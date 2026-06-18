@@ -3814,6 +3814,199 @@
   color: var(--bx-text-dim);
   margin: 0;
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   Features page v2 — value levers, integrations strip, footnote.
+   Adds the attention-grabbing "three reasons DME owners switch" band
+   (time / revenue / leaner team) plus the partner-logos chip row.
+   Still scoped under .breathe-page; reuses bx-* primitives elsewhere.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Three big value levers */
+.bxf-levers {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 18px;
+}
+@media (max-width: 900px) {
+  .bxf-levers {
+    grid-template-columns: 1fr;
+  }
+}
+.bxf-lever {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 30px;
+  border-radius: 20px;
+  background: var(--bx-panel);
+  border: 1px solid var(--bx-line);
+  backdrop-filter: blur(10px);
+  transition:
+    transform 0.25s ease,
+    border-color 0.25s ease,
+    box-shadow 0.25s ease;
+}
+.bxf-lever:hover {
+  transform: translateY(-4px);
+  border-color: var(--bx-line-strong);
+  box-shadow: 0 24px 50px -20px rgba(8, 20, 55, 0.9);
+}
+.bxf-lever-ic {
+  width: 48px;
+  height: 48px;
+  border-radius: 13px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 20px;
+  color: var(--bx-cyan);
+  background: linear-gradient(
+    135deg,
+    rgba(84, 200, 255, 0.16),
+    rgba(47, 111, 230, 0.08)
+  );
+  border: 1px solid var(--bx-line-strong);
+}
+.bxf-lever-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.bxf-lever-metric .n {
+  font-family: var(--bx-display);
+  font-optical-sizing: auto;
+  font-size: 46px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  background: linear-gradient(120deg, #fff, var(--bx-cyan));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.bxf-lever-metric .u {
+  font-family: var(--bx-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--bx-text-faint);
+}
+.bxf-lever h3 {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0 0 10px;
+}
+.bxf-lever > p {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--bx-text-dim);
+  margin: 0 0 18px;
+}
+.bxf-lever-list {
+  list-style: none;
+  margin: auto 0 0;
+  padding: 18px 0 0;
+  border-top: 1px solid var(--bx-line);
+  display: grid;
+  gap: 12px;
+}
+.bxf-lever-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--bx-text);
+}
+.bxf-lever-list li svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--bx-cyan);
+}
+/* Per-lever accent: 1 = time (cyan, default), 2 = revenue (mint),
+   3 = leaner team (gold). */
+.bxf-lever:nth-child(2) .bxf-lever-ic,
+.bxf-lever:nth-child(2) .bxf-lever-list li svg {
+  color: var(--bx-mint);
+}
+.bxf-lever:nth-child(2) .bxf-lever-ic {
+  background: linear-gradient(
+    135deg,
+    rgba(111, 240, 194, 0.18),
+    rgba(111, 240, 194, 0.06)
+  );
+}
+.bxf-lever:nth-child(2) .bxf-lever-metric .n {
+  background: linear-gradient(120deg, #fff, var(--bx-mint));
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+.bxf-lever:nth-child(3) .bxf-lever-ic,
+.bxf-lever:nth-child(3) .bxf-lever-list li svg {
+  color: var(--bx-gold-soft);
+}
+.bxf-lever:nth-child(3) .bxf-lever-ic {
+  background: linear-gradient(
+    135deg,
+    rgba(246, 167, 34, 0.18),
+    rgba(246, 167, 34, 0.06)
+  );
+}
+.bxf-lever:nth-child(3) .bxf-lever-metric .n {
+  background: linear-gradient(120deg, #fff, var(--bx-gold-soft));
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
+/* Integrations / partners chip row */
+.bxf-chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  max-width: 880px;
+  margin: 0 auto;
+}
+.bxf-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 16px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--bx-text-dim);
+  background: var(--bx-panel-2);
+  border: 1px solid var(--bx-line);
+  transition:
+    color 0.2s ease,
+    border-color 0.2s ease;
+}
+.bxf-chip:hover {
+  color: var(--bx-text);
+  border-color: var(--bx-line-strong);
+}
+.bxf-chip .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--bx-cyan);
+  box-shadow: 0 0 8px 1px rgba(84, 200, 255, 0.6);
+}
+
+/* Honest-figures footnote */
+.bxf-footnote {
+  max-width: 720px;
+  margin: 26px auto 0;
+  text-align: center;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--bx-text-faint);
+}
+
 /* ───────────────────── Responsive refinements ───────────────────── */
 /* Product-tour mock console: the fixed 212px sidebar + multi-column panels
    are illegible on phones, so collapse them down progressively. */
