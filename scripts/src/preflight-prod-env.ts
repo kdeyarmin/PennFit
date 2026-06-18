@@ -607,13 +607,14 @@ function runChecks(): void {
     }
   }
 
-  // CLAUDE.md "One From address PER TENANT" rule (G6): SENDGRID_FROM_EMAIL
-  // is the PLATFORM DEFAULT From — used by the seed tenant and as the
-  // fallback for any tenant without its own `organizations.from_email`.
-  // It must still be info@pennpaps.com in production; per-tenant senders
-  // are stored in org data, not this env var.
+  // SENDGRID_FROM_EMAIL is the PLATFORM DEFAULT From — the CareMetric
+  // Breathe platform identity, used as the fallback for any tenant without
+  // its own `organizations.from_email`. It should be noreply@cmbreathe.com
+  // in production; per-tenant senders (e.g. the Penn tenant's
+  // info@pennpaps.com, pinned via migration 0377) are stored in org data,
+  // not this env var.
   if (prodMode) {
-    expectExactly("SENDGRID_FROM_EMAIL", "info@pennpaps.com");
+    expectExactly("SENDGRID_FROM_EMAIL", "noreply@cmbreathe.com");
   } else {
     const from = getTrimmed("SENDGRID_FROM_EMAIL");
     if (from === undefined) {

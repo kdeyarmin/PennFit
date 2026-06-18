@@ -137,9 +137,9 @@ function nonEmpty(v: string | undefined | null): v is string {
 }
 
 function emailConfigured(env: NodeJS.ProcessEnv): boolean {
-  // The From address is a fixed platform constant that createSendgridClient
-  // defaults to (info@pennpaps.com), so the API key is the only thing that
-  // actually gates whether we can send.
+  // The From address is a platform constant that createSendgridClient
+  // defaults to (noreply@cmbreathe.com), so the API key is the only thing
+  // that actually gates whether we can send.
   return nonEmpty(env.SENDGRID_API_KEY);
 }
 
