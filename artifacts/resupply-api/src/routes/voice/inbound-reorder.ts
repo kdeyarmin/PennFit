@@ -36,13 +36,10 @@ import {
   requireTwilioSignature,
 } from "@workspace/resupply-telecom";
 
-import {
-  applyCompanyIdentityToText,
-  getCompanyInfo,
-} from "../../lib/company-info";
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
 import { resolveOrgIdByCalledNumber } from "../../lib/messaging/tenant-telecom";
+import { resolveBrandingByOrgId } from "../../lib/tenant-branding";
 import { getPendingSessions } from "../../lib/voice/pending-sessions";
 import { resolveCallerByPhone } from "../../lib/voice/resolve-caller";
 import {
@@ -145,13 +142,15 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
   }
   const supabase = getOrgScopedClient(orgId);
 
-  // Resolve the tenant's spoken brand once. The greeting + human-transfer
-  // copy is brand-literal ("PennPaps"); rewrite it to this tenant's saved
-  // name so a non-seed tenant's caller never hears the seed brand. No-op for
-  // the seed tenant and for any unseeded environment.
-  const companyInfo = await getCompanyInfo(orgId);
+  // Resolve the tenant's storefront brand once. The greeting + human-transfer
+  // copy is brand-literal ("PennPaps"); rewrite it to this tenant's storefront
+  // name so a non-seed tenant's caller never hears the seed brand. Uses the
+  // same resolver as the check-in voice/SMS copy (resolveBrandingByOrgId) so
+  // all patient-facing voice/storefront copy reads ONE brand field. Seed →
+  // "PennPaps" (a no-op for the substitution); fail-soft to the platform brand.
+  const brandName = (await resolveBrandingByOrgId(orgId)).storefrontName;
   const brand = (text: string): string =>
-    applyCompanyIdentityToText(text, companyInfo);
+    text.split("PennPaps").join(brandName);
 
   // 1. Identify the caller. A DB failure here must NOT be silently treated
   // as "unidentified" — that would mask an outage and mis-route the caller.
