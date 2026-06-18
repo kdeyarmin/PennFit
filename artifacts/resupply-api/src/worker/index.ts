@@ -63,6 +63,7 @@ import { registerDlqMonitorJob } from "./jobs/dlq-monitor.js";
 import { registerOwnerDigestJob } from "./jobs/owner-digest.js";
 import { registerTherapyFleetAlertsJob } from "./jobs/therapy-fleet-alerts-scan.js";
 import { registerSetupDeadlineOutreachJob } from "./jobs/therapy-setup-deadline-outreach.js";
+import { registerResupplyAutoDraftJob } from "./jobs/resupply-auto-draft.js";
 import { registerCoachingProgressJob } from "./jobs/coaching-plan-progress.js";
 import { registerCoachingAutoEnrollJob } from "./jobs/coaching-auto-enroll.js";
 import { registerPayerEstimateStatsJob } from "./jobs/payer-estimate-stats-refresh.js";
@@ -760,6 +761,15 @@ async function doStartWorker(): Promise<void> {
     "registerSetupDeadlineOutreachJob",
     registrationFailures,
     () => registerSetupDeadlineOutreachJob(boss),
+  );
+
+  // Daily resupply auto-draft (05:30 UTC, after the 04:30 nightly therapy
+  // sync). Stages a draft PROPOSAL per device-eligible supply so CSRs get a
+  // ready-to-review queue instead of eyeballing the opportunities list.
+  // Internal only — no patient contact. Gated per-tenant by the
+  // resupply.auto_order_drafts flag (seeded OFF); idempotent.
+  await safeRegister("registerResupplyAutoDraftJob", registrationFailures, () =>
+    registerResupplyAutoDraftJob(boss),
   );
 
   // Daily prior-authorization expiry sweep — flips approved → expired

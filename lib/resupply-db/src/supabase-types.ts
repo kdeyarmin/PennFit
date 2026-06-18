@@ -2357,6 +2357,35 @@ export interface Database {
         >;
         Relationships: [];
       };
+      // Migration 0391: staged resupply order drafts (proposals).
+      resupply_order_drafts: {
+        Row: {
+          id: string;
+          org_id: string;
+          patient_id: string;
+          category: string;
+          source: string | null;
+          source_description: string | null;
+          next_eligible_date: string | null;
+          suggested_product_id: string | null;
+          suggested_quantity: number;
+          status: "proposed" | "approved" | "dismissed" | "ordered";
+          origin: "auto" | "manual";
+          created_by_email: string | null;
+          created_by_user_id: string | null;
+          dismissed_reason: string | null;
+          shop_order_id: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["resupply_order_drafts"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["resupply_order_drafts"]["Row"]
+        >;
+        Relationships: [];
+      };
       organization_agreements: {
         Row: {
           id: string;

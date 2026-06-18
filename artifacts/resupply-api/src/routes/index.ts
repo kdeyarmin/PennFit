@@ -101,6 +101,7 @@ import integrationsErrorsRouter from "./admin/integrations-errors.js";
 import therapyFleetRouter from "./admin/therapy-fleet.js";
 import therapyClinicalInsightsRouter from "./admin/therapy-clinical-insights.js";
 import therapyResupplyRouter from "./admin/therapy-resupply.js";
+import resupplyOrderDraftsRouter from "./admin/resupply-order-drafts.js";
 import therapyComplianceRouter from "./admin/therapy-compliance.js";
 import integrationsRefreshSuppliesRouter from "./admin/integrations-refresh-supplies.js";
 import integrationsSyncEquipmentRouter from "./admin/integrations-sync-equipment.js";
@@ -969,6 +970,11 @@ router.use(therapyClinicalInsightsRouter);
 // vendor supply rosters whose nextEligibleDate has arrived, surfaced as
 // a fleet "due/overdue" queue (with CSV export) to drive resupply orders.
 router.use(therapyResupplyRouter);
+// /admin/therapy-resupply/draft-orders — staged resupply order proposals
+// (review queue + batch-stage + dismiss). A draft is a proposal a CSR
+// reviews and approves into the sign-&-pay order flow; nothing is charged
+// automatically. Staged manually here or by the resupply.auto-draft worker.
+router.use(resupplyOrderDraftsRouter);
 // /admin/therapy-compliance/* — CMS 90-day setup-adherence tracker:
 // best rolling 30-day count per in-window patient + qualify/at-risk
 // classification (with CSV export) to protect Medicare reimbursement.
