@@ -12,20 +12,33 @@ import { Router, type IRouter, type Request, type Response } from "express";
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
+import {
+  rateLimit as expressRateLimit,
+  ipKeyGenerator,
+} from "express-rate-limit";
+
 import { logger } from "../../lib/logger";
 import { verifyPlatformUnsubscribeToken } from "../../lib/platform-outreach/unsubscribe-token";
-import { rateLimit } from "../../middlewares/rate-limit";
 
 const router: IRouter = Router();
 
-// Public, unauthenticated endpoint — bound by a per-IP fixed window so a
-// leaked link or a scanner can't hammer it. The token is HMAC-signed
+// Public, unauthenticated endpoint — bound by a per-IP window so a leaked
+// link or a scanner can't hammer it. The token is HMAC-signed
 // (enumeration-proof), so a generous budget still lets a real recipient
-// click through (and re-click) without friction.
-const unsubscribeLimiter = rateLimit({
-  name: "platform_unsubscribe",
-  windowMs: 60_000,
-  max: 30,
+// click through (and re-click) without friction. Built DIRECTLY from
+// express-rate-limit (not the local rateLimit() wrapper) because CodeQL's
+// js/missing-rate-limiting query only recognises the upstream middleware
+// at the call site — same rationale as adminReadRateLimiter. IPv6 clients
+// are bucketed by subnet via ipKeyGenerator so a /64 can't rotate
+// addresses past the limit.
+const unsubscribeLimiter = expressRateLimit({
+  windowMs: 60 * 1000,
+  limit: 60,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req) =>
+    ipKeyGenerator(req.ip ?? req.socket.remoteAddress ?? "0.0.0.0"),
+  message: { error: "too_many_requests", limiter: "platform_unsubscribe" },
 });
 
 function page(title: string, message: string): string {
