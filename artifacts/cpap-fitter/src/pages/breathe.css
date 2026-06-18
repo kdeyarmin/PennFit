@@ -755,6 +755,148 @@
   line-height: 1.4;
 }
 
+/* ───────────────────── Value pillars (home) ───────────────────── */
+/* The four concrete "what it does + what it's worth" cards under the hero.
+   Larger and more outcome-forward than the .bx-cap capability grid lower on
+   the page: a corner glow, a serif metric, and the mechanism in plain copy. */
+.bx-pillars {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 20px;
+}
+@media (max-width: 820px) {
+  .bx-pillars {
+    grid-template-columns: 1fr;
+  }
+}
+.bx-pillar {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 30px 32px 32px;
+  border-radius: 22px;
+  background: linear-gradient(
+    180deg,
+    rgba(20, 32, 62, 0.5),
+    rgba(11, 20, 42, 0.66)
+  );
+  border: 1px solid var(--bx-line);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  overflow: hidden;
+  transition:
+    transform 0.25s ease,
+    border-color 0.25s ease,
+    box-shadow 0.25s ease;
+}
+/* Soft luminous corner so the card reads as a lit panel, not a flat box. */
+.bx-pillar::before {
+  content: "";
+  position: absolute;
+  top: -45%;
+  right: -30%;
+  width: 62%;
+  height: 88%;
+  background: radial-gradient(
+    circle,
+    rgba(84, 200, 255, 0.16),
+    transparent 70%
+  );
+  pointer-events: none;
+}
+.bx-pillar.gold::before {
+  background: radial-gradient(
+    circle,
+    rgba(246, 167, 34, 0.16),
+    transparent 70%
+  );
+}
+.bx-pillar:hover {
+  transform: translateY(-4px);
+  border-color: var(--bx-line-strong);
+  box-shadow: 0 28px 60px -26px rgba(8, 20, 55, 0.95);
+}
+.bx-pillar-top {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 22px;
+}
+.bx-pillar-ic {
+  flex: none;
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  color: var(--bx-cyan);
+  background: linear-gradient(
+    135deg,
+    rgba(84, 200, 255, 0.18),
+    rgba(47, 111, 230, 0.08)
+  );
+  border: 1px solid var(--bx-line-strong);
+}
+.bx-pillar.gold .bx-pillar-ic {
+  color: var(--bx-gold-soft);
+  background: linear-gradient(
+    135deg,
+    rgba(246, 167, 34, 0.2),
+    rgba(246, 167, 34, 0.05)
+  );
+}
+.bx-pillar-metric {
+  text-align: right;
+  line-height: 1;
+}
+.bx-pillar-metric b {
+  display: block;
+  font-family: var(--bx-display);
+  font-optical-sizing: auto;
+  font-size: clamp(28px, 3.4vw, 40px);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  background: linear-gradient(120deg, #fff, var(--bx-cyan));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.bx-pillar.gold .bx-pillar-metric b {
+  background: linear-gradient(120deg, #fff, var(--bx-gold-soft));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.bx-pillar-metric small {
+  display: block;
+  margin-top: 7px;
+  font-family: var(--bx-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--bx-text-faint);
+}
+.bx-pillar-title {
+  position: relative;
+  font-family: var(--bx-display);
+  font-optical-sizing: auto;
+  font-size: 23px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+  margin: 0 0 12px;
+  color: var(--bx-text);
+}
+.bx-pillar-body {
+  position: relative;
+  font-size: 15px;
+  line-height: 1.62;
+  color: var(--bx-text-dim);
+  margin: 0;
+}
+
 /* ───────────────────── Integrations strip ───────────────────── */
 .bx-integrations {
   padding: 8px 0 0;

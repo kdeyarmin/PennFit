@@ -651,14 +651,15 @@ function SignupSection() {
 /* Landing — the elevator pitch: hero, integrations, what it replaces, CTA. */
 export function BreatheHome() {
   useDocumentTitle(
-    "Breathe — The DME Operating Platform by CareMetric.ai",
-    "Breathe is the AI-native operating platform for durable medical equipment companies: patient CRM, resupply automation, revenue-cycle, therapy monitoring, telehealth, and an AI voice agent in one system.",
+    "Breathe — All-in-One CPAP & DME Software by CareMetric.ai",
+    "Breathe is the all-in-one platform for CPAP & DME providers: automate resupply reordering, scrub claims clean before they're filed, sync therapy compliance from ResMed, Philips & 3B, and e-sign documentation — so you capture more revenue, cut denials, and keep patients on therapy.",
     { schema: "Article" },
   );
   return (
     <BreatheShell>
       <Hero />
       <IntegrationsStrip />
+      <Pillars />
       <Lifecycle />
       <Capabilities />
       <Replaces />
@@ -916,18 +917,20 @@ function Hero() {
           <div className="bx-hero-copy">
             <span className="bx-eyebrow bx-reveal in">
               <span className="bx-dot" />
-              The AI-native platform for DME
+              All-in-one software for CPAP &amp; DME
             </span>
             <h1 className="bx-h1 bx-reveal in">
-              Run your entire DME
+              Capture every resupply.
               <br />
-              business on <span className="grad-em">one breath.</span>
+              <span className="grad-em">Get paid the first time.</span>
             </h1>
             <p className="bx-hero-sub bx-reveal in">
-              Breathe unifies intake, resupply, revenue cycle, clinical
-              monitoring, and patient communication into a single AI-native
-              system — so your team stops stitching seven tools together and
-              starts caring for patients.
+              Breathe is the all-in-one platform for CPAP &amp; DME providers.
+              It automates the resupply reordering that eats your staff&apos;s
+              day, scrubs every claim clean before it&apos;s filed, and syncs
+              live compliance data straight from ResMed, Philips &amp; 3B — so
+              you book more orders, deny fewer claims, and keep patients on
+              therapy.
             </p>
             <div className="bx-hero-cta bx-reveal in">
               <button
@@ -937,8 +940,8 @@ function Hero() {
               >
                 Start the free demo <ArrowRight size={17} />
               </button>
-              <Link className="bx-btn bx-btn-ghost" href="/breathe/signup">
-                Create your account
+              <Link className="bx-btn bx-btn-ghost" href="/breathe/roi">
+                See what you&apos;d save
               </Link>
             </div>
             <div className="bx-hero-trust bx-reveal in">
@@ -1050,6 +1053,95 @@ function IntegrationsStrip() {
   );
 }
 
+/* ───────────────────────── Value pillars ───────────────────────── */
+/*
+ * The home page's concrete "what it does, and what it's worth" band — placed
+ * directly under the hero so a DME owner sees the four revenue/operational
+ * wins (resupply, billing, compliance, documentation) before scrolling into
+ * the deeper story. Each pillar pairs an outcome metric with the mechanism
+ * behind it; the numbers mirror the benchmark-sourced figures in <Outcomes/>
+ * lower on the page and are framed as industry ranges, not guarantees.
+ */
+const PILLARS: {
+  icon: React.ReactNode;
+  metric: string;
+  metricSub: string;
+  title: string;
+  body: string;
+  gold?: boolean;
+}[] = [
+  {
+    icon: <RefreshCw size={22} />,
+    metric: "2.5×",
+    metricSub: "more resupply orders",
+    title: "CPAP resupply that runs itself",
+    body: "Eligibility-aware reminders go out by text, email, and voice on the right 90-day cadence — and a 24/7 AI agent books the reorders behind them, even after hours. Your team works the exceptions instead of the phone tree, and no replacement window slips.",
+  },
+  {
+    icon: <Receipt size={22} />,
+    metric: "94%",
+    metricSub: "first-pass clean claims",
+    title: "Claims that get paid the first time",
+    gold: true,
+    body: "AI scrubs every 837P before it leaves the building — eligibility, modifiers, documentation — then auto-submits and posts the ERA back automatically. Most DME denials are preventable rework at ~$118 each; Breathe catches them before the claim is ever filed.",
+  },
+  {
+    icon: <Stethoscope size={22} />,
+    metric: "85%",
+    metricSub: "therapy compliance",
+    title: "Higher compliance, better outcomes",
+    body: "Live adherence from ResMed, Philips, and 3B is pulled in nightly and ranked, so at-risk patients surface before they quit. Hit the Medicare 4-hour rule, document the 90-day window automatically, and keep every compliant patient supplied.",
+  },
+  {
+    icon: <ClipboardSignature size={22} />,
+    metric: "Minutes",
+    metricSub: "to a signed order",
+    title: "Documents signed, not stalled",
+    body: "Written orders, CMNs, prior auths, and proof of delivery draft from the patient's own data and route for e-signature in a tap — signed and on file before delivery. Missing documentation is the #1 reason DME claims stall; Breathe closes that gap before it costs you.",
+  },
+];
+
+function Pillars() {
+  return (
+    <section className="bx-section" id="what-it-does">
+      <div className="bx-shell">
+        <div className="bx-section-head center bx-reveal">
+          <span className="bx-eyebrow">
+            <Sparkles size={13} /> What Breathe does
+          </span>
+          <h2 className="bx-h2">
+            The work that runs a CPAP business — automated
+          </h2>
+          <p className="bx-lede">
+            From the 90-day reorder reminder to the paid claim, Breathe handles
+            the repetitive, revenue-critical work end to end — so you grow
+            resupply, deny fewer claims, and keep patients on therapy without
+            adding staff.
+          </p>
+        </div>
+        <div className="bx-pillars">
+          {PILLARS.map((p) => (
+            <article
+              className={`bx-pillar bx-reveal${p.gold ? " gold" : ""}`}
+              key={p.title}
+            >
+              <div className="bx-pillar-top">
+                <span className="bx-pillar-ic">{p.icon}</span>
+                <span className="bx-pillar-metric">
+                  <b>{p.metric}</b>
+                  <small>{p.metricSub}</small>
+                </span>
+              </div>
+              <h3 className="bx-pillar-title">{p.title}</h3>
+              <p className="bx-pillar-body">{p.body}</p>
+            </article>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 /* ───────────────────────── Replaces strip ───────────────────────── */
 const REPLACED = [
   "Resupply software",
@@ -1094,7 +1186,7 @@ function Lifecycle() {
       <div className="bx-shell">
         <div className="bx-section-head center bx-reveal">
           <span className="bx-eyebrow">
-            <Waypoints size={13} /> The whole lifecycle
+            <Waypoints size={13} /> How it works
           </span>
           <h2 className="bx-h2">One continuous workflow, end to end</h2>
           <p className="bx-lede">
