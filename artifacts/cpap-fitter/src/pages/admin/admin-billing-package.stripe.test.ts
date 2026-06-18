@@ -33,4 +33,14 @@ describe("AdminBillingPackagePage Stripe status", () => {
     // Recurring add-ons get a quantity stepper; one-time ones are contact-us.
     expect(SRC).toContain("addon-qty-");
   });
+
+  it("explains each add-on in a collapsible dropdown", () => {
+    expect(SRC).toContain("AddonExplainer");
+    expect(SRC).toContain("addon-explainer-");
+    expect(SRC).toContain("What this does");
+    // Plain-language copy keyed by catalog code, with a description fallback.
+    expect(SRC).toContain("ADDON_DETAILS");
+    expect(SRC).toContain("whatItDoes");
+    expect(SRC).toContain("whyItMatters");
+  });
 });
