@@ -1762,6 +1762,101 @@
   background: linear-gradient(135deg, var(--bx-cyan), var(--bx-blue));
   box-shadow: 0 0 10px rgba(84, 200, 255, 0.5);
 }
+/* Three-up variant for short bands (e.g. the Compare "why it's different"
+   payoff) so an odd card count doesn't orphan on the 2-col default. */
+.bx-caps-3 {
+  grid-template-columns: repeat(3, 1fr);
+}
+@media (max-width: 900px) {
+  .bx-caps-3 {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ───────────────────── A day on Breathe (timeline) ───────────────────── */
+/* Vertical timeline for the product-tour "what it does while you work"
+   story. The connector line sits behind the dot column; cards mirror the
+   .bx-card aesthetic. */
+.bx-day {
+  position: relative;
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 0;
+  list-style: none;
+}
+.bx-day::before {
+  content: "";
+  position: absolute;
+  left: 27px;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  border-radius: 2px;
+  background: linear-gradient(
+    180deg,
+    transparent,
+    var(--bx-line-strong) 8%,
+    var(--bx-line-strong) 92%,
+    transparent
+  );
+}
+.bx-day-item {
+  position: relative;
+  display: grid;
+  grid-template-columns: 56px 1fr;
+  gap: 22px;
+  padding-bottom: 26px;
+}
+.bx-day-item:last-child {
+  padding-bottom: 0;
+}
+.bx-day-dot {
+  position: relative;
+  z-index: 1;
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  display: grid;
+  place-items: center;
+  color: var(--bx-cyan);
+  background: linear-gradient(
+    160deg,
+    rgba(20, 34, 66, 0.98),
+    rgba(10, 18, 38, 0.98)
+  );
+  border: 1px solid var(--bx-line-strong);
+  box-shadow:
+    0 10px 28px -14px rgba(8, 20, 55, 0.95),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+.bx-day-item.gold .bx-day-dot {
+  color: var(--bx-gold-soft);
+}
+.bx-day-body {
+  padding: 4px 0 0;
+}
+.bx-day-time {
+  display: inline-block;
+  font-family: var(--bx-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--bx-text-faint);
+  margin-bottom: 6px;
+}
+.bx-day-body h3 {
+  font-size: 17.5px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0 0 7px;
+}
+.bx-day-body p {
+  font-size: 14.5px;
+  line-height: 1.58;
+  color: var(--bx-text-dim);
+  margin: 0;
+  max-width: 60ch;
+}
 
 /* ───────────────────────── Comparison ───────────────────────── */
 .bx-compare-wrap {
