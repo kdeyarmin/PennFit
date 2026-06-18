@@ -11,6 +11,7 @@ import {
 import { logger } from "../../lib/logger";
 import {
   ensureTenantStripeCustomer,
+  PlatformBillingAccountChangedError,
   syncPlatformBillingCatalogToStripe,
   syncTenantStripeSubscription,
 } from "../../lib/platform-billing/stripe";
@@ -832,6 +833,10 @@ router.post(
       }
       await tenantBilling(param.data.id, res);
     } catch (err) {
+      if (err instanceof PlatformBillingAccountChangedError) {
+        res.status(409).json({ error: "stripe_account_changed" });
+        return;
+      }
       logger.error(
         { event: "platform_billing_stripe_customer_failed", err },
         "platform billing Stripe customer failed",
@@ -862,6 +867,10 @@ router.post(
       }
       await tenantBilling(param.data.id, res);
     } catch (err) {
+      if (err instanceof PlatformBillingAccountChangedError) {
+        res.status(409).json({ error: "stripe_account_changed" });
+        return;
+      }
       logger.error(
         { event: "platform_billing_stripe_subscription_failed", err },
         "platform billing Stripe subscription sync failed",

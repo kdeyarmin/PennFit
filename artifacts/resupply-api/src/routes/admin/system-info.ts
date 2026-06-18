@@ -138,6 +138,19 @@ router.get(
           webhookSecretConfigured: Boolean(
             vendorEnv.STRIPE_WEBHOOK_SIGNING_SECRET,
           ),
+          // Platform SaaS-billing account. "dedicated" when its own key is
+          // set (billing kept off the patient-checkout account); "shared"
+          // means it bills on STRIPE_SECRET_KEY. In dedicated mode the
+          // platform webhook secret must also be set.
+          platformBillingMode: vendorEnv.STRIPE_PLATFORM_SECRET_KEY?.trim()
+            ? "dedicated"
+            : "shared",
+          platformBillingSecretKeyConfigured: Boolean(
+            vendorEnv.STRIPE_PLATFORM_SECRET_KEY?.trim(),
+          ),
+          platformBillingWebhookSecretConfigured: Boolean(
+            vendorEnv.STRIPE_PLATFORM_WEBHOOK_SIGNING_SECRET?.trim(),
+          ),
         },
         objectStorage: {
           privateBucketConfigured: Boolean(

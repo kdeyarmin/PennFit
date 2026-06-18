@@ -38,7 +38,10 @@ import {
 } from "./middlewares/csrf";
 import { adminMutationLooseLimit } from "./middlewares/rate-limit";
 import { securityHeaders } from "./middlewares/securityHeaders";
-import { stripeWebhookHandler } from "./lib/stripe/webhook-handler";
+import {
+  stripePlatformBillingWebhookHandler,
+  stripeWebhookHandler,
+} from "./lib/stripe/webhook-handler";
 import faxWebhooksRouter from "./routes/fax/webhooks";
 
 // Register the audit lib's request-id bridge once at import time so
@@ -268,6 +271,16 @@ app.post(
   stripeWebhookLimiter,
   express.raw({ type: "application/json", limit: "256kb" }),
   stripeWebhookHandler,
+);
+// Dedicated platform-billing (SaaS) Stripe account posts here with its
+// own signing secret — separate from the patient/Connect webhook above.
+// Same raw-body-before-express.json() contract; inert in shared-account
+// mode (returns 503/ignored). See webhook-handler.ts.
+app.post(
+  "/resupply-api/stripe/platform-webhook",
+  stripeWebhookLimiter,
+  express.raw({ type: "application/json", limit: "256kb" }),
+  stripePlatformBillingWebhookHandler,
 );
 
 // Telnyx fax webhooks (inbound fax.received + outbound delivery status)
