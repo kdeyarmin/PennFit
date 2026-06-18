@@ -35,7 +35,8 @@ export type SignedLinkTable =
   | "prior_authorizations"
   | "physician_fax_outreach"
   | "patients"
-  | "call_dispositions";
+  | "call_dispositions"
+  | "referral_reviews";
 
 export async function resolveOrgIdForSignedRecord(
   table: SignedLinkTable,

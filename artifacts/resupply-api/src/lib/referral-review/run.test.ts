@@ -33,8 +33,15 @@ vi.mock("../object-storage/objectStorage", () => ({
 import { runReviewExtraction } from "./run";
 
 const REVIEW_ID = "22222222-2222-4222-8222-222222222222";
+const ORG_ID = "00000000-0000-4000-8000-000000000002";
 
 function stageReview(overrides: Record<string, unknown> = {}) {
+  // 1) resolveOrgIdForSignedRecord reads the review's org_id first (the tenant
+  //    is derived from the record, not the seed org).
+  stageSupabaseResponse("referral_reviews", "select", {
+    data: { org_id: ORG_ID },
+  });
+  // 2) the routine's own review-row read.
   stageSupabaseResponse("referral_reviews", "select", {
     data: {
       id: REVIEW_ID,
@@ -74,6 +81,10 @@ describe("runReviewExtraction", () => {
       extraction_model: "claude-sonnet-4-6",
       error_reason: null,
     });
+    // The persist lands in the review's OWN tenant (the org-scoped facade
+    // forces org_id onto the patch = the org derived from the record), not
+    // the seed org.
+    expect(upd.org_id).toBe(ORG_ID);
   });
 
   it("persists a failed result with its reason", async () => {
