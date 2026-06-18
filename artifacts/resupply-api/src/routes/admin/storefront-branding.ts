@@ -425,6 +425,8 @@ router.post(
         custom_domain_status: "pending",
         custom_domain_token: token,
         custom_domain_verified_at: null,
+        custom_domain_tls: null,
+        custom_domain_cf_hostname_id: null,
         updated_at: new Date().toISOString(),
       })
       .eq("id", orgId)
@@ -520,6 +522,8 @@ router.delete(
         custom_domain_status: "none",
         custom_domain_token: null,
         custom_domain_verified_at: null,
+        custom_domain_tls: null,
+        custom_domain_cf_hostname_id: null,
         updated_at: new Date().toISOString(),
       })
       .eq("id", orgId)

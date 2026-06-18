@@ -39,6 +39,7 @@ import { adminMutationLooseLimit } from "./middlewares/rate-limit";
 import { securityHeaders } from "./middlewares/securityHeaders";
 import { stripeWebhookHandler } from "./lib/stripe/webhook-handler";
 import faxWebhooksRouter from "./routes/fax/webhooks";
+import { createTrustProxyFn } from "./lib/trusted-proxies";
 
 // Register the audit lib's request-id bridge once at import time so
 // any logAudit() call from inside an HTTP request automatically
@@ -56,10 +57,10 @@ applyEnvAliases();
 
 const app: Express = express();
 
-// We're behind Railway's reverse proxy (one hop). Without trust proxy,
-// every request looks like it came from 127.0.0.1, which breaks rate
-// limiting and audit-log IP capture.
-app.set("trust proxy", 1);
+// We're behind Railway's reverse proxy, and some production domains add
+// Cloudflare as an additional hop. Trust hop 0 (Railway) plus known
+// Cloudflare ranges so req.ip resolves to the real client on both paths.
+app.set("trust proxy", createTrustProxyFn());
 
 // Security headers — mounted FIRST so every response (including the
 // Stripe webhook below, every CORS preflight, and every error handler
@@ -442,8 +443,8 @@ logger.info(
 // `api-server` artifact). Orders cost Penn an email + a fulfillment
 // workflow per request — throttle hard. Usage events are anonymous
 // telemetry — looser limit. Both are keyed by IP via `ipKeyGenerator`
-// for IPv6-safe normalisation. `app.set("trust proxy", 1)` above is
-// what makes the IP key honest behind Railway's reverse proxy.
+// for IPv6-safe normalisation. `app.set("trust proxy", …)` above is
+// what makes the IP key honest behind reverse proxies.
 const storefrontOrderLimiter = expressRateLimit({
   windowMs: RATE_LIMITS.storefront_orders.windowMs,
   limit: RATE_LIMITS.storefront_orders.limit,
