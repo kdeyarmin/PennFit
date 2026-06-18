@@ -16,4 +16,13 @@ describe("AdminBillingPackagePage Stripe status", () => {
     expect(SRC).toContain("Invoice status");
     expect(SRC).toContain("Billing period ends");
   });
+
+  it("offers tenant self-service plan selection", () => {
+    expect(SRC).toContain("PlanSelector");
+    expect(SRC).toContain("Choose your plan");
+    expect(SRC).toContain("fetchSelectablePlans");
+    expect(SRC).toContain("selectTenantPlan");
+    // Custom/Enterprise tiers are a contact-us state, not self-selectable.
+    expect(SRC).toContain("Contact us");
+  });
 });
