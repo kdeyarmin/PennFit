@@ -226,21 +226,43 @@ export function __resetSeedOrgIdForTests(): void {
  * archived tenants are intentionally excluded — their crons should not
  * run. NOT cached: tenant status changes (suspend/reactivate) must take
  * effect on the next tick without a process restart.
+ *
+ * PAGINATED: PostgREST caps an unbounded select at ~1000 rows. This is
+ * the fan-out source for EVERY per-tenant cron, so an implicit cap would
+ * SILENTLY drop tenants past it — their reminders/sweeps would just stop
+ * running. We page with `.range()` until a short page proves the table is
+ * exhausted rather than trusting a single unbounded read.
  */
+/** Per-page window for the active-org scan. Below PostgREST's ~1000-row
+ *  implicit cap so each `.range()` call returns a full page. */
+const ACTIVE_ORG_PAGE_SIZE = 500;
+
 export async function listActiveOrgIds(
   client: ResupplySupabaseClient = getSupabaseServiceRoleClient(),
 ): Promise<string[]> {
   try {
     const supabase = client;
-    const { data, error } = await supabase
-      .schema("resupply")
-      .from("organizations")
-      .select("id")
-      .eq("status", "active");
-    if (error || !data) return [];
-    return data
-      .map((row) => (row as { id?: string }).id)
-      .filter((id): id is string => typeof id === "string" && id.length > 0);
+    const ids: string[] = [];
+    for (let from = 0; ; from += ACTIVE_ORG_PAGE_SIZE) {
+      const { data, error } = await supabase
+        .schema("resupply")
+        .from("organizations")
+        .select("id")
+        .eq("status", "active")
+        .range(from, from + ACTIVE_ORG_PAGE_SIZE - 1);
+      // Fail-soft on the FIRST page only: a mid-scan error would otherwise
+      // return a truncated tenant list, which is worse than skipping the
+      // tick entirely (some tenants would silently miss their cron).
+      if (error) return from === 0 ? [] : ids;
+      if (!data || data.length === 0) break;
+      for (const row of data) {
+        const id = (row as { id?: string }).id;
+        if (typeof id === "string" && id.length > 0) ids.push(id);
+      }
+      // A short page means we've reached the end of the table.
+      if (data.length < ACTIVE_ORG_PAGE_SIZE) break;
+    }
+    return ids;
   } catch {
     return [];
   }
