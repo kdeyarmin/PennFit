@@ -6,8 +6,8 @@ import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 import { logger } from "../logger";
 import {
   getStripeClient,
-  readStripeConfigOrNull,
-  type StripeConfig,
+  readPlatformBillingStripeConfigOrNull,
+  type PlatformBillingStripeConfig,
 } from "../stripe/config";
 
 const PLATFORM_BILLING_SCOPE = "platform_tenant";
@@ -114,7 +114,7 @@ async function ensureRecurringPrice(args: {
 }
 
 export async function syncPlatformBillingCatalogToStripe(): Promise<PlatformStripeSyncResult> {
-  const config = readStripeConfigOrNull();
+  const config = readPlatformBillingStripeConfigOrNull();
   if (!config) return { stripeConfigured: false };
   const raw = await rawClient();
   if (!raw) throw new Error("tenant_directory_unavailable");
@@ -195,7 +195,7 @@ export async function ensureTenantStripeCustomer(args: {
   orgId: string;
   adminEmail?: string | null;
 }): Promise<PlatformStripeSyncResult> {
-  const config = readStripeConfigOrNull();
+  const config = readPlatformBillingStripeConfigOrNull();
   if (!config) return { stripeConfigured: false };
   const raw = await rawClient();
   if (!raw) throw new Error("tenant_directory_unavailable");
@@ -273,7 +273,8 @@ export async function syncTenantStripeSubscription(args: {
   orgId: string;
   adminEmail?: string | null;
 }): Promise<PlatformStripeSyncResult> {
-  const config: StripeConfig | null = readStripeConfigOrNull();
+  const config: PlatformBillingStripeConfig | null =
+    readPlatformBillingStripeConfigOrNull();
   if (!config) return { stripeConfigured: false };
   const raw = await rawClient();
   if (!raw) throw new Error("tenant_directory_unavailable");
