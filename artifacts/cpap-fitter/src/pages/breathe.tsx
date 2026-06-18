@@ -140,6 +140,7 @@ export function BreatheHome() {
       <Hero />
       <IntegrationsStrip />
       <Replaces />
+      <Outcomes />
       <PricingHome />
       <ClosingCta />
     </BreatheShell>
@@ -169,6 +170,7 @@ export function BreatheProduct() {
       <ProductShowcase />
       <Features />
       <AiBento />
+      <Outcomes />
       <ClosingCta />
     </BreatheShell>
   );
@@ -1093,6 +1095,249 @@ function AiBento() {
             </div>
           ))}
         </div>
+      </div>
+    </section>
+  );
+}
+
+/* ───────────────────────── Outcomes / proof ───────────────────────── */
+/*
+ * Three-pillar "what it adds up to" section: more sales, better patient
+ * care, cleaner billing (AI). Every figure is an ILLUSTRATIVE range
+ * grounded in published DME / healthcare revenue-cycle benchmarks (see the
+ * section footnote) — directional, not a guarantee. Charts are hand-built
+ * bars (no third-party charting library) so the page stays same-origin
+ * under the strict CSP, matching the Sparkline / ROI patterns above.
+ */
+type OutcomeBar = {
+  fromLabel: string;
+  from: number;
+  toLabel: string;
+  to: number;
+  unit: string;
+  caption: string;
+};
+
+type OutcomeCard = {
+  icon: React.ReactNode;
+  eyebrow: string;
+  hero: string;
+  heroSub: string;
+  bar: OutcomeBar;
+  points: string[];
+  source: string;
+  gold?: boolean;
+};
+
+const OUTCOMES: OutcomeCard[] = [
+  {
+    icon: <TrendingUp size={20} />,
+    eyebrow: "More sales",
+    hero: "2.5×",
+    heroSub: "more resupply orders captured",
+    bar: {
+      fromLabel: "Reactive outreach",
+      from: 20,
+      toLabel: "Breathe automation",
+      to: 50,
+      unit: "%",
+      caption: "Resupply order rate — higher is better",
+    },
+    points: [
+      "Eligibility-aware reminders by SMS, email & voice on the right cadence",
+      "24/7 AI voice agent books reorders even while your team sleeps",
+      "One-tap reorder links — no spreadsheets, no missed replacement windows",
+    ],
+    source:
+      "Industry: proactive / managed resupply lifts order rates from ~20% to 45–50%.",
+  },
+  {
+    icon: <Stethoscope size={20} />,
+    eyebrow: "Better patient care",
+    hero: "85%",
+    heroSub: "therapy compliance, up from a ~50% norm",
+    bar: {
+      fromLabel: "National average",
+      from: 50,
+      toLabel: "Proactive monitoring",
+      to: 85,
+      unit: "%",
+      caption: "CPAP compliance — higher is better",
+    },
+    points: [
+      "Live ResMed, Philips & 3B adherence pulled nightly into one worklist",
+      "At-risk patients surfaced before they fall off therapy",
+      "~1 in 3 CPAP patients drift out of adherence — caught early, not lost",
+    ],
+    source:
+      "Industry: live outreach raised compliance from the ~50% national average to 85%.",
+  },
+  {
+    icon: <Receipt size={20} />,
+    eyebrow: "Better billing — AI built in",
+    hero: "94%",
+    heroSub: "first-pass clean-claim rate",
+    gold: true,
+    bar: {
+      fromLabel: "Typical DME",
+      from: 80,
+      toLabel: "Breathe AI scrubbing",
+      to: 94,
+      unit: "%",
+      caption: "First-pass clean claims — higher is better",
+    },
+    points: [
+      "AI scrubs every 837P before submission — fewer rejects out the door",
+      "Denial worklist ranked by recoverable dollars × win probability",
+      "AI eligibility checks cut denials up to 42%; each rework costs $25–$118",
+    ],
+    source:
+      "Industry: best-practice first-pass rate is 95%+; initial denials average ~11.8%.",
+  },
+];
+
+const CLAIMS_FLOW: {
+  icon: React.ReactNode;
+  label: string;
+  sub: string;
+  gold?: boolean;
+}[] = [
+  {
+    icon: <BadgeCheck size={16} />,
+    label: "Eligibility",
+    sub: "270 / 271 real-time",
+  },
+  {
+    icon: <Sparkles size={16} />,
+    label: "AI scrub",
+    sub: "837P cleaned pre-submit",
+  },
+  {
+    icon: <Receipt size={16} />,
+    label: "Auto-submit",
+    sub: "to the clearinghouse",
+  },
+  {
+    icon: <RefreshCw size={16} />,
+    label: "ERA auto-post",
+    sub: "835 reconciled",
+  },
+  {
+    icon: <LineChart size={16} />,
+    label: "AI denial worklist",
+    sub: "ranked by $ recoverable",
+    gold: true,
+  },
+];
+
+function OutcomeBars({ bar, gold }: { bar: OutcomeBar; gold?: boolean }) {
+  return (
+    <div className="bx-ob" aria-hidden="true">
+      <div className="bx-ob-row">
+        <span className="bx-ob-tag">{bar.fromLabel}</span>
+        <span className="bx-ob-track">
+          <i
+            className="from"
+            style={{ ["--w"]: `${bar.from}%` } as React.CSSProperties}
+          />
+        </span>
+        <span className="bx-ob-val">
+          {bar.from}
+          {bar.unit}
+        </span>
+      </div>
+      <div className="bx-ob-row">
+        <span className="bx-ob-tag">{bar.toLabel}</span>
+        <span className="bx-ob-track">
+          <i
+            className={"to" + (gold ? " gold" : "")}
+            style={{ ["--w"]: `${bar.to}%` } as React.CSSProperties}
+          />
+        </span>
+        <span className={"bx-ob-val to" + (gold ? " gold" : "")}>
+          {bar.to}
+          {bar.unit}
+        </span>
+      </div>
+      <div className="bx-ob-axis">{bar.caption}</div>
+    </div>
+  );
+}
+
+function Outcomes() {
+  return (
+    <section className="bx-section" id="outcomes">
+      <div className="bx-shell">
+        <div className="bx-section-head center bx-reveal">
+          <span className="bx-eyebrow">
+            <LineChart size={13} /> What it adds up to
+          </span>
+          <h2 className="bx-h2">More sales, better care, cleaner billing</h2>
+          <p className="bx-lede">
+            One platform moves every number that matters — recurring resupply
+            revenue, patients kept on therapy, and claims that get paid the
+            first time — with the AI doing the heavy lifting.
+          </p>
+        </div>
+
+        <div className="bx-outcomes">
+          {OUTCOMES.map((o) => (
+            <div
+              className={`bx-outcome bx-reveal${o.gold ? " gold" : ""}`}
+              key={o.eyebrow}
+            >
+              <div className="bx-outcome-top">
+                <span className="bx-outcome-ic">{o.icon}</span>
+                <span className="bx-outcome-eyebrow">{o.eyebrow}</span>
+              </div>
+              <div className="bx-outcome-hero">{o.hero}</div>
+              <div className="bx-outcome-hero-sub">{o.heroSub}</div>
+              <OutcomeBars bar={o.bar} gold={o.gold} />
+              <ul className="bx-outcome-points">
+                {o.points.map((p) => (
+                  <li key={p}>
+                    <Check size={14} />
+                    {p}
+                  </li>
+                ))}
+              </ul>
+              <p className="bx-outcome-source">{o.source}</p>
+            </div>
+          ))}
+        </div>
+
+        <div className="bx-claims-engine bx-reveal">
+          <div className="bx-claims-engine-head">
+            <BrainCircuit size={15} /> Inside the AI claims engine
+          </div>
+          <ol className="bx-claims-flow">
+            {CLAIMS_FLOW.map((s, i) => (
+              <li
+                className={`bx-claims-step${s.gold ? " gold" : ""}`}
+                key={s.label}
+              >
+                <span className="bx-claims-ic">{s.icon}</span>
+                <span className="bx-claims-meta">
+                  <b>{s.label}</b>
+                  <i>{s.sub}</i>
+                </span>
+                {i < CLAIMS_FLOW.length - 1 ? (
+                  <ArrowRight
+                    className="bx-claims-arrow"
+                    size={15}
+                    aria-hidden="true"
+                  />
+                ) : null}
+              </li>
+            ))}
+          </ol>
+        </div>
+
+        <p className="bx-outcomes-foot">
+          Illustrative ranges drawn from published DME and healthcare
+          revenue-cycle benchmarks; actual results depend on your payer mix,
+          patient base, and current processes. Directional, not a guarantee.
+        </p>
       </div>
     </section>
   );
