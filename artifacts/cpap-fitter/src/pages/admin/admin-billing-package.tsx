@@ -140,10 +140,12 @@ const ADDON_DETAILS: Record<
 
 /** Collapsible "what this does & why it matters" explainer rendered under
  *  each add-on card. Uses a native <details> element so it needs no extra
- *  state and stays accessible. Falls back to the catalog description when
- *  no richer copy is mapped for the add-on's code. */
+ *  state and stays accessible. Renders nothing when no richer copy is mapped
+ *  for the add-on's code — the card's own `addon.description` already covers
+ *  unknown/newly-seeded add-ons, so a fallback here would just duplicate it. */
 function AddonExplainer({ addon }: { addon: BillingAddon }) {
   const detail = ADDON_DETAILS[addon.code];
+  if (!detail) return null;
   return (
     <details
       className="group mt-3 border-t border-slate-100 pt-2"
@@ -157,24 +159,14 @@ function AddonExplainer({ addon }: { addon: BillingAddon }) {
         />
       </summary>
       <div className="mt-2 space-y-2 text-xs text-slate-600">
-        {detail ? (
-          <>
-            <p>
-              <span className="font-semibold text-slate-700">
-                What it does:
-              </span>{" "}
-              {detail.whatItDoes}
-            </p>
-            <p>
-              <span className="font-semibold text-slate-700">
-                Why it matters:
-              </span>{" "}
-              {detail.whyItMatters}
-            </p>
-          </>
-        ) : (
-          <p>{addon.description}</p>
-        )}
+        <p>
+          <span className="font-semibold text-slate-700">What it does:</span>{" "}
+          {detail.whatItDoes}
+        </p>
+        <p>
+          <span className="font-semibold text-slate-700">Why it matters:</span>{" "}
+          {detail.whyItMatters}
+        </p>
       </div>
     </details>
   );
