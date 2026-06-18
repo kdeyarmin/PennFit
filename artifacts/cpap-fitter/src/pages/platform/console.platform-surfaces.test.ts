@@ -1,3 +1,9 @@
+// allow-source-read: structural invariant — that the three relocated
+// global surfaces are wired into the platform console's router/nav. The
+// behavioral equivalent (mounting <PlatformConsole/>) needs the platform
+// `useGetPlatformMe` gate plus every dashboard data hook mocked; this
+// mirrors the grandfathered source-grep in console.platform-billing.test.ts
+// that pins the matching tenant-console wiring.
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
