@@ -618,9 +618,9 @@ function runChecks(): void {
 
     if (platformKey === getTrimmed("STRIPE_SECRET_KEY")) {
       record(
-        "STRIPE_PLATFORM_SECRET_KEY",
+        "STRIPE_PLATFORM_SECRET_KEY_DISTINCT",
         "fail",
-        "is identical to STRIPE_SECRET_KEY — a dedicated platform-billing " +
+        "STRIPE_PLATFORM_SECRET_KEY is identical to STRIPE_SECRET_KEY — a dedicated platform-billing " +
           "account must use its own Stripe key (or leave this unset for " +
           "single-account mode)",
       );
