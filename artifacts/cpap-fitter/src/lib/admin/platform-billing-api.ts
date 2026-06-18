@@ -122,6 +122,26 @@ export function selectTenantPlan(planCode: string): Promise<TenantBilling> {
   });
 }
 
+/** Active add-ons a tenant owner can add to their plan. Recurring add-ons
+ *  are self-selectable (quantity stepper); one-time/project add-ons have a
+ *  null recurringPriceCents and are surfaced as a "Contact us" tier. */
+export function fetchSelectableAddons(): Promise<{ addons: BillingAddon[] }> {
+  return jsonFetch<{ addons: BillingAddon[] }>("/admin/billing/addons");
+}
+
+/** Set the quantity of a recurring add-on for the caller's own tenant
+ *  (quantity 0 removes it). Syncs to Stripe and returns the refreshed
+ *  tenant billing package. */
+export function updateOwnAddon(
+  addonCode: string,
+  quantity: number,
+): Promise<TenantBilling> {
+  return jsonFetch<TenantBilling>("/admin/billing/addons", {
+    method: "PUT",
+    body: JSON.stringify({ addonCode, quantity }),
+  });
+}
+
 export function fetchPlatformBillingCatalog(): Promise<BillingCatalogResponse> {
   return jsonFetch<BillingCatalogResponse>("/platform/billing/catalog");
 }

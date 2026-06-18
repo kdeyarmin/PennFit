@@ -25,4 +25,12 @@ describe("AdminBillingPackagePage Stripe status", () => {
     // Custom/Enterprise tiers are a contact-us state, not self-selectable.
     expect(SRC).toContain("Contact us");
   });
+
+  it("offers tenant self-service add-on selection", () => {
+    expect(SRC).toContain("AddonSelector");
+    expect(SRC).toContain("fetchSelectableAddons");
+    expect(SRC).toContain("updateOwnAddon");
+    // Recurring add-ons get a quantity stepper; one-time ones are contact-us.
+    expect(SRC).toContain("addon-qty-");
+  });
 });
