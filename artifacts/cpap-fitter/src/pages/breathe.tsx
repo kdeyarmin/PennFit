@@ -54,6 +54,7 @@ import {
   Zap,
 } from "lucide-react";
 import { useDocumentTitle } from "@/hooks/use-document-title";
+import { ADDON_DETAILS } from "@/lib/admin/addon-details";
 import "./breathe.css";
 
 // Icon-only crop of the CareMetric app icon. The full lockup PNG
@@ -3079,45 +3080,115 @@ function liveToPlanCards(plans: PublicPlan[]): PlanCard[] {
   }));
 }
 
+// Each item carries the catalog `code` so the row can surface the shared
+// plain-language explainer (ADDON_DETAILS) in a collapsible dropdown; live
+// catalog data fills the same shape via liveToAddonGroups().
+type AddonItem = {
+  name: string;
+  price: string;
+  code?: string;
+  description?: string | null;
+};
+
 const ADDON_GROUPS: {
   group: string;
-  items: { name: string; price: string }[];
+  items: AddonItem[];
 }[] = [
   {
     group: "Premium modules",
     items: [
-      { name: "AI voice agent / IVR", price: "$499/mo" },
-      { name: "Advanced billing automation", price: "$699/mo" },
-      { name: "Advanced analytics suite", price: "$399/mo" },
-      { name: "Multi-location management", price: "$499/mo" },
-      { name: "Fax automation", price: "$199/mo" },
-      { name: "Dedicated success manager", price: "$1,000/mo" },
+      {
+        name: "AI voice agent / IVR",
+        price: "$499/mo",
+        code: "ai_voice_agent",
+      },
+      {
+        name: "Advanced billing automation",
+        price: "$699/mo",
+        code: "advanced_billing_automation",
+      },
+      {
+        name: "Advanced analytics suite",
+        price: "$399/mo",
+        code: "advanced_analytics",
+      },
+      {
+        name: "Multi-location management",
+        price: "$499/mo",
+        code: "multi_location_management",
+      },
+      { name: "Fax automation", price: "$199/mo", code: "fax_automation" },
+      {
+        name: "Dedicated success manager",
+        price: "$1,000/mo",
+        code: "dedicated_success_manager",
+      },
     ],
   },
   {
     group: "Capacity",
     items: [
-      { name: "Additional staff seat", price: "$49/mo" },
-      { name: "Active-patient block (+500)", price: "$99/mo" },
-      { name: "Additional location", price: "$199/mo" },
-      { name: "Extra storage (+100 GB)", price: "$25/mo" },
+      {
+        name: "Additional staff seat",
+        price: "$49/mo",
+        code: "additional_seat",
+      },
+      {
+        name: "Active-patient block (+500)",
+        price: "$99/mo",
+        code: "active_patient_block",
+      },
+      {
+        name: "Additional location",
+        price: "$199/mo",
+        code: "additional_location",
+      },
+      {
+        name: "Extra storage (+100 GB)",
+        price: "$25/mo",
+        code: "storage_100gb",
+      },
     ],
   },
   {
     group: "Usage bundles",
     items: [
-      { name: "SMS / email bundle (1,000)", price: "$50" },
-      { name: "AI text bundle (1,000)", price: "$40" },
-      { name: "Claims / eligibility bundle (1,000)", price: "$75" },
+      {
+        name: "SMS / email bundle (1,000)",
+        price: "$50",
+        code: "message_bundle",
+      },
+      { name: "AI text bundle (1,000)", price: "$40", code: "ai_text_bundle" },
+      {
+        name: "Claims / eligibility bundle (1,000)",
+        price: "$75",
+        code: "billing_transaction_bundle",
+      },
     ],
   },
   {
     group: "Integrations & one-time",
     items: [
-      { name: "Additional therapy-cloud vendor", price: "$299/mo" },
-      { name: "Custom integration", price: "from $5,000" },
-      { name: "Data migration package", price: "$2,500–$15,000" },
-      { name: "Custom domain + branding setup", price: "$500" },
+      {
+        name: "Additional therapy-cloud vendor",
+        price: "$299/mo",
+        code: "additional_therapy_vendor",
+      },
+      {
+        name: "Custom integration",
+        price: "from $5,000",
+        code: "custom_integration",
+      },
+      {
+        name: "Data migration package",
+        price: "$2,500–$15,000",
+        code: "data_migration",
+      },
+      {
+        name: "Custom domain + branding setup",
+        price: "$500",
+        code: "custom_domain_branding_setup",
+      },
     ],
   },
 ];
@@ -3145,14 +3216,19 @@ function addonPrice(a: PublicAddon): string {
 
 function liveToAddonGroups(addons: PublicAddon[]): typeof ADDON_GROUPS {
   const order: string[] = [];
-  const byLabel = new Map<string, { name: string; price: string }[]>();
+  const byLabel = new Map<string, AddonItem[]>();
   for (const a of addons) {
     const label = ADDON_CATEGORY_LABELS[a.category ?? ""] ?? "Add-ons";
     if (!byLabel.has(label)) {
       byLabel.set(label, []);
       order.push(label);
     }
-    byLabel.get(label)!.push({ name: a.name, price: addonPrice(a) });
+    byLabel.get(label)!.push({
+      name: a.name,
+      price: addonPrice(a),
+      code: a.code,
+      description: a.description,
+    });
   }
   return order.map((group) => ({ group, items: byLabel.get(group)! }));
 }
@@ -3203,6 +3279,53 @@ function PricingPlans({ cards = PLANS }: { cards?: PlanCard[] }) {
   );
 }
 
+/** A single add-on line. When a plain-language explainer is available (the
+ *  shared ADDON_DETAILS map, keyed by catalog code, or the add-on's own
+ *  description) the row becomes a collapsible <details> with a down-arrow
+ *  that reveals a brief "what it does / why it matters" benefit blurb.
+ *  Otherwise it renders the static name/price row unchanged. */
+function PricingAddonRow({ item }: { item: AddonItem }) {
+  const detail = item.code ? ADDON_DETAILS[item.code] : undefined;
+  const fallback = item.description?.trim();
+  if (!detail && !fallback) {
+    return (
+      <div className="bx-addon-row">
+        <span className="bx-addon-name">{item.name}</span>
+        <span className="bx-addon-price">{item.price}</span>
+      </div>
+    );
+  }
+  return (
+    <details className="bx-addon-item">
+      <summary className="bx-addon-row">
+        <span className="bx-addon-name">
+          {item.name}
+          <ChevronDown
+            className="bx-addon-caret"
+            size={14}
+            aria-hidden="true"
+          />
+        </span>
+        <span className="bx-addon-price">{item.price}</span>
+      </summary>
+      <div className="bx-addon-detail">
+        {detail ? (
+          <>
+            <p>
+              <strong>What it does:</strong> {detail.whatItDoes}
+            </p>
+            <p>
+              <strong>Why it matters:</strong> {detail.whyItMatters}
+            </p>
+          </>
+        ) : (
+          <p>{fallback}</p>
+        )}
+      </div>
+    </details>
+  );
+}
+
 /** The à la carte add-on catalog, grouped by category. `groups` defaults
  *  to the static ADDON_GROUPS but is fed live catalog data by the Pricing
  *  section when the public pricing endpoint responds. */
@@ -3221,10 +3344,7 @@ function PricingAddons({
           <div className="bx-addon-group" key={g.group}>
             <div className="bx-addon-group-name">{g.group}</div>
             {g.items.map((it) => (
-              <div className="bx-addon-row" key={it.name}>
-                <span className="bx-addon-name">{it.name}</span>
-                <span className="bx-addon-price">{it.price}</span>
-              </div>
+              <PricingAddonRow item={it} key={it.code ?? it.name} />
             ))}
           </div>
         ))}
