@@ -48,6 +48,11 @@ import {
   TwilioConfigError,
 } from "@workspace/resupply-telecom";
 
+import {
+  applyCompanyIdentityToText,
+  getCompanyInfo,
+  type CompanyInfo,
+} from "./company-info.js";
 import { isOutsideSmsSendWindow } from "./comm-prefs";
 import { createTenantSendgridClient } from "./email/tenant-sender.js";
 import { isFeatureEnabled } from "./feature-flags";
@@ -561,11 +566,13 @@ async function sendEmail(
   }
   const greeting = greetingFor(row.firstName);
   try {
+    const brand = (text: string): string =>
+      applyCompanyIdentityToText(text, clients.companyInfo);
     const r = await clients.sg.sendEmail({
       to: row.email,
-      subject: subjectForDay(day),
-      text: textBodyForDay(day, greeting),
-      html: htmlBodyForDay(day, greeting),
+      subject: brand(subjectForDay(day)),
+      text: brand(textBodyForDay(day, greeting)),
+      html: brand(htmlBodyForDay(day, greeting)),
       customArgs: { kind: "onboarding_checkin", day },
     });
     return {
@@ -608,7 +615,10 @@ async function sendSms(
       () =>
         clients.sms!.client.sendSms({
           to: row.phoneE164!,
-          body: smsBodyForDay(day, greetingFor(row.firstName)),
+          body: applyCompanyIdentityToText(
+            smsBodyForDay(day, greetingFor(row.firstName)),
+            clients.companyInfo,
+          ),
           // No status callback URL — onboarding SMS attempts are tracked
           // in patient_checkin_attempts, not the conversations table.
           statusCallbackUrl: "",
@@ -786,18 +796,27 @@ interface BuiltClients {
     from: string;
     publicBaseUrl: string;
   } | null;
+  // The tenant's effective company identity, resolved once per dispatch.
+  // The brand-literal day-copy ("PennPaps") is rewritten to this tenant's
+  // name/contact at the I/O boundary so a non-seed tenant's patients never
+  // hear/read the seed brand. No-op for the seed tenant (info.name ===
+  // "PennPaps") and for any unseeded environment (source !== "database").
+  companyInfo: CompanyInfo;
 }
 
 async function buildClients(
   orgId: string,
   publicBaseUrlOverride?: string,
 ): Promise<BuiltClients> {
+  // Resolve the tenant's company identity once. The day-copy body builders
+  // stay brand-literal ("PennPaps"); the SMS/email/voice senders rewrite that
+  // to this tenant's saved name/contact via applyCompanyIdentityToText.
+  const companyInfo = await getCompanyInfo(orgId);
+
   let sg: BuiltClients["sg"] = null;
   try {
     // Send under the tenant's own From identity when configured (G6);
-    // falls back to the platform default otherwise. The day-copy body
-    // builders are intentionally left brand-literal as-is (out of scope
-    // for the email-client swap).
+    // falls back to the platform default otherwise.
     sg = await createTenantSendgridClient(orgId);
   } catch (err) {
     if (!(err instanceof EmailConfigError)) {
@@ -865,7 +884,7 @@ async function buildClients(
     }
   }
 
-  return { sg, sms, voice };
+  return { sg, sms, voice, companyInfo };
 }
 
 // ───────────────────────────────────────────────────────────────────

@@ -165,10 +165,22 @@ operator digests, DLQ/metric/integration alerts, CSR-inbox, review-moderation,
 scheduled reports, the admin assistant) intentionally stays on the platform
 From. _Remaining sender items:_ a few internal-vs-patient nuanced senders
 (`storefront/orderEmail` fulfillment-to-practice, `insurance-lead-email`'s mixed
-team+lead recipients), `statement-send`'s sync `practiceName` builder, and the
-non-brand-copy bodies in a couple of large knowledge-base senders
-(checkin day-copy); none affect a second tenant's From identity. Remaining
-outbound-SMS callsites lacking an in-scope `orgId` are likewise a small tail.
+team+lead recipients) and `statement-send`'s sync `practiceName` builder; none
+affect a second tenant's From identity.
+
+**Patient-facing brand-string tail — now addressed (2026-06-18).** The
+brand-literal patient-facing _copy_ (distinct from the From identity) is now
+rewritten to the tenant's saved name/contact at the I/O boundary via
+`applyCompanyIdentityToText(text, getCompanyInfo(orgId))`: the onboarding
+check-in **day-copy** (SMS + email + voice scripts in `checkin-dispatcher` —
+branded once-per-dispatch through `BuiltClients.companyInfo`), the
+**check-in IVR** `<Say>` script + goodbye (`voice/checkin-twiml`, tenant resolved
+from the signed patient id), the **inbound-reorder** shop greeting + human-transfer
+line (`voice/inbound-reorder`, tenant from the called number), and the
+fitter-order concierge **SMS** (`storefront/orders`). `applyCompanyIdentityToText`
+now also rewrites the TTS-spaced `"Penn Paps"` spelling, not just camel-cased
+`"PennPaps"`. All are no-ops for the seed tenant (`info.name === "PennPaps"`) and
+for any unseeded environment (`source !== "database"`).
 
 **Still open after this branch (tracked):** the small sender/SMS tail noted
 above. The G1 `reminder_subscriptions` global-table resolution is

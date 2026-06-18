@@ -31,6 +31,10 @@ import { requireTwilioSignature } from "@workspace/resupply-telecom";
 
 import { resolveOrgIdForSignedRecord } from "../../lib/storefront/signed-link-org";
 import { voiceScriptForDay } from "../../lib/checkin-dispatcher";
+import {
+  applyCompanyIdentityToText,
+  getCompanyInfo,
+} from "../../lib/company-info";
 import { logger } from "../../lib/logger";
 import {
   readTwilioWebhookAuthTokenOrNull,
@@ -66,15 +70,29 @@ const VALID_DAYS: ReadonlyArray<OnboardingDayLabel> = [
 router.post(
   "/voice/checkin-twiml",
   signatureMiddleware,
-  (req: Request, res) => {
+  async (req: Request, res) => {
     const cfg = readVoiceConfigOrNull();
     const dayRaw = (req.query["day"] ?? "").toString();
     const day = (VALID_DAYS as readonly string[]).includes(dayRaw)
       ? (dayRaw as OnboardingDayLabel)
       : "day7";
-    const script = voiceScriptForDay(day);
     const patientId = (req.query["patientId"] ?? "").toString();
     const journeyId = (req.query["journeyId"] ?? "").toString();
+
+    // Webhook: no req.orgId. The patient id rode in the signed TwiML URL
+    // (globally unique), so resolve the spoken brand FROM the patient's
+    // tenant — otherwise a non-seed tenant's patient would hear the seed
+    // "PennPaps" name. A miss degrades to the seed/sync identity, so a
+    // tenant-context gap never breaks the call. No-op for the seed tenant.
+    const companyInfo = patientId
+      ? await getCompanyInfo(
+          (await resolveOrgIdForSignedRecord("patients", patientId)) ??
+            undefined,
+        )
+      : await getCompanyInfo();
+    const brand = (text: string): string =>
+      applyCompanyIdentityToText(text, companyInfo);
+    const script = brand(voiceScriptForDay(day));
 
     // The press-1 callback URL embeds the same identifiers so we don't
     // have to rely on Twilio re-sending them. Dropping back through
@@ -103,7 +121,7 @@ router.post(
           `    <Say voice="Polly.Joanna">If you would like a member of our team to call you back, press 1 now. Otherwise just hang up.</Say>`,
           `  </Gather>`,
           // <Gather> falls through here on timeout — no input, hang up.
-          `  <Say voice="Polly.Joanna">Thanks for using Penn Paps. Goodbye.</Say>`,
+          `  <Say voice="Polly.Joanna">${escapeXmlText(brand("Thanks for using Penn Paps. Goodbye."))}</Say>`,
           `  <Hangup/>`,
           `</Response>`,
         ].join("\n"),

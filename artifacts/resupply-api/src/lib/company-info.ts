@@ -331,6 +331,10 @@ function identityReplacements(info: CompanyInfo): Array<[string, string]> {
     ["pennpaps.com", websiteHost],
     ["(814) 471-0627", info.supportPhoneDisplay],
     ["+18144710627", info.supportPhoneE164],
+    // The voice/IVR (TTS) day-copy spaces the storefront brand as two
+    // words ("Penn Paps") so Polly/ElevenLabs pronounce it naturally;
+    // rewrite that spelling too, not just the camel-cased "PennPaps".
+    ["Penn Paps", info.name],
     ["PennPaps", info.name],
     // Hour-blurb variants that appear across the knowledge bases.
     ["Monday-Friday 9 AM - 5 PM Eastern", info.supportHours],
