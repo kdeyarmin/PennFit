@@ -25,7 +25,11 @@ import {
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import "./breathe.css";
 
-const LOGO = "/breathe/caremetric-logo.png";
+// Icon-only crop of the CareMetric app icon — NOT the full lockup PNG
+// (`caremetric-logo.png`), which bakes a "CareMetric AI" wordmark under the
+// icon and collides with the "Breathe" text set beside it in the small nav /
+// footer brand slots. Matches the asset used across breathe.tsx.
+const LOGO = "/breathe/caremetric-icon.png";
 
 /**
  * Breathe — "What the software does", broken down by role.
