@@ -250,7 +250,9 @@ describe("platform-billing-api", () => {
     });
 
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe("/resupply-api/platform/billing/tenants/tenant%201/preview");
+    expect(url).toBe(
+      "/resupply-api/platform/billing/tenants/tenant%201/preview",
+    );
     expect(init.method).toBe("POST");
     expect(JSON.parse(String(init.body))).toEqual({
       kind: "addon",
