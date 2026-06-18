@@ -842,7 +842,7 @@
 }
 .bx-replace-pill {
   font-size: 14px;
-  color: var(--bx-text-dim);
+  color: var(--bx-text);
   padding: 9px 16px;
   border: 1px solid var(--bx-line);
   border-radius: 100px;
@@ -850,8 +850,8 @@
   position: relative;
 }
 .bx-replace-pill s {
-  text-decoration-color: rgba(246, 167, 34, 0.7);
-  text-decoration-thickness: 2px;
+  text-decoration-color: rgba(246, 167, 34, 0.85);
+  text-decoration-thickness: 1.5px;
 }
 
 /* ───────────────────── Lifecycle pipeline ───────────────────── */
