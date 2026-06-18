@@ -4138,9 +4138,15 @@ export interface Database {
             | "all_active_shop_customers"
             | "all_active_patients"
             | "by_patient_payer"
+            | "by_therapy_cohort"
+            | "patient_segment"
             | "manual_list";
           audience_payer: string | null;
-          channel: "email";
+          /** Composable patient-segment spec; set only when
+           * audience_kind='patient_segment' (migration 0394). Shape owned by
+           * lib/bulk-campaigns/patient-segment.ts. */
+          audience_filter: Json | null;
+          channel: "email" | "sms";
           category: "marketing" | "service" | "compliance";
           compliance_attestation: string | null;
           template_key: string;
@@ -4174,6 +4180,9 @@ export interface Database {
           recipient_kind: "patient" | "shop_customer";
           recipient_id: string;
           recipient_email: string | null;
+          /** E.164 destination snapshot for SMS campaigns (migration 0394);
+           * NULL for email campaigns and no-phone recipients. */
+          recipient_phone: string | null;
           status:
             | "pending"
             | "retry_pending"

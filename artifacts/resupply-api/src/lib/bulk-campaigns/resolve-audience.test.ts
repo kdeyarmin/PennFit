@@ -181,6 +181,100 @@ describe("resolveAudience — patients", () => {
   });
 });
 
+describe("resolveAudience — SMS channel", () => {
+  it("snapshots the phone and suppresses patients with no phone", () => {
+    const r = resolveAudience({
+      audienceKind: "all_active_patients",
+      audiencePayer: null,
+      category: "service",
+      channel: "sms",
+      patients: [
+        {
+          id: "p-1",
+          email: "a@example.test",
+          phone: "+12155551212",
+          status: "active",
+          insurancePayer: null,
+        },
+        {
+          id: "p-2",
+          email: "b@example.test",
+          phone: null,
+          status: "active",
+          insurancePayer: null,
+        },
+      ],
+    });
+    const sent = r.recipients.find((x) => x.recipientId === "p-1")!;
+    expect(sent.status).toBe("pending");
+    expect(sent.recipientPhone).toBe("+12155551212");
+    expect(sent.recipientEmail).toBeNull(); // SMS snapshot omits email
+    const noPhone = r.recipients.find((x) => x.recipientId === "p-2")!;
+    expect(noPhone.status).toBe("suppressed");
+    expect(noPhone.suppressionReason).toBe("no_phone");
+  });
+
+  it("respects shop-customer SMS opt-out for marketing/service", () => {
+    const r = resolveAudience({
+      audienceKind: "all_active_shop_customers",
+      audiencePayer: null,
+      category: "marketing",
+      channel: "sms",
+      shopCustomers: [
+        {
+          id: "s-1",
+          emailLower: "x@example.test",
+          phoneE164: "+12155550001",
+          communicationPreferences: { smsMarketing: false },
+        },
+        {
+          id: "s-2",
+          emailLower: "y@example.test",
+          phoneE164: "+12155550002",
+          communicationPreferences: { smsMarketing: true },
+        },
+      ],
+    });
+    const optedOut = r.recipients.find((x) => x.recipientId === "s-1")!;
+    expect(optedOut.status).toBe("suppressed");
+    expect(optedOut.suppressionReason).toBe("opted_out_sms_marketing");
+    const ok = r.recipients.find((x) => x.recipientId === "s-2")!;
+    expect(ok.status).toBe("pending");
+    expect(ok.recipientPhone).toBe("+12155550002");
+  });
+
+  it("compliance bypasses shop SMS opt-out but never a paused patient", () => {
+    const r = resolveAudience({
+      audienceKind: "manual_list",
+      audiencePayer: null,
+      category: "compliance",
+      channel: "sms",
+      shopCustomers: [
+        {
+          id: "s-1",
+          emailLower: null,
+          phoneE164: "+12155550001",
+          communicationPreferences: { smsMarketing: false },
+        },
+      ],
+      patients: [
+        {
+          id: "p-paused",
+          email: null,
+          phone: "+12155550003",
+          status: "paused",
+          insurancePayer: null,
+        },
+      ],
+    });
+    const shop = r.recipients.find((x) => x.recipientId === "s-1")!;
+    expect(shop.status).toBe("pending"); // compliance overrides opt-out pref
+    const paused = r.recipients.find((x) => x.recipientId === "p-paused")!;
+    expect(paused.status).toBe("suppressed");
+    expect(paused.suppressionReason).toBe("patient_not_active");
+  });
+});
+
 describe("resolveAudience — totals + dedupe", () => {
   it("dedupes by (kind, id) — second occurrence ignored", () => {
     const r = resolveAudience({
