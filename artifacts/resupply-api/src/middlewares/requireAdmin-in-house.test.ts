@@ -448,6 +448,32 @@ describe("requireAdmin — in-house pf_session cookie path", () => {
       expect(res.body.adminGranularRole).toBe("csr");
     });
 
+    it("binds req.orgId to the admin's OWN admin_users.org_id, not the seed org", async () => {
+      const { deps, repo } = await buildDepsWithRepo();
+      mockDeps = deps;
+      // A non-seed tenant admin must be scoped to THEIR org — the gate reads
+      // admin_users.org_id, so it can never collapse a tenant-B admin onto the
+      // seed tenant's data.
+      mockAdminUsersLookup = {
+        data: { role: "admin", location_id: null, org_id: "org-b" },
+        error: null,
+      };
+      mockAgreementRows = ALL_SIGNED_ROWS; // org-b has signed → gate passes
+      const { cookie } = await seedSignedInUser(repo, {
+        id: "u_tenant_b",
+        email: "admin@tenant-b.example",
+        role: "admin",
+      });
+
+      const res = await request(makeApp())
+        .get("/imp-protected")
+        .set("Cookie", cookie);
+
+      expect(res.status).toBe(200);
+      expect(res.body.orgId).toBe("org-b");
+      expect(res.body.impersonation).toBe(false);
+    });
+
     it("falls back to the coarse role when NO admin_users row exists (legacy)", async () => {
       const { deps, repo } = await buildDepsWithRepo();
       mockDeps = deps;

@@ -46,7 +46,10 @@
 //   1 — invalid args / db error / unexpected
 //   2 — SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not set
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  getSupabaseServiceRoleClient,
+  resolveSeedOrgId,
+} from "@workspace/resupply-db";
 import {
   hashToken,
   issueToken,
@@ -263,6 +266,51 @@ async function main(): Promise<void> {
   // without issuing a password link).
   if (argsParsed.platformAdmin) {
     await grantPlatformAdmin(supabase, userId, emailLower);
+  }
+
+  // Ensure a tenant-bound admin_users row exists so requireAdmin can resolve
+  // this admin's org under the fail-closed gate (a present-but-NULL org_id is
+  // rejected). Bootstrap admins are the seed/platform admin → bind to the seed
+  // org. BEST-EFFORT: a failure here must NOT abort the bootstrap — the auth
+  // user + reset link are the critical output, and requireAdmin still resolves
+  // a row-less admin to the seed org — so log and continue. Never clobbers an
+  // existing row's role/status.
+  try {
+    const seedOrgId = await resolveSeedOrgId();
+    if (seedOrgId) {
+      const { data: existingAdminRow } = await supabase
+        .schema("resupply")
+        .from("admin_users")
+        .select("id, org_id, auth_user_id")
+        .eq("email_lower", emailLower)
+        .maybeSingle();
+      if (!existingAdminRow) {
+        await supabase.schema("resupply").from("admin_users").insert({
+          email_lower: emailLower,
+          role: argsParsed.role,
+          status: "active",
+          auth_user_id: userId,
+          org_id: seedOrgId,
+          accepted_at: new Date().toISOString(),
+        });
+      } else if (!existingAdminRow.org_id || !existingAdminRow.auth_user_id) {
+        await supabase
+          .schema("resupply")
+          .from("admin_users")
+          .update({
+            org_id: existingAdminRow.org_id ?? seedOrgId,
+            auth_user_id: existingAdminRow.auth_user_id ?? userId,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("email_lower", emailLower);
+      }
+    }
+  } catch (err) {
+    process.stderr.write(
+      `[auth:bootstrap-admin] warning: could not link admin_users row ` +
+        `(${err instanceof Error ? err.message : String(err)}); the admin ` +
+        `still resolves to the seed org via the row-less fallback.\n`,
+    );
   }
 
   // Issue a short-lived password_reset token. The bootstrap link is a
