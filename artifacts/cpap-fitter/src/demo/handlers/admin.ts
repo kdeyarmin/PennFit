@@ -6,6 +6,7 @@
 
 import { route, type DemoHandler } from "../types";
 import { json, sseChat } from "../respond";
+import { emptyGetFallbackBody } from "../empty";
 import {
   demoAdminIdentity,
   demoInboxCounts,
@@ -146,8 +147,17 @@ export const adminHandlers: DemoHandler[] = [
   // `data.episodes.length` (+ conversations/fulfillments/prescriptions)
   // for its tab counts, so the empty-object GET fallback crashes it on
   // the click the seeded roster invites.
+  //
+  // `:id` matches ANY single segment, so it also shadows static sub-
+  // routes like `/patients/duplicates` (and export / bulk-status). Only
+  // answer for real demo patient ids; anything else gets the generic
+  // empty-collections body so e.g. the duplicates page (data.groups)
+  // renders its empty state instead of crashing on a wrong-shaped
+  // fixture.
   route("GET", "/resupply-api/patients/:id", (_req, { id }) =>
-    json(demoPatientDetail(id)),
+    /^demo-patient-\d+$/.test(id)
+      ? json(demoPatientDetail(id))
+      : json(emptyGetFallbackBody()),
   ),
   route("GET", "/resupply-api/conversations", (req) =>
     json(

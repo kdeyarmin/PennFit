@@ -6,6 +6,7 @@
 
 import type { DemoHandler, DemoRequest, HttpMethod } from "./types";
 import { json } from "./respond";
+import { emptyGetFallbackBody } from "./empty";
 
 import { authHandlers } from "./handlers/auth";
 import { shopHandlers } from "./handlers/shop";
@@ -28,128 +29,6 @@ const handlers: DemoHandler[] = [
   ...billingClaimsHandlers,
   ...platformHandlers,
 ];
-
-// Collection field names that admin/storefront pages read off a list
-// response and then call `.map`/`.length`/`.filter`/… on. The demo
-// seeds the prominent endpoints with real fixtures; everything else
-// (the long tail of admin pages a broadly-permissioned demo explorer can
-// still navigate to) falls through here. Returning `{}` made those pages
-// crash on `data.<field>.<arrayMethod>` and bubble to the global
-// ErrorBoundary ("Something went wrong"); mapping every known collection
-// name to an empty array instead lets each page render the empty state
-// the demo README promises. Harmless extra keys a page doesn't read are
-// just ignored. Keep this union broad — a missing name is a latent crash.
-const EMPTY_COLLECTION_KEYS = [
-  "items",
-  "results",
-  "records",
-  "rows",
-  "products",
-  "masks",
-  "orders",
-  "events",
-  "messageEvents",
-  "recallEvents",
-  "auditEvents",
-  "messages",
-  "conversations",
-  "patients",
-  "customers",
-  "tenants",
-  "accounts",
-  "providers",
-  "locations",
-  "agents",
-  "recipients",
-  "comments",
-  "videos",
-  "links",
-  "cases",
-  "closures",
-  "episodes",
-  "prescriptions",
-  "fulfillments",
-  "deliveries",
-  "backorders",
-  "recalls",
-  "subscriptions",
-  "reviews",
-  "notes",
-  "attachments",
-  "packets",
-  "interventions",
-  "tasks",
-  "runs",
-  "rules",
-  "thresholds",
-  "targets",
-  "requests",
-  "acknowledgements",
-  "signals",
-  "setups",
-  "signed",
-  "opportunities",
-  "campaigns",
-  "candidates",
-  "attempts",
-  "addons",
-  "eligible",
-  "evaluated",
-  "alerts",
-  "points",
-  "entries",
-  "history",
-  "activity",
-  "pages",
-  "sources",
-  "substitutes",
-  "claims",
-  "insuranceClaims",
-  "feeSchedules",
-  "checks",
-  "eraFiles",
-  "groups",
-  "excluded",
-  "pending",
-  "queued",
-  "cohort",
-  "horizons",
-  "funnel",
-  "topMasks",
-  "topRecommendations",
-  "statusBreakdown",
-  "ordersByDay",
-  "byMonth",
-  "byPlan",
-  "byPayer",
-  "byCohort",
-  "bySource",
-] as const;
-
-// Object-shaped fields that pages index into (e.g. `data.counts[k]`,
-// `data.stats.totalCents`) — an empty object yields `undefined` (which
-// tolerant formatters handle) instead of throwing on a missing parent.
-const EMPTY_OBJECT_KEYS = ["counts", "stats", "summary", "totals"] as const;
-
-/**
- * The body returned for any unmatched GET: empty collections, empty
- * indexable objects, and zeroed pagination scalars. One shape that
- * satisfies the overwhelmingly common list-page contract so the long
- * tail of unseeded demo endpoints renders empty states, not crashes.
- */
-function emptyGetFallbackBody(): Record<string, unknown> {
-  const body: Record<string, unknown> = {
-    total: 0,
-    count: 0,
-    page: 1,
-    pageSize: 25,
-    limit: 25,
-    offset: 0,
-  };
-  for (const key of EMPTY_COLLECTION_KEYS) body[key] = [];
-  for (const key of EMPTY_OBJECT_KEYS) body[key] = {};
-  return body;
-}
 
 /** API paths the demo sandbox is responsible for answering. */
 function isApiPath(pathname: string): boolean {
@@ -289,7 +168,13 @@ export async function routeDemoRequest(
   // API call escape to a real backend in demo mode. Mutations report
   // success; reads return an "empty everything" shape so list pages fall
   // back to their empty states rather than throwing.
-  if (req.method === "GET" || req.method === "HEAD") {
+  //
+  // HEAD carries no body per HTTP semantics — return a bodyless 200 so
+  // callers that inspect Content-Length / streaming don't get confused.
+  if (req.method === "HEAD") {
+    return new Response(null, { status: 200 });
+  }
+  if (req.method === "GET") {
     if (import.meta.env.DEV) {
       console.debug("[demo] unmatched GET — empty fallback:", req.pathname);
     }

@@ -305,6 +305,34 @@ describe("demo router", () => {
     }
   });
 
+  it("does not let the patient :id fixture shadow static sub-routes", async () => {
+    // Regression guard (Codex review): `:id` matches any single segment,
+    // so /resupply-api/patients/duplicates was being answered with
+    // demoPatientDetail("duplicates") — which has no `groups`, crashing
+    // AdminPatientsDuplicatesPage (data.groups.length). Non-demo ids must
+    // fall through to the empty-collections body instead.
+    const res = await get("/resupply-api/patients/duplicates");
+    expect(res!.status).toBe(200);
+    const body = (await res!.json()) as Record<string, unknown>;
+    expect(Array.isArray(body.groups)).toBe(true);
+    expect((body.groups as unknown[]).length).toBe(0);
+    // And a real demo patient id still gets the full detail.
+    const detail = (await (await get(
+      "/resupply-api/patients/demo-patient-1",
+    ))!.json()) as { id: string; episodes: unknown[] };
+    expect(detail.id).toBe("demo-patient-1");
+    expect(Array.isArray(detail.episodes)).toBe(true);
+  });
+
+  it("returns a bodyless 200 for unmatched HEAD requests", async () => {
+    // HTTP semantics (Copilot review): HEAD responses carry no body.
+    const res = await routeDemoRequest("/resupply-api/whatever", {
+      method: "HEAD",
+    });
+    expect(res!.status).toBe(200);
+    expect(await res!.text()).toBe("");
+  });
+
   it("answers a storefront order detail with a populated payload", async () => {
     // Regression guard: AdminOrderDetail derefs data.order.payload.* —
     // the empty-object fallback (no `order`) crashed it on click.
