@@ -602,7 +602,11 @@ async function recordBillingEvent(
     if (error) throw error;
   } catch (err) {
     logger.warn(
-      { event: "tenant_billing_event_insert_failed", action: event.action, err },
+      {
+        event: "tenant_billing_event_insert_failed",
+        action: event.action,
+        err,
+      },
       "tenant_billing_events insert failed (platform activity panel will miss this change)",
     );
   }
@@ -666,7 +670,10 @@ async function loadRecurringState(
   for (const a of (addons.data ?? []) as unknown as Array<{
     quantity: number | null;
     custom_recurring_price_cents: number | null;
-    billing_addons: { code: string; recurring_price_cents: number | null } | null;
+    billing_addons: {
+      code: string;
+      recurring_price_cents: number | null;
+    } | null;
   }>) {
     const code = a.billing_addons?.code;
     if (!code) continue;

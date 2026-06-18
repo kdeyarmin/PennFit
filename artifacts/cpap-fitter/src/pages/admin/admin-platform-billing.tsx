@@ -355,8 +355,7 @@ function TenantEditor({
             if (!monthly.trim()) {
               const planName =
                 plans.find((p) => p.code === planCode)?.name ?? planCode;
-              const who =
-                tenant.storefrontName || tenant.name || tenant.slug;
+              const who = tenant.storefrontName || tenant.name || tenant.slug;
               let message = `Switch ${who} to the ${planName} plan? This updates their Stripe billing.`;
               try {
                 const preview = await previewTenantBillingChange(tenant.id, {

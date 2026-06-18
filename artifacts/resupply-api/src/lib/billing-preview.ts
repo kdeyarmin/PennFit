@@ -79,7 +79,11 @@ export function computeBillingPreview(
     : NaN;
 
   // Without a valid, future-ending period window we can't prorate.
-  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) {
+  if (
+    !Number.isFinite(startMs) ||
+    !Number.isFinite(endMs) ||
+    endMs <= startMs
+  ) {
     return {
       currentMonthlyCents,
       newMonthlyCents,
