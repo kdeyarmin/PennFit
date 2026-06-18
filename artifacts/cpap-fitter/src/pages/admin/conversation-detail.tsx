@@ -1302,7 +1302,7 @@ function CoachingNotesPanel({
     conversationId,
     "coaching-notes",
   ] as const;
-  const { data, isPending, isError, error } = useQuery({
+  const { data, isPending, isError, error, refetch } = useQuery({
     queryKey,
     queryFn: () => listConversationCoachingNotes(conversationId),
   });
@@ -1322,7 +1322,7 @@ function CoachingNotesPanel({
       {isPending ? (
         <Spinner />
       ) : isError ? (
-        <ErrorPanel error={error} onRetry={() => undefined} />
+        <ErrorPanel error={error} onRetry={() => void refetch()} />
       ) : (data?.notes ?? []).length === 0 ? (
         <p className="text-sm text-muted-foreground">
           No coaching notes yet on this conversation.
@@ -1506,6 +1506,22 @@ function TriagePanel({
     initialSnoozedUntil,
   );
   const [error, setError] = useState<string | null>(null);
+
+  // Tags/snooze are immediate-save (no local dirty/editing buffer), so a
+  // straight re-sync is correct. The parent only remounts on conversation id
+  // change, but the query polls every 60s and refetches after edits — without
+  // these effects, a teammate tagging/snoozing the same thread would never
+  // reach this panel's local state, and a later local save would drop their
+  // change. Depend on a stable key (not the array identity) to avoid an
+  // effect loop from a fresh array on every render.
+  const initialTagsKey = initialTags.join(",");
+  useEffect(() => {
+    setTags(initialTags);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialTagsKey]);
+  useEffect(() => {
+    setSnoozeIso(initialSnoozedUntil);
+  }, [initialSnoozedUntil]);
 
   const saveTags = useMutation({
     mutationFn: (next: string[]) => triageApi.setTags(conversationId, next),
