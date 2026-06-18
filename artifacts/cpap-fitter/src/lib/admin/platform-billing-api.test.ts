@@ -3,16 +3,21 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { Mock } from "vitest";
 
 import {
+  buildPreviewConfirm,
+  fetchPlatformBillingActivity,
   fetchPlatformBillingCatalog,
   fetchPlatformTenantBilling,
   ensureTenantStripeCustomer,
   fetchTenantBilling,
   formatMoney,
+  previewOwnBillingChange,
+  previewTenantBillingChange,
   recordTenantUsage,
   syncPlatformBillingCatalogToStripe,
   syncTenantStripeSubscription,
   updateTenantAddon,
   updateTenantPlan,
+  type BillingPreview,
 } from "./platform-billing-api";
 
 const ORIGINAL_FETCH = globalThis.fetch;
@@ -180,6 +185,50 @@ describe("platform-billing-api", () => {
     );
   });
 
+  test("previewOwnBillingChange posts the change to the tenant preview endpoint", async () => {
+    fetchMock.mockResolvedValue(okJson({ changeLabel: "Switch to Growth" }));
+
+    await previewOwnBillingChange({ kind: "plan", planCode: "growth" });
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("/resupply-api/admin/billing/preview");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(String(init.body))).toEqual({
+      kind: "plan",
+      planCode: "growth",
+    });
+  });
+
+  test("previewTenantBillingChange URL-encodes the tenant id", async () => {
+    fetchMock.mockResolvedValue(okJson({ changeLabel: "Set fax ×2" }));
+
+    await previewTenantBillingChange("tenant 1", {
+      kind: "addon",
+      addonCode: "extra_fax",
+      quantity: 2,
+    });
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("/resupply-api/platform/billing/tenants/tenant%201/preview");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(String(init.body))).toEqual({
+      kind: "addon",
+      addonCode: "extra_fax",
+      quantity: 2,
+    });
+  });
+
+  test("fetchPlatformBillingActivity reads the activity feed with a limit", async () => {
+    fetchMock.mockResolvedValue(okJson({ activity: [] }));
+
+    await fetchPlatformBillingActivity(10);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/resupply-api/platform/billing/activity?limit=10",
+      expect.objectContaining({ credentials: "include" }),
+    );
+  });
+
   test("throws ApiError with parsed server details for non-OK responses", async () => {
     fetchMock.mockResolvedValue(
       errorJson(403, { error: "platform_admin_required" }),
@@ -199,5 +248,51 @@ describe("formatMoney", () => {
 
   test("labels null prices as custom", () => {
     expect(formatMoney(null)).toBe("Custom");
+  });
+});
+
+describe("buildPreviewConfirm", () => {
+  const base: BillingPreview = {
+    currentMonthlyCents: 19900,
+    newMonthlyCents: 29900,
+    deltaMonthlyCents: 10000,
+    proratedNowCents: 5000,
+    daysRemaining: 15,
+    periodDays: 30,
+    currentPeriodEnd: "2026-07-01T00:00:00.000Z",
+    changeLabel: "Switch to Growth",
+  };
+
+  test("shows the change label, monthly delta, and prorated charge", () => {
+    const msg = buildPreviewConfirm(base);
+    expect(msg).toContain("Switch to Growth?");
+    expect(msg).toContain("New monthly total: $299/mo");
+    expect(msg).toContain("+$100/mo vs. today");
+    expect(msg).toContain("prorated charge");
+    expect(msg).toContain("~$50");
+  });
+
+  test("renders a prorated credit for a downgrade", () => {
+    const msg = buildPreviewConfirm({
+      ...base,
+      changeLabel: "Switch to Launch",
+      newMonthlyCents: 9900,
+      deltaMonthlyCents: -10000,
+      proratedNowCents: -5000,
+    });
+    expect(msg).toContain("−$100/mo vs. today");
+    expect(msg).toContain("prorated credit");
+    expect(msg).toContain("~$50");
+  });
+
+  test("notes Stripe will calculate proration when the period is unknown", () => {
+    const msg = buildPreviewConfirm({
+      ...base,
+      proratedNowCents: null,
+      daysRemaining: null,
+      periodDays: null,
+      currentPeriodEnd: null,
+    });
+    expect(msg).toContain("calculated by Stripe");
   });
 });

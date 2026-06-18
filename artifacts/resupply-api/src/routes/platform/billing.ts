@@ -9,6 +9,10 @@ import {
 } from "@workspace/resupply-db";
 
 import {
+  computeBillingPreview,
+  type BillingPreview,
+} from "../../lib/billing-preview";
+import {
   summarizeFleetBilling,
   type FleetBillingTenant,
 } from "../../lib/fleet-billing";
@@ -66,6 +70,21 @@ const selectAddonBody = z.object({
   addonCode: z.string().regex(/^[a-z0-9_]+$/),
   quantity: z.number().int().min(0).max(9999),
 });
+// Proration / cost-preview request. The UI sends the SAME change it is
+// about to confirm — a plan switch or an add-on quantity — and gets back a
+// deterministic estimate (new monthly total, change vs. today, prorated
+// amount for the rest of the period). Discriminated on `kind`.
+const previewBody = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("plan"),
+    planCode: z.string().regex(/^[a-z0-9_]+$/),
+  }),
+  z.object({
+    kind: z.literal("addon"),
+    addonCode: z.string().regex(/^[a-z0-9_]+$/),
+    quantity: z.number().int().min(0).max(9999),
+  }),
+]);
 const usageEventBody = z.object({
   tenantId: z.string().uuid().optional(),
   // Allows the camelCase console metric keys (e.g. aiTextInteractionsPerMonth)
@@ -405,6 +424,192 @@ async function tenantBilling(orgId: string, res: Response): Promise<void> {
   });
 }
 
+/**
+ * Append a tenant-billing change to the activity feed the super-admin portal
+ * reads (tenant_billing_events, migration 0386). Best-effort and value-free
+ * of PHI: a failure here must never fail the billing mutation, so it mirrors
+ * writeConfigEvent's swallow-and-log posture. logAudit() is a no-op stub
+ * (migration 0156), so this is the only readable record of who changed what.
+ */
+async function recordBillingEvent(
+  raw: RawClient,
+  event: {
+    orgId: string;
+    action: string;
+    actor: "tenant" | "platform";
+    operatorEmail: string | null;
+    summary: string;
+    metadata: Record<string, unknown>;
+  },
+): Promise<void> {
+  try {
+    const { error } = await raw
+      .schema("resupply")
+      .from("tenant_billing_events")
+      .insert({
+        org_id: event.orgId,
+        action: event.action,
+        actor: event.actor,
+        operator_email: event.operatorEmail,
+        summary: event.summary,
+        metadata: event.metadata,
+      });
+    if (error) throw error;
+  } catch (err) {
+    logger.warn(
+      { event: "tenant_billing_event_insert_failed", action: event.action, err },
+      "tenant_billing_events insert failed (platform activity panel will miss this change)",
+    );
+  }
+}
+
+/** A tenant's recurring monthly cost, decomposed for the preview math. */
+interface RecurringState {
+  planMonthlyCents: number;
+  addonsTotalCents: number;
+  /** addon code → its current active quantity + unit price (cents/mo). */
+  addonByCode: Map<string, { quantity: number; unitCents: number }>;
+  currentPeriodStart: string | null;
+  currentPeriodEnd: string | null;
+}
+
+/** Read a tenant's current recurring monthly cost (plan + active add-ons)
+ *  plus its billing-period window, for the cost-preview endpoints. */
+async function loadRecurringState(
+  raw: RawClient,
+  orgId: string,
+): Promise<RecurringState> {
+  const [sub, addons] = await Promise.all([
+    raw
+      .schema("resupply")
+      .from("tenant_billing_subscriptions")
+      .select(
+        "custom_monthly_price_cents, current_period_start, current_period_end, billing_plans(monthly_price_cents)",
+      )
+      .eq("org_id", orgId)
+      .in("status", ["active", "trialing", "past_due"])
+      .limit(1)
+      .maybeSingle(),
+    raw
+      .schema("resupply")
+      .from("tenant_billing_addons")
+      .select(
+        "quantity, custom_recurring_price_cents, billing_addons(code, recurring_price_cents)",
+      )
+      .eq("org_id", orgId)
+      .eq("status", "active"),
+  ]);
+  if (sub.error) throw sub.error;
+  if (addons.error) throw addons.error;
+
+  const subRow = sub.data as {
+    custom_monthly_price_cents: number | null;
+    current_period_start: string | null;
+    current_period_end: string | null;
+    billing_plans: { monthly_price_cents: number | null } | null;
+  } | null;
+  const planMonthlyCents =
+    subRow?.custom_monthly_price_cents ??
+    subRow?.billing_plans?.monthly_price_cents ??
+    0;
+
+  const addonByCode = new Map<
+    string,
+    { quantity: number; unitCents: number }
+  >();
+  let addonsTotalCents = 0;
+  for (const a of (addons.data ?? []) as unknown as Array<{
+    quantity: number | null;
+    custom_recurring_price_cents: number | null;
+    billing_addons: { code: string; recurring_price_cents: number | null } | null;
+  }>) {
+    const code = a.billing_addons?.code;
+    if (!code) continue;
+    const quantity = a.quantity ?? 0;
+    const unitCents =
+      a.custom_recurring_price_cents ??
+      a.billing_addons?.recurring_price_cents ??
+      0;
+    addonByCode.set(code, { quantity, unitCents });
+    addonsTotalCents += unitCents * Math.max(0, quantity);
+  }
+
+  return {
+    planMonthlyCents,
+    addonsTotalCents,
+    addonByCode,
+    currentPeriodStart: subRow?.current_period_start ?? null,
+    currentPeriodEnd: subRow?.current_period_end ?? null,
+  };
+}
+
+/** Shape returned to the SPA's confirm step. */
+interface BillingPreviewResponse extends BillingPreview {
+  /** Human-readable description of the change being previewed. */
+  changeLabel: string;
+}
+
+/** Compute the cost/proration preview for a pending plan or add-on change.
+ *  Returns null with an error code the route maps to a 404. */
+async function buildBillingPreview(
+  raw: RawClient,
+  orgId: string,
+  change: z.infer<typeof previewBody>,
+): Promise<
+  | { ok: true; preview: BillingPreviewResponse }
+  | { ok: false; error: "plan_not_found" | "addon_not_found" }
+> {
+  const state = await loadRecurringState(raw, orgId);
+  const currentMonthlyCents = state.planMonthlyCents + state.addonsTotalCents;
+
+  let newMonthlyCents: number;
+  let changeLabel: string;
+
+  if (change.kind === "plan") {
+    const { data: plan, error } = await raw
+      .schema("resupply")
+      .from("billing_plans")
+      .select("name, monthly_price_cents")
+      .eq("code", change.planCode)
+      .maybeSingle();
+    if (error || !plan) return { ok: false, error: "plan_not_found" };
+    const newPlanMonthly = (plan.monthly_price_cents as number | null) ?? 0;
+    // A plan switch keeps the existing add-ons; only the plan line changes.
+    newMonthlyCents = newPlanMonthly + state.addonsTotalCents;
+    changeLabel = `Switch to ${plan.name as string}`;
+  } else {
+    const { data: addon, error } = await raw
+      .schema("resupply")
+      .from("billing_addons")
+      .select("name, recurring_price_cents")
+      .eq("code", change.addonCode)
+      .maybeSingle();
+    if (error || !addon) return { ok: false, error: "addon_not_found" };
+    const existing = state.addonByCode.get(change.addonCode);
+    // Catalog rate for a not-yet-active add-on; keep the existing (possibly
+    // custom) unit price when one is already on the subscription.
+    const unitCents =
+      existing?.unitCents ??
+      ((addon.recurring_price_cents as number | null) ?? 0);
+    const currentContribution = (existing?.quantity ?? 0) * unitCents;
+    const newContribution = change.quantity * unitCents;
+    newMonthlyCents =
+      currentMonthlyCents - currentContribution + newContribution;
+    changeLabel =
+      change.quantity === 0
+        ? `Remove ${addon.name as string}`
+        : `Set ${addon.name as string} ×${change.quantity}`;
+  }
+
+  const preview = computeBillingPreview({
+    currentMonthlyCents,
+    newMonthlyCents,
+    currentPeriodStart: state.currentPeriodStart,
+    currentPeriodEnd: state.currentPeriodEnd,
+  });
+  return { ok: true, preview: { ...preview, changeLabel } };
+}
+
 router.get(
   "/admin/billing/package",
   adminReadRateLimiter,
@@ -580,6 +785,14 @@ router.post(
       ip: null,
       userAgent: null,
     }).catch(() => undefined);
+    await recordBillingEvent(raw, {
+      orgId: req.orgId,
+      action: "subscription.selected",
+      actor: "tenant",
+      operatorEmail: req.adminEmail ?? null,
+      summary: `Selected the ${plan.code} plan`,
+      metadata: { planCode: body.data.planCode },
+    });
     // Best-effort Stripe sync — record the choice regardless of whether
     // the platform-billing Stripe account is configured.
     try {
@@ -771,6 +984,20 @@ router.put(
       ip: null,
       userAgent: null,
     }).catch(() => undefined);
+    await recordBillingEvent(raw, {
+      orgId: req.orgId,
+      action: "addon.updated",
+      actor: "tenant",
+      operatorEmail: req.adminEmail ?? null,
+      summary:
+        body.data.quantity === 0
+          ? `Removed the ${addon.code} add-on`
+          : `Set the ${addon.code} add-on to ×${body.data.quantity}`,
+      metadata: {
+        addonCode: body.data.addonCode,
+        quantity: body.data.quantity,
+      },
+    });
     // Best-effort Stripe sync — mirror the plan-selection route. A sync
     // failure is logged but never fails the request (the add-on change is
     // already recorded), so deploys without platform-billing Stripe keys
@@ -797,6 +1024,49 @@ router.put(
       );
     }
     await tenantBilling(req.orgId, res);
+  },
+);
+
+// ── POST /admin/billing/preview ─────────────────────────────────────
+// Cost / proration preview for the tenant self-service confirm step. The
+// owner sees the new monthly total, the change vs. today, and the prorated
+// amount for the rest of the current period BEFORE committing the change.
+// Read-only — records nothing and touches no Stripe state.
+router.post(
+  "/admin/billing/preview",
+  adminReadRateLimiter,
+  requireAdmin,
+  async (req, res): Promise<void> => {
+    if (!req.orgId) {
+      res.status(400).json({ error: "tenant_not_resolved" });
+      return;
+    }
+    const body = previewBody.safeParse(req.body);
+    if (!body.success) {
+      res
+        .status(400)
+        .json({ error: "invalid_preview", details: body.error.flatten() });
+      return;
+    }
+    const raw = await rawClient();
+    if (!raw) {
+      res.status(503).json({ error: "tenant_directory_unavailable" });
+      return;
+    }
+    try {
+      const result = await buildBillingPreview(raw, req.orgId, body.data);
+      if (!result.ok) {
+        res.status(404).json({ error: result.error });
+        return;
+      }
+      res.json(result.preview);
+    } catch (err) {
+      logger.error(
+        { event: "tenant_billing_preview_failed", err },
+        "tenant billing preview failed",
+      );
+      res.status(500).json({ error: "billing_preview_failed" });
+    }
   },
 );
 
@@ -1229,6 +1499,18 @@ router.put(
       ip: null,
       userAgent: null,
     }).catch(() => undefined);
+    await recordBillingEvent(raw, {
+      orgId: param.data.id,
+      action: "subscription.updated",
+      actor: "platform",
+      operatorEmail: req.platformAdminEmail ?? null,
+      summary: `Assigned the ${plan.code} plan (${body.data.status})`,
+      metadata: {
+        planCode: body.data.planCode,
+        status: body.data.status,
+        customMonthlyPriceCents: body.data.customMonthlyPriceCents ?? null,
+      },
+    });
     await tenantBilling(param.data.id, res);
   },
 );
@@ -1304,7 +1586,7 @@ router.put(
         updated_by_email: req.platformAdminEmail ?? null,
         updated_at: new Date().toISOString(),
       };
-      const write = existing
+      let write = existing
         ? await raw
             .schema("resupply")
             .from("tenant_billing_addons")
@@ -1314,6 +1596,20 @@ router.put(
             .schema("resupply")
             .from("tenant_billing_addons")
             .insert({ ...payload, org_id: param.data.id, addon_id: addon.id });
+      // Race fallback: the read-then-insert path can lose to a concurrent
+      // request (double-click/retry) and trip the partial unique index on
+      // (org_id, addon_id) WHERE status='active' (migration 0362). Treat
+      // that 23505 as idempotent — update the row the winner just created
+      // rather than 500 the loser. Mirrors the tenant self-service route.
+      if (write.error && !existing && write.error.code === "23505") {
+        write = await raw
+          .schema("resupply")
+          .from("tenant_billing_addons")
+          .update(payload)
+          .eq("org_id", param.data.id)
+          .eq("addon_id", addon.id)
+          .eq("status", "active");
+      }
       if (write.error) {
         res.status(500).json({ error: "addon_update_failed" });
         return;
@@ -1332,7 +1628,156 @@ router.put(
       ip: null,
       userAgent: null,
     }).catch(() => undefined);
+    await recordBillingEvent(raw, {
+      orgId: param.data.id,
+      action: "addon.updated",
+      actor: "platform",
+      operatorEmail: req.platformAdminEmail ?? null,
+      summary:
+        body.data.quantity === 0
+          ? `Removed the ${addon.code} add-on`
+          : `Set the ${addon.code} add-on to ×${body.data.quantity}`,
+      metadata: {
+        addonCode: body.data.addonCode,
+        quantity: body.data.quantity,
+      },
+    });
     await tenantBilling(param.data.id, res);
+  },
+);
+
+// ── POST /platform/billing/tenants/:id/preview ──────────────────────
+// Cost / proration preview for the super-admin confirm step — the same
+// estimate the tenant self-service route returns, for any tenant. Read-only.
+router.post(
+  "/platform/billing/tenants/:id/preview",
+  adminReadRateLimiter,
+  requirePlatformAdmin,
+  async (req, res): Promise<void> => {
+    const param = tenantIdParam.safeParse(req.params);
+    if (!param.success) {
+      res.status(400).json({ error: "invalid_tenant_id" });
+      return;
+    }
+    const body = previewBody.safeParse(req.body);
+    if (!body.success) {
+      res
+        .status(400)
+        .json({ error: "invalid_preview", details: body.error.flatten() });
+      return;
+    }
+    const raw = await rawClient();
+    if (!raw) {
+      res.status(503).json({ error: "tenant_directory_unavailable" });
+      return;
+    }
+    try {
+      const result = await buildBillingPreview(raw, param.data.id, body.data);
+      if (!result.ok) {
+        res.status(404).json({ error: result.error });
+        return;
+      }
+      res.json(result.preview);
+    } catch (err) {
+      logger.error(
+        { event: "platform_billing_preview_failed", err },
+        "platform billing preview failed",
+      );
+      res.status(500).json({ error: "billing_preview_failed" });
+    }
+  },
+);
+
+// ── GET /platform/billing/activity ──────────────────────────────────
+// Recent tenant-billing changes across the fleet for the super-admin
+// portal's "Recent billing activity" panel. Reads the append-only
+// tenant_billing_events feed (migration 0386) and joins the org name so the
+// panel can show which tenant each change applies to. Platform billing
+// metadata only — plan/add-on codes, quantities, operator email. No PHI.
+const billingActivityQuery = z.object({
+  limit: z
+    .string()
+    .optional()
+    .transform((v) => {
+      if (!v) return 25;
+      const n = Number.parseInt(v, 10);
+      if (!Number.isFinite(n) || n <= 0) return 25;
+      return Math.min(n, 100);
+    }),
+});
+
+interface BillingEventRow {
+  id: string;
+  org_id: string;
+  action: string;
+  actor: string;
+  operator_email: string | null;
+  summary: string | null;
+  metadata: Record<string, unknown> | null;
+  occurred_at: string;
+}
+
+router.get(
+  "/platform/billing/activity",
+  adminReadRateLimiter,
+  requirePlatformAdmin,
+  async (req, res): Promise<void> => {
+    const parsed = billingActivityQuery.safeParse(req.query);
+    const limit = parsed.success ? parsed.data.limit : 25;
+    const raw = await rawClient();
+    if (!raw) {
+      res.status(503).json({ error: "tenant_directory_unavailable" });
+      return;
+    }
+    const { data, error } = await raw
+      .schema("resupply")
+      .from("tenant_billing_events")
+      .select(
+        "id, org_id, action, actor, operator_email, summary, metadata, occurred_at",
+      )
+      .order("occurred_at", { ascending: false })
+      .limit(limit);
+    if (error) {
+      logger.error(
+        { event: "platform_billing_activity_failed", err: error },
+        "platform billing activity read failed",
+      );
+      res.status(500).json({ error: "billing_activity_failed" });
+      return;
+    }
+    const rows = (data ?? []) as BillingEventRow[];
+    // Resolve org display names in one query (newest events reference few
+    // distinct orgs). Falls back to the org id when the name is unknown.
+    const orgIds = [...new Set(rows.map((r) => r.org_id))];
+    const nameByOrg = new Map<string, string>();
+    if (orgIds.length > 0) {
+      const { data: orgs } = await raw
+        .schema("resupply")
+        .from("organizations")
+        .select("id, slug, name, storefront_name")
+        .in("id", orgIds);
+      for (const o of (orgs ?? []) as Array<{
+        id: string;
+        slug: string | null;
+        name: string | null;
+        storefront_name: string | null;
+      }>) {
+        nameByOrg.set(o.id, o.storefront_name || o.name || o.slug || o.id);
+      }
+    }
+    res.json({
+      activity: rows.map((r) => ({
+        id: r.id,
+        tenantId: r.org_id,
+        tenantName: nameByOrg.get(r.org_id) ?? r.org_id,
+        action: r.action,
+        actor: r.actor,
+        operatorEmail: r.operator_email,
+        summary: r.summary,
+        metadata: r.metadata ?? {},
+        occurredAt: r.occurred_at,
+      })),
+    });
   },
 );
 

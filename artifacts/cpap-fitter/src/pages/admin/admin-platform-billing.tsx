@@ -5,14 +5,18 @@ import { Card } from "@/components/admin/Card";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Spinner } from "@/components/admin/Spinner";
 import {
+  buildPreviewConfirm,
+  fetchPlatformBillingActivity,
   fetchPlatformBillingCatalog,
   fetchPlatformTenantBilling,
   ensureTenantStripeCustomer,
   formatMoney,
+  previewTenantBillingChange,
   syncPlatformBillingCatalogToStripe,
   syncTenantStripeSubscription,
   updateTenantAddon,
   updateTenantPlan,
+  type BillingActivityEvent,
   type BillingAddon,
   type BillingPlan,
   type PlatformTenantBillingRow,
@@ -320,7 +324,23 @@ function TenantEditor({
           />
         </label>
         <button
-          onClick={() => savePlan.mutate()}
+          onClick={async () => {
+            // Cost/proration preview before committing the plan change. A
+            // custom monthly override skips the preview (it isn't catalog
+            // priced); falls back to a plain confirm if the preview fails.
+            if (!monthly.trim()) {
+              try {
+                const preview = await previewTenantBillingChange(tenant.id, {
+                  kind: "plan",
+                  planCode,
+                });
+                if (!window.confirm(buildPreviewConfirm(preview))) return;
+              } catch {
+                // preview unavailable — fall through and save
+              }
+            }
+            savePlan.mutate();
+          }}
           disabled={savePlan.isPending}
           className="self-end rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
         >
@@ -364,13 +384,27 @@ function TenantEditor({
                   type="number"
                   min={0}
                   className="w-20 rounded-md border border-slate-300 px-2 py-1 text-sm"
-                  onBlur={(e) => {
+                  onBlur={async (e) => {
                     const next = Number(e.currentTarget.value || 0);
-                    if (next !== qty)
-                      saveAddon.mutate({
-                        addonCode: addon.code,
-                        quantity: next,
-                      });
+                    if (next === qty) return;
+                    // Cost/proration preview before committing the change.
+                    try {
+                      const preview = await previewTenantBillingChange(
+                        tenant.id,
+                        {
+                          kind: "addon",
+                          addonCode: addon.code,
+                          quantity: next,
+                        },
+                      );
+                      if (!window.confirm(buildPreviewConfirm(preview))) return;
+                    } catch {
+                      // preview unavailable — fall through and save
+                    }
+                    saveAddon.mutate({
+                      addonCode: addon.code,
+                      quantity: next,
+                    });
                   }}
                 />
               </div>
@@ -460,6 +494,74 @@ function CatalogPreview({
   );
 }
 
+/** Recent tenant-billing changes across the fleet — surfaces the
+ *  tenant.billing.* / platform.billing.* events the logAudit stub can't show.
+ *  Polls every 60s; degrades to a quiet empty/error state. */
+function RecentBillingActivity() {
+  const activity = useQuery({
+    queryKey: ["platform-billing", "activity"],
+    queryFn: () => fetchPlatformBillingActivity(25),
+    refetchInterval: 60_000,
+  });
+  return (
+    <Card className="p-5" data-testid="platform-billing-activity">
+      <h2 className="font-semibold text-slate-950">Recent billing activity</h2>
+      <p className="mt-1 text-sm text-slate-600">
+        Plan and add-on changes across every tenant — who changed what, and
+        when. Self-service tenant changes and super-admin assignments both show
+        here.
+      </p>
+      {activity.isPending ? (
+        <div className="mt-4">
+          <Spinner label="Loading activity…" />
+        </div>
+      ) : activity.isError ? (
+        <p className="mt-4 text-sm text-slate-500">
+          Could not load billing activity.
+        </p>
+      ) : activity.data.activity.length === 0 ? (
+        <p className="mt-4 text-sm text-slate-500">No billing changes yet.</p>
+      ) : (
+        <ul className="mt-4 divide-y divide-slate-100">
+          {activity.data.activity.map((e: BillingActivityEvent) => (
+            <li
+              key={e.id}
+              className="flex flex-wrap items-baseline justify-between gap-2 py-2"
+            >
+              <div className="min-w-0">
+                <span className="font-medium text-slate-900">
+                  {e.tenantName}
+                </span>
+                <span className="text-slate-600">
+                  {" "}
+                  — {e.summary ?? e.action}
+                </span>
+                <span
+                  className={`ml-2 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                    e.actor === "tenant"
+                      ? "bg-sky-50 text-sky-700"
+                      : "bg-violet-50 text-violet-700"
+                  }`}
+                >
+                  {e.actor === "tenant" ? "self-service" : "super-admin"}
+                </span>
+              </div>
+              <div className="text-right text-xs text-slate-500">
+                <div>{e.operatorEmail ?? "—"}</div>
+                <time dateTime={e.occurredAt}>
+                  {new Date(e.occurredAt).toLocaleString(undefined, {
+                    timeZone: "America/New_York",
+                  })}
+                </time>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
 export function AdminPlatformBillingPage() {
   const catalog = useQuery({
     queryKey: ["platform-billing", "catalog"],
@@ -543,6 +645,7 @@ export function AdminPlatformBillingPage() {
           </div>
         </Card>
       </div>
+      <RecentBillingActivity />
       <CatalogPreview plans={plans} addons={addons} />
       {tenantRows.map(({ tenant }) => (
         <TenantEditor
