@@ -1716,9 +1716,9 @@ function Pricing() {
           <p className="bx-lede">
             Transparent subscription tiers sized to your patient base —
             month-to-month, with onboarding and migration included. Upload a CSV
-            of your patients and you&apos;re live on day one, and your data stays
-            yours — always exportable (back out to PacWare too). License premium
-            modules à la carte.
+            of your patients and you&apos;re live on day one, and your data
+            stays yours — always exportable (back out to PacWare too). License
+            premium modules à la carte.
           </p>
         </div>
         <PricingPlans />
