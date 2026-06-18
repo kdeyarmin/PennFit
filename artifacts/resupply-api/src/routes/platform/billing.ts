@@ -729,7 +729,7 @@ router.put(
         updated_by_email: req.adminEmail ?? null,
         updated_at: new Date().toISOString(),
       };
-      const write = existing
+      let write = existing
         ? await raw
             .schema("resupply")
             .from("tenant_billing_addons")
@@ -739,6 +739,20 @@ router.put(
             .schema("resupply")
             .from("tenant_billing_addons")
             .insert({ ...payload, org_id: req.orgId, addon_id: addon.id });
+      // Race fallback: the read-then-insert path can lose to a concurrent
+      // request (double-click/retry) and trip the partial unique index on
+      // (org_id, addon_id) WHERE status='active' (migration 0362). Treat
+      // that 23505 as idempotent — update the row the winner just created
+      // rather than 500 the loser.
+      if (write.error && !existing && write.error.code === "23505") {
+        write = await raw
+          .schema("resupply")
+          .from("tenant_billing_addons")
+          .update(payload)
+          .eq("org_id", req.orgId)
+          .eq("addon_id", addon.id)
+          .eq("status", "active");
+      }
       if (write.error) {
         res.status(500).json({ error: "addon_update_failed" });
         return;
