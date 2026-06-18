@@ -534,6 +534,9 @@ const BreathePricing = lazyWithRetry(() =>
 const BreatheSecurity = lazyWithRetry(() =>
   import("@/pages/breathe").then((m) => ({ default: m.BreatheSecurity })),
 );
+const BreatheSignup = lazyWithRetry(() =>
+  import("@/pages/breathe").then((m) => ({ default: m.BreatheSignup })),
+);
 
 // Breathe — "What the software does, by role". A dedicated companion to
 // the Breathe homepage that breaks every feature down by the team seat
@@ -1170,6 +1173,7 @@ function TopRouter() {
         <Route path="/breathe/roi" component={BreatheRoi} />
         <Route path="/breathe/pricing" component={BreathePricing} />
         <Route path="/breathe/security" component={BreatheSecurity} />
+        <Route path="/breathe/signup" component={BreatheSignup} />
         <Route path="/">
           {() => (isPlatformHomeHost() ? <BreatheHome /> : <PatientRouter />)}
         </Route>

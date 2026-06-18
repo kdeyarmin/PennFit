@@ -441,9 +441,12 @@ function Nav() {
               {r.title.split(" / ")[0]}
             </a>
           ))}
-          <a className="bx-btn bx-btn-primary bx-btn-sm" href="#demo">
-            Request a demo
-          </a>
+          <Link
+            className="bx-btn bx-btn-primary bx-btn-sm"
+            href="/breathe/signup"
+          >
+            Create account
+          </Link>
         </div>
       </div>
     </nav>
@@ -474,9 +477,9 @@ function Intro() {
             saves time, cuts cost, or grows revenue.
           </p>
           <div className="bx-hero-cta bx-reveal in">
-            <a className="bx-btn bx-btn-primary" href="#demo">
-              Request a demo <ArrowRight size={17} />
-            </a>
+            <Link className="bx-btn bx-btn-primary" href="/breathe/signup">
+              Create your account <ArrowRight size={17} />
+            </Link>
             <a className="bx-btn bx-btn-ghost" href="#csr">
               Jump to the roles
             </a>
@@ -625,17 +628,14 @@ function ClosingCta() {
           </span>
           <h2>See it run for your team.</h2>
           <p>
-            We&apos;ll walk your coordinators, billers, and clinicians through
-            the exact features above — tailored to your payers and your patient
-            panel.
+            Spin up your own workspace and walk your coordinators, billers, and
+            clinicians through every feature above — free, on sample data, no
+            call required.
           </p>
           <div className="bx-cta-row">
-            <a
-              className="bx-btn bx-btn-gold"
-              href="mailto:hello@caremetric.ai?subject=Breathe%20demo%20request"
-            >
-              Request a demo <ArrowRight size={17} />
-            </a>
+            <Link className="bx-btn bx-btn-gold" href="/breathe/signup">
+              Create your account <ArrowRight size={17} />
+            </Link>
             <Link className="bx-btn bx-btn-ghost" href="/breathe">
               Back to the overview
             </Link>

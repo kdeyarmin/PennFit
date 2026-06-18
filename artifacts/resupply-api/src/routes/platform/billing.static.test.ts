@@ -104,4 +104,34 @@ describe("platform billing route wiring", () => {
     expect(SRC).toContain("summarizeFleetBilling");
     expect(SRC).toContain("billing_summary_failed");
   });
+
+  it("hardens the platform-admin add-on route with the same idempotent-race fallback", () => {
+    // Both the tenant self-service PUT and the platform-admin PUT must treat a
+    // 23505 on the read-then-insert path as idempotent (the partial unique
+    // index on (org_id, addon_id) WHERE status='active', migration 0362).
+    const fallbacks = SRC.match(/!existing && write\.error\.code === "23505"/g) ?? [];
+    expect(fallbacks.length).toBeGreaterThanOrEqual(2);
+    // The platform route's write must be reassignable (let, not const) so the
+    // fallback can replace it.
+    expect(SRC).toContain("let write = existing");
+  });
+
+  it("records billing changes to the activity feed and exposes the activity endpoint", () => {
+    // tenant.billing.* and platform.billing.* changes are logged via the
+    // no-op logAudit stub, so a readable record lives in tenant_billing_events
+    // (migration 0386), surfaced on the super-admin portal.
+    expect(SRC).toContain("tenant_billing_events");
+    expect(SRC).toContain("recordBillingEvent");
+    expect(SRC).toContain('"/platform/billing/activity"');
+    // All four mutation routes feed the activity panel.
+    const recorded = SRC.match(/await recordBillingEvent\(/g) ?? [];
+    expect(recorded.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it("exposes the cost/proration preview endpoints for both surfaces", () => {
+    expect(SRC).toContain('"/admin/billing/preview"');
+    expect(SRC).toContain('"/platform/billing/tenants/:id/preview"');
+    expect(SRC).toContain("computeBillingPreview");
+    expect(SRC).toContain("buildBillingPreview");
+  });
 });

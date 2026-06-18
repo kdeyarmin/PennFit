@@ -3072,6 +3072,265 @@
 .bx-cta-meta svg {
   color: var(--bx-mint);
 }
+
+/* ───────────────────── Demo email gate ───────────────────── */
+/* Honeypot — off-screen but present in the DOM for bots to fill. */
+.bx-hp {
+  position: absolute;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+.bx-demoform {
+  width: 100%;
+  max-width: 480px;
+  margin: 30px auto 0;
+}
+.bx-demoform-row {
+  display: flex;
+  gap: 10px;
+}
+.bx-demoform input[type="email"] {
+  flex: 1;
+  min-width: 0;
+  padding: 13px 16px;
+  border-radius: 12px;
+  border: 1px solid var(--bx-line-strong);
+  background: rgba(0, 0, 0, 0.28);
+  color: var(--bx-text);
+  font-family: var(--bx-font);
+  font-size: 15px;
+}
+.bx-demoform input[type="email"]::placeholder {
+  color: var(--bx-text-faint);
+}
+.bx-demoform input[type="email"]:focus {
+  outline: none;
+  border-color: var(--bx-cyan);
+  box-shadow: 0 0 0 3px rgba(84, 200, 255, 0.18);
+}
+.bx-demoform .bx-btn {
+  white-space: nowrap;
+}
+.bx-demoform-err {
+  display: block;
+  margin-top: 10px;
+  font-size: 13px;
+  color: #ff9b9b;
+  text-align: center;
+}
+@media (max-width: 520px) {
+  .bx-demoform-row {
+    flex-direction: column;
+  }
+}
+
+/* ───────────────────── Demo gate modal ───────────────────── */
+.bx-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(2, 5, 12, 0.72);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  animation: bx-fade-in 0.2s ease both;
+}
+.bx-modal {
+  position: relative;
+  width: 100%;
+  max-width: 470px;
+  padding: 36px 30px 28px;
+  border-radius: 22px;
+  border: 1px solid var(--bx-line-strong);
+  background:
+    radial-gradient(
+      80% 120% at 50% 0%,
+      rgba(47, 111, 230, 0.22),
+      transparent 70%
+    ),
+    #0a1226;
+  box-shadow: 0 40px 100px -30px rgba(2, 8, 30, 0.95);
+  text-align: center;
+  animation: bx-modal-in 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.bx-modal-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  border: 1px solid var(--bx-line);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--bx-text-dim);
+  cursor: pointer;
+  transition:
+    background 0.2s ease,
+    color 0.2s ease;
+}
+.bx-modal-close:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--bx-text);
+}
+.bx-modal-ic {
+  display: inline-grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  color: var(--bx-cyan);
+  background: linear-gradient(
+    135deg,
+    rgba(84, 200, 255, 0.18),
+    rgba(47, 111, 230, 0.08)
+  );
+  border: 1px solid var(--bx-line-strong);
+  margin-bottom: 14px;
+}
+.bx-modal h3 {
+  font-family: var(--bx-display);
+  font-optical-sizing: auto;
+  font-size: 25px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 0 0 10px;
+}
+.bx-modal-lede {
+  font-size: 14.5px;
+  line-height: 1.55;
+  color: var(--bx-text-dim);
+  margin: 0;
+}
+.bx-modal .bx-demoform {
+  margin-top: 22px;
+}
+.bx-modal-fine {
+  font-size: 11.5px;
+  color: var(--bx-text-faint);
+  margin: 14px 0 0;
+  line-height: 1.5;
+}
+.bx-modal-alt {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--bx-line);
+  font-size: 13.5px;
+  color: var(--bx-text-dim);
+}
+.bx-modal-alt a {
+  color: var(--bx-cyan);
+  text-decoration: none;
+  font-weight: 600;
+}
+.bx-modal-alt a:hover {
+  text-decoration: underline;
+}
+@keyframes bx-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes bx-modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ───────────────────── Create-account (signup) ───────────────────── */
+.bx-signup-shell {
+  max-width: 520px;
+}
+.bx-signup {
+  text-align: center;
+}
+.bx-signup-ic {
+  display: inline-grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 15px;
+  color: var(--bx-mint);
+  background: rgba(111, 240, 194, 0.1);
+  border: 1px solid rgba(111, 240, 194, 0.26);
+  margin: 0 0 18px;
+}
+.bx-signup-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  text-align: left;
+  margin-top: 30px;
+  padding: 28px;
+  border-radius: 20px;
+  border: 1px solid var(--bx-line);
+  background: var(--bx-panel);
+}
+.bx-field-label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--bx-text-dim);
+}
+.bx-field-label input {
+  padding: 12px 14px;
+  border-radius: 11px;
+  border: 1px solid var(--bx-line-strong);
+  background: rgba(0, 0, 0, 0.28);
+  color: var(--bx-text);
+  font-family: var(--bx-font);
+  font-size: 15px;
+  font-weight: 400;
+}
+.bx-field-label input::placeholder {
+  color: var(--bx-text-faint);
+}
+.bx-field-label input:focus {
+  outline: none;
+  border-color: var(--bx-cyan);
+  box-shadow: 0 0 0 3px rgba(84, 200, 255, 0.18);
+}
+.bx-signup-form .bx-btn {
+  justify-content: center;
+  margin-top: 4px;
+}
+.bx-turnstile {
+  min-height: 65px;
+}
+.bx-signup-alt {
+  font-size: 13.5px;
+  color: var(--bx-text-dim);
+  margin: 20px 0 0;
+}
+.bx-linkbtn {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--bx-cyan);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.bx-linkbtn:hover {
+  text-decoration: underline;
+}
+
 .bx-footer {
   border-top: 1px solid var(--bx-line);
   margin-top: 100px;
@@ -3217,6 +3476,25 @@
   }
   50% {
     background-position: 100% 50%;
+  }
+}
+
+/* Each split-out route's content cross-fades up on navigation, so moving
+   between the Product / Compare / ROI / Pricing / Security pages reads as a
+   deliberate transition rather than a hard cut. The nav + footer sit outside
+   <main>, so they stay put while only the content swaps. Disabled wholesale
+   by the reduced-motion block below. */
+.breathe-page main {
+  animation: bx-page-enter 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes bx-page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 
