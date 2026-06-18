@@ -684,12 +684,73 @@ const REFERRAL_REVIEW = {
   id: "5a3b1e00-1600-4000-8000-000000000e01",
   source: "fax" as const,
   status: "extracted" as const,
+  // Must match the ReferralExtraction schema the admin reviewer renders
+  // (artifacts/cpap-fitter/src/lib/admin/referral-reviews-api.ts): the UI
+  // dereferences extraction.patient.firstName / .sleepStudy / .confidence
+  // directly, so a flat shape crashes the page.
   extraction: {
-    patientName: "Jamie Newpatient",
-    dateOfBirth: "1972-02-18",
-    referringProvider: "Dr. Quinn Sleepwell",
-    diagnosis: "Obstructive sleep apnea (G47.33)",
-    note: "Sample extracted referral awaiting CSR acceptance.",
+    patient: {
+      firstName: "Jamie",
+      lastName: "Newpatient",
+      dob: "1972-02-18",
+      phone: "+18145550150",
+      email: "sample.jamie@example.com",
+      address: {
+        line1: "12 Sample Lane",
+        line2: null,
+        city: "Altoona",
+        state: "PA",
+        postalCode: "16601",
+      },
+    },
+    insurance: {
+      payerName: "Medicare Part B",
+      planName: "Original Medicare",
+      memberId: "1EG4-TE5-MK72",
+      groupNumber: null,
+      policyholderName: "Jamie Newpatient",
+      policyholderRelationship: "self",
+    },
+    secondaryInsurance: null,
+    order: [{ description: "CPAP full-face mask resupply", hcpcs: "A7030" }],
+    sleepStudy: {
+      studyDate: "2026-05-20",
+      studyType: "In-lab polysomnography",
+      ahi: 28,
+      rdi: 31,
+      odi: 22,
+      totalSleepMinutes: 372,
+      interpretingPhysician: "Dr. Quinn Sleepwell",
+    },
+    physician: {
+      name: "Dr. Quinn Sleepwell",
+      npi: "1234567893",
+      phone: "+18145550190",
+      fax: "+18145550191",
+      clinic: "Allegheny Sleep Clinic",
+    },
+    documents: [
+      {
+        type: "physician_order",
+        pageStart: 1,
+        pageEnd: 1,
+        title: "Physician order",
+      },
+      {
+        type: "sleep_study",
+        pageStart: 2,
+        pageEnd: 4,
+        title: "Sleep study report",
+      },
+    ],
+    summary:
+      "Sample extracted referral for Jamie Newpatient — OSA, CPAP full-face resupply. Awaiting CSR acceptance.",
+    confidence: {
+      patient: "high",
+      insurance: "medium",
+      order: "high",
+      sleepStudy: "medium",
+    },
   },
   extractionModel: "sample-seed",
   createdAt: daysAgo(1),
