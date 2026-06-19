@@ -167,6 +167,41 @@ export function readVoicePublicBaseUrlOrNull(
   return null;
 }
 
+/**
+ * The allowlist of public base URLs a Twilio voice webhook may have been
+ * signed against. Used by routes reachable on more than one public host —
+ * e.g. the platform sales line on the platform host (cmbreathe.com) AND the
+ * tenant lines on a tenant custom domain (pennpaps.com) — so each validates
+ * its Twilio signature against its own host instead of being forced onto a
+ * single global host.
+ *
+ * Sourced from RESUPPLY_VOICE_PUBLIC_BASE_URLS (comma-separated), unioned
+ * with the single RESUPPLY_VOICE_PUBLIC_BASE_URL / RAILWAY_PUBLIC_DOMAIN
+ * value — so existing single-host config keeps working unchanged. Deduped
+ * (case-insensitively), trailing slashes stripped. Returns an empty array
+ * when nothing is configured (the signature middleware then fails closed).
+ */
+export function readVoicePublicBaseUrls(
+  env: NodeJS.ProcessEnv = process.env,
+): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const add = (raw: string | null | undefined): void => {
+    if (!raw) return;
+    for (const part of raw.split(",")) {
+      const v = stripTrailingSlash(part.trim());
+      const key = v.toLowerCase();
+      if (v && !seen.has(key)) {
+        seen.add(key);
+        out.push(v);
+      }
+    }
+  };
+  add(env.RESUPPLY_VOICE_PUBLIC_BASE_URLS);
+  add(readVoicePublicBaseUrlOrNull(env));
+  return out;
+}
+
 export function readVoiceConfigOrNull(
   env: NodeJS.ProcessEnv = process.env,
 ): VoiceConfig | null {

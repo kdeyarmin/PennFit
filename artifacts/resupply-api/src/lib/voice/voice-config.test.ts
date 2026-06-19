@@ -15,6 +15,7 @@ import {
   readVoiceConfigOrNull,
   readVoiceConfigOrThrow,
   readVoicePublicBaseUrlOrNull,
+  readVoicePublicBaseUrls,
 } from "./voice-config";
 
 // The three required keys plus a public-base-URL source. Spread and
@@ -213,6 +214,46 @@ describe("readVoicePublicBaseUrlOrNull", () => {
 
   it("returns null when neither source is set", () => {
     expect(readVoicePublicBaseUrlOrNull({})).toBeNull();
+  });
+});
+
+describe("readVoicePublicBaseUrls — multi-host allowlist", () => {
+  it("returns the single configured host when only the singular var is set", () => {
+    expect(
+      readVoicePublicBaseUrls({
+        RESUPPLY_VOICE_PUBLIC_BASE_URL: "https://pennpaps.com/",
+      }),
+    ).toEqual(["https://pennpaps.com"]);
+  });
+
+  it("unions the comma-separated allowlist with the singular var, deduped", () => {
+    expect(
+      readVoicePublicBaseUrls({
+        RESUPPLY_VOICE_PUBLIC_BASE_URLS:
+          "https://cmbreathe.com, https://pennpaps.com/",
+        RESUPPLY_VOICE_PUBLIC_BASE_URL: "https://pennpaps.com",
+      }),
+    ).toEqual(["https://cmbreathe.com", "https://pennpaps.com"]);
+  });
+
+  it("strips trailing slashes and ignores blank entries", () => {
+    expect(
+      readVoicePublicBaseUrls({
+        RESUPPLY_VOICE_PUBLIC_BASE_URLS: "https://cmbreathe.com/, ,",
+      }),
+    ).toEqual(["https://cmbreathe.com"]);
+  });
+
+  it("includes the RAILWAY_PUBLIC_DOMAIN fallback when no explicit URL is set", () => {
+    expect(
+      readVoicePublicBaseUrls({
+        RAILWAY_PUBLIC_DOMAIN: "pennfit.up.railway.app",
+      }),
+    ).toEqual(["https://pennfit.up.railway.app"]);
+  });
+
+  it("returns an empty array when nothing is configured (fails closed)", () => {
+    expect(readVoicePublicBaseUrls({})).toEqual([]);
   });
 });
 
