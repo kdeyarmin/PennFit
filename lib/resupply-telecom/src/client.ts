@@ -52,8 +52,9 @@ export interface PlaceCallInput {
    * `AnsweredBy` verdict (human | machine_start | machine_end_* | fax |
    * unknown) on the status callback so the caller can tell a live answer from
    * voicemail. Omit for the interactive admin click-to-dial (a CSR is on the
-   * line); the automated reorder call sets `"DetectMessageEnd"`. No effect on
-   * the TwiML/agent flow beyond the added verdict.
+   * line); the automated reorder call sets `"Enable"` (detect the machine
+   * quickly and retry later, rather than wait out the greeting to leave a
+   * message). No effect on the TwiML/agent flow beyond the added verdict.
    */
   machineDetection?: "Enable" | "DetectMessageEnd";
 }

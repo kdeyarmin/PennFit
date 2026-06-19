@@ -50,6 +50,31 @@ describe("aggregateReorderFunnel", () => {
     });
   });
 
+  it("never counts an UNREMINDED episode in the confirmed/shipped stages", () => {
+    // A reorder that confirmed AND shipped without any reminder must not leak
+    // into the later stages — those measure reminder effectiveness, so they are
+    // scoped to reminded episodes only. Without that, rates exceed 100% and the
+    // top-line disagrees with the per-channel table.
+    const eps: ReorderFunnelEpisode[] = [
+      { id: "r1", status: "fulfilled" }, // reminded(sms), confirmed, shipped
+      { id: "u1", status: "fulfilled" }, // NEVER reminded, but shipped
+      { id: "u2", status: "confirmed" }, // NEVER reminded, but confirmed
+    ];
+    const convs: ReorderFunnelConversation[] = [
+      { episodeId: "r1", channel: "sms" },
+    ];
+    const r = aggregateReorderFunnel(eps, convs, new Set(["r1", "u1"]));
+    expect(r.due).toBe(3); // the whole window
+    expect(r.reminded).toBe(1); // only r1
+    expect(r.confirmed).toBe(1); // only r1 — u1/u2 excluded (never reminded)
+    expect(r.shipped).toBe(1); // only r1 — u1 excluded
+    // every stage stays nested: shipped ⊆ confirmed ⊆ reminded ⊆ due.
+    expect(r.shipped).toBeLessThanOrEqual(r.confirmed);
+    expect(r.confirmed).toBeLessThanOrEqual(r.reminded);
+    expect(r.byChannel.sms).toEqual({ reminded: 1, confirmed: 1, shipped: 1 });
+    expect(r.rates.confirmedOfReminded).toBe(1); // 1/1, not 3/1
+  });
+
   it("computes stage-to-stage rates (null when the prior stage is empty)", () => {
     const r = aggregateReorderFunnel(episodes, conversations, new Set(["e1"]));
     expect(r.rates.remindedOfDue).toBe(0.8); // 4/5

@@ -40,24 +40,29 @@ router.get(
       return;
     }
     const days = parsed.data.days;
-    const cutoff = new Date(
-      Date.now() - days * 24 * 60 * 60 * 1000,
-    ).toISOString();
+    const now = Date.now();
+    const cutoff = new Date(now - days * 24 * 60 * 60 * 1000).toISOString();
+    const nowIso = new Date(now).toISOString();
+    // Trim-check, not just falsy: getOrgScopedClient throws on a blank/
+    // whitespace orgId — return the controlled error instead.
     const orgId = req.orgId;
-    if (!orgId) {
+    if (!orgId || !orgId.trim()) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
     const supabase = getOrgScopedClient(orgId);
 
-    // Episodes that became due in the window. Keyset-paged (PostgREST caps a
-    // page at ~1000 rows).
+    // Episodes that became DUE in the window — bound on `due_at` (actual
+    // reorder eligibility), not `created_at` (row-insert time). Excludes
+    // episodes whose due date is still in the future. Keyset-paged (PostgREST
+    // caps a page at ~1000 rows); `episodes.due_at` is indexed.
     const episodes: ReorderFunnelEpisode[] = [];
     for (let from = 0; ; from += PAGE_SIZE) {
       const { data, error } = await supabase
         .from("episodes")
         .select("id, status")
-        .gte("created_at", cutoff)
+        .gte("due_at", cutoff)
+        .lte("due_at", nowIso)
         .order("id", { ascending: true })
         .range(from, from + PAGE_SIZE - 1);
       if (error) throw error;

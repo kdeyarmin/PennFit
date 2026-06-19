@@ -146,11 +146,19 @@ function FunnelBody({ data }: { data: ReorderFunnelResponse }) {
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left" style={{ color: "hsl(var(--ink-3))" }}>
-                <th className="px-3 py-2 font-medium">Channel</th>
-                <th className="px-3 py-2 font-medium text-right">Reminded</th>
-                <th className="px-3 py-2 font-medium text-right">Confirmed</th>
-                <th className="px-3 py-2 font-medium text-right">Shipped</th>
-                <th className="px-3 py-2 font-medium text-right">
+                <th scope="col" className="px-3 py-2 font-medium">
+                  Channel
+                </th>
+                <th scope="col" className="px-3 py-2 font-medium text-right">
+                  Reminded
+                </th>
+                <th scope="col" className="px-3 py-2 font-medium text-right">
+                  Confirmed
+                </th>
+                <th scope="col" className="px-3 py-2 font-medium text-right">
+                  Shipped
+                </th>
+                <th scope="col" className="px-3 py-2 font-medium text-right">
                   Confirm rate
                 </th>
               </tr>

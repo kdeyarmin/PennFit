@@ -448,9 +448,14 @@ describe("runReminderEscalationScan — patient status + capability read", () =>
 
   it("reads voice-call disposition to drive the retry/exhaust decision", () => {
     // Joins voice_calls by conversation_id via .raw() (rows are written
-    // webhook-side without org_id, so the org filter would miss them).
+    // webhook-side without org_id, so the org filter would miss them). We still
+    // SELECT org_id and skip any row carrying a CONFLICTING tenant — defense in
+    // depth against a future webhook that does stamp it.
     expect(SRC).toContain('.from("voice_calls")');
-    expect(SRC).toContain('.select("conversation_id, status, answered_by")');
+    expect(SRC).toContain(
+      '.select("conversation_id, status, answered_by, org_id")',
+    );
+    expect(SRC).toContain("rowOrg != null && rowOrg !== orgId");
     expect(SRC).toContain("isVoiceCallConnected(");
   });
 });

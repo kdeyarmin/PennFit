@@ -95,17 +95,24 @@ export function aggregateReorderFunnel(
 
   for (const ep of episodes) {
     const channels = channelsByEpisode.get(ep.id);
-    const isConfirmed = CONFIRMED_STATUSES.has(ep.status);
+    // The funnel measures REMINDER effectiveness, so the confirmed/shipped
+    // stages are counted only among episodes we actually reminded. Without
+    // this an episode that reordered with no reminder would inflate the later
+    // stages (rates > 100%) and make the top-line disagree with the channel
+    // table. The "due" stage (episodes.length) still counts the whole window.
+    if (!channels || channels.size === 0) continue;
+    reminded += 1;
     const isShipped = shippedEpisodeIds.has(ep.id);
+    // A shipped order is by definition a confirmed reorder — fold it in so the
+    // funnel stays nested (shipped ⊆ confirmed) even if episode.status lags
+    // behind the fulfillment.
+    const isConfirmed = CONFIRMED_STATUSES.has(ep.status) || isShipped;
     if (isConfirmed) confirmed += 1;
     if (isShipped) shipped += 1;
-    if (channels && channels.size > 0) {
-      reminded += 1;
-      for (const ch of channels) {
-        byChannel[ch].reminded += 1;
-        if (isConfirmed) byChannel[ch].confirmed += 1;
-        if (isShipped) byChannel[ch].shipped += 1;
-      }
+    for (const ch of channels) {
+      byChannel[ch].reminded += 1;
+      if (isConfirmed) byChannel[ch].confirmed += 1;
+      if (isShipped) byChannel[ch].shipped += 1;
     }
   }
 

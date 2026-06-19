@@ -524,7 +524,10 @@ async function escalationScanForOrg(
   // it false → the planner retries the call up to the attempt cap before the
   // CSR hand-off. Read via `.raw()` keyed by conversation_id (the tenant's own
   // ids) because voice_calls rows are written webhook-side without an org_id,
-  // so the org-scoped filter would miss them.
+  // so the org-scoped filter would miss them. We still SELECT `org_id` and skip
+  // any row whose non-null org_id belongs to a different tenant — defense in
+  // depth so a future webhook that does stamp org_id can never cross tenants
+  // (the conversation_ids themselves are already tenant-private uuids).
   if (ladder.includes("voice") && voiceRowById.size > 0) {
     const voiceConvIds = [...voiceRowById.keys()];
     for (let i = 0; i < voiceConvIds.length; i += 200) {
@@ -534,7 +537,7 @@ async function escalationScanForOrg(
           .raw()
           .schema("resupply")
           .from("voice_calls")
-          .select("conversation_id, status, answered_by")
+          .select("conversation_id, status, answered_by, org_id")
           .in("conversation_id", idChunk)
           .order("conversation_id", { ascending: true })
           .range(from, from + PAGE_SIZE - 1);
@@ -544,6 +547,11 @@ async function escalationScanForOrg(
           const cid = (vc as { conversation_id: string | null })
             .conversation_id;
           if (!cid) continue;
+          // Skip a row only when it carries a CONFLICTING org_id; null/absent
+          // (the current webhook shape) falls through to the conversation-id
+          // match, which is already tenant-scoped.
+          const rowOrg = (vc as { org_id?: string | null }).org_id;
+          if (rowOrg != null && rowOrg !== orgId) continue;
           const row = voiceRowById.get(cid);
           if (
             row &&
