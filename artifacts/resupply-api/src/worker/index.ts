@@ -51,6 +51,7 @@ import { registerCartAbandonmentJob } from "./jobs/cart-abandonment-scan.js";
 import { registerFailedEmailDigestJob } from "./jobs/failed-order-emails-digest.js";
 import { registerPacwareReadyToSyncDigestJob } from "./jobs/pacware-ready-to-sync-digest.js";
 import { registerTherapyNightlySyncJob } from "./jobs/therapy-integrations-nightly-sync.js";
+import { registerPhoneLineTypeBackfillJob } from "./jobs/phone-line-type-backfill.js";
 import { registerEligibilityReverifyBatchJob } from "./jobs/eligibility-reverify-batch.js";
 import { registerAutoSubmitBatchJob } from "./jobs/auto-submit-batch.js";
 import { registerBillHoldSweepJob } from "./jobs/bill-hold-sweep.js";
@@ -658,6 +659,11 @@ async function doStartWorker(): Promise<void> {
     "registerTherapyNightlySyncJob",
     registrationFailures,
     () => registerTherapyNightlySyncJob(boss),
+  );
+  await safeRegister(
+    "registerPhoneLineTypeBackfillJob",
+    registrationFailures,
+    () => registerPhoneLineTypeBackfillJob(boss),
   );
 
   // Eligibility re-verification batch (Biller #31). Queue + worker

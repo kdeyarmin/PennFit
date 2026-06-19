@@ -69,6 +69,17 @@ export {
 } from "./sms";
 
 export {
+  createTwilioLookupClient,
+  mapTwilioLineType,
+  type PhoneLineType,
+  type LookupLineTypeResult,
+  type TwilioLookupClient,
+  type CreateTwilioLookupClientOptions,
+  type LookupHttpGet,
+  type TwilioLookupHttpResponse,
+} from "./lookup";
+
+export {
   isTransientTwilioError,
   withRetry,
   computeBackoffMs,

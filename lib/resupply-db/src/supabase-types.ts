@@ -879,6 +879,10 @@ export interface Database {
           birthday_email_year_sent: number | null;
           sleep_anniversary_year_sent: number | null;
           timezone: string;
+          /** Phone line type (migration 0398). NULL = never classified. */
+          phone_line_type: "mobile" | "landline" | "voip" | "unknown" | null;
+          phone_line_type_source: "lookup" | "manual" | null;
+          phone_line_type_checked_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -4237,9 +4241,15 @@ export interface Database {
             | "all_active_shop_customers"
             | "all_active_patients"
             | "by_patient_payer"
+            | "by_therapy_cohort"
+            | "patient_segment"
             | "manual_list";
           audience_payer: string | null;
-          channel: "email";
+          /** Composable patient-segment spec; set only when
+           * audience_kind='patient_segment' (migration 0397). Shape owned by
+           * lib/bulk-campaigns/patient-segment.ts. */
+          audience_filter: Json | null;
+          channel: "email" | "sms";
           category: "marketing" | "service" | "compliance";
           compliance_attestation: string | null;
           template_key: string;
@@ -4273,6 +4283,9 @@ export interface Database {
           recipient_kind: "patient" | "shop_customer";
           recipient_id: string;
           recipient_email: string | null;
+          /** E.164 destination snapshot for SMS campaigns (migration 0397);
+           * NULL for email campaigns and no-phone recipients. */
+          recipient_phone: string | null;
           status:
             | "pending"
             | "retry_pending"
@@ -4897,6 +4910,10 @@ export interface Database {
           caregiver_revoked_at: string | null;
           // E.164 phone captured at Stripe Checkout (migration 0247).
           phone_e164: string | null;
+          /** Phone line type (migration 0398). NULL = never classified. */
+          phone_line_type: "mobile" | "landline" | "voip" | "unknown" | null;
+          phone_line_type_source: "lookup" | "manual" | null;
+          phone_line_type_checked_at: string | null;
           created_at: string;
           updated_at: string;
         };
