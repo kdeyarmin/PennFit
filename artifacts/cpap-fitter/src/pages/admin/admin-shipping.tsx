@@ -97,7 +97,7 @@ export function AdminShippingPage() {
                 Add your XPS API key, customer id, integration id, and a
                 ship-from address under{" "}
                 <a
-                  href="/admin/system-configuration"
+                  href="/admin/system/configuration"
                   className="underline decoration-dotted"
                 >
                   System Configuration → Shipping labels (XPS Ship)
@@ -265,7 +265,7 @@ function QueueCard({
                   className="text-left text-xs uppercase tracking-wider"
                   style={{ color: "hsl(var(--ink-3))" }}
                 >
-                  <th className="py-2 w-6">
+                  <th scope="col" className="py-2 w-6">
                     <input
                       type="checkbox"
                       aria-label="Select all"
@@ -275,11 +275,19 @@ function QueueCard({
                       onChange={toggleAll}
                     />
                   </th>
-                  <th className="py-2">Order</th>
-                  <th className="py-2">Ship to</th>
-                  <th className="py-2">Total</th>
-                  <th className="py-2">Status</th>
-                  <th className="py-2" />
+                  <th scope="col" className="py-2">
+                    Order
+                  </th>
+                  <th scope="col" className="py-2">
+                    Ship to
+                  </th>
+                  <th scope="col" className="py-2">
+                    Total
+                  </th>
+                  <th scope="col" className="py-2">
+                    Status
+                  </th>
+                  <th scope="col" className="py-2" />
                 </tr>
               </thead>
               <tbody>
@@ -704,12 +712,24 @@ function ProductSpecsCard() {
                       className="text-left text-xs uppercase tracking-wider"
                       style={{ color: "hsl(var(--ink-3))" }}
                     >
-                      <th className="py-1">Product</th>
-                      <th className="py-1">Label</th>
-                      <th className="py-1">Weight (oz)</th>
-                      <th className="py-1">L</th>
-                      <th className="py-1">W</th>
-                      <th className="py-1">H</th>
+                      <th scope="col" className="py-1">
+                        Product
+                      </th>
+                      <th scope="col" className="py-1">
+                        Label
+                      </th>
+                      <th scope="col" className="py-1">
+                        Weight (oz)
+                      </th>
+                      <th scope="col" className="py-1">
+                        L
+                      </th>
+                      <th scope="col" className="py-1">
+                        W
+                      </th>
+                      <th scope="col" className="py-1">
+                        H
+                      </th>
                     </tr>
                   </thead>
                   <tbody>

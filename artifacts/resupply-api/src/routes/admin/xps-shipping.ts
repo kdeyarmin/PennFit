@@ -366,7 +366,7 @@ async function createAndResolveLabel(args: {
   }
 
   const supabase = getOrgScopedClient(orgId);
-  await supabase
+  const { error: stageErr } = await supabase
     .from("shop_orders")
     .update({
       xps_label_status: "staged",
@@ -374,6 +374,9 @@ async function createAndResolveLabel(args: {
       updated_at: new Date().toISOString(),
     })
     .eq("id", order.id);
+  // The order is already staged in XPS at this point; a failed local write
+  // must not be swallowed (we'd report success on an inconsistent row).
+  if (stageErr) throw stageErr;
 
   let resolved = await resolveAndPersist({ orgId, order, adapter, log });
   const maxExtra = pollResolve ? 2 : 0;
@@ -525,8 +528,10 @@ router.post(
           results.push({ orderId, status: "staged" });
         }
       } catch (err) {
+        // Log the Error object itself so the logger's err.* redaction
+        // applies (a pre-stringified message would bypass it).
         req.log?.warn?.(
-          { orderId, err: err instanceof Error ? err.message : String(err) },
+          { orderId, err },
           "xps-shipping: batch label error (isolated)",
         );
         results.push({ orderId, status: "error", error: "unexpected_error" });
@@ -663,13 +668,15 @@ router.post(
       return;
     }
     const supabase = getOrgScopedClient(orgId);
-    await supabase
+    const { error: voidErr } = await supabase
       .from("shop_orders")
       .update({
         xps_label_status: "voided",
         updated_at: new Date().toISOString(),
       })
       .eq("id", orderId);
+    // Don't report success if the local status write failed.
+    if (voidErr) throw voidErr;
     req.log?.info?.(
       { orderId, adminEmail: req.adminEmail },
       "xps-shipping: label voided",

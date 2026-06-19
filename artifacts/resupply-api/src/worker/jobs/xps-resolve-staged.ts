@@ -49,6 +49,8 @@ export interface XpsResolveStagedSummary {
   booked: number;
   /** Σ staged orders still awaiting XPS booking. */
   stillStaged: number;
+  /** Σ staged orders whose resolve returned an adapter error this tick. */
+  errored: number;
 }
 
 /**
@@ -59,10 +61,11 @@ export interface XpsResolveStagedSummary {
 async function resolveStagedForOrg(orgId: string): Promise<{
   booked: number;
   stillStaged: number;
+  errored: number;
 }> {
   const adapter = await getXpsAdapterForOrg(orgId);
   if (adapter.availability().status !== "configured") {
-    return { booked: 0, stillStaged: 0 };
+    return { booked: 0, stillStaged: 0, errored: 0 };
   }
   const supabase = getOrgScopedClient(orgId);
   const { data, error } = await supabase
@@ -76,6 +79,7 @@ async function resolveStagedForOrg(orgId: string): Promise<{
 
   let booked = 0;
   let stillStaged = 0;
+  let errored = 0;
   for (const row of (data ?? []) as Array<{ id: string }>) {
     try {
       const order = await loadShippingOrder(orgId, row.id);
@@ -86,29 +90,40 @@ async function resolveStagedForOrg(orgId: string): Promise<{
         adapter,
         log: logger,
       });
-      if (resolved.kind === "booked") booked++;
-      else stillStaged++;
+      if (resolved.kind === "booked") {
+        booked++;
+      } else if (resolved.kind === "error") {
+        // resolveAndPersist returns (not throws) on an adapter error
+        // (auth/rate-limit/etc.). Surface it so a persistent failure
+        // isn't hidden as "still staged".
+        errored++;
+        logger.warn(
+          { orderId: row.id, reason: resolved.error },
+          "xps.resolve-staged: shipment resolve returned an adapter error",
+        );
+      } else {
+        stillStaged++;
+      }
     } catch (err) {
-      stillStaged++;
+      errored++;
+      // Log the Error object itself so the logger's err.* redaction applies.
       logger.warn(
-        {
-          orderId: row.id,
-          err: err instanceof Error ? err.message : String(err),
-        },
+        { orderId: row.id, err },
         "xps.resolve-staged: order resolve failed (isolated)",
       );
     }
   }
-  return { booked, stillStaged };
+  return { booked, stillStaged, errored };
 }
 
 export async function runXpsResolveStagedAllOrgs(): Promise<XpsResolveStagedSummary> {
-  const agg = { booked: 0, stillStaged: 0 };
+  const agg = { booked: 0, stillStaged: 0, errored: 0 };
   const fan = await forEachActiveOrg(
     async (orgId) => {
       const stats = await resolveStagedForOrg(orgId);
       agg.booked += stats.booked;
       agg.stillStaged += stats.stillStaged;
+      agg.errored += stats.errored;
     },
     { jobName: XPS_RESOLVE_STAGED_JOB },
   );

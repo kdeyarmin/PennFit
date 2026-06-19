@@ -181,6 +181,22 @@ describe("findShipmentByOrderId", () => {
     const res = await adapter.findShipmentByOrderId("abc-123");
     expect(res).toEqual({ ok: true, value: null });
   });
+
+  it("returns null when fuzzy hits exist but none match the orderId exactly", async () => {
+    // The keyword search is fuzzy; an unrelated shipment must never be
+    // booked onto this order (would notify the patient with wrong tracking).
+    const fetchImpl = vi.fn().mockResolvedValue(
+      jsonResponse({
+        shipments: [
+          { bookNumber: 111, orderId: "other-1", trackingNumber: "T1" },
+          { bookNumber: 222, orderId: "other-2", trackingNumber: "T2" },
+        ],
+      }),
+    );
+    const adapter = createXpsShipAdapter(FULL_ENV, { fetchImpl });
+    const res = await adapter.findShipmentByOrderId("abc-123");
+    expect(res).toEqual({ ok: true, value: null });
+  });
 });
 
 describe("getLabel", () => {

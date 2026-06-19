@@ -260,10 +260,12 @@ export function createXpsShipAdapter(
           { keyword: orderId },
         );
         const shipments = parseSearchShipments(json);
-        // The keyword search is fuzzy across many fields — pin to the exact
-        // order id so an unrelated partial match never gets booked back.
-        const exact = shipments.find((s) => s.orderId === orderId);
-        return exact ?? shipments[0] ?? null;
+        // The keyword search is fuzzy across many fields (name, phone, email,
+        // references, …), so we ONLY accept a shipment whose orderId is an
+        // exact match. Returning a fuzzy first-hit here would let an
+        // unrelated shipment's tracking get booked onto this order and the
+        // patient notified with the wrong number — never fall back.
+        return shipments.find((s) => s.orderId === orderId) ?? null;
       });
     },
 

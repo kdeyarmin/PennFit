@@ -40,10 +40,9 @@ export function validateReceiverAddress(addr: XpsAddress): AddressValidation {
     issues.push({ field: "city", message: "City is required." });
   }
 
+  // An unset country defaults to US (matching the adapter), so there is no
+  // "country required" case to surface — it only affects the state/ZIP rules.
   const country = trimmed(addr.country) || "US";
-  if (!country) {
-    issues.push({ field: "country", message: "Country is required." });
-  }
 
   const state = trimmed(addr.state);
   if (!state) {

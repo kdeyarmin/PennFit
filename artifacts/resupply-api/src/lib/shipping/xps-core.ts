@@ -353,11 +353,9 @@ export async function resolveAndPersist(args: {
   try {
     await sendShippingNotificationIfNew({ orgId, orderId: order.id, log });
   } catch (err) {
+    // Log the Error object itself so the logger's err.* redaction applies.
     log?.warn?.(
-      {
-        orderId: order.id,
-        err: err instanceof Error ? err.message : String(err),
-      },
+      { orderId: order.id, err },
       "xps-shipping: shipping notification failed (non-fatal)",
     );
   }
