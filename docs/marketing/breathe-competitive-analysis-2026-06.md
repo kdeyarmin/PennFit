@@ -90,7 +90,12 @@ in response. Source pages live in
   inbox, patient roster, and orders — each in a browser frame with a caption.
   Video + screens were recorded with Playwright against the demo sandbox;
   assets in `public/breathe/screens/`. (The illustrative `ProductShowcase`
-  mockup still serves the deeper `/breathe/product` tour.)
+  mockup still serves the deeper `/breathe/product` tour.) A second
+  **`FeatureVideos`** section ("See it in action") follows the capability
+  grid with **four short per-feature clips** showing real interactions — the
+  resupply engine filtering its worklist, the **AI admin copilot** answering a
+  question with live `/admin` links, the AI denials worklist, and therapy
+  monitoring — each click-to-play with `preload="none"`.
 - **Stat credibility** — provenance note under the hero stat band on both
   `/breathe` and `/breathe/features`, linking to the ROI methodology.
 - **"Talk to us" path** — new `ContactGateModal` (+ `ContactEmailForm`,

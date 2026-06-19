@@ -895,6 +895,7 @@ export function BreatheHome() {
       <UnifiedFleet />
       <Lifecycle />
       <Capabilities />
+      <FeatureVideos />
       <BuiltInHouse />
       <Replaces />
       <Outcomes />
@@ -1866,6 +1867,89 @@ const LIVE_SHOTS: { src: string; cap: string; alt: string }[] = [
     alt: "Breathe admin: storefront orders list with status and fulfillment",
   },
 ];
+
+/* ───────────────────── Feature videos (short, per-capability clips) ─────────
+ * Short screen-recorded clips of individual features in motion — the
+ * complement to the LiveConsole stills. Click-to-play with preload="none"
+ * (each clip is <1MB but still only loads on demand), reusing the .bx-shotgrid
+ * card frame. Posters are the matching console screenshots. */
+const FEATURE_VIDEOS: {
+  src: string;
+  poster: string;
+  label: string;
+  cap: string;
+}[] = [
+  {
+    src: "/breathe/screens/feat-resupply.webm",
+    poster: "/breathe/screens/console-resupply.jpg",
+    label: "Resupply engine",
+    cap: "Filter the worklist by item — who's overdue, who's due, who needs a refit.",
+  },
+  {
+    src: "/breathe/screens/feat-copilot.webm",
+    poster: "/breathe/screens/feat-copilot-poster.jpg",
+    label: "AI admin copilot",
+    cap: "Ask how something works — it answers with the exact pages to use.",
+  },
+  {
+    src: "/breathe/screens/feat-denials.webm",
+    poster: "/breathe/screens/console-denials.jpg",
+    label: "AI denials worklist",
+    cap: "Denials ranked by recoverable dollars × win probability.",
+  },
+  {
+    src: "/breathe/screens/feat-fleet.webm",
+    poster: "/breathe/screens/console-fleet.jpg",
+    label: "Therapy monitoring",
+    cap: "Compliance, clinical flags & at-risk alerts across ResMed, Philips & 3B.",
+  },
+];
+
+function FeatureVideos() {
+  return (
+    <section className="bx-section" id="feature-videos">
+      <div className="bx-shell">
+        <div className="bx-section-head center bx-reveal">
+          <span className="bx-eyebrow">
+            <Video size={13} /> See it in action
+          </span>
+          <h2 className="bx-h2">Each piece, in motion</h2>
+          <p className="bx-lede">
+            Short clips from the live demo — the resupply engine, the AI
+            copilot, the denials worklist, and therapy monitoring doing their
+            thing. Click any to play; sample data throughout.
+          </p>
+        </div>
+        <div className="bx-shotgrid">
+          {FEATURE_VIDEOS.map((v) => (
+            <figure className="bx-shotcard bx-reveal" key={v.src}>
+              <div className="bx-shotcard-frame">
+                <span className="bx-shotcard-bar" aria-hidden="true">
+                  <i />
+                  <i />
+                  <i />
+                </span>
+                <video
+                  src={v.src}
+                  poster={v.poster}
+                  controls
+                  loop
+                  muted
+                  playsInline
+                  preload="none"
+                  aria-label={`${v.label} — ${v.cap}`}
+                />
+              </div>
+              <figcaption>
+                <b>{v.label}</b> — {v.cap}
+              </figcaption>
+            </figure>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
 
 function LiveConsole() {
   return (
