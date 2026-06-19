@@ -49,6 +49,17 @@ function clean(v: string | undefined): string | null {
 }
 
 /**
+ * Strip trailing slashes without a regex. A regex like `/\/+$/` over
+ * uncontrolled (env) input trips CodeQL's polynomial-ReDoS heuristic; a
+ * plain loop is linear and obviously safe.
+ */
+function stripTrailingSlashes(s: string): string {
+  let end = s.length;
+  while (end > 0 && s[end - 1] === "/") end--;
+  return s.slice(0, end);
+}
+
+/**
  * Reads XPS Ship config from the supplied env, or returns `null` when any
  * required value is missing. Required: the API key, customer id,
  * integration id, and a complete-enough ship-from address (name, line 1,
@@ -84,9 +95,9 @@ export function readXpsShipConfigOrNull(
   const labelFormat: "PDF" | "PNG" = labelFormatRaw === "PNG" ? "PNG" : "PDF";
 
   return {
-    apiBaseUrl: (
-      clean(env.XPS_SHIP_API_BASE_URL) ?? DEFAULT_XPS_API_BASE_URL
-    ).replace(/\/+$/, ""),
+    apiBaseUrl: stripTrailingSlashes(
+      clean(env.XPS_SHIP_API_BASE_URL) ?? DEFAULT_XPS_API_BASE_URL,
+    ),
     apiKey,
     customerId,
     integrationId,
