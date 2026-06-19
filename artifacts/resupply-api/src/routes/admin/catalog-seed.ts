@@ -32,6 +32,7 @@ import { stripeAccountRequestOptions } from "../../lib/stripe/connect";
 import { seedStarterCatalog } from "../../lib/stripe/starter-catalog";
 import { stripeErrLogFields } from "../../lib/stripe/err-log-fields";
 import { rateLimit } from "../../middlewares/rate-limit";
+import { withIdempotency } from "../../middlewares/idempotency";
 import { requirePermission } from "../../middlewares/requireAdmin";
 import { invalidateShopProductsCache } from "../shop/products";
 
@@ -50,8 +51,13 @@ const catalogSeedLimiter = rateLimit({
 
 router.post(
   "/admin/shop/catalog/seed",
-  catalogSeedLimiter,
+  // requirePermission (→ requireAdmin) first so the limiter keys on the real
+  // adminUserId and withIdempotency sees an authenticated admin.
   requirePermission("admin.tools.manage"),
+  catalogSeedLimiter,
+  // Replay-safe: a client that sends an Idempotency-Key gets the first
+  // response replayed on a retry/double-submit instead of re-seeding.
+  withIdempotency("POST /admin/shop/catalog/seed"),
   async (req, res) => {
     const orgId = req.orgId?.trim();
     if (!orgId) {

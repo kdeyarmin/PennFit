@@ -780,13 +780,16 @@ export function AdminShopInventoryPage() {
   // empty. The server is idempotent (re-running only updates existing
   // SKUs), so the button is safe to click more than once.
   const [seedOpen, setSeedOpen] = useState(false);
+  // Stable idempotency key per "load catalog" intent, so a retry/double-submit
+  // replays the first response instead of re-seeding (server-side guard).
+  const [seedKey, setSeedKey] = useState<string | null>(null);
   const [seedMsg, setSeedMsg] = useState<
     | { kind: "success"; result: SeedStarterCatalogResult }
     | { kind: "error"; message: string }
     | null
   >(null);
   const seedMutation = useMutation({
-    mutationFn: seedStarterCatalog,
+    mutationFn: () => seedStarterCatalog(seedKey ?? undefined),
     onSuccess: (result) => {
       setSeedMsg({ kind: "success", result });
       setSeedOpen(false);
@@ -809,6 +812,7 @@ export function AdminShopInventoryPage() {
 
   function openSeedConfirm() {
     setSeedMsg(null);
+    setSeedKey(crypto.randomUUID());
     setSeedOpen(true);
   }
 

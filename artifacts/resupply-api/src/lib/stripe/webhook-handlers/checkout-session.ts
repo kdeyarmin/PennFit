@@ -286,10 +286,20 @@ export async function upsertOrderItemsFromSession(
     | undefined,
 ): Promise<OrderConfirmationLineItem[]> {
   const stripe = getStripeClient(config);
-  const lineItems = await stripe.checkout.sessions.listLineItems(session.id, {
-    limit: 100,
-    expand: ["data.price.product"],
-  });
+  // Connect (G6): a connected-account checkout's line items live ON that
+  // account, and the direct-charge event carries it. The dispatcher bound
+  // the tenant via enterWebhookOrg, so resolve its { stripeAccount } the
+  // same way the autopay handlers do. Fail-soft to the platform account
+  // (this whole helper is best-effort) if the tenant can't be resolved.
+  const lineItemsOrgId = await resolveWebhookOrgId();
+  const accountOptions = await stripeAccountRequestOptions(
+    lineItemsOrgId ?? undefined,
+  );
+  const lineItems = await stripe.checkout.sessions.listLineItems(
+    session.id,
+    { limit: 100, expand: ["data.price.product"] },
+    accountOptions,
+  );
 
   const rows: ShopOrderItemInsert[] = [];
   // SKU per row (aligned 1:1 with `rows`), resolved from the expanded
