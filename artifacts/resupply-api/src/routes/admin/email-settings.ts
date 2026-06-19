@@ -102,7 +102,7 @@ router.get(
   adminReadRateLimiter,
   requirePermission("admin.tools.manage"),
   async (req, res) => {
-    const orgId = req.orgId;
+    const orgId = req.orgId?.trim();
     if (!orgId) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;
@@ -130,7 +130,7 @@ router.patch(
       });
       return;
     }
-    const orgId = req.orgId;
+    const orgId = req.orgId?.trim();
     if (!orgId) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;

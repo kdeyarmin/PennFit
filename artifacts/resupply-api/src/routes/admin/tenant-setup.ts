@@ -174,7 +174,7 @@ export function buildTenantSetupItems(
         : set(s.stripeAccountId)
           ? "Stripe account linked — finish onboarding so Stripe enables charges."
           : "Not connected.",
-      href: "/admin/billing/stripe-connect",
+      href: "/admin/billing/config/organization",
       required: true,
     },
 
@@ -201,9 +201,9 @@ export function buildTenantSetupItems(
         "Load products so your storefront isn't empty. Start from a curated CPAP-supply catalog, then edit pricing to match yours.",
       status: "action",
       detail: stripeReady
-        ? "Add products from the Shop products page, or load a starter catalog."
-        : "Connect payments first, then load products.",
-      href: "/admin/shop/products",
+        ? "Add products from the Inventory page so your storefront isn't empty."
+        : "Connect payments first, then add products.",
+      href: "/admin/shop/inventory",
       required: false,
     },
   ];
@@ -280,7 +280,7 @@ router.get(
   adminReadRateLimiter,
   requireAdmin,
   async (req, res) => {
-    const orgId = req.orgId;
+    const orgId = req.orgId?.trim();
     if (!orgId) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;

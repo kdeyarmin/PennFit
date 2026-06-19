@@ -181,8 +181,11 @@ export function createTwilioNumberClient(
           ...(areaCode !== undefined && Number.isFinite(areaCode)
             ? { areaCode }
             : {}),
-          voiceEnabled: wantVoice,
-          smsEnabled: wantSms,
+          // Twilio's voiceEnabled/smsEnabled filter for numbers that LACK
+          // the capability when set to false — so only send the flag when we
+          // actually REQUIRE that capability; omit it otherwise.
+          ...(wantVoice ? { voiceEnabled: true } : {}),
+          ...(wantSms ? { smsEnabled: true } : {}),
           limit: input.limit ?? 10,
         });
       return rows.map((r) => ({

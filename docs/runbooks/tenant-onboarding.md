@@ -98,15 +98,16 @@ self-serve from the admin console. The **Set up your workspace** checklist
 (`/admin/setup`, served by `GET /admin/organization/setup-checklist`) shows
 each step's live status and links to its page:
 
-| Step                 | Page (nav: Settings → …) | Backed by                                                                     |
-| -------------------- | ------------------------ | ----------------------------------------------------------------------------- |
-| Storefront name/logo | Storefront branding      | `organizations.storefront_name` / `logo_url`                                  |
-| Custom domain        | Storefront branding      | `custom_domain*` (see [`tenant-custom-domain.md`](./tenant-custom-domain.md)) |
-| Phone & SMS numbers  | Phone & SMS              | `voice_from_number` / `sms_from_number` / `twilio_messaging_service_sid`      |
-| Fax number           | Fax number               | `fax_from_number` (see **Fax number** above)                                  |
-| Email From address   | Email From address       | `from_email` / `from_name` (+ live SendGrid domain-auth check)                |
-| Payments             | Billing → Stripe Connect | `stripe_account_id` / `stripe_charges_enabled`                                |
-| Team                 | Team                     | `admin_users` invites                                                         |
+| Step                 | Page (nav: Settings → …)                              | Backed by                                                                     |
+| -------------------- | ----------------------------------------------------- | ----------------------------------------------------------------------------- |
+| Storefront name/logo | Storefront branding                                   | `organizations.storefront_name` / `logo_url`                                  |
+| Custom domain        | Storefront branding                                   | `custom_domain*` (see [`tenant-custom-domain.md`](./tenant-custom-domain.md)) |
+| Phone & SMS numbers  | Phone & SMS                                           | `voice_from_number` / `sms_from_number` / `twilio_messaging_service_sid`      |
+| Fax number           | Fax number                                            | `fax_from_number` (see **Fax number** above)                                  |
+| Email From address   | Email From address                                    | `from_email` / `from_name` (+ live SendGrid domain-auth check)                |
+| Payments             | Billing → Config → Organization (Stripe Connect card) | `stripe_account_id` / `stripe_charges_enabled`                                |
+| Catalog              | Shop → Inventory                                      | products (Stripe-sourced)                                                     |
+| Team                 | Team                                                  | `admin_users` invites                                                         |
 
 **Phone & SMS** (`/admin/phone-settings`) mirrors the fax flow but on
 **Twilio**: a tenant can auto-buy a voice+SMS-capable number by area code
@@ -130,7 +131,7 @@ sending **domain** to be authenticated (SPF/DKIM) in SendGrid out of band.
 > shared Stripe account today, so there is no per-tenant "starter catalog"
 > seed yet — a per-tenant catalog requires per-tenant catalog reads (a
 > separate multi-tenant workstream). The checklist's **catalog** item links
-> the tenant to the Shop products page in the meantime.
+> the tenant to the Shop → Inventory page in the meantime.
 
 ## Safety / idempotency
 

@@ -30,7 +30,7 @@ interface FakeOpts {
 }
 
 function makeSdk(opts: FakeOpts = {}) {
-  const listSpy = vi.fn(async () => {
+  const listSpy = vi.fn(async (_listOpts: Record<string, unknown>) => {
     if (opts.listError) throw opts.listError;
     return opts.available ?? [];
   });
@@ -113,6 +113,18 @@ describe("searchAvailableNumbers", () => {
         capabilities: { voice: true, sms: true, mms: false },
       },
     ]);
+  });
+
+  it("omits the capability flag when it is NOT required (Twilio treats false as 'lacks it')", async () => {
+    const { sdk, listSpy } = makeSdk({ available: [] });
+    const client = createTwilioNumberClient({
+      ...BASE_CREDS,
+      sdkFactory: () => sdk,
+    });
+    await client.searchAvailableNumbers({ voice: true, sms: false });
+    const opts = listSpy.mock.calls[0]![0];
+    expect(opts).toMatchObject({ voiceEnabled: true });
+    expect(opts).not.toHaveProperty("smsEnabled");
   });
 
   it("wraps SDK errors as TwilioApiError", async () => {
