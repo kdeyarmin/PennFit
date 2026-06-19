@@ -2542,7 +2542,7 @@ function UnifiedFleet() {
             of compliance.
           </p>
         </div>
-        <div className="bx-logogrid bx-logogrid-merge bx-reveal">
+        <div className="bx-logogrid bx-reveal">
           {DEVICE_CLOUDS.map((c) => (
             <article className="bx-logocard" key={c.mark}>
               <span className="bx-logocard-tag">{c.tag}</span>

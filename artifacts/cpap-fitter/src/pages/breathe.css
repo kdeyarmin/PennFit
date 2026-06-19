@@ -4299,18 +4299,13 @@
 
 /* ───────────── Logo / wordmark cards (UnifiedFleet teaser) ───────────── */
 .bx-logogrid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
-}
-.bx-logogrid-merge {
   display: flex;
   flex-wrap: wrap;
   align-items: stretch;
   justify-content: center;
   gap: 14px;
 }
-.bx-logogrid-merge .bx-logocard {
+.bx-logogrid .bx-logocard {
   flex: 1 1 190px;
   max-width: 230px;
 }
@@ -4365,13 +4360,11 @@
   color: var(--bx-cyan);
 }
 @media (max-width: 700px) {
-  .bx-logogrid,
-  .bx-logogrid-merge {
+  .bx-logogrid {
     flex-direction: column;
-    grid-template-columns: 1fr;
     align-items: stretch;
   }
-  .bx-logogrid-merge .bx-logocard {
+  .bx-logogrid .bx-logocard {
     max-width: none;
   }
   .bx-logogrid-arrow {

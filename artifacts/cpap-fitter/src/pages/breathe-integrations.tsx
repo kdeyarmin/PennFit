@@ -263,7 +263,7 @@ function AiEarlyWarning() {
         </div>
         <div className="bx-alert-tags bx-reveal">
           <span className="bx-alert-tags-label">
-            Signals the scan raises automatically
+            Signals the nightly monitoring raises automatically
           </span>
           <div className="bx-alert-tags-row">
             {ALERT_TAGS.map((t) => (
