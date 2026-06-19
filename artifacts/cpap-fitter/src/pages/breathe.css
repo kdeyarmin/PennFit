@@ -4251,3 +4251,612 @@
     padding: 44px 0 0;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   Integrations + differentiation + education build-out.
+   New sections for the homepage (UnifiedFleet, BuiltInHouse), the
+   Integrations page (breathe-integrations.tsx) and the DME Platform 101
+   page (breathe-learn.tsx). Every selector is .bx-* namespaced and only
+   rendered inside .breathe-page, like the rest of this file — no @theme,
+   no bare element selectors. Reduced motion is covered by the global
+   `.breathe-page *` rule above.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* A small standalone CTA band that shouldn't add a second 104px gap. */
+.bx-section-tight {
+  padding-top: 0;
+}
+
+/* Homepage integrations strip — make it a link into /breathe/integrations. */
+.bx-integrations-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 22px;
+}
+.bx-integrations-head .bx-integrations-label {
+  margin: 0;
+}
+.bx-integrations-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--bx-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--bx-cyan);
+  text-decoration: none;
+  transition:
+    gap 0.2s ease,
+    color 0.2s ease;
+}
+.bx-integrations-link:hover {
+  gap: 10px;
+  color: var(--bx-text);
+}
+
+/* ───────────── Logo / wordmark cards (UnifiedFleet teaser) ───────────── */
+.bx-logogrid {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  justify-content: center;
+  gap: 14px;
+}
+.bx-logogrid .bx-logocard {
+  flex: 1 1 190px;
+  max-width: 230px;
+}
+.bx-logogrid-arrow {
+  display: grid;
+  place-items: center;
+  color: var(--bx-cyan);
+  flex: 0 0 auto;
+  padding: 0 2px;
+}
+.bx-logocard {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: center;
+  text-align: center;
+  padding: 22px 20px;
+  border-radius: 16px;
+  background: var(--bx-panel);
+  border: 1px solid var(--bx-line);
+  backdrop-filter: blur(10px);
+}
+.bx-logocard-tag {
+  font-family: var(--bx-mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--bx-text-faint);
+}
+.bx-logocard-mark {
+  font-family: var(--bx-display);
+  font-size: 23px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--bx-text);
+}
+.bx-logocard-sub {
+  font-size: 12.5px;
+  color: var(--bx-text-dim);
+}
+.bx-logocard-unified {
+  border-color: var(--bx-line-strong);
+  background: linear-gradient(
+    135deg,
+    rgba(84, 200, 255, 0.14),
+    rgba(47, 111, 230, 0.06)
+  );
+  box-shadow: 0 18px 44px -22px rgba(8, 20, 55, 0.9);
+}
+.bx-logocard-unified .bx-logocard-tag {
+  color: var(--bx-cyan);
+}
+@media (max-width: 700px) {
+  .bx-logogrid {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .bx-logogrid .bx-logocard {
+    max-width: none;
+  }
+  .bx-logogrid-arrow {
+    transform: rotate(90deg);
+  }
+}
+
+/* ───────────── "Built in-house, not bolted on" vs band ───────────── */
+.bx-vs {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 18px;
+  align-items: stretch;
+}
+@media (max-width: 860px) {
+  .bx-vs {
+    grid-template-columns: 1fr;
+  }
+}
+.bx-vs-col {
+  padding: 28px;
+  border-radius: 18px;
+  background: var(--bx-panel);
+  border: 1px solid var(--bx-line);
+  backdrop-filter: blur(10px);
+}
+.bx-vs-col header {
+  margin-bottom: 18px;
+}
+.bx-vs-kicker {
+  font-family: var(--bx-mono);
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--bx-text-faint);
+}
+.bx-vs-col header h3 {
+  font-family: var(--bx-display);
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 8px 0 0;
+  color: var(--bx-text);
+}
+.bx-vs-legacy {
+  border-style: dashed;
+}
+.bx-vs-native {
+  border-color: var(--bx-line-strong);
+  background: linear-gradient(
+    160deg,
+    rgba(20, 32, 62, 0.62),
+    rgba(11, 20, 42, 0.78)
+  );
+}
+.bx-vs-native .bx-vs-kicker {
+  color: var(--bx-cyan);
+}
+.bx-vs-divider {
+  display: grid;
+  place-items: center;
+}
+.bx-vs-divider span {
+  font-family: var(--bx-mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--bx-text-faint);
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--bx-line);
+  background: var(--bx-panel-3);
+}
+.bx-vs-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 11px;
+}
+.bx-vs-list li {
+  position: relative;
+  padding-left: 26px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--bx-text-dim);
+}
+.bx-vs-list li::before {
+  content: "✕";
+  position: absolute;
+  left: 4px;
+  top: 0;
+  color: var(--bx-text-faint);
+  font-size: 13px;
+}
+.bx-vs-list-good li::before {
+  content: "✓";
+  color: var(--bx-mint);
+}
+.bx-vs-native-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 14px;
+}
+.bx-vs-native-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.bx-vs-ic {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  color: var(--bx-cyan);
+  background: linear-gradient(
+    135deg,
+    rgba(84, 200, 255, 0.16),
+    rgba(47, 111, 230, 0.08)
+  );
+  border: 1px solid var(--bx-line-strong);
+}
+.bx-vs-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.bx-vs-text b {
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--bx-text);
+}
+.bx-vs-text i {
+  font-style: normal;
+  font-size: 13px;
+  color: var(--bx-text-dim);
+}
+
+/* ───────────── Login sprawl ("today" state) ───────────── */
+.bx-sprawl {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 18px;
+}
+@media (max-width: 760px) {
+  .bx-sprawl {
+    grid-template-columns: 1fr;
+  }
+}
+.bx-sprawl-node {
+  position: relative;
+  padding: 28px 24px;
+  border-radius: 18px;
+  background: var(--bx-panel-2);
+  border: 1px dashed var(--bx-line-strong);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+}
+.bx-sprawl-mark {
+  font-family: var(--bx-display);
+  font-size: 26px;
+  font-weight: 600;
+  color: var(--bx-text);
+}
+.bx-sprawl-sub {
+  font-size: 13.5px;
+  color: var(--bx-text-dim);
+}
+.bx-sprawl-tag {
+  margin-top: 8px;
+  font-family: var(--bx-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--bx-gold-soft);
+  border: 1px solid rgba(246, 167, 34, 0.34);
+  border-radius: 100px;
+  padding: 5px 12px;
+}
+.bx-sprawl-foot {
+  margin: 26px auto 0;
+  max-width: 640px;
+  text-align: center;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--bx-text-faint);
+}
+
+/* ───────────── Unified fleet table ───────────── */
+.bx-fleet-wrap {
+  border-radius: 18px;
+  border: 1px solid var(--bx-line);
+  background: var(--bx-panel);
+  backdrop-filter: blur(10px);
+  overflow-x: auto;
+}
+.bx-fleet {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+  min-width: 660px;
+}
+.bx-fleet th,
+.bx-fleet td {
+  text-align: left;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--bx-line);
+  white-space: nowrap;
+}
+.bx-fleet thead th {
+  font-family: var(--bx-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--bx-text-faint);
+  font-weight: 600;
+}
+.bx-fleet td {
+  color: var(--bx-text-dim);
+}
+.bx-fleet tbody tr:last-child td {
+  border-bottom: none;
+}
+.bx-fleet tbody tr:hover td {
+  background: rgba(84, 200, 255, 0.04);
+}
+.bx-fleet-name {
+  font-weight: 600;
+  color: var(--bx-text);
+}
+.bx-fleet-chip {
+  font-family: var(--bx-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--bx-cyan);
+  border: 1px solid var(--bx-line-strong);
+  border-radius: 7px;
+  padding: 3px 8px;
+  background: rgba(84, 200, 255, 0.06);
+}
+.bx-fleet-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  border-radius: 100px;
+  padding: 4px 11px;
+}
+.bx-fleet-status::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.bx-fleet-status.is-ok {
+  color: var(--bx-mint);
+  background: rgba(111, 240, 194, 0.1);
+}
+.bx-fleet-status.is-warn {
+  color: var(--bx-gold-soft);
+  background: rgba(246, 167, 34, 0.12);
+}
+.bx-fleet-status.is-info {
+  color: var(--bx-text-dim);
+  background: rgba(120, 160, 230, 0.1);
+}
+.bx-fleet-foot {
+  margin: 18px auto 0;
+  max-width: 720px;
+  text-align: center;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--bx-text-faint);
+}
+
+/* ───────────── AI early-warning timeline ───────────── */
+.bx-alertline {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+@media (max-width: 900px) {
+  .bx-alertline {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+@media (max-width: 560px) {
+  .bx-alertline {
+    grid-template-columns: 1fr;
+  }
+}
+.bx-alert-node {
+  position: relative;
+  padding: 24px 22px;
+  border-radius: 16px;
+  background: var(--bx-panel);
+  border: 1px solid var(--bx-line);
+  backdrop-filter: blur(10px);
+}
+.bx-alert-idx {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  font-family: var(--bx-mono);
+  font-weight: 700;
+  font-size: 14px;
+  color: #05101f;
+  background: linear-gradient(135deg, #7ed7ff, #6aa6ff);
+  margin-bottom: 16px;
+}
+.bx-alert-body h3 {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0 0 7px;
+  color: var(--bx-text);
+}
+.bx-alert-body p {
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--bx-text-dim);
+  margin: 0;
+}
+.bx-alert-tags {
+  margin-top: 24px;
+  padding: 22px 24px;
+  border-radius: 16px;
+  border: 1px solid var(--bx-line);
+  background: var(--bx-panel-2);
+}
+.bx-alert-tags-label {
+  display: block;
+  font-family: var(--bx-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--bx-text-faint);
+  margin-bottom: 14px;
+}
+.bx-alert-tags-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+.bx-alert-tag {
+  font-family: var(--bx-mono);
+  font-size: 12px;
+  border-radius: 8px;
+  padding: 6px 11px;
+  border: 1px solid var(--bx-line);
+  color: var(--bx-text-dim);
+}
+.bx-alert-tag.is-risk {
+  color: var(--bx-gold-soft);
+  border-color: rgba(246, 167, 34, 0.4);
+  background: rgba(246, 167, 34, 0.08);
+}
+.bx-alert-tag.is-warn {
+  color: var(--bx-cyan);
+  border-color: var(--bx-line-strong);
+  background: rgba(84, 200, 255, 0.06);
+}
+.bx-alert-tag.is-info {
+  color: var(--bx-text-dim);
+  background: rgba(120, 160, 230, 0.06);
+}
+
+/* ───────────── Integration (device cloud / payer) cards ───────────── */
+.bx-intgrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 18px;
+}
+@media (max-width: 900px) {
+  .bx-intgrid {
+    grid-template-columns: 1fr;
+  }
+}
+.bx-intcard {
+  padding: 26px 28px;
+  border-radius: 18px;
+  background: var(--bx-panel);
+  border: 1px solid var(--bx-line);
+  backdrop-filter: blur(10px);
+  transition:
+    transform 0.25s ease,
+    border-color 0.25s ease,
+    box-shadow 0.25s ease;
+}
+.bx-intcard:hover {
+  transform: translateY(-3px);
+  border-color: var(--bx-line-strong);
+  box-shadow: 0 24px 50px -22px rgba(8, 20, 55, 0.9);
+}
+.bx-intcard.gold {
+  border-color: rgba(246, 167, 34, 0.32);
+}
+.bx-intcard-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+.bx-intcard-mark {
+  font-family: var(--bx-display);
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--bx-text);
+}
+.bx-intcard-tag {
+  font-family: var(--bx-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--bx-cyan);
+  border: 1px solid var(--bx-line-strong);
+  border-radius: 100px;
+  padding: 4px 10px;
+  white-space: nowrap;
+}
+.bx-intcard.gold .bx-intcard-tag {
+  color: var(--bx-gold-soft);
+  border-color: rgba(246, 167, 34, 0.4);
+}
+.bx-intcard-sub {
+  font-size: 13px;
+  color: var(--bx-text-dim);
+  margin: 0 0 16px;
+}
+
+/* ───────────── DME Platform 101 (education) ───────────── */
+.bx-learn-lead {
+  max-width: 760px;
+  margin: 0 auto;
+  display: grid;
+  gap: 18px;
+  padding: 32px 34px;
+  border-radius: 20px;
+  background: var(--bx-panel);
+  border: 1px solid var(--bx-line);
+  backdrop-filter: blur(10px);
+}
+.bx-learn-lead p {
+  font-size: 17px;
+  line-height: 1.7;
+  color: var(--bx-text-dim);
+  margin: 0;
+}
+.bx-glossary {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  margin: 0;
+}
+@media (max-width: 760px) {
+  .bx-glossary {
+    grid-template-columns: 1fr;
+  }
+}
+.bx-glossary-item {
+  padding: 22px 24px;
+  border-radius: 16px;
+  background: var(--bx-panel);
+  border: 1px solid var(--bx-line);
+  backdrop-filter: blur(10px);
+}
+.bx-glossary-term {
+  font-family: var(--bx-display);
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--bx-text);
+  margin: 0 0 8px;
+}
+.bx-glossary-def {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--bx-text-dim);
+  margin: 0;
+}

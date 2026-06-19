@@ -24,10 +24,10 @@ import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DRIZZLE_DIR = path.resolve(__dirname, "../drizzle");
+const MIGRATIONS_DIR = path.resolve(__dirname, "../migrations");
 
 function readMigration(filename: string): string {
-  return fs.readFileSync(path.join(DRIZZLE_DIR, filename), "utf8");
+  return fs.readFileSync(path.join(MIGRATIONS_DIR, filename), "utf8");
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

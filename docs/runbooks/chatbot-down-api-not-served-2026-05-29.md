@@ -79,7 +79,7 @@ Why the real server never goes live:
 3. The production Supabase DB (**PennPaps**, project `uppdjphagdildcgkvdsz`)
    was provisioned by 8 Supabase-native migrations, **not** the repo's
    migration system, and was **missing `resupply.feature_flags`** entirely
-   (`drizzle.resupply_migrations` history schema is also absent; `auth.users`
+   (`migrations.resupply_migrations` history schema is also absent; `auth.users`
    is empty).
 4. Missing table → `/readyz` 503 → Railway marks the deploy unhealthy →
    it is **never promoted** → the previous static-SPA deploy stays live →
@@ -93,7 +93,7 @@ success), and the system prompt is 76,692 chars (under the 80k cap).
 
 ### 1. Create `resupply.feature_flags` — ✅ done 2026-05-29
 
-Applied repo migration `lib/resupply-db/drizzle/0149_feature_flags.sql`
+Applied repo migration `lib/resupply-db/migrations/0149_feature_flags.sql`
 (additive + idempotent) to the PennPaps Supabase project. Verify:
 
 ```sql
@@ -103,7 +103,7 @@ select key, enabled from resupply.feature_flags order by key;
 
 > Note: this is a **targeted** fix for the healthcheck blocker, not a full
 > reconciliation. The production DB is broadly out of sync with the repo's
-> migrations (e.g. no `drizzle.resupply_migrations`, `auth.users` empty,
+> migrations (e.g. no `migrations.resupply_migrations`, `auth.users` empty,
 > `resupply.masks` absent — the chatbot uses the static `maskCatalog.ts` so
 > that one doesn't affect it). A separate migration-reconciliation effort
 > is warranted; see `docs/migration-state-investigation-2026-05-08.md`.
