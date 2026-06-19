@@ -910,6 +910,7 @@ export function BreatheHome() {
       <Replaces />
       <Outcomes />
       <PricingHome />
+      <FoundingPartner />
       <ClosingCta />
     </BreatheShell>
   );
@@ -3688,6 +3689,10 @@ const PLANS: {
   name: string;
   price: string;
   cadence: string;
+  // Monthly list price in cents, used to derive the annual (2-months-free)
+  // option in the billing toggle. null for custom/contact tiers, which never
+  // show a derived annual number.
+  monthlyCents: number | null;
   setup: string;
   blurb: string;
   highlights: string[];
@@ -3697,6 +3702,7 @@ const PLANS: {
     name: "Launch",
     price: "$799",
     cadence: "/mo",
+    monthlyCents: 79900,
     setup: "+ $2,500 one-time onboarding",
     blurb: "Branded storefront and core resupply automation for a small DME.",
     highlights: [
@@ -3710,6 +3716,7 @@ const PLANS: {
     name: "Growth",
     price: "$1,899",
     cadence: "/mo",
+    monthlyCents: 189900,
     setup: "+ $5,000 one-time onboarding",
     blurb:
       "Full resupply operations, outreach, documents, and billing worklists.",
@@ -3725,6 +3732,7 @@ const PLANS: {
     name: "Scale",
     price: "$3,999",
     cadence: "/mo",
+    monthlyCents: 399900,
     setup: "+ $10,000 one-time onboarding",
     blurb:
       "Multi-location automation, analytics, and AI controls at higher volume.",
@@ -3739,6 +3747,7 @@ const PLANS: {
     name: "Enterprise",
     price: "Custom",
     cadence: "",
+    monthlyCents: null,
     setup: "Contracted volume + SLA",
     blurb:
       "For high-volume DME operations needing custom integration and support.",
@@ -3833,6 +3842,7 @@ function liveToPlanCards(plans: PublicPlan[]): PlanCard[] {
         ? "Contact us"
         : dollars(p.monthlyPriceCents),
     cadence: p.isCustom || p.monthlyPriceCents == null ? "" : "/mo",
+    monthlyCents: p.isCustom ? null : p.monthlyPriceCents,
     setup: p.isCustom
       ? "Contracted volume + SLA"
       : p.onboardingFeeCents != null && p.onboardingFeeCents > 0
@@ -3997,48 +4007,122 @@ function liveToAddonGroups(addons: PublicAddon[]): typeof ADDON_GROUPS {
   return order.map((group) => ({ group, items: byLabel.get(group)! }));
 }
 
+type BillingMode = "monthly" | "annual";
+
+// Annual billing = pay for 10 months, get 12 (two months free). Returns the
+// values a plan card shows in annual mode, or null when the tier has no
+// derivable price (Custom / Contact us) and should fall back to its monthly
+// string unchanged.
+function annualView(
+  monthlyCents: number | null,
+): { effMonthly: string; perYear: string; saved: string } | null {
+  if (monthlyCents == null || monthlyCents <= 0) return null;
+  const perYearCents = monthlyCents * 10;
+  return {
+    effMonthly: dollars(Math.round(perYearCents / 12)),
+    perYear: dollars(perYearCents),
+    saved: dollars(monthlyCents * 2),
+  };
+}
+
+/** Monthly ⇄ annual segmented control. Controlled by the parent so the
+ *  landing teaser and the full pricing page each own their own state. */
+function BillingToggle({
+  mode,
+  onChange,
+}: {
+  mode: BillingMode;
+  onChange: (m: BillingMode) => void;
+}) {
+  return (
+    <div
+      className="bx-billtoggle bx-reveal"
+      role="radiogroup"
+      aria-label="Billing period"
+    >
+      <button
+        type="button"
+        role="radio"
+        aria-checked={mode === "monthly"}
+        className={"bx-billtoggle-opt" + (mode === "monthly" ? " on" : "")}
+        onClick={() => onChange("monthly")}
+      >
+        Monthly
+      </button>
+      <button
+        type="button"
+        role="radio"
+        aria-checked={mode === "annual"}
+        className={"bx-billtoggle-opt" + (mode === "annual" ? " on" : "")}
+        onClick={() => onChange("annual")}
+      >
+        Annual
+        <span className="bx-billtoggle-save">2 months free</span>
+      </button>
+    </div>
+  );
+}
+
 /** The four subscription packages. Reused on the landing page + pricing page.
  *  `cards` defaults to the static PLANS but is fed live catalog data by the
- *  Pricing section when the public pricing endpoint responds. */
-function PricingPlans({ cards = PLANS }: { cards?: PlanCard[] }) {
+ *  Pricing section when the public pricing endpoint responds. `billing`
+ *  switches every priced card between its monthly rate and the annual
+ *  (2-months-free) equivalent. */
+function PricingPlans({
+  cards = PLANS,
+  billing = "monthly",
+}: {
+  cards?: PlanCard[];
+  billing?: BillingMode;
+}) {
   return (
     <div className="bx-plan-grid">
-      {cards.map((p) => (
-        <div
-          className={"bx-plan bx-reveal" + (p.featured ? " featured" : "")}
-          key={p.name}
-        >
-          {p.featured ? (
-            <span className="bx-plan-badge">Most popular</span>
-          ) : null}
-          <div className="bx-plan-name">{p.name}</div>
-          <div className="bx-plan-price">
-            <span className="bx-plan-amt">{p.price}</span>
-            {p.cadence ? (
-              <span className="bx-plan-cadence">{p.cadence}</span>
-            ) : null}
-          </div>
-          <div className="bx-plan-setup">{p.setup}</div>
-          <p className="bx-plan-blurb">{p.blurb}</p>
-          <ul className="bx-plan-list">
-            {p.highlights.map((h) => (
-              <li key={h}>
-                <Check size={15} />
-                {h}
-              </li>
-            ))}
-          </ul>
-          <Link
-            className={
-              "bx-btn bx-btn-sm " +
-              (p.featured ? "bx-btn-primary" : "bx-btn-ghost")
-            }
-            href="/breathe/signup"
+      {cards.map((p) => {
+        const annual = billing === "annual" ? annualView(p.monthlyCents) : null;
+        return (
+          <div
+            className={"bx-plan bx-reveal" + (p.featured ? " featured" : "")}
+            key={p.name}
           >
-            Create your account
-          </Link>
-        </div>
-      ))}
+            {p.featured ? (
+              <span className="bx-plan-badge">Most popular</span>
+            ) : null}
+            <div className="bx-plan-name">{p.name}</div>
+            <div className="bx-plan-price">
+              <span className="bx-plan-amt">
+                {annual ? annual.effMonthly : p.price}
+              </span>
+              {p.cadence ? (
+                <span className="bx-plan-cadence">{p.cadence}</span>
+              ) : null}
+            </div>
+            {annual ? (
+              <div className="bx-plan-annual">
+                {annual.perYear}/yr billed annually · <b>save {annual.saved}</b>
+              </div>
+            ) : null}
+            <div className="bx-plan-setup">{p.setup}</div>
+            <p className="bx-plan-blurb">{p.blurb}</p>
+            <ul className="bx-plan-list">
+              {p.highlights.map((h) => (
+                <li key={h}>
+                  <Check size={15} />
+                  {h}
+                </li>
+              ))}
+            </ul>
+            <Link
+              className={
+                "bx-btn bx-btn-sm " +
+                (p.featured ? "bx-btn-primary" : "bx-btn-ghost")
+              }
+              href="/breathe/signup"
+            >
+              Create your account
+            </Link>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -4123,6 +4207,7 @@ function PricingAddons({
 function Pricing() {
   const { open: openDemoGate } = useDemoGate();
   const live = usePublicPricing();
+  const [billing, setBilling] = useState<BillingMode>("monthly");
   const cards = live ? liveToPlanCards(live.plans) : PLANS;
   const groups =
     live && live.addons.length > 0
@@ -4139,14 +4224,15 @@ function Pricing() {
             Pick a package, <em>add only what you need</em>
           </h2>
           <p className="bx-lede">
-            Transparent subscription tiers sized to your patient base —
-            month-to-month, with onboarding and migration included. Upload a CSV
-            of your patients and you&apos;re live on day one, and your data
-            stays yours — always exportable (back out to PacWare too). License
-            premium modules à la carte.
+            Transparent subscription tiers sized to your patient base — monthly
+            or annual (two months free), with onboarding and migration included.
+            Upload a CSV of your patients and you&apos;re live on day one, and
+            your data stays yours — always exportable (back out to PacWare too).
+            License premium modules à la carte.
           </p>
         </div>
-        <PricingPlans cards={cards} />
+        <BillingToggle mode={billing} onChange={setBilling} />
+        <PricingPlans cards={cards} billing={billing} />
         <PricingAddons groups={groups} />
         <div className="bx-price-cta bx-reveal">
           <span>Not sure which package fits?</span>
@@ -4166,6 +4252,7 @@ function Pricing() {
 /* Landing-page pricing — packages up front with an add-ons teaser; the full
    catalog lives on /breathe/pricing. */
 function PricingHome() {
+  const [billing, setBilling] = useState<BillingMode>("monthly");
   return (
     <section className="bx-section">
       <div className="bx-shell">
@@ -4177,13 +4264,14 @@ function PricingHome() {
             One platform, <em>packaged for your size</em>
           </h2>
           <p className="bx-lede">
-            Subscription tiers sized to your patient base — month-to-month, with
-            onboarding and migration included. Upload a CSV of your patients and
-            you&apos;re live on day one. Add premium modules only when you need
-            them.
+            Subscription tiers sized to your patient base — monthly or annual
+            (two months free), with onboarding and migration included. Upload a
+            CSV of your patients and you&apos;re live on day one. Add premium
+            modules only when you need them.
           </p>
         </div>
-        <PricingPlans />
+        <BillingToggle mode={billing} onChange={setBilling} />
+        <PricingPlans billing={billing} />
         <div className="bx-addons-teaser bx-reveal">
           <Plug size={15} />
           <span>
@@ -4692,6 +4780,81 @@ function Audiences() {
           {AUDIENCES.map((c) => (
             <CapCard c={c} key={c.title} />
           ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ───────────────────────── Founding partner ─────────────────────────
+ * Turns "pre-launch" into the pitch instead of hiding it. CareMetric
+ * Breathe is newly launched, so rather than fake logos or testimonials we
+ * make an honest early-access offer: a small cohort of founding DME
+ * partners who lock in founding pricing, get a direct line to the team,
+ * and help shape the roadmap. Reuses the .bx-pillar grid + .bx-cta button
+ * styles, so it needs only a thin wrapper of new CSS. */
+const FOUNDING_PERKS: { icon: React.ReactNode; title: string; body: string }[] =
+  [
+    {
+      icon: <CircleDollarSign size={20} />,
+      title: "Founding pricing, locked in",
+      body: "Lock today's rate for the life of your account — it never goes up as we add capabilities and the list price does.",
+    },
+    {
+      icon: <GitBranch size={20} />,
+      title: "Shape the roadmap",
+      body: "A direct line to the people building Breathe. The features you need get prioritized because you asked for them.",
+    },
+    {
+      icon: <Headphones size={20} />,
+      title: "White-glove migration",
+      body: "We sit with you through the CSV import, your first resupply run, and your first claim batch — hands-on, not a ticket queue.",
+    },
+  ];
+
+function FoundingPartner() {
+  const { open: openDemoGate } = useDemoGate();
+  return (
+    <section className="bx-section bx-founding-section" id="founding">
+      <div className="bx-shell">
+        <div className="bx-founding bx-reveal">
+          <div className="bx-section-head center">
+            <span className="bx-eyebrow">
+              <Sparkles size={13} /> Early access
+            </span>
+            <h2 className="bx-h2">Become a founding DME partner</h2>
+            <p className="bx-lede">
+              Breathe is newly launched, and we&apos;re onboarding a small group
+              of founding providers by hand. Get in early and you don&apos;t
+              just use the platform — you help shape it, at a price that never
+              moves.
+            </p>
+          </div>
+          <div className="bx-founding-grid">
+            {FOUNDING_PERKS.map((p) => (
+              <article className="bx-founding-perk" key={p.title}>
+                <span className="bx-founding-ic">{p.icon}</span>
+                <h3>{p.title}</h3>
+                <p>{p.body}</p>
+              </article>
+            ))}
+          </div>
+          <div className="bx-founding-cta">
+            <Link className="bx-btn bx-btn-gold" href="/breathe/signup">
+              Claim a founding spot <ArrowRight size={17} />
+            </Link>
+            <button
+              type="button"
+              className="bx-btn bx-btn-ghost"
+              onClick={() => openDemoGate("breathe-founding")}
+            >
+              See it first
+            </button>
+          </div>
+          <p className="bx-founding-fine">
+            No credit card to start · founding terms confirmed in writing before
+            you commit
+          </p>
         </div>
       </div>
     </section>
