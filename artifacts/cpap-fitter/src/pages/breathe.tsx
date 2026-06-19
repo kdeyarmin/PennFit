@@ -1054,6 +1054,7 @@ const NAV_LINKS: { href: string; label: string }[] = [
   { href: "/breathe/integrations", label: "Integrations" },
   { href: "/breathe/why", label: "Why Breathe" },
   { href: "/breathe/compare", label: "Compare" },
+  { href: "/breathe/case-studies", label: "Case studies" },
   { href: "/breathe/pricing", label: "Pricing" },
 ];
 
@@ -1069,6 +1070,7 @@ const FOOTER_LINKS: { href: string; label: string }[] = [
   { href: "/breathe/roi", label: "ROI" },
   { href: "/breathe/pricing", label: "Pricing" },
   { href: "/breathe/security", label: "Security" },
+  { href: "/breathe/case-studies", label: "Case studies" },
   { href: "/breathe/faq", label: "FAQ" },
 ];
 

@@ -2296,6 +2296,84 @@
   background: linear-gradient(135deg, var(--bx-cyan), var(--bx-blue));
   box-shadow: 0 0 10px rgba(84, 200, 255, 0.5);
 }
+/* Case-studies page (breathe-case-studies.tsx). Industry cards reuse .bx-cap
+   but stack situation/approach/points/source as siblings, so give them an even
+   flex-gap and bottom-align the cited source. */
+.bx-cs-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.bx-cs-card .bx-cap-head {
+  margin-bottom: 0;
+}
+.bx-cap-tag {
+  display: block;
+  font-family: var(--bx-mono);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--bx-cyan);
+}
+.bx-cap.gold .bx-cap-tag {
+  color: var(--bx-gold-soft);
+}
+.bx-stat-num.gold {
+  background: linear-gradient(120deg, var(--bx-gold-soft), var(--bx-gold));
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+/* The honesty callout that frames the Breathe scenario as modeled, not real. */
+.bx-cs-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  max-width: 860px;
+  margin: 0 auto 22px;
+  padding: 16px 20px;
+  border: 1px solid var(--bx-line-strong);
+  border-radius: 14px;
+  background: rgba(246, 167, 34, 0.06);
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--bx-text-dim);
+}
+.bx-cs-note svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--bx-gold-soft);
+}
+.bx-cs-note a {
+  color: var(--bx-cyan);
+  font-weight: 600;
+  text-decoration: none;
+}
+.bx-cs-note a:hover {
+  text-decoration: underline;
+}
+.bx-cs-profile {
+  max-width: 760px;
+  margin: 0 auto 22px;
+  text-align: center;
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--bx-text-dim);
+}
+.bx-cs-basis {
+  margin-top: 8px;
+  font-family: var(--bx-mono);
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--bx-text-faint);
+}
+.bx-cs-cta {
+  display: flex;
+  gap: 14px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-top: 30px;
+}
+
 /* Three-up variant for short bands (e.g. the Compare "why it's different"
    payoff) so an odd card count doesn't orphan on the 2-col default. */
 .bx-caps-3 {

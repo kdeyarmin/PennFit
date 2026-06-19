@@ -113,6 +113,14 @@ in response. Source pages live in
   section on the home page (independent / multi-site / sleep-CPAP / RCM-led),
   reusing the exported `CapCard` + `.bx-caps` grid. Complements the role-based
   personas on `/breathe/why`; capability-based, no customer claims.
+- **Case-studies page** (`/breathe/case-studies`, linked in nav + footer) —
+  "AI in DME" industry case studies grounded in **published industry
+  benchmarks** (resupply automation, AI revenue cycle, therapy monitoring),
+  plus a CareMetric Breathe study **explicitly labeled as an illustrative,
+  modeled scenario** (a representative ~2,500-patient provider, figures
+  modeled from those benchmarks + the ROI methodology) — **not a real
+  customer**. This is the honest stand-in until there's a real pilot to cite
+  (see backlog #3).
 
 ## Backlog — revisit once there are real customers
 
