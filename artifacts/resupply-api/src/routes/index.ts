@@ -28,6 +28,7 @@ import conversationsSearchRouter from "./admin/conversations-search.js";
 import conversationDraftReplyRouter from "./admin/conversation-draft-reply.js";
 import clickToDialRouter from "./admin/click-to-dial.js";
 import shopOrdersAdminRouter from "./admin/shop-orders.js";
+import xpsShippingAdminRouter from "./admin/xps-shipping.js";
 import counterOrdersRouter from "./admin/counter-orders.js";
 import csrOrderRequestsAdminRouter from "./admin/csr-order-requests.js";
 import shopProductsAdminRouter from "./admin/shop-products.js";
@@ -695,6 +696,11 @@ router.use(storefrontBrandingAdminRouter);
 // (tracking entry, mark-delivered, address override, refund issuance).
 // requireAdmin gate is on the router itself.
 router.use(shopOrdersAdminRouter);
+// /admin/shipping/xps/* + /admin/shop/orders/:orderId/shipping/* — XPS
+// Ship shipping-label integration: rate-shop, merge the patient address
+// onto a label, book + print it, and auto-fill tracking. requirePermission
+// gate is on each route.
+router.use(xpsShippingAdminRouter);
 // /admin/shop/counter-orders — Front Desk walk-in ordering. A CSR rings
 // up a cash or bill-to-insurance order for a walk-in customer without
 // Stripe Hosted Checkout. requirePermission("orders.create") gate is on

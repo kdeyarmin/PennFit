@@ -371,6 +371,11 @@ const AdminPacwarePage = lazyWithRetry(() =>
     default: m.AdminPacwarePage,
   })),
 );
+const AdminShippingPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-shipping").then((m) => ({
+    default: m.AdminShippingPage,
+  })),
+);
 const AdminSystemConfigurationPage = lazyWithRetry(() =>
   import("@/pages/admin/admin-system-configuration").then((m) => ({
     default: m.AdminSystemConfigurationPage,
@@ -1178,6 +1183,7 @@ function AdminConsole() {
               component={AdminIntegrationsPage}
             />
             <Route path="/admin/pacware" component={AdminPacwarePage} />
+            <Route path="/admin/shipping" component={AdminShippingPage} />
             <Route
               path="/admin/system/configuration"
               component={AdminSystemConfigurationPage}

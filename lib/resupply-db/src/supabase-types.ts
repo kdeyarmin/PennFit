@@ -5039,6 +5039,13 @@ export interface Database {
           source: string;
           payment_method: string | null;
           counter_csr_email: string | null;
+          // Migration 0404: XPS Ship shipping-label integration.
+          // xps_book_number is the booked shipment lookup key;
+          // xps_label_status tracks 'staged' | 'booked' | 'voided';
+          // shipping_service_code is the chosen carrier service.
+          xps_book_number: string | null;
+          xps_label_status: "staged" | "booked" | "voided" | null;
+          shipping_service_code: string | null;
         };
         Insert: Partial<Database["resupply"]["Tables"]["shop_orders"]["Row"]>;
         Update: Partial<Database["resupply"]["Tables"]["shop_orders"]["Row"]>;

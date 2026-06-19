@@ -584,6 +584,14 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             hint: "Storefront orders — fulfill, refund, look up",
           },
           {
+            href: "/admin/shipping",
+            label: "Shipping labels",
+            icon: TruckIcon,
+            matchPrefix: "/admin/shipping",
+            requiredPermission: "returns.manage",
+            hint: "Print XPS shipping labels with the patient address merged in; tracking auto-fills",
+          },
+          {
             href: "/admin/shop/subscriptions",
             label: "Subscriptions",
             icon: Repeat,

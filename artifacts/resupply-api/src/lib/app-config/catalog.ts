@@ -92,6 +92,7 @@ export const CATEGORY_CARE = "Therapy cloud — Philips Care Orchestrator";
 export const CATEGORY_REACT_HEALTH =
   "Therapy cloud — 3B Medical (React Health)";
 export const CATEGORY_OFFICE_ALLY = "Clearinghouse (Office Ally)";
+export const CATEGORY_XPS_SHIP = "Shipping labels (XPS Ship)";
 export const CATEGORY_REMINDERS = "Resupply reminders";
 
 export const APP_CONFIG_CATALOG: readonly AppConfigSetting[] = [
@@ -551,6 +552,144 @@ export const APP_CONFIG_CATALOG: readonly AppConfigSetting[] = [
     description:
       "API key for Office Ally's real-time eligibility REST API, sent verbatim in the Authorization header. Separate from the SFTP key. Used as the fallback when a saved clearinghouse connection row has no key stored on it.",
   },
+  // ── XPS Ship shipping-label integration ──────────────────────────
+  // Each DME brings its own XPS Ship account. These are tenant-scoped
+  // (CATEGORY_XPS_SHIP is a tenant business category) and read at call
+  // time by createXpsShipAdapter(getEffectiveEnvForOrg(orgId)), so a
+  // saved value takes effect "live" (no restart). The integration stays
+  // dormant until the API key + customer id + integration id + a
+  // ship-from address (name / line 1 / city / state / zip) are all set.
+  {
+    key: "XPS_SHIP_API_KEY",
+    label: "XPS API key",
+    category: CATEGORY_XPS_SHIP,
+    secret: true,
+    applyMode: "live",
+    description:
+      "XPS Ship REST API key, sent as the `Authorization: RSIS <key>` header. Generate it in XPS Webship → Settings → API.",
+  },
+  {
+    key: "XPS_SHIP_CUSTOMER_ID",
+    label: "XPS customer id",
+    category: CATEGORY_XPS_SHIP,
+    secret: false,
+    applyMode: "live",
+    description: "Your XPS customer id (the :customerId URL segment).",
+    placeholder: "CUST00001",
+  },
+  {
+    key: "XPS_SHIP_INTEGRATION_ID",
+    label: "REST API integration id",
+    category: CATEGORY_XPS_SHIP,
+    secret: false,
+    applyMode: "live",
+    description:
+      "The REST API integration id created in XPS Webship → Settings, used on the Put-Order endpoint.",
+  },
+  {
+    key: "XPS_SHIP_API_BASE_URL",
+    label: "API base URL (optional)",
+    category: CATEGORY_XPS_SHIP,
+    secret: false,
+    applyMode: "live",
+    description:
+      "Override the XPS REST base URL (default https://xpsshipper.com/restapi/v1). Leave blank for production.",
+    placeholder: "https://xpsshipper.com/restapi/v1",
+  },
+  {
+    key: "XPS_SHIP_LABEL_FORMAT",
+    label: "Label format",
+    category: CATEGORY_XPS_SHIP,
+    secret: false,
+    applyMode: "live",
+    description:
+      "Default label image format: PDF (universal) or PNG (not all carriers). Defaults to PDF.",
+    placeholder: "PDF",
+  },
+  {
+    key: "XPS_SHIP_FROM_NAME",
+    label: "Ship-from name",
+    category: CATEGORY_XPS_SHIP,
+    secret: false,
+    applyMode: "live",
+    description: "Sender / return-to name printed on every label.",
+    placeholder: "Penn Home Medical Supply",
+  },
+  {
+    key: "XPS_SHIP_FROM_COMPANY",
+    label: "Ship-from company (optional)",
+    category: CATEGORY_XPS_SHIP,
+    secret: false,
+    applyMode: "live",
+    description: "Optional company line on the ship-from address.",
+  },
+  {
+    key: "XPS_SHIP_FROM_ADDRESS1",
+    label: "Ship-from street address",
+    category: CATEGORY_XPS_SHIP,
+    secret: false,
+    applyMode: "live",
+    description: "Sender street address line 1.",
+  },
+  {
+    key: "XPS_SHIP_FROM_ADDRESS2",
+    label: "Ship-from address line 2 (optional)",
+    category: CATEGORY_XPS_SHIP,
+    secret: false,
+    applyMode: "live",
+    description: "Sender street address line 2 (suite / unit).",
+  },
+  {
+    key: "XPS_SHIP_FROM_CITY",
+    label: "Ship-from city",
+    category: CATEGORY_XPS_SHIP,
+    secret: false,
+    applyMode: "live",
+    description: "Sender city.",
+  },
+  {
+    key: "XPS_SHIP_FROM_STATE",
+    label: "Ship-from state",
+    category: CATEGORY_XPS_SHIP,
+    secret: false,
+    applyMode: "live",
+    description: "Sender 2-letter state code.",
+    placeholder: "PA",
+  },
+  {
+    key: "XPS_SHIP_FROM_ZIP",
+    label: "Ship-from ZIP",
+    category: CATEGORY_XPS_SHIP,
+    secret: false,
+    applyMode: "live",
+    description: "Sender postal code.",
+    placeholder: "19103",
+  },
+  {
+    key: "XPS_SHIP_FROM_COUNTRY",
+    label: "Ship-from country (optional)",
+    category: CATEGORY_XPS_SHIP,
+    secret: false,
+    applyMode: "live",
+    description: "Sender ISO country code. Defaults to US.",
+    placeholder: "US",
+  },
+  {
+    key: "XPS_SHIP_FROM_PHONE",
+    label: "Ship-from phone (optional)",
+    category: CATEGORY_XPS_SHIP,
+    secret: false,
+    applyMode: "live",
+    description: "Sender phone for carrier contact.",
+  },
+  {
+    key: "XPS_SHIP_FROM_EMAIL",
+    label: "Ship-from email (optional)",
+    category: CATEGORY_XPS_SHIP,
+    secret: false,
+    applyMode: "live",
+    description: "Sender email for carrier notifications.",
+  },
   // Resupply reminder escalation cadence — tenant-tunable from Control Center.
   // Read per-tick by reminders.escalation-scan (applyMode "live"); a blank or
   // out-of-range value falls back to the built-in default and is clamped to a
@@ -603,6 +742,7 @@ const TENANT_BUSINESS_CATEGORIES: ReadonlySet<string> = new Set([
   CATEGORY_CARE,
   CATEGORY_REACT_HEALTH,
   CATEGORY_OFFICE_ALLY,
+  CATEGORY_XPS_SHIP,
 ]);
 
 /** Every key the catalog declares (env-var names). */
