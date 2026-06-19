@@ -174,6 +174,9 @@ describe("fetchAudienceCandidates — all_active_patients", () => {
       email: "carol@example.test",
       status: "active",
       insurancePayer: "BCBS",
+      phone: undefined,
+      phoneLineType: undefined,
+      smsMarketingConsent: false,
     });
     expect(result.shopCandidates).toHaveLength(0);
   });

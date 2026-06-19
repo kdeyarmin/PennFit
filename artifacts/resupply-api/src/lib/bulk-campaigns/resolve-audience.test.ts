@@ -447,3 +447,132 @@ describe("resolveAudience — totals + dedupe", () => {
     expect(r.recipients).toEqual([]);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Patient SMS-marketing consent gate (migration 0401)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("resolveAudience — patient SMS marketing consent (TCPA opt-in)", () => {
+  it("suppresses a patient with smsMarketingConsent=false for marketing SMS", () => {
+    const r = resolveAudience({
+      audienceKind: "all_active_patients",
+      audiencePayer: null,
+      category: "marketing",
+      channel: "sms",
+      patients: [
+        {
+          id: "p-no-consent",
+          email: "a@example.test",
+          phone: "+12155550001",
+          status: "active",
+          insurancePayer: null,
+          smsMarketingConsent: false,
+        },
+      ],
+    });
+    expect(r.recipients[0]!.status).toBe("suppressed");
+    expect(r.recipients[0]!.suppressionReason).toBe("sms_not_opted_in");
+  });
+
+  it("suppresses a patient with smsMarketingConsent=null/undefined for marketing SMS", () => {
+    const r = resolveAudience({
+      audienceKind: "all_active_patients",
+      audiencePayer: null,
+      category: "marketing",
+      channel: "sms",
+      patients: [
+        {
+          id: "p-null-consent",
+          email: "b@example.test",
+          phone: "+12155550002",
+          status: "active",
+          insurancePayer: null,
+          // smsMarketingConsent omitted → treated as no consent (TCPA opt-in)
+        },
+      ],
+    });
+    expect(r.recipients[0]!.status).toBe("suppressed");
+    expect(r.recipients[0]!.suppressionReason).toBe("sms_not_opted_in");
+  });
+
+  it("includes a patient with smsMarketingConsent=true for marketing SMS", () => {
+    const r = resolveAudience({
+      audienceKind: "all_active_patients",
+      audiencePayer: null,
+      category: "marketing",
+      channel: "sms",
+      patients: [
+        {
+          id: "p-consented",
+          email: "c@example.test",
+          phone: "+12155550003",
+          status: "active",
+          insurancePayer: null,
+          smsMarketingConsent: true,
+        },
+      ],
+    });
+    expect(r.recipients[0]!.status).toBe("pending");
+    expect(r.recipients[0]!.recipientPhone).toBe("+12155550003");
+  });
+
+  it("service SMS does not require smsMarketingConsent (not marketing)", () => {
+    const r = resolveAudience({
+      audienceKind: "all_active_patients",
+      audiencePayer: null,
+      category: "service",
+      channel: "sms",
+      patients: [
+        {
+          id: "p-no-consent",
+          email: "d@example.test",
+          phone: "+12155550004",
+          status: "active",
+          insurancePayer: null,
+          smsMarketingConsent: false,
+        },
+      ],
+    });
+    expect(r.recipients[0]!.status).toBe("pending");
+  });
+
+  it("compliance SMS does not require smsMarketingConsent", () => {
+    const r = resolveAudience({
+      audienceKind: "all_active_patients",
+      audiencePayer: null,
+      category: "compliance",
+      channel: "sms",
+      patients: [
+        {
+          id: "p-no-consent",
+          email: "e@example.test",
+          phone: "+12155550005",
+          status: "active",
+          insurancePayer: null,
+          smsMarketingConsent: false,
+        },
+      ],
+    });
+    expect(r.recipients[0]!.status).toBe("pending");
+  });
+
+  it("marketing email does not require smsMarketingConsent", () => {
+    const r = resolveAudience({
+      audienceKind: "all_active_patients",
+      audiencePayer: null,
+      category: "marketing",
+      channel: "email",
+      patients: [
+        {
+          id: "p-no-consent",
+          email: "f@example.test",
+          phone: "+12155550006",
+          status: "active",
+          insurancePayer: null,
+          smsMarketingConsent: false,
+        },
+      ],
+    });
+    expect(r.recipients[0]!.status).toBe("pending");
+  });
+});

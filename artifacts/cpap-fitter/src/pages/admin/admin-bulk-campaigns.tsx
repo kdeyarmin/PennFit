@@ -341,24 +341,12 @@ function NewCampaignModal({
     onError: (e: Error) => setError(e.message),
   });
 
-  // Marketing SMS to a patient audience is blocked: patients have no
-  // per-patient SMS-marketing consent flag yet, so it can't demonstrate
-  // TCPA consent. Shop customers carry that consent, so they're allowed.
-  const marketingSmsToPatients =
-    channel === "sms" &&
-    category === "marketing" &&
-    (audienceKind === "all_active_patients" ||
-      audienceKind === "by_patient_payer" ||
-      audienceKind === "by_therapy_cohort" ||
-      audienceKind === "patient_segment");
-
   const canSave =
     name.trim().length > 0 &&
     templateKey.trim().length > 0 &&
     (audienceKind !== "by_patient_payer" || audiencePayer.trim().length > 0) &&
     (audienceKind !== "patient_segment" || segmentCriteriaCount > 0) &&
-    (category !== "compliance" || complianceAttestation.trim().length >= 10) &&
-    !marketingSmsToPatients;
+    (category !== "compliance" || complianceAttestation.trim().length >= 10);
 
   const toggleDeviceClass = (dc: SegmentDeviceClass) => {
     setSegDeviceClasses((prev) => {
@@ -582,15 +570,6 @@ function NewCampaignModal({
             <option value="compliance">Compliance / recall</option>
           </select>
         </div>
-
-        {marketingSmsToPatients && (
-          <div className="col-span-2 rounded border border-rose-200 bg-rose-50 p-3 text-xs text-rose-900">
-            Marketing SMS to patients isn't supported yet — patients have no
-            per-patient SMS-marketing consent on file (TCPA). Send marketing as
-            email, target shop customers, or use a Service / Compliance
-            category.
-          </div>
-        )}
 
         <div>
           <Label>Throttle / minute</Label>

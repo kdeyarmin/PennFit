@@ -306,6 +306,10 @@ function stageSingleRecipientTick(opts: {
   /** phone_line_type the patient re-check SELECT returns (default null =
    *  unknown → allowed for SMS). Set 'landline'/'voip' to exercise the gate. */
   patientLineType?: string | null;
+  /** sms_marketing_consent the patient re-check SELECT returns (default true
+   *  so existing SMS tests continue to pass). Set false to exercise the
+   *  TCPA consent gate. */
+  patientSmsMarketingConsent?: boolean;
   claimTable?: string;
 }) {
   const campaign = makeCampaign(opts.campaign ?? {});
@@ -320,7 +324,8 @@ function stageSingleRecipientTick(opts: {
   // 3. Claim UPDATE (status → sending, RETURNING id + email + phone + kind + id)
   stageDb("bulk_campaign_recipients", "update", { data: [recipient] });
   // 4. Opt-out re-check SELECT. Patients are re-checked by `status`
-  //    (paused = STOP/unsubscribed); shop_customers by their per-channel
+  //    (paused = STOP/unsubscribed) and, for marketing SMS, by
+  //    sms_marketing_consent; shop_customers by their per-channel
   //    communication_preferences.
   const prefTable =
     opts.claimTable ??
@@ -333,6 +338,12 @@ function stageSingleRecipientTick(opts: {
         ? {
             status: opts.patientStatus ?? "active",
             phone_line_type: opts.patientLineType ?? null,
+            // Default true so existing tests (which test non-consent behaviour)
+            // remain sendable; set false to test the TCPA gate.
+            sms_marketing_consent:
+              opts.patientSmsMarketingConsent !== undefined
+                ? opts.patientSmsMarketingConsent
+                : true,
           }
         : opts.patientPrefs !== undefined
           ? {
@@ -1069,6 +1080,75 @@ describe("processTick — SMS channel", () => {
         recipient_phone: "+12155551212",
       },
       patientLineType: null, // not yet classified
+    });
+
+    await processTick(
+      makeBoss() as never,
+      { campaignId: "camp-1" },
+      testLog as never,
+    );
+
+    expect(smsSendMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("suppresses a patient who has not given SMS marketing consent (TCPA)", async () => {
+    stageSingleRecipientTick({
+      campaign: { category: "marketing", channel: "sms" },
+      recipient: {
+        recipient_kind: "patient",
+        recipient_id: "pat-no-consent",
+        recipient_email: null,
+        recipient_phone: "+12155551212",
+      },
+      patientSmsMarketingConsent: false,
+    });
+
+    await processTick(
+      makeBoss() as never,
+      { campaignId: "camp-1" },
+      testLog as never,
+    );
+
+    expect(smsSendMock).not.toHaveBeenCalled();
+    const updates = getWrites("bulk_campaign_recipients", "update") as Array<
+      Record<string, unknown>
+    >;
+    const suppression = updates.find((u) => u.status === "suppressed");
+    expect(suppression).toBeDefined();
+    expect(suppression!.suppression_reason).toBe("opted_out_at_send_time");
+  });
+
+  it("sends marketing SMS to a patient with smsMarketingConsent=true", async () => {
+    stageSingleRecipientTick({
+      campaign: { category: "marketing", channel: "sms" },
+      recipient: {
+        recipient_kind: "patient",
+        recipient_id: "pat-consented",
+        recipient_email: null,
+        recipient_phone: "+12155551212",
+      },
+      patientSmsMarketingConsent: true,
+    });
+
+    await processTick(
+      makeBoss() as never,
+      { campaignId: "camp-1" },
+      testLog as never,
+    );
+
+    expect(smsSendMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends service SMS to a patient regardless of smsMarketingConsent", async () => {
+    stageSingleRecipientTick({
+      campaign: { category: "service", channel: "sms" },
+      recipient: {
+        recipient_kind: "patient",
+        recipient_id: "pat-service",
+        recipient_email: null,
+        recipient_phone: "+12155551212",
+      },
+      patientSmsMarketingConsent: false,
     });
 
     await processTick(
