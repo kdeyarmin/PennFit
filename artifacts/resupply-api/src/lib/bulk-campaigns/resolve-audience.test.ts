@@ -285,7 +285,7 @@ describe("resolveAudience — SMS channel", () => {
     expect(r.recipients[0]!.status).toBe("pending");
   });
 
-  it("respects shop-customer SMS opt-out for marketing/service", () => {
+  it("requires explicit SMS opt-in for shop customers (opt-in, not opt-out)", () => {
     const r = resolveAudience({
       audienceKind: "all_active_shop_customers",
       audiencePayer: null,
@@ -293,25 +293,36 @@ describe("resolveAudience — SMS channel", () => {
       channel: "sms",
       shopCustomers: [
         {
-          id: "s-1",
+          id: "s-false",
           emailLower: "x@example.test",
           phoneE164: "+12155550001",
           communicationPreferences: { smsMarketing: false },
         },
         {
-          id: "s-2",
+          id: "s-null",
+          emailLower: "z@example.test",
+          phoneE164: "+12155550003",
+          // Never set prefs — default is smsMarketing:false, so NOT opted in.
+          communicationPreferences: null,
+        },
+        {
+          id: "s-true",
           emailLower: "y@example.test",
           phoneE164: "+12155550002",
           communicationPreferences: { smsMarketing: true },
         },
       ],
     });
-    const optedOut = r.recipients.find((x) => x.recipientId === "s-1")!;
-    expect(optedOut.status).toBe("suppressed");
-    expect(optedOut.suppressionReason).toBe("opted_out_sms_marketing");
-    const ok = r.recipients.find((x) => x.recipientId === "s-2")!;
-    expect(ok.status).toBe("pending");
-    expect(ok.recipientPhone).toBe("+12155550002");
+    const byId = (id: string) =>
+      r.recipients.find((x) => x.recipientId === id)!;
+    expect(byId("s-false").status).toBe("suppressed");
+    expect(byId("s-false").suppressionReason).toBe("sms_not_opted_in");
+    // Missing prefs must NOT be texted (opt-in).
+    expect(byId("s-null").status).toBe("suppressed");
+    expect(byId("s-null").suppressionReason).toBe("sms_not_opted_in");
+    // Only the explicit opt-in is sent.
+    expect(byId("s-true").status).toBe("pending");
+    expect(byId("s-true").recipientPhone).toBe("+12155550002");
   });
 
   it("compliance bypasses shop SMS opt-out but never a paused patient", () => {

@@ -92,10 +92,17 @@ export async function classifyAndCachePhoneLineType(input: {
 
     if (row.phone_line_type_source === "manual") return null; // never override
     if (!input.force && row.phone_line_type) return null; // already classified
-    const normalized = row.phone_e164 ? normalizeE164(row.phone_e164) : null;
-    if (!normalized) return null;
+    if (!row.phone_e164) return null; // no phone to classify
 
-    const { lineType } = await client.lookupLineType(normalized);
+    // A phone that won't normalize can't be looked up — record it as
+    // 'unknown' (rather than leaving phone_line_type NULL) so the nightly
+    // backfill candidate scan doesn't re-pick it forever and starve other
+    // rows. The phone-change DB trigger (migration 0398) re-NULLs it if the
+    // number is later corrected, so it'll be re-classified then.
+    const normalized = normalizeE164(row.phone_e164);
+    const lineType = normalized
+      ? (await client.lookupLineType(normalized)).lineType
+      : "unknown";
 
     const { error: updErr } = await supabase
       .from(table)
@@ -113,7 +120,8 @@ export async function classifyAndCachePhoneLineType(input: {
       .or("phone_line_type_source.is.null,phone_line_type_source.neq.manual");
     if (updErr) {
       logger.warn(
-        { kind: input.kind, id: input.id, err: updErr.message },
+        // Pass the error OBJECT so the logger's err.* redaction applies.
+        { kind: input.kind, id: input.id, err: updErr },
         "phone_line_type: cache update failed",
       );
       return null;

@@ -341,7 +341,7 @@ async function fetchPatientSegment(
     for (let from = 0; ; from += BATCH) {
       const { data, error } = await supabase
         .from("patient_latest_message")
-        .select("patient_id, last_message_at")
+        .select("patient_id")
         .gte("last_message_at", cutoffIso)
         .order("patient_id", { ascending: true })
         .range(from, from + BATCH - 1);

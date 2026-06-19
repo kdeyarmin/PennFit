@@ -30,8 +30,9 @@
 //                                emailMarketing=false
 //   * "opted_out_service"     — email service, recipient flipped
 //                                emailResupplyReminders=false
-//   * "opted_out_sms_marketing" — sms marketing, smsMarketing=false
-//   * "opted_out_sms_service"   — sms service, smsTransactional=false
+//   * "sms_not_opted_in"       — sms campaign, recipient hasn't explicitly
+//                                opted in (smsMarketing/smsTransactional not
+//                                true) — SMS is opt-in (TCPA)
 //   * "patient_not_active"    — patient.status !== 'active' (only the
 //                                patient branches)
 //   * "duplicate"             — same (kind, id) already in the resolved
@@ -119,8 +120,7 @@ export type SuppressionReason =
   | "phone_not_mobile"
   | "opted_out_marketing"
   | "opted_out_service"
-  | "opted_out_sms_marketing"
-  | "opted_out_sms_service"
+  | "sms_not_opted_in"
   | "patient_not_active"
   | "duplicate";
 
@@ -198,8 +198,12 @@ export function resolveAudience(
     }
     const prefs = c.communicationPreferences ?? {};
     if (input.category === "marketing") {
-      if (channel === "sms" && prefs.smsMarketing === false) {
-        push("suppressed", "opted_out_sms_marketing");
+      // SMS is OPT-IN: the platform default for smsMarketing/smsTransactional
+      // is false (DEFAULT_COMMUNICATION_PREFERENCES), so a missing/null pref
+      // means "not opted in" — never text them (TCPA). Email stays opt-out
+      // ("send unless they said no"), the codebase's established convention.
+      if (channel === "sms" && prefs.smsMarketing !== true) {
+        push("suppressed", "sms_not_opted_in");
         continue;
       }
       if (channel === "email" && prefs.emailMarketing === false) {
@@ -208,8 +212,8 @@ export function resolveAudience(
       }
     }
     if (input.category === "service") {
-      if (channel === "sms" && prefs.smsTransactional === false) {
-        push("suppressed", "opted_out_sms_service");
+      if (channel === "sms" && prefs.smsTransactional !== true) {
+        push("suppressed", "sms_not_opted_in");
         continue;
       }
       if (channel === "email" && prefs.emailResupplyReminders === false) {

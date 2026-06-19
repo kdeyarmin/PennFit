@@ -106,7 +106,8 @@ export async function runPhoneLineTypeBackfillForOrg(
       .range(0, PAGE - 1);
     if (error) {
       logger.warn(
-        { job: PHONE_LINE_TYPE_BACKFILL_JOB, orgId, kind, err: error.message },
+        // Pass the error OBJECT so the logger's err.* redaction applies.
+        { job: PHONE_LINE_TYPE_BACKFILL_JOB, orgId, kind, err: error },
         "phone-line-type.backfill: candidate scan failed",
       );
       continue;

@@ -155,9 +155,13 @@ router.patch(
       updates.channel_preference = body.channelPreference ?? null;
     if ("phoneLineType" in body) {
       // Concrete value → manual override; null → clear (lets lookup re-run).
+      // Clearing also nulls checked_at so the tri-state stays consistent
+      // (NULL type = unclassified, not "recently checked").
       updates.phone_line_type = body.phoneLineType ?? null;
       updates.phone_line_type_source = body.phoneLineType ? "manual" : null;
-      updates.phone_line_type_checked_at = new Date().toISOString();
+      updates.phone_line_type_checked_at = body.phoneLineType
+        ? new Date().toISOString()
+        : null;
     }
     if ("status" in body && body.status) updates.status = body.status;
     if ("locationId" in body) updates.location_id = body.locationId ?? null;

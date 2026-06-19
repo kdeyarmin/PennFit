@@ -434,7 +434,7 @@ export async function processTick(
         .eq("id", campaign.id);
       if (pauseErr) {
         log.error(
-          { err: pauseErr.message, campaignId: campaign.id },
+          { err: pauseErr, campaignId: campaign.id },
           "bulk_campaigns.tick: failed to pause SMS campaign after missing config",
         );
       }
@@ -820,7 +820,9 @@ async function rollbackRecipientsToPending(
       .in("id", ids.slice(i, i + 200));
     if (error) {
       log.error(
-        { err: error.message, campaignId },
+        // Pass the error OBJECT (not .message) so the logger's err.* redaction
+        // applies — a PostgREST message/details can echo PHI.
+        { err: error, campaignId },
         "bulk_campaigns.tick: recipient rollback chunk failed — stale-lease recovery will reclaim after expiry",
       );
     }
@@ -846,7 +848,7 @@ async function suppressRecipientAtSend(
     .eq("id", rowId);
   if (!supErr) return "suppressed";
   log.error(
-    { err: supErr.message, recipientId: rowId, campaignId },
+    { err: supErr, recipientId: rowId, campaignId },
     "bulk_campaigns.tick: suppression update failed — marking recipient failed",
   );
   const { error: failMarkErr } = await supabase
@@ -855,7 +857,7 @@ async function suppressRecipientAtSend(
     .eq("id", rowId);
   if (failMarkErr) {
     log.error(
-      { err: failMarkErr.message, recipientId: rowId, campaignId },
+      { err: failMarkErr, recipientId: rowId, campaignId },
       "bulk_campaigns.tick: failed-mark update also failed — recipient status is stale",
     );
   }
@@ -946,7 +948,14 @@ async function recheckRecipientAtSend(
       typeof data.communication_preferences === "object"
         ? (data.communication_preferences as Record<string, unknown> | null)
         : null;
-    const optedOut = Boolean(prefKey && prefs && prefs[prefKey] === false);
+    // SMS is opt-IN (default false → missing pref means not opted in); email
+    // stays opt-OUT. Mirrors the enqueue-time resolver.
+    const optedOut = Boolean(
+      prefKey &&
+      (channel === "sms"
+        ? prefs?.[prefKey] !== true
+        : prefs?.[prefKey] === false),
+    );
     return { optedOut, lineType };
   } catch {
     return NOT_OPTED_OUT;
