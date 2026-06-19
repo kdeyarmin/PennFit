@@ -2,7 +2,6 @@ import type { ReactNode } from "react";
 import { Link } from "wouter";
 import {
   ArrowRight,
-  BadgeCheck,
   FileText,
   FlaskConical,
   LineChart,
@@ -132,10 +131,7 @@ function IndustryStudies() {
               <p className="bx-cap-summary">{s.approach}</p>
               <ul className="bx-cap-list">
                 {s.points.map((p) => (
-                  <li key={p}>
-                    <BadgeCheck size={14} />
-                    {p}
-                  </li>
+                  <li key={p}>{p}</li>
                 ))}
               </ul>
               <p className="bx-outcome-source">{s.source}</p>
