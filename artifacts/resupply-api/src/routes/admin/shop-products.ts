@@ -39,6 +39,7 @@ import {
   requirePermission,
 } from "../../middlewares/requireAdmin";
 import { rateLimit } from "../../middlewares/rate-limit";
+import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import {
   getStripeClient,
   readStripeConfigOrNull,
@@ -1747,35 +1748,44 @@ router.post(
 //
 // Gate: requireAdmin (not admin.tools.manage) — viewing inventory is
 // staff-wide; only the mutations above carry the supervisor-tier permission.
-router.get("/admin/shop/products", requireAdmin, async (req, res) => {
-  const config = readStripeConfigOrNull();
-  if (!config) {
-    // Preview parity with the public endpoint: surface the fixture catalog
-    // so the inventory UI still renders (edits then 503 with a clear
-    // "set STRIPE_SECRET_KEY" message).
-    res.json({ previewMode: true, products: getPreviewCatalog() });
-    return;
-  }
-  const stripe = getStripeClient(config);
-  const accountOptions = await stripeAccountRequestOptions(req.orgId);
-  let list: Awaited<ReturnType<typeof stripe.products.list>>;
-  try {
-    list = await stripe.products.list(
-      { active: true, limit: 100, expand: ["data.default_price"] },
-      accountOptions,
-    );
-  } catch (err) {
-    req.log?.warn?.(
-      { ...stripeErrLogFields(err) },
-      "shop/admin/products: list failed (admin catalog)",
-    );
-    res.status(502).json({ error: "stripe_list_failed" });
-    return;
-  }
-  const products = list.data
-    .map(projectProduct)
-    .filter((p): p is ShopProductView => p !== null);
-  res.json({ previewMode: false, products });
-});
+// adminReadRateLimiter runs BEFORE requireAdmin (which does a DB session
+// lookup) so an authenticated GET isn't unbounded — and it's the direct
+// express-rate-limit instance CodeQL's missing-rate-limiting query
+// recognizes (the wrapped factories aren't traced). See admin-rate-limit.ts.
+router.get(
+  "/admin/shop/products",
+  adminReadRateLimiter,
+  requireAdmin,
+  async (req, res) => {
+    const config = readStripeConfigOrNull();
+    if (!config) {
+      // Preview parity with the public endpoint: surface the fixture catalog
+      // so the inventory UI still renders (edits then 503 with a clear
+      // "set STRIPE_SECRET_KEY" message).
+      res.json({ previewMode: true, products: getPreviewCatalog() });
+      return;
+    }
+    const stripe = getStripeClient(config);
+    const accountOptions = await stripeAccountRequestOptions(req.orgId);
+    let list: Awaited<ReturnType<typeof stripe.products.list>>;
+    try {
+      list = await stripe.products.list(
+        { active: true, limit: 100, expand: ["data.default_price"] },
+        accountOptions,
+      );
+    } catch (err) {
+      req.log?.warn?.(
+        { ...stripeErrLogFields(err) },
+        "shop/admin/products: list failed (admin catalog)",
+      );
+      res.status(502).json({ error: "stripe_list_failed" });
+      return;
+    }
+    const products = list.data
+      .map(projectProduct)
+      .filter((p): p is ShopProductView => p !== null);
+    res.json({ previewMode: false, products });
+  },
+);
 
 export default router;
