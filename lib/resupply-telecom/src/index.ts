@@ -79,6 +79,21 @@ export {
   type TwilioLookupHttpResponse,
 } from "./lookup";
 
+// Voice / SMS number PROVISIONING (search + buy a DID for a tenant) goes
+// through Twilio — the mirror of the Telnyx fax-number flow above.
+export {
+  createTwilioNumberClient,
+  type TwilioNumberClient,
+  type CreateTwilioNumberClientOptions,
+  type AvailableTwilioNumber,
+  type SearchNumbersInput,
+  type PurchaseNumberInput,
+  type PurchaseNumberResult,
+  type ProvisionNumberInput,
+  type ProvisionNumberResult,
+  type RawTwilioNumbersSdk,
+} from "./twilio-numbers";
+
 export {
   isTransientTwilioError,
   withRetry,

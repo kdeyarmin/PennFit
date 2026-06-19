@@ -34,10 +34,18 @@ What it does, in order (all idempotent):
    from their DID. See **Fax number** below. Omit both flags to onboard
    without one — it can be added later from the admin UI.
 
-The admin then opens the set-password link, signs in at
-`/admin/sign-in`, and goes to **Settings → Storefront branding** to set
-their name / tagline / logo and wire up a custom domain (see
-[`tenant-custom-domain.md`](./tenant-custom-domain.md)).
+The admin then opens the set-password link, signs in at `/admin/sign-in`,
+and lands on a dashboard whose **"Finish setting up your workspace"** card
+links to the guided checklist at **Settings → Set up your workspace**
+(`/admin/setup`). The checklist tracks live status for each step and links
+straight to the page that completes it. See
+**Self-service setup** below.
+
+> **Self-service vs. CLI.** A tenant can also be created entirely
+> self-serve from the public **`/breathe/signup`** page (org + first admin +
+> verify email, no operator). `tenant:onboard` is the operator path for
+> standing up a tenant on someone's behalf (and the only path that can
+> auto-provision a fax number at creation time).
 
 ## Arguments
 
@@ -82,6 +90,47 @@ the inbound-fax **routing** (`resolveOrgIdByFaxNumber`).
   fax number any time from **Settings → Fax number** in the admin console
   (`POST /admin/organization/fax-settings/provision`,
   `PATCH /admin/organization/fax-settings`).
+
+## Self-service setup
+
+After sign-in, everything except the deployment-level platform config is
+self-serve from the admin console. The **Set up your workspace** checklist
+(`/admin/setup`, served by `GET /admin/organization/setup-checklist`) shows
+each step's live status and links to its page:
+
+| Step                 | Page (nav: Settings → …) | Backed by                                                                     |
+| -------------------- | ------------------------ | ----------------------------------------------------------------------------- |
+| Storefront name/logo | Storefront branding      | `organizations.storefront_name` / `logo_url`                                  |
+| Custom domain        | Storefront branding      | `custom_domain*` (see [`tenant-custom-domain.md`](./tenant-custom-domain.md)) |
+| Phone & SMS numbers  | Phone & SMS              | `voice_from_number` / `sms_from_number` / `twilio_messaging_service_sid`      |
+| Fax number           | Fax number               | `fax_from_number` (see **Fax number** above)                                  |
+| Email From address   | Email From address       | `from_email` / `from_name` (+ live SendGrid domain-auth check)                |
+| Payments             | Billing → Stripe Connect | `stripe_account_id` / `stripe_charges_enabled`                                |
+| Team                 | Team                     | `admin_users` invites                                                         |
+
+**Phone & SMS** (`/admin/phone-settings`) mirrors the fax flow but on
+**Twilio**: a tenant can auto-buy a voice+SMS-capable number by area code
+(`POST /admin/organization/phone-settings/provision`, points the number's
+inbound webhooks at the platform endpoints), or set a ported number /
+Messaging Service SID manually (`PATCH /admin/organization/phone-settings`).
+Auto-provisioning needs `TWILIO_ACCOUNT_SID` + `TWILIO_AUTH_TOKEN`; without
+them the page falls back to manual entry. Numbers flow through
+`resolveTenantVoiceFrom` / `resolveTenantSmsFrom` (outbound) and
+`resolveOrgIdByCalledNumber` (inbound routing).
+
+**Email From address** (`/admin/email-settings`) sets the tenant's
+`from_email` / `from_name` (`PATCH /admin/organization/email-settings`) and
+runs a **live SendGrid domain-authentication check** on the address so an
+unauthenticated (spam-bound) sender is flagged before it's used. A From
+name alone is ignored — only a From address switches a tenant off the
+platform default (`resolveTenantSender`). Deliverability still requires the
+sending **domain** to be authenticated (SPF/DKIM) in SendGrid out of band.
+
+> **Product catalog.** The storefront catalog is sourced from a single
+> shared Stripe account today, so there is no per-tenant "starter catalog"
+> seed yet — a per-tenant catalog requires per-tenant catalog reads (a
+> separate multi-tenant workstream). The checklist's **catalog** item links
+> the tenant to the Shop products page in the meantime.
 
 ## Safety / idempotency
 
