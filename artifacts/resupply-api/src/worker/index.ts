@@ -665,10 +665,8 @@ async function doStartWorker(): Promise<void> {
   // Queue + worker always register; the recurring cron attaches only when
   // XPS_RESOLVE_STAGED_CRON_ENABLED=1 (opt-in — it pulls tracking + fires
   // the patient shipping notification once XPS books the label).
-  await safeRegister(
-    "registerXpsResolveStagedJob",
-    registrationFailures,
-    () => registerXpsResolveStagedJob(boss),
+  await safeRegister("registerXpsResolveStagedJob", registrationFailures, () =>
+    registerXpsResolveStagedJob(boss),
   );
   await safeRegister(
     "registerPhoneLineTypeBackfillJob",
