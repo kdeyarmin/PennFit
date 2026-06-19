@@ -1,4 +1,4 @@
-# Manual deploys (turning off deploy-on-every-merge)
+# Runbook: manual deploys (turning off deploy-on-every-merge)
 
 By default, Railway's GitHub integration auto-deploys production from the
 **`main`** branch: every merge into `main` builds and ships. This runbook
