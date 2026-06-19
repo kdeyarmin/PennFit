@@ -40,10 +40,10 @@ Every confirm channel now states the attestation the patient is agreeing
 to, and the affirmation is persisted as one **`refill_confirmations`** row
 per confirmed episode (the audit-grade proof a payer asks for):
 
-| Channel | Where the attestation is shown |
-| ------- | ------------------------------ |
-| SMS     | reminder copy asks them to reply `YES` only if still using it AND running low (`defaultReminderSmsBody`) |
-| Email   | the click-through landing page renders `REFILL_AFFIRMATION_STATEMENT` above the confirm button (`renderClickLanding`) |
+| Channel | Where the attestation is shown                                                                                          |
+| ------- | ----------------------------------------------------------------------------------------------------------------------- |
+| SMS     | reminder copy asks them to reply `YES` only if still using it AND running low (`defaultReminderSmsBody`)                |
+| Email   | the click-through landing page renders `REFILL_AFFIRMATION_STATEMENT` above the confirm button (`renderClickLanding`)   |
 | Voice   | the agent confirms continued use + running low out loud before calling `place_resupply_order` (prompt `2026-06-19.v12`) |
 
 The row records the channel, both attestation booleans, the exact

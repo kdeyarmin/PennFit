@@ -508,7 +508,9 @@ async function recordRefillConfirmation(
   },
 ): Promise<void> {
   try {
-    if (!(await isFeatureEnabled("resupply.refill_affirmation_capture", orgId))) {
+    if (
+      !(await isFeatureEnabled("resupply.refill_affirmation_capture", orgId))
+    ) {
       return;
     }
 

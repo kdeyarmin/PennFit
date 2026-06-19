@@ -41,9 +41,7 @@ describe("resolveRefillWindow", () => {
     const r = resolveRefillWindow(
       input({ lastFulfilledAt: last, supplyDurationDays: 30 }),
     );
-    expect(r.expectedDepletionOn?.getTime()).toBe(
-      last.getTime() + 30 * DAY_MS,
-    );
+    expect(r.expectedDepletionOn?.getTime()).toBe(last.getTime() + 30 * DAY_MS);
   });
 
   it("blocks contact before the 14-day contact window opens", () => {

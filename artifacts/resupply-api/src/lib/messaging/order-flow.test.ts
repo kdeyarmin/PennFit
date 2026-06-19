@@ -803,7 +803,11 @@ describe("placeResupplyOrderForConversation — refill-window guard", () => {
     lastDispense.setUTCDate(lastDispense.getUTCDate() - daysAgo);
     stageSupabaseResponse("fulfillments", "select", {
       data: [
-        { quantity: 1, created_at: lastDispense.toISOString(), status: "shipped" },
+        {
+          quantity: 1,
+          created_at: lastDispense.toISOString(),
+          status: "shipped",
+        },
       ],
       error: null,
     });
