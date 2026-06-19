@@ -30,6 +30,8 @@ export {
   DEFAULT_REALTIME_TRANSCRIBE_MODEL,
   DEFAULT_REALTIME_GA_TRANSCRIBE_MODEL,
   DEFAULT_REALTIME_VOICE,
+  DEFAULT_REALTIME_NOISE_REDUCTION,
+  type RealtimeNoiseReduction,
   type RealtimeClientOptions,
   type RealtimeAudioDelta,
   type RealtimeTranscriptDelta,
@@ -131,6 +133,12 @@ export {
   type ElevenLabsStreamSession,
   type ElevenLabsStreamWebSocketLike,
 } from "./elevenlabs-stream";
+
+export {
+  applyPronunciation,
+  createPronunciationStream,
+  type PronunciationStream,
+} from "./tts-pronunciation";
 
 export {
   TOOL_NAMES,
