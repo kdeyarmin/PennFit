@@ -8,6 +8,7 @@ import {
   CalendarClock,
   Check,
   ChevronDown,
+  ClipboardCheck,
   ClipboardSignature,
   CreditCard,
   Database,
@@ -86,6 +87,12 @@ const COMPLIANCE_PILLARS: CompliancePillar[] = [
     gold: true,
   },
   {
+    icon: <ClipboardCheck size={20} />,
+    title: "Refill confirmation documented on every order",
+    body: "CMS never lets recurring supplies auto-ship — before each refill the patient has to affirmatively confirm they're still using the device and that their supply is running low. Breathe asks for that on every channel (text, email, and the AI voice agent) and records it as an audit-grade attestation on the chart, so the refill documentation a payer asks for is captured by default.",
+    gold: true,
+  },
+  {
     icon: <Stethoscope size={20} />,
     title: "Adherence documentation, captured automatically",
     body: "Nightly adherence pulls from ResMed, Philips, and 3B device clouds document the Medicare 4-hour rule and the 90-day compliance window automatically — the usage proof payers require to keep paying for therapy.",
@@ -148,6 +155,10 @@ const FAQ_GROUPS: FaqGroup[] = [
       {
         q: "Does it stop me from billing resupply too early?",
         a: "Yes. The resupply engine is eligibility-aware — it knows each payer's replacement schedule and only assembles a 'due' worklist when a patient is actually inside the allowed window. That keeps you from filing claims that would be denied for being early, while making sure no eligible reorder is missed.",
+      },
+      {
+        q: "How do you meet the CMS DMEPOS refill documentation rule?",
+        a: "The CMS refill requirement (Program Integrity Manual Ch. 5) says recurring supplies can't be auto-shipped: before each refill you must contact the patient, document that they confirmed they're still using the item and that their supply is running low, and not ship too early. Breathe does all three — nothing ships without an affirmative confirmation, every reminder (text, email, and the AI voice agent) asks the patient to confirm continued use and that they're running low, and each confirmation is saved as an audit-grade attestation on the patient's chart. Reminders fire on the payer's replacement cadence, so orders stay inside the allowed refill window.",
       },
       {
         q: "What about prior authorization?",
