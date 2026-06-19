@@ -136,6 +136,7 @@ export {
   TOOL_NAMES,
   PATIENT_TOOL_NAMES,
   SHOP_TOOL_NAMES,
+  BREATHE_SALES_TOOL_NAMES,
   TOOL_ARG_SCHEMAS,
   OPENAI_TOOL_DESCRIPTORS,
   summarizeToolArgsForAudit,
@@ -147,6 +148,10 @@ export {
   placeResupplyOrderArgs,
   requestHumanHandoffArgs,
   endCallArgs,
+  identifyCallReasonArgs,
+  sendInfoEmailArgs,
+  captureSalesLeadArgs,
+  startBreatheSignupArgs,
   type ToolName,
   type ToolDispatcher,
   type DispatchToolCall,
@@ -162,5 +167,15 @@ export {
   type PlaceResupplyOrderResult,
   type RequestHumanHandoffResult,
   type EndCallResult,
+  type IdentifyCallReasonResult,
+  type SendInfoEmailResult,
+  type CaptureSalesLeadResult,
+  type StartBreatheSignupResult,
   type InventoryItem,
 } from "./tools";
+
+export {
+  BREATHE_SALES_KNOWLEDGE,
+  BREATHE_PLATFORM_OVERVIEW,
+  BREATHE_PRICING,
+} from "./breathe-sales-knowledge";
