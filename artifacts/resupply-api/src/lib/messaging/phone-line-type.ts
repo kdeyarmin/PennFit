@@ -106,7 +106,11 @@ export async function classifyAndCachePhoneLineType(input: {
       })
       .eq(idCol, input.id)
       // Don't clobber a manual override that landed between read and write.
-      .neq("phone_line_type_source", "manual");
+      // NB: a bare `.neq("…","manual")` would compile to `<> 'manual'`, which
+      // is NULL (not TRUE) for the NULL-source rows this path targets — so it
+      // would match ZERO rows and silently drop every first-time
+      // classification. Match "source IS NULL OR source <> 'manual'" instead.
+      .or("phone_line_type_source.is.null,phone_line_type_source.neq.manual");
     if (updErr) {
       logger.warn(
         { kind: input.kind, id: input.id, err: updErr.message },

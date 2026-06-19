@@ -60,8 +60,14 @@ export function SettingsCard({
   const [locationId, setLocationId] = useState<string>(
     patient.locationId ?? "",
   );
+  // The control reflects the MANUAL override only: empty = "Auto" (let Twilio
+  // Lookup classify), a value = a manual override. We don't seed it from a
+  // lookup-classified value, so selecting any value (even one matching the
+  // current auto value) is a real change that pins it as a manual override.
   const [phoneLineType, setPhoneLineType] = useState<LineTypeChoice>(
-    (patient.phoneLineType ?? "") as LineTypeChoice,
+    (patient.phoneLineTypeSource === "manual"
+      ? (patient.phoneLineType ?? "")
+      : "") as LineTypeChoice,
   );
   const [error, setError] = useState<string | null>(null);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
@@ -99,7 +105,11 @@ export function SettingsCard({
     );
     setChannel((patient.channelPreference ?? "") as ChannelChoice);
     setLocationId(patient.locationId ?? "");
-    setPhoneLineType((patient.phoneLineType ?? "") as LineTypeChoice);
+    setPhoneLineType(
+      (patient.phoneLineTypeSource === "manual"
+        ? (patient.phoneLineType ?? "")
+        : "") as LineTypeChoice,
+    );
     setError(null);
   }, [
     patient.insurancePayer,
@@ -107,6 +117,7 @@ export function SettingsCard({
     patient.channelPreference,
     patient.locationId,
     patient.phoneLineType,
+    patient.phoneLineTypeSource,
   ]);
 
   function buildPatch(): {
@@ -151,9 +162,13 @@ export function SettingsCard({
     if (multiLocationEnabled && locationId !== locOnServer) {
       body.locationId = locationId === "" ? null : locationId;
     }
-    // phone line type: empty clears the manual override (lets the Twilio
-    // Lookup backfill re-classify); a concrete value is a manual override.
-    const ltOnServer = patient.phoneLineType ?? "";
+    // phone line type: compare against the MANUAL override on the server only
+    // (a lookup-classified value is not an override). Empty clears the manual
+    // override (lets Twilio Lookup re-classify); a concrete value pins it.
+    const ltOnServer =
+      patient.phoneLineTypeSource === "manual"
+        ? (patient.phoneLineType ?? "")
+        : "";
     if (phoneLineType !== ltOnServer) {
       body.phoneLineType = phoneLineType === "" ? null : phoneLineType;
     }
@@ -214,6 +229,8 @@ export function SettingsCard({
     if (patient.insurancePayer != null) body.insurancePayer = null;
     if (patient.cadenceOverrideDays != null) body.cadenceOverrideDays = null;
     if (patient.channelPreference != null) body.channelPreference = null;
+    // Clear a manual line-type override too (back to auto Twilio Lookup).
+    if (patient.phoneLineTypeSource === "manual") body.phoneLineType = null;
     if (Object.keys(body).length === 0) {
       setStatusMsg("Nothing to reset — already on defaults.");
       return;
@@ -238,7 +255,8 @@ export function SettingsCard({
   const hasOverride =
     patient.insurancePayer != null ||
     patient.cadenceOverrideDays != null ||
-    patient.channelPreference != null;
+    patient.channelPreference != null ||
+    patient.phoneLineTypeSource === "manual";
 
   return (
     <Card>
@@ -326,9 +344,9 @@ export function SettingsCard({
           />
           <p className="mt-1 text-xs" style={{ color: "hsl(var(--ink-3))" }}>
             {patient.phoneLineTypeSource === "manual"
-              ? "Manually set. Bulk SMS only sends to mobile."
+              ? `Manually set${patient.phoneLineType ? ` to ${patient.phoneLineType}` : ""}. Bulk SMS only sends to mobile.`
               : patient.phoneLineType
-                ? "Auto-classified by Twilio. Bulk SMS only sends to mobile."
+                ? `Auto-classified by Twilio: ${patient.phoneLineType}. Pick a value to override. Bulk SMS only sends to mobile.`
                 : "Not yet classified. Bulk SMS only sends to mobile."}
           </p>
         </div>

@@ -82,9 +82,16 @@ export async function runPhoneLineTypeBackfillForOrg(
   const client = readLookupClientOrNull();
   if (!client) return { classified: 0 };
   const supabase = getOrgScopedClient(orgId);
+  // `attempts` bounds the BILLABLE work: each classify call may issue a Twilio
+  // Lookup, so the per-run cap counts attempts (not just successful writes) —
+  // otherwise a tenant with many un-classifiable rows (un-normalizable phones,
+  // transient write errors) could drive unbounded Lookup spend and re-scan the
+  // same rows every night. `classified` is tracked only for the summary log.
+  let attempts = 0;
   let classified = 0;
 
   for (const kind of ["patient", "shop_customer"] as LineTypeRecipientKind[]) {
+    if (attempts >= MAX_LOOKUPS_PER_ORG) break;
     const table = kind === "patient" ? "patients" : "shop_customers";
     const idCol = kind === "patient" ? "id" : "customer_id";
     // Scan candidates: a phone on file, not yet classified. (A manual
@@ -105,9 +112,10 @@ export async function runPhoneLineTypeBackfillForOrg(
       continue;
     }
     for (const row of data ?? []) {
-      if (classified >= MAX_LOOKUPS_PER_ORG) break;
+      if (attempts >= MAX_LOOKUPS_PER_ORG) break;
       const id = (row as Record<string, string>)[idCol];
       if (!id) continue;
+      attempts += 1;
       const lineType = await classifyAndCachePhoneLineType({
         orgId,
         kind,
@@ -116,12 +124,11 @@ export async function runPhoneLineTypeBackfillForOrg(
       });
       if (lineType) classified += 1;
     }
-    if (classified >= MAX_LOOKUPS_PER_ORG) break;
   }
 
-  if (classified > 0) {
+  if (attempts > 0) {
     logger.info(
-      { job: PHONE_LINE_TYPE_BACKFILL_JOB, orgId, classified },
+      { job: PHONE_LINE_TYPE_BACKFILL_JOB, orgId, attempts, classified },
       "phone-line-type.backfill: classified numbers for tenant",
     );
   }
