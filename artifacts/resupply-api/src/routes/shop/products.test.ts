@@ -48,7 +48,9 @@ vi.mock("../../lib/stripe/connect", () => ({
 }));
 
 // Host → tenant resolution for this public route. Default → null (platform).
-const resolveOrgIdByHostMock = vi.fn(async (_host: unknown) => null);
+const resolveOrgIdByHostMock = vi.fn(
+  async (_host: unknown): Promise<string | null> => null,
+);
 vi.mock("../../lib/tenant-branding", () => ({
   resolveOrgIdByHost: (host: unknown) => resolveOrgIdByHostMock(host),
 }));
