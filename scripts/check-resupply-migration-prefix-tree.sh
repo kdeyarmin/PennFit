@@ -37,7 +37,10 @@
 # #1053's 0370_inbound_fax_twilio_sid_nullable (ALTER inbound_faxes),
 # #1056's 0370_platform_billing_payment_method (ALTER tenant_billing_subscriptions),
 # and #1058's 0370_low_stock_alert_state_org_pk (ALTER low_stock_alert_state).
-# All three touch disjoint tables, so any apply order is equivalent.
+# All three touch disjoint tables, so any apply order is equivalent. 0396 is
+# the same kind of already-lost race: one file corrects the platform-outreach
+# updated_at triggers while the other adds voice_calls.answered_by; they touch
+# unrelated tables, so either apply order is safe.
 #
 # Self-contained and side-effect free; exits 0 on a clean tree.
 
@@ -68,6 +71,7 @@ GRANDFATHERED="
 0337:2
 0338:2
 0370:3
+0396:2
 "
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
