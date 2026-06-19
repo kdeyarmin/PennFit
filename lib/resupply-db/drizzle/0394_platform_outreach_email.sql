@@ -63,7 +63,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS "platform_contacts_updated_at_trigger" ON "resupply"."platform_contacts";
 CREATE TRIGGER "platform_contacts_updated_at_trigger"
   BEFORE UPDATE ON "resupply"."platform_contacts"
   FOR EACH ROW
@@ -118,7 +117,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS "platform_email_campaigns_updated_at_trigger" ON "resupply"."platform_email_campaigns";
 CREATE TRIGGER "platform_email_campaigns_updated_at_trigger"
   BEFORE UPDATE ON "resupply"."platform_email_campaigns"
   FOR EACH ROW
@@ -171,7 +169,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS "platform_email_recipients_updated_at_trigger" ON "resupply"."platform_email_recipients";
 CREATE TRIGGER "platform_email_recipients_updated_at_trigger"
   BEFORE UPDATE ON "resupply"."platform_email_recipients"
   FOR EACH ROW
