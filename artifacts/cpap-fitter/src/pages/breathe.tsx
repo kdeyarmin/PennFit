@@ -1834,9 +1834,19 @@ function Sparkline() {
  * with. Hero screen + a four-up gallery, each captioned with the job it does. */
 const LIVE_SHOTS: { src: string; cap: string; alt: string }[] = [
   {
-    src: "/breathe/screens/console-patients.jpg",
-    cap: "Patient roster — every channel, every status",
-    alt: "Breathe admin: patient roster with status and SMS, email and voice channels",
+    src: "/breathe/screens/console-resupply.jpg",
+    cap: "Resupply opportunities — who's due, overdue, and ready to refit",
+    alt: "Breathe admin: resupply opportunities worklist with overdue and high-leak flags",
+  },
+  {
+    src: "/breathe/screens/console-fleet.jpg",
+    cap: "Therapy fleet — compliance across ResMed, Philips & 3B",
+    alt: "Breathe admin: therapy fleet compliance dashboard across device clouds",
+  },
+  {
+    src: "/breathe/screens/console-denials.jpg",
+    cap: "Denials ranked by recoverable $ × win-probability",
+    alt: "Breathe admin: denials worklist ranked by recoverable dollars",
   },
   {
     src: "/breathe/screens/console-conversations.jpg",
@@ -1844,9 +1854,9 @@ const LIVE_SHOTS: { src: string; cap: string; alt: string }[] = [
     alt: "Breathe admin: unified conversations inbox across every channel",
   },
   {
-    src: "/breathe/screens/console-denials.jpg",
-    cap: "Denials ranked by recoverable $ × win-probability",
-    alt: "Breathe admin: denials worklist ranked by recoverable dollars",
+    src: "/breathe/screens/console-patients.jpg",
+    cap: "Patient roster — every channel, every status",
+    alt: "Breathe admin: patient roster with status and SMS, email and voice channels",
   },
   {
     src: "/breathe/screens/console-orders.jpg",

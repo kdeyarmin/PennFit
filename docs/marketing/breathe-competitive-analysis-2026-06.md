@@ -112,6 +112,11 @@ Do **not** fabricate any of these; add them when the underlying truth exists:
 6. **Resources/blog** for SEO + thought leadership.
 7. **Vertical landing pages** (CPAP, respiratory, O&P, CGM…) à la NikoHealth.
 8. **Refresh the captured screenshots** when the console UI changes (re-run the
-   Playwright capture against `/admin?demo=1`), and broaden coverage to the
-   therapy-fleet / resupply-opportunities screens once their demo fixtures are
-   filled in (they currently error in the sandbox).
+   Playwright capture against `/admin?demo=1`).
+
+Also shipped alongside the showcase: demo fixtures for the **Therapy Fleet**
+and **Resupply Opportunities** pages (`demo/fixtures/therapy.ts` +
+`demo/handlers/therapy.ts`). Those two routes previously **crashed** in the
+self-serve demo (empty `{}` fallback → reading `summary.byCategory.mask` /
+`summary.byKind.pressure_at_max` off undefined); they now render with sample
+data, both in the live demo and in the home-page gallery.
