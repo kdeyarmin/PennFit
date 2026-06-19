@@ -486,7 +486,7 @@ function ContactEmailForm({
             "Sending…"
           ) : (
             <>
-              Request a walkthrough <ArrowRight size={16} />
+              Send to support <ArrowRight size={16} />
             </>
           )}
         </button>
@@ -545,9 +545,8 @@ function ContactGateModal({
               Thanks — we&apos;ll be in touch.
             </h3>
             <p className="bx-modal-lede">
-              A CPAP &amp; DME specialist will reach out within one business day
-              to set up a walkthrough on your own workflows. Prefer to talk now?
-              We&apos;re here.
+              Our support team will get back to you within one business day.
+              Prefer to talk now? We&apos;re here.
             </p>
             <div className="bx-modal-contact">
               <a href="tel:+18775212890">
@@ -576,11 +575,12 @@ function ContactGateModal({
             <span className="bx-modal-ic">
               <Headphones size={20} />
             </span>
-            <h3 id="bx-contact-modal-title">Book a walkthrough</h3>
+            <h3 id="bx-contact-modal-title">Questions? We&apos;re here to help</h3>
             <p className="bx-modal-lede">
-              Want a guided tour with a human instead? Leave your email and a
-              specialist will reach out to schedule a walkthrough on your
-              patients, payers, and workflows — or call us right now.
+              Have a question, a concern, or need technical support? Leave your
+              email and our support team will get back to you — or call us right
+              now. Ready to go? You can start the demo or create your account
+              yourself, no call required.
             </p>
             <ContactEmailForm
               source={source}
@@ -595,7 +595,8 @@ function ContactGateModal({
               </a>
             </div>
             <p className="bx-modal-fine">
-              No sales pressure — just a working session. Unsubscribe anytime.
+              No sales pressure — just real help when you need it. Unsubscribe
+              anytime.
             </p>
           </>
         )}
@@ -896,14 +897,16 @@ export function BreatheHome() {
       <LiveConsole />
       <IntegrationsStrip />
       <Pillars />
+      {/* The home page is deliberately short and focused on WHY Breathe is
+          different: the proprietary resupply engine, the in-house (not
+          bolted-on) architecture, and "one login instead of seven". The
+          deeper detail — the full lifecycle, the capability grid, the unified
+          therapy fleet, and the audience breakdown — lives on the Product,
+          Compare, and Integrations pages so this page stays scannable. */}
       <ResupplyEngine />
-      <UnifiedFleet />
-      <Lifecycle />
-      <Capabilities />
       <BuiltInHouse />
       <Replaces />
       <Outcomes />
-      <Audiences />
       <PricingHome />
       <ClosingCta />
     </BreatheShell>
@@ -931,9 +934,11 @@ export function BreatheProduct() {
       />
       <Lifecycle />
       <DayInLife />
+      <Capabilities />
       <ProductShowcase />
       <Features />
       <FeatureVideos />
+      <UnifiedFleet />
       <BuiltInHouse />
       <RevenueCycle />
       <AiBento />
@@ -965,6 +970,7 @@ export function BreatheCompare() {
       <WhyDifferent />
       <BuiltInHouse />
       <Roles />
+      <Audiences />
       <ClosingCta />
     </BreatheShell>
   );
@@ -1077,7 +1083,7 @@ const FOOTER_LINKS: { href: string; label: string }[] = [
 function Nav() {
   const [loc] = useLocation();
   const [open, setOpen] = useState(false);
-  const { open: openDemoGate, openContact } = useDemoGate();
+  const { open: openDemoGate } = useDemoGate();
   // Close the mobile menu on any route change so it never lingers open.
   useEffect(() => {
     setOpen(false);
@@ -1102,13 +1108,12 @@ function Nav() {
               {l.label}
             </Link>
           ))}
-          <button
-            type="button"
+          <Link
             className="bx-btn bx-btn-ghost bx-btn-sm"
-            onClick={() => openContact("breathe-nav")}
+            href="/breathe/signup"
           >
-            Book a demo
-          </button>
+            Create account
+          </Link>
           <button
             type="button"
             className="bx-btn bx-btn-primary bx-btn-sm"
@@ -1153,16 +1158,13 @@ function Nav() {
             >
               Start free demo
             </button>
-            <button
-              type="button"
+            <Link
+              href="/breathe/signup"
               className="bx-btn bx-btn-ghost bx-nav-mobile-demo"
-              onClick={() => {
-                setOpen(false);
-                openContact("breathe-nav");
-              }}
+              onClick={() => setOpen(false)}
             >
-              Book a demo
-            </button>
+              Create account
+            </Link>
           </div>
         </div>
       ) : null}
@@ -1229,13 +1231,13 @@ function Hero() {
               Live demo on sample data · No call · No credit card
             </div>
             <p className="bx-hero-talk bx-reveal in">
-              Prefer a guided walkthrough?{" "}
+              Questions, or need a hand getting set up?{" "}
               <button
                 type="button"
                 className="bx-linkbtn"
                 onClick={() => openContact("breathe-hero")}
               >
-                Talk to us →
+                Contact support →
               </button>
             </p>
           </div>
@@ -4714,16 +4716,16 @@ export function ClosingCta() {
             <Link className="bx-btn bx-btn-gold" href="/breathe/signup">
               Create your account <ArrowRight size={17} />
             </Link>
+            <Link className="bx-btn bx-btn-ghost" href="/breathe/product">
+              Explore the platform
+            </Link>
             <button
               type="button"
               className="bx-btn bx-btn-ghost"
               onClick={() => openContact("breathe-cta")}
             >
-              Book a demo
+              Contact support
             </button>
-            <Link className="bx-btn bx-btn-ghost" href="/breathe/product">
-              Explore the platform
-            </Link>
           </div>
           <div className="bx-cta-meta">
             <span>

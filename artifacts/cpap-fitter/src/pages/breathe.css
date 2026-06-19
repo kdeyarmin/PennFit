@@ -368,12 +368,13 @@
   font-size: 13.5px;
 }
 .bx-btn-primary {
-  /* Near-black ink on a fully LIGHT blue gradient. The old mid-blue stop
-     (#4f8dff) under dark text read muddy/low-contrast; both stops are now
-     light so the label stays crisp across the whole button (incl. the small
-     nav variant). */
+  /* Near-black ink on a fully LIGHT blue gradient. Earlier mid-blue stops
+     (#4f8dff, then #6aa6ff) under dark text still read muddy/low-contrast on
+     the right edge — most visible on the small nav "Create account" variant.
+     Both stops are now genuinely light so the label stays crisp across the
+     whole button at every size. */
   color: #05101f;
-  background: linear-gradient(135deg, #7ed7ff 0%, #6aa6ff 100%);
+  background: linear-gradient(135deg, #9fe3ff 0%, #7fbcff 100%);
   box-shadow:
     0 10px 30px -8px var(--_glow),
     inset 0 1px 0 rgba(255, 255, 255, 0.28);
