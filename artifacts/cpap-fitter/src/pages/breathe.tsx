@@ -970,12 +970,40 @@ export function BreatheCompare() {
         sub="Legacy DME systems bolt modules onto decades-old cores. See the line-by-line difference — and what it means for each person on your team."
       />
       <Comparison />
+      <SwitchLinks />
       <WhyDifferent />
       <BuiltInHouse />
       <Roles />
       <Audiences />
       <ClosingCta />
     </BreatheShell>
+  );
+}
+
+/* Cross-links to the per-competitor "Switch from X" migration pages, shown
+   under the comparison table where switch intent is highest. */
+const SWITCH_LINKS: { href: string; name: string }[] = [
+  { href: "/breathe/switch/brightree", name: "Brightree" },
+  { href: "/breathe/switch/bonafide", name: "Bonafide" },
+  { href: "/breathe/switch/nikohealth", name: "NikoHealth" },
+];
+
+function SwitchLinks() {
+  return (
+    <div className="bx-shell">
+      <div className="bx-switchlinks bx-reveal">
+        <span className="bx-switchlinks-label">
+          <GitBranch size={15} /> Coming from a specific system?
+        </span>
+        <div className="bx-switchlinks-row">
+          {SWITCH_LINKS.map((s) => (
+            <Link className="bx-switchlink" href={s.href} key={s.href}>
+              Switch from {s.name} <ArrowRight size={14} />
+            </Link>
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -3265,7 +3293,7 @@ function CompareMark({ v }: { v: Cell }) {
   );
 }
 
-function Comparison() {
+export function Comparison() {
   return (
     <section className="bx-section" id="compare">
       <div className="bx-shell">
@@ -3377,7 +3405,7 @@ const DIFFERENCES: Capability[] = [
   },
 ];
 
-function WhyDifferent() {
+export function WhyDifferent() {
   return (
     <section className="bx-section">
       <div className="bx-shell">
@@ -4593,7 +4621,7 @@ const STEPS: {
   },
 ];
 
-function Onboarding() {
+export function Onboarding() {
   return (
     <section className="bx-section">
       <div className="bx-shell">
