@@ -1121,6 +1121,9 @@ class Impl implements VoiceToolDispatcher {
         adminEmail: admin_email,
         password: throwawayPassword,
         baseUrl: platformBaseUrl(),
+        // The caller never speaks a password — email them a set-password
+        // link (which also verifies the email) instead of a verify-only link.
+        sendSetPasswordLink: true,
       });
     } catch (err) {
       logger.warn(

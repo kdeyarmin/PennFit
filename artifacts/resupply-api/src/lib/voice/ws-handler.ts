@@ -1240,6 +1240,19 @@ export async function handleBreatheSalesWsConnection(
   const MAX_SALES_CALL_MS = 15 * 60 * 1000;
   let maxTimer: ReturnType<typeof setTimeout> | null = null;
 
+  // Graceful end_call drain: when the agent says goodbye and ends the call,
+  // VoiceBridge calls sink.waitForPlaybackDone() so we don't close the Twilio
+  // stream while the farewell audio is still queued (Twilio echoes a `mark`
+  // once playback reaches it). Resolvers live here so the message handler and
+  // teardown can settle them. Mirrors the patient/diagnostic sinks.
+  const pendingPlaybackMarks = new Map<string, () => void>();
+  let playbackMarkSeq = 0;
+  const settleAllPlaybackMarks = (): void => {
+    const resolvers = [...pendingPlaybackMarks.values()];
+    pendingPlaybackMarks.clear();
+    for (const resolve of resolvers) resolve();
+  };
+
   const sink: MediaStreamSink = {
     writeAudioBase64(b64: string): void {
       if (closed || !streamSid) return;
@@ -1262,6 +1275,31 @@ export async function handleBreatheSalesWsConnection(
       } catch {
         // best-effort; barge-in clears are not load-bearing
       }
+    },
+    waitForPlaybackDone(timeoutMs: number): Promise<void> {
+      // Already torn down (or never started) — nothing is playing.
+      if (closed || !streamSid) return Promise.resolve();
+      playbackMarkSeq += 1;
+      const name = `pf-playback-${playbackMarkSeq}`;
+      const sid = streamSid;
+      return new Promise<void>((resolve) => {
+        const timer = setTimeout(() => {
+          pendingPlaybackMarks.delete(name);
+          resolve();
+        }, timeoutMs);
+        timer.unref?.();
+        pendingPlaybackMarks.set(name, () => {
+          clearTimeout(timer);
+          resolve();
+        });
+        try {
+          ws.send(encodeMarkFrame(sid, name));
+        } catch {
+          pendingPlaybackMarks.delete(name);
+          clearTimeout(timer);
+          resolve();
+        }
+      });
     },
   };
 
@@ -1337,6 +1375,9 @@ export async function handleBreatheSalesWsConnection(
       clearTimeout(maxTimer);
       maxTimer = null;
     }
+    // Settle any in-flight playback-done wait so a teardown can't leave the
+    // end_call drain promise hanging.
+    settleAllPlaybackMarks();
     logger.info(
       {
         event: "voice_breathe_sales_closed",
@@ -1418,6 +1459,16 @@ export async function handleBreatheSalesWsConnection(
       case "stop":
         cleanup("twilio-stop");
         return;
+      case "mark": {
+        // Playback marker echoed back by Twilio — settles the graceful
+        // end_call hangup's "goodbye finished playing" wait.
+        const resolveMark = pendingPlaybackMarks.get(frame.mark.name);
+        if (resolveMark) {
+          pendingPlaybackMarks.delete(frame.mark.name);
+          resolveMark();
+        }
+        return;
+      }
       default:
         return;
     }

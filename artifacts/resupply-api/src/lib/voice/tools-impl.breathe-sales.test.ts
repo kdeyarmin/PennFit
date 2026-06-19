@@ -234,12 +234,16 @@ describe("breathe sales — start_breathe_signup", () => {
       adminEmail: string;
       orgName: string;
       slug: string;
+      sendSetPasswordLink?: boolean;
     };
     expect(arg.password.length).toBeGreaterThanOrEqual(12);
     expect(arg.password).not.toBe("Acme DME");
     expect(arg.password).not.toContain("owner@acme-dme.example");
     expect(arg.adminEmail).toBe("owner@acme-dme.example");
     expect(arg.slug).toBe("acme-dme");
+    // The caller never speaks a password — the tool asks the signup service
+    // to email a set-password link (which also verifies the email).
+    expect(arg.sendSetPasswordLink).toBe(true);
 
     await flush();
     const inserts = supabaseMock.writePayloads("sales_leads", "insert");
