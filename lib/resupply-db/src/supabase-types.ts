@@ -5067,7 +5067,7 @@ export interface Database {
           source: string;
           payment_method: string | null;
           counter_csr_email: string | null;
-          // Migration 0404: XPS Ship shipping-label integration.
+          // Migration 0405: XPS Ship shipping-label integration.
           // xps_book_number is the booked shipment lookup key;
           // xps_label_status tracks 'staged' | 'booked' | 'voided';
           // shipping_service_code is the chosen carrier service.

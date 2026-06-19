@@ -1,4 +1,4 @@
--- 0405_product_ship_specs — per-product parcel presets for XPS shipping labels
+-- 0406_product_ship_specs — per-product parcel presets for XPS shipping labels
 --
 -- WHY
 --   Creating an XPS label needs a parcel weight (and ideally dimensions).

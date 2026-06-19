@@ -1,4 +1,4 @@
--- Migration 0404 — XPS Ship label fields on shop_orders
+-- Migration 0405 — XPS Ship label fields on shop_orders
 --
 -- Backs the XPS Ship shipping-label integration. The existing
 -- tracking_carrier / tracking_number / shipped_at columns (migration

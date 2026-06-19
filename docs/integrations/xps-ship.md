@@ -37,7 +37,7 @@ immediately. If XPS hasn't booked it yet, the order is left in the
 | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | Adapter (HTTP client, error normalisation) | `lib/resupply-integrations-xps-ship`                                                                                                         |
 | API routes                                 | `artifacts/resupply-api/src/routes/admin/xps-shipping.ts`                                                                                    |
-| DB columns                                 | migration `0404_shop_orders_xps_shipping.sql` (`xps_book_number`, `xps_label_status`, `shipping_service_code`; reuses `shipping_cost_cents`) |
+| DB columns                                 | migration `0405_shop_orders_xps_shipping.sql` (`xps_book_number`, `xps_label_status`, `shipping_service_code`; reuses `shipping_cost_cents`) |
 | Admin UI                                   | `artifacts/cpap-fitter/src/pages/admin/admin-shipping.tsx` (`/admin/shipping`)                                                               |
 | Config catalog                             | `CATEGORY_XPS_SHIP` in `app-config/catalog.ts` (tenant-scoped)                                                                               |
 
@@ -98,7 +98,7 @@ PDF endpoint sets `Cache-Control: no-store`.
   `staged` orders so tracking + the patient notification land without
   anyone clicking Sync. Per-tenant + fail-soft (unconfigured tenants do no
   work).
-- **Per-product parcel presets** — `product_ship_specs` (migration 0405)
+- **Per-product parcel presets** — `product_ship_specs` (migration 0406)
   stores a weight (oz) + optional dimensions per Stripe product id. The
   create-label form and the batch path pre-fill the parcel by summing each
   order line's preset × quantity (`computeParcelForOrder`); missing presets
