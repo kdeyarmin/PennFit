@@ -37,7 +37,7 @@ import {
   publicWsOriginFromBaseUrl,
   readTwilioWebhookAuthTokenOrNull,
   readVoiceConfigOrNull,
-  readVoicePublicBaseUrlOrNull,
+  readVoicePublicBaseUrls,
 } from "../../lib/voice/voice-config";
 
 const BREATHE_SALES_GREETING =
@@ -65,10 +65,13 @@ const signatureMiddleware = requireTwilioSignature({
   // is unset; reconstruct the public URL independently so the signature
   // comparison matches (same posture as inbound-reorder).
   getAuthToken: () => readTwilioWebhookAuthTokenOrNull() ?? undefined,
+  // The platform sales line is reachable on the platform host (cmbreathe.com)
+  // as well as whatever host the tenant lines use, so validate the Twilio
+  // signature against the configured allowlist of voice hosts rather than a
+  // single global host. Each candidate still requires a valid HMAC.
   buildPublicUrl: (req) => {
-    const base = readVoicePublicBaseUrlOrNull() ?? "";
     const originalUrl = req.originalUrl ?? "";
-    return `${base}${originalUrl}`;
+    return readVoicePublicBaseUrls().map((base) => `${base}${originalUrl}`);
   },
 });
 
