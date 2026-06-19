@@ -117,7 +117,8 @@ describe("readVoiceConfigOrNull — optional value parsing", () => {
         ?.elevenLabsStyle,
     ).toBe(0.15);
     expect(
-      readVoiceConfigOrNull(fullEnv({ ELEVENLABS_STYLE: "5" }))?.elevenLabsStyle,
+      readVoiceConfigOrNull(fullEnv({ ELEVENLABS_STYLE: "5" }))
+        ?.elevenLabsStyle,
     ).toBe(1);
     expect(
       readVoiceConfigOrNull(fullEnv({ ELEVENLABS_SIMILARITY_BOOST: "0.9" }))

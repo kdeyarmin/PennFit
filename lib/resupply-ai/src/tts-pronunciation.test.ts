@@ -7,7 +7,9 @@ import {
 
 describe("applyPronunciation", () => {
   it("rewrites CPAP/BiPAP/APAP initialisms to syllabic spellings", () => {
-    expect(applyPronunciation("Your CPAP is due.")).toBe("Your see-pap is due.");
+    expect(applyPronunciation("Your CPAP is due.")).toBe(
+      "Your see-pap is due.",
+    );
     expect(applyPronunciation("a BiPAP machine")).toBe("a bye-pap machine");
     expect(applyPronunciation("APAP mode")).toBe("ay-pap mode");
   });
@@ -19,9 +21,7 @@ describe("applyPronunciation", () => {
   });
 
   it("rewrites ResMed and Bi-PAP variants", () => {
-    expect(applyPronunciation("a ResMed AirSense")).toBe(
-      "a Rezz-med AirSense",
-    );
+    expect(applyPronunciation("a ResMed AirSense")).toBe("a Rezz-med AirSense");
     expect(applyPronunciation("Bi-PAP")).toBe("bye-pap");
   });
 
