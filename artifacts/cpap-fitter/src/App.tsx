@@ -538,6 +538,15 @@ const BreatheSignup = lazyWithRetry(() =>
   import("@/pages/breathe").then((m) => ({ default: m.BreatheSignup })),
 );
 
+// Breathe — Case studies. How AI is applied across the DME workflow (sourced
+// industry benchmarks) plus an explicitly illustrative/modeled CareMetric
+// Breathe scenario. Same dark chrome, mounted in TopRouter, lazy-loaded.
+const BreatheCaseStudies = lazyWithRetry(() =>
+  import("@/pages/breathe-case-studies").then((m) => ({
+    default: m.BreatheCaseStudies,
+  })),
+);
+
 // Breathe — "What the software does, by role". A dedicated companion to
 // the Breathe homepage that breaks every feature down by the team seat
 // that uses it and tags each with time saved / cost cut / revenue grown.
@@ -1203,6 +1212,7 @@ function TopRouter() {
         <Route path="/breathe/pricing" component={BreathePricing} />
         <Route path="/breathe/security" component={BreatheSecurity} />
         <Route path="/breathe/faq" component={BreatheFaq} />
+        <Route path="/breathe/case-studies" component={BreatheCaseStudies} />
         <Route path="/breathe/signup" component={BreatheSignup} />
         <Route path="/">
           {() => (isPlatformHomeHost() ? <BreatheHome /> : <PatientRouter />)}
