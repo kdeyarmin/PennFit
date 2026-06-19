@@ -542,6 +542,28 @@
   align-items: center;
   gap: 10px;
 }
+/* Tertiary "talk to a human" path under the hero CTAs — the self-serve
+   demo stays primary; this is the quieter route for buyers who want a call. */
+.bx-hero-talk {
+  margin: 14px 0 0;
+  font-size: 13.5px;
+  color: var(--bx-text-dim);
+}
+/* A button that reads as an inline text link — used where we need link
+   affordance but a real <button> (opens a modal, not a route). */
+.bx-linkbtn {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+  color: var(--bx-cyan);
+  font-weight: 600;
+}
+.bx-linkbtn:hover {
+  text-decoration: underline;
+}
 
 /* Inner-page header (Product / Compare / ROI / Pricing / Security) */
 .bx-pagehead {
@@ -758,6 +780,24 @@
   font-size: 13.5px;
   color: var(--bx-text-dim);
   line-height: 1.4;
+}
+/* Honest provenance for the headline stats — keeps them from reading as
+   invented and routes the skeptic to the calculator that shows the math. */
+.bx-stats-note {
+  margin: 16px 0 0;
+  text-align: center;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--bx-text-faint);
+}
+.bx-stats-note a {
+  color: var(--bx-cyan);
+  text-decoration: none;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.bx-stats-note a:hover {
+  text-decoration: underline;
 }
 
 /* ───────────────────── Value pillars (home) ───────────────────── */
@@ -3426,6 +3466,29 @@
 }
 .bx-modal-alt a:hover {
   text-decoration: underline;
+}
+/* Direct phone/email inside the "talk to us" modal — an enterprise buyer
+   who'd rather just call never has to hunt the footer for it. */
+.bx-modal-contact {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 22px;
+  margin-top: 18px;
+}
+.bx-modal-contact a {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--bx-text);
+  text-decoration: none;
+}
+.bx-modal-contact a:hover {
+  color: var(--bx-cyan);
+}
+.bx-modal-contact svg {
+  color: var(--bx-cyan);
 }
 @keyframes bx-fade-in {
   from {

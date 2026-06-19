@@ -56,6 +56,7 @@ import {
 } from "lucide-react";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import { ADDON_DETAILS } from "@/lib/admin/addon-details";
+import { isPlatformApexHost } from "@/lib/platform-host";
 import "./breathe.css";
 
 // Icon-only crop of the CareMetric app icon. The full lockup PNG
@@ -148,10 +149,15 @@ export function PageHead({
 const DEMO_ENTRY_URL = "/admin?demo=1";
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-type DemoGateContextValue = { open: (source?: string) => void };
+type DemoGateContextValue = {
+  /** Open the email→self-serve-demo gate (lands the visitor in the console). */
+  open: (source?: string) => void;
+  /** Open the "talk to us" contact gate (a human follows up — no console). */
+  openContact: (source?: string) => void;
+};
 const DemoGateContext = React.createContext<DemoGateContextValue | null>(null);
 
-/** Open the email→demo gate from any CTA. */
+/** Open the demo / contact gates from any CTA. */
 export function useDemoGate(): DemoGateContextValue {
   const ctx = useContext(DemoGateContext);
   if (!ctx) throw new Error("useDemoGate must be used within DemoGateProvider");
@@ -160,10 +166,14 @@ export function useDemoGate(): DemoGateContextValue {
 
 function DemoGateProvider({ children }: { children: React.ReactNode }) {
   const [openSource, setOpenSource] = useState<string | null>(null);
+  const [contactSource, setContactSource] = useState<string | null>(null);
   const open = useCallback((source?: string) => {
     setOpenSource(source ?? "breathe");
   }, []);
-  const value = useMemo(() => ({ open }), [open]);
+  const openContact = useCallback((source?: string) => {
+    setContactSource(source ?? "breathe-contact");
+  }, []);
+  const value = useMemo(() => ({ open, openContact }), [open, openContact]);
   return (
     <DemoGateContext.Provider value={value}>
       {children}
@@ -171,6 +181,12 @@ function DemoGateProvider({ children }: { children: React.ReactNode }) {
         <DemoGateModal
           source={openSource}
           onClose={() => setOpenSource(null)}
+        />
+      ) : null}
+      {contactSource !== null ? (
+        <ContactGateModal
+          source={contactSource}
+          onClose={() => setContactSource(null)}
         />
       ) : null}
     </DemoGateContext.Provider>
@@ -182,7 +198,7 @@ function DemoGateProvider({ children }: { children: React.ReactNode }) {
  * failure must never block demo entry) and then hard-navigates into the
  * client-side demo sandbox.
  */
-async function enterDemoWithEmail(
+async function captureLead(
   email: string,
   source: string,
   honeypot: string,
@@ -198,8 +214,16 @@ async function enterDemoWithEmail(
       }),
     });
   } catch {
-    /* best-effort: enter the demo regardless of capture success */
+    /* best-effort: never block the visitor on a capture failure */
   }
+}
+
+async function enterDemoWithEmail(
+  email: string,
+  source: string,
+  honeypot: string,
+): Promise<void> {
+  await captureLead(email, source, honeypot);
   window.location.href = DEMO_ENTRY_URL;
 }
 
@@ -288,18 +312,14 @@ function DemoEmailForm({
   );
 }
 
-function DemoGateModal({
-  source,
-  onClose,
-}: {
-  source: string;
-  onClose: () => void;
-}) {
+/**
+ * Modal a11y plumbing shared by every Breathe gate modal: Esc to close,
+ * body scroll-lock, a focus trap (keyboard users can't tab out to the page
+ * behind), and focus restored to the trigger on close. Returns the ref to
+ * spread onto the dialog element.
+ */
+function useModalDismiss(onClose: () => void) {
   const modalRef = useRef<HTMLDivElement>(null);
-
-  // Esc to close, body scroll-lock, a focus trap (keyboard users can't
-  // tab out to the page behind), and focus restored to the trigger on
-  // close.
   useEffect(() => {
     const prevFocused = document.activeElement as HTMLElement | null;
     const onKey = (e: KeyboardEvent) => {
@@ -331,6 +351,17 @@ function DemoGateModal({
       prevFocused?.focus?.();
     };
   }, [onClose]);
+  return modalRef;
+}
+
+function DemoGateModal({
+  source,
+  onClose,
+}: {
+  source: string;
+  onClose: () => void;
+}) {
+  const modalRef = useModalDismiss(onClose);
 
   return (
     <div className="bx-modal-backdrop" role="presentation" onClick={onClose}>
@@ -370,6 +401,198 @@ function DemoGateModal({
             Create your account →
           </Link>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Email-only contact capture for the "talk to us" gate. Mirrors
+ * DemoEmailForm's validation + honeypot, but instead of navigating into
+ * the demo it captures the lead (best-effort) and hands control back to
+ * the modal to show a confirmation — the human follow-up happens off-app.
+ */
+function ContactEmailForm({
+  source,
+  onDone,
+}: {
+  source: string;
+  onDone: () => void;
+}) {
+  const [email, setEmail] = useState("");
+  const [status, setStatus] = useState<"idle" | "submitting" | "error">("idle");
+  const [err, setErr] = useState("");
+  const hpRef = useRef<HTMLInputElement>(null);
+  const emailRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    emailRef.current?.focus();
+  }, []);
+
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const value = email.trim().toLowerCase();
+    if (!EMAIL_RE.test(value)) {
+      setErr("Please enter a valid email address.");
+      setStatus("error");
+      return;
+    }
+    setStatus("submitting");
+    setErr("");
+    await captureLead(value, source, hpRef.current?.value ?? "");
+    onDone();
+  };
+
+  return (
+    <form className="bx-demoform" onSubmit={onSubmit} noValidate>
+      {/* Honeypot: real users never see or fill this. */}
+      <input
+        ref={hpRef}
+        type="text"
+        name="website"
+        tabIndex={-1}
+        autoComplete="off"
+        aria-hidden="true"
+        className="bx-hp"
+      />
+      <div className="bx-demoform-row">
+        <input
+          ref={emailRef}
+          type="email"
+          inputMode="email"
+          autoComplete="email"
+          required
+          value={email}
+          onChange={(e) => {
+            setEmail(e.target.value);
+            if (status === "error") setStatus("idle");
+          }}
+          placeholder="you@yourdme.com"
+          aria-label="Work email"
+          aria-invalid={status === "error"}
+        />
+        <button
+          type="submit"
+          className="bx-btn bx-btn-primary"
+          disabled={status === "submitting"}
+        >
+          {status === "submitting" ? (
+            "Sending…"
+          ) : (
+            <>
+              Request a walkthrough <ArrowRight size={16} />
+            </>
+          )}
+        </button>
+      </div>
+      {status === "error" ? (
+        <span className="bx-demoform-err" role="alert">
+          {err}
+        </span>
+      ) : null}
+    </form>
+  );
+}
+
+/**
+ * "Talk to us" gate — the human path that sits beside the self-serve demo.
+ * Captures an email for follow-up (tagged with its own source) and always
+ * surfaces the phone + email so an enterprise buyer who wants a real
+ * conversation has one. On submit it confirms in-place rather than
+ * navigating, then nudges toward the live demo for the impatient.
+ */
+function ContactGateModal({
+  source,
+  onClose,
+}: {
+  source: string;
+  onClose: () => void;
+}) {
+  const modalRef = useModalDismiss(onClose);
+  const { open: openDemoGate } = useDemoGate();
+  const [submitted, setSubmitted] = useState(false);
+
+  return (
+    <div className="bx-modal-backdrop" role="presentation" onClick={onClose}>
+      <div
+        ref={modalRef}
+        className="bx-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="bx-contact-modal-title"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          type="button"
+          className="bx-modal-close"
+          aria-label="Close"
+          onClick={onClose}
+        >
+          <X size={18} />
+        </button>
+        {submitted ? (
+          <>
+            <span className="bx-modal-ic">
+              <Check size={20} />
+            </span>
+            <h3 id="bx-contact-modal-title">
+              Thanks — we&apos;ll be in touch.
+            </h3>
+            <p className="bx-modal-lede">
+              A CPAP &amp; DME specialist will reach out within one business day
+              to set up a walkthrough on your own workflows. Prefer to talk now?
+              We&apos;re here.
+            </p>
+            <div className="bx-modal-contact">
+              <a href="tel:+18775212890">
+                <PhoneCall size={14} aria-hidden="true" /> (877) 521-2890
+              </a>
+              <a href="mailto:info@cmbreathe.com">
+                <Mail size={14} aria-hidden="true" /> info@cmbreathe.com
+              </a>
+            </div>
+            <div className="bx-modal-alt">
+              Don&apos;t want to wait?{" "}
+              <button
+                type="button"
+                className="bx-linkbtn"
+                onClick={() => {
+                  onClose();
+                  openDemoGate("breathe-contact-to-demo");
+                }}
+              >
+                Jump into the live demo →
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <span className="bx-modal-ic">
+              <Headphones size={20} />
+            </span>
+            <h3 id="bx-contact-modal-title">Book a walkthrough</h3>
+            <p className="bx-modal-lede">
+              Want a guided tour with a human instead? Leave your email and a
+              specialist will reach out to schedule a walkthrough on your
+              patients, payers, and workflows — or call us right now.
+            </p>
+            <ContactEmailForm
+              source={source}
+              onDone={() => setSubmitted(true)}
+            />
+            <div className="bx-modal-contact">
+              <a href="tel:+18775212890">
+                <PhoneCall size={14} aria-hidden="true" /> (877) 521-2890
+              </a>
+              <a href="mailto:info@cmbreathe.com">
+                <Mail size={14} aria-hidden="true" /> info@cmbreathe.com
+              </a>
+            </div>
+            <p className="bx-modal-fine">
+              No sales pressure — just a working session. Unsubscribe anytime.
+            </p>
+          </>
+        )}
       </div>
     </div>
   );
@@ -660,6 +883,12 @@ export function BreatheHome() {
   return (
     <BreatheShell>
       <Hero />
+      {/* Show the actual console on the landing page — not just the product
+          tour. The hero sells the outcome; this proves the product is real
+          (competitors all lead with product UI, we used to lead with an
+          abstract graphic). Reuses the same illustrative console as the
+          product tour. */}
+      <ProductShowcase />
       <IntegrationsStrip />
       <Pillars />
       <ResupplyEngine />
@@ -839,7 +1068,7 @@ const FOOTER_LINKS: { href: string; label: string }[] = [
 function Nav() {
   const [loc] = useLocation();
   const [open, setOpen] = useState(false);
-  const { open: openDemoGate } = useDemoGate();
+  const { open: openDemoGate, openContact } = useDemoGate();
   // Close the mobile menu on any route change so it never lingers open.
   useEffect(() => {
     setOpen(false);
@@ -864,6 +1093,13 @@ function Nav() {
               {l.label}
             </Link>
           ))}
+          <button
+            type="button"
+            className="bx-btn bx-btn-ghost bx-btn-sm"
+            onClick={() => openContact("breathe-nav")}
+          >
+            Book a demo
+          </button>
           <button
             type="button"
             className="bx-btn bx-btn-primary bx-btn-sm"
@@ -908,6 +1144,16 @@ function Nav() {
             >
               Start free demo
             </button>
+            <button
+              type="button"
+              className="bx-btn bx-btn-ghost bx-nav-mobile-demo"
+              onClick={() => {
+                setOpen(false);
+                openContact("breathe-nav");
+              }}
+            >
+              Book a demo
+            </button>
           </div>
         </div>
       ) : null}
@@ -917,7 +1163,7 @@ function Nav() {
 
 /* ───────────────────────── Hero ───────────────────────── */
 function Hero() {
-  const { open: openDemoGate } = useDemoGate();
+  const { open: openDemoGate, openContact } = useDemoGate();
   const onMove = (e: React.MouseEvent<HTMLElement>) => {
     if (prefersReducedMotion()) return;
     const r = e.currentTarget.getBoundingClientRect();
@@ -973,6 +1219,16 @@ function Hero() {
               <BadgeCheck size={15} color="#54c8ff" />
               Live demo on sample data · No call · No credit card
             </div>
+            <p className="bx-hero-talk bx-reveal in">
+              Prefer a guided walkthrough?{" "}
+              <button
+                type="button"
+                className="bx-linkbtn"
+                onClick={() => openContact("breathe-hero")}
+              >
+                Talk to us →
+              </button>
+            </p>
           </div>
 
           <div className="bx-orb-wrap bx-reveal in">
@@ -1022,16 +1278,26 @@ const STATS: { num: number; suffix: string; prefix?: string; label: string }[] =
 
 function StatBand() {
   return (
-    <div className="bx-stats bx-reveal">
-      {STATS.map((s) => (
-        <div className="bx-stat" key={s.label}>
-          <div className="bx-stat-num">
-            <CountUp to={s.num} prefix={s.prefix} suffix={s.suffix} />
+    <>
+      <div className="bx-stats bx-reveal">
+        {STATS.map((s) => (
+          <div className="bx-stat" key={s.label}>
+            <div className="bx-stat-num">
+              <CountUp to={s.num} prefix={s.prefix} suffix={s.suffix} />
+            </div>
+            <div className="bx-stat-label">{s.label}</div>
           </div>
-          <div className="bx-stat-label">{s.label}</div>
-        </div>
-      ))}
-    </div>
+        ))}
+      </div>
+      {/* Honest framing: these are modeled / benchmark figures, not a
+          claim of measured customer results. Tie them to the calculator
+          that shows the math on the reader's own numbers. */}
+      <p className="bx-stats-note bx-reveal">
+        Modeled on typical DME resupply economics and published industry
+        benchmarks — directional, not a guarantee.{" "}
+        <Link href="/breathe/roi">Size it on your own numbers →</Link>
+      </p>
+    </>
   );
 }
 
@@ -4161,6 +4427,7 @@ function Faq() {
 
 /* ───────────────────────── Closing CTA ───────────────────────── */
 export function ClosingCta() {
+  const { openContact } = useDemoGate();
   return (
     <section className="bx-section" id="demo">
       <div className="bx-shell">
@@ -4179,6 +4446,13 @@ export function ClosingCta() {
             <Link className="bx-btn bx-btn-gold" href="/breathe/signup">
               Create your account <ArrowRight size={17} />
             </Link>
+            <button
+              type="button"
+              className="bx-btn bx-btn-ghost"
+              onClick={() => openContact("breathe-cta")}
+            >
+              Book a demo
+            </button>
             <Link className="bx-btn bx-btn-ghost" href="/breathe/product">
               Explore the platform
             </Link>
@@ -4264,14 +4538,24 @@ function Footer() {
 /* ───────────────────────── Helpers ───────────────────────── */
 
 /**
- * Marks this page `noindex` while it is mounted. pennpaps.com is
- * reserved for the first tenant (Penn Home Medical Supply); Breathe is
- * a separate-brand CareMetric.ai marketing surface, so it must not be
- * indexed under the tenant domain. The tag is removed on unmount so it
- * never leaks onto the tenant's own pages during SPA navigation.
+ * Marks this page `noindex` while it is mounted — EXCEPT on the platform's
+ * public production apex (`cmbreathe.com`), which is the canonical home of
+ * the Breathe marketing site and SHOULD be indexed.
+ *
+ * Everywhere else stays noindex: tenant storefront domains (e.g.
+ * `pennpaps.com`, reserved for Penn Home Medical Supply) where these
+ * separate-brand CareMetric.ai pages must never be indexed, plus the
+ * Railway `*.up.railway.app` deploy/preview hosts (staging/duplicate
+ * content). The tag is removed on unmount so it never leaks onto a
+ * tenant's own pages during SPA navigation.
+ *
+ * (Previously this added `noindex` unconditionally, which left the entire
+ * marketing site invisible to search engines even on `cmbreathe.com`.)
  */
 function useNoIndex() {
   useEffect(() => {
+    // The apex is the one host we WANT indexed — skip the tag there.
+    if (isPlatformApexHost()) return;
     const meta = document.createElement("meta");
     meta.name = "robots";
     meta.content = "noindex, follow";

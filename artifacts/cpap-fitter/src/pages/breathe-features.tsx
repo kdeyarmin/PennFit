@@ -766,16 +766,23 @@ function Intro() {
 
 function StatBand() {
   return (
-    <div className="bx-stats bx-reveal">
-      {HERO_STATS.map((s) => (
-        <div className="bx-stat" key={s.label}>
-          <div className="bx-stat-num">
-            <CountUp to={s.to} suffix={s.suffix} decimals={s.decimals} />
+    <>
+      <div className="bx-stats bx-reveal">
+        {HERO_STATS.map((s) => (
+          <div className="bx-stat" key={s.label}>
+            <div className="bx-stat-num">
+              <CountUp to={s.to} suffix={s.suffix} decimals={s.decimals} />
+            </div>
+            <div className="bx-stat-label">{s.label}</div>
           </div>
-          <div className="bx-stat-label">{s.label}</div>
-        </div>
-      ))}
-    </div>
+        ))}
+      </div>
+      <p className="bx-stats-note bx-reveal">
+        Modeled on typical DME resupply economics and published industry
+        benchmarks — directional, not a guarantee.{" "}
+        <Link href="/breathe/roi">Size it on your own numbers →</Link>
+      </p>
+    </>
   );
 }
 
