@@ -808,6 +808,17 @@ class Impl implements VoiceToolDispatcher {
       this.deps.placeOrderForConversation ?? placeResupplyOrderForConversation;
     const placed = await placeOrder({
       conversationId: this.deps.conversationId,
+      // The caller's spoken confirmation (the agent reads back the
+      // refill attestation before calling this tool) is the recorded
+      // Medicare/payer refill attestation. No IP/UA on a phone call.
+      affirmation: {
+        channel: "voice",
+        continuedUse: true,
+        supplyLow: true,
+        requestedBy: "self",
+        ip: null,
+        userAgent: null,
+      },
     });
     switch (placed.status) {
       case "ok":
@@ -875,6 +886,23 @@ class Impl implements VoiceToolDispatcher {
               "before this order can ship. Warmly offer to have a " +
               "teammate follow up — do not mention usage data or " +
               "compliance.",
+          },
+        };
+      case "too_early":
+        return {
+          callId: call.callId,
+          name: call.name,
+          result: {
+            ok: false,
+            order_id: "",
+            accepted_skus: [],
+            reason:
+              "It is a little early to reship this under the plan" +
+              (placed.refillWindow.earliestShipOn
+                ? ` (eligible to ship on ${placed.refillWindow.earliestShipOn})`
+                : "") +
+              ". Warmly offer to have a teammate follow up rather than " +
+              "placing the order now.",
           },
         };
       default:

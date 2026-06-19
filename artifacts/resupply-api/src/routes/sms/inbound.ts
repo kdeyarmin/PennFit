@@ -885,6 +885,17 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
     case "confirm": {
       const result = await placeResupplyOrderForConversation({
         conversationId: input.conversationId,
+        // The patient's YES reply (to copy that states "confirm only if
+        // you still use your equipment and are running low") is the
+        // recorded Medicare/payer refill attestation.
+        affirmation: {
+          channel: "sms",
+          continuedUse: true,
+          supplyLow: true,
+          requestedBy: "self",
+          ip: input.ip,
+          userAgent: input.userAgent,
+        },
       });
       if (result.status === "ok") {
         const { error: closeErr } = await supabase
@@ -1008,6 +1019,36 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
           userAgent: input.userAgent,
         });
         return "Thanks! A team member will check in with you before this ships — we want to make sure your therapy is going well first.";
+      }
+      if (result.status === "too_early") {
+        // Refill-window guard held the reship (would ship earlier than the
+        // CMS 10-day-before-depletion window). Do NOT reuse input.aiReply
+        // ("on its way"). order-flow already raised a CSR alert; flip the
+        // conversation to awaiting_admin so it lands in the queue.
+        const { error: earlyErr } = await supabase
+          .from("conversations")
+          .update({ status: "awaiting_admin", updated_at: nowIso })
+          .eq("id", input.conversationId);
+        if (earlyErr) throw earlyErr;
+        await safeAudit({
+          action: "messaging.order.blocked_refill_window",
+          adminEmail: null,
+          adminUserId: null,
+          targetTable: "episodes",
+          targetId: result.episodeId,
+          metadata: {
+            channel: "sms",
+            conversation_id: input.conversationId,
+            patient_id: input.patientId,
+            episode_id: result.episodeId,
+            hcpcs_code: result.refillWindow.hcpcsCode,
+            earliest_ship_on: result.refillWindow.earliestShipOn,
+            days_until_ship: result.refillWindow.daysUntilShip,
+          },
+          ip: input.ip,
+          userAgent: input.userAgent,
+        });
+        return "Thanks! It looks like it's a little early to reship this under your plan, so a team member will review and follow up before anything ships.";
       }
       return "Thanks — we'll review and follow up shortly.";
     }

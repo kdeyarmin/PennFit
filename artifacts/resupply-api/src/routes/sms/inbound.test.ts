@@ -232,9 +232,17 @@ describe("POST /sms/inbound", () => {
 
     expect(res.status).toBe(200);
     expect(res.text).toMatch(/<Response><Message>.*refill is on its way/);
-    expect(placeOrderMock).toHaveBeenCalledWith({
-      conversationId: CONVERSATION_ID,
-    });
+    expect(placeOrderMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversationId: CONVERSATION_ID,
+        // The YES reply carries the Medicare/payer refill attestation.
+        affirmation: expect.objectContaining({
+          channel: "sms",
+          continuedUse: true,
+          supplyLow: true,
+        }),
+      }),
+    );
 
     const audits = logAuditMock.mock.calls.map((c) => c[0]);
     const intentAudit = audits.find(

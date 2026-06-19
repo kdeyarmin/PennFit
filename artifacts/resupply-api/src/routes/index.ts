@@ -168,6 +168,7 @@ import clearinghouseCredentialsRouter from "./admin/clearinghouse-credentials.js
 import goodFaithEstimatesRouter from "./admin/good-faith-estimates.js";
 import pecosStatusRouter from "./admin/pecos-status.js";
 import eligibilityChecksRouter from "./admin/eligibility-checks.js";
+import refillConfirmationsRouter from "./admin/refill-confirmations.js";
 import sameOrSimilarRouter from "./admin/same-or-similar.js";
 import cappedRentalCyclesRouter from "./admin/capped-rental-cycles.js";
 import dwoDocumentsRouter from "./admin/dwo-documents.js";
@@ -569,6 +570,9 @@ router.use(pecosStatusRouter);
 // /admin/patients/:id/insurance-coverages/:coverageId/verify-eligibility
 // + /admin/patients/:id/eligibility-checks — X12 270/271 round-trip.
 router.use(eligibilityChecksRouter);
+// /admin/patients/:id/refill-confirmations — Medicare/payer refill
+// attestations (continued use + supply running low) captured at confirm.
+router.use(refillConfirmationsRouter);
 // /admin/patients/:id/same-or-similar — Medicare HETS Same-or-Similar
 // cache. Manual recording today; HETS adapter lands later.
 router.use(sameOrSimilarRouter);

@@ -23,9 +23,12 @@ describe("defaultReminderSmsBody", () => {
     expect(new Set(bodies).size).toBe(variants.length);
   });
 
-  it("keeps the historical 'initial' copy byte-for-byte", () => {
+  it("pins the 'initial' copy and its refill attestation framing", () => {
+    // The YES reply is the patient's Medicare/payer refill attestation, so
+    // the copy asks them to confirm continued use AND running low before
+    // replying (see REFILL_AFFIRMATION_STATEMENT).
     expect(defaultReminderSmsBody("initial", NAME, PRACTICE)).toBe(
-      "Hi Sam, it's PennPaps. You're due for a CPAP refill. Reply YES to ship to the address on file, EDIT to change it, or STOP to opt out.",
+      "Hi Sam, it's PennPaps. Time for a CPAP refill. Reply YES if you still use it and are low on supplies, EDIT to change address, STOP to opt out.",
     );
   });
 
