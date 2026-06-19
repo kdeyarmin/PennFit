@@ -1593,7 +1593,7 @@ function Lifecycle() {
           <p className="bx-lede">
             From the first intake call to the last reconciled claim, every stage
             of the DME lifecycle runs on the same data — no exports, no
-            swivel-chair, no patients lost between systems.
+            re-keying between screens, no patients lost between systems.
           </p>
         </div>
         <div className="bx-pipeline bx-reveal">
@@ -1850,7 +1850,7 @@ const LIVE_SHOTS: { src: string; cap: string; alt: string }[] = [
   {
     src: "/breathe/screens/console-resupply.jpg",
     cap: "Resupply opportunities — who's due, overdue, and ready to refit",
-    alt: "Breathe admin: resupply opportunities worklist with overdue and high-leak flags",
+    alt: "Breathe admin: resupply opportunities worklist with overdue and at-risk flags",
   },
   {
     src: "/breathe/screens/console-fleet.jpg",
@@ -2393,8 +2393,9 @@ function AiBento() {
           </h2>
           <p className="bx-lede">
             Best-in-class models from Anthropic, OpenAI, and ElevenLabs are
-            wired into the product where each is strongest — and every one
-            degrades gracefully when a key is unset.
+            wired into the product where each is strongest — and if a provider
+            is ever unavailable, that feature steps aside quietly instead of
+            breaking your day.
           </p>
         </div>
         <div className="bx-bento">
@@ -2940,8 +2941,8 @@ function Capabilities() {
           <p className="bx-lede">
             Resupply, revenue cycle, clinical monitoring, patient communication,
             a branded storefront, telehealth, and an AI workforce — every
-            workflow on the same patient record. No exports, no swivel-chair, no
-            patients lost between systems.
+            workflow on the same patient record. No exports, no re-keying
+            between screens, no patients lost between systems.
           </p>
         </div>
         <div className="bx-caps">
@@ -3084,7 +3085,7 @@ const BOLTED_ON = [
   "A separate telephony provider for calls & texts",
   "A separate e-signature tool",
   "An add-on “AI” module, licensed on top",
-  "Glue code, nightly exports & swivel-chair in between",
+  "Glue code, nightly exports & manual re-keying in between",
 ];
 
 function BuiltInHouse() {
@@ -3361,7 +3362,7 @@ const DIFFERENCES: Capability[] = [
     summary: "Every workflow reads and writes the same data.",
     points: [
       "Intake → resupply → claims → clinical on one timeline",
-      "No exports, no swivel-chair, no patients lost between tools",
+      "No exports, no re-keying between screens, no patients lost between tools",
     ],
   },
   {
@@ -4431,7 +4432,7 @@ function RoiAssumptions() {
 const PRICING_FAQ: { q: string; a: React.ReactNode }[] = [
   {
     q: "Is it really one price, or per-module like legacy suites?",
-    a: "One platform price covers the core — resupply, revenue cycle, patient communications, clinical monitoring, the storefront, and analytics. There are no per-module unlocks to discover later. A short list of à-la-carte add-ons (the AI voice agent, advanced billing automation, extra seats and locations) is published in the open, not negotiated line by line.",
+    a: "One platform price covers the core — resupply, revenue cycle, patient communications, clinical monitoring, the storefront, and analytics. There are no per-module unlocks to discover later. A short list of à la carte add-ons (the AI voice agent, advanced billing automation, extra seats and locations) is published in the open, not negotiated line by line.",
   },
   {
     q: "Is there a long-term contract?",
@@ -4494,7 +4495,7 @@ const STEPS: {
     icon: <Plug size={20} />,
     n: "02",
     title: "Configure & connect",
-    body: "Wire up your payers, clearinghouse, brand, From address, and reminder cadences. Turn AI surfaces on one feature flag at a time, at your pace.",
+    body: "Wire up your payers, clearinghouse, branding, sender email address, and reminder schedules. Switch on each AI feature one at a time, at your own pace.",
   },
   {
     icon: <Zap size={20} />,
