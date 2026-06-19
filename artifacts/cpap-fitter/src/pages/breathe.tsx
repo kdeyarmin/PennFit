@@ -2000,8 +2000,9 @@ function LiveConsole() {
           <div className="bx-app-glow" aria-hidden="true" />
         </div>
         <p className="bx-app-caption">
-          A ~40-second tour of the live console — resupply, therapy fleet,
-          denials, the shared inbox, and orders. Real screens, sample data.
+          A 40-second look at Breathe — the command center, resupply, therapy
+          monitoring, revenue cycle, and the AI workforce. Real product screens;
+          sample data.
         </p>
 
         <div className="bx-shotgrid">

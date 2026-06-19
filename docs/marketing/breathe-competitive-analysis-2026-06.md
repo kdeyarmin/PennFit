@@ -83,9 +83,13 @@ in response. Source pages live in
 ## Changes shipped in this PR
 
 - **Show the real product on the home page** — a new `LiveConsole` section on
-  `/breathe` leads with a **~40-second product-tour video** of the live
-  `/admin?demo=1` console (click-to-play, `preload="none"`, the home dashboard
-  as its poster) and a gallery of **six real captured screenshots** —
+  `/breathe` leads with a **~40-second cinematic product trailer** —
+  branded title/outro cards, the real `/admin?demo=1` screens shown with
+  Ken-Burns motion in glass frames, animated captions, and a stat punch, all
+  in the Breathe brand (Fraunces/Hanken, navy/cyan/gold). It's composed as an
+  HTML motion sequence and screen-recorded with Playwright (no editing
+  tooling needed); click-to-play, `preload="none"`, home dashboard as poster.
+  Below it sits a gallery of **six real captured screenshots** —
   resupply opportunities, therapy fleet, AI denials worklist, omnichannel
   inbox, patient roster, and orders — each in a browser frame with a caption.
   Video + screens were recorded with Playwright against the demo sandbox;
