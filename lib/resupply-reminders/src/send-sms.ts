@@ -76,15 +76,40 @@ export function defaultReminderSmsBody(
   firstName: string,
   practiceName: string,
 ): string {
+  // Each YES is the patient's Medicare/payer refill attestation, so the
+  // copy asks them to confirm BOTH that they still use the equipment AND
+  // that they are running low before replying YES (see
+  // REFILL_AFFIRMATION_STATEMENT). Kept GSM-7-safe (no em-dash, curly
+  // quotes, or ellipsis) so Twilio doesn't upgrade the whole message to
+  // UCS-2 and triple the per-segment cost.
   switch (variant) {
     case "followup":
-      return `Hi ${firstName}, just checking back from ${practiceName} - your CPAP refill is ready when you are. Reply YES to ship, EDIT to change address, or STOP to opt out.`;
+      return `Hi ${firstName}, ${practiceName} checking back. Reply YES if you still use your CPAP and are low on supplies, EDIT to change address, STOP to opt out.`;
     case "final":
-      return `Last reminder, ${firstName} - we don't want you to run out of CPAP supplies. Reply YES and ${practiceName} ships today, or STOP to opt out.`;
+      return `Last reminder, ${firstName}: reply YES if you still use your CPAP and are low on supplies and ${practiceName} ships today, or STOP to opt out.`;
     case "initial":
     default:
-      return `Hi ${firstName}, it's ${practiceName}. You're due for a CPAP refill. Reply YES to ship to the address on file, EDIT to change it, or STOP to opt out.`;
+      return `Hi ${firstName}, it's ${practiceName}. Time for a CPAP refill. Reply YES if you still use it and are low on supplies, EDIT to change address, STOP to opt out.`;
   }
+}
+
+/**
+ * True when an outbound SMS body asked the patient to confirm the two
+ * Medicare/payer refill attestations (still using the equipment AND
+ * running low) before replying YES — i.e. the body is one of the
+ * `defaultReminderSmsBody` variants, not a custom/admin/playbook body or
+ * older copy that didn't ask. The inbound `YES` handler uses this so it
+ * only records a `refill_confirmations` attestation when the prompt the
+ * patient was actually replying to asked for it — never manufacturing a
+ * false attestation for a legacy or custom prompt.
+ *
+ * Kept here, beside `defaultReminderSmsBody`, so the question wording and
+ * its detector move together; `send-sms.variants.test.ts` pins that every
+ * default variant satisfies it.
+ */
+export function smsAsksRefillAttestation(body: string): boolean {
+  const b = body.toLowerCase();
+  return b.includes("still use") && b.includes("low on supplies");
 }
 
 export async function sendReminderSms(

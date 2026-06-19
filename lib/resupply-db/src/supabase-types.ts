@@ -3096,6 +3096,41 @@ export interface Database {
         >;
         Relationships: [];
       };
+      refill_confirmations: {
+        Row: {
+          id: string;
+          org_id: string | null;
+          patient_id: string;
+          episode_id: string;
+          prescription_id: string | null;
+          item_sku: string | null;
+          hcpcs_code: string | null;
+          channel: "sms" | "email" | "voice" | "admin";
+          affirm_continued_use: boolean;
+          affirm_supply_low: boolean;
+          attestation_text: string;
+          requested_by:
+            | "self"
+            | "spouse"
+            | "guardian"
+            | "power_of_attorney"
+            | "caregiver"
+            | "authorized_rep"
+            | "other";
+          expected_depletion_on: string | null;
+          confirmer_ip: string | null;
+          confirmer_user_agent: string | null;
+          confirmed_at: string;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["refill_confirmations"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["refill_confirmations"]["Row"]
+        >;
+        Relationships: [];
+      };
       manual_documents: {
         Row: {
           org_id: string | null;

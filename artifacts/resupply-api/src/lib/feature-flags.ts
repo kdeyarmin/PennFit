@@ -72,6 +72,8 @@ export const FEATURE_FLAG_KEYS = [
   "resupply.entitlement_enforcement",
   "resupply.eligibility_enforcement",
   "resupply.usage_compliance_check",
+  "resupply.refill_affirmation_capture",
+  "resupply.refill_window_enforcement",
   "resupply.auto_order_drafts",
   "reminder_escalation.dispatcher",
   "reminder_escalation.voice",

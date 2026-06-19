@@ -103,6 +103,13 @@ const PROMPT_VERSION_HASHES: Readonly<Record<string, string>> = {
   // BREATHE_SALES_PROMPT_HASH below.
   "2026-06-19.v11":
     "05fc068dde89418e69165756635271358cf39a1e63c0c91719a44c63c4167310",
+  // v12 adds the patient-flow refill attestation: before placing the
+  // order the agent confirms out loud that the patient still uses their
+  // equipment and is running low (CMS DMEPOS refill requirement).
+  // Patient-only clause, so the shop + breathe-sales variants are
+  // unchanged.
+  "2026-06-19.v12":
+    "dbae7c07e5f190b3ce1b800939ece9b3ec4b90d7a8304cb61644d3f196d5eb73",
 };
 
 function renderCanonicalPrompt(): string {
