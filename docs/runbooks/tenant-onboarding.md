@@ -145,10 +145,12 @@ sending **domain** to be authenticated (SPF/DKIM) in SendGrid out of band.
 > The checklist's **catalog** item flips to complete once the tenant has
 > products of their own.
 >
-> _Out of scope (follow-up):_ admin **counter orders**
-> (`/admin/shop/counter-orders`) still validate + charge on the platform
-> account — they are not yet Connect-aware, so a connected tenant's in-person
-> counter orders need that path wired separately.
+> Admin **counter orders** (`/admin/shop/counter-orders`, the CSR Front
+> Desk) are Connect-aware too: they validate + re-price against the tenant's
+> connected account (the same `{ stripeAccount }` the storefront uses). No
+> Stripe charge is created at the counter — the lanes are **cash** (collected
+> in person) and **insurance** (filed through the existing claims pipeline) —
+> so only the catalog reads needed per-tenant scoping.
 
 ## Safety / idempotency
 
