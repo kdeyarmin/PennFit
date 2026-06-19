@@ -26,6 +26,10 @@
 //                            422 `invalid_location`. Billing identity is
 //                            unaffected — claims still use the shared org
 //                            NPI/Tax-ID regardless of branch.
+//   - sms_marketing_consent  (boolean) — express written consent for
+//                            marketing SMS (TCPA opt-in). Setting it also
+//                            stamps sms_marketing_consent_at and records
+//                            source='staff'.
 //
 // All non-status fields accept `null` to explicitly clear an override;
 // `status` does not — there is no "no status" state. A missing key in
@@ -110,6 +114,10 @@ const bodySchema = z
       .string()
       .regex(ISO_TIMESTAMP_RE, "must be an ISO-8601 timestamp")
       .optional(),
+    // Express written consent for marketing SMS (TCPA). When set, the
+    // server also stamps sms_marketing_consent_at = now() and records
+    // sms_marketing_consent_source = 'staff'.
+    smsMarketingConsent: z.boolean().optional(),
   })
   .strict();
 
@@ -165,6 +173,14 @@ router.patch(
     }
     if ("status" in body && body.status) updates.status = body.status;
     if ("locationId" in body) updates.location_id = body.locationId ?? null;
+    if (
+      "smsMarketingConsent" in body &&
+      body.smsMarketingConsent !== undefined
+    ) {
+      updates.sms_marketing_consent = body.smsMarketingConsent;
+      updates.sms_marketing_consent_at = new Date().toISOString();
+      updates.sms_marketing_consent_source = "staff";
+    }
 
     const orgId = req.orgId;
     if (!orgId) {

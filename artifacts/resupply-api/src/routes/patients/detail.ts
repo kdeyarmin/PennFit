@@ -76,7 +76,7 @@ router.get(
       supabase
         .from("patients")
         .select(
-          "id, pacware_id, legal_first_name, legal_last_name, status, phone_e164, phone_line_type, phone_line_type_source, email, insurance_payer, cadence_override_days, channel_preference, location_id, created_at, updated_at, portal_auth_user_id, portal_invited_at",
+          "id, pacware_id, legal_first_name, legal_last_name, status, phone_e164, phone_line_type, phone_line_type_source, email, insurance_payer, cadence_override_days, channel_preference, location_id, created_at, updated_at, portal_auth_user_id, portal_invited_at, sms_marketing_consent, sms_marketing_consent_at, sms_marketing_consent_source",
         )
         .eq("id", id)
         .limit(1)
@@ -252,6 +252,10 @@ router.get(
       // (null when the patient has no portal account or no matching
       // customer). Drives the "view customer record" link.
       linkedCustomerUserId: linkedCustomerRes.data?.customer_id ?? null,
+      // SMS marketing consent (migration 0401).
+      smsMarketingConsent: patient.sms_marketing_consent ?? false,
+      smsMarketingConsentAt: patient.sms_marketing_consent_at ?? null,
+      smsMarketingConsentSource: patient.sms_marketing_consent_source ?? null,
       prescriptions: ((prescriptionsRes.data ?? []) as RxRow[]).map((p) => ({
         id: p.id,
         itemSku: p.item_sku,

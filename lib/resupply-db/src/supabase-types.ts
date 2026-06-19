@@ -883,6 +883,12 @@ export interface Database {
           phone_line_type: "mobile" | "landline" | "voip" | "unknown" | null;
           phone_line_type_source: "lookup" | "manual" | null;
           phone_line_type_checked_at: string | null;
+          /** SMS marketing consent (migration 0401). false = no consent on file (default, TCPA opt-in). */
+          sms_marketing_consent: boolean;
+          /** When sms_marketing_consent was last changed. NULL when never explicitly set. */
+          sms_marketing_consent_at: string | null;
+          /** Who recorded the consent. NULL when never explicitly set. */
+          sms_marketing_consent_source: "staff" | "portal" | null;
           created_at: string;
           updated_at: string;
         };

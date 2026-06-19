@@ -69,6 +69,9 @@ export function SettingsCard({
       ? (patient.phoneLineType ?? "")
       : "") as LineTypeChoice,
   );
+  const [smsMarketingConsent, setSmsMarketingConsent] = useState<boolean>(
+    patient.smsMarketingConsent ?? false,
+  );
   const [error, setError] = useState<string | null>(null);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const mutation = useUpdatePatient();
@@ -110,6 +113,7 @@ export function SettingsCard({
         ? (patient.phoneLineType ?? "")
         : "") as LineTypeChoice,
     );
+    setSmsMarketingConsent(patient.smsMarketingConsent ?? false);
     setError(null);
   }, [
     patient.insurancePayer,
@@ -118,13 +122,14 @@ export function SettingsCard({
     patient.locationId,
     patient.phoneLineType,
     patient.phoneLineTypeSource,
+    patient.smsMarketingConsent,
   ]);
 
   function buildPatch(): {
-    body: Record<string, string | number | null>;
+    body: Record<string, string | number | boolean | null>;
     error: string | null;
   } {
-    const body: Record<string, string | number | null> = {};
+    const body: Record<string, string | number | boolean | null> = {};
     // insurance: empty string clears, anything else is a set.
     const insTrim = insurancePayer.trim();
     const insOnServer = patient.insurancePayer ?? "";
@@ -171,6 +176,11 @@ export function SettingsCard({
         : "";
     if (phoneLineType !== ltOnServer) {
       body.phoneLineType = phoneLineType === "" ? null : phoneLineType;
+    }
+    // SMS marketing consent: a boolean toggle; send only when it changed.
+    const consentOnServer = patient.smsMarketingConsent ?? false;
+    if (smsMarketingConsent !== consentOnServer) {
+      body.smsMarketingConsent = smsMarketingConsent;
     }
     return { body, error: null };
   }
@@ -366,6 +376,44 @@ export function SettingsCard({
             </p>
           </div>
         )}
+        <div className="md:col-span-3">
+          <label className="flex items-start gap-2">
+            <input
+              id="patient-sms-marketing-consent"
+              type="checkbox"
+              className="mt-0.5"
+              checked={smsMarketingConsent}
+              onChange={(e) => setSmsMarketingConsent(e.target.checked)}
+              disabled={isPending}
+            />
+            <span>
+              <span className="text-sm font-medium">
+                SMS marketing consent (TCPA)
+              </span>
+              <p
+                className="mt-0.5 text-xs"
+                style={{ color: "hsl(var(--ink-3))" }}
+              >
+                Check to record that this patient has given express written
+                consent to receive marketing text messages. Required before bulk
+                marketing SMS campaigns can reach this patient.
+                {patient.smsMarketingConsentAt && (
+                  <span>
+                    {" "}
+                    Last updated:{" "}
+                    {new Date(
+                      patient.smsMarketingConsentAt,
+                    ).toLocaleDateString()}
+                    {patient.smsMarketingConsentSource
+                      ? ` (${patient.smsMarketingConsentSource})`
+                      : ""}
+                    .
+                  </span>
+                )}
+              </p>
+            </span>
+          </label>
+        </div>
       </div>
 
       {error && (
