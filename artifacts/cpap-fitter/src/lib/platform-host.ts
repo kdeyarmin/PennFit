@@ -19,6 +19,25 @@
 const PLATFORM_APEX_HOSTS: ReadonlySet<string> = new Set(["cmbreathe.com"]);
 
 /**
+ * True ONLY for the platform's public production apex (`cmbreathe.com`,
+ * with or without `www.`). Unlike {@link isPlatformHomeHost} this
+ * deliberately EXCLUDES the Railway `*.up.railway.app` deploy/preview
+ * hosts: those serve the same marketing content but must not be indexed
+ * by search engines (staging/duplicate content), so only the canonical
+ * apex is treated as the indexable home. Used to gate the `noindex` meta
+ * on the Breathe marketing pages.
+ */
+export function isPlatformApexHost(
+  hostname: string = typeof window !== "undefined"
+    ? window.location.hostname
+    : "",
+): boolean {
+  const host = hostname.trim().toLowerCase().replace(/\.$/, "");
+  if (!host) return false;
+  return PLATFORM_APEX_HOSTS.has(host.replace(/^www\./, ""));
+}
+
+/**
  * True when `hostname` is the platform's own home host (the CareMetric
  * Breathe apex or its Railway fallback), false for a tenant storefront
  * host (custom domain or `<slug>.cmbreathe.com` subdomain) and for local

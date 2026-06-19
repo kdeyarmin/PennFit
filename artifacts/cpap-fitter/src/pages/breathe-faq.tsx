@@ -24,6 +24,7 @@ import {
   Stethoscope,
 } from "lucide-react";
 import { useDocumentTitle } from "@/hooks/use-document-title";
+import { useNoIndexExceptApex } from "@/hooks/use-noindex-except-apex";
 import "./breathe.css";
 
 // Icon-only crop of the CareMetric app icon — matches the asset used across
@@ -296,7 +297,7 @@ export function BreatheFaq() {
   );
 
   useRevealOnScroll();
-  useNoIndex();
+  useNoIndexExceptApex();
   useSmoothScroll();
   useInitialHashScroll();
 
@@ -584,18 +585,6 @@ function prefersReducedMotion() {
     typeof window !== "undefined" &&
     window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true
   );
-}
-
-function useNoIndex() {
-  useEffect(() => {
-    const meta = document.createElement("meta");
-    meta.name = "robots";
-    meta.content = "noindex, follow";
-    document.head.appendChild(meta);
-    return () => {
-      meta.remove();
-    };
-  }, []);
 }
 
 function useSmoothScroll() {

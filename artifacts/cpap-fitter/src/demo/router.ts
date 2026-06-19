@@ -14,6 +14,7 @@ import { accountHandlers } from "./handlers/account";
 import { fitflowHandlers } from "./handlers/fitflow";
 import { miscHandlers } from "./handlers/misc";
 import { adminHandlers } from "./handlers/admin";
+import { therapyHandlers } from "./handlers/therapy";
 import { billingClaimsHandlers } from "./handlers/billing-claims";
 import { platformHandlers } from "./handlers/platform";
 
@@ -26,6 +27,7 @@ const handlers: DemoHandler[] = [
   ...fitflowHandlers,
   ...miscHandlers,
   ...adminHandlers,
+  ...therapyHandlers,
   ...billingClaimsHandlers,
   ...platformHandlers,
 ];
