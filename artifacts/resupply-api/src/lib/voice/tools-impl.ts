@@ -17,7 +17,7 @@
 //     `end_call` — a panicking caller MUST be able to escape to a
 //     human or hang up without first proving their date of birth.
 
-import { timingSafeEqual, randomUUID } from "node:crypto";
+import { timingSafeEqual, randomUUID, randomBytes } from "node:crypto";
 
 import {
   getOrgScopedClient,
@@ -27,16 +27,34 @@ import {
   type ResupplySupabaseClient,
 } from "@workspace/resupply-db";
 
-import { PATIENT_TOOL_NAMES, SHOP_TOOL_NAMES } from "@workspace/resupply-ai";
+import {
+  BREATHE_SALES_TOOL_NAMES,
+  PATIENT_TOOL_NAMES,
+  SHOP_TOOL_NAMES,
+} from "@workspace/resupply-ai";
 import type {
   DispatchToolCall,
   DispatchToolResult,
+  StartBreatheSignupResult,
+  ToolArgsByName,
   ToolDispatcher,
   ToolName,
 } from "@workspace/resupply-ai";
+import {
+  createSendgridClient,
+  EmailApiError,
+  EmailConfigError,
+} from "@workspace/resupply-email";
 
+import { logger } from "../logger";
+import { resolveSuperAdminRecipients } from "../admin-assistant/adminAssistantTools";
 import { placeResupplyOrderForConversation } from "../messaging/order-flow";
 import { describeHcpcsPlain } from "../swo-pdf";
+import {
+  createSelfServeTenant,
+  slugifyOrgName,
+  type SelfServeSignupResult,
+} from "../tenant-signup-service";
 
 const MAX_VERIFY_ATTEMPTS = 3;
 
@@ -115,6 +133,22 @@ function identityRequiredResultFor<K extends ToolName>(
     case "end_call":
       // Unreachable — both are exempt from the identity gate.
       return { ok: true } as unknown as DispatchToolResult<K>["result"];
+    // The CareMetric Breathe sales tools are only ever dispatched on the
+    // "breathe_prospect" path (which never runs the identity gate). These
+    // branches exist purely so this helper stays total over ToolName and
+    // returns a benign "not available" shape if one ever reaches a
+    // patient/shop dispatcher.
+    case "identify_call_reason":
+      return { ok: true, reason: "other" } as unknown as DispatchToolResult<K>["result"];
+    case "send_info_email":
+      return { ok: false, sent: false } as unknown as DispatchToolResult<K>["result"];
+    case "capture_sales_lead":
+      return { ok: false } as unknown as DispatchToolResult<K>["result"];
+    case "start_breathe_signup":
+      return {
+        ok: false,
+        status: "unavailable",
+      } as unknown as DispatchToolResult<K>["result"];
   }
   // Exhaustiveness — TypeScript should already have narrowed away.
   throw new Error(`Unknown tool: ${String(name)}`);
@@ -134,6 +168,29 @@ const PATIENT_DISPATCH_TOOLS: ReadonlySet<ToolName> = new Set(
   PATIENT_TOOL_NAMES,
 );
 const SHOP_DISPATCH_TOOLS: ReadonlySet<ToolName> = new Set(SHOP_TOOL_NAMES);
+const BREATHE_SALES_DISPATCH_TOOLS: ReadonlySet<ToolName> = new Set(
+  BREATHE_SALES_TOOL_NAMES,
+);
+
+// How many platform-info emails one sales call may send. Bounds a single
+// malicious caller using the agent as an email relay — combined with
+// templated (never model-authored) bodies and a single confirmed recipient,
+// the relay surface is closed.
+const MAX_INFO_EMAILS_PER_CALL = 3;
+
+/** A composed platform email (sales-line tools). */
+export interface PlatformEmailMessage {
+  to: string;
+  subject: string;
+  text: string;
+  html: string;
+}
+
+/** Sends a platform email; resolves to whether it went out (never throws on
+ *  an unconfigured/failed send — returns ok:false so the model degrades). */
+export type SendPlatformEmail = (
+  msg: PlatformEmailMessage,
+) => Promise<{ ok: boolean; reason?: string }>;
 
 export interface VoiceToolDispatcherDeps {
   /** Optional Supabase client. Tests inject a stub; production callers
@@ -141,8 +198,10 @@ export interface VoiceToolDispatcherDeps {
   supabase?: ResupplySupabaseClient;
   /** "patient" (default) runs the full resupply flow and verifies by date
    *  of birth; "shop_customer" verifies by the last four of the card on
-   *  file and is limited to reading their account or reaching a human. */
-  callerKind?: "patient" | "shop_customer";
+   *  file and is limited to reading their account or reaching a human;
+   *  "breathe_prospect" is the CareMetric Breathe B2B platform sales agent
+   *  (no patient identity, no conversations row — its own tool set). */
+  callerKind?: "patient" | "shop_customer" | "breathe_prospect";
   /** Set for patient callers — the bound clinical patient. */
   patientId?: string;
   conversationId: string;
@@ -150,6 +209,9 @@ export interface VoiceToolDispatcherDeps {
   episodeId?: string;
   /** Set for shop_customer callers — the storefront customer id. */
   shopCustomerId?: string;
+  /** The Twilio CallSid, when known — recorded on captured sales leads so a
+   *  lead can be tied back to its call. Sales path only. */
+  twilioCallSid?: string;
   /**
    * Seam for the shared order-placement flow (the SAME path the SMS and
    * email confirms ride: atomic episode claim + entitlement/coverage
@@ -157,6 +219,18 @@ export interface VoiceToolDispatcherDeps {
    * callers leave it unset and get the real implementation.
    */
   placeOrderForConversation?: typeof placeResupplyOrderForConversation;
+  /**
+   * Seam for sending a platform email (sales-line tools). Tests inject a
+   * stub; production callers leave it unset and get the SendGrid-backed
+   * {@link defaultSendPlatformEmail} (platform default From, cmbreathe.com).
+   */
+  sendPlatformEmail?: SendPlatformEmail;
+  /**
+   * Seam for provisioning a CareMetric Breathe tenant (the no-spoken-password
+   * sign-up). Tests inject a stub; production callers leave it unset and get
+   * the real {@link createSelfServeTenant}.
+   */
+  createTenant?: typeof createSelfServeTenant;
 }
 
 export interface VoiceToolDispatcher extends ToolDispatcher {
@@ -172,6 +246,8 @@ export function createVoiceToolDispatcher(
 class Impl implements VoiceToolDispatcher {
   private verified = false;
   private verifyAttempts = 0;
+  /** Platform-info emails sent so far this call (sales line cap). */
+  private infoEmailsSent = 0;
   /** Injected raw client (test seam); undefined in production. */
   private readonly injectedClient?: ResupplySupabaseClient;
   /** Memoized org-scoped facade, resolved on first DB use. */
@@ -220,6 +296,13 @@ class Impl implements VoiceToolDispatcher {
   async dispatch<K extends ToolName>(
     call: DispatchToolCall<K>,
   ): Promise<DispatchToolResult<K>> {
+    // CareMetric Breathe B2B platform sales caller: a wholly separate tool
+    // set with no patient identity, no PHI, and no `conversations` row.
+    // Routed entirely through its own dispatcher so the patient/shop identity
+    // gate, lockout, and chart machinery never run for a prospect.
+    if ((this.deps.callerKind ?? "patient") === "breathe_prospect") {
+      return this.dispatchBreatheSales(call);
+    }
     // Per-caller-kind scoping (defense in depth): a shop_customer caller
     // can only verify-by-card, read their chart, hand off, or hang up; a
     // patient caller cannot use the shop verify tool. Anything outside the
@@ -842,6 +925,265 @@ class Impl implements VoiceToolDispatcher {
       result: { ok: true },
     };
   }
+
+  // ---- CareMetric Breathe B2B platform sales tools ----------------------
+  //
+  // These run for `callerKind === "breathe_prospect"` only. No patient
+  // identity, no PHI, no `conversations` row. The dispatcher routes here
+  // BEFORE the identity gate so none of the patient/shop machinery applies.
+
+  private async dispatchBreatheSales<K extends ToolName>(
+    call: DispatchToolCall<K>,
+  ): Promise<DispatchToolResult<K>> {
+    if (!BREATHE_SALES_DISPATCH_TOOLS.has(call.name)) {
+      // A non-sales tool reached the sales line — return a benign shape so
+      // the wire payload type-checks. The model is only ever offered the
+      // sales tools, so this is defense in depth.
+      return {
+        callId: call.callId,
+        name: call.name,
+        result: identityRequiredResultFor(call.name),
+      };
+    }
+    switch (call.name) {
+      case "identify_call_reason":
+        return (await this.identifyCallReason(
+          call as DispatchToolCall<"identify_call_reason">,
+        )) as DispatchToolResult<K>;
+      case "send_info_email":
+        return (await this.sendInfoEmail(
+          call as DispatchToolCall<"send_info_email">,
+        )) as DispatchToolResult<K>;
+      case "capture_sales_lead":
+        return (await this.captureSalesLead(
+          call as DispatchToolCall<"capture_sales_lead">,
+        )) as DispatchToolResult<K>;
+      case "start_breathe_signup":
+        return (await this.startBreatheSignup(
+          call as DispatchToolCall<"start_breathe_signup">,
+        )) as DispatchToolResult<K>;
+      case "request_human_handoff":
+        return (await this.salesHandoff(
+          call as DispatchToolCall<"request_human_handoff">,
+        )) as DispatchToolResult<K>;
+      case "end_call":
+        return (await this.endCall(
+          call as DispatchToolCall<"end_call">,
+        )) as DispatchToolResult<K>;
+    }
+    throw new Error(`Unknown sales tool: ${String(call.name)}`);
+  }
+
+  private async identifyCallReason(
+    call: DispatchToolCall<"identify_call_reason">,
+  ): Promise<DispatchToolResult<"identify_call_reason">> {
+    // No side effect — committing to a skill is enough for the model to
+    // route. The durable record of a service/support reason is the lead the
+    // model captures next; the bridge audits this invocation either way.
+    logger.info(
+      { event: "voice_breathe_sales.call_reason", reason: call.args.reason },
+      "voice sales: call reason identified",
+    );
+    return {
+      callId: call.callId,
+      name: call.name,
+      result: { ok: true, reason: call.args.reason },
+    };
+  }
+
+  private async sendInfoEmail(
+    call: DispatchToolCall<"send_info_email">,
+  ): Promise<DispatchToolResult<"send_info_email">> {
+    if (this.infoEmailsSent >= MAX_INFO_EMAILS_PER_CALL) {
+      return {
+        callId: call.callId,
+        name: call.name,
+        result: { ok: false, sent: false, reason: "send_limit" },
+      };
+    }
+    const { email, topic, notes } = call.args;
+    const built = buildPlatformInfoEmail(topic, notes);
+    const send = this.deps.sendPlatformEmail ?? defaultSendPlatformEmail;
+    const outcome = await send({ to: email, ...built });
+    if (outcome.ok) this.infoEmailsSent += 1;
+    return {
+      callId: call.callId,
+      name: call.name,
+      result: {
+        ok: outcome.ok,
+        sent: outcome.ok,
+        ...(outcome.reason ? { reason: outcome.reason } : {}),
+      },
+    };
+  }
+
+  private async captureSalesLead(
+    call: DispatchToolCall<"capture_sales_lead">,
+  ): Promise<DispatchToolResult<"capture_sales_lead">> {
+    const a = call.args;
+    // Assigned in the try below; the catch always returns, so by the time we
+    // read it past the try/catch it is definitely set.
+    let leadId: string | null;
+    try {
+      const supabase = await this.db();
+      const { data, error } = await supabase
+        .raw()
+        .schema("resupply")
+        .from("sales_leads")
+        .insert({
+          contact_name: a.contact_name ?? null,
+          company_name: a.company_name ?? null,
+          phone_e164: a.phone ?? null,
+          email: a.email ?? null,
+          interest_tier: a.interest_tier ?? null,
+          message: a.message,
+          twilio_call_sid: this.deps.twilioCallSid ?? null,
+          source: "voice_sales_agent",
+          status: "new",
+        })
+        .select("id")
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      leadId = (data as { id?: string } | null)?.id ?? null;
+    } catch (err) {
+      logger.warn(
+        { event: "voice_breathe_sales.lead_insert_failed", err: errShape(err) },
+        "voice sales: sales lead insert failed",
+      );
+      return {
+        callId: call.callId,
+        name: call.name,
+        result: { ok: false, reason: "persist_failed" },
+      };
+    }
+
+    // Best-effort super-admin notification. The DB row is the durable
+    // record — a failed/queued email must never lose the lead.
+    void this.notifySalesLead(a, leadId);
+
+    return {
+      callId: call.callId,
+      name: call.name,
+      result: { ok: true, ...(leadId ? { lead_id: leadId } : {}) },
+    };
+  }
+
+  /** Email the captured lead to the super-admin(s). Best-effort; always
+   *  resolves (a notification failure is logged, not surfaced). */
+  private async notifySalesLead(
+    args: ToolArgsByName["capture_sales_lead"],
+    leadId: string | null,
+  ): Promise<void> {
+    try {
+      const supabase = await this.db();
+      const recipients = await resolveSuperAdminRecipients(supabase);
+      if (recipients.length === 0) {
+        logger.warn(
+          { event: "voice_breathe_sales.no_lead_recipients" },
+          "voice sales: no super-admin recipient resolved for a sales lead",
+        );
+        return;
+      }
+      const built = buildSalesLeadNotificationEmail(args, leadId);
+      const send = this.deps.sendPlatformEmail ?? defaultSendPlatformEmail;
+      for (const to of recipients) {
+        await send({ to, ...built });
+      }
+    } catch (err) {
+      logger.warn(
+        { event: "voice_breathe_sales.lead_notify_failed", err: errShape(err) },
+        "voice sales: sales lead notification failed",
+      );
+    }
+  }
+
+  private async startBreatheSignup(
+    call: DispatchToolCall<"start_breathe_signup">,
+  ): Promise<DispatchToolResult<"start_breathe_signup">> {
+    const { org_name, admin_email } = call.args;
+    // NO spoken password: generate a strong throwaway the caller never learns
+    // and which is never logged. They set their own via the emailed verify /
+    // set-password link — the only secure path on a recorded call.
+    const throwawayPassword = randomBytes(24).toString("base64url");
+    const create = this.deps.createTenant ?? createSelfServeTenant;
+    let result: SelfServeSignupResult;
+    try {
+      result = await create({
+        orgName: org_name,
+        slug: slugifyOrgName(org_name),
+        adminEmail: admin_email,
+        password: throwawayPassword,
+        baseUrl: platformBaseUrl(),
+      });
+    } catch (err) {
+      logger.warn(
+        { event: "voice_breathe_sales.signup_failed", err: errShape(err) },
+        "voice sales: tenant signup threw",
+      );
+      return {
+        callId: call.callId,
+        name: call.name,
+        result: { ok: false, status: "unavailable" },
+      };
+    }
+
+    if (result.ok) {
+      // Record a converted lead (best-effort; never block the signup result).
+      void this.recordSignupLead(org_name, admin_email);
+    } else {
+      logger.info(
+        { event: "voice_breathe_sales.signup_rejected", reason: result.reason },
+        "voice sales: tenant signup rejected",
+      );
+    }
+    return {
+      callId: call.callId,
+      name: call.name,
+      result: { ok: result.ok, status: mapSignupResultToStatus(result) },
+    };
+  }
+
+  /** Stamp a `signed_up` lead row after a successful sign-up. Best-effort. */
+  private async recordSignupLead(
+    orgName: string,
+    adminEmail: string,
+  ): Promise<void> {
+    try {
+      const supabase = await this.db();
+      const { error } = await supabase
+        .raw()
+        .schema("resupply")
+        .from("sales_leads")
+        .insert({
+          company_name: orgName,
+          email: adminEmail,
+          message: "Started a CareMetric Breathe sign-up on a sales call.",
+          twilio_call_sid: this.deps.twilioCallSid ?? null,
+          source: "voice_sales_agent",
+          status: "signed_up",
+        });
+      if (error) throw error;
+    } catch (err) {
+      logger.warn(
+        { event: "voice_breathe_sales.signup_lead_failed", err: errShape(err) },
+        "voice sales: signup lead row failed",
+      );
+    }
+  }
+
+  private async salesHandoff(
+    call: DispatchToolCall<"request_human_handoff">,
+  ): Promise<DispatchToolResult<"request_human_handoff">> {
+    // The sales line has no `conversations` row to escalate (a prospect is
+    // neither a patient nor a customer). The durable artifact is the lead the
+    // model captures; this just acknowledges so the model can wrap up.
+    return {
+      callId: call.callId,
+      name: call.name,
+      result: { ok: true, handoff_id: randomUUID() },
+    };
+  }
 }
 
 /** Best-effort first name from a free-form display name ("Jane Doe" ->
@@ -865,4 +1207,214 @@ function constantTimeStringEquals(a: string, b: string): boolean {
   const bb = Buffer.from(b, "utf8");
   if (ab.length !== bb.length) return false;
   return timingSafeEqual(ab, bb);
+}
+
+// ---- CareMetric Breathe sales-tool helpers --------------------------------
+
+/** PII-safe error shape for logs — name only, never the message (which could
+ *  echo a caller-supplied value). Mirrors the admin-assistant tool posture. */
+function errShape(err: unknown): { name: string } {
+  return { name: err instanceof Error ? err.name : "unknown" };
+}
+
+/** Escape HTML for the dynamic (caller/model-supplied) parts of an email. */
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/** The platform host for sign-up / info links. Overridable for preview envs;
+ *  defaults to the canonical platform domain. */
+function platformBaseUrl(): string {
+  const raw = (process.env.BREATHE_PLATFORM_BASE_URL ?? "").trim();
+  if (raw && /^https?:\/\//i.test(raw)) return raw.replace(/\/+$/, "");
+  return "https://cmbreathe.com";
+}
+
+/** Production platform-email sender: the shared SendGrid client with the
+ *  platform default From (noreply@cmbreathe.com). Never throws — an
+ *  unconfigured/failed send returns ok:false so the model degrades. */
+async function defaultSendPlatformEmail(
+  msg: PlatformEmailMessage,
+): Promise<{ ok: boolean; reason?: string }> {
+  let client;
+  try {
+    client = createSendgridClient();
+  } catch (err) {
+    if (err instanceof EmailConfigError) {
+      return { ok: false, reason: "email_unconfigured" };
+    }
+    throw err;
+  }
+  try {
+    await client.sendEmail({
+      to: msg.to,
+      subject: msg.subject,
+      text: msg.text,
+      html: msg.html,
+    });
+    return { ok: true };
+  } catch (err) {
+    const retryable = err instanceof EmailApiError ? err.retryable : null;
+    logger.warn(
+      {
+        event: "voice_breathe_sales.email_send_failed",
+        retryable,
+        err: errShape(err),
+      },
+      "voice sales: platform email send failed",
+    );
+    return { ok: false, reason: "send_failed" };
+  }
+}
+
+/**
+ * Compose a TEMPLATED platform-info email keyed by topic. The model never
+ * authors the body — it only picks the topic and supplies an optional short
+ * note (escaped, in a clearly delimited section) — which closes the
+ * open-relay/spam surface.
+ */
+function buildPlatformInfoEmail(
+  topic: ToolArgsByName["send_info_email"]["topic"],
+  notes: string | undefined,
+): { subject: string; text: string; html: string } {
+  const overview = [
+    "CareMetric Breathe is an all-in-one platform that DME and sleep businesses use to run their CPAP resupply program — a branded patient storefront with an AI mask-fitter, automated SMS/email/voice resupply reminders and auto-ship, insurance eligibility and billing tools, therapy-compliance monitoring, built-in AI assistants, multi-location support, and analytics. It's the engine that helps providers bring more patients back on schedule and grow resupply revenue without adding staff.",
+  ];
+  const pricing = [
+    "CareMetric Breathe pricing — every plan is a monthly platform fee plus a small per-active-patient monthly fee plus a one-time setup, and all plans include the full platform:",
+    "• Launch — $499/mo + $1.25 per active patient/mo, $2,500 setup (best under ~1,000 patients).",
+    "• Growth — $1,500/mo + $0.95 per active patient/mo, $5,000 setup (~1,000–10,000 patients).",
+    "• Scale — $3,999/mo + $0.65 per active patient/mo, $10,000 setup (10,000+ / multi-location).",
+    "• Enterprise — custom pricing, dedicated database and integrations.",
+    "Optional add-ons include the AI voice agent and advanced billing automation.",
+  ];
+  const signup = [
+    "Ready to get started with CareMetric Breathe?",
+    `Create your account here: ${platformBaseUrl()}`,
+    "You'll confirm your email and set a password, and our team will help you get set up.",
+  ];
+
+  let subject: string;
+  let bodyLines: string[];
+  switch (topic) {
+    case "pricing":
+      subject = "CareMetric Breathe — pricing";
+      bodyLines = pricing;
+      break;
+    case "signup_link":
+      subject = "CareMetric Breathe — create your account";
+      bodyLines = signup;
+      break;
+    case "custom":
+      subject = "Following up from CareMetric Breathe";
+      bodyLines = [
+        "Thanks for taking the time to talk with us about CareMetric Breathe.",
+        ...overview,
+      ];
+      break;
+    case "overview":
+    default:
+      subject = "About CareMetric Breathe";
+      bodyLines = overview;
+      break;
+  }
+
+  const noteText = notes && notes.trim().length > 0 ? notes.trim() : null;
+  const text = [
+    ...bodyLines,
+    ...(noteText ? ["", "Note from your call:", noteText] : []),
+    "",
+    "Reply to this email or call us back any time and we'll be glad to help.",
+    "— The CareMetric Breathe team",
+  ].join("\n");
+
+  const html = [
+    `<div style="font-family:system-ui,Segoe UI,Helvetica,Arial,sans-serif;color:#0f172a;line-height:1.5">`,
+    ...bodyLines.map(
+      (line) => `<p style="margin:0 0 10px">${escapeHtml(line)}</p>`,
+    ),
+    ...(noteText
+      ? [
+          `<p style="margin:14px 0 4px;color:#64748b">Note from your call</p>`,
+          `<p style="white-space:pre-wrap;margin:0 0 10px">${escapeHtml(noteText)}</p>`,
+        ]
+      : []),
+    `<hr style="border:none;border-top:1px solid #e2e8f0;margin:16px 0"/>`,
+    `<p style="margin:0">Reply to this email or call us back any time and we'll be glad to help.</p>`,
+    `<p style="color:#94a3b8;font-size:12px;margin:8px 0 0">— The CareMetric Breathe team</p>`,
+    `</div>`,
+  ].join("");
+
+  return { subject, text, html };
+}
+
+/** Compose the super-admin notification for a captured sales lead. Subject
+ *  carries no sensitive content beyond the business name. */
+function buildSalesLeadNotificationEmail(
+  args: ToolArgsByName["capture_sales_lead"],
+  leadId: string | null,
+): { subject: string; text: string; html: string } {
+  const company = args.company_name?.trim() || "a prospect";
+  const subject = `New CareMetric Breathe sales lead: ${company}`;
+  const rows: Array<[string, string]> = [
+    ["Contact", args.contact_name ?? "(not given)"],
+    ["Company", args.company_name ?? "(not given)"],
+    ["Phone", args.phone ?? "(not given)"],
+    ["Email", args.email ?? "(not given)"],
+    ["Interest", args.interest_tier ?? "(unspecified)"],
+    ["Lead id", leadId ?? "(not recorded)"],
+  ];
+
+  const text = [
+    "A new sales lead was captured by the CareMetric Breathe phone agent.",
+    "",
+    ...rows.map(([k, v]) => `${k}: ${v}`),
+    "",
+    "Message:",
+    args.message,
+    "",
+    "— Captured by the CareMetric Breathe sales line.",
+  ].join("\n");
+
+  const html = [
+    `<div style="font-family:system-ui,Segoe UI,Helvetica,Arial,sans-serif;color:#0f172a;line-height:1.5">`,
+    `<p>A new sales lead was captured by the CareMetric Breathe phone agent.</p>`,
+    `<table style="border-collapse:collapse;margin:12px 0">`,
+    ...rows.map(
+      ([k, v]) =>
+        `<tr><td style="padding:2px 12px 2px 0;color:#64748b">${escapeHtml(k)}</td><td>${escapeHtml(v)}</td></tr>`,
+    ),
+    `</table>`,
+    `<p style="margin:12px 0 4px;color:#64748b">Message</p>`,
+    `<p style="white-space:pre-wrap;margin:0 0 12px">${escapeHtml(args.message)}</p>`,
+    `<hr style="border:none;border-top:1px solid #e2e8f0;margin:16px 0"/>`,
+    `<p style="color:#94a3b8;font-size:12px;margin:0">Captured by the CareMetric Breathe sales line.</p>`,
+    `</div>`,
+  ].join("");
+
+  return { subject, text, html };
+}
+
+/** Map the self-serve signup result to the sales tool's status enum. */
+function mapSignupResultToStatus(
+  result: SelfServeSignupResult,
+): StartBreatheSignupResult["status"] {
+  if (result.ok) return "verification_email_sent";
+  switch (result.reason) {
+    case "email_taken":
+      return "email_taken";
+    case "slug_taken":
+      return "name_taken";
+    case "invalid_email":
+      return "invalid_email";
+    case "weak_password":
+    case "unavailable":
+    default:
+      return "unavailable";
+  }
 }

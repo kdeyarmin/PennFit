@@ -37,6 +37,14 @@ export const TOOL_NAMES = [
   "place_resupply_order",
   "request_human_handoff",
   "end_call",
+  // CareMetric Breathe B2B platform sales line (callerKind "breathe_prospect").
+  // These carry NO patient PHI — they sell the platform to prospective DME
+  // businesses, email platform info, capture a sales lead, or start a tenant
+  // sign-up. None gate on patient identity.
+  "identify_call_reason",
+  "send_info_email",
+  "capture_sales_lead",
+  "start_breathe_signup",
 ] as const;
 
 export type ToolName = (typeof TOOL_NAMES)[number];
@@ -61,6 +69,20 @@ export const PATIENT_TOOL_NAMES = [
 export const SHOP_TOOL_NAMES = [
   "verify_shop_customer_identity",
   "get_customer_chart",
+  "request_human_handoff",
+  "end_call",
+] as const satisfies readonly ToolName[];
+
+// CareMetric Breathe B2B platform sales agent. A prospective DME business
+// dialed the dedicated platform sales line. The agent identifies why they
+// called, pitches the platform, can email platform info, capture a lead for
+// human follow-up, or start a tenant sign-up — then hand off or hang up. No
+// patient PHI is in scope, so none of these gate on identity verification.
+export const BREATHE_SALES_TOOL_NAMES = [
+  "identify_call_reason",
+  "send_info_email",
+  "capture_sales_lead",
+  "start_breathe_signup",
   "request_human_handoff",
   "end_call",
 ] as const satisfies readonly ToolName[];
@@ -154,6 +176,55 @@ export const endCallArgs = z
   })
   .strict();
 
+// ---- CareMetric Breathe sales tool arg schemas ---------------------------
+
+// The three call reasons the platform sales line routes between ("skills").
+// Sales is built out fully today; customer_service and tech_support currently
+// take a message and hand off to a human.
+export const identifyCallReasonArgs = z
+  .object({
+    reason: z.enum(["sales", "customer_service", "tech_support", "other"]),
+  })
+  .strict();
+
+// Send a templated platform-info email. The model supplies ONLY the recipient
+// (the caller's stated address, read back and confirmed first), a topic that
+// selects a fixed server-side template, and a short optional note. The model
+// never authors the body — that closes the open-relay/spam surface.
+export const sendInfoEmailArgs = z
+  .object({
+    email: z.string().trim().email("Expected a valid email address."),
+    topic: z.enum(["overview", "pricing", "signup_link", "custom"]),
+    notes: z.string().trim().max(500).optional(),
+  })
+  .strict();
+
+// Capture a sales lead / take a message for human follow-up. Every field is
+// optional except the message — a caller may decline to share everything.
+export const captureSalesLeadArgs = z
+  .object({
+    contact_name: z.string().trim().min(1).max(160).optional(),
+    company_name: z.string().trim().min(1).max(200).optional(),
+    phone: z.string().trim().min(1).max(40).optional(),
+    email: z.string().trim().email().optional(),
+    interest_tier: z
+      .enum(["launch", "growth", "scale", "enterprise"])
+      .optional(),
+    message: z.string().trim().min(1).max(2_000),
+  })
+  .strict();
+
+// Start a CareMetric Breathe tenant sign-up on the call. NOTE: there is no
+// password field BY DESIGN — a spoken password would land in the call
+// transcript (treated as world-readable). The system provisions the workspace
+// and emails the caller a secure link to verify and set their own password.
+export const startBreatheSignupArgs = z
+  .object({
+    org_name: z.string().trim().min(2, "Organization name is required.").max(120),
+    admin_email: z.string().trim().email("Expected a valid email address."),
+  })
+  .strict();
+
 // Map for runtime dispatch. Keep this exhaustive — the dispatcher
 // switch below uses it as the source of truth for "is this a known
 // tool".
@@ -167,6 +238,10 @@ export const TOOL_ARG_SCHEMAS = {
   place_resupply_order: placeResupplyOrderArgs,
   request_human_handoff: requestHumanHandoffArgs,
   end_call: endCallArgs,
+  identify_call_reason: identifyCallReasonArgs,
+  send_info_email: sendInfoEmailArgs,
+  capture_sales_lead: captureSalesLeadArgs,
+  start_breathe_signup: startBreatheSignupArgs,
 } as const satisfies Record<ToolName, z.ZodTypeAny>;
 
 // ---- Result types ---------------------------------------------------------
@@ -258,6 +333,41 @@ export interface EndCallResult {
   ok: true;
 }
 
+export interface IdentifyCallReasonResult {
+  ok: true;
+  reason: "sales" | "customer_service" | "tech_support" | "other";
+}
+
+export interface SendInfoEmailResult {
+  ok: boolean;
+  /** Whether the email actually went out (false when email is unconfigured). */
+  sent: boolean;
+  /** Non-PHI hint the model can phrase: "send_limit", "email_unconfigured". */
+  reason?: string;
+}
+
+export interface CaptureSalesLeadResult {
+  ok: boolean;
+  /** Present when the lead row persisted — an internal id, safe to log. */
+  lead_id?: string;
+  reason?: string;
+}
+
+export interface StartBreatheSignupResult {
+  ok: boolean;
+  /**
+   * Outcome of the sign-up attempt. `verification_email_sent` is the success
+   * path: the workspace was created and a verify/set-password email is on its
+   * way. The others let the model phrase the reason without quoting raw data.
+   */
+  status:
+    | "verification_email_sent"
+    | "email_taken"
+    | "name_taken"
+    | "invalid_email"
+    | "unavailable";
+}
+
 export interface ToolResultByName {
   verify_patient_identity: VerifyPatientIdentityResult;
   verify_shop_customer_identity: VerifyShopCustomerIdentityResult;
@@ -268,6 +378,10 @@ export interface ToolResultByName {
   place_resupply_order: PlaceResupplyOrderResult;
   request_human_handoff: RequestHumanHandoffResult;
   end_call: EndCallResult;
+  identify_call_reason: IdentifyCallReasonResult;
+  send_info_email: SendInfoEmailResult;
+  capture_sales_lead: CaptureSalesLeadResult;
+  start_breathe_signup: StartBreatheSignupResult;
 }
 
 // ---- OpenAI tool descriptors ---------------------------------------------
@@ -471,6 +585,103 @@ export const OPENAI_TOOL_DESCRIPTORS: readonly OpenAiToolDescriptor[] = [
       additionalProperties: false,
     },
   },
+  {
+    type: "function",
+    name: "identify_call_reason",
+    description:
+      "Record why the caller phoned the CareMetric Breathe platform line so you can route into the right skill. Call this once, early, after you understand their intent. 'sales' = evaluating or buying the platform (your main job); 'customer_service' = an existing customer with an account/billing question; 'tech_support' = a technical problem. For customer_service and tech_support, take a message with capture_sales_lead and hand off.",
+    parameters: {
+      type: "object",
+      properties: {
+        reason: {
+          type: "string",
+          enum: ["sales", "customer_service", "tech_support", "other"],
+        },
+      },
+      required: ["reason"],
+      additionalProperties: false,
+    },
+  },
+  {
+    type: "function",
+    name: "send_info_email",
+    description:
+      "Email the caller information about CareMetric Breathe. ALWAYS read the email address back and confirm it out loud before calling. The body is a fixed template chosen by 'topic' — you do not write it; 'overview' explains the platform, 'pricing' sends the plans, 'signup_link' sends a link to create an account, 'custom' is a general follow-up. Only send to the address the caller gave you on this call.",
+    parameters: {
+      type: "object",
+      properties: {
+        email: {
+          type: "string",
+          description: "The caller's email address (confirm it aloud first).",
+        },
+        topic: {
+          type: "string",
+          enum: ["overview", "pricing", "signup_link", "custom"],
+        },
+        notes: {
+          type: "string",
+          maxLength: 500,
+          description:
+            "Optional short note from the caller to include in the email (e.g. a specific question). No patient data.",
+        },
+      },
+      required: ["email", "topic"],
+      additionalProperties: false,
+    },
+  },
+  {
+    type: "function",
+    name: "capture_sales_lead",
+    description:
+      "Record a sales lead or take a message for the team to follow up. Use this whenever the caller is interested but not signing up now, asks for a human, or has a customer-service/tech-support need you can't resolve. Capture whatever they're willing to share; only 'message' is required.",
+    parameters: {
+      type: "object",
+      properties: {
+        contact_name: { type: "string", description: "The caller's name." },
+        company_name: {
+          type: "string",
+          description: "Their business / DME company name.",
+        },
+        phone: { type: "string", description: "Best callback number." },
+        email: { type: "string", description: "Their email address." },
+        interest_tier: {
+          type: "string",
+          enum: ["launch", "growth", "scale", "enterprise"],
+          description: "Which plan they seemed interested in, if any.",
+        },
+        message: {
+          type: "string",
+          maxLength: 2000,
+          description:
+            "A short summary of what they want / their question, in your words.",
+        },
+      },
+      required: ["message"],
+      additionalProperties: false,
+    },
+  },
+  {
+    type: "function",
+    name: "start_breathe_signup",
+    description:
+      "Start creating a CareMetric Breathe account for the caller's business. You collect ONLY the business name and an admin email — NEVER a password (the system emails them a secure link to verify their address and set their own password). Read the email back and confirm it before calling. On success tell them to watch for that email to finish setting up.",
+    parameters: {
+      type: "object",
+      properties: {
+        org_name: {
+          type: "string",
+          description: "The business / organization name for the workspace.",
+        },
+        admin_email: {
+          type: "string",
+          description:
+            "The email for the first admin login (confirm it aloud first).",
+        },
+      },
+      required: ["org_name", "admin_email"],
+      additionalProperties: false,
+    },
+  },
 ] as const;
 
 // ---- Dispatcher contract -------------------------------------------------
@@ -564,6 +775,39 @@ export function summarizeToolArgsForAudit(
       return {
         name,
         outcome: typeof a.outcome === "string" ? a.outcome : null,
+      };
+    case "identify_call_reason":
+      return {
+        name,
+        reason: typeof a.reason === "string" ? a.reason : null,
+      };
+    case "send_info_email":
+      // Never echo the recipient address — record only that one was supplied
+      // plus the (non-PII) topic and whether a note rode along.
+      return {
+        name,
+        topic: typeof a.topic === "string" ? a.topic : null,
+        has_email: typeof a.email === "string",
+        has_notes: typeof a.notes === "string",
+      };
+    case "capture_sales_lead":
+      // Booleans/lengths only — a lead's name/company/phone/email are PII.
+      return {
+        name,
+        has_contact_name: typeof a.contact_name === "string",
+        has_company_name: typeof a.company_name === "string",
+        has_phone: typeof a.phone === "string",
+        has_email: typeof a.email === "string",
+        interest_tier: typeof a.interest_tier === "string" ? a.interest_tier : null,
+        message_len: typeof a.message === "string" ? a.message.length : 0,
+      };
+    case "start_breathe_signup":
+      // Never echo the org name or admin email — record only that each was
+      // supplied. (No password field exists on this tool by design.)
+      return {
+        name,
+        has_org_name: typeof a.org_name === "string",
+        has_admin_email: typeof a.admin_email === "string",
       };
     default:
       // The switch is exhaustive over ToolName, but this function is

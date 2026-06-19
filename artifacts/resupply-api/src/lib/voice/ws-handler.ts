@@ -50,6 +50,7 @@ import {
   OPENAI_TOOL_DESCRIPTORS,
   PROMPT_VERSION,
   RealtimeClient,
+  BREATHE_SALES_TOOL_NAMES,
   PATIENT_TOOL_NAMES,
   DEFAULT_TOOL_CALL_FILLER_PHRASES,
   SHOP_TOOL_NAMES,
@@ -71,6 +72,7 @@ import {
   parseTwilioFrame,
 } from "@workspace/resupply-telecom";
 
+import { PLATFORM_NAME } from "../company-info";
 import { getAnthropicClient } from "../llm-provider";
 import { logger } from "../logger";
 import { recordTenantUsage } from "../metering/usage";
@@ -111,6 +113,11 @@ function voiceMaxConcurrentCalls(): number {
 }
 
 const DIAGNOSTIC_DEFAULT_CALL_CONTEXT = "Voice connection diagnostic.";
+
+const BREATHE_SALES_DEFAULT_CALL_CONTEXT =
+  "Inbound sales call to the CareMetric Breathe platform line. The caller is " +
+  "a prospective DME business. Identify why they called, then pitch, help, or " +
+  "take a message accordingly.";
 
 /**
  * Build the system prompt, degrading to the flow's stock framing when the
@@ -1157,6 +1164,262 @@ export async function handleVoiceDiagnosticWsConnection(
     logger.warn(
       { event: "voice_diag_ws_error", err: serializeErr(err) },
       "voice diagnostic: ws error",
+    );
+    cleanup("twilio-ws-error");
+  });
+
+  await new Promise<void>((resolve) => {
+    resolveClosed = resolve;
+    if (closed) resolve();
+  });
+}
+
+/**
+ * CareMetric Breathe B2B platform SALES bridge. A prospective DME business
+ * dialed the dedicated platform sales line. Modeled on the diagnostic handler
+ * (no patient, no `conversations` row, no DB transcript / Deepgram / post-call
+ * summary) — a platform prospect is neither a patient nor a customer, so the
+ * `conversations` subject-XOR check forbids a row, and the patient transcript/
+ * finalize machinery does not apply. BUT it wires in the REAL sales tool
+ * dispatcher (lead capture, info email, tenant sign-up) and runs the same
+ * concurrency cap + max-duration + agent-speaks-first as production.
+ *
+ * The agent's voice is OpenAI's built-in `cedar` (generateAudio: true) — warm
+ * and simple; ElevenLabs can be layered on later by mirroring the production
+ * handler. Kept deliberately separate from the production handler so the real
+ * PHI voice path is never touched.
+ *
+ * The durable record of a sales call is the structured `sales_leads` row the
+ * tools write — full transcript turns are intentionally NOT persisted (no row
+ * to hang them on, and it keeps caller-stated business PII out of `messages`).
+ */
+export async function handleBreatheSalesWsConnection(
+  ws: WebSocket,
+  pending: PendingSessionEntry,
+): Promise<void> {
+  const config = readVoiceConfigOrThrow();
+
+  // Concurrency cap — reject gracefully BEFORE opening any upstream socket
+  // (same ceiling as the production handler). The slot is reserved just
+  // before the OpenAI WS opens and released on every teardown path.
+  const maxConcurrent = voiceMaxConcurrentCalls();
+  if (activeVoiceCallCount >= maxConcurrent) {
+    logger.warn(
+      {
+        event: "voice_max_concurrent_reached",
+        active: activeVoiceCallCount,
+        max: maxConcurrent,
+        conversationId: pending.conversationId,
+      },
+      "voice sales: concurrent-call ceiling reached; rejecting connection",
+    );
+    try {
+      ws.close(1013, "voice-capacity");
+    } catch {
+      /* already closed */
+    }
+    return;
+  }
+  let callSlotReserved = false;
+  let callSlotReleased = false;
+  const reserveCallSlot = (): void => {
+    if (callSlotReserved) return;
+    callSlotReserved = true;
+    activeVoiceCallCount += 1;
+  };
+  const releaseCallSlot = (): void => {
+    if (!callSlotReserved || callSlotReleased) return;
+    callSlotReleased = true;
+    activeVoiceCallCount = Math.max(0, activeVoiceCallCount - 1);
+  };
+
+  let streamSid: string | null = null;
+  let closed = false;
+  let resolveClosed: (() => void) | null = null;
+  // Sales calls are short; cap hard so a wedged call can't burn minutes.
+  const MAX_SALES_CALL_MS = 15 * 60 * 1000;
+  let maxTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const sink: MediaStreamSink = {
+    writeAudioBase64(b64: string): void {
+      if (closed || !streamSid) return;
+      try {
+        ws.send(encodeMediaFrame(streamSid, b64));
+      } catch (err) {
+        logger.warn(
+          { event: "voice_breathe_sales_ws_send_failed", err: serializeErr(err) },
+          "voice sales: ws send failed",
+        );
+      }
+    },
+    clearQueuedAudio(): void {
+      if (closed || !streamSid) return;
+      try {
+        ws.send(encodeClearFrame(streamSid));
+      } catch {
+        // best-effort; barge-in clears are not load-bearing
+      }
+    },
+  };
+
+  // Real sales dispatcher: no patient/episode/customer, no conversations row.
+  // It resolves the seed org itself for its platform-global writes
+  // (sales_leads) and super-admin notifications.
+  const dispatcher = createVoiceToolDispatcher({
+    callerKind: "breathe_prospect",
+    conversationId: pending.conversationId,
+    ...(pending.twilioCallSid ? { twilioCallSid: pending.twilioCallSid } : {}),
+  });
+
+  const realtime = resolveRealtimeClientOptions(config);
+
+  // Reserve the slot right before the RealtimeClient constructor opens the
+  // OpenAI WS. A synchronous throw releases it before propagating.
+  reserveCallSlot();
+  let client: RealtimeClient;
+  try {
+    client = new RealtimeClient({
+      apiKey: config.openaiApiKey,
+      ...realtime,
+      // cedar voice (model produces audio). The sales line is platform-
+      // branded; practiceName is the platform name.
+      generateAudio: true,
+      instructions: buildPromptOrFallback(
+        {
+          practiceName: PLATFORM_NAME,
+          callerKind: "breathe_prospect",
+          callContext: pending.callContext ?? BREATHE_SALES_DEFAULT_CALL_CONTEXT,
+          ...(pending.greeting ? { greeting: pending.greeting } : {}),
+        },
+        BREATHE_SALES_DEFAULT_CALL_CONTEXT,
+        pending.conversationId,
+      ),
+      tools: OPENAI_TOOL_DESCRIPTORS,
+      allowedToolNames: new Set(BREATHE_SALES_TOOL_NAMES),
+    });
+  } catch (err) {
+    releaseCallSlot();
+    throw err;
+  }
+
+  let bridge: VoiceBridge;
+  try {
+    bridge = new VoiceBridge({ client, sink, dispatcher });
+  } catch (err) {
+    try {
+      client.close(1011, "bridge-construction-failed");
+    } catch {
+      /* never mask the original error with a close failure */
+    }
+    releaseCallSlot();
+    throw err;
+  }
+
+  let realtimeOpened = false;
+  let twilioStarted = false;
+  let greetingRequested = false;
+  const maybeSpeakFirst = (): void => {
+    if (!pending.agentSpeaksFirst || greetingRequested || closed) return;
+    if (!realtimeOpened || !twilioStarted) return;
+    greetingRequested = true;
+    bridge.requestGreeting();
+  };
+
+  const cleanup = (reason: string): void => {
+    if (closed) return;
+    closed = true;
+    releaseCallSlot();
+    if (maxTimer !== null) {
+      clearTimeout(maxTimer);
+      maxTimer = null;
+    }
+    logger.info(
+      {
+        event: "voice_breathe_sales_closed",
+        reason,
+        conversationId: pending.conversationId,
+      },
+      "voice sales: closed",
+    );
+    bridge.close(reason);
+    try {
+      ws.close(1000, "sales-closed");
+    } catch {
+      // already closed
+    }
+    if (resolveClosed) {
+      const resolve = resolveClosed;
+      resolveClosed = null;
+      resolve();
+    }
+  };
+
+  bridge.on("session.opened", () => {
+    logger.info(
+      {
+        event: "voice_breathe_sales_opened",
+        conversationId: pending.conversationId,
+      },
+      "voice sales: session opened",
+    );
+    realtimeOpened = true;
+    maybeSpeakFirst();
+  });
+  bridge.on("session.error", (err) =>
+    logger.warn(
+      {
+        event: "voice_session_error",
+        err,
+        conversationId: pending.conversationId,
+      },
+      "voice sales: session error",
+    ),
+  );
+  bridge.on("tool.invoked", (invocation) => {
+    // Observability only — name + status are non-PII (the tool layer keeps
+    // caller details out of `auditArgs`). No conversation row to audit
+    // against, so a log line is the record of which tools ran.
+    logger.info(
+      {
+        event: "voice_breathe_sales_tool",
+        name: invocation.name,
+        status: invocation.status,
+        conversationId: pending.conversationId,
+      },
+      "voice sales: tool invoked",
+    );
+  });
+  bridge.on("session.closed", (info) =>
+    cleanup(info.reason || "session-closed"),
+  );
+
+  maxTimer = setTimeout(() => cleanup("max-duration-exceeded"), MAX_SALES_CALL_MS);
+  maxTimer.unref?.();
+
+  ws.on("message", (raw) => {
+    const frame = parseTwilioFrame(raw as Buffer | string);
+    if (!frame) return;
+    switch (frame.event) {
+      case "start":
+        streamSid = frame.start.streamSid;
+        twilioStarted = true;
+        maybeSpeakFirst();
+        return;
+      case "media":
+        bridge.forwardCallerAudio(frame.media.payload);
+        return;
+      case "stop":
+        cleanup("twilio-stop");
+        return;
+      default:
+        return;
+    }
+  });
+  ws.on("close", () => cleanup("twilio-ws-closed"));
+  ws.on("error", (err) => {
+    logger.warn(
+      { event: "voice_breathe_sales_ws_error", err: serializeErr(err) },
+      "voice sales: ws error",
     );
     cleanup("twilio-ws-error");
   });

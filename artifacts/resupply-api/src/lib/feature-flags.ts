@@ -75,6 +75,7 @@ export const FEATURE_FLAG_KEYS = [
   "resupply.auto_order_drafts",
   "reminder_escalation.dispatcher",
   "reminder_escalation.voice",
+  "voice.breathe_sales",
   "storefront.auto_reminder_enrollment",
   "alerts.auto_dispatch",
   "therapy_fleet.auto_outreach",
