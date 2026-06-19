@@ -63,6 +63,8 @@ import {
   type Intent,
 } from "@workspace/resupply-messaging";
 
+import { smsAsksRefillAttestation } from "@workspace/resupply-reminders";
+
 import { logger } from "../../lib/logger";
 import { resolveOrgIdByCalledNumber } from "../../lib/messaging/tenant-telecom";
 import { createAiFallbackAdapter } from "../../lib/messaging/ai-fallback-impl";
@@ -883,19 +885,39 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
   const nowIso = new Date().toISOString();
   switch (input.intent) {
     case "confirm": {
+      // Only record the refill attestation when the LAST outbound prompt
+      // actually asked for it. A YES can land on a custom/admin/playbook
+      // SMS body (sendReminderSms accepts a `body` override) or on older
+      // copy that didn't ask the two questions — recording continued-use
+      // + low-supply as `true` there would manufacture a false attestation.
+      // When the prompt didn't ask, the order still places normally; we
+      // simply omit the affirmation so no (false) proof row is written.
+      const { data: lastOutbound } = await supabase
+        .from("messages")
+        .select("body")
+        .eq("conversation_id", input.conversationId)
+        .eq("direction", "outbound")
+        .order("sent_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const promptAskedAttestation =
+        typeof lastOutbound?.body === "string" &&
+        smsAsksRefillAttestation(lastOutbound.body);
       const result = await placeResupplyOrderForConversation({
         conversationId: input.conversationId,
-        // The patient's YES reply (to copy that states "confirm only if
-        // you still use your equipment and are running low") is the
-        // recorded Medicare/payer refill attestation.
-        affirmation: {
-          channel: "sms",
-          continuedUse: true,
-          supplyLow: true,
-          requestedBy: "self",
-          ip: input.ip,
-          userAgent: input.userAgent,
-        },
+        // The patient's YES reply to attestation-bearing copy ("reply YES
+        // if you still use ... and are low on supplies") is the recorded
+        // Medicare/payer refill attestation.
+        affirmation: promptAskedAttestation
+          ? {
+              channel: "sms",
+              continuedUse: true,
+              supplyLow: true,
+              requestedBy: "self",
+              ip: input.ip,
+              userAgent: input.userAgent,
+            }
+          : undefined,
       });
       if (result.status === "ok") {
         const { error: closeErr } = await supabase

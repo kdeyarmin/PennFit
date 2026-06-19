@@ -97,4 +97,16 @@ describe("resolveRefillWindow", () => {
     expect(r.contactAllowed).toBe(true);
     expect(r.shipAllowed).toBe(true);
   });
+
+  it("falls back to 1 day for non-finite supply durations (no Invalid Dates)", () => {
+    for (const bad of [NaN, Infinity, -Infinity]) {
+      const r = resolveRefillWindow(
+        input({ lastFulfilledAt: NOW, supplyDurationDays: bad }),
+      );
+      // Treated as a 1-day supply → both windows open, valid dates.
+      expect(r.contactAllowed).toBe(true);
+      expect(r.shipAllowed).toBe(true);
+      expect(Number.isNaN(r.expectedDepletionOn?.getTime() ?? NaN)).toBe(false);
+    }
+  });
 });

@@ -4,7 +4,7 @@
 
 import { describe, it, expect } from "vitest";
 
-import { defaultReminderSmsBody } from "./send-sms";
+import { defaultReminderSmsBody, smsAsksRefillAttestation } from "./send-sms";
 
 const NAME = "Sam";
 const PRACTICE = "PennPaps";
@@ -45,6 +45,22 @@ describe("defaultReminderSmsBody", () => {
       expect(body.length).toBeLessThanOrEqual(160);
     });
   }
+
+  it("every default variant is detected as attestation-bearing", () => {
+    for (const v of variants) {
+      expect(
+        smsAsksRefillAttestation(defaultReminderSmsBody(v, NAME, PRACTICE)),
+      ).toBe(true);
+    }
+  });
+
+  it("does not flag custom/legacy bodies that omit the attestation ask", () => {
+    expect(
+      smsAsksRefillAttestation(
+        "You're due for a CPAP refill. Reply YES to ship, STOP to opt out.",
+      ),
+    ).toBe(false);
+  });
 
   it("escalates urgency: followup circles back, final is a last call", () => {
     expect(defaultReminderSmsBody("followup", NAME, PRACTICE)).toContain(

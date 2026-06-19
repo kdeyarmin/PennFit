@@ -450,19 +450,48 @@ export async function placeResupplyOrderForConversation(
   // re-check existence after the claim and short-circuit if found.
   // The FOR-UPDATE-equivalent UPDATE above already eliminated the
   // common concurrent-race; this catches the misordered-write case.
+  // 6a. Snapshot the entitlement used to stamp the attestation's
+  // expected_depletion_on BEFORE inserting the new fulfillment. The flag
+  // is checked here (not just inside recordRefillConfirmation) because the
+  // ordering matters: resolveSkuEntitlement treats the most recent
+  // non-cancelled fulfillment as the last dispense, so resolving AFTER
+  // ensureFulfillments would read the order we are about to create and
+  // stamp the depletion date from the NEW supply instead of the expiring
+  // one the patient is attesting about. The guard block (3b/3e) already
+  // resolved it pre-claim when a guard flag was on; otherwise resolve once
+  // here, still before the insert. Best-effort — a resolve failure leaves
+  // the metadata null but never blocks recording the attestation itself.
+  let captureAffirmation = false;
+  if (input.affirmation) {
+    captureAffirmation = await isFeatureEnabled(
+      "resupply.refill_affirmation_capture",
+      orgId,
+    );
+    if (captureAffirmation && !resolvedEntitlement) {
+      try {
+        resolvedEntitlement = await resolveSkuEntitlement(supabase.raw(), {
+          patientId: episode.patient_id,
+          itemSku: rx.item_sku,
+        });
+      } catch {
+        resolvedEntitlement = null; // metadata-only; attestation still records
+      }
+    }
+  }
+
   const fulfillmentIds = await ensureFulfillments(supabase, {
     patientId: episode.patient_id,
     episodeId: episode.id,
     itemSku: rx.item_sku,
   });
 
-  // 6. Record the beneficiary's Medicare/payer refill attestation as an
-  // audit-grade refill_confirmations row. Best-effort and AFTER the order
-  // is placed: the ship has already happened, so a write failure here
-  // must NEVER turn a successful confirm into a failure. Skipped when the
-  // caller supplied no affirmation (internal/non-patient callers).
-  if (input.affirmation) {
-    await recordRefillConfirmation(supabase, orgId, {
+  // 6b. Record the beneficiary's Medicare/payer refill attestation as an
+  // audit-grade refill_confirmations row, using the pre-insert entitlement
+  // snapshot from 6a. Best-effort and AFTER the order is placed: the ship
+  // has already happened, so a write failure here must NEVER turn a
+  // successful confirm into a failure.
+  if (input.affirmation && captureAffirmation) {
+    await recordRefillConfirmation(supabase, {
       patientId: episode.patient_id,
       episodeId: episode.id,
       prescriptionId: episode.prescription_id,
@@ -487,17 +516,16 @@ export async function placeResupplyOrderForConversation(
  * throws into the caller — the order is already placed; a failed proof
  * write is logged for ops reconciliation, not surfaced to the patient.
  *
- * `entitlement` is the SKU entitlement already resolved by the guard
- * block when a guard flag was on; it carries the HCPCS code + last
- * dispense used to stamp the expected depletion date. When the guards
- * were off it's null, and we do a single best-effort resolve so the
- * compliance row still carries the HCPCS + depletion context. Failure
- * to resolve leaves those two columns null — the attestation itself
- * (the legally important part) is recorded regardless.
+ * The caller has already confirmed the `resupply.refill_affirmation_capture`
+ * flag is on and resolved `entitlement` BEFORE the new fulfillment was
+ * inserted (so the stamped expected-depletion date reflects the expiring
+ * supply, not the order just created). `entitlement` may be null when the
+ * SKU is unmapped or the resolve failed — the attestation itself (the
+ * legally important part) is recorded regardless, with null HCPCS /
+ * depletion columns.
  */
 async function recordRefillConfirmation(
   supabase: OrgScopedClient,
-  orgId: string,
   args: {
     patientId: string;
     episodeId: string;
@@ -508,24 +536,7 @@ async function recordRefillConfirmation(
   },
 ): Promise<void> {
   try {
-    if (
-      !(await isFeatureEnabled("resupply.refill_affirmation_capture", orgId))
-    ) {
-      return;
-    }
-
-    let entitlement = args.entitlement;
-    if (!entitlement) {
-      try {
-        entitlement = await resolveSkuEntitlement(supabase.raw(), {
-          patientId: args.patientId,
-          itemSku: args.itemSku,
-        });
-      } catch {
-        entitlement = null; // metadata-only; attestation still records
-      }
-    }
-
+    const entitlement = args.entitlement;
     let expectedDepletionOn: string | null = null;
     if (entitlement) {
       const window = resolveRefillWindow({
@@ -561,7 +572,9 @@ async function recordRefillConfirmation(
         {
           event: "resupply.refill_confirmation.record_failed",
           episodeId: args.episodeId,
-          err: error.message,
+          // Code only — a PostgREST `message`/`details`/`hint` can echo
+          // row values (PHI). Treat every log line as world-readable.
+          errCode: error.code ?? null,
         },
         "resupply: failed to record refill attestation (non-fatal)",
       );
@@ -762,7 +775,9 @@ async function raiseRefillWindowAlert(
       logger.warn(
         {
           event: "resupply.refill_window.alert_failed",
-          err: insertAlertErr.message,
+          // Code only — a PostgREST message/details/hint can echo row
+          // values (PHI). Treat every log line as world-readable.
+          errCode: insertAlertErr.code ?? null,
           patientId,
         },
         "resupply: failed to raise refill-window CSR alert (non-fatal)",

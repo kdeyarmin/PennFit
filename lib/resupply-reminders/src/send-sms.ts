@@ -93,6 +93,25 @@ export function defaultReminderSmsBody(
   }
 }
 
+/**
+ * True when an outbound SMS body asked the patient to confirm the two
+ * Medicare/payer refill attestations (still using the equipment AND
+ * running low) before replying YES — i.e. the body is one of the
+ * `defaultReminderSmsBody` variants, not a custom/admin/playbook body or
+ * older copy that didn't ask. The inbound `YES` handler uses this so it
+ * only records a `refill_confirmations` attestation when the prompt the
+ * patient was actually replying to asked for it — never manufacturing a
+ * false attestation for a legacy or custom prompt.
+ *
+ * Kept here, beside `defaultReminderSmsBody`, so the question wording and
+ * its detector move together; `send-sms.variants.test.ts` pins that every
+ * default variant satisfies it.
+ */
+export function smsAsksRefillAttestation(body: string): boolean {
+  const b = body.toLowerCase();
+  return b.includes("still use") && b.includes("low on supplies");
+}
+
 export async function sendReminderSms(
   input: SendReminderSmsInput,
 ): Promise<SendReminderOutcome> {

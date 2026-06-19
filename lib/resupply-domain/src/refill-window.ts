@@ -77,7 +77,12 @@ export function resolveRefillWindow(
   input: RefillWindowInput,
 ): RefillWindowResult {
   const { lastFulfilledAt, now } = input;
-  const supplyDurationDays = Math.max(1, Math.floor(input.supplyDurationDays));
+  // Clamp to >= 1 whole day. Guard non-finite inputs (NaN / Infinity)
+  // explicitly: Math.floor(NaN) is NaN and Math.max(1, NaN) is NaN, which
+  // would produce Invalid Dates downstream — fall back to 1 instead.
+  const supplyDurationDays = Number.isFinite(input.supplyDurationDays)
+    ? Math.max(1, Math.floor(input.supplyDurationDays))
+    : 1;
 
   // First fill — no current supply, both windows open.
   if (lastFulfilledAt === null) {
