@@ -1,4 +1,4 @@
-# Runbook: manual deploys (turning off deploy-on-every-merge)
+# Runbook: Manual deploys (turning off deploy-on-every-merge)
 
 By default, Railway's GitHub integration auto-deploys production from the
 **`main`** branch: every merge into `main` builds and ships. This runbook
@@ -20,16 +20,25 @@ only when you trigger them.
 3. Turn **off automatic deploys** — depending on your Railway UI version
    this is an **"Automatic Deploys" / "Auto Deploy"** toggle, or removing
    the branch deploy trigger.
-4. To deploy from then on, either:
-   - click **Deploy / Redeploy** on the service in the dashboard, or
-   - run the Railway CLI against the prod environment:
+4. To deploy from then on, use one of:
+   - **Dashboard (recommended for shipping a specific `main` commit):** on
+     the service, open the **Deployments** tab and trigger a deploy of the
+     desired commit — this builds the selected commit from GitHub.
+   - **CLI `railway up`:** this uploads and deploys your **current local
+     working tree**, not whatever is on remote `main`. Only run it from a
+     clean checkout you've verified is at `origin/main`:
      ```bash
-     railway up          # build + deploy the current local checkout (ensure you're on the commit/branch you intend to ship)
-     # or
-     railway redeploy    # re-run the most recent deploy for this environment
+     git fetch origin && git checkout main && git reset --hard origin/main
+     railway up        # builds + deploys exactly what's checked out
      ```
+   - Do **not** use `railway redeploy` to ship new code: it re-runs the
+     **current** deployment's existing artifact without uploading new code,
+     so newly-merged `main` commits would **not** go live.
 
-Merges into `main` will no longer trigger a deploy; production will only ship when you manually deploy/redeploy.
+With automatic deploys off, merges into `main` simply stop triggering
+deploys — there is no pending/queued deployment that ships later. `main`
+advances normally; production stays on the last artifact you deployed until
+you trigger the next deploy.
 
 ## Option B — Deploy from a dedicated `release` branch (git-native)
 
