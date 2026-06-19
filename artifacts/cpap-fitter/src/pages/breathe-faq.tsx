@@ -287,6 +287,7 @@ export function BreatheFaq() {
   useRevealOnScroll();
   useNoIndex();
   useSmoothScroll();
+  useInitialHashScroll();
 
   return (
     <div className="breathe-page">
@@ -308,6 +309,8 @@ const NAV_ANCHORS: { href: string; label: string }[] = [
   { href: "#compliance-answer", label: "Compliance" },
   { href: "#security", label: "Security" },
   { href: "#billing", label: "Billing" },
+  { href: "#platform", label: "Platform" },
+  { href: "#ai", label: "AI" },
   { href: "#getting-started", label: "Get started" },
 ];
 
@@ -593,6 +596,37 @@ function useSmoothScroll() {
     return () => {
       root.style.scrollBehavior = prev;
     };
+  }, []);
+}
+
+// Lazy-loaded pages mount their sections a frame or two after the browser
+// has already tried (and failed) to jump to a `#section` hash, so deep links
+// like /breathe/faq#billing would otherwise land at the top. Retry the scroll
+// until the target exists. Mirrors useInitialHashScroll in breathe.tsx.
+function useInitialHashScroll() {
+  useEffect(() => {
+    const hash = window.location.hash;
+    if (!hash || hash === "#" || hash === "#top") return;
+    let frame = 0;
+    let tries = 0;
+    const tryScroll = () => {
+      let el: Element | null;
+      try {
+        el = document.querySelector(hash);
+      } catch {
+        return; // malformed selector — nothing to do
+      }
+      if (el) {
+        el.scrollIntoView({
+          behavior: prefersReducedMotion() ? "auto" : "smooth",
+          block: "start",
+        });
+        return;
+      }
+      if (tries++ < 60) frame = requestAnimationFrame(tryScroll);
+    };
+    frame = requestAnimationFrame(tryScroll);
+    return () => cancelAnimationFrame(frame);
   }, []);
 }
 
