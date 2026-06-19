@@ -1247,7 +1247,10 @@ export async function handleBreatheSalesWsConnection(
         ws.send(encodeMediaFrame(streamSid, b64));
       } catch (err) {
         logger.warn(
-          { event: "voice_breathe_sales_ws_send_failed", err: serializeErr(err) },
+          {
+            event: "voice_breathe_sales_ws_send_failed",
+            err: serializeErr(err),
+          },
           "voice sales: ws send failed",
         );
       }
@@ -1288,7 +1291,8 @@ export async function handleBreatheSalesWsConnection(
         {
           practiceName: PLATFORM_NAME,
           callerKind: "breathe_prospect",
-          callContext: pending.callContext ?? BREATHE_SALES_DEFAULT_CALL_CONTEXT,
+          callContext:
+            pending.callContext ?? BREATHE_SALES_DEFAULT_CALL_CONTEXT,
           ...(pending.greeting ? { greeting: pending.greeting } : {}),
         },
         BREATHE_SALES_DEFAULT_CALL_CONTEXT,
@@ -1393,7 +1397,10 @@ export async function handleBreatheSalesWsConnection(
     cleanup(info.reason || "session-closed"),
   );
 
-  maxTimer = setTimeout(() => cleanup("max-duration-exceeded"), MAX_SALES_CALL_MS);
+  maxTimer = setTimeout(
+    () => cleanup("max-duration-exceeded"),
+    MAX_SALES_CALL_MS,
+  );
   maxTimer.unref?.();
 
   ws.on("message", (raw) => {

@@ -167,7 +167,8 @@ router.post(
         event: "voice.inbound-breathe-sales.connected",
         callSid: CallSid,
         // PHI-free: digit count only, never the caller's number.
-        fromDigits: (From ?? parsed.data.Caller ?? "").replace(/\D+/g, "").length,
+        fromDigits: (From ?? parsed.data.Caller ?? "").replace(/\D+/g, "")
+          .length,
       },
       "voice.inbound-breathe-sales: connecting caller to the platform sales agent",
     );

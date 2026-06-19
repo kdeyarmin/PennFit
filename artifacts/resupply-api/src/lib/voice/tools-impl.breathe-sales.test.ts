@@ -15,10 +15,7 @@ import {
 } from "../../test-helpers/supabase-mock";
 
 import { createVoiceToolDispatcher } from "./tools-impl";
-import type {
-  PlatformEmailMessage,
-  SendPlatformEmail,
-} from "./tools-impl";
+import type { PlatformEmailMessage, SendPlatformEmail } from "./tools-impl";
 
 const supabaseMock = installSupabaseMock();
 

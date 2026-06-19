@@ -220,7 +220,11 @@ export const captureSalesLeadArgs = z
 // and emails the caller a secure link to verify and set their own password.
 export const startBreatheSignupArgs = z
   .object({
-    org_name: z.string().trim().min(2, "Organization name is required.").max(120),
+    org_name: z
+      .string()
+      .trim()
+      .min(2, "Organization name is required.")
+      .max(120),
     admin_email: z.string().trim().email("Expected a valid email address."),
   })
   .strict();
@@ -798,7 +802,8 @@ export function summarizeToolArgsForAudit(
         has_company_name: typeof a.company_name === "string",
         has_phone: typeof a.phone === "string",
         has_email: typeof a.email === "string",
-        interest_tier: typeof a.interest_tier === "string" ? a.interest_tier : null,
+        interest_tier:
+          typeof a.interest_tier === "string" ? a.interest_tier : null,
         message_len: typeof a.message === "string" ? a.message.length : 0,
       };
     case "start_breathe_signup":

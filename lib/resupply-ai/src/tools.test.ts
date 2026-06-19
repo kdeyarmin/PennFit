@@ -122,7 +122,8 @@ describe("tool descriptors / schemas", () => {
 
   it("BREATHE_SALES_TOOL_NAMES is a subset of TOOL_NAMES with no patient/shop tools", () => {
     const all = new Set<ToolName>(TOOL_NAMES);
-    for (const name of BREATHE_SALES_TOOL_NAMES) expect(all.has(name)).toBe(true);
+    for (const name of BREATHE_SALES_TOOL_NAMES)
+      expect(all.has(name)).toBe(true);
     // The sales line must NOT expose any patient/shop side-effect tool.
     const forbidden: ToolName[] = [
       "verify_patient_identity",
@@ -146,9 +147,9 @@ describe("tool descriptors / schemas", () => {
     const descriptor = OPENAI_TOOL_DESCRIPTORS.find(
       (d) => d.name === "start_breathe_signup",
     );
-    expect(
-      Object.keys(descriptor?.parameters.properties ?? {}),
-    ).not.toContain("password");
+    expect(Object.keys(descriptor?.parameters.properties ?? {})).not.toContain(
+      "password",
+    );
   });
 
   it("end_call constrains outcome to the allowed enum", () => {

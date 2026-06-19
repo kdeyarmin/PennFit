@@ -139,9 +139,15 @@ function identityRequiredResultFor<K extends ToolName>(
     // returns a benign "not available" shape if one ever reaches a
     // patient/shop dispatcher.
     case "identify_call_reason":
-      return { ok: true, reason: "other" } as unknown as DispatchToolResult<K>["result"];
+      return {
+        ok: true,
+        reason: "other",
+      } as unknown as DispatchToolResult<K>["result"];
     case "send_info_email":
-      return { ok: false, sent: false } as unknown as DispatchToolResult<K>["result"];
+      return {
+        ok: false,
+        sent: false,
+      } as unknown as DispatchToolResult<K>["result"];
     case "capture_sales_lead":
       return { ok: false } as unknown as DispatchToolResult<K>["result"];
     case "start_breathe_signup":
