@@ -182,7 +182,7 @@ async function buildReceiver(
     });
     phone = recipient?.phoneE164 ?? null;
   } catch {
-    phone = null;
+    // best-effort — leave phone null when the resolver is unavailable
   }
 
   return {
