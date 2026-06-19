@@ -52,7 +52,7 @@ git merge --ff-only origin/main   # fast-forward release up to main
 git push origin release           # this push triggers the Railway deploy
 ```
 
-To deploy a *specific* commit rather than all of `main`, fast-forward
+To deploy a _specific_ commit rather than all of `main`, fast-forward
 `release` to that commit's SHA instead of `origin/main`.
 
 > Keep `release` strictly behind/equal to `main` (fast-forward only). Don't
@@ -63,7 +63,7 @@ To deploy a *specific* commit rather than all of `main`, fast-forward
 - **Preview environments are unaffected.** PR-branch preview builds come
   from Railway's PR integration, separate from the production branch
   trigger; disabling production auto-deploy does not turn those off.
-- **Migrations** still run via the `preDeployCommand` on each *actual*
+- **Migrations** still run via the `preDeployCommand` on each _actual_
   deploy (gated by `RUN_DB_MIGRATIONS=true`), so deferring a deploy also
   defers its migrations — expected.
 - After any manual deploy, verify the API is routed:
