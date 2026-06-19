@@ -97,6 +97,12 @@ const PROMPT_VERSION_HASHES: Readonly<Record<string, string>> = {
   // variant hash is unchanged.
   "2026-06-14.v10":
     "05fc068dde89418e69165756635271358cf39a1e63c0c91719a44c63c4167310",
+  // v11 adds the breathe_prospect caller-kind (the CareMetric Breathe B2B
+  // platform sales agent). The PATIENT render is byte-for-byte unchanged, so
+  // this hash matches v10's; the sales variant is pinned separately in
+  // BREATHE_SALES_PROMPT_HASH below.
+  "2026-06-19.v11":
+    "05fc068dde89418e69165756635271358cf39a1e63c0c91719a44c63c4167310",
 };
 
 function renderCanonicalPrompt(): string {
@@ -124,6 +130,15 @@ function hashStrippingVersionLine(prompt: string, version: string): string {
  */
 const SHOP_PROMPT_HASH =
   "e2d9c7ad6fe44263a5e4d7ee630f6a61a7d32d7b3f0ee05d1791c3d754356195";
+
+/**
+ * The CareMetric Breathe sales (breathe_prospect) variant renders its own
+ * persona / skills / pricing-knowledge / tools clauses. Pinned separately so
+ * drift in the sales prompt is caught too. Update the same way: render, take
+ * the printed hash, record it here.
+ */
+const BREATHE_SALES_PROMPT_HASH =
+  "d24bedcb23d69c82253b147168799d132badbd0ddafd79785e91ecd6e58d4f4d";
 
 describe("PROMPT_VERSION drift detector", () => {
   it("has a recorded hash for the currently-shipped PROMPT_VERSION", () => {
@@ -181,6 +196,19 @@ describe("PROMPT_VERSION drift detector", () => {
       throw new Error(
         `Shop prompt drift. Expected ${SHOP_PROMPT_HASH}, got ${actual}. ` +
           "If the change was intended, record the value above in SHOP_PROMPT_HASH.",
+      );
+    }
+  });
+
+  it("the breathe_prospect (sales) variant matches its recorded hash", () => {
+    const actual = hashStrippingVersionLine(
+      buildSystemPrompt({ ...CANONICAL_INPUT, callerKind: "breathe_prospect" }),
+      PROMPT_VERSION,
+    );
+    if (actual !== BREATHE_SALES_PROMPT_HASH) {
+      throw new Error(
+        `Breathe sales prompt drift. Expected ${BREATHE_SALES_PROMPT_HASH}, got ${actual}. ` +
+          "If the change was intended, record the value above in BREATHE_SALES_PROMPT_HASH.",
       );
     }
   });
