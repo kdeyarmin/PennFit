@@ -575,7 +575,9 @@ function ContactGateModal({
             <span className="bx-modal-ic">
               <Headphones size={20} />
             </span>
-            <h3 id="bx-contact-modal-title">Questions? We&apos;re here to help</h3>
+            <h3 id="bx-contact-modal-title">
+              Questions? We&apos;re here to help
+            </h3>
             <p className="bx-modal-lede">
               Have a question, a concern, or need technical support? Leave your
               email and our support team will get back to you — or call us right
