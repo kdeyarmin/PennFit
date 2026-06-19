@@ -16,6 +16,7 @@ import {
   Gauge,
   Headphones,
   LineChart,
+  Mail,
   MessageSquare,
   Mic,
   PhoneCall,
@@ -1166,6 +1167,24 @@ function Footer() {
           infrastructure; patient imagery is processed on-device and never
           transmitted.
         </p>
+        <div className="bx-footer-contact">
+          <span className="bx-footer-contact-label">
+            <Headphones size={13} aria-hidden="true" />
+            Customer &amp; tech support
+          </span>
+          <a className="bx-footer-contact-link" href="tel:+18775212890">
+            <PhoneCall size={13} aria-hidden="true" />
+            (877) 521-2890
+            <span className="bx-footer-contact-toll">toll-free</span>
+          </a>
+          <a
+            className="bx-footer-contact-link"
+            href="mailto:info@cmbreathe.com"
+          >
+            <Mail size={13} aria-hidden="true" />
+            info@cmbreathe.com
+          </a>
+        </div>
         <div className="bx-brand-sub">
           © {new Date().getFullYear()} CareMetric.ai
         </div>

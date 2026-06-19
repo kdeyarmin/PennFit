@@ -3542,6 +3542,44 @@
   max-width: 420px;
   line-height: 1.6;
 }
+.bx-footer-contact {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.bx-footer-contact-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--bx-text-faint);
+}
+.bx-footer-contact-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--bx-text-dim);
+  text-decoration: none;
+  transition: color 0.18s ease;
+}
+.bx-footer-contact-link:hover {
+  color: var(--bx-text);
+}
+.bx-footer-contact-toll {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--bx-text-faint);
+  border: 1px solid var(--bx-line);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
 .bx-footer-nav {
   display: flex;
   flex-wrap: wrap;
