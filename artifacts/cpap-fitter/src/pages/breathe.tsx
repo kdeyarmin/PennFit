@@ -883,12 +883,11 @@ export function BreatheHome() {
   return (
     <BreatheShell>
       <Hero />
-      {/* Show the actual console on the landing page — not just the product
+      {/* Show the actual product on the landing page — not just the product
           tour. The hero sells the outcome; this proves the product is real
-          (competitors all lead with product UI, we used to lead with an
-          abstract graphic). Reuses the same illustrative console as the
-          product tour. */}
-      <ProductShowcase />
+          with REAL captured screens of the live console (competitors all lead
+          with product UI; we used to lead with an abstract graphic). */}
+      <LiveConsole />
       <IntegrationsStrip />
       <Pillars />
       <ResupplyEngine />
@@ -1825,6 +1824,99 @@ function Sparkline() {
       />
       <circle cx={last[0]} cy={last[1]} r="2.6" fill="var(--bx-mint)" />
     </svg>
+  );
+}
+
+/* ───────────────────── Live console (real screenshots) ─────────────────────
+ * Real captured screens from the /admin?demo=1 sandbox (sample data). Unlike
+ * the illustrative ProductShowcase below, these are the actual product — the
+ * strongest "show, don't tell" proof, and what every competitor's site leads
+ * with. Hero screen + a four-up gallery, each captioned with the job it does. */
+const LIVE_SHOTS: { src: string; cap: string; alt: string }[] = [
+  {
+    src: "/breathe/screens/console-patients.jpg",
+    cap: "Patient roster — every channel, every status",
+    alt: "Breathe admin: patient roster with status and SMS, email and voice channels",
+  },
+  {
+    src: "/breathe/screens/console-conversations.jpg",
+    cap: "One inbox — SMS, email, voice & in-app",
+    alt: "Breathe admin: unified conversations inbox across every channel",
+  },
+  {
+    src: "/breathe/screens/console-denials.jpg",
+    cap: "Denials ranked by recoverable $ × win-probability",
+    alt: "Breathe admin: denials worklist ranked by recoverable dollars",
+  },
+  {
+    src: "/breathe/screens/console-orders.jpg",
+    cap: "Storefront orders, end to end",
+    alt: "Breathe admin: storefront orders list with status and fulfillment",
+  },
+];
+
+function LiveConsole() {
+  return (
+    <section className="bx-section" id="console">
+      <div className="bx-shell">
+        <div className="bx-section-head center bx-reveal">
+          <span className="bx-eyebrow">
+            <Cpu size={13} /> The actual product
+          </span>
+          <h2 className="bx-h2">This is the console — not a mockup</h2>
+          <p className="bx-lede">
+            Real screens from the live demo, running on sample data — the same
+            command center your team works in every day. Start the free demo and
+            click around it yourself.
+          </p>
+        </div>
+
+        <div className="bx-app-frame bx-reveal">
+          <div className="bx-app">
+            <div className="bx-app-top">
+              <span className="bx-app-dots">
+                <i />
+                <i />
+                <i />
+              </span>
+              <span className="bx-app-url">
+                <Lock size={11} /> app.cmbreathe.com/admin
+              </span>
+              <span className="bx-app-live">
+                <span className="dot" /> Live
+              </span>
+            </div>
+            <img
+              className="bx-shot-img"
+              src="/breathe/screens/console-home.jpg"
+              alt="Breathe admin home dashboard: live counters and today's worklist"
+              loading="lazy"
+            />
+          </div>
+          <div className="bx-app-glow" aria-hidden="true" />
+        </div>
+        <p className="bx-app-caption">
+          Home — live counters and today&apos;s worklist across every queue.
+          Real screen from the demo, on sample data.
+        </p>
+
+        <div className="bx-shotgrid">
+          {LIVE_SHOTS.map((s) => (
+            <figure className="bx-shotcard bx-reveal" key={s.src}>
+              <div className="bx-shotcard-frame">
+                <span className="bx-shotcard-bar" aria-hidden="true">
+                  <i />
+                  <i />
+                  <i />
+                </span>
+                <img src={s.src} alt={s.alt} loading="lazy" />
+              </div>
+              <figcaption>{s.cap}</figcaption>
+            </figure>
+          ))}
+        </div>
+      </div>
+    </section>
   );
 }
 

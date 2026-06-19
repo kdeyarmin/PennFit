@@ -72,7 +72,7 @@ in response. Source pages live in
 
 | #   | Gap                                                                                                             | Competitor doing it well                                                             | Disposition in this PR                                                                                                                                                                                                                                                               |
 | --- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 1   | **Home page never showed the product** — it led with an abstract animated "orb."                                | NikoHealth, Tennr lead with product UI.                                              | **Fixed.** Surfaced the existing illustrative console (`ProductShowcase`) on the home page, right under the hero.                                                                                                                                                                    |
+| 1   | **Home page never showed the product** — it led with an abstract animated "orb."                                | NikoHealth, Tennr lead with product UI.                                              | **Fixed.** Added a `LiveConsole` section under the hero with **real captured screenshots** of the live `/admin?demo=1` console — home dashboard, patient roster, omnichannel inbox, AI denials worklist, and orders.                                                                 |
 | 2   | **Headline stats unattributed** — `7 / 38% / 22% / 9+ hrs` read as invented.                                    | Brightree ties numbers to named customers; NikoHealth labels a stats dashboard.      | **Fixed (honest framing).** Added a provenance note under the hero stat band ("modeled on typical DME economics + published industry benchmarks — directional, not a guarantee") linking to the ROI calculator. (The outcome cards lower on the page already cite industry sources.) |
 | 3   | **No human contact path** — self-serve demo only.                                                               | All five offer "Book a demo / Talk to us."                                           | **Fixed.** Added a secondary "Book a demo / Talk to us" gate (Nav, hero, closing CTA) that captures a lead and surfaces phone + email — self-serve demo stays the primary CTA.                                                                                                       |
 | 4   | **Marketing site was `noindex` even on `cmbreathe.com`** — invisible to search engines.                         | All competitors are indexed.                                                         | **Fixed.** `noindex` now applies everywhere _except_ the production apex; Railway preview + tenant hosts stay out of the index.                                                                                                                                                      |
@@ -82,10 +82,13 @@ in response. Source pages live in
 
 ## Changes shipped in this PR
 
-- **Show the real product on the home page** — `<ProductShowcase />` (the
-  illustrative console: sidebar, KPIs, resupply worklist, live AI voice
-  panel, denials-by-$, collections) now renders on `/breathe`, not just the
-  product tour. Reuse, not rebuild. (`breathe.tsx` `BreatheHome`.)
+- **Show the real product on the home page** — a new `LiveConsole` section on
+  `/breathe` renders **real captured screenshots** of the live `/admin?demo=1`
+  console (home dashboard, patient roster, omnichannel inbox, AI denials
+  worklist, orders), each in a browser frame with a caption. Captured with
+  Playwright against the demo sandbox; assets in
+  `public/breathe/screens/`. (The illustrative `ProductShowcase` mockup still
+  serves the deeper `/breathe/product` tour.)
 - **Stat credibility** — provenance note under the hero stat band on both
   `/breathe` and `/breathe/features`, linking to the ROI methodology.
 - **"Talk to us" path** — new `ContactGateModal` (+ `ContactEmailForm`,
@@ -107,8 +110,8 @@ Do **not** fabricate any of these; add them when the underlying truth exists:
 4. **Review-site badges** (G2 / Capterra) once listed and reviewed.
 5. **Press / "as seen in"** wall once there's coverage.
 6. **Resources/blog** for SEO + thought leadership.
-7. **Replace the illustrative console with real captured screenshots** of the
-   `/admin?demo=1` sandbox (Playwright capture) — a drop-in upgrade to the
-   same `ProductShowcase` slot; the caption already says "illustrative…
-   sample data," so swapping in real frames only strengthens it.
-8. **Vertical landing pages** (CPAP, respiratory, O&P, CGM…) à la NikoHealth.
+7. **Vertical landing pages** (CPAP, respiratory, O&P, CGM…) à la NikoHealth.
+8. **Refresh the captured screenshots** when the console UI changes (re-run the
+   Playwright capture against `/admin?demo=1`), and broaden coverage to the
+   therapy-fleet / resupply-opportunities screens once their demo fixtures are
+   filled in (they currently error in the sandbox).
