@@ -549,6 +549,24 @@ const BreatheFeatures = lazyWithRetry(() =>
   })),
 );
 
+// Breathe — Integrations. The centerpiece marketing page: unifying the CPAP
+// manufacturer device clouds (ResMed AirView, Philips Care Orchestrator, 3B
+// React Health) into one fleet view with AI early-warning monitoring, plus
+// the payer/billing connectors. Same dark chrome, mounted in TopRouter.
+const BreatheIntegrations = lazyWithRetry(() =>
+  import("@/pages/breathe-integrations").then((m) => ({
+    default: m.BreatheIntegrations,
+  })),
+);
+
+// Breathe — DME Platform 101. Category education for prospects who don't yet
+// know this kind of software exists. Same dark chrome, mounted in TopRouter.
+const BreatheLearn = lazyWithRetry(() =>
+  import("@/pages/breathe-learn").then((m) => ({
+    default: m.BreatheLearn,
+  })),
+);
+
 const Reminders = lazyWithRetry(() =>
   import("@/pages/reminders").then((m) => ({ default: m.Reminders })),
 );
@@ -1168,6 +1186,8 @@ function TopRouter() {
         */}
         <Route path="/breathe" component={BreatheHome} />
         <Route path="/breathe/features" component={BreatheFeatures} />
+        <Route path="/breathe/integrations" component={BreatheIntegrations} />
+        <Route path="/breathe/why" component={BreatheLearn} />
         <Route path="/breathe/product" component={BreatheProduct} />
         <Route path="/breathe/compare" component={BreatheCompare} />
         <Route path="/breathe/roi" component={BreatheRoi} />

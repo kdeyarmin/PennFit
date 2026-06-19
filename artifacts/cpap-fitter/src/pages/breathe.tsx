@@ -91,7 +91,7 @@ const LOGO = "/breathe/caremetric-icon.png";
  * so each page stays short and focused. Every page renders its own slice of
  * sections inside this shell.
  */
-function BreatheShell({ children }: { children: React.ReactNode }) {
+export function BreatheShell({ children }: { children: React.ReactNode }) {
   useRevealOnScroll();
   useNoIndex();
   useSmoothScroll();
@@ -114,7 +114,7 @@ function BreatheShell({ children }: { children: React.ReactNode }) {
  * split-out page has its own title and context instead of opening cold on
  * a content section.
  */
-function PageHead({
+export function PageHead({
   icon: Icon,
   eyebrow,
   title,
@@ -151,7 +151,7 @@ type DemoGateContextValue = { open: (source?: string) => void };
 const DemoGateContext = React.createContext<DemoGateContextValue | null>(null);
 
 /** Open the email→demo gate from any CTA. */
-function useDemoGate(): DemoGateContextValue {
+export function useDemoGate(): DemoGateContextValue {
   const ctx = useContext(DemoGateContext);
   if (!ctx) throw new Error("useDemoGate must be used within DemoGateProvider");
   return ctx;
@@ -662,8 +662,10 @@ export function BreatheHome() {
       <IntegrationsStrip />
       <Pillars />
       <ResupplyEngine />
+      <UnifiedFleet />
       <Lifecycle />
       <Capabilities />
+      <BuiltInHouse />
       <Replaces />
       <Outcomes />
       <PricingHome />
@@ -695,6 +697,7 @@ export function BreatheProduct() {
       <DayInLife />
       <ProductShowcase />
       <Features />
+      <BuiltInHouse />
       <RevenueCycle />
       <AiBento />
       <Outcomes showClaimsEngine={false} />
@@ -723,6 +726,7 @@ export function BreatheCompare() {
       />
       <Comparison />
       <WhyDifferent />
+      <BuiltInHouse />
       <Roles />
       <ClosingCta />
     </BreatheShell>
@@ -748,6 +752,7 @@ export function BreatheRoi() {
         sub="Estimate what Breathe gives back on your own numbers — staff hours, revenue-cycle recovery, resupply growth, and the seven point tools you stop paying for."
       />
       <Roi />
+      <RoiAssumptions />
       <ClosingCta />
     </BreatheShell>
   );
@@ -773,6 +778,7 @@ export function BreathePricing() {
       />
       <Pricing />
       <Onboarding />
+      <PricingFaq />
       <ClosingCta />
     </BreatheShell>
   );
@@ -797,6 +803,7 @@ export function BreatheSecurity() {
         sub="HIPAA-eligible infrastructure, on-device patient imaging, and a least-privilege posture — the questions your compliance team will ask, answered."
       />
       <Security />
+      <SecurityPosture />
       <Manifesto />
       <Faq />
       <ClosingCta />
@@ -806,8 +813,22 @@ export function BreatheSecurity() {
 
 /* ───────────────────────── Nav ───────────────────────── */
 const NAV_LINKS: { href: string; label: string }[] = [
-  { href: "/breathe/product", label: "Product" },
+  { href: "/breathe/product", label: "Platform" },
+  { href: "/breathe/integrations", label: "Integrations" },
+  { href: "/breathe/why", label: "Why Breathe" },
   { href: "/breathe/compare", label: "Compare" },
+  { href: "/breathe/pricing", label: "Pricing" },
+];
+
+// The full set of marketing pages — used by the footer so ROI, Security,
+// and Features stay reachable + crawlable even though they're kept out of
+// the (deliberately short) top nav.
+const FOOTER_LINKS: { href: string; label: string }[] = [
+  { href: "/breathe/product", label: "Platform" },
+  { href: "/breathe/integrations", label: "Integrations" },
+  { href: "/breathe/why", label: "Why Breathe" },
+  { href: "/breathe/compare", label: "Compare" },
+  { href: "/breathe/features", label: "Features" },
   { href: "/breathe/roi", label: "ROI" },
   { href: "/breathe/pricing", label: "Pricing" },
   { href: "/breathe/security", label: "Security" },
@@ -1028,11 +1049,14 @@ const INTEGRATIONS = [
 function IntegrationsStrip() {
   return (
     <section className="bx-integrations bx-reveal" aria-label="Integrations">
-      <div className="bx-shell">
+      <div className="bx-shell bx-integrations-head">
         <p className="bx-integrations-label">
           <Plug size={13} /> Connected to the device clouds, clearinghouses, and
           billing systems you already run
         </p>
+        <Link className="bx-integrations-link" href="/breathe/integrations">
+          See how it connects <ArrowRight size={14} />
+        </Link>
         {/* The marquee duplicates the list for the animation, so it is
             aria-hidden; this visually-hidden list exposes the partner
             names to assistive tech exactly once. */}
@@ -2331,7 +2355,7 @@ function RevenueCycle() {
  * Office Ally RCM, therapy-cloud monitoring, the AI workforce, the virtual
  * mask fitter, storefront, telehealth, analytics), not aspiration.
  */
-type Capability = {
+export type Capability = {
   icon: React.ReactNode;
   title: string;
   summary: string;
@@ -2486,6 +2510,172 @@ function Capabilities() {
   );
 }
 
+/* ───────────────── Unified therapy fleet (home teaser) ───────────────── */
+/*
+ * Homepage teaser for the dedicated /breathe/integrations story: the
+ * multi-portal status quo (ResMed AirView, Philips Care Orchestrator, 3B
+ * React Health) → one compiled fleet view → AI that flags risk early.
+ * Reuses the new logo-card grid and the price-cta; the deep version lives
+ * on the Integrations page.
+ */
+const DEVICE_CLOUDS: { mark: string; sub: string; tag: string }[] = [
+  { mark: "ResMed", sub: "AirView", tag: "Therapy cloud" },
+  { mark: "Philips", sub: "Care Orchestrator", tag: "Respironics" },
+  { mark: "3B Medical", sub: "React Health", tag: "Luna G3" },
+];
+
+function UnifiedFleet() {
+  return (
+    <section className="bx-section" id="unified-fleet">
+      <div className="bx-shell">
+        <div className="bx-section-head center bx-reveal">
+          <span className="bx-eyebrow">
+            <Network size={13} /> Connected therapy
+          </span>
+          <h2 className="bx-h2">Three device clouds. One fleet view.</h2>
+          <p className="bx-lede">
+            Your patients are scattered across ResMed AirView, Philips Care
+            Orchestrator, and 3B&apos;s React Health portal — three logins,
+            three exports, the same patient re-keyed three times. Breathe
+            compiles all of them onto one screen, then watches the whole fleet
+            for you and flags who&apos;s slipping <em>before</em> they fall out
+            of compliance.
+          </p>
+        </div>
+        <div className="bx-logogrid bx-reveal">
+          {DEVICE_CLOUDS.map((c) => (
+            <article className="bx-logocard" key={c.mark}>
+              <span className="bx-logocard-tag">{c.tag}</span>
+              <span className="bx-logocard-mark">{c.mark}</span>
+              <span className="bx-logocard-sub">{c.sub}</span>
+            </article>
+          ))}
+          <div className="bx-logogrid-arrow" aria-hidden="true">
+            <ArrowRight size={20} />
+          </div>
+          <article className="bx-logocard bx-logocard-unified">
+            <span className="bx-logocard-tag">Breathe</span>
+            <span className="bx-logocard-mark">One fleet</span>
+            <span className="bx-logocard-sub">every patient, every night</span>
+          </article>
+        </div>
+        <div className="bx-price-cta bx-reveal">
+          <span>
+            See the unified fleet view and the AI early-warning system in depth.
+          </span>
+          <Link className="bx-btn bx-btn-primary" href="/breathe/integrations">
+            Explore integrations <ArrowRight size={16} />
+          </Link>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ───────────────── Built in-house, not bolted on ───────────────── */
+/*
+ * The marquee differentiation band: legacy DME suites are decades-old cores
+ * with third-party add-ons stacked on top; Breathe is one native codebase.
+ * Grounded in real in-house workspace packages (resupply-auth, -telecom,
+ * -ai, RCM, the resupply engine, the voice agent). Used on the homepage and
+ * the product tour.
+ */
+const NATIVE_STACK: { icon: React.ReactNode; label: string; note: string }[] = [
+  {
+    icon: <KeyRound size={17} />,
+    label: "Authentication & MFA",
+    note: "argon2id, TOTP, device sessions",
+  },
+  {
+    icon: <MessageSquare size={17} />,
+    label: "Messaging",
+    note: "SMS, voice, email & fax in one inbox",
+  },
+  {
+    icon: <BrainCircuit size={17} />,
+    label: "AI orchestration",
+    note: "voice agent, chat, scrubbing, coaching",
+  },
+  {
+    icon: <Receipt size={17} />,
+    label: "Billing & revenue cycle",
+    note: "eligibility → claims → ERA posting",
+  },
+  {
+    icon: <RefreshCw size={17} />,
+    label: "Resupply engine",
+    note: "reasoning-driven reorder outreach",
+  },
+  {
+    icon: <Stethoscope size={17} />,
+    label: "Therapy monitoring",
+    note: "device-cloud adherence + early alerts",
+  },
+];
+
+const BOLTED_ON = [
+  "A separate billing / clearinghouse vendor",
+  "A separate telephony provider for calls & texts",
+  "A separate e-signature tool",
+  "An add-on “AI” module, licensed on top",
+  "Glue code, nightly exports & swivel-chair in between",
+];
+
+function BuiltInHouse() {
+  return (
+    <section className="bx-section" id="in-house">
+      <div className="bx-shell">
+        <div className="bx-section-head center bx-reveal">
+          <span className="bx-eyebrow">
+            <Cpu size={13} /> One codebase
+          </span>
+          <h2 className="bx-h2">Built in-house — not bolted on</h2>
+          <p className="bx-lede">
+            Legacy DME suites are decades-old cores with third-party add-ons
+            stacked on top. Breathe is one native platform — every module built
+            ground-up under one roof, on one patient record — so the
+            intelligence ships <em>in</em> the product instead of arriving as
+            the add-on you license separately.
+          </p>
+        </div>
+        <div className="bx-vs bx-reveal">
+          <article className="bx-vs-col bx-vs-legacy">
+            <header>
+              <span className="bx-vs-kicker">Legacy DME software</span>
+              <h3>A core — plus a stack of vendors</h3>
+            </header>
+            <ul className="bx-vs-list">
+              {BOLTED_ON.map((b) => (
+                <li key={b}>{b}</li>
+              ))}
+            </ul>
+          </article>
+          <div className="bx-vs-divider" aria-hidden="true">
+            <span>vs</span>
+          </div>
+          <article className="bx-vs-col bx-vs-native">
+            <header>
+              <span className="bx-vs-kicker">Breathe</span>
+              <h3>One native stack, one record</h3>
+            </header>
+            <ul className="bx-vs-native-list">
+              {NATIVE_STACK.map((n) => (
+                <li key={n.label}>
+                  <span className="bx-vs-ic">{n.icon}</span>
+                  <span className="bx-vs-text">
+                    <b>{n.label}</b>
+                    <i>{n.note}</i>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </article>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 /* ───────────────────────── Comparison ───────────────────────── */
 type Cell = "yes" | "no" | "partial";
 type CompareRow = {
@@ -2535,6 +2725,18 @@ const COMPARE_ROWS: CompareRow[] = [
     sub: "ResMed · Philips · 3B",
     breathe: "yes",
     cols: ["partial", "partial", "no"],
+  },
+  {
+    label: "Native telephony",
+    sub: "SMS · voice · fax, built-in",
+    breathe: "yes",
+    cols: ["no", "partial", "no"],
+  },
+  {
+    label: "One codebase, built in-house",
+    sub: "not acquired & bolted-on modules",
+    breathe: "yes",
+    cols: ["no", "no", "partial"],
   },
   {
     label: "Electronic prior authorization",
@@ -3593,6 +3795,222 @@ function Security() {
   );
 }
 
+/* ───────────── Shared capability card + deepening sections ───────────── */
+/*
+ * Small reusable card for the .bx-caps grid (Capability shape). The
+ * homepage Capabilities / Compare WhyDifferent bands inline this same
+ * markup; the deepening sections below render through this helper.
+ */
+export function CapCard({ c }: { c: Capability }) {
+  return (
+    <article className={`bx-cap bx-reveal${c.gold ? " gold" : ""}`}>
+      <div className="bx-cap-head">
+        <span className="bx-cap-ic">{c.icon}</span>
+        <div>
+          <h3>{c.title}</h3>
+          <p className="bx-cap-summary">{c.summary}</p>
+        </div>
+      </div>
+      <ul className="bx-cap-list">
+        {c.points.map((p) => (
+          <li key={p}>{p}</li>
+        ))}
+      </ul>
+    </article>
+  );
+}
+
+/* Security page — the concrete control list a compliance review reads. */
+const SECURITY_POSTURE: Capability[] = [
+  {
+    icon: <KeyRound size={20} />,
+    title: "Authentication, in-house",
+    summary: "Identity is ours — no third-party SSO vendor in the loop.",
+    points: [
+      "argon2id password hashing",
+      "TOTP multi-factor with recovery codes",
+      "DB-backed sessions + CSRF protection",
+      "Rate-limited auth endpoints",
+    ],
+  },
+  {
+    icon: <Database size={20} />,
+    title: "Data handling",
+    summary: "PHI minimized by architecture, not policy alone.",
+    points: [
+      "Order payloads & images kept out of logs",
+      "Mask imaging on-device — frames never transmitted",
+      "Per-object storage access control",
+      "Your data exports on demand — no lock-in",
+    ],
+    gold: true,
+  },
+  {
+    icon: <Server size={20} />,
+    title: "Access & isolation",
+    summary: "Least-privilege, multi-tenant by design.",
+    points: [
+      "Permission-gated admin routes, every mutation",
+      "Per-tenant brand, sending domain & data separation",
+      "Strict-CSP, same-origin delivery — no trackers",
+      "HIPAA-eligible vendors end to end",
+    ],
+  },
+];
+
+function SecurityPosture() {
+  return (
+    <section className="bx-section">
+      <div className="bx-shell">
+        <div className="bx-section-head center bx-reveal">
+          <span className="bx-eyebrow">
+            <ShieldCheck size={13} /> The control list
+          </span>
+          <h2 className="bx-h2">
+            The specifics your compliance team will ask for
+          </h2>
+          <p className="bx-lede">
+            Not a trust-us badge — the concrete controls, grouped the way a
+            security review actually reads them.
+          </p>
+        </div>
+        <div className="bx-caps bx-caps-3">
+          {SECURITY_POSTURE.map((c) => (
+            <CapCard c={c} key={c.title} />
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ROI page — what each lever in the calculator actually models. */
+const ROI_LEVERS: Capability[] = [
+  {
+    icon: <Activity size={20} />,
+    title: "Staff time recovered",
+    summary: "≈ 9 hrs / staff / week automated, at a $34 loaded hourly cost.",
+    points: [
+      "Routine resupply & status calls handled by the AI voice agent",
+      "Eligibility, scrubbing, submission & posting run end to end",
+      "Adherence worklists replace manual report-pulling",
+    ],
+  },
+  {
+    icon: <Receipt size={20} />,
+    title: "Revenue-cycle recovery",
+    summary: "≈ $16 / active patient / yr from cleaner claims.",
+    points: [
+      "Higher first-pass acceptance on AI-scrubbed 837Ps",
+      "Denials worked, ranked by recoverable dollars",
+      "Fewer timely-filing write-offs",
+    ],
+    gold: true,
+  },
+  {
+    icon: <RefreshCw size={20} />,
+    title: "Resupply growth",
+    summary: "≈ $21 / active patient / yr in incremental margin.",
+    points: [
+      "Eligibility-aware reorder outreach across SMS, email & voice",
+      "One-tap signed reorders — no portal friction",
+      "Replacement windows that used to slip get captured",
+    ],
+  },
+  {
+    icon: <CircleDollarSign size={20} />,
+    title: "Tools retired",
+    summary: "≈ $1,500 / seat / yr in point-tool licenses you drop.",
+    points: [
+      "Resupply, RCM, CRM, telehealth, e-sign & IVR in one platform",
+      "No per-module upsells or integration glue to maintain",
+      "Your data exports back out on demand",
+    ],
+  },
+];
+
+function RoiAssumptions() {
+  return (
+    <section className="bx-section">
+      <div className="bx-shell">
+        <div className="bx-section-head center bx-reveal">
+          <span className="bx-eyebrow">
+            <Gauge size={13} /> How the model works
+          </span>
+          <h2 className="bx-h2">Every number, traced to a lever</h2>
+          <p className="bx-lede">
+            The estimate is directional, not a quote — but each coefficient is a
+            stated, conservative assumption you can see and challenge.
+          </p>
+        </div>
+        <div className="bx-caps">
+          {ROI_LEVERS.map((c) => (
+            <CapCard c={c} key={c.title} />
+          ))}
+        </div>
+        <div className="bx-price-cta bx-reveal">
+          <span>
+            New to this category? See what an all-in-one DME platform changes.
+          </span>
+          <Link className="bx-btn bx-btn-ghost" href="/breathe/why">
+            DME Platform 101 <ArrowRight size={16} />
+          </Link>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* Pricing page — the cost questions buyers ask before they switch. */
+const PRICING_FAQ: { q: string; a: React.ReactNode }[] = [
+  {
+    q: "Is it really one price, or per-module like legacy suites?",
+    a: "One platform price covers the core — resupply, revenue cycle, patient communications, clinical monitoring, the storefront, and analytics. There are no per-module unlocks to discover later. A short list of à-la-carte add-ons (the AI voice agent, advanced billing automation, extra seats and locations) is published in the open, not negotiated line by line.",
+  },
+  {
+    q: "Is there a long-term contract?",
+    a: "No multi-year lock-in. Pricing is transparent and month-to-month, and your data is yours — exportable on demand, including back out to PacWare. The goal is to keep earning the relationship, not to trap it.",
+  },
+  {
+    q: "How fast can we be live?",
+    a: "Day one. Upload a CSV of your patients and your team starts the same day; the deeper payer, clearinghouse, and device-cloud connections come online over the following weeks, not quarters. The roster import is a fill-only sync, so there's no risky big-bang cutover.",
+  },
+  {
+    q: "What does it replace?",
+    a: "For most operators, the platform retires a stack of point tools — separate resupply software, an RCM/billing suite, a patient CRM, a telehealth app, a document/e-sign tool, therapy dashboards, and a call-center IVR — into one login. The ROI calculator models that consolidation per seat.",
+  },
+];
+
+function PricingFaq() {
+  return (
+    <section className="bx-section">
+      <div className="bx-shell bx-faq-shell">
+        <div className="bx-section-head bx-reveal">
+          <span className="bx-eyebrow">
+            <CircleDollarSign size={13} /> Pricing questions
+          </span>
+          <h2 className="bx-h2">Straight answers on cost</h2>
+          <p className="bx-lede">
+            How it&apos;s priced, what it replaces, and why there&apos;s no
+            per-module surprise waiting after you sign.
+          </p>
+        </div>
+        <div className="bx-faq bx-reveal">
+          {PRICING_FAQ.map((f) => (
+            <details className="bx-faq-item" key={f.q}>
+              <summary>
+                <span>{f.q}</span>
+                <ChevronDown className="bx-faq-chev" size={18} />
+              </summary>
+              <div className="bx-faq-a">{f.a}</div>
+            </details>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 /* ───────────────────────── Onboarding / migration ───────────────────────── */
 const STEPS: {
   icon: React.ReactNode;
@@ -3740,7 +4158,7 @@ function Faq() {
 }
 
 /* ───────────────────────── Closing CTA ───────────────────────── */
-function ClosingCta() {
+export function ClosingCta() {
   return (
     <section className="bx-section" id="demo">
       <div className="bx-shell">
@@ -3803,7 +4221,7 @@ function Footer() {
         </div>
       </div>
       <nav className="bx-shell bx-footer-nav" aria-label="Breathe pages">
-        {NAV_LINKS.map((l) => (
+        {FOOTER_LINKS.map((l) => (
           <Link className="bx-footer-link" href={l.href} key={l.href}>
             {l.label}
           </Link>
