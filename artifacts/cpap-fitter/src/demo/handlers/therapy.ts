@@ -47,6 +47,31 @@ export const therapyHandlers: DemoHandler[] = [
   route("POST", "/resupply-api/admin/therapy-resupply/draft-orders", () =>
     json({ staged: 0, skipped: 0 }),
   ),
+  // Approving a seeded draft — without this the item-level POST falls through
+  // to the generic `{ ok: true }` fallback and the success screen renders
+  // undefined order reference / pay link. Return a realistic checkout result.
+  route(
+    "POST",
+    "/resupply-api/admin/therapy-resupply/draft-orders/:id/approve",
+    (_req, { id }) => {
+      const ref = `PENN-DEMO-90${(String(id).match(/\d+/)?.[0] ?? "1").slice(-2)}`;
+      return json({
+        ok: true,
+        draftId: id,
+        orderRequestId: `demo-or-${id}`,
+        orderReference: ref,
+        link: `https://cmbreathe.com/pay/${ref.toLowerCase()}`,
+        emailSent: true,
+        smsSent: false,
+      });
+    },
+  ),
+  // Dismissing a seeded draft.
+  route(
+    "POST",
+    "/resupply-api/admin/therapy-resupply/draft-orders/:id/dismiss",
+    (_req, { id }) => json({ ok: true, id }),
+  ),
 
   // ── Therapy Fleet ───────────────────────────────────────────────────
   route("GET", "/resupply-api/admin/therapy-fleet/overview", (req) =>

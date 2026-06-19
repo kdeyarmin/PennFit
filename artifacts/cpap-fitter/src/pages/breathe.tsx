@@ -56,8 +56,8 @@ import {
   Zap,
 } from "lucide-react";
 import { useDocumentTitle } from "@/hooks/use-document-title";
+import { useNoIndexExceptApex } from "@/hooks/use-noindex-except-apex";
 import { ADDON_DETAILS } from "@/lib/admin/addon-details";
-import { isPlatformApexHost } from "@/lib/platform-host";
 import "./breathe.css";
 
 // Icon-only crop of the CareMetric app icon. The full lockup PNG
@@ -96,7 +96,7 @@ const LOGO = "/breathe/caremetric-icon.png";
  */
 export function BreatheShell({ children }: { children: React.ReactNode }) {
   useRevealOnScroll();
-  useNoIndex();
+  useNoIndexExceptApex();
   useSmoothScroll();
   useInitialHashScroll();
 
@@ -168,10 +168,15 @@ export function useDemoGate(): DemoGateContextValue {
 function DemoGateProvider({ children }: { children: React.ReactNode }) {
   const [openSource, setOpenSource] = useState<string | null>(null);
   const [contactSource, setContactSource] = useState<string | null>(null);
+  // The two gates are mutually exclusive — opening one always closes the
+  // other so there's never a second backdrop / focus-trap / scroll-lock
+  // active at the same time.
   const open = useCallback((source?: string) => {
+    setContactSource(null);
     setOpenSource(source ?? "breathe");
   }, []);
   const openContact = useCallback((source?: string) => {
+    setOpenSource(null);
     setContactSource(source ?? "breathe-contact");
   }, []);
   const value = useMemo(() => ({ open, openContact }), [open, openContact]);
@@ -4807,35 +4812,6 @@ function Footer() {
 }
 
 /* ───────────────────────── Helpers ───────────────────────── */
-
-/**
- * Marks this page `noindex` while it is mounted — EXCEPT on the platform's
- * public production apex (`cmbreathe.com`), which is the canonical home of
- * the Breathe marketing site and SHOULD be indexed.
- *
- * Everywhere else stays noindex: tenant storefront domains (e.g.
- * `pennpaps.com`, reserved for Penn Home Medical Supply) where these
- * separate-brand CareMetric.ai pages must never be indexed, plus the
- * Railway `*.up.railway.app` deploy/preview hosts (staging/duplicate
- * content). The tag is removed on unmount so it never leaks onto a
- * tenant's own pages during SPA navigation.
- *
- * (Previously this added `noindex` unconditionally, which left the entire
- * marketing site invisible to search engines even on `cmbreathe.com`.)
- */
-function useNoIndex() {
-  useEffect(() => {
-    // The apex is the one host we WANT indexed — skip the tag there.
-    if (isPlatformApexHost()) return;
-    const meta = document.createElement("meta");
-    meta.name = "robots";
-    meta.content = "noindex, follow";
-    document.head.appendChild(meta);
-    return () => {
-      meta.remove();
-    };
-  }, []);
-}
 
 /**
  * True when the user has asked the OS to minimize non-essential motion.

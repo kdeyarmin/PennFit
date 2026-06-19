@@ -34,6 +34,7 @@ import {
   Workflow,
 } from "lucide-react";
 import { useDocumentTitle } from "@/hooks/use-document-title";
+import { useNoIndexExceptApex } from "@/hooks/use-noindex-except-apex";
 import "./breathe.css";
 
 // Icon-only crop of the CareMetric app icon — NOT the full lockup PNG
@@ -661,7 +662,7 @@ export function BreatheFeatures() {
   );
 
   useRevealOnScroll();
-  useNoIndex();
+  useNoIndexExceptApex();
   useSmoothScroll();
 
   return (
@@ -1269,18 +1270,6 @@ function CountUp({
       {suffix}
     </span>
   );
-}
-
-function useNoIndex() {
-  useEffect(() => {
-    const meta = document.createElement("meta");
-    meta.name = "robots";
-    meta.content = "noindex, follow";
-    document.head.appendChild(meta);
-    return () => {
-      meta.remove();
-    };
-  }, []);
 }
 
 function useSmoothScroll() {
