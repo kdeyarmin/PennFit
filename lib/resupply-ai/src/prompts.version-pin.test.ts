@@ -110,6 +110,13 @@ const PROMPT_VERSION_HASHES: Readonly<Record<string, string>> = {
   // unchanged.
   "2026-06-19.v12":
     "dbae7c07e5f190b3ce1b800939ece9b3ec4b90d7a8304cb61644d3f196d5eb73",
+  // v13 enriches the shared "How to speak" block with five naturalness
+  // techniques (mirror the caller's vocabulary, vary sentence rhythm,
+  // react before answering, don't parrot, occasional discourse markers).
+  // The block is SHARED across all three caller kinds, so the shop +
+  // breathe-sales variant hashes below move too.
+  "2026-06-19.v13":
+    "137d96d03a342a03d084da0851638bf77e406259f5d2764c5a6236f55b073402",
 };
 
 function renderCanonicalPrompt(): string {
@@ -136,7 +143,7 @@ function hashStrippingVersionLine(prompt: string, version: string): string {
  * Update the same way: render, take the printed hash, record it here.
  */
 const SHOP_PROMPT_HASH =
-  "e2d9c7ad6fe44263a5e4d7ee630f6a61a7d32d7b3f0ee05d1791c3d754356195";
+  "c8bfc44a35b78e5ef4f98b905415fb8037fa267683ebc8ae0949e44b7a8222b2";
 
 /**
  * The CareMetric Breathe sales (breathe_prospect) variant renders its own
@@ -145,7 +152,7 @@ const SHOP_PROMPT_HASH =
  * the printed hash, record it here.
  */
 const BREATHE_SALES_PROMPT_HASH =
-  "d24bedcb23d69c82253b147168799d132badbd0ddafd79785e91ecd6e58d4f4d";
+  "512009a0c3674c0d3681058d7f229c86ce2be574b6ca69d5347de4e34c14fcb4";
 
 describe("PROMPT_VERSION drift detector", () => {
   it("has a recorded hash for the currently-shipped PROMPT_VERSION", () => {

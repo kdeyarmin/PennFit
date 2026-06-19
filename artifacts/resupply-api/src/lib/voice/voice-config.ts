@@ -88,6 +88,24 @@ export interface VoiceConfig {
    */
   elevenLabsSpeed?: number;
   /**
+   * Optional ElevenLabs style-exaggeration override (0..1). 0 (the tuned
+   * default) keeps a natural conversational read; a small nudge (~0.1–0.15)
+   * adds warmth/expressiveness at a slight synthesis-latency cost. Clamped.
+   */
+  elevenLabsStyle?: number;
+  /**
+   * Optional ElevenLabs similarity-boost override (0..1). Higher holds
+   * closer to the chosen voice's character. When unset, the tuned default
+   * (0.8) applies. Clamped.
+   */
+  elevenLabsSimilarityBoost?: number;
+  /**
+   * Optional ElevenLabs speaker-boost override. The tuned default is `true`
+   * (a touch more clarity for the older / hard-of-hearing demographic). Set
+   * `false` to disable. When unset, the tuned default applies.
+   */
+  elevenLabsUseSpeakerBoost?: boolean;
+  /**
    * ElevenLabs TTS transport. `"ws"` (default) uses the stream-input
    * WebSocket — one connection per agent turn, text fed as the model
    * generates it, lowest latency + best cross-sentence prosody. `"http"`
@@ -113,6 +131,13 @@ export interface VoiceConfig {
   realtimeTranscribeModel?: string;
   /** Realtime wire audio-format token override (GA µ-law correction). */
   realtimeAudioFormat?: string;
+  /**
+   * Caller-audio noise reduction the Realtime server applies before its
+   * VAD + STT (`"far_field"` | `"near_field"` | `"off"`). When unset, the
+   * client default (`"far_field"`, suited to telephony) applies. Env:
+   * OPENAI_REALTIME_NOISE_REDUCTION — set `off` to disable if it ever hurts.
+   */
+  realtimeNoiseReduction?: "far_field" | "near_field" | "off";
   /**
    * When true, the `/voice/realtime-diagnostic` route is live — a no-patient
    * "connection test" that opens the Realtime bridge so an operator can dial
@@ -229,6 +254,15 @@ export function readVoiceConfigOrNull(
     elevenLabsModelId: env.ELEVENLABS_MODEL_ID?.trim() || undefined,
     elevenLabsStability: readBoundedFloatEnv(env.ELEVENLABS_STABILITY, 0, 1),
     elevenLabsSpeed: readBoundedFloatEnv(env.ELEVENLABS_SPEED, 0.7, 1.2),
+    elevenLabsStyle: readBoundedFloatEnv(env.ELEVENLABS_STYLE, 0, 1),
+    elevenLabsSimilarityBoost: readBoundedFloatEnv(
+      env.ELEVENLABS_SIMILARITY_BOOST,
+      0,
+      1,
+    ),
+    elevenLabsUseSpeakerBoost: parseOptionalBool(
+      env.ELEVENLABS_USE_SPEAKER_BOOST,
+    ),
     // Default to the streaming WS path; opt back to HTTP only on explicit
     // `http`. Case/space-insensitive so "HTTP" / " http " still match.
     elevenLabsTransport:
@@ -247,6 +281,9 @@ export function readVoiceConfigOrNull(
     realtimeTranscribeModel:
       env.OPENAI_REALTIME_TRANSCRIBE_MODEL?.trim() || undefined,
     realtimeAudioFormat: env.OPENAI_REALTIME_AUDIO_FORMAT?.trim() || undefined,
+    realtimeNoiseReduction: parseNoiseReduction(
+      env.OPENAI_REALTIME_NOISE_REDUCTION,
+    ),
     realtimeDiagnosticEnabled: isTruthyEnv(
       env.OPENAI_REALTIME_DIAGNOSTIC_ENABLED,
     ),
@@ -271,6 +308,30 @@ function parseReasoningEffort(
   return v === "minimal" || v === "low" || v === "medium" || v === "high"
     ? v
     : undefined;
+}
+
+/**
+ * Parse an optional boolean env var. Returns undefined when unset/blank
+ * (the caller falls back to the tuned default), else the truthiness of the
+ * value — so `ELEVENLABS_USE_SPEAKER_BOOST=false` can explicitly disable a
+ * default-on setting.
+ */
+function parseOptionalBool(raw: string | undefined): boolean | undefined {
+  if (raw == null || raw.trim() === "") return undefined;
+  return isTruthyEnv(raw);
+}
+
+/**
+ * Parse the optional Realtime noise-reduction env var. Returns undefined
+ * (client default `"far_field"` applies) when unset or not one of the
+ * allowed values, so a typo degrades to the default rather than sending an
+ * invalid value.
+ */
+function parseNoiseReduction(
+  raw: string | undefined,
+): "far_field" | "near_field" | "off" | undefined {
+  const v = raw?.trim().toLowerCase();
+  return v === "far_field" || v === "near_field" || v === "off" ? v : undefined;
 }
 
 /**

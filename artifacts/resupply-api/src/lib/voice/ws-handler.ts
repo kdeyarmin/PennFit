@@ -40,9 +40,11 @@ import {
   type OrgScopedClient,
 } from "@workspace/resupply-db";
 import {
+  applyPronunciation,
   buildSystemPrompt,
   createDeepgramClient,
   createElevenLabsClient,
+  createPronunciationStream,
   DEFAULT_CONVERSATIONAL_VOICE_SETTINGS,
   DEFAULT_REALTIME_GA_MODEL,
   DEFAULT_REALTIME_GA_TRANSCRIBE_MODEL,
@@ -59,6 +61,7 @@ import {
   type ElevenLabsClient,
   type ElevenLabsVoiceSettings,
   type MediaStreamSink,
+  type RealtimeNoiseReduction,
   type ToolDispatcher,
   type ToolName,
   type TranscriptTurn,
@@ -956,6 +959,7 @@ function resolveRealtimeClientOptions(config: VoiceConfig): {
   transcriptionModel: string | undefined;
   reasoningEffort: "minimal" | "low" | "medium" | "high" | undefined;
   audioFormat: string | undefined;
+  noiseReduction: RealtimeNoiseReduction | undefined;
 } {
   const isGa = config.realtimeSchema === "ga";
   return {
@@ -967,6 +971,8 @@ function resolveRealtimeClientOptions(config: VoiceConfig): {
       (isGa ? DEFAULT_REALTIME_GA_TRANSCRIBE_MODEL : undefined),
     reasoningEffort: config.realtimeReasoningEffort,
     audioFormat: config.realtimeAudioFormat,
+    // undefined → RealtimeClient applies its telephony default (far_field).
+    noiseReduction: config.realtimeNoiseReduction,
   };
 }
 
@@ -1891,7 +1897,9 @@ function buildElevenLabsSynthesizer(opts: {
       let carry = Buffer.alloc(0);
       const result = await client.streamTextToSpeech(
         {
-          text,
+          // Fix domain-term pronunciation (e.g. "CPAP" → "see-pap") before
+          // synthesis. Safe to run on the whole sentence here (HTTP path).
+          text: applyPronunciation(text),
           ...(opts.voiceId ? { voiceId: opts.voiceId } : {}),
           ...(opts.modelId ? { modelId: opts.modelId } : {}),
           voiceSettings,
@@ -1946,6 +1954,15 @@ function resolveElevenLabsVoiceSettings(
     ...(config.elevenLabsSpeed !== undefined
       ? { speed: config.elevenLabsSpeed }
       : {}),
+    ...(config.elevenLabsStyle !== undefined
+      ? { style: config.elevenLabsStyle }
+      : {}),
+    ...(config.elevenLabsSimilarityBoost !== undefined
+      ? { similarity_boost: config.elevenLabsSimilarityBoost }
+      : {}),
+    ...(config.elevenLabsUseSpeakerBoost !== undefined
+      ? { use_speaker_boost: config.elevenLabsUseSpeakerBoost }
+      : {}),
   };
 }
 
@@ -1972,6 +1989,11 @@ function buildElevenLabsStreamer(opts: {
       // Per-session re-framing buffer: ElevenLabs returns ulaw_8000 in
       // arbitrary chunk sizes; we hand Twilio uniform 160-byte frames.
       let carry = Buffer.alloc(0);
+      // Streaming-safe domain-term pronunciation (e.g. "CPAP" → "see-pap").
+      // The bridge feeds partial deltas that can split a term across pushes,
+      // so this holds the trailing partial word until a whitespace boundary
+      // (or flush/end) before rewriting + forwarding it.
+      const pron = createPronunciationStream();
       const session = openElevenLabsStream(
         {
           apiKey: opts.apiKey,
@@ -2008,7 +2030,28 @@ function buildElevenLabsStreamer(opts: {
           },
         },
       );
-      return session;
+      // Wrap the vendor session so the model's text passes through the
+      // pronunciation rewrite before ElevenLabs sees it. flush()/end() emit
+      // the held tail first so the last word of a sentence/turn is voiced.
+      return {
+        pushText(text: string): void {
+          const safe = pron.push(text);
+          if (safe) session.pushText(safe);
+        },
+        flush(): void {
+          const tail = pron.flush();
+          if (tail) session.pushText(tail);
+          session.flush();
+        },
+        end(): void {
+          const tail = pron.flush();
+          if (tail) session.pushText(tail);
+          session.end();
+        },
+        abort(): void {
+          session.abort();
+        },
+      };
     },
   };
 }
