@@ -79,3 +79,13 @@
 # two lines after this PR merges.
 0370_low_stock_alert_state_org_pk.sql
 0370_inbound_fax_twilio_sid_nullable.sql
+
+# 2026-06-18 prefix-collision renumber: 0396_fix_platform_outreach_trigger_guards.sql
+# (#1131) and 0396_voice_calls_answered_by.sql (#1129) both took prefix 0396
+# and merged in a race (surfaced post-merge by the tree-wide check). The
+# most-recently-merged file (voice_calls_answered_by, #1129) is renamed to
+# 0397_ with IDENTICAL content — migrate.mjs dedups by content sha256, so the
+# already-applied hash is unchanged and it is NOT re-applied to production.
+# The immutability check sees the old 0396 path as a deletion; allowlist it so
+# this renumber PR passes. Safe to delete this line after this PR merges.
+0396_voice_calls_answered_by.sql
