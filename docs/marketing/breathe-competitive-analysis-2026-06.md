@@ -12,26 +12,26 @@ in response. Source pages live in
 
 ## What we benchmarked against
 
-| Competitor | Positioning | Primary CTA model |
-| --- | --- | --- |
-| **Brightree** (ResMed) | Incumbent HME/DME + pharmacy suite | Sales-gated — "Schedule a meeting" |
-| **Brightree Resupply** (+ SNAP) | CPAP resupply engine + live-call services | Sales-gated — "Schedule a meeting" |
-| **NikoHealth** | Modern cloud HME/DME platform | Sales-gated — "Request a Demo" |
-| **WellSky / Bonafide** | DME/HME ERP (Bonafide now under WellSky) | Sales-gated — "Request a demo" |
-| **Tennr** | AI-native referral/patient-flow automation (the design + AI-positioning standout) | Sales-gated — "Book a Demo" |
+| Competitor                      | Positioning                                                                       | Primary CTA model                  |
+| ------------------------------- | --------------------------------------------------------------------------------- | ---------------------------------- |
+| **Brightree** (ResMed)          | Incumbent HME/DME + pharmacy suite                                                | Sales-gated — "Schedule a meeting" |
+| **Brightree Resupply** (+ SNAP) | CPAP resupply engine + live-call services                                         | Sales-gated — "Schedule a meeting" |
+| **NikoHealth**                  | Modern cloud HME/DME platform                                                     | Sales-gated — "Request a Demo"     |
+| **WellSky / Bonafide**          | DME/HME ERP (Bonafide now under WellSky)                                          | Sales-gated — "Request a demo"     |
+| **Tennr**                       | AI-native referral/patient-flow automation (the design + AI-positioning standout) | Sales-gated — "Book a Demo"        |
 
 ### Per-competitor notes
 
-- **Brightree** — Hero: *"Software solutions for HME and pharmacy
-  providers."* Leads with three product-category cards (Document Automation,
+- **Brightree** — Hero: _"Software solutions for HME and pharmacy
+  providers."_ Leads with three product-category cards (Document Automation,
   HME/DME, Pharmacy). The **Resupply** page is the most relevant: it lists
   six patient-engagement modalities (IVR, guided calling, email, mobile app,
   online portal, scheduled order) and — crucially — attributes hard numbers
   to customers ("items per order **+42%**, revenue **+46%**", "average
   revenue per order **up ~50%**"). Sales-led throughout; no pricing, no
   self-serve.
-- **NikoHealth** — The closest modern analog. Hero: *"HME | DME Software —
-  Streamline Your Business Workflow."* Heavy on **social proof** (customer
+- **NikoHealth** — The closest modern analog. Hero: _"HME | DME Software —
+  Streamline Your Business Workflow."_ Heavy on **social proof** (customer
   logo carousel, "the most innovative organizations partner with NikoHealth",
   14+ named testimonials with titles) and a **stats dashboard** (76% faster
   fulfillment, 98% clean-claim rate, 40% more upfront collections). Segments
@@ -43,14 +43,14 @@ in response. Source pages live in
   eligibility, a facility self-service ordering portal, document management,
   and resupply (native or via SnapWorx). AWS-hosted. Sales-gated.
 - **Tennr** — Not DME, but the **design + AI-native benchmark**. Bold
-  all-caps hero (*"RIGHT PATIENT. RIGHT CARE SETTING. EVERY TIME."*), an
+  all-caps hero (_"RIGHT PATIENT. RIGHT CARE SETTING. EVERY TIME."_), an
   animated multi-step product pipeline, named testimonials **with
   headshots**, quantified **case studies** ("75% faster, 4X volume",
   "3-week backlog → same-day intake"), a **press logo wall** (Fortune,
   Forbes, Axios, Bloomberg), and HIPAA/SOC II badges. Clean, product-forward,
   motion-rich.
 
-## What Breathe already does *better* (keep / amplify)
+## What Breathe already does _better_ (keep / amplify)
 
 1. **Self-serve live demo** — "Start the free demo" lands the visitor in the
    real console on sample data (`/admin?demo=1`), **no call, no credit card**.
@@ -70,15 +70,15 @@ in response. Source pages live in
 
 ## Gaps vs. competitors, and disposition
 
-| # | Gap | Competitor doing it well | Disposition in this PR |
-| --- | --- | --- | --- |
-| 1 | **Home page never showed the product** — it led with an abstract animated "orb." | NikoHealth, Tennr lead with product UI. | **Fixed.** Surfaced the existing illustrative console (`ProductShowcase`) on the home page, right under the hero. |
-| 2 | **Headline stats unattributed** — `7 / 38% / 22% / 9+ hrs` read as invented. | Brightree ties numbers to named customers; NikoHealth labels a stats dashboard. | **Fixed (honest framing).** Added a provenance note under the hero stat band ("modeled on typical DME economics + published industry benchmarks — directional, not a guarantee") linking to the ROI calculator. (The outcome cards lower on the page already cite industry sources.) |
-| 3 | **No human contact path** — self-serve demo only. | All five offer "Book a demo / Talk to us." | **Fixed.** Added a secondary "Book a demo / Talk to us" gate (Nav, hero, closing CTA) that captures a lead and surfaces phone + email — self-serve demo stays the primary CTA. |
-| 4 | **Marketing site was `noindex` even on `cmbreathe.com`** — invisible to search engines. | All competitors are indexed. | **Fixed.** `noindex` now applies everywhere *except* the production apex; Railway preview + tenant hosts stay out of the index. |
-| 5 | **No social proof** — one anonymous founder quote; no testimonials, logos, case studies, or review-site badges. | NikoHealth (14+ testimonials + logo wall); Tennr (headshots + case studies + press). | **Deferred — pre-launch.** We will NOT fabricate customers. See backlog below. |
-| 6 | **No vertical segmentation** — single CPAP/DME story. | NikoHealth segments by equipment type. | Deferred. Lower priority while CPAP/resupply is the wedge. |
-| 7 | **No resources/blog** for SEO + thought leadership. | NikoHealth, Tennr. | Deferred (content investment). |
+| #   | Gap                                                                                                             | Competitor doing it well                                                             | Disposition in this PR                                                                                                                                                                                                                                                               |
+| --- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | **Home page never showed the product** — it led with an abstract animated "orb."                                | NikoHealth, Tennr lead with product UI.                                              | **Fixed.** Surfaced the existing illustrative console (`ProductShowcase`) on the home page, right under the hero.                                                                                                                                                                    |
+| 2   | **Headline stats unattributed** — `7 / 38% / 22% / 9+ hrs` read as invented.                                    | Brightree ties numbers to named customers; NikoHealth labels a stats dashboard.      | **Fixed (honest framing).** Added a provenance note under the hero stat band ("modeled on typical DME economics + published industry benchmarks — directional, not a guarantee") linking to the ROI calculator. (The outcome cards lower on the page already cite industry sources.) |
+| 3   | **No human contact path** — self-serve demo only.                                                               | All five offer "Book a demo / Talk to us."                                           | **Fixed.** Added a secondary "Book a demo / Talk to us" gate (Nav, hero, closing CTA) that captures a lead and surfaces phone + email — self-serve demo stays the primary CTA.                                                                                                       |
+| 4   | **Marketing site was `noindex` even on `cmbreathe.com`** — invisible to search engines.                         | All competitors are indexed.                                                         | **Fixed.** `noindex` now applies everywhere _except_ the production apex; Railway preview + tenant hosts stay out of the index.                                                                                                                                                      |
+| 5   | **No social proof** — one anonymous founder quote; no testimonials, logos, case studies, or review-site badges. | NikoHealth (14+ testimonials + logo wall); Tennr (headshots + case studies + press). | **Deferred — pre-launch.** We will NOT fabricate customers. See backlog below.                                                                                                                                                                                                       |
+| 6   | **No vertical segmentation** — single CPAP/DME story.                                                           | NikoHealth segments by equipment type.                                               | Deferred. Lower priority while CPAP/resupply is the wedge.                                                                                                                                                                                                                           |
+| 7   | **No resources/blog** for SEO + thought leadership.                                                             | NikoHealth, Tennr.                                                                   | Deferred (content investment).                                                                                                                                                                                                                                                       |
 
 ## Changes shipped in this PR
 
