@@ -23,3 +23,9 @@ export type {
   XpsRate,
   XpsShipment,
 } from "./types";
+
+export {
+  validateReceiverAddress,
+  type AddressIssue,
+  type AddressValidation,
+} from "./validate";

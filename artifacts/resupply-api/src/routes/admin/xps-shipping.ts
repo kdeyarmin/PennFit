@@ -2,52 +2,56 @@
 // XPS Ship shipping-label integration.
 //
 // What this gives DME staff: instead of re-keying every patient's name
-// and address into XPS's Webship UI, PennFit merges the order's
-// shipping address straight onto the label. The flow mirrors XPS's
-// stage-then-process REST model:
+// and address into XPS's Webship UI, PennFit merges the order's shipping
+// address straight onto the label. The flow mirrors XPS's stage-then-
+// process REST model:
 //
 //   1. rates  — rate-shop carriers for the parcel (informational).
 //   2. label  — Put Order into XPS with the merged patient/address data
 //               and the chosen service, then resolve the booked shipment
-//               (bookNumber + tracking) and store it. On success the
-//               order is stamped shipped and the existing patient
-//               shipping-notification (email/SMS/push) fires — exactly
-//               like the manual /tracking flow.
-//   3. sync   — re-resolve an order that XPS staged but hadn't processed
-//               into a booked shipment yet.
-//   4. label.pdf — stream the printable label bytes for the staff to
-//               print.
+//               (bookNumber + tracking) and store it. On success the order
+//               is stamped shipped and the existing patient shipping
+//               notification (email/SMS/push) fires.
+//   3. sync   — re-resolve an order XPS staged but hadn't booked yet.
+//   4. label.pdf — stream the printable label bytes for printing.
 //   5. void   — cancel a staged order / label.
+//   6. batch-label — stage + resolve labels for MANY orders at once
+//               (parcel auto-computed from per-product presets).
+//   7. product-specs — manage the per-product parcel weight presets.
 //
-// PHI posture: the label carries the patient's name + address (that's
-// its purpose). We never log the address, the label bytes, or the XPS
-// response bodies — only structural counts + order ids + carrier codes.
+// Shared order-load / receiver / parcel / resolve logic lives in
+// lib/shipping/xps-core.ts so the background auto-resolve worker job uses
+// the same implementation.
 //
-// Per-tenant: each DME brings its own XPS account, so the adapter is
-// built from getEffectiveEnvForOrg(orgId) at call time (credential
-// rotation honoured without a restart), never the bare process.env.
+// PHI posture: the label carries the patient's name + address (that's its
+// purpose). We never log the address, the label bytes, or XPS response
+// bodies — only structural counts + order ids + carrier codes.
+//
+// Per-tenant: each DME brings its own XPS account, so the adapter is built
+// from getEffectiveEnvForOrg(orgId) at call time.
 
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import {
   getOrgScopedClient,
-  type Database,
   type SavedShippingAddress,
 } from "@workspace/resupply-db";
-import {
-  createXpsShipAdapter,
-  type XpsAddress,
-  type XpsShipAdapter,
-} from "@workspace/resupply-integrations-xps-ship";
+import { validateReceiverAddress } from "@workspace/resupply-integrations-xps-ship";
 
 import { requirePermission } from "../../middlewares/requireAdmin";
 import { getEffectiveEnvForOrg } from "../../lib/app-config/store";
 import { evaluatePaperworkGateForCustomer } from "../../lib/paperwork/require-signed-paperwork";
-import { resolveSmsRecipientForShopOrder } from "../../lib/shop-orders-sms-resolver";
-import { sendShippingNotificationIfNew } from "./shop-orders";
-
-type ShopOrderUpdate = Database["resupply"]["Tables"]["shop_orders"]["Update"];
+import {
+  adapterErrorStatus,
+  buildAndValidateReceiver,
+  computeParcelForOrder,
+  defaultParcelWeightOz,
+  getXpsAdapterForOrg,
+  loadShippingOrder,
+  resolveAndPersist,
+  type ShippingOrderRow,
+} from "../../lib/shipping/xps-core";
 
 const router: IRouter = Router();
 
@@ -84,227 +88,49 @@ const labelBodySchema = z.object({
   contentDescription: z.string().trim().max(120).nullish(),
 });
 
-interface ShippingOrderRow {
-  id: string;
-  status: string;
-  customerId: string | null;
-  customerEmail: string | null;
-  fulfillmentMethod: "ship" | "pickup";
-  shippingAddress: SavedShippingAddress | null;
-  trackingCarrier: string | null;
-  trackingNumber: string | null;
-  xpsBookNumber: string | null;
-  xpsLabelStatus: "staged" | "booked" | "voided" | null;
+const batchBodySchema = z.object({
+  orderIds: z.array(z.string()).min(1).max(50),
+  shippingService: z.string().trim().min(1).max(60),
+  residential: z.boolean().optional(),
+});
+
+const productSpecSchema = z.object({
+  productId: z.string().trim().min(1).max(255),
+  weightOz: z
+    .number()
+    .positive()
+    .max(70 * 16),
+  lengthIn: z.number().positive().max(108).nullish(),
+  widthIn: z.number().positive().max(108).nullish(),
+  heightIn: z.number().positive().max(108).nullish(),
+  label: z.string().trim().max(120).nullish(),
+});
+const productSpecsBodySchema = z.object({
+  specs: z.array(productSpecSchema).min(1).max(200),
+});
+
+function tenant(
+  req: { orgId?: string },
+  res: { status: (n: number) => { json: (b: unknown) => void } },
+): string | null {
+  if (!req.orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return null;
+  }
+  return req.orgId;
 }
 
-const SHIPPING_COLUMNS =
-  "id, status, customer_id, customer_email, fulfillment_method, shipping_address_json, tracking_carrier, tracking_number, xps_book_number, xps_label_status";
-
-function rowToShippingOrder(row: {
-  id: string;
-  status: string;
-  customer_id: string | null;
-  customer_email: string | null;
-  fulfillment_method: "ship" | "pickup";
-  shipping_address_json: unknown;
-  tracking_carrier: string | null;
-  tracking_number: string | null;
-  xps_book_number: string | null;
-  xps_label_status: "staged" | "booked" | "voided" | null;
-}): ShippingOrderRow {
-  return {
-    id: row.id,
-    status: row.status,
-    customerId: row.customer_id,
-    customerEmail: row.customer_email,
-    fulfillmentMethod: row.fulfillment_method ?? "ship",
-    shippingAddress:
-      (row.shipping_address_json as SavedShippingAddress | null) ?? null,
-    trackingCarrier: row.tracking_carrier,
-    trackingNumber: row.tracking_number,
-    xpsBookNumber: row.xps_book_number,
-    xpsLabelStatus: row.xps_label_status,
-  };
-}
-
-async function loadShippingOrder(
-  orgId: string,
-  orderId: string,
-): Promise<ShippingOrderRow | null> {
-  const supabase = getOrgScopedClient(orgId);
-  const { data, error } = await supabase
-    .from("shop_orders")
-    .select(SHIPPING_COLUMNS)
-    .eq("id", orderId)
-    .limit(1)
-    .maybeSingle();
-  if (error) throw error;
-  return data ? rowToShippingOrder(data) : null;
-}
-
-/** Build the XPS receiver from the order's address + customer identity. */
-async function buildReceiver(
-  orgId: string,
-  order: ShippingOrderRow,
-): Promise<XpsAddress | { error: "no_shipping_address" }> {
-  const addr = order.shippingAddress;
-  if (!addr || !addr.line1 || !addr.city || !addr.state || !addr.postalCode) {
-    return { error: "no_shipping_address" };
-  }
-
-  let name = "";
-  let email: string | null = order.customerEmail;
-  const supabase = getOrgScopedClient(orgId);
-  if (order.customerId) {
-    const { data: cust } = await supabase
-      .from("shop_customers")
-      .select("display_name, email_lower")
-      .eq("customer_id", order.customerId)
-      .limit(1)
-      .maybeSingle();
-    if (cust?.display_name) name = cust.display_name;
-    if (!email && cust?.email_lower) email = cust.email_lower;
-  }
-  if (!name) {
-    // Fall back to the local-part of the order email so the carrier has
-    // *a* recipient name to print (a label with a blank name can be
-    // rejected). Never blank.
-    name = (email?.split("@")[0] ?? "Recipient").slice(0, 60);
-  }
-
-  // Best-effort phone for carrier contact (gated by the SMS resolver's
-  // own consent checks; returns null when unavailable). Never logged.
-  let phone: string | null = null;
-  try {
-    const recipient = await resolveSmsRecipientForShopOrder({
-      customerId: order.customerId,
-      customerEmailFromOrder: order.customerEmail,
-    });
-    phone = recipient?.phoneE164 ?? null;
-  } catch {
-    // best-effort — leave phone null when the resolver is unavailable
-  }
-
-  return {
-    name,
+/** Structural address-validity for the queue list (name not required here). */
+function addressLooksValid(addr: SavedShippingAddress | null): boolean {
+  if (!addr) return false;
+  return validateReceiverAddress({
+    name: "placeholder",
     address1: addr.line1,
-    address2: addr.line2 ?? null,
     city: addr.city,
     state: addr.state,
     zip: addr.postalCode,
     country: addr.country || "US",
-    phone,
-    email,
-  };
-}
-
-async function getAdapterForOrg(orgId: string): Promise<XpsShipAdapter> {
-  const env = await getEffectiveEnvForOrg(orgId);
-  return createXpsShipAdapter(env);
-}
-
-/** Map adapter error codes to HTTP responses consistently. */
-function adapterErrorStatus(error: string): number {
-  switch (error) {
-    case "unavailable":
-      return 503;
-    case "auth_failed":
-      return 502;
-    case "not_found":
-      return 404;
-    case "rate_limited":
-      return 429;
-    case "invalid_request":
-      return 422;
-    default:
-      return 502;
-  }
-}
-
-/**
- * Resolve a staged XPS order into a booked shipment and persist it.
- * Shared by the `label` (post-create) and `sync` endpoints. On a booked
- * shipment it stamps shipped_at + tracking and fires the patient
- * notification, returning `{ status: "booked", shipment }`. When XPS
- * hasn't processed the order yet it returns `{ status: "staged" }`.
- */
-async function resolveAndPersist(args: {
-  orgId: string;
-  order: ShippingOrderRow;
-  adapter: XpsShipAdapter;
-  log:
-    | { info?: (...a: unknown[]) => void; warn?: (...a: unknown[]) => void }
-    | undefined;
-}): Promise<
-  | {
-      kind: "booked";
-      carrier: string;
-      trackingNumber: string;
-      bookNumber: string;
-    }
-  | { kind: "staged" }
-  | { kind: "error"; status: number; error: string }
-> {
-  const { orgId, order, adapter, log } = args;
-  const found = await adapter.findShipmentByOrderId(order.id);
-  if (!found.ok) {
-    return {
-      kind: "error",
-      status: adapterErrorStatus(found.error),
-      error: found.error,
-    };
-  }
-  const shipment = found.value;
-  if (!shipment || !shipment.bookNumber || !shipment.trackingNumber) {
-    return { kind: "staged" };
-  }
-
-  const carrier = shipment.carrierCode ?? "XPS";
-  const trackingChanged =
-    order.trackingCarrier !== carrier ||
-    order.trackingNumber !== shipment.trackingNumber;
-  const nowIso = new Date().toISOString();
-  const update: ShopOrderUpdate = {
-    xps_book_number: shipment.bookNumber,
-    xps_label_status: "booked",
-    tracking_carrier: carrier,
-    tracking_number: shipment.trackingNumber,
-    shipping_service_code: shipment.serviceCode ?? null,
-    shipped_at: nowIso,
-    updated_at: nowIso,
-  };
-  if (shipment.totalCostCents != null) {
-    update.shipping_cost_cents = shipment.totalCostCents;
-  }
-  if (trackingChanged) update.shipping_email_sent_at = null;
-
-  const supabase = getOrgScopedClient(orgId);
-  const { error } = await supabase
-    .from("shop_orders")
-    .update(update)
-    .eq("id", order.id)
-    .eq("status", "paid");
-  if (error) throw error;
-
-  // Best-effort patient notification — never fails the request.
-  try {
-    await sendShippingNotificationIfNew({ orgId, orderId: order.id, log });
-  } catch (err) {
-    log?.warn?.(
-      {
-        orderId: order.id,
-        err: err instanceof Error ? err.message : String(err),
-      },
-      "xps-shipping: shipping notification failed (non-fatal)",
-    );
-  }
-
-  return {
-    kind: "booked",
-    carrier,
-    trackingNumber: shipment.trackingNumber,
-    bookNumber: shipment.bookNumber,
-  };
+  }).ok;
 }
 
 // ---------------------------------------------------------------------
@@ -314,12 +140,9 @@ router.get(
   "/admin/shipping/xps/status",
   requirePermission("returns.manage"),
   async (req, res) => {
-    const orgId = req.orgId;
-    if (!orgId) {
-      res.status(500).json({ error: "tenant_context_missing" });
-      return;
-    }
-    const adapter = await getAdapterForOrg(orgId);
+    const orgId = tenant(req, res);
+    if (!orgId) return;
+    const adapter = await getXpsAdapterForOrg(orgId);
     res.json({ availability: adapter.availability() });
   },
 );
@@ -327,17 +150,12 @@ router.get(
 // ---------------------------------------------------------------------
 // GET /admin/shipping/xps/queue — orders awaiting a shipping label
 // ---------------------------------------------------------------------
-// Paid, ship-method orders not yet shipped (no tracking). The DME's
-// "print labels" worklist.
 router.get(
   "/admin/shipping/xps/queue",
   requirePermission("returns.manage"),
   async (req, res) => {
-    const orgId = req.orgId;
-    if (!orgId) {
-      res.status(500).json({ error: "tenant_context_missing" });
-      return;
-    }
+    const orgId = tenant(req, res);
+    if (!orgId) return;
     const limit = Math.min(
       Math.max(Number.parseInt(String(req.query.limit ?? "50"), 10) || 50, 1),
       100,
@@ -372,13 +190,44 @@ router.get(
         createdAt: row.created_at,
         amountTotalCents: row.amount_total_cents,
         labelStatus: row.xps_label_status,
-        // City/state only in the list view — full address only when a
-        // label is actually created. Keeps the worklist low-PHI.
         shipTo: addr ? `${addr.city}, ${addr.state} ${addr.postalCode}` : null,
         hasAddress: Boolean(addr?.line1),
+        addressValid: addressLooksValid(addr),
       };
     });
     res.json({ orders });
+  },
+);
+
+// ---------------------------------------------------------------------
+// GET /admin/shop/orders/:orderId/shipping/suggested-parcel
+// ---------------------------------------------------------------------
+// Pre-fills the create-label form from per-product weight presets.
+router.get(
+  "/admin/shop/orders/:orderId/shipping/suggested-parcel",
+  requirePermission("returns.manage"),
+  async (req, res) => {
+    const orderId = validateOrderId(req.params.orderId);
+    if (!orderId) {
+      res.status(400).json({ error: "invalid_order_id" });
+      return;
+    }
+    const orgId = tenant(req, res);
+    if (!orgId) return;
+    const env = await getEffectiveEnvForOrg(orgId);
+    const computed = await computeParcelForOrder(
+      orgId,
+      orderId,
+      defaultParcelWeightOz(env),
+    );
+    res.json({
+      weightOz: computed.parcel.weightOz,
+      lengthIn: computed.parcel.lengthIn ?? null,
+      widthIn: computed.parcel.widthIn ?? null,
+      heightIn: computed.parcel.heightIn ?? null,
+      fromPresets: computed.fromPresets,
+      missingProductIds: computed.missingProductIds,
+    });
   },
 );
 
@@ -394,11 +243,8 @@ router.post(
       res.status(400).json({ error: "invalid_order_id" });
       return;
     }
-    const orgId = req.orgId;
-    if (!orgId) {
-      res.status(500).json({ error: "tenant_context_missing" });
-      return;
-    }
+    const orgId = tenant(req, res);
+    if (!orgId) return;
     const parsed = ratesBodySchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: "invalid_body" });
@@ -409,14 +255,14 @@ router.post(
       res.status(404).json({ error: "order_not_found" });
       return;
     }
-    const receiver = await buildReceiver(orgId, order);
-    if ("error" in receiver) {
-      res.status(409).json({ error: receiver.error });
+    const built = await buildAndValidateReceiver(orgId, order);
+    if ("error" in built) {
+      res.status(409).json({ error: built.error });
       return;
     }
-    const adapter = await getAdapterForOrg(orgId);
+    const adapter = await getXpsAdapterForOrg(orgId);
     const result = await adapter.quoteRates({
-      receiver,
+      receiver: built.receiver,
       parcels: [parsed.data.parcel],
       residential: parsed.data.residential,
       carrierCode: parsed.data.carrierCode ?? null,
@@ -431,6 +277,125 @@ router.post(
   },
 );
 
+/**
+ * Shared create-label core: validate preconditions, build + validate the
+ * receiver, Put Order, mark staged, then resolve. Returns a discriminated
+ * outcome the route handlers translate to HTTP. Used by both the single
+ * /label endpoint and the batch endpoint.
+ */
+async function createAndResolveLabel(args: {
+  orgId: string;
+  order: ShippingOrderRow;
+  parcel: {
+    weightOz: number;
+    lengthIn?: number | null;
+    widthIn?: number | null;
+    heightIn?: number | null;
+  };
+  shippingService: string;
+  contentDescription?: string | null;
+  pollResolve: boolean;
+  log:
+    | { info?: (...a: unknown[]) => void; warn?: (...a: unknown[]) => void }
+    | undefined;
+}): Promise<
+  | {
+      ok: true;
+      status: "booked";
+      carrier: string;
+      trackingNumber: string;
+      bookNumber: string;
+    }
+  | { ok: true; status: "staged" }
+  | { ok: false; status: number; error: string; issues?: unknown }
+> {
+  const {
+    orgId,
+    order,
+    parcel,
+    shippingService,
+    contentDescription,
+    pollResolve,
+    log,
+  } = args;
+
+  if (order.status !== "paid") {
+    return { ok: false, status: 409, error: "order_not_paid" };
+  }
+  if (order.fulfillmentMethod === "pickup") {
+    return { ok: false, status: 409, error: "order_is_pickup" };
+  }
+  const gate = await evaluatePaperworkGateForCustomer(order.customerId);
+  if (gate.required && !gate.satisfied) {
+    return {
+      ok: false,
+      status: 409,
+      error: "order_requires_signed_paperwork",
+      issues: gate.missingForms,
+    };
+  }
+  const built = await buildAndValidateReceiver(orgId, order);
+  if ("error" in built) {
+    return { ok: false, status: 409, error: built.error };
+  }
+  if (built.issues.length > 0) {
+    return {
+      ok: false,
+      status: 422,
+      error: "invalid_address",
+      issues: built.issues,
+    };
+  }
+
+  const adapter = await getXpsAdapterForOrg(orgId);
+  const created = await adapter.createOrder({
+    orderId: order.id,
+    orderNumber: order.id.slice(0, 8),
+    receiver: built.receiver,
+    parcels: [parcel],
+    shippingService,
+    contentDescription: contentDescription ?? "CPAP supplies",
+    reference1: order.id.slice(0, 8),
+  });
+  if (!created.ok) {
+    return {
+      ok: false,
+      status: adapterErrorStatus(created.error),
+      error: created.error,
+    };
+  }
+
+  const supabase = getOrgScopedClient(orgId);
+  await supabase
+    .from("shop_orders")
+    .update({
+      xps_label_status: "staged",
+      shipping_service_code: shippingService,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", order.id);
+
+  let resolved = await resolveAndPersist({ orgId, order, adapter, log });
+  const maxExtra = pollResolve ? 2 : 0;
+  for (let i = 0; i < maxExtra && resolved.kind === "staged"; i++) {
+    await new Promise((r) => setTimeout(r, 1200));
+    resolved = await resolveAndPersist({ orgId, order, adapter, log });
+  }
+
+  if (resolved.kind === "booked") {
+    return {
+      ok: true,
+      status: "booked",
+      carrier: resolved.carrier,
+      trackingNumber: resolved.trackingNumber,
+      bookNumber: resolved.bookNumber,
+    };
+  }
+  // Both "staged" and a resolve-time adapter error leave the order staged
+  // in XPS; the sync endpoint / worker job will pick it up.
+  return { ok: true, status: "staged" };
+}
+
 // ---------------------------------------------------------------------
 // POST /admin/shop/orders/:orderId/shipping/label — create + book label
 // ---------------------------------------------------------------------
@@ -443,11 +408,8 @@ router.post(
       res.status(400).json({ error: "invalid_order_id" });
       return;
     }
-    const orgId = req.orgId;
-    if (!orgId) {
-      res.status(500).json({ error: "tenant_context_missing" });
-      return;
-    }
+    const orgId = tenant(req, res);
+    if (!orgId) return;
     const parsed = labelBodySchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: "invalid_body" });
@@ -458,111 +420,127 @@ router.post(
       res.status(404).json({ error: "order_not_found" });
       return;
     }
-    if (order.status !== "paid") {
-      res
-        .status(409)
-        .json({ error: "order_not_paid", currentStatus: order.status });
-      return;
-    }
-    if (order.fulfillmentMethod === "pickup") {
-      res.status(409).json({ error: "order_is_pickup" });
-      return;
-    }
-
-    // Same paperwork gate the manual /tracking flow enforces: required
-    // intake paperwork must be signed before a patient-linked order ships.
-    const gate = await evaluatePaperworkGateForCustomer(order.customerId);
-    if (gate.required && !gate.satisfied) {
-      res.status(409).json({
-        error: "order_requires_signed_paperwork",
-        missingForms: gate.missingForms,
-      });
-      return;
-    }
-
-    const receiver = await buildReceiver(orgId, order);
-    if ("error" in receiver) {
-      res.status(409).json({ error: receiver.error });
-      return;
-    }
-
-    const adapter = await getAdapterForOrg(orgId);
-    const created = await adapter.createOrder({
-      orderId,
-      orderNumber: orderId.slice(0, 8),
-      receiver,
-      parcels: [parsed.data.parcel],
+    const outcome = await createAndResolveLabel({
+      orgId,
+      order,
+      parcel: parsed.data.parcel,
       shippingService: parsed.data.shippingService,
-      contentDescription: parsed.data.contentDescription ?? "CPAP supplies",
-      reference1: orderId.slice(0, 8),
+      contentDescription: parsed.data.contentDescription,
+      pollResolve: true,
+      log: req.log,
     });
-    if (!created.ok) {
+    if (!outcome.ok) {
       res
-        .status(adapterErrorStatus(created.error))
-        .json({ error: "xps_error", reason: created.error });
+        .status(outcome.status)
+        .json({ error: outcome.error, issues: outcome.issues });
       return;
     }
-
-    // Mark staged immediately so a failed resolve still leaves a record
-    // the sync endpoint / job can pick up.
-    const supabase = getOrgScopedClient(orgId);
-    await supabase
-      .from("shop_orders")
-      .update({
-        xps_label_status: "staged",
-        shipping_service_code: parsed.data.shippingService,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", orderId);
-
     req.log?.info?.(
       {
         orderId,
         adminEmail: req.adminEmail,
         service: parsed.data.shippingService,
+        result: outcome.status,
       },
-      "xps-shipping: order staged in XPS",
+      "xps-shipping: label created",
     );
-
-    // Try to resolve into a booked shipment right away (XPS auto-process
-    // rules usually book within a second or two). A couple of short
-    // retries cover the common case; otherwise the UI polls /sync.
-    let resolved = await resolveAndPersist({
-      orgId,
-      order,
-      adapter,
-      log: req.log,
-    });
-    for (
-      let attempt = 0;
-      attempt < 2 && resolved.kind === "staged";
-      attempt++
-    ) {
-      await new Promise((r) => setTimeout(r, 1200));
-      resolved = await resolveAndPersist({
-        orgId,
-        order,
-        adapter,
-        log: req.log,
+    if (outcome.status === "booked") {
+      res.json({
+        status: "booked",
+        carrier: outcome.carrier,
+        trackingNumber: outcome.trackingNumber,
+        bookNumber: outcome.bookNumber,
       });
+    } else {
+      res.status(202).json({ status: "staged" });
+    }
+  },
+);
+
+// ---------------------------------------------------------------------
+// POST /admin/shipping/xps/batch-label — create labels for many orders
+// ---------------------------------------------------------------------
+router.post(
+  "/admin/shipping/xps/batch-label",
+  requirePermission("returns.manage"),
+  async (req, res) => {
+    const orgId = tenant(req, res);
+    if (!orgId) return;
+    const parsed = batchBodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "invalid_body" });
+      return;
+    }
+    const env = await getEffectiveEnvForOrg(orgId);
+    const defaultWeight = defaultParcelWeightOz(env);
+
+    const results: Array<{
+      orderId: string;
+      status: "booked" | "staged" | "error";
+      trackingNumber?: string;
+      carrier?: string;
+      error?: string;
+    }> = [];
+
+    // Sequential to keep XPS request pressure bounded and isolate failures.
+    for (const rawId of parsed.data.orderIds) {
+      const orderId = validateOrderId(rawId);
+      if (!orderId) {
+        results.push({
+          orderId: rawId,
+          status: "error",
+          error: "invalid_order_id",
+        });
+        continue;
+      }
+      try {
+        const order = await loadShippingOrder(orgId, orderId);
+        if (!order) {
+          results.push({ orderId, status: "error", error: "order_not_found" });
+          continue;
+        }
+        const computed = await computeParcelForOrder(
+          orgId,
+          orderId,
+          defaultWeight,
+        );
+        const outcome = await createAndResolveLabel({
+          orgId,
+          order,
+          parcel: computed.parcel,
+          shippingService: parsed.data.shippingService,
+          pollResolve: false,
+          log: req.log,
+        });
+        if (!outcome.ok) {
+          results.push({ orderId, status: "error", error: outcome.error });
+        } else if (outcome.status === "booked") {
+          results.push({
+            orderId,
+            status: "booked",
+            trackingNumber: outcome.trackingNumber,
+            carrier: outcome.carrier,
+          });
+        } else {
+          results.push({ orderId, status: "staged" });
+        }
+      } catch (err) {
+        req.log?.warn?.(
+          { orderId, err: err instanceof Error ? err.message : String(err) },
+          "xps-shipping: batch label error (isolated)",
+        );
+        results.push({ orderId, status: "error", error: "unexpected_error" });
+      }
     }
 
-    if (resolved.kind === "error") {
-      // The order is staged in XPS; surface a soft status so the UI can
-      // offer "sync" rather than treating it as a hard failure.
-      res.status(202).json({ status: "staged", note: "awaiting_processing" });
-      return;
-    }
-    if (resolved.kind === "staged") {
-      res.status(202).json({ status: "staged" });
-      return;
-    }
-    res.json({
-      status: "booked",
-      carrier: resolved.carrier,
-      trackingNumber: resolved.trackingNumber,
-      bookNumber: resolved.bookNumber,
-    });
+    const booked = results.filter((r) => r.status === "booked").length;
+    const staged = results.filter((r) => r.status === "staged").length;
+    const errored = results.filter((r) => r.status === "error").length;
+    req.log?.info?.(
+      { orgId, adminEmail: req.adminEmail, booked, staged, errored },
+      "xps-shipping: batch label complete",
+    );
+    res.json({ results, summary: { booked, staged, errored } });
   },
 );
 
@@ -578,17 +556,14 @@ router.post(
       res.status(400).json({ error: "invalid_order_id" });
       return;
     }
-    const orgId = req.orgId;
-    if (!orgId) {
-      res.status(500).json({ error: "tenant_context_missing" });
-      return;
-    }
+    const orgId = tenant(req, res);
+    if (!orgId) return;
     const order = await loadShippingOrder(orgId, orderId);
     if (!order) {
       res.status(404).json({ error: "order_not_found" });
       return;
     }
-    const adapter = await getAdapterForOrg(orgId);
+    const adapter = await getXpsAdapterForOrg(orgId);
     const resolved = await resolveAndPersist({
       orgId,
       order,
@@ -626,11 +601,8 @@ router.get(
       res.status(400).json({ error: "invalid_order_id" });
       return;
     }
-    const orgId = req.orgId;
-    if (!orgId) {
-      res.status(500).json({ error: "tenant_context_missing" });
-      return;
-    }
+    const orgId = tenant(req, res);
+    if (!orgId) return;
     const order = await loadShippingOrder(orgId, orderId);
     if (!order) {
       res.status(404).json({ error: "order_not_found" });
@@ -640,7 +612,7 @@ router.get(
       res.status(409).json({ error: "label_not_booked" });
       return;
     }
-    const adapter = await getAdapterForOrg(orgId);
+    const adapter = await getXpsAdapterForOrg(orgId);
     const label = await adapter.getLabel(order.xpsBookNumber, "PDF");
     if (!label.ok) {
       res
@@ -671,11 +643,8 @@ router.post(
       res.status(400).json({ error: "invalid_order_id" });
       return;
     }
-    const orgId = req.orgId;
-    if (!orgId) {
-      res.status(500).json({ error: "tenant_context_missing" });
-      return;
-    }
+    const orgId = tenant(req, res);
+    if (!orgId) return;
     const order = await loadShippingOrder(orgId, orderId);
     if (!order) {
       res.status(404).json({ error: "order_not_found" });
@@ -685,7 +654,7 @@ router.post(
       res.status(409).json({ error: "no_label_to_void" });
       return;
     }
-    const adapter = await getAdapterForOrg(orgId);
+    const adapter = await getXpsAdapterForOrg(orgId);
     const voided = await adapter.deleteOrder(orderId);
     if (!voided.ok) {
       res
@@ -706,6 +675,112 @@ router.post(
       "xps-shipping: label voided",
     );
     res.json({ status: "voided" });
+  },
+);
+
+// ---------------------------------------------------------------------
+// GET /admin/shipping/xps/product-specs — list parcel presets
+// ---------------------------------------------------------------------
+// Returns saved presets plus the distinct product ids seen on orders still
+// awaiting shipment (so staff can seed weights for products they actually
+// ship). Order items don't persist a title, so unsaved rows show the id.
+router.get(
+  "/admin/shipping/xps/product-specs",
+  requirePermission("returns.manage"),
+  async (req, res) => {
+    const orgId = tenant(req, res);
+    if (!orgId) return;
+    const supabase = getOrgScopedClient(orgId);
+
+    const { data: specsData, error: specErr } = await supabase
+      .from("product_ship_specs")
+      .select("product_id, weight_oz, length_in, width_in, height_in, label")
+      .order("updated_at", { ascending: false })
+      .limit(500);
+    if (specErr) throw specErr;
+    const specs = (
+      (specsData ?? []) as Array<{
+        product_id: string;
+        weight_oz: number;
+        length_in: number | null;
+        width_in: number | null;
+        height_in: number | null;
+        label: string | null;
+      }>
+    ).map((s) => ({
+      productId: s.product_id,
+      weightOz: s.weight_oz,
+      lengthIn: s.length_in,
+      widthIn: s.width_in,
+      heightIn: s.height_in,
+      label: s.label,
+    }));
+
+    // Distinct product ids on unshipped, paid, ship-method orders.
+    const { data: orderRows, error: ordErr } = await supabase
+      .from("shop_orders")
+      .select("id")
+      .eq("status", "paid")
+      .eq("fulfillment_method", "ship")
+      .is("shipped_at", null)
+      .limit(200);
+    if (ordErr) throw ordErr;
+    const orderIds = ((orderRows ?? []) as Array<{ id: string }>).map(
+      (o) => o.id,
+    );
+    const seen = new Set<string>();
+    if (orderIds.length > 0) {
+      const { data: itemRows, error: itemErr } = await supabase
+        .from("shop_order_items")
+        .select("product_id")
+        .in("order_id", orderIds)
+        .limit(2000);
+      if (itemErr) throw itemErr;
+      for (const r of (itemRows ?? []) as Array<{ product_id: string }>) {
+        seen.add(r.product_id);
+      }
+    }
+    const known = new Set(specs.map((s) => s.productId));
+    const unconfiguredProductIds = [...seen].filter((id) => !known.has(id));
+
+    res.json({ specs, unconfiguredProductIds });
+  },
+);
+
+// ---------------------------------------------------------------------
+// PUT /admin/shipping/xps/product-specs — upsert parcel presets
+// ---------------------------------------------------------------------
+router.put(
+  "/admin/shipping/xps/product-specs",
+  requirePermission("returns.manage"),
+  async (req, res) => {
+    const orgId = tenant(req, res);
+    if (!orgId) return;
+    const parsed = productSpecsBodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "invalid_body" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+    const nowIso = new Date().toISOString();
+    const rows = parsed.data.specs.map((s) => ({
+      product_id: s.productId,
+      weight_oz: s.weightOz,
+      length_in: s.lengthIn ?? null,
+      width_in: s.widthIn ?? null,
+      height_in: s.heightIn ?? null,
+      label: s.label ?? null,
+      updated_at: nowIso,
+    }));
+    const { error } = await supabase
+      .from("product_ship_specs")
+      .upsert(rows, { onConflict: "org_id,product_id" });
+    if (error) throw error;
+    req.log?.info?.(
+      { orgId, adminEmail: req.adminEmail, count: rows.length },
+      "xps-shipping: product specs upserted",
+    );
+    res.json({ ok: true, count: rows.length });
   },
 );
 

@@ -373,6 +373,34 @@ export interface Database {
       };
       // the per-transaction cost snapshots + every owner-facing margin
       // surface (computeMargin / aggregateMargin in resupply-domain).
+      product_ship_specs: {
+        Row: {
+          org_id: string | null;
+          product_id: string;
+          weight_oz: number;
+          length_in: number | null;
+          width_in: number | null;
+          height_in: number | null;
+          label: string | null;
+          updated_at: string;
+          created_at: string;
+        };
+        Insert: {
+          org_id?: string;
+          product_id: string;
+          weight_oz: number;
+          length_in?: number | null;
+          width_in?: number | null;
+          height_in?: number | null;
+          label?: string | null;
+          updated_at?: string;
+          created_at?: string;
+        };
+        Update: Partial<
+          Database["resupply"]["Tables"]["product_ship_specs"]["Insert"]
+        >;
+        Relationships: [];
+      };
       product_costs: {
         Row: {
           org_id: string | null;

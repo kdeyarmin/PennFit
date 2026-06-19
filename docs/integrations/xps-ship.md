@@ -88,11 +88,25 @@ flow to XPS. We never log the address, the label bytes, or XPS response
 bodies — only structural counts, order ids, and carrier codes. The label
 PDF endpoint sets `Cache-Control: no-store`.
 
-## Future efficiency wins (not yet built)
+## Efficiency tooling
 
-- **Batch labels**: a "print all" action over the awaiting-shipment queue
-  that stages every order and bulk-resolves tracking.
-- **Background sync job**: a pg-boss tick that resolves `staged` orders so
-  staff never need to click Sync.
-- **Default parcel presets** per SKU/kit so weight/dimensions pre-fill.
-- **Address validation** via XPS before booking to catch typos up front.
+- **Batch labels** — select orders on the queue and `POST
+/admin/shipping/xps/batch-label { orderIds, shippingService }` stages +
+  resolves them all, parcel auto-computed from per-product presets.
+- **Background auto-resolve** — the `xps.resolve-staged` pg-boss cron
+  (every 5 min, opt-in via `XPS_RESOLVE_STAGED_CRON_ENABLED=1`) resolves
+  `staged` orders so tracking + the patient notification land without
+  anyone clicking Sync. Per-tenant + fail-soft (unconfigured tenants do no
+  work).
+- **Per-product parcel presets** — `product_ship_specs` (migration 0405)
+  stores a weight (oz) + optional dimensions per Stripe product id. The
+  create-label form and the batch path pre-fill the parcel by summing each
+  order line's preset × quantity (`computeParcelForOrder`); missing presets
+  fall back to `XPS_SHIP_DEFAULT_WEIGHT_OZ` (default 16 oz). Managed inline
+  on the Shipping page (`GET`/`PUT /admin/shipping/xps/product-specs`).
+- **Pre-book address validation** — `validateReceiverAddress` (pure, in the
+  integration package) structurally checks the destination (required
+  fields, 2-letter state, US ZIP) before staging; the queue flags
+  questionable addresses and the label/batch paths return `invalid_address`
+  with per-field issues rather than failing at XPS. Carrier-side existence
+  is still validated by XPS at quote/book time.
