@@ -833,6 +833,7 @@ const FOOTER_LINKS: { href: string; label: string }[] = [
   { href: "/breathe/roi", label: "ROI" },
   { href: "/breathe/pricing", label: "Pricing" },
   { href: "/breathe/security", label: "Security" },
+  { href: "/breathe/faq", label: "FAQ" },
 ];
 
 function Nav() {
