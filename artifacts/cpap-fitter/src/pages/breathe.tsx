@@ -900,7 +900,6 @@ export function BreatheHome() {
       <UnifiedFleet />
       <Lifecycle />
       <Capabilities />
-      <FeatureVideos />
       <BuiltInHouse />
       <Replaces />
       <Outcomes />
@@ -934,6 +933,7 @@ export function BreatheProduct() {
       <DayInLife />
       <ProductShowcase />
       <Features />
+      <FeatureVideos />
       <BuiltInHouse />
       <RevenueCycle />
       <AiBento />
@@ -1054,6 +1054,7 @@ const NAV_LINKS: { href: string; label: string }[] = [
   { href: "/breathe/integrations", label: "Integrations" },
   { href: "/breathe/why", label: "Why Breathe" },
   { href: "/breathe/compare", label: "Compare" },
+  { href: "/breathe/case-studies", label: "Case studies" },
   { href: "/breathe/pricing", label: "Pricing" },
 ];
 
@@ -1069,6 +1070,7 @@ const FOOTER_LINKS: { href: string; label: string }[] = [
   { href: "/breathe/roi", label: "ROI" },
   { href: "/breathe/pricing", label: "Pricing" },
   { href: "/breathe/security", label: "Security" },
+  { href: "/breathe/case-studies", label: "Case studies" },
   { href: "/breathe/faq", label: "FAQ" },
 ];
 
@@ -1860,16 +1862,6 @@ const LIVE_SHOTS: { src: string; cap: string; alt: string }[] = [
     src: "/breathe/screens/console-conversations.jpg",
     cap: "One inbox — SMS, email, voice & in-app",
     alt: "Breathe admin: unified conversations inbox across every channel",
-  },
-  {
-    src: "/breathe/screens/console-patients.jpg",
-    cap: "Patient roster — every channel, every status",
-    alt: "Breathe admin: patient roster with status and SMS, email and voice channels",
-  },
-  {
-    src: "/breathe/screens/console-orders.jpg",
-    cap: "Storefront orders, end to end",
-    alt: "Breathe admin: storefront orders list with status and fulfillment",
   },
 ];
 

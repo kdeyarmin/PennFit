@@ -82,24 +82,21 @@ in response. Source pages live in
 
 ## Changes shipped in this PR
 
-- **Show the real product on the home page** — a new `LiveConsole` section on
-  `/breathe` leads with a **~40-second cinematic product trailer** —
-  branded title/outro cards, the real `/admin?demo=1` screens shown with
-  Ken-Burns motion in glass frames, animated captions, and a stat punch, all
-  in the Breathe brand (Fraunces/Hanken, navy/cyan/gold). It's composed as an
-  HTML motion sequence and screen-recorded with Playwright (no editing
-  tooling needed); click-to-play, `preload="none"`, home dashboard as poster.
-  Below it sits a gallery of **six real captured screenshots** —
-  resupply opportunities, therapy fleet, AI denials worklist, omnichannel
-  inbox, patient roster, and orders — each in a browser frame with a caption.
-  Video + screens were recorded with Playwright against the demo sandbox;
-  assets in `public/breathe/screens/`. (The illustrative `ProductShowcase`
-  mockup still serves the deeper `/breathe/product` tour.) A second
-  **`FeatureVideos`** section ("See it in action") follows the capability
-  grid with **four short per-feature clips** showing real interactions — the
-  resupply engine filtering its worklist, the **AI admin copilot** answering a
-  question with live `/admin` links, the AI denials worklist, and therapy
-  monitoring — each click-to-play with `preload="none"`.
+- **Show the real product on the home page** — a `LiveConsole` section on
+  `/breathe` leads with a **~60-second cinematic product trailer** — branded
+  title/outro cards, a problem→solution arc, the real `/admin?demo=1` screens
+  shown with Ken-Burns motion in glass frames, an integrations beat, a
+  "seven tools → one" beat, and a stat punch, all in the Breathe brand
+  (Fraunces/Hanken, navy/cyan/gold). It's composed as an HTML motion sequence
+  and screen-recorded with Playwright (no editing tooling needed);
+  click-to-play, `preload="none"`, home dashboard as poster. Below it sits a
+  tight gallery of **four real captured screenshots** (resupply, therapy
+  fleet, AI denials, omnichannel inbox). The deeper **`FeatureVideos`**
+  section ("See it in action" — four per-feature clips: resupply filtering,
+  the **AI admin copilot** answering with live `/admin` links, AI denials,
+  therapy monitoring) lives on the **`/breathe/product`** tour, keeping the
+  home page short. (The illustrative `ProductShowcase` mockup also serves the
+  product tour.) Assets in `public/breathe/screens/`.
 - **Stat credibility** — provenance note under the hero stat band on both
   `/breathe` and `/breathe/features`, linking to the ROI methodology.
 - **"Talk to us" path** — new `ContactGateModal` (+ `ContactEmailForm`,
@@ -113,6 +110,14 @@ in response. Source pages live in
   section on the home page (independent / multi-site / sleep-CPAP / RCM-led),
   reusing the exported `CapCard` + `.bx-caps` grid. Complements the role-based
   personas on `/breathe/why`; capability-based, no customer claims.
+- **Case-studies page** (`/breathe/case-studies`, linked in nav + footer) —
+  "AI in DME" industry case studies grounded in **published industry
+  benchmarks** (resupply automation, AI revenue cycle, therapy monitoring),
+  plus a CareMetric Breathe study **explicitly labeled as an illustrative,
+  modeled scenario** (a representative ~2,500-patient provider, figures
+  modeled from those benchmarks + the ROI methodology) — **not a real
+  customer**. This is the honest stand-in until there's a real pilot to cite
+  (see backlog #3).
 
 ## Backlog — revisit once there are real customers
 
