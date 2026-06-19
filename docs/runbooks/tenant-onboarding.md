@@ -127,11 +127,28 @@ name alone is ignored — only a From address switches a tenant off the
 platform default (`resolveTenantSender`). Deliverability still requires the
 sending **domain** to be authenticated (SPF/DKIM) in SendGrid out of band.
 
-> **Product catalog.** The storefront catalog is sourced from a single
-> shared Stripe account today, so there is no per-tenant "starter catalog"
-> seed yet — a per-tenant catalog requires per-tenant catalog reads (a
-> separate multi-tenant workstream). The checklist's **catalog** item links
-> the tenant to the Shop → Inventory page in the meantime.
+> **Product catalog (per-tenant).** Stripe Connect runs in _direct-charges_
+> mode, so a connected tenant's storefront catalog is read from — and
+> checkout routes to — **their own** connected Stripe account
+> (`GET /shop/products`, cart validation, and reorder suggestions all pass
+> the tenant's `{ stripeAccount }`; the catalog cache is keyed per account so
+> one tenant's catalog never serves on another's storefront). A brand-new
+> tenant therefore starts empty. **Shop → Inventory → "Load starter
+> catalog"** (`POST /admin/shop/catalog/seed`, gated by `admin.tools.manage`)
+> one-clicks a tenant-neutral ~27-item CPAP-supply catalog into the tenant's
+> own account so the storefront isn't empty; it is **idempotent** (re-running
+> only updates existing SKUs by `metadata.shop_sku`). The tenant then edits
+> names/prices from the same page. A non-seed tenant must connect Stripe
+> first (the seed refuses to write to the shared platform account →
+> `409 connect_stripe_first`); the seed tenant (Penn Home Medical Supply)
+> keeps its own branded catalog via `scripts/src/seed-stripe-products.ts`.
+> The checklist's **catalog** item flips to complete once the tenant has
+> products of their own.
+>
+> _Out of scope (follow-up):_ admin **counter orders**
+> (`/admin/shop/counter-orders`) still validate + charge on the platform
+> account — they are not yet Connect-aware, so a connected tenant's in-person
+> counter orders need that path wired separately.
 
 ## Safety / idempotency
 

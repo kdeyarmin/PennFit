@@ -3,15 +3,18 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   bulkPatchShopProductStock,
   centsToPriceDraft,
+  ConnectStripeFirstError,
   InventoryUnavailableError,
   listShopInventory,
   parsePriceDraftToCents,
   patchShopProductPrice,
   patchShopProductStock,
   patchShopProductThreshold,
+  seedStarterCatalog,
   type BulkStockResultItem,
   type InventoryProductRow,
   type ListShopInventoryResponse,
+  type SeedStarterCatalogResult,
 } from "@/lib/admin/shop-inventory-api";
 
 // Default threshold the storefront falls back to when a SKU has no
@@ -42,6 +45,13 @@ const DEFAULT_LOW_STOCK_THRESHOLD = 5;
 //   roll back on error.
 
 const QUERY_KEY = ["shop-inventory"] as const;
+
+// Approximate size of the generic starter catalog, shown in the confirm
+// copy. Mirrors STARTER_CATALOG.length in
+// artifacts/resupply-api/src/lib/stripe/starter-catalog.ts (kept as a local
+// constant rather than imported across the workspace boundary; "about" in
+// the copy absorbs any small drift).
+const STARTER_CATALOG_SIZE = 27;
 
 function StockCell({
   product,
@@ -765,6 +775,43 @@ export function AdminShopInventoryPage() {
     });
   }
 
+  // "Load starter catalog" (G6): one-click seed a generic CPAP-supply
+  // catalog into THIS tenant's Stripe account so a new storefront isn't
+  // empty. The server is idempotent (re-running only updates existing
+  // SKUs), so the button is safe to click more than once.
+  const [seedOpen, setSeedOpen] = useState(false);
+  const [seedMsg, setSeedMsg] = useState<
+    | { kind: "success"; result: SeedStarterCatalogResult }
+    | { kind: "error"; message: string }
+    | null
+  >(null);
+  const seedMutation = useMutation({
+    mutationFn: seedStarterCatalog,
+    onSuccess: (result) => {
+      setSeedMsg({ kind: "success", result });
+      setSeedOpen(false);
+      void queryClient.invalidateQueries({ queryKey: QUERY_KEY });
+    },
+    onError: (err) => {
+      setSeedMsg({
+        kind: "error",
+        message:
+          err instanceof ConnectStripeFirstError
+            ? "Connect your Stripe account and finish onboarding first, so products are created in your own account."
+            : err instanceof InventoryUnavailableError
+              ? "Stripe isn't configured in this environment yet."
+              : err instanceof Error
+                ? err.message
+                : "Couldn't load the starter catalog.",
+      });
+    },
+  });
+
+  function openSeedConfirm() {
+    setSeedMsg(null);
+    setSeedOpen(true);
+  }
+
   return (
     <div style={{ maxWidth: 980 }}>
       <header style={{ marginBottom: 24 }}>
@@ -813,6 +860,24 @@ export function AdminShopInventoryPage() {
             >
               View archived
             </a>
+            <button
+              type="button"
+              onClick={openSeedConfirm}
+              data-testid="load-starter-catalog"
+              style={{
+                color: "hsl(var(--ink-2))",
+                background: "#fff",
+                padding: "8px 12px",
+                fontSize: 13,
+                fontWeight: 600,
+                borderRadius: 6,
+                border: "1px solid #d1d5db",
+                cursor: "pointer",
+                whiteSpace: "nowrap",
+              }}
+            >
+              Load starter catalog
+            </button>
             <a
               href={`${import.meta.env.BASE_URL}admin/shop/inventory/new`}
               style={{
@@ -848,6 +913,104 @@ export function AdminShopInventoryPage() {
         </p>
       </header>
 
+      {seedOpen ? (
+        <div
+          role="dialog"
+          aria-label="Load starter catalog"
+          style={{
+            background: "#f8fafc",
+            border: "1px solid hsl(var(--line-1))",
+            borderRadius: 8,
+            padding: 16,
+            marginBottom: 16,
+          }}
+        >
+          <p
+            style={{
+              margin: 0,
+              fontSize: 14,
+              fontWeight: 600,
+              color: "hsl(var(--ink-1))",
+            }}
+          >
+            Load the starter catalog?
+          </p>
+          <p
+            style={{
+              margin: "6px 0 12px",
+              fontSize: 13,
+              color: "hsl(var(--ink-2))",
+              lineHeight: 1.5,
+            }}
+          >
+            This creates a generic CPAP-supply catalog (about{" "}
+            {STARTER_CATALOG_SIZE} products with placeholder prices) in your
+            Stripe account so your storefront isn&rsquo;t empty. It&rsquo;s safe
+            to run more than once — products with the same SKU are updated, not
+            duplicated. Edit names and prices afterward from this page.
+          </p>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              type="button"
+              onClick={() => seedMutation.mutate()}
+              disabled={seedMutation.isPending}
+              data-testid="load-starter-catalog-confirm"
+              style={{
+                background: "#0a1f44",
+                color: "#fff",
+                padding: "8px 16px",
+                fontSize: 13,
+                fontWeight: 600,
+                borderRadius: 6,
+                border: "none",
+                cursor: seedMutation.isPending ? "default" : "pointer",
+                opacity: seedMutation.isPending ? 0.7 : 1,
+              }}
+            >
+              {seedMutation.isPending ? "Loading…" : "Load catalog"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setSeedOpen(false)}
+              disabled={seedMutation.isPending}
+              style={{
+                background: "#fff",
+                color: "hsl(var(--ink-2))",
+                padding: "8px 16px",
+                fontSize: 13,
+                fontWeight: 600,
+                borderRadius: 6,
+                border: "1px solid #d1d5db",
+                cursor: "pointer",
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {seedMsg ? (
+        <div
+          role="status"
+          style={{
+            background: seedMsg.kind === "success" ? "#ecfdf5" : "#fef2f2",
+            border: `1px solid ${
+              seedMsg.kind === "success" ? "#a7f3d0" : "#fecaca"
+            }`,
+            color: seedMsg.kind === "success" ? "#065f46" : "#991b1b",
+            padding: "12px 16px",
+            borderRadius: 6,
+            fontSize: 13,
+            marginBottom: 16,
+          }}
+        >
+          {seedMsg.kind === "success"
+            ? `Starter catalog loaded — ${seedMsg.result.created} added, ${seedMsg.result.updated} updated (${seedMsg.result.total} total). Edit names and prices below.`
+            : seedMsg.message}
+        </div>
+      ) : null}
+
       {data?.previewMode ? (
         <div
           role="status"
@@ -874,7 +1037,47 @@ export function AdminShopInventoryPage() {
           {error instanceof Error ? error.message : "Failed to load inventory."}
         </div>
       ) : !data || data.products.length === 0 ? (
-        <div style={{ color: "hsl(var(--ink-3))" }}>No products found.</div>
+        <div
+          style={{
+            border: "1px dashed hsl(var(--line-1))",
+            borderRadius: 8,
+            padding: 24,
+            textAlign: "center",
+            color: "hsl(var(--ink-2))",
+          }}
+        >
+          <p
+            style={{
+              margin: 0,
+              fontSize: 15,
+              fontWeight: 600,
+              color: "hsl(var(--ink-1))",
+            }}
+          >
+            Your catalog is empty
+          </p>
+          <p style={{ margin: "6px 0 16px", fontSize: 13, lineHeight: 1.5 }}>
+            Load a generic CPAP-supply starter catalog to fill your storefront,
+            then edit names and prices to match your business.
+          </p>
+          <button
+            type="button"
+            onClick={openSeedConfirm}
+            data-testid="load-starter-catalog-empty"
+            style={{
+              background: "#0a1f44",
+              color: "#fff",
+              padding: "10px 18px",
+              fontSize: 13,
+              fontWeight: 600,
+              borderRadius: 6,
+              border: "none",
+              cursor: "pointer",
+            }}
+          >
+            Load starter catalog
+          </button>
+        </div>
       ) : (
         <>
           <div

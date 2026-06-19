@@ -17,9 +17,15 @@
 
 import { Router, type IRouter } from "express";
 
-import { getOrgScopedClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger.js";
+import {
+  getStripeClient,
+  readStripeConfigOrNull,
+} from "../../lib/stripe/config.js";
+import { stripeAccountRequestOptions } from "../../lib/stripe/connect.js";
+import { isShopCategory } from "../../lib/stripe/products-meta.js";
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit.js";
 import { requireAdmin } from "../../middlewares/requireAdmin.js";
 
@@ -54,6 +60,12 @@ export interface TenantSetupSnapshot {
   fromEmail: string | null;
   stripeAccountId: string | null;
   stripeChargesEnabled: boolean;
+  /**
+   * Count of catalog products in the tenant's OWN Stripe account, or null
+   * when it couldn't be read (Stripe unset, not the tenant's own account,
+   * or a probe error). Only used to flip the catalog item to "complete".
+   */
+  catalogProductCount: number | null;
   activeAdminCount: number;
 }
 
@@ -198,11 +210,17 @@ export function buildTenantSetupItems(
       group: "Team & catalog",
       title: "Add your product catalog",
       description:
-        "Load products so your storefront isn't empty. Start from a curated CPAP-supply catalog, then edit pricing to match yours.",
-      status: "action",
-      detail: stripeReady
-        ? "Add products from the Inventory page so your storefront isn't empty."
-        : "Connect payments first, then add products.",
+        "Load products so your storefront isn't empty. Start from a generic CPAP-supply catalog with one click, then edit pricing to match yours.",
+      status:
+        s.catalogProductCount != null && s.catalogProductCount > 0
+          ? "complete"
+          : "action",
+      detail:
+        s.catalogProductCount != null && s.catalogProductCount > 0
+          ? `${s.catalogProductCount}${s.catalogProductCount >= 100 ? "+" : ""} product${s.catalogProductCount === 1 ? "" : "s"} in your catalog.`
+          : stripeReady
+            ? "Empty — load the starter catalog from Inventory, then edit pricing to match yours."
+            : "Connect payments first, then load the starter catalog.",
       href: "/admin/shop/inventory",
       required: false,
     },
@@ -222,6 +240,7 @@ async function loadSnapshot(orgId: string): Promise<TenantSetupSnapshot> {
     fromEmail: null,
     stripeAccountId: null,
     stripeChargesEnabled: false,
+    catalogProductCount: null,
     activeAdminCount: 0,
   };
 
@@ -269,6 +288,39 @@ async function loadSnapshot(orgId: string): Promise<TenantSetupSnapshot> {
     logger.warn(
       { event: "tenant_setup_admin_count_failed", err },
       "tenant-setup: admin count probe failed",
+    );
+  }
+
+  // Catalog probe (fail-soft): count the tenant's OWN catalog products so
+  // the checklist can flip "Add your product catalog" to complete. Only
+  // counts the account that IS the tenant's — their connected account, or
+  // the platform account for the seed tenant — never another tenant's
+  // platform-shared catalog. Any hiccup leaves the count null (→ "action").
+  try {
+    const config = readStripeConfigOrNull();
+    if (config) {
+      const accountOptions = await stripeAccountRequestOptions(orgId);
+      const ownsAccount =
+        Boolean(accountOptions.stripeAccount) ||
+        orgId === (await resolveSeedOrgId());
+      if (ownsAccount) {
+        const stripe = getStripeClient(config);
+        const list = await stripe.products.list(
+          { active: true, limit: 100 },
+          accountOptions,
+        );
+        base.catalogProductCount = list.data.filter((p) =>
+          isShopCategory(p.metadata?.category),
+        ).length;
+      } else {
+        // Tenant hasn't connected Stripe yet → no catalog of their own.
+        base.catalogProductCount = 0;
+      }
+    }
+  } catch (err) {
+    logger.warn(
+      { event: "tenant_setup_catalog_probe_failed", err },
+      "tenant-setup: catalog product probe failed",
     );
   }
 

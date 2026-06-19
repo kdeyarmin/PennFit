@@ -256,7 +256,14 @@ router.post(
     // /shop/me/quick-checkout route applies the same guard; without it a
     // tampered cart could check out stale/legacy prices, out-of-stock
     // items, or SKUs intentionally excluded from /shop/products.
-    const cartValidation = await validateCartItems(stripe, items);
+    // Validate against the SAME account the Checkout session is created on
+    // (connectOptions) so a connected tenant's cart is checked against their
+    // catalog, not the platform's — otherwise every line is price_not_found.
+    const cartValidation = await validateCartItems(
+      stripe,
+      items,
+      connectOptions,
+    );
     if (!cartValidation.ok) {
       req.log?.warn(
         { errors: cartValidation.errors },

@@ -74,6 +74,13 @@ export interface CartValidationResult {
 export async function validateCartItems(
   stripe: Stripe,
   items: CartItem[],
+  // Per-request Stripe options — `{ stripeAccount }` when the tenant has a
+  // connected account, so the cart is validated against the SAME account
+  // the Checkout session is created on. Defaults to `{}` (platform account)
+  // so single-account callers are unchanged. Passing the platform account
+  // here while creating the session on a connected account (or vice-versa)
+  // would reject every line as `price_not_found`.
+  requestOptions: Stripe.RequestOptions = {},
 ): Promise<CartValidationResult> {
   const errors: CartValidationError[] = [];
 
@@ -107,12 +114,16 @@ export async function validateCartItems(
   await Promise.all(
     uniqueItems.map(async (item) => {
       const totalQty = aggregatedQty.get(item.priceId) ?? item.quantity;
-      const itemError = await validateSingleItem(stripe, {
-        ...item,
-        // Pass the aggregated quantity so the stock check uses the real
-        // total across all duplicate lines, not just this one line's qty.
-        quantity: item.mode === "one_time" ? totalQty : item.quantity,
-      });
+      const itemError = await validateSingleItem(
+        stripe,
+        {
+          ...item,
+          // Pass the aggregated quantity so the stock check uses the real
+          // total across all duplicate lines, not just this one line's qty.
+          quantity: item.mode === "one_time" ? totalQty : item.quantity,
+        },
+        requestOptions,
+      );
       if (itemError) errors.push(itemError);
     }),
   );
@@ -123,14 +134,17 @@ export async function validateCartItems(
 async function validateSingleItem(
   stripe: Stripe,
   item: CartItem,
+  requestOptions: Stripe.RequestOptions,
 ): Promise<CartValidationError | null> {
   // Fetch price with product AND product.default_price expanded so we
   // can run the full projectProduct catalog-membership check in one call.
   let price: Stripe.Price;
   try {
-    price = await stripe.prices.retrieve(item.priceId, {
-      expand: ["product", "product.default_price"],
-    });
+    price = await stripe.prices.retrieve(
+      item.priceId,
+      { expand: ["product", "product.default_price"] },
+      requestOptions,
+    );
   } catch {
     return {
       priceId: item.priceId,
@@ -190,7 +204,7 @@ async function validateSingleItem(
   if (item.mode === "one_time") {
     return validateOneTimeItem(item, product, meta);
   } else {
-    return validateSubscriptionItem(stripe, item, product);
+    return validateSubscriptionItem(stripe, item, product, requestOptions);
   }
 }
 
@@ -256,6 +270,7 @@ async function validateSubscriptionItem(
   stripe: Stripe,
   item: CartItem,
   product: Stripe.Product,
+  requestOptions: Stripe.RequestOptions,
 ): Promise<CartValidationError | null> {
   // Full catalog-membership gate: mirror projectProduct(...) from
   // products-meta.ts so products excluded from /shop/products for
@@ -284,12 +299,15 @@ async function validateSubscriptionItem(
   // target stale/internal recurring prices on catalog products.
   let recurringPrices: Stripe.Price[];
   try {
-    const list = await stripe.prices.list({
-      product: product.id,
-      active: true,
-      type: "recurring",
-      limit: 100,
-    });
+    const list = await stripe.prices.list(
+      {
+        product: product.id,
+        active: true,
+        type: "recurring",
+        limit: 100,
+      },
+      requestOptions,
+    );
     recurringPrices = list.data;
   } catch {
     // If we can't confirm the price is the storefront-approved one,

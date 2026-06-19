@@ -137,6 +137,7 @@ import faxSettingsRouter from "./admin/fax-settings.js";
 import phoneSettingsRouter from "./admin/phone-settings.js";
 import emailSettingsRouter from "./admin/email-settings.js";
 import tenantSetupRouter from "./admin/tenant-setup.js";
+import catalogSeedRouter from "./admin/catalog-seed.js";
 import shopBackInStockAdminRouter from "./admin/shop-back-in-stock.js";
 import shopSubsMetricsRouter from "./admin/shop-subscriptions-metrics.js";
 import insuranceLeadsAdminRouter from "./admin/insurance-leads.js";
@@ -700,6 +701,9 @@ router.use(adminSupportRouter);
 // itself. Today: PATCH stock_count metadata on a Stripe Product.
 // requireAdmin gate is on the router itself.
 router.use(shopProductsAdminRouter);
+// POST /admin/shop/catalog/seed — one-click "load starter catalog" into the
+// tenant's own Stripe account (idempotent). Gated by admin.tools.manage.
+router.use(catalogSeedRouter);
 // /admin/storefront-branding/* — a tenant configures their own
 // storefront name / tagline / logo and binds + verifies a custom domain.
 router.use(storefrontBrandingAdminRouter);

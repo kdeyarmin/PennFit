@@ -17,6 +17,7 @@ const EMPTY: TenantSetupSnapshot = {
   fromEmail: null,
   stripeAccountId: null,
   stripeChargesEnabled: false,
+  catalogProductCount: null,
   activeAdminCount: 1,
 };
 
@@ -34,8 +35,22 @@ describe("buildTenantSetupItems", () => {
     expect(byId(items, "voice-number").status).toBe("incomplete");
     expect(byId(items, "email-sender").status).toBe("incomplete");
     expect(byId(items, "payments").status).toBe("incomplete");
-    // catalog is always an action item, never auto-complete.
+    // catalog is an action item until the tenant has products of their own.
     expect(byId(items, "catalog").status).toBe("action");
+  });
+
+  it("completes the catalog item once the tenant has products of their own", () => {
+    const seeded = buildTenantSetupItems({ ...EMPTY, catalogProductCount: 27 });
+    expect(byId(seeded, "catalog").status).toBe("complete");
+    expect(byId(seeded, "catalog").detail).toContain("27 products");
+
+    // A zero count (own account, but empty) stays an action item.
+    const empty = buildTenantSetupItems({ ...EMPTY, catalogProductCount: 0 });
+    expect(byId(empty, "catalog").status).toBe("action");
+
+    // 100+ is rendered with a "+" so a capped probe doesn't read as exactly 100.
+    const big = buildTenantSetupItems({ ...EMPTY, catalogProductCount: 100 });
+    expect(byId(big, "catalog").detail).toContain("100+ products");
   });
 
   it("completes branding when a storefront name is set", () => {
