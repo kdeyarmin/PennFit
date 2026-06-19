@@ -51,6 +51,7 @@ import { registerCartAbandonmentJob } from "./jobs/cart-abandonment-scan.js";
 import { registerFailedEmailDigestJob } from "./jobs/failed-order-emails-digest.js";
 import { registerPacwareReadyToSyncDigestJob } from "./jobs/pacware-ready-to-sync-digest.js";
 import { registerTherapyNightlySyncJob } from "./jobs/therapy-integrations-nightly-sync.js";
+import { registerXpsResolveStagedJob } from "./jobs/xps-resolve-staged.js";
 import { registerPhoneLineTypeBackfillJob } from "./jobs/phone-line-type-backfill.js";
 import { registerEligibilityReverifyBatchJob } from "./jobs/eligibility-reverify-batch.js";
 import { registerAutoSubmitBatchJob } from "./jobs/auto-submit-batch.js";
@@ -659,6 +660,13 @@ async function doStartWorker(): Promise<void> {
     "registerTherapyNightlySyncJob",
     registrationFailures,
     () => registerTherapyNightlySyncJob(boss),
+  );
+  // Auto-resolve XPS orders staged but not yet booked into a shipment.
+  // Queue + worker always register; the recurring cron attaches only when
+  // XPS_RESOLVE_STAGED_CRON_ENABLED=1 (opt-in — it pulls tracking + fires
+  // the patient shipping notification once XPS books the label).
+  await safeRegister("registerXpsResolveStagedJob", registrationFailures, () =>
+    registerXpsResolveStagedJob(boss),
   );
   await safeRegister(
     "registerPhoneLineTypeBackfillJob",

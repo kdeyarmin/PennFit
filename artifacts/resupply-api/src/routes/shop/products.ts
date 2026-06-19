@@ -17,6 +17,7 @@ import {
   getStripeClient,
   readStripeConfigOrNull,
 } from "../../lib/stripe/config";
+import { stripeAccountRequestOptions } from "../../lib/stripe/connect";
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { requestHost } from "../../lib/request-host";
 import { resolveOrgIdByHost } from "../../lib/tenant-branding";
@@ -31,12 +32,17 @@ import {
 } from "../../lib/stripe/products-meta";
 
 interface CacheEntry {
-  keyPrefix: string;
   fetchedAt: number;
   products: ShopProductView[];
 }
 
-let cache: CacheEntry | null = null;
+// Per-account catalog cache (Stripe Connect direct-charges, G6): keyed by
+// `${secretPrefix}:${connectedAccountId ?? "platform"}`. Each connected
+// tenant lists products from THEIR own account, so a single global cache
+// would leak one tenant's catalog into another's storefront. Bounded so a
+// large tenant fan-out can't grow it unbounded.
+const cacheByAccount = new Map<string, CacheEntry>();
+const MAX_CACHED_ACCOUNTS = 50;
 const CACHE_TTL_MS = 60_000;
 
 /**
@@ -53,7 +59,10 @@ const CACHE_TTL_MS = 60_000;
  * (bounded by the same 60s TTL that exists now).
  */
 export function invalidateShopProductsCache(): void {
-  cache = null;
+  // Clear every tenant's entry. Catalog mutations are per-tenant, but
+  // over-invalidation is harmless (just a re-fetch on the next request)
+  // and clearing all keeps the 6 admin-mutation callsites argument-free.
+  cacheByAccount.clear();
 }
 
 // How long we'll keep serving the in-process catalog as "stale" when
@@ -64,29 +73,29 @@ export function invalidateShopProductsCache(): void {
 const STALE_GRACE_MS = 15 * 60_000;
 
 /**
- * Retrieve cached product views when the cached entry matches the provided key prefix and is still within the freshness window.
+ * Retrieve cached product views for a per-account cache key when the entry is still within the freshness window.
  *
- * @param keyPrefix - Prefix derived from the Stripe secret key used to scope the cache
+ * @param cacheKey - `${secretPrefix}:${connectedAccountId ?? "platform"}` scoping the cache to a tenant's account
  * @returns The cached `ShopProductView[]` when available and fresh, `null` otherwise
  */
-function cacheFresh(keyPrefix: string): ShopProductView[] | null {
-  if (!cache) return null;
-  if (cache.keyPrefix !== keyPrefix) return null;
-  if (Date.now() - cache.fetchedAt > CACHE_TTL_MS) return null;
-  return cache.products;
+function cacheFresh(cacheKey: string): ShopProductView[] | null {
+  const entry = cacheByAccount.get(cacheKey);
+  if (!entry) return null;
+  if (Date.now() - entry.fetchedAt > CACHE_TTL_MS) return null;
+  return entry.products;
 }
 
 /**
- * Retrieve cached product views that are still usable within the stale-grace window for a specific cache key prefix.
+ * Retrieve cached product views that are still usable within the stale-grace window for a per-account cache key.
  *
- * @param keyPrefix - The cache key prefix (derived from the Stripe secret key) used to scope the cached snapshot
- * @returns The cached array of `ShopProductView` when a cache exists for `keyPrefix` and its age is less than or equal to `CACHE_TTL_MS + STALE_GRACE_MS`, `null` otherwise
+ * @param cacheKey - `${secretPrefix}:${connectedAccountId ?? "platform"}` scoping the cached snapshot to a tenant's account
+ * @returns The cached array of `ShopProductView` when a cache exists for `cacheKey` and its age is ≤ `CACHE_TTL_MS + STALE_GRACE_MS`, `null` otherwise
  */
-function cacheStaleButUsable(keyPrefix: string): ShopProductView[] | null {
-  if (!cache) return null;
-  if (cache.keyPrefix !== keyPrefix) return null;
-  if (Date.now() - cache.fetchedAt > CACHE_TTL_MS + STALE_GRACE_MS) return null;
-  return cache.products;
+function cacheStaleButUsable(cacheKey: string): ShopProductView[] | null {
+  const entry = cacheByAccount.get(cacheKey);
+  if (!entry) return null;
+  if (Date.now() - entry.fetchedAt > CACHE_TTL_MS + STALE_GRACE_MS) return null;
+  return entry.products;
 }
 
 const router: IRouter = Router();
@@ -102,17 +111,29 @@ router.get("/shop/products", async (req, res) => {
   // unintentionally opened. See lib/stripe/preview-catalog.ts.
   let previewMode = false;
   let products: ShopProductView[];
+  // Tenant resolved (host-based) only when Stripe is configured; reused for
+  // both the connected-account catalog read and the purchasing gate below.
+  let orgId: string | undefined;
 
   if (!config) {
     previewMode = true;
     products = getPreviewCatalog();
   } else {
-    // Use just the first 8 chars of the secret as the cache key prefix
-    // so we invalidate on key rotation without writing a key (or a
-    // hash of one) into a long-lived in-process variable.
-    const keyPrefix = config.secretKey.slice(0, 8);
+    // Resolve the tenant for this public storefront from the request host
+    // (no auth middleware populates req.orgId here), then route the catalog
+    // read to that tenant's connected Stripe account when set — the SAME
+    // account checkout creates the session on. NULL → {} → platform account.
+    orgId =
+      req.orgId ?? (await resolveOrgIdByHost(requestHost(req))) ?? undefined;
+    const accountOptions = await stripeAccountRequestOptions(orgId);
+    const accountKey = accountOptions.stripeAccount ?? "platform";
 
-    const cached = cacheFresh(keyPrefix);
+    // Cache key scopes by secret prefix (so a test→live rotation
+    // invalidates) AND by connected account (so one tenant's catalog is
+    // never served on another tenant's storefront).
+    const cacheKey = `${config.secretKey.slice(0, 8)}:${accountKey}`;
+
+    const cached = cacheFresh(cacheKey);
     if (cached) {
       products = cached;
     } else {
@@ -128,11 +149,14 @@ router.get("/shop/products", async (req, res) => {
       // chance of crossing the TTL+grace boundary mid-request.
       let stale: ShopProductView[] | null = null;
       try {
-        list = await stripe.products.list({
-          active: true,
-          limit: 100,
-          expand: ["data.default_price"],
-        });
+        list = await stripe.products.list(
+          {
+            active: true,
+            limit: 100,
+            expand: ["data.default_price"],
+          },
+          accountOptions,
+        );
       } catch (err) {
         // Stripe hiccup, network blip, rate limit, or invalid key.
         // Previously the throw escaped to the error handler and the
@@ -145,15 +169,16 @@ router.get("/shop/products", async (req, res) => {
         //   2. Otherwise return 503 + Retry-After so the SPA can show
         //      the same retry UX with correct HTTP semantics for
         //      load balancers and uptime monitors.
-        stale = cacheStaleButUsable(keyPrefix);
+        stale = cacheStaleButUsable(cacheKey);
+        const staleEntry = cacheByAccount.get(cacheKey);
         req.log?.warn(
           {
             event: "shop_products_stripe_list_failed",
             ...stripeErrLogFields(err),
             servedStale: stale !== null,
             staleAgeSeconds:
-              cache && stale
-                ? Math.round((Date.now() - cache.fetchedAt) / 1000)
+              staleEntry && stale
+                ? Math.round((Date.now() - staleEntry.fetchedAt) / 1000)
                 : null,
           },
           "stripe products.list failed",
@@ -185,11 +210,14 @@ router.get("/shop/products", async (req, res) => {
         // pagination caps at 100; we don't expect to exceed that until
         // the catalog is much larger than today (ten-ish active SKUs).
         try {
-          const priceList = await stripe.prices.list({
-            active: true,
-            type: "recurring",
-            limit: 100,
-          });
+          const priceList = await stripe.prices.list(
+            {
+              active: true,
+              type: "recurring",
+              limit: 100,
+            },
+            accountOptions,
+          );
           const cheapestByProduct = new Map<
             string,
             ReturnType<typeof projectRecurringPrice>
@@ -234,8 +262,13 @@ router.get("/shop/products", async (req, res) => {
 
         // Only write the cache on a successful fresh fetch. The stale
         // path below intentionally skips this so a sustained outage
-        // can't keep refreshing the stale timestamp forever.
-        cache = { keyPrefix, fetchedAt: Date.now(), products };
+        // can't keep refreshing the stale timestamp forever. Prune the
+        // oldest entry first if we'd exceed the per-account bound.
+        if (cacheByAccount.size >= MAX_CACHED_ACCOUNTS) {
+          const oldest = cacheByAccount.keys().next().value;
+          if (oldest) cacheByAccount.delete(oldest);
+        }
+        cacheByAccount.set(cacheKey, { fetchedAt: Date.now(), products });
       } else {
         // Stale path: `stale` was assigned in the catch branch
         // (otherwise we'd have already returned 503). Serve it as-is
@@ -288,16 +321,12 @@ router.get("/shop/products", async (req, res) => {
   // enforce the same gate server-side. The `config !== null &&`
   // short-circuit skips the flag lookup in preview mode, where
   // purchasing is off regardless of the flag.
-  // Public route — no auth middleware populates req.orgId, so resolve the
-  // tenant from the request host so a tenant's storefront.checkout toggle
-  // gates THIS storefront. The `config !== null &&` short-circuit still
-  // skips both the host resolve and the flag lookup in preview mode.
+  // `orgId` was resolved above (host-based) when Stripe is configured; the
+  // tenant's storefront.checkout toggle gates THIS storefront. In preview
+  // mode orgId stays undefined and the `config !== null &&` short-circuit
+  // skips the flag lookup, so purchasing is off regardless.
   const purchasingEnabled =
-    config !== null &&
-    (await isFeatureEnabled(
-      "storefront.checkout",
-      req.orgId ?? (await resolveOrgIdByHost(requestHost(req))) ?? undefined,
-    ));
+    config !== null && (await isFeatureEnabled("storefront.checkout", orgId));
 
   res.json({
     previewMode,

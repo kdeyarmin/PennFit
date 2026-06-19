@@ -19,6 +19,7 @@ import {
   LifeBuoy,
   Store,
   Printer,
+  PhoneCall,
   Inbox,
   MessageSquareText,
   ListChecks,
@@ -582,6 +583,14 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             icon: ShoppingBag,
             matchPrefix: "/admin/pennpaps/orders",
             hint: "Storefront orders — fulfill, refund, look up",
+          },
+          {
+            href: "/admin/shipping",
+            label: "Shipping labels",
+            icon: TruckIcon,
+            matchPrefix: "/admin/shipping",
+            requiredPermission: "returns.manage",
+            hint: "Print XPS shipping labels with the patient address merged in; tracking auto-fills",
           },
           {
             href: "/admin/shop/subscriptions",
@@ -1170,6 +1179,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         hint: "Practice settings, closures, team accounts, and your own security",
         tabs: [
           {
+            href: "/admin/setup",
+            label: "Set up your workspace",
+            icon: ListChecks,
+            matchPrefix: "/admin/setup",
+            hint: "Guided checklist: brand, domain, phone/SMS/fax numbers, email sender, and payments",
+          },
+          {
             href: "/admin/settings",
             label: "Settings",
             icon: Settings,
@@ -1191,11 +1207,25 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             hint: "Your storefront name, tagline, and logo — plus wiring up your own custom domain",
           },
           {
+            href: "/admin/phone-settings",
+            label: "Phone & SMS",
+            icon: PhoneCall,
+            matchPrefix: "/admin/phone-settings",
+            hint: "Your own voice + SMS numbers for the voice agent and resupply texting",
+          },
+          {
             href: "/admin/fax-settings",
             label: "Fax number",
             icon: Printer,
             matchPrefix: "/admin/fax-settings",
             hint: "Your practice's own fax number for inbound and outbound faxes",
+          },
+          {
+            href: "/admin/email-settings",
+            label: "Email From address",
+            icon: Mail,
+            matchPrefix: "/admin/email-settings",
+            hint: "Send patient email from your own address (with SendGrid domain-auth status)",
           },
           {
             href: "/admin/closures",

@@ -371,6 +371,11 @@ const AdminPacwarePage = lazyWithRetry(() =>
     default: m.AdminPacwarePage,
   })),
 );
+const AdminShippingPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-shipping").then((m) => ({
+    default: m.AdminShippingPage,
+  })),
+);
 const AdminSystemConfigurationPage = lazyWithRetry(() =>
   import("@/pages/admin/admin-system-configuration").then((m) => ({
     default: m.AdminSystemConfigurationPage,
@@ -609,6 +614,21 @@ const AdminStorefrontBrandingPage = lazyWithRetry(() =>
 const AdminFaxSettingsPage = lazyWithRetry(() =>
   import("@/pages/admin/admin-fax-settings").then((m) => ({
     default: m.AdminFaxSettingsPage,
+  })),
+);
+const AdminPhoneSettingsPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-phone-settings").then((m) => ({
+    default: m.AdminPhoneSettingsPage,
+  })),
+);
+const AdminEmailSettingsPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-email-settings").then((m) => ({
+    default: m.AdminEmailSettingsPage,
+  })),
+);
+const AdminSetupChecklistPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-setup-checklist").then((m) => ({
+    default: m.AdminSetupChecklistPage,
   })),
 );
 const AdminBillingConfigClearinghousePage = lazyWithRetry(() =>
@@ -886,6 +906,15 @@ function AdminConsole() {
               path="/admin/fax-settings"
               component={AdminFaxSettingsPage}
             />
+            <Route
+              path="/admin/phone-settings"
+              component={AdminPhoneSettingsPage}
+            />
+            <Route
+              path="/admin/email-settings"
+              component={AdminEmailSettingsPage}
+            />
+            <Route path="/admin/setup" component={AdminSetupChecklistPage} />
             <Route
               path="/admin/billing/config/clearinghouse"
               component={AdminBillingConfigClearinghousePage}
@@ -1178,6 +1207,7 @@ function AdminConsole() {
               component={AdminIntegrationsPage}
             />
             <Route path="/admin/pacware" component={AdminPacwarePage} />
+            <Route path="/admin/shipping" component={AdminShippingPage} />
             <Route
               path="/admin/system/configuration"
               component={AdminSystemConfigurationPage}

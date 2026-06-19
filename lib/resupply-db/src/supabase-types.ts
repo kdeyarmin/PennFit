@@ -373,6 +373,34 @@ export interface Database {
       };
       // the per-transaction cost snapshots + every owner-facing margin
       // surface (computeMargin / aggregateMargin in resupply-domain).
+      product_ship_specs: {
+        Row: {
+          org_id: string | null;
+          product_id: string;
+          weight_oz: number;
+          length_in: number | null;
+          width_in: number | null;
+          height_in: number | null;
+          label: string | null;
+          updated_at: string;
+          created_at: string;
+        };
+        Insert: {
+          org_id?: string;
+          product_id: string;
+          weight_oz: number;
+          length_in?: number | null;
+          width_in?: number | null;
+          height_in?: number | null;
+          label?: string | null;
+          updated_at?: string;
+          created_at?: string;
+        };
+        Update: Partial<
+          Database["resupply"]["Tables"]["product_ship_specs"]["Insert"]
+        >;
+        Relationships: [];
+      };
       product_costs: {
         Row: {
           org_id: string | null;
@@ -5074,6 +5102,13 @@ export interface Database {
           source: string;
           payment_method: string | null;
           counter_csr_email: string | null;
+          // Migration 0405: XPS Ship shipping-label integration.
+          // xps_book_number is the booked shipment lookup key;
+          // xps_label_status tracks 'staged' | 'booked' | 'voided';
+          // shipping_service_code is the chosen carrier service.
+          xps_book_number: string | null;
+          xps_label_status: "staged" | "booked" | "voided" | null;
+          shipping_service_code: string | null;
         };
         Insert: Partial<Database["resupply"]["Tables"]["shop_orders"]["Row"]>;
         Update: Partial<Database["resupply"]["Tables"]["shop_orders"]["Row"]>;

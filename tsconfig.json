@@ -22,6 +22,7 @@
     { "path": "./lib/resupply-integrations-pacware" },
     { "path": "./lib/resupply-integrations-airview" },
     { "path": "./lib/resupply-integrations-care-orchestrator" },
-    { "path": "./lib/resupply-integrations-react-health" }
+    { "path": "./lib/resupply-integrations-react-health" },
+    { "path": "./lib/resupply-integrations-xps-ship" }
   ]
 }

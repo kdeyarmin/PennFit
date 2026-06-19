@@ -61,6 +61,16 @@ vi.mock("../../lib/stripe/config", () => ({
   }),
 }));
 
+// Stripe Connect (G6): admin catalog calls target the tenant's connected
+// account. Default → platform ({}); a forwarding test overrides it.
+const stripeAccountRequestOptionsMock = vi.fn(
+  async (..._a: unknown[]) => ({}) as Record<string, unknown>,
+);
+vi.mock("../../lib/stripe/connect", () => ({
+  stripeAccountRequestOptions: (...a: unknown[]) =>
+    stripeAccountRequestOptionsMock(...a),
+}));
+
 let stripeConfigured = true;
 function readStripeConfig(): { secretKey: string } | null {
   return stripeConfigured ? { secretKey: "sk_test_x" } : null;
@@ -217,6 +227,8 @@ beforeEach(() => {
   stripePriceUpdateMock.mockReset();
   stripePriceListMock.mockReset();
   invalidateCacheMock.mockReset();
+  stripeAccountRequestOptionsMock.mockReset();
+  stripeAccountRequestOptionsMock.mockResolvedValue({});
   // Default: archive succeeds, no recurring prices to rotate. The
   // price-PATCH tests that exercise rotation override prices.list.
   stripePriceUpdateMock.mockResolvedValue({});
@@ -526,9 +538,11 @@ describe("PATCH /admin/shop/products/:productId/price", () => {
     );
     // Replaced price archived AFTER the repoint (Stripe refuses to
     // archive a product's current default_price).
-    expect(stripePriceUpdateMock).toHaveBeenCalledWith("price_old", {
-      active: false,
-    });
+    expect(stripePriceUpdateMock).toHaveBeenCalledWith(
+      "price_old",
+      { active: false },
+      {},
+    );
     // The public catalog cache was dropped, so the storefront stops
     // serving the replaced price id without waiting out the 60s TTL.
     expect(invalidateCacheMock).toHaveBeenCalledTimes(1);
@@ -582,12 +596,16 @@ describe("PATCH /admin/shop/products/:productId/price", () => {
       recurring: { interval: "month", interval_count: 3 },
     });
     // Both the old default price AND the old recurring price retired.
-    expect(stripePriceUpdateMock).toHaveBeenCalledWith("price_old", {
-      active: false,
-    });
-    expect(stripePriceUpdateMock).toHaveBeenCalledWith("price_rec_old", {
-      active: false,
-    });
+    expect(stripePriceUpdateMock).toHaveBeenCalledWith(
+      "price_old",
+      { active: false },
+      {},
+    );
+    expect(stripePriceUpdateMock).toHaveBeenCalledWith(
+      "price_rec_old",
+      { active: false },
+      {},
+    );
     // Cache dropped twice: once when default_price repointed, once
     // after the recurring rotation (a GET between the two could have
     // re-cached the old recurring price).
@@ -1149,6 +1167,7 @@ describe("PATCH /admin/shop/products/:productId/details", () => {
         description: "Updated description text.",
         metadata: { tagline: "New tagline", manufacturer: "" },
       }),
+      {},
     );
     // Untouched fields must not appear in the update payload.
     const payload = stripeUpdateMock.mock.calls[0]![1] as Record<
@@ -1178,6 +1197,7 @@ describe("PATCH /admin/shop/products/:productId/details", () => {
     expect(stripeUpdateMock).toHaveBeenLastCalledWith(
       "prod_x",
       expect.objectContaining({ images: ["https://cdn.example.com/p.webp"] }),
+      {},
     );
 
     const clear = await request(makeApp())
@@ -1187,6 +1207,7 @@ describe("PATCH /admin/shop/products/:productId/details", () => {
     expect(stripeUpdateMock).toHaveBeenLastCalledWith(
       "prod_x",
       expect.objectContaining({ images: [] }),
+      {},
     );
   });
 });
@@ -1258,7 +1279,11 @@ describe("POST /admin/shop/products/:productId/archive", () => {
     );
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ ok: true, productId: "prod_x" });
-    expect(stripeUpdateMock).toHaveBeenCalledWith("prod_x", { active: false });
+    expect(stripeUpdateMock).toHaveBeenCalledWith(
+      "prod_x",
+      { active: false },
+      {},
+    );
     expect(invalidateCacheMock).toHaveBeenCalled();
   });
 
@@ -1359,7 +1384,10 @@ describe("GET /admin/shop/products/archived", () => {
         updatedAt: 1760000000,
       },
     ]);
-    expect(stripeListMock).toHaveBeenCalledWith({ active: false, limit: 100 });
+    expect(stripeListMock).toHaveBeenCalledWith(
+      { active: false, limit: 100 },
+      {},
+    );
   });
 });
 
@@ -1460,7 +1488,89 @@ describe("POST /admin/shop/products/:productId/restore", () => {
     );
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ ok: true, productId: "prod_x" });
-    expect(stripeUpdateMock).toHaveBeenCalledWith("prod_x", { active: true });
+    expect(stripeUpdateMock).toHaveBeenCalledWith(
+      "prod_x",
+      { active: true },
+      {},
+    );
     expect(invalidateCacheMock).toHaveBeenCalled();
+  });
+});
+
+describe("GET /admin/shop/products (session-scoped)", () => {
+  it("401s when unauthenticated", async () => {
+    const res = await request(makeApp()).get(
+      "/resupply-api/admin/shop/products",
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it("lists the catalog from the admin's own connected account", async () => {
+    stubVerifiedAdmin();
+    stripeAccountRequestOptionsMock.mockResolvedValue({
+      stripeAccount: "acct_tenant",
+    });
+    stripeListMock.mockResolvedValue({
+      data: [{ id: "prod_1" }, { id: "prod_2" }],
+    });
+    const res = await request(makeApp()).get(
+      "/resupply-api/admin/shop/products",
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.previewMode).toBe(false);
+    expect(
+      (res.body.products as Array<{ id: string }>).map((p) => p.id),
+    ).toEqual(["prod_1", "prod_2"]);
+    // Read scoped to the tenant's OWN connected account (session-resolved),
+    // NOT the request host.
+    expect(stripeListMock).toHaveBeenCalledWith(
+      { active: true, limit: 100, expand: ["data.default_price"] },
+      { stripeAccount: "acct_tenant" },
+    );
+  });
+
+  it("returns preview fixtures when Stripe is not configured", async () => {
+    stubVerifiedAdmin();
+    stripeConfigured = false;
+    const res = await request(makeApp()).get(
+      "/resupply-api/admin/shop/products",
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.previewMode).toBe(true);
+  });
+});
+
+describe("admin catalog mutations — connected-account routing", () => {
+  it("threads the tenant's connected account into the stock PATCH", async () => {
+    stubVerifiedAdmin();
+    stripeAccountRequestOptionsMock.mockResolvedValue({
+      stripeAccount: "acct_tenant",
+    });
+    stripeRetrieveMock.mockResolvedValue({
+      id: "prod_x",
+      name: "SKU",
+      metadata: {},
+    });
+    stripeUpdateMock.mockResolvedValue({
+      id: "prod_x",
+      name: "SKU",
+      metadata: {},
+    });
+    const res = await request(makeApp())
+      .patch("/resupply-api/admin/shop/products/prod_x/stock")
+      .send({ stockCount: 5 });
+    expect(res.status).toBe(200);
+    // BOTH the precheck retrieve and the metadata update hit the tenant's
+    // connected account — otherwise their own product 404s.
+    expect(stripeRetrieveMock).toHaveBeenCalledWith(
+      "prod_x",
+      { expand: ["default_price"] },
+      { stripeAccount: "acct_tenant" },
+    );
+    expect(stripeUpdateMock).toHaveBeenCalledWith(
+      "prod_x",
+      expect.objectContaining({ metadata: { stock_count: "5" } }),
+      { stripeAccount: "acct_tenant" },
+    );
   });
 });

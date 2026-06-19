@@ -28,6 +28,7 @@ import conversationsSearchRouter from "./admin/conversations-search.js";
 import conversationDraftReplyRouter from "./admin/conversation-draft-reply.js";
 import clickToDialRouter from "./admin/click-to-dial.js";
 import shopOrdersAdminRouter from "./admin/shop-orders.js";
+import xpsShippingAdminRouter from "./admin/xps-shipping.js";
 import counterOrdersRouter from "./admin/counter-orders.js";
 import csrOrderRequestsAdminRouter from "./admin/csr-order-requests.js";
 import shopProductsAdminRouter from "./admin/shop-products.js";
@@ -134,6 +135,10 @@ import patientIntegrationsRouter from "./admin/patient-integrations.js";
 import smartTriggersRouter from "./admin/smart-triggers.js";
 import physicianFaxOutreachRouter from "./admin/physician-fax-outreach.js";
 import faxSettingsRouter from "./admin/fax-settings.js";
+import phoneSettingsRouter from "./admin/phone-settings.js";
+import emailSettingsRouter from "./admin/email-settings.js";
+import tenantSetupRouter from "./admin/tenant-setup.js";
+import catalogSeedRouter from "./admin/catalog-seed.js";
 import shopBackInStockAdminRouter from "./admin/shop-back-in-stock.js";
 import shopSubsMetricsRouter from "./admin/shop-subscriptions-metrics.js";
 import insuranceLeadsAdminRouter from "./admin/insurance-leads.js";
@@ -367,6 +372,15 @@ router.use(physicianFaxOutreachRouter);
 // /admin/organization/fax-settings — view / auto-provision (Telnyx) /
 // manually set a tenant's own fax number (migration 0368).
 router.use(faxSettingsRouter);
+// /admin/organization/phone-settings — view / auto-provision (Twilio) /
+// manually set a tenant's own voice + SMS numbers (migration 0364).
+router.use(phoneSettingsRouter);
+// /admin/organization/email-settings — view / set a tenant's own From
+// identity (migration 0360) + live SendGrid domain-auth status.
+router.use(emailSettingsRouter);
+// /admin/organization/setup-checklist — per-tenant onboarding checklist
+// (branding, domain, numbers, sender, payments, team, catalog).
+router.use(tenantSetupRouter);
 // /admin/(patients/:id)/prescription-requests — physician-faxable
 // pre-populated prescriptions. Telnyx dispatch, signed-PDF return,
 // CSR-stamped lifecycle. Renders via lib/prescription-request-pdf.ts.
@@ -692,6 +706,9 @@ router.use(adminSupportRouter);
 // itself. Today: PATCH stock_count metadata on a Stripe Product.
 // requireAdmin gate is on the router itself.
 router.use(shopProductsAdminRouter);
+// POST /admin/shop/catalog/seed — one-click "load starter catalog" into the
+// tenant's own Stripe account (idempotent). Gated by admin.tools.manage.
+router.use(catalogSeedRouter);
 // /admin/storefront-branding/* — a tenant configures their own
 // storefront name / tagline / logo and binds + verifies a custom domain.
 router.use(storefrontBrandingAdminRouter);
@@ -699,6 +716,11 @@ router.use(storefrontBrandingAdminRouter);
 // (tracking entry, mark-delivered, address override, refund issuance).
 // requireAdmin gate is on the router itself.
 router.use(shopOrdersAdminRouter);
+// /admin/shipping/xps/* + /admin/shop/orders/:orderId/shipping/* — XPS
+// Ship shipping-label integration: rate-shop, merge the patient address
+// onto a label, book + print it, and auto-fill tracking. requirePermission
+// gate is on each route.
+router.use(xpsShippingAdminRouter);
 // /admin/shop/counter-orders — Front Desk walk-in ordering. A CSR rings
 // up a cash or bill-to-insurance order for a walk-in customer without
 // Stripe Hosted Checkout. requirePermission("orders.create") gate is on

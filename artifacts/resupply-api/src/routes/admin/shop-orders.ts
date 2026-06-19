@@ -272,7 +272,7 @@ async function loadOrder(
  * Errors NEVER throw — the admin route already 200'd the UPDATE; we
  * must not fail the response because SendGrid is misconfigured.
  */
-async function sendShippingNotificationIfNew(args: {
+export async function sendShippingNotificationIfNew(args: {
   orgId: string;
   orderId: string;
   log:
