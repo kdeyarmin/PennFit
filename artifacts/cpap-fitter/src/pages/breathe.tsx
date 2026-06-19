@@ -1875,9 +1875,9 @@ function LiveConsole() {
           </span>
           <h2 className="bx-h2">This is the console — not a mockup</h2>
           <p className="bx-lede">
-            Real screens from the live demo, running on sample data — the same
-            command center your team works in every day. Start the free demo and
-            click around it yourself.
+            Watch the short tour, or click around the live demo yourself — the
+            same command center your team works in every day, on sample data.
+            Real screens below.
           </p>
         </div>
 
@@ -1896,18 +1896,26 @@ function LiveConsole() {
                 <span className="dot" /> Live
               </span>
             </div>
-            <img
+            {/* Click-to-play product tour. preload="none" so the ~4.5MB clip
+                only loads when a visitor chooses to watch it; the home
+                screenshot stands in as the poster until then. */}
+            <video
               className="bx-shot-img"
-              src="/breathe/screens/console-home.jpg"
-              alt="Breathe admin home dashboard: live counters and today's worklist"
-              loading="lazy"
+              src="/breathe/screens/console-tour.webm"
+              poster="/breathe/screens/console-home.jpg"
+              controls
+              loop
+              muted
+              playsInline
+              preload="none"
+              aria-label="Product tour — a walkthrough of the Breathe admin console: resupply, therapy fleet, denials, inbox and orders"
             />
           </div>
           <div className="bx-app-glow" aria-hidden="true" />
         </div>
         <p className="bx-app-caption">
-          Home — live counters and today&apos;s worklist across every queue.
-          Real screen from the demo, on sample data.
+          A ~40-second tour of the live console — resupply, therapy fleet,
+          denials, the shared inbox, and orders. Real screens, sample data.
         </p>
 
         <div className="bx-shotgrid">

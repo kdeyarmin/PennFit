@@ -83,12 +83,14 @@ in response. Source pages live in
 ## Changes shipped in this PR
 
 - **Show the real product on the home page** — a new `LiveConsole` section on
-  `/breathe` renders **real captured screenshots** of the live `/admin?demo=1`
-  console (home dashboard, patient roster, omnichannel inbox, AI denials
-  worklist, orders), each in a browser frame with a caption. Captured with
-  Playwright against the demo sandbox; assets in
-  `public/breathe/screens/`. (The illustrative `ProductShowcase` mockup still
-  serves the deeper `/breathe/product` tour.)
+  `/breathe` leads with a **~40-second product-tour video** of the live
+  `/admin?demo=1` console (click-to-play, `preload="none"`, the home dashboard
+  as its poster) and a gallery of **six real captured screenshots** —
+  resupply opportunities, therapy fleet, AI denials worklist, omnichannel
+  inbox, patient roster, and orders — each in a browser frame with a caption.
+  Video + screens were recorded with Playwright against the demo sandbox;
+  assets in `public/breathe/screens/`. (The illustrative `ProductShowcase`
+  mockup still serves the deeper `/breathe/product` tour.)
 - **Stat credibility** — provenance note under the hero stat band on both
   `/breathe` and `/breathe/features`, linking to the ROI methodology.
 - **"Talk to us" path** — new `ContactGateModal` (+ `ContactEmailForm`,
