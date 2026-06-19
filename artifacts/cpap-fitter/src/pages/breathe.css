@@ -162,6 +162,14 @@
   box-sizing: border-box;
 }
 
+/* Branded text selection — a luminous cyan wash instead of the OS default,
+   so even highlighting copy stays on-aesthetic. */
+.breathe-page ::selection {
+  background: rgba(84, 200, 255, 0.3);
+  color: #ffffff;
+  text-shadow: none;
+}
+
 .bx-shell {
   width: 100%;
   max-width: var(--bx-maxw);
@@ -403,6 +411,20 @@
   transform: translateY(-2px);
   box-shadow: 0 16px 40px -8px rgba(246, 167, 34, 0.6);
 }
+/* Tactile press — the button settles back down and compresses a hair on
+   click, so every CTA feels physical rather than static. */
+.bx-btn:active {
+  transform: translateY(0) scale(0.985);
+}
+/* The trailing arrow glides forward on hover — a small directional cue that
+   reinforces "this moves you onward". The icon already ships in the markup,
+   so this is pure motion polish (and is killed under reduced-motion). */
+.bx-btn svg {
+  transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.bx-btn:hover svg {
+  transform: translateX(3px);
+}
 
 /* Eyebrow label */
 .bx-eyebrow {
@@ -450,6 +472,9 @@
   font-weight: 600;
   letter-spacing: -0.02em;
   line-height: 1.05;
+  /* Balance the big Fraunces headlines so a multi-line title breaks into
+     even raglines instead of leaving a lonely orphan word on the last row. */
+  text-wrap: balance;
   margin: 18px 0 0;
   /* room for descenders — -webkit-background-clip: text trims them on tight line-heights */
   padding-bottom: 0.1em;
@@ -475,6 +500,7 @@
   font-size: 18px;
   line-height: 1.62;
   color: var(--bx-text-dim);
+  text-wrap: pretty;
   margin-top: 20px;
 }
 
@@ -502,6 +528,7 @@
   font-weight: 560;
   letter-spacing: -0.022em;
   line-height: 0.98;
+  text-wrap: balance;
   margin: 22px 0 0;
 }
 .bx-h1 .grad-em,
@@ -526,6 +553,7 @@
   font-size: 19px;
   line-height: 1.62;
   color: var(--bx-text-dim);
+  text-wrap: pretty;
   margin: 26px 0 0;
   max-width: 552px;
 }
@@ -579,12 +607,14 @@
   font-weight: 560;
   letter-spacing: -0.02em;
   line-height: 1.02;
+  text-wrap: balance;
   margin: 20px 0 0;
 }
 .bx-pagehead-sub {
   font-size: 18px;
   line-height: 1.62;
   color: var(--bx-text-dim);
+  text-wrap: pretty;
   margin: 22px 0 0;
   max-width: 620px;
 }
@@ -3858,6 +3888,12 @@
   transition:
     opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1),
     transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+}
+/* Promote to its own layer only WHILE it still has to animate in. Leaving
+   `will-change` on every revealed element permanently pins a compositor
+   layer per section for the life of the page; dropping it once `.in` lands
+   hands that memory back to the browser. */
+.bx-reveal:not(.in) {
   will-change: opacity, transform;
 }
 .bx-reveal.in {
