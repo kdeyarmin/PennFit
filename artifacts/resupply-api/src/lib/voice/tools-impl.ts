@@ -1233,6 +1233,20 @@ function escapeHtml(s: string): string {
     .replace(/'/g, "&#39;");
 }
 
+/** Sanitize a model/caller-supplied value for safe use in an email Subject
+ *  header: replace CR/LF and other control characters (which would trip
+ *  SendGrid's header-injection guard and silently drop the send) with spaces,
+ *  squeeze runs of spaces, and cap the length. */
+function sanitizeEmailSubjectValue(s: string): string {
+  const stripped = Array.from(s)
+    .map((ch) => {
+      const code = ch.charCodeAt(0);
+      return code < 0x20 || code === 0x7f ? " " : ch;
+    })
+    .join("");
+  return stripped.replace(/ +/g, " ").trim().slice(0, 120);
+}
+
 /** The platform host for sign-up / info links. Overridable for preview envs;
  *  defaults to the canonical platform domain. */
 function platformBaseUrl(): string {
@@ -1365,7 +1379,8 @@ function buildSalesLeadNotificationEmail(
   args: ToolArgsByName["capture_sales_lead"],
   leadId: string | null,
 ): { subject: string; text: string; html: string } {
-  const company = args.company_name?.trim() || "a prospect";
+  const company =
+    sanitizeEmailSubjectValue(args.company_name ?? "") || "a prospect";
   const subject = `New CareMetric Breathe sales lead: ${company}`;
   const rows: Array<[string, string]> = [
     ["Contact", args.contact_name ?? "(not given)"],

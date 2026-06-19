@@ -346,7 +346,8 @@ export interface SendInfoEmailResult {
   ok: boolean;
   /** Whether the email actually went out (false when email is unconfigured). */
   sent: boolean;
-  /** Non-PHI hint the model can phrase: "send_limit", "email_unconfigured". */
+  /** Non-PHI hint the model can phrase: "send_limit", "email_unconfigured",
+   *  or "send_failed". */
   reason?: string;
 }
 
