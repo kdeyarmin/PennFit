@@ -43,7 +43,10 @@ import {
 import { logger } from "../../lib/logger.js";
 import { invalidateTenantTelecomCache } from "../../lib/messaging/tenant-telecom.js";
 import { readVoicePublicBaseUrlOrNull } from "../../lib/voice/voice-config.js";
-import { adminRateLimit } from "../../middlewares/admin-rate-limit.js";
+import {
+  adminRateLimit,
+  adminReadRateLimiter,
+} from "../../middlewares/admin-rate-limit.js";
 import { requirePermission } from "../../middlewares/requireAdmin.js";
 
 const router: IRouter = Router();
@@ -151,6 +154,7 @@ function viewOf(row: OrgPhoneRow | null) {
 // ---------------------------------------------------------------------------
 router.get(
   "/admin/organization/phone-settings",
+  adminReadRateLimiter,
   requirePermission("admin.tools.manage"),
   async (req, res) => {
     const orgId = req.orgId;

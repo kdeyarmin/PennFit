@@ -20,6 +20,7 @@ import { Router, type IRouter } from "express";
 import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger.js";
+import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit.js";
 import { requireAdmin } from "../../middlewares/requireAdmin.js";
 
 const router: IRouter = Router();
@@ -276,6 +277,7 @@ async function loadSnapshot(orgId: string): Promise<TenantSetupSnapshot> {
 
 router.get(
   "/admin/organization/setup-checklist",
+  adminReadRateLimiter,
   requireAdmin,
   async (req, res) => {
     const orgId = req.orgId;

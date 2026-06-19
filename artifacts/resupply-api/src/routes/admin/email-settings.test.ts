@@ -29,16 +29,17 @@ vi.mock("../../middlewares/requireAdmin", () =>
   makeRequireAdminMock(mockAdmin),
 );
 
-vi.mock("../../middlewares/admin-rate-limit", () => ({
-  adminRateLimit:
-    () =>
-    (
-      _req: express.Request,
-      _res: express.Response,
-      next: express.NextFunction,
-    ) =>
-      next(),
-}));
+vi.mock("../../middlewares/admin-rate-limit", () => {
+  const passthrough = (
+    _req: express.Request,
+    _res: express.Response,
+    next: express.NextFunction,
+  ) => next();
+  return {
+    adminRateLimit: () => passthrough,
+    adminReadRateLimiter: passthrough,
+  };
+});
 
 vi.mock("@workspace/resupply-db", () => ({
   resolveSeedOrgId: async () => "org",

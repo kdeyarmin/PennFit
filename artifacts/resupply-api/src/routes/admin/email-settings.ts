@@ -34,7 +34,10 @@ import {
 import { logger } from "../../lib/logger.js";
 import { invalidateTenantSenderCache } from "../../lib/email/tenant-sender.js";
 import { checkSendgridDomainAuth } from "../../lib/email/sendgrid-domain-auth.js";
-import { adminRateLimit } from "../../middlewares/admin-rate-limit.js";
+import {
+  adminRateLimit,
+  adminReadRateLimiter,
+} from "../../middlewares/admin-rate-limit.js";
 import { requirePermission } from "../../middlewares/requireAdmin.js";
 
 const router: IRouter = Router();
@@ -96,6 +99,7 @@ async function viewOf(row: OrgEmailRow | null) {
 // ---------------------------------------------------------------------------
 router.get(
   "/admin/organization/email-settings",
+  adminReadRateLimiter,
   requirePermission("admin.tools.manage"),
   async (req, res) => {
     const orgId = req.orgId;
