@@ -70,6 +70,7 @@ import {
 } from "@workspace/resupply-db";
 import type { ReminderVariant } from "@workspace/resupply-reminders";
 
+import { getTenantConfigValue } from "../../lib/app-config/store";
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
 import { readVoiceConfigOrNull } from "../../lib/voice/voice-config";
@@ -89,11 +90,84 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 export const ESCALATION_DELAY_DAYS = 3;
 /** Stop escalating (and stop nagging) past this age from the FIRST touch. */
 export const ESCALATION_MAX_DAYS = 21;
+
+// Admin-tunable timing (Control Center → Resupply reminders). Read per-tick
+// per tenant from app_config; a blank/out-of-range value falls back to the
+// defaults above and is clamped to these bounds so a typo can never break or
+// runaway the ladder.
+export const ESCALATION_DELAY_DAYS_KEY = "RESUPPLY_ESCALATION_DELAY_DAYS";
+export const ESCALATION_MAX_DAYS_KEY = "RESUPPLY_ESCALATION_MAX_DAYS";
+const DELAY_DAYS_MIN = 1;
+const DELAY_DAYS_MAX = 30;
+const MAX_DAYS_CEIL = 120;
+
+export interface EscalationTiming {
+  delayDays: number;
+  maxDays: number;
+}
+
+/**
+ * Parse + clamp the admin-supplied cadence into a safe `{ delayDays, maxDays }`.
+ * Pure (no I/O) so the clamping is unit-testable. A blank/unparseable value
+ * falls back to the built-in default; `maxDays` is floored at `delayDays` (a
+ * max below the step spacing would let nothing escalate) and capped at
+ * MAX_DAYS_CEIL.
+ */
+export function resolveEscalationTiming(
+  rawDelay: string | null,
+  rawMax: string | null,
+): EscalationTiming {
+  const delayDays = clampInt(
+    rawDelay,
+    ESCALATION_DELAY_DAYS,
+    DELAY_DAYS_MIN,
+    DELAY_DAYS_MAX,
+  );
+  const maxDays = clampInt(
+    rawMax,
+    ESCALATION_MAX_DAYS,
+    // A max below the step delay would stall every episode — floor it at delay.
+    delayDays,
+    MAX_DAYS_CEIL,
+  );
+  return { delayDays, maxDays };
+}
+
+function clampInt(
+  raw: string | null,
+  fallback: number,
+  min: number,
+  max: number,
+): number {
+  if (raw == null) return Math.min(max, Math.max(min, fallback));
+  const n = Number.parseInt(raw.trim(), 10);
+  if (!Number.isFinite(n)) return Math.min(max, Math.max(min, fallback));
+  return Math.min(max, Math.max(min, n));
+}
+
+/** Read + clamp a tenant's escalation cadence from app_config (fail-soft). */
+async function resolveEscalationTimingForOrg(
+  orgId: string,
+): Promise<EscalationTiming> {
+  const [rawDelay, rawMax] = await Promise.all([
+    getTenantConfigValue(orgId, ESCALATION_DELAY_DAYS_KEY),
+    getTenantConfigValue(orgId, ESCALATION_MAX_DAYS_KEY),
+  ]);
+  return resolveEscalationTiming(rawDelay, rawMax);
+}
 /** Base text-channel ladder, walked in order. Voice is appended per-tenant
  *  (flag + config) in `escalationScanForOrg` — see the file header. */
 export const ESCALATION_LADDER = ["sms", "email"] as const;
 /** Ladder with the automated-voice tier appended. */
 export const ESCALATION_LADDER_WITH_VOICE = ["sms", "email", "voice"] as const;
+/**
+ * How many times the automated voice tier may dial before giving up and
+ * handing to a CSR. Unlike SMS/email (one touch each), a call that goes
+ * unanswered / busy / to voicemail is RETRIED up to this cap (spaced by the
+ * step delay). A call that REACHES a live person ends the voice tier
+ * immediately regardless of attempt count.
+ */
+export const MAX_VOICE_ATTEMPTS = 2;
 
 const IN_PROGRESS_STATUSES = ["outreach_pending", "awaiting_response"];
 
@@ -119,6 +193,15 @@ export interface EscalationConvRow {
   episodeId: string;
   channel: string;
   createdAtMs: number;
+  /**
+   * For a `voice` conversation: did the call reach a LIVE person? Derived
+   * upstream from the voice-call telemetry (status `completed` and not an
+   * AMD "machine"/"fax" verdict). Ignored for text channels. A voice
+   * conversation without this set counts as an unanswered attempt — so a
+   * no-answer/busy/voicemail call is retried up to the cap rather than
+   * counted as "done".
+   */
+  voiceConnected?: boolean;
 }
 export interface EscalationPlanInput {
   /** Episodes still unresolved (status-filtered upstream). */
@@ -131,6 +214,53 @@ export interface EscalationPlanInput {
   /** Max ms from the first touch before we stop escalating. */
   maxMs: number;
   ladder: readonly string[];
+  /** Voice dial cap before the CSR hand-off. Defaults to MAX_VOICE_ATTEMPTS. */
+  maxVoiceAttempts?: number;
+}
+
+interface EpisodeProgress {
+  channels: Set<string>;
+  earliestMs: number;
+  latestMs: number;
+  /** Number of voice conversations (dial attempts) for this episode. */
+  voiceAttempts: number;
+  /** True once any voice attempt reached a live person. */
+  voiceConnected: boolean;
+}
+
+/**
+ * Did a voice call reach a LIVE person? True only when the call COMPLETED and
+ * Twilio's AMD verdict isn't a machine/fax pickup. A null verdict (detection
+ * off or unresolved) on a completed call defaults to connected — we reached
+ * the line. Non-completed terminals (no-answer / busy / failed / canceled) and
+ * a voicemail (machine_*) / fax verdict are NOT connected, so the call is
+ * retried up to the attempt cap.
+ */
+export function isVoiceCallConnected(
+  status: string | null,
+  answeredBy: string | null,
+): boolean {
+  if (status !== "completed") return false;
+  const ab = (answeredBy ?? "").trim().toLowerCase();
+  if (ab.startsWith("machine") || ab === "fax") return false;
+  return true;
+}
+
+/**
+ * Has this channel been satisfied for the episode (no further attempt due)?
+ * Text channels are satisfied by a single conversation. Voice is satisfied
+ * once a call reaches a live person OR the attempt cap is hit — until then an
+ * unanswered call is retried.
+ */
+function channelSatisfied(
+  channel: string,
+  info: EpisodeProgress,
+  maxVoiceAttempts: number,
+): boolean {
+  if (channel === "voice") {
+    return info.voiceConnected || info.voiceAttempts >= maxVoiceAttempts;
+  }
+  return info.channels.has(channel);
 }
 export type EscalationTier =
   | { kind: "send"; channel: string; variant: ReminderVariant }
@@ -168,20 +298,24 @@ function channelReachable(
 export function planReminderEscalations(
   input: EscalationPlanInput,
 ): EscalationAction[] {
-  const byEpisode = new Map<
-    string,
-    { channels: Set<string>; earliestMs: number; latestMs: number }
-  >();
+  const maxVoiceAttempts = input.maxVoiceAttempts ?? MAX_VOICE_ATTEMPTS;
+  const byEpisode = new Map<string, EpisodeProgress>();
   for (const c of input.conversations) {
     if (!input.ladder.includes(c.channel)) continue;
     const e = byEpisode.get(c.episodeId) ?? {
       channels: new Set<string>(),
       earliestMs: Number.POSITIVE_INFINITY,
       latestMs: Number.NEGATIVE_INFINITY,
+      voiceAttempts: 0,
+      voiceConnected: false,
     };
     e.channels.add(c.channel);
     e.earliestMs = Math.min(e.earliestMs, c.createdAtMs);
     e.latestMs = Math.max(e.latestMs, c.createdAtMs);
+    if (c.channel === "voice") {
+      e.voiceAttempts += 1;
+      if (c.voiceConnected) e.voiceConnected = true;
+    }
     byEpisode.set(c.episodeId, e);
   }
 
@@ -203,17 +337,19 @@ export function planReminderEscalations(
     const effectiveLadder = input.ladder.filter((ch) =>
       channelReachable(ch, hasPhone, hasEmail),
     );
-    const next = effectiveLadder.find((ch) => !info.channels.has(ch));
+    const next = effectiveLadder.find(
+      (ch) => !channelSatisfied(ch, info, maxVoiceAttempts),
+    );
     let tier: EscalationTier;
     if (next) {
       // Copy variant reflects whether MORE automated outreach follows this
-      // touch: "followup" when another untried channel remains after `next`,
-      // "final" when `next` is the last automated channel before the CSR
-      // hand-off. (The "initial" variant is the scan's first touch, never an
-      // escalation.) Voice ignores the variant downstream; it's set
+      // touch: "followup" when another unsatisfied channel remains after
+      // `next`, "final" when `next` is the last automated channel before the
+      // CSR hand-off. (The "initial" variant is the scan's first touch, never
+      // an escalation.) Voice ignores the variant downstream; it's set
       // uniformly so the type stays simple.
       const moreAfter = effectiveLadder.some(
-        (ch) => ch !== next && !info.channels.has(ch),
+        (ch) => ch !== next && !channelSatisfied(ch, info, maxVoiceAttempts),
       );
       tier = {
         kind: "send",
@@ -223,8 +359,10 @@ export function planReminderEscalations(
     } else {
       tier = {
         kind: "csr_exhausted",
-        // Report in ladder order for the CSR alert copy.
-        triedChannels: input.ladder.filter((ch) => info.channels.has(ch)),
+        // Report the channels actually attempted, in ladder order.
+        triedChannels: input.ladder.filter((ch) =>
+          ch === "voice" ? info.voiceAttempts > 0 : info.channels.has(ch),
+        ),
       };
     }
     actions.push({ episodeId: ep.id, patientId: ep.patientId, tier });
@@ -307,9 +445,12 @@ async function escalationScanForOrg(
   }
 
   const ladder = await resolveLadderForOrg(orgId);
+  // Tenant-tunable cadence (Control Center). Falls back to the defaults +
+  // clamped, so a blank/typo'd value is safe.
+  const { delayDays, maxDays } = await resolveEscalationTimingForOrg(orgId);
   const supabase = getOrgScopedClient(orgId);
   const horizonIso = new Date(
-    now.getTime() - (ESCALATION_MAX_DAYS + 2) * DAY_MS,
+    now.getTime() - (maxDays + 2) * DAY_MS,
   ).toISOString();
 
   // Unresolved episodes within the escalation horizon. PAGINATED:
@@ -346,6 +487,9 @@ async function escalationScanForOrg(
   const episodeIds = episodes.map((e) => e.id);
   const ladderChannels = [...ladder];
   const conversations: EscalationConvRow[] = [];
+  // voice conversation id → its row, so the voice-call disposition read below
+  // can stamp `voiceConnected` (only populated when voice is in the ladder).
+  const voiceRowById = new Map<string, EscalationConvRow>();
   for (let i = 0; i < episodeIds.length; i += 200) {
     const idChunk = episodeIds.slice(i, i + 200);
     for (let from = 0; ; from += PAGE_SIZE) {
@@ -361,14 +505,66 @@ async function escalationScanForOrg(
       if (!data || data.length === 0) break;
       for (const c of data) {
         if (c.episode_id && c.created_at) {
-          conversations.push({
+          const row: EscalationConvRow = {
             episodeId: c.episode_id,
             channel: c.channel,
             createdAtMs: new Date(c.created_at).getTime(),
-          });
+          };
+          conversations.push(row);
+          if (c.channel === "voice" && c.id) voiceRowById.set(c.id, row);
         }
       }
       if (data.length < PAGE_SIZE) break;
+    }
+  }
+
+  // Voice-call disposition: mark a voice conversation "connected" when its
+  // telemetry shows the call reached a LIVE person (status `completed` and not
+  // an AMD machine/fax verdict). Unanswered / busy / failed / voicemail leave
+  // it false → the planner retries the call up to the attempt cap before the
+  // CSR hand-off. Read via `.raw()` keyed by conversation_id (the tenant's own
+  // ids) because voice_calls rows are written webhook-side without an org_id,
+  // so the org-scoped filter would miss them. We still SELECT `org_id` and skip
+  // any row whose non-null org_id belongs to a different tenant — defense in
+  // depth so a future webhook that does stamp org_id can never cross tenants
+  // (the conversation_ids themselves are already tenant-private uuids).
+  if (ladder.includes("voice") && voiceRowById.size > 0) {
+    const voiceConvIds = [...voiceRowById.keys()];
+    for (let i = 0; i < voiceConvIds.length; i += 200) {
+      const idChunk = voiceConvIds.slice(i, i + 200);
+      for (let from = 0; ; from += PAGE_SIZE) {
+        const { data, error } = await supabase
+          .raw()
+          .schema("resupply")
+          .from("voice_calls")
+          .select("conversation_id, status, answered_by, org_id")
+          .in("conversation_id", idChunk)
+          .order("conversation_id", { ascending: true })
+          .range(from, from + PAGE_SIZE - 1);
+        if (error) throw error;
+        if (!data || data.length === 0) break;
+        for (const vc of data) {
+          const cid = (vc as { conversation_id: string | null })
+            .conversation_id;
+          if (!cid) continue;
+          // Skip a row only when it carries a CONFLICTING org_id; null/absent
+          // (the current webhook shape) falls through to the conversation-id
+          // match, which is already tenant-scoped.
+          const rowOrg = (vc as { org_id?: string | null }).org_id;
+          if (rowOrg != null && rowOrg !== orgId) continue;
+          const row = voiceRowById.get(cid);
+          if (
+            row &&
+            isVoiceCallConnected(
+              (vc as { status: string | null }).status,
+              (vc as { answered_by: string | null }).answered_by,
+            )
+          ) {
+            row.voiceConnected = true;
+          }
+        }
+        if (data.length < PAGE_SIZE) break;
+      }
     }
   }
 
@@ -431,8 +627,8 @@ async function escalationScanForOrg(
     episodes: activeEpisodes,
     conversations,
     nowMs: now.getTime(),
-    delayMs: ESCALATION_DELAY_DAYS * DAY_MS,
-    maxMs: ESCALATION_MAX_DAYS * DAY_MS,
+    delayMs: delayDays * DAY_MS,
+    maxMs: maxDays * DAY_MS,
     ladder,
   });
 

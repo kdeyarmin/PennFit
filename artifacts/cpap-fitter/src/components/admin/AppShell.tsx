@@ -1038,6 +1038,14 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             hint: "Resupply funnel, compliance cohorts, CSR productivity",
           },
           {
+            href: "/admin/reorder-reminders",
+            label: "Reorder Reminders",
+            icon: BellRing,
+            matchPrefix: "/admin/reorder-reminders",
+            requiredPermission: "reports.read",
+            hint: "Reorder reminder funnel — due → reminded → confirmed → shipped, with per-channel conversion",
+          },
+          {
             href: "/admin/therapy-usage-report",
             label: "Therapy Report",
             icon: ScrollText,
