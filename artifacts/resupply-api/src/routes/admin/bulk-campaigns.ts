@@ -24,7 +24,13 @@ import {
   resolveAudience,
   type AudienceKind,
   type Category,
+  type Channel,
 } from "../../lib/bulk-campaigns/resolve-audience";
+import {
+  patientSegmentFilterSchema,
+  summarizePatientSegment,
+  type PatientSegmentFilter,
+} from "../../lib/bulk-campaigns/patient-segment";
 import {
   isLegalCampaignTransition,
   type CampaignStatus,
@@ -43,14 +49,25 @@ type BulkCampaignRecipientRow =
 
 const idParam = z.object({ id: z.string().uuid() });
 
+/** Safely render a stored audience_filter jsonb as a PHI-free one-liner for
+ *  the campaign list / detail UI; null for non-segment campaigns or an
+ *  unrecognized shape. */
+function summarizeAudienceFilter(raw: unknown): string | null {
+  if (!raw || typeof raw !== "object") return null;
+  const parsed = patientSegmentFilterSchema.safeParse(raw);
+  return parsed.success ? summarizePatientSegment(parsed.data) : null;
+}
+
 const AUDIENCE_KIND_VALUES: AudienceKind[] = [
   "all_active_shop_customers",
   "all_active_patients",
   "by_patient_payer",
   "by_therapy_cohort",
+  "patient_segment",
   "manual_list",
 ];
 const CATEGORY_VALUES: Category[] = ["marketing", "service", "compliance"];
+const CHANNEL_VALUES: Channel[] = ["email", "sms"];
 
 // RT clinical cohorts (C-R1). The selector is carried in the
 // `audience_payer` column (a generic audience parameter) so it threads
@@ -73,11 +90,21 @@ const draftBody = z
     /** Required when audienceKind='by_therapy_cohort'. Selects which
      *  open-compliance-alert cohort to target. Stored in audience_payer. */
     therapyCohort: z.enum(THERAPY_COHORT_VALUES).optional(),
+    /** Required when audienceKind='patient_segment'. Composable patient
+     *  filter (equipment make/class/model, failing therapy, payer,
+     *  recency). Persisted to bulk_campaigns.audience_filter. */
+    patientSegment: patientSegmentFilterSchema.optional(),
     /** Required when audienceKind='manual_list'. Each id is a UUID;
      *  recipientKind is determined by the order in shop/patient
      *  arrays. */
     manualShopCustomerIds: z.array(z.string().uuid()).max(50_000).optional(),
     manualPatientIds: z.array(z.string().uuid()).max(50_000).optional(),
+    /** Delivery channel. Email goes through SendGrid; SMS through Twilio.
+     *  Defaults to email. */
+    channel: z
+      .enum(CHANNEL_VALUES as [Channel, ...Channel[]])
+      .optional()
+      .default("email"),
     category: z.enum(CATEGORY_VALUES as [Category, ...Category[]]),
     complianceAttestation: z.string().trim().max(2000).nullable().optional(),
     templateKey: z.string().trim().min(1).max(120),
@@ -107,6 +134,13 @@ const draftBody = z
     },
   )
   .refine(
+    (b) => b.audienceKind !== "patient_segment" || Boolean(b.patientSegment),
+    {
+      path: ["patientSegment"],
+      message: "patientSegment is required when audienceKind=patient_segment.",
+    },
+  )
+  .refine(
     (b) =>
       b.category !== "compliance" ||
       (b.complianceAttestation && b.complianceAttestation.trim().length >= 10),
@@ -114,6 +148,30 @@ const draftBody = z
       path: ["complianceAttestation"],
       message:
         "complianceAttestation (≥ 10 chars) is required when category=compliance.",
+    },
+  )
+  // Block MARKETING SMS to patient audiences. Patients have no per-patient
+  // SMS-marketing consent flag yet (tracked as a follow-up), so a marketing
+  // text to a patient audience can't demonstrate prior express written
+  // consent (TCPA). Shop customers DO carry an smsMarketing preference (the
+  // resolver gates on it), so all_active_shop_customers — and a manual list
+  // of only shop customers — is allowed. Service/compliance SMS to patients
+  // (transactional reminders, recalls) is unaffected.
+  .refine(
+    (b) => {
+      if (b.channel !== "sms" || b.category !== "marketing") return true;
+      const patientBearing =
+        b.audienceKind !== "all_active_shop_customers" &&
+        !(
+          b.audienceKind === "manual_list" &&
+          (b.manualPatientIds?.length ?? 0) === 0
+        );
+      return !patientBearing;
+    },
+    {
+      path: ["channel"],
+      message:
+        "Marketing SMS to patients isn't supported yet (no per-patient SMS-marketing consent on file). Send marketing as email, target shop customers, or use a service/compliance category.",
     },
   );
 
@@ -153,7 +211,7 @@ router.post(
       .from("message_templates")
       .select("template_key, channel, is_active")
       .eq("template_key", b.templateKey)
-      .eq("channel", "email")
+      .eq("channel", b.channel)
       .limit(1)
       .maybeSingle();
     if (tplErr) {
@@ -170,7 +228,7 @@ router.post(
     if (!tpl) {
       res.status(400).json({
         error: "template_not_found",
-        message: `No active email template with key "${b.templateKey}".`,
+        message: `No active ${b.channel} template with key "${b.templateKey}".`,
       });
       return;
     }
@@ -192,12 +250,16 @@ router.post(
         ? (b.therapyCohort ?? null)
         : (b.audiencePayer ?? null);
 
+    const patientSegment: PatientSegmentFilter | null =
+      b.audienceKind === "patient_segment" ? (b.patientSegment ?? null) : null;
+
     // ── Pull candidates ───────────────────────────────────────────
     const { shopCandidates, patientCandidates } = await fetchAudienceCandidates(
       supabase,
       {
         audienceKind: b.audienceKind,
         audiencePayer: audienceParam,
+        patientSegment,
         manualShopCustomerIds: b.manualShopCustomerIds,
         manualPatientIds: b.manualPatientIds,
       },
@@ -206,6 +268,7 @@ router.post(
       audienceKind: b.audienceKind,
       audiencePayer: audienceParam,
       category: b.category,
+      channel: b.channel,
       shopCustomers: shopCandidates,
       patients: patientCandidates,
     });
@@ -218,7 +281,8 @@ router.post(
         description: b.description ?? null,
         audience_kind: b.audienceKind,
         audience_payer: audienceParam,
-        channel: "email",
+        audience_filter: patientSegment,
+        channel: b.channel,
         category: b.category,
         compliance_attestation: b.complianceAttestation ?? null,
         template_key: b.templateKey,
@@ -242,6 +306,7 @@ router.post(
           recipient_kind: r.recipientKind,
           recipient_id: r.recipientId,
           recipient_email: r.recipientEmail,
+          recipient_phone: r.recipientPhone,
           status: r.status,
           suppression_reason: r.suppressionReason,
         }));
@@ -260,12 +325,16 @@ router.post(
       targetId: campaign.id,
       metadata: {
         audience_kind: b.audienceKind,
+        channel: b.channel,
         category: b.category,
         template_key: b.templateKey,
+        segment: patientSegment
+          ? summarizePatientSegment(patientSegment)
+          : null,
         total: resolved.totals.total,
         pending: resolved.totals.pending,
         suppressed: resolved.totals.suppressed,
-        // Recipient ids/emails withheld — the row count alone is
+        // Recipient ids/contacts withheld — the row count alone is
         // the meaningful audit dimension here.
       },
       ip: req.ip ?? null,
@@ -307,6 +376,7 @@ router.get(
         description: r.description,
         audienceKind: r.audience_kind,
         audiencePayer: r.audience_payer,
+        audienceFilterSummary: summarizeAudienceFilter(r.audience_filter),
         channel: r.channel,
         category: r.category,
         templateKey: r.template_key,
@@ -363,7 +433,7 @@ router.get(
     const { data: recipients, error: rErr } = await supabase
       .from("bulk_campaign_recipients")
       .select(
-        "id, recipient_kind, recipient_id, recipient_email, status, suppression_reason",
+        "id, recipient_kind, recipient_id, recipient_email, recipient_phone, status, suppression_reason",
       )
       .eq("campaign_id", row.id)
       .order("status", { ascending: false })
@@ -376,6 +446,8 @@ router.get(
       description: row.description,
       audienceKind: row.audience_kind,
       audiencePayer: row.audience_payer,
+      audienceFilter: row.audience_filter,
+      audienceFilterSummary: summarizeAudienceFilter(row.audience_filter),
       channel: row.channel,
       category: row.category,
       complianceAttestation: row.compliance_attestation,
@@ -397,6 +469,7 @@ router.get(
           recipientKind: r.recipient_kind,
           recipientId: r.recipient_id,
           recipientEmail: r.recipient_email,
+          recipientPhone: r.recipient_phone,
           status: r.status,
           suppressionReason: r.suppression_reason,
         }),
@@ -687,7 +760,9 @@ router.post(
     const supabase = getOrgScopedClient(orgId);
     const { data: campaign, error: lookupErr } = await supabase
       .from("bulk_campaigns")
-      .select("id, status, audience_kind, audience_payer, category")
+      .select(
+        "id, status, audience_kind, audience_payer, audience_filter, channel, category",
+      )
       .eq("id", idCheck.data)
       .limit(1)
       .maybeSingle();
@@ -718,11 +793,33 @@ router.post(
       return;
     }
 
+    // Re-validate the stored segment spec (defensive — the column is jsonb).
+    const segParse =
+      campaign.audience_kind === "patient_segment"
+        ? patientSegmentFilterSchema.safeParse(campaign.audience_filter)
+        : null;
+    const regenSegment: PatientSegmentFilter | null =
+      segParse && segParse.success ? segParse.data : null;
+    // Refuse rather than wipe: a patient_segment campaign whose stored filter
+    // no longer parses would otherwise resolve to zero candidates, and the
+    // delete-then-reinsert below would silently destroy the drafted audience
+    // and report success. Bail with a clear error instead.
+    if (campaign.audience_kind === "patient_segment" && !regenSegment) {
+      res.status(409).json({
+        error: "invalid_segment_filter",
+        message:
+          "This campaign's stored segment filter is missing or invalid. Cancel and create a fresh draft to rebuild the audience.",
+      });
+      return;
+    }
+    const regenChannel: Channel = campaign.channel === "sms" ? "sms" : "email";
+
     const { shopCandidates, patientCandidates } = await fetchAudienceCandidates(
       supabase,
       {
         audienceKind: campaign.audience_kind as AudienceKind,
         audiencePayer: campaign.audience_payer,
+        patientSegment: regenSegment,
       },
     );
 
@@ -730,6 +827,7 @@ router.post(
       audienceKind: campaign.audience_kind as AudienceKind,
       audiencePayer: campaign.audience_payer,
       category: campaign.category as Category,
+      channel: regenChannel,
       shopCustomers: shopCandidates,
       patients: patientCandidates,
     });
@@ -752,6 +850,7 @@ router.post(
           recipient_kind: r.recipientKind,
           recipient_id: r.recipientId,
           recipient_email: r.recipientEmail,
+          recipient_phone: r.recipientPhone,
           status: r.status,
           suppression_reason: r.suppressionReason,
         }));
@@ -835,6 +934,7 @@ router.get(
         "recipient_kind",
         "recipient_id",
         "recipient_email",
+        "recipient_phone",
         "status",
         "suppression_reason",
         "created_at",
@@ -854,7 +954,7 @@ router.get(
       const { data, error } = await supabase
         .from("bulk_campaign_recipients")
         .select(
-          "recipient_kind, recipient_id, recipient_email, status, suppression_reason, created_at",
+          "recipient_kind, recipient_id, recipient_email, recipient_phone, status, suppression_reason, created_at",
         )
         .eq("campaign_id", idCheck.data)
         .order("created_at", { ascending: true })
@@ -869,6 +969,7 @@ router.get(
             r.recipient_kind,
             r.recipient_id,
             r.recipient_email,
+            r.recipient_phone ?? "",
             r.status,
             r.suppression_reason ?? "",
             r.created_at,

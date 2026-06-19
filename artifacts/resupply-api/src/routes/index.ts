@@ -59,6 +59,7 @@ import referralReviewsRouter from "./admin/referral-reviews.js";
 import equipmentRecallsRouter from "./admin/equipment-recalls.js";
 import assetRecoveryRouter from "./admin/asset-recovery.js";
 import analyticsRouter from "./admin/analytics.js";
+import reorderRemindersRouter from "./admin/reorder-reminders.js";
 import analyticsOutreachAttributionRouter from "./admin/analytics-outreach-attribution.js";
 import analyticsMarginRouter from "./admin/analytics-margin.js";
 import analyticsRevenueBySourceRouter from "./admin/analytics-revenue-by-source.js";
@@ -843,6 +844,9 @@ router.use(assetRecoveryRouter);
 // analytics at /admin/storefront/analytics which covers orders +
 // email health + mask popularity.
 router.use(analyticsRouter);
+// /admin/reorder-reminders/* — reorder-reminder funnel (due → reminded →
+// confirmed → shipped) with per-channel (sms/email/voice) conversion.
+router.use(reorderRemindersRouter);
 // /admin/analytics/revenue-by-source — order volume + cash revenue split
 // across the storefront / resupply-fulfillment / clinical-form channels.
 router.use(analyticsRevenueBySourceRouter);

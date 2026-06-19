@@ -52,6 +52,27 @@ describe("buildVoiceCallPatch", () => {
     expect(p.status).toBe("ringing");
   });
 
+  it("records the AMD verdict when present, ignores blank/absent", () => {
+    const withAmd = buildVoiceCallPatch({
+      ...base,
+      callStatus: "completed",
+      answeredBy: "machine_start",
+    });
+    expect(withAmd.answered_by).toBe("machine_start");
+
+    // Absent or blank verdict must not overwrite an earlier one.
+    expect(
+      buildVoiceCallPatch({ ...base, callStatus: "completed" }).answered_by,
+    ).toBeUndefined();
+    expect(
+      buildVoiceCallPatch({
+        ...base,
+        callStatus: "completed",
+        answeredBy: "  ",
+      }).answered_by,
+    ).toBeUndefined();
+  });
+
   it("stamps ended_at + duration on terminal events", () => {
     for (const s of ["completed", "failed", "busy", "no-answer", "canceled"]) {
       const p = buildVoiceCallPatch({

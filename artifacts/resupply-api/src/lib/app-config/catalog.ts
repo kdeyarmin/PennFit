@@ -92,6 +92,7 @@ export const CATEGORY_CARE = "Therapy cloud — Philips Care Orchestrator";
 export const CATEGORY_REACT_HEALTH =
   "Therapy cloud — 3B Medical (React Health)";
 export const CATEGORY_OFFICE_ALLY = "Clearinghouse (Office Ally)";
+export const CATEGORY_REMINDERS = "Resupply reminders";
 
 export const APP_CONFIG_CATALOG: readonly AppConfigSetting[] = [
   // ── Branding & assistants ─────────────────────────────────────────
@@ -549,6 +550,32 @@ export const APP_CONFIG_CATALOG: readonly AppConfigSetting[] = [
     applyMode: "restart",
     description:
       "API key for Office Ally's real-time eligibility REST API, sent verbatim in the Authorization header. Separate from the SFTP key. Used as the fallback when a saved clearinghouse connection row has no key stored on it.",
+  },
+  // Resupply reminder escalation cadence — tenant-tunable from Control Center.
+  // Read per-tick by reminders.escalation-scan (applyMode "live"); a blank or
+  // out-of-range value falls back to the built-in default and is clamped to a
+  // sane range on read, so a typo can never break the ladder.
+  {
+    key: "RESUPPLY_ESCALATION_DELAY_DAYS",
+    label: "Days between reminder steps",
+    category: CATEGORY_REMINDERS,
+    secret: false,
+    applyMode: "live",
+    scope: "tenant",
+    description:
+      "Minimum days to wait after the most recent reminder before the escalation ladder advances to the next channel (SMS → email → call → CSR alert). Default 3. Clamped to 1–30.",
+    placeholder: "3",
+  },
+  {
+    key: "RESUPPLY_ESCALATION_MAX_DAYS",
+    label: "Stop-nagging age (days)",
+    category: CATEGORY_REMINDERS,
+    secret: false,
+    applyMode: "live",
+    scope: "tenant",
+    description:
+      "Stop escalating an unanswered episode once its first reminder is older than this many days. Default 21. Clamped to (days-between-steps)–120.",
+    placeholder: "21",
   },
 ];
 

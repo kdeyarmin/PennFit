@@ -885,6 +885,11 @@ export interface PatientDetail {
   lastName: string;
   status: PatientDetailStatus;
   hasPhone: boolean;
+  /** Classified phone line type (cell vs. landline/VoIP), or null when not
+   *  yet classified. Drives whether bulk SMS may target this number. */
+  phoneLineType?: "mobile" | "landline" | "voip" | "unknown" | null;
+  /** How phoneLineType was set: 'lookup' (Twilio) or 'manual' (override). */
+  phoneLineTypeSource?: "lookup" | "manual" | null;
   hasEmail: boolean;
   /** Free-text payer name set by an admin. Used as a match
 target by frequency_rules. NULL means no payer recorded.
@@ -1289,6 +1294,16 @@ export const PatientUpdateStatus = {
   closed: "closed",
 } as const;
 
+export type PatientUpdatePhoneLineType =
+  (typeof PatientUpdatePhoneLineType)[keyof typeof PatientUpdatePhoneLineType];
+
+export const PatientUpdatePhoneLineType = {
+  mobile: "mobile",
+  landline: "landline",
+  voip: "voip",
+  unknown: "unknown",
+} as const;
+
 /**
  * Body for PATCH /patients/{id}. All fields are independently
 optional; sending `null` explicitly clears the field, omitting
@@ -1320,6 +1335,12 @@ backfill path for patients created before PacWare knew them.
    */
   cadenceOverrideDays?: number | null;
   channelPreference?: PatientUpdateChannelPreference;
+  /** Manual override of the phone line type (cell vs. landline/VoIP).
+A concrete value is authoritative and the Twilio Lookup backfill
+never overwrites it; null clears the override so a future lookup
+can re-classify. Drives whether bulk SMS may target this number.
+ */
+  phoneLineType?: PatientUpdatePhoneLineType | null;
   /** Business branch (location) servicing this patient. A uuid
 assigns the patient to that location (must reference an active
 location, else 422 invalid_location); null clears the
