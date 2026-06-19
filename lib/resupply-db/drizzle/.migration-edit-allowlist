@@ -89,3 +89,17 @@
 # The immutability check sees the old 0396 path as a deletion; allowlist it so
 # this renumber PR passes. Safe to delete this line after this PR merges.
 0396_voice_calls_answered_by.sql
+
+# 2026-06-19 prefix-collision repair: 0397_bulk_campaign_segments_and_sms.sql
+# (#1127) and 0397_voice_calls_answered_by.sql both took prefix 0397 — the
+# voice file was the renamed-to-0397 leftover from the 0396 repair above,
+# which also already exists at its intended renumbered home
+# 0400_voice_calls_answered_by.sql (content-identical apart from the header
+# comment, ADD COLUMN IF NOT EXISTS). The collision surfaced post-merge
+# (tree-wide check) when #1127 merged. Resolution: bulk_campaign keeps 0397;
+# the stale 0397_voice duplicate is deleted (0400_voice is its canonical
+# home). migrate.mjs never re-applies a deleted file and the column already
+# exists in prod, so the delete is a safe no-op. The immutability check sees
+# the old 0397 path as a deletion; allowlist it so this repair PR passes.
+# Safe to delete this line after this PR merges.
+0397_voice_calls_answered_by.sql
