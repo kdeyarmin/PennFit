@@ -744,7 +744,7 @@ router.use(alertMessageOverridesRouter);
 // (lib/resupply-templates) falls back to each call site's
 // hard-coded baseline when the table is missing or the lookup
 // fails, so this route is forward-safe even before the migration
-// is journaled — see lib/resupply-db/drizzle/0067_message_templates.sql
+// is journaled — see lib/resupply-db/migrations/0067_message_templates.sql
 // for the journal posture.
 router.use(messageTemplatesRouter);
 // /admin/outreach-playbooks/* — situation-based contact templates:

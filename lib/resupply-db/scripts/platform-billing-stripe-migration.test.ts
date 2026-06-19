@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SQL = readFileSync(
-  path.join(__dirname, "../drizzle/0363_platform_billing_stripe.sql"),
+  path.join(__dirname, "../migrations/0363_platform_billing_stripe.sql"),
   "utf8",
 );
 

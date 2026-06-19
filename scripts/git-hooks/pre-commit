@@ -11,12 +11,12 @@
 #           when resupply lib/ or artifact code changes
 #       * scripts/check-resupply-migration-prefix.sh
 #           when a new SQL file is added under
-#           lib/resupply-db/drizzle/. Enforces the moratorium on new
+#           lib/resupply-db/migrations/. Enforces the moratorium on new
 #           migrations with prefix <= 0066 while the journal/files
 #           drift is being reconciled (see the README in that
 #           directory for the full rationale).
 #       * scripts/check-resupply-migration-immutability.sh
-#           when any SQL file under lib/resupply-db/drizzle/ is
+#           when any SQL file under lib/resupply-db/migrations/ is
 #           modified or deleted. A shipped migration is immutable —
 #           editing it changes migrate.mjs's content hash and re-applies
 #           it against prod (the 2026-06-05 Railway-deploy incident).
@@ -26,8 +26,8 @@
 #  routes to a `need_codegen` branch.)
 #
 # (The previous schema/migration co-change check was retired when the
-#  Drizzle schema directory was deleted — there is no schema TS file
-#  to "edit and forget to migrate" anymore. New migrations are
+#  generated TS schema directory was deleted — there is no schema TS
+#  file to "edit and forget to migrate" anymore. New migrations are
 #  hand-written SQL.)
 #   - Both checks run against an isolated snapshot of the staged
 #     index — unstaged edits and untracked files are stashed for the
@@ -126,13 +126,13 @@ while IFS= read -r file; do
       ;;
   esac
   # Resupply DB migration-prefix moratorium: while the journal/files
-  # drift is being reconciled (see lib/resupply-db/drizzle/README.md),
+  # drift is being reconciled (see lib/resupply-db/migrations/README.md),
   # any newly-added migration SQL is checked to ensure it doesn't
   # land in the duplicate-prefix set or the unjournaled range.
-  # Trigger on any change under lib/resupply-db/drizzle/; the script
+  # Trigger on any change under lib/resupply-db/migrations/; the script
   # itself filters to ADDED *.sql files with forbidden prefixes.
   case "$file" in
-    lib/resupply-db/drizzle/*|lib/resupply-db/drizzle/*/*)
+    lib/resupply-db/migrations/*|lib/resupply-db/migrations/*/*)
       need_resupply_prefix=1
       # Same trigger feeds the immutability check; it filters to
       # MODIFIED/DELETED *.sql itself (additions are the prefix check's
