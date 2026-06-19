@@ -48,6 +48,7 @@ import {
   Stethoscope,
   Store,
   TrendingUp,
+  Users,
   Video,
   Waypoints,
   Workflow,
@@ -897,6 +898,7 @@ export function BreatheHome() {
       <BuiltInHouse />
       <Replaces />
       <Outcomes />
+      <Audiences />
       <PricingHome />
       <ClosingCta />
     </BreatheShell>
@@ -4528,6 +4530,80 @@ function Faq() {
               </summary>
               <div className="bx-faq-a">{f.a}</div>
             </details>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ───────────────────────── Who it's for ─────────────────────────
+ * Business-profile self-qualification ("is this me?"), complementing the
+ * role-based personas on /breathe/why. Reuses the exported CapCard +
+ * .bx-caps grid, so no new markup or CSS. Capability-based, not customer
+ * claims — honest for a pre-launch platform. */
+const AUDIENCES: Capability[] = [
+  {
+    icon: <Store size={20} />,
+    title: "Independent CPAP & DME providers",
+    summary: "Run the whole operation without adding headcount.",
+    points: [
+      "Resupply reminders and the AI voice agent handle the busywork",
+      "Claims scrubbed and submitted without a billing department",
+      "One login instead of the seven point tools you pay for today",
+    ],
+  },
+  {
+    icon: <Network size={20} />,
+    title: "Growing & multi-site DMEs",
+    summary: "Scale the panel, not the payroll.",
+    points: [
+      "One patient record and one workflow across every location",
+      "Live margin, DSO, and growth dashboards across the business",
+      "Stand up a new site in weeks with a CSV import, not a quarter",
+    ],
+  },
+  {
+    icon: <Stethoscope size={20} />,
+    title: "Sleep & CPAP-focused suppliers",
+    summary: "Keep patients on therapy and supplies on schedule.",
+    points: [
+      "ResMed, Philips & 3B adherence pulled nightly into one worklist",
+      "Eligibility-aware resupply on every patient's reorder window",
+      "Browser mask-fitter — images never leave the patient's device",
+    ],
+    gold: true,
+  },
+  {
+    icon: <Receipt size={20} />,
+    title: "Billing-led / RCM operations",
+    summary: "Get paid the first time, faster.",
+    points: [
+      "AI scrubs every 837P clean, then auto-submits or exports it",
+      "Denials ranked by recoverable dollars × win probability",
+      "Eligibility (270/271), prior auth, and ERA posting automated",
+    ],
+  },
+];
+
+function Audiences() {
+  return (
+    <section className="bx-section" id="who-its-for">
+      <div className="bx-shell">
+        <div className="bx-section-head center bx-reveal">
+          <span className="bx-eyebrow">
+            <Users size={13} /> Who it&apos;s for
+          </span>
+          <h2 className="bx-h2">Built for the people who run resupply</h2>
+          <p className="bx-lede">
+            Whether you&apos;re a one-location shop or a multi-site group,
+            Breathe runs the resupply, billing, and therapy monitoring on one
+            record — see where you fit.
+          </p>
+        </div>
+        <div className="bx-caps">
+          {AUDIENCES.map((c) => (
+            <CapCard c={c} key={c.title} />
           ))}
         </div>
       </div>

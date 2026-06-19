@@ -77,7 +77,7 @@ in response. Source pages live in
 | 3   | **No human contact path** — self-serve demo only.                                                               | All five offer "Book a demo / Talk to us."                                           | **Fixed.** Added a secondary "Book a demo / Talk to us" gate (Nav, hero, closing CTA) that captures a lead and surfaces phone + email — self-serve demo stays the primary CTA.                                                                                                       |
 | 4   | **Marketing site was `noindex` even on `cmbreathe.com`** — invisible to search engines.                         | All competitors are indexed.                                                         | **Fixed.** `noindex` now applies everywhere _except_ the production apex; Railway preview + tenant hosts stay out of the index.                                                                                                                                                      |
 | 5   | **No social proof** — one anonymous founder quote; no testimonials, logos, case studies, or review-site badges. | NikoHealth (14+ testimonials + logo wall); Tennr (headshots + case studies + press). | **Deferred — pre-launch.** We will NOT fabricate customers. See backlog below.                                                                                                                                                                                                       |
-| 6   | **No vertical segmentation** — single CPAP/DME story.                                                           | NikoHealth segments by equipment type.                                               | Deferred. Lower priority while CPAP/resupply is the wedge.                                                                                                                                                                                                                           |
+| 6   | **No vertical segmentation** — single CPAP/DME story.                                                           | NikoHealth segments by equipment type.                                               | **Partially addressed.** Added a business-profile "Who it's for" section to the home page (independent, multi-site, sleep/CPAP-focused, RCM-led); full per-vertical landing pages still deferred.                                                                                    |
 | 7   | **No resources/blog** for SEO + thought leadership.                                                             | NikoHealth, Tennr.                                                                   | Deferred (content investment).                                                                                                                                                                                                                                                       |
 
 ## Changes shipped in this PR
@@ -100,6 +100,10 @@ in response. Source pages live in
 - **SEO fix** — `isPlatformApexHost()` added to `lib/platform-host.ts`;
   `useNoIndex()` now indexes the apex and noindexes everywhere else. Unit
   tested.
+- **"Who it's for" segmentation** — a business-profile self-qualification
+  section on the home page (independent / multi-site / sleep-CPAP / RCM-led),
+  reusing the exported `CapCard` + `.bx-caps` grid. Complements the role-based
+  personas on `/breathe/why`; capability-based, no customer claims.
 
 ## Backlog — revisit once there are real customers
 
