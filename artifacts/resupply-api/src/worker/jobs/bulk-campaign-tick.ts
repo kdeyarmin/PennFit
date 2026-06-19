@@ -905,15 +905,21 @@ async function recheckRecipientAtSend(
     try {
       const { data } = await supabase
         .from("patients")
-        .select("status, phone_line_type")
+        .select("status, phone_line_type, sms_marketing_consent")
         .eq("id", id)
         .limit(1)
         .maybeSingle();
       if (!data) return NOT_OPTED_OUT;
-      return {
-        optedOut: data.status !== "active",
-        lineType: (data.phone_line_type as AtSendRecheck["lineType"]) ?? null,
-      };
+      const lineType =
+        (data.phone_line_type as AtSendRecheck["lineType"]) ?? null;
+      // patient_not_active is an absolute opt-out (mirrors enqueue-time check).
+      // Marketing SMS additionally requires sms_marketing_consent (TCPA opt-in).
+      const optedOut =
+        data.status !== "active" ||
+        (channel === "sms" &&
+          category === "marketing" &&
+          data.sms_marketing_consent !== true);
+      return { optedOut, lineType };
     } catch {
       return NOT_OPTED_OUT;
     }

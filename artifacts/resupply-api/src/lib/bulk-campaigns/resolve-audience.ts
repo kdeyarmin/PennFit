@@ -103,6 +103,10 @@ export interface PatientCandidate {
   phoneLineType?: PhoneLineType | null;
   status: string;
   insurancePayer: string | null;
+  /** Whether the patient has given express written consent to receive
+   *  marketing SMS (migration 0401). false/null = no consent on file.
+   *  SMS marketing is OPT-IN (TCPA). */
+  smsMarketingConsent?: boolean | null;
 }
 
 export interface ResolvedRecipient {
@@ -279,9 +283,15 @@ export function resolveAudience(
       push("suppressed", "phone_not_mobile");
       continue;
     }
-    // Patient comm-prefs live elsewhere (no jsonb on patients itself).
-    // Active patients with contact on file are pending; the at-send
-    // re-check in the worker catches anyone who opts out mid-campaign.
+    // SMS marketing is OPT-IN (TCPA): suppress if consent is not on file.
+    // Mirrors the shop-customer smsMarketing gate above.
+    // service/compliance SMS is unaffected by this gate.
+    if (input.category === "marketing" && channel === "sms") {
+      if (p.smsMarketingConsent !== true) {
+        push("suppressed", "sms_not_opted_in");
+        continue;
+      }
+    }
     push("pending", null);
   }
 

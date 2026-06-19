@@ -59,9 +59,10 @@ export interface FetchCandidatesResult {
 const BATCH = 1000;
 
 /** Columns the patient candidate projection needs across every patient
- *  audience. Includes phone for the SMS channel. */
+ *  audience. Includes phone for the SMS channel and the consent bit
+ *  for the marketing-SMS gate (migration 0401). */
 const PATIENT_CANDIDATE_COLUMNS =
-  "id, email, phone_e164, phone_line_type, status, insurance_payer";
+  "id, email, phone_e164, phone_line_type, status, insurance_payer, sms_marketing_consent";
 
 type PatientRow = {
   id: string;
@@ -70,6 +71,7 @@ type PatientRow = {
   phone_line_type: PatientCandidate["phoneLineType"];
   status: string;
   insurance_payer: string | null;
+  sms_marketing_consent: boolean | null;
 };
 
 function toPatientCandidate(r: PatientRow): PatientCandidate {
@@ -80,6 +82,7 @@ function toPatientCandidate(r: PatientRow): PatientCandidate {
     phoneLineType: r.phone_line_type,
     status: r.status,
     insurancePayer: r.insurance_payer,
+    smsMarketingConsent: r.sms_marketing_consent ?? false,
   };
 }
 
