@@ -12,6 +12,7 @@
 //      inserted, server-computed total, audit emitted (ids/shape only)
 //   7. Insurance happy path → status 'pending', no paid_at on the order
 //   8. 400 when a shipped order omits the shipping address
+//   9. Connect: catalog reads + re-pricing target the tenant's account
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import express, { type Express } from "express";
@@ -69,6 +70,15 @@ vi.mock("../../lib/stripe/config", () => ({
 const validateCartItemsMock = vi.fn();
 vi.mock("../../lib/stripe/validate-cart", () => ({
   validateCartItems: (...args: unknown[]) => validateCartItemsMock(...args),
+}));
+
+// Stripe Connect account resolution. Default → platform account ({}).
+const stripeAccountRequestOptionsMock = vi.fn(
+  async (..._args: unknown[]) => ({}),
+);
+vi.mock("../../lib/stripe/connect", () => ({
+  stripeAccountRequestOptions: (...args: unknown[]) =>
+    stripeAccountRequestOptionsMock(...args),
 }));
 
 // Pickup location resolver.
@@ -133,6 +143,7 @@ describe("POST /admin/shop/counter-orders", () => {
     getStripeClientMock.mockReset();
     validateCartItemsMock.mockReset();
     getActivePickupLocationByIdMock.mockReset();
+    stripeAccountRequestOptionsMock.mockReset().mockResolvedValue({});
   });
 
   it("401 with no session", async () => {
@@ -246,6 +257,43 @@ describe("POST /admin/shop/counter-orders", () => {
     expect(audit.action).toBe("shop_order.counter.created");
     expect(audit.metadata.payment_method).toBe("cash");
     expect(audit.metadata).not.toHaveProperty("items");
+  });
+
+  it("routes catalog reads + re-pricing to the tenant's connected account", async () => {
+    stubCsr();
+    stripeAccountRequestOptionsMock.mockResolvedValue({
+      stripeAccount: "acct_tenant",
+    });
+    const retrieveSpy = vi.fn(async () => ({
+      unit_amount: 4999,
+      currency: "usd",
+      product: PRODUCT_ID,
+    }));
+    readStripeConfigOrNullMock.mockReturnValue({ secretKey: "sk_test_x" });
+    getStripeClientMock.mockReturnValue({ prices: { retrieve: retrieveSpy } });
+    validateCartItemsMock.mockResolvedValue({ ok: true, errors: [] });
+    getActivePickupLocationByIdMock.mockResolvedValue({ id: LOCATION_ID });
+    stageSupabaseResponse("shop_orders", "insert", { data: { id: ORDER_ID } });
+    stageSupabaseResponse("shop_order_items", "insert", { data: null });
+
+    const res = await request(makeApp())
+      .post("/resupply-api/admin/shop/counter-orders")
+      .send(PICKUP_CASH_BODY);
+
+    expect(res.status).toBe(201);
+    // Cart validation ran against the tenant's connected account, not the
+    // platform account — otherwise the tenant's own price ids 404.
+    expect(validateCartItemsMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      { stripeAccount: "acct_tenant" },
+    );
+    // Re-pricing retrieve carried the same connected-account options.
+    expect(retrieveSpy).toHaveBeenCalledWith(
+      PRICE_ID,
+      expect.objectContaining({ expand: ["product"] }),
+      { stripeAccount: "acct_tenant" },
+    );
   });
 
   it("insurance happy path: pending order, no paid_at", async () => {

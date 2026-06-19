@@ -616,6 +616,21 @@ const AdminFaxSettingsPage = lazyWithRetry(() =>
     default: m.AdminFaxSettingsPage,
   })),
 );
+const AdminPhoneSettingsPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-phone-settings").then((m) => ({
+    default: m.AdminPhoneSettingsPage,
+  })),
+);
+const AdminEmailSettingsPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-email-settings").then((m) => ({
+    default: m.AdminEmailSettingsPage,
+  })),
+);
+const AdminSetupChecklistPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-setup-checklist").then((m) => ({
+    default: m.AdminSetupChecklistPage,
+  })),
+);
 const AdminBillingConfigClearinghousePage = lazyWithRetry(() =>
   import("@/pages/admin/admin-billing-config-clearinghouse").then((m) => ({
     default: m.AdminBillingConfigClearinghousePage,
@@ -891,6 +906,15 @@ function AdminConsole() {
               path="/admin/fax-settings"
               component={AdminFaxSettingsPage}
             />
+            <Route
+              path="/admin/phone-settings"
+              component={AdminPhoneSettingsPage}
+            />
+            <Route
+              path="/admin/email-settings"
+              component={AdminEmailSettingsPage}
+            />
+            <Route path="/admin/setup" component={AdminSetupChecklistPage} />
             <Route
               path="/admin/billing/config/clearinghouse"
               component={AdminBillingConfigClearinghousePage}
