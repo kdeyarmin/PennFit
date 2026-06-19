@@ -448,6 +448,8 @@
   letter-spacing: -0.02em;
   line-height: 1.05;
   margin: 18px 0 0;
+  /* room for descenders — -webkit-background-clip: text trims them on tight line-heights */
+  padding-bottom: 0.1em;
   background: linear-gradient(180deg, #ffffff, #bdcdf0);
   -webkit-background-clip: text;
   background-clip: text;
@@ -455,6 +457,7 @@
 }
 .bx-h2 em {
   font-style: italic;
+  padding-bottom: 0.08em;
   background: linear-gradient(
     100deg,
     var(--bx-cyan) 0%,
@@ -502,6 +505,8 @@
 .bx-pagehead-title .grad-em {
   font-style: italic;
   font-weight: 500;
+  /* room for descenders clipped by -webkit-background-clip: text */
+  padding-bottom: 0.08em;
   background: linear-gradient(
     100deg,
     var(--bx-cyan) 0%,
