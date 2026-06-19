@@ -55,14 +55,16 @@
 
 .breathe-page {
   /* Palette — drawn from the CareMetric app-icon: glassy navy→azure
-     gradient, circuit cyan, amber-gold "AI", a clinical mint for "live". */
-  --bx-ink: #04070f;
-  --bx-ink-2: #070d1e;
-  --bx-panel: rgba(20, 32, 62, 0.55);
-  --bx-panel-2: rgba(11, 20, 42, 0.72);
-  --bx-panel-3: rgba(8, 14, 31, 0.92);
-  --bx-line: rgba(120, 160, 230, 0.16);
-  --bx-line-strong: rgba(135, 180, 248, 0.4);
+     gradient, circuit cyan, amber-gold "AI", a clinical mint for "live".
+     Base lifted from near-black to a mid-dark navy so foreground panels and
+     copy read clearly while keeping the command-center feel. */
+  --bx-ink: #0b1426;
+  --bx-ink-2: #11203c;
+  --bx-panel: rgba(34, 52, 92, 0.62);
+  --bx-panel-2: rgba(22, 36, 66, 0.74);
+  --bx-panel-3: rgba(16, 28, 54, 0.92);
+  --bx-line: rgba(130, 172, 236, 0.24);
+  --bx-line-strong: rgba(142, 186, 250, 0.46);
 
   --bx-blue: #2f6fe6;
   --bx-blue-bright: #4f8dff;
@@ -71,9 +73,9 @@
   --bx-gold-soft: #ffc861;
   --bx-mint: #6ff0c2;
 
-  --bx-text: #eaf1ff;
-  --bx-text-dim: #aab9d9;
-  --bx-text-faint: #6f82a8;
+  --bx-text: #eef3ff;
+  --bx-text-dim: #c6d1ea;
+  --bx-text-faint: #93a3c6;
 
   --bx-display:
     "Fraunces", "Iowan Old Style", Georgia, "Times New Roman", serif;
@@ -121,7 +123,7 @@
       rgba(246, 167, 34, 0.13),
       transparent 60%
     ),
-    linear-gradient(180deg, #04070f 0%, #060d20 45%, #04081400 100%),
+    linear-gradient(180deg, #0b1426 0%, #0e1c38 45%, #0b142600 100%),
     var(--bx-ink);
 }
 
