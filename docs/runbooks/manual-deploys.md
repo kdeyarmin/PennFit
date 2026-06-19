@@ -29,7 +29,7 @@ only when you trigger them.
      railway redeploy    # re-run the most recent deploy for this environment
      ```
 
-Merges into `main` will now queue but not ship until you trigger a deploy.
+Merges into `main` will no longer trigger a deploy; production will only ship when you manually deploy/redeploy.
 
 ## Option B — Deploy from a dedicated `release` branch (git-native)
 
