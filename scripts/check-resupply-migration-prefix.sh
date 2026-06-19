@@ -3,7 +3,7 @@
 # Resupply DB migration-prefix moratorium check.
 #
 # Background:
-#   The lib/resupply-db/drizzle/ tree is mid-drift. The original
+#   The lib/resupply-db/migrations/ tree is mid-drift. The original
 #   moratorium documented six duplicated prefixes in the journaled
 #   range — 0016, 0017, 0049, 0050, 0052, 0065 — and forbade any new
 #   migration with prefix <= 0066. Since then, six MORE prefixes have
@@ -17,12 +17,12 @@
 #   loser rebases. A CI job that fails on any duplicated prefix in
 #   the tree (not just adds) would close that remaining hole; tracked
 #   as a follow-up so this script can stay drop-in.
-#   See lib/resupply-db/drizzle/README.md and
+#   See lib/resupply-db/migrations/README.md and
 #   docs/migration-state-investigation-2026-05-08.md for the full
 #   story and why a code-only fix is unsafe.
 #
 # Rule enforced here:
-#   Any migration file ADDED under lib/resupply-db/drizzle/ must have
+#   Any migration file ADDED under lib/resupply-db/migrations/ must have
 #   a 4-digit prefix STRICTLY GREATER THAN the moratorium threshold
 #   (currently 0066). Adding a file with prefix <= 0066 either:
 #     - reuses one of the six already-duplicated prefixes, or
@@ -78,13 +78,25 @@ fi
 # Renamed-into is treated as added by git when the source content
 # changed enough; that's the correct behavior here because a "new"
 # prefix slot is what we care about regardless of provenance.
+#
+# We deliberately diff the WHOLE tree (no pathspec) with rename
+# detection enabled, then filter to migrations/*.sql afterward.
+# Restricting the diff to the migrations/ pathspec hides the deletion
+# side of a rename whose source lived elsewhere (e.g. the one-time
+# lib/resupply-db/drizzle/ -> lib/resupply-db/migrations/ directory
+# move), which makes git report every renamed file as a fresh add and
+# falsely trips the collision check below. Diffing the full tree lets
+# git pair renames (classified R, excluded by --diff-filter=A); a
+# rename with enough content change still shows as A — exactly the
+# "new prefix slot regardless of provenance" behavior we want.
 diff_args=(diff)
 if [[ -n "$DIFF_TARGET" ]]; then
   diff_args+=("$DIFF_TARGET")
 fi
-diff_args+=(--name-only --diff-filter=A "$BASE_REF" -- 'lib/resupply-db/drizzle/*.sql')
+diff_args+=(--name-only --diff-filter=A --find-renames "$BASE_REF")
 
-mapfile -t added < <(git "${diff_args[@]}" 2>/dev/null || true)
+mapfile -t added < <(git "${diff_args[@]}" 2>/dev/null \
+  | grep -E '^lib/resupply-db/migrations/.+\.sql$' || true)
 
 # Build the set of prefixes that ALREADY exist in the tree (excluding
 # the files being added in THIS diff). A new migration must pick a
@@ -99,7 +111,7 @@ while IFS= read -r f; do
   if [[ "$base" =~ ^([0-9]{4})_.+\.sql$ ]]; then
     existing_prefixes+=" ${BASH_REMATCH[1]}"
   fi
-done < <(git ls-files 'lib/resupply-db/drizzle/*.sql' 2>/dev/null || true)
+done < <(git ls-files 'lib/resupply-db/migrations/*.sql' 2>/dev/null || true)
 
 # Remove the just-added files from the existing set — they're part
 # of the diff being checked, not pre-existing collisions. The
@@ -139,7 +151,7 @@ for f in "${added[@]}"; do
       if [[ "$existing_base" =~ ^([0-9]{4})_.+\.sql$ ]] && [[ "${BASH_REMATCH[1]}" == "$prefix" ]]; then
         count=$((count + 1))
       fi
-    done < <(git ls-files -- 'lib/resupply-db/drizzle/*.sql')
+    done < <(git ls-files -- 'lib/resupply-db/migrations/*.sql')
     if (( count > 0 )); then
       collision_violations+=("$f (prefix ${prefix} already exists)")
     fi
@@ -154,7 +166,7 @@ ERROR: new resupply migration collides with an existing prefix.
 
 This commit adds the following migration file(s) whose 4-digit
 prefix is already used by another migration in
-lib/resupply-db/drizzle/:
+lib/resupply-db/migrations/:
 
 EOF
   for v in "${collision_violations[@]}"; do
@@ -180,7 +192,7 @@ if (( ${#violations[@]} > 0 )); then
 ERROR: new resupply migration uses a forbidden prefix.
 
 This commit adds the following migration file(s) under
-lib/resupply-db/drizzle/ with a 4-digit prefix <= ${threshold_padded}:
+lib/resupply-db/migrations/ with a 4-digit prefix <= ${threshold_padded}:
 
 EOF
   for v in "${violations[@]}"; do
@@ -188,7 +200,7 @@ EOF
   done
   cat >&2 <<EOF
 
-The lib/resupply-db/drizzle/ tree is currently mid-drift:
+The lib/resupply-db/migrations/ tree is currently mid-drift:
   - meta/_journal.json stops at 0049_physician_fax_outreach_status_pending_idx
     (52 entries) but 73 SQL files exist on disk.
   - Six prefixes are duplicated: 0016, 0017, 0049, 0050, 0052, 0065.
@@ -198,7 +210,7 @@ Adding any new migration with prefix <= ${threshold_padded} either reuses
 a duplicate prefix or lands inside the unjournaled range, compounding
 the drift. Use a prefix > ${threshold_padded} (i.e. >= $((THRESHOLD + 1))) instead.
 
-Read lib/resupply-db/drizzle/README.md and
+Read lib/resupply-db/migrations/README.md and
 docs/migration-state-investigation-2026-05-08.md for the full
 rationale and the coordinated rewrite procedure that will eventually
 lift this moratorium.

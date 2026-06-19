@@ -110,4 +110,4 @@ clean up — the flag only gates whether the triggers reach `dispatchAlert`.
   `…/low-usage-checkin-trigger.ts`.
 - Dispatch + per-channel send + the unresolved-variable guard:
   `artifacts/resupply-api/src/lib/alerts/dispatch.ts`.
-- Flag seed (off): `lib/resupply-db/drizzle/0181_alerts_auto_dispatch_flag.sql`.
+- Flag seed (off): `lib/resupply-db/migrations/0181_alerts_auto_dispatch_flag.sql`.

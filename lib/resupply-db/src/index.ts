@@ -16,10 +16,9 @@
 //   - `getDbPool` is retained for the migration tooling under
 //     `./scripts`. No production runtime path calls it.
 //
-// Migration history lives in the SQL files under `./drizzle/*.sql`.
-// The directory name is historical — new migrations are hand-written
-// SQL (no drizzle-kit involved). The directory will be renamed in
-// a separate operational change.
+// Migration history lives in the SQL files under `./migrations/*.sql`.
+// New migrations are hand-written SQL, applied by the in-house
+// migrator in `./scripts/migrate.mjs` (no ORM tooling involved).
 //
 // PHI is stored as plaintext (text/jsonb). Earlier revisions used
 // pgcrypto column-level encryption; migration 0025 stripped it.

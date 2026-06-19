@@ -33,7 +33,7 @@ router.get(
   async (_req, res) => {
     // pgVersion / migrationCount / lastMigrationAt are returned as
     // nulls: PostgREST doesn't expose `SHOW server_version`, and the
-    // on-DB migration bookkeeping table (drizzle.resupply_migrations)
+    // on-DB migration bookkeeping table (migrations.resupply_migrations)
     // is only reachable by the deploy migrator (`scripts/migrate.mjs`),
     // not the exposed-schema Supabase client. Null (not 0) so the SPA
     // renders an honest "not tracked here" instead of the misleading

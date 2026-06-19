@@ -60,7 +60,7 @@ rg -n '@sendgrid/mail|new MailService|sgMail|setApiKey\(' artifacts lib --glob '
 # R7 global @theme block in admin.css (must NOT exist), and admin surfaces missing the scope wrapper
 rg -n '@theme' artifacts/cpap-fitter/src/admin.css
 
-# Conventions: direct pg outside the db package, drizzle in the domain pkg
+# Conventions: direct pg outside the db package, drizzle-orm in the domain pkg
 rg -nP "from\s+['\"]pg['\"]|require\(\s*['\"]pg['\"]\s*\)" artifacts lib --glob '!lib/resupply-db/**'
 rg -n 'drizzle-orm|drizzle-kit|drizzle-zod' lib/resupply-domain lib/resupply-integrations*
 
@@ -134,7 +134,7 @@ Enforced by `artifacts/cpap-fitter/src/admin.scope.test.ts`.
   `drizzle-orm`/`drizzle-kit`; no direct `pg` outside `lib/resupply-db`
   (a few legacy worker paths + `migrate.mjs` are the only exceptions).
 - **Zod at every HTTP boundary** in `resupply-api`.
-- **Don't hand-edit `lib/resupply-db/drizzle/meta/_journal.json`** — frozen
+- **Don't hand-edit `lib/resupply-db/migrations/meta/_journal.json`** — frozen
   at 52 entries; splicing it can re-apply/skip prod migrations.
 - **Service boot is decoupled from the worker.** Don't `process.exit` on
   worker-boot failure and don't point the health check at `/readyz`
