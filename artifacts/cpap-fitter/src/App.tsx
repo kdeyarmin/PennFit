@@ -567,6 +567,15 @@ const BreatheLearn = lazyWithRetry(() =>
   })),
 );
 
+// Breathe — FAQ. Leads with the marquee operator question ("is this compliant
+// with Medicare and the major payers?") and answers everything else about the
+// software. Same dark chrome, mounted in TopRouter, lazy-loaded.
+const BreatheFaq = lazyWithRetry(() =>
+  import("@/pages/breathe-faq").then((m) => ({
+    default: m.BreatheFaq,
+  })),
+);
+
 const Reminders = lazyWithRetry(() =>
   import("@/pages/reminders").then((m) => ({ default: m.Reminders })),
 );
@@ -1193,6 +1202,7 @@ function TopRouter() {
         <Route path="/breathe/roi" component={BreatheRoi} />
         <Route path="/breathe/pricing" component={BreathePricing} />
         <Route path="/breathe/security" component={BreatheSecurity} />
+        <Route path="/breathe/faq" component={BreatheFaq} />
         <Route path="/breathe/signup" component={BreatheSignup} />
         <Route path="/">
           {() => (isPlatformHomeHost() ? <BreatheHome /> : <PatientRouter />)}
