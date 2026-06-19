@@ -1655,6 +1655,9 @@
   display: block;
   width: 100%;
   height: auto;
+  /* Reserve the box at the assets' native 16:10 so the lazy/poster media
+     doesn't shift layout while it loads (the video uses preload="none"). */
+  aspect-ratio: 16 / 10;
 }
 .bx-shotgrid {
   display: grid;
@@ -1707,6 +1710,7 @@
   display: block;
   width: 100%;
   height: auto;
+  aspect-ratio: 16 / 10;
 }
 .bx-shotcard figcaption {
   margin-top: 14px;
