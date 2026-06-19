@@ -24,9 +24,9 @@ only when you trigger them.
    - click **Deploy / Redeploy** on the service in the dashboard, or
    - run the Railway CLI against the prod environment:
      ```bash
-     railway up          # build + deploy current main HEAD
+     railway up          # build + deploy the current local checkout (ensure you're on the commit/branch you intend to ship)
      # or
-     railway redeploy    # re-ship the latest build
+     railway redeploy    # re-run the most recent deploy for this environment
      ```
 
 Merges into `main` will now queue but not ship until you trigger a deploy.
