@@ -62,9 +62,9 @@ function CategoryIntro() {
             Most DME companies don&apos;t run one. They run six or seven
             disconnected tools that were never designed to talk to each other —
             and spend real money, every day, moving patients between them by
-            hand. If you didn&apos;t know a platform like this existed, that&apos;s
-            because the category is new: it was only possible to build once AI
-            could do the work the extra staff used to.
+            hand. If you didn&apos;t know a platform like this existed,
+            that&apos;s because the category is new: it was only possible to
+            build once AI could do the work the extra staff used to.
           </p>
         </div>
       </div>

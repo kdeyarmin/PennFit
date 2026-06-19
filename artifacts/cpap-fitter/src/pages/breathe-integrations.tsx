@@ -240,7 +240,9 @@ function AiEarlyWarning() {
           <span className="bx-eyebrow">
             <BrainCircuit size={13} /> AI monitoring
           </span>
-          <h2 className="bx-h2">It catches problems early — not at the audit</h2>
+          <h2 className="bx-h2">
+            It catches problems early — not at the audit
+          </h2>
           <p className="bx-lede">
             A unified fleet is only half the value. Breathe watches it for you,
             every night, and turns the data into a ranked worklist of exactly
