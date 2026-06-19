@@ -3985,6 +3985,7 @@ export interface Database {
           answered_at: string | null;
           ended_at: string | null;
           duration_seconds: number | null;
+          answered_by: string | null;
           created_at: string;
           updated_at: string;
         };

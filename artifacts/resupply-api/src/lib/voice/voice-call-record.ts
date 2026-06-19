@@ -31,6 +31,13 @@ export interface VoiceCallEvent {
   direction: string | null;
   /** Parsed Twilio `CallDuration` (whole seconds) on terminal events. */
   durationSeconds: number | null;
+  /**
+   * Twilio Answering Machine Detection verdict (`AnsweredBy`): human |
+   * machine_start | machine_end_* | fax | unknown. Present only when the call
+   * was placed with machine detection AND Twilio has resolved it. Null/absent
+   * otherwise — never clobbers a prior non-null verdict.
+   */
+  answeredBy?: string | null;
   nowIso: string;
 }
 
@@ -41,6 +48,7 @@ export interface VoiceCallPatch {
   answered_at?: string;
   ended_at?: string;
   duration_seconds?: number | null;
+  answered_by?: string;
 }
 
 /**
@@ -61,6 +69,12 @@ export function buildVoiceCallPatch(event: VoiceCallEvent): VoiceCallPatch {
   } else if (TERMINAL_STATUSES.has(event.callStatus)) {
     patch.ended_at = event.nowIso;
     patch.duration_seconds = event.durationSeconds;
+  }
+  // AMD verdict can arrive on any event (Twilio resolves it shortly after
+  // answer). Only set it when present + non-empty so a later event carrying no
+  // verdict can't wipe an earlier one.
+  if (typeof event.answeredBy === "string" && event.answeredBy.trim() !== "") {
+    patch.answered_by = event.answeredBy.trim();
   }
   return patch;
 }

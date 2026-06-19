@@ -196,6 +196,11 @@ const AdminAnalyticsPage = lazyWithRetry(() =>
     default: m.AdminAnalyticsPage,
   })),
 );
+const AdminReorderRemindersPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-reorder-reminders").then((m) => ({
+    default: m.AdminReorderRemindersPage,
+  })),
+);
 const AdminAnalyticsMarginPage = lazyWithRetry(() =>
   import("@/pages/admin/admin-analytics-margin").then((m) => ({
     default: m.AdminAnalyticsMarginPage,
@@ -1085,6 +1090,10 @@ function AdminConsole() {
             <Route path="/admin/goals" component={AdminGoalsPage} />
             <Route path="/admin/kpi-alerts" component={AdminKpiAlertsPage} />
             <Route path="/admin/analytics" component={AdminAnalyticsPage} />
+            <Route
+              path="/admin/reorder-reminders"
+              component={AdminReorderRemindersPage}
+            />
             <Route
               path="/admin/therapy-usage-report"
               component={AdminTherapyUsageReportPage}

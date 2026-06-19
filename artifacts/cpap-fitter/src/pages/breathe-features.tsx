@@ -131,11 +131,13 @@ type Capability = {
 const CAPABILITIES: Capability[] = [
   {
     icon: <RefreshCw size={20} />,
-    title: "Resupply engine",
-    summary: "Never miss a replacement window across your whole panel.",
+    title: "Resupply revenue engine",
+    summary:
+      "A proprietary, behavioral-science engine that gets patients to reorder — automatically.",
     points: [
-      "Eligibility-aware reminders by SMS, email and voice on the right cadence",
-      "One-tap signed reorder links — no login, no friction",
+      "AI reasons over each patient's reorder window to choose the right message, channel and moment",
+      "Escalates text → email → AI phone call; an unanswered call is retried before a human steps in",
+      "One-tap signed reorder links — reply YES, tap, or just say yes; no login, no friction",
       "Subscriptions, autopay and cart-abandonment recovery",
       "A device-driven “supplies due” worklist built from real machine data",
     ],

@@ -56,23 +56,32 @@ A single due episode walks **one ladder**, advancing only when the previous
 touch goes unanswered. The moment the patient confirms / declines / opts out,
 or the order ships, the episode leaves the ladder and is never touched again.
 
-| Step | Day\* | Channel                                | Who runs it                                          | What it does                                              |
-| ---- | ----- | -------------------------------------- | ---------------------------------------------------- | --------------------------------------------------------- |
-| 0    | 0     | **SMS or email** (first-touch channel) | `reminders.scan` (hourly)                            | First reminder on the resolved channel.                   |
-| 1    | ~3    | **The other text channel**             | `reminders.escalation-scan` (daily)                  | Try email if step 0 was SMS, or vice-versa.               |
-| 2    | ~6    | **Automated phone call** _(opt-in)_    | `reminders.escalation-scan` → `reminders.place-call` | AI agent calls the patient for a resupply check-in.       |
-| 3    | ~9    | **Human CSR alert**                    | `reminders.escalation-scan`                          | Raise a `no_response` alert: "recommend a personal call." |
-| —    | 21    | **Stop**                               | `reminders.escalation-scan`                          | Past `ESCALATION_MAX_DAYS`, stop nagging entirely.        |
+| Step | Day\* | Channel                                | Who runs it                                          | What it does                                                            |
+| ---- | ----- | -------------------------------------- | ---------------------------------------------------- | ----------------------------------------------------------------------- |
+| 0    | 0     | **SMS or email** (first-touch channel) | `reminders.scan` (hourly)                            | First reminder on the resolved channel.                                 |
+| 1    | ~3    | **The other text channel**             | `reminders.escalation-scan` (daily)                  | Try email if step 0 was SMS, or vice-versa.                             |
+| 2    | ~6    | **Automated phone call** _(opt-in)_    | `reminders.escalation-scan` → `reminders.place-call` | AI agent calls the patient. Retried (up to a cap) if it isn't answered. |
+| 3    | ~9    | **Human CSR alert**                    | `reminders.escalation-scan`                          | Raise a `no_response` alert: "recommend a personal call."               |
+| —    | 21    | **Stop**                               | `reminders.escalation-scan`                          | Past the max-age cap, stop nagging entirely.                            |
 
-\* Days are approximate. Two timers govern spacing:
+\* Days are approximate. Two timers govern spacing (both **admin-tunable** per
+tenant from Control Center → Resupply reminders, falling back to the defaults):
 
-- **Minimum spacing (`ESCALATION_DELAY_DAYS = 3`)** — measured from the **most
-  recent** touch. A patient texted on day 0 and emailed on day 3 isn't called
-  until ~day 6 and isn't handed to a CSR until ~day 9, instead of the whole
-  ladder firing on back-to-back days.
-- **Max age (`ESCALATION_MAX_DAYS = 21`)** — measured from the **first** touch.
-  After 21 days the episode stops escalating no matter where it is in the
-  ladder.
+- **Minimum spacing (`RESUPPLY_ESCALATION_DELAY_DAYS`, default 3)** — measured
+  from the **most recent** touch. A patient texted on day 0 and emailed on day 3
+  isn't called until ~day 6 and isn't handed to a CSR until ~day 9, instead of
+  the whole ladder firing on back-to-back days. Clamped to 1–30.
+- **Max age (`RESUPPLY_ESCALATION_MAX_DAYS`, default 21)** — measured from the
+  **first** touch. After this many days the episode stops escalating no matter
+  where it is in the ladder. Clamped to (spacing)–120.
+
+**The voice tier retries.** Unlike the one-shot text channels, a call that goes
+**unanswered / busy / to voicemail** is retried up to `MAX_VOICE_ATTEMPTS` (2),
+spaced by the step delay. A call that **reaches a live person** ends the voice
+tier immediately (the agent handled it). Voicemail vs live answer is told apart
+by Twilio Answering Machine Detection (`AnsweredBy`); if detection never
+resolves, a completed call defaults to "reached someone" so detection failing
+never blocks the ladder.
 
 The voice tier (step 2) is **opt-in and additive**: it is inserted into a
 tenant's ladder only when the `reminder_escalation.voice` feature flag is ON
@@ -86,13 +95,15 @@ that never flips the flag is unchanged.
 episode still outreach_pending / awaiting_response?
 │  no  → leave the ladder (patient responded or order shipped). DONE.
 │  yes
-├─ firstTouchAge > 21 days?           → stop nagging. DONE.
-├─ sinceLastTouch < 3 days?           → too soon, wait. DONE for today.
-└─ pick next untried channel in ladder:
-   ├─ sms   untried → enqueue SMS reminder
-   ├─ email untried → enqueue email reminder
-   ├─ voice untried → enqueue automated call   (only if voice tier active)
-   └─ none untried  → raise CSR "no_response" alert
+├─ firstTouchAge > max-age?           → stop nagging. DONE.
+├─ sinceLastTouch < step-delay?       → too soon, wait. DONE for today.
+└─ pick next UNSATISFIED channel in ladder (skip ones the patient can't receive):
+   ├─ sms   not sent → enqueue SMS reminder
+   ├─ email not sent → enqueue email reminder
+   ├─ voice not satisfied → place a call            (only if voice tier active)
+   │     • satisfied once a call REACHES a live person, OR after MAX_VOICE_ATTEMPTS
+   │       unanswered/busy/voicemail calls — an unanswered call is retried
+   └─ all satisfied → raise CSR "no_response" alert
 ```
 
 ---
@@ -243,17 +254,18 @@ episode.
 
 ## 7. Configuration
 
-| Control                          | Type         | Default         | Effect                                                         |
-| -------------------------------- | ------------ | --------------- | -------------------------------------------------------------- |
-| `sms.reminders`                  | feature flag | on              | First-touch + escalation SMS.                                  |
-| `email.reminders`                | feature flag | on              | First-touch + escalation email.                                |
-| `reminder_escalation.dispatcher` | feature flag | (per migration) | Master switch for the daily escalation sweep.                  |
-| `reminder_escalation.voice`      | feature flag | **off**         | Adds the automated-call tier to the ladder. Opt-in per tenant. |
-| `patients.cadence_override_days` | column       | null            | Per-patient cadence.                                           |
-| `patients.channel_preference`    | column       | null            | Per-patient first-touch channel.                               |
-| `frequency_rules`                | table        | —               | SKU/payer/tenure-scoped cadence + channel.                     |
-| `ESCALATION_DELAY_DAYS`          | constant     | 3               | Min days between ladder steps.                                 |
-| `ESCALATION_MAX_DAYS`            | constant     | 21              | Stop-nagging age from first touch.                             |
+| Control                          | Type                        | Default         | Effect                                                                      |
+| -------------------------------- | --------------------------- | --------------- | --------------------------------------------------------------------------- |
+| `sms.reminders`                  | feature flag                | on              | First-touch + escalation SMS.                                               |
+| `email.reminders`                | feature flag                | on              | First-touch + escalation email.                                             |
+| `reminder_escalation.dispatcher` | feature flag                | (per migration) | Master switch for the daily escalation sweep.                               |
+| `reminder_escalation.voice`      | feature flag                | **off**         | Adds the automated-call tier to the ladder. Opt-in per tenant.              |
+| `patients.cadence_override_days` | column                      | null            | Per-patient cadence.                                                        |
+| `patients.channel_preference`    | column                      | null            | Per-patient first-touch channel.                                            |
+| `frequency_rules`                | table                       | —               | SKU/payer/tenure-scoped cadence + channel.                                  |
+| `RESUPPLY_ESCALATION_DELAY_DAYS` | app_config (Control Center) | 3               | Min days between ladder steps (clamped 1–30).                               |
+| `RESUPPLY_ESCALATION_MAX_DAYS`   | app_config (Control Center) | 21              | Stop-nagging age from first touch (clamped (delay)–120).                    |
+| `MAX_VOICE_ATTEMPTS`             | constant                    | 2               | Voice dial cap before the CSR hand-off (unanswered calls retry up to this). |
 
 The voice tier additionally requires the voice path to be configured:
 `OPENAI_API_KEY`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`,
@@ -268,16 +280,19 @@ automated call counts as `aiVoiceEvents`.
 
 ## 8. Where this lives
 
-| Concern                                            | File                                                                                               |
-| -------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| First-touch scan + per-channel SMS/email send      | `artifacts/resupply-api/src/worker/jobs/reminders.ts`                                              |
-| Eligibility / cadence + channel resolver           | `lib/resupply-domain/src/outreach-plan.ts`                                                         |
-| Escalation ladder (spacing, voice tier, CSR alert) | `artifacts/resupply-api/src/worker/jobs/reminder-escalation.ts`                                    |
-| Automated-call send job                            | `artifacts/resupply-api/src/worker/jobs/reminder-voice.ts`                                         |
-| Shared outbound-call placement (route + worker)    | `artifacts/resupply-api/src/lib/voice/place-outbound-call.ts`                                      |
-| Admin "Call" button route                          | `artifacts/resupply-api/src/routes/voice/place-call.ts`                                            |
-| SMS reminder copy                                  | `lib/resupply-reminders/src/send-sms.ts`                                                           |
-| Email reminder copy + signed CTAs                  | `lib/resupply-messaging/src/email-templates.ts`                                                    |
-| Inbound SMS keyword routing                        | `lib/resupply-messaging/src/keyword-router.ts`, `artifacts/resupply-api/src/routes/sms/inbound.ts` |
-| Voice agent grounding context                      | `artifacts/resupply-api/src/lib/voice/ws-handler.ts`                                               |
-| Voice tier opt-in flag (seed)                      | `lib/resupply-db/drizzle/0394_reminder_escalation_voice_flag.sql`                                  |
+| Concern                                            | File                                                                                                                                                                                              |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| First-touch scan + per-channel SMS/email send      | `artifacts/resupply-api/src/worker/jobs/reminders.ts`                                                                                                                                             |
+| Eligibility / cadence + channel resolver           | `lib/resupply-domain/src/outreach-plan.ts`                                                                                                                                                        |
+| Escalation ladder (spacing, voice tier, CSR alert) | `artifacts/resupply-api/src/worker/jobs/reminder-escalation.ts`                                                                                                                                   |
+| Automated-call send job                            | `artifacts/resupply-api/src/worker/jobs/reminder-voice.ts`                                                                                                                                        |
+| Shared outbound-call placement (route + worker)    | `artifacts/resupply-api/src/lib/voice/place-outbound-call.ts`                                                                                                                                     |
+| Admin "Call" button route                          | `artifacts/resupply-api/src/routes/voice/place-call.ts`                                                                                                                                           |
+| SMS reminder copy                                  | `lib/resupply-reminders/src/send-sms.ts`                                                                                                                                                          |
+| Email reminder copy + signed CTAs                  | `lib/resupply-messaging/src/email-templates.ts`                                                                                                                                                   |
+| Inbound SMS keyword routing                        | `lib/resupply-messaging/src/keyword-router.ts`, `artifacts/resupply-api/src/routes/sms/inbound.ts`                                                                                                |
+| Voice agent grounding context                      | `artifacts/resupply-api/src/lib/voice/ws-handler.ts`                                                                                                                                              |
+| Voice tier opt-in flag (seed)                      | `lib/resupply-db/drizzle/0395_reminder_escalation_voice_flag.sql`                                                                                                                                 |
+| Voice-call disposition (AMD) column                | `lib/resupply-db/drizzle/0396_voice_calls_answered_by.sql`                                                                                                                                        |
+| Tunable cadence (Control Center settings)          | `artifacts/resupply-api/src/lib/app-config/catalog.ts` (`RESUPPLY_ESCALATION_*`)                                                                                                                  |
+| Reorder funnel view (admin page + API)             | `artifacts/cpap-fitter/src/pages/admin/admin-reorder-reminders.tsx`, `artifacts/resupply-api/src/routes/admin/reorder-reminders.ts`, `artifacts/resupply-api/src/lib/analytics/reorder-funnel.ts` |

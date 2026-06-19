@@ -181,6 +181,12 @@ export async function placeOutboundReorderCall(
       from: callerId,
       url: twimlUrl,
       statusCallbackUrl,
+      // Detect voicemail vs a live answer so the escalation can retry an
+      // unanswered call (up to the cap) instead of counting a voicemail as a
+      // completed conversation. The verdict (`AnsweredBy`) lands on the status
+      // callback; if it never resolves, a completed call defaults to
+      // "connected" so detection failing never blocks the ladder.
+      machineDetection: "Enable",
     });
     callSid = result.sid;
   } catch (err) {
