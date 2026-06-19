@@ -97,7 +97,7 @@ export async function classifyAndCachePhoneLineType(input: {
     // A phone that won't normalize can't be looked up — record it as
     // 'unknown' (rather than leaving phone_line_type NULL) so the nightly
     // backfill candidate scan doesn't re-pick it forever and starve other
-    // rows. The phone-change DB trigger (migration 0398) re-NULLs it if the
+    // rows. The phone-change DB trigger (migration 0399) re-NULLs it if the
     // number is later corrected, so it'll be re-classified then.
     const normalized = normalizeE164(row.phone_e164);
     const lineType = normalized

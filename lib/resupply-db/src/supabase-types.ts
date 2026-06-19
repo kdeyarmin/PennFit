@@ -879,7 +879,7 @@ export interface Database {
           birthday_email_year_sent: number | null;
           sleep_anniversary_year_sent: number | null;
           timezone: string;
-          /** Phone line type (migration 0397). NULL = never classified. */
+          /** Phone line type (migration 0398). NULL = never classified. */
           phone_line_type: "mobile" | "landline" | "voip" | "unknown" | null;
           phone_line_type_source: "lookup" | "manual" | null;
           phone_line_type_checked_at: string | null;
@@ -4246,7 +4246,7 @@ export interface Database {
             | "manual_list";
           audience_payer: string | null;
           /** Composable patient-segment spec; set only when
-           * audience_kind='patient_segment' (migration 0396). Shape owned by
+           * audience_kind='patient_segment' (migration 0397). Shape owned by
            * lib/bulk-campaigns/patient-segment.ts. */
           audience_filter: Json | null;
           channel: "email" | "sms";
@@ -4283,7 +4283,7 @@ export interface Database {
           recipient_kind: "patient" | "shop_customer";
           recipient_id: string;
           recipient_email: string | null;
-          /** E.164 destination snapshot for SMS campaigns (migration 0396);
+          /** E.164 destination snapshot for SMS campaigns (migration 0397);
            * NULL for email campaigns and no-phone recipients. */
           recipient_phone: string | null;
           status:
@@ -4910,7 +4910,7 @@ export interface Database {
           caregiver_revoked_at: string | null;
           // E.164 phone captured at Stripe Checkout (migration 0247).
           phone_e164: string | null;
-          /** Phone line type (migration 0397). NULL = never classified. */
+          /** Phone line type (migration 0398). NULL = never classified. */
           phone_line_type: "mobile" | "landline" | "voip" | "unknown" | null;
           phone_line_type_source: "lookup" | "manual" | null;
           phone_line_type_checked_at: string | null;

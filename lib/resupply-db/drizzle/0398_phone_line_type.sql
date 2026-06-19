@@ -1,4 +1,4 @@
--- 0397 — Phone line type (cell vs. landline/VoIP) for patients + shop customers.
+-- 0398 — Phone line type (cell vs. landline/VoIP) for patients + shop customers.
 --
 -- Adds a classified line type to each phone on file so the app can tell
 -- whether a number is a CELL — and so bulk-campaign SMS only goes to

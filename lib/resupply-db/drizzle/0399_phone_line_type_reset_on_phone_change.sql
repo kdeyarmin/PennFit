@@ -1,6 +1,6 @@
--- 0398 — Reset the phone line-type cache when a phone number changes.
+-- 0399 — Reset the phone line-type cache when a phone number changes.
 --
--- 0397 added cached phone_line_type columns to patients + shop_customers.
+-- 0398 added cached phone_line_type columns to patients + shop_customers.
 -- The cache is keyed to a specific number, so when phone_e164 changes (admin
 -- edit, portal-invite, merge, any current/future write path) the cached
 -- classification is stale: a mobile number replaced with a landline would

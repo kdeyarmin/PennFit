@@ -70,7 +70,7 @@ export type AudienceKind =
   // patient audience — the payer-filter guard below only fires for
   // by_patient_payer.
   | "by_therapy_cohort"
-  // Composable patient segment (migration 0396). The route resolves the
+  // Composable patient segment (migration 0397). The route resolves the
   // segment to patient candidates via fetch-candidates; this resolver
   // treats them like any other patient audience.
   | "patient_segment"
@@ -81,7 +81,7 @@ export interface ShopCustomerCandidate {
   emailLower: string | null;
   /** E.164 phone captured at checkout (migration 0247); null when unset. */
   phoneE164?: string | null;
-  /** Classified line type (migration 0397); gates SMS to non-landline. */
+  /** Classified line type (migration 0398); gates SMS to non-landline. */
   phoneLineType?: PhoneLineType | null;
   /** The full communication_preferences jsonb, or null when the
    *  customer hasn't ever set them. Null is treated as the default
@@ -99,7 +99,7 @@ export interface PatientCandidate {
   email: string | null;
   /** E.164 phone (patients.phone_e164); null when unset. */
   phone?: string | null;
-  /** Classified line type (migration 0397); gates SMS to non-landline. */
+  /** Classified line type (migration 0398); gates SMS to non-landline. */
   phoneLineType?: PhoneLineType | null;
   status: string;
   insurancePayer: string | null;
