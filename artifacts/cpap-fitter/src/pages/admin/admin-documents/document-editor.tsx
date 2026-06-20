@@ -345,6 +345,7 @@ function DocumentEditorForm({
                     id={`f-${f.key}`}
                     value={fields[f.key] ?? ""}
                     placeholder={f.placeholder}
+                    ariaRequired={f.required}
                     onChange={(v) => setField(f.key, v)}
                   />
                 ) : (
@@ -352,6 +353,7 @@ function DocumentEditorForm({
                     id={`f-${f.key}`}
                     type={f.kind === "date" ? "date" : "text"}
                     placeholder={f.placeholder}
+                    aria-required={f.required || undefined}
                     value={fields[f.key] ?? ""}
                     onChange={(e) => setField(f.key, e.target.value)}
                   />
