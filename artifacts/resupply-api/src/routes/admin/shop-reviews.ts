@@ -478,7 +478,7 @@ async function resolveProductDisplayName(productId: string): Promise<string> {
  * artifact root, NOT at the resupply-api base path — we use the
  * request origin (set by the same proxy that serves the dashboard)
  * so dev (https://<deploy>.up.railway.app/shop/p/...) and production
- * (https://pennpaps.com/shop/p/...) both render the right link
+ * (https://cmbreathe.com/shop/p/...) both render the right link
  * without a separate config.
  */
 function buildProductUrl(

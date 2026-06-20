@@ -51,6 +51,8 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useDocumentTitle } from "@/hooks/use-document-title";
+import { useCompanyContact } from "@/lib/contact";
+import { BrandName } from "@/components/company-contact";
 import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 import { toast } from "@/hooks/use-toast";
 import { useDocumentMeta } from "@/hooks/use-document-meta";
@@ -90,6 +92,7 @@ const BODY_MAX = 2000;
 type LoadState = "loading" | "ready" | "not_found" | "error";
 
 export function ShopProductDetail({ productId }: { productId: string }) {
+  const company = useCompanyContact();
   const [product, setProduct] = useState<ShopProductView | null>(null);
   // Full catalog kept around so RecentlyViewedStrip can resolve other
   // products by id without firing a second list request.
@@ -116,8 +119,20 @@ export function ShopProductDetail({ productId }: { productId: string }) {
   const [mine, setMine] = useState<MyReview | null>(null);
   const [mineLoaded, setMineLoaded] = useState(false);
 
+  // Tracks mount status so async event-handler callbacks (e.g.
+  // onMineChange's reviews refetch) don't setState after unmount.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   useDocumentTitle(
-    product ? `${product.name} — PennPaps shop` : "Product — PennPaps shop",
+    product
+      ? `${product.name} — ${company.name} shop`
+      : `Product — ${company.name} shop`,
     product?.tagline ?? product?.description ?? undefined,
   );
 
@@ -180,16 +195,16 @@ export function ShopProductDetail({ productId }: { productId: string }) {
     }
     return {
       openGraph: {
-        title: `${product.name} — Penn Home Medical Supply`,
+        title: `${product.name} — ${company.legalName}`,
         description,
         type: "product",
         url,
-        siteName: "Penn Home Medical Supply",
+        siteName: company.legalName,
         image: absoluteImage,
       } as const,
       jsonLd,
     };
-  }, [product, reviewPages?.aggregate]);
+  }, [product, reviewPages?.aggregate, company.legalName]);
 
   useDocumentMeta({
     openGraph: seoMeta.openGraph,
@@ -239,26 +254,39 @@ export function ShopProductDetail({ productId }: { productId: string }) {
   // Load the caller's own review for this product when the auth provider is ready.
   // Refetches on sign-in/out via the user-id key dep below.
   const { isSignedIn, userId } = useShopIdentity();
-  const refetchMine = useCallback(() => {
-    if (!isSignedIn) {
-      setMine(null);
-      setMineLoaded(true);
-      return;
-    }
-    fetchMyReview(productId)
-      .then((r) => {
-        setMine(r);
-        setMineLoaded(true);
-      })
-      .catch(() => {
-        // Network / 5xx shouldn't break the page — treat as "no review".
+  const refetchMine = useCallback(
+    (isActive: () => boolean = () => true) => {
+      if (!isSignedIn) {
+        if (!isActive()) return;
         setMine(null);
         setMineLoaded(true);
-      });
-  }, [isSignedIn, productId]);
+        return;
+      }
+      fetchMyReview(productId)
+        .then((r) => {
+          // Guard against a stale response / post-unmount setState — a
+          // newer fetch (sign-in/out, product change) may have superseded
+          // this one, mirroring the mount effect's `active` flag.
+          if (!isActive()) return;
+          setMine(r);
+          setMineLoaded(true);
+        })
+        .catch(() => {
+          // Network / 5xx shouldn't break the page — treat as "no review".
+          if (!isActive()) return;
+          setMine(null);
+          setMineLoaded(true);
+        });
+    },
+    [isSignedIn, productId],
+  );
   useEffect(() => {
+    let cancelled = false;
     setMineLoaded(false);
-    refetchMine();
+    refetchMine(() => !cancelled);
+    return () => {
+      cancelled = true;
+    };
   }, [refetchMine, userId]);
 
   const handleLoadMore = useCallback(async () => {
@@ -360,7 +388,11 @@ export function ShopProductDetail({ productId }: { productId: string }) {
           // Refetch the public list so a freshly-approved review (or
           // a deletion) is reflected immediately on this page.
           fetchProductReviews(productId)
-            .then(setReviewPages)
+            .then((pages) => {
+              // Guard against post-unmount / stale-response setState.
+              if (!mountedRef.current) return;
+              setReviewPages(pages);
+            })
             .catch(() => {
               // Non-fatal — list will refresh on next mount.
             });
@@ -531,6 +563,7 @@ function Hero({
 }) {
   const { addItem } = useCart();
   const { toast } = useToast();
+  const company = useCompanyContact();
   const [justAdded, setJustAdded] = useState(false);
   const [imgFailed, setImgFailed] = useState(false);
   const [mode, setMode] = useState<"one_time" | "subscription">(
@@ -553,7 +586,7 @@ function Hero({
       try {
         await navigator.share({
           title: product.name,
-          text: product.tagline ?? `${product.name} at PennPaps`,
+          text: product.tagline ?? `${product.name} at ${company.name}`,
           url,
         });
         return;
@@ -1042,7 +1075,7 @@ function ReviewsSection({
                   Want to write a review?
                 </h3>
                 <p className="text-sm text-muted-foreground mt-1">
-                  Sign in with your PennPaps account to leave one.
+                  Sign in with your <BrandName /> account to leave one.
                 </p>
               </div>
               <Link

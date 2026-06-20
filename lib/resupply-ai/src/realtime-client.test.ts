@@ -125,6 +125,46 @@ describe("RealtimeClient", () => {
     expect(sent.session.tools).toHaveLength(TOOL_NAMES.length);
   });
 
+  it("defaults caller-audio noise reduction to far_field (beta) for cleaner telephony input", () => {
+    const { fake } = build({ instructions: "do the thing" });
+    fake.fakeOpen();
+    const sent = JSON.parse(fake.received[0]!);
+    expect(sent.session.input_audio_noise_reduction).toEqual({
+      type: "far_field",
+    });
+  });
+
+  it("honors an explicit noiseReduction override and disables it with 'off'", () => {
+    const near = new FakeWebSocket();
+    new RealtimeClient({
+      apiKey: "sk-test",
+      instructions: "x",
+      noiseReduction: "near_field",
+      tools: OPENAI_TOOL_DESCRIPTORS,
+      allowedToolNames,
+      webSocketFactory: () => near,
+    });
+    near.fakeOpen();
+    expect(
+      JSON.parse(near.received[0]!).session.input_audio_noise_reduction,
+    ).toEqual({ type: "near_field" });
+
+    const off = new FakeWebSocket();
+    new RealtimeClient({
+      apiKey: "sk-test",
+      instructions: "x",
+      noiseReduction: "off",
+      tools: OPENAI_TOOL_DESCRIPTORS,
+      allowedToolNames,
+      webSocketFactory: () => off,
+    });
+    off.fakeOpen();
+    // `off` sends null explicitly so a session.update can also turn it off.
+    expect(
+      JSON.parse(off.received[0]!).session.input_audio_noise_reduction,
+    ).toBeNull();
+  });
+
   it("runs in text-output mode when generateAudio:false (external TTS owns the voice)", () => {
     const fake = new FakeWebSocket();
     new RealtimeClient({
@@ -182,6 +222,10 @@ describe("RealtimeClient", () => {
       "gpt-realtime-whisper",
     );
     expect(sent.session.audio.input.turn_detection.type).toBe("semantic_vad");
+    // Noise reduction lives under audio.input on the GA schema.
+    expect(sent.session.audio.input.noise_reduction).toEqual({
+      type: "far_field",
+    });
     // Reasoning model: depth via effort, not temperature.
     expect(sent.session.reasoning.effort).toBe("low");
     expect(sent.session.temperature).toBeUndefined();

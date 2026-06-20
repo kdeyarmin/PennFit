@@ -45,6 +45,10 @@ export interface ClearinghouseBody {
   /** Write-only — sent on save, never returned by GET. Blank on edit
    *  keeps the currently-stored password. */
   realtimePassword: string | null;
+  // Insurance discovery config. Reuses the real-time Authorization key
+  // (same Office Ally EDI account); only the endpoint URL + toggle here.
+  discoveryEnabled: boolean;
+  discoveryUrl: string | null;
 }
 
 export interface Clearinghouse extends Omit<
@@ -154,6 +158,8 @@ export function emptyClearinghouseBody(): ClearinghouseBody {
     realtimeReceiverId: null,
     realtimeTimeoutMs: null,
     realtimePassword: null,
+    discoveryEnabled: false,
+    discoveryUrl: null,
   };
 }
 
@@ -186,6 +192,8 @@ export function clearinghouseToBody(c: Clearinghouse): ClearinghouseBody {
     // Always blank on load — entering a value replaces the stored one;
     // leaving it blank keeps the current password.
     realtimePassword: null,
+    discoveryEnabled: c.discoveryEnabled,
+    discoveryUrl: c.discoveryUrl,
   };
 }
 

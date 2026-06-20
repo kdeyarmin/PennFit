@@ -43,6 +43,7 @@ import {
   createInsuranceClaim,
   createInsuranceClaimEvent,
   createInsuranceClaimLine,
+  downloadClaims837p,
   fetchInsuranceClaimPreflight,
   getInsuranceClaim,
   listInsuranceClaims,
@@ -120,11 +121,26 @@ export function AdminInsuranceClaimsPage({ patientId }: { patientId: string }) {
   const [, setLocation] = useLocation();
   const [showCreate, setShowCreate] = useState(false);
   const [openClaimId, setOpenClaimId] = useState<string | null>(null);
+  // Multi-select for batch 837P export. Holds claim ids the biller has
+  // ticked; the toolbar that appears builds one 837P for the whole set.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const { data, isPending, isError, error, refetch } = useQuery({
     queryKey: ["admin", "insurance-claims", patientId],
     queryFn: () => listInsuranceClaims(patientId),
   });
+
+  const claims = data?.insuranceClaims ?? [];
+  const selectedClaims = claims.filter((c) => selectedIds.has(c.id));
+
+  function toggleSelected(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
 
   return (
     <div className="p-6 space-y-6 max-w-5xl">
@@ -172,15 +188,25 @@ export function AdminInsuranceClaimsPage({ patientId }: { patientId: string }) {
             that will be billed to insurance.
           </p>
         ) : (
-          <ul className="space-y-3">
-            {data.insuranceClaims.map((c) => (
-              <ClaimRow
-                key={c.id}
-                claim={c}
-                onOpen={() => setOpenClaimId(c.id)}
+          <div className="space-y-3">
+            {selectedIds.size > 0 && (
+              <BatchExportBar
+                selectedClaims={selectedClaims}
+                onClear={() => setSelectedIds(new Set())}
               />
-            ))}
-          </ul>
+            )}
+            <ul className="space-y-3">
+              {claims.map((c) => (
+                <ClaimRow
+                  key={c.id}
+                  claim={c}
+                  selected={selectedIds.has(c.id)}
+                  onToggleSelect={() => toggleSelected(c.id)}
+                  onOpen={() => setOpenClaimId(c.id)}
+                />
+              ))}
+            </ul>
+          </div>
         )}
       </Card>
 
@@ -210,17 +236,34 @@ export function AdminInsuranceClaimsPage({ patientId }: { patientId: string }) {
  */
 function ClaimRow({
   claim,
+  selected,
+  onToggleSelect,
   onOpen,
 }: {
   claim: InsuranceClaim;
+  selected: boolean;
+  onToggleSelect: () => void;
   onOpen: () => void;
 }) {
   return (
-    <li>
+    <li className="flex items-stretch gap-2">
+      <label
+        className="flex items-center pl-1 cursor-pointer"
+        title="Select for batch 837P export"
+      >
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={onToggleSelect}
+          className="h-4 w-4"
+          aria-label={`Select ${claim.payerName} claim (DOS ${claim.dateOfService}) for batch export`}
+          data-testid={`insurance-claim-select-${claim.id}`}
+        />
+      </label>
       <button
         type="button"
         onClick={onOpen}
-        className="w-full text-left rounded-lg border p-4 hover:bg-[hsl(var(--surface-2))] transition-colors"
+        className="flex-1 min-w-0 text-left rounded-lg border p-4 hover:bg-[hsl(var(--surface-2))] transition-colors"
         style={{ borderColor: "hsl(var(--surface-3))" }}
         data-testid={`insurance-claim-row-${claim.id}`}
       >
@@ -260,6 +303,119 @@ function ClaimRow({
         </div>
       </button>
     </li>
+  );
+}
+
+// Max claims per 837P interchange — mirrors the server-side cap on
+// /admin/billing/claims/export-837p (claimIds.max(100)).
+const MAX_BATCH_CLAIMS = 100;
+
+/**
+ * Toolbar shown above the claim list once one or more claims are ticked.
+ * Builds a single clearinghouse-neutral 837P for the whole selection and
+ * downloads it — the multi-claim counterpart to the drawer's per-claim
+ * "Download 837P".
+ *
+ * An 837P interchange can't mix payers (the server rejects with
+ * `batch_payer_mismatch`), so we guard client-side: a selection that spans
+ * more than one payer disables export with an inline hint rather than letting
+ * the request fail. The server stays the authoritative validator.
+ */
+function BatchExportBar({
+  selectedClaims,
+  onClear,
+}: {
+  selectedClaims: InsuranceClaim[];
+  onClear: () => void;
+}) {
+  const [receiverId, setReceiverId] = useState("");
+  const [downloading, setDownloading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const payerNames = Array.from(
+    new Set(selectedClaims.map((c) => c.payerName)),
+  );
+  const multiPayer = payerNames.length > 1;
+  const tooMany = selectedClaims.length > MAX_BATCH_CLAIMS;
+  const canExport =
+    selectedClaims.length > 0 && !multiPayer && !tooMany && !downloading;
+
+  async function onExport() {
+    setDownloading(true);
+    setErr(null);
+    try {
+      await downloadClaims837p(
+        selectedClaims.map((c) => c.id),
+        receiverId,
+      );
+    } catch (e) {
+      setErr(
+        e instanceof Error ? e.message : "Could not export the batch 837P.",
+      );
+    } finally {
+      setDownloading(false);
+    }
+  }
+
+  return (
+    <div
+      className="rounded-lg border p-3 space-y-2"
+      style={{
+        borderColor: "hsl(var(--surface-3))",
+        backgroundColor: "hsl(var(--surface-2))",
+      }}
+      data-testid="claims-batch-export-bar"
+    >
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="text-sm font-medium">
+          {selectedClaims.length} selected
+          {payerNames.length === 1 ? ` · ${payerNames[0]}` : ""}
+        </span>
+        <input
+          type="text"
+          value={receiverId}
+          onChange={(e) => setReceiverId(e.target.value)}
+          placeholder="Receiver ID (optional)"
+          aria-label="Clearinghouse interchange receiver ID (ISA08)"
+          className="rounded border px-2 py-1 text-[12px]"
+          style={{ borderColor: "hsl(var(--surface-3))" }}
+        />
+        <Button
+          type="button"
+          disabled={!canExport}
+          onClick={onExport}
+          data-testid="claims-batch-export-button"
+        >
+          <Send className="h-4 w-4 mr-1.5" />
+          {downloading ? "Building…" : "Export batch (837P)"}
+        </Button>
+        <button
+          type="button"
+          onClick={onClear}
+          className="text-[12px] font-semibold hover:underline"
+          style={{ color: "hsl(var(--ink-3))" }}
+        >
+          Clear
+        </button>
+      </div>
+      {multiPayer && (
+        <p className="text-[12px]" style={{ color: "#b45309" }}>
+          One 837P can't mix payers. Selection spans {payerNames.length} payers
+          — narrow it to a single payer to export.
+        </p>
+      )}
+      {tooMany && (
+        <p className="text-[12px]" style={{ color: "#b45309" }}>
+          Up to {MAX_BATCH_CLAIMS} claims per export — deselect{" "}
+          {selectedClaims.length - MAX_BATCH_CLAIMS} to continue.
+        </p>
+      )}
+      {err && (
+        <p className="text-[12px]" style={{ color: "#9f1239" }}>
+          ✗ {err}
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -630,6 +786,7 @@ function ClaimDrawerContent({
 
       {claim.status === "draft" && (
         <OfficeAllySubmitPanel
+          claimId={claim.id}
           preflight={preflight}
           preflightLoading={preflightLoading}
           submitting={submitting}
@@ -773,6 +930,7 @@ function ClaimDrawerContent({
 // payer) are surfaced but don't block.
 
 function OfficeAllySubmitPanel({
+  claimId,
   preflight,
   preflightLoading,
   submitting,
@@ -780,6 +938,7 @@ function OfficeAllySubmitPanel({
   onSubmit,
   onRefreshPreflight,
 }: {
+  claimId: string;
   preflight: PreflightSummary | null;
   preflightLoading: boolean;
   submitting: boolean;
@@ -788,6 +947,23 @@ function OfficeAllySubmitPanel({
   onRefreshPreflight: () => void;
 }) {
   const ready = preflight?.readyToSubmit ?? false;
+  const [receiverId, setReceiverId] = useState("");
+  const [downloading, setDownloading] = useState(false);
+  const [downloadErr, setDownloadErr] = useState<string | null>(null);
+
+  async function onDownload837p() {
+    setDownloading(true);
+    setDownloadErr(null);
+    try {
+      await downloadClaims837p([claimId], receiverId);
+    } catch (e) {
+      setDownloadErr(
+        e instanceof Error ? e.message : "Could not export the 837P.",
+      );
+    } finally {
+      setDownloading(false);
+    }
+  }
   return (
     <section
       className="space-y-3 rounded border p-4"
@@ -873,6 +1049,41 @@ function OfficeAllySubmitPanel({
           ✗ Submit failed: {submitResult.error}
         </p>
       )}
+
+      <div
+        className="space-y-2 rounded border border-dashed p-3"
+        style={{ borderColor: "hsl(var(--surface-3))" }}
+      >
+        <p className="text-[12px]" style={{ color: "hsl(var(--ink-3))" }}>
+          Not using Office Ally? Export the clean 837P and upload it to the
+          clearinghouse of your choice.
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            type="text"
+            value={receiverId}
+            onChange={(e) => setReceiverId(e.target.value)}
+            placeholder="Receiver ID (optional)"
+            aria-label="Clearinghouse interchange receiver ID (ISA08)"
+            className="rounded border px-2 py-1 text-[12px]"
+            style={{ borderColor: "hsl(var(--surface-3))" }}
+          />
+          <button
+            type="button"
+            disabled={downloading}
+            onClick={onDownload837p}
+            className="rounded border px-3 py-1 text-[12px] font-semibold disabled:opacity-50"
+            style={{ borderColor: "hsl(var(--surface-3))" }}
+          >
+            {downloading ? "Building…" : "↓ Download 837P"}
+          </button>
+        </div>
+        {downloadErr && (
+          <p className="text-[12px]" style={{ color: "#9f1239" }}>
+            ✗ {downloadErr}
+          </p>
+        )}
+      </div>
     </section>
   );
 }

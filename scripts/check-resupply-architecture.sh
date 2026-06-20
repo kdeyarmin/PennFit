@@ -261,7 +261,7 @@ for noaudit in artifacts/resupply-api/src \
     # or `db.insert(\n  schema.auditLog\n)` across lines and slip
     # past every line-oriented pattern we write):
     #
-    #   1. `.insert(<anyIdent>?.audit*)` — Drizzle insert call.
+    #   1. `.insert(<anyIdent>?.audit*)` — ORM-style insert call.
     #      Matches the bare `.insert(auditLog)` form AND the
     #      namespaced `.insert(schema.auditLog)` /
     #      `.insert(tables.AuditLog)` form. The identifier-name
@@ -347,7 +347,7 @@ forbid_imports_in lib/resupply-messaging/src \
 # place to import it) but must NEVER reach into the DB layer or any
 # AI/telecom vendor SDK. PHI lives encrypted in resupply.* and
 # arrives at this lib already-decrypted as plain strings; the lib
-# itself does not — and must not — know about pg/drizzle. Same
+# itself does not — and must not — know about pg/raw-SQL ORMs. Same
 # blast-radius reasoning as Rule 10.
 forbid_imports_in lib/resupply-email/src \
   "lib/resupply-email must not import the DB layer or non-SendGrid vendor SDKs (keep it a pure SendGrid adapter)" \
@@ -417,8 +417,8 @@ fi
 # catches that by grepping for `CREATE TABLE resupply.<name>` patterns
 # matching the same forbidden vocabulary. Same Pacware-boundary
 # rationale — change only via ADR.
-if [[ -d lib/resupply-db/drizzle ]]; then
-  forbidden_inventory_sql="$(find lib/resupply-db/drizzle -maxdepth 1 -type f -name '*.sql' \
+if [[ -d lib/resupply-db/migrations ]]; then
+  forbidden_inventory_sql="$(find lib/resupply-db/migrations -maxdepth 1 -type f -name '*.sql' \
     -exec grep -liE '(CREATE|ALTER)[[:space:]]+TABLE[[:space:]]+(IF[[:space:]]+NOT[[:space:]]+EXISTS[[:space:]]+)?"?resupply"?\."?(inventory_items|inventory_lots|purchase_orders|receiving_events|receiving_receipts|warehouses|stock_transfers)"?' {} \; 2>/dev/null || true)"
   if [[ -n "$forbidden_inventory_sql" ]]; then
     fail "SQL migrations may not own inventory/warehousing tables — Pacware is the system of record."

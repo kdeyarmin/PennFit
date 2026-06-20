@@ -14,6 +14,7 @@ import { Router, type IRouter } from "express";
 import alertTwimlRouter from "./alert-twiml";
 import checkinTwimlRouter from "./checkin-twiml";
 import connectionTestTwimlRouter from "./connection-test-twiml";
+import inboundBreatheSalesRouter from "./inbound-breathe-sales";
 import inboundReorderRouter from "./inbound-reorder";
 import placeCallRouter from "./place-call";
 import realtimeDiagnosticRouter from "./realtime-diagnostic";
@@ -41,6 +42,12 @@ router.use(checkinTwimlRouter);
 // the OpenAI Realtime bridge for a conversation; unidentified
 // callers transfer to a human.
 router.use(inboundReorderRouter);
+// /voice/inbound-breathe-sales — AI sales line for the CareMetric Breathe
+// PLATFORM (B2B). A prospective DME business dials the dedicated platform
+// number; the agent pitches the platform, emails info, captures leads, and
+// can start a tenant sign-up. Gated by the voice.breathe_sales flag + the
+// BREATHE_SALES_VOICE_NUMBER env var; handler does its own checks.
+router.use(inboundBreatheSalesRouter);
 // /voice/connection-test-twiml — static Say + Hangup served to Twilio
 // for the super-admin "test voice connection" diagnostic call.
 router.use(connectionTestTwimlRouter);

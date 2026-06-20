@@ -13,9 +13,12 @@ describe("admin console platform billing routes", () => {
     expect(SRC).toContain('path="/admin/billing/package"');
   });
 
-  it("lazy-loads the super-admin platform billing page", () => {
-    expect(SRC).toContain("AdminPlatformBillingPage");
-    expect(SRC).toContain("@/pages/admin/admin-platform-billing");
-    expect(SRC).toContain('path="/admin/platform-billing"');
+  it("does not mount the super-admin platform billing page in the tenant console", () => {
+    // The cross-tenant platform billing page moved to the platform
+    // super-admin console (/platform/billing); it must not be reachable
+    // from the per-tenant /admin console.
+    expect(SRC).not.toContain("AdminPlatformBillingPage");
+    expect(SRC).not.toContain("admin-platform-billing");
+    expect(SRC).not.toContain('path="/admin/platform-billing"');
   });
 });

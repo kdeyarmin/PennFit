@@ -36,6 +36,7 @@ import {
   generateOrderReference,
 } from "../../lib/storefront/orderEmail.js";
 import { sendFitterOrderConfirmationEmail } from "../../lib/order-emails/send-fitter-order-confirmation-email.js";
+import { resolveBrandingByOrgId } from "../../lib/tenant-branding.js";
 import {
   createTwilioSmsClient,
   TwilioConfigError,
@@ -303,7 +304,11 @@ router.post(
         // Keep the body under 160 GSM-7 characters so it ships as a
         // single segment. The order reference doubles as a per-message
         // search anchor if the patient texts back asking about it.
-        const body = `PennPaps: order ${result.orderReference} received. We'll reach out to Dr. ${physicianName.split(" ").pop()} this week to coordinate your prescription. Reply STOP to opt out.`;
+        // Brand to the tenant's storefront name via the shared resolver
+        // (same field the check-in voice/SMS copy uses). Seed → "PennPaps".
+        const brandName = (await resolveBrandingByOrgId(orgId ?? undefined))
+          .storefrontName;
+        const body = `${brandName}: order ${result.orderReference} received. We'll reach out to Dr. ${physicianName.split(" ").pop()} this week to coordinate your prescription. Reply STOP to opt out.`;
         await sms.sendSms({ to: phone, body });
       } catch (err) {
         if (err instanceof TwilioConfigError) {

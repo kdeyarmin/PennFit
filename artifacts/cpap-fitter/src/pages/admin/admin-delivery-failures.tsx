@@ -121,7 +121,7 @@ function MessageFailuresTable({ data }: { data: DeliveryFailuresResponse }) {
   // row) into one newest-first triage list.
   const rows = useMemo<Array<MessageFailureEvent | RecallFailureEvent>>(
     () =>
-      [...data.messageEvents, ...(data.recallEvents ?? [])].sort(
+      [...(data.messageEvents ?? []), ...(data.recallEvents ?? [])].sort(
         (a, b) =>
           new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime(),
       ),
@@ -311,7 +311,7 @@ function AuditFailuresTable({ data }: { data: DeliveryFailuresResponse }) {
       </div>
     );
   }
-  const rows = data.auditEvents;
+  const rows = data.auditEvents ?? [];
   if (rows.length === 0) {
     return (
       <div className="text-sm text-slate-500">

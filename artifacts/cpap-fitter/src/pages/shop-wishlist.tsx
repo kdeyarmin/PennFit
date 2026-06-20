@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ToastAction } from "@/components/ui/toast";
 import { useToast } from "@/hooks/use-toast";
+import { useCompanyContact } from "@/lib/contact";
 import {
   fetchShopProducts,
   formatMoneyCents,
@@ -34,6 +35,7 @@ export function ShopWishlist() {
   const { ids } = useWishlist();
   const { addItem } = useCart();
   const { toast } = useToast();
+  const company = useCompanyContact();
   const [catalog, setCatalog] = useState<ShopProductView[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -199,8 +201,8 @@ export function ShopWishlist() {
     if (typeof navigator !== "undefined" && navigator.share) {
       try {
         await navigator.share({
-          title: "My PennPaps saved list",
-          text: `${items.length} CPAP supplies I'm considering on PennPaps`,
+          title: `My ${company.name} saved list`,
+          text: `${items.length} CPAP supplies I'm considering on ${company.name}`,
           url,
         });
         return;

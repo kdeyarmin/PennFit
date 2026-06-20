@@ -25,6 +25,7 @@ import {
   PackageCheck,
 } from "lucide-react";
 import { useDocumentTitle } from "@/hooks/use-document-title";
+import { useCompanyContact } from "@/lib/contact";
 import { TrustSignalStrip } from "@/components/trust-signal-strip";
 import fullFaceImg from "@/assets/masks/full-face.webp";
 import nasalImg from "@/assets/masks/nasal.webp";
@@ -94,9 +95,10 @@ const brands: Brand[] = [
 ];
 
 export function CpapMasks() {
+  const c = useCompanyContact();
   useDocumentTitle(
     "CPAP Mask Brands",
-    "Compare CPAP masks from React Health, ResMed, and Fisher & Paykel — the three brands PennPaps carries, with our top picks and a clinically-matched fitter.",
+    `Compare CPAP masks from React Health, ResMed, and Fisher & Paykel — the three brands ${c.name} carries, with our top picks and a clinically-matched fitter.`,
     { schema: "Article" },
   );
   const [, navigate] = useLocation();
@@ -654,7 +656,7 @@ export function CpapMasks() {
             <div className="inline-flex items-center gap-3">
               <div className="h-px w-10 bg-gradient-to-r from-transparent to-[hsl(var(--penn-gold))]" />
               <span className="text-xs font-semibold uppercase tracking-[0.32em] text-[hsl(var(--penn-navy))]/75">
-                Why PennPaps
+                Why {c.name}
               </span>
               <div className="h-px w-10 bg-gradient-to-l from-transparent to-[hsl(var(--penn-gold))]" />
             </div>

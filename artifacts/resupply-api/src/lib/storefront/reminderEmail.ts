@@ -23,7 +23,7 @@
  *                            (the canonical practice address) when unset, so
  *                            it is no longer required for delivery.
  *   - REMINDER_PUBLIC_BASE_URL — Base URL for manage / unsubscribe links.
- *     Defaults to https://pennpaps.com so links emitted from preview /
+ *     Defaults to https://cmbreathe.com so links emitted from preview /
  *     staging deploys still resolve to production.
  *
  * If SendGrid isn't configured, the functions return
@@ -43,7 +43,7 @@ import {
   resolveTenantBaseUrl,
 } from "../tenant-branding.js";
 
-const DEFAULT_BASE_URL = "https://pennpaps.com";
+const DEFAULT_BASE_URL = "https://cmbreathe.com";
 
 export interface SendEmailResult {
   configured: boolean;

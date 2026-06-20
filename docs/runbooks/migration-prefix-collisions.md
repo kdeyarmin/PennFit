@@ -8,8 +8,8 @@
 ```
 ERROR: duplicated resupply migration prefix(es) in the tree.
     prefix 03NN: 2 files (allowed 1)
-        lib/resupply-db/drizzle/03NN_<series-a>.sql
-        lib/resupply-db/drizzle/03NN_<series-b>.sql
+        lib/resupply-db/migrations/03NN_<series-a>.sql
+        lib/resupply-db/migrations/03NN_<series-b>.sql
 ```
 
 This fired three times on 2026-06-14 alone (prefixes 0325–0330, 0337/0338,
@@ -58,7 +58,7 @@ Both parts are needed; either alone leaves the race open.
 
 ### Verify
 
-Open a throwaway PR that adds `lib/resupply-db/drizzle/0016_dupe_test.sql`
+Open a throwaway PR that adds `lib/resupply-db/migrations/0016_dupe_test.sql`
 (0016 is a known duplicate prefix). The drift check should fail and — with
 the settings above — the PR should be **unmergeable** (not merely
 "unstable").
@@ -78,8 +78,8 @@ it: **rename the most-recently-merged file(s) to the next free prefix.**
    (`check-resupply-migration-immutability.sh`) still passes:
 
    ```bash
-   git mv lib/resupply-db/drizzle/0342_asset_recovery_auto_populate_flag.sql \
-          lib/resupply-db/drizzle/0343_asset_recovery_auto_populate_flag.sql
+   git mv lib/resupply-db/migrations/0342_asset_recovery_auto_populate_flag.sql \
+          lib/resupply-db/migrations/0343_asset_recovery_auto_populate_flag.sql
    ```
 
 4. Do **NOT** extend the grandfathered allowlist in
@@ -101,7 +101,7 @@ Worked examples: PRs #814 (0337/0338 → 0340–0342) and #824
 
 ## See also
 
-- `lib/resupply-db/drizzle/README.md` — migration conventions.
+- `lib/resupply-db/migrations/README.md` — migration conventions.
 - `docs/migration-state-investigation-2026-05-08.md` — why the journal is
   frozen and a code-only fix to the drift is unsafe.
 - `docs/runbooks/adopt-migration-ledger.md` — the deploy-time migrator.

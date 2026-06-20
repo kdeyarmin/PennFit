@@ -591,6 +591,58 @@ function runChecks(): void {
     }
   }
 
+  // Dedicated platform-billing Stripe account (optional). When unset,
+  // platform billing shares STRIPE_SECRET_KEY (single-account mode) and
+  // there is nothing to check. When SET, it must be a live key in prod, it
+  // must be paired with its own webhook signing secret, and it must NOT be
+  // the same key as patient checkout (that would defeat the split).
+  const platformKey = getTrimmed("STRIPE_PLATFORM_SECRET_KEY");
+  if (platformKey !== undefined) {
+    if (prodMode && !STRIPE_LIVE_KEY_SHAPE.test(platformKey)) {
+      const reason = platformKey.startsWith("sk_test_")
+        ? "must be a live key (sk_live_…), got a test key (sk_test_…)"
+        : "must be a live key matching sk_live_<alphanum>{20+}";
+      record("STRIPE_PLATFORM_SECRET_KEY", "fail", reason);
+    } else if (
+      STRIPE_LIVE_KEY_SHAPE.test(platformKey) ||
+      STRIPE_TEST_KEY_SHAPE.test(platformKey)
+    ) {
+      record("STRIPE_PLATFORM_SECRET_KEY", "pass", "dedicated billing key");
+    } else {
+      record(
+        "STRIPE_PLATFORM_SECRET_KEY",
+        prodSeverity,
+        "unexpected key shape",
+      );
+    }
+
+    // Distinct-key constraint gets its OWN check name so it can't collide
+    // with a PASS recorded above under "STRIPE_PLATFORM_SECRET_KEY".
+    if (platformKey === getTrimmed("STRIPE_SECRET_KEY")) {
+      record(
+        "STRIPE_PLATFORM_SECRET_KEY_DISTINCT",
+        "fail",
+        "STRIPE_PLATFORM_SECRET_KEY is identical to STRIPE_SECRET_KEY — a dedicated platform-billing " +
+          "account must use its own Stripe key (or leave this unset for " +
+          "single-account mode)",
+      );
+    }
+
+    const platformWebhook = getTrimmed(
+      "STRIPE_PLATFORM_WEBHOOK_SIGNING_SECRET",
+    );
+    if (platformWebhook === undefined) {
+      record(
+        "STRIPE_PLATFORM_WEBHOOK_SIGNING_SECRET",
+        "fail",
+        "unset while STRIPE_PLATFORM_SECRET_KEY is set — the dedicated " +
+          "platform-billing webhook can't verify signatures without it",
+      );
+    } else {
+      requirePrefix("STRIPE_PLATFORM_WEBHOOK_SIGNING_SECRET", "whsec_");
+    }
+  }
+
   // SendGrid — must look like a real SG key, not the example placeholder.
   if (!refusePlaceholder("SENDGRID_API_KEY", "SG.replace_me")) {
     const sg = getTrimmed("SENDGRID_API_KEY");

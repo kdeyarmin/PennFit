@@ -58,15 +58,24 @@ const ALLOWED_CONTENT_TYPES = new Set<string>([
 const MAX_MEDIA_REDIRECTS = 3;
 
 /** Telnyx stores received-fax media on AWS S3 (pre-signed) or a
- *  telnyx.com host. Anything else is rejected to constrain SSRF. */
+ *  telnyx.com host. Anything else is rejected to constrain SSRF.
+ *
+ *  The AWS allowance is scoped to the S3 SERVICE hosts (`s3.amazonaws.com`,
+ *  the regional `s3.<region>.amazonaws.com`, and virtual-hosted-bucket
+ *  `<bucket>.s3[.<region>].amazonaws.com`) — NOT the whole `*.amazonaws.com`
+ *  surface. The old broad rule allowed every AWS service host (EC2 instance
+ *  endpoints, internal/VPC service hostnames, etc.) as an SSRF target;
+ *  pre-signed fax media only ever comes from S3, so we narrow to S3 and keep
+ *  legitimate ingestion working (the existing `s3.amazonaws.com` URLs and
+ *  redirects still match). */
 function isAllowedMediaHost(hostname: string): boolean {
   const host = hostname.toLowerCase();
-  return (
-    host === "amazonaws.com" ||
-    host.endsWith(".amazonaws.com") ||
-    host === "telnyx.com" ||
-    host.endsWith(".telnyx.com")
-  );
+  if (host === "telnyx.com" || host.endsWith(".telnyx.com")) return true;
+  // S3 only: path-style `s3.amazonaws.com` / `s3.<region>.amazonaws.com`,
+  // or virtual-hosted-style `<bucket>.s3[.<region>].amazonaws.com`.
+  if (host === "s3.amazonaws.com") return true;
+  if (/(^|\.)s3(\.[a-z0-9-]+)?\.amazonaws\.com$/.test(host)) return true;
+  return false;
 }
 
 /**

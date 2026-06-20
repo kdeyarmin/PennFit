@@ -60,8 +60,11 @@ export interface PendingSessionEntry {
    * "patient" when unset (outbound + inbound patient flows). The inbound
    * reorder IVR sets "shop_customer" for a matched storefront caller — in
    * which case `shopCustomerId` is set and `patientId`/`episodeId` are "".
+   * "breathe_prospect" is the CareMetric Breathe platform sales line: no
+   * patient/episode/customer, no `conversations` row — the sales WS handler
+   * runs without the patient transcript/finalize machinery.
    */
-  callerKind?: "patient" | "shop_customer";
+  callerKind?: "patient" | "shop_customer" | "breathe_prospect";
   /** Storefront customer id — set only for callerKind "shop_customer". */
   shopCustomerId?: string;
   /**
@@ -131,10 +134,11 @@ export class PendingSessions {
     patientId: string;
     episodeId: string;
     orgId?: string;
+    twilioCallSid?: string;
     callContext?: string;
     greeting?: string;
     diagnostic?: boolean;
-    callerKind?: "patient" | "shop_customer";
+    callerKind?: "patient" | "shop_customer" | "breathe_prospect";
     shopCustomerId?: string;
     agentSpeaksFirst?: boolean;
   }): PendingSessionEntry {
@@ -145,6 +149,7 @@ export class PendingSessions {
       patientId: args.patientId,
       episodeId: args.episodeId,
       ...(args.orgId ? { orgId: args.orgId } : {}),
+      ...(args.twilioCallSid ? { twilioCallSid: args.twilioCallSid } : {}),
       ...(args.callContext ? { callContext: args.callContext } : {}),
       ...(args.greeting ? { greeting: args.greeting } : {}),
       ...(args.diagnostic ? { diagnostic: true } : {}),

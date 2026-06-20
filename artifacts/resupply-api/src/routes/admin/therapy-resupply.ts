@@ -156,6 +156,7 @@ async function buildOpportunities(
     .raw()
     .schema("resupply")
     .rpc("therapy_resupply_opportunities", {
+      p_org_id: orgId,
       p_due_within_days: dueWithinDays,
       // Over-fetch when filtering by category so the post-filter still
       // returns a full page (the RPC can't cheaply filter per category

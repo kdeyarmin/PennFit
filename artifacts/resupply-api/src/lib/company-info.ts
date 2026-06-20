@@ -91,18 +91,29 @@ export interface CompanyInfo {
   source: "database" | "environment" | "fallback";
 }
 
-// Historical hardcoded values — kept byte-identical to what shipped
-// before this module existed so an unseeded environment renders exactly
-// what it used to.
+// Platform-identity fallback for an UNCONFIGURED tenant — used only when
+// no `dme_organization` row exists (and no RESUPPLY_PRACTICE_NAME env).
+//
+// Brand architecture: the platform is **CareMetric Breathe** (cmbreathe.com).
+// "Penn Home Medical Supply" / storefront brand "PennPaps" is ONE TENANT, not
+// the platform default — so an unseeded environment, or a second tenant that
+// hasn't filled in Company Information, falls back to the NEUTRAL platform
+// identity rather than inheriting the seed tenant's brand. The seed tenant
+// (Penn) carries its own brand in its `dme_organization` row (source =
+// "database"), so this fallback never changes Penn's patient-facing copy.
+//
+// The platform is not itself a DME with a patient support line, so there is
+// no platform phone — `phoneE164`/`phoneDisplay` are blank in the fallback
+// (a configured tenant always supplies its own). The historical Penn literals
+// live on only as the `identityReplacements()` needles below, which rewrite
+// the brand-baked source text to a DB-backed tenant's own values.
 const DEFAULTS = {
-  name: "PennPaps",
-  // The registered DME business name. "PennPaps" is only the online
-  // storefront brand; official paperwork carries the legal name.
-  legalName: "Penn Home Medical Supply",
-  phoneE164: "+18144710627",
-  phoneDisplay: "(814) 471-0627",
-  supportEmail: "support@pennpaps.com",
-  generalEmail: "info@pennpaps.com",
+  name: "CareMetric Breathe",
+  legalName: "CareMetric Breathe",
+  phoneE164: "",
+  phoneDisplay: "",
+  supportEmail: "support@cmbreathe.com",
+  generalEmail: "support@cmbreathe.com",
   supportHours: "Mon–Fri 9a–5p ET",
 } as const;
 
@@ -331,6 +342,14 @@ function identityReplacements(info: CompanyInfo): Array<[string, string]> {
     ["pennpaps.com", websiteHost],
     ["(814) 471-0627", info.supportPhoneDisplay],
     ["+18144710627", info.supportPhoneE164],
+    // The voice/IVR (TTS) day-copy spaces the storefront brand as two
+    // words ("Penn Paps") so Polly/ElevenLabs pronounce it naturally;
+    // rewrite that spelling too for a non-seed tenant. Skip it when the
+    // brand IS the seed "PennPaps" so the seed tenant keeps its deliberate
+    // two-word TTS spelling rather than collapsing to camel case.
+    ...(info.name === "PennPaps"
+      ? []
+      : ([["Penn Paps", info.name]] as Array<[string, string]>)),
     ["PennPaps", info.name],
     // Hour-blurb variants that appear across the knowledge bases.
     ["Monday-Friday 9 AM - 5 PM Eastern", info.supportHours],

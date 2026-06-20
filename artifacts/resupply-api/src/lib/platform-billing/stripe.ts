@@ -6,11 +6,68 @@ import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 import { logger } from "../logger";
 import {
   getStripeClient,
-  readStripeConfigOrNull,
-  type StripeConfig,
+  readPlatformBillingStripeConfigOrNull,
+  type PlatformBillingStripeConfig,
+  type PlatformBillingStripeMode,
 } from "../stripe/config";
 
 const PLATFORM_BILLING_SCOPE = "platform_tenant";
+
+/**
+ * Thrown when a tenant's stored Stripe customer/subscription was created on a
+ * DIFFERENT Stripe account than the one platform billing is now using (e.g.
+ * after switching STRIPE_PLATFORM_SECRET_KEY to a dedicated account). We refuse
+ * to silently recreate billing objects on the new account — the old account's
+ * subscription may still be charging the card, so recreating would double-bill.
+ * The operator must migrate deliberately (cancel on the old account, clear the
+ * stored IDs) first. Catalog products/prices, which never bill anyone, ARE
+ * recreated automatically.
+ */
+export class PlatformBillingAccountChangedError extends Error {
+  constructor() {
+    super(
+      "platform_billing_account_changed: this tenant's Stripe " +
+        "customer/subscription belongs to a different Stripe account than the " +
+        "one platform billing now uses. Migrate it deliberately (cancel on the " +
+        "old account and clear the stored Stripe IDs) before syncing.",
+    );
+    this.name = "PlatformBillingAccountChangedError";
+  }
+}
+
+// Stripe object IDs are account-scoped, so we record which account each synced
+// object belongs to (tenant_billing_subscriptions/billing_*.stripe_account_ref)
+// and refuse to reuse an ID across accounts. The account identity is the
+// `acct_…` id of whichever Stripe account the active key belongs to, fetched
+// once per client (accounts.retrieveCurrent() returns the key's own account)
+// and memoized on the client instance.
+const accountIdCache = new WeakMap<Stripe, string>();
+
+async function resolvePlatformBillingAccountId(
+  stripe: Stripe,
+): Promise<string> {
+  const cached = accountIdCache.get(stripe);
+  if (cached) return cached;
+  // retrieveCurrent() returns the account the API key itself belongs to.
+  const account = await stripe.accounts.retrieveCurrent();
+  accountIdCache.set(stripe, account.id);
+  return account.id;
+}
+
+/**
+ * Does a stored row's `stripe_account_ref` match the account we're syncing
+ * against now? A NULL/blank ref predates the column — it was therefore synced
+ * on the SHARED (patient-checkout) account, since dedicated mode didn't exist
+ * yet — so it matches only when we're currently in shared mode.
+ */
+export function accountRefMatches(
+  rowRef: string | null | undefined,
+  accountId: string,
+  mode: PlatformBillingStripeMode,
+): boolean {
+  if (rowRef == null || rowRef === "") return mode === "shared";
+  return rowRef === accountId;
+}
 
 type RawClient = ReturnType<ReturnType<typeof getOrgScopedClient>["raw"]>;
 
@@ -68,6 +125,7 @@ interface CatalogRow {
   code: string;
   stripe_price_id?: string | null;
   stripe_product_id?: string | null;
+  stripe_account_ref?: string | null;
 }
 
 async function ensureRecurringPrice(args: {
@@ -77,21 +135,33 @@ async function ensureRecurringPrice(args: {
   kind: "plan" | "addon";
   row: CatalogRow;
   amountCents: number | null;
+  accountId: string;
+  mode: PlatformBillingStripeMode;
 }): Promise<string | null> {
   if (!args.amountCents || args.amountCents <= 0)
     return args.row.stripe_price_id ?? null;
-  if (args.row.stripe_price_id) return args.row.stripe_price_id;
+  // Catalog objects are account-scoped: reuse the stored product/price ONLY
+  // when it belongs to the account we're syncing against now. If the account
+  // changed (e.g. shared → dedicated), recreate them — products/prices never
+  // bill anyone, so recreating is safe (unlike customers/subscriptions).
+  const sameAccount = accountRefMatches(
+    args.row.stripe_account_ref,
+    args.accountId,
+    args.mode,
+  );
+  if (args.row.stripe_price_id && sameAccount) return args.row.stripe_price_id;
 
-  const product = args.row.stripe_product_id
-    ? await args.stripe.products.update(args.row.stripe_product_id, {
-        name: args.row.name,
-        metadata: priceMetadata(args.kind, args.row.code),
-      })
-    : await args.stripe.products.create({
-        name: args.row.name,
-        description: args.row.description ?? undefined,
-        metadata: priceMetadata(args.kind, args.row.code),
-      });
+  const product =
+    args.row.stripe_product_id && sameAccount
+      ? await args.stripe.products.update(args.row.stripe_product_id, {
+          name: args.row.name,
+          metadata: priceMetadata(args.kind, args.row.code),
+        })
+      : await args.stripe.products.create({
+          name: args.row.name,
+          description: args.row.description ?? undefined,
+          metadata: priceMetadata(args.kind, args.row.code),
+        });
 
   const price = await args.stripe.prices.create({
     product: product.id,
@@ -107,6 +177,7 @@ async function ensureRecurringPrice(args: {
     .update({
       stripe_product_id: product.id,
       stripe_price_id: price.id,
+      stripe_account_ref: args.accountId,
       stripe_synced_at: new Date().toISOString(),
     })
     .eq("id", args.row.id);
@@ -114,11 +185,12 @@ async function ensureRecurringPrice(args: {
 }
 
 export async function syncPlatformBillingCatalogToStripe(): Promise<PlatformStripeSyncResult> {
-  const config = readStripeConfigOrNull();
+  const config = readPlatformBillingStripeConfigOrNull();
   if (!config) return { stripeConfigured: false };
   const raw = await rawClient();
   if (!raw) throw new Error("tenant_directory_unavailable");
   const stripe = getStripeClient(config);
+  const accountId = await resolvePlatformBillingAccountId(stripe);
   const [plans, addons] = await Promise.all([
     raw.schema("resupply").from("billing_plans").select("*"),
     raw.schema("resupply").from("billing_addons").select("*"),
@@ -133,6 +205,8 @@ export async function syncPlatformBillingCatalogToStripe(): Promise<PlatformStri
       kind: "plan",
       row: plan,
       amountCents: cents(plan.monthly_price_cents),
+      accountId,
+      mode: config.mode,
     });
     if (price) syncedPlans += 1;
   }
@@ -145,6 +219,8 @@ export async function syncPlatformBillingCatalogToStripe(): Promise<PlatformStri
       kind: "addon",
       row: addon,
       amountCents: cents(addon.recurring_price_cents),
+      accountId,
+      mode: config.mode,
     });
     if (price) syncedAddons += 1;
   }
@@ -195,18 +271,24 @@ export async function ensureTenantStripeCustomer(args: {
   orgId: string;
   adminEmail?: string | null;
 }): Promise<PlatformStripeSyncResult> {
-  const config = readStripeConfigOrNull();
+  const config = readPlatformBillingStripeConfigOrNull();
   if (!config) return { stripeConfigured: false };
   const raw = await rawClient();
   if (!raw) throw new Error("tenant_directory_unavailable");
+  const stripe = getStripeClient(config);
+  const accountId = await resolvePlatformBillingAccountId(stripe);
   const [tenant, sub] = await Promise.all([
     tenantRow(raw, args.orgId),
     activeSubscription(raw, args.orgId),
   ]);
   if (sub.stripe_customer_id) {
+    // A customer from a different Stripe account can't be reused here — fail
+    // loudly rather than create a duplicate on the new account.
+    if (!accountRefMatches(sub.stripe_account_ref, accountId, config.mode)) {
+      throw new PlatformBillingAccountChangedError();
+    }
     return { stripeConfigured: true, customerId: sub.stripe_customer_id };
   }
-  const stripe = getStripeClient(config);
   const customer = await stripe.customers.create({
     name: tenant.storefront_name ?? tenant.name ?? tenant.slug,
     metadata: {
@@ -220,6 +302,7 @@ export async function ensureTenantStripeCustomer(args: {
     .from("tenant_billing_subscriptions")
     .update({
       stripe_customer_id: customer.id,
+      stripe_account_ref: accountId,
       stripe_last_synced_at: new Date().toISOString(),
       updated_by_email: args.adminEmail ?? null,
     })
@@ -273,17 +356,29 @@ export async function syncTenantStripeSubscription(args: {
   orgId: string;
   adminEmail?: string | null;
 }): Promise<PlatformStripeSyncResult> {
-  const config: StripeConfig | null = readStripeConfigOrNull();
+  const config: PlatformBillingStripeConfig | null =
+    readPlatformBillingStripeConfigOrNull();
   if (!config) return { stripeConfigured: false };
   const raw = await rawClient();
   if (!raw) throw new Error("tenant_directory_unavailable");
   const stripe = getStripeClient(config);
+  const accountId = await resolvePlatformBillingAccountId(stripe);
   await syncPlatformBillingCatalogToStripe();
   const [tenant, sub, addons] = await Promise.all([
     tenantRow(raw, args.orgId),
     activeSubscription(raw, args.orgId),
     activeAddons(raw, args.orgId),
   ]);
+  // Existing customer/subscription IDs are account-scoped. If they belong to a
+  // different account (e.g. after switching to a dedicated platform-billing
+  // account), refuse rather than retrieve/recreate against the wrong account —
+  // the old subscription may still be billing the card.
+  if (
+    (sub.stripe_customer_id || sub.stripe_subscription_id) &&
+    !accountRefMatches(sub.stripe_account_ref, accountId, config.mode)
+  ) {
+    throw new PlatformBillingAccountChangedError();
+  }
   const customer = sub.stripe_customer_id
     ? { id: sub.stripe_customer_id }
     : await stripe.customers.create({
@@ -307,6 +402,8 @@ export async function syncTenantStripeSubscription(args: {
         kind: "plan",
         row: plan,
         amountCents: cents(plan.monthly_price_cents),
+        accountId,
+        mode: config.mode,
       });
   if (!planAmount || planAmount <= 0) throw new Error("plan_not_billable");
 
@@ -342,6 +439,8 @@ export async function syncTenantStripeSubscription(args: {
           kind: "addon",
           row: addon,
           amountCents: cents(addon.recurring_price_cents),
+          accountId,
+          mode: config.mode,
         });
     items.push(
       priceId
@@ -406,6 +505,7 @@ export async function syncTenantStripeSubscription(args: {
     .update({
       stripe_customer_id: customer.id,
       stripe_subscription_id: stripeSub.id,
+      stripe_account_ref: accountId,
       stripe_status: subscriptionStatus(stripeSub),
       stripe_last_synced_at: new Date().toISOString(),
       current_period_start: asStripeTimestamp(

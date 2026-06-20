@@ -46,6 +46,9 @@ export interface FormAckSummaryRow {
   signedCurrent: number;
   signedOld: number;
   neverSigned: number;
+  /** Operator-facing compliance caveat (e.g. the ABN is not the official
+   *  CMS-R-131); null for forms without one. */
+  complianceNote?: string | null;
 }
 
 export const getFormAckSummary = () =>

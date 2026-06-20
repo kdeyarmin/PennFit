@@ -35,6 +35,67 @@ export interface RenderResupplyReminderInput {
   editUrl: string;
   /** Signed link the "Stop reminders" CTA points at. */
   stopUrl: string;
+  /**
+   * Which touch in the escalation ladder this is — drives the subject +
+   * opening line so a follow-up doesn't read identically to the first
+   * reminder. Defaults to "initial" (the first touch's copy, unchanged).
+   */
+  variant?: ReminderVariant;
+}
+
+/**
+ * Escalation-step copy variant for resupply reminders. Lives in the
+ * messaging lib (the shared "templates" home) so both the email template
+ * here and the SMS body in @workspace/resupply-reminders pick from the same
+ * vocabulary:
+ *   - "initial"  — first touch (gentle "you're due").
+ *   - "followup" — a later touch with MORE outreach still to come
+ *     ("just circling back").
+ *   - "final"    — the LAST automated touch before a human is asked to call
+ *     ("last call").
+ */
+export type ReminderVariant = "initial" | "followup" | "final";
+
+interface ReminderVariantCopy {
+  /** Subject line + heading (no PHI). */
+  subject: string;
+  /** Opening sentence in the plain-text body (practice name pre-interpolated). */
+  introText: string;
+  /** Opening sentence in the HTML body, following "Hi {name} — "
+   *  (escaped practice name pre-interpolated). */
+  introHtml: string;
+}
+
+/**
+ * Resolve the subject + opening line for a reminder variant. "initial" is
+ * byte-for-byte the historical copy so the first touch is unchanged.
+ */
+function reminderVariantCopy(
+  variant: ReminderVariant,
+  practiceName: string,
+  safePractice: string,
+): ReminderVariantCopy {
+  switch (variant) {
+    case "followup":
+      return {
+        subject: "Still time to refill your CPAP supplies",
+        introText: `Just circling back from ${practiceName} — your CPAP refill is ready whenever you are:`,
+        introHtml: `just circling back from ${safePractice}. Your CPAP refill is ready whenever you are:`,
+      };
+    case "final":
+      return {
+        subject: "Last call: your CPAP refill is ready",
+        introText: `We don't want you to run low — your CPAP refill from ${practiceName} is ready and we can ship today:`,
+        introHtml: `we don't want you to run low — your CPAP refill from ${safePractice} is ready and we can ship today:`,
+      };
+    case "initial":
+    default:
+      return {
+        subject: "Time to refill your CPAP supplies",
+        introText: `Quick note from ${practiceName} — you're due for a CPAP refill, and your next order is ready whenever you are:`,
+        introHtml: `quick note from ${safePractice}. You're due for a CPAP refill, and your next order is ready whenever you are:`,
+      };
+  }
 }
 
 export interface RenderedEmail {
@@ -93,9 +154,14 @@ export function safeHref(rawUrl: string): string {
 export function renderResupplyReminder(
   input: RenderResupplyReminderInput,
 ): RenderedEmail {
-  const subject = "Time to refill your CPAP supplies";
   const safeFirstName = escapeHtml(input.firstName);
   const safePractice = escapeHtml(input.practiceName);
+  const variantCopy = reminderVariantCopy(
+    input.variant ?? "initial",
+    input.practiceName,
+    safePractice,
+  );
+  const subject = variantCopy.subject;
   const itemsTextLines = input.items
     .map((it) => `  • ${it.name} × ${it.quantity}`)
     .join("\n");
@@ -109,13 +175,13 @@ export function renderResupplyReminder(
   const text = [
     `Hi ${input.firstName},`,
     "",
-    `Quick note from ${input.practiceName} — you're due for a CPAP refill, and your next order is ready whenever you are:`,
+    variantCopy.introText,
     "",
     itemsTextLines || "  (your supplies, per your prescription)",
     "",
     "Keeping these fresh matters: a worn cushion leaks and an old filter makes your machine work harder, so an on-time refill keeps your therapy doing its job. Most plans cover the replacement and we verify yours before anything ships — no surprise bills.",
     "",
-    "It's one tap — we'll ship to the address on file, no login needed:",
+    "Confirm below if you're still using your equipment and running low on supplies — we'll ship to the address on file, no login needed:",
     `  Yes, ship it: ${input.confirmUrl}`,
     `  Change my address: ${input.editUrl}`,
     `  Stop these reminders: ${input.stopUrl}`,
@@ -139,10 +205,10 @@ export function renderResupplyReminder(
 <body style="margin:0;padding:0;background:#f6f7f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#0f172a;">
   <div style="max-width:560px;margin:0 auto;padding:32px 24px;">
     <h1 style="margin:0 0 16px;font-size:20px;line-height:28px;font-weight:600;color:#0f172a;">
-      Time to refill your CPAP supplies
+      ${escapeHtml(subject)}
     </h1>
     <p style="margin:0 0 16px;font-size:15px;line-height:22px;">
-      Hi ${safeFirstName} — quick note from ${safePractice}. You're due for a CPAP refill, and your next order is ready whenever you are:
+      Hi ${safeFirstName} — ${variantCopy.introHtml}
     </p>
     <ul style="margin:0 0 16px;padding-left:18px;font-size:15px;line-height:22px;color:#1e293b;">
       ${itemsHtmlLines || `<li style="margin:4px 0;">Your supplies, per your prescription.</li>`}
@@ -151,7 +217,7 @@ export function renderResupplyReminder(
       Keeping these fresh matters — a worn cushion leaks and an old filter makes your machine work harder, so an on-time refill keeps your therapy doing its job. Most plans cover the replacement and we verify yours before anything ships, so there are no surprise bills.
     </p>
     <p style="margin:0 0 12px;font-size:14px;line-height:21px;color:#0f172a;font-weight:600;">
-      It's one tap — we'll ship to the address on file, no login needed.
+      Confirm below if you're still using your equipment and running low on supplies — we'll ship to the address on file, no login needed.
     </p>
     <div style="margin:0 0 24px;">
       <a href="${safeHref(input.confirmUrl)}" style="display:inline-block;padding:12px 20px;border-radius:6px;background:#0f766e;color:#ffffff;text-decoration:none;font-weight:600;font-size:15px;">
@@ -245,6 +311,14 @@ export interface RenderClickLandingInput {
    * NOT PHI: supply names + quantities are product references only.
    */
   items?: ClickLandingItem[];
+  /**
+   * The Medicare/payer refill attestation the patient agrees to by
+   * confirming. Rendered as an explicit statement directly above the
+   * confirm button so the click is an informed affirmation that they
+   * still use the equipment and are running low. Only shown for the
+   * `confirm` action; omitted → not rendered (back-compat).
+   */
+  attestationText?: string;
 }
 
 /** Color chip per supply category for the landing-page item cards. */
@@ -335,6 +409,20 @@ export function renderClickLanding(input: RenderClickLandingInput): string {
       ? renderLandingItems(input.items)
       : "";
 
+  // Explicit refill attestation shown directly above the confirm button
+  // so the click is an informed Medicare/payer affirmation (still using
+  // the equipment + supplies running low), and a screenshot of this page
+  // is itself the proof of what the patient agreed to.
+  const attestationBlock =
+    input.action === "confirm" &&
+    typeof input.attestationText === "string" &&
+    input.attestationText.length > 0
+      ? `    <div style="margin:0 0 20px;padding:14px 16px;border:1px solid #e2e8f0;border-radius:10px;background:#f8fafc;text-align:left;">
+      <div style="font-size:13px;font-weight:600;color:#475569;margin:0 0 6px;">Please confirm</div>
+      <p style="margin:0;font-size:14px;line-height:21px;color:#334155;">${escapeHtml(input.attestationText)}</p>
+    </div>`
+      : "";
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -351,6 +439,7 @@ export function renderClickLanding(input: RenderClickLandingInput): string {
       ${escapeHtml(description)}
     </p>
 ${itemsBlock}
+${attestationBlock}
     <form method="POST" action="${escapeHtml(input.formActionUrl)}">
       <button type="submit" style="display:inline-block;padding:14px 28px;border-radius:6px;background:${buttonColor};color:#ffffff;text-decoration:none;font-weight:600;font-size:16px;border:none;cursor:pointer;">
         ${escapeHtml(buttonLabel)}
