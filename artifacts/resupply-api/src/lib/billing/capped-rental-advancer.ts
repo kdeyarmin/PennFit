@@ -21,6 +21,8 @@ import {
   type OrgScopedClient,
 } from "@workspace/resupply-db";
 import {
+  CMS_COMPLIANT_NIGHTS,
+  COMPLIANT_MINUTES_PER_NIGHT,
   decideCappedRentalAdvance,
   pickCappedRentalModifiers,
 } from "@workspace/resupply-domain";
@@ -295,9 +297,9 @@ async function isPatientCompliant(
   if (nightsErr) throw nightsErr;
   const compliant = (nights ?? []).filter(
     (n: Database["resupply"]["Tables"]["patient_therapy_nights"]["Row"]) =>
-      (n.usage_minutes ?? 0) >= 240,
+      (n.usage_minutes ?? 0) >= COMPLIANT_MINUTES_PER_NIGHT,
   ).length;
-  return compliant >= 21;
+  return compliant >= CMS_COMPLIANT_NIGHTS;
 }
 
 async function defaultBilledForHcpcs(

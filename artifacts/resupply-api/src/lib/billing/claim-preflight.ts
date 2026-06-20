@@ -22,7 +22,11 @@ import {
   resolveSeedOrgId,
   type OrgScopedClient,
 } from "@workspace/resupply-db";
-import { evaluateSameOrSimilar } from "@workspace/resupply-domain";
+import {
+  CMS_COMPLIANT_NIGHTS,
+  COMPLIANT_MINUTES_PER_NIGHT,
+  evaluateSameOrSimilar,
+} from "@workspace/resupply-domain";
 
 type ClaimLineRow =
   Database["resupply"]["Tables"]["insurance_claim_line_items"]["Row"];
@@ -1163,7 +1167,7 @@ async function isPatientCompliant(
     .limit(60);
   const compliant = (nights ?? []).filter(
     (n: Database["resupply"]["Tables"]["patient_therapy_nights"]["Row"]) =>
-      (n.usage_minutes ?? 0) >= 240,
+      (n.usage_minutes ?? 0) >= COMPLIANT_MINUTES_PER_NIGHT,
   ).length;
-  return compliant >= 21;
+  return compliant >= CMS_COMPLIANT_NIGHTS;
 }

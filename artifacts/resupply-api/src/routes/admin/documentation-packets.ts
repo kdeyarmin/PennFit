@@ -10,6 +10,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
+import { COMPLIANT_MINUTES_PER_NIGHT } from "@workspace/resupply-domain";
 import {
   type Database,
   type Json,
@@ -198,7 +199,7 @@ router.post(
       const nights = (nightsData ?? []) as TherapyNightRow[];
       const withData = nights.filter((n) => n.usage_minutes !== null);
       const compliantNights = withData.filter(
-        (n) => (n.usage_minutes ?? 0) >= 240,
+        (n) => (n.usage_minutes ?? 0) >= COMPLIANT_MINUTES_PER_NIGHT,
       ).length;
       const avgMin = withData.length
         ? Math.round(

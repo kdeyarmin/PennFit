@@ -48,6 +48,14 @@ import {
   type Database,
   type Json,
 } from "@workspace/resupply-db";
+// Medicare LCD adherence thresholds — the single source of truth in the
+// pure domain layer (4h/night, 70% of a 30-night window), aliased to this
+// job's local names so the milestone logic reads unchanged.
+import {
+  COMPLIANT_MINUTES_PER_NIGHT as ADHERENCE_THRESHOLD_MINUTES,
+  COMPLIANCE_NIGHT_RATIO as ADHERENCE_PCT_THRESHOLD,
+  WINDOW_DAYS as ADHERENCE_WINDOW_NIGHTS,
+} from "@workspace/resupply-domain";
 
 import { logger } from "../../lib/logger";
 import { forEachActiveOrg } from "../lib/for-each-active-org.js";
@@ -65,13 +73,6 @@ type MilestoneInsert =
 
 const JOB_NAME = "therapy-milestones.run";
 const JOB_CRON = "53 4 * * *";
-
-/** Medicare LCD adherence threshold (4 hours = 240 minutes). */
-const ADHERENCE_THRESHOLD_MINUTES = 240;
-/** Medicare LCD adherence threshold (70% of the rolling window). */
-const ADHERENCE_PCT_THRESHOLD = 0.7;
-/** Window length for the first-adherence-month milestone. */
-const ADHERENCE_WINDOW_NIGHTS = 30;
 
 /** Only consider patients whose therapy nights changed recently. */
 const ACTIVITY_LOOKBACK_DAYS = 60;
