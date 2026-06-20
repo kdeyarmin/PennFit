@@ -1123,7 +1123,7 @@ function TopRouter() {
   // to "/" only so every other path (/admin, /shop, auth) is unaffected, and
   // handled before the <Switch> so the storefront <Layout> never mounts for
   // the platform home (Breathe carries its own full-bleed chrome).
-  if (isPlatform && location === "/") {
+  if (isPlatform && location.split(/[?#]/)[0] === "/") {
     return (
       <Suspense fallback={<RouteFallback />}>
         <Breathe />
