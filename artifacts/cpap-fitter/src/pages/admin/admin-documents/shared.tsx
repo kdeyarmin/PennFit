@@ -54,12 +54,14 @@ export function Textarea({
   onChange,
   placeholder,
   rows = 3,
+  ariaRequired,
 }: {
   id: string;
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
   rows?: number;
+  ariaRequired?: boolean;
 }) {
   return (
     <textarea
@@ -67,6 +69,7 @@ export function Textarea({
       value={value}
       rows={rows}
       placeholder={placeholder}
+      aria-required={ariaRequired || undefined}
       onChange={(e) => onChange(e.target.value)}
       className="block w-full rounded-md border px-3 py-1.5 text-sm bg-white"
       style={{ borderColor: "hsl(var(--line-2))", color: "hsl(var(--ink-1))" }}
