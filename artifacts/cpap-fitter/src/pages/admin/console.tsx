@@ -661,6 +661,16 @@ const AdminBillingConfigClaimTemplatesPage = lazyWithRetry(() =>
     default: m.AdminBillingConfigClaimTemplatesPage,
   })),
 );
+const AdminBillingConfigPayerCoveragePage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-billing-config-payer-coverage").then((m) => ({
+    default: m.AdminBillingConfigPayerCoveragePage,
+  })),
+);
+const AdminBillingConfigCmsImportPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-billing-config-cms-import").then((m) => ({
+    default: m.AdminBillingConfigCmsImportPage,
+  })),
+);
 const AdminBillingCappedRentalsPage = lazyWithRetry(() =>
   import("@/pages/admin/admin-billing-capped-rentals").then((m) => ({
     default: m.AdminBillingCappedRentalsPage,
@@ -943,6 +953,14 @@ function AdminConsole() {
             <Route
               path="/admin/billing/config/claim-templates"
               component={AdminBillingConfigClaimTemplatesPage}
+            />
+            <Route
+              path="/admin/billing/config/payer-coverage-diagnoses"
+              component={AdminBillingConfigPayerCoveragePage}
+            />
+            <Route
+              path="/admin/billing/config/cms-import"
+              component={AdminBillingConfigCmsImportPage}
             />
             <Route
               path="/admin/billing/capped-rentals"

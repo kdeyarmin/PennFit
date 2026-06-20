@@ -78,7 +78,15 @@ router.get(
       res.status(500).json({ error: "query_failed", message: error.message });
       return;
     }
-    res.json({ overrides: data ?? [] });
+    const overrides = (data ?? []).map((r) => ({
+      id: r.id,
+      hcpcsCode: r.hcpcs_code,
+      icd10Code: r.icd10_code,
+      description: r.description,
+      policy: r.policy,
+      active: r.active,
+    }));
+    res.json({ overrides });
   },
 );
 
