@@ -26,6 +26,7 @@ import {
   CMS_COMPLIANT_NIGHTS,
   COMPLIANT_MINUTES_PER_NIGHT,
   evaluateSameOrSimilar,
+  timelyFilingStatus,
 } from "@workspace/resupply-domain";
 
 type ClaimLineRow =
@@ -331,19 +332,40 @@ export async function preflightClaim(
       }
 
       // ── Timely filing window (Phase 12) ───────────────────────
-      if (payer.timely_filing_days != null && claim.date_of_service) {
-        const dos = toUtcDateEpochMs(new Date(claim.date_of_service));
-        const today = toUtcDateEpochMs(new Date());
-        const ageDays = Math.floor((today - dos) / MS_PER_DAY);
-        const remaining = payer.timely_filing_days - ageDays;
-        if (remaining < 0) {
+      // Countdown comes from the shared domain rule (timelyFilingStatus),
+      // the same one the /admin/billing/timely-filing surface and the
+      // auto-submit engine use, so the preflight badge can't drift from
+      // them. We keep the two "can't compute" sub-cases distinct (no
+      // window configured vs no date of service) for an actionable detail.
+      if (payer.timely_filing_days == null) {
+        items.push({
+          key: "timely_filing",
+          severity: "warning",
+          label: "Timely-filing window not configured",
+          detail: `${payer.display_name} is missing timely_filing_days in the payer profile.`,
+        });
+      } else if (!claim.date_of_service) {
+        items.push({
+          key: "timely_filing",
+          severity: "warning",
+          label: "Date of service missing",
+          detail:
+            "Claim is missing date_of_service, so timely filing cannot be calculated.",
+        });
+      } else {
+        const tf = timelyFilingStatus({
+          dateOfService: claim.date_of_service,
+          filingWindowDays: payer.timely_filing_days,
+        });
+        const remaining = tf.daysRemaining ?? 0;
+        if (tf.status === "overdue") {
           items.push({
             key: "timely_filing",
             severity: "error",
             label: "Past the timely-filing deadline",
             detail: `${payer.display_name} requires submission within ${payer.timely_filing_days} days of DOS; this claim is ${-remaining} day(s) past.`,
           });
-        } else if (remaining <= 14) {
+        } else if (tf.status === "due_soon") {
           items.push({
             key: "timely_filing",
             severity: "warning",
@@ -358,21 +380,6 @@ export async function preflightClaim(
             detail: `${payer.display_name} timely-filing window: ${payer.timely_filing_days} days from DOS.`,
           });
         }
-      } else if (payer.timely_filing_days == null) {
-        items.push({
-          key: "timely_filing",
-          severity: "warning",
-          label: "Timely-filing window not configured",
-          detail: `${payer.display_name} is missing timely_filing_days in the payer profile.`,
-        });
-      } else {
-        items.push({
-          key: "timely_filing",
-          severity: "warning",
-          label: "Date of service missing",
-          detail:
-            "Claim is missing date_of_service, so timely filing cannot be calculated.",
-        });
       }
 
       // ── Required modifiers (Phase 12) ─────────────────────────
@@ -1142,14 +1149,6 @@ function formatCents(cents: number): string {
   const d = Math.floor(abs / 100);
   const c = abs % 100;
   return `${sign}$${d}.${c.toString().padStart(2, "0")}`;
-}
-
-function toUtcDateEpochMs(value: Date): number {
-  return Date.UTC(
-    value.getUTCFullYear(),
-    value.getUTCMonth(),
-    value.getUTCDate(),
-  );
 }
 
 async function isPatientCompliant(
