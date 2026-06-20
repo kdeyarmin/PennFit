@@ -75,22 +75,23 @@ interface QuantityQueryResult {
   error: unknown | null;
 }
 
-interface BillingPlanRow {
-  id: string;
-  code: string;
-  name: string;
-  description: string | null;
-  monthly_price_cents: number | null;
-  onboarding_fee_cents: number | null;
-  is_public: boolean;
-  is_custom: boolean;
-  sort_order: number;
-  allowances: Record<string, unknown> | null;
-  features: unknown[] | null;
-  stripe_product_id: string | null;
-  stripe_price_id: string | null;
-  stripe_synced_at: string | null;
-}
+type BillingPlanRow = Pick<
+  Database["resupply"]["Tables"]["billing_plans"]["Row"],
+  | "id"
+  | "code"
+  | "name"
+  | "description"
+  | "monthly_price_cents"
+  | "onboarding_fee_cents"
+  | "is_public"
+  | "is_custom"
+  | "sort_order"
+  | "allowances"
+  | "features"
+  | "stripe_product_id"
+  | "stripe_price_id"
+  | "stripe_synced_at"
+>;
 
 interface BillingAddonRow {
   id: string;
