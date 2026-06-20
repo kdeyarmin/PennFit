@@ -3700,10 +3700,135 @@ function Roi() {
                 </div>
               ))}
             </div>
+
+            <RoiEmailCapture patients={patients} staff={staff} />
           </div>
         </div>
       </div>
     </section>
+  );
+}
+
+/**
+ * "Email me this estimate" — captures the lead at peak intent. Posts the two
+ * slider inputs (not the computed totals) to /api/roi-estimate, which
+ * recomputes the numbers server-side, saves the address to the marketing
+ * list, and emails the visitor the breakdown. Fail-soft: the backend always
+ * 200s; `emailed:false` (e.g. provider offline) still confirms we captured
+ * the request.
+ */
+function RoiEmailCapture({
+  patients,
+  staff,
+}: {
+  patients: number;
+  staff: number;
+}) {
+  const [email, setEmail] = useState("");
+  const [status, setStatus] = useState<
+    "idle" | "submitting" | "sent" | "captured" | "error"
+  >("idle");
+  const [err, setErr] = useState("");
+  const hpRef = useRef<HTMLInputElement>(null);
+
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const value = email.trim().toLowerCase();
+    if (!EMAIL_RE.test(value)) {
+      setErr("Please enter a valid email address.");
+      setStatus("error");
+      return;
+    }
+    setStatus("submitting");
+    setErr("");
+    try {
+      const resp = await fetch("/api/roi-estimate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: value,
+          patients,
+          staff,
+          website: hpRef.current?.value || undefined,
+        }),
+      });
+      if (!resp.ok) {
+        setErr("Something went wrong. Please try again.");
+        setStatus("error");
+        return;
+      }
+      const data = (await resp.json().catch(() => ({}))) as {
+        emailed?: boolean;
+      };
+      setStatus(data.emailed ? "sent" : "captured");
+    } catch {
+      setErr("Network error. Please try again.");
+      setStatus("error");
+    }
+  };
+
+  if (status === "sent" || status === "captured") {
+    return (
+      <div className="bx-roi-capture-done" role="status">
+        <Check size={16} />
+        {status === "sent"
+          ? "Sent — check your inbox for the full breakdown."
+          : "Got it — we have your numbers and will be in touch with the breakdown."}
+      </div>
+    );
+  }
+
+  return (
+    <form className="bx-roi-capture" onSubmit={onSubmit} noValidate>
+      <label className="bx-roi-capture-label" htmlFor="bx-roi-email">
+        Email me this estimate
+      </label>
+      <div className="bx-roi-capture-row">
+        {/* Honeypot — real users never see or fill this. */}
+        <input
+          ref={hpRef}
+          type="text"
+          name="website"
+          tabIndex={-1}
+          autoComplete="off"
+          aria-hidden="true"
+          className="bx-hp"
+        />
+        <input
+          id="bx-roi-email"
+          type="email"
+          inputMode="email"
+          autoComplete="email"
+          required
+          value={email}
+          onChange={(e) => {
+            setEmail(e.target.value);
+            if (status === "error") setStatus("idle");
+          }}
+          placeholder="you@yourdme.com"
+          aria-label="Work email"
+          aria-invalid={status === "error"}
+        />
+        <button
+          type="submit"
+          className="bx-btn bx-btn-primary bx-btn-sm"
+          disabled={status === "submitting"}
+        >
+          {status === "submitting" ? (
+            "Sending…"
+          ) : (
+            <>
+              Email it <ArrowRight size={15} />
+            </>
+          )}
+        </button>
+      </div>
+      {status === "error" ? (
+        <span className="bx-demoform-err" role="alert">
+          {err}
+        </span>
+      ) : null}
+    </form>
   );
 }
 

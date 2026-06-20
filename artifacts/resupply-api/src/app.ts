@@ -612,6 +612,22 @@ const demoLeadLimiter = expressRateLimit({
 });
 app.use("/api/demo-lead", demoLeadLimiter);
 
+// POST /api/roi-estimate — anonymous "email me my ROI estimate". This one
+// SENDS an email to the address provided, so a tight per-IP cap also blunts
+// using it to spray mail; reuses the same marketing-form window/limit.
+const roiEstimateLimiter = expressRateLimit({
+  windowMs: RATE_LIMITS.newsletter_subscribe.windowMs,
+  limit: RATE_LIMITS.newsletter_subscribe.limit,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req: Request) => ipKeyGenerator(req.ip ?? "0.0.0.0"),
+  message: {
+    error:
+      "Too many estimate requests from this network. Please wait a few minutes and try again.",
+  },
+});
+app.use("/api/roi-estimate", roiEstimateLimiter);
+
 // POST /api/tenant-signup — public self-serve account creation. Each
 // success provisions a real tenant + admin, so cap it tightly per-IP
 // (same window/limit as the other anonymous marketing-form endpoints;

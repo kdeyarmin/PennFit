@@ -2868,6 +2868,75 @@
   line-height: 1.5;
 }
 
+/* "Email me this estimate" lead capture under the breakdown. */
+.bx-roi-capture {
+  margin-top: 22px;
+  padding-top: 20px;
+  border-top: 1px solid var(--bx-line);
+}
+.bx-roi-capture-label {
+  display: block;
+  font-family: var(--bx-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--bx-text-dim);
+  margin-bottom: 10px;
+}
+.bx-roi-capture-row {
+  display: flex;
+  gap: 10px;
+}
+.bx-roi-capture-row input[type="email"] {
+  flex: 1;
+  min-width: 0;
+  padding: 11px 14px;
+  border-radius: 11px;
+  border: 1px solid var(--bx-line-strong);
+  background: rgba(0, 0, 0, 0.28);
+  color: var(--bx-text);
+  font-family: var(--bx-font);
+  font-size: 14.5px;
+}
+.bx-roi-capture-row input[type="email"]::placeholder {
+  color: var(--bx-text-faint);
+}
+.bx-roi-capture-row input[type="email"]:focus {
+  outline: none;
+  border-color: var(--bx-cyan);
+  box-shadow: 0 0 0 3px rgba(84, 200, 255, 0.18);
+}
+.bx-roi-capture-row .bx-btn {
+  flex: none;
+  white-space: nowrap;
+}
+.bx-roi-capture-done {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 22px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(111, 240, 194, 0.32);
+  background: rgba(111, 240, 194, 0.08);
+  color: var(--bx-text);
+  font-size: 14px;
+  line-height: 1.45;
+}
+.bx-roi-capture-done svg {
+  flex: none;
+  color: var(--bx-mint);
+}
+@media (max-width: 520px) {
+  .bx-roi-capture-row {
+    flex-wrap: wrap;
+  }
+  .bx-roi-capture-row .bx-btn {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
 /* ───────────────────────── Pricing ───────────────────────── */
 .bx-price-grid {
   display: grid;
