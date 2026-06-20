@@ -585,6 +585,26 @@ const BreatheFaq = lazyWithRetry(() =>
   })),
 );
 
+// Breathe — "Switch from <competitor>" migration landing pages (Brightree,
+// Bonafide, NikoHealth). High-intent pages for operators already shopping to
+// leave a legacy DME suite; each reuses the shared comparison + migration
+// sections. Same dark chrome, mounted in TopRouter, lazy-loaded.
+const BreatheSwitchBrightree = lazyWithRetry(() =>
+  import("@/pages/breathe-switch").then((m) => ({
+    default: m.BreatheSwitchBrightree,
+  })),
+);
+const BreatheSwitchBonafide = lazyWithRetry(() =>
+  import("@/pages/breathe-switch").then((m) => ({
+    default: m.BreatheSwitchBonafide,
+  })),
+);
+const BreatheSwitchNikohealth = lazyWithRetry(() =>
+  import("@/pages/breathe-switch").then((m) => ({
+    default: m.BreatheSwitchNikohealth,
+  })),
+);
+
 const Reminders = lazyWithRetry(() =>
   import("@/pages/reminders").then((m) => ({ default: m.Reminders })),
 );
@@ -1213,6 +1233,18 @@ function TopRouter() {
         <Route path="/breathe/security" component={BreatheSecurity} />
         <Route path="/breathe/faq" component={BreatheFaq} />
         <Route path="/breathe/case-studies" component={BreatheCaseStudies} />
+        <Route
+          path="/breathe/switch/brightree"
+          component={BreatheSwitchBrightree}
+        />
+        <Route
+          path="/breathe/switch/bonafide"
+          component={BreatheSwitchBonafide}
+        />
+        <Route
+          path="/breathe/switch/nikohealth"
+          component={BreatheSwitchNikohealth}
+        />
         <Route path="/breathe/signup" component={BreatheSignup} />
         <Route path="/">
           {() => (isPlatformHomeHost() ? <BreatheHome /> : <PatientRouter />)}

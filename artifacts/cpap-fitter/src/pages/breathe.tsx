@@ -486,7 +486,7 @@ function ContactEmailForm({
             "Sending…"
           ) : (
             <>
-              Request a walkthrough <ArrowRight size={16} />
+              Send to support <ArrowRight size={16} />
             </>
           )}
         </button>
@@ -545,9 +545,8 @@ function ContactGateModal({
               Thanks — we&apos;ll be in touch.
             </h3>
             <p className="bx-modal-lede">
-              A CPAP &amp; DME specialist will reach out within one business day
-              to set up a walkthrough on your own workflows. Prefer to talk now?
-              We&apos;re here.
+              Our support team will get back to you within one business day.
+              Prefer to talk now? We&apos;re here.
             </p>
             <div className="bx-modal-contact">
               <a href="tel:+18775212890">
@@ -576,11 +575,14 @@ function ContactGateModal({
             <span className="bx-modal-ic">
               <Headphones size={20} />
             </span>
-            <h3 id="bx-contact-modal-title">Book a walkthrough</h3>
+            <h3 id="bx-contact-modal-title">
+              Questions? We&apos;re here to help
+            </h3>
             <p className="bx-modal-lede">
-              Want a guided tour with a human instead? Leave your email and a
-              specialist will reach out to schedule a walkthrough on your
-              patients, payers, and workflows — or call us right now.
+              Have a question, a concern, or need technical support? Leave your
+              email and our support team will get back to you — or call us right
+              now. Ready to go? You can start the demo or create your account
+              yourself, no call required.
             </p>
             <ContactEmailForm
               source={source}
@@ -595,7 +597,8 @@ function ContactGateModal({
               </a>
             </div>
             <p className="bx-modal-fine">
-              No sales pressure — just a working session. Unsubscribe anytime.
+              No sales pressure — just real help when you need it. Unsubscribe
+              anytime.
             </p>
           </>
         )}
@@ -896,15 +899,18 @@ export function BreatheHome() {
       <LiveConsole />
       <IntegrationsStrip />
       <Pillars />
+      {/* The home page is deliberately short and focused on WHY Breathe is
+          different: the proprietary resupply engine, the in-house (not
+          bolted-on) architecture, and "one login instead of seven". The
+          deeper detail — the full lifecycle, the capability grid, the unified
+          therapy fleet, and the audience breakdown — lives on the Product,
+          Compare, and Integrations pages so this page stays scannable. */}
       <ResupplyEngine />
-      <UnifiedFleet />
-      <Lifecycle />
-      <Capabilities />
       <BuiltInHouse />
       <Replaces />
       <Outcomes />
-      <Audiences />
       <PricingHome />
+      <FoundingPartner />
       <ClosingCta />
     </BreatheShell>
   );
@@ -931,9 +937,11 @@ export function BreatheProduct() {
       />
       <Lifecycle />
       <DayInLife />
+      <Capabilities />
       <ProductShowcase />
       <Features />
       <FeatureVideos />
+      <UnifiedFleet />
       <BuiltInHouse />
       <RevenueCycle />
       <AiBento />
@@ -962,11 +970,40 @@ export function BreatheCompare() {
         sub="Legacy DME systems bolt modules onto decades-old cores. See the line-by-line difference — and what it means for each person on your team."
       />
       <Comparison />
+      <SwitchLinks />
       <WhyDifferent />
       <BuiltInHouse />
       <Roles />
+      <Audiences />
       <ClosingCta />
     </BreatheShell>
+  );
+}
+
+/* Cross-links to the per-competitor "Switch from X" migration pages, shown
+   under the comparison table where switch intent is highest. */
+const SWITCH_LINKS: { href: string; name: string }[] = [
+  { href: "/breathe/switch/brightree", name: "Brightree" },
+  { href: "/breathe/switch/bonafide", name: "Bonafide" },
+  { href: "/breathe/switch/nikohealth", name: "NikoHealth" },
+];
+
+function SwitchLinks() {
+  return (
+    <div className="bx-shell">
+      <div className="bx-switchlinks bx-reveal">
+        <span className="bx-switchlinks-label">
+          <GitBranch size={15} /> Coming from a specific system?
+        </span>
+        <div className="bx-switchlinks-row">
+          {SWITCH_LINKS.map((s) => (
+            <Link className="bx-switchlink" href={s.href} key={s.href}>
+              Switch from {s.name} <ArrowRight size={14} />
+            </Link>
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -1077,7 +1114,7 @@ const FOOTER_LINKS: { href: string; label: string }[] = [
 function Nav() {
   const [loc] = useLocation();
   const [open, setOpen] = useState(false);
-  const { open: openDemoGate, openContact } = useDemoGate();
+  const { open: openDemoGate } = useDemoGate();
   // Close the mobile menu on any route change so it never lingers open.
   useEffect(() => {
     setOpen(false);
@@ -1102,13 +1139,12 @@ function Nav() {
               {l.label}
             </Link>
           ))}
-          <button
-            type="button"
+          <Link
             className="bx-btn bx-btn-ghost bx-btn-sm"
-            onClick={() => openContact("breathe-nav")}
+            href="/breathe/signup"
           >
-            Book a demo
-          </button>
+            Create account
+          </Link>
           <button
             type="button"
             className="bx-btn bx-btn-primary bx-btn-sm"
@@ -1153,16 +1189,13 @@ function Nav() {
             >
               Start free demo
             </button>
-            <button
-              type="button"
+            <Link
+              href="/breathe/signup"
               className="bx-btn bx-btn-ghost bx-nav-mobile-demo"
-              onClick={() => {
-                setOpen(false);
-                openContact("breathe-nav");
-              }}
+              onClick={() => setOpen(false)}
             >
-              Book a demo
-            </button>
+              Create account
+            </Link>
           </div>
         </div>
       ) : null}
@@ -1229,13 +1262,13 @@ function Hero() {
               Live demo on sample data · No call · No credit card
             </div>
             <p className="bx-hero-talk bx-reveal in">
-              Prefer a guided walkthrough?{" "}
+              Questions, or need a hand getting set up?{" "}
               <button
                 type="button"
                 className="bx-linkbtn"
                 onClick={() => openContact("breathe-hero")}
               >
-                Talk to us →
+                Contact support →
               </button>
             </p>
           </div>
@@ -1589,7 +1622,7 @@ function Lifecycle() {
           <p className="bx-lede">
             From the first intake call to the last reconciled claim, every stage
             of the DME lifecycle runs on the same data — no exports, no
-            swivel-chair, no patients lost between systems.
+            re-keying between screens, no patients lost between systems.
           </p>
         </div>
         <div className="bx-pipeline bx-reveal">
@@ -1846,7 +1879,7 @@ const LIVE_SHOTS: { src: string; cap: string; alt: string }[] = [
   {
     src: "/breathe/screens/console-resupply.jpg",
     cap: "Resupply opportunities — who's due, overdue, and ready to refit",
-    alt: "Breathe admin: resupply opportunities worklist with overdue and high-leak flags",
+    alt: "Breathe admin: resupply opportunities worklist with overdue and at-risk flags",
   },
   {
     src: "/breathe/screens/console-fleet.jpg",
@@ -2389,8 +2422,9 @@ function AiBento() {
           </h2>
           <p className="bx-lede">
             Best-in-class models from Anthropic, OpenAI, and ElevenLabs are
-            wired into the product where each is strongest — and every one
-            degrades gracefully when a key is unset.
+            wired into the product where each is strongest — and if a provider
+            is ever unavailable, that feature steps aside quietly instead of
+            breaking your day.
           </p>
         </div>
         <div className="bx-bento">
@@ -2936,8 +2970,8 @@ function Capabilities() {
           <p className="bx-lede">
             Resupply, revenue cycle, clinical monitoring, patient communication,
             a branded storefront, telehealth, and an AI workforce — every
-            workflow on the same patient record. No exports, no swivel-chair, no
-            patients lost between systems.
+            workflow on the same patient record. No exports, no re-keying
+            between screens, no patients lost between systems.
           </p>
         </div>
         <div className="bx-caps">
@@ -3080,7 +3114,7 @@ const BOLTED_ON = [
   "A separate telephony provider for calls & texts",
   "A separate e-signature tool",
   "An add-on “AI” module, licensed on top",
-  "Glue code, nightly exports & swivel-chair in between",
+  "Glue code, nightly exports & manual re-keying in between",
 ];
 
 function BuiltInHouse() {
@@ -3259,7 +3293,7 @@ function CompareMark({ v }: { v: Cell }) {
   );
 }
 
-function Comparison() {
+export function Comparison() {
   return (
     <section className="bx-section" id="compare">
       <div className="bx-shell">
@@ -3357,7 +3391,7 @@ const DIFFERENCES: Capability[] = [
     summary: "Every workflow reads and writes the same data.",
     points: [
       "Intake → resupply → claims → clinical on one timeline",
-      "No exports, no swivel-chair, no patients lost between tools",
+      "No exports, no re-keying between screens, no patients lost between tools",
     ],
   },
   {
@@ -3371,7 +3405,7 @@ const DIFFERENCES: Capability[] = [
   },
 ];
 
-function WhyDifferent() {
+export function WhyDifferent() {
   return (
     <section className="bx-section">
       <div className="bx-shell">
@@ -3666,10 +3700,134 @@ function Roi() {
                 </div>
               ))}
             </div>
+
+            <RoiEmailCapture patients={patients} staff={staff} />
           </div>
         </div>
       </div>
     </section>
+  );
+}
+
+/**
+ * "Email me this estimate" — captures the lead at peak intent. Posts the two
+ * slider inputs (not the computed totals) to /api/roi-estimate, which
+ * recomputes the numbers server-side, saves the address to the marketing
+ * list, and emails the visitor the breakdown. Fail-soft: the backend always
+ * 200s; `emailed:false` (e.g. provider offline) still confirms we captured
+ * the request.
+ */
+function RoiEmailCapture({
+  patients,
+  staff,
+}: {
+  patients: number;
+  staff: number;
+}) {
+  const [email, setEmail] = useState("");
+  const [status, setStatus] = useState<
+    "idle" | "submitting" | "sent" | "captured" | "error"
+  >("idle");
+  const [err, setErr] = useState("");
+  const hpRef = useRef<HTMLInputElement>(null);
+
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const value = email.trim().toLowerCase();
+    if (!EMAIL_RE.test(value)) {
+      setErr("Please enter a valid email address.");
+      setStatus("error");
+      return;
+    }
+    setStatus("submitting");
+    setErr("");
+    try {
+      const resp = await fetch("/api/roi-estimate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: value,
+          patients,
+          staff,
+          website: hpRef.current?.value || undefined,
+        }),
+      });
+      if (!resp.ok) {
+        setErr("Something went wrong. Please try again.");
+        setStatus("error");
+        return;
+      }
+      const data = (await resp.json().catch(() => ({}))) as {
+        emailed?: boolean;
+      };
+      setStatus(data.emailed ? "sent" : "captured");
+    } catch {
+      setErr("Network error. Please try again.");
+      setStatus("error");
+    }
+  };
+
+  if (status === "sent" || status === "captured") {
+    return (
+      <div className="bx-roi-capture-done" role="status">
+        <Check size={16} />
+        {status === "sent"
+          ? "Sent — check your inbox for the full breakdown."
+          : "Thanks — you're on our list. Your estimate is shown above; we couldn't email a copy just now."}
+      </div>
+    );
+  }
+
+  return (
+    <form className="bx-roi-capture" onSubmit={onSubmit} noValidate>
+      <label className="bx-roi-capture-label" htmlFor="bx-roi-email">
+        Email me this estimate
+      </label>
+      <div className="bx-roi-capture-row">
+        {/* Honeypot — real users never see or fill this. */}
+        <input
+          ref={hpRef}
+          type="text"
+          name="website"
+          tabIndex={-1}
+          autoComplete="off"
+          aria-hidden="true"
+          className="bx-hp"
+        />
+        <input
+          id="bx-roi-email"
+          type="email"
+          inputMode="email"
+          autoComplete="email"
+          required
+          value={email}
+          onChange={(e) => {
+            setEmail(e.target.value);
+            if (status === "error") setStatus("idle");
+          }}
+          placeholder="you@yourdme.com"
+          aria-invalid={status === "error"}
+        />
+        <button
+          type="submit"
+          className="bx-btn bx-btn-primary bx-btn-sm"
+          disabled={status === "submitting"}
+        >
+          {status === "submitting" ? (
+            "Sending…"
+          ) : (
+            <>
+              Email it <ArrowRight size={15} />
+            </>
+          )}
+        </button>
+      </div>
+      {status === "error" ? (
+        <span className="bx-demoform-err" role="alert">
+          {err}
+        </span>
+      ) : null}
+    </form>
   );
 }
 
@@ -3683,6 +3841,10 @@ const PLANS: {
   name: string;
   price: string;
   cadence: string;
+  // Monthly list price in cents, used to derive the annual (2-months-free)
+  // option in the billing toggle. null for custom/contact tiers, which never
+  // show a derived annual number.
+  monthlyCents: number | null;
   setup: string;
   blurb: string;
   highlights: string[];
@@ -3692,6 +3854,7 @@ const PLANS: {
     name: "Launch",
     price: "$799",
     cadence: "/mo",
+    monthlyCents: 79900,
     setup: "+ $2,500 one-time onboarding",
     blurb: "Branded storefront and core resupply automation for a small DME.",
     highlights: [
@@ -3705,6 +3868,7 @@ const PLANS: {
     name: "Growth",
     price: "$1,899",
     cadence: "/mo",
+    monthlyCents: 189900,
     setup: "+ $5,000 one-time onboarding",
     blurb:
       "Full resupply operations, outreach, documents, and billing worklists.",
@@ -3720,6 +3884,7 @@ const PLANS: {
     name: "Scale",
     price: "$3,999",
     cadence: "/mo",
+    monthlyCents: 399900,
     setup: "+ $10,000 one-time onboarding",
     blurb:
       "Multi-location automation, analytics, and AI controls at higher volume.",
@@ -3734,6 +3899,7 @@ const PLANS: {
     name: "Enterprise",
     price: "Custom",
     cadence: "",
+    monthlyCents: null,
     setup: "Contracted volume + SLA",
     blurb:
       "For high-volume DME operations needing custom integration and support.",
@@ -3828,6 +3994,7 @@ function liveToPlanCards(plans: PublicPlan[]): PlanCard[] {
         ? "Contact us"
         : dollars(p.monthlyPriceCents),
     cadence: p.isCustom || p.monthlyPriceCents == null ? "" : "/mo",
+    monthlyCents: p.isCustom ? null : p.monthlyPriceCents,
     setup: p.isCustom
       ? "Contracted volume + SLA"
       : p.onboardingFeeCents != null && p.onboardingFeeCents > 0
@@ -3992,48 +4159,122 @@ function liveToAddonGroups(addons: PublicAddon[]): typeof ADDON_GROUPS {
   return order.map((group) => ({ group, items: byLabel.get(group)! }));
 }
 
+type BillingMode = "monthly" | "annual";
+
+// Annual billing = pay for 10 months, get 12 (two months free). Returns the
+// values a plan card shows in annual mode, or null when the tier has no
+// derivable price (Custom / Contact us) and should fall back to its monthly
+// string unchanged.
+function annualView(
+  monthlyCents: number | null,
+): { effMonthly: string; perYear: string; saved: string } | null {
+  if (monthlyCents == null || monthlyCents <= 0) return null;
+  const perYearCents = monthlyCents * 10;
+  return {
+    effMonthly: dollars(Math.round(perYearCents / 12)),
+    perYear: dollars(perYearCents),
+    saved: dollars(monthlyCents * 2),
+  };
+}
+
+/** Monthly ⇄ annual segmented control. Controlled by the parent so the
+ *  landing teaser and the full pricing page each own their own state. */
+function BillingToggle({
+  mode,
+  onChange,
+}: {
+  mode: BillingMode;
+  onChange: (m: BillingMode) => void;
+}) {
+  return (
+    <div
+      className="bx-billtoggle bx-reveal"
+      role="radiogroup"
+      aria-label="Billing period"
+    >
+      <button
+        type="button"
+        role="radio"
+        aria-checked={mode === "monthly"}
+        className={"bx-billtoggle-opt" + (mode === "monthly" ? " on" : "")}
+        onClick={() => onChange("monthly")}
+      >
+        Monthly
+      </button>
+      <button
+        type="button"
+        role="radio"
+        aria-checked={mode === "annual"}
+        className={"bx-billtoggle-opt" + (mode === "annual" ? " on" : "")}
+        onClick={() => onChange("annual")}
+      >
+        Annual
+        <span className="bx-billtoggle-save">2 months free</span>
+      </button>
+    </div>
+  );
+}
+
 /** The four subscription packages. Reused on the landing page + pricing page.
  *  `cards` defaults to the static PLANS but is fed live catalog data by the
- *  Pricing section when the public pricing endpoint responds. */
-function PricingPlans({ cards = PLANS }: { cards?: PlanCard[] }) {
+ *  Pricing section when the public pricing endpoint responds. `billing`
+ *  switches every priced card between its monthly rate and the annual
+ *  (2-months-free) equivalent. */
+function PricingPlans({
+  cards = PLANS,
+  billing = "monthly",
+}: {
+  cards?: PlanCard[];
+  billing?: BillingMode;
+}) {
   return (
     <div className="bx-plan-grid">
-      {cards.map((p) => (
-        <div
-          className={"bx-plan bx-reveal" + (p.featured ? " featured" : "")}
-          key={p.name}
-        >
-          {p.featured ? (
-            <span className="bx-plan-badge">Most popular</span>
-          ) : null}
-          <div className="bx-plan-name">{p.name}</div>
-          <div className="bx-plan-price">
-            <span className="bx-plan-amt">{p.price}</span>
-            {p.cadence ? (
-              <span className="bx-plan-cadence">{p.cadence}</span>
-            ) : null}
-          </div>
-          <div className="bx-plan-setup">{p.setup}</div>
-          <p className="bx-plan-blurb">{p.blurb}</p>
-          <ul className="bx-plan-list">
-            {p.highlights.map((h) => (
-              <li key={h}>
-                <Check size={15} />
-                {h}
-              </li>
-            ))}
-          </ul>
-          <Link
-            className={
-              "bx-btn bx-btn-sm " +
-              (p.featured ? "bx-btn-primary" : "bx-btn-ghost")
-            }
-            href="/breathe/signup"
+      {cards.map((p) => {
+        const annual = billing === "annual" ? annualView(p.monthlyCents) : null;
+        return (
+          <div
+            className={"bx-plan bx-reveal" + (p.featured ? " featured" : "")}
+            key={p.name}
           >
-            Create your account
-          </Link>
-        </div>
-      ))}
+            {p.featured ? (
+              <span className="bx-plan-badge">Most popular</span>
+            ) : null}
+            <div className="bx-plan-name">{p.name}</div>
+            <div className="bx-plan-price">
+              <span className="bx-plan-amt">
+                {annual ? annual.effMonthly : p.price}
+              </span>
+              {p.cadence ? (
+                <span className="bx-plan-cadence">{p.cadence}</span>
+              ) : null}
+            </div>
+            {annual ? (
+              <div className="bx-plan-annual">
+                {annual.perYear}/yr billed annually · <b>save {annual.saved}</b>
+              </div>
+            ) : null}
+            <div className="bx-plan-setup">{p.setup}</div>
+            <p className="bx-plan-blurb">{p.blurb}</p>
+            <ul className="bx-plan-list">
+              {p.highlights.map((h) => (
+                <li key={h}>
+                  <Check size={15} />
+                  {h}
+                </li>
+              ))}
+            </ul>
+            <Link
+              className={
+                "bx-btn bx-btn-sm " +
+                (p.featured ? "bx-btn-primary" : "bx-btn-ghost")
+              }
+              href="/breathe/signup"
+            >
+              Create your account
+            </Link>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -4118,6 +4359,7 @@ function PricingAddons({
 function Pricing() {
   const { open: openDemoGate } = useDemoGate();
   const live = usePublicPricing();
+  const [billing, setBilling] = useState<BillingMode>("monthly");
   const cards = live ? liveToPlanCards(live.plans) : PLANS;
   const groups =
     live && live.addons.length > 0
@@ -4134,14 +4376,15 @@ function Pricing() {
             Pick a package, <em>add only what you need</em>
           </h2>
           <p className="bx-lede">
-            Transparent subscription tiers sized to your patient base —
-            month-to-month, with onboarding and migration included. Upload a CSV
-            of your patients and you&apos;re live on day one, and your data
-            stays yours — always exportable (back out to PacWare too). License
-            premium modules à la carte.
+            Transparent subscription tiers sized to your patient base — monthly
+            or annual (two months free), with onboarding and migration included.
+            Upload a CSV of your patients and you&apos;re live on day one, and
+            your data stays yours — always exportable (back out to PacWare too).
+            License premium modules à la carte.
           </p>
         </div>
-        <PricingPlans cards={cards} />
+        <BillingToggle mode={billing} onChange={setBilling} />
+        <PricingPlans cards={cards} billing={billing} />
         <PricingAddons groups={groups} />
         <div className="bx-price-cta bx-reveal">
           <span>Not sure which package fits?</span>
@@ -4161,6 +4404,7 @@ function Pricing() {
 /* Landing-page pricing — packages up front with an add-ons teaser; the full
    catalog lives on /breathe/pricing. */
 function PricingHome() {
+  const [billing, setBilling] = useState<BillingMode>("monthly");
   return (
     <section className="bx-section">
       <div className="bx-shell">
@@ -4172,13 +4416,14 @@ function PricingHome() {
             One platform, <em>packaged for your size</em>
           </h2>
           <p className="bx-lede">
-            Subscription tiers sized to your patient base — month-to-month, with
-            onboarding and migration included. Upload a CSV of your patients and
-            you&apos;re live on day one. Add premium modules only when you need
-            them.
+            Subscription tiers sized to your patient base — monthly or annual
+            (two months free), with onboarding and migration included. Upload a
+            CSV of your patients and you&apos;re live on day one. Add premium
+            modules only when you need them.
           </p>
         </div>
-        <PricingPlans />
+        <BillingToggle mode={billing} onChange={setBilling} />
+        <PricingPlans billing={billing} />
         <div className="bx-addons-teaser bx-reveal">
           <Plug size={15} />
           <span>
@@ -4427,7 +4672,7 @@ function RoiAssumptions() {
 const PRICING_FAQ: { q: string; a: React.ReactNode }[] = [
   {
     q: "Is it really one price, or per-module like legacy suites?",
-    a: "One platform price covers the core — resupply, revenue cycle, patient communications, clinical monitoring, the storefront, and analytics. There are no per-module unlocks to discover later. A short list of à-la-carte add-ons (the AI voice agent, advanced billing automation, extra seats and locations) is published in the open, not negotiated line by line.",
+    a: "One platform price covers the core — resupply, revenue cycle, patient communications, clinical monitoring, the storefront, and analytics. There are no per-module unlocks to discover later. A short list of à la carte add-ons (the AI voice agent, advanced billing automation, extra seats and locations) is published in the open, not negotiated line by line.",
   },
   {
     q: "Is there a long-term contract?",
@@ -4490,7 +4735,7 @@ const STEPS: {
     icon: <Plug size={20} />,
     n: "02",
     title: "Configure & connect",
-    body: "Wire up your payers, clearinghouse, brand, From address, and reminder cadences. Turn AI surfaces on one feature flag at a time, at your pace.",
+    body: "Wire up your payers, clearinghouse, branding, sender email address, and reminder schedules. Switch on each AI feature one at a time, at your own pace.",
   },
   {
     icon: <Zap size={20} />,
@@ -4500,7 +4745,7 @@ const STEPS: {
   },
 ];
 
-function Onboarding() {
+export function Onboarding() {
   return (
     <section className="bx-section">
       <div className="bx-shell">
@@ -4693,6 +4938,81 @@ function Audiences() {
   );
 }
 
+/* ───────────────────────── Founding partner ─────────────────────────
+ * Turns "pre-launch" into the pitch instead of hiding it. CareMetric
+ * Breathe is newly launched, so rather than fake logos or testimonials we
+ * make an honest early-access offer: a small cohort of founding DME
+ * partners who lock in founding pricing, get a direct line to the team,
+ * and help shape the roadmap. Reuses the .bx-pillar grid + .bx-cta button
+ * styles, so it needs only a thin wrapper of new CSS. */
+const FOUNDING_PERKS: { icon: React.ReactNode; title: string; body: string }[] =
+  [
+    {
+      icon: <CircleDollarSign size={20} />,
+      title: "Founding pricing, locked in",
+      body: "Lock today's rate for the life of your account — it never goes up as we add capabilities and the list price does.",
+    },
+    {
+      icon: <GitBranch size={20} />,
+      title: "Shape the roadmap",
+      body: "A direct line to the people building Breathe. The features you need get prioritized because you asked for them.",
+    },
+    {
+      icon: <Headphones size={20} />,
+      title: "White-glove migration",
+      body: "We sit with you through the CSV import, your first resupply run, and your first claim batch — hands-on, not a ticket queue.",
+    },
+  ];
+
+function FoundingPartner() {
+  const { open: openDemoGate } = useDemoGate();
+  return (
+    <section className="bx-section bx-founding-section" id="founding">
+      <div className="bx-shell">
+        <div className="bx-founding bx-reveal">
+          <div className="bx-section-head center">
+            <span className="bx-eyebrow">
+              <Sparkles size={13} /> Early access
+            </span>
+            <h2 className="bx-h2">Become a founding DME partner</h2>
+            <p className="bx-lede">
+              Breathe is newly launched, and we&apos;re onboarding a small group
+              of founding providers by hand. Get in early and you don&apos;t
+              just use the platform — you help shape it, at a price that never
+              moves.
+            </p>
+          </div>
+          <div className="bx-founding-grid">
+            {FOUNDING_PERKS.map((p) => (
+              <article className="bx-founding-perk" key={p.title}>
+                <span className="bx-founding-ic">{p.icon}</span>
+                <h3>{p.title}</h3>
+                <p>{p.body}</p>
+              </article>
+            ))}
+          </div>
+          <div className="bx-founding-cta">
+            <Link className="bx-btn bx-btn-gold" href="/breathe/signup">
+              Claim a founding spot <ArrowRight size={17} />
+            </Link>
+            <button
+              type="button"
+              className="bx-btn bx-btn-ghost"
+              onClick={() => openDemoGate("breathe-founding")}
+            >
+              See it first
+            </button>
+          </div>
+          <p className="bx-founding-fine">
+            No credit card to start · founding terms confirmed in writing before
+            you commit
+          </p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 /* ───────────────────────── Closing CTA ───────────────────────── */
 export function ClosingCta() {
   const { openContact } = useDemoGate();
@@ -4714,16 +5034,16 @@ export function ClosingCta() {
             <Link className="bx-btn bx-btn-gold" href="/breathe/signup">
               Create your account <ArrowRight size={17} />
             </Link>
+            <Link className="bx-btn bx-btn-ghost" href="/breathe/product">
+              Explore the platform
+            </Link>
             <button
               type="button"
               className="bx-btn bx-btn-ghost"
               onClick={() => openContact("breathe-cta")}
             >
-              Book a demo
+              Contact support
             </button>
-            <Link className="bx-btn bx-btn-ghost" href="/breathe/product">
-              Explore the platform
-            </Link>
           </div>
           <div className="bx-cta-meta">
             <span>

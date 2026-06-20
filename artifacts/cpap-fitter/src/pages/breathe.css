@@ -162,6 +162,14 @@
   box-sizing: border-box;
 }
 
+/* Branded text selection — a luminous cyan wash instead of the OS default,
+   so even highlighting copy stays on-aesthetic. */
+.breathe-page ::selection {
+  background: rgba(84, 200, 255, 0.3);
+  color: #ffffff;
+  text-shadow: none;
+}
+
 .bx-shell {
   width: 100%;
   max-width: var(--bx-maxw);
@@ -368,12 +376,13 @@
   font-size: 13.5px;
 }
 .bx-btn-primary {
-  /* Near-black ink on a fully LIGHT blue gradient. The old mid-blue stop
-     (#4f8dff) under dark text read muddy/low-contrast; both stops are now
-     light so the label stays crisp across the whole button (incl. the small
-     nav variant). */
+  /* Near-black ink on a fully LIGHT blue gradient. Earlier mid-blue stops
+     (#4f8dff, then #6aa6ff) under dark text still read muddy/low-contrast on
+     the right edge — most visible on the small nav "Create account" variant.
+     Both stops are now genuinely light so the label stays crisp across the
+     whole button at every size. */
   color: #05101f;
-  background: linear-gradient(135deg, #7ed7ff 0%, #6aa6ff 100%);
+  background: linear-gradient(135deg, #9fe3ff 0%, #7fbcff 100%);
   box-shadow:
     0 10px 30px -8px var(--_glow),
     inset 0 1px 0 rgba(255, 255, 255, 0.28);
@@ -401,6 +410,20 @@
 .bx-btn-gold:hover {
   transform: translateY(-2px);
   box-shadow: 0 16px 40px -8px rgba(246, 167, 34, 0.6);
+}
+/* Tactile press — the button settles back down and compresses a hair on
+   click, so every CTA feels physical rather than static. */
+.bx-btn:active {
+  transform: translateY(0) scale(0.985);
+}
+/* The trailing arrow glides forward on hover — a small directional cue that
+   reinforces "this moves you onward". The icon already ships in the markup,
+   so this is pure motion polish (and is killed under reduced-motion). */
+.bx-btn svg {
+  transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.bx-btn:hover svg {
+  transform: translateX(3px);
 }
 
 /* Eyebrow label */
@@ -449,6 +472,9 @@
   font-weight: 600;
   letter-spacing: -0.02em;
   line-height: 1.05;
+  /* Balance the big Fraunces headlines so a multi-line title breaks into
+     even raglines instead of leaving a lonely orphan word on the last row. */
+  text-wrap: balance;
   margin: 18px 0 0;
   /* room for descenders — -webkit-background-clip: text trims them on tight line-heights */
   padding-bottom: 0.1em;
@@ -474,6 +500,7 @@
   font-size: 18px;
   line-height: 1.62;
   color: var(--bx-text-dim);
+  text-wrap: pretty;
   margin-top: 20px;
 }
 
@@ -501,6 +528,7 @@
   font-weight: 560;
   letter-spacing: -0.022em;
   line-height: 0.98;
+  text-wrap: balance;
   margin: 22px 0 0;
 }
 .bx-h1 .grad-em,
@@ -525,6 +553,7 @@
   font-size: 19px;
   line-height: 1.62;
   color: var(--bx-text-dim);
+  text-wrap: pretty;
   margin: 26px 0 0;
   max-width: 552px;
 }
@@ -578,12 +607,14 @@
   font-weight: 560;
   letter-spacing: -0.02em;
   line-height: 1.02;
+  text-wrap: balance;
   margin: 20px 0 0;
 }
 .bx-pagehead-sub {
   font-size: 18px;
   line-height: 1.62;
   color: var(--bx-text-dim);
+  text-wrap: pretty;
   margin: 22px 0 0;
   max-width: 620px;
 }
@@ -2837,6 +2868,75 @@
   line-height: 1.5;
 }
 
+/* "Email me this estimate" lead capture under the breakdown. */
+.bx-roi-capture {
+  margin-top: 22px;
+  padding-top: 20px;
+  border-top: 1px solid var(--bx-line);
+}
+.bx-roi-capture-label {
+  display: block;
+  font-family: var(--bx-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--bx-text-dim);
+  margin-bottom: 10px;
+}
+.bx-roi-capture-row {
+  display: flex;
+  gap: 10px;
+}
+.bx-roi-capture-row input[type="email"] {
+  flex: 1;
+  min-width: 0;
+  padding: 11px 14px;
+  border-radius: 11px;
+  border: 1px solid var(--bx-line-strong);
+  background: rgba(0, 0, 0, 0.28);
+  color: var(--bx-text);
+  font-family: var(--bx-font);
+  font-size: 14.5px;
+}
+.bx-roi-capture-row input[type="email"]::placeholder {
+  color: var(--bx-text-faint);
+}
+.bx-roi-capture-row input[type="email"]:focus {
+  outline: none;
+  border-color: var(--bx-cyan);
+  box-shadow: 0 0 0 3px rgba(84, 200, 255, 0.18);
+}
+.bx-roi-capture-row .bx-btn {
+  flex: none;
+  white-space: nowrap;
+}
+.bx-roi-capture-done {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 22px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(111, 240, 194, 0.32);
+  background: rgba(111, 240, 194, 0.08);
+  color: var(--bx-text);
+  font-size: 14px;
+  line-height: 1.45;
+}
+.bx-roi-capture-done svg {
+  flex: none;
+  color: var(--bx-mint);
+}
+@media (max-width: 520px) {
+  .bx-roi-capture-row {
+    flex-wrap: wrap;
+  }
+  .bx-roi-capture-row .bx-btn {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
 /* ───────────────────────── Pricing ───────────────────────── */
 .bx-price-grid {
   display: grid;
@@ -3004,6 +3104,70 @@
   font-size: 12px;
   color: var(--bx-text-faint);
   margin-top: 4px;
+}
+/* Annual-billing sub-line under the price (only shown in annual mode). */
+.bx-plan-annual {
+  font-size: 12px;
+  color: var(--bx-text-dim);
+  margin-top: 5px;
+}
+.bx-plan-annual b {
+  color: var(--bx-mint);
+  font-weight: 700;
+}
+
+/* Monthly ⇄ annual segmented toggle above the plan grid. width:fit-content +
+   auto margins centers it within the (block) section shell. */
+.bx-billtoggle {
+  display: flex;
+  width: fit-content;
+  margin: 0 auto 28px;
+  padding: 5px;
+  gap: 4px;
+  border: 1px solid var(--bx-line-strong);
+  border-radius: 100px;
+  background: var(--bx-panel-2);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+.bx-billtoggle-opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 20px;
+  border: 0;
+  border-radius: 100px;
+  background: transparent;
+  color: var(--bx-text-dim);
+  font-family: var(--bx-font);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background 0.2s ease,
+    color 0.2s ease;
+}
+.bx-billtoggle-opt:hover {
+  color: var(--bx-text);
+}
+.bx-billtoggle-opt.on {
+  color: #05101f;
+  background: linear-gradient(135deg, #9fe3ff 0%, #7fbcff 100%);
+  box-shadow: 0 8px 22px -10px rgba(47, 111, 230, 0.7);
+}
+.bx-billtoggle-save {
+  font-family: var(--bx-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 3px 7px;
+  border-radius: 100px;
+  background: rgba(111, 240, 194, 0.16);
+  color: var(--bx-mint);
+}
+.bx-billtoggle-opt.on .bx-billtoggle-save {
+  background: rgba(5, 16, 31, 0.16);
+  color: #07351f;
 }
 .bx-plan-blurb {
   font-size: 13px;
@@ -3180,6 +3344,63 @@
 }
 .bx-addons-teaser-link:hover {
   color: var(--bx-text);
+}
+
+/* ───────────── "Switch from <competitor>" cross-links ───────────── */
+.bx-switchlinks {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px 24px;
+  margin-top: 28px;
+  padding: 20px 24px;
+  border: 1px solid var(--bx-line);
+  border-radius: 16px;
+  background: var(--bx-panel-2);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+.bx-switchlinks-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  font-family: var(--bx-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--bx-text-faint);
+}
+.bx-switchlinks-label svg {
+  color: var(--bx-cyan);
+  flex: none;
+}
+.bx-switchlinks-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.bx-switchlink {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 14px;
+  border-radius: 100px;
+  border: 1px solid var(--bx-line-strong);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--bx-text-dim);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  transition:
+    color 0.18s ease,
+    background 0.18s ease,
+    border-color 0.18s ease;
+}
+.bx-switchlink:hover {
+  color: var(--bx-text);
+  background: rgba(84, 200, 255, 0.08);
+  border-color: var(--bx-cyan);
 }
 
 /* ───────────────────────── Security ───────────────────────── */
@@ -3407,6 +3628,96 @@
 }
 
 /* ───────────────────────── CTA + footer ───────────────────────── */
+/* ───────────────────── Founding partner band ───────────────────── */
+.bx-founding {
+  position: relative;
+  padding: 56px 40px 48px;
+  border-radius: 28px;
+  border: 1px solid rgba(246, 167, 34, 0.32);
+  overflow: hidden;
+  background:
+    radial-gradient(
+      66% 120% at 50% 0%,
+      rgba(246, 167, 34, 0.16),
+      transparent 70%
+    ),
+    linear-gradient(180deg, rgba(20, 32, 62, 0.6), rgba(11, 20, 42, 0.72));
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+.bx-founding .bx-section-head {
+  margin-bottom: 40px;
+}
+/* A warm amber-tinted eyebrow so the founding band reads as the "gold"
+   moment of the page (matches the gold pillar/voice accents). */
+.bx-founding .bx-eyebrow {
+  color: var(--bx-gold-soft);
+  border-color: rgba(246, 167, 34, 0.4);
+  background: rgba(246, 167, 34, 0.08);
+}
+.bx-founding-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 18px;
+}
+@media (max-width: 820px) {
+  .bx-founding-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.bx-founding-perk {
+  text-align: left;
+  padding: 24px 24px 26px;
+  border-radius: 18px;
+  border: 1px solid var(--bx-line);
+  background: rgba(11, 20, 42, 0.5);
+}
+.bx-founding-ic {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 13px;
+  margin-bottom: 16px;
+  color: var(--bx-gold-soft);
+  background: linear-gradient(
+    135deg,
+    rgba(246, 167, 34, 0.2),
+    rgba(246, 167, 34, 0.05)
+  );
+  border: 1px solid rgba(246, 167, 34, 0.34);
+}
+.bx-founding-perk h3 {
+  font-family: var(--bx-display);
+  font-optical-sizing: auto;
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 0 0 8px;
+  color: var(--bx-text);
+}
+.bx-founding-perk p {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--bx-text-dim);
+  margin: 0;
+}
+.bx-founding-cta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 14px;
+  margin-top: 36px;
+}
+.bx-founding-fine {
+  margin: 18px 0 0;
+  text-align: center;
+  font-family: var(--bx-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+  color: var(--bx-text-faint);
+}
+
 .bx-cta {
   position: relative;
   text-align: center;
@@ -3857,6 +4168,12 @@
   transition:
     opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1),
     transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+}
+/* Promote to its own layer only WHILE it still has to animate in. Leaving
+   `will-change` on every revealed element permanently pins a compositor
+   layer per section for the life of the page; dropping it once `.in` lands
+   hands that memory back to the browser. */
+.bx-reveal:not(.in) {
   will-change: opacity, transform;
 }
 .bx-reveal.in {
