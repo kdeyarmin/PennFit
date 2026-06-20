@@ -13,6 +13,7 @@ const baseCtx: ModifierRuleContext = {
   isCompliant: false,
   isInitialDispense: false,
   hasPriorAuth: false,
+  isAbnOnFile: false,
 };
 
 describe("ruleApplies", () => {
@@ -30,9 +31,14 @@ describe("ruleApplies", () => {
     expect(ruleApplies("if_rental_month_le_3", baseCtx)).toBe(false);
   });
 
-  it("always matches `always`, and abn is opt-in false", () => {
+  it("always matches `always`, and abn tracks the ABN-on-file flag", () => {
     expect(ruleApplies("always", baseCtx)).toBe(true);
+    // No ABN on file → the rule stays dormant.
     expect(ruleApplies("if_abn_on_file", baseCtx)).toBe(false);
+    // Signed ABN on file → the rule fires (e.g. stamp GA).
+    expect(
+      ruleApplies("if_abn_on_file", { ...baseCtx, isAbnOnFile: true }),
+    ).toBe(true);
   });
 
   it("matches compliance / PA / initial-dispense flags", () => {
