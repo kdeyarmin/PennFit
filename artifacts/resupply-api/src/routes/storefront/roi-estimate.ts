@@ -1,5 +1,6 @@
-// POST /roi-estimate — "email me my ROI estimate" from the public Breathe
-// ROI calculator (/breathe/roi).
+// POST /api/roi-estimate — "email me my ROI estimate" from the public Breathe
+// ROI calculator (/breathe/roi). Declared here router-relative as
+// "/roi-estimate"; mounted under /api in storefront/index.ts.
 //
 // A visitor enters two numbers (active patients, staff) and asks us to email
 // them the modeled estimate. We do two things, both best-effort so the

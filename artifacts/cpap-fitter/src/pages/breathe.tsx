@@ -3806,7 +3806,6 @@ function RoiEmailCapture({
             if (status === "error") setStatus("idle");
           }}
           placeholder="you@yourdme.com"
-          aria-label="Work email"
           aria-invalid={status === "error"}
         />
         <button
