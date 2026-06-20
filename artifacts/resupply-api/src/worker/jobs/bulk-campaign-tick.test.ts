@@ -39,6 +39,35 @@ vi.mock("@workspace/resupply-email", () => ({
   createSendgridClient: createSendgridClientMock,
 }));
 
+// ── SMS mocks (the channel='sms' send path) ──────────────────────────────────
+const smsSendMock = vi.hoisted(() =>
+  vi.fn(async () => ({ messageSid: "sm-msg-1" })),
+);
+const createTwilioSmsClientMock = vi.hoisted(() =>
+  vi.fn(() => ({ sendSms: smsSendMock })),
+);
+// normalizeE164 is imported statically by the worker; a pass-through keeps
+// already-E.164 fixtures intact and returns null for empty input.
+vi.mock("@workspace/resupply-domain", () => ({
+  normalizeE164: (v: string | null | undefined) =>
+    v && String(v).trim().length > 0 ? String(v) : null,
+}));
+vi.mock("../../lib/messaging/messaging-config.js", () => ({
+  readSmsConfigOrNull: vi.fn(() => ({
+    twilioAccountSid: "AC_test",
+    twilioAuthToken: "tok",
+    twilioPhoneNumber: "+15550001111",
+    twilioMessagingServiceSid: undefined,
+    publicBaseUrl: "https://example.test",
+  })),
+}));
+vi.mock("../../lib/messaging/tenant-telecom.js", () => ({
+  resolveTenantSmsClientOptions: vi.fn(async () => ({})),
+}));
+vi.mock("@workspace/resupply-telecom", () => ({
+  createTwilioSmsClient: createTwilioSmsClientMock,
+}));
+
 // ── Audit mock (fire-and-forget; we don't assert on it here) ─────────────────
 vi.mock("@workspace/resupply-audit", () => ({
   logAudit: vi.fn(async () => undefined),
@@ -271,6 +300,16 @@ function stageSingleRecipientTick(opts: {
   campaign?: Record<string, unknown>;
   recipient?: Record<string, unknown>;
   patientPrefs?: Record<string, unknown> | null;
+  /** Status the patient opt-out re-check SELECT returns (patient kind
+   *  only). Defaults to "active" so the default recipient is sendable. */
+  patientStatus?: string;
+  /** phone_line_type the patient re-check SELECT returns (default null =
+   *  unknown → allowed for SMS). Set 'landline'/'voip' to exercise the gate. */
+  patientLineType?: string | null;
+  /** sms_marketing_consent the patient re-check SELECT returns (default true
+   *  so existing SMS tests continue to pass). Set false to exercise the
+   *  TCPA consent gate. */
+  patientSmsMarketingConsent?: boolean;
   claimTable?: string;
 }) {
   const campaign = makeCampaign(opts.campaign ?? {});
@@ -282,9 +321,12 @@ function stageSingleRecipientTick(opts: {
   stageDb("bulk_campaign_recipients", "update", { data: null });
   // 2. Pending recipients SELECT
   stageDb("bulk_campaign_recipients", "select", { data: [recipient] });
-  // 3. Claim UPDATE (status → sending, RETURNING id + email + kind + id)
+  // 3. Claim UPDATE (status → sending, RETURNING id + email + phone + kind + id)
   stageDb("bulk_campaign_recipients", "update", { data: [recipient] });
-  // 4. Opt-out check SELECT (patients or shop_customers)
+  // 4. Opt-out re-check SELECT. Patients are re-checked by `status`
+  //    (paused = STOP/unsubscribed) and, for marketing SMS, by
+  //    sms_marketing_consent; shop_customers by their per-channel
+  //    communication_preferences.
   const prefTable =
     opts.claimTable ??
     (recipient.recipient_kind === "shop_customer"
@@ -292,9 +334,23 @@ function stageSingleRecipientTick(opts: {
       : "patients");
   stageDb(prefTable, "select", {
     data:
-      opts.patientPrefs !== undefined
-        ? { communication_preferences: opts.patientPrefs }
-        : null,
+      prefTable === "patients"
+        ? {
+            status: opts.patientStatus ?? "active",
+            phone_line_type: opts.patientLineType ?? null,
+            // Default true so existing tests (which test non-consent behaviour)
+            // remain sendable; set false to test the TCPA gate.
+            sms_marketing_consent:
+              opts.patientSmsMarketingConsent !== undefined
+                ? opts.patientSmsMarketingConsent
+                : true,
+          }
+        : opts.patientPrefs !== undefined
+          ? {
+              communication_preferences: opts.patientPrefs,
+              phone_line_type: opts.patientLineType ?? null,
+            }
+          : null,
   });
   // 5. Status update on recipient (sent / suppressed / failed)
   stageDb("bulk_campaign_recipients", "update", { data: null });
@@ -327,6 +383,12 @@ beforeEach(() => {
   createSendgridClientMock.mockImplementation(() => ({
     sendEmail: sendEmailMock,
   }));
+  smsSendMock.mockClear();
+  smsSendMock.mockResolvedValue({ messageSid: "sm-msg-1" });
+  createTwilioSmsClientMock.mockClear();
+  createTwilioSmsClientMock.mockImplementation(() => ({
+    sendSms: smsSendMock,
+  }));
   testLog.info.mockClear();
   testLog.warn.mockClear();
   testLog.error.mockClear();
@@ -338,11 +400,9 @@ beforeEach(() => {
 
 describe("processTick — opt-out re-check at send time (marketing)", () => {
   it("suppresses a recipient whose emailMarketing pref is false", async () => {
-    // recipient_kind: shop_customer — `isRecipientOptedOut` currently
-    // only re-checks shop_customers at send time. Patients don't
-    // expose `communication_preferences` in the generated Database
-    // types, so the re-check fail-opens for patient recipients.
-    // Closing that gap requires schema work tracked as a follow-up.
+    // recipient_kind: shop_customer — the at-send re-check consults the
+    // customer's communication_preferences. (Patient recipients are
+    // re-checked by `status` instead; see the paused-patient test below.)
     stageSingleRecipientTick({
       campaign: { category: "marketing" },
       recipient: { recipient_kind: "shop_customer", recipient_id: "cust-1" },
@@ -863,26 +923,21 @@ describe("processTick — suppressedAtSend counter and pool.query", () => {
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
-// opt-out re-check scope — shop_customer vs patient (regression)
+// opt-out re-check — patient kind uses `status`, not email prefs
 // ──────────────────────────────────────────────────────────────────────────────
 //
-// PR note: `isRecipientOptedOut` only re-checks shop_customers at send time.
-// Patient recipients fall through to the default (not opted-out) because
-// Database.public.Tables.patients doesn't expose communication_preferences
-// in the generated types. Closing that gap requires a schema migration that
-// is tracked separately.
-//
-// These tests pin the current *scope* of the send-time opt-out re-check so
-// that the failure mode is visible in code history.
+// Patient recipients have no communication_preferences column; their opt-out
+// signal is a non-'active' status (paused = texted STOP / unsubscribed),
+// which the at-send re-check now consults. An active patient is always
+// sendable regardless of any email-pref the campaign category cares about.
 
-describe("processTick — opt-out re-check scope: patient kind fails open", () => {
-  it("does NOT suppress a patient recipient even when emailMarketing pref is false", async () => {
-    // Default makeRecipient() is recipient_kind: "patient". The test
-    // demonstrates the fail-open behavior: patients are sent to regardless
-    // of their stored communication_preferences.
+describe("processTick — patient opt-out re-check uses status", () => {
+  it("sends to an ACTIVE patient regardless of marketing pref (no patient pref gate)", async () => {
+    // Default makeRecipient() is recipient_kind: "patient", default status
+    // "active". A marketing campaign sends to them; patient email prefs
+    // don't gate the patient channel.
     stageSingleRecipientTick({
       campaign: { category: "marketing" },
-      // No explicit recipient override → defaults to kind: "patient"
       patientPrefs: { emailMarketing: false },
     });
 
@@ -892,8 +947,6 @@ describe("processTick — opt-out re-check scope: patient kind fails open", () =
       testLog as never,
     );
 
-    // Patient is NOT suppressed — send proceeds despite the pref being false.
-    // (The shop_customer path would suppress here; see the marketing tests above.)
     expect(sendEmailMock).toHaveBeenCalledTimes(1);
     const updates = getWrites("bulk_campaign_recipients", "update");
     const suppressionUpdate = updates.find(
@@ -905,11 +958,11 @@ describe("processTick — opt-out re-check scope: patient kind fails open", () =
     expect(suppressionUpdate).toBeUndefined();
   });
 
-  it("does NOT suppress a patient recipient for service category emailResupplyReminders=false", async () => {
+  it("SUPPRESSES a patient who became paused (STOP/unsubscribed) after enqueue", async () => {
     stageSingleRecipientTick({
       campaign: { category: "service" },
-      // kind: "patient" (default)
-      patientPrefs: { emailResupplyReminders: false },
+      // Patient texted STOP between enqueue and this tick → status 'paused'.
+      patientStatus: "paused",
     });
 
     await processTick(
@@ -918,13 +971,227 @@ describe("processTick — opt-out re-check scope: patient kind fails open", () =
       testLog as never,
     );
 
-    // Patient recipient is still sent to — fail-open scope.
-    expect(sendEmailMock).toHaveBeenCalledTimes(1);
+    // Not sent — and parked as suppressed at send time.
+    expect(sendEmailMock).not.toHaveBeenCalled();
     const updates = getWrites("bulk_campaign_recipients", "update");
     const suppressionUpdate = updates.find(
-      (u) => (u as Record<string, unknown>).status === "suppressed",
+      (u) =>
+        (u as Record<string, unknown>).status === "suppressed" &&
+        (u as Record<string, unknown>).suppression_reason ===
+          "opted_out_at_send_time",
     );
-    expect(suppressionUpdate).toBeUndefined();
+    expect(suppressionUpdate).toBeDefined();
+  });
+
+  it("paused patient is suppressed even for the compliance category (STOP is absolute)", async () => {
+    stageSingleRecipientTick({
+      campaign: { category: "compliance" },
+      patientStatus: "paused",
+    });
+
+    await processTick(
+      makeBoss() as never,
+      { campaignId: "camp-1" },
+      testLog as never,
+    );
+
+    expect(sendEmailMock).not.toHaveBeenCalled();
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// SMS channel — send path (channel='sms')
+// ──────────────────────────────────────────────────────────────────────────────
+
+describe("processTick — SMS channel", () => {
+  it("sends an SMS to the recipient's phone and finalizes with the Twilio SID", async () => {
+    stageSingleRecipientTick({
+      campaign: { category: "marketing", channel: "sms" },
+      recipient: {
+        recipient_kind: "patient",
+        recipient_id: "pat-sms-1",
+        recipient_email: null,
+        recipient_phone: "+12155551212",
+      },
+    });
+
+    await processTick(
+      makeBoss() as never,
+      { campaignId: "camp-1" },
+      testLog as never,
+    );
+
+    // The email path must NOT be used; the SMS client is.
+    expect(sendEmailMock).not.toHaveBeenCalled();
+    expect(smsSendMock).toHaveBeenCalledTimes(1);
+    const [{ to, body }] = smsSendMock.mock.calls[0] as unknown as [
+      { to: string; body: string },
+    ];
+    expect(to).toBe("+12155551212");
+    expect(body).toBe("Body"); // from the renderMessage mock's bodyText
+
+    // The recipient is finalized 'sent' with the Twilio message SID.
+    const updates = getWrites("bulk_campaign_recipients", "update") as Array<
+      Record<string, unknown>
+    >;
+    const sentUpdate = updates.find((u) => u.status === "sent");
+    expect(sentUpdate).toBeDefined();
+    expect(sentUpdate!.vendor_message_id).toBe("sm-msg-1");
+  });
+
+  it("suppresses an SMS recipient whose number is a known landline (at send)", async () => {
+    stageSingleRecipientTick({
+      campaign: { category: "marketing", channel: "sms" },
+      recipient: {
+        recipient_kind: "patient",
+        recipient_id: "pat-ll-1",
+        recipient_email: null,
+        recipient_phone: "+12155551212",
+      },
+      // The number was classified a landline since enqueue.
+      patientLineType: "landline",
+    });
+
+    await processTick(
+      makeBoss() as never,
+      { campaignId: "camp-1" },
+      testLog as never,
+    );
+
+    expect(smsSendMock).not.toHaveBeenCalled();
+    const updates = getWrites("bulk_campaign_recipients", "update") as Array<
+      Record<string, unknown>
+    >;
+    const suppression = updates.find(
+      (u) =>
+        u.status === "suppressed" &&
+        u.suppression_reason === "phone_not_mobile_at_send_time",
+    );
+    expect(suppression).toBeDefined();
+  });
+
+  it("still sends an SMS to an unknown line type (allow-unknown policy)", async () => {
+    stageSingleRecipientTick({
+      campaign: { category: "marketing", channel: "sms" },
+      recipient: {
+        recipient_kind: "patient",
+        recipient_id: "pat-unk-1",
+        recipient_email: null,
+        recipient_phone: "+12155551212",
+      },
+      patientLineType: null, // not yet classified
+    });
+
+    await processTick(
+      makeBoss() as never,
+      { campaignId: "camp-1" },
+      testLog as never,
+    );
+
+    expect(smsSendMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("suppresses a patient who has not given SMS marketing consent (TCPA)", async () => {
+    stageSingleRecipientTick({
+      campaign: { category: "marketing", channel: "sms" },
+      recipient: {
+        recipient_kind: "patient",
+        recipient_id: "pat-no-consent",
+        recipient_email: null,
+        recipient_phone: "+12155551212",
+      },
+      patientSmsMarketingConsent: false,
+    });
+
+    await processTick(
+      makeBoss() as never,
+      { campaignId: "camp-1" },
+      testLog as never,
+    );
+
+    expect(smsSendMock).not.toHaveBeenCalled();
+    const updates = getWrites("bulk_campaign_recipients", "update") as Array<
+      Record<string, unknown>
+    >;
+    const suppression = updates.find((u) => u.status === "suppressed");
+    expect(suppression).toBeDefined();
+    expect(suppression!.suppression_reason).toBe("opted_out_at_send_time");
+  });
+
+  it("sends marketing SMS to a patient with smsMarketingConsent=true", async () => {
+    stageSingleRecipientTick({
+      campaign: { category: "marketing", channel: "sms" },
+      recipient: {
+        recipient_kind: "patient",
+        recipient_id: "pat-consented",
+        recipient_email: null,
+        recipient_phone: "+12155551212",
+      },
+      patientSmsMarketingConsent: true,
+    });
+
+    await processTick(
+      makeBoss() as never,
+      { campaignId: "camp-1" },
+      testLog as never,
+    );
+
+    expect(smsSendMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends service SMS to a patient regardless of smsMarketingConsent", async () => {
+    stageSingleRecipientTick({
+      campaign: { category: "service", channel: "sms" },
+      recipient: {
+        recipient_kind: "patient",
+        recipient_id: "pat-service",
+        recipient_email: null,
+        recipient_phone: "+12155551212",
+      },
+      patientSmsMarketingConsent: false,
+    });
+
+    await processTick(
+      makeBoss() as never,
+      { campaignId: "camp-1" },
+      testLog as never,
+    );
+
+    expect(smsSendMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("pauses the campaign when SMS is not configured (Twilio creds unset)", async () => {
+    const { readSmsConfigOrNull } =
+      await import("../../lib/messaging/messaging-config.js");
+    (
+      readSmsConfigOrNull as unknown as ReturnType<typeof vi.fn>
+    ).mockReturnValueOnce(null);
+
+    const campaign = makeCampaign({ channel: "sms" });
+    const recipient = makeRecipient({
+      recipient_email: null,
+      recipient_phone: "+12155551212",
+    });
+    // Sequence up to the sender construction: campaign select, reclaim,
+    // pending select, claim update. Then: pause UPDATE + rollback UPDATE.
+    stageDb("bulk_campaigns", "select", { data: campaign });
+    stageDb("bulk_campaign_recipients", "update", { data: null }); // reclaim
+    stageDb("bulk_campaign_recipients", "select", { data: [recipient] });
+    stageDb("bulk_campaign_recipients", "update", { data: [recipient] }); // claim
+    stageDb("bulk_campaigns", "update", { data: [{ id: campaign.id }] }); // pause
+    stageDb("bulk_campaign_recipients", "update", { data: null }); // rollback
+
+    await processTick(
+      makeBoss() as never,
+      { campaignId: "camp-1" },
+      testLog as never,
+    );
+
+    expect(smsSendMock).not.toHaveBeenCalled();
+    const campaignUpdates = getWrites("bulk_campaigns", "update") as Array<
+      Record<string, unknown>
+    >;
+    expect(campaignUpdates.find((u) => u.status === "paused")).toBeDefined();
   });
 });
 

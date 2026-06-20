@@ -45,12 +45,15 @@ import { registerMaintenanceNudgeJob } from "./jobs/maintenance-nudges.js";
 import { registerVideoVisitReminderJob } from "./jobs/video-visit-reminders.js";
 import { registerFitterLeadReengageJob } from "./jobs/fitter-lead-reengage.js";
 import { registerFitterLeadFirstDayNudgeJob } from "./jobs/fitter-lead-first-day-nudge.js";
+import { registerDemoDripJob } from "./jobs/demo-drip.js";
 import { registerFitterSupplyCampaignJob } from "./jobs/fitter-supply-campaign.js";
 import { registerFitterConversionAttributionJob } from "./jobs/fitter-conversion-attribution.js";
 import { registerCartAbandonmentJob } from "./jobs/cart-abandonment-scan.js";
 import { registerFailedEmailDigestJob } from "./jobs/failed-order-emails-digest.js";
 import { registerPacwareReadyToSyncDigestJob } from "./jobs/pacware-ready-to-sync-digest.js";
 import { registerTherapyNightlySyncJob } from "./jobs/therapy-integrations-nightly-sync.js";
+import { registerXpsResolveStagedJob } from "./jobs/xps-resolve-staged.js";
+import { registerPhoneLineTypeBackfillJob } from "./jobs/phone-line-type-backfill.js";
 import { registerEligibilityReverifyBatchJob } from "./jobs/eligibility-reverify-batch.js";
 import { registerAutoSubmitBatchJob } from "./jobs/auto-submit-batch.js";
 import { registerBillHoldSweepJob } from "./jobs/bill-hold-sweep.js";
@@ -570,6 +573,15 @@ async function doStartWorker(): Promise<void> {
   await safeRegister("registerCartAbandonmentJob", registrationFailures, () =>
     registerCartAbandonmentJob(boss),
   );
+  // Demo-lead nurture drip — hourly at :37. Walks each Breathe demo
+  // signup (newsletter_subscribers, source='breathe-demo') through a
+  // branded welcome + two follow-ups, then stops. Platform-branded,
+  // sent under the platform SendGrid sender, every email carrying a
+  // one-click unsubscribe link. Off by default — production sets
+  // RESUPPLY_DEMO_DRIP_ENABLED=1 to turn the cron on.
+  await safeRegister("registerDemoDripJob", registrationFailures, () =>
+    registerDemoDripJob(boss),
+  );
   // Failed-email order digest — daily at 13:00 UTC. Scans
   // public.orders for rows with email_status=failed in the last 24h
   // and sends a single PHI-safe summary email to
@@ -658,6 +670,18 @@ async function doStartWorker(): Promise<void> {
     "registerTherapyNightlySyncJob",
     registrationFailures,
     () => registerTherapyNightlySyncJob(boss),
+  );
+  // Auto-resolve XPS orders staged but not yet booked into a shipment.
+  // Queue + worker always register; the recurring cron attaches only when
+  // XPS_RESOLVE_STAGED_CRON_ENABLED=1 (opt-in — it pulls tracking + fires
+  // the patient shipping notification once XPS books the label).
+  await safeRegister("registerXpsResolveStagedJob", registrationFailures, () =>
+    registerXpsResolveStagedJob(boss),
+  );
+  await safeRegister(
+    "registerPhoneLineTypeBackfillJob",
+    registrationFailures,
+    () => registerPhoneLineTypeBackfillJob(boss),
   );
 
   // Eligibility re-verification batch (Biller #31). Queue + worker

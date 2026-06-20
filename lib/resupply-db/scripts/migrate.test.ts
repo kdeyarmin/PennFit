@@ -19,7 +19,7 @@ import { readMigrations } from "./migrate.mjs";
 // Asserts:
 //   1. Running the migrate script against the live DB succeeds (exit 0).
 //   2. Re-running it is a no-op (idempotent — the cutover problem).
-//   3. The `drizzle.resupply_migrations` history table exists with at
+//   3. The `migrations.resupply_migrations` history table exists with at
 //      least one row after a run, and the row count does not change on
 //      a second run (proves we're not re-applying migrations).
 //   4. The boot path works against a database WITHOUT the `pgcrypto`
@@ -96,7 +96,7 @@ describe.skipIf(!dbUrl)("resupply-db migrate.mjs", () => {
     expect(first.stdout).toMatch(/migrations applied/);
 
     const before = await pool.query<{ count: string }>(
-      "SELECT count(*)::text AS count FROM drizzle.resupply_migrations",
+      "SELECT count(*)::text AS count FROM migrations.resupply_migrations",
     );
     const beforeCount = Number(before.rows[0]!.count);
     expect(beforeCount).toBeGreaterThan(0);
@@ -105,7 +105,7 @@ describe.skipIf(!dbUrl)("resupply-db migrate.mjs", () => {
     expect(second.stdout).toMatch(/migrations applied/);
 
     const after = await pool.query<{ count: string }>(
-      "SELECT count(*)::text AS count FROM drizzle.resupply_migrations",
+      "SELECT count(*)::text AS count FROM migrations.resupply_migrations",
     );
     expect(Number(after.rows[0]!.count)).toBe(beforeCount);
   }, 30_000);
@@ -384,7 +384,7 @@ describe("readMigrations — apply ordering", () => {
   const MIGRATIONS_FOLDER = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
     "..",
-    "drizzle",
+    "migrations",
   );
 
   it("orders every migration by non-decreasing numeric prefix", () => {

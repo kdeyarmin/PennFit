@@ -60,6 +60,20 @@ export const DEFAULT_REALTIME_GA_TRANSCRIBE_MODEL = "gpt-realtime-whisper";
 export const DEFAULT_REALTIME_VOICE = "cedar";
 
 /**
+ * Caller-audio noise reduction applied by the Realtime server before its
+ * VAD + STT see the stream. `"far_field"` suits telephony (handset/
+ * speakerphone, room noise, background TV) — it's the right default for a
+ * phone agent: cleaner input means fewer false barge-ins and fewer
+ * mis-hears, which is what actually makes the agent feel attentive rather
+ * than robotic. `"near_field"` targets close-mic headsets; `"off"` disables
+ * it (sends no `input_audio_noise_reduction`, the API default). Override per
+ * deployment via OPENAI_REALTIME_NOISE_REDUCTION.
+ */
+export type RealtimeNoiseReduction = "near_field" | "far_field" | "off";
+export const DEFAULT_REALTIME_NOISE_REDUCTION: RealtimeNoiseReduction =
+  "far_field";
+
+/**
  * Inbound event shapes we care about. The wire schema is much wider —
  * we deliberately ignore unknown event types rather than fail-closed,
  * because OpenAI ships new event kinds out of band and we don't want
@@ -163,6 +177,13 @@ export interface RealtimeClientOptions {
    * documented at build time).
    */
   audioFormat?: string;
+  /**
+   * Caller-audio noise reduction (see {@link RealtimeNoiseReduction}).
+   * Defaults to `"far_field"` (telephony). `"off"` omits the field entirely.
+   * Identical placement story to turn detection — top-level on the beta
+   * session, under `audio.input` on GA.
+   */
+  noiseReduction?: RealtimeNoiseReduction;
   /** System prompt, already built (see prompts.ts). */
   instructions: string;
   /** Tool descriptors (see tools.ts). */
@@ -218,12 +239,17 @@ export class RealtimeClient extends EventEmitter {
   private readonly opts: Required<
     Omit<
       RealtimeClientOptions,
-      "webSocketFactory" | "voice" | "model" | "generateAudio"
+      | "webSocketFactory"
+      | "voice"
+      | "model"
+      | "generateAudio"
+      | "noiseReduction"
     >
   > & {
     model: string;
     voice: string;
     generateAudio: boolean;
+    noiseReduction: RealtimeNoiseReduction;
   };
   private readonly ws: WebSocketLike;
   private sessionUpdateSent = false;
@@ -260,6 +286,7 @@ export class RealtimeClient extends EventEmitter {
         (isGa ? DEFAULT_REALTIME_GA_MODEL : DEFAULT_REALTIME_MODEL),
       voice: opts.voice ?? DEFAULT_REALTIME_VOICE,
       generateAudio: opts.generateAudio ?? true,
+      noiseReduction: opts.noiseReduction ?? DEFAULT_REALTIME_NOISE_REDUCTION,
       instructions: opts.instructions,
       tools: opts.tools,
       allowedToolNames: opts.allowedToolNames,
@@ -655,6 +682,19 @@ export class RealtimeClient extends EventEmitter {
     };
   }
 
+  /**
+   * The `input_audio_noise_reduction` value, or `null` when disabled.
+   * `null` is sent explicitly (rather than omitting the key) so a
+   * `session.update` can also TURN OFF a previously-set reduction; the
+   * API treats `null` as "no reduction". Placement differs by schema:
+   * top-level on beta, under `audio.input` on GA — same as turn detection.
+   */
+  private noiseReduction(): { type: RealtimeNoiseReduction } | null {
+    return this.opts.noiseReduction === "off"
+      ? null
+      : { type: this.opts.noiseReduction };
+  }
+
   /** The proven `OpenAI-Beta: realtime=v1` flat session (production). */
   private buildBetaSession(): Record<string, unknown> {
     // Output modality: built-in audio (cedar) by default, or text-only
@@ -667,6 +707,9 @@ export class RealtimeClient extends EventEmitter {
       // so we do zero transcoding of the caller audio.
       input_audio_format: this.opts.audioFormat,
       input_audio_transcription: { model: this.opts.transcriptionModel },
+      // Clean up the caller's telephony audio before the server's VAD + STT
+      // see it — fewer false barge-ins and mis-hears.
+      input_audio_noise_reduction: this.noiseReduction(),
     };
     if (this.opts.generateAudio) {
       session.voice = this.opts.voice;
@@ -699,6 +742,7 @@ export class RealtimeClient extends EventEmitter {
         format: audioFormat,
         turn_detection: this.turnDetection(),
         transcription: { model: this.opts.transcriptionModel },
+        noise_reduction: this.noiseReduction(),
       },
     };
     if (this.opts.generateAudio) {

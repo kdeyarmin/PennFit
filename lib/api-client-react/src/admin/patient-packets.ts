@@ -99,9 +99,15 @@ export interface PatientPacketSummary {
   recipient_name: string;
   recipient_email: string | null;
   sent_at: string | null;
+  /** When the patient first opened the signing link (null until opened). */
+  first_viewed_at?: string | null;
   completed_at: string | null;
   expires_at: string | null;
   created_at: string;
+  /** How many reminder nudges have gone out (0 = none). */
+  reminder_count?: number;
+  /** When the most recent reminder was sent (null until the first nudge). */
+  last_reminded_at?: string | null;
   /** Set when the signed PDF was auto-filed to the patient's chart. */
   chart_document_id: string | null;
   chart_filed_at: string | null;

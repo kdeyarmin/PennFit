@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { isPlatformHomeHost } from "./platform-host";
+import { isPlatformApexHost, isPlatformHomeHost } from "./platform-host";
 
 describe("isPlatformHomeHost", () => {
   it("matches the platform apex (with and without www)", () => {
@@ -28,5 +28,28 @@ describe("isPlatformHomeHost", () => {
     expect(isPlatformHomeHost("localhost")).toBe(false);
     expect(isPlatformHomeHost("127.0.0.1")).toBe(false);
     expect(isPlatformHomeHost("")).toBe(false);
+  });
+});
+
+describe("isPlatformApexHost", () => {
+  it("matches ONLY the production apex (with and without www)", () => {
+    expect(isPlatformApexHost("cmbreathe.com")).toBe(true);
+    expect(isPlatformApexHost("www.cmbreathe.com")).toBe(true);
+    expect(isPlatformApexHost("CMBreathe.com")).toBe(true);
+    expect(isPlatformApexHost("cmbreathe.com.")).toBe(true);
+  });
+
+  it("does NOT match the Railway deploy/preview hosts (kept out of the index)", () => {
+    // These ARE platform-home hosts, but they serve staging/duplicate
+    // content and must stay noindex — only the canonical apex is indexable.
+    expect(isPlatformApexHost("pennfit.up.railway.app")).toBe(false);
+    expect(isPlatformApexHost("pennfit-pr-42.up.railway.app")).toBe(false);
+  });
+
+  it("does NOT match tenant storefront, local dev, or empty hosts", () => {
+    expect(isPlatformApexHost("pennpaps.com")).toBe(false);
+    expect(isPlatformApexHost("acme.cmbreathe.com")).toBe(false);
+    expect(isPlatformApexHost("localhost")).toBe(false);
+    expect(isPlatformApexHost("")).toBe(false);
   });
 });

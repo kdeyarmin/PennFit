@@ -96,12 +96,12 @@ while IFS= read -r line; do
   prefix="${line##* }"
   allowed="$(allowed_count_for "$prefix")"
   if (( count > allowed )); then
-    files="$(git ls-files 'lib/resupply-db/drizzle/*.sql' | grep "/${prefix}_" | sed 's/^/        /')"
+    files="$(git ls-files 'lib/resupply-db/migrations/*.sql' | grep "/${prefix}_" | sed 's/^/        /')"
     violations+=("    prefix ${prefix}: ${count} files (allowed ${allowed})
 ${files}")
   fi
 done < <(
-  git ls-files 'lib/resupply-db/drizzle/*.sql' \
+  git ls-files 'lib/resupply-db/migrations/*.sql' \
     | sed 's|.*/||' \
     | grep -E '^[0-9]{4}_' \
     | cut -c1-4 \

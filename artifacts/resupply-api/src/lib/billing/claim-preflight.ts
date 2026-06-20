@@ -39,6 +39,11 @@ import {
   type DenialRiskStat,
 } from "./denial-risk";
 import { getCachedEligibility } from "./eligibility-verifier";
+import { validateModifierCombination } from "./modifier-validation";
+import {
+  evaluateCoverageDiagnosis,
+  type CoverageDiagnosisRow,
+} from "./coverage-diagnosis";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -662,6 +667,115 @@ export async function preflightClaim(
           lineId: first.id,
         },
       });
+    }
+
+    // ── Invalid modifier combinations (hard payer rejections) ──────
+    // Certain modifier pairs reject the line as *unprocessable* (not a
+    // coverage denial): KX alongside a liability modifier (GA/GZ/GY/GX),
+    // two primary liability modifiers, rental + purchase, new + used, or
+    // two capped-rental month bands. Surface them as a blocking error so a
+    // corrected line goes out the first time instead of a guaranteed
+    // rejection. See lib/billing/modifier-validation.ts.
+    const modifierConflicts = (lines as ClaimLineRow[])
+      .map((l) => ({
+        line: l,
+        conflicts: validateModifierCombination(l.modifier),
+      }))
+      .filter((x) => x.conflicts.length > 0);
+    if (modifierConflicts.length > 0) {
+      const first = modifierConflicts[0]!;
+      const firstMods = (first.line.modifier ?? "").trim();
+      items.push({
+        key: "modifier_combination",
+        severity: "error",
+        label:
+          modifierConflicts.length === 1
+            ? "Invalid modifier combination on a line"
+            : `Invalid modifier combinations on ${modifierConflicts.length} lines`,
+        detail: `${first.line.hcpcs_code} (${firstMods}): ${first.conflicts
+          .map((c) => c.message)
+          .join(" ")}`,
+        fixAction: {
+          kind: "edit_line_item",
+          claimId: claim.id,
+          lineId: first.line.id,
+        },
+      });
+    }
+
+    // ── Diagnosis supports the billed HCPCS (LCD medical necessity) ─
+    // A diagnosis can be ON FILE yet not SUPPORT the code billed — e.g. a
+    // PAP device (E0601) requires an obstructive-sleep-apnea diagnosis
+    // (G47.33) under LCD L33718; a mismatched ICD-10 denies for medical
+    // necessity. Fail-soft + non-blocking: only HCPCS we've catalogued in
+    // resupply.hcpcs_coverage_diagnoses produce an opinion, and the result
+    // is a WARNING — the catalog is a baseline and the claim's full
+    // diagnosis picture may exceed the single sleep-study code we read.
+    // See lib/billing/coverage-diagnosis.ts.
+    const diagnosisCodes = sleep?.diagnosis_icd10
+      ? [sleep.diagnosis_icd10]
+      : [];
+    if (diagnosisCodes.length > 0) {
+      try {
+        // Normalise to the catalog's canonical (trimmed, uppercase) HCPCS
+        // BEFORE the `.in()` query: the DB filter is an exact match, so a
+        // non-canonical line code (" e0601 ") would otherwise return zero
+        // catalog rows and silently skip the warning (false negative). This
+        // keeps the query aligned with evaluateCoverageDiagnosis's own
+        // normalisation.
+        const distinctHcpcs = [
+          ...new Set(
+            (lines as ClaimLineRow[])
+              .map((l) => (l.hcpcs_code ?? "").trim().toUpperCase())
+              .filter((c) => c.length > 0),
+          ),
+        ];
+        const { data: coverage, error: covErr } = await supabase
+          .raw()
+          .schema("resupply")
+          .from("hcpcs_coverage_diagnoses")
+          .select("hcpcs_code, icd10_code, policy")
+          .in("hcpcs_code", distinctHcpcs)
+          .eq("active", true);
+        if (covErr) throw covErr;
+        const rows = (coverage ?? []) as CoverageDiagnosisRow[];
+        const unsupported = distinctHcpcs
+          .map((hcpcs) => ({
+            hcpcs,
+            evald: evaluateCoverageDiagnosis(hcpcs, diagnosisCodes, rows),
+          }))
+          .filter((x) => x.evald.hasRules && !x.evald.covered);
+        if (unsupported.length > 0) {
+          const policies = [
+            ...new Set(unsupported.flatMap((x) => x.evald.policies)),
+          ];
+          const policyNote =
+            policies.length > 0 ? ` per ${policies.join(", ")}` : "";
+          items.push({
+            key: "medical_necessity_dx",
+            severity: "warning",
+            label: "Diagnosis may not support the billed HCPCS",
+            detail: `ICD-10 ${sleep!.diagnosis_icd10} is not a covered indication${policyNote} for ${unsupported
+              .map((x) => x.hcpcs)
+              .join(
+                ", ",
+              )} — verify the diagnosis or the code, or the claim may deny for medical necessity.`,
+            fixAction: {
+              kind: "add_sleep_study",
+              patientId: claim.patient_id,
+            },
+          });
+        }
+      } catch (err) {
+        logger.warn(
+          {
+            event: "billing.preflight.medical_necessity_failed",
+            claimId: claim.id,
+            errName: err instanceof Error ? err.name : "unknown",
+          },
+          "preflight: medical-necessity diagnosis check skipped (non-fatal)",
+        );
+      }
     }
   }
 

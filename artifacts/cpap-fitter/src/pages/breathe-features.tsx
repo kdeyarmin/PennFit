@@ -16,6 +16,7 @@ import {
   Gauge,
   Headphones,
   LineChart,
+  Mail,
   MessageSquare,
   Mic,
   PhoneCall,
@@ -33,6 +34,7 @@ import {
   Workflow,
 } from "lucide-react";
 import { useDocumentTitle } from "@/hooks/use-document-title";
+import { useNoIndexExceptApex } from "@/hooks/use-noindex-except-apex";
 import "./breathe.css";
 
 // Icon-only crop of the CareMetric app icon — NOT the full lockup PNG
@@ -660,7 +662,7 @@ export function BreatheFeatures() {
   );
 
   useRevealOnScroll();
-  useNoIndex();
+  useNoIndexExceptApex();
   useSmoothScroll();
 
   return (
@@ -765,16 +767,23 @@ function Intro() {
 
 function StatBand() {
   return (
-    <div className="bx-stats bx-reveal">
-      {HERO_STATS.map((s) => (
-        <div className="bx-stat" key={s.label}>
-          <div className="bx-stat-num">
-            <CountUp to={s.to} suffix={s.suffix} decimals={s.decimals} />
+    <>
+      <div className="bx-stats bx-reveal">
+        {HERO_STATS.map((s) => (
+          <div className="bx-stat" key={s.label}>
+            <div className="bx-stat-num">
+              <CountUp to={s.to} suffix={s.suffix} decimals={s.decimals} />
+            </div>
+            <div className="bx-stat-label">{s.label}</div>
           </div>
-          <div className="bx-stat-label">{s.label}</div>
-        </div>
-      ))}
-    </div>
+        ))}
+      </div>
+      <p className="bx-stats-note bx-reveal">
+        Modeled on typical DME resupply economics and published industry
+        benchmarks — directional, not a guarantee.{" "}
+        <Link href="/breathe/roi">Size it on your own numbers →</Link>
+      </p>
+    </>
   );
 }
 
@@ -1166,6 +1175,24 @@ function Footer() {
           infrastructure; patient imagery is processed on-device and never
           transmitted.
         </p>
+        <div className="bx-footer-contact">
+          <span className="bx-footer-contact-label">
+            <Headphones size={13} aria-hidden="true" />
+            Customer &amp; tech support
+          </span>
+          <a className="bx-footer-contact-link" href="tel:+18775212890">
+            <PhoneCall size={13} aria-hidden="true" />
+            (877) 521-2890
+            <span className="bx-footer-contact-toll">toll-free</span>
+          </a>
+          <a
+            className="bx-footer-contact-link"
+            href="mailto:info@cmbreathe.com"
+          >
+            <Mail size={13} aria-hidden="true" />
+            info@cmbreathe.com
+          </a>
+        </div>
         <div className="bx-brand-sub">
           © {new Date().getFullYear()} CareMetric.ai
         </div>
@@ -1243,18 +1270,6 @@ function CountUp({
       {suffix}
     </span>
   );
-}
-
-function useNoIndex() {
-  useEffect(() => {
-    const meta = document.createElement("meta");
-    meta.name = "robots";
-    meta.content = "noindex, follow";
-    document.head.appendChild(meta);
-    return () => {
-      meta.remove();
-    };
-  }, []);
 }
 
 function useSmoothScroll() {

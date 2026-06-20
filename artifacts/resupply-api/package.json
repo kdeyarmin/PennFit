@@ -27,6 +27,7 @@
     "@workspace/resupply-integrations-office-ally": "workspace:*",
     "@workspace/resupply-integrations-pacware": "workspace:*",
     "@workspace/resupply-integrations-react-health": "workspace:*",
+    "@workspace/resupply-integrations-xps-ship": "workspace:*",
     "@workspace/resupply-messaging": "workspace:*",
     "@workspace/resupply-reminders": "workspace:*",
     "@workspace/resupply-secrets": "workspace:*",
@@ -47,7 +48,7 @@
     "sanitize-html": "^2.17.4",
     "stripe": "^22.1.1",
     "twilio": "^6.0.2",
-    "undici": "^7.25.0",
+    "undici": "^7.28.0",
     "web-push": "^3.6.7",
     "ws": "^8.20.1",
     "zod": "catalog:"

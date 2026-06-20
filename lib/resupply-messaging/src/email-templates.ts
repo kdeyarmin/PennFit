@@ -181,7 +181,7 @@ export function renderResupplyReminder(
     "",
     "Keeping these fresh matters: a worn cushion leaks and an old filter makes your machine work harder, so an on-time refill keeps your therapy doing its job. Most plans cover the replacement and we verify yours before anything ships — no surprise bills.",
     "",
-    "It's one tap — we'll ship to the address on file, no login needed:",
+    "Confirm below if you're still using your equipment and running low on supplies — we'll ship to the address on file, no login needed:",
     `  Yes, ship it: ${input.confirmUrl}`,
     `  Change my address: ${input.editUrl}`,
     `  Stop these reminders: ${input.stopUrl}`,
@@ -217,7 +217,7 @@ export function renderResupplyReminder(
       Keeping these fresh matters — a worn cushion leaks and an old filter makes your machine work harder, so an on-time refill keeps your therapy doing its job. Most plans cover the replacement and we verify yours before anything ships, so there are no surprise bills.
     </p>
     <p style="margin:0 0 12px;font-size:14px;line-height:21px;color:#0f172a;font-weight:600;">
-      It's one tap — we'll ship to the address on file, no login needed.
+      Confirm below if you're still using your equipment and running low on supplies — we'll ship to the address on file, no login needed.
     </p>
     <div style="margin:0 0 24px;">
       <a href="${safeHref(input.confirmUrl)}" style="display:inline-block;padding:12px 20px;border-radius:6px;background:#0f766e;color:#ffffff;text-decoration:none;font-weight:600;font-size:15px;">
@@ -311,6 +311,14 @@ export interface RenderClickLandingInput {
    * NOT PHI: supply names + quantities are product references only.
    */
   items?: ClickLandingItem[];
+  /**
+   * The Medicare/payer refill attestation the patient agrees to by
+   * confirming. Rendered as an explicit statement directly above the
+   * confirm button so the click is an informed affirmation that they
+   * still use the equipment and are running low. Only shown for the
+   * `confirm` action; omitted → not rendered (back-compat).
+   */
+  attestationText?: string;
 }
 
 /** Color chip per supply category for the landing-page item cards. */
@@ -401,6 +409,20 @@ export function renderClickLanding(input: RenderClickLandingInput): string {
       ? renderLandingItems(input.items)
       : "";
 
+  // Explicit refill attestation shown directly above the confirm button
+  // so the click is an informed Medicare/payer affirmation (still using
+  // the equipment + supplies running low), and a screenshot of this page
+  // is itself the proof of what the patient agreed to.
+  const attestationBlock =
+    input.action === "confirm" &&
+    typeof input.attestationText === "string" &&
+    input.attestationText.length > 0
+      ? `    <div style="margin:0 0 20px;padding:14px 16px;border:1px solid #e2e8f0;border-radius:10px;background:#f8fafc;text-align:left;">
+      <div style="font-size:13px;font-weight:600;color:#475569;margin:0 0 6px;">Please confirm</div>
+      <p style="margin:0;font-size:14px;line-height:21px;color:#334155;">${escapeHtml(input.attestationText)}</p>
+    </div>`
+      : "";
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -417,6 +439,7 @@ export function renderClickLanding(input: RenderClickLandingInput): string {
       ${escapeHtml(description)}
     </p>
 ${itemsBlock}
+${attestationBlock}
     <form method="POST" action="${escapeHtml(input.formActionUrl)}">
       <button type="submit" style="display:inline-block;padding:14px 28px;border-radius:6px;background:${buttonColor};color:#ffffff;text-decoration:none;font-weight:600;font-size:16px;border:none;cursor:pointer;">
         ${escapeHtml(buttonLabel)}
