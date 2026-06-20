@@ -124,7 +124,7 @@ async function patientPacketReminderSweepForOrg(
   const { data: candidates, error } = await supabase
     .from("patient_packets")
     .select(
-      "id, patient_id, link_version, reminder_count, recipient_name, recipient_email, sent_at, status, expires_at, last_reminded_at",
+      "id, patient_id, link_version, reminder_count, recipient_name, recipient_email, recipient_phone, sent_at, status, expires_at, last_reminded_at",
     )
     .in("status", ["sent", "viewed"])
     .lt("reminder_count", MAX_REMINDERS)
@@ -142,7 +142,11 @@ async function patientPacketReminderSweepForOrg(
   // Bulk-resolve patient phone numbers (+ timezone for the TCPA
   // send-window gate) for the SMS channel.
   const patientIds = Array.from(
-    new Set(rows.map((r: { patient_id: string }) => r.patient_id)),
+    new Set(
+      rows
+        .map((r: { patient_id: string | null }) => r.patient_id)
+        .filter((id: string | null): id is string => Boolean(id)),
+    ),
   );
   const { data: patients } = await supabase
     .from("patients")
@@ -202,12 +206,19 @@ async function patientPacketReminderSweepForOrg(
     // when the patient's local time is outside the 9am–8pm TCPA send
     // window. The 19:33 UTC default cron makes this a backstop for
     // non-US/edge timezones rather than the primary gate.
-    const patientRow = patientById.get(c.patient_id);
+    //
+    // Linked packets text the patient's number, gated by that patient's
+    // local window. Unlinked contact-only packets (no patient row) text
+    // the recipient phone captured at send time, with the window
+    // defaulting to Eastern when we have no timezone on file — the same
+    // posture the initial contact send already uses.
+    const patientRow = c.patient_id ? patientById.get(c.patient_id) : undefined;
+    const phone = patientRow?.phone_e164 ?? c.recipient_phone ?? null;
     const smsWindowOpen =
-      patientRow != null &&
+      phone != null &&
       !isOutsideSmsSendWindow(new Date(), {
-        timezone: patientRow.timezone,
-        shippingZip: patientRow.address?.zip ?? null,
+        timezone: patientRow?.timezone ?? null,
+        shippingZip: patientRow?.address?.zip ?? null,
       });
     let emailSent = false;
     let smsSent = false;
@@ -217,7 +228,7 @@ async function patientPacketReminderSweepForOrg(
         recipientName: c.recipient_name,
         link,
         email: c.recipient_email,
-        phone: smsWindowOpen ? (patientRow?.phone_e164 ?? null) : null,
+        phone: smsWindowOpen ? phone : null,
         channels: PACKET_CHANNELS,
         reminder: true,
         packetId: c.id,

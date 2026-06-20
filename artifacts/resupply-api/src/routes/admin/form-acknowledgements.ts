@@ -93,6 +93,9 @@ router.get(
         signedCurrent,
         signedOld,
         neverSigned,
+        // Operator-facing caveat (e.g. the ABN is not the official
+        // CMS-R-131); null for forms without one.
+        complianceNote: INTAKE_FORMS[kind].complianceNote ?? null,
       };
     });
 
