@@ -187,7 +187,7 @@ which is exactly the gap §6 closes for patient packets.
 
 ## 6. Changes shipped in this change-set
 
-1. **Timeliness on by default (migration `0409`).** Flips
+1. **Timeliness on by default (migration `0408`).** Flips
    `patient_packets.autosend_on_delivery` and `patient_packets.autoremind`
    from the seeded OFF to **ON** for every tenant, and updates the Control
    Center descriptions to match. Both paths are safe to run unattended:
@@ -300,7 +300,7 @@ review and confirmed still-open here:
 
 ## 8. Files touched
 
-- `lib/resupply-db/migrations/0409_patient_packet_automation_default_on.sql`
+- `lib/resupply-db/migrations/0408_patient_packet_automation_default_on.sql`
 - `artifacts/resupply-api/src/routes/admin/patient-packets.ts` (Outstanding
   filter + reminder/aging fields)
 - `artifacts/resupply-api/src/worker/jobs/patient-packet-reminders.ts`
