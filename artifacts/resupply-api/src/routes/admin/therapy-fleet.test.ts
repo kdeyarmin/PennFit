@@ -541,7 +541,7 @@ describe("GET /admin/therapy-fleet/trend", () => {
           setups_in_window: "31",
           setups_at_risk: "4",
           // clinical_signals_* intentionally omitted — a historical row
-          // captured before migration 0341 reads as 0, not null.
+          // captured before migration 0411 reads as 0, not null.
         },
       ],
     });
@@ -566,7 +566,7 @@ describe("GET /admin/therapy-fleet/trend", () => {
       clinicalSignalsMedium: 7,
     });
     expect(res.body.points[1].compliant).toBe(74);
-    // Historical row without the 0341 columns coerces to 0.
+    // Historical row without the 0411 columns coerces to 0.
     expect(res.body.points[1].clinicalSignalsOpen).toBe(0);
   });
 });
