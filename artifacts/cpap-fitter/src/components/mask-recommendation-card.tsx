@@ -24,6 +24,7 @@ import {
   Wind,
 } from "lucide-react";
 import { getMaskImage, formatMaskType } from "@/lib/mask-images";
+import { useCompanyContact } from "@/lib/contact";
 
 /**
  * MaskRecommendationCard — single, reusable card for one entry on the
@@ -56,6 +57,7 @@ export function MaskRecommendationCard({
     onAddToCart: () => void;
   };
 }) {
+  const c = useCompanyContact();
   const confidencePct = Math.round(mask.confidence * 100);
 
   return (
@@ -154,7 +156,7 @@ export function MaskRecommendationCard({
                     <p className="text-xs text-muted-foreground italic pt-1">
                       Penalties apply for contraindications and pressure
                       mismatches. The score is guidance — the final fitting
-                      confirmation happens with PennPaps.
+                      confirmation happens with {c.name}.
                     </p>
                   </PopoverContent>
                 </Popover>
@@ -309,7 +311,7 @@ export function MaskRecommendationCard({
             </Button>
             <p className="text-xs text-muted-foreground text-center mt-2">
               We'll collect your insurance and shipping info, then send your
-              order to PennPaps.
+              order to {c.name}.
             </p>
             {cashPay && (
               <>
@@ -324,7 +326,7 @@ export function MaskRecommendationCard({
                   Buy without insurance — {cashPay.priceLabel}
                 </Button>
                 <p className="text-xs text-muted-foreground text-center mt-2">
-                  Skip the paperwork — ships from the PennPaps shop. HSA/FSA
+                  Skip the paperwork — ships from the {c.name} shop. HSA/FSA
                   eligible.
                 </p>
               </>

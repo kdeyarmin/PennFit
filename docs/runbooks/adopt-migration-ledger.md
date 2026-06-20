@@ -4,12 +4,12 @@
 
 Until June 2026 the Railway deploy ran **no migration step** — `migrate.mjs`
 was never invoked on deploy or boot — so production drifted behind the
-`lib/resupply-db/drizzle/*.sql` history. As of the migrate-on-deploy change,
+`lib/resupply-db/migrations/*.sql` history. As of the migrate-on-deploy change,
 `railway.json` has a `preDeployCommand` that runs the migrator, gated by the
 `RUN_DB_MIGRATIONS` env var.
 
 Production cannot simply turn that on, because it has **no
-`drizzle.resupply_migrations` ledger** while already carrying most of the
+`migrations.resupply_migrations` ledger** while already carrying most of the
 schema. A naive run would attempt a full `0000..` replay and fail on the
 first non-idempotent historical statement whose object already exists. The
 migrator now **guards against that**: on a populated database with an empty
@@ -119,5 +119,5 @@ site down).
 - The adoption guard only fires on the populated-but-unledgered case; fresh
   databases (CI, local, preview) replay from `0000` as before, and a healthy
   ledgered database applies only the pending tail.
-- Never hand-edit `lib/resupply-db/drizzle/meta/_journal.json` (frozen at 52
+- Never hand-edit `lib/resupply-db/migrations/meta/_journal.json` (frozen at 52
   entries — see `docs/migration-state-investigation-2026-05-08.md`).

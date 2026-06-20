@@ -121,6 +121,7 @@ router.post("/me/payments/intent", async (req, res) => {
     source: "portal",
     note: parsed.data.note,
     initiatorEmail: link.customerEmail,
+    orgId,
   });
   if ("error" in result) {
     // 503 — Stripe not configured (service unavailable in this env).
@@ -263,6 +264,7 @@ router.post("/me/payments/checkout-session", async (req, res) => {
     // Stripe metadata.initiator_email for the "who initiated this payment"
     // audit trail (matches the PaymentIntent path above).
     initiatorEmail: link.customerEmail,
+    orgId,
   });
   if ("error" in result) {
     res

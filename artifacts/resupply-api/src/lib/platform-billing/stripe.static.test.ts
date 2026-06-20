@@ -27,4 +27,14 @@ describe("platform billing Stripe service contract", () => {
     expect(SRC).toContain('event.type !== "invoice.payment_failed"');
     expect(SRC).toContain("last_invoice_status");
   });
+
+  it("guards account-scoped IDs across a Stripe account switch", () => {
+    // Records which account each synced object belongs to, and refuses to
+    // reuse a customer/subscription from a different account (double-billing
+    // guard) while letting catalog objects recreate.
+    expect(SRC).toContain("stripe_account_ref");
+    expect(SRC).toContain("resolvePlatformBillingAccountId");
+    expect(SRC).toContain("PlatformBillingAccountChangedError");
+    expect(SRC).toContain("accountRefMatches");
+  });
 });

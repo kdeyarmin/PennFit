@@ -23,7 +23,7 @@ import { useDocumentTitle } from "@/hooks/admin/use-document-title";
 
 const STATUS_LABEL: Record<string, string> = {
   pending: "Pending send",
-  sent: "Delivered to PennPaps",
+  sent: "Delivered",
   failed: "Delivery failed",
   skipped: "Skipped (email not configured)",
 };
@@ -216,7 +216,7 @@ export function AdminOrderDetail() {
             value={
               prescription.hasExistingPrescription
                 ? "Yes"
-                : "No — PennPaps must obtain Rx before shipping"
+                : "No — a prescription must be obtained before shipping"
             }
           />
           {prescription.physicianName && (

@@ -114,16 +114,51 @@ export interface PacwareSettings {
   generatedAt: string;
 }
 
+/** A mappable patient field, for the "import any CSV" column picker. */
+export interface PatientImportFieldInfo {
+  field: string;
+  header: string;
+  required: boolean;
+  description: string;
+}
+
+/** Response of the header-preview endpoint (column labels only — no PHI). */
+export interface PacwareHeaderPreview {
+  headers: string[];
+  suggestedMapping: Record<string, string>;
+  fields: PatientImportFieldInfo[];
+}
+
+/** Operator-supplied mapping: canonical field -> the source file's header. */
+export type PatientColumnMapping = Record<string, string>;
+
 export const getPacwareStatus = () =>
   jsonFetch<PacwareStatus>("/admin/pacware/status");
+
+/**
+ * Read just the header row of an arbitrary CSV and get auto-suggested column
+ * mappings + the field catalog. Used to map a roster exported from any system
+ * (not just a PacWare export) before importing it.
+ */
+export const previewPacwarePatientHeaders = (csv: string) =>
+  jsonFetch<PacwareHeaderPreview>("/admin/pacware/import/patients/headers", {
+    method: "POST",
+    body: JSON.stringify({ csv }),
+  });
 
 export const importPacwarePatients = (
   csv: string,
   mode: "preview" | "commit",
+  columnMapping?: PatientColumnMapping,
 ) =>
   jsonFetch<PacwareImportPreview | PacwareImportCommit>(
     "/admin/pacware/import/patients",
-    { method: "POST", body: JSON.stringify({ csv, mode }) },
+    {
+      method: "POST",
+      body: JSON.stringify(
+        columnMapping ? { csv, mode, columnMapping } : { csv, mode },
+      ),
+    },
   );
 
 export const getPacwareSyncPreview = (

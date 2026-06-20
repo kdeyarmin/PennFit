@@ -161,7 +161,7 @@ router.get(
       res.json(toAutopayStatusView(null));
       return;
     }
-    const row = await getActiveAutopayAuthorization(link.patientId);
+    const row = await getActiveAutopayAuthorization(req.orgId, link.patientId);
     res.json(toAutopayStatusView(row));
   },
 );
@@ -232,6 +232,9 @@ router.post(
       patientId: link.patientId,
       shopCustomerId: customerId,
       stripeCustomerId,
+      // Same tenant used to mint the Stripe customer above, so the setup
+      // session lands on the account where that customer lives (G5).
+      orgId: req.orgId,
       successUrl,
       cancelUrl,
       enableAutopay: parsed.data.enableAutopay,
@@ -285,6 +288,7 @@ router.patch(
       return;
     }
     const result = await setAutopayEnabled(
+      req.orgId,
       link.patientId,
       parsed.data.enabled,
       `customer:${link.customerEmail}`,
@@ -344,6 +348,7 @@ router.delete(
       return;
     }
     const result = await revokeAutopayAuthorization(
+      req.orgId,
       link.patientId,
       `customer:${link.customerEmail}`,
     );

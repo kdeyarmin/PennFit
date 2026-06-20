@@ -18,11 +18,34 @@ import {
 
 const supabaseMock = installSupabaseMock();
 
+// Stripe Connect routing — controllable per test. Default `{}` = the
+// platform account (seed tenant), preserving the pre-Connect behavior.
+const connectAcctOpts = vi.hoisted(() => ({
+  value: {} as { stripeAccount?: string },
+}));
+vi.mock("../../lib/stripe/connect.js", () => ({
+  stripeAccountRequestOptions: vi.fn(async () => connectAcctOpts.value),
+}));
+
+// Per-tenant feature gate — default ON so the charge-path tests below run as
+// before. Flipped to OFF in the dedicated gating test.
+const autopayFlag = vi.hoisted(() => ({ value: true }));
+vi.mock("../../lib/feature-flags", () => ({
+  isFeatureEnabled: vi.fn(async () => autopayFlag.value),
+}));
+
 import type { OffSessionCharger } from "../../lib/billing/payment-plan-autocharge.js";
 import { runPatientAutopayCharge } from "./patient-autopay-charge";
 
 beforeEach(() => {
   supabaseMock.reset();
+  connectAcctOpts.value = {};
+  autopayFlag.value = true;
+  // The sweep fans out across active tenants (forEachActiveOrg →
+  // listActiveOrgIds reads `organizations`); stage a single active org.
+  stageSupabaseResponse("organizations", "select", {
+    data: [{ id: "00000000-0000-4000-8000-000000000001" }],
+  });
 });
 
 function stageAuthorizationScan(over: Record<string, unknown> = {}) {
@@ -103,6 +126,26 @@ describe("runPatientAutopayCharge — per-authorization claim", () => {
     });
   });
 
+  it("skips an org whose own billing.patient_autopay flag is off (no cross-tenant authorize)", async () => {
+    // Regression: the tick used to gate on ONE global flag read, so the seed
+    // tenant's "on" authorized off-session charges for every active tenant.
+    // With per-org gating, an org whose flag is off charges nothing even
+    // though its authorizations would otherwise be chargeable.
+    autopayFlag.value = false;
+    stageAuthorizationScan();
+    stageOpenBalance();
+    const charger = vi.fn<OffSessionCharger>().mockResolvedValue({
+      outcome: "succeeded",
+      paymentIntentId: "pi_1",
+    });
+
+    const stats = await runPatientAutopayCharge({ charger });
+
+    expect(charger).not.toHaveBeenCalled();
+    expect(stats.charged).toBe(0);
+    expect(stats.authorizationsConsidered).toBe(0);
+  });
+
   it("CASes against the exact scanned timestamp when one exists", async () => {
     const yesterday = "2026-06-09T04:00:00.000Z";
     stageAuthorizationScan({ last_charge_attempt_at: yesterday });
@@ -152,5 +195,74 @@ describe("runPatientAutopayCharge — per-authorization claim", () => {
     expect(supabaseMock.callCount("patient_payments", "insert")).toBe(0);
     expect(stats.charged).toBe(0);
     expect(stats.failed).toBe(0);
+  });
+
+  it("routes the charge to the tenant's connected Stripe account (G5)", async () => {
+    // The tenant has an onboarded connected account → the off-session charge
+    // must carry `{ stripeAccount }` so it lands on that account.
+    connectAcctOpts.value = { stripeAccount: "acct_tenant" };
+    stageAuthorizationScan();
+    stageOpenBalance();
+    stageSupabaseResponse("patient_autopay_authorizations", "update", {
+      data: [{ id: "auth-1" }],
+      error: null,
+    });
+    stageSupabaseResponse("patient_payments", "insert", {
+      data: { id: "pay-1" },
+      error: null,
+    });
+
+    const charger = vi.fn<OffSessionCharger>().mockResolvedValue({
+      outcome: "failed",
+      paymentIntentId: "pi_1",
+      reason: "card_declined",
+    });
+    await runPatientAutopayCharge({ charger });
+
+    expect(charger).toHaveBeenCalledTimes(1);
+    expect(charger).toHaveBeenCalledWith(
+      expect.objectContaining({
+        accountOptions: { stripeAccount: "acct_tenant" },
+      }),
+    );
+  });
+
+  it("omits the account route for the platform tenant (no connected account)", async () => {
+    // Default connectAcctOpts is `{}` → platform account, as before Connect.
+    stageAuthorizationScan();
+    stageOpenBalance();
+    stageSupabaseResponse("patient_autopay_authorizations", "update", {
+      data: [{ id: "auth-1" }],
+      error: null,
+    });
+    stageSupabaseResponse("patient_payments", "insert", {
+      data: { id: "pay-1" },
+      error: null,
+    });
+
+    const charger = vi.fn<OffSessionCharger>().mockResolvedValue({
+      outcome: "failed",
+      paymentIntentId: "pi_1",
+      reason: "card_declined",
+    });
+    await runPatientAutopayCharge({ charger });
+
+    expect(charger).toHaveBeenCalledWith(
+      expect.objectContaining({ accountOptions: {} }),
+    );
+  });
+
+  it("re-throws after fan-out when a tenant fails (prompt pg-boss retry)", async () => {
+    // Money-path retry safety: a per-tenant throw (here, an authorization-scan
+    // DB error standing in for a post-charge persistence failure) is caught by
+    // forEachActiveOrg, so the wrapper must re-surface it so pg-boss retries
+    // promptly. beforeEach already staged one active org.
+    stageSupabaseResponse("patient_autopay_authorizations", "select", {
+      error: { message: "db down" },
+    });
+    const charger = vi.fn<OffSessionCharger>();
+    await expect(runPatientAutopayCharge({ charger })).rejects.toThrow(
+      /tenant\(s\) failed/,
+    );
   });
 });

@@ -95,7 +95,7 @@ below summarize the current intent; if a change needs to cross one of these
 boundaries, write an ADR first.
 
 - `lib/resupply-domain` stays pure. It must not import DB, telecom, AI, audit,
-  raw `pg`, Drizzle, or vendor SDK packages.
+  raw `pg`, an ORM (`drizzle-orm`), or vendor SDK packages.
 - `lib/resupply-db` owns Postgres connectivity. Runtime application code should
   use `getSupabaseServiceRoleClient()`; direct `pg` access is limited to
   migration tooling and a small number of legacy pool-level worker paths exposed
@@ -112,8 +112,8 @@ boundaries, write an ADR first.
   resupply-api route/registry layer.
 - `@workspace/api-client-react` is for `artifacts/cpap-fitter` only. Resupply
   libraries and the Express server must not import the React client.
-- No package should add new Drizzle runtime dependencies. Drizzle tooling was
-  retired; SQL migrations are hand-written.
+- No package should add an ORM runtime dependency (e.g. `drizzle-orm`). The
+  project uses no ORM; SQL migrations are hand-written.
 - No production code should add direct `audit_log` writers or new audit-log
   readers. The historical `@workspace/resupply-audit` package is a no-op
   compatibility shim, and compliance evidence is handled out of band.
@@ -130,16 +130,16 @@ boundaries, write an ADR first.
 - PHI columns are plaintext `text`/`jsonb`. Migration
   `0025_strip_phi_encryption.sql` removed the prior pgcrypto column-level
   encryption and related key material.
-- SQL migrations live in `lib/resupply-db/drizzle/`. The directory and
-  `drizzle.resupply_migrations` table keep historical names for compatibility,
+- SQL migrations live in `lib/resupply-db/migrations/`. The directory and
+  `migrations.resupply_migrations` table keep historical names for compatibility,
   but new migrations are hand-written SQL.
 - `lib/resupply-db/scripts/migrate.mjs` applies every SQL file in numeric
   prefix order, deduping by SHA256 content hash. Do not edit, rename, delete,
   or renumber migrations that exist on `main`; add a new corrective migration.
-- `lib/resupply-db/drizzle/meta/_journal.json` is frozen. It is read only to
+- `lib/resupply-db/migrations/meta/_journal.json` is frozen. It is read only to
   recover historical `created_at` timestamps for old files.
 
-See `lib/resupply-db/README.md`, `lib/resupply-db/drizzle/README.md`, and
+See `lib/resupply-db/README.md`, `lib/resupply-db/migrations/README.md`, and
 `docs/migration-state-investigation-2026-05-08.md` before changing migrations.
 
 ## Auth Model
@@ -184,7 +184,7 @@ scripts/check-admin-route-gates.sh
 pnpm verify
 ```
 
-The repo targets Node 24 and pnpm 11.6.0. `artifacts/resupply-api` and
+The repo targets Node 24 and pnpm 11.7.0. `artifacts/resupply-api` and
 `artifacts/cpap-fitter` should run on distinct local ports; Railway injects
 `PORT` in production and defaults `BASE_PATH` to `/`.
 

@@ -27,11 +27,15 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
+import { resolveSeedOrgId } from "@workspace/resupply-db";
+
 import { sendInsuranceLeadEmails } from "../../lib/insurance-lead-email";
 import {
   recordInsuranceLead,
   stampInsuranceLeadDelivery,
 } from "../../lib/insurance-lead-record";
+import { requestHost } from "../../lib/request-host.js";
+import { resolveOrgIdByHost } from "../../lib/tenant-branding.js";
 
 const router: IRouter = Router();
 
@@ -139,6 +143,13 @@ router.post("/shop/insurance-leads", async (req, res) => {
         : null,
   });
 
+  // Public, unauthenticated route — resolve the tenant by host so the patient
+  // confirmation goes out under (and branded with) the tenant the lead came in
+  // on. Apex / miss → seed org (single-tenant unchanged).
+  const orgId =
+    (await resolveOrgIdByHost(requestHost(req))) ??
+    (await resolveSeedOrgId()) ??
+    undefined;
   const result = await sendInsuranceLeadEmails({
     fullName: data.fullName,
     email: data.email,
@@ -149,6 +160,7 @@ router.post("/shop/insurance-leads", async (req, res) => {
     groupNumber: data.groupNumber,
     prescribingPhysician: data.prescribingPhysician,
     notes: data.notes,
+    orgId,
   });
 
   // Stamp the SendGrid outcomes on the row we just inserted (no-op

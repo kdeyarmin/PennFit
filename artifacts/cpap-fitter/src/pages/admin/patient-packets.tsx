@@ -85,6 +85,17 @@ function fmtDate(iso: string | null): string {
       });
 }
 
+/** Whole-day age of a timestamp ("today" / "3 days ago"); null when absent. */
+function fmtAgo(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return null;
+  const days = Math.floor((Date.now() - t) / (24 * 60 * 60 * 1000));
+  if (days <= 0) return "today";
+  if (days === 1) return "1 day ago";
+  return `${days} days ago`;
+}
+
 export function AdminPatientPacketsPage() {
   useDocumentTitle("Document packets");
   const qc = useQueryClient();
@@ -164,6 +175,7 @@ export function AdminPatientPacketsPage() {
                 onChange={(e) => setStatusFilter(e.target.value)}
                 emptyOptionLabel="All statuses"
                 options={[
+                  { value: "outstanding", label: "Outstanding (unsigned)" },
                   { value: "sent", label: "Sent" },
                   { value: "viewed", label: "Opened" },
                   { value: "completed", label: "Signed" },
@@ -206,6 +218,9 @@ export function AdminPatientPacketsPage() {
                     </th>
                     <th scope="col" className="px-5 py-2 font-medium">
                       Sent
+                    </th>
+                    <th scope="col" className="px-5 py-2 font-medium">
+                      Reminders
                     </th>
                     <th scope="col" className="px-5 py-2 font-medium">
                       Signed
@@ -256,7 +271,40 @@ export function AdminPatientPacketsPage() {
                         className="px-5 py-3"
                         style={{ color: "hsl(var(--ink-2))" }}
                       >
-                        {fmtDate(p.sent_at)}
+                        <div>{fmtDate(p.sent_at)}</div>
+                        {p.status !== "completed" &&
+                          p.status !== "voided" &&
+                          fmtAgo(p.sent_at) && (
+                            <div
+                              className="text-xs"
+                              style={{ color: "hsl(var(--ink-3))" }}
+                            >
+                              {fmtAgo(p.sent_at)}
+                            </div>
+                          )}
+                      </td>
+                      <td
+                        className="px-5 py-3"
+                        style={{ color: "hsl(var(--ink-2))" }}
+                      >
+                        {(p.reminder_count ?? 0) > 0 ? (
+                          <>
+                            <div>
+                              {p.reminder_count}{" "}
+                              {p.reminder_count === 1 ? "nudge" : "nudges"}
+                            </div>
+                            {p.last_reminded_at && (
+                              <div
+                                className="text-xs"
+                                style={{ color: "hsl(var(--ink-3))" }}
+                              >
+                                last {fmtDate(p.last_reminded_at)}
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <span style={{ color: "hsl(var(--ink-3))" }}>—</span>
+                        )}
                       </td>
                       <td
                         className="px-5 py-3"

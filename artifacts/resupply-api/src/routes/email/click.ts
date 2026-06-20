@@ -29,6 +29,7 @@ import { Router, type IRouter, type Request } from "express";
 import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 
 import { getOrgScopedClient } from "@workspace/resupply-db";
+import { REFILL_AFFIRMATION_STATEMENT } from "@workspace/resupply-domain";
 import {
   renderClickConfirmation,
   renderClickError,
@@ -217,6 +218,12 @@ router.get("/email/click", emailClickLimiter, async (req, res) => {
         action: verified.action,
         formActionUrl,
         items: dueItems,
+        // Shown above the confirm button so the click is an informed
+        // Medicare/payer refill attestation (recorded on confirm).
+        attestationText:
+          verified.action === "confirm"
+            ? REFILL_AFFIRMATION_STATEMENT
+            : undefined,
       }),
     );
 });
@@ -311,6 +318,18 @@ router.post("/email/click", emailClickLimiter, async (req, res) => {
         const result = await placeResupplyOrderForConversation({
           conversationId,
           orgId,
+          // The POST click (which the patient performed on the landing
+          // page showing REFILL_AFFIRMATION_STATEMENT) is the recorded
+          // Medicare/payer refill attestation.
+          affirmation: {
+            channel: "email",
+            continuedUse: true,
+            supplyLow: true,
+            attestationText: REFILL_AFFIRMATION_STATEMENT,
+            requestedBy: "self",
+            ip: req.ip ?? null,
+            userAgent: req.get("user-agent") ?? null,
+          },
         });
         if (result.status === "ok" || result.status === "already_confirmed") {
           const { error: closeErr } = await supabase
@@ -484,6 +503,50 @@ router.post("/email/click", emailClickLimiter, async (req, res) => {
               data_nights: result.usage.dataNights,
               compliant_nights: result.usage.compliantNights,
               window_days: result.usage.windowDays,
+              via: "email_link",
+            },
+            ip: req.ip ?? null,
+            userAgent: req.get("user-agent") ?? null,
+          });
+          res
+            .status(200)
+            .type("text/html")
+            .send(
+              renderClickConfirmation({
+                practiceName: cfg.practiceName,
+                action: "review",
+              }),
+            );
+          return;
+        }
+        if (result.status === "too_early") {
+          // Refill-window guard held the reship (would ship earlier than
+          // the CMS 10-day-before-depletion window). order-flow already
+          // raised a CSR alert and left the episode pending. Same handling
+          // as the other guards: CSR queue, audit, truthful "we'll review"
+          // page (200, not an error).
+          const { error: earlyErr } = await supabase
+            .from("conversations")
+            .update({
+              status: "awaiting_admin",
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", conversationId);
+          if (earlyErr) throw earlyErr;
+          await safeAudit({
+            action: "messaging.order.blocked_refill_window",
+            adminEmail: null,
+            adminUserId: null,
+            targetTable: "episodes",
+            targetId: result.episodeId,
+            metadata: {
+              channel: "email",
+              conversation_id: conversationId,
+              patient_id: result.patientId,
+              episode_id: result.episodeId,
+              hcpcs_code: result.refillWindow.hcpcsCode,
+              earliest_ship_on: result.refillWindow.earliestShipOn,
+              days_until_ship: result.refillWindow.daysUntilShip,
               via: "email_link",
             },
             ip: req.ip ?? null,

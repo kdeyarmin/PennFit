@@ -10,14 +10,11 @@
 // returns a discriminated `{sent, reason?}` shape so the dispatcher
 // keeps moving on partial failures.
 
-import {
-  createSendgridClient,
-  EmailConfigError,
-  type SendgridClient,
-} from "@workspace/resupply-email";
+import { type SendgridClient } from "@workspace/resupply-email";
 
 import { isFeatureEnabled } from "../feature-flags";
-import { readPracticeName } from "./messaging-config";
+import { createTenantSendgridClient } from "../email/tenant-sender.js";
+import { resolveBrandingByOrgId } from "../tenant-branding.js";
 
 export type ReviewRequestEmailResult =
   | { sent: true; messageId: string }
@@ -28,19 +25,16 @@ export interface ReviewRequestEmailInput {
   productName: string;
   /** Absolute URL to /shop/p/:id with ?review=1 anchor. */
   productUrl: string;
+  /**
+   * Tenant the order belongs to. When set, the email is sent under the
+   * tenant's own From identity (G6) and branded with the tenant's
+   * storefront name; omit / undefined keeps the platform default.
+   */
+  orgId?: string;
 }
 
 export interface SendReviewRequestEmailDeps {
   clientFactory?: () => SendgridClient | null;
-}
-
-function defaultClientFactory(): SendgridClient | null {
-  try {
-    return createSendgridClient();
-  } catch (err) {
-    if (err instanceof EmailConfigError) return null;
-    return null;
-  }
 }
 
 export async function sendReviewRequestEmail(
@@ -54,11 +48,29 @@ export async function sendReviewRequestEmail(
     return { sent: false, reason: "feature_disabled" };
   }
 
-  const factory = deps.clientFactory ?? defaultClientFactory;
-  const client = factory();
+  // Tests inject a synchronous clientFactory; honour that seam unchanged.
+  // Otherwise build a SendgridClient bound to the tenant's own From
+  // identity (G6) — falling back to the platform default when the tenant
+  // has none / orgId is unset.
+  let client: SendgridClient | null;
+  if (deps.clientFactory) {
+    client = deps.clientFactory();
+  } else {
+    try {
+      client = await createTenantSendgridClient(input.orgId);
+    } catch {
+      // Fail soft: any config/build failure (incl. EmailConfigError) skips
+      // cleanly as "not configured" rather than throwing out of this helper.
+      client = null;
+    }
+  }
   if (!client) return { sent: false, reason: "email_not_configured" };
 
-  const practice = readPracticeName();
+  // Brand with the tenant's own storefront name (G6). For the seed tenant
+  // this resolves to "PennPaps" (its stored brand), so single-tenant copy
+  // is unchanged.
+  const brand = await resolveBrandingByOrgId(input.orgId);
+  const practice = brand.storefrontName;
   const subject = `How is your ${input.productName}?`;
   const html = renderHtml({ practice, ...input });
   const text = renderText({ practice, ...input });

@@ -60,9 +60,39 @@ export {
   type CreateTwilioSmsClientOptions,
   type TwilioSmsClient,
   type RawTwilioMessagingSdk,
+  type RawTwilioMessageContext,
+  type SmsDeliveryStatus,
+  type ConfirmDeliveryOptions,
+  type ConfirmDeliveryResult,
   type InboundSmsParams,
   type SmsStatusCallbackParams,
 } from "./sms";
+
+export {
+  createTwilioLookupClient,
+  mapTwilioLineType,
+  type PhoneLineType,
+  type LookupLineTypeResult,
+  type TwilioLookupClient,
+  type CreateTwilioLookupClientOptions,
+  type LookupHttpGet,
+  type TwilioLookupHttpResponse,
+} from "./lookup";
+
+// Voice / SMS number PROVISIONING (search + buy a DID for a tenant) goes
+// through Twilio — the mirror of the Telnyx fax-number flow above.
+export {
+  createTwilioNumberClient,
+  type TwilioNumberClient,
+  type CreateTwilioNumberClientOptions,
+  type AvailableTwilioNumber,
+  type SearchNumbersInput,
+  type PurchaseNumberInput,
+  type PurchaseNumberResult,
+  type ProvisionNumberInput,
+  type ProvisionNumberResult,
+  type RawTwilioNumbersSdk,
+} from "./twilio-numbers";
 
 export {
   isTransientTwilioError,
@@ -97,6 +127,25 @@ export {
   type CreateTelnyxFaxClientOptions,
   type FaxHttpSend,
 } from "./telnyx-fax";
+
+// Fax-number PROVISIONING (search + order a fax-capable DID for a new
+// tenant) also goes through Telnyx, for the same reason fax send does.
+export {
+  createTelnyxNumberClient,
+  type TelnyxNumberClient,
+  type CreateTelnyxNumberClientOptions,
+  type AvailableFaxNumber,
+  type SearchFaxNumbersInput,
+  type OrderNumberInput,
+  type OrderNumberResult,
+  type ProvisionFaxNumberInput,
+  type ProvisionFaxNumberResult,
+  type ReleaseFaxNumberResult,
+  type NumbersHttpGet,
+  type NumbersHttpPost,
+  type NumbersHttpLookup,
+  type NumbersHttpDelete,
+} from "./telnyx-numbers";
 
 export {
   validateTelnyxSignature,

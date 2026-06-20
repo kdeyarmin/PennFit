@@ -18,13 +18,15 @@
 //   - The location name/address/phone are PUBLIC business contact info.
 //   - No PHI — this is the cash-pay shop.
 
-import {
-  createSendgridClient,
-  EmailApiError,
-  EmailConfigError,
-} from "@workspace/resupply-email";
+import { EmailApiError, EmailConfigError } from "@workspace/resupply-email";
 
-const DEFAULT_BASE_URL = "https://pennpaps.com";
+import { createTenantSendgridClient } from "../email/tenant-sender.js";
+import {
+  resolveBrandingByOrgId,
+  resolveTenantBaseUrl,
+} from "../tenant-branding.js";
+
+const DEFAULT_BASE_URL = "https://cmbreathe.com";
 
 export interface PickupLocationForEmail {
   name: string;
@@ -45,6 +47,13 @@ export interface SendReadyForPickupEmailInput {
   location: PickupLocationForEmail;
   /** Optional override for the public base URL. */
   baseUrlOverride?: string;
+  /**
+   * Tenant the order belongs to. When set and the tenant has its own
+   * From identity (migration 0360), the email is sent under it (G6) and
+   * the copy carries the tenant's storefront brand; otherwise the platform
+   * default From/brand is used. Omit / undefined leaves it unchanged.
+   */
+  orgId?: string;
 }
 
 export interface SendReadyForPickupEmailResult {
@@ -96,7 +105,9 @@ export async function sendReadyForPickupEmail(
 
   let client;
   try {
-    client = createSendgridClient();
+    // Send under the tenant's own From identity when configured (G6);
+    // falls back to the platform default when it isn't / orgId is unset.
+    client = await createTenantSendgridClient(input.orgId);
   } catch (err) {
     if (err instanceof EmailConfigError) {
       // Fail-open — the admin route logs and skips. A missing SendGrid
@@ -106,12 +117,23 @@ export async function sendReadyForPickupEmail(
     throw err;
   }
 
-  const subject = "Your PennPaps order is ready for pickup";
-  const orderUrl = `${publicBaseUrl(input.baseUrlOverride)}/shop/checkout-success?session_id=${encodeURIComponent(stripeSessionId)}`;
+  // Brand the email with the tenant's own storefront name (G6). For the seed
+  // tenant this resolves to "PennPaps" (its stored brand), so single-tenant
+  // copy is unchanged; a second tenant's email carries ITS brand.
+  const brand = await resolveBrandingByOrgId(input.orgId);
+  const brandName = brand.storefrontName;
+
+  const subject = `Your ${brandName} order is ready for pickup`;
+  const base = publicBaseUrl(
+    input.baseUrlOverride ??
+      (await resolveTenantBaseUrl(input.orgId)) ??
+      undefined,
+  );
+  const orderUrl = `${base}/shop/checkout-success?session_id=${encodeURIComponent(stripeSessionId)}`;
 
   // ---------- text body ----------
   const textLines: string[] = [
-    "Good news — your PennPaps order is ready to pick up.",
+    `Good news — your ${brandName} order is ready to pick up.`,
     "",
     "Pick up at:",
     ...locationTextLines(location).map((l) => `  ${l}`),
@@ -133,13 +155,13 @@ export async function sendReadyForPickupEmail(
         <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;padding:32px;max-width:560px;">
           <tr>
             <td style="padding-bottom:16px;border-bottom:2px solid #c9a227;">
-              <div style="font-size:14px;letter-spacing:0.08em;color:#7a5d00;text-transform:uppercase;font-weight:600;">PennPaps</div>
+              <div style="font-size:14px;letter-spacing:0.08em;color:#7a5d00;text-transform:uppercase;font-weight:600;">${escapeHtml(brandName)}</div>
               <div style="font-size:22px;color:#1a1a1a;font-weight:700;margin-top:4px;">Ready for pickup</div>
             </td>
           </tr>
           <tr>
             <td style="padding-top:20px;color:#333;font-size:15px;line-height:1.5;">
-              Good news &mdash; your PennPaps order is ready to pick up.
+              Good news &mdash; your ${escapeHtml(brandName)} order is ready to pick up.
             </td>
           </tr>
           <tr>

@@ -39,9 +39,12 @@ import {
   listPacwareReportSpecs,
   pacwareAvailability,
   parsePacwarePatientCsv,
+  parsePatientCsvWithMapping,
+  previewPatientCsvHeaders,
   type PacwarePatientExportRecord,
   type PacwarePatientRow,
   type PacwareResupplyDueRecord,
+  type PatientColumnMapping,
 } from "@workspace/resupply-integrations-pacware";
 
 import { logger } from "../../lib/logger";
@@ -126,6 +129,12 @@ const importBodySchema = z
       .min(1)
       .max(8 * 1024 * 1024),
     mode: z.enum(["preview", "commit"]).default("preview"),
+    // Optional operator-supplied column mapping (canonical field -> the source
+    // file's header label). When present, the file is imported as an arbitrary
+    // CSV with tolerant date/phone coercion; when absent, the legacy
+    // PacWare-format path (header aliases) is used. Either way the SAME schema
+    // and fill-only sync run downstream.
+    columnMapping: z.record(z.string(), z.string()).optional(),
   })
   .strict();
 
@@ -145,6 +154,46 @@ const SCALAR_COLUMN: Record<string, string> = {
 // write (assembleAddress would yield null and blank an existing address).
 const CORE_ADDRESS_FIELDS = ["addressLine1", "city", "state", "postalCode"];
 
+// ---------------------------------------------------------------------------
+// POST /admin/pacware/import/patients/headers — read just the header row of
+// an uploaded CSV and propose a column mapping.
+//
+// Powers the "map your columns" step for importing a roster from ANY system
+// (not just a PacWare export). Returns column LABELS + auto-detected
+// field guesses + the mappable-field catalog — deliberately NO data rows, so
+// it never echoes PHI (and so it carries no Idempotency-Key persistence).
+// ---------------------------------------------------------------------------
+const importHeadersBodySchema = z
+  .object({
+    csv: z
+      .string()
+      .min(1)
+      .max(8 * 1024 * 1024),
+  })
+  .strict();
+
+router.post(
+  "/admin/pacware/import/patients/headers",
+  adminWriteRateLimiter,
+  requirePermission("admin.tools.manage"),
+  (req, res) => {
+    if (!ensurePacwareEnabled(res)) return;
+    const parsed = importHeadersBodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "invalid_body",
+        issues: parsed.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
+      });
+      return;
+    }
+    res.setHeader("Cache-Control", "no-store");
+    res.status(200).json(previewPatientCsvHeaders(parsed.data.csv));
+  },
+);
+
 router.post(
   "/admin/pacware/import/patients",
   adminWriteRateLimiter,
@@ -163,9 +212,12 @@ router.post(
       });
       return;
     }
-    const { csv, mode } = parsed.data;
+    const { csv, mode, columnMapping } = parsed.data;
 
-    const result = parsePacwarePatientCsv(csv);
+    const result =
+      columnMapping && Object.keys(columnMapping).length > 0
+        ? parsePatientCsvWithMapping(csv, columnMapping as PatientColumnMapping)
+        : parsePacwarePatientCsv(csv);
     if (result.totalDataRows > MAX_IMPORT_ROWS) {
       res.status(413).json({
         error: "too_many_rows",
@@ -321,6 +373,9 @@ router.post(
         validation_errors: result.errors.length,
         batch_errors: batchErrors.length,
         unmapped_header_count: result.unmappedHeaders.length,
+        column_mapping_used: !!(
+          columnMapping && Object.keys(columnMapping).length > 0
+        ),
       },
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,

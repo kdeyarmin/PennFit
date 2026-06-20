@@ -910,13 +910,16 @@ function StatementDeliveryCard({ patientId }: { patientId: string }) {
     return () => clearTimeout(t);
   }, [savedAt]);
 
+  // Hydrate local form state from server state on first load and after a
+  // successful save, but NOT while the user has unsaved edits — otherwise a
+  // staleTime-driven background refetch (returning a new-but-equal object)
+  // would overwrite in-progress keystrokes and flip `dirty` false mid-edit.
   useEffect(() => {
-    if (pref.data) {
+    if (pref.data && !dirty) {
       setMethod(pref.data.statementDeliveryMethod);
       setEmail(pref.data.email ?? "");
-      setDirty(false);
     }
-  }, [pref.data]);
+  }, [pref.data, dirty]);
 
   const save = useMutation({
     mutationFn: async (): Promise<void> => {
@@ -950,6 +953,9 @@ function StatementDeliveryCard({ patientId }: { patientId: string }) {
     onSuccess: () => {
       setError(null);
       setSavedAt(Date.now());
+      // Edits are now persisted: clearing `dirty` re-enables hydration so the
+      // invalidated query's fresh server state flows back into the form.
+      setDirty(false);
       void qc.invalidateQueries({
         queryKey: ["patient-statement-delivery", patientId],
       });

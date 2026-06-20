@@ -115,7 +115,7 @@ pnpm install                           # regenerates from package.json
 git add pnpm-lock.yaml
 ```
 
-**Do NOT hand-edit `lib/resupply-db/drizzle/meta/_journal.json`.** Despite
+**Do NOT hand-edit `lib/resupply-db/migrations/meta/_journal.json`.** Despite
 the older guidance to "splice" it, that file is **frozen** at 52 entries
 and is no longer appended to (new migrations are not journaled — there are
 180+ `.sql` files but only 52 journal entries). It therefore does not
@@ -131,7 +131,7 @@ side is worse than a visible conflict.
 
 ## Repository map
 
-This is a `pnpm` workspaces monorepo (Node v24, TypeScript ~6.0, pnpm 11.6.0).
+This is a `pnpm` workspaces monorepo (Node v24, TypeScript ~6.0, pnpm 11.7.0).
 Workspace globs (`pnpm-workspace.yaml`): `artifacts/*`, `lib/*`,
 and `scripts`.
 
@@ -236,21 +236,39 @@ correctness, not style:
   `audit_log` onto `feature_flags`.
 - **One From address per tenant — still through the shared client.**
   Every outbound email funnels through `lib/resupply-email`'s
-  `createSendgridClient()`; don't bypass it. The platform default From is
-  `SENDGRID_FROM_EMAIL` (`info@pennpaps.com`, the seed tenant's address +
-  the fallback for any tenant without its own). **G6 (Phase 2)** relaxed
-  the historical "one global From" rule to **per-tenant**: a tenant's
-  `organizations.from_email` / `from_name` (migration 0360) override the
-  default. Resolve a tenant's sender with `resolveTenantSender(orgId)` /
-  `createTenantSendgridClient(orgId)`
-  (`artifacts/resupply-api/src/lib/email/tenant-sender.ts`) at any callsite
-  that knows its `orgId` — these still go through `createSendgridClient()`
-  (which already accepts `fromEmail`/`fromName`). A NULL `from_email`
-  leaves the platform default in place, so single-tenant is unchanged.
-  Deliverability still requires the tenant's sending **domain** to be
-  authenticated in SendGrid (SPF/DKIM) — storing an unauthenticated
-  `from_email` sends but lands in spam, so enabling a tenant sender is
-  gated on domain auth out of band.
+  `createSendgridClient()`; don't bypass it. The **platform default From is
+  the CareMetric Breathe identity, `noreply@cmbreathe.com`** — the
+  `DEFAULT_SENDGRID_FROM_EMAIL` / `DEFAULT_SENDGRID_FROM_NAME` constants in
+  `lib/resupply-email/src/client.ts`, used when `SENDGRID_FROM_EMAIL` is
+  unset and a tenant has no sender of its own. It is **NOT** the seed
+  tenant's address: the Penn Home Medical Supply tenant pins its own
+  `info@pennpaps.com` / "Penn Home Medical Supply" via its
+  `organizations.from_email` / `from_name` (seeded by migration 0377), so a
+  second (unconfigured) tenant inherits `noreply@cmbreathe.com`, never Penn's
+  address. **G6 (Phase 2)** relaxed the historical "one global From" rule to
+  **per-tenant**: a tenant's `organizations.from_email` / `from_name`
+  (migration 0360) override the platform default. Resolve a tenant's sender
+  with `resolveTenantSender(orgId)` / `createTenantSendgridClient(orgId)`
+  (`artifacts/resupply-api/src/lib/email/tenant-sender.ts`) at any
+  patient/user-facing callsite that knows its `orgId` — these still go
+  through `createSendgridClient()` (which accepts `fromEmail`/`fromName`).
+  Internal/ops/auth mail (password resets, operator digests, alerts) stays
+  on the platform default by design. A NULL `from_email` leaves the platform
+  default (`noreply@cmbreathe.com`) in place. Deliverability still requires
+  the tenant's sending **domain** to be authenticated in SendGrid (SPF/DKIM)
+  — storing an unauthenticated `from_email` sends but lands in spam, so
+  enabling a tenant sender is gated on domain auth out of band. The same
+  platform-vs-tenant split applies to the other outgoing channels: outbound
+  SMS/voice/fax resolve the tenant's own number via
+  `resolveTenantSmsFrom`/`resolveTenantVoiceFrom`/`resolveTenantFaxFrom`
+  (migrations 0364/0368, platform Twilio/Telnyx number as the fallback), and
+  patient-facing copy (SMS/voice/email/chatbot/PDF) is branded to the tenant
+  at the I/O boundary via `applyCompanyIdentityToText(text,
+getCompanyInfo(orgId))` / `resolveBrandingByOrgId(orgId)`. The unconfigured
+  fallback identity in `company-info.ts` is the **platform** (CareMetric
+  Breathe / `cmbreathe.com`), not PennPaps. Patient-facing link fallbacks
+  default to `https://cmbreathe.com`, overridden by the tenant's verified
+  custom domain (`resolveTenantBaseUrl`).
 - **Admin theme stays scoped.** Admin tokens (`--penn-navy`, etc.) live
   in `src/admin.css` under `.admin-root`. Every admin surface must wrap
   its outer `<div>` with `className="admin-root"` so it doesn't clobber
@@ -505,23 +523,25 @@ Wiring & conventions:
   exported from `@workspace/resupply-db` as
   `getSupabaseServiceRoleClient()`; every route, worker, and helper
   reads/writes through PostgREST via that client. **Supabase is the
-  only data path** — `drizzle-orm`, `drizzle-kit`, `drizzle-zod`,
-  `drizzle.config.ts`, the `src/schema/**` TS schema directory, and
-  the structural `check-drizzle-drift.sh` CI check have all been
-  retired. The SQL files in `lib/resupply-db/drizzle/*.sql` are the
+  only data path** — there is no ORM. Any `drizzle-orm`, `drizzle-kit`,
+  `drizzle-zod`, `drizzle.config.ts`, the `src/schema/**` TS schema
+  directory, and the structural ORM schema-drift CI check have all been
+  retired. The SQL files in `lib/resupply-db/migrations/*.sql` are the
   source of truth for migration history; `lib/resupply-db/scripts/migrate.mjs`
   applies them via raw `pg`. New migrations are hand-written SQL
-  (or generated via Supabase's own tooling). The directory name and
-  the on-DB `drizzle.resupply_migrations` history schema are kept
-  unchanged so production's applied-migration rows continue to gate
-  new deploys cleanly; a rename is tracked as a separate operational
-  change. `getDbPool` is still called by `scripts/migrate.mjs` and a
-  small number of legacy worker paths (e.g.
+  (or generated via Supabase's own tooling). The on-DB history schema
+  is `migrations.resupply_migrations`; databases provisioned before the
+  rename carry the ledger under the legacy `drizzle` schema, which
+  `migrate.mjs` renames in place on first run (metadata-only, preserving
+  every applied-migration row) so production's history continues to gate
+  new deploys cleanly without a replay. `getDbPool` is still called by
+  `scripts/migrate.mjs` and a small number of legacy worker paths (e.g.
   `artifacts/resupply-api/src/worker/jobs/bulk-campaign-tick.ts`).
   The "no direct `pg` outside `lib/resupply-db`" invariant is enforced
   by Rule 7 in `scripts/check-resupply-architecture.sh`; the same
   script also forbids `drizzle-orm` imports in `lib/resupply-domain`
-  (Rule 2). The remaining schema-drift pre-commit guard is
+  (Rule 2) so an ORM cannot drift back in. The remaining schema-drift
+  pre-commit guard is
   `scripts/check-resupply-migration-prefix.sh` (the historical
   co-change pair-check was retired with the TS schema directory).
 - **Auth:** in-house, `argon2id` + DB-backed `pf_session` cookies

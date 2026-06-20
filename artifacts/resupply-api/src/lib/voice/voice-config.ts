@@ -88,6 +88,24 @@ export interface VoiceConfig {
    */
   elevenLabsSpeed?: number;
   /**
+   * Optional ElevenLabs style-exaggeration override (0..1). 0 (the tuned
+   * default) keeps a natural conversational read; a small nudge (~0.1–0.15)
+   * adds warmth/expressiveness at a slight synthesis-latency cost. Clamped.
+   */
+  elevenLabsStyle?: number;
+  /**
+   * Optional ElevenLabs similarity-boost override (0..1). Higher holds
+   * closer to the chosen voice's character. When unset, the tuned default
+   * (0.8) applies. Clamped.
+   */
+  elevenLabsSimilarityBoost?: number;
+  /**
+   * Optional ElevenLabs speaker-boost override. The tuned default is `true`
+   * (a touch more clarity for the older / hard-of-hearing demographic). Set
+   * `false` to disable. When unset, the tuned default applies.
+   */
+  elevenLabsUseSpeakerBoost?: boolean;
+  /**
    * ElevenLabs TTS transport. `"ws"` (default) uses the stream-input
    * WebSocket — one connection per agent turn, text fed as the model
    * generates it, lowest latency + best cross-sentence prosody. `"http"`
@@ -113,6 +131,13 @@ export interface VoiceConfig {
   realtimeTranscribeModel?: string;
   /** Realtime wire audio-format token override (GA µ-law correction). */
   realtimeAudioFormat?: string;
+  /**
+   * Caller-audio noise reduction the Realtime server applies before its
+   * VAD + STT (`"far_field"` | `"near_field"` | `"off"`). When unset, the
+   * client default (`"far_field"`, suited to telephony) applies. Env:
+   * OPENAI_REALTIME_NOISE_REDUCTION — set `off` to disable if it ever hurts.
+   */
+  realtimeNoiseReduction?: "far_field" | "near_field" | "off";
   /**
    * When true, the `/voice/realtime-diagnostic` route is live — a no-patient
    * "connection test" that opens the Realtime bridge so an operator can dial
@@ -167,6 +192,41 @@ export function readVoicePublicBaseUrlOrNull(
   return null;
 }
 
+/**
+ * The allowlist of public base URLs a Twilio voice webhook may have been
+ * signed against. Used by routes reachable on more than one public host —
+ * e.g. the platform sales line on the platform host (cmbreathe.com) AND the
+ * tenant lines on a tenant custom domain (pennpaps.com) — so each validates
+ * its Twilio signature against its own host instead of being forced onto a
+ * single global host.
+ *
+ * Sourced from RESUPPLY_VOICE_PUBLIC_BASE_URLS (comma-separated), unioned
+ * with the single RESUPPLY_VOICE_PUBLIC_BASE_URL / RAILWAY_PUBLIC_DOMAIN
+ * value — so existing single-host config keeps working unchanged. Deduped
+ * (case-insensitively), trailing slashes stripped. Returns an empty array
+ * when nothing is configured (the signature middleware then fails closed).
+ */
+export function readVoicePublicBaseUrls(
+  env: NodeJS.ProcessEnv = process.env,
+): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const add = (raw: string | null | undefined): void => {
+    if (!raw) return;
+    for (const part of raw.split(",")) {
+      const v = stripTrailingSlash(part.trim());
+      const key = v.toLowerCase();
+      if (v && !seen.has(key)) {
+        seen.add(key);
+        out.push(v);
+      }
+    }
+  };
+  add(env.RESUPPLY_VOICE_PUBLIC_BASE_URLS);
+  add(readVoicePublicBaseUrlOrNull(env));
+  return out;
+}
+
 export function readVoiceConfigOrNull(
   env: NodeJS.ProcessEnv = process.env,
 ): VoiceConfig | null {
@@ -194,17 +254,29 @@ export function readVoiceConfigOrNull(
     elevenLabsModelId: env.ELEVENLABS_MODEL_ID?.trim() || undefined,
     elevenLabsStability: readBoundedFloatEnv(env.ELEVENLABS_STABILITY, 0, 1),
     elevenLabsSpeed: readBoundedFloatEnv(env.ELEVENLABS_SPEED, 0.7, 1.2),
+    elevenLabsStyle: readBoundedFloatEnv(env.ELEVENLABS_STYLE, 0, 1),
+    elevenLabsSimilarityBoost: readBoundedFloatEnv(
+      env.ELEVENLABS_SIMILARITY_BOOST,
+      0,
+      1,
+    ),
+    elevenLabsUseSpeakerBoost: parseOptionalBool(
+      env.ELEVENLABS_USE_SPEAKER_BOOST,
+    ),
     // Default to the streaming WS path; opt back to HTTP only on explicit
     // `http`. Case/space-insensitive so "HTTP" / " http " still match.
     elevenLabsTransport:
       env.ELEVENLABS_TTS_TRANSPORT?.trim().toLowerCase() === "http"
         ? "http"
         : "ws",
-    // Realtime stays on the proven beta schema unless explicitly set to
-    // `ga` (the gpt-realtime-2 spike). The ws-handler fills in coherent GA
-    // model/STT defaults when the schema is `ga`.
+    // Realtime now defaults to the `ga` schema (gpt-realtime-2); set
+    // OPENAI_REALTIME_SCHEMA=beta to fall back to the legacy beta schema.
+    // The ws-handler fills in coherent GA model/STT defaults when the
+    // schema is `ga`.
     realtimeSchema:
-      env.OPENAI_REALTIME_SCHEMA?.trim().toLowerCase() === "ga" ? "ga" : "beta",
+      env.OPENAI_REALTIME_SCHEMA?.trim().toLowerCase() === "beta"
+        ? "beta"
+        : "ga",
     realtimeModel: env.OPENAI_REALTIME_MODEL?.trim() || undefined,
     realtimeReasoningEffort: parseReasoningEffort(
       env.OPENAI_REALTIME_REASONING_EFFORT,
@@ -212,6 +284,9 @@ export function readVoiceConfigOrNull(
     realtimeTranscribeModel:
       env.OPENAI_REALTIME_TRANSCRIBE_MODEL?.trim() || undefined,
     realtimeAudioFormat: env.OPENAI_REALTIME_AUDIO_FORMAT?.trim() || undefined,
+    realtimeNoiseReduction: parseNoiseReduction(
+      env.OPENAI_REALTIME_NOISE_REDUCTION,
+    ),
     realtimeDiagnosticEnabled: isTruthyEnv(
       env.OPENAI_REALTIME_DIAGNOSTIC_ENABLED,
     ),
@@ -236,6 +311,30 @@ function parseReasoningEffort(
   return v === "minimal" || v === "low" || v === "medium" || v === "high"
     ? v
     : undefined;
+}
+
+/**
+ * Parse an optional boolean env var. Returns undefined when unset/blank
+ * (the caller falls back to the tuned default), else the truthiness of the
+ * value — so `ELEVENLABS_USE_SPEAKER_BOOST=false` can explicitly disable a
+ * default-on setting.
+ */
+function parseOptionalBool(raw: string | undefined): boolean | undefined {
+  if (raw == null || raw.trim() === "") return undefined;
+  return isTruthyEnv(raw);
+}
+
+/**
+ * Parse the optional Realtime noise-reduction env var. Returns undefined
+ * (client default `"far_field"` applies) when unset or not one of the
+ * allowed values, so a typo degrades to the default rather than sending an
+ * invalid value.
+ */
+function parseNoiseReduction(
+  raw: string | undefined,
+): "far_field" | "near_field" | "off" | undefined {
+  const v = raw?.trim().toLowerCase();
+  return v === "far_field" || v === "near_field" || v === "off" ? v : undefined;
 }
 
 /**

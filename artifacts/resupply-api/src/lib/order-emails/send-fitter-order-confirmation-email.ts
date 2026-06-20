@@ -28,13 +28,15 @@
 // received the order — the confirmation email is a comfort signal
 // on top of that. The route calls this best-effort.
 
-import {
-  createSendgridClient,
-  EmailApiError,
-  EmailConfigError,
-} from "@workspace/resupply-email";
+import { EmailApiError, EmailConfigError } from "@workspace/resupply-email";
 
-const DEFAULT_BASE_URL = "https://pennpaps.com";
+import { createTenantSendgridClient } from "../email/tenant-sender.js";
+import {
+  resolveBrandingByOrgId,
+  resolveTenantBaseUrl,
+} from "../tenant-branding.js";
+
+const DEFAULT_BASE_URL = "https://cmbreathe.com";
 
 export interface SendFitterOrderConfirmationInput {
   toEmail: string;
@@ -47,6 +49,12 @@ export interface SendFitterOrderConfirmationInput {
   maskManufacturer?: string | null;
   /** Optional override; otherwise pulled from env. */
   baseUrlOverride?: string;
+  /**
+   * Tenant the order belongs to. When set and the tenant has its own
+   * From identity (migration 0360), the confirmation is sent under it
+   * (G6); otherwise the platform default From is used.
+   */
+  orgId?: string;
 }
 
 export interface SendFitterOrderConfirmationResult {
@@ -79,7 +87,9 @@ export async function sendFitterOrderConfirmationEmail(
 ): Promise<SendFitterOrderConfirmationResult> {
   let client;
   try {
-    client = createSendgridClient();
+    // Send under the tenant's own From identity when configured (G6);
+    // falls back to the platform default when it isn't / orgId is unset.
+    client = await createTenantSendgridClient(input.orgId);
   } catch (err) {
     if (err instanceof EmailConfigError) {
       return { configured: false, delivered: false, error: err.message };
@@ -87,7 +97,15 @@ export async function sendFitterOrderConfirmationEmail(
     throw err;
   }
 
-  const base = publicBaseUrl(input.baseUrlOverride);
+  // Brand the signature with the tenant's own storefront name (G6). Seed
+  // tenant → "PennPaps" (unchanged); a second tenant → its own brand.
+  const brand = await resolveBrandingByOrgId(input.orgId);
+  const brandName = brand.storefrontName;
+  const base = publicBaseUrl(
+    input.baseUrlOverride ??
+      (await resolveTenantBaseUrl(input.orgId)) ??
+      undefined,
+  );
   const accountUrl = `${base}/account`;
   const greeting = input.firstName
     ? `Hi ${escapeHtml(input.firstName)},`
@@ -119,7 +137,7 @@ export async function sendFitterOrderConfirmationEmail(
     "Reply to this email if you have any questions — a real human picks",
     "it up.",
     "",
-    "—The PennPaps team",
+    `—The ${brandName} team`,
   ].join("\n");
 
   const html = `<!doctype html>
@@ -155,7 +173,7 @@ export async function sendFitterOrderConfirmationEmail(
           </p>
         </td></tr>
         <tr><td style="padding:16px 28px 24px;border-top:1px solid #eef0f5;font-size:12px;color:#8b95a9;">
-          The PennPaps team
+          The ${escapeHtml(brandName)} team
         </td></tr>
       </table>
     </td></tr>

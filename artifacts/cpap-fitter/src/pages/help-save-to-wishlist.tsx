@@ -27,10 +27,7 @@ const steps: HelpStep[] = [
       </p>
     ),
     shot: (
-      <Screenshot
-        url="pennpaps.com/shop"
-        caption="Every product card and detail page has a heart icon to save it."
-      >
+      <Screenshot caption="Every product card and detail page has a heart icon to save it.">
         <ShopShot />
       </Screenshot>
     ),
@@ -59,10 +56,7 @@ const steps: HelpStep[] = [
       </p>
     ),
     shot: (
-      <Screenshot
-        url="pennpaps.com/shop/wishlist"
-        caption="Your saved items in one place — add any of them straight to the cart."
-      >
+      <Screenshot caption="Your saved items in one place — add any of them straight to the cart.">
         <WishlistShot />
       </Screenshot>
     ),
@@ -82,10 +76,7 @@ const steps: HelpStep[] = [
       </p>
     ),
     shot: (
-      <Screenshot
-        url="pennpaps.com/account"
-        caption="Every past order has a one-tap Reorder button."
-      >
+      <Screenshot caption="Every past order has a one-tap Reorder button.">
         <AccountShot />
       </Screenshot>
     ),
@@ -99,7 +90,7 @@ export function HelpSaveToWishlist() {
       title="Save favorites & reorder"
       Icon={Heart}
       minutes="2 min"
-      metaDescription="How to use the PennPaps wishlist and reorder: save products with the heart icon, open your wishlist, add saved items to the cart, and reorder past purchases in one tap."
+      metaDescription="How to use the wishlist and reorder: save products with the heart icon, open your wishlist, add saved items to the cart, and reorder past purchases in one tap."
       intro="Keep the supplies you reorder within easy reach. Save products to your wishlist with a tap, and reorder past purchases without hunting for them again."
       summary={
         <>

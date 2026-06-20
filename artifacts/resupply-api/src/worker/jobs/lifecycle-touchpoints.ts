@@ -42,12 +42,12 @@ import {
   type Json,
   type OrgScopedClient,
   getOrgScopedClient,
-  resolveSeedOrgId,
 } from "@workspace/resupply-db";
 
 import { sendLifecycleTouchpointEmail } from "../../lib/order-emails/send-lifecycle-touchpoint-email";
 import { shouldSendEmail } from "../../lib/comm-prefs";
 import { logger } from "../../lib/logger";
+import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import {
   createQueueWithDlq,
   VENDOR_SEND_QUEUE_OPTS,
@@ -182,11 +182,34 @@ export async function runLifecycleTouchpoints(
     skippedOptedOut: 0,
     skippedNoShopCustomer: 0,
   };
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) {
-    return stats;
-  }
+  await forEachActiveOrg(
+    async (orgId) => {
+      await lifecycleTouchpointsSweepForOrg(orgId, now, stats);
+    },
+    { jobName: JOB_NAME },
+  );
+  return stats;
+}
+
+/**
+ * Run the birthday + sleep-anniversary touchpoint passes for a SINGLE
+ * tenant, accumulating into the shared `stats`. `patients` /
+ * `patient_therapy_nights` / `shop_customers` are org-scoped, so each
+ * tenant is swept on its own org-scoped client and a touchpoint only ever
+ * reaches a patient in their own org. Each pass's `PER_KIND_MAX` send cap
+ * is tracked per tenant (local counters) so a busy tenant can't starve the
+ * others out of their daily budget.
+ */
+async function lifecycleTouchpointsSweepForOrg(
+  orgId: string,
+  now: Date,
+  stats: TouchpointStats,
+): Promise<void> {
   const supabase = getOrgScopedClient(orgId);
+  // Per-tenant send budgets — the PER_KIND_MAX caps are each tenant's, not
+  // shared, so one tenant's popular-birthday cohort never starves another.
+  let birthdaySentThisOrg = 0;
+  let anniversarySentThisOrg = 0;
   const mmdd = todayMmDd(now);
   const currentYear = now.getUTCFullYear();
 
@@ -225,7 +248,7 @@ export async function runLifecycleTouchpoints(
     ((bdayRows ?? []) as PatientRow[]).map((r) => r.email),
   );
   for (const row of (bdayRows ?? []) as PatientRow[]) {
-    if (stats.birthdaySent >= PER_KIND_MAX) break;
+    if (birthdaySentThisOrg >= PER_KIND_MAX) break;
     stats.birthdayCandidates += 1;
     const gate = bdayOptIn.get(row.email.toLowerCase()) ?? {
       optedIn: false,
@@ -261,6 +284,7 @@ export async function runLifecycleTouchpoints(
         toEmail: row.email,
         firstName: row.legal_first_name,
         kind: "birthday",
+        orgId,
       });
       if (!r.delivered) {
         // Roll back the stamp so next tick can retry. Check the
@@ -285,6 +309,7 @@ export async function runLifecycleTouchpoints(
         continue;
       }
       stats.birthdaySent += 1;
+      birthdaySentThisOrg += 1;
     } catch (err) {
       const { error: rollbackErr } = await supabase
         .from("patients")
@@ -346,7 +371,7 @@ export async function runLifecycleTouchpoints(
     annRows.map((r) => r.email),
   );
   for (const row of annRows) {
-    if (stats.anniversarySent >= PER_KIND_MAX) break;
+    if (anniversarySentThisOrg >= PER_KIND_MAX) break;
     // The RPC already guarantees first_night MM-DD == today and year <
     // currentYear; recompute firstYear for the "years on therapy" copy
     // and keep the finite-year guard as defense-in-depth.
@@ -389,6 +414,7 @@ export async function runLifecycleTouchpoints(
         firstName: row.legal_first_name,
         kind: "sleep_anniversary",
         yearsOnTherapy: currentYear - firstYear,
+        orgId,
       });
       if (!r.delivered) {
         const { error: rollbackErr } = await supabase
@@ -411,6 +437,7 @@ export async function runLifecycleTouchpoints(
         continue;
       }
       stats.anniversarySent += 1;
+      anniversarySentThisOrg += 1;
     } catch (err) {
       const { error: rollbackErr } = await supabase
         .from("patients")
@@ -438,8 +465,6 @@ export async function runLifecycleTouchpoints(
       );
     }
   }
-
-  return stats;
 }
 
 export async function registerLifecycleTouchpointsJob(

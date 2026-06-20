@@ -47,6 +47,16 @@ export interface ManualDocumentField {
    * editor input itself remains genuinely blank for chart prefill.
    */
   renderWhenBlank?: boolean;
+  /**
+   * The document is not considered complete-to-send until this field has a
+   * value. Required fields are the identifiers/content a document of this
+   * type is genuinely invalid without AND that the supplier provides (so
+   * chart prefill fills them when the data exists, and the send gate flags
+   * any that are still blank for manual entry). Source of truth:
+   * REQUIRED_FIELD_KEYS below. Set by the catalog serializer, not stored on
+   * the literals.
+   */
+  required?: boolean;
 }
 
 export interface ManualDocumentTypeDef {
@@ -292,6 +302,87 @@ export function getManualDocumentTypeDef(
 /** The set of field keys a given type renders. */
 export function manualDocumentFieldKeys(type: ManualDocumentType): Set<string> {
   return new Set(getManualDocumentTypeDef(type).fields.map((f) => f.key));
+}
+
+/**
+ * Per-type required fields: a document is not "complete to send" until each
+ * of these carries a value. The set is deliberately the supplier-known
+ * identity + essential content — the things the document is invalid without
+ * AND that chart prefill fills when the data exists. So in the common case
+ * the chart auto-populates them; when the chart lacks the data the send gate
+ * flags exactly those for a human to enter before the document goes out.
+ *
+ * Clinical content — the diagnosis (ICD-10) and the length of need — is
+ * included for the order kinds (CMN, prescription): a complete order carries
+ * them, the diagnosis is auto-populated from a validated source already in
+ * the system (the inbound referral order / sleep study — see the prefill
+ * route), and the length of need is supplied by the DME. These documents are
+ * sent TO the prescriber to review and sign, so pre-filling a validated
+ * diagnosis and proposing a length of need is the standard, compliant draft-
+ * order pattern (the prescriber's signature is the medical-necessity
+ * attestation) — and it mirrors what the prescription-request flow
+ * (validatePrescriptionRequestInputs) already requires. The recipient
+ * contact (fax/email) is gated separately by the send route.
+ */
+export const REQUIRED_FIELD_KEYS: Record<
+  ManualDocumentType,
+  ReadonlySet<string>
+> = {
+  cmn: new Set([
+    "patient_name",
+    "date_of_birth",
+    "ordering_physician",
+    "physician_npi",
+    "diagnosis",
+    "length_of_need",
+  ]),
+  prescription: new Set([
+    "patient_name",
+    "date_of_birth",
+    "prescriber_name",
+    "prescriber_npi",
+    "items_ordered",
+    "icd10_codes",
+    "length_of_need",
+  ]),
+  agreement: new Set(["party_name", "agreement_type"]),
+  delivery_ticket: new Set([
+    "patient_name",
+    "delivery_address",
+    "delivery_date",
+    "items_delivered",
+  ]),
+  cover_letter: new Set(["attention"]),
+  other: new Set<string>(),
+};
+
+/** Whether a given field of a type must be filled before the doc can send. */
+export function isRequiredManualDocumentField(
+  type: ManualDocumentType,
+  key: string,
+): boolean {
+  return REQUIRED_FIELD_KEYS[type].has(key);
+}
+
+/**
+ * The required fields (key + human label) that are still blank for a given
+ * type + stored field values. Empty array means the document carries every
+ * required field — i.e. it is complete to send. Pure: shared by the send
+ * routes (the hard gate) and exposed to the SPA (the pre-send flag) so the
+ * two never disagree on what "complete" means.
+ */
+export function missingRequiredManualDocumentFields(
+  type: ManualDocumentType,
+  fields: Record<string, unknown> | null | undefined,
+): Array<{ key: string; label: string }> {
+  const filled = normalizeManualDocumentFields(type, fields);
+  const def = getManualDocumentTypeDef(type);
+  const out: Array<{ key: string; label: string }> = [];
+  for (const field of def.fields) {
+    if (!REQUIRED_FIELD_KEYS[type].has(field.key)) continue;
+    if (!filled[field.key]) out.push({ key: field.key, label: field.label });
+  }
+  return out;
 }
 
 /**

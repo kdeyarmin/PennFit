@@ -77,20 +77,15 @@ describe("echo contract", () => {
   it("returns the raw forwarding headers and Express's resolution under trust proxy = 1", async () => {
     const res = await request(makeApp(1))
       .get("/admin/diagnostics/proxy-chain")
-      .set("X-Forwarded-For", "203.0.113.7, 198.51.100.2")
-      .set("CF-Connecting-IP", "203.0.113.7")
-      .set("CF-Ray", "8abc123-EWR");
+      .set("X-Forwarded-For", "203.0.113.7, 198.51.100.2");
     expect(res.status).toBe(200);
     expect(res.body.headers).toMatchObject({
       "x-forwarded-for": "203.0.113.7, 198.51.100.2",
-      "cf-connecting-ip": "203.0.113.7",
-      "cf-ray": "8abc123-EWR",
       // Absent headers come back as explicit nulls, not undefined.
-      "true-client-ip": null,
+      "x-real-ip": null,
     });
     // With ONE trusted hop, req.ip resolves to the LAST entry in XFF —
-    // the immediate proxy's claim — which is exactly the P1-5 bug shape
-    // behind a two-hop Cloudflare → Railway chain.
+    // the immediate proxy's claim.
     expect(res.body.expressResolution.trustProxy).toBe(1);
     expect(res.body.expressResolution.ip).toBe("198.51.100.2");
     expect(res.body.expressResolution.ips).toEqual(["198.51.100.2"]);

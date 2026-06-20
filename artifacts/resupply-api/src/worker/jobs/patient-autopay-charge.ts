@@ -24,11 +24,7 @@
 import type PgBoss from "pg-boss";
 import type Stripe from "stripe";
 
-import {
-  type Json,
-  getOrgScopedClient,
-  resolveSeedOrgId,
-} from "@workspace/resupply-db";
+import { type Json, getOrgScopedClient } from "@workspace/resupply-db";
 
 import {
   markPaymentStatus,
@@ -47,7 +43,9 @@ import {
   getStripeClient,
   readStripeConfigOrNull,
 } from "../../lib/stripe/config.js";
+import { stripeAccountRequestOptions } from "../../lib/stripe/connect.js";
 import { logger } from "../../lib/logger.js";
+import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import {
   createQueueWithDlq,
   VENDOR_SEND_QUEUE_OPTS,
@@ -74,7 +72,10 @@ function buildStripeOffSessionCharger(stripe: Stripe): OffSessionCharger {
           confirm: true,
           metadata: req.metadata,
         },
-        { idempotencyKey: req.idempotencyKey },
+        // `accountOptions` carries `{ stripeAccount }` for a tenant on Stripe
+        // Connect, routing the charge to its connected account (where its
+        // customer + PM live). Empty for the platform account (seed tenant).
+        { idempotencyKey: req.idempotencyKey, ...(req.accountOptions ?? {}) },
       );
       if (pi.status === "succeeded") {
         return { outcome: "succeeded", paymentIntentId: pi.id };
@@ -148,9 +149,53 @@ export async function runPatientAutopayCharge(
     }
     charger = buildStripeOffSessionCharger(getStripeClient(config));
   }
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) return stats;
+  const activeCharger = charger;
+  // Fan out across every active tenant — patient_autopay_authorizations is
+  // org-scoped, and each tenant's off-session charge is routed to ITS OWN
+  // Stripe account (stripeAccountRequestOptions(orgId)) so the stored
+  // customer + payment method resolve on the account they were created on.
+  // Per-tenant failure isolation; results summed. Single-tenant:
+  // listActiveOrgIds() returns just the seed org → empty account options →
+  // the platform account, exactly as before Connect.
+  const fan = await forEachActiveOrg(
+    async (orgId) => {
+      await patientAutopayChargeForOrg(orgId, activeCharger, stats);
+    },
+    { jobName: PATIENT_AUTOPAY_CHARGE_JOB },
+  );
+  // Money-path retry safety: forEachActiveOrg isolates a per-tenant throw
+  // (e.g. a DB write failing AFTER a successful PaymentIntent), so the
+  // handler would otherwise see success and not retry until the next cron
+  // tick — potentially past Stripe's ~24h idempotency window, risking a
+  // second charge. Re-throw so pg-boss retries the tick promptly; the
+  // already-charged authorizations are idempotent (per-auth CAS claim +
+  // idempotency key) so the retry is safe.
+  if (fan.failedOrgIds.length > 0) {
+    throw new Error(
+      `patient-autopay-charge: ${fan.failedOrgIds.length} tenant(s) failed this tick — retrying`,
+    );
+  }
+  return stats;
+}
+
+async function patientAutopayChargeForOrg(
+  orgId: string,
+  charger: OffSessionCharger,
+  stats: PatientAutopayRunStats,
+): Promise<void> {
+  // Per-tenant opt-in. The flag is checked HERE, per org, not once for the
+  // whole tick: gating the fan-out on a single (seed) flag read would let the
+  // seed tenant's "on" authorize off-session card charges for EVERY active
+  // tenant. isFeatureEnabled falls back to the seed flag only for orgs with no
+  // row of their own, so single-tenant behavior is unchanged.
+  if (!(await isFeatureEnabled("billing.patient_autopay", orgId))) {
+    return;
+  }
   const supabase = getOrgScopedClient(orgId);
+  // Resolve the tenant's Stripe Connect routing ONCE per tick. Empty for the
+  // platform account (seed / not-yet-onboarded); `{ stripeAccount }` once the
+  // tenant's connected account has charges_enabled.
+  const accountOptions = await stripeAccountRequestOptions(orgId);
   const todayIso = new Date().toISOString().slice(0, 10);
 
   // Keyset-page the enabled authorizations: PostgREST caps each
@@ -191,7 +236,7 @@ export async function runPatientAutopayCharge(
 
   for (const auth of due) {
     try {
-      await chargeOneAuthorization(orgId, auth, charger, stats);
+      await chargeOneAuthorization(orgId, accountOptions, auth, charger, stats);
     } catch (err) {
       // One bad patient must not abort the whole tick.
       stats.failed += 1;
@@ -201,11 +246,11 @@ export async function runPatientAutopayCharge(
       );
     }
   }
-  return stats;
 }
 
 async function chargeOneAuthorization(
   orgId: string,
+  accountOptions: { stripeAccount?: string },
   auth: ChargeableAuthorization,
   charger: OffSessionCharger,
   stats: PatientAutopayRunStats,
@@ -334,6 +379,7 @@ async function chargeOneAuthorization(
       patient_payment_id: payRow.id,
       source: "autopay",
     },
+    accountOptions,
   });
 
   if (result.outcome === "succeeded") {
@@ -416,14 +462,9 @@ export async function registerPatientAutopayChargeJob(
     VENDOR_SEND_QUEUE_OPTS,
   );
   await boss.work(PATIENT_AUTOPAY_CHARGE_JOB, async () => {
-    const enabled = await isFeatureEnabled("billing.patient_autopay");
-    if (!enabled) {
-      logger.info(
-        { queue: PATIENT_AUTOPAY_CHARGE_JOB },
-        "patient-autopay-charge: feature flag off — nothing charged",
-      );
-      return;
-    }
+    // No global flag gate here — the feature flag is enforced per-tenant in
+    // patientAutopayChargeForOrg so one tenant's flag can't authorize charges
+    // for another. Orgs with the flag off are skipped inside the fan-out.
     const stats = await runPatientAutopayCharge();
     logger.info(
       { event: "billing.patient-autopay-charge.completed", ...stats },

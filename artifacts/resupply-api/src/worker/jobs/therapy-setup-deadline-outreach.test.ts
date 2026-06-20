@@ -46,6 +46,13 @@ const SAVED_ENV = { ...process.env };
 
 beforeEach(() => {
   supabaseMock.reset();
+  // The sweep fans out across active tenants (forEachActiveOrg →
+  // listActiveOrgIds reads `organizations`); stage a single active org so
+  // the per-tenant cases below behave as the prior one-tenant sweep. The
+  // multi-tenant fan-out case re-stages this explicitly.
+  stageSupabaseResponse("organizations", "select", {
+    data: [{ id: "00000000-0000-4000-8000-000000000001" }],
+  });
   featureEnabled.value = false;
   sendSmsMock.mockClear();
   // Pin the clock inside the 9am–8pm patient-local TCPA send window
@@ -209,5 +216,32 @@ describe("runSetupDeadlineOutreach", () => {
     expect(result.messaged).toBe(0);
     expect(sendSmsMock).not.toHaveBeenCalled();
     expect(getSupabaseWritePayloads("worker_dedup_keys", "insert")).toEqual([]);
+  });
+
+  it("fans out across active tenants and sums the results", async () => {
+    // Two active tenants, each with one in-window/eligible patient via its
+    // own adherence RPC. Flag off → nothing sent; the counts must SUM
+    // (2/2/0), not reflect only the last tenant.
+    supabaseMock.reset();
+    featureEnabled.value = false;
+    stageSupabaseResponse("organizations", "select", {
+      data: [{ id: "org-a" }, { id: "org-b" }],
+    });
+    for (const _org of ["a", "b"]) {
+      stageSupabaseRpcResponse("therapy_setup_adherence_list", {
+        data: [
+          {
+            patient_id: P1,
+            status: "on_track",
+            days_remaining: "10",
+            nights_needed: "5",
+          },
+        ],
+      });
+    }
+    const result = await runSetupDeadlineOutreach();
+    expect(result.inWindow).toBe(2);
+    expect(result.eligible).toBe(2);
+    expect(result.messaged).toBe(0);
   });
 });

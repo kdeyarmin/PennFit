@@ -121,6 +121,7 @@ function fireAssignmentEmail(args: {
   eventType: string;
   location: string | null;
   assignedByEmail: string | null;
+  orgId: string;
 }): void {
   void sendAppointmentAssignedEmail({
     toEmail: args.assignee.email,
@@ -131,6 +132,7 @@ function fireAssignmentEmail(args: {
     location: args.location,
     assignedByEmail: args.assignedByEmail,
     dashboardUrl: calendarDashboardUrl(),
+    orgId: args.orgId,
   })
     .then((r) => {
       if (!r.delivered) {
@@ -333,6 +335,7 @@ router.post(
         eventType: parsed.data.eventType,
         location: parsed.data.location ?? null,
         assignedByEmail: req.adminEmail ?? null,
+        orgId,
       });
     }
 
@@ -487,6 +490,7 @@ router.patch(
         eventType: emailPlan.eventType,
         location: emailPlan.location,
         assignedByEmail: req.adminEmail ?? null,
+        orgId,
       });
     }
 

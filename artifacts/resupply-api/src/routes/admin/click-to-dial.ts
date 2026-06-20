@@ -30,6 +30,7 @@ import {
 } from "@workspace/resupply-telecom";
 
 import { logger } from "../../lib/logger";
+import { resolveTenantVoiceFrom } from "../../lib/messaging/tenant-telecom";
 import { readVoiceConfigOrNull } from "../../lib/voice/voice-config";
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -204,6 +205,11 @@ router.post(
       dispositionId,
     )}`;
 
+    // Dial the agent leg from the tenant's own voice caller-id when it
+    // has one (G7), else the platform default. Fails soft to the default.
+    const callerId =
+      (await resolveTenantVoiceFrom(orgId)) ?? config.twilioPhoneNumber;
+
     let callSid: string;
     try {
       const twilio = createTwilioClient({
@@ -212,7 +218,7 @@ router.post(
       });
       const result = await twilio.placeCall({
         to: agentPhone,
-        from: config.twilioPhoneNumber,
+        from: callerId,
         url: twimlUrl,
       });
       callSid = result.sid;

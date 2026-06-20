@@ -37,7 +37,13 @@ import {
 
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
-import { readPracticeName } from "../../lib/messaging/messaging-config";
+import { createTenantSendgridClient } from "../../lib/email/tenant-sender.js";
+import {
+  resolveBrandingByOrgId,
+  resolveTenantBaseUrl,
+} from "../../lib/tenant-branding.js";
+import { recordOutboundMessageUsage } from "../../lib/metering/usage.js";
+import { resolveTenantSmsClientOptions } from "../../lib/messaging/tenant-telecom";
 import { signVideoVisitToken } from "../../lib/video/video-visit-token";
 import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import {
@@ -135,13 +141,17 @@ function formatStartTime(scheduledAt: string): string {
   });
 }
 
-function publicBaseUrl(env: NodeJS.ProcessEnv = process.env): string {
+function publicBaseUrl(
+  override?: string,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
   return (
+    override ??
     env.SHOP_PUBLIC_BASE_URL ??
     env.RESUPPLY_VOICE_PUBLIC_BASE_URL ??
     (env.RAILWAY_PUBLIC_DOMAIN
       ? `https://${env.RAILWAY_PUBLIC_DOMAIN}`
-      : "https://pennpaps.com")
+      : "https://cmbreathe.com")
   ).replace(/\/$/, "");
 }
 
@@ -232,6 +242,22 @@ async function videoVisitReminderSweepForOrg(
   };
   if (!avail.sms && !avail.email) return;
 
+  // Send under the tenant's own number / Messaging Service when it has
+  // one (G7); falls back to the platform default otherwise. The global
+  // `clients.twilio` proves SMS is constructible (availability gate
+  // above); we build a tenant-scoped sender for the actual send.
+  const tenantTwilio = avail.sms
+    ? createTwilioSmsClient(await resolveTenantSmsClientOptions(orgId))
+    : null;
+
+  // Send under the tenant's own From identity (G6); the global
+  // `clients.sendgrid` already proved constructibility in the avail gate,
+  // mirroring the tenant SMS pattern above. For the seed tenant this resolves
+  // to the platform default From, so single-tenant behavior is unchanged.
+  const tenantSendgrid = avail.email
+    ? await createTenantSendgridClient(orgId)
+    : null;
+
   const supabase = getOrgScopedClient(orgId);
   const windowEnd = new Date(now.getTime() + REMINDER_WINDOW_MS).toISOString();
   const { data, error } = await supabase
@@ -248,8 +274,15 @@ async function videoVisitReminderSweepForOrg(
   if (error) throw error;
 
   const visits = (data ?? []) as unknown as ReminderVisitRow[];
-  const practiceName = readPracticeName();
-  const base = publicBaseUrl();
+  // Brand the reminder copy with the tenant's own storefront name (G6); for
+  // the seed tenant this resolves to "PennPaps" so single-tenant copy is
+  // unchanged.
+  const brand = await resolveBrandingByOrgId(orgId);
+  const practiceName = brand.storefrontName;
+  // Build patient links from the tenant's own storefront origin (its verified
+  // custom domain) when it has one; the seed tenant falls through to the env/
+  // default, so single-tenant is unchanged. Resolved once per tenant sweep.
+  const base = publicBaseUrl((await resolveTenantBaseUrl(orgId)) ?? undefined);
 
   for (const visit of visits) {
     stats.scanned += 1;
@@ -296,10 +329,11 @@ async function videoVisitReminderSweepForOrg(
       });
 
       if (target.channel === "sms") {
-        // Non-null by construction: avail.sms implied clients.twilio above.
-        await clients.twilio!.sendSms({ to: target.to, body: message.sms });
+        // Non-null by construction: avail.sms implied tenantTwilio above.
+        await tenantTwilio!.sendSms({ to: target.to, body: message.sms });
       } else {
-        await clients.sendgrid!.sendEmail({
+        // Non-null by construction: avail.email implied tenantSendgrid above.
+        await tenantSendgrid!.sendEmail({
           to: target.to,
           // No PHI in the subject line.
           subject: message.subject,
@@ -308,6 +342,11 @@ async function videoVisitReminderSweepForOrg(
         });
       }
       stats.sent += 1;
+      recordOutboundMessageUsage({
+        orgId,
+        channel: target.channel === "sms" ? "sms" : "email",
+        source: "video_visit_reminder",
+      });
     } catch (err) {
       stats.errors += 1;
       logger.warn(

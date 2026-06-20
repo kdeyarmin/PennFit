@@ -49,10 +49,10 @@ import type PgBoss from "pg-boss";
 
 import {
   getOrgScopedClient,
-  resolveSeedOrgId,
   type OrgScopedClient,
 } from "@workspace/resupply-db";
 
+import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import { sendDeliveryFollowupEmail } from "../../lib/order-emails/send-delivery-followup-email";
 import { sendCaregiverNotificationEmail } from "../../lib/order-emails/send-caregiver-notification-email";
 import { sendPushToCustomer } from "../../lib/web-push";
@@ -63,6 +63,9 @@ import {
   TwilioConfigError,
 } from "@workspace/resupply-telecom";
 import { logger } from "../../lib/logger";
+import { resolveTenantSmsClientOptions } from "../../lib/messaging/tenant-telecom.js";
+import { resolveBrandingByOrgId } from "../../lib/tenant-branding.js";
+import { recordOutboundMessageUsage } from "../../lib/metering/usage.js";
 import {
   createQueueWithDlq,
   VENDOR_SEND_QUEUE_OPTS,
@@ -151,21 +154,40 @@ async function resolveRecipient(
 }
 
 /**
- * Exported for testability. Pure DB + send work, no clock dependency
- * other than `now` parameter for the window.
+ * Exported for testability. Fans out across every ACTIVE tenant —
+ * `shop_orders` / `shop_customers` are org-scoped, so each tenant is
+ * swept on its own org-scoped client and a follow-up only ever reaches a
+ * shopper in that order's own org. Per-tenant failure isolation keeps one
+ * tenant's bad row from aborting the rest; the accumulated stats are
+ * summed across tenants. Single-tenant: `listActiveOrgIds()` returns just
+ * the seed org, so this is exactly the prior one-tenant sweep.
  */
 export async function runDeliveryFollowupSweep(): Promise<FollowupSweepStats> {
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) {
-    return { considered: 0, sent: 0, skipped: 0, failed: 0 };
-  }
-  const supabase = getOrgScopedClient(orgId);
   const stats: FollowupSweepStats = {
     considered: 0,
     sent: 0,
     skipped: 0,
     failed: 0,
   };
+  await forEachActiveOrg(
+    async (orgId) => {
+      await deliveryFollowupSweepForOrg(orgId, stats);
+    },
+    { jobName: FOLLOWUP_JOB },
+  );
+  return stats;
+}
+
+/**
+ * Run the delivery follow-up sweep for a SINGLE tenant, accumulating into
+ * the shared `stats`. The atomic claim and the 500-row cap both apply per
+ * tenant.
+ */
+async function deliveryFollowupSweepForOrg(
+  orgId: string,
+  stats: FollowupSweepStats,
+): Promise<void> {
+  const supabase = getOrgScopedClient(orgId);
 
   const upper = isoDaysAgo(MIN_DAYS_SINCE_DELIVERY);
   const lower = isoDaysAgo(MAX_DAYS_SINCE_DELIVERY);
@@ -182,7 +204,7 @@ export async function runDeliveryFollowupSweep(): Promise<FollowupSweepStats> {
     .limit(500);
   if (error) throw error;
 
-  stats.considered = (candidates ?? []).length;
+  stats.considered += (candidates ?? []).length;
 
   for (const candidate of candidates ?? []) {
     // 1. Atomic claim — wins iff still null. Concurrent runs lose.
@@ -258,6 +280,7 @@ export async function runDeliveryFollowupSweep(): Promise<FollowupSweepStats> {
         stripeSessionId: claimed.stripe_session_id,
         firstName: recipient.firstName,
         orderId: claimed.id,
+        orgId,
       });
       if (!result.configured) {
         await releaseClaim();
@@ -274,6 +297,11 @@ export async function runDeliveryFollowupSweep(): Promise<FollowupSweepStats> {
         continue;
       }
       stats.sent += 1;
+      recordOutboundMessageUsage({
+        orgId,
+        channel: "email",
+        source: "shop_order_delivery_followup.email",
+      });
     } catch (err) {
       await releaseClaim();
       stats.failed += 1;
@@ -332,13 +360,26 @@ export async function runDeliveryFollowupSweep(): Promise<FollowupSweepStats> {
           "shop-order.delivery-followup: sms skipped (outside send window)",
         );
       } else if (smsRecipient) {
-        const smsClient = createTwilioSmsClient();
+        // Send under the tenant's own number / Messaging Service when it
+        // has one (G7); falls back to the platform env default otherwise.
+        const smsClient = createTwilioSmsClient(
+          await resolveTenantSmsClientOptions(orgId),
+        );
+        // Tenant brand when the patient's first name is unknown — never the
+        // seed tenant's "PennPaps" for another tenant's customer. Resolved
+        // once (cached, fail-soft); the greeting doesn't depend on it.
+        const brand = await resolveBrandingByOrgId(orgId);
         const greeting = smsRecipient.patientFirstName
           ? `Hi ${smsRecipient.patientFirstName}`
-          : "PennPaps";
+          : brand.storefrontName;
         await smsClient.sendSms({
           to: smsRecipient.phoneE164,
           body: `${greeting}: how is your new CPAP setup going? Reply YES if it works, or NO and we'll start a return. Reply STOP to opt out.`,
+        });
+        recordOutboundMessageUsage({
+          orgId,
+          channel: "sms",
+          source: "shop_order_delivery_followup.sms",
         });
       }
     } catch (smsErr) {
@@ -359,12 +400,24 @@ export async function runDeliveryFollowupSweep(): Promise<FollowupSweepStats> {
     //    stamp — the primary delivery is the canonical record.
     if (recipient.caregiver) {
       try {
-        await sendCaregiverNotificationEmail({
+        // sendCaregiverNotificationEmail returns { configured, delivered }
+        // instead of throwing on a provider reject, so meter only when the
+        // provider actually accepted the caregiver email — a rejected or
+        // unconfigured send must not count toward outboundMessagesPerMonth.
+        const cgResult = await sendCaregiverNotificationEmail({
           toEmail: recipient.caregiver.email,
           caregiverName: recipient.caregiver.name,
           patientFirstName: recipient.firstName,
           kind: "delivered",
+          orgId,
         });
+        if (cgResult.delivered) {
+          recordOutboundMessageUsage({
+            orgId,
+            channel: "email",
+            source: "shop_order_delivery_followup.caregiver_email",
+          });
+        }
       } catch (cgErr) {
         logger.warn(
           {
@@ -376,8 +429,6 @@ export async function runDeliveryFollowupSweep(): Promise<FollowupSweepStats> {
       }
     }
   }
-
-  return stats;
 }
 
 export async function registerShopOrderDeliveryFollowupJob(

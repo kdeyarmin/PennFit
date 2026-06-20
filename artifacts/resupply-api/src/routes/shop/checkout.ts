@@ -38,6 +38,7 @@ import {
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { getActivePickupLocationById } from "../../lib/pickup/locations";
 import { getOrCreateStripeCustomer } from "../../lib/stripe/customer";
+import { stripeAccountRequestOptions } from "../../lib/stripe/connect";
 import { validateCartItems } from "../../lib/stripe/validate-cart";
 import { stripeErrLogFields } from "../../lib/stripe/err-log-fields";
 import { readCustomerProfile } from "../../lib/customer-profile";
@@ -246,13 +247,23 @@ router.post(
       .digest("hex");
 
     const stripe = getStripeClient(config);
+    // Stripe Connect (G5): route the Checkout session + its Customer to the
+    // tenant's connected account when set; NULL → {} → platform account.
+    const connectOptions = await stripeAccountRequestOptions(req.orgId);
 
     // Catalog guard: every price in the cart must belong to the approved
     // shop catalog and respect stock/type constraints. The sibling
     // /shop/me/quick-checkout route applies the same guard; without it a
     // tampered cart could check out stale/legacy prices, out-of-stock
     // items, or SKUs intentionally excluded from /shop/products.
-    const cartValidation = await validateCartItems(stripe, items);
+    // Validate against the SAME account the Checkout session is created on
+    // (connectOptions) so a connected tenant's cart is checked against their
+    // catalog, not the platform's — otherwise every line is price_not_found.
+    const cartValidation = await validateCartItems(
+      stripe,
+      items,
+      connectOptions,
+    );
     if (!cartValidation.ok) {
       req.log?.warn(
         { errors: cartValidation.errors },
@@ -356,7 +367,7 @@ router.post(
             },
             automatic_tax: { enabled: false },
           },
-          { idempotencyKey },
+          { idempotencyKey, ...connectOptions },
         );
       } else {
         session = await stripe.checkout.sessions.create(
@@ -407,7 +418,7 @@ router.post(
             // dashboard without code changes.
             automatic_tax: { enabled: false },
           },
-          { idempotencyKey },
+          { idempotencyKey, ...connectOptions },
         );
       }
     } catch (err) {

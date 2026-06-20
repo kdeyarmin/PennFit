@@ -12,18 +12,12 @@ describe("AppShell billing navigation", () => {
     expect(SRC).toContain('href: "/admin/billing/package"');
   });
 
-  it("exposes platform billing only behind system configuration permission", () => {
-    const platformNavStart = SRC.indexOf('label: "Platform billing"');
-    expect(platformNavStart).toBeGreaterThanOrEqual(0);
-    const platformNavBlock = SRC.slice(
-      platformNavStart,
-      platformNavStart + 300,
-    );
-    expect(platformNavBlock).toContain(
-      'matchPrefix: "/admin/platform-billing"',
-    );
-    expect(platformNavBlock).toContain(
-      'requiredPermission: "system.config.manage"',
-    );
+  it("does not expose platform billing in the tenant admin nav", () => {
+    // Platform billing is a cross-tenant super-admin surface (assign
+    // plans, pricing overrides, Stripe sync for every tenant) and now
+    // lives on the platform console (/platform/billing), not the
+    // per-tenant admin nav.
+    expect(SRC).not.toContain('label: "Platform billing"');
+    expect(SRC).not.toContain("/admin/platform-billing");
   });
 });

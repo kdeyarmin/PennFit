@@ -315,6 +315,31 @@ describe("runAutoSubmitBatch (orchestration)", () => {
     expect(result.skippedNotReady).toHaveLength(0);
   });
 
+  it("threads orgId (G8) into both claim selection and the batch submit", async () => {
+    const claims = [readyClaim({ claimId: "a", payerProfileId: "P1" })];
+    let selectOrgId: string | undefined = "unset";
+    let submitOrgId: string | undefined = "unset";
+    await runAutoSubmitBatch(
+      {
+        submittedByEmail: "ops@example.com",
+        triggeredBy: "operator",
+        orgId: "org-tenant-x",
+      },
+      {
+        select: async (opts) => {
+          selectOrgId = opts.orgId;
+          return readiness(claims);
+        },
+        submit: async (input) => {
+          submitOrgId = input.orgId;
+          return okResult("sub-a", input.claimIds.length);
+        },
+      },
+    );
+    expect(selectOrgId).toBe("org-tenant-x");
+    expect(submitOrgId).toBe("org-tenant-x");
+  });
+
   it("only submits approved ids that are still ready and reports the rest", async () => {
     const claims = [
       readyClaim({ claimId: "a", payerProfileId: "P1" }),

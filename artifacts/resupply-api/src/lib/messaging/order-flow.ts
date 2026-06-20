@@ -48,6 +48,11 @@ import {
   type Json,
   type OrgScopedClient,
 } from "@workspace/resupply-db";
+import {
+  REFILL_AFFIRMATION_STATEMENT,
+  REFILL_SHIP_LEAD_DAYS,
+  resolveRefillWindow,
+} from "@workspace/resupply-domain";
 
 import { resolveFulfillmentSku } from "../backorder/resolve-fulfillment-sku";
 import {
@@ -81,6 +86,50 @@ export interface UsageReviewBlock {
   compliantNights: number;
 }
 
+/**
+ * CMS refill-window snapshot for a confirmation held because it would
+ * ship earlier than the 10-day-before-depletion window allows. Dates are
+ * ISO; counts/dates only — no PHI.
+ */
+export interface RefillWindowBlock {
+  hcpcsCode: string;
+  /** Expected end of the current supply's usable life (ISO date). */
+  expectedDepletionOn: string | null;
+  /** Earliest date the refill may ship (ISO date). */
+  earliestShipOn: string | null;
+  daysUntilShip: number;
+}
+
+/**
+ * The beneficiary's Medicare/payer refill attestation, captured at
+ * confirm time and persisted as a `refill_confirmations` row. Every
+ * confirm caller (SMS YES, email-link click, voice, admin) passes this so
+ * the proof is recorded against the episode that shipped.
+ */
+export interface RefillAffirmationInput {
+  channel: "sms" | "email" | "voice" | "admin";
+  /** Beneficiary confirmed they are still using the equipment. */
+  continuedUse: boolean;
+  /** Beneficiary confirmed their current supply is running low / used up. */
+  supplyLow: boolean;
+  /** Exact statement the beneficiary agreed to. Defaults to the canonical
+   *  REFILL_AFFIRMATION_STATEMENT when omitted (snapshotted onto the row). */
+  attestationText?: string;
+  /** Relationship of the person confirming to the beneficiary. */
+  requestedBy?:
+    | "self"
+    | "spouse"
+    | "guardian"
+    | "power_of_attorney"
+    | "caregiver"
+    | "authorized_rep"
+    | "other";
+  /** IP of the confirming click, where available (email/web). */
+  ip?: string | null;
+  /** User-agent of the confirming click, where available (email/web). */
+  userAgent?: string | null;
+}
+
 export type PlaceOrderResult =
   | {
       status: "ok";
@@ -107,6 +156,12 @@ export type PlaceOrderResult =
       episodeId: string;
       usage: UsageReviewBlock;
     }
+  | {
+      status: "too_early";
+      patientId: string;
+      episodeId: string;
+      refillWindow: RefillWindowBlock;
+    }
   | { status: "conversation_not_found" }
   | { status: "episode_not_found" }
   | { status: "no_active_prescription" };
@@ -117,6 +172,14 @@ export interface PlaceOrderInput {
    *  (single-tenant bridge) for the SMS/voice callers that have no
    *  request tenant; the email-link route passes the conversation's org. */
   orgId?: string;
+  /**
+   * The beneficiary's Medicare/payer refill attestation. When provided
+   * AND the `resupply.refill_affirmation_capture` flag is on, a
+   * `refill_confirmations` row is recorded against the confirmed episode
+   * (best-effort, AFTER the order is placed — a write failure never
+   * blocks the ship). Omitted by internal/non-patient callers.
+   */
+  affirmation?: RefillAffirmationInput;
 }
 
 export async function placeResupplyOrderForConversation(
@@ -187,13 +250,17 @@ export async function placeResupplyOrderForConversation(
   // ANY lookup error allows the confirmation through. We never strand
   // a legitimate reorder on our own eligibility bug. The guard runs
   // before the atomic claim so a blocked episode is left untouched
-  // (stays pending) for the CSR to work.
+  // (stays pending) for the CSR to work. The resolved entitlement is
+  // captured for reuse by the refill-window guard (3e) and the
+  // refill_confirmations stamp below.
+  let resolvedEntitlement: SkuEntitlement | null = null;
   if (await isFeatureEnabled("resupply.entitlement_enforcement", orgId)) {
     try {
       const entitlement = await resolveSkuEntitlement(supabase.raw(), {
         patientId: episode.patient_id,
         itemSku: rx.item_sku,
       });
+      resolvedEntitlement = entitlement;
       if (entitlement && !entitlement.eligible) {
         await raiseTooSoonAlert(supabase, episode.patient_id, entitlement);
         return {
@@ -296,6 +363,62 @@ export async function placeResupplyOrderForConversation(
     }
   }
 
+  // 3e. Refill-window guard (feature-flagged). Block a reorder that would
+  // SHIP earlier than the CMS DMEPOS ship window allows — more than 10
+  // days before the current supply's expected depletion (last dispense +
+  // the HCPCS supply duration). The entitlement guard (3b), when on, is
+  // stricter (it requires the FULL interval), so with both flags on the
+  // entitlement block already returned; this guard is what enforces the
+  // CMS ship-window floor when entitlement enforcement is off. Reuses the
+  // entitlement resolved in 3b when available, else resolves once here.
+  // FAIL OPEN: a first fill, an unmapped SKU, or ANY lookup error allows
+  // the confirmation through. Runs before the atomic claim so a blocked
+  // episode is left untouched (stays pending) for the CSR.
+  if (await isFeatureEnabled("resupply.refill_window_enforcement", orgId)) {
+    try {
+      const entitlement =
+        resolvedEntitlement ??
+        (await resolveSkuEntitlement(supabase.raw(), {
+          patientId: episode.patient_id,
+          itemSku: rx.item_sku,
+        }));
+      resolvedEntitlement = entitlement;
+      if (entitlement) {
+        const window = resolveRefillWindow({
+          lastFulfilledAt: entitlement.lastFulfilledAt,
+          supplyDurationDays: entitlement.minIntervalDays,
+          now: new Date(),
+        });
+        if (!window.shipAllowed) {
+          const block: RefillWindowBlock = {
+            hcpcsCode: entitlement.hcpcsCode,
+            expectedDepletionOn:
+              window.expectedDepletionOn?.toISOString().slice(0, 10) ?? null,
+            earliestShipOn:
+              window.earliestShipOn?.toISOString().slice(0, 10) ?? null,
+            daysUntilShip: window.daysUntilShip,
+          };
+          await raiseRefillWindowAlert(supabase, episode.patient_id, block);
+          return {
+            status: "too_early",
+            patientId: episode.patient_id,
+            episodeId: episode.id,
+            refillWindow: block,
+          };
+        }
+      }
+    } catch (err) {
+      logger.warn(
+        {
+          event: "resupply.refill_window.check_failed",
+          episodeId: episode.id,
+          errName: err instanceof Error ? err.name : "unknown",
+        },
+        "resupply: refill-window check failed; allowing confirmation (fail open)",
+      );
+    }
+  }
+
   // 4. Atomic claim: flip status from any non-terminal value to
   // `confirmed`, ONLY when it isn't already confirmed/fulfilled.
   // Two concurrent calls into this helper both try this same UPDATE
@@ -327,11 +450,56 @@ export async function placeResupplyOrderForConversation(
   // re-check existence after the claim and short-circuit if found.
   // The FOR-UPDATE-equivalent UPDATE above already eliminated the
   // common concurrent-race; this catches the misordered-write case.
+  // 6a. Snapshot the entitlement used to stamp the attestation's
+  // expected_depletion_on BEFORE inserting the new fulfillment. The flag
+  // is checked here (not just inside recordRefillConfirmation) because the
+  // ordering matters: resolveSkuEntitlement treats the most recent
+  // non-cancelled fulfillment as the last dispense, so resolving AFTER
+  // ensureFulfillments would read the order we are about to create and
+  // stamp the depletion date from the NEW supply instead of the expiring
+  // one the patient is attesting about. The guard block (3b/3e) already
+  // resolved it pre-claim when a guard flag was on; otherwise resolve once
+  // here, still before the insert. Best-effort — a resolve failure leaves
+  // the metadata null but never blocks recording the attestation itself.
+  let captureAffirmation = false;
+  if (input.affirmation) {
+    captureAffirmation = await isFeatureEnabled(
+      "resupply.refill_affirmation_capture",
+      orgId,
+    );
+    if (captureAffirmation && !resolvedEntitlement) {
+      try {
+        resolvedEntitlement = await resolveSkuEntitlement(supabase.raw(), {
+          patientId: episode.patient_id,
+          itemSku: rx.item_sku,
+        });
+      } catch {
+        resolvedEntitlement = null; // metadata-only; attestation still records
+      }
+    }
+  }
+
   const fulfillmentIds = await ensureFulfillments(supabase, {
     patientId: episode.patient_id,
     episodeId: episode.id,
     itemSku: rx.item_sku,
   });
+
+  // 6b. Record the beneficiary's Medicare/payer refill attestation as an
+  // audit-grade refill_confirmations row, using the pre-insert entitlement
+  // snapshot from 6a. Best-effort and AFTER the order is placed: the ship
+  // has already happened, so a write failure here must NEVER turn a
+  // successful confirm into a failure.
+  if (input.affirmation && captureAffirmation) {
+    await recordRefillConfirmation(supabase, {
+      patientId: episode.patient_id,
+      episodeId: episode.id,
+      prescriptionId: episode.prescription_id,
+      itemSku: rx.item_sku,
+      affirmation: input.affirmation,
+      entitlement: resolvedEntitlement,
+    });
+  }
 
   return {
     status: "ok",
@@ -339,6 +507,88 @@ export async function placeResupplyOrderForConversation(
     episodeId: episode.id,
     fulfillmentIds,
   };
+}
+
+/**
+ * Persist the beneficiary's refill attestation (continued use + supply
+ * running low) against the confirmed episode. Gated by the
+ * `resupply.refill_affirmation_capture` flag (ON by default). NEVER
+ * throws into the caller — the order is already placed; a failed proof
+ * write is logged for ops reconciliation, not surfaced to the patient.
+ *
+ * The caller has already confirmed the `resupply.refill_affirmation_capture`
+ * flag is on and resolved `entitlement` BEFORE the new fulfillment was
+ * inserted (so the stamped expected-depletion date reflects the expiring
+ * supply, not the order just created). `entitlement` may be null when the
+ * SKU is unmapped or the resolve failed — the attestation itself (the
+ * legally important part) is recorded regardless, with null HCPCS /
+ * depletion columns.
+ */
+async function recordRefillConfirmation(
+  supabase: OrgScopedClient,
+  args: {
+    patientId: string;
+    episodeId: string;
+    prescriptionId: string | null;
+    itemSku: string;
+    affirmation: RefillAffirmationInput;
+    entitlement: SkuEntitlement | null;
+  },
+): Promise<void> {
+  try {
+    const entitlement = args.entitlement;
+    let expectedDepletionOn: string | null = null;
+    if (entitlement) {
+      const window = resolveRefillWindow({
+        lastFulfilledAt: entitlement.lastFulfilledAt,
+        supplyDurationDays: entitlement.minIntervalDays,
+        now: new Date(),
+      });
+      expectedDepletionOn =
+        window.expectedDepletionOn?.toISOString().slice(0, 10) ?? null;
+    }
+
+    const { error } = await supabase.from("refill_confirmations").upsert(
+      {
+        patient_id: args.patientId,
+        episode_id: args.episodeId,
+        prescription_id: args.prescriptionId,
+        item_sku: args.itemSku,
+        hcpcs_code: entitlement?.hcpcsCode ?? null,
+        channel: args.affirmation.channel,
+        affirm_continued_use: args.affirmation.continuedUse,
+        affirm_supply_low: args.affirmation.supplyLow,
+        attestation_text:
+          args.affirmation.attestationText ?? REFILL_AFFIRMATION_STATEMENT,
+        requested_by: args.affirmation.requestedBy ?? "self",
+        expected_depletion_on: expectedDepletionOn,
+        confirmer_ip: args.affirmation.ip ?? null,
+        confirmer_user_agent: args.affirmation.userAgent ?? null,
+      },
+      { onConflict: "episode_id", ignoreDuplicates: true },
+    );
+    if (error) {
+      logger.warn(
+        {
+          event: "resupply.refill_confirmation.record_failed",
+          episodeId: args.episodeId,
+          // Code only — a PostgREST `message`/`details`/`hint` can echo
+          // row values (PHI). Treat every log line as world-readable.
+          errCode: error.code ?? null,
+        },
+        "resupply: failed to record refill attestation (non-fatal)",
+      );
+    }
+  } catch (err) {
+    logger.warn(
+      {
+        event: "resupply.refill_confirmation.record_failed",
+        episodeId: args.episodeId,
+        errName: err instanceof Error ? err.name : "unknown",
+      },
+      "resupply: failed to record refill attestation (non-fatal)",
+    );
+  }
 }
 
 async function ensureFulfillments(
@@ -474,6 +724,72 @@ async function raiseTooSoonAlert(
         errName: err instanceof Error ? err.name : "unknown",
       },
       "resupply: failed to raise too-soon CSR alert",
+    );
+  }
+}
+
+/**
+ * Best-effort CSR alert when the refill-window guard holds a reorder
+ * (would ship earlier than the CMS 10-day-before-depletion window).
+ * Mirrors `raiseTooSoonAlert`: NEVER throws into the caller, and de-dupes
+ * against the existing open alert via the `(patient_id, alert_type)
+ * WHERE status='open'` partial unique index so a repeat confirm doesn't
+ * 23505. Snapshot carries dates/counts only — no PHI.
+ */
+async function raiseRefillWindowAlert(
+  supabase: OrgScopedClient,
+  patientId: string,
+  block: RefillWindowBlock,
+): Promise<void> {
+  try {
+    const { data: existing } = await supabase
+      .from("csr_compliance_alerts")
+      .select("id")
+      .eq("patient_id", patientId)
+      .eq("alert_type", "resupply_refill_too_early")
+      .eq("status", "open")
+      .limit(1)
+      .maybeSingle();
+    if (existing) return;
+    const { error: insertAlertErr } = await supabase
+      .from("csr_compliance_alerts")
+      .insert({
+        patient_id: patientId,
+        alert_type: "resupply_refill_too_early",
+        severity: "warning",
+        summary:
+          `Reorder held — ${block.hcpcsCode} would ship too early under the ` +
+          `CMS refill window (no sooner than ${REFILL_SHIP_LEAD_DAYS} days ` +
+          `before the current supply runs out). Eligible to ship on ` +
+          `${block.earliestShipOn ?? "a later date"} ` +
+          `(${block.daysUntilShip} day${block.daysUntilShip === 1 ? "" : "s"}).`,
+        metric_snapshot: {
+          hcpcsCode: block.hcpcsCode,
+          expectedDepletionOn: block.expectedDepletionOn,
+          earliestShipOn: block.earliestShipOn,
+          daysUntilShip: block.daysUntilShip,
+          shipLeadDays: REFILL_SHIP_LEAD_DAYS,
+        } as unknown as Json,
+      });
+    if (insertAlertErr) {
+      logger.warn(
+        {
+          event: "resupply.refill_window.alert_failed",
+          // Code only — a PostgREST message/details/hint can echo row
+          // values (PHI). Treat every log line as world-readable.
+          errCode: insertAlertErr.code ?? null,
+          patientId,
+        },
+        "resupply: failed to raise refill-window CSR alert (non-fatal)",
+      );
+    }
+  } catch (err) {
+    logger.warn(
+      {
+        event: "resupply.refill_window.alert_failed",
+        errName: err instanceof Error ? err.name : "unknown",
+      },
+      "resupply: failed to raise refill-window CSR alert",
     );
   }
 }

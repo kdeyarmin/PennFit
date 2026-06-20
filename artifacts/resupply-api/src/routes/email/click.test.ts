@@ -253,10 +253,18 @@ describe("POST /email/click (signed action)", () => {
     );
     expect(res.status).toBe(200);
     expect(res.headers["content-type"]).toContain("text/html");
-    expect(placeOrderMock).toHaveBeenCalledWith({
-      conversationId: CONVERSATION_ID,
-      orgId: ORG_ID,
-    });
+    expect(placeOrderMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversationId: CONVERSATION_ID,
+        orgId: ORG_ID,
+        // The click carries the Medicare/payer refill attestation.
+        affirmation: expect.objectContaining({
+          channel: "email",
+          continuedUse: true,
+          supplyLow: true,
+        }),
+      }),
+    );
     const audits = logAuditMock.mock.calls.map((c) => c[0]);
     expect(audits.find((a) => a.action === "email.link.clicked")).toBeDefined();
     expect(

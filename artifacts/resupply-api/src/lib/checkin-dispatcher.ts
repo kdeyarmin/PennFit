@@ -49,8 +49,14 @@ import {
 } from "@workspace/resupply-telecom";
 
 import { isOutsideSmsSendWindow } from "./comm-prefs";
+import { createTenantSendgridClient } from "./email/tenant-sender.js";
 import { isFeatureEnabled } from "./feature-flags";
 import { logger } from "./logger";
+import {
+  resolveTenantSmsClientOptions,
+  resolveTenantVoiceFrom,
+} from "./messaging/tenant-telecom";
+import { resolveBrandingByOrgId } from "./tenant-branding";
 import { withRetry } from "./with-retry";
 
 export interface CheckinActor {
@@ -70,6 +76,15 @@ export interface DispatchOptions {
   actor: CheckinActor;
   /** Optional override for the public base URL the voice TwiML lives on. */
   publicBaseUrl?: string;
+  /**
+   * Tenant to sweep. The daily cron fans out across every active tenant
+   * (worker/jobs/onboarding-checkins.ts) and ALWAYS passes an explicit
+   * orgId. Left optional only for the admin "Run now" route, which has no
+   * tenant context and falls back to the seed org for back-compat. Also
+   * keys the single-flight guard so two different tenants never collapse
+   * into one in-flight run.
+   */
+  orgId?: string;
 }
 
 export interface DispatchSummary {
@@ -125,24 +140,49 @@ const ALL_CHANNELS: CheckinAttemptChannel[] = ["email", "sms", "voice"];
 // after a crash between the vendor send and the stamp write; those
 // remain bounded by the per-row `.is(dayN_sent_at, null)` stamp and are
 // tracked as a follow-up (a claim-before-send reorder).
-let inFlightDispatch: Promise<DispatchSummary> | null = null;
+// Keyed by tenant so a multi-tenant fan-out (one in-flight run per org)
+// doesn't collapse into a single shared promise — org-B's call must not
+// receive org-A's result. Callers with no orgId (admin "Run now" pre-
+// fan-out) share the "__seed__" key, preserving the original single-flight
+// behaviour for that path.
+const inFlightDispatch = new Map<string, Promise<DispatchSummary>>();
 
 export function dispatchDueCheckins(
   opts: DispatchOptions,
 ): Promise<DispatchSummary> {
-  if (inFlightDispatch) return inFlightDispatch;
+  const key = opts.orgId ?? "__seed__";
+  const existing = inFlightDispatch.get(key);
+  if (existing) return existing;
   const run = runDueCheckins(opts).finally(() => {
-    inFlightDispatch = null;
+    inFlightDispatch.delete(key);
   });
-  inFlightDispatch = run;
+  inFlightDispatch.set(key, run);
   return run;
 }
 
 async function runDueCheckins(opts: DispatchOptions): Promise<DispatchSummary> {
-  // Control Center feature gate. Returns the same zeroed envelope as
-  // a no-active-journeys scan so the admin "send-due" route and the
-  // cron worker both see "nothing to do" instead of an error.
-  if (!(await isFeatureEnabled("patient_onboarding.dispatcher"))) {
+  // Resolve the tenant for the file-local worker pattern. The cron passes
+  // an explicit orgId (multi-tenant fan-out); the admin "Run now" route
+  // passes none and falls back to the seed org. An injected client (test
+  // seam) is bound to the scoped facade so the body uniformly uses `.from()`.
+  // A missing org degrades to the same zeroed envelope the feature-gate-off
+  // branch returns ("nothing to do").
+  const orgId = opts.orgId ?? (await resolveSeedOrgId());
+  if (!orgId) {
+    return {
+      attempted: 0,
+      delivered: 0,
+      failed: 0,
+      skippedNoContact: 0,
+      completedJourneys: 0,
+      remaining: 0,
+    };
+  }
+
+  // Control Center feature gate, per tenant. Returns the same zeroed
+  // envelope as a no-active-journeys scan so the admin "send-due" route
+  // and the cron worker both see "nothing to do" instead of an error.
+  if (!(await isFeatureEnabled("patient_onboarding.dispatcher", orgId))) {
     return {
       attempted: 0,
       delivered: 0,
@@ -155,21 +195,6 @@ async function runDueCheckins(opts: DispatchOptions): Promise<DispatchSummary> {
 
   const now = opts.asOf ?? new Date();
   const cap = opts.cap ?? DEFAULT_CAP;
-  // Resolve the tenant for the file-local worker pattern. An injected
-  // client (test seam) is bound to the scoped facade so the body
-  // uniformly uses `.from()`. A missing org degrades to the same zeroed
-  // envelope the feature-gate-off branch returns ("nothing to do").
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) {
-    return {
-      attempted: 0,
-      delivered: 0,
-      failed: 0,
-      skippedNoContact: 0,
-      completedJourneys: 0,
-      remaining: 0,
-    };
-  }
   const supabase = getOrgScopedClient(orgId, opts.supabase);
 
   // PostgREST has no JOIN. Fetch active journeys + every patient we
@@ -282,7 +307,7 @@ async function runDueCheckins(opts: DispatchOptions): Promise<DispatchSummary> {
   // Build clients lazily — a missing vendor secret should NOT block
   // attempts on other channels. We track availability so the per-row
   // loop emits `skipped_not_configured` rather than throwing.
-  const clients = buildClients(opts.publicBaseUrl);
+  const clients = await buildClients(orgId, opts.publicBaseUrl);
 
   let attempted = 0;
   let delivered = 0;
@@ -537,11 +562,20 @@ async function sendEmail(
   }
   const greeting = greetingFor(row.firstName);
   try {
+    // Brand the day-copy to the tenant's storefront name (seed → "PennPaps",
+    // a no-op). Plain-text subject/body take the raw name; the HTML body
+    // takes an HTML-escaped name so a tenant DBA like "Smith & Sons" can't
+    // re-introduce raw markup (htmlBodyForDay strips <>& from its own inputs
+    // specifically to keep the template well-formed).
+    const brand = (s: string): string =>
+      s.split("PennPaps").join(clients.brandName);
+    const brandHtml = (s: string): string =>
+      s.split("PennPaps").join(htmlEscape(clients.brandName));
     const r = await clients.sg.sendEmail({
       to: row.email,
-      subject: subjectForDay(day),
-      text: textBodyForDay(day, greeting),
-      html: htmlBodyForDay(day, greeting),
+      subject: brand(subjectForDay(day)),
+      text: brand(textBodyForDay(day, greeting)),
+      html: brandHtml(htmlBodyForDay(day, greeting)),
       customArgs: { kind: "onboarding_checkin", day },
     });
     return {
@@ -584,7 +618,11 @@ async function sendSms(
       () =>
         clients.sms!.client.sendSms({
           to: row.phoneE164!,
-          body: smsBodyForDay(day, greetingFor(row.firstName)),
+          body: smsBodyForDay(
+            day,
+            greetingFor(row.firstName),
+            clients.brandName,
+          ),
           // No status callback URL — onboarding SMS attempts are tracked
           // in patient_checkin_attempts, not the conversations table.
           statusCallbackUrl: "",
@@ -762,12 +800,23 @@ interface BuiltClients {
     from: string;
     publicBaseUrl: string;
   } | null;
+  /** Tenant storefront brand for the SMS/voice day-copy (seed → "PennPaps"). */
+  brandName: string;
 }
 
-function buildClients(publicBaseUrlOverride?: string): BuiltClients {
+async function buildClients(
+  orgId: string,
+  publicBaseUrlOverride?: string,
+): Promise<BuiltClients> {
+  // The tenant's storefront brand threads into the SMS/voice day-copy so a
+  // second tenant's patients see/hear their own name (seed → "PennPaps").
+  const brandName = (await resolveBrandingByOrgId(orgId)).storefrontName;
+
   let sg: BuiltClients["sg"] = null;
   try {
-    sg = createSendgridClient();
+    // Send under the tenant's own From identity when configured (G6);
+    // falls back to the platform default otherwise.
+    sg = await createTenantSendgridClient(orgId);
   } catch (err) {
     if (!(err instanceof EmailConfigError)) {
       logger.warn({ err }, "sendgrid client construction failed");
@@ -779,14 +828,28 @@ function buildClients(publicBaseUrlOverride?: string): BuiltClients {
   const authToken = process.env["TWILIO_AUTH_TOKEN"];
   const phoneNumber = process.env["TWILIO_PHONE_NUMBER"];
   const messagingServiceSid = process.env["TWILIO_MESSAGING_SERVICE_SID"];
-  if (accountSid && authToken && (phoneNumber || messagingServiceSid)) {
+  // Send under the tenant's own number / Messaging Service when it has
+  // one (G7); falls back to the platform env default otherwise.
+  const tenantSms = await resolveTenantSmsClientOptions(orgId);
+  // A tenant can be routable via its own DB sender even when the platform env
+  // has no default from-number/Messaging Service — consider both. (Account
+  // creds stay platform-level: per-tenant Twilio subaccounts aren't built yet.)
+  if (
+    accountSid &&
+    authToken &&
+    (phoneNumber ||
+      messagingServiceSid ||
+      tenantSms.from ||
+      tenantSms.messagingServiceSid)
+  ) {
     try {
       sms = {
         client: createTwilioSmsClient({
           accountSid,
           authToken,
-          from: phoneNumber,
-          messagingServiceSid,
+          from: tenantSms.from ?? phoneNumber,
+          messagingServiceSid:
+            tenantSms.messagingServiceSid ?? messagingServiceSid,
         }),
       };
     } catch (err) {
@@ -803,11 +866,14 @@ function buildClients(publicBaseUrlOverride?: string): BuiltClients {
     (process.env["RAILWAY_PUBLIC_DOMAIN"]
       ? `https://${process.env["RAILWAY_PUBLIC_DOMAIN"]}`
       : "");
-  if (accountSid && authToken && phoneNumber && publicBaseUrl) {
+  // Call from the tenant's own voice caller-id when it has one (G7),
+  // else the platform default.
+  const tenantVoiceFrom = (await resolveTenantVoiceFrom(orgId)) ?? phoneNumber;
+  if (accountSid && authToken && tenantVoiceFrom && publicBaseUrl) {
     try {
       voice = {
         client: createTwilioClient({ accountSid, authToken }),
-        from: phoneNumber,
+        from: tenantVoiceFrom,
         publicBaseUrl: publicBaseUrl.replace(/\/$/, ""),
       };
     } catch (err) {
@@ -817,7 +883,7 @@ function buildClients(publicBaseUrlOverride?: string): BuiltClients {
     }
   }
 
-  return { sg, sms, voice };
+  return { sg, sms, voice, brandName };
 }
 
 // ───────────────────────────────────────────────────────────────────
@@ -856,6 +922,13 @@ export function stampFieldForDay(
     case "day90":
       return "day90_sent_at";
   }
+}
+
+/** HTML-escape a tenant-configured brand name before it is substituted
+ * into an already-rendered HTML email body, so a free-text DBA name
+ * containing `< > &` (e.g. "Smith & Sons") can't break the template. */
+export function htmlEscape(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 export function subjectForDay(label: OnboardingDayLabel): string {
@@ -922,38 +995,42 @@ export function htmlBodyForDay(
 export function smsBodyForDay(
   label: OnboardingDayLabel,
   greeting: string,
+  brandName: string,
 ): string {
   // SMS bodies are intentionally short (<160 chars where possible) so
   // they render as a single segment on most carriers.
   switch (label) {
     case "day1":
     case "day3":
-      return `${greeting}, this is PennPaps. You're a few days into therapy — common early issues are mask leaks and dry mouth. Reply HELP if anything is uncomfortable.`;
+      return `${greeting}, this is ${brandName}. You're a few days into therapy — common early issues are mask leaks and dry mouth. Reply HELP if anything is uncomfortable.`;
     case "day7":
-      return `${greeting}, PennPaps here — one week in! Most patients hit a comfort issue by now. Reply HELP and we'll triage.`;
+      return `${greeting}, ${brandName} here — one week in! Most patients hit a comfort issue by now. Reply HELP and we'll triage.`;
     case "day30":
-      return `${greeting}, PennPaps — you're 30 days in. Cushion seals degrade fast in the first month; reply YES for a replacement on file.`;
+      return `${greeting}, ${brandName} — you're 30 days in. Cushion seals degrade fast in the first month; reply YES for a replacement on file.`;
     case "day60":
-      return `${greeting}, PennPaps — 60 day check-in. If usage has dipped, reply HELP and we'll re-fit your mask.`;
+      return `${greeting}, ${brandName} — 60 day check-in. If usage has dipped, reply HELP and we'll re-fit your mask.`;
     case "day90":
-      return `${greeting}, PennPaps — 90 days! You've cleared the adherence threshold. Reply HELP if you'd like a follow-up call.`;
+      return `${greeting}, ${brandName} — 90 days! You've cleared the adherence threshold. Reply HELP if you'd like a follow-up call.`;
   }
 }
 
-export function voiceScriptForDay(label: OnboardingDayLabel): string {
+export function voiceScriptForDay(
+  label: OnboardingDayLabel,
+  brandName: string,
+): string {
   // Read aloud by Twilio's <Say> verb. Keep under ~30 seconds.
   switch (label) {
     case "day1":
     case "day3":
-      return "Hi, this is an automated check-in from Penn Paps. You are a few days into your therapy. Most patients run into a comfort issue this week. If anything feels off — mask leaks, dry mouth, or pressure feeling too strong — please call us back, or reply to the text message we just sent. Thank you.";
+      return `Hi, this is an automated check-in from ${brandName}. You are a few days into your therapy. Most patients run into a comfort issue this week. If anything feels off — mask leaks, dry mouth, or pressure feeling too strong — please call us back, or reply to the text message we just sent. Thank you.`;
     case "day7":
-      return "Hi, this is an automated check-in from Penn Paps. You are one week into your therapy. If you are running into any issues with comfort, mask seal, or the machine itself, please call us back. We can usually resolve it in a single call. Thank you.";
+      return `Hi, this is an automated check-in from ${brandName}. You are one week into your therapy. If you are running into any issues with comfort, mask seal, or the machine itself, please call us back. We can usually resolve it in a single call. Thank you.`;
     case "day30":
-      return "Hi, this is an automated check-in from Penn Paps. You are 30 days into your therapy. You may be due for a fresh mask cushion. Please call us back to confirm a replacement, or reply yes to the text message we just sent. Thank you.";
+      return `Hi, this is an automated check-in from ${brandName}. You are 30 days into your therapy. You may be due for a fresh mask cushion. Please call us back to confirm a replacement, or reply yes to the text message we just sent. Thank you.`;
     case "day60":
-      return "Hi, this is an automated check-in from Penn Paps. You are 60 days into your therapy. If your usage has dipped recently, a quick mask refit is usually the fix. Please call us back if anything has changed. Thank you.";
+      return `Hi, this is an automated check-in from ${brandName}. You are 60 days into your therapy. If your usage has dipped recently, a quick mask refit is usually the fix. Please call us back if anything has changed. Thank you.`;
     case "day90":
-      return "Hi, this is an automated check-in from Penn Paps. Congratulations — you are 90 days into your therapy. Insurance now considers you adherent. If you would like a follow-up call with one of our therapists, please call us back. Thank you.";
+      return `Hi, this is an automated check-in from ${brandName}. Congratulations — you are 90 days into your therapy. Insurance now considers you adherent. If you would like a follow-up call with one of our therapists, please call us back. Thank you.`;
   }
 }
 
