@@ -41,7 +41,7 @@ import {
   resolveTenantBaseUrl,
 } from "../tenant-branding.js";
 
-const DEFAULT_BASE_URL = "https://pennpaps.com";
+const DEFAULT_BASE_URL = "https://cmbreathe.com";
 
 export interface SendShippingNotificationEmailInput {
   /** Recipient email — required. Caller resolves; helper does not look up. */
@@ -61,7 +61,7 @@ export interface SendShippingNotificationEmailInput {
   /**
    * Optional override for the public base URL. Defaults to
    * SHOP_PUBLIC_BASE_URL env var, then RESUPPLY_VOICE_PUBLIC_BASE_URL,
-   * then https://pennpaps.com.
+   * then https://cmbreathe.com.
    */
   baseUrlOverride?: string;
   /**

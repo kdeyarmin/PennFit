@@ -82,6 +82,29 @@ EXCLUDES=(
   # (clearinghouse_credentials) IS read through getOrgScopedClient(orgId).
   # A reviewed global-table exception, like requireAdmin above.
   --glob '!**/lib/billing/identity-resolver.ts'
+  # Platform outreach (super-admin broadcast) operates EXCLUSIVELY on
+  # platform-GLOBAL tables — platform_contacts / platform_email_campaigns
+  # / platform_email_recipients (migration 0394) have NO org_id and belong
+  # to the platform operator, not any tenant. Every callsite is gated by
+  # requirePlatformAdmin (the cross-tenant tier above requireAdmin), which
+  # deliberately does NOT attach req.orgId. Like the dme_organization and
+  # organizations directory reads, these go through the unscoped
+  # service-role client by design; there is no tenant to scope to. Reviewed
+  # global-table exceptions.
+  --glob '!**/lib/platform-outreach/**'
+  --glob '!**/routes/platform/outreach-contacts.ts'
+  --glob '!**/routes/platform/outreach-campaigns.ts'
+  --glob '!**/routes/platform/unsubscribe.ts'
+  --glob '!**/worker/jobs/platform-email-tick.ts'
+  # The demo-lead nurture drip and its one-click unsubscribe operate on
+  # public.newsletter_subscribers — a single platform-GLOBAL marketing list
+  # keyed by email alone, with NO org_id (migration 0354; see the design
+  # note in routes/storefront/newsletter.ts). It is the platform's list, not
+  # any tenant's, so there is no org to scope to — the same global-table
+  # rationale as the platform-outreach entries above. The drip is a worker
+  # tick (no req.orgId) and the unsubscribe route is public/anonymous.
+  --glob '!**/worker/jobs/demo-drip.ts'
+  --glob '!**/routes/storefront/newsletter-unsubscribe.ts'
 )
 
 # Match a CALL (open paren) so bare `import { getSupabaseServiceRoleClient }`

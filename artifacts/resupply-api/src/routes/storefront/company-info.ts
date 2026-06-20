@@ -40,6 +40,9 @@ router.get("/company-info", async (req, res) => {
   res.set("Cache-Control", "public, max-age=300");
   res.json({
     name: info.name,
+    // Registered legal name — the storefront legal pages ("operated by …")
+    // render this per-tenant rather than hardcoding the seed tenant's.
+    legalName: info.legalName,
     phoneE164: info.supportPhoneE164,
     phoneDisplay: info.supportPhoneDisplay,
     supportEmail: info.supportEmail,

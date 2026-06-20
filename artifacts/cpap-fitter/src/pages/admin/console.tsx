@@ -196,6 +196,11 @@ const AdminAnalyticsPage = lazyWithRetry(() =>
     default: m.AdminAnalyticsPage,
   })),
 );
+const AdminReorderRemindersPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-reorder-reminders").then((m) => ({
+    default: m.AdminReorderRemindersPage,
+  })),
+);
 const AdminAnalyticsMarginPage = lazyWithRetry(() =>
   import("@/pages/admin/admin-analytics-margin").then((m) => ({
     default: m.AdminAnalyticsMarginPage,
@@ -364,6 +369,11 @@ const AdminIntegrationsPage = lazyWithRetry(() =>
 const AdminPacwarePage = lazyWithRetry(() =>
   import("@/pages/admin/admin-pacware").then((m) => ({
     default: m.AdminPacwarePage,
+  })),
+);
+const AdminShippingPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-shipping").then((m) => ({
+    default: m.AdminShippingPage,
   })),
 );
 const AdminSystemConfigurationPage = lazyWithRetry(() =>
@@ -571,6 +581,11 @@ const AdminBillingVerifyPage = lazyWithRetry(() =>
     default: m.AdminBillingVerifyPage,
   })),
 );
+const AdminInsuranceDiscoveryPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-insurance-discovery").then((m) => ({
+    default: m.AdminInsuranceDiscoveryPage,
+  })),
+);
 const AdminBillingEligibilityWorklistPage = lazyWithRetry(() =>
   import("@/pages/admin/admin-billing-eligibility-worklist").then((m) => ({
     default: m.AdminBillingEligibilityWorklistPage,
@@ -604,6 +619,21 @@ const AdminStorefrontBrandingPage = lazyWithRetry(() =>
 const AdminFaxSettingsPage = lazyWithRetry(() =>
   import("@/pages/admin/admin-fax-settings").then((m) => ({
     default: m.AdminFaxSettingsPage,
+  })),
+);
+const AdminPhoneSettingsPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-phone-settings").then((m) => ({
+    default: m.AdminPhoneSettingsPage,
+  })),
+);
+const AdminEmailSettingsPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-email-settings").then((m) => ({
+    default: m.AdminEmailSettingsPage,
+  })),
+);
+const AdminSetupChecklistPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-setup-checklist").then((m) => ({
+    default: m.AdminSetupChecklistPage,
   })),
 );
 const AdminBillingConfigClearinghousePage = lazyWithRetry(() =>
@@ -851,6 +881,10 @@ function AdminConsole() {
               component={AdminBillingVerifyPage}
             />
             <Route
+              path="/admin/billing/insurance-discovery"
+              component={AdminInsuranceDiscoveryPage}
+            />
+            <Route
               path="/admin/billing/prior-auths"
               component={AdminBillingPriorAuthsPage}
             />
@@ -881,6 +915,15 @@ function AdminConsole() {
               path="/admin/fax-settings"
               component={AdminFaxSettingsPage}
             />
+            <Route
+              path="/admin/phone-settings"
+              component={AdminPhoneSettingsPage}
+            />
+            <Route
+              path="/admin/email-settings"
+              component={AdminEmailSettingsPage}
+            />
+            <Route path="/admin/setup" component={AdminSetupChecklistPage} />
             <Route
               path="/admin/billing/config/clearinghouse"
               component={AdminBillingConfigClearinghousePage}
@@ -1086,6 +1129,10 @@ function AdminConsole() {
             <Route path="/admin/kpi-alerts" component={AdminKpiAlertsPage} />
             <Route path="/admin/analytics" component={AdminAnalyticsPage} />
             <Route
+              path="/admin/reorder-reminders"
+              component={AdminReorderRemindersPage}
+            />
+            <Route
               path="/admin/therapy-usage-report"
               component={AdminTherapyUsageReportPage}
             />
@@ -1169,6 +1216,7 @@ function AdminConsole() {
               component={AdminIntegrationsPage}
             />
             <Route path="/admin/pacware" component={AdminPacwarePage} />
+            <Route path="/admin/shipping" component={AdminShippingPage} />
             <Route
               path="/admin/system/configuration"
               component={AdminSystemConfigurationPage}

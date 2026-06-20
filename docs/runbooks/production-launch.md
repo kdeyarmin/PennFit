@@ -200,9 +200,9 @@ revoked still passes. Live-wire failures surface in §6.
 ## 4. Apply migrations against the production DB (5 min)
 
 The migrator is `pnpm --filter @workspace/resupply-db run migrate`. It
-applies every pending SQL file in `lib/resupply-db/drizzle/`, takes a
+applies every pending SQL file in `lib/resupply-db/migrations/`, takes a
 Postgres advisory lock for the duration so two deploys can't race, and
-records every applied file in `drizzle.resupply_migrations`.
+records every applied file in `migrations.resupply_migrations`.
 
 Copy the production Postgres connection string from Supabase →
 Project Settings → Database (the "Connection string" / "Direct
@@ -237,7 +237,7 @@ If it fails:
   (see `lib/resupply-db/scripts/migrate.mjs:189`), so any statement
   failure rolls the entire batch back. The DB is left exactly as it
   was before the migrator ran; nothing partial lands. Fix the
-  offending SQL in `lib/resupply-db/drizzle/<tag>.sql`, push, and
+  offending SQL in `lib/resupply-db/migrations/<tag>.sql`, push, and
   re-run — the prior migrations are still considered "to apply" and
   will replay cleanly.
 

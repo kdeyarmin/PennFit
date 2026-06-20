@@ -874,6 +874,17 @@ export function build837P(
 
   // SE — segment count is everything from ST (inclusive) to SE (inclusive).
   // We need to count segments emitted since the ST line for this transaction.
+  // Invariant: this builder emits exactly ONE ST/SE transaction per
+  // interchange, so `findIndex` below is the count anchor. If a future
+  // change ever emits a second ST, the index would silently undercount and
+  // produce a wrong SE01 — a SNIP-2 rejection the clearinghouse only
+  // surfaces hours later. Assert the invariant loudly here instead.
+  const stCount = segments.filter((s) => s.startsWith("ST*")).length;
+  if (stCount !== 1) {
+    throw new Error(
+      `837P builder expects exactly one ST segment per interchange, found ${stCount}`,
+    );
+  }
   const stIdx = segments.findIndex((s) => s.startsWith("ST*"));
   const segmentsInTxn = segments.length - stIdx + 1; // +1 for the SE we'll add
   segments.push(joinSegment(["SE", String(segmentsInTxn), stCtl]));

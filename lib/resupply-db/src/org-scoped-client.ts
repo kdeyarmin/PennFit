@@ -226,21 +226,50 @@ export function __resetSeedOrgIdForTests(): void {
  * archived tenants are intentionally excluded — their crons should not
  * run. NOT cached: tenant status changes (suspend/reactivate) must take
  * effect on the next tick without a process restart.
+ *
+ * PAGINATED: PostgREST caps an unbounded select at ~1000 rows. This is
+ * the fan-out source for EVERY per-tenant cron, so an implicit cap would
+ * SILENTLY drop tenants past it — their reminders/sweeps would just stop
+ * running. We page with `.range()` until a short page proves the table is
+ * exhausted rather than trusting a single unbounded read. A stable
+ * `.order("id")` is REQUIRED before paginating — without an ORDER BY,
+ * Postgres returns rows in an arbitrary order that can differ per request,
+ * so pages could overlap or skip rows (a tenant processed twice or missed).
+ * Any page-read error returns `[]` so the scheduler skips the WHOLE tick
+ * (and retries next tick) rather than fanning out to only some tenants.
  */
+/** Per-page window for the active-org scan. Below PostgREST's ~1000-row
+ *  implicit cap so each `.range()` call returns a full page. */
+const ACTIVE_ORG_PAGE_SIZE = 500;
+
 export async function listActiveOrgIds(
   client: ResupplySupabaseClient = getSupabaseServiceRoleClient(),
 ): Promise<string[]> {
   try {
     const supabase = client;
-    const { data, error } = await supabase
-      .schema("resupply")
-      .from("organizations")
-      .select("id")
-      .eq("status", "active");
-    if (error || !data) return [];
-    return data
-      .map((row) => (row as { id?: string }).id)
-      .filter((id): id is string => typeof id === "string" && id.length > 0);
+    const ids: string[] = [];
+    for (let from = 0; ; from += ACTIVE_ORG_PAGE_SIZE) {
+      const { data, error } = await supabase
+        .schema("resupply")
+        .from("organizations")
+        .select("id")
+        .eq("status", "active")
+        .order("id")
+        .range(from, from + ACTIVE_ORG_PAGE_SIZE - 1);
+      // Fail-soft on ANY page error: returning the ids gathered so far would
+      // silently fan out to only the tenants before the failed page and skip
+      // every one after it. Skipping the whole tick (it retries next run) is
+      // strictly safer than a partial, undetectable run.
+      if (error) return [];
+      if (!data || data.length === 0) break;
+      for (const row of data) {
+        const id = (row as { id?: string }).id;
+        if (typeof id === "string" && id.length > 0) ids.push(id);
+      }
+      // A short page means we've reached the end of the table.
+      if (data.length < ACTIVE_ORG_PAGE_SIZE) break;
+    }
+    return ids;
   } catch {
     return [];
   }

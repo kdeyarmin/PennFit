@@ -862,23 +862,25 @@ export function FloatingContactLauncher() {
                 aria-label="Contact options"
                 className="flex-1 overflow-y-auto p-2"
               >
-                <a
-                  href={`tel:${contact.phoneE164}`}
-                  className="flex items-center gap-3 rounded-lg px-3 py-2 hover:bg-secondary/40"
-                  data-testid="floating-contact-phone"
-                >
-                  <span className="h-9 w-9 rounded-lg bg-[hsl(var(--penn-navy)/0.10)] flex items-center justify-center">
-                    <Phone className="h-4 w-4 text-[hsl(var(--penn-navy))]" />
-                  </span>
-                  <span className="flex-1 min-w-0">
-                    <span className="block text-sm font-medium text-foreground">
-                      Call us
+                {contact.phoneE164 && (
+                  <a
+                    href={`tel:${contact.phoneE164}`}
+                    className="flex items-center gap-3 rounded-lg px-3 py-2 hover:bg-secondary/40"
+                    data-testid="floating-contact-phone"
+                  >
+                    <span className="h-9 w-9 rounded-lg bg-[hsl(var(--penn-navy)/0.10)] flex items-center justify-center">
+                      <Phone className="h-4 w-4 text-[hsl(var(--penn-navy))]" />
                     </span>
-                    <span className="block text-xs text-muted-foreground">
-                      {contact.phoneDisplay}
+                    <span className="flex-1 min-w-0">
+                      <span className="block text-sm font-medium text-foreground">
+                        Call us
+                      </span>
+                      <span className="block text-xs text-muted-foreground">
+                        {contact.phoneDisplay}
+                      </span>
                     </span>
-                  </span>
-                </a>
+                  </a>
+                )}
                 <a
                   href={`mailto:${contact.email}`}
                   className="flex items-center gap-3 rounded-lg px-3 py-2 hover:bg-secondary/40"

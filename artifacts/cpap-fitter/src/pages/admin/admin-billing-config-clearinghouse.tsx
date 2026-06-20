@@ -359,6 +359,48 @@ export function AdminBillingConfigClearinghousePage() {
         </div>
       </Card>
 
+      <Card title="Insurance discovery">
+        <p className="text-sm mb-3" style={{ color: "hsl(var(--ink-3))" }}>
+          Optional add-on. When enabled, the Insurance discovery page searches
+          Office Ally&rsquo;s payer network from a patient&rsquo;s demographics
+          to find active coverage when their insurance is unknown — or a
+          coverage on file came back inactive. It reuses the real-time API key
+          above (same Office Ally EDI account); only the endpoint differs. Enter
+          the discovery endpoint below or set{" "}
+          <code>OFFICE_ALLY_DISCOVERY_URL</code>.
+        </p>
+        <label className="flex items-center gap-2 text-sm mb-3">
+          <input
+            type="checkbox"
+            checked={body.discoveryEnabled}
+            onChange={(e) => {
+              setSaved(false);
+              setBody((p) => ({ ...p, discoveryEnabled: e.target.checked }));
+            }}
+          />
+          <span style={{ color: "hsl(var(--ink-2))" }}>
+            Enabled (allow insurance discovery searches)
+          </span>
+        </label>
+        <label className="block text-sm">
+          <span style={{ color: "hsl(var(--ink-2))" }}>
+            Discovery endpoint URL
+          </span>
+          <input
+            type="url"
+            className="mt-1 w-full rounded-md border px-2.5 py-1.5 text-sm"
+            style={INPUT_STYLE}
+            value={body.discoveryUrl ?? ""}
+            placeholder="https://edi.officeally.io/…"
+            onChange={(e) => {
+              setSaved(false);
+              const v = e.target.value.trim();
+              setBody((p) => ({ ...p, discoveryUrl: v === "" ? null : v }));
+            }}
+          />
+        </label>
+      </Card>
+
       <div className="flex flex-wrap items-center gap-3">
         <button
           type="button"

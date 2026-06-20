@@ -20,6 +20,7 @@ import {
   Moon,
 } from "lucide-react";
 import { useDocumentTitle } from "@/hooks/use-document-title";
+import { useCompanyContact } from "@/lib/contact";
 import { ShareArticle } from "@/components/share-article";
 import nasalPillowImg from "@/assets/masks/nasal-pillow.webp";
 import nasalImg from "@/assets/masks/nasal.webp";
@@ -110,9 +111,10 @@ const whyFp = [
 ];
 
 export function CpapMasksFisherPaykel() {
+  const c = useCompanyContact();
   useDocumentTitle(
     "Fisher & Paykel CPAP Masks",
-    "Fisher & Paykel CPAP masks at PennPaps — RollFit and AirPillow cushion technology designed in New Zealand. Featured: Evora, Brevida, Vitera.",
+    `Fisher & Paykel CPAP masks at ${c.name} — RollFit and AirPillow cushion technology designed in New Zealand. Featured: Evora, Brevida, Vitera.`,
   );
   const [, navigate] = useLocation();
 
@@ -333,7 +335,7 @@ export function CpapMasksFisherPaykel() {
             alarm.&rdquo;
           </blockquote>
           <div className="text-sm font-medium text-foreground/70">
-            — Verified PennPaps patient · Bryn Mawr, PA
+            — Verified {c.name} patient · Bryn Mawr, PA
           </div>
         </div>
       </div>
@@ -394,7 +396,7 @@ export function CpapMasksFisherPaykel() {
       <div className="w-full mb-12">
         <ShareArticle
           path="/cpap-masks/fisher-paykel"
-          title="Fisher & Paykel CPAP masks at PennPaps"
+          title={`Fisher & Paykel CPAP masks at ${c.name}`}
           blurb="Designed in New Zealand. RollFit and AirPillow cushion technology that follows you through the night. Best leak resistance for restless sleepers."
           testIdPrefix="share-fisher-paykel"
         />

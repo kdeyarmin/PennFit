@@ -234,7 +234,7 @@ export async function sendInsuranceLeadEmails(
   // Point the /insurance + /faq links at the tenant's own verified custom
   // domain when it has one (seed → pennpaps.com, unchanged).
   const baseUrl =
-    (await resolveTenantBaseUrl(payload.orgId)) ?? "https://pennpaps.com";
+    (await resolveTenantBaseUrl(payload.orgId)) ?? "https://cmbreathe.com";
   const team = await teamRecipient(payload.orgId);
   let notificationDelivered = false;
   let confirmationDelivered = false;

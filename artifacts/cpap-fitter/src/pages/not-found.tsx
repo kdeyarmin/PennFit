@@ -18,11 +18,13 @@ import {
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import { useRecentlyViewed } from "@/hooks/use-recently-viewed";
 import { useWishlist } from "@/lib/wishlist";
+import { useCompanyContact } from "@/lib/contact";
 
 export default function NotFound() {
+  const contact = useCompanyContact();
   useDocumentTitle(
     "Page not found",
-    "We couldn't find that page on PennPaps. Try the home page, the shop, or the mask catalog.",
+    `We couldn't find that page on ${contact.name}. Try the home page, the shop, or the mask catalog.`,
   );
   // Recovery hints — when the visitor has any localStorage signal of
   // prior shop activity, surface direct links back to it. The page
@@ -49,8 +51,8 @@ export default function NotFound() {
             Page Not Found
           </CardTitle>
           <CardDescription className="text-base max-w-md mx-auto">
-            The page you're looking for doesn't exist on PennPaps. Try the home
-            page, the supply shop, or the mask fitter.
+            The page you're looking for doesn't exist on {contact.name}. Try the
+            home page, the supply shop, or the mask fitter.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col sm:flex-row gap-3 justify-center pt-4 pb-8 flex-wrap">
@@ -153,8 +155,8 @@ export default function NotFound() {
       </div>
 
       <p className="text-center text-xs text-muted-foreground mt-6">
-        Need help? Contact PennPaps for help with mask fittings, supply orders,
-        insurance, or resupply.
+        Need help? Contact {contact.name} for help with mask fittings, supply
+        orders, insurance, or resupply.
       </p>
     </div>
   );

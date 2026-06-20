@@ -212,6 +212,16 @@ describe("POST /sms/inbound", () => {
   it("dispatches confirm intent → places order, closes, audits ok", async () => {
     setMessagingEnv();
     stageKnownPatientFlow();
+    // Last outbound prompt ASKED the attestation (default reminder copy),
+    // so the YES records the refill attestation.
+    stageSupabaseResponse("messages", "select", {
+      data: {
+        body:
+          "Hi Sam, it's PennPaps. Time for a CPAP refill. Reply YES if you " +
+          "still use it and are low on supplies, EDIT to change address, " +
+          "STOP to opt out.",
+      },
+    });
     placeOrderMock.mockResolvedValue({
       status: "ok",
       episodeId: EPISODE_ID,
@@ -232,9 +242,17 @@ describe("POST /sms/inbound", () => {
 
     expect(res.status).toBe(200);
     expect(res.text).toMatch(/<Response><Message>.*refill is on its way/);
-    expect(placeOrderMock).toHaveBeenCalledWith({
-      conversationId: CONVERSATION_ID,
-    });
+    expect(placeOrderMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversationId: CONVERSATION_ID,
+        // The YES reply carries the Medicare/payer refill attestation.
+        affirmation: expect.objectContaining({
+          channel: "sms",
+          continuedUse: true,
+          supplyLow: true,
+        }),
+      }),
+    );
 
     const audits = logAuditMock.mock.calls.map((c) => c[0]);
     const intentAudit = audits.find(
@@ -251,6 +269,41 @@ describe("POST /sms/inbound", () => {
     for (const a of audits) {
       expect(JSON.stringify(a.metadata)).not.toContain("YES");
     }
+  });
+
+  it("confirm on a legacy/custom prompt that did NOT ask the attestation places the order WITHOUT recording a (false) attestation", async () => {
+    setMessagingEnv();
+    stageKnownPatientFlow();
+    // Last outbound prompt was a custom body that did not ask the
+    // continued-use / running-low questions → no attestation captured.
+    stageSupabaseResponse("messages", "select", {
+      data: {
+        body: "Your CPAP refill is ready. Reply YES to ship, STOP to opt out.",
+      },
+    });
+    placeOrderMock.mockResolvedValue({
+      status: "ok",
+      episodeId: EPISODE_ID,
+      patientId: PATIENT_ID,
+      fulfillmentIds: ["f1"],
+    });
+
+    const res = await request(makeApp())
+      .post("/resupply-api/sms/inbound")
+      .type("form")
+      .send({
+        From: FROM_PHONE,
+        To: "+12158675309",
+        Body: "YES",
+        MessageSid: "SM_yes_legacy",
+        NumMedia: "0",
+      });
+
+    expect(res.status).toBe(200);
+    // Order still placed — the YES is a valid order confirmation.
+    expect(placeOrderMock).toHaveBeenCalledTimes(1);
+    // ...but with NO affirmation, so no false attestation is recorded.
+    expect(placeOrderMock.mock.calls[0][0].affirmation).toBeUndefined();
   });
 
   it("dispatches confirm intent → coverage_blocked holds for CSR, audits blocked_coverage", async () => {

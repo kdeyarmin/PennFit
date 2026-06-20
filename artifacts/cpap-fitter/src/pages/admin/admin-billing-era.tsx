@@ -31,7 +31,7 @@ const MAX_FILE_BYTES = 4 * 1024 * 1024;
 
 function statusTone(status: string): string {
   // era_files.status is one of: "processed" | "partial" | "rejected"
-  // (see lib/resupply-db/drizzle/0118_insurance_claims.sql).
+  // (see lib/resupply-db/migrations/0118_insurance_claims.sql).
   if (status === "processed") return "#15803d";
   if (status === "partial") return "#b45309";
   if (status === "rejected") return "#b91c1c";

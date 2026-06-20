@@ -1,10 +1,7 @@
 // @vitest-environment jsdom
 //
-// Tests for createPaymentCheckoutSession after the PR removed csrfHeader()
-// and the X-PF-CSRF header injection. The function now posts to
-// /api/me/payments/checkout-session WITHOUT the X-PF-CSRF header.
-//
-// Also covers the formatMoneyCents utility.
+// Tests for the patient billing API wrapper, including CSRF wiring for
+// signed-in /api/me/* mutations and the formatMoneyCents utility.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
@@ -25,6 +22,13 @@ import {
 const ORIGINAL_FETCH = globalThis.fetch;
 let fetchMock: Mock;
 
+function setDocumentCookie(raw: string): void {
+  Object.defineProperty(document, "cookie", {
+    configurable: true,
+    get: () => raw,
+  });
+}
+
 beforeEach(() => {
   fetchMock = vi.fn();
   globalThis.fetch = fetchMock as unknown as typeof fetch;
@@ -33,6 +37,7 @@ beforeEach(() => {
 afterEach(() => {
   globalThis.fetch = ORIGINAL_FETCH;
   vi.restoreAllMocks();
+  setDocumentCookie("");
 });
 
 // ── createPaymentCheckoutSession — request wiring ───────────────────────────
@@ -106,10 +111,22 @@ describe("createPaymentCheckoutSession — request wiring", () => {
     expect(headers["Accept"]).toBe("application/json");
   });
 
-  // Regression: the PR removed csrfHeader() and X-PF-CSRF injection from
-  // createPaymentCheckoutSession. This test pins that it is GONE so no
-  // accidental re-introduction sends the header from this call.
-  it("does NOT send X-PF-CSRF header (csrfHeader removed in PR)", async () => {
+  it("sends X-PF-CSRF header when the readable CSRF cookie is present", async () => {
+    setDocumentCookie("pf_csrf=checkout-csrf; other=ignored");
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => VALID_RESPONSE,
+    });
+
+    await createPaymentCheckoutSession({ allocations: [] });
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const headers = init.headers as Record<string, string>;
+    expect(headers["X-PF-CSRF"]).toBe("checkout-csrf");
+  });
+
+  it("does not throw or send X-PF-CSRF when the CSRF cookie is malformed", async () => {
+    setDocumentCookie("pf_csrf=%ZZ");
     fetchMock.mockResolvedValueOnce({
       ok: true,
       json: async () => VALID_RESPONSE,

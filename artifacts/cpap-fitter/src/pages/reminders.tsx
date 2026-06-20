@@ -31,6 +31,7 @@ import {
   todayIso,
   type ReminderSku,
 } from "@/lib/reminder-defaults";
+import { BrandName, LegalName } from "@/components/company-contact";
 
 const PAGE_TITLE = "Supply replacement reminders";
 
@@ -173,15 +174,16 @@ export function Reminders() {
                 <AlertTitle>Could not send the manage email</AlertTitle>
                 <AlertDescription>
                   Email delivery isn't configured right now — please reach out
-                  to Penn Home Medical Supply directly so we can send you your
-                  manage link.
+                  to <LegalName /> directly so we can send you your manage link.
                 </AlertDescription>
               </Alert>
             )}
 
             <div className="flex flex-wrap gap-3">
               <Link href="/">
-                <Button variant="ghost">Back to PennPaps</Button>
+                <Button variant="ghost">
+                  Back to <BrandName />
+                </Button>
               </Link>
             </div>
           </CardContent>

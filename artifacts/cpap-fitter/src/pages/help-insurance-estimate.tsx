@@ -52,10 +52,7 @@ const steps: HelpStep[] = [
       </>,
     ],
     shot: (
-      <Screenshot
-        url="pennpaps.com/insurance/estimate"
-        caption="A few plan details on the left produce an instant cost estimate on the right."
-      >
+      <Screenshot caption="A few plan details on the left produce an instant cost estimate on the right.">
         <InsuranceEstimateShot />
       </Screenshot>
     ),
@@ -106,7 +103,7 @@ export function HelpInsuranceEstimate() {
       title="Get an insurance estimate"
       Icon={ShieldCheck}
       minutes="2 min"
-      metaDescription="How to use the PennPaps insurance estimate tool: enter your provider, plan type, and deductible status to see a projected out-of-pocket cost for CPAP supplies."
+      metaDescription="How to use the insurance estimate tool: enter your provider, plan type, and deductible status to see a projected out-of-pocket cost for CPAP supplies."
       intro="Want to know what you'll pay before you order? The insurance estimate tool projects your out-of-pocket cost from a few plan details in about two minutes."
       summary={
         <>

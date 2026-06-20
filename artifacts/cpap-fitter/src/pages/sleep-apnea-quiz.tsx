@@ -20,6 +20,8 @@ import {
   User,
 } from "lucide-react";
 import { submitQuizLead } from "@/lib/shop-api";
+import { useCompanyContact } from "@/lib/contact";
+import { BrandName } from "@/components/company-contact";
 
 // Sleep-apnea self-screener.
 //
@@ -256,8 +258,9 @@ function bandFor(score: number): RiskBand {
 const SECTION_ORDER: Section[] = ["sleep", "health", "about"];
 
 export function SleepApneaQuiz() {
+  const c = useCompanyContact();
   useDocumentTitle(
-    "Sleep Apnea Self-Screener — PennPaps",
+    `Sleep Apnea Self-Screener — ${c.name}`,
     "An 8-question STOP-BANG screener that estimates your risk of obstructive sleep apnea and helps you decide whether to talk to a physician.",
   );
 
@@ -324,9 +327,9 @@ export function SleepApneaQuiz() {
           </p>
           <p className="text-muted-foreground leading-relaxed">
             Only a qualified physician can diagnose obstructive sleep apnea,
-            typically with a take-home or in-lab sleep study. PennPaps fits and
-            supplies CPAP equipment once your physician has prescribed it — we
-            don't diagnose or prescribe.
+            typically with a take-home or in-lab sleep study. <BrandName /> fits
+            and supplies CPAP equipment once your physician has prescribed it —
+            we don't diagnose or prescribe.
           </p>
         </div>
       </section>

@@ -60,7 +60,7 @@ rg -n '@sendgrid/mail|new MailService|sgMail|setApiKey\(' artifacts lib --glob '
 # R7 global @theme block in admin.css (must NOT exist), and admin surfaces missing the scope wrapper
 rg -n '@theme' artifacts/cpap-fitter/src/admin.css
 
-# Conventions: direct pg outside the db package, drizzle in the domain pkg
+# Conventions: direct pg outside the db package, drizzle-orm in the domain pkg
 rg -nP "from\s+['\"]pg['\"]|require\(\s*['\"]pg['\"]\s*\)" artifacts lib --glob '!lib/resupply-db/**'
 rg -n 'drizzle-orm|drizzle-kit|drizzle-zod' lib/resupply-domain lib/resupply-integrations*
 
@@ -101,10 +101,21 @@ degraded responses (e.g. delivery-failures returns
 `auditEventsUnavailable: true`); the `/readyz` DB probe uses
 `feature_flags`, not `audit_log`.
 
-### R6 — One From address
+### R6 — One From per tenant, through the shared client
 Every outbound email funnels through `lib/resupply-email`'s
-`createSendgridClient()`; `SENDGRID_FROM_EMAIL` is `info@pennpaps.com`.
-Don't construct a second SendGrid client or hardcode a different From.
+`createSendgridClient()`; don't construct a second SendGrid client or
+hardcode a From. The **platform default From is the CareMetric Breathe
+identity `noreply@cmbreathe.com`** (`DEFAULT_SENDGRID_FROM_EMAIL`), NOT the
+seed tenant — Penn pins its own `info@pennpaps.com` via
+`organizations.from_email` (migration 0377). Patient/user-facing senders
+that know their `orgId` use `createTenantSendgridClient(orgId)` /
+`resolveTenantSender(orgId)` (tenant From, platform fallback);
+internal/ops/auth mail stays on the platform default. Same platform-vs-tenant
+split for SMS/voice/fax (`resolveTenantSmsFrom`/`resolveTenantVoiceFrom`/
+`resolveTenantFaxFrom`) and for brand copy (`applyCompanyIdentityToText` /
+`resolveBrandingByOrgId`). The `company-info.ts` unconfigured fallback and
+patient-facing link defaults are the platform (`CareMetric Breathe` /
+`https://cmbreathe.com`), never PennPaps.
 
 ### R7 — Admin theme stays scoped
 Admin tokens (`--penn-navy`, …) live in `artifacts/cpap-fitter/src/admin.css`
@@ -123,7 +134,7 @@ Enforced by `artifacts/cpap-fitter/src/admin.scope.test.ts`.
   `drizzle-orm`/`drizzle-kit`; no direct `pg` outside `lib/resupply-db`
   (a few legacy worker paths + `migrate.mjs` are the only exceptions).
 - **Zod at every HTTP boundary** in `resupply-api`.
-- **Don't hand-edit `lib/resupply-db/drizzle/meta/_journal.json`** — frozen
+- **Don't hand-edit `lib/resupply-db/migrations/meta/_journal.json`** — frozen
   at 52 entries; splicing it can re-apply/skip prod migrations.
 - **Service boot is decoupled from the worker.** Don't `process.exit` on
   worker-boot failure and don't point the health check at `/readyz`

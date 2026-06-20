@@ -667,17 +667,29 @@ router.get(
     let query = supabase
       .from("patient_packets")
       .select(
-        "id, patient_id, title, status, recipient_name, recipient_email, sent_at, completed_at, expires_at, created_at, chart_document_id, chart_filed_at",
-      )
-      .order("created_at", { ascending: false })
-      .limit(100);
-    if (
-      status &&
-      ["draft", "sent", "viewed", "completed", "voided", "expired"].includes(
-        status,
-      )
-    ) {
-      query = query.eq("status", status);
+        "id, patient_id, title, status, recipient_name, recipient_email, sent_at, first_viewed_at, completed_at, expires_at, created_at, reminder_count, last_reminded_at, chart_document_id, chart_filed_at",
+      );
+    if (status === "outstanding") {
+      // The "not yet returned" worklist: packets still awaiting a signature
+      // (sent OR opened-but-unsigned), oldest first so the most overdue
+      // paperwork surfaces at the top. Capped higher than the recent-list
+      // view since this is the actionable backlog an operator works through;
+      // a `?limit=` override (1..1000) lets a large backlog be paged.
+      const limit = Math.min(Math.max(Number(req.query.limit) || 500, 1), 1000);
+      query = query
+        .in("status", ["sent", "viewed"])
+        .order("sent_at", { ascending: true, nullsFirst: false })
+        .limit(limit);
+    } else {
+      query = query.order("created_at", { ascending: false }).limit(100);
+      if (
+        status &&
+        ["draft", "sent", "viewed", "completed", "voided", "expired"].includes(
+          status,
+        )
+      ) {
+        query = query.eq("status", status);
+      }
     }
     const { data, error } = await query;
     if (error) throw error;
@@ -705,7 +717,7 @@ router.get(
     const { data, error } = await supabase
       .from("patient_packets")
       .select(
-        "id, patient_id, title, status, recipient_name, recipient_email, sent_at, completed_at, expires_at, created_at, chart_document_id, chart_filed_at",
+        "id, patient_id, title, status, recipient_name, recipient_email, sent_at, first_viewed_at, completed_at, expires_at, created_at, reminder_count, last_reminded_at, chart_document_id, chart_filed_at",
       )
       .eq("patient_id", parsed.data.id)
       .order("created_at", { ascending: false })

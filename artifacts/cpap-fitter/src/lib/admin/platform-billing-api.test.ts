@@ -272,6 +272,18 @@ describe("platform-billing-api", () => {
     );
   });
 
+  test("fetchPlatformBillingActivity scopes the feed to a tenant when given", async () => {
+    fetchMock.mockResolvedValue(okJson({ activity: [] }));
+
+    const tenantId = "3f2504e0-4f89-41d3-9a0c-0305e82c3301";
+    await fetchPlatformBillingActivity(10, tenantId);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/resupply-api/platform/billing/activity?limit=10&tenantId=${tenantId}`,
+      expect.objectContaining({ credentials: "include" }),
+    );
+  });
+
   test("throws ApiError with parsed server details for non-OK responses", async () => {
     fetchMock.mockResolvedValue(
       errorJson(403, { error: "platform_admin_required" }),

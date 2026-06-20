@@ -17,6 +17,7 @@
 //     phone number plaintext, never the admin's typed text.
 
 import { normalizeE164 } from "@workspace/resupply-domain";
+import type { ReminderVariant } from "@workspace/resupply-messaging";
 import {
   getOrgScopedClient,
   resolveSeedOrgId,
@@ -48,11 +49,67 @@ export interface SendReminderSmsInput {
   episodeId?: string;
   /**
    * Optional override for the message body. When absent we render a
-   * default reminder template. Admin-typed bodies are passed through
-   * verbatim to Twilio and stored as-is in `messages.body`.
+   * default reminder template (selected by `variant`). Admin-typed bodies
+   * are passed through verbatim to Twilio and stored as-is in
+   * `messages.body`.
    */
   body?: string;
+  /**
+   * Which escalation-ladder touch this is — picks the default body when no
+   * explicit `body` override is given. Ignored when `body` is set. Defaults
+   * to "initial" (the first touch's copy, unchanged).
+   */
+  variant?: ReminderVariant;
   actor: SendActor;
+}
+
+/**
+ * Default reminder SMS body per escalation step. All three are kept under
+ * one GSM-7 segment (160 chars for a typical name/practice) and free of
+ * UCS-2-triggering characters (em-dash, curly quotes, ellipsis) — Twilio
+ * silently switches the whole message to UCS-2 (70-char segments) on a
+ * single non-GSM-7 character, tripling the per-message cost at scale.
+ * "initial" is byte-for-byte the historical copy.
+ */
+export function defaultReminderSmsBody(
+  variant: ReminderVariant,
+  firstName: string,
+  practiceName: string,
+): string {
+  // Each YES is the patient's Medicare/payer refill attestation, so the
+  // copy asks them to confirm BOTH that they still use the equipment AND
+  // that they are running low before replying YES (see
+  // REFILL_AFFIRMATION_STATEMENT). Kept GSM-7-safe (no em-dash, curly
+  // quotes, or ellipsis) so Twilio doesn't upgrade the whole message to
+  // UCS-2 and triple the per-segment cost.
+  switch (variant) {
+    case "followup":
+      return `Hi ${firstName}, ${practiceName} checking back. Reply YES if you still use your CPAP and are low on supplies, EDIT to change address, STOP to opt out.`;
+    case "final":
+      return `Last reminder, ${firstName}: reply YES if you still use your CPAP and are low on supplies and ${practiceName} ships today, or STOP to opt out.`;
+    case "initial":
+    default:
+      return `Hi ${firstName}, it's ${practiceName}. Time for a CPAP refill. Reply YES if you still use it and are low on supplies, EDIT to change address, STOP to opt out.`;
+  }
+}
+
+/**
+ * True when an outbound SMS body asked the patient to confirm the two
+ * Medicare/payer refill attestations (still using the equipment AND
+ * running low) before replying YES — i.e. the body is one of the
+ * `defaultReminderSmsBody` variants, not a custom/admin/playbook body or
+ * older copy that didn't ask. The inbound `YES` handler uses this so it
+ * only records a `refill_confirmations` attestation when the prompt the
+ * patient was actually replying to asked for it — never manufacturing a
+ * false attestation for a legacy or custom prompt.
+ *
+ * Kept here, beside `defaultReminderSmsBody`, so the question wording and
+ * its detector move together; `send-sms.variants.test.ts` pins that every
+ * default variant satisfies it.
+ */
+export function smsAsksRefillAttestation(body: string): boolean {
+  const b = body.toLowerCase();
+  return b.includes("still use") && b.includes("low on supplies");
 }
 
 export async function sendReminderSms(
@@ -200,15 +257,16 @@ export async function sendReminderSms(
     }
   };
 
-  // Default body: kept under the 160-char GSM-7 segment cap AND
-  // free of UCS-2-triggering characters (em-dash, curly quotes,
-  // ellipsis). Twilio silently switches the whole message to
-  // UCS-2 (70-char segments) if it sees a non-GSM-7 character, so
-  // a single em-dash quietly turns every reminder into a 3-segment
-  // charge — at high outreach volume that's real money.
+  // Default body: variant-selected, GSM-7-safe (see defaultReminderSmsBody).
+  // An explicit `input.body` override (admin-typed / outreach playbook)
+  // still wins and is passed through verbatim.
   const messageBody =
     input.body ??
-    `Hi ${patient.legal_first_name ?? "there"}, it's ${cfg.practiceName}. You're due for a CPAP refill. Reply YES to ship to the address on file, EDIT to change it, or STOP to opt out.`;
+    defaultReminderSmsBody(
+      input.variant ?? "initial",
+      patient.legal_first_name ?? "there",
+      cfg.practiceName,
+    );
 
   const statusCallbackUrl = `${cfg.publicBaseUrl}/resupply-api/sms/status-callback?conversationId=${encodeURIComponent(
     conversationId,

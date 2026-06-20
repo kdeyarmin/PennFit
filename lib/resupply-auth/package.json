@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@workspace/resupply-db": "workspace:*",
+    "@workspace/resupply-email": "workspace:*",
     "argon2": "^0.44.0",
     "express": "^5",
     "express-rate-limit": "^8.5.2",

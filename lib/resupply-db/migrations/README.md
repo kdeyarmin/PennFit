@@ -1,9 +1,11 @@
-# `lib/resupply-db/drizzle/` — migration directory
+# `lib/resupply-db/migrations/` — migration directory
 
-> **Note:** Drizzle has been fully retired. New migrations are hand-written SQL
-> applied by `scripts/migrate.mjs` via raw `pg`. The directory and the on-DB
-> `drizzle.resupply_migrations` history table keep their Drizzle-era names so
-> the existing production rows continue to gate new migrations cleanly.
+> **Note:** This project uses no ORM. Migrations are hand-written SQL applied
+> by `scripts/migrate.mjs` via raw `pg` against Supabase/Postgres. The on-DB
+> history table is `migrations.resupply_migrations`; a database provisioned
+> before this rename carries the ledger under the legacy `drizzle` schema and
+> `migrate.mjs` renames it in place on first run, preserving every applied row
+> so production history continues to gate new migrations cleanly.
 
 ## Adding a migration
 
@@ -11,7 +13,7 @@
    higher than any existing file and unique (no other file uses that prefix).
    Find the next free prefix with:
    ```bash
-   ls lib/resupply-db/drizzle/*.sql | sed -E 's#.*/([0-9]{4})_.*#\1#' | sort -n | tail -1 | awk '{printf "%04d\n", $1 + 1}'
+   ls lib/resupply-db/migrations/*.sql | sed -E 's#.*/([0-9]{4})_.*#\1#' | sort -n | tail -1 | awk '{printf "%04d\n", $1 + 1}'
    ```
 2. The pre-commit hook (`scripts/check-resupply-migration-prefix.sh`) and the
    CI drift job both reject any addition that collides with an existing prefix.

@@ -68,7 +68,7 @@ router.get(
     const { data: aggRows, error: notifErr } = await supabase
       .raw()
       .schema("resupply")
-      .rpc("shop_back_in_stock_queue");
+      .rpc("shop_back_in_stock_queue", { p_org_id: orgId });
     if (notifErr) throw notifErr;
 
     // PostgREST serializes bigint as string; coerce the counts. The
@@ -249,7 +249,7 @@ router.post(
     const baseUrl =
       (await resolveTenantBaseUrl(req.orgId)) ??
       (process.env.SHOP_PUBLIC_BASE_URL?.replace(/\/$/, "") ||
-        "https://pennpaps.com");
+        "https://cmbreathe.com");
 
     const result = await dispatchBackInStockForProduct({
       productId,

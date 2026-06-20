@@ -67,7 +67,7 @@ router.get(
       supabase
         .raw()
         .schema("resupply")
-        .rpc("fulfillments_to_bill_count", { p_since: t7d }),
+        .rpc("fulfillments_to_bill_count", { p_org_id: orgId, p_since: t7d }),
       supabase
         .from("insurance_claims")
         .select("id")

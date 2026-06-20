@@ -42,17 +42,34 @@ type AdminUsersLookupResult =
     }
   | "throw";
 let mockAdminUsersLookup: AdminUsersLookupResult = { data: null, error: null };
+// Drives the G4 impersonation re-check: requireAdmin re-verifies the
+// impersonator is STILL in resupply.platform_admins on every request. Default
+// to a present row (the impersonator is an active platform admin). Set to
+// `{ data: null }` to simulate a revoked platform admin, or "throw" to
+// simulate a lookup error — both must fail closed (401).
+let mockPlatformAdminLookup:
+  | {
+      data: { auth_user_id: string } | null;
+      error: { message: string } | null;
+    }
+  | "throw" = { data: { auth_user_id: "platform-admin" }, error: null };
 // Drives the G16 agreements gate: the rows hasPendingAgreements() reads from
 // organization_agreements for the resolved org. Empty ⇒ unsigned ⇒ blocked.
 let mockAgreementRows: Array<{ agreement_type: string; version: string }> = [];
 vi.mock("@workspace/resupply-db", () => ({
   getSupabaseServiceRoleClient: () => ({
     schema: () => ({
-      from: () => ({
+      from: (table: string) => ({
         select: () => ({
           eq: () => ({
             limit: () => ({
               maybeSingle: async () => {
+                if (table === "platform_admins") {
+                  if (mockPlatformAdminLookup === "throw") {
+                    throw new Error("platform_admins lookup blew up");
+                  }
+                  return mockPlatformAdminLookup;
+                }
                 if (mockAdminUsersLookup === "throw") {
                   throw new Error("admin_users lookup blew up");
                 }
@@ -227,6 +244,11 @@ describe("requireAdmin — in-house pf_session cookie path", () => {
   beforeEach(() => {
     mockDeps = null;
     mockAdminUsersLookup = { data: null, error: null };
+    // Default: the impersonator is an active platform admin (present row).
+    mockPlatformAdminLookup = {
+      data: { auth_user_id: "platform-admin" },
+      error: null,
+    };
     // Reset the agreements gate between cases (the pending cache is
     // module-level and would otherwise leak across tests).
     mockAgreementRows = [];
@@ -426,6 +448,32 @@ describe("requireAdmin — in-house pf_session cookie path", () => {
       expect(res.body.adminGranularRole).toBe("csr");
     });
 
+    it("binds req.orgId to the admin's OWN admin_users.org_id, not the seed org", async () => {
+      const { deps, repo } = await buildDepsWithRepo();
+      mockDeps = deps;
+      // A non-seed tenant admin must be scoped to THEIR org — the gate reads
+      // admin_users.org_id, so it can never collapse a tenant-B admin onto the
+      // seed tenant's data.
+      mockAdminUsersLookup = {
+        data: { role: "admin", location_id: null, org_id: "org-b" },
+        error: null,
+      };
+      mockAgreementRows = ALL_SIGNED_ROWS; // org-b has signed → gate passes
+      const { cookie } = await seedSignedInUser(repo, {
+        id: "u_tenant_b",
+        email: "admin@tenant-b.example",
+        role: "admin",
+      });
+
+      const res = await request(makeApp())
+        .get("/imp-protected")
+        .set("Cookie", cookie);
+
+      expect(res.status).toBe(200);
+      expect(res.body.orgId).toBe("org-b");
+      expect(res.body.impersonation).toBe(false);
+    });
+
     it("falls back to the coarse role when NO admin_users row exists (legacy)", async () => {
       const { deps, repo } = await buildDepsWithRepo();
       mockDeps = deps;
@@ -604,6 +652,47 @@ describe("requireAdmin — in-house pf_session cookie path", () => {
       expect(res.status).toBe(200);
       expect(res.body.impersonation).toBe(false);
       expect(res.body.impersonatorUserId).toBeNull();
+    });
+
+    it("rejects an impersonation session when the impersonator is no longer a platform admin (401)", async () => {
+      const { deps, repo } = await buildDepsWithRepo();
+      mockDeps = deps;
+      // The impersonator was removed from platform_admins after the cookie was
+      // minted — the per-request re-check must cut their cross-tenant access
+      // immediately, not wait for the session TTL to expire.
+      mockPlatformAdminLookup = { data: null, error: null };
+      const { cookie } = await seedSignedInUser(repo, {
+        id: "u_platform",
+        email: "ops@cmbreathe.example",
+        role: "admin",
+        impersonatedOrgId: TARGET_ORG,
+        impersonatorUserId: "u_platform",
+      });
+
+      const res = await request(makeApp())
+        .get("/imp-protected")
+        .set("Cookie", cookie);
+
+      expect(res.status).toBe(401);
+    });
+
+    it("fails closed (401) when the platform_admins re-check errors", async () => {
+      const { deps, repo } = await buildDepsWithRepo();
+      mockDeps = deps;
+      mockPlatformAdminLookup = "throw";
+      const { cookie } = await seedSignedInUser(repo, {
+        id: "u_platform",
+        email: "ops@cmbreathe.example",
+        role: "admin",
+        impersonatedOrgId: TARGET_ORG,
+        impersonatorUserId: "u_platform",
+      });
+
+      const res = await request(makeApp())
+        .get("/imp-protected")
+        .set("Cookie", cookie);
+
+      expect(res.status).toBe(401);
     });
   });
 

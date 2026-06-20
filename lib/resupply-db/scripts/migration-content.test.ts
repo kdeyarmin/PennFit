@@ -24,10 +24,10 @@ import type { TaskContext } from "vitest";
 import { Pool } from "pg";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DRIZZLE_DIR = path.resolve(__dirname, "../drizzle");
+const MIGRATIONS_DIR = path.resolve(__dirname, "../migrations");
 
 function readMigration(filename: string): string {
-  return readFileSync(path.join(DRIZZLE_DIR, filename), "utf-8");
+  return readFileSync(path.join(MIGRATIONS_DIR, filename), "utf-8");
 }
 
 // ---------------------------------------------------------------------------

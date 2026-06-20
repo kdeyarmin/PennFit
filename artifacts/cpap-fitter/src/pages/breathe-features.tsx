@@ -1,28 +1,40 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Link } from "wouter";
 import {
   Activity,
   ArrowLeft,
   ArrowRight,
-  CircleDollarSign,
+  BadgeCheck,
   Bot,
+  BrainCircuit,
   CalendarClock,
+  Check,
+  CircleDollarSign,
   ClipboardSignature,
   Clock,
   FileStack,
+  Gauge,
+  Headphones,
   LineChart,
+  Mail,
+  MessageSquare,
   Mic,
   PhoneCall,
+  Plug,
   Receipt,
   RefreshCw,
   ScanFace,
+  ShieldCheck,
   Sparkles,
   Stethoscope,
+  Store,
   TrendingUp,
+  Users,
   Video,
   Workflow,
 } from "lucide-react";
 import { useDocumentTitle } from "@/hooks/use-document-title";
+import { useNoIndexExceptApex } from "@/hooks/use-noindex-except-apex";
 import "./breathe.css";
 
 // Icon-only crop of the CareMetric app icon — NOT the full lockup PNG
@@ -32,20 +44,249 @@ import "./breathe.css";
 const LOGO = "/breathe/caremetric-icon.png";
 
 /**
- * Breathe — "What the software does", broken down by role.
+ * Breathe — the full features page.
  *
- * A dedicated companion page to the `/breathe` marketing homepage that
- * answers the operator's real question: "for each seat on my team, what
- * does this actually do, and how does it save me time, cut my costs, or
- * grow my revenue?" The homepage's Roles section is a teaser; this page
- * is the full, role-by-role catalog.
+ * The operator's real question is never "what features do you have?" — it's
+ * "why would I switch, and what's it worth to my business?" So this page
+ * leads with the answer (hours back, revenue captured, a leaner team),
+ * proves it with the complete capability catalog, names the AI workforce
+ * that does the work, and only then drops into the role-by-role breakdown.
+ * Calls to action are threaded through every section.
  *
  * It reuses the namespaced `breathe.css` design system (every rule scoped
- * under `.breathe-page`) plus a small `.bxf-*` block at the end of that
- * file for the impact-tagged feature cards. Rendered OUTSIDE the patient
- * storefront <Layout> (mounted in TopRouter), lazy-loaded, and `noindex`
- * for the same tenant-domain reason the homepage is.
+ * under `.breathe-page`) plus the `.bxf-*` blocks at the end of that file.
+ * Rendered OUTSIDE the patient storefront <Layout> (mounted in TopRouter),
+ * lazy-loaded, and `noindex` for the same tenant-domain reason the homepage
+ * is.
  */
+
+/* ════════════════════════ Content ════════════════════════ */
+
+const HERO_STATS: {
+  to: number;
+  suffix: string;
+  decimals?: number;
+  label: string;
+}[] = [
+  { to: 50, suffix: "", label: "staff hours handed back every week" },
+  { to: 7, suffix: "", label: "point tools collapsed into one login" },
+  { to: 22, suffix: "%", label: "lift in first-pass claim acceptance" },
+  { to: 2.5, suffix: "×", decimals: 1, label: "more resupply orders captured" },
+];
+
+type Lever = {
+  icon: React.ReactNode;
+  metric: string;
+  unit: string;
+  title: string;
+  body: string;
+  points: string[];
+};
+
+const LEVERS: Lever[] = [
+  {
+    icon: <Clock size={22} />,
+    metric: "9+ hrs",
+    unit: "per teammate, every week",
+    title: "Give every seat its week back",
+    body: "Breathe automates the repetitive work in every role — the routine calls, the re-keying, the report-pulling, the chasing — so your people spend the day on patients, not busywork.",
+    points: [
+      "AI voice agent and chatbot field routine calls, texts and emails 24/7",
+      "Claims are scrubbed and submitted automatically — reps work only the exceptions",
+      "Reminders, faxes, statements and follow-ups all fire on their own",
+    ],
+  },
+  {
+    icon: <TrendingUp size={22} />,
+    metric: "2.5×",
+    unit: "more resupply orders captured",
+    title: "Capture the revenue you leave on the table",
+    body: "Every missed replacement window and every preventable denial is recurring revenue walking out the door. Breathe closes both — and keeps booking orders around the clock.",
+    points: [
+      "Eligibility-aware resupply across your whole panel — no window missed",
+      "+22% first-pass claim acceptance, with denials worked by dollars recoverable",
+      "The 24/7 voice agent books reorders after hours and on weekends",
+    ],
+  },
+  {
+    icon: <Users size={22} />,
+    metric: "7 → 1",
+    unit: "the whole stack, one platform",
+    title: "Grow your panel without growing payroll",
+    body: "Stop paying for — and swivel-chairing between — a CRM, a resupply tool, an RCM suite, a telehealth app, an e-sign service and a call center. One platform means far more throughput per person.",
+    points: [
+      "One platform retires seven point tools and their per-seat licenses",
+      "After-hours and peak call volume covered with zero added headcount",
+      "Every coordinator handles a bigger panel as AI absorbs the routine load",
+    ],
+  },
+];
+
+type Capability = {
+  icon: React.ReactNode;
+  title: string;
+  summary: string;
+  points: string[];
+  gold?: boolean;
+};
+
+const CAPABILITIES: Capability[] = [
+  {
+    icon: <RefreshCw size={20} />,
+    title: "Resupply revenue engine",
+    summary:
+      "A proprietary, behavioral-science engine that gets patients to reorder — automatically.",
+    points: [
+      "AI reasons over each patient's reorder window to choose the right message, channel and moment",
+      "Escalates text → email → AI phone call; an unanswered call is retried before a human steps in",
+      "One-tap signed reorder links — reply YES, tap, or just say yes; no login, no friction",
+      "Subscriptions, autopay and cart-abandonment recovery",
+      "A device-driven “supplies due” worklist built from real machine data",
+    ],
+  },
+  {
+    icon: <Receipt size={20} />,
+    title: "Revenue cycle and claims",
+    summary: "Get paid the first time, faster — end to end.",
+    points: [
+      "Real-time 270/271 eligibility and automatic re-verification",
+      "AI-scrubbed 837P auto-submitted via Office Ally — or any clearinghouse",
+      "835/ERA auto-posting and denials ranked by dollars recoverable × win odds",
+      "Prior auth, A/R aging, timely-filing and capped-rental modifier rotation",
+      "Payer profitability, collections forecast and patient statements",
+    ],
+    gold: true,
+  },
+  {
+    icon: <Stethoscope size={20} />,
+    title: "Therapy monitoring and compliance",
+    summary: "See who is slipping off therapy before they quit.",
+    points: [
+      "Nightly adherence pulls from ResMed, Philips and 3B device clouds",
+      "CMS 90-day compliance cohorts with at-risk alerts",
+      "RT encounters, interventions and provider-ready usage reports",
+      "Equipment-recall registry with serial-number matching",
+    ],
+  },
+  {
+    icon: <MessageSquare size={20} />,
+    title: "Patient communications",
+    summary: "Every conversation in one inbox, fully logged.",
+    points: [
+      "Unified SMS, MMS, email and inbound-fax inbox with cases and routing",
+      "Canned macros, AI-drafted replies and editable message templates",
+      "Bulk campaigns, smart triggers and multi-touch outreach playbooks",
+      "Delivery tracking that honors consent, quiet hours and frequency caps",
+    ],
+  },
+  {
+    icon: <FileStack size={20} />,
+    title: "Intake and documents",
+    summary: "Clean, signed paperwork in the door — fast.",
+    points: [
+      "AI referral intake: faxed packets are read and used to pre-fill a patient",
+      "One-click CMN, Rx and agreement generation plus e-signature packets",
+      "A provider e-sign portal with full signature tracking",
+      "Inbound faxes triaged straight onto the right patient record",
+    ],
+  },
+  {
+    icon: <Store size={20} />,
+    title: "Branded storefront and fitter",
+    summary: "A shop that converts shoppers into patients.",
+    points: [
+      "Virtual mask fitter — patients self-fit at home, no staff fittings, no wasted masks",
+      "Catalog, cart, Stripe checkout, subscriptions, returns and reviews",
+      "Live insurance benefit estimates before a patient ever pays",
+      "Your brand, your domain — patient accounts, tracking and POD photos",
+    ],
+  },
+  {
+    icon: <Video size={20} />,
+    title: "Telehealth",
+    summary: "Face-to-face setups and follow-ups, no friction.",
+    points: [
+      "Built-in video visits for setups, mask fittings and check-ins",
+      "One-tap patient join by text or email — no app to install",
+      "Auto-scheduled, reminded and summarized for the chart",
+    ],
+  },
+  {
+    icon: <LineChart size={20} />,
+    title: "Analytics and automation",
+    summary: "Run the business on live signal, not last month's export.",
+    points: [
+      "Margin, DSO, LTV/CAC, payer-profitability and acquisition-funnel dashboards",
+      "KPI alerts and goal tracking that page you before a number slips",
+      "Owner weekly digest, CSR productivity and live staffing load",
+      "CSV, PDF and QuickBooks exports plus an outbound webhook feed",
+    ],
+  },
+  {
+    icon: <ShieldCheck size={20} />,
+    title: "Platform and control",
+    summary: "Multi-location, multi-tenant, and you stay in control.",
+    points: [
+      "Role-based access, granular permissions and admin MFA",
+      "Feature flags to switch each surface on at your own pace",
+      "Locations, team management and per-tenant branded From addresses",
+      "PacWare stays your system of record — fill-only, lossless sync",
+    ],
+  },
+];
+
+type AiCell = {
+  icon: React.ReactNode;
+  title: string;
+  body: string;
+  gold?: boolean;
+};
+
+const AI_CELLS: AiCell[] = [
+  {
+    icon: <Mic size={22} />,
+    title: "24/7 AI voice agent",
+    body: "Answers inbound resupply and status calls, confirms coverage, places the order, and hands your team a transcript, summary and sentiment read.",
+    gold: true,
+  },
+  {
+    icon: <Receipt size={22} />,
+    title: "AI claims engine",
+    body: "Scrubs the 837P, predicts denials before they happen, and ranks the worklist by recoverable dollars × win probability.",
+    gold: true,
+  },
+  {
+    icon: <Bot size={22} />,
+    title: "Admin copilot",
+    body: "An in-app assistant that answers “where do I…?” for any teammate and surfaces the next best action across the console.",
+  },
+  {
+    icon: <MessageSquare size={22} />,
+    title: "Storefront chatbot",
+    body: "Warm, on-brand answers for patients on the web — plus high-confidence email auto-reply with a clean human hand-off.",
+  },
+  {
+    icon: <FileStack size={22} />,
+    title: "AI referral intake",
+    body: "Drop in a referral fax and the model extracts the patient and clinical details to pre-fill intake — no manual re-keying.",
+  },
+  {
+    icon: <ScanFace size={22} />,
+    title: "Virtual mask fitter",
+    body: "Patients self-fit at home from their phone — no staff time on fittings and no sample masks opened just to be thrown away. AI facial measurements pick the perfect mask and size, and the image never leaves the browser.",
+    gold: true,
+  },
+  {
+    icon: <Headphones size={22} />,
+    title: "AI sleep coach",
+    body: "Delivers adherence coaching through the make-or-break first weeks, when most patients quit therapy.",
+  },
+  {
+    icon: <Workflow size={22} />,
+    title: "SMS intent triage",
+    body: "Classifies every inbound text — confirm, question, complaint, opt-out — and routes it to the right place automatically.",
+  },
+];
 
 type Impact = "time" | "money" | "revenue";
 
@@ -296,12 +537,12 @@ const ROLES: RoleBlock[] = [
       },
       {
         icon: <FileStack size={20} />,
-        title: "Inbound fax triage",
-        body: "Sleep studies and Rx renewals that arrive by fax are triaged and attached to the right patient instead of landing in a shared pile.",
+        title: "AI referral intake & fax triage",
+        body: "Sleep studies, referrals, and Rx renewals that arrive by fax are read by AI, extracted to pre-fill a patient, and attached to the right record — instead of landing in a shared pile.",
         impacts: [
           {
             kind: "time",
-            text: "Faxes are sorted to the patient automatically — no manual matching.",
+            text: "Faxes are read and matched to the patient automatically — no re-keying.",
           },
           {
             kind: "revenue",
@@ -311,16 +552,16 @@ const ROLES: RoleBlock[] = [
       },
       {
         icon: <ScanFace size={20} />,
-        title: "On-device AI mask fitting",
-        body: "Patients get fitted for the right mask from their phone camera. Facial measurements are computed on-device — images never leave the browser.",
+        title: "Virtual mask fitter",
+        body: "Patients fit themselves at home from their phone camera — AI facial measurements pick the perfect mask and size, and images never leave the browser.",
         impacts: [
           {
             kind: "time",
-            text: "Self-serve fitting removes a manual sizing step from intake.",
+            text: "Self-serve fitting at home removes in-person fittings from staff's day.",
           },
           {
             kind: "revenue",
-            text: "Right-first-time fit means fewer returns and remakes eating margin.",
+            text: "No sample masks opened just to fit a patient, and a right-first-time fit means fewer returns eating margin.",
           },
         ],
       },
@@ -328,7 +569,7 @@ const ROLES: RoleBlock[] = [
   },
   {
     id: "owner",
-    icon: <Activity size={22} />,
+    icon: <Gauge size={22} />,
     title: "Operations Manager / Owner",
     mission:
       "Run the whole business from one source of truth — and consolidate the stack of point tools you license today.",
@@ -394,15 +635,34 @@ const ROLES: RoleBlock[] = [
   },
 ];
 
+const INTEGRATIONS = [
+  "ResMed AirView",
+  "Philips Care Orchestrator",
+  "3B React Health",
+  "Office Ally",
+  "DaVinci PAS",
+  "PacWare",
+  "Stripe",
+  "Twilio",
+  "SendGrid",
+  "Telnyx Fax",
+  "Anthropic",
+  "OpenAI",
+  "ElevenLabs",
+  "Deepgram",
+];
+
+/* ════════════════════════ Page ════════════════════════ */
+
 export function BreatheFeatures() {
   useDocumentTitle(
-    "What Breathe Does, by Role — Time, Cost & Revenue | CareMetric.ai",
-    "A role-by-role breakdown of the Breathe DME platform: exactly which features each seat on your team uses, and how each one saves time, cuts cost, or grows revenue.",
+    "Features — Save Time, Grow Revenue, Run Leaner | Breathe by CareMetric.ai",
+    "Every feature of the Breathe DME platform: AI voice, automated resupply, AI-driven revenue cycle, therapy monitoring, telehealth and more — and exactly how each one saves time, grows revenue, and lets a leaner team do more.",
     { schema: "Article" },
   );
 
   useRevealOnScroll();
-  useNoIndex();
+  useNoIndexExceptApex();
   useSmoothScroll();
 
   return (
@@ -411,10 +671,11 @@ export function BreatheFeatures() {
       <Nav />
       <main>
         <Intro />
-        <Legend />
-        {ROLES.map((r) => (
-          <RoleSection key={r.id} role={r} />
-        ))}
+        <Levers />
+        <Capabilities />
+        <AiWorkforce />
+        <Integrations />
+        <Roles />
         <BottomLine />
         <ClosingCta />
       </main>
@@ -424,6 +685,13 @@ export function BreatheFeatures() {
 }
 
 /* ───────────────────────── Nav ───────────────────────── */
+const NAV_ANCHORS: { href: string; label: string }[] = [
+  { href: "#levers", label: "Why switch" },
+  { href: "#capabilities", label: "Platform" },
+  { href: "#ai", label: "AI" },
+  { href: "#roles", label: "By role" },
+];
+
 function Nav() {
   return (
     <nav className="bx-nav">
@@ -436,9 +704,9 @@ function Nav() {
           </span>
         </Link>
         <div className="bx-nav-links">
-          {ROLES.map((r) => (
-            <a className="bx-nav-anchor" href={`#${r.id}`} key={r.id}>
-              {r.title.split(" / ")[0]}
+          {NAV_ANCHORS.map((a) => (
+            <a className="bx-nav-anchor" href={a.href} key={a.href}>
+              {a.label}
             </a>
           ))}
           <Link
@@ -453,7 +721,7 @@ function Nav() {
   );
 }
 
-/* ───────────────────────── Intro ───────────────────────── */
+/* ───────────────────────── Intro / hero ───────────────────────── */
 function Intro() {
   return (
     <header className="bx-section bx-hero" id="top">
@@ -464,52 +732,279 @@ function Intro() {
           </Link>
           <span className="bx-eyebrow bx-reveal in">
             <span className="bx-dot" />
-            What the software does
+            Everything Breathe does — and what it&apos;s worth
           </span>
           <h1 className="bx-h1 bx-reveal in">
-            Every feature, mapped to the{" "}
-            <span className="grad-em">seat that uses it.</span>
+            Hours back. Revenue captured.
+            <br />
+            <span className="grad-em">A leaner team that does more.</span>
           </h1>
           <p className="bx-hero-sub bx-reveal in">
-            Breathe is the AI-native operating platform that runs the entire DME
-            lifecycle. Below is the honest breakdown: for each role on your
-            team, exactly what the platform does — and whether each capability
-            saves time, cuts cost, or grows revenue.
+            Breathe is the AI-native operating platform that runs your entire
+            DME business — intake, resupply, revenue cycle, clinical monitoring,
+            telehealth, and every patient conversation — on one login. Below is
+            the full catalog, and exactly why owners switch.
           </p>
           <div className="bx-hero-cta bx-reveal in">
             <Link className="bx-btn bx-btn-primary" href="/breathe/signup">
               Create your account <ArrowRight size={17} />
             </Link>
-            <a className="bx-btn bx-btn-ghost" href="#csr">
-              Jump to the roles
+            <a className="bx-btn bx-btn-ghost" href="/breathe#demo">
+              See it live on sample data
             </a>
           </div>
+          <div className="bx-hero-trust bx-reveal in">
+            <BadgeCheck size={15} color="#54c8ff" />
+            Free demo · No call · No credit card · Live on day one
+          </div>
         </div>
+
+        <StatBand />
       </div>
     </header>
   );
 }
 
-/* ───────────────────────── Legend ───────────────────────── */
-function Legend() {
+function StatBand() {
   return (
-    <div className="bx-shell">
-      <div className="bxf-legend bx-reveal">
-        <span className="bxf-legend-label">How to read this page</span>
-        <div className="bxf-legend-keys">
-          {(Object.keys(IMPACT_META) as Impact[]).map((k) => (
-            <span className={`bxf-impact ${k}`} key={k}>
-              {IMPACT_META[k].icon}
-              {IMPACT_META[k].label}
+    <>
+      <div className="bx-stats bx-reveal">
+        {HERO_STATS.map((s) => (
+          <div className="bx-stat" key={s.label}>
+            <div className="bx-stat-num">
+              <CountUp to={s.to} suffix={s.suffix} decimals={s.decimals} />
+            </div>
+            <div className="bx-stat-label">{s.label}</div>
+          </div>
+        ))}
+      </div>
+      <p className="bx-stats-note bx-reveal">
+        Modeled on typical DME resupply economics and published industry
+        benchmarks — directional, not a guarantee.{" "}
+        <Link href="/breathe/roi">Size it on your own numbers →</Link>
+      </p>
+    </>
+  );
+}
+
+/* ───────────────────────── Levers ───────────────────────── */
+function Levers() {
+  return (
+    <section className="bx-section" id="levers">
+      <div className="bx-shell">
+        <div className="bx-section-head center bx-reveal">
+          <span className="bx-eyebrow">
+            <Sparkles size={13} /> Three reasons owners switch
+          </span>
+          <h2 className="bx-h2">
+            It pays for itself <em>three ways at once</em>
+          </h2>
+          <p className="bx-lede">
+            Every feature on this page rolls up to the same three outcomes a DME
+            owner actually cares about: time given back, revenue captured, and
+            more done by a leaner team. Here is how.
+          </p>
+        </div>
+        <div className="bxf-levers">
+          {LEVERS.map((l) => (
+            <article className="bxf-lever bx-reveal" key={l.title}>
+              <div className="bxf-lever-ic">{l.icon}</div>
+              <div className="bxf-lever-metric">
+                <span className="n">{l.metric}</span>
+                <span className="u">{l.unit}</span>
+              </div>
+              <h3>{l.title}</h3>
+              <p>{l.body}</p>
+              <ul className="bxf-lever-list">
+                {l.points.map((p) => (
+                  <li key={p}>
+                    <Check size={15} />
+                    {p}
+                  </li>
+                ))}
+              </ul>
+            </article>
+          ))}
+        </div>
+        <div className="bx-price-cta bx-reveal">
+          <span>Want the dollar figure for your panel?</span>
+          <Link className="bx-btn bx-btn-primary" href="/breathe/roi">
+            Open the ROI calculator <ArrowRight size={16} />
+          </Link>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ───────────────────────── Capabilities ───────────────────────── */
+function Capabilities() {
+  return (
+    <section className="bx-section" id="capabilities">
+      <div className="bx-shell">
+        <div className="bx-section-head center bx-reveal">
+          <span className="bx-eyebrow">
+            <Workflow size={13} /> Everything it does
+          </span>
+          <h2 className="bx-h2">One platform runs the entire DME business</h2>
+          <p className="bx-lede">
+            Resupply, revenue cycle, clinical monitoring, patient communication,
+            a branded storefront, telehealth, and an AI workforce — every
+            workflow on the same patient record. No exports, no swivel-chair, no
+            patients lost between systems.
+          </p>
+        </div>
+        <div className="bx-caps">
+          {CAPABILITIES.map((c) => (
+            <article
+              className={`bx-cap bx-reveal${c.gold ? " gold" : ""}`}
+              key={c.title}
+            >
+              <div className="bx-cap-head">
+                <span className="bx-cap-ic">{c.icon}</span>
+                <div>
+                  <h3>{c.title}</h3>
+                  <p className="bx-cap-summary">{c.summary}</p>
+                </div>
+              </div>
+              <ul className="bx-cap-list">
+                {c.points.map((p) => (
+                  <li key={p}>{p}</li>
+                ))}
+              </ul>
+            </article>
+          ))}
+        </div>
+        <div className="bx-price-cta bx-reveal">
+          <span>Want to click through every screen and automation?</span>
+          <Link className="bx-btn bx-btn-primary" href="/breathe/product">
+            Explore the full platform <ArrowRight size={16} />
+          </Link>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ───────────────────────── AI workforce ───────────────────────── */
+function AiWorkforce() {
+  return (
+    <section className="bx-section" id="ai">
+      <div className="bx-shell">
+        <div className="bx-section-head center bx-reveal">
+          <span className="bx-eyebrow">
+            <BrainCircuit size={13} /> Your AI workforce
+          </span>
+          <h2 className="bx-h2">
+            AI that does the work — <em>not just the talking</em>
+          </h2>
+          <p className="bx-lede">
+            Breathe puts a whole shift of AI teammates on the floor — answering
+            calls, drafting replies, scrubbing claims, reading faxes, fitting
+            masks, and coaching patients. Best-in-class models from Anthropic,
+            OpenAI, and ElevenLabs are wired in where each is strongest, and
+            every one degrades gracefully if a key is unset.
+          </p>
+        </div>
+        <div className="bx-features">
+          {AI_CELLS.map((c) => (
+            <div
+              className={`bx-card bx-reveal${c.gold ? " gold" : ""}`}
+              key={c.title}
+            >
+              <span className="bx-tag">AI</span>
+              <div className="bx-card-ico">{c.icon}</div>
+              <h3>{c.title}</h3>
+              <p>{c.body}</p>
+            </div>
+          ))}
+        </div>
+        <div className="bx-price-cta bx-reveal">
+          <span>See the AI workforce run on your data — free.</span>
+          <a className="bx-btn bx-btn-gold" href="/breathe#demo">
+            Start the free demo <ArrowRight size={16} />
+          </a>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ───────────────────────── Integrations ───────────────────────── */
+function Integrations() {
+  return (
+    <section className="bx-section" id="integrations">
+      <div className="bx-shell">
+        <div className="bx-section-head center bx-reveal">
+          <span className="bx-eyebrow">
+            <Plug size={13} /> Connected out of the box
+          </span>
+          <h2 className="bx-h2">It plugs into the tools you already run</h2>
+          <p className="bx-lede">
+            Device clouds, your clearinghouse, prior-auth, payments, messaging,
+            and your billing system of record — connected on day one. Flip each
+            one on when you&apos;re ready; a missing credential never breaks the
+            app.
+          </p>
+        </div>
+        <div className="bxf-chips bx-reveal">
+          {INTEGRATIONS.map((name) => (
+            <span className="bxf-chip" key={name}>
+              <span className="dot" />
+              {name}
             </span>
           ))}
         </div>
+      </div>
+    </section>
+  );
+}
+
+/* ───────────────────────── Roles ───────────────────────── */
+function Roles() {
+  return (
+    <>
+      <section className="bx-section" id="roles">
+        <div className="bx-shell">
+          <div className="bx-section-head center bx-reveal">
+            <span className="bx-eyebrow">
+              <Users size={13} /> Mapped to your team
+            </span>
+            <h2 className="bx-h2">
+              Every feature, mapped to the seat that uses it
+            </h2>
+            <p className="bx-lede">
+              The honest, role-by-role breakdown: for each person on your team,
+              exactly what the platform does — and whether each capability saves
+              time, cuts cost, or grows revenue.
+            </p>
+          </div>
+          <Legend />
+        </div>
+      </section>
+      {ROLES.map((r) => (
+        <RoleSection key={r.id} role={r} />
+      ))}
+    </>
+  );
+}
+
+function Legend() {
+  return (
+    <div className="bxf-legend bx-reveal">
+      <span className="bxf-legend-label">How to read this</span>
+      <div className="bxf-legend-keys">
+        {(Object.keys(IMPACT_META) as Impact[]).map((k) => (
+          <span className={`bxf-impact ${k}`} key={k}>
+            {IMPACT_META[k].icon}
+            {IMPACT_META[k].label}
+          </span>
+        ))}
       </div>
     </div>
   );
 }
 
-/* ───────────────────────── Role section ───────────────────────── */
 function RoleSection({ role }: { role: RoleBlock }) {
   return (
     <section className="bx-section bxf-role-section" id={role.id}>
@@ -564,14 +1059,14 @@ const BOTTOM: { icon: React.ReactNode; k: string; v: string; sub: string }[] = [
   {
     icon: <Clock size={20} />,
     k: "Time",
-    v: "9+ hrs",
-    sub: "saved per staff member every week, by automating the repetitive work in each role.",
+    v: "50 hrs",
+    sub: "handed back across a five-seat team every week, by automating the repetitive work in each role.",
   },
   {
     icon: <CircleDollarSign size={20} />,
-    k: "Cost",
+    k: "Leaner team",
     v: "7 tools",
-    sub: "replaced by one platform — retire the per-seat licenses you stack today.",
+    sub: "replaced by one platform — retire the per-seat licenses and cover after-hours volume without adding headcount.",
   },
   {
     icon: <TrendingUp size={20} />,
@@ -589,11 +1084,11 @@ function BottomLine() {
           <span className="bx-eyebrow">
             <TrendingUp size={13} /> The bottom line
           </span>
-          <h2 className="bx-h2">Time saved. Cost cut. Revenue grown.</h2>
+          <h2 className="bx-h2">Time saved. Revenue grown. Team set free.</h2>
           <p className="bx-lede">
-            Add up the role-by-role automations above and the platform pays for
-            itself three ways at once. Size it for your panel in the ROI
-            calculator on the overview page.
+            Add up the automations on this page and the platform pays for itself
+            three ways at once. Size it for your own panel in the ROI
+            calculator.
           </p>
         </div>
         <div className="bxf-bottom">
@@ -612,6 +1107,11 @@ function BottomLine() {
             Open the ROI calculator <ArrowRight size={16} />
           </Link>
         </div>
+        <p className="bxf-footnote bx-reveal">
+          Figures are illustrative ranges grounded in published DME and
+          revenue-cycle benchmarks — directional, not a guarantee. The ROI
+          calculator models the range for your own panel and staffing.
+        </p>
       </div>
     </section>
   );
@@ -636,9 +1136,20 @@ function ClosingCta() {
             <Link className="bx-btn bx-btn-gold" href="/breathe/signup">
               Create your account <ArrowRight size={17} />
             </Link>
-            <Link className="bx-btn bx-btn-ghost" href="/breathe">
-              Back to the overview
+            <Link className="bx-btn bx-btn-ghost" href="/breathe/roi">
+              Calculate your ROI
             </Link>
+          </div>
+          <div className="bx-cta-meta">
+            <span>
+              <BadgeCheck size={13} /> No credit card
+            </span>
+            <span>
+              <Check size={13} /> Sample data only
+            </span>
+            <span>
+              <ArrowRight size={13} /> Live on day one
+            </span>
           </div>
         </div>
       </div>
@@ -664,6 +1175,24 @@ function Footer() {
           infrastructure; patient imagery is processed on-device and never
           transmitted.
         </p>
+        <div className="bx-footer-contact">
+          <span className="bx-footer-contact-label">
+            <Headphones size={13} aria-hidden="true" />
+            Customer &amp; tech support
+          </span>
+          <a className="bx-footer-contact-link" href="tel:+18775212890">
+            <PhoneCall size={13} aria-hidden="true" />
+            (877) 521-2890
+            <span className="bx-footer-contact-toll">toll-free</span>
+          </a>
+          <a
+            className="bx-footer-contact-link"
+            href="mailto:info@cmbreathe.com"
+          >
+            <Mail size={13} aria-hidden="true" />
+            info@cmbreathe.com
+          </a>
+        </div>
         <div className="bx-brand-sub">
           © {new Date().getFullYear()} CareMetric.ai
         </div>
@@ -684,16 +1213,63 @@ function prefersReducedMotion() {
   );
 }
 
-function useNoIndex() {
+function CountUp({
+  to,
+  suffix = "",
+  prefix = "",
+  decimals = 0,
+}: {
+  to: number;
+  suffix?: string;
+  prefix?: string;
+  decimals?: number;
+}) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const [val, setVal] = useState(0);
+  const done = useRef(false);
+
   useEffect(() => {
-    const meta = document.createElement("meta");
-    meta.name = "robots";
-    meta.content = "noindex, follow";
-    document.head.appendChild(meta);
+    const el = ref.current;
+    if (!el) return;
+    if (prefersReducedMotion() || typeof IntersectionObserver === "undefined") {
+      setVal(to);
+      return;
+    }
+    let raf = 0;
+    let cancelled = false;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (!entries[0]?.isIntersecting || done.current) return;
+        done.current = true;
+        const start = performance.now();
+        const dur = 1300;
+        const tick = (now: number) => {
+          if (cancelled) return;
+          const p = Math.min(1, (now - start) / dur);
+          const eased = 1 - Math.pow(1 - p, 3);
+          setVal(to * eased);
+          if (p < 1) raf = requestAnimationFrame(tick);
+        };
+        raf = requestAnimationFrame(tick);
+        io.disconnect();
+      },
+      { threshold: 0.5 },
+    );
+    io.observe(el);
     return () => {
-      meta.remove();
+      cancelled = true;
+      cancelAnimationFrame(raf);
+      io.disconnect();
     };
-  }, []);
+  }, [to]);
+
+  return (
+    <span ref={ref}>
+      {prefix}
+      {val.toFixed(decimals)}
+      {suffix}
+    </span>
+  );
 }
 
 function useSmoothScroll() {

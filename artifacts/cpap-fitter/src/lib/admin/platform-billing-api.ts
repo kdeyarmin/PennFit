@@ -201,11 +201,16 @@ export interface BillingActivityEvent {
   occurredAt: string;
 }
 
+/** Recent billing activity across the fleet. Pass `tenantId` to scope the
+ *  feed to a single tenant's billing history. */
 export function fetchPlatformBillingActivity(
   limit = 25,
+  tenantId?: string,
 ): Promise<{ activity: BillingActivityEvent[] }> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (tenantId) params.set("tenantId", tenantId);
   return jsonFetch<{ activity: BillingActivityEvent[] }>(
-    `/platform/billing/activity?limit=${encodeURIComponent(String(limit))}`,
+    `/platform/billing/activity?${params.toString()}`,
   );
 }
 

@@ -83,13 +83,19 @@ export class ErrorBoundary extends React.Component<Props, State> {
           <h1 className="text-2xl font-semibold mb-2">Something went wrong</h1>
           <p className="text-muted-foreground mb-6">
             The page hit an unexpected error. Reloading usually fixes it. If
-            this keeps happening, please call us at {contact.name} at{" "}
-            <a
-              href={`tel:${contact.phoneE164}`}
-              className="font-medium text-foreground underline underline-offset-2"
-            >
-              {contact.phoneDisplay}
-            </a>{" "}
+            this keeps happening, please reach out to {contact.name}
+            {contact.phoneE164 ? (
+              <>
+                {" "}
+                at{" "}
+                <a
+                  href={`tel:${contact.phoneE164}`}
+                  className="font-medium text-foreground underline underline-offset-2"
+                >
+                  {contact.phoneDisplay}
+                </a>
+              </>
+            ) : null}{" "}
             and we'll help you finish what you were doing.
           </p>
           {/*

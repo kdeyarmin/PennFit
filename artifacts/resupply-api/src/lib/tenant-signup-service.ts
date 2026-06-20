@@ -29,6 +29,7 @@ import {
   hashPassword,
   issueToken,
   normalizeEmail,
+  renderPasswordResetEmail,
   renderVerifyEmail,
   writeUserChosenPassword,
   type AuthEmailContext,
@@ -56,6 +57,16 @@ export type SelfServeSignupInput = {
    * to. Falls back to that default when absent/invalid.
    */
   baseUrl?: string;
+  /**
+   * When set, email the new admin a SET-PASSWORD link (a `password_reset`
+   * token) instead of the default verify-email link. The phone (voice)
+   * signup path uses this: the caller never speaks or learns a password (a
+   * throwaway is stored), so they finish by setting one via the emailed
+   * link — and completing that reset also verifies the email. The web
+   * signup form leaves this unset (the user chose their own password in the
+   * form and only needs to verify).
+   */
+  sendSetPasswordLink?: boolean;
 };
 
 export type SelfServeSignupFailure =
@@ -269,18 +280,27 @@ export async function createSelfServeTenant(
     mustChange: false,
   });
 
-  // 5. Verification token + email. Only the most recent link stays valid.
+  // 5. Finish-setup token + email. Default (web signup): a verify-email
+  //    link — the user already chose their own password. Voice signup
+  //    (sendSetPasswordLink): a SET-PASSWORD link (a `password_reset`
+  //    token) instead, because the caller never spoke/knows a password (a
+  //    throwaway was stored above) — completing the reset both sets their
+  //    password AND verifies the email, so no separate verify mail is
+  //    needed. Only the most recent link of either kind stays valid.
   const ttlMs = deps.env.emailTokenTtlHours * 60 * 60 * 1000;
+  const tokenPurpose = input.sendSetPasswordLink
+    ? "password_reset"
+    : "signup_verify";
   const token = issueToken();
   await deps.repo.expireUnconsumedEmailTokens({
     userId,
-    purpose: "signup_verify",
+    purpose: tokenPurpose,
     at: new Date(),
   });
   await deps.repo.insertEmailToken({
     tokenHash: token.hash,
     userId,
-    purpose: "signup_verify",
+    purpose: tokenPurpose,
     expiresAt: new Date(Date.now() + ttlMs),
   });
   const ctx: AuthEmailContext = {
@@ -289,7 +309,9 @@ export async function createSelfServeTenant(
     publicBaseUrl: linkBaseUrl,
     uiPathPrefix: UI_PATH_PREFIX,
   };
-  const rendered = renderVerifyEmail(ctx, token.raw, ttlMs);
+  const rendered = input.sendSetPasswordLink
+    ? renderPasswordResetEmail(ctx, token.raw, ttlMs)
+    : renderVerifyEmail(ctx, token.raw, ttlMs);
   try {
     await deps.email({
       to: input.adminEmail,
@@ -299,7 +321,7 @@ export async function createSelfServeTenant(
     });
   } catch {
     // Swallow — a SendGrid blip must not fail signup; the user can
-    // re-request verification via /admin/forgot-password.
+    // re-request the link via /admin/forgot-password.
   }
 
   // 6. Link admin_users to THIS org (active, admin).

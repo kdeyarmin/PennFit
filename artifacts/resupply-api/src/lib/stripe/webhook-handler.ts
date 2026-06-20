@@ -354,6 +354,11 @@ export const stripeWebhookHandler: RequestHandler = async (
               session,
               paidRow,
               log,
+              // Pass the EVENT's connected account (immutable for this event)
+              // so the historical line-item read targets the account the
+              // session was created on, even across disconnect/reconnect or
+              // a replayed/async webhook. Undefined for platform events.
+              event.account ?? null,
             );
           } catch (itemsErr) {
             log?.warn?.(

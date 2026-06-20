@@ -154,7 +154,7 @@ export function AdminOutboundMessagesPage() {
                 result === k ? "ring-2 ring-offset-1 ring-slate-400" : ""
               }`}
             >
-              {RESULT_LABEL[k]} · {data.counts[k]}
+              {RESULT_LABEL[k]} · {data.counts?.[k] ?? 0}
             </button>
           ))}
         </div>
@@ -169,7 +169,7 @@ export function AdminOutboundMessagesPage() {
           title="Couldn't load outbound messages"
         />
       ) : data ? (
-        data.items.length === 0 ? (
+        (data.items ?? []).length === 0 ? (
           <div
             className="text-sm text-slate-500"
             data-testid="outbound-messages-empty"
@@ -209,7 +209,7 @@ export function AdminOutboundMessagesPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.items.map((m) => (
+                  {(data.items ?? []).map((m) => (
                     <MessageRow key={m.id} row={m} />
                   ))}
                 </tbody>

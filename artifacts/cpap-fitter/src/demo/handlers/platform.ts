@@ -28,7 +28,7 @@ export const platformHandlers: DemoHandler[] = [
   route("GET", "/resupply-api/platform/billing/tenants", () =>
     json(demoPlatformTenantBilling()),
   ),
-  route("GET", "/resupply-api/platform/billing/activity", () =>
-    json(demoPlatformBillingActivity()),
+  route("GET", "/resupply-api/platform/billing/activity", (req) =>
+    json(demoPlatformBillingActivity(req.query.get("tenantId"))),
   ),
 ];

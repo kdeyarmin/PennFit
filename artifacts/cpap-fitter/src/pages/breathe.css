@@ -55,14 +55,16 @@
 
 .breathe-page {
   /* Palette — drawn from the CareMetric app-icon: glassy navy→azure
-     gradient, circuit cyan, amber-gold "AI", a clinical mint for "live". */
-  --bx-ink: #04070f;
-  --bx-ink-2: #070d1e;
-  --bx-panel: rgba(20, 32, 62, 0.55);
-  --bx-panel-2: rgba(11, 20, 42, 0.72);
-  --bx-panel-3: rgba(8, 14, 31, 0.92);
-  --bx-line: rgba(120, 160, 230, 0.16);
-  --bx-line-strong: rgba(135, 180, 248, 0.4);
+     gradient, circuit cyan, amber-gold "AI", a clinical mint for "live".
+     Base lifted from near-black to a mid-dark navy so foreground panels and
+     copy read clearly while keeping the command-center feel. */
+  --bx-ink: #0b1426;
+  --bx-ink-2: #11203c;
+  --bx-panel: rgba(34, 52, 92, 0.62);
+  --bx-panel-2: rgba(22, 36, 66, 0.74);
+  --bx-panel-3: rgba(16, 28, 54, 0.92);
+  --bx-line: rgba(130, 172, 236, 0.24);
+  --bx-line-strong: rgba(142, 186, 250, 0.46);
 
   --bx-blue: #2f6fe6;
   --bx-blue-bright: #4f8dff;
@@ -71,9 +73,9 @@
   --bx-gold-soft: #ffc861;
   --bx-mint: #6ff0c2;
 
-  --bx-text: #eaf1ff;
-  --bx-text-dim: #aab9d9;
-  --bx-text-faint: #6f82a8;
+  --bx-text: #eef3ff;
+  --bx-text-dim: #c6d1ea;
+  --bx-text-faint: #93a3c6;
 
   --bx-display:
     "Fraunces", "Iowan Old Style", Georgia, "Times New Roman", serif;
@@ -121,7 +123,7 @@
       rgba(246, 167, 34, 0.13),
       transparent 60%
     ),
-    linear-gradient(180deg, #04070f 0%, #060d20 45%, #04081400 100%),
+    linear-gradient(180deg, #0b1426 0%, #0e1c38 45%, #0b142600 100%),
     var(--bx-ink);
 }
 
@@ -158,6 +160,14 @@
 .breathe-page *::before,
 .breathe-page *::after {
   box-sizing: border-box;
+}
+
+/* Branded text selection — a luminous cyan wash instead of the OS default,
+   so even highlighting copy stays on-aesthetic. */
+.breathe-page ::selection {
+  background: rgba(84, 200, 255, 0.3);
+  color: #ffffff;
+  text-shadow: none;
 }
 
 .bx-shell {
@@ -366,12 +376,13 @@
   font-size: 13.5px;
 }
 .bx-btn-primary {
-  /* Near-black ink on a fully LIGHT blue gradient. The old mid-blue stop
-     (#4f8dff) under dark text read muddy/low-contrast; both stops are now
-     light so the label stays crisp across the whole button (incl. the small
-     nav variant). */
+  /* Near-black ink on a fully LIGHT blue gradient. Earlier mid-blue stops
+     (#4f8dff, then #6aa6ff) under dark text still read muddy/low-contrast on
+     the right edge — most visible on the small nav "Create account" variant.
+     Both stops are now genuinely light so the label stays crisp across the
+     whole button at every size. */
   color: #05101f;
-  background: linear-gradient(135deg, #7ed7ff 0%, #6aa6ff 100%);
+  background: linear-gradient(135deg, #9fe3ff 0%, #7fbcff 100%);
   box-shadow:
     0 10px 30px -8px var(--_glow),
     inset 0 1px 0 rgba(255, 255, 255, 0.28);
@@ -399,6 +410,20 @@
 .bx-btn-gold:hover {
   transform: translateY(-2px);
   box-shadow: 0 16px 40px -8px rgba(246, 167, 34, 0.6);
+}
+/* Tactile press — the button settles back down and compresses a hair on
+   click, so every CTA feels physical rather than static. */
+.bx-btn:active {
+  transform: translateY(0) scale(0.985);
+}
+/* The trailing arrow glides forward on hover — a small directional cue that
+   reinforces "this moves you onward". The icon already ships in the markup,
+   so this is pure motion polish (and is killed under reduced-motion). */
+.bx-btn svg {
+  transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.bx-btn:hover svg {
+  transform: translateX(3px);
 }
 
 /* Eyebrow label */
@@ -447,7 +472,12 @@
   font-weight: 600;
   letter-spacing: -0.02em;
   line-height: 1.05;
+  /* Balance the big Fraunces headlines so a multi-line title breaks into
+     even raglines instead of leaving a lonely orphan word on the last row. */
+  text-wrap: balance;
   margin: 18px 0 0;
+  /* room for descenders — -webkit-background-clip: text trims them on tight line-heights */
+  padding-bottom: 0.1em;
   background: linear-gradient(180deg, #ffffff, #bdcdf0);
   -webkit-background-clip: text;
   background-clip: text;
@@ -455,6 +485,7 @@
 }
 .bx-h2 em {
   font-style: italic;
+  padding-bottom: 0.08em;
   background: linear-gradient(
     100deg,
     var(--bx-cyan) 0%,
@@ -469,6 +500,7 @@
   font-size: 18px;
   line-height: 1.62;
   color: var(--bx-text-dim);
+  text-wrap: pretty;
   margin-top: 20px;
 }
 
@@ -496,12 +528,15 @@
   font-weight: 560;
   letter-spacing: -0.022em;
   line-height: 0.98;
+  text-wrap: balance;
   margin: 22px 0 0;
 }
 .bx-h1 .grad-em,
 .bx-pagehead-title .grad-em {
   font-style: italic;
   font-weight: 500;
+  /* room for descenders clipped by -webkit-background-clip: text */
+  padding-bottom: 0.08em;
   background: linear-gradient(
     100deg,
     var(--bx-cyan) 0%,
@@ -518,6 +553,7 @@
   font-size: 19px;
   line-height: 1.62;
   color: var(--bx-text-dim);
+  text-wrap: pretty;
   margin: 26px 0 0;
   max-width: 552px;
 }
@@ -537,6 +573,28 @@
   align-items: center;
   gap: 10px;
 }
+/* Tertiary "talk to a human" path under the hero CTAs — the self-serve
+   demo stays primary; this is the quieter route for buyers who want a call. */
+.bx-hero-talk {
+  margin: 14px 0 0;
+  font-size: 13.5px;
+  color: var(--bx-text-dim);
+}
+/* A button that reads as an inline text link — used where we need link
+   affordance but a real <button> (opens a modal, not a route). */
+.bx-linkbtn {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+  color: var(--bx-cyan);
+  font-weight: 600;
+}
+.bx-linkbtn:hover {
+  text-decoration: underline;
+}
 
 /* Inner-page header (Product / Compare / ROI / Pricing / Security) */
 .bx-pagehead {
@@ -549,12 +607,14 @@
   font-weight: 560;
   letter-spacing: -0.02em;
   line-height: 1.02;
+  text-wrap: balance;
   margin: 20px 0 0;
 }
 .bx-pagehead-sub {
   font-size: 18px;
   line-height: 1.62;
   color: var(--bx-text-dim);
+  text-wrap: pretty;
   margin: 22px 0 0;
   max-width: 620px;
 }
@@ -754,6 +814,166 @@
   color: var(--bx-text-dim);
   line-height: 1.4;
 }
+/* Honest provenance for the headline stats — keeps them from reading as
+   invented and routes the skeptic to the calculator that shows the math. */
+.bx-stats-note {
+  margin: 16px 0 0;
+  text-align: center;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--bx-text-faint);
+}
+.bx-stats-note a {
+  color: var(--bx-cyan);
+  text-decoration: none;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.bx-stats-note a:hover {
+  text-decoration: underline;
+}
+
+/* ───────────────────── Value pillars (home) ───────────────────── */
+/* The four concrete "what it does + what it's worth" cards under the hero.
+   Larger and more outcome-forward than the .bx-cap capability grid lower on
+   the page: a corner glow, a serif metric, and the mechanism in plain copy. */
+.bx-pillars {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 20px;
+}
+@media (max-width: 820px) {
+  .bx-pillars {
+    grid-template-columns: 1fr;
+  }
+}
+.bx-pillar {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 30px 32px 32px;
+  border-radius: 22px;
+  background: linear-gradient(
+    180deg,
+    rgba(20, 32, 62, 0.5),
+    rgba(11, 20, 42, 0.66)
+  );
+  border: 1px solid var(--bx-line);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  overflow: hidden;
+  transition:
+    transform 0.25s ease,
+    border-color 0.25s ease,
+    box-shadow 0.25s ease;
+}
+/* Soft luminous corner so the card reads as a lit panel, not a flat box. */
+.bx-pillar::before {
+  content: "";
+  position: absolute;
+  top: -45%;
+  right: -30%;
+  width: 62%;
+  height: 88%;
+  background: radial-gradient(
+    circle,
+    rgba(84, 200, 255, 0.16),
+    transparent 70%
+  );
+  pointer-events: none;
+}
+.bx-pillar.gold::before {
+  background: radial-gradient(
+    circle,
+    rgba(246, 167, 34, 0.16),
+    transparent 70%
+  );
+}
+.bx-pillar:hover {
+  transform: translateY(-4px);
+  border-color: var(--bx-line-strong);
+  box-shadow: 0 28px 60px -26px rgba(8, 20, 55, 0.95);
+}
+.bx-pillar-top {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 22px;
+}
+.bx-pillar-ic {
+  flex: none;
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  color: var(--bx-cyan);
+  background: linear-gradient(
+    135deg,
+    rgba(84, 200, 255, 0.18),
+    rgba(47, 111, 230, 0.08)
+  );
+  border: 1px solid var(--bx-line-strong);
+}
+.bx-pillar.gold .bx-pillar-ic {
+  color: var(--bx-gold-soft);
+  background: linear-gradient(
+    135deg,
+    rgba(246, 167, 34, 0.2),
+    rgba(246, 167, 34, 0.05)
+  );
+}
+.bx-pillar-metric {
+  text-align: right;
+  line-height: 1;
+}
+.bx-pillar-metric b {
+  display: block;
+  font-family: var(--bx-display);
+  font-optical-sizing: auto;
+  font-size: clamp(28px, 3.4vw, 40px);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  background: linear-gradient(120deg, #fff, var(--bx-cyan));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.bx-pillar.gold .bx-pillar-metric b {
+  background: linear-gradient(120deg, #fff, var(--bx-gold-soft));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.bx-pillar-metric small {
+  display: block;
+  margin-top: 7px;
+  font-family: var(--bx-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--bx-text-faint);
+}
+.bx-pillar-title {
+  position: relative;
+  font-family: var(--bx-display);
+  font-optical-sizing: auto;
+  font-size: 23px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+  margin: 0 0 12px;
+  color: var(--bx-text);
+}
+.bx-pillar-body {
+  position: relative;
+  font-size: 15px;
+  line-height: 1.62;
+  color: var(--bx-text-dim);
+  margin: 0;
+}
 
 /* ───────────────────── Integrations strip ───────────────────── */
 .bx-integrations {
@@ -846,17 +1066,21 @@
   margin-top: 22px;
 }
 .bx-replace-pill {
-  font-size: 14px;
+  font-size: 15px;
+  font-weight: 500;
   color: var(--bx-text);
   padding: 9px 16px;
   border: 1px solid var(--bx-line);
   border-radius: 100px;
-  background: rgba(255, 255, 255, 0.02);
+  background: rgba(255, 255, 255, 0.05);
   position: relative;
 }
 .bx-replace-pill s {
-  text-decoration-color: rgba(246, 167, 34, 0.85);
-  text-decoration-thickness: 1.5px;
+  /* Keep the words fully legible — a thin, semi-transparent line reads as
+     "replaced" without striking the text out of readability. */
+  color: var(--bx-text);
+  text-decoration-color: rgba(246, 167, 34, 0.6);
+  text-decoration-thickness: 1px;
 }
 
 /* ───────────────────── Lifecycle pipeline ───────────────────── */
@@ -1456,6 +1680,84 @@
   color: var(--bx-text-faint);
   margin-top: 18px;
 }
+
+/* Real-screenshot showcase (LiveConsole). The hero screen reuses the
+   .bx-app-frame chrome above; these rules add the screenshot image fit and
+   the four-up gallery of smaller framed screens below it. */
+.bx-shot-img {
+  display: block;
+  width: 100%;
+  height: auto;
+  /* Reserve the box at the assets' native 16:10 so the lazy/poster media
+     doesn't shift layout while it loads (the video uses preload="none"). */
+  aspect-ratio: 16 / 10;
+}
+.bx-shotgrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 26px;
+  margin-top: 46px;
+}
+.bx-shotcard {
+  margin: 0;
+}
+.bx-shotcard-frame {
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid var(--bx-line-strong);
+  background: var(--bx-panel-3);
+  box-shadow: 0 30px 70px -36px rgba(4, 12, 40, 0.9);
+  transition:
+    transform 0.25s ease,
+    box-shadow 0.25s ease;
+}
+.bx-shotcard:hover .bx-shotcard-frame {
+  transform: translateY(-4px);
+  box-shadow: 0 40px 90px -38px rgba(4, 12, 40, 0.95);
+}
+.bx-shotcard-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 13px;
+  border-bottom: 1px solid var(--bx-line);
+  background: rgba(255, 255, 255, 0.02);
+}
+.bx-shotcard-bar i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.16);
+}
+.bx-shotcard-bar i:first-child {
+  background: rgba(246, 122, 122, 0.55);
+}
+.bx-shotcard-bar i:nth-child(2) {
+  background: rgba(246, 200, 97, 0.55);
+}
+.bx-shotcard-bar i:nth-child(3) {
+  background: rgba(111, 240, 194, 0.5);
+}
+.bx-shotcard-frame img,
+.bx-shotcard-frame video {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 10;
+}
+.bx-shotcard figcaption {
+  margin-top: 14px;
+  font-size: 14px;
+  color: var(--bx-text-dim);
+  line-height: 1.4;
+}
+@media (max-width: 820px) {
+  .bx-shotgrid {
+    grid-template-columns: 1fr;
+    gap: 22px;
+  }
+}
 @media (max-width: 820px) {
   .bx-app-body {
     grid-template-columns: 1fr;
@@ -2027,6 +2329,84 @@
   background: linear-gradient(135deg, var(--bx-cyan), var(--bx-blue));
   box-shadow: 0 0 10px rgba(84, 200, 255, 0.5);
 }
+/* Case-studies page (breathe-case-studies.tsx). Industry cards reuse .bx-cap
+   but stack situation/approach/points/source as siblings, so give them an even
+   flex-gap and bottom-align the cited source. */
+.bx-cs-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.bx-cs-card .bx-cap-head {
+  margin-bottom: 0;
+}
+.bx-cap-tag {
+  display: block;
+  font-family: var(--bx-mono);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--bx-cyan);
+}
+.bx-cap.gold .bx-cap-tag {
+  color: var(--bx-gold-soft);
+}
+.bx-stat-num.gold {
+  background: linear-gradient(120deg, var(--bx-gold-soft), var(--bx-gold));
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+/* The honesty callout that frames the Breathe scenario as modeled, not real. */
+.bx-cs-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  max-width: 860px;
+  margin: 0 auto 22px;
+  padding: 16px 20px;
+  border: 1px solid var(--bx-line-strong);
+  border-radius: 14px;
+  background: rgba(246, 167, 34, 0.06);
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--bx-text-dim);
+}
+.bx-cs-note svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--bx-gold-soft);
+}
+.bx-cs-note a {
+  color: var(--bx-cyan);
+  font-weight: 600;
+  text-decoration: none;
+}
+.bx-cs-note a:hover {
+  text-decoration: underline;
+}
+.bx-cs-profile {
+  max-width: 760px;
+  margin: 0 auto 22px;
+  text-align: center;
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--bx-text-dim);
+}
+.bx-cs-basis {
+  margin-top: 8px;
+  font-family: var(--bx-mono);
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--bx-text-faint);
+}
+.bx-cs-cta {
+  display: flex;
+  gap: 14px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-top: 30px;
+}
+
 /* Three-up variant for short bands (e.g. the Compare "why it's different"
    payoff) so an odd card count doesn't orphan on the 2-col default. */
 .bx-caps-3 {
@@ -2488,6 +2868,75 @@
   line-height: 1.5;
 }
 
+/* "Email me this estimate" lead capture under the breakdown. */
+.bx-roi-capture {
+  margin-top: 22px;
+  padding-top: 20px;
+  border-top: 1px solid var(--bx-line);
+}
+.bx-roi-capture-label {
+  display: block;
+  font-family: var(--bx-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--bx-text-dim);
+  margin-bottom: 10px;
+}
+.bx-roi-capture-row {
+  display: flex;
+  gap: 10px;
+}
+.bx-roi-capture-row input[type="email"] {
+  flex: 1;
+  min-width: 0;
+  padding: 11px 14px;
+  border-radius: 11px;
+  border: 1px solid var(--bx-line-strong);
+  background: rgba(0, 0, 0, 0.28);
+  color: var(--bx-text);
+  font-family: var(--bx-font);
+  font-size: 14.5px;
+}
+.bx-roi-capture-row input[type="email"]::placeholder {
+  color: var(--bx-text-faint);
+}
+.bx-roi-capture-row input[type="email"]:focus {
+  outline: none;
+  border-color: var(--bx-cyan);
+  box-shadow: 0 0 0 3px rgba(84, 200, 255, 0.18);
+}
+.bx-roi-capture-row .bx-btn {
+  flex: none;
+  white-space: nowrap;
+}
+.bx-roi-capture-done {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 22px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(111, 240, 194, 0.32);
+  background: rgba(111, 240, 194, 0.08);
+  color: var(--bx-text);
+  font-size: 14px;
+  line-height: 1.45;
+}
+.bx-roi-capture-done svg {
+  flex: none;
+  color: var(--bx-mint);
+}
+@media (max-width: 520px) {
+  .bx-roi-capture-row {
+    flex-wrap: wrap;
+  }
+  .bx-roi-capture-row .bx-btn {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
 /* ───────────────────────── Pricing ───────────────────────── */
 .bx-price-grid {
   display: grid;
@@ -2656,6 +3105,70 @@
   color: var(--bx-text-faint);
   margin-top: 4px;
 }
+/* Annual-billing sub-line under the price (only shown in annual mode). */
+.bx-plan-annual {
+  font-size: 12px;
+  color: var(--bx-text-dim);
+  margin-top: 5px;
+}
+.bx-plan-annual b {
+  color: var(--bx-mint);
+  font-weight: 700;
+}
+
+/* Monthly ⇄ annual segmented toggle above the plan grid. width:fit-content +
+   auto margins centers it within the (block) section shell. */
+.bx-billtoggle {
+  display: flex;
+  width: fit-content;
+  margin: 0 auto 28px;
+  padding: 5px;
+  gap: 4px;
+  border: 1px solid var(--bx-line-strong);
+  border-radius: 100px;
+  background: var(--bx-panel-2);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+.bx-billtoggle-opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 20px;
+  border: 0;
+  border-radius: 100px;
+  background: transparent;
+  color: var(--bx-text-dim);
+  font-family: var(--bx-font);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background 0.2s ease,
+    color 0.2s ease;
+}
+.bx-billtoggle-opt:hover {
+  color: var(--bx-text);
+}
+.bx-billtoggle-opt.on {
+  color: #05101f;
+  background: linear-gradient(135deg, #9fe3ff 0%, #7fbcff 100%);
+  box-shadow: 0 8px 22px -10px rgba(47, 111, 230, 0.7);
+}
+.bx-billtoggle-save {
+  font-family: var(--bx-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 3px 7px;
+  border-radius: 100px;
+  background: rgba(111, 240, 194, 0.16);
+  color: var(--bx-mint);
+}
+.bx-billtoggle-opt.on .bx-billtoggle-save {
+  background: rgba(5, 16, 31, 0.16);
+  color: #07351f;
+}
 .bx-plan-blurb {
   font-size: 13px;
   line-height: 1.55;
@@ -2753,6 +3266,50 @@
   white-space: nowrap;
 }
 
+/* Collapsible add-on explainer: the row becomes a <details> whose <summary>
+   carries the existing name/price layout plus a down-arrow that flips open
+   to reveal a brief benefit blurb. */
+.bx-addon-item {
+  border-top: 1px solid var(--bx-line);
+}
+.bx-addon-item > .bx-addon-row {
+  border-top: none;
+  cursor: pointer;
+  list-style: none;
+}
+.bx-addon-item > .bx-addon-row::-webkit-details-marker {
+  display: none;
+}
+.bx-addon-item > .bx-addon-row:hover .bx-addon-name {
+  color: var(--bx-text);
+}
+.bx-addon-caret {
+  margin-left: 6px;
+  vertical-align: middle;
+  color: var(--bx-text-dim);
+  transition: transform 0.2s ease;
+}
+.bx-addon-item[open] > .bx-addon-row .bx-addon-caret {
+  transform: rotate(180deg);
+  color: var(--bx-cyan);
+}
+.bx-addon-detail {
+  padding: 2px 0 12px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--bx-text-dim);
+}
+.bx-addon-detail p {
+  margin: 0 0 6px;
+}
+.bx-addon-detail p:last-child {
+  margin-bottom: 0;
+}
+.bx-addon-detail strong {
+  color: var(--bx-text);
+  font-weight: 600;
+}
+
 /* Add-ons teaser (landing page) */
 .bx-addons-teaser {
   display: flex;
@@ -2787,6 +3344,63 @@
 }
 .bx-addons-teaser-link:hover {
   color: var(--bx-text);
+}
+
+/* ───────────── "Switch from <competitor>" cross-links ───────────── */
+.bx-switchlinks {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px 24px;
+  margin-top: 28px;
+  padding: 20px 24px;
+  border: 1px solid var(--bx-line);
+  border-radius: 16px;
+  background: var(--bx-panel-2);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+.bx-switchlinks-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  font-family: var(--bx-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--bx-text-faint);
+}
+.bx-switchlinks-label svg {
+  color: var(--bx-cyan);
+  flex: none;
+}
+.bx-switchlinks-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.bx-switchlink {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 14px;
+  border-radius: 100px;
+  border: 1px solid var(--bx-line-strong);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--bx-text-dim);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  transition:
+    color 0.18s ease,
+    background 0.18s ease,
+    border-color 0.18s ease;
+}
+.bx-switchlink:hover {
+  color: var(--bx-text);
+  background: rgba(84, 200, 255, 0.08);
+  border-color: var(--bx-cyan);
 }
 
 /* ───────────────────────── Security ───────────────────────── */
@@ -3014,6 +3628,96 @@
 }
 
 /* ───────────────────────── CTA + footer ───────────────────────── */
+/* ───────────────────── Founding partner band ───────────────────── */
+.bx-founding {
+  position: relative;
+  padding: 56px 40px 48px;
+  border-radius: 28px;
+  border: 1px solid rgba(246, 167, 34, 0.32);
+  overflow: hidden;
+  background:
+    radial-gradient(
+      66% 120% at 50% 0%,
+      rgba(246, 167, 34, 0.16),
+      transparent 70%
+    ),
+    linear-gradient(180deg, rgba(20, 32, 62, 0.6), rgba(11, 20, 42, 0.72));
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+.bx-founding .bx-section-head {
+  margin-bottom: 40px;
+}
+/* A warm amber-tinted eyebrow so the founding band reads as the "gold"
+   moment of the page (matches the gold pillar/voice accents). */
+.bx-founding .bx-eyebrow {
+  color: var(--bx-gold-soft);
+  border-color: rgba(246, 167, 34, 0.4);
+  background: rgba(246, 167, 34, 0.08);
+}
+.bx-founding-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 18px;
+}
+@media (max-width: 820px) {
+  .bx-founding-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.bx-founding-perk {
+  text-align: left;
+  padding: 24px 24px 26px;
+  border-radius: 18px;
+  border: 1px solid var(--bx-line);
+  background: rgba(11, 20, 42, 0.5);
+}
+.bx-founding-ic {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 13px;
+  margin-bottom: 16px;
+  color: var(--bx-gold-soft);
+  background: linear-gradient(
+    135deg,
+    rgba(246, 167, 34, 0.2),
+    rgba(246, 167, 34, 0.05)
+  );
+  border: 1px solid rgba(246, 167, 34, 0.34);
+}
+.bx-founding-perk h3 {
+  font-family: var(--bx-display);
+  font-optical-sizing: auto;
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 0 0 8px;
+  color: var(--bx-text);
+}
+.bx-founding-perk p {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--bx-text-dim);
+  margin: 0;
+}
+.bx-founding-cta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 14px;
+  margin-top: 36px;
+}
+.bx-founding-fine {
+  margin: 18px 0 0;
+  text-align: center;
+  font-family: var(--bx-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+  color: var(--bx-text-faint);
+}
+
 .bx-cta {
   position: relative;
   text-align: center;
@@ -3232,6 +3936,29 @@
 .bx-modal-alt a:hover {
   text-decoration: underline;
 }
+/* Direct phone/email inside the "talk to us" modal — an enterprise buyer
+   who'd rather just call never has to hunt the footer for it. */
+.bx-modal-contact {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 22px;
+  margin-top: 18px;
+}
+.bx-modal-contact a {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--bx-text);
+  text-decoration: none;
+}
+.bx-modal-contact a:hover {
+  color: var(--bx-cyan);
+}
+.bx-modal-contact svg {
+  color: var(--bx-cyan);
+}
 @keyframes bx-fade-in {
   from {
     opacity: 0;
@@ -3352,6 +4079,44 @@
   max-width: 420px;
   line-height: 1.6;
 }
+.bx-footer-contact {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.bx-footer-contact-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--bx-text-faint);
+}
+.bx-footer-contact-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--bx-text-dim);
+  text-decoration: none;
+  transition: color 0.18s ease;
+}
+.bx-footer-contact-link:hover {
+  color: var(--bx-text);
+}
+.bx-footer-contact-toll {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--bx-text-faint);
+  border: 1px solid var(--bx-line);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
 .bx-footer-nav {
   display: flex;
   flex-wrap: wrap;
@@ -3403,6 +4168,12 @@
   transition:
     opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1),
     transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+}
+/* Promote to its own layer only WHILE it still has to animate in. Leaving
+   `will-change` on every revealed element permanently pins a compositor
+   layer per section for the life of the page; dropping it once `.in` lands
+   hands that memory back to the browser. */
+.bx-reveal:not(.in) {
   will-change: opacity, transform;
 }
 .bx-reveal.in {
@@ -3814,6 +4585,202 @@
   color: var(--bx-text-dim);
   margin: 0;
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   Features page v2 — value levers, integrations strip, footnote.
+   Adds the attention-grabbing "three reasons DME owners switch" band
+   (time / revenue / leaner team) plus the partner-logos chip row.
+   Isolation here is by naming convention, not selector prefix: the
+   bxf-* / bx-* class prefixes are unique to this design system and the
+   markup only ever renders inside .breathe-page — matching the rest of
+   this file. The section reuses bx-* primitives elsewhere.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Three big value levers */
+.bxf-levers {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 18px;
+}
+@media (max-width: 900px) {
+  .bxf-levers {
+    grid-template-columns: 1fr;
+  }
+}
+.bxf-lever {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 30px;
+  border-radius: 20px;
+  background: var(--bx-panel);
+  border: 1px solid var(--bx-line);
+  backdrop-filter: blur(10px);
+  transition:
+    transform 0.25s ease,
+    border-color 0.25s ease,
+    box-shadow 0.25s ease;
+}
+.bxf-lever:hover {
+  transform: translateY(-4px);
+  border-color: var(--bx-line-strong);
+  box-shadow: 0 24px 50px -20px rgba(8, 20, 55, 0.9);
+}
+.bxf-lever-ic {
+  width: 48px;
+  height: 48px;
+  border-radius: 13px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 20px;
+  color: var(--bx-cyan);
+  background: linear-gradient(
+    135deg,
+    rgba(84, 200, 255, 0.16),
+    rgba(47, 111, 230, 0.08)
+  );
+  border: 1px solid var(--bx-line-strong);
+}
+.bxf-lever-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.bxf-lever-metric .n {
+  font-family: var(--bx-display);
+  font-optical-sizing: auto;
+  font-size: 46px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  background: linear-gradient(120deg, #fff, var(--bx-cyan));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.bxf-lever-metric .u {
+  font-family: var(--bx-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--bx-text-faint);
+}
+.bxf-lever h3 {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0 0 10px;
+}
+.bxf-lever > p {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--bx-text-dim);
+  margin: 0 0 18px;
+}
+.bxf-lever-list {
+  list-style: none;
+  margin: auto 0 0;
+  padding: 18px 0 0;
+  border-top: 1px solid var(--bx-line);
+  display: grid;
+  gap: 12px;
+}
+.bxf-lever-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--bx-text);
+}
+.bxf-lever-list li svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--bx-cyan);
+}
+/* Per-lever accent: 1 = time (cyan, default), 2 = revenue (mint),
+   3 = leaner team (gold). */
+.bxf-lever:nth-child(2) .bxf-lever-ic,
+.bxf-lever:nth-child(2) .bxf-lever-list li svg {
+  color: var(--bx-mint);
+}
+.bxf-lever:nth-child(2) .bxf-lever-ic {
+  background: linear-gradient(
+    135deg,
+    rgba(111, 240, 194, 0.18),
+    rgba(111, 240, 194, 0.06)
+  );
+}
+.bxf-lever:nth-child(2) .bxf-lever-metric .n {
+  background: linear-gradient(120deg, #fff, var(--bx-mint));
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+.bxf-lever:nth-child(3) .bxf-lever-ic,
+.bxf-lever:nth-child(3) .bxf-lever-list li svg {
+  color: var(--bx-gold-soft);
+}
+.bxf-lever:nth-child(3) .bxf-lever-ic {
+  background: linear-gradient(
+    135deg,
+    rgba(246, 167, 34, 0.18),
+    rgba(246, 167, 34, 0.06)
+  );
+}
+.bxf-lever:nth-child(3) .bxf-lever-metric .n {
+  background: linear-gradient(120deg, #fff, var(--bx-gold-soft));
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
+/* Integrations / partners chip row */
+.bxf-chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  max-width: 880px;
+  margin: 0 auto;
+}
+.bxf-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 16px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--bx-text-dim);
+  background: var(--bx-panel-2);
+  border: 1px solid var(--bx-line);
+  transition:
+    color 0.2s ease,
+    border-color 0.2s ease;
+}
+.bxf-chip:hover {
+  color: var(--bx-text);
+  border-color: var(--bx-line-strong);
+}
+.bxf-chip .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--bx-cyan);
+  box-shadow: 0 0 8px 1px rgba(84, 200, 255, 0.6);
+}
+
+/* Honest-figures footnote */
+.bxf-footnote {
+  max-width: 720px;
+  margin: 26px auto 0;
+  text-align: center;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--bx-text-faint);
+}
+
 /* ───────────────────── Responsive refinements ───────────────────── */
 /* Product-tour mock console: the fixed 212px sidebar + multi-column panels
    are illegible on phones, so collapse them down progressively. */
@@ -3864,4 +4831,613 @@
   .bx-pagehead {
     padding: 44px 0 0;
   }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Integrations + differentiation + education build-out.
+   New sections for the homepage (UnifiedFleet, BuiltInHouse), the
+   Integrations page (breathe-integrations.tsx) and the DME Platform 101
+   page (breathe-learn.tsx). Every selector is .bx-* namespaced and only
+   rendered inside .breathe-page, like the rest of this file — no @theme,
+   no bare element selectors. Reduced motion is covered by the global
+   `.breathe-page *` rule above.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* A small standalone CTA band that shouldn't add a second 104px gap. */
+.bx-section-tight {
+  padding-top: 0;
+}
+
+/* Homepage integrations strip — make it a link into /breathe/integrations. */
+.bx-integrations-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 22px;
+}
+.bx-integrations-head .bx-integrations-label {
+  margin: 0;
+}
+.bx-integrations-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--bx-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--bx-cyan);
+  text-decoration: none;
+  transition:
+    gap 0.2s ease,
+    color 0.2s ease;
+}
+.bx-integrations-link:hover {
+  gap: 10px;
+  color: var(--bx-text);
+}
+
+/* ───────────── Logo / wordmark cards (UnifiedFleet teaser) ───────────── */
+.bx-logogrid {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  justify-content: center;
+  gap: 14px;
+}
+.bx-logogrid .bx-logocard {
+  flex: 1 1 190px;
+  max-width: 230px;
+}
+.bx-logogrid-arrow {
+  display: grid;
+  place-items: center;
+  color: var(--bx-cyan);
+  flex: 0 0 auto;
+  padding: 0 2px;
+}
+.bx-logocard {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: center;
+  text-align: center;
+  padding: 22px 20px;
+  border-radius: 16px;
+  background: var(--bx-panel);
+  border: 1px solid var(--bx-line);
+  backdrop-filter: blur(10px);
+}
+.bx-logocard-tag {
+  font-family: var(--bx-mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--bx-text-faint);
+}
+.bx-logocard-mark {
+  font-family: var(--bx-display);
+  font-size: 23px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--bx-text);
+}
+.bx-logocard-sub {
+  font-size: 12.5px;
+  color: var(--bx-text-dim);
+}
+.bx-logocard-unified {
+  border-color: var(--bx-line-strong);
+  background: linear-gradient(
+    135deg,
+    rgba(84, 200, 255, 0.14),
+    rgba(47, 111, 230, 0.06)
+  );
+  box-shadow: 0 18px 44px -22px rgba(8, 20, 55, 0.9);
+}
+.bx-logocard-unified .bx-logocard-tag {
+  color: var(--bx-cyan);
+}
+@media (max-width: 700px) {
+  .bx-logogrid {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .bx-logogrid .bx-logocard {
+    max-width: none;
+  }
+  .bx-logogrid-arrow {
+    transform: rotate(90deg);
+  }
+}
+
+/* ───────────── "Built in-house, not bolted on" vs band ───────────── */
+.bx-vs {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 18px;
+  align-items: stretch;
+}
+@media (max-width: 860px) {
+  .bx-vs {
+    grid-template-columns: 1fr;
+  }
+}
+.bx-vs-col {
+  padding: 28px;
+  border-radius: 18px;
+  background: var(--bx-panel);
+  border: 1px solid var(--bx-line);
+  backdrop-filter: blur(10px);
+}
+.bx-vs-col header {
+  margin-bottom: 18px;
+}
+.bx-vs-kicker {
+  font-family: var(--bx-mono);
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--bx-text-faint);
+}
+.bx-vs-col header h3 {
+  font-family: var(--bx-display);
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 8px 0 0;
+  color: var(--bx-text);
+}
+.bx-vs-legacy {
+  border-style: dashed;
+}
+.bx-vs-native {
+  border-color: var(--bx-line-strong);
+  background: linear-gradient(
+    160deg,
+    rgba(20, 32, 62, 0.62),
+    rgba(11, 20, 42, 0.78)
+  );
+}
+.bx-vs-native .bx-vs-kicker {
+  color: var(--bx-cyan);
+}
+.bx-vs-divider {
+  display: grid;
+  place-items: center;
+}
+.bx-vs-divider span {
+  font-family: var(--bx-mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--bx-text-faint);
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--bx-line);
+  background: var(--bx-panel-3);
+}
+.bx-vs-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 11px;
+}
+.bx-vs-list li {
+  position: relative;
+  padding-left: 26px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--bx-text-dim);
+}
+.bx-vs-list li::before {
+  content: "✕";
+  position: absolute;
+  left: 4px;
+  top: 0;
+  color: var(--bx-text-faint);
+  font-size: 13px;
+}
+.bx-vs-list-good li::before {
+  content: "✓";
+  color: var(--bx-mint);
+}
+.bx-vs-native-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 14px;
+}
+.bx-vs-native-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.bx-vs-ic {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  color: var(--bx-cyan);
+  background: linear-gradient(
+    135deg,
+    rgba(84, 200, 255, 0.16),
+    rgba(47, 111, 230, 0.08)
+  );
+  border: 1px solid var(--bx-line-strong);
+}
+.bx-vs-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.bx-vs-text b {
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--bx-text);
+}
+.bx-vs-text i {
+  font-style: normal;
+  font-size: 13px;
+  color: var(--bx-text-dim);
+}
+
+/* ───────────── Login sprawl ("today" state) ───────────── */
+.bx-sprawl {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 18px;
+}
+@media (max-width: 760px) {
+  .bx-sprawl {
+    grid-template-columns: 1fr;
+  }
+}
+.bx-sprawl-node {
+  position: relative;
+  padding: 28px 24px;
+  border-radius: 18px;
+  background: var(--bx-panel-2);
+  border: 1px dashed var(--bx-line-strong);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+}
+.bx-sprawl-mark {
+  font-family: var(--bx-display);
+  font-size: 26px;
+  font-weight: 600;
+  color: var(--bx-text);
+}
+.bx-sprawl-sub {
+  font-size: 13.5px;
+  color: var(--bx-text-dim);
+}
+.bx-sprawl-tag {
+  margin-top: 8px;
+  font-family: var(--bx-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--bx-gold-soft);
+  border: 1px solid rgba(246, 167, 34, 0.34);
+  border-radius: 100px;
+  padding: 5px 12px;
+}
+.bx-sprawl-foot {
+  margin: 26px auto 0;
+  max-width: 640px;
+  text-align: center;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--bx-text-faint);
+}
+
+/* ───────────── Unified fleet table ───────────── */
+.bx-fleet-wrap {
+  border-radius: 18px;
+  border: 1px solid var(--bx-line);
+  background: var(--bx-panel);
+  backdrop-filter: blur(10px);
+  overflow-x: auto;
+}
+.bx-fleet {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+  min-width: 660px;
+}
+.bx-fleet th,
+.bx-fleet td {
+  text-align: left;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--bx-line);
+  white-space: nowrap;
+}
+.bx-fleet thead th {
+  font-family: var(--bx-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--bx-text-faint);
+  font-weight: 600;
+}
+.bx-fleet td {
+  color: var(--bx-text-dim);
+}
+.bx-fleet tbody tr:last-child td {
+  border-bottom: none;
+}
+.bx-fleet tbody tr:hover td {
+  background: rgba(84, 200, 255, 0.04);
+}
+.bx-fleet-name {
+  font-weight: 600;
+  color: var(--bx-text);
+}
+.bx-fleet-chip {
+  font-family: var(--bx-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--bx-cyan);
+  border: 1px solid var(--bx-line-strong);
+  border-radius: 7px;
+  padding: 3px 8px;
+  background: rgba(84, 200, 255, 0.06);
+}
+.bx-fleet-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  border-radius: 100px;
+  padding: 4px 11px;
+}
+.bx-fleet-status::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.bx-fleet-status.is-ok {
+  color: var(--bx-mint);
+  background: rgba(111, 240, 194, 0.1);
+}
+.bx-fleet-status.is-warn {
+  color: var(--bx-gold-soft);
+  background: rgba(246, 167, 34, 0.12);
+}
+.bx-fleet-status.is-info {
+  color: var(--bx-text-dim);
+  background: rgba(120, 160, 230, 0.1);
+}
+.bx-fleet-foot {
+  margin: 18px auto 0;
+  max-width: 720px;
+  text-align: center;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--bx-text-faint);
+}
+
+/* ───────────── AI early-warning timeline ───────────── */
+.bx-alertline {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+@media (max-width: 900px) {
+  .bx-alertline {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+@media (max-width: 560px) {
+  .bx-alertline {
+    grid-template-columns: 1fr;
+  }
+}
+.bx-alert-node {
+  position: relative;
+  padding: 24px 22px;
+  border-radius: 16px;
+  background: var(--bx-panel);
+  border: 1px solid var(--bx-line);
+  backdrop-filter: blur(10px);
+}
+.bx-alert-idx {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  font-family: var(--bx-mono);
+  font-weight: 700;
+  font-size: 14px;
+  color: #05101f;
+  background: linear-gradient(135deg, #7ed7ff, #6aa6ff);
+  margin-bottom: 16px;
+}
+.bx-alert-body h3 {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0 0 7px;
+  color: var(--bx-text);
+}
+.bx-alert-body p {
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--bx-text-dim);
+  margin: 0;
+}
+.bx-alert-tags {
+  margin-top: 24px;
+  padding: 22px 24px;
+  border-radius: 16px;
+  border: 1px solid var(--bx-line);
+  background: var(--bx-panel-2);
+}
+.bx-alert-tags-label {
+  display: block;
+  font-family: var(--bx-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--bx-text-faint);
+  margin-bottom: 14px;
+}
+.bx-alert-tags-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+.bx-alert-tag {
+  font-family: var(--bx-mono);
+  font-size: 12px;
+  border-radius: 8px;
+  padding: 6px 11px;
+  border: 1px solid var(--bx-line);
+  color: var(--bx-text-dim);
+}
+.bx-alert-tag.is-risk {
+  color: var(--bx-gold-soft);
+  border-color: rgba(246, 167, 34, 0.4);
+  background: rgba(246, 167, 34, 0.08);
+}
+.bx-alert-tag.is-warn {
+  color: var(--bx-cyan);
+  border-color: var(--bx-line-strong);
+  background: rgba(84, 200, 255, 0.06);
+}
+.bx-alert-tag.is-info {
+  color: var(--bx-text-dim);
+  background: rgba(120, 160, 230, 0.06);
+}
+
+/* ───────────── Integration (device cloud / payer) cards ───────────── */
+.bx-intgrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 18px;
+}
+@media (max-width: 900px) {
+  .bx-intgrid {
+    grid-template-columns: 1fr;
+  }
+}
+.bx-intcard {
+  padding: 26px 28px;
+  border-radius: 18px;
+  background: var(--bx-panel);
+  border: 1px solid var(--bx-line);
+  backdrop-filter: blur(10px);
+  transition:
+    transform 0.25s ease,
+    border-color 0.25s ease,
+    box-shadow 0.25s ease;
+}
+.bx-intcard:hover {
+  transform: translateY(-3px);
+  border-color: var(--bx-line-strong);
+  box-shadow: 0 24px 50px -22px rgba(8, 20, 55, 0.9);
+}
+.bx-intcard.gold {
+  border-color: rgba(246, 167, 34, 0.32);
+}
+.bx-intcard-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+.bx-intcard-mark {
+  font-family: var(--bx-display);
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--bx-text);
+}
+.bx-intcard-tag {
+  font-family: var(--bx-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--bx-cyan);
+  border: 1px solid var(--bx-line-strong);
+  border-radius: 100px;
+  padding: 4px 10px;
+  white-space: nowrap;
+}
+.bx-intcard.gold .bx-intcard-tag {
+  color: var(--bx-gold-soft);
+  border-color: rgba(246, 167, 34, 0.4);
+}
+.bx-intcard-sub {
+  font-size: 13px;
+  color: var(--bx-text-dim);
+  margin: 0 0 16px;
+}
+
+/* ───────────── DME Platform 101 (education) ───────────── */
+.bx-learn-lead {
+  max-width: 760px;
+  margin: 0 auto;
+  display: grid;
+  gap: 18px;
+  padding: 32px 34px;
+  border-radius: 20px;
+  background: var(--bx-panel);
+  border: 1px solid var(--bx-line);
+  backdrop-filter: blur(10px);
+}
+.bx-learn-lead p {
+  font-size: 17px;
+  line-height: 1.7;
+  color: var(--bx-text-dim);
+  margin: 0;
+}
+.bx-glossary {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  margin: 0;
+}
+@media (max-width: 760px) {
+  .bx-glossary {
+    grid-template-columns: 1fr;
+  }
+}
+.bx-glossary-item {
+  padding: 22px 24px;
+  border-radius: 16px;
+  background: var(--bx-panel);
+  border: 1px solid var(--bx-line);
+  backdrop-filter: blur(10px);
+}
+.bx-glossary-term {
+  font-family: var(--bx-display);
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--bx-text);
+  margin: 0 0 8px;
+}
+.bx-glossary-def {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--bx-text-dim);
+  margin: 0;
 }

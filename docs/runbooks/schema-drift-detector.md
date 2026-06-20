@@ -29,10 +29,10 @@ missing column shows up as a daily alarm instead of an outage.
   If `SCHEMA_DRIFT_DATABASE_URL` is unset the job **no-ops** with a notice
   instead of failing red.
 - **Tool:** [`scripts/src/check-schema-drift.ts`](../../scripts/src/check-schema-drift.ts).
-  Read-only. Parses every `lib/resupply-db/drizzle/*.sql` for additive DDL
+  Read-only. Parses every `lib/resupply-db/migrations/*.sql` for additive DDL
   targeting `resupply` / `resupply_auth`, then asks the live DB (two
   `information_schema` SELECTs + one `to_regclass` for the
-  `drizzle.resupply_migrations` ledger) which expected tables/columns are
+  `migrations.resupply_migrations` ledger) which expected tables/columns are
   absent. Exit codes: `0` no drift · `1` drift found · `2` usage/env error
   · `3` internal error.
 - **Secret:** repository secret `SCHEMA_DRIFT_DATABASE_URL` on
@@ -165,7 +165,7 @@ Actions → **"Schema drift (live DB)"** → **Run workflow**. A real run
 (not the no-op) proves the credential connects.
 
 **Expect a drift _finding_ on the first run, not a clean pass.** Per the
-incident doc, production has **no `drizzle.resupply_migrations` ledger**,
+incident doc, production has **no `migrations.resupply_migrations` ledger**,
 which the tool reports as drift by design (exit `1`). That is the tool
 working, not a regression — it stops being red once a ledger/runner is
 restored (incident follow-up #1).

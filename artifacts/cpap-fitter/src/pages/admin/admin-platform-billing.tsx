@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card } from "@/components/admin/Card";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Spinner } from "@/components/admin/Spinner";
+import { AddonExplainer } from "@/lib/admin/addon-details";
 import {
   buildPreviewConfirm,
   fetchPlatformBillingActivity,
@@ -140,6 +141,11 @@ function TenantEditor({
   );
   const [notes, setNotes] = useState(tenant.billing.subscription?.notes ?? "");
   const [message, setMessage] = useState<string | null>(null);
+  // Guard the async preview windows so a fast second click (Save plan) or a
+  // blur→refocus→blur (add-on input) can't open a duplicate confirm + fire a
+  // second mutation while the preview fetch is still in flight.
+  const [previewingPlan, setPreviewingPlan] = useState(false);
+  const [previewingAddon, setPreviewingAddon] = useState<string | null>(null);
   const savePlan = useMutation({
     mutationFn: () =>
       updateTenantPlan(tenant.id, {
@@ -348,11 +354,15 @@ function TenantEditor({
         </label>
         <button
           onClick={async () => {
+            // Ignore re-entrant clicks while a preview is in flight or the
+            // save is committing.
+            if (savePlan.isPending || previewingPlan) return;
             // Cost/proration preview before committing the plan change. A
             // custom monthly override skips the preview (it isn't catalog
             // priced); on a preview failure we still show a plain confirm so
             // a save never commits without acknowledgement.
             if (!monthly.trim()) {
+              setPreviewingPlan(true);
               const planName =
                 plans.find((p) => p.code === planCode)?.name ?? planCode;
               const who = tenant.storefrontName || tenant.name || tenant.slug;
@@ -365,15 +375,21 @@ function TenantEditor({
                 message = buildPreviewConfirm(preview);
               } catch {
                 // preview unavailable — keep the static fallback message
+              } finally {
+                setPreviewingPlan(false);
               }
               if (!window.confirm(message)) return;
             }
             savePlan.mutate();
           }}
-          disabled={savePlan.isPending}
+          disabled={savePlan.isPending || previewingPlan}
           className="self-end rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
         >
-          {savePlan.isPending ? "Saving…" : "Save plan"}
+          {savePlan.isPending
+            ? "Saving…"
+            : previewingPlan
+              ? "Checking…"
+              : "Save plan"}
         </button>
       </div>
       {message ? <p className="text-sm text-slate-600">{message}</p> : null}
@@ -413,8 +429,12 @@ function TenantEditor({
                   type="number"
                   min={0}
                   step={1}
-                  className="w-20 rounded-md border border-slate-300 px-2 py-1 text-sm"
+                  disabled={saveAddon.isPending || previewingAddon !== null}
+                  className="w-20 rounded-md border border-slate-300 px-2 py-1 text-sm disabled:opacity-60"
                   onBlur={async (e) => {
+                    // Ignore re-entrant blurs while a preview is in flight or
+                    // a save is committing (blur→refocus→blur).
+                    if (saveAddon.isPending || previewingAddon !== null) return;
                     // Normalize to a non-negative integer — the API schema
                     // expects an int, so an empty/decimal/NaN field would
                     // otherwise 400. Reflect the cleaned value back into the
@@ -428,6 +448,7 @@ function TenantEditor({
                     // Cost/proration preview before committing the change; on
                     // a preview failure we still show a plain confirm so a
                     // save never commits without acknowledgement.
+                    setPreviewingAddon(addon.code);
                     let message =
                       next === 0
                         ? `Remove ${addon.name} from this tenant?`
@@ -444,6 +465,8 @@ function TenantEditor({
                       message = buildPreviewConfirm(preview);
                     } catch {
                       // preview unavailable — keep the static fallback message
+                    } finally {
+                      setPreviewingAddon(null);
                     }
                     if (!window.confirm(message)) return;
                     saveAddon.mutate({
@@ -766,6 +789,7 @@ function AddonCatalogRow({ addon }: { addon: BillingAddon }) {
           </button>
         ) : null}
       </div>
+      {!editing ? <AddonExplainer addon={addon} /> : null}
       {editing ? (
         <div className="mt-2 space-y-2">
           <div className="grid grid-cols-2 gap-2">
@@ -931,20 +955,47 @@ function CatalogPreview({
 /** Recent tenant-billing changes across the fleet — surfaces the
  *  tenant.billing.* / platform.billing.* events the logAudit stub can't show.
  *  Polls every 60s; degrades to a quiet empty/error state. */
-function RecentBillingActivity() {
+function RecentBillingActivity({
+  tenants,
+}: {
+  tenants: Array<{ id: string; label: string }>;
+}) {
+  const [tenantId, setTenantId] = useState<string>("");
   const activity = useQuery({
-    queryKey: ["platform-billing", "activity"],
-    queryFn: () => fetchPlatformBillingActivity(25),
+    queryKey: ["platform-billing", "activity", tenantId || "all"],
+    queryFn: () => fetchPlatformBillingActivity(25, tenantId || undefined),
     refetchInterval: 60_000,
   });
   return (
     <Card className="p-5" data-testid="platform-billing-activity">
-      <h2 className="font-semibold text-slate-950">Recent billing activity</h2>
-      <p className="mt-1 text-sm text-slate-600">
-        Plan and add-on changes across every tenant — who changed what, and
-        when. Self-service tenant changes and super-admin assignments both show
-        here.
-      </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="font-semibold text-slate-950">
+            Recent billing activity
+          </h2>
+          <p className="mt-1 text-sm text-slate-600">
+            Plan and add-on changes across every tenant — who changed what, and
+            when. Self-service tenant changes and super-admin assignments both
+            show here.
+          </p>
+        </div>
+        <label className="text-sm text-slate-600">
+          <span className="sr-only">Filter by tenant</span>
+          <select
+            data-testid="activity-tenant-filter"
+            className="rounded-md border border-slate-300 px-2 py-1 text-sm text-slate-900"
+            value={tenantId}
+            onChange={(e) => setTenantId(e.target.value)}
+          >
+            <option value="">All tenants</option>
+            {tenants.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
       {activity.isPending ? (
         <div className="mt-4">
           <Spinner label="Loading activity…" />
@@ -954,7 +1005,11 @@ function RecentBillingActivity() {
           Could not load billing activity.
         </p>
       ) : activity.data.activity.length === 0 ? (
-        <p className="mt-4 text-sm text-slate-500">No billing changes yet.</p>
+        <p className="mt-4 text-sm text-slate-500">
+          {tenantId
+            ? "No billing changes for this tenant yet."
+            : "No billing changes yet."}
+        </p>
       ) : (
         <ul className="mt-4 divide-y divide-slate-100">
           {activity.data.activity.map((e: BillingActivityEvent) => (
@@ -1077,7 +1132,13 @@ export function AdminPlatformBillingPage() {
           </div>
         </Card>
       </div>
-      <RecentBillingActivity />
+      <RecentBillingActivity
+        tenants={tenantRows.map(({ tenant }) => ({
+          id: tenant.id,
+          label:
+            tenant.storefrontName || tenant.name || tenant.slug || tenant.id,
+        }))}
+      />
       <CatalogPreview plans={plans} addons={addons} />
       {tenantRows.map(({ tenant }) => (
         <TenantEditor
