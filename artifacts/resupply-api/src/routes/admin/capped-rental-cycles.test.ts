@@ -354,3 +354,69 @@ describe("PATCH /admin/capped-rental-cycles/:id — auth gate", () => {
     expect(adminRateLimitSpy.mock.results.length).toBe(callsBefore);
   });
 });
+
+describe("GET /admin/capped-rental-cycles/:id/preview", () => {
+  it("401s without an admin session", async () => {
+    const res = await request(makeApp()).get(
+      `/admin/capped-rental-cycles/${CYCLE_ID}/preview`,
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it("404s when the cycle is missing", async () => {
+    stubAdmin();
+    stageSupabaseResponse("capped_rental_cycles", "select", { data: null });
+    const res = await request(makeApp()).get(
+      `/admin/capped-rental-cycles/${CYCLE_ID}/preview`,
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("previews the month-band modifiers with KX gated on compliance", async () => {
+    stubAdmin();
+    // start_date = today → next anniversary is ~150 days out → not due,
+    // so action is noop and the billed month is the current month (5).
+    const today = new Date().toISOString().slice(0, 10);
+    stageSupabaseResponse("capped_rental_cycles", "select", {
+      data: {
+        id: CYCLE_ID,
+        hcpcs_code: "E0601",
+        start_date: today,
+        current_month: 5,
+        max_months: 13,
+        status: "active",
+      },
+    });
+    const res = await request(makeApp()).get(
+      `/admin/capped-rental-cycles/${CYCLE_ID}/preview`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.action).toBe("noop");
+    expect(res.body.billedMonth).toBe(5);
+    expect(res.body.kxGated).toBe(true);
+    // Month 4-13 band: RR + KI, plus KX only when compliant.
+    expect(res.body.modifiersIfCompliant).toEqual(["RR", "KI", "KX"]);
+    expect(res.body.modifiersIfNotCompliant).toEqual(["RR", "KI"]);
+  });
+
+  it("does not gate KX for a non-PAP HCPCS", async () => {
+    stubAdmin();
+    const today = new Date().toISOString().slice(0, 10);
+    stageSupabaseResponse("capped_rental_cycles", "select", {
+      data: {
+        id: CYCLE_ID,
+        hcpcs_code: "E0260", // hospital bed — not KX-adherence-gated
+        start_date: today,
+        current_month: 5,
+        max_months: 13,
+        status: "active",
+      },
+    });
+    const res = await request(makeApp()).get(
+      `/admin/capped-rental-cycles/${CYCLE_ID}/preview`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.kxGated).toBe(false);
+    expect(res.body.modifiersIfCompliant).toEqual(["RR", "KI"]);
+  });
+});
