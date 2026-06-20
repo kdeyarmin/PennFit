@@ -143,3 +143,38 @@ describe("GET /admin/dwo-documents/:id/pdf", () => {
     expect(res.body.error).toBe("incomplete_inputs");
   });
 });
+
+describe("GET /admin/dwo-documents/expiring — expiry classification", () => {
+  it("401s when unauthenticated", async () => {
+    const res = await request(makeApp()).get("/admin/dwo-documents/expiring");
+    expect(res.status).toBe(401);
+  });
+
+  it("tags each row with the sweep-consistent expiry classification", async () => {
+    mockAdmin.current = CSR;
+    // 7 days out → lands on the 7-day DWO heads-up window (critical),
+    // computed relative to now so the assertion is date-independent.
+    const inSevenDays = new Date(Date.now() + 7 * 24 * 3600 * 1000)
+      .toISOString()
+      .slice(0, 10);
+    stageSupabaseResponse("dwo_documents", "select", {
+      data: [
+        {
+          id: DWO_ID,
+          patient_id: "p1",
+          form_type: "dwo",
+          hcpcs_family: "pap",
+          expires_on: inSevenDays,
+          signed_on: "2026-01-01",
+        },
+      ],
+    });
+    const res = await request(makeApp()).get("/admin/dwo-documents/expiring");
+    expect(res.status).toBe(200);
+    const doc = res.body.documents[0];
+    expect(doc.id).toBe(DWO_ID); // raw row preserved
+    expect(doc.expiry.state).toBe("expiring");
+    expect(doc.expiry.severity).toBe("critical"); // <= 7 days
+    expect(doc.expiry.window).toBe(7);
+  });
+});
