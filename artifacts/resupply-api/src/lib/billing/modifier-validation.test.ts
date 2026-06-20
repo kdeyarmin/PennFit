@@ -3,6 +3,7 @@ import { describe, it, expect } from "vitest";
 import {
   normalizeModifiers,
   validateModifierCombination,
+  findModifierAdvisories,
   type ModifierConflictCode,
 } from "./modifier-validation";
 
@@ -97,5 +98,34 @@ describe("validateModifierCombination — hard contradictions", () => {
   it("accepts a comma-joined string (the stored line shape)", () => {
     expect(validateModifierCombination("RR,KH,KX")).toEqual([]);
     expect(codes("KX,GA")).toEqual(["kx_with_liability"]);
+  });
+});
+
+describe("findModifierAdvisories", () => {
+  it("flags RT and LT on the same line (bilateral two-line convention)", () => {
+    const [adv] = findModifierAdvisories(["RT", "LT"]);
+    expect(adv?.code).toBe("bilateral_one_line");
+    expect(adv?.modifiers).toEqual(["RT", "LT"]);
+    // Same from the stored comma-joined shape.
+    expect(findModifierAdvisories("RT,LT")[0]?.code).toBe("bilateral_one_line");
+    expect(findModifierAdvisories("NU,RT,LT")[0]?.code).toBe(
+      "bilateral_one_line",
+    );
+  });
+
+  it("does not flag a single side modifier or unrelated mods", () => {
+    expect(findModifierAdvisories(["RT"])).toEqual([]);
+    expect(findModifierAdvisories(["LT"])).toEqual([]);
+    expect(findModifierAdvisories(["RR", "KX"])).toEqual([]);
+    expect(findModifierAdvisories([])).toEqual([]);
+    expect(findModifierAdvisories(null)).toEqual([]);
+    expect(findModifierAdvisories("")).toEqual([]);
+  });
+
+  it("is independent of the hard-conflict validator", () => {
+    // RT/LT is NOT a hard contradiction — validateModifierCombination stays
+    // silent while the advisory fires.
+    expect(validateModifierCombination("RT,LT")).toEqual([]);
+    expect(findModifierAdvisories("RT,LT")).toHaveLength(1);
   });
 });

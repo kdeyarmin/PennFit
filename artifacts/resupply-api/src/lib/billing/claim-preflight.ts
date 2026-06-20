@@ -39,7 +39,10 @@ import {
   type DenialRiskStat,
 } from "./denial-risk";
 import { getCachedEligibility } from "./eligibility-verifier";
-import { validateModifierCombination } from "./modifier-validation";
+import {
+  validateModifierCombination,
+  findModifierAdvisories,
+} from "./modifier-validation";
 import {
   evaluateCoverageDiagnosis,
   type CoverageDiagnosisRow,
@@ -694,6 +697,33 @@ export async function preflightClaim(
             : `Invalid modifier combinations on ${modifierConflicts.length} lines`,
         detail: `${first.line.hcpcs_code} (${firstMods}): ${first.conflicts
           .map((c) => c.message)
+          .join(" ")}`,
+        fixAction: {
+          kind: "edit_line_item",
+          claimId: claim.id,
+          lineId: first.line.id,
+        },
+      });
+    }
+
+    // ── Bilateral RT/LT convention (payer-sensitive, non-blocking) ─
+    // A line carrying both RT and LT should be split into two lines (one
+    // RT, one LT, 1 unit each); many payers reject/mis-price a combined
+    // RTLT line. A warning (not a hard error) because it's payer-specific.
+    const bilateral = (lines as ClaimLineRow[])
+      .map((l) => ({ line: l, advisories: findModifierAdvisories(l.modifier) }))
+      .filter((x) => x.advisories.length > 0);
+    if (bilateral.length > 0) {
+      const first = bilateral[0]!;
+      items.push({
+        key: "bilateral_modifier",
+        severity: "warning",
+        label:
+          bilateral.length === 1
+            ? "Bilateral modifiers on one line"
+            : `Bilateral modifiers on ${bilateral.length} lines`,
+        detail: `${first.line.hcpcs_code} (${(first.line.modifier ?? "").trim()}): ${first.advisories
+          .map((a) => a.message)
           .join(" ")}`,
         fixAction: {
           kind: "edit_line_item",
