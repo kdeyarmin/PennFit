@@ -87,7 +87,7 @@ export function renderDemoWelcomeEmail(links: DemoEmailLinks): DemoEmail {
 <ul style="margin:0 0 16px;padding-left:20px;color:#334155;font-size:16px;line-height:1.7;">
 <li>Open the <strong>resupply worklist</strong> and watch the reminder engine flag who's due.</li>
 <li>Drop into a <strong>patient record</strong> to see orders, therapy data, and messages in one place.</li>
-<li>Ask <strong>PennPilot</strong>, the admin assistant, how something works.</li>
+<li>Ask <strong>CareMetric Copilot</strong>, the admin assistant, how something works.</li>
 </ul>
 ${paragraph(
   "It picks up right where you left off — jump back in whenever you have a minute.",
@@ -100,7 +100,7 @@ Thanks for taking CareMetric Breathe for a spin. The demo is a fully interactive
 A few things worth trying first:
   * Open the resupply worklist and watch the reminder engine flag who's due.
   * Drop into a patient record to see orders, therapy data, and messages in one place.
-  * Ask PennPilot, the admin assistant, how something works.
+  * Ask CareMetric Copilot, the admin assistant, how something works.
 
 Open the live demo: ${links.demoUrl}
 

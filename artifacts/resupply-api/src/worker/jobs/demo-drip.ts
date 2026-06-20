@@ -86,12 +86,18 @@ interface SubscriberRow {
   demo_drip_last_sent_at: string | null;
 }
 
-/** Platform public origin the demo links point at. Mirrors the resolution
- *  used by the other platform/marketing surfaces. */
+/** Platform public origin the demo links point at.
+ *
+ * This is a PLATFORM-only drip (CareMetric Breathe marketing), so it must
+ * resolve the platform's OWN host — NOT `SHOP_PUBLIC_BASE_URL`, which the
+ * README documents as a tenant storefront deep-link host (e.g.
+ * `https://pennpaps.com`). Pointing demo links or the unsubscribe URL at a
+ * tenant domain would leak platform marketing traffic into that tenant's
+ * brand. Order: explicit `PLATFORM_PUBLIC_BASE_URL` override → the
+ * platform's Railway host → the canonical `cmbreathe.com` apex. */
 export function demoDripBaseUrl(): string {
   return (
-    process.env.SHOP_PUBLIC_BASE_URL ??
-    process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL ??
+    process.env.PLATFORM_PUBLIC_BASE_URL ??
     (process.env.RAILWAY_PUBLIC_DOMAIN
       ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
       : "https://cmbreathe.com")

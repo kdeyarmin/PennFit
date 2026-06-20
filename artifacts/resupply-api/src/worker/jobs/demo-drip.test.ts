@@ -6,8 +6,8 @@ const DAY = 86_400_000;
 
 beforeEach(() => {
   process.env.RESUPPLY_LINK_HMAC_KEY = "test-hmac-key-for-demo-drip-helpers-32";
+  delete process.env.PLATFORM_PUBLIC_BASE_URL;
   delete process.env.SHOP_PUBLIC_BASE_URL;
-  delete process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL;
   delete process.env.RAILWAY_PUBLIC_DOMAIN;
 });
 
@@ -41,11 +41,26 @@ describe("isStageDue", () => {
   });
 });
 
-describe("buildDemoLinks", () => {
+describe("demoDripBaseUrl", () => {
   it("defaults the base URL to the platform apex", () => {
     expect(demoDripBaseUrl()).toBe("https://cmbreathe.com");
   });
 
+  it("prefers the explicit platform override", () => {
+    process.env.PLATFORM_PUBLIC_BASE_URL = "https://cmbreathe.com/";
+    expect(demoDripBaseUrl()).toBe("https://cmbreathe.com");
+  });
+
+  it("uses the platform Railway host, never a tenant shop URL", () => {
+    // SHOP_PUBLIC_BASE_URL can be a tenant storefront (e.g. pennpaps.com) —
+    // it must NOT influence this platform-only drip.
+    process.env.SHOP_PUBLIC_BASE_URL = "https://pennpaps.com";
+    process.env.RAILWAY_PUBLIC_DOMAIN = "pennfit.up.railway.app";
+    expect(demoDripBaseUrl()).toBe("https://pennfit.up.railway.app");
+  });
+});
+
+describe("buildDemoLinks", () => {
   it("builds demo / features / unsubscribe links bound to the email", () => {
     const links = buildDemoLinks("lead@example.com", "https://cmbreathe.com");
     expect(links.demoUrl).toBe("https://cmbreathe.com/admin?demo=1");
