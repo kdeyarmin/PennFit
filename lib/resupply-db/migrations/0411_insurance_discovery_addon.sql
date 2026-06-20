@@ -5,14 +5,23 @@
 -- demographics to find ACTIVE coverage when the patient's insurance is
 -- unknown, or a coverage on file came back inactive. It is sold as a paid
 -- add-on (this migration seeds the catalog row) and gated per-tenant by the
--- `insurance.discovery` feature flag: purchasing the add-on flips the flag
--- on for that tenant, exactly as the AI voice agent add-on drives
--- voice.agent. The discovery route refuses to run when the flag is off, so a
--- tenant without the add-on can't reach the (billable) clearinghouse search.
+-- `insurance.discovery` feature flag. As with every other paid feature
+-- (e.g. the AI voice agent / `voice.agent`), buying the add-on is the
+-- COMMERCIAL entitlement and is decoupled from the runtime gate: the add-on
+-- row records billing, while turning the feature ON is a separate admin step
+-- — flip `insurance.discovery` in Control Center / System Configuration. The
+-- discovery route refuses to run while the flag is off.
 --
--- ADDITIVE / idempotent. ON CONFLICT keeps re-runs safe and never clobbers a
--- price the platform owner has since edited (the flag insert never clobbers
--- an intentional toggle either).
+-- ADDITIVE / idempotent, but the two ON CONFLICT clauses behave differently:
+--   * billing_addons uses DO UPDATE, so re-running this migration REFRESHES
+--     the catalog row (name, price, etc.) from the values here. Re-runs are
+--     ledger-gated (the migrator applies each file once), so this only fires
+--     on an intentional replay — it is NOT a place that preserves a price a
+--     platform owner later edited in the catalog UI; such an edit would be
+--     reset by a replay. Edit the price in the UI (or a new migration), not
+--     by re-running this one.
+--   * feature_flags uses DO NOTHING, so a re-run never clobbers an
+--     intentional toggle.
 --
 -- Two concerns, two tables:
 --   1. billing_addons      — the global catalog row (premium, recurring).

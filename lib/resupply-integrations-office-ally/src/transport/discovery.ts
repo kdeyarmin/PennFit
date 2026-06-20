@@ -189,7 +189,10 @@ export function buildDiscoveryRequestBody(
     gender: req.gender ?? "U",
     asOfDate: req.serviceDate ?? isoToday(),
   };
-  if (req.ssn && req.ssn.trim()) body.ssn = req.ssn.replace(/\D/g, "");
+  // Strip to digits FIRST, then only include it when something remains —
+  // a non-numeric input (e.g. "abc") must not send `ssn: ""`.
+  const ssnDigits = req.ssn ? req.ssn.replace(/\D/g, "") : "";
+  if (ssnDigits) body.ssn = ssnDigits;
   if (req.memberId && req.memberId.trim()) body.memberId = req.memberId.trim();
   if (req.postalCode && req.postalCode.trim()) {
     body.postalCode = req.postalCode.trim();
@@ -245,11 +248,20 @@ export function normalizeCoverage(row: unknown): DiscoveredCoverage | null {
 export function normalizeDate(value: string | null): string | null {
   if (!value) return null;
   const trimmed = value.trim();
-  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
-  // X12 D8: YYYYMMDD → YYYY-MM-DD.
-  const d8 = /^(\d{4})(\d{2})(\d{2})$/.exec(trimmed);
-  if (d8) return `${d8[1]}-${d8[2]}-${d8[3]}`;
-  return null;
+  // Accept fully-ISO (YYYY-MM-DD) or fully-D8 (YYYYMMDD); nothing mixed.
+  const m =
+    /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed) ??
+    /^(\d{4})(\d{2})(\d{2})$/.exec(trimmed);
+  if (!m) return null;
+  const iso = `${m[1]}-${m[2]}-${m[3]}`;
+  // Reject shape-valid but impossible dates (e.g. 2026-13-40, 2026-02-31):
+  // they'd look ISO but still 400 at the chart's strict date validation.
+  // The round-trip catches both out-of-range and rolled-over dates.
+  const dt = new Date(`${iso}T00:00:00Z`);
+  if (Number.isNaN(dt.getTime()) || dt.toISOString().slice(0, 10) !== iso) {
+    return null;
+  }
+  return iso;
 }
 
 function coerceActive(r: Record<string, unknown>): boolean {

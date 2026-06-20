@@ -88,13 +88,17 @@ router.post(
   discoveryRateLimiter,
   async (req, res) => {
     // Paid add-on gate: a tenant without `insurance.discovery` can't reach
-    // the billable clearinghouse search.
+    // the billable clearinghouse search. The flag is the runtime gate;
+    // purchasing the add-on (Billing → Package & usage) is the commercial
+    // step, and an administrator turns the feature on in System Configuration
+    // (Control Center) — the same decoupled model every paid feature uses.
     if (!(await isFeatureEnabled("insurance.discovery", req.orgId))) {
       res.status(403).json({
         error: "addon_not_enabled",
         message:
-          "Insurance discovery is an add-on that isn't enabled for your " +
-          "account. Add it from Billing → Package & usage to turn it on.",
+          "Insurance discovery isn't enabled for your account. Once the " +
+          "add-on is in place, an administrator can turn it on under System " +
+          "Configuration.",
       });
       return;
     }

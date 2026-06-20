@@ -188,6 +188,17 @@ describe("buildDiscoveryRequestBody", () => {
     expect(body.asOfDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
+  it("omits ssn entirely when the input has no digits (never sends an empty string)", () => {
+    const body = buildDiscoveryRequestBody({
+      firstName: "A",
+      lastName: "B",
+      dateOfBirth: "1990-01-01",
+      ssn: "abc",
+    });
+    expect(body.ssn).toBeUndefined();
+    expect("ssn" in body).toBe(false);
+  });
+
   it("passes through service date and strips SSN to digits", () => {
     const body = buildDiscoveryRequestBody({
       firstName: "A",
@@ -263,6 +274,17 @@ describe("normalizeDate", () => {
     expect(normalizeDate("June 20")).toBeNull();
     expect(normalizeDate("")).toBeNull();
     expect(normalizeDate(null)).toBeNull();
+  });
+
+  it("rejects shape-valid but impossible dates", () => {
+    // Would otherwise become "2026-13-40" / "2026-02-31" — ISO-shaped but
+    // not a real date, and would 400 at the chart's date validation.
+    expect(normalizeDate("20261340")).toBeNull();
+    expect(normalizeDate("2026-13-40")).toBeNull();
+    expect(normalizeDate("20260231")).toBeNull();
+    expect(normalizeDate("2026-02-31")).toBeNull();
+    // Mixed ISO/D8 is not accepted.
+    expect(normalizeDate("2026-0620")).toBeNull();
   });
 });
 
