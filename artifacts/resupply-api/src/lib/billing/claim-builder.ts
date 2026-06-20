@@ -26,8 +26,11 @@ import {
 
 import { logger } from "../logger";
 import {
+  type AbnScope,
   type ModifierRuleContext,
   type ModifierRuleRow,
+  abnCoversHcpcs,
+  buildAbnScope,
   resolveModifiersFromRules,
 } from "./modifier-rules";
 import { fetchUnitCostsBySku } from "./product-cost-lookup";
@@ -333,17 +336,23 @@ export async function buildClaimFromFulfillment(
   //    needs the rental cycle stage + compliance state; we resolve
   //    those once and pass into the per-line evaluator.
   if (proposed.payerProfileId) {
-    const ctx = await resolveRuleContext(
+    const { ctx, abn } = await resolveRuleContext(
       supabase,
       fulfillment.patient_id,
       proposed.priorAuthNumber !== null,
     );
     for (const lineItem of proposed.lines) {
+      // Resolve "ABN on file" for THIS line's HCPCS — a general ABN covers
+      // every line; an item-scoped ABN only its listed codes.
+      const lineCtx: ModifierRuleContext = {
+        ...ctx,
+        isAbnOnFile: abnCoversHcpcs(abn, lineItem.hcpcsCode),
+      };
       const extra = await applyPayerModifierRules(
         supabase,
         proposed.payerProfileId,
         lineItem.hcpcsCode,
-        ctx,
+        lineCtx,
       );
       // Merge + dedupe modifiers while preserving order; the EDI
       // builder accepts up to 4 modifiers per line.
@@ -453,7 +462,7 @@ async function resolveRuleContext(
   supabase: SupabaseClient,
   patientId: string,
   hasPriorAuth: boolean,
-): Promise<ModifierRuleContext> {
+): Promise<{ ctx: ModifierRuleContext; abn: AbnScope }> {
   // Rental month — count of prior insurance_claims carrying an E0601
   // line in status submitted / accepted / paid for this patient. This
   // is heuristic; an explicit capped_rental_status on
@@ -493,26 +502,36 @@ async function resolveRuleContext(
   ).length;
   const isCompliant = compliantNights >= COMPLIANCE_MIN_NIGHTS;
 
-  // ABN on file — any signed Advance Beneficiary Notice acknowledgement for
+  // ABN on file — signed Advance Beneficiary Notice acknowledgement(s) for
   // this patient. Drives the `if_abn_on_file` payer rule (e.g. stamp GA on
-  // an expected-non-coverage line). A lookup error degrades to "no ABN" so
-  // we never silently shift liability to the patient on bad data.
-  const { data: abnAck } = await supabase
+  // an expected-non-coverage line so the patient — not the supplier — is
+  // liable). An ABN can be ITEM-SCOPED (migration 0417): a row's hcpcs_codes
+  // limits it to specific HCPCS, while a NULL/empty list is a general ABN
+  // that covers every line. We resolve the scope here and apply it PER LINE
+  // below, so GA never lands on an item the patient didn't sign an ABN for.
+  // A lookup error degrades to "no ABN" so we never silently shift liability
+  // to the patient on bad data.
+  const { data: abnAcks } = await supabase
     .from("patient_form_acknowledgements")
-    .select("id")
+    .select("hcpcs_codes")
     .eq("patient_id", patientId)
-    .eq("form_kind", "abn")
-    .limit(1)
-    .maybeSingle();
-  const isAbnOnFile = Boolean(abnAck);
+    .eq("form_kind", "abn");
+  const abn = buildAbnScope(
+    (abnAcks ?? []) as Array<{ hcpcs_codes: string[] | null }>,
+  );
 
   return {
-    rentalMonth,
-    isPurchased: false,
-    isCompliant,
-    isInitialDispense: !priorCpapLines || priorCpapLines.length === 0,
-    hasPriorAuth,
-    isAbnOnFile,
+    ctx: {
+      rentalMonth,
+      isPurchased: false,
+      isCompliant,
+      isInitialDispense: !priorCpapLines || priorCpapLines.length === 0,
+      hasPriorAuth,
+      // Claim-wide baseline; the per-line loop overrides this with the
+      // HCPCS-specific answer before evaluating each line's rules.
+      isAbnOnFile: abn.coversAll,
+    },
+    abn,
   };
 }
 

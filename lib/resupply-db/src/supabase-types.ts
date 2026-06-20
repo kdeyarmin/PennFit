@@ -4751,6 +4751,10 @@ export interface Database {
           source: "patient_portal" | "csr_recorded" | "paper_scan";
           document_id: string | null;
           notes: string | null;
+          // Optional HCPCS scope for an ABN (mig 0417): NULL/empty = a general
+          // ABN that applies to every line; a non-empty list scopes the ABN to
+          // only those HCPCS. NULL for non-ABN forms.
+          hcpcs_codes: string[] | null;
           created_at: string;
         };
         Insert: Partial<
