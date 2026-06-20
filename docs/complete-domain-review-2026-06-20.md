@@ -12,22 +12,22 @@ Run with `npm_config_engine_strict=false` (this container is Node 22 / the
 repo pins Node 24; the override only relaxes the version gate, the code runs
 unchanged):
 
-| Check | Result |
-| --- | --- |
-| `tsc` typecheck (all workspaces) | **Pass** — 0 errors |
-| ESLint (`--max-warnings 0`) | **Pass** — 0 warnings |
-| Architecture / migration-prefix / admin-route-gate / tenant-isolation CI checks | **Pass** |
-| Vitest — `resupply-api` | **6,263 passed**, 10 skipped, 0 failed (622 files) |
-| Vitest — all `lib/*` packages | **Pass** (one env-polluted test — see below) |
-| API esbuild bundle | **Builds** (13 MB `dist/index.mjs`) |
-| Storefront/admin SPA Vite build | **Builds** |
-| TODO/FIXME/HACK markers in non-test code | **0** |
-| Orphaned/unmounted routes (213 admin routers) | **0** — all imported and mounted |
-| Boot-contract invariants (healthz liveness / worker decouple / SIGTERM) | **Intact** |
+| Check                                                                           | Result                                             |
+| ------------------------------------------------------------------------------- | -------------------------------------------------- |
+| `tsc` typecheck (all workspaces)                                                | **Pass** — 0 errors                                |
+| ESLint (`--max-warnings 0`)                                                     | **Pass** — 0 warnings                              |
+| Architecture / migration-prefix / admin-route-gate / tenant-isolation CI checks | **Pass**                                           |
+| Vitest — `resupply-api`                                                         | **6,263 passed**, 10 skipped, 0 failed (622 files) |
+| Vitest — all `lib/*` packages                                                   | **Pass** (one env-polluted test — see below)       |
+| API esbuild bundle                                                              | **Builds** (13 MB `dist/index.mjs`)                |
+| Storefront/admin SPA Vite build                                                 | **Builds**                                         |
+| TODO/FIXME/HACK markers in non-test code                                        | **0**                                              |
+| Orphaned/unmounted routes (213 admin routers)                                   | **0** — all imported and mounted                   |
+| Boot-contract invariants (healthz liveness / worker decouple / SIGTERM)         | **Intact**                                         |
 
 **One red test, not a code defect:**
 `lib/resupply-telecom/src/lookup.test.ts` → "throws when credentials are
-missing" fails *only in this container* because the remote environment injects
+missing" fails _only in this container_ because the remote environment injects
 real `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN`, so the factory does not throw.
 The production code is correctly fail-closed; the **test** lacks env isolation
 (it should stub/clear `process.env` rather than rely on it being unset). Low
@@ -41,8 +41,8 @@ domain reviews. The platform is mid-migration from single-tenant (the Penn
 Home Medical Supply "seed" org) to multi-tenant. The **authenticated admin
 surface is correct** — patient/billing/conversation routes thread `req.orgId`
 and fail closed when it is missing. But a set of **detached, webhook-adjacent,
-and async callsites** resolve `resolveSeedOrgId()` as their *only* org source
-even when the real tenant is in scope. For the live single tenant (which *is*
+and async callsites** resolve `resolveSeedOrgId()` as their _only_ org source
+even when the real tenant is in scope. For the live single tenant (which _is_
 the seed org) everything works; for any second tenant these paths silently
 operate against the wrong org.
 
@@ -51,16 +51,16 @@ handlers with no `req.orgId`, workers that iterate all orgs, correct
 fallbacks). The bug is the narrow subset where a known tenant is available but
 not threaded:
 
-| Sev | Path | File:line | Effect for a non-seed tenant |
-| --- | --- | --- | --- |
-| High | Inbound SMS confirm / STOP / START | `routes/sms/inbound.ts:906,1116,1144` → `lib/messaging/order-flow.ts:188,1032,1095` | Patient texts "YES" → no order placed, gets generic "we'll follow up"; STOP fails to opt out (TCPA exposure) |
-| High | FHIR `Patient` / `$everything` | `routes/fhir/index.ts:122,183` | Non-seed admin gets 404 for their own patients |
-| High | Voice post-call handoff + summary + Deepgram transcript | `lib/voice/post-call-handoff.ts:109`, `lib/voice/ws-handler.ts:1816,1635` | Distressed-patient CSR handoff silently dropped; PHI transcript tagged to wrong org |
-| Med | Inbound voice caller identification | `routes/voice/inbound-reorder.ts:554` → `resolve-caller.ts:52` | Caller matched by phone with no org filter → cross-tenant patient/episode bind |
-| Med/High | Eligibility **quick-check** | `routes/admin/eligibility-quick-check.ts:83` → `lib/billing/eligibility-quick-check.ts:120` | Uses seed tenant's billing identity/clearinghouse; non-seed tenant's `payerProfileId` 404s. Sibling patient-attached route threads `orgId` correctly |
-| Med | Provider e-sign portal | `routes/provider/portal.ts:73,150,227,411,498` + `requireProvider.ts:111` | Provider queue filtered by seed `org_id`; a non-seed tenant's signature requests never appear and provider can only sign seed-org docs |
-| Low | Object-storage helpers | `lib/object-storage/objectStorage.ts:80,115` | Not tenant-partitioned — but upstream callers derive the key from an already-org-scoped DB row, so no reachable cross-tenant read |
-| Low | davinci-pas Bearer token namespace | `routes/admin/davinci-pas-submit.ts:13,254` | Per-payer PAS creds shared across tenants via process env |
+| Sev      | Path                                                    | File:line                                                                                   | Effect for a non-seed tenant                                                                                                                         |
+| -------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| High     | Inbound SMS confirm / STOP / START                      | `routes/sms/inbound.ts:906,1116,1144` → `lib/messaging/order-flow.ts:188,1032,1095`         | Patient texts "YES" → no order placed, gets generic "we'll follow up"; STOP fails to opt out (TCPA exposure)                                         |
+| High     | FHIR `Patient` / `$everything`                          | `routes/fhir/index.ts:122,183`                                                              | Non-seed admin gets 404 for their own patients                                                                                                       |
+| High     | Voice post-call handoff + summary + Deepgram transcript | `lib/voice/post-call-handoff.ts:109`, `lib/voice/ws-handler.ts:1816,1635`                   | Distressed-patient CSR handoff silently dropped; PHI transcript tagged to wrong org                                                                  |
+| Med      | Inbound voice caller identification                     | `routes/voice/inbound-reorder.ts:554` → `resolve-caller.ts:52`                              | Caller matched by phone with no org filter → cross-tenant patient/episode bind                                                                       |
+| Med/High | Eligibility **quick-check**                             | `routes/admin/eligibility-quick-check.ts:83` → `lib/billing/eligibility-quick-check.ts:120` | Uses seed tenant's billing identity/clearinghouse; non-seed tenant's `payerProfileId` 404s. Sibling patient-attached route threads `orgId` correctly |
+| Med      | Provider e-sign portal                                  | `routes/provider/portal.ts:73,150,227,411,498` + `requireProvider.ts:111`                   | Provider queue filtered by seed `org_id`; a non-seed tenant's signature requests never appear and provider can only sign seed-org docs               |
+| Low      | Object-storage helpers                                  | `lib/object-storage/objectStorage.ts:80,115`                                                | Not tenant-partitioned — but upstream callers derive the key from an already-org-scoped DB row, so no reachable cross-tenant read                    |
+| Low      | davinci-pas Bearer token namespace                      | `routes/admin/davinci-pas-submit.ts:13,254`                                                 | Per-payer PAS creds shared across tenants via process env                                                                                            |
 
 **Recommended remediation:** thread `orgId` (already in scope at each caller)
 into `placeResupplyOrderForConversation` / `pausePatient` / `reactivatePatient`
@@ -75,6 +75,7 @@ submit/transfer concurrency are genuinely strong. Gaps cluster around
 **status-derivation and the manual-vs-automated path split**.
 
 ### High
+
 1. **Eligibility re-verify surface is dead.** The success path inserts an
    `eligibility_checks` row but never stamps `insurance_coverages.verified_at`
    (`lib/billing/eligibility-verifier.ts:241-321`). The worklist and batch rank
@@ -106,6 +107,7 @@ submit/transfer concurrency are genuinely strong. Gaps cluster around
    `billing-reports.ts:53`).
 
 ### Medium (selected)
+
 - Appeal generation never transitions claim → `appealed` nor denial-analysis →
   `accepted_appealed`, so appealed claims keep reappearing as actionable
   (`claim-appeals.ts:183`).
@@ -127,6 +129,7 @@ submit/transfer concurrency are genuinely strong. Gaps cluster around
   duplicate guard (`manual-claim.ts:154`).
 
 ### Low
+
 Expired PAs renewable but in no queue bucket; `eligibility-recent`/`-checks`
 advertise statuses never written and swallow query errors;
 `clearinghouse-credentials` inbound filter drops `277`/`271`; capped-rental
