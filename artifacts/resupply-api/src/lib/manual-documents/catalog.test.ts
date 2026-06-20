@@ -79,12 +79,13 @@ describe("required fields & completeness", () => {
       patient_name: "Jordan Rivera",
       date_of_birth: "1980-02-02",
       prescriber_name: "  ", // whitespace → still missing
-      // prescriber_npi omitted → missing
-      // items_ordered omitted → missing
+      // prescriber_npi, items_ordered, icd10_codes, length_of_need omitted
       directions: "Use nightly", // not required → irrelevant
     });
     expect(missing.map((m) => m.key).sort()).toEqual([
+      "icd10_codes",
       "items_ordered",
+      "length_of_need",
       "prescriber_name",
       "prescriber_npi",
     ]);
@@ -100,7 +101,8 @@ describe("required fields & completeness", () => {
       date_of_birth: "1980-02-02",
       ordering_physician: "Dr. Ada Lin",
       physician_npi: "1234567890",
-      diagnosis: "G47.33", // extra, fine
+      diagnosis: "G47.33", // ICD-10, auto-pulled from a validated source
+      length_of_need: "99 months", // supplied by the DME
     };
     expect(missingRequiredManualDocumentFields("cmn", complete)).toEqual([]);
   });

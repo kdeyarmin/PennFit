@@ -219,6 +219,47 @@ describe("GET /admin/manual-documents/prefill", () => {
       "Sleep study date: ______________   AHI/RDI: ______________",
     );
   });
+
+  it("prefills ICD-10 from the inbound referral order (preferred over the study)", async () => {
+    mockAdmin.current = ADMIN;
+    supabaseMock.stage("patients", "select", {
+      data: {
+        id: "33333333-3333-4333-8333-333333333333",
+        legal_first_name: "Referred",
+        legal_last_name: "Patient",
+        date_of_birth: "1975-06-07",
+        phone_e164: null,
+        email: null,
+        address: null,
+      },
+    });
+    supabaseMock.stage("prescriptions", "select", { data: [] });
+    // A study exists with one diagnosis…
+    supabaseMock.stage("sleep_studies", "select", {
+      data: {
+        diagnosis_icd10: "G47.30",
+        study_date: "2026-05-01",
+        ahi: "20",
+        rdi: null,
+        interpreting_provider_id: null,
+      },
+    });
+    // …but the referral order carries the validated referring-provider
+    // diagnosis, which wins.
+    supabaseMock.stage("inbound_referral_orders", "select", {
+      data: {
+        icd10_codes_json: ["G47.33", "E66.9"],
+        received_at: "2026-06-01",
+      },
+    });
+
+    const res = await request(makeApp()).get(
+      "/admin/manual-documents/prefill?patientId=33333333-3333-4333-8333-333333333333&documentType=prescription",
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body.fields.icd10_codes).toBe("G47.33, E66.9");
+  });
 });
 
 describe("GET /admin/manual-documents/catalog — required flags", () => {
@@ -284,6 +325,11 @@ describe("send gate — incomplete documents are blocked before dispatch", () =>
     expect(res.body.error).toBe("document_incomplete");
     expect(
       res.body.missingFields.map((m: { key: string }) => m.key).sort(),
-    ).toEqual(["items_ordered", "prescriber_npi"]);
+    ).toEqual([
+      "icd10_codes",
+      "items_ordered",
+      "length_of_need",
+      "prescriber_npi",
+    ]);
   });
 });

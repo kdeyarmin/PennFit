@@ -312,10 +312,17 @@ export function manualDocumentFieldKeys(type: ManualDocumentType): Set<string> {
  * the chart auto-populates them; when the chart lacks the data the send gate
  * flags exactly those for a human to enter before the document goes out.
  *
- * NOT included: fields a downstream signer (the prescriber) is expected to
- * complete (e.g. ICD-10 / length-of-need on a prescription) — requiring
- * those would block the very send that asks the prescriber to fill them.
- * The recipient contact (fax/email) is gated separately by the send route.
+ * Clinical content — the diagnosis (ICD-10) and the length of need — is
+ * included for the order kinds (CMN, prescription): a complete order carries
+ * them, the diagnosis is auto-populated from a validated source already in
+ * the system (the inbound referral order / sleep study — see the prefill
+ * route), and the length of need is supplied by the DME. These documents are
+ * sent TO the prescriber to review and sign, so pre-filling a validated
+ * diagnosis and proposing a length of need is the standard, compliant draft-
+ * order pattern (the prescriber's signature is the medical-necessity
+ * attestation) — and it mirrors what the prescription-request flow
+ * (validatePrescriptionRequestInputs) already requires. The recipient
+ * contact (fax/email) is gated separately by the send route.
  */
 export const REQUIRED_FIELD_KEYS: Record<
   ManualDocumentType,
@@ -326,6 +333,8 @@ export const REQUIRED_FIELD_KEYS: Record<
     "date_of_birth",
     "ordering_physician",
     "physician_npi",
+    "diagnosis",
+    "length_of_need",
   ]),
   prescription: new Set([
     "patient_name",
@@ -333,6 +342,8 @@ export const REQUIRED_FIELD_KEYS: Record<
     "prescriber_name",
     "prescriber_npi",
     "items_ordered",
+    "icd10_codes",
+    "length_of_need",
   ]),
   agreement: new Set(["party_name", "agreement_type"]),
   delivery_ticket: new Set([

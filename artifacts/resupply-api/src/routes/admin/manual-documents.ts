@@ -344,7 +344,7 @@ router.get(
       return;
     }
 
-    const [presRes, studyRes] = await Promise.all([
+    const [presRes, studyRes, referralRes] = await Promise.all([
       supabase
         .from("prescriptions")
         .select("item_sku, hcpcs_code, provider_id, status, created_at")
@@ -360,9 +360,24 @@ router.get(
         .order("study_date", { ascending: false })
         .limit(1)
         .maybeSingle(),
+      // The referring provider's validated diagnosis, captured on the
+      // inbound referral order. inbound_referral_orders is a GLOBAL table
+      // (no org_id) — read via raw() and scope to THIS patient
+      // (patient_match_id), who was already authorized for this tenant by
+      // the org-scoped patient load above, so there is no cross-tenant read.
+      supabase
+        .raw()
+        .schema("resupply")
+        .from("inbound_referral_orders")
+        .select("icd10_codes_json, received_at")
+        .eq("patient_match_id", patientId)
+        .order("received_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
     ]);
     if (presRes.error) throw presRes.error;
     if (studyRes.error) throw studyRes.error;
+    if (referralRes.error) throw referralRes.error;
 
     const prescriptions = (presRes.data ?? []) as Array<{
       item_sku: string;
@@ -423,7 +438,18 @@ router.get(
         ),
       ),
     ].join("\n");
-    const diagnosis = studyRes.data?.diagnosis_icd10 ?? "";
+    // ICD-10 diagnosis: prefer the referral order's validated codes (from
+    // the referring provider); fall back to the sleep study's diagnosis.
+    // Either way it is a validated diagnosis already on file — the DME is
+    // not authoring it — and the order is sent to the prescriber to sign.
+    const referralIcd10 = Array.isArray(referralRes.data?.icd10_codes_json)
+      ? (referralRes.data.icd10_codes_json as unknown[])
+          .filter(
+            (c): c is string => typeof c === "string" && c.trim().length > 0,
+          )
+          .join(", ")
+      : "";
+    const diagnosis = referralIcd10 || (studyRes.data?.diagnosis_icd10 ?? "");
     const providerAddress = formatJsonAddress(provider?.practice_address);
 
     // Per-type field suggestions. Only keys the type's catalog defines

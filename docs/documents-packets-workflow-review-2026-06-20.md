@@ -237,17 +237,26 @@ which is exactly the gap §6 closes for patient packets.
    notion of a required field and no pre-send check — a half-filled CMN
    could be faxed out. Now:
    - The catalog carries a per-type **required-field** set
-     (`REQUIRED_FIELD_KEYS`): the supplier-known identity/content a document
-     is genuinely invalid without (e.g. a prescription needs patient name +
-     DOB + prescriber name + NPI + items). Fields a downstream signer
-     completes (ICD-10, length-of-need) are deliberately **not** required,
-     so the gate never blocks the very send that asks the prescriber to fill
-     them.
+     (`REQUIRED_FIELD_KEYS`): the identity + clinical content a document is
+     genuinely invalid without. For the order kinds this includes the
+     **diagnosis (ICD-10)** and the **length of need** — a complete order
+     carries them, the diagnosis is auto-populated from a validated source
+     already on file, and the length of need is supplied by the DME. These
+     documents are sent **to the prescriber to review and sign**, so
+     pre-filling a validated diagnosis and proposing a length of need is the
+     standard, compliant draft-order pattern (the prescriber's signature is
+     the medical-necessity attestation) — and it mirrors what the
+     prescription-request flow (`validatePrescriptionRequestInputs`) already
+     requires. e.g. a prescription requires patient name + DOB + prescriber
+     name + NPI + items + ICD-10 + length-of-need.
    - **Auto-populate:** these required fields are exactly what chart prefill
      (`/admin/manual-documents/prefill`) fills from the patient record,
-     provider directory, and latest sleep study — so when the data is in the
-     system it lands in the document automatically (blank-only merge; typed
-     values are never overwritten).
+     provider directory, latest sleep study, and the **inbound referral
+     order's validated ICD-10** (the referral packet's diagnosis is preferred
+     over the study's). So when the data is in the system it lands in the
+     document automatically (blank-only merge; typed values are never
+     overwritten); the length of need is the one field the DME fills, and the
+     gate flags it until they do.
    - **Flag before send:** `send-email` / `send-fax` (single doc **and**
      packet) now return **`422 document_incomplete`** with the exact
      `missingFields` (or `incompleteDocuments`) when any required field is
