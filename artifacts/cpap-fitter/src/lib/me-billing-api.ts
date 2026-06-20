@@ -1,3 +1,5 @@
+import { csrfHeader } from "./csrf";
+
 // Tiny typed client for /api/me/billing-balance + /api/me/payments +
 // /api/me/billing-statements. Patterned on account-api.ts but keeps
 // scope narrow: read-only patient-portal queries plus the
@@ -70,20 +72,6 @@ async function meGet<T>(path: string): Promise<T> {
     throw new Error(`GET /api${path} failed (${res.status})`);
   }
   return (await res.json()) as T;
-}
-
-/** Read the readable `pf_csrf` cookie (set at sign-in by the auth lib)
- *  and return it as an `X-PF-CSRF` header. The app-level conditional
- *  CSRF gate requires this header on every signed-in `/api/me/*`
- *  mutation (e.g. the checkout-session POST below); without it the
- *  request is rejected. Mirrors shop-api.ts's `csrfHeader()`. */
-function csrfHeader(): Record<string, string> {
-  if (typeof document === "undefined") return {};
-  const token = document.cookie
-    .split("; ")
-    .find((row) => row.startsWith("pf_csrf="))
-    ?.slice("pf_csrf=".length);
-  return token ? { "X-PF-CSRF": decodeURIComponent(token) } : {};
 }
 
 /** Shared POST/PATCH/DELETE helper for the signed-in /api/me/* mutations.

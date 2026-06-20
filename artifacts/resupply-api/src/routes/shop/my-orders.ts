@@ -48,8 +48,9 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import {
-  getSupabaseServiceRoleClient,
+  type Database,
   type Json,
+  getOrgScopedClient,
 } from "@workspace/resupply-db";
 import type { SavedShippingAddress } from "@workspace/resupply-db";
 
@@ -170,7 +171,12 @@ router.get("/shop/me/orders", requireSignedIn, async (req, res) => {
     return;
   }
 
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
 
   // Only paid orders reach the history page. Pending / expired sessions
   // are operational noise the customer never asked to see; they'll be
@@ -179,7 +185,6 @@ router.get("/shop/me/orders", requireSignedIn, async (req, res) => {
   // id < cursorId)`. PostgREST expresses it as an .or() expression
   // with an embedded `and()` group.
   let ordersQuery = supabase
-    .schema("resupply")
     .from("shop_orders")
     .select(
       "id, stripe_session_id, status, amount_total_cents, currency, created_at, paid_at, shipping_address_json, tracking_carrier, tracking_number, shipped_at, delivered_at, pod_uploaded_at, fulfillment_method, pickup_location_id, ready_for_pickup_at, picked_up_at",
@@ -198,7 +203,9 @@ router.get("/shop/me/orders", requireSignedIn, async (req, res) => {
   const { data: orderRows, error: ordersErr } = await ordersQuery;
   if (ordersErr) throw ordersErr;
 
-  const rows = orderRows ?? [];
+  const rows = (orderRows ?? []) as Array<
+    Database["resupply"]["Tables"]["shop_orders"]["Row"]
+  >;
   const hasMore = rows.length > limit;
   const trimmed = hasMore ? rows.slice(0, limit) : rows;
   const lastItem = trimmed[trimmed.length - 1];
@@ -215,12 +222,13 @@ router.get("/shop/me/orders", requireSignedIn, async (req, res) => {
 
   const orderIds = trimmed.map((o) => o.id);
   const { data: itemRowsRaw, error: itemsErr } = await supabase
-    .schema("resupply")
     .from("shop_order_items")
     .select("order_id, product_id, quantity, unit_amount_cents, currency")
     .in("order_id", orderIds);
   if (itemsErr) throw itemsErr;
-  const itemRows = itemRowsRaw ?? [];
+  const itemRows = (itemRowsRaw ?? []) as Array<
+    Database["resupply"]["Tables"]["shop_order_items"]["Row"]
+  >;
 
   // Bulk product-name lookup. One Stripe call regardless of page
   // size (Stripe's products.list cap is 100 IDs per call; we cap our
@@ -357,13 +365,17 @@ router.post(
       country: "US",
     };
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     // Pre-check: load the row to disambiguate "doesn't exist", "not
     // yours", and "already shipped". Without this the UPDATE-only
     // path would collapse all three into a single 404, which is a
     // worse customer experience.
     const { data: existing, error: existsErr } = await supabase
-      .schema("resupply")
       .from("shop_orders")
       .select("id, customer_id, status, shipped_at")
       .eq("id", orderId)
@@ -394,7 +406,6 @@ router.post(
     // Returning the row gives the UI an updated projection without
     // a follow-up GET.
     const { data: row, error: updateErr } = await supabase
-      .schema("resupply")
       .from("shop_orders")
       .update({
         shipping_address_json: address as unknown as Json,

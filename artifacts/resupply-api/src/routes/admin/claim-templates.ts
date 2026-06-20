@@ -14,7 +14,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import {
   type Database,
   type TemplateLine,
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
@@ -121,9 +121,13 @@ router.get(
   "/admin/claim-templates",
   requirePermission("admin.tools.manage"),
   async (req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     let query = supabase
-      .schema("resupply")
       .from("claim_templates")
       .select(
         "id, slug, display_name, description, lines_json, default_diagnosis_codes, scoped_payer_profile_id, is_active, created_at, updated_at",
@@ -179,9 +183,13 @@ router.post(
       return;
     }
     const b = parsed.data;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("claim_templates")
       .insert({
         slug: b.slug,
@@ -253,9 +261,13 @@ router.patch(
     if (b.scopedPayerProfileId !== undefined)
       update.scoped_payer_profile_id = b.scopedPayerProfileId;
     if (b.isActive !== undefined) update.is_active = b.isActive;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { error } = await supabase
-      .schema("resupply")
       .from("claim_templates")
       .update(update)
       .eq("id", idParsed.data.id);
@@ -300,10 +312,14 @@ router.post(
       });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     const { data: claim } = await supabase
-      .schema("resupply")
       .from("insurance_claims")
       .select("id, status")
       .eq("id", idParsed.data.claimId)
@@ -323,7 +339,6 @@ router.post(
     }
 
     const { data: template } = await supabase
-      .schema("resupply")
       .from("claim_templates")
       .select("id, lines_json, default_diagnosis_codes, is_active")
       .eq("id", bodyParsed.data.templateId)
@@ -345,7 +360,6 @@ router.post(
       status: "pending" as const,
     }));
     const { error: insertErr } = await supabase
-      .schema("resupply")
       .from("insurance_claim_line_items")
       .insert(lineRows);
     if (insertErr) throw insertErr;
@@ -354,16 +368,18 @@ router.post(
     // is per-unit, so the extended line charge is billed_cents * quantity
     // (template lines carry units > 1, e.g. disposable filters x2).
     const { data: allLines } = await supabase
-      .schema("resupply")
       .from("insurance_claim_line_items")
       .select("billed_cents, quantity")
       .eq("claim_id", claim.id);
-    const newTotal = (allLines ?? []).reduce(
-      (s, l) => s + (l.billed_cents ?? 0) * (l.quantity ?? 1),
+    const newTotal = (
+      (allLines ?? []) as Array<
+        Database["resupply"]["Tables"]["insurance_claim_line_items"]["Row"]
+      >
+    ).reduce(
+      (s: number, l) => s + (l.billed_cents ?? 0) * (l.quantity ?? 1),
       0,
     );
     const { error: totalUpdateErr } = await supabase
-      .schema("resupply")
       .from("insurance_claims")
       .update({
         total_billed_cents: newTotal,
@@ -373,7 +389,6 @@ router.post(
     if (totalUpdateErr) throw totalUpdateErr;
 
     const { error: eventInsertErr } = await supabase
-      .schema("resupply")
       .from("insurance_claim_events")
       .insert({
         claim_id: claim.id,

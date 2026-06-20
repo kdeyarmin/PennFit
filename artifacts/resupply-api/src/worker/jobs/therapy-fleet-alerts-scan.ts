@@ -29,7 +29,8 @@ import type PgBoss from "pg-boss";
 import {
   type CommunicationPreferences,
   DEFAULT_COMMUNICATION_PREFERENCES,
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
+  type OrgScopedClient,
 } from "@workspace/resupply-db";
 import {
   type SendActor,
@@ -43,7 +44,10 @@ import {
   shouldSendSms,
 } from "../../lib/comm-prefs.js";
 import { isFeatureEnabled } from "../../lib/feature-flags.js";
+import { recordOutboundMessageUsage } from "../../lib/metering/usage.js";
 import { logger } from "../../lib/logger.js";
+import { applyTenantSmsFrom } from "../../lib/messaging/tenant-telecom.js";
+import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import { claimDedupKey } from "../../lib/dedup-keys.js";
 import {
   createQueueWithDlq,
@@ -166,20 +170,46 @@ function readSmsConfig(
 }
 
 export async function runTherapyFleetAlertsScan(): Promise<AlertsScanResult> {
-  const supabase = getSupabaseServiceRoleClient();
   const result: AlertsScanResult = {
     detected: 0,
     created: 0,
     resolved: 0,
     messaged: 0,
   };
+  // Fan out across every active tenant — the worklist/adherence RPCs and
+  // therapy_fleet_alerts are org-scoped (the `.raw()` reads/writes filter by
+  // org_id explicitly), and the auto_outreach / sms.reminders flags resolve
+  // per tenant — so a tenant only alerts/texts its own patients, and only
+  // when it has enabled outreach. Per-tenant failure isolation; results
+  // summed. Single-tenant: listActiveOrgIds() returns just the seed org, so
+  // this is exactly the prior one-tenant sweep.
+  await forEachActiveOrg(
+    async (orgId) => {
+      await therapyFleetAlertsScanForOrg(orgId, result);
+    },
+    { jobName: THERAPY_FLEET_ALERTS_JOB },
+  );
+  logger.info(
+    { queue: THERAPY_FLEET_ALERTS_JOB, ...result },
+    "therapy fleet alerts scan complete",
+  );
+  return result;
+}
+
+async function therapyFleetAlertsScanForOrg(
+  orgId: string,
+  result: AlertsScanResult,
+): Promise<void> {
+  const supabase = getOrgScopedClient(orgId);
 
   // ── 1. detect ──────────────────────────────────────────────────
   const worklist = await supabase
+    .raw()
     .schema("resupply")
     .rpc("therapy_fleet_worklist", { p_window_days: 30, p_limit: 1000 });
   if (worklist.error) throw worklist.error;
   const setups = await supabase
+    .raw()
     .schema("resupply")
     .rpc("therapy_setup_adherence_list", { p_limit: 1000 });
   if (setups.error) throw setups.error;
@@ -226,7 +256,7 @@ export async function runTherapyFleetAlertsScan(): Promise<AlertsScanResult> {
       },
     });
   }
-  result.detected = detected.length;
+  result.detected += detected.length;
 
   const detectedKeys = new Set(
     detected.map((d) => `${d.patientId}|${d.alertType}`),
@@ -249,9 +279,11 @@ export async function runTherapyFleetAlertsScan(): Promise<AlertsScanResult> {
   let openCursor: string | null = null;
   for (;;) {
     let pageQuery = supabase
+      .raw()
       .schema("resupply")
       .from("therapy_fleet_alerts")
       .select("id, patient_id, alert_type")
+      .eq("org_id", orgId)
       .eq("status", "open")
       .order("id", { ascending: true })
       .limit(OPEN_PAGE_SIZE);
@@ -287,6 +319,7 @@ export async function runTherapyFleetAlertsScan(): Promise<AlertsScanResult> {
   }
   if (newAlerts.length > 0) {
     const rows = newAlerts.map((d) => ({
+      org_id: orgId,
       patient_id: d.patientId,
       alert_type: d.alertType,
       severity: SEVERITY[d.alertType],
@@ -305,6 +338,7 @@ export async function runTherapyFleetAlertsScan(): Promise<AlertsScanResult> {
     let created = 0;
     for (const row of rows) {
       const ins = await supabase
+        .raw()
         .schema("resupply")
         .from("therapy_fleet_alerts")
         .insert(row);
@@ -314,7 +348,7 @@ export async function runTherapyFleetAlertsScan(): Promise<AlertsScanResult> {
       }
       created += 1;
     }
-    result.created = created;
+    result.created += created;
   }
 
   // Auto-resolve open alerts the patient no longer trips. Chunked:
@@ -333,6 +367,7 @@ export async function runTherapyFleetAlertsScan(): Promise<AlertsScanResult> {
   for (let i = 0; i < staleIds.length; i += STALE_CHUNK) {
     const chunk = staleIds.slice(i, i + STALE_CHUNK);
     const upd = await supabase
+      .raw()
       .schema("resupply")
       .from("therapy_fleet_alerts")
       .update({
@@ -341,6 +376,7 @@ export async function runTherapyFleetAlertsScan(): Promise<AlertsScanResult> {
         resolved_by_email: "system:worker:fleet-alerts",
         updated_at: nowIso,
       })
+      .eq("org_id", orgId)
       .in("id", chunk);
     if (upd.error) throw upd.error;
     result.resolved += chunk.length;
@@ -348,9 +384,12 @@ export async function runTherapyFleetAlertsScan(): Promise<AlertsScanResult> {
 
   // ── 3. opt-in patient auto-outreach (flag-gated) ───────────────
   const outreachOn =
-    (await isFeatureEnabled("therapy_fleet.auto_outreach")) &&
-    (await isFeatureEnabled("sms.reminders"));
-  const cfg = outreachOn ? readSmsConfig() : null;
+    (await isFeatureEnabled("therapy_fleet.auto_outreach", orgId)) &&
+    (await isFeatureEnabled("sms.reminders", orgId));
+  const baseCfg = outreachOn ? readSmsConfig() : null;
+  // Send under the tenant's own number / Messaging Service when it has
+  // one (G7); falls back to the platform default otherwise.
+  const cfg = baseCfg ? await applyTenantSmsFrom(orgId, baseCfg) : null;
   if (outreachOn && cfg) {
     // Only newly-created, patient-appropriate alerts trigger a send.
     const candidates = newAlerts.filter((d) =>
@@ -365,9 +404,11 @@ export async function runTherapyFleetAlertsScan(): Promise<AlertsScanResult> {
       if (sent) {
         result.messaged += 1;
         const { error: outreachStampErr } = await supabase
+          .raw()
           .schema("resupply")
           .from("therapy_fleet_alerts")
           .update({ outreach_sent_at: new Date().toISOString() })
+          .eq("org_id", orgId)
           .eq("patient_id", d.patientId)
           .eq("alert_type", d.alertType)
           .eq("status", "open");
@@ -384,12 +425,6 @@ export async function runTherapyFleetAlertsScan(): Promise<AlertsScanResult> {
       }
     }
   }
-
-  logger.info(
-    { queue: THERAPY_FLEET_ALERTS_JOB, ...result },
-    "therapy fleet alerts scan complete",
-  );
-  return result;
 }
 
 // Returns true iff a message was actually dispatched. Enforces explicit
@@ -406,7 +441,7 @@ export async function runTherapyFleetAlertsScan(): Promise<AlertsScanResult> {
 // transient/no-op send doesn't burn the cooldown (mirrors
 // reminders.ts:releaseReminderDedupKey).
 async function maybeSendAdherenceSms(
-  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
+  supabase: OrgScopedClient,
   cfg: SmsSendConfig,
   patientId: string,
 ): Promise<boolean> {
@@ -415,7 +450,6 @@ async function maybeSendAdherenceSms(
   // / inside the DND window → do not message (and do not claim the cap
   // key, so the next run re-evaluates).
   const patientRes = await supabase
-    .schema("resupply")
     .from("patients")
     .select("email, timezone, address")
     .eq("id", patientId)
@@ -428,7 +462,6 @@ async function maybeSendAdherenceSms(
   const email = patientRow?.email;
   if (!email) return false;
   const prefsRes = await supabase
-    .schema("resupply")
     .from("shop_customers")
     .select("communication_preferences")
     .eq("email_lower", email.toLowerCase())
@@ -462,7 +495,7 @@ async function maybeSendAdherenceSms(
   const expiresAt = new Date(
     Date.now() + OUTREACH_COOLDOWN_DAYS * 24 * 60 * 60 * 1000,
   ).toISOString();
-  const claim = await claimDedupKey(supabase, capKey, expiresAt);
+  const claim = await claimDedupKey(supabase.raw(), capKey, expiresAt);
   if (claim.outcome !== "claimed") {
     if (claim.outcome === "error") {
       logger.warn(
@@ -486,13 +519,20 @@ async function maybeSendAdherenceSms(
   const actor: SendActor = { kind: "system", jobId: THERAPY_FLEET_ALERTS_JOB };
   try {
     const outcome = await sendReminderSms({
-      supabase,
+      supabase: supabase.raw(),
       cfg,
       patientId,
       body,
       actor,
     });
-    if (outcome.status === "ok") return true;
+    if (outcome.status === "ok") {
+      recordOutboundMessageUsage({
+        orgId: supabase.orgId,
+        channel: "sms",
+        source: "therapy_fleet_adherence.sms",
+      });
+      return true;
+    }
     // Didn't actually dispatch (e.g. no routable phone) — release the cap
     // key so a later run can retry instead of suppressing for 14 days.
     await releaseAdherenceCapKey(supabase, capKey);
@@ -511,10 +551,11 @@ async function maybeSendAdherenceSms(
 // didn't actually go out, so the patient isn't suppressed for the full
 // cooldown over a transient or no-op send.
 async function releaseAdherenceCapKey(
-  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
+  supabase: OrgScopedClient,
   key: string,
 ): Promise<void> {
   const { error } = await supabase
+    .raw()
     .schema("resupply")
     .from("worker_dedup_keys")
     .delete()

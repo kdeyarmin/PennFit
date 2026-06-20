@@ -77,6 +77,7 @@ function makeSupabase(
     return builder;
   };
   return {
+    from: fromTable,
     schema: () => ({ from: fromTable }),
   } as unknown as Parameters<typeof resolvePatientByContact>[0];
 }
@@ -334,6 +335,7 @@ function makeReconcileSupabase(existingKeys: string[]) {
     return builder;
   };
   const supabase = {
+    from: fromTable,
     schema: () => ({ from: fromTable }),
   } as unknown as Parameters<typeof reconcilePacketDocuments>[0];
   return { supabase, ops };

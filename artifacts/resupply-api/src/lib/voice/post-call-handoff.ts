@@ -39,7 +39,7 @@
 //   runs detached after the WS has already closed; a routing failure
 //   must not crash the call cleanup path.
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { logger } from "../logger";
 
@@ -106,11 +106,24 @@ function buildEscalationReason(input: RouteVoiceHandoffInput): string {
 export async function routeVoiceHandoffToCsrQueue(
   input: RouteVoiceHandoffInput,
 ): Promise<void> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    // Best-effort sweep — degrade like every other failure path here:
+    // log a WARN and resolve cleanly (the call cleanup is unaffected).
+    logger.warn(
+      {
+        event: "voice_handoff_skipped",
+        reason: "tenant_context_missing",
+        conversationId: input.conversationId,
+      },
+      "voice handoff: tenant context missing — cannot escalate",
+    );
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
 
   try {
     const { data: row, error: readErr } = await supabase
-      .schema("resupply")
       .from("conversations")
       .select("id, priority, tags, escalated_at, escalation_reason")
       .eq("id", input.conversationId)
@@ -169,7 +182,6 @@ export async function routeVoiceHandoffToCsrQueue(
 
     const nowIso = new Date().toISOString();
     const { error: updateErr } = await supabase
-      .schema("resupply")
       .from("conversations")
       .update({
         escalated_at: nowIso,

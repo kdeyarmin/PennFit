@@ -190,12 +190,24 @@ function SetupTable({ setups }: { setups: SetupEntry[] }) {
             className="text-left border-b"
             style={{ borderColor: "hsl(var(--line-1))" }}
           >
-            <th className="py-2 font-semibold">Patient</th>
-            <th className="py-2 font-semibold">Status</th>
-            <th className="py-2 font-semibold">Best 30-day</th>
-            <th className="py-2 font-semibold text-right">Nights needed</th>
-            <th className="py-2 font-semibold text-right">Days left</th>
-            <th className="py-2 font-semibold text-right">Started</th>
+            <th scope="col" className="py-2 font-semibold">
+              Patient
+            </th>
+            <th scope="col" className="py-2 font-semibold">
+              Status
+            </th>
+            <th scope="col" className="py-2 font-semibold">
+              Best 30-day
+            </th>
+            <th scope="col" className="py-2 font-semibold text-right">
+              Nights needed
+            </th>
+            <th scope="col" className="py-2 font-semibold text-right">
+              Days left
+            </th>
+            <th scope="col" className="py-2 font-semibold text-right">
+              Started
+            </th>
           </tr>
         </thead>
         <tbody>

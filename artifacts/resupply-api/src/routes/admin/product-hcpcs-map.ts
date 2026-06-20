@@ -8,10 +8,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  type Database,
-  getSupabaseServiceRoleClient,
-} from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
@@ -84,7 +81,12 @@ router.get(
   "/admin/product-hcpcs-map",
   requirePermission("reports.read"),
   async (req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId).raw();
     let query = supabase
       .schema("resupply")
       .from("product_hcpcs_map")
@@ -131,7 +133,12 @@ router.post(
       return;
     }
     const b = parsed.data;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId).raw();
     const { data, error } = await supabase
       .schema("resupply")
       .from("product_hcpcs_map")
@@ -211,7 +218,12 @@ router.patch(
       update.default_billed_cents = b.defaultBilledCents;
     if (b.description !== undefined) update.description = b.description;
     if (b.isActive !== undefined) update.is_active = b.isActive;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId).raw();
     const { error } = await supabase
       .schema("resupply")
       .from("product_hcpcs_map")

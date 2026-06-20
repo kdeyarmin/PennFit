@@ -21,17 +21,14 @@
 // PHI posture: list / detail responses include from_e164 (sender
 // fax — physician PHI) because CSRs need it to recognize the
 // originating office. Logger receives only the row id and a
-// first-8 prefix of the twilio_fax_sid, never the From.
+// first-8 prefix of the provider_fax_id, never the From.
 
 import { Router, type IRouter } from "express";
 import { Readable } from "node:stream";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  type Database,
-  getSupabaseServiceRoleClient,
-} from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { autoFileSignedFax } from "../../lib/fax/auto-file-signed";
@@ -45,6 +42,10 @@ import { requirePermission } from "../../middlewares/requireAdmin";
 
 type InboundFaxUpdate =
   Database["resupply"]["Tables"]["inbound_faxes"]["Update"];
+type InboundFaxRow = Database["resupply"]["Tables"]["inbound_faxes"]["Row"];
+type ReferralReviewRow =
+  Database["resupply"]["Tables"]["referral_reviews"]["Row"];
+type PatientRow = Database["resupply"]["Tables"]["patients"]["Row"];
 type InboundFaxStatus = NonNullable<
   Database["resupply"]["Tables"]["inbound_faxes"]["Row"]["status"]
 >;
@@ -113,12 +114,16 @@ router.get(
       res.status(400).json({ error: "invalid_query" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     let query = supabase
-      .schema("resupply")
       .from("inbound_faxes")
       .select(
-        "id, twilio_fax_sid, from_e164, to_e164, received_at, num_pages, media_object_key, media_content_type, media_size_bytes, status, attached_patient_id, attached_provider_id, attached_prescription_id, attached_document_type, assigned_admin_user_id, triaged_at, notes, created_at, tracking_code_detected, auto_file_status, auto_filed_at, signature_tracking_id, chart_document_id",
+        "id, provider_fax_id, from_e164, to_e164, received_at, num_pages, media_object_key, media_content_type, media_size_bytes, status, attached_patient_id, attached_provider_id, attached_prescription_id, attached_document_type, assigned_admin_user_id, triaged_at, notes, created_at, tracking_code_detected, auto_file_status, auto_filed_at, signature_tracking_id, chart_document_id",
       )
       .order("received_at", { ascending: false })
       .limit(q.data.limit);
@@ -129,18 +134,18 @@ router.get(
     }
     const { data, error } = await query;
     if (error) throw error;
+    const rows = (data ?? []) as InboundFaxRow[];
 
     // Linked referral reviews (one batched lookup) so the triage UI can
     // badge faxes the Referral Reviewer has picked up.
     const reviewByFaxId = new Map<string, { id: string; status: string }>();
-    const faxIds = (data ?? []).map((r) => r.id);
+    const faxIds = rows.map((r) => r.id);
     if (faxIds.length > 0) {
       const { data: reviews } = await supabase
-        .schema("resupply")
         .from("referral_reviews")
         .select("id, status, inbound_fax_id")
         .in("inbound_fax_id", faxIds);
-      for (const rev of reviews ?? []) {
+      for (const rev of (reviews ?? []) as ReferralReviewRow[]) {
         if (rev.inbound_fax_id) {
           reviewByFaxId.set(rev.inbound_fax_id, {
             id: rev.id,
@@ -151,9 +156,9 @@ router.get(
     }
 
     res.json({
-      faxes: (data ?? []).map((r) => ({
+      faxes: rows.map((r) => ({
         id: r.id,
-        twilioFaxSid: r.twilio_fax_sid,
+        providerFaxId: r.provider_fax_id,
         fromE164: r.from_e164,
         toE164: r.to_e164,
         receivedAt: r.received_at,
@@ -192,9 +197,13 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("inbound_faxes")
       .select("*")
       .eq("id", params.data.id)
@@ -208,7 +217,6 @@ router.get(
     // Linked referral review (when the Referral Reviewer opened one for
     // this fax) so the triage UI can deep-link to it.
     const { data: review } = await supabase
-      .schema("resupply")
       .from("referral_reviews")
       .select("id, status")
       .eq("inbound_fax_id", row.id)
@@ -216,7 +224,7 @@ router.get(
       .maybeSingle();
     res.json({
       id: row.id,
-      twilioFaxSid: row.twilio_fax_sid,
+      providerFaxId: row.provider_fax_id,
       fromE164: row.from_e164,
       toE164: row.to_e164,
       receivedAt: row.received_at,
@@ -261,11 +269,15 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("inbound_faxes")
-      .select("id, media_object_key, media_content_type, twilio_fax_sid")
+      .select("id, media_object_key, media_content_type, provider_fax_id")
       .eq("id", params.data.id)
       .limit(1)
       .maybeSingle();
@@ -293,7 +305,7 @@ router.get(
       targetTable: "inbound_faxes",
       targetId: row.id,
       metadata: {
-        twilio_fax_sid: row.twilio_fax_sid,
+        provider_fax_id: row.provider_fax_id,
       },
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
@@ -343,11 +355,15 @@ router.post(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("inbound_faxes")
-      .select("id, media_object_key, media_content_type, twilio_fax_sid")
+      .select("id, media_object_key, media_content_type, provider_fax_id")
       .eq("id", params.data.id)
       .limit(1)
       .maybeSingle();
@@ -393,7 +409,6 @@ router.post(
       updated_at: new Date().toISOString(),
     };
     const { error: upErr } = await supabase
-      .schema("resupply")
       .from("inbound_faxes")
       .update(update)
       .eq("id", row.id);
@@ -408,7 +423,7 @@ router.post(
       // PHI-safe: status + sid prefix only, never the extracted fields.
       metadata: {
         ocr_status: result.status,
-        twilio_fax_sid: row.twilio_fax_sid,
+        provider_fax_id: row.provider_fax_id,
       },
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
@@ -426,7 +441,7 @@ router.post(
 
 // POST /admin/inbound-faxes/:id/auto-file — manually run the barcode
 // auto-file on a fax's stored media: the SAME routine the ingest runs on
-// arrival when `fax.auto_file_signed` is on (read the PennFit tracking
+// arrival when `fax.auto_file_signed` is on (read the tracking
 // code, file to the patient chart, mark the signature returned, release
 // the bill hold). Lets a CSR process the backlog after enabling the flag,
 // retry a transient failure, or file a fax that arrived while the flag was
@@ -444,12 +459,16 @@ router.post(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("inbound_faxes")
       .select(
-        "id, media_object_key, media_content_type, auto_file_status, twilio_fax_sid",
+        "id, media_object_key, media_content_type, auto_file_status, provider_fax_id",
       )
       .eq("id", params.data.id)
       .limit(1)
@@ -504,7 +523,7 @@ router.post(
         // also logged by the signature-tracking route) + sid prefix.
         auto_file_status: outcome.status,
         tracking_code: outcome.trackingCode,
-        twilio_fax_sid: row.twilio_fax_sid,
+        provider_fax_id: row.provider_fax_id,
       },
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
@@ -548,9 +567,13 @@ router.patch(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: existing, error: getErr } = await supabase
-      .schema("resupply")
       .from("inbound_faxes")
       .select("id, status, attached_patient_id")
       .eq("id", params.data.id)
@@ -613,7 +636,6 @@ router.patch(
     }
 
     const { error: updErr } = await supabase
-      .schema("resupply")
       .from("inbound_faxes")
       .update(updates)
       .eq("id", params.data.id);
@@ -655,9 +677,13 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: fax } = await supabase
-      .schema("resupply")
       .from("inbound_faxes")
       .select("id, from_e164")
       .eq("id", params.data.id)
@@ -674,22 +700,20 @@ router.get(
     // First try exact-match, then fall back to last-7-digit
     // contains. Capping at 10 keeps the response small.
     const exact = await supabase
-      .schema("resupply")
       .from("patients")
       .select("id, legal_first_name, legal_last_name, email, phone_e164")
       .eq("phone_e164", fax.from_e164)
       .limit(10);
-    const candidates = (exact.data ?? []).slice();
+    const candidates = ((exact.data ?? []) as PatientRow[]).slice();
     if (candidates.length === 0) {
       const tail = fax.from_e164.slice(-7);
       if (tail.length === 7) {
         const fuzzy = await supabase
-          .schema("resupply")
           .from("patients")
           .select("id, legal_first_name, legal_last_name, email, phone_e164")
           .ilike("phone_e164", `%${tail}%`)
           .limit(10);
-        candidates.push(...(fuzzy.data ?? []));
+        candidates.push(...((fuzzy.data ?? []) as PatientRow[]));
       }
     }
     res.json({

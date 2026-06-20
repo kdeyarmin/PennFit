@@ -805,12 +805,22 @@ function RunsTab() {
               className="text-left text-xs uppercase tracking-wide"
               style={{ color: "hsl(var(--ink-3))" }}
             >
-              <th className="py-2 pr-3">Patient</th>
-              <th className="py-2 pr-3">Playbook</th>
-              <th className="py-2 pr-3">Progress</th>
-              <th className="py-2 pr-3">Next touch</th>
-              <th className="py-2 pr-3">Started by</th>
-              <th className="py-2" />
+              <th scope="col" className="py-2 pr-3">
+                Patient
+              </th>
+              <th scope="col" className="py-2 pr-3">
+                Playbook
+              </th>
+              <th scope="col" className="py-2 pr-3">
+                Progress
+              </th>
+              <th scope="col" className="py-2 pr-3">
+                Next touch
+              </th>
+              <th scope="col" className="py-2 pr-3">
+                Started by
+              </th>
+              <th scope="col" className="py-2" />
             </tr>
           </thead>
           <tbody>

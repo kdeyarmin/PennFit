@@ -1,0 +1,550 @@
+// Per-tenant storefront branding resolver.
+//
+// Answers "which tenant — and which storefront name / tagline / logo —
+// does a request on THIS host belong to". The public storefront calls
+// GET /api/storefront-branding on first paint; the SPA then renders the
+// resolving tenant's brand instead of the hardcoded PennPaps identity.
+//
+// Resolution:
+//   * A request whose Host matches a VERIFIED custom domain resolves to
+//     that tenant's branding.
+//   * Everything else (the platform host, an unverified/none domain, any
+//     miss or error) resolves to the platform brand. PennPaps is reached
+//     through the seed tenant's verified pennpaps.com custom domain.
+//
+// Posture mirrors lib/company-info.ts:
+//   * Fail-soft — a Supabase error/timeout degrades to the platform
+//     brand; this must never take the public storefront down.
+//   * Cached for a short TTL so the unauthenticated, per-page branding
+//     fetch adds no meaningful DB load.
+
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
+
+import { logger } from "./logger";
+import {
+  extractTenantSubdomainLabel,
+  normalizeCustomDomain,
+} from "./tenant-domain";
+
+export interface StorefrontBranding {
+  /** Short customer-facing brand shown in the header/hero (e.g. "PennPaps"). */
+  storefrontName: string;
+  /** Registered/legal company name (footer, "by …" line). */
+  legalName: string;
+  /** One-line storefront strapline. */
+  tagline: string;
+  /** Public URL of the tenant's logo, or null to use the bundled default. */
+  logoUrl: string | null;
+}
+
+// Platform identity for hosts that are not a verified tenant custom
+// domain. PennPaps is now tenant-specific and resolves via the seed
+// organization's verified `pennpaps.com` custom domain.
+export const DEFAULT_BRANDING: StorefrontBranding = {
+  storefrontName: "CareMetric Breathe",
+  legalName: "CareMetric Breathe",
+  tagline: "The CPAP resupply platform for modern DME teams.",
+  logoUrl: null,
+};
+
+const CACHE_TTL_MS = 60_000;
+const LOOKUP_TIMEOUT_MS = 1_500;
+const VERIFIED_DOMAINS_TTL_MS = 60_000;
+
+type OrgBrandingColumns = {
+  name: string | null;
+  storefront_name: string | null;
+  tagline: string | null;
+  logo_url: string | null;
+};
+
+function trimmed(v: string | null | undefined): string {
+  return (v ?? "").trim();
+}
+
+function mapBranding(row: OrgBrandingColumns | null): StorefrontBranding {
+  if (!row) return DEFAULT_BRANDING;
+  const legalName = trimmed(row.name) || DEFAULT_BRANDING.legalName;
+  return {
+    storefrontName: trimmed(row.storefront_name) || legalName,
+    legalName,
+    tagline: trimmed(row.tagline) || DEFAULT_BRANDING.tagline,
+    logoUrl: trimmed(row.logo_url) || null,
+  };
+}
+
+class BrandingLookupTimeout extends Error {
+  constructor() {
+    super("branding_lookup_timeout");
+    this.name = "BrandingLookupTimeout";
+  }
+}
+
+async function withTimeout<T>(p: PromiseLike<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new BrandingLookupTimeout()),
+      LOOKUP_TIMEOUT_MS,
+    );
+  });
+  try {
+    return await Promise.race([p, timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────
+// Branding cache, keyed by normalized host ("" = platform/default).
+// ────────────────────────────────────────────────────────────────────
+
+interface CacheEntry {
+  branding: StorefrontBranding;
+  expiresAt: number;
+}
+
+const cache = new Map<string, CacheEntry>();
+
+async function loadBrandingForHost(host: string): Promise<StorefrontBranding> {
+  const normalized = normalizeCustomDomain(host);
+  if (!normalized) return DEFAULT_BRANDING;
+
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) throw new Error("tenant context missing");
+  // GLOBAL `organizations` directory — reach via `.raw()` so the org-scoped
+  // facade does not append an org_id filter to the tenant directory.
+  const supabase = getOrgScopedClient(orgId);
+  const brandingCols = "name, storefront_name, tagline, logo_url";
+
+  // 1. A verified custom domain wins.
+  const { data, error } = await withTimeout(
+    supabase
+      .raw()
+      .schema("resupply")
+      .from("organizations")
+      .select(brandingCols)
+      .eq("custom_domain", normalized)
+      .eq("custom_domain_status", "verified")
+      .eq("status", "active")
+      .limit(1)
+      .maybeSingle(),
+  );
+  if (error) throw error;
+  if (data) return mapBranding(data);
+
+  // 2. Platform subdomain (`<slug>.<base>`, G10) → tenant by slug. The
+  // zero-DNS-setup default: an active tenant served at its slug subdomain
+  // gets its own brand without binding a custom domain.
+  const slug = extractTenantSubdomainLabel(host);
+  if (slug) {
+    const { data: bySlug, error: slugErr } = await withTimeout(
+      supabase
+        .raw()
+        .schema("resupply")
+        .from("organizations")
+        .select(brandingCols)
+        .eq("slug", slug)
+        .eq("status", "active")
+        .limit(1)
+        .maybeSingle(),
+    );
+    if (slugErr) throw slugErr;
+    if (bySlug) return mapBranding(bySlug);
+  }
+
+  // No tenant on this host → the platform site.
+  return DEFAULT_BRANDING;
+}
+
+/**
+ * The effective storefront branding for a request host. Cached ~60s per
+ * host; never throws (any failure degrades to the platform/default brand).
+ */
+export async function resolveBrandingByHost(
+  host: string | undefined,
+): Promise<StorefrontBranding> {
+  const key = normalizeCustomDomain(host ?? "") ?? "";
+  const now = Date.now();
+  const hit = cache.get(key);
+  if (hit && hit.expiresAt > now) return hit.branding;
+
+  let branding: StorefrontBranding;
+  try {
+    branding = key ? await loadBrandingForHost(key) : DEFAULT_BRANDING;
+  } catch (err) {
+    const normalized =
+      err instanceof Error ? err : new Error(String(err ?? "unknown"));
+    logger.warn(
+      { event: "tenant_branding_load_failed", err: normalized },
+      "tenant branding load failed; falling back to default brand",
+    );
+    branding = DEFAULT_BRANDING;
+  }
+  cache.set(key, { branding, expiresAt: now + CACHE_TTL_MS });
+  return branding;
+}
+
+// Branding cache keyed by org_id (separate from the host cache above). Used by
+// callsites that already know their tenant — e.g. order-confirmation emails
+// fired from a Stripe webhook, which have an org_id but no request host.
+const orgBrandingCache = new Map<string, CacheEntry>();
+
+async function loadBrandingForOrgId(
+  orgId: string,
+): Promise<StorefrontBranding> {
+  const supabase = getOrgScopedClient(orgId);
+  // GLOBAL `organizations` directory — reach via `.raw()` so the org-scoped
+  // facade does not append an org_id filter to the tenant directory, then
+  // select this specific org by id.
+  const { data, error } = await withTimeout(
+    supabase
+      .raw()
+      .schema("resupply")
+      .from("organizations")
+      .select("name, storefront_name, tagline, logo_url")
+      .eq("id", orgId)
+      .limit(1)
+      .maybeSingle(),
+  );
+  if (error) throw error;
+  return mapBranding(data);
+}
+
+/**
+ * The effective storefront branding for a known tenant `orgId`. Cached ~60s
+ * per org; never throws (any failure degrades to the platform/default brand).
+ * For the seed tenant this returns its stored brand (e.g. "PennPaps"), so
+ * single-tenant copy is unchanged.
+ */
+export async function resolveBrandingByOrgId(
+  orgId: string | undefined,
+): Promise<StorefrontBranding> {
+  const key = orgId?.trim();
+  if (!key) return DEFAULT_BRANDING;
+  const now = Date.now();
+  const hit = orgBrandingCache.get(key);
+  if (hit && hit.expiresAt > now) return hit.branding;
+
+  let branding: StorefrontBranding;
+  try {
+    branding = await loadBrandingForOrgId(key);
+  } catch (err) {
+    const normalized =
+      err instanceof Error ? err : new Error(String(err ?? "unknown"));
+    logger.warn(
+      { event: "tenant_branding_load_failed", err: normalized },
+      "tenant branding load by org failed; falling back to default brand",
+    );
+    branding = DEFAULT_BRANDING;
+  }
+  orgBrandingCache.set(key, { branding, expiresAt: now + CACHE_TTL_MS });
+  return branding;
+}
+
+/**
+ * Resolve a tenant's per-tenant INTERNAL notification recipient (migration
+ * 0379): `fulfillment_email` (fitter-flow order notifications) or
+ * `lead_notification_email` (insurance-lead notifications). Returns the
+ * column value, or null when unset / no org / on any error — callers fall
+ * back to the platform env default so single-tenant is unchanged.
+ */
+export async function resolveOrgNotificationEmail(
+  orgId: string | undefined,
+  column: "fulfillment_email" | "lead_notification_email",
+): Promise<string | null> {
+  const id = orgId?.trim();
+  if (!id) return null;
+  try {
+    const supabase = getOrgScopedClient(id);
+    // GLOBAL `organizations` directory — `.raw()` so the facade doesn't
+    // re-append an org filter; select this org by id.
+    const { data, error } = await withTimeout(
+      supabase
+        .raw()
+        .schema("resupply")
+        .from("organizations")
+        .select(column)
+        .eq("id", id)
+        .limit(1)
+        .maybeSingle(),
+    );
+    if (error) return null;
+    const value = (data as Record<string, unknown> | null)?.[column];
+    return typeof value === "string" && value.trim() ? value.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+// Tenant base-URL cache (origin string), keyed by org_id. Patient-facing email
+// links are built from this; it changes only on a custom-domain bind/unbind.
+const orgBaseUrlCache = new Map<
+  string,
+  { value: string | null; expiresAt: number }
+>();
+
+/**
+ * The public origin (e.g. `https://acme.example`) for a tenant's own storefront
+ * links, taken from its VERIFIED custom domain. Returns null when the tenant
+ * has no verified domain (or no org / on error) — callers fall back to the
+ * platform `SHOP_PUBLIC_BASE_URL` env / default, so single-tenant is unchanged
+ * (the seed org's verified `pennpaps.com` resolves to `https://pennpaps.com`).
+ * Cached ~60s per org.
+ */
+export async function resolveTenantBaseUrl(
+  orgId: string | undefined,
+): Promise<string | null> {
+  const id = orgId?.trim();
+  if (!id) return null;
+  const now = Date.now();
+  const hit = orgBaseUrlCache.get(id);
+  if (hit && hit.expiresAt > now) return hit.value;
+
+  let value: string | null = null;
+  try {
+    const supabase = getOrgScopedClient(id);
+    const { data, error } = await withTimeout(
+      supabase
+        .raw()
+        .schema("resupply")
+        .from("organizations")
+        .select("custom_domain, custom_domain_status")
+        .eq("id", id)
+        .limit(1)
+        .maybeSingle(),
+    );
+    if (!error) {
+      const row = data as {
+        custom_domain: string | null;
+        custom_domain_status: string | null;
+      } | null;
+      const domain = trimmed(row?.custom_domain);
+      if (domain && row?.custom_domain_status === "verified") {
+        value = `https://${domain.replace(/^https?:\/\//, "").replace(/\/$/, "")}`;
+      }
+    }
+  } catch {
+    value = null;
+  }
+  orgBaseUrlCache.set(id, { value, expiresAt: now + CACHE_TTL_MS });
+  return value;
+}
+
+/**
+ * Drop the branding cache so an admin save is visible on the next read.
+ * Also drops the host→org cache: every branding/custom-domain mutation
+ * invalidates this, and a domain bind/unbind changes which org a host
+ * resolves to, so the two must clear together.
+ */
+export function invalidateBrandingCache(): void {
+  cache.clear();
+  orgIdCache.clear();
+  orgBrandingCache.clear();
+  orgBaseUrlCache.clear();
+}
+
+// ────────────────────────────────────────────────────────────────────
+// Host → tenant (org_id) resolution.
+//
+// The branding resolver above answers "what does this host LOOK like";
+// this answers "whose DATA does a request on this host operate on". They
+// share the same verified-custom-domain lookup but are kept separate so
+// the public branding endpoint can stay cacheable/PII-free while the
+// org-id resolver feeds request-scoped data access (requireSignedIn,
+// storefront routes).
+//
+// Resolution mirrors branding exactly:
+//   * a VERIFIED custom domain → that tenant's org_id,
+//   * everything else (platform host, unverified, miss, error) → the
+//     SEED org id — so single-tenant behavior is byte-identical.
+// ────────────────────────────────────────────────────────────────────
+
+interface OrgIdCacheEntry {
+  orgId: string | null;
+  expiresAt: number;
+}
+
+const orgIdCache = new Map<string, OrgIdCacheEntry>();
+
+async function loadOrgIdForHost(host: string): Promise<string | null> {
+  const normalized = normalizeCustomDomain(host);
+  if (!normalized) return resolveSeedOrgId();
+
+  const seedOrgId = await resolveSeedOrgId();
+  if (!seedOrgId) return null;
+  // GLOBAL `organizations` directory — reach via `.raw()` (see
+  // loadSeedBranding) so the org-scoped facade doesn't append a filter.
+  const supabase = getOrgScopedClient(seedOrgId);
+
+  // 1. A verified custom domain wins.
+  const { data, error } = await withTimeout(
+    supabase
+      .raw()
+      .schema("resupply")
+      .from("organizations")
+      .select("id")
+      .eq("custom_domain", normalized)
+      .eq("custom_domain_status", "verified")
+      .eq("status", "active")
+      .limit(1)
+      .maybeSingle(),
+  );
+  if (error) throw error;
+  if (data?.id) return data.id;
+
+  // 2. Platform subdomain (`<slug>.<base>`, G10) → tenant by slug.
+  const slug = extractTenantSubdomainLabel(host);
+  if (slug) {
+    const { data: bySlug, error: slugErr } = await withTimeout(
+      supabase
+        .raw()
+        .schema("resupply")
+        .from("organizations")
+        .select("id")
+        .eq("slug", slug)
+        .eq("status", "active")
+        .limit(1)
+        .maybeSingle(),
+    );
+    if (slugErr) throw slugErr;
+    if (bySlug?.id) return bySlug.id;
+  }
+
+  // No verified tenant on this host → the default site (seed org).
+  return seedOrgId;
+}
+
+/**
+ * The tenant (`org_id`) a request on this host operates on. Cached ~60s
+ * per host; never throws — any failure degrades to the seed org so the
+ * storefront/customer surface stays up and single-tenant-correct.
+ *
+ * Returns null only when even the seed org can't be resolved (DB down at
+ * boot); callers treat that exactly as they treat a missing `req.orgId`.
+ */
+export async function resolveOrgIdByHost(
+  host: string | undefined,
+): Promise<string | null> {
+  const key = normalizeCustomDomain(host ?? "") ?? "";
+  const now = Date.now();
+  const hit = orgIdCache.get(key);
+  if (hit && hit.expiresAt > now) return hit.orgId;
+
+  let orgId: string | null;
+  try {
+    orgId = key ? await loadOrgIdForHost(key) : await resolveSeedOrgId();
+  } catch (err) {
+    logger.warn(
+      {
+        event: "tenant_org_resolve_failed",
+        host: key,
+        err: err instanceof Error ? err : new Error(String(err ?? "unknown")),
+      },
+      "host→org resolve failed; falling back to seed org",
+    );
+    // Fail-soft to the seed org (single-tenant-correct).
+    orgId = await resolveSeedOrgId().catch(() => null);
+  }
+  // Only cache a positive resolution; a null (DB-down) result should be
+  // retried on the next request rather than pinned for the TTL.
+  if (orgId) orgIdCache.set(key, { orgId, expiresAt: now + CACHE_TTL_MS });
+  return orgId;
+}
+
+/** Drop the host→org cache (call when a domain verification changes). */
+export function invalidateOrgIdCache(): void {
+  orgIdCache.clear();
+}
+
+// ────────────────────────────────────────────────────────────────────
+// Verified-custom-domain set — consumed by the CORS allowlist so a
+// tenant's own domain is an accepted Origin without a redeploy.
+// ────────────────────────────────────────────────────────────────────
+
+let verifiedDomains = new Set<string>();
+let verifiedDomainsExpiresAt = 0;
+let verifiedRefreshInFlight: Promise<void> | null = null;
+
+async function reloadVerifiedDomains(): Promise<void> {
+  try {
+    const orgId = await resolveSeedOrgId();
+    if (!orgId) throw new Error("tenant context missing");
+    // GLOBAL `organizations` directory — reach via `.raw()` so the org-scoped
+    // facade does not append an org_id filter to the tenant directory.
+    const supabase = getOrgScopedClient(orgId);
+    const { data, error } = await withTimeout(
+      supabase
+        .raw()
+        .schema("resupply")
+        .from("organizations")
+        .select("custom_domain")
+        .eq("custom_domain_status", "verified")
+        .eq("status", "active"),
+    );
+    if (error) throw error;
+    const next = new Set<string>();
+    for (const row of data ?? []) {
+      const d = normalizeCustomDomain(trimmed(row.custom_domain));
+      if (d) next.add(d);
+    }
+    verifiedDomains = next;
+    verifiedDomainsExpiresAt = Date.now() + VERIFIED_DOMAINS_TTL_MS;
+  } catch (err) {
+    // Keep the last-known set; just back off the retry window so a flaky
+    // DB doesn't hammer on every request.
+    verifiedDomainsExpiresAt = Date.now() + 5_000;
+    logger.warn(
+      {
+        event: "verified_domains_reload_failed",
+        err: err instanceof Error ? err : new Error(String(err)),
+      },
+      "verified custom-domain reload failed; keeping last-known set",
+    );
+  }
+}
+
+function kickVerifiedDomainsRefresh(): void {
+  if (verifiedRefreshInFlight) return;
+  verifiedRefreshInFlight = reloadVerifiedDomains().finally(() => {
+    verifiedRefreshInFlight = null;
+  });
+}
+
+/**
+ * Synchronously report whether an Origin is a verified custom domain.
+ * Backed by a cached set refreshed in the background — the CORS callback
+ * must stay sync, so a cold/stale cache triggers a refresh for NEXT time
+ * and answers from the last-known set now. Force a refresh right after a
+ * verify with `refreshVerifiedCustomDomains()`.
+ */
+export function isVerifiedCustomDomainOrigin(origin: string): boolean {
+  if (Date.now() >= verifiedDomainsExpiresAt) kickVerifiedDomainsRefresh();
+  let host: string;
+  try {
+    host = new URL(origin).hostname;
+  } catch {
+    return false;
+  }
+  const normalized = normalizeCustomDomain(host);
+  return normalized ? verifiedDomains.has(normalized) : false;
+}
+
+/** Force-refresh the verified-domain set (call after a domain verifies). */
+export async function refreshVerifiedCustomDomains(): Promise<void> {
+  await reloadVerifiedDomains();
+}
+
+/** Warm the verified-domain cache at boot (fire-and-forget). */
+export function warmVerifiedCustomDomains(): void {
+  kickVerifiedDomainsRefresh();
+}
+
+/** Test-only: reset all module caches between cases. */
+export function __resetTenantBrandingForTests(): void {
+  cache.clear();
+  orgIdCache.clear();
+  verifiedDomains = new Set<string>();
+  verifiedDomainsExpiresAt = 0;
+  verifiedRefreshInFlight = null;
+}

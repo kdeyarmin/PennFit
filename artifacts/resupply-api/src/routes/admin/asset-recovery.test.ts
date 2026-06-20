@@ -231,3 +231,66 @@ describe("PATCH /admin/asset-recovery/:id", () => {
     expect(res.body.case.patientId).toBe(PATIENT_ID);
   });
 });
+
+// ── POST /admin/asset-recovery/:id/label ─────────────────────────────────────
+// No carrier vendor is configured in tests, so selectAdapter() returns the
+// null adapter → the happy path resolves to 503 vendor_not_configured. We pin
+// the gating + state checks that run before the adapter call.
+
+describe("POST /admin/asset-recovery/:id/label", () => {
+  it("returns 401 when unauthenticated", async () => {
+    const res = await request(makeApp()).post(
+      `/admin/asset-recovery/${CASE_ID}/label`,
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 400 for a non-uuid id", async () => {
+    stubAdmin();
+    const res = await request(makeApp()).post(
+      "/admin/asset-recovery/not-a-uuid/label",
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 404 when the case does not exist", async () => {
+    stubAdmin();
+    stageSupabaseResponse("asset_recovery_cases", "select", { data: null });
+    const res = await request(makeApp()).post(
+      `/admin/asset-recovery/${CASE_ID}/label`,
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 409 when the case is past the labelable stage", async () => {
+    stubAdmin();
+    stageSupabaseResponse("asset_recovery_cases", "select", {
+      data: makeCaseRow({ status: "received" }),
+    });
+    const res = await request(makeApp()).post(
+      `/admin/asset-recovery/${CASE_ID}/label`,
+    );
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("wrong_state");
+  });
+
+  it("returns 503 vendor_not_configured for an eligible case (null adapter)", async () => {
+    stubAdmin();
+    stageSupabaseResponse("asset_recovery_cases", "select", {
+      data: makeCaseRow({ status: "identified" }),
+    });
+    const res = await request(makeApp()).post(
+      `/admin/asset-recovery/${CASE_ID}/label`,
+    );
+    expect(res.status).toBe(503);
+    expect(res.body.error).toBe("vendor_not_configured");
+  });
+
+  it("wires adminRateLimit name='asset_recovery.label' preset='mutation'", () => {
+    const call = adminRateLimitSpy.mock.calls.find(
+      ([opts]) => opts.name === "asset_recovery.label",
+    );
+    expect(call).toBeDefined();
+    expect(call![0].preset).toBe("mutation");
+  });
+});

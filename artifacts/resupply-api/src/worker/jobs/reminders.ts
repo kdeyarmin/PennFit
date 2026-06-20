@@ -70,16 +70,26 @@ import {
   type OutreachPrescription,
   type OutreachRule,
 } from "@workspace/resupply-domain";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  type Database,
+  type OrgScopedClient,
+  getOrgScopedClient,
+  resolveSeedOrgId,
+} from "@workspace/resupply-db";
 import { DEFAULT_SENDGRID_FROM_EMAIL } from "@workspace/resupply-email";
 import {
   sendReminderEmail,
   sendReminderSms,
+  type ReminderVariant,
   type SendActor,
 } from "@workspace/resupply-reminders";
 import { hasLinkHmacKey } from "@workspace/resupply-secrets";
 
 import { logger } from "../../lib/logger.js";
+import { applyTenantEmailSender } from "../../lib/email/apply-tenant-email-sender.js";
+import { applyTenantSmsFrom } from "../../lib/messaging/tenant-telecom.js";
+import { forEachActiveOrg } from "../lib/for-each-active-org.js";
+import { recordOutboundMessageUsage } from "../../lib/metering/usage.js";
 import {
   createQueueWithDlq,
   CRON_SCAN_QUEUE_OPTS,
@@ -115,9 +125,9 @@ export const SEND_EMAIL_JOB = "reminders.send-email";
  * TTL = 22h (intentionally less than 24h so the next-day scan can
  * resend cleanly when a patient's cadence is daily).
  */
-async function tryClaimReminderDedupKey(
-  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
-  channel: "sms" | "email",
+export async function tryClaimReminderDedupKey(
+  supabase: OrgScopedClient,
+  channel: "sms" | "email" | "voice",
   patientId: string,
   episodeId: string,
   jobId: string,
@@ -133,7 +143,6 @@ async function tryClaimReminderDedupKey(
   let timezone = "America/New_York";
   try {
     const { data: tzRow } = await supabase
-      .schema("resupply")
       .from("patients")
       .select("timezone")
       .eq("id", patientId)
@@ -160,6 +169,7 @@ async function tryClaimReminderDedupKey(
   const key = `reminder-${channel}:${patientId}:${episodeId}:${todayLocal}`;
   const expiresAt = new Date(Date.now() + 22 * 60 * 60 * 1000).toISOString();
   const { error } = await supabase
+    .raw()
     .schema("resupply")
     .from("worker_dedup_keys")
     .insert({ key, expires_at: expiresAt });
@@ -200,12 +210,13 @@ async function tryClaimReminderDedupKey(
   );
 }
 
-async function releaseReminderDedupKey(
-  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
+export async function releaseReminderDedupKey(
+  supabase: OrgScopedClient,
   key: string,
   jobId: string,
 ): Promise<void> {
   const { error } = await supabase
+    .raw()
     .schema("resupply")
     .from("worker_dedup_keys")
     .delete()
@@ -239,6 +250,21 @@ export interface ScanJobData {
 export interface SendJobData {
   patientId: string;
   episodeId: string;
+  /**
+   * The tenant this reminder belongs to. Stamped by the per-tenant scan
+   * fan-out so the send worker claims its dedup key + reads on the RIGHT
+   * tenant's org-scoped client. Optional for back-compat: a job enqueued by
+   * the pre-fan-out scheduler (still in flight across a deploy) carries no
+   * orgId, and the worker falls back to the seed org — single-tenant-correct.
+   */
+  orgId?: string;
+  /**
+   * Which escalation-ladder touch this send is — selects the copy variant
+   * (initial / followup / final). The hourly scan stamps "initial" (first
+   * touch); the escalation scan stamps the step it resolved. Absent → the
+   * send helper defaults to "initial".
+   */
+  variant?: ReminderVariant;
 }
 
 interface ScanRow {
@@ -274,7 +300,7 @@ function daysBetween(earlier: Date, later: Date): number {
  */
 const QUIET_HOURS_START = 9; // 09:00 local — earliest send
 const QUIET_HOURS_END = 20; // 20:00 local — latest send (exclusive)
-function isWithinQuietHours(now: Date, timezone: string): boolean {
+export function isWithinQuietHours(now: Date, timezone: string): boolean {
   let hour: number;
   try {
     const fmt = new Intl.DateTimeFormat("en-US", {
@@ -417,9 +443,13 @@ export const __testing = {
  * SQL filter.
  */
 export async function scanForDueReminders(
+  orgId: string,
   asOf: Date = new Date(),
 ): Promise<ScanRow[]> {
-  const supabase = getSupabaseServiceRoleClient();
+  // Empty / whitespace orgId → no tenant to scan (return empty rather than
+  // letting getOrgScopedClient throw on a blank id).
+  if (!orgId || !orgId.trim()) return [];
+  const supabase = getOrgScopedClient(orgId);
   const quietCutoff = new Date(asOf.getTime() - QUIET_PERIOD_MS);
   const quietCutoffIso = quietCutoff.toISOString();
 
@@ -428,7 +458,6 @@ export async function scanForDueReminders(
   // in memory for the duration of the scan and let `resolveOutreachPlan`
   // pick the right one per patient.
   const { data: ruleRows, error: rulesErr } = await supabase
-    .schema("resupply")
     .from("frequency_rules")
     .select(
       "id, priority, created_at, active, match_item_sku_prefix, match_insurance_payer, min_tenure_days, max_tenure_days, cadence_days, default_channel",
@@ -437,7 +466,10 @@ export async function scanForDueReminders(
     .order("priority", { ascending: true })
     .order("created_at", { ascending: true });
   if (rulesErr) throw rulesErr;
-  const rules: OutreachRule[] = (ruleRows ?? []).map((r) => ({
+  const rules: OutreachRule[] = (
+    (ruleRows ??
+      []) as Database["resupply"]["Tables"]["frequency_rules"]["Row"][]
+  ).map((r) => ({
     id: r.id,
     priority: r.priority,
     createdAt: new Date(r.created_at),
@@ -475,7 +507,6 @@ export async function scanForDueReminders(
   }> = [];
   for (let from = 0; ; from += PAGE_SIZE) {
     const { data, error } = await supabase
-      .schema("resupply")
       .from("prescriptions")
       .select("id, patient_id, item_sku, cadence_days, created_at")
       .eq("status", "active")
@@ -509,7 +540,6 @@ export async function scanForDueReminders(
     const idChunk = activePrescriptionIds.slice(i, i + 200);
     for (let from = 0; ; from += PAGE_SIZE) {
       const { data, error } = await supabase
-        .schema("resupply")
         .from("episodes")
         .select("id, prescription_id, due_at")
         .in("prescription_id", idChunk)
@@ -543,7 +573,6 @@ export async function scanForDueReminders(
   for (let i = 0; i < patientIds.length; i += 200) {
     const batch = patientIds.slice(i, i + 200);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("patients")
       .select(
         "id, created_at, insurance_payer, cadence_override_days, channel_preference, phone_e164, email, timezone",
@@ -571,7 +600,6 @@ export async function scanForDueReminders(
     const batch = activePatientIds.slice(i, i + 200);
     for (let from = 0; ; from += PAGE_SIZE) {
       const { data, error } = await supabase
-        .schema("resupply")
         .from("fulfillments")
         .select("id, patient_id, item_sku, shipped_at")
         .in("patient_id", batch)
@@ -610,7 +638,6 @@ export async function scanForDueReminders(
     const idChunk = candidateEpisodeIds.slice(i, i + 200);
     for (let from = 0; ; from += PAGE_SIZE) {
       const { data, error } = await supabase
-        .schema("resupply")
         .from("conversations")
         .select("id, episode_id")
         .in("episode_id", idChunk)
@@ -875,22 +902,38 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
     try {
       const data = jobs[0]?.data ?? {};
       const asOf = data.asOfIso ? new Date(data.asOfIso) : new Date();
-      const rows = await scanForDueReminders(asOf);
-      logger.info(
-        { count: rows.length },
-        "reminders.scan: enqueueing per-patient send jobs",
+      // Fan out the scan across EVERY active tenant. Each tenant's due
+      // reminders are scanned on its own org-scoped client, and every
+      // enqueued send carries its `orgId` so the send worker claims the
+      // dedup key + reads on the right tenant. Per-tenant failure isolation
+      // means one tenant's scan error can't drop another tenant's reminders.
+      let enqueued = 0;
+      await forEachActiveOrg(
+        async (orgId) => {
+          const rows = await scanForDueReminders(orgId, asOf);
+          for (const row of rows) {
+            const send: SendJobData = {
+              patientId: row.patientId,
+              episodeId: row.episodeId,
+              orgId,
+              // First touch always uses the gentle "initial" copy; the
+              // escalation scan is what advances the variant.
+              variant: "initial",
+            };
+            if (row.channel === "sms") {
+              await boss.send(SEND_SMS_JOB, send);
+            } else {
+              await boss.send(SEND_EMAIL_JOB, send);
+            }
+            enqueued += 1;
+          }
+        },
+        { jobName: SCAN_JOB },
       );
-      for (const row of rows) {
-        const send: SendJobData = {
-          patientId: row.patientId,
-          episodeId: row.episodeId,
-        };
-        if (row.channel === "sms") {
-          await boss.send(SEND_SMS_JOB, send);
-        } else {
-          await boss.send(SEND_EMAIL_JOB, send);
-        }
-      }
+      logger.info(
+        { count: enqueued },
+        "reminders.scan: enqueued per-patient send jobs across active tenants",
+      );
     } catch (err) {
       logger.error({ err }, "reminders.scan: job failed");
       throw err;
@@ -908,7 +951,19 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
       );
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    // Prefer the tenant stamped by the per-tenant scan fan-out; fall back
+    // to the seed org for jobs enqueued before the fan-out deploy. Treat an
+    // empty/whitespace payload orgId as absent (a blank id would otherwise
+    // throw in getOrgScopedClient instead of using the seed fallback).
+    const orgId = j.data.orgId?.trim() || (await resolveSeedOrgId());
+    if (!orgId) {
+      logger.warn(
+        { job_id: j.id },
+        "reminders.send-sms: no org resolved — skipping",
+      );
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     // Idempotency: short-circuit if another attempt already sent (or
     // is sending) for this (patient, episode, channel, day). See
     // tryClaimReminderDedupKey for posture.
@@ -924,10 +979,14 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
     let outcome: Awaited<ReturnType<typeof sendReminderSms>>;
     try {
       outcome = await sendReminderSms({
-        supabase,
-        cfg: cfg.sms,
+        supabase: supabase.raw(),
+        orgId,
+        // Send under the tenant's own number / Messaging Service when it
+        // has one; falls back to the platform default otherwise (G7).
+        cfg: await applyTenantSmsFrom(orgId, cfg.sms),
         patientId: j.data.patientId,
         episodeId: j.data.episodeId,
+        variant: j.data.variant,
         actor,
       });
     } catch (err) {
@@ -964,6 +1023,14 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
           `reminders.send-sms: retryable failure: ${outcome.status}`,
         );
       }
+    } else {
+      // One patient-facing SMS went out (the dedup claim above makes this
+      // once-per (patient, episode, day) — no double-count on retry).
+      recordOutboundMessageUsage({
+        orgId,
+        channel: "sms",
+        source: "reminders.sms",
+      });
     }
   });
 
@@ -978,7 +1045,19 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
       );
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    // Prefer the tenant stamped by the per-tenant scan fan-out; fall back
+    // to the seed org for jobs enqueued before the fan-out deploy. Treat an
+    // empty/whitespace payload orgId as absent (a blank id would otherwise
+    // throw in getOrgScopedClient instead of using the seed fallback).
+    const orgId = j.data.orgId?.trim() || (await resolveSeedOrgId());
+    if (!orgId) {
+      logger.warn(
+        { job_id: j.id },
+        "reminders.send-email: no org resolved — skipping",
+      );
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     // Idempotency: short-circuit if another attempt already sent (or
     // is sending) for this (patient, episode, channel, day).
     const { proceed, key: dedupKey } = await tryClaimReminderDedupKey(
@@ -993,10 +1072,14 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
     let outcome: Awaited<ReturnType<typeof sendReminderEmail>>;
     try {
       outcome = await sendReminderEmail({
-        supabase,
-        cfg: cfg.email,
+        supabase: supabase.raw(),
+        orgId,
+        // Send under the tenant's own From identity when configured (G6);
+        // falls back to the platform default when it isn't.
+        cfg: await applyTenantEmailSender(orgId, cfg.email),
         patientId: j.data.patientId,
         episodeId: j.data.episodeId,
+        variant: j.data.variant,
         actor,
       });
     } catch (err) {
@@ -1031,6 +1114,14 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
           `reminders.send-email: retryable failure: ${outcome.status}`,
         );
       }
+    } else {
+      // One patient-facing email went out (dedup-claimed once-per
+      // (patient, episode, day) — no double-count on retry).
+      recordOutboundMessageUsage({
+        orgId,
+        channel: "email",
+        source: "reminders.email",
+      });
     }
   });
 

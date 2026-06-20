@@ -25,8 +25,10 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import {
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
+  resolveSeedOrgId,
   type Json,
+  type OrgScopedClient,
 } from "@workspace/resupply-db";
 import {
   buildConnectStreamTwiml,
@@ -36,6 +38,8 @@ import {
 
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
+import { resolveOrgIdByCalledNumber } from "../../lib/messaging/tenant-telecom";
+import { resolveBrandingByOrgId } from "../../lib/tenant-branding";
 import { getPendingSessions } from "../../lib/voice/pending-sessions";
 import { resolveCallerByPhone } from "../../lib/voice/resolve-caller";
 import {
@@ -82,6 +86,10 @@ const inboundBody = z.object({
   From: z.string().trim().optional(),
   CallSid: z.string().trim().min(1),
   Caller: z.string().trim().optional(),
+  // The called number (our/tenant number). Twilio sends both `To` and
+  // `Called`; either drives per-tenant routing (G7).
+  To: z.string().trim().optional(),
+  Called: z.string().trim().optional(),
 });
 
 const signatureMiddleware = requireTwilioSignature({
@@ -116,7 +124,33 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
     return;
   }
   const { From, CallSid } = parsed.data;
-  const supabase = getSupabaseServiceRoleClient();
+
+  // Webhook: no req.orgId. Route by the CALLED number to the tenant that
+  // owns it (G7), falling back to the seed org when unregistered. On miss
+  // degrade to a clean Hangup so a tenant-context gap never retry-storms
+  // Twilio. With no per-tenant numbers configured this resolves to seed.
+  const calledNumber = parsed.data.Called ?? parsed.data.To;
+  const orgId =
+    (await resolveOrgIdByCalledNumber(calledNumber)) ??
+    (await resolveSeedOrgId());
+  if (!orgId) {
+    res
+      .status(200)
+      .type("text/xml")
+      .send(buildHangupTwiml("Voice service unavailable."));
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
+
+  // Resolve the tenant's storefront brand once. The greeting + human-transfer
+  // copy is brand-literal ("PennPaps"); rewrite it to this tenant's storefront
+  // name so a non-seed tenant's caller never hears the seed brand. Uses the
+  // same resolver as the check-in voice/SMS copy (resolveBrandingByOrgId) so
+  // all patient-facing voice/storefront copy reads ONE brand field. Seed →
+  // "PennPaps" (a no-op for the substitution); fail-soft to the platform brand.
+  const brandName = (await resolveBrandingByOrgId(orgId)).storefrontName;
+  const brand = (text: string): string =>
+    text.split("PennPaps").join(brandName);
 
   // 1. Identify the caller. A DB failure here must NOT be silently treated
   // as "unidentified" — that would mask an outage and mis-route the caller.
@@ -155,7 +189,6 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
   // 2. Persist session row.
   const sessionStatus = patientId ? "in_progress" : "patient_not_identified";
   const { data: session, error } = await supabase
-    .schema("resupply")
     .from("voice_reorder_sessions")
     .insert({
       twilio_call_sid: CallSid,
@@ -186,7 +219,6 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
   // flows on any fall-through). Records the outcome on the session first.
   const transferToHuman = async (reason: string): Promise<void> => {
     const { error: transferStampErr } = await supabase
-      .schema("resupply")
       .from("voice_reorder_sessions")
       .update({
         status: "transferred_to_human",
@@ -206,7 +238,7 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
         [
           '<?xml version="1.0" encoding="UTF-8"?>',
           "<Response>",
-          "<Say>Hi! Welcome to your PennPaps reorder line. ",
+          `<Say>${escapeXmlText(brand("Hi! Welcome to your PennPaps reorder line. "))}`,
           "Connecting you to our team now.</Say>",
           `<Dial timeout="20">${SUPPORT_DIAL_E164}</Dial>`,
           "</Response>",
@@ -220,7 +252,7 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
   // conversation is bound to the shop customer (customer_id) and the agent
   // runs in "shop_customer" mode. Falls back to a human on any hiccup.
   if (!patientId && shopCustomerId && !ambiguous) {
-    if (!(await isFeatureEnabled("voice.agent"))) {
+    if (!(await isFeatureEnabled("voice.agent", orgId))) {
       logger.info(
         { event: "voice.inbound-reorder.agent_disabled", callSid: CallSid },
         "voice.inbound-reorder: voice agent disabled; transferring shop caller",
@@ -231,7 +263,6 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
     let shopConversationId: string;
     try {
       const { data: conv, error: convErr } = await supabase
-        .schema("resupply")
         .from("conversations")
         .insert({
           customer_id: shopCustomerId,
@@ -262,6 +293,7 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
 
     getPendingSessions().register({
       conversationId: shopConversationId,
+      orgId,
       // Patient/episode are empty for a storefront caller; callerKind +
       // shopCustomerId drive the shop tool set + prompt.
       patientId: "",
@@ -269,7 +301,7 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
       callerKind: "shop_customer",
       shopCustomerId,
       callContext: INBOUND_SHOP_CALL_CONTEXT,
-      greeting: INBOUND_SHOP_GREETING,
+      greeting: brand(INBOUND_SHOP_GREETING),
       // The caller dialed US — the agent must greet first, not wait for
       // the caller to break the silence.
       agentSpeaksFirst: true,
@@ -278,7 +310,6 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
     // Best-effort metadata stamp — the TwiML response (and the call) must go
     // out regardless, so log a warning on failure rather than throwing.
     const { error: shopStampErr } = await supabase
-      .schema("resupply")
       .from("voice_reorder_sessions")
       .update({
         // The row was inserted as patient_not_identified (no patient), but a
@@ -367,7 +398,7 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
   // the unchanged WS upgrade handler then claims it and runs the bridge.
   // Anything else falls back to a human, which is strictly better than
   // greeting the caller and dropping them.
-  if (!(await isFeatureEnabled("voice.agent"))) {
+  if (!(await isFeatureEnabled("voice.agent", orgId))) {
     logger.info(
       { event: "voice.inbound-reorder.agent_disabled", callSid: CallSid },
       "voice.inbound-reorder: voice agent disabled; transferring to human",
@@ -394,7 +425,6 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
   let conversationId: string;
   try {
     const { data: conv, error: convErr } = await supabase
-      .schema("resupply")
       .from("conversations")
       .insert({
         patient_id: patientId,
@@ -426,6 +456,7 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
   // in that we're calling them.
   getPendingSessions().register({
     conversationId,
+    orgId,
     patientId,
     episodeId,
     callContext: INBOUND_CALL_CONTEXT,
@@ -437,7 +468,6 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
 
   // Best-effort metadata stamp — the TwiML response must go out regardless.
   const { error: patientStampErr } = await supabase
-    .schema("resupply")
     .from("voice_reorder_sessions")
     .update({
       outcome_json: {
@@ -483,11 +513,10 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
  * with nothing to reorder.
  */
 async function findActionableEpisodeId(
-  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
+  supabase: OrgScopedClient,
   patientId: string,
 ): Promise<string | null> {
   const { data, error } = await supabase
-    .schema("resupply")
     .from("episodes")
     .select("id, status, created_at")
     .eq("patient_id", patientId)
@@ -513,14 +542,16 @@ interface IdentifyResult {
 }
 
 async function identifyCaller(
-  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
+  supabase: OrgScopedClient,
   fromE164: string,
 ): Promise<IdentifyResult> {
   // Unified resolution across clinical patients + cash-pay storefront
   // customers (patients win on a tie). The shared-number / ambiguity
   // rules live in resolveCallerByPhone; we map its discriminated result
   // back onto the IdentifyResult shape the rest of this route expects.
-  const resolution = await resolveCallerByPhone(supabase, fromE164);
+  // resolveCallerByPhone is a shared helper still typed for the unscoped
+  // service-role client (cut over in a later wave), so pass `.raw()`.
+  const resolution = await resolveCallerByPhone(supabase.raw(), fromE164);
   switch (resolution.kind) {
     case "patient":
       return {
@@ -539,6 +570,14 @@ async function identifyCaller(
     case "none":
       return { patientId: null, shopCustomerId: null, ambiguous: false };
   }
+}
+
+// A tenant's saved brand name is substituted into the transfer <Say> below;
+// escape it so a name containing & < > can't produce malformed TwiML (which
+// Twilio rejects, dropping the human-transfer call). Mirrors the helper in
+// voice/checkin-twiml.ts.
+function escapeXmlText(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 export default router;

@@ -78,6 +78,10 @@ describe("POST /sms/status-callback (recall notifications)", () => {
     expect(
       supabaseMock.filterCalls("recall_notifications", "update"),
     ).toContainEqual({ verb: "eq", args: ["id", RECALL_NOTIFICATION_ID] });
+    // Tenant-agnostic webhook keyed by the globally-unique notification id:
+    // the update must NOT be org-scoped (the org-scoped facade forces org_id
+    // onto the patch), else a non-seed tenant's status would be dropped.
+    expect(payload).not.toHaveProperty("org_id");
   });
 
   it("records the error code and audits on a delivery failure", async () => {

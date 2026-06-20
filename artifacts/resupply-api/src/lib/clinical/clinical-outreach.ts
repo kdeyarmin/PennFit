@@ -19,7 +19,7 @@
 
 import {
   DEFAULT_COMMUNICATION_PREFERENCES,
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
   type CommunicationPreferences,
   type Json,
 } from "@workspace/resupply-db";
@@ -30,9 +30,13 @@ import {
 import { createTwilioSmsClient } from "@workspace/resupply-telecom";
 
 import { isInDndWindow, type DndOptions } from "../comm-prefs";
+import { createTenantSendgridClient } from "../email/tenant-sender.js";
 import { logger } from "../logger";
+import { applyTenantSmsFrom } from "../messaging/tenant-telecom";
+import { recordOutboundMessageUsage } from "../metering/usage";
+import { resolveBrandingByOrgId } from "../tenant-branding.js";
 
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+type SupabaseClient = ReturnType<typeof getOrgScopedClient>;
 
 export interface OutreachMessagingConfig {
   sendgridApiKey: string | null;
@@ -212,6 +216,13 @@ export interface OutreachDeps {
   sendEmail?: (to: string, subject: string, body: string) => Promise<void>;
   sendSms?: (to: string, body: string) => Promise<void>;
   now?: Date;
+  /**
+   * Tenant the batch is sweeping. When set, the EMAIL send goes out under
+   * the tenant's own From identity (G6) via `createTenantSendgridClient`.
+   * Unset (direct unit-test calls) falls back to the env-config From, so
+   * the test seam is unchanged.
+   */
+  orgId?: string;
 }
 
 function escapeHtml(s: string): string {
@@ -237,7 +248,6 @@ export async function sendOneOutreach(
   const now = deps.now ?? new Date();
 
   const { data: patient } = await supabase
-    .schema("resupply")
     .from("patients")
     .select("email, phone_e164, address")
     .eq("id", target.patientId)
@@ -252,7 +262,6 @@ export async function sendOneOutreach(
   let prefs: CommunicationPreferences | null = null;
   if (email) {
     const { data: cust } = await supabase
-      .schema("resupply")
       .from("shop_customers")
       .select("communication_preferences")
       .eq("email_lower", email.toLowerCase())
@@ -282,7 +291,6 @@ export async function sendOneOutreach(
   }
 
   const { error: outreachLogErr } = await supabase
-    .schema("resupply")
     .from("clinical_outreach_log")
     .insert({
       patient_id: target.patientId,
@@ -327,11 +335,16 @@ async function deliver(
       if (deps.sendEmail) {
         await deps.sendEmail(contact.email, msg.subject, msg.body);
       } else {
-        const client = createSendgridClient({
-          apiKey: cfg.sendgridApiKey,
-          fromEmail: cfg.sendgridFromEmail,
-          fromName: cfg.sendgridFromName,
-        });
+        // Send under the tenant's own From identity when the batch knows
+        // its tenant (G6); a direct unit-test call (no orgId) falls back to
+        // the env-config From so the test seam is unchanged.
+        const client = deps.orgId
+          ? await createTenantSendgridClient(deps.orgId)
+          : createSendgridClient({
+              apiKey: cfg.sendgridApiKey,
+              fromEmail: cfg.sendgridFromEmail,
+              fromName: cfg.sendgridFromName,
+            });
         await client.sendEmail({
           to: contact.email,
           subject: msg.subject,
@@ -382,6 +395,12 @@ async function deliver(
 }
 
 export interface OutreachBatchOpts {
+  /**
+   * Tenant to sweep. Callers resolve it: the admin "Run now" route from
+   * `req.orgId`, the cron from `resolveSeedOrgId()` (single-tenant
+   * bridge). Every read/write is scoped to it via `getOrgScopedClient`.
+   */
+  orgId: string;
   cap?: number;
   minHoursBetweenOutreach?: number;
 }
@@ -399,10 +418,10 @@ export interface OutreachBatchResult {
  * Fail-soft per patient.
  */
 export async function runClinicalOutreachBatch(
-  opts: OutreachBatchOpts = {},
+  opts: OutreachBatchOpts,
   deps: OutreachDeps = {},
 ): Promise<OutreachBatchResult> {
-  const supabase = getSupabaseServiceRoleClient();
+  const supabase = getOrgScopedClient(opts.orgId);
   const cap = opts.cap ?? 50;
   const minHours = opts.minHoursBetweenOutreach ?? 24 * 14; // fortnightly
   const result: OutreachBatchResult = {
@@ -414,7 +433,6 @@ export async function runClinicalOutreachBatch(
   };
 
   const { data, error } = await supabase
-    .schema("resupply")
     .from("clinical_encounters")
     .select("id, patient_id, assessment_category, created_at")
     .eq("encounter_type", "adherence_intervention")
@@ -434,7 +452,6 @@ export async function runClinicalOutreachBatch(
   const patientIds = [...new Set(rows.map((r) => r.patient_id))];
   const lastOutreach = new Map<string, string>();
   const { data: logs } = await supabase
-    .schema("resupply")
     .from("clinical_outreach_log")
     .select("patient_id, created_at")
     .in("patient_id", patientIds)
@@ -459,11 +476,38 @@ export async function runClinicalOutreachBatch(
   );
   result.selected = targets.length;
 
+  // Resolve the tenant's own SMS sender ONCE for the whole batch (G7) and
+  // pin it onto deps.cfg so every per-patient send goes out under the
+  // tenant's number / Messaging Service (falling back to the platform
+  // default when the tenant has none). deps.cfg drives the SMS branch of
+  // `deliver`; the email From is unaffected.
+  const baseCfg = deps.cfg ?? readOutreachMessagingConfig();
+  // Brand the outreach with the tenant's own storefront name (G6) — drives
+  // both the email subject and the SMS body prefix. For the seed tenant this
+  // resolves to "PennPaps", so single-tenant copy is unchanged.
+  const brand = await resolveBrandingByOrgId(opts.orgId);
+  const tenantDeps: OutreachDeps = {
+    ...deps,
+    // Stash the orgId so the per-patient email send goes out under the
+    // tenant's own From identity (used by `deliver`).
+    orgId: opts.orgId,
+    cfg: {
+      ...(await applyTenantSmsFrom(opts.orgId, baseCfg)),
+      practiceName: brand.storefrontName,
+    },
+  };
+
   for (const t of targets) {
     try {
-      const outcome = await sendOneOutreach(supabase, t, deps);
-      if (outcome.kind === "sent") result.sent += 1;
-      else if (outcome.kind === "failed") result.failed += 1;
+      const outcome = await sendOneOutreach(supabase, t, tenantDeps);
+      if (outcome.kind === "sent") {
+        result.sent += 1;
+        recordOutboundMessageUsage({
+          orgId: opts.orgId,
+          channel: outcome.channel === "email" ? "email" : "sms",
+          source: "clinical_outreach",
+        });
+      } else if (outcome.kind === "failed") result.failed += 1;
       else result.skipped += 1;
     } catch (err) {
       logger.warn(

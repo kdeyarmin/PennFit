@@ -150,7 +150,7 @@ export function normalizeHeader(h: string): string {
 /**
  * Reverse {@link safeCsvCell}'s formula-injection guard on import: strip a
  * single leading apostrophe when it immediately precedes a formula-trigger
- * char (`= + - @` / tab / CR). This is what makes a PennFit export
+ * char (`= + - @` / tab / CR). This is what makes a CareMetric Breathe export
  * round-trip losslessly — without it, an E.164 phone "+14155551212"
  * exported as the spreadsheet-safe "'+14155551212" would fail re-import.
  *

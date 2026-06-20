@@ -294,4 +294,40 @@ describe("POST /email/inbound-parse", () => {
     expect(convVals.channel).toBe("email");
     expect(convVals.status).toBe("open");
   });
+
+  it("routes the thread to the sender patient's OWN tenant, not the seed org", async () => {
+    const ORG_B = "00000000-0000-4000-8000-000000000002";
+    // The matched patient belongs to a non-seed tenant.
+    stageSupabaseResponse("patients", "select", {
+      data: [{ id: "patient-b", org_id: ORG_B }],
+    });
+    stageSupabaseResponse("conversations", "select", { data: null });
+    stageSupabaseResponse("episodes", "select", { data: { id: "ep-b" } });
+    stageSupabaseResponse("conversations", "insert", {
+      data: { id: "conv-b" },
+    });
+    stageSupabaseResponse("messages", "insert", { data: { id: "msg-b" } });
+    stageSupabaseResponse("conversations", "update", { error: null });
+    stageSupabaseResponse("conversations", "update", { error: null });
+
+    const res = await request(buildApp())
+      .post("/email/inbound-parse")
+      .auth("sg_user", "correct-horse")
+      .field("from", "patientb@example.com")
+      .field("text", "Hello from tenant B");
+    expect(res.status).toBe(200);
+    // The conversation + message land in the patient's tenant (the org-scoped
+    // facade forces org_id onto every insert = the org derived from the
+    // patient record), NOT the seed org.
+    const convVals = getSupabaseWritePayloads(
+      "conversations",
+      "insert",
+    )[0] as Record<string, unknown>;
+    expect(convVals.org_id).toBe(ORG_B);
+    const msgVals = getSupabaseWritePayloads("messages", "insert")[0] as Record<
+      string,
+      unknown
+    >;
+    expect(msgVals.org_id).toBe(ORG_B);
+  });
 });

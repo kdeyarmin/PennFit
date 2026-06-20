@@ -16,7 +16,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
@@ -54,21 +54,34 @@ router.get(
     }
     const { days, commentLimit } = parsed.data;
 
-    const supabase = getSupabaseServiceRoleClient();
+    // Fail closed: never widen to all tenants on a missing orgId.
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const db = getOrgScopedClient(orgId);
     const cutoff = new Date();
     cutoff.setUTCDate(cutoff.getUTCDate() - days);
 
     // Pull every NPS row in the window — typical volume is well under
     // 1k/week even at scale, so a single read is cheaper than two
     // round-trips for separate aggregations + tail.
-    const { data: rows, error } = await supabase
-      .schema("resupply")
+    const { data: rows, error } = await db
       .from("shop_order_nps_responses")
       .select("id, order_id, score, comment, created_at")
       .gte("created_at", cutoff.toISOString())
       .order("created_at", { ascending: false })
       .limit(2000);
     if (error) throw error;
+
+    const npsRows = (rows ?? []) as Array<{
+      id: string;
+      order_id: string;
+      score: number;
+      comment: string | null;
+      created_at: string;
+    }>;
 
     // Dedup to most-recent rating per order. Sorted desc above, so the
     // first occurrence wins.
@@ -80,7 +93,7 @@ router.get(
       comment: string | null;
       created_at: string;
     }> = [];
-    for (const r of rows ?? []) {
+    for (const r of npsRows) {
       if (seen.has(r.order_id)) continue;
       seen.add(r.order_id);
       latestPerOrder.push(r);
@@ -98,7 +111,7 @@ router.get(
 
     // Comment tail — recent rows with non-empty comments. We surface
     // the score alongside so the admin can see context.
-    const commentTail = (rows ?? [])
+    const commentTail = npsRows
       .filter((r) => r.comment && r.comment.trim().length > 0)
       .slice(0, commentLimit)
       .map((r) => ({

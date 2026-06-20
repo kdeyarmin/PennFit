@@ -153,8 +153,14 @@ router.post(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const summary = await runEligibilityReverificationBatch(
       {
+        orgId,
         cap: parsed.data.cap ?? 25,
         minHoursBetweenAttempts: parsed.data.minHoursBetweenAttempts,
         staleDays: parsed.data.staleDays,

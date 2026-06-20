@@ -265,6 +265,7 @@ function ReportLostLink({ orderId }: { orderId: string }) {
     <div className="flex items-center gap-1">
       <input
         type="text"
+        aria-label="Describe what happened (optional)"
         placeholder="Describe what happened (optional)"
         value={note}
         onChange={(e) => setNote(e.target.value)}

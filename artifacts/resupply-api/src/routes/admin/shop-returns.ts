@@ -35,8 +35,8 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import {
-  getSupabaseServiceRoleClient,
   type Database,
+  getOrgScopedClient,
   type ShopReturnStatus,
 } from "@workspace/resupply-db";
 
@@ -48,6 +48,7 @@ import {
   getStripeClient,
   readStripeConfigOrNull,
 } from "../../lib/stripe/config";
+import { stripeAccountRequestOptions } from "../../lib/stripe/connect";
 import { sendReturnStatusEmail } from "../../lib/shop-returns/send-return-status-email";
 import { logger } from "../../lib/logger";
 
@@ -165,13 +166,13 @@ function sanitizeStripeFailureReason(err: unknown): string {
  * catch and is logged structurally without blocking the response.
  */
 async function resolveCustomerEmailForReturn(
+  orgId: string,
   customerId: string | null,
   orderId: string,
 ): Promise<string | null> {
-  const supabase = getSupabaseServiceRoleClient();
+  const supabase = getOrgScopedClient(orgId);
   if (customerId) {
     const { data, error } = await supabase
-      .schema("resupply")
       .from("shop_customers")
       .select("email_lower")
       .eq("customer_id", customerId)
@@ -181,7 +182,6 @@ async function resolveCustomerEmailForReturn(
     if (data?.email_lower) return data.email_lower;
   }
   const { data: order, error: orderError } = await supabase
-    .schema("resupply")
     .from("shop_orders")
     .select("customer_email")
     .eq("id", orderId)
@@ -209,7 +209,12 @@ router.get(
     const cursor =
       typeof req.query.cursor === "string" ? req.query.cursor : null;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // Cursor format: "<ISO timestamp>__<id>" (composite — same pattern as
     // shop-reviews so paginating across rows that share createdAt is
@@ -235,7 +240,6 @@ router.get(
     const cursorId = parsed.id;
 
     let listQuery = supabase
-      .schema("resupply")
       .from("shop_returns")
       .select(RETURN_COLUMNS)
       .order("created_at", { ascending: false })
@@ -283,9 +287,13 @@ router.get(
       res.status(400).json({ error: "missing_id" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("shop_returns")
       .select(RETURN_COLUMNS)
       .eq("id", id)
@@ -335,11 +343,15 @@ router.post(
       });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const adminId = req.adminUserId ?? null;
     const nowIso = new Date().toISOString();
     const { data: updated, error } = await supabase
-      .schema("resupply")
       .from("shop_returns")
       .update({
         status: "approved",
@@ -368,6 +380,7 @@ router.post(
     // committed.
     void (async () => {
       const toEmail = await resolveCustomerEmailForReturn(
+        orgId,
         updated.customer_id,
         updated.order_id,
       );
@@ -386,6 +399,7 @@ router.post(
         returnCarrier: updated.return_carrier,
         returnTrackingNumber: updated.return_tracking_number,
         returnLabelUrl: updated.return_label_url,
+        orgId,
       });
       if (!result.delivered) {
         // `errorCode` is the machine-readable token returned by
@@ -442,11 +456,15 @@ router.post(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const adminId = req.adminUserId ?? null;
     const nowIso = new Date().toISOString();
     const { data: updated, error } = await supabase
-      .schema("resupply")
       .from("shop_returns")
       .update({
         status: "rejected",
@@ -485,11 +503,15 @@ router.post(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const adminId = req.adminUserId ?? null;
     const nowIso = new Date().toISOString();
     const { data: updated, error } = await supabase
-      .schema("resupply")
       .from("shop_returns")
       .update({
         status: "shipped_back",
@@ -531,7 +553,12 @@ router.post(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const adminId = req.adminUserId ?? null;
     const nowIso = new Date().toISOString();
     // Allow received from either shipped_back (normal flow) or
@@ -539,7 +566,6 @@ router.post(
     // happens when ops scans the inbound parcel without first
     // marking it dispatched).
     const { data: updated, error } = await supabase
-      .schema("resupply")
       .from("shop_returns")
       .update({
         status: "received",
@@ -591,9 +617,13 @@ router.post(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: ret, error: lookupErr } = await supabase
-      .schema("resupply")
       .from("shop_returns")
       .select(RETURN_COLUMNS)
       .eq("id", id)
@@ -611,7 +641,6 @@ router.post(
 
     // Look up the order to grab the payment intent ID for Stripe.
     const { data: orderRow, error: orderErr } = await supabase
-      .schema("resupply")
       .from("shop_orders")
       .select("stripe_payment_intent_id, amount_total_cents")
       .eq("id", ret.order_id)
@@ -662,6 +691,11 @@ router.post(
         // callback below keeps the TS control-flow narrowing from the
         // outer `if (stripe && orderRow.stripe_payment_intent_id)`.
         const paymentIntentId = orderRow.stripe_payment_intent_id;
+        // The original PaymentIntent lives on the tenant's connected
+        // account (Stripe Connect, G5) when it has one, so the refund must
+        // be issued on that SAME account — else Stripe 404s the PI on the
+        // platform account. No connected account → platform account, as today.
+        const acct = await stripeAccountRequestOptions(orgId);
         const refund = await withMetrics(
           {
             name: "stripe.refunds.create",
@@ -678,7 +712,7 @@ router.post(
                   shop_order_id: ret.order_id,
                 },
               },
-              { idempotencyKey },
+              { ...acct, idempotencyKey },
             ),
         );
         stripeRefundId = refund.id;
@@ -693,7 +727,6 @@ router.post(
         const nowIso = new Date().toISOString();
         const nextCount = (ret.refund_failure_count ?? 0) + 1;
         const { error: stampErr } = await supabase
-          .schema("resupply")
           .from("shop_returns")
           .update({
             refund_failure_count: nextCount,
@@ -752,7 +785,6 @@ router.post(
     const adminId = req.adminUserId ?? null;
     const nowIso = new Date().toISOString();
     const { data: updated, error: updateErr } = await supabase
-      .schema("resupply")
       .from("shop_returns")
       .update({
         status: "refunded",
@@ -785,6 +817,7 @@ router.post(
     // approve handler above — never blocks the response.
     void (async () => {
       const toEmail = await resolveCustomerEmailForReturn(
+        orgId,
         updated.customer_id,
         updated.order_id,
       );
@@ -805,6 +838,7 @@ router.post(
         // when we need precise rendering. shop_orders carries it; if
         // unavailable, the helper defaults to "usd" which matches v1.
         currency: null,
+        orgId,
       });
       if (!result.delivered) {
         // See approve handler — `errorCode` (not `err`) so the
@@ -864,11 +898,15 @@ router.post(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const adminId = req.adminUserId ?? null;
     const nowIso = new Date().toISOString();
     const { data: updated, error } = await supabase
-      .schema("resupply")
       .from("shop_returns")
       .update({
         status: "replaced",
@@ -914,10 +952,14 @@ router.post(
       res.status(400).json({ error: "missing_note" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const adminId = req.adminUserId ?? null;
     const { data: ret, error: lookupErr } = await supabase
-      .schema("resupply")
       .from("shop_returns")
       .select(RETURN_COLUMNS)
       .eq("id", id)
@@ -929,7 +971,6 @@ router.post(
       return;
     }
     const { data: updated, error: updateErr } = await supabase
-      .schema("resupply")
       .from("shop_returns")
       .update({
         admin_note: appendNote(

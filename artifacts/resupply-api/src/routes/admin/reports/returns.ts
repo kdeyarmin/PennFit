@@ -4,7 +4,7 @@
 // `fetchReturns` used by the revenue-summary / refunds-journal /
 // all-financial reports.
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import {
   customerKeyForId,
@@ -25,6 +25,7 @@ import {
   setDownloadHeaders,
   type ReportModule,
   type CsvSink,
+  reportOrgId,
 } from "./shared";
 
 export interface ReturnRow {
@@ -45,10 +46,13 @@ export interface ReturnRow {
   closed_at: string | null;
 }
 
-export async function fetchReturns(from: Date, to: Date): Promise<ReturnRow[]> {
-  const supabase = getSupabaseServiceRoleClient();
+export async function fetchReturns(
+  orgId: string,
+  from: Date,
+  to: Date,
+): Promise<ReturnRow[]> {
+  const supabase = getOrgScopedClient(orgId);
   const { data, error } = await supabase
-    .schema("resupply")
     .from("shop_returns")
     .select(
       "id, order_id, customer_id, stripe_session_id, status, reason, resolution, refund_cents, stripe_refund_id, exchange_product_id, created_at, approved_at, received_at, resolved_at, closed_at",
@@ -130,8 +134,10 @@ export const returnsReport: ReportModule = {
       "/admin/reports/returns.csv",
       requirePermission("reports.read"),
       async (req, res) => {
+        const orgId = reportOrgId(req, res);
+        if (!orgId) return;
         const { from, to } = parseRange(req);
-        const rows = await fetchReturns(from, to);
+        const rows = await fetchReturns(orgId, from, to);
         setDownloadHeaders(
           res,
           "text/csv; charset=utf-8",
@@ -145,8 +151,10 @@ export const returnsReport: ReportModule = {
       "/admin/reports/returns.pdf",
       requirePermission("reports.read"),
       async (req, res) => {
+        const orgId = reportOrgId(req, res);
+        if (!orgId) return;
         const { from, to } = parseRange(req);
-        const rows = await fetchReturns(from, to);
+        const rows = await fetchReturns(orgId, from, to);
         const refundTotal = rows.reduce(
           (s, r) => s + centsToDollars(r.refund_cents),
           0,
@@ -194,8 +202,10 @@ export const returnsReport: ReportModule = {
       "/admin/reports/returns.iif",
       requirePermission("reports.read"),
       async (req, res) => {
+        const orgId = reportOrgId(req, res);
+        if (!orgId) return;
         const { from, to } = parseRange(req);
-        const rows = await fetchReturns(from, to);
+        const rows = await fetchReturns(orgId, from, to);
         const iif = await renderIifWithAccounts({
           from: from.toISOString().slice(0, 10),
           to: to.toISOString().slice(0, 10),
@@ -215,8 +225,10 @@ export const returnsReport: ReportModule = {
       "/admin/reports/returns.qbo.csv",
       requirePermission("reports.read"),
       async (req, res) => {
+        const orgId = reportOrgId(req, res);
+        if (!orgId) return;
         const { from, to } = parseRange(req);
-        const rows = await fetchReturns(from, to);
+        const rows = await fetchReturns(orgId, from, to);
         const csv = renderQboCsv({
           from: from.toISOString().slice(0, 10),
           to: to.toISOString().slice(0, 10),
@@ -233,17 +245,17 @@ export const returnsReport: ReportModule = {
     );
   },
 
-  async buildEmailCsv(from, to) {
+  async buildEmailCsv(orgId, from, to) {
     const { res, collect } = bufferedRes();
-    writeReturnsCsv(res, await fetchReturns(from, to));
+    writeReturnsCsv(res, await fetchReturns(orgId, from, to));
     return collect();
   },
 
   // The email PDF deliberately uses a slimmer column shape than the
   // GET handler — the duplication is intentional (see the note on
   // the email route's per-slug PDF builders).
-  async buildEmailPdf(from, to) {
-    const rows = await fetchReturns(from, to);
+  async buildEmailPdf(orgId, from, to) {
+    const rows = await fetchReturns(orgId, from, to);
     const refunded = rows.reduce((s, r) => s + (r.refund_cents ?? 0) / 100, 0);
     const pdf = await renderTablePdf({
       title: "Returns & RMAs",
@@ -273,7 +285,7 @@ export const returnsReport: ReportModule = {
     return pdf;
   },
 
-  async buildEmailQbRows(from, to) {
-    return buildQbRowsFromReturns(await fetchReturns(from, to));
+  async buildEmailQbRows(orgId, from, to) {
+    return buildQbRowsFromReturns(await fetchReturns(orgId, from, to));
   },
 };

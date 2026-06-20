@@ -81,7 +81,7 @@ router.post("/voice/twiml-connect", signatureMiddleware, async (req, res) => {
   // Control Center feature gate. When the voice agent is turned off
   // we hang the caller up cleanly rather than route them to the AI
   // bridge. The hangup TwiML returns 200 so Twilio doesn't retry.
-  if (!(await isFeatureEnabled("voice.agent"))) {
+  if (!(await isFeatureEnabled("voice.agent", req.orgId))) {
     logger.info(
       { event: "voice_twiml_disabled_by_feature_flag" },
       "twiml-connect: voice agent disabled via Control Center; hanging up",

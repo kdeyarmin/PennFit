@@ -25,7 +25,8 @@
 // journaled.
 
 import {
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
+  resolveSeedOrgId,
   type Database,
 } from "@workspace/resupply-db";
 import {
@@ -129,7 +130,9 @@ export const messageTemplateLookup: TemplateLookup = async (
   customerId,
 ) => {
   try {
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = await resolveSeedOrgId();
+    if (!orgId) return null;
+    const supabase = getOrgScopedClient(orgId);
 
     // Two queries (override + global) issued in parallel. Both are
     // small unique-index hits; PostgREST has no JOIN, so we resolve
@@ -137,7 +140,6 @@ export const messageTemplateLookup: TemplateLookup = async (
     const [overrideRes, globalRes] = await Promise.all([
       customerId
         ? supabase
-            .schema("resupply")
             .from("shop_customer_message_template_overrides")
             .select(
               "id, customer_id, template_key, channel, subject, body_html, body_text, is_active, note, created_by, updated_by, created_at, updated_at, org_id",
@@ -149,7 +151,6 @@ export const messageTemplateLookup: TemplateLookup = async (
             .maybeSingle()
         : Promise.resolve({ data: null, error: null as null }),
       supabase
-        .schema("resupply")
         .from("message_templates")
         .select(
           "id, template_key, channel, subject, body_html, body_text, allowed_variables, is_active, updated_at, updated_by, created_at, created_by, org_id",

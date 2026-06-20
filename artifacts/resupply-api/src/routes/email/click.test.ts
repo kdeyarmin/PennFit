@@ -35,6 +35,16 @@ import { signLinkToken } from "@workspace/resupply-messaging";
 const PATIENT_ID = "11111111-1111-4111-8111-111111111111";
 const EPISODE_ID = "22222222-2222-4222-8222-222222222222";
 const CONVERSATION_ID = "33333333-3333-4333-8333-333333333333";
+// The seed-org mock resolves to this fixed tenant; the route derives the
+// reminder link's org from the conversation record's `org_id` (G1.4).
+const ORG_ID = "00000000-0000-4000-8000-000000000000";
+
+// The route resolves the link's tenant via a leading `conversations`
+// select for `org_id` before reading the conversation record. Stage that
+// first so the record lookup that follows pops the caller's staged row.
+function stageOrgResolution(orgId: string = ORG_ID): void {
+  stageSupabaseResponse("conversations", "select", { data: { org_id: orgId } });
+}
 
 function makeApp(): Express {
   const app = express();
@@ -155,6 +165,7 @@ describe("GET /email/click (landing page — no side effects)", () => {
       conversationId: CONVERSATION_ID,
       action: "confirm",
     });
+    stageOrgResolution();
     stageSupabaseResponse("conversations", "select", {
       data: { id: CONVERSATION_ID },
     });
@@ -220,6 +231,7 @@ describe("POST /email/click (signed action)", () => {
       conversationId: CONVERSATION_ID,
       action: "confirm",
     });
+    stageOrgResolution();
     stageSupabaseResponse("conversations", "select", {
       data: {
         id: CONVERSATION_ID,
@@ -241,9 +253,18 @@ describe("POST /email/click (signed action)", () => {
     );
     expect(res.status).toBe(200);
     expect(res.headers["content-type"]).toContain("text/html");
-    expect(placeOrderMock).toHaveBeenCalledWith({
-      conversationId: CONVERSATION_ID,
-    });
+    expect(placeOrderMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversationId: CONVERSATION_ID,
+        orgId: ORG_ID,
+        // The click carries the Medicare/payer refill attestation.
+        affirmation: expect.objectContaining({
+          channel: "email",
+          continuedUse: true,
+          supplyLow: true,
+        }),
+      }),
+    );
     const audits = logAuditMock.mock.calls.map((c) => c[0]);
     expect(audits.find((a) => a.action === "email.link.clicked")).toBeDefined();
     expect(
@@ -257,6 +278,7 @@ describe("POST /email/click (signed action)", () => {
       conversationId: CONVERSATION_ID,
       action: "confirm",
     });
+    stageOrgResolution();
     stageSupabaseResponse("conversations", "select", {
       data: {
         id: CONVERSATION_ID,
@@ -296,6 +318,7 @@ describe("POST /email/click (signed action)", () => {
       conversationId: CONVERSATION_ID,
       action: "stop",
     });
+    stageOrgResolution();
     stageSupabaseResponse("conversations", "select", {
       data: {
         id: CONVERSATION_ID,
@@ -309,7 +332,7 @@ describe("POST /email/click (signed action)", () => {
       `/resupply-api/email/click?t=${encodeURIComponent(token)}`,
     );
     expect(res.status).toBe(200);
-    expect(pausePatientMock).toHaveBeenCalledWith(PATIENT_ID);
+    expect(pausePatientMock).toHaveBeenCalledWith(PATIENT_ID, ORG_ID);
     const handoffAudit = logAuditMock.mock.calls
       .map((c) => c[0])
       .find(
@@ -326,6 +349,7 @@ describe("POST /email/click (signed action)", () => {
       conversationId: CONVERSATION_ID,
       action: "edit",
     });
+    stageOrgResolution();
     stageSupabaseResponse("conversations", "select", {
       data: {
         id: CONVERSATION_ID,

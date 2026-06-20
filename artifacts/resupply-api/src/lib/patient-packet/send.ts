@@ -13,14 +13,17 @@
 
 import {
   escapePostgRESTFilterValue,
-  getSupabaseServiceRoleClient,
   type Json,
+  type OrgScopedClient,
 } from "@workspace/resupply-db";
 import { normalizeE164 } from "@workspace/resupply-domain";
 import { createTwilioSmsClient } from "@workspace/resupply-telecom";
 
 import { getAuthDeps } from "../auth-deps";
+import { createTenantSendgridClient } from "../email/tenant-sender.js";
 import { logger } from "../logger";
+import { resolveTenantSmsClientOptions } from "../messaging/tenant-telecom";
+import { recordOutboundMessageUsage } from "../metering/usage";
 import { resolveCompanyProfile } from "./company";
 import {
   effectiveTemplateContent,
@@ -40,7 +43,7 @@ import {
 } from "./templates";
 import { signPatientPacketToken } from "../patient-packet-token";
 
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+type SupabaseClient = OrgScopedClient;
 
 export const DEFAULT_PACKET_TTL_DAYS = 30;
 
@@ -171,7 +174,6 @@ export async function createAndSendPatientPacket(
   }
 
   const { data: patient, error: patientErr } = await supabase
-    .schema("resupply")
     .from("patients")
     .select("id, legal_first_name, legal_last_name, email, phone_e164")
     .eq("id", patientId)
@@ -363,7 +365,6 @@ export async function resolvePatientByContact(
 
   if (contact.emailLower) {
     const { data, error } = await supabase
-      .schema("resupply")
       .from("patients")
       .select("id, legal_first_name, legal_last_name")
       .ilike("email", escapePostgRESTFilterValue(contact.emailLower))
@@ -373,7 +374,6 @@ export async function resolvePatientByContact(
   }
   if (contact.phoneE164) {
     const { data, error } = await supabase
-      .schema("resupply")
       .from("patients")
       .select("id, legal_first_name, legal_last_name")
       .eq("phone_e164", contact.phoneE164)
@@ -405,7 +405,6 @@ export async function resolvePatientByContact(
       }
 
       const { data: verify, error: verifyErr } = await supabase
-        .schema("resupply")
         .from("patients")
         .select("id")
         .eq("id", patientId)
@@ -437,7 +436,6 @@ async function resolvePatientViaCustomerEmail(
   emailLower: string,
 ): Promise<{ patientId: string; name: string } | null> {
   const { data: customers, error: custErr } = await supabase
-    .schema("resupply")
     .from("shop_customers")
     .select("auth_user_id")
     .eq("email_lower", emailLower)
@@ -450,7 +448,6 @@ async function resolvePatientViaCustomerEmail(
   if (!authUserId) return null;
 
   const { data: patients, error: patErr } = await supabase
-    .schema("resupply")
     .from("patients")
     .select("id, legal_first_name, legal_last_name")
     .eq("portal_auth_user_id", authUserId)
@@ -584,7 +581,6 @@ async function buildAndDeliverPacket(
   );
 
   const { data: packet, error: insertErr } = await supabase
-    .schema("resupply")
     .from("patient_packets")
     .insert({
       patient_id: input.patientId,
@@ -630,7 +626,6 @@ async function buildAndDeliverPacket(
     };
   });
   const { error: docsErr } = await supabase
-    .schema("resupply")
     .from("patient_packet_documents")
     .insert(docRows);
   if (docsErr) throw docsErr;
@@ -683,13 +678,16 @@ export async function reconcilePacketDocuments(
   orderedKeys: string[],
 ): Promise<void> {
   const { data: existing, error: existErr } = await supabase
-    .schema("resupply")
     .from("patient_packet_documents")
     .select("document_key")
     .eq("packet_id", packetId);
   if (existErr) throw existErr;
 
-  const existingKeys = new Set((existing ?? []).map((d) => d.document_key));
+  const existingKeys = new Set(
+    ((existing ?? []) as Array<{ document_key: string }>).map(
+      (d) => d.document_key,
+    ),
+  );
   const nextKeys = new Set(orderedKeys);
 
   const toRemove = [...existingKeys].filter((k) => !nextKeys.has(k));
@@ -697,7 +695,6 @@ export async function reconcilePacketDocuments(
 
   if (toRemove.length > 0) {
     const { error } = await supabase
-      .schema("resupply")
       .from("patient_packet_documents")
       .delete()
       .eq("packet_id", packetId)
@@ -724,7 +721,6 @@ export async function reconcilePacketDocuments(
       };
     });
     const { error } = await supabase
-      .schema("resupply")
       .from("patient_packet_documents")
       .insert(addRows);
     if (error) throw error;
@@ -736,7 +732,6 @@ export async function reconcilePacketDocuments(
     const key = orderedKeys[i]!;
     if (!existingKeys.has(key)) continue; // freshly inserted with correct order
     const { error } = await supabase
-      .schema("resupply")
       .from("patient_packet_documents")
       .update({ sort_order: i })
       .eq("packet_id", packetId)
@@ -765,7 +760,6 @@ export async function applyPacketDocumentOverrides(
       override,
     );
     const { error } = await supabase
-      .schema("resupply")
       .from("patient_packet_documents")
       .update(snapshot)
       .eq("packet_id", packetId)
@@ -805,7 +799,13 @@ export async function deliverPacketLink(
   let emailSent = false;
   if (wantEmail && input.email) {
     try {
-      await getAuthDeps().email({
+      // Send via createSendgridClient() directly (not getAuthDeps().email,
+      // which swallows EmailConfigError/EmailApiError and resolves anyway)
+      // so an unconfigured provider or a vendor reject surfaces as a throw.
+      // That keeps emailSent — and the usage metering below — gated on a
+      // genuinely accepted send, never an over-count during a config gap.
+      const client = await createTenantSendgridClient(input.supabase.orgId);
+      await client.sendEmail({
         to: input.email,
         subject: input.reminder
           ? `Reminder: please sign your ${company.legalName} new patient documents`
@@ -822,6 +822,11 @@ export async function deliverPacketLink(
         ),
       });
       emailSent = true;
+      recordOutboundMessageUsage({
+        orgId: input.supabase.orgId,
+        channel: "email",
+        source: "patient_packet_invite",
+      });
     } catch (err) {
       logger.warn(
         {
@@ -836,17 +841,26 @@ export async function deliverPacketLink(
   let smsSent = false;
   if (wantSms && input.phone) {
     smsSent = await sendPacketSms(
+      input.supabase.orgId,
       company,
       input.phone,
       input.link,
       input.packetId,
     );
+    if (smsSent) {
+      recordOutboundMessageUsage({
+        orgId: input.supabase.orgId,
+        channel: "sms",
+        source: "patient_packet_invite",
+      });
+    }
   }
 
   return { emailSent, smsSent };
 }
 
-function sendPacketSms(
+async function sendPacketSms(
+  orgId: string,
   company: CompanyProfile,
   phoneE164: string,
   link: string,
@@ -856,9 +870,23 @@ function sendPacketSms(
   const authToken = process.env.TWILIO_AUTH_TOKEN ?? null;
   const from = process.env.TWILIO_PHONE_NUMBER ?? null;
   const messagingServiceSid = process.env.TWILIO_MESSAGING_SERVICE_SID ?? null;
-  if (!accountSid || !authToken || !(from || messagingServiceSid)) {
+  // Send under the tenant's own number / Messaging Service when it has one
+  // (G7); falls back to the platform env default otherwise. Resolved before
+  // the guard so a tenant routable via its DB sender still sends even when the
+  // platform env has no default from-number/Messaging Service.
+  const tenantSms = await resolveTenantSmsClientOptions(orgId);
+  if (
+    !accountSid ||
+    !authToken ||
+    !(
+      from ||
+      messagingServiceSid ||
+      tenantSms.from ||
+      tenantSms.messagingServiceSid
+    )
+  ) {
     // SMS not configured (dev / preview). Graceful no-op.
-    return Promise.resolve(false);
+    return false;
   }
   const body =
     `${company.legalName}: please review & sign your new patient documents here: ${link}` +
@@ -866,8 +894,9 @@ function sendPacketSms(
   const client = createTwilioSmsClient({
     accountSid,
     authToken,
-    from: from ?? undefined,
-    messagingServiceSid: messagingServiceSid ?? undefined,
+    from: tenantSms.from ?? from ?? undefined,
+    messagingServiceSid:
+      tenantSms.messagingServiceSid ?? messagingServiceSid ?? undefined,
   });
   return client
     .sendSms({ to: phoneE164, body: body.slice(0, 480) })

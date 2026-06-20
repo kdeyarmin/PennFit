@@ -200,10 +200,18 @@ function BySourceTable({ rows }: { rows: AttributionBucket[] }) {
       <table className="w-full text-sm min-w-[620px]">
         <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-600">
           <tr>
-            <th className="text-left px-3 py-2">Channel</th>
-            <th className="text-right px-3 py-2">Contacted</th>
-            <th className="text-right px-3 py-2">Converted</th>
-            <th className="text-right px-3 py-2">Conversion rate</th>
+            <th scope="col" className="text-left px-3 py-2">
+              Channel
+            </th>
+            <th scope="col" className="text-right px-3 py-2">
+              Contacted
+            </th>
+            <th scope="col" className="text-right px-3 py-2">
+              Converted
+            </th>
+            <th scope="col" className="text-right px-3 py-2">
+              Conversion rate
+            </th>
           </tr>
         </thead>
         <tbody>

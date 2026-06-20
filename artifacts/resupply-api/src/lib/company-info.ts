@@ -20,9 +20,30 @@
 //     ~30 existing `env.RESUPPLY_PRACTICE_NAME` readers pick up the
 //     value without each being rewritten.
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { logger } from "./logger";
+import { getTenantConfigValue } from "./app-config/store.js";
+
+/**
+ * The platform/parent-company brand. PennFit is the codename of this
+ * SaaS; the product the business sells is **CareMetric Breathe**. It is
+ * the constant that does NOT change per tenant — every DME company
+ * (Penn Home Medical Supply / "PennPaps" is one such tenant) runs its
+ * own storefront brand on top of the CareMetric Breathe platform. Use
+ * this anywhere the app refers to *itself* (the software/platform), as
+ * opposed to the operating tenant's own brand (see `CompanyInfo.name`).
+ */
+export const PLATFORM_NAME = "CareMetric Breathe";
+
+/**
+ * CareMetric platform defaults for the two in-app AI assistants. A
+ * tenant owner may rename them from System Configuration
+ * (RESUPPLY_ASSISTANT_STOREFRONT_NAME / RESUPPLY_ASSISTANT_ADMIN_NAME);
+ * the Penn Home Medical Supply tenant is seeded to "PennBot"/"PennPilot".
+ */
+export const DEFAULT_STOREFRONT_ASSISTANT_NAME = "CareMetric Assistant";
+export const DEFAULT_ADMIN_ASSISTANT_NAME = "CareMetric Copilot";
 
 export interface CompanyAddress {
   line1: string;
@@ -53,6 +74,16 @@ export interface CompanyInfo {
   websiteUrl: string | null;
   /** Published support hours, e.g. "Mon–Fri 9a–5p ET". */
   supportHours: string;
+  /**
+   * Display name for the customer-facing storefront chat assistant.
+   * Tenant-configurable; defaults to the CareMetric platform name.
+   */
+  assistantStorefrontName: string;
+  /**
+   * Display name for the in-app admin-console assistant.
+   * Tenant-configurable; defaults to the CareMetric platform name.
+   */
+  assistantAdminName: string;
   /** Physical business address (null until the org row is seeded). */
   address: CompanyAddress | null;
   organizationalNpi: string | null;
@@ -60,18 +91,29 @@ export interface CompanyInfo {
   source: "database" | "environment" | "fallback";
 }
 
-// Historical hardcoded values — kept byte-identical to what shipped
-// before this module existed so an unseeded environment renders exactly
-// what it used to.
+// Platform-identity fallback for an UNCONFIGURED tenant — used only when
+// no `dme_organization` row exists (and no RESUPPLY_PRACTICE_NAME env).
+//
+// Brand architecture: the platform is **CareMetric Breathe** (cmbreathe.com).
+// "Penn Home Medical Supply" / storefront brand "PennPaps" is ONE TENANT, not
+// the platform default — so an unseeded environment, or a second tenant that
+// hasn't filled in Company Information, falls back to the NEUTRAL platform
+// identity rather than inheriting the seed tenant's brand. The seed tenant
+// (Penn) carries its own brand in its `dme_organization` row (source =
+// "database"), so this fallback never changes Penn's patient-facing copy.
+//
+// The platform is not itself a DME with a patient support line, so there is
+// no platform phone — `phoneE164`/`phoneDisplay` are blank in the fallback
+// (a configured tenant always supplies its own). The historical Penn literals
+// live on only as the `identityReplacements()` needles below, which rewrite
+// the brand-baked source text to a DB-backed tenant's own values.
 const DEFAULTS = {
-  name: "PennPaps",
-  // The registered DME business name. "PennPaps" is only the online
-  // storefront brand; official paperwork carries the legal name.
-  legalName: "Penn Home Medical Supply",
-  phoneE164: "+18144710627",
-  phoneDisplay: "(814) 471-0627",
-  supportEmail: "support@pennpaps.com",
-  generalEmail: "info@pennpaps.com",
+  name: "CareMetric Breathe",
+  legalName: "CareMetric Breathe",
+  phoneE164: "",
+  phoneDisplay: "",
+  supportEmail: "support@cmbreathe.com",
+  generalEmail: "support@cmbreathe.com",
   supportHours: "Mon–Fri 9a–5p ET",
 } as const;
 
@@ -83,7 +125,12 @@ interface CacheEntry {
   expiresAt: number;
 }
 
-let cache: CacheEntry | null = null;
+// Company identity is per-tenant (dme_organization carries org_id). Cache by
+// org so a tenant's documents/statements show ITS company, not the seed's.
+// The no-orgId / seed path uses the SEED_CACHE_KEY entry, which the boot
+// hydration + periodic re-apply keep warm for the synchronous accessors.
+const SEED_CACHE_KEY = "__seed__";
+const cacheByOrg = new Map<string, CacheEntry>();
 
 /** "+18144710627" → "(814) 471-0627"; non-NANP numbers pass through. */
 export function formatPhoneForDisplay(e164: string): string {
@@ -94,6 +141,26 @@ export function formatPhoneForDisplay(e164: string): string {
 
 function trimmed(v: string | null | undefined): string {
   return (v ?? "").trim();
+}
+
+/**
+ * The two assistant display names, resolved from the tenant-configurable
+ * env vars (populated by the app_config overlay at boot) with the
+ * CareMetric platform defaults as the fallback. Independent of the
+ * dme_organization row so the names resolve even for an unseeded tenant.
+ */
+function resolveAssistantNames(): {
+  assistantStorefrontName: string;
+  assistantAdminName: string;
+} {
+  return {
+    assistantStorefrontName:
+      trimmed(process.env.RESUPPLY_ASSISTANT_STOREFRONT_NAME) ||
+      DEFAULT_STOREFRONT_ASSISTANT_NAME,
+    assistantAdminName:
+      trimmed(process.env.RESUPPLY_ASSISTANT_ADMIN_NAME) ||
+      DEFAULT_ADMIN_ASSISTANT_NAME,
+  };
 }
 
 function envFallbackInfo(): CompanyInfo {
@@ -114,6 +181,7 @@ function envFallbackInfo(): CompanyInfo {
     supportHours: DEFAULTS.supportHours,
     address: null,
     organizationalNpi: null,
+    ...resolveAssistantNames(),
     source: envName ? "environment" : "fallback",
   };
 }
@@ -125,13 +193,15 @@ class CompanyInfoLookupTimeout extends Error {
   }
 }
 
-async function loadFromDb(): Promise<CompanyInfo | null> {
-  const supabase = getSupabaseServiceRoleClient();
+async function loadFromDb(orgId: string): Promise<CompanyInfo | null> {
+  const supabase = getOrgScopedClient(orgId);
+  // Org-scoped: the facade appends `.eq("org_id", orgId)`, so this reads the
+  // caller's company identity (one row per org, migration 0375). The legacy
+  // `.eq("singleton", true)` filter is dropped — it would exclude a non-seed
+  // tenant's row and is redundant now that org_id selects the right row.
   const lookup = supabase
-    .schema("resupply")
     .from("dme_organization")
     .select("*")
-    .eq("singleton", true)
     .limit(1)
     .maybeSingle();
 
@@ -181,6 +251,7 @@ async function loadFromDb(): Promise<CompanyInfo | null> {
       zip: org.physical_zip,
     },
     organizationalNpi: trimmed(org.organizational_npi) || null,
+    ...resolveAssistantNames(),
     source: "database",
   };
 }
@@ -189,12 +260,17 @@ async function loadFromDb(): Promise<CompanyInfo | null> {
  * The effective company identity. Cached for ~30s; DB wins over env;
  * never throws (any failure degrades to env + historical defaults).
  */
-export async function getCompanyInfo(): Promise<CompanyInfo> {
+export async function getCompanyInfo(orgId?: string): Promise<CompanyInfo> {
   const now = Date.now();
-  if (cache && cache.expiresAt > now) return cache.info;
+  const key = orgId?.trim() || SEED_CACHE_KEY;
+  const hit = cacheByOrg.get(key);
+  if (hit && hit.expiresAt > now) return hit.info;
   let info: CompanyInfo;
   try {
-    info = (await loadFromDb()) ?? envFallbackInfo();
+    const effectiveOrgId = orgId?.trim() || (await resolveSeedOrgId());
+    info = effectiveOrgId
+      ? ((await loadFromDb(effectiveOrgId)) ?? envFallbackInfo())
+      : envFallbackInfo();
   } catch (err) {
     const normalized =
       err instanceof Error
@@ -206,13 +282,13 @@ export async function getCompanyInfo(): Promise<CompanyInfo> {
     );
     info = envFallbackInfo();
   }
-  cache = { info, expiresAt: now + CACHE_TTL_MS };
+  cacheByOrg.set(key, { info, expiresAt: now + CACHE_TTL_MS });
   return info;
 }
 
-/** Drop the cache so an admin save is visible on the next read. */
+/** Drop every cached org so an admin save is visible on the next read. */
 export function invalidateCompanyInfoCache(): void {
-  cache = null;
+  cacheByOrg.clear();
 }
 
 /**
@@ -223,7 +299,10 @@ export function invalidateCompanyInfoCache(): void {
  * early boot) degrades to env + historical defaults.
  */
 export function getCompanyInfoSync(): CompanyInfo {
-  return cache?.info ?? envFallbackInfo();
+  // The seed/default entry — kept warm by boot hydration + the periodic
+  // re-apply. Per-tenant sync identity isn't available (no DB round-trip);
+  // callers that need a specific tenant must use the async getCompanyInfo(orgId).
+  return cacheByOrg.get(SEED_CACHE_KEY)?.info ?? envFallbackInfo();
 }
 
 /**
@@ -232,8 +311,8 @@ export function getCompanyInfoSync(): CompanyInfo {
  * sign-offs. Always the registered legal name ("Penn Home Medical
  * Supply"), never the online-storefront brand ("PennPaps").
  */
-export async function getDocumentSupplierName(): Promise<string> {
-  return (await getCompanyInfo()).legalName;
+export async function getDocumentSupplierName(orgId?: string): Promise<string> {
+  return (await getCompanyInfo(orgId)).legalName;
 }
 
 /** Synchronous variant for non-async contexts (warm cache or fallback). */
@@ -263,6 +342,14 @@ function identityReplacements(info: CompanyInfo): Array<[string, string]> {
     ["pennpaps.com", websiteHost],
     ["(814) 471-0627", info.supportPhoneDisplay],
     ["+18144710627", info.supportPhoneE164],
+    // The voice/IVR (TTS) day-copy spaces the storefront brand as two
+    // words ("Penn Paps") so Polly/ElevenLabs pronounce it naturally;
+    // rewrite that spelling too for a non-seed tenant. Skip it when the
+    // brand IS the seed "PennPaps" so the seed tenant keeps its deliberate
+    // two-word TTS spelling rather than collapsing to camel case.
+    ...(info.name === "PennPaps"
+      ? []
+      : ([["Penn Paps", info.name]] as Array<[string, string]>)),
     ["PennPaps", info.name],
     // Hour-blurb variants that appear across the knowledge bases.
     ["Monday-Friday 9 AM - 5 PM Eastern", info.supportHours],
@@ -288,6 +375,88 @@ export function applyCompanyIdentityToText(
     if (replacement) out = out.split(needle).join(replacement);
   }
   return out;
+}
+
+/**
+ * Normalize the platform/assistant brand tokens in machine-generated
+ * text (chat system prompts, assistant offline replies, suggestion
+ * emails) to the current tenant's effective names. Distinct from
+ * `applyCompanyIdentityToText`, which swaps the *tenant's* own
+ * brand/contact strings and only fires once a company row is saved:
+ *
+ *   - "PennFit"   → the platform brand (CareMetric Breathe) for EVERY
+ *                   tenant — PennFit is the internal codename; the
+ *                   product is always CareMetric Breathe.
+ *   - "PennBot"   → the tenant's configured storefront assistant name
+ *                   (CareMetric Assistant by default; "PennBot" for the
+ *                   Penn Home Medical Supply tenant — a no-op there).
+ *   - "PennPilot" → the tenant's configured admin assistant name
+ *                   (CareMetric Copilot by default; "PennPilot" for Penn
+ *                   Home Medical Supply — a no-op there).
+ *
+ * Keeping the Penn* tokens as the in-source placeholders means the large
+ * prompt knowledge bases don't need to change; the correct names are
+ * produced at the point the text leaves the server. Idempotent.
+ */
+export function applyPlatformBranding(
+  text: string,
+  info: CompanyInfo = getCompanyInfoSync(),
+): string {
+  if (!text) return text;
+  let out = text.split("PennFit").join(PLATFORM_NAME);
+  if (
+    info.assistantStorefrontName &&
+    info.assistantStorefrontName !== "PennBot"
+  )
+    out = out.split("PennBot").join(info.assistantStorefrontName);
+  if (info.assistantAdminName && info.assistantAdminName !== "PennPilot")
+    out = out.split("PennPilot").join(info.assistantAdminName);
+  return out;
+}
+
+/**
+ * Resolve the two assistant display names for a SPECIFIC tenant. The
+ * per-tenant counterpart of `resolveAssistantNames()` (which reads the seed
+ * value folded into `process.env` at boot): this reads the tenant-scoped
+ * `RESUPPLY_ASSISTANT_*` app_config keys via `getTenantConfigValue`, which
+ * falls back to the seed org's value (the platform default) when the tenant
+ * has no row, then to the CareMetric defaults when neither is set.
+ *
+ * Fail-soft: `getTenantConfigValue` never throws, so a flaky lookup degrades
+ * to the platform defaults. Single-tenant: the seed org's row is the only
+ * one, so this returns exactly what `resolveAssistantNames()` does.
+ */
+export async function resolveAssistantNamesForOrg(orgId: string): Promise<{
+  assistantStorefrontName: string;
+  assistantAdminName: string;
+}> {
+  const [storefront, admin] = await Promise.all([
+    getTenantConfigValue(orgId, "RESUPPLY_ASSISTANT_STOREFRONT_NAME"),
+    getTenantConfigValue(orgId, "RESUPPLY_ASSISTANT_ADMIN_NAME"),
+  ]);
+  return {
+    assistantStorefrontName:
+      trimmed(storefront) || DEFAULT_STOREFRONT_ASSISTANT_NAME,
+    assistantAdminName: trimmed(admin) || DEFAULT_ADMIN_ASSISTANT_NAME,
+  };
+}
+
+/**
+ * `applyPlatformBranding`, but resolving the assistant names for a SPECIFIC
+ * tenant rather than the process-global (seed) names. Use this on
+ * per-request surfaces that know their `orgId` (storefront chatbot, admin
+ * assistant) so a second tenant's configured assistant names appear in
+ * machine-generated text. When `orgId` is absent it degrades to the
+ * synchronous, seed-scoped `applyPlatformBranding` — so single-tenant and
+ * host-unresolved requests are unchanged.
+ */
+export async function applyPlatformBrandingForOrg(
+  text: string,
+  orgId: string | null | undefined,
+): Promise<string> {
+  if (!text || !orgId) return applyPlatformBranding(text);
+  const names = await resolveAssistantNamesForOrg(orgId);
+  return applyPlatformBranding(text, { ...getCompanyInfoSync(), ...names });
 }
 
 // What SENDGRID_FROM_NAME / RESUPPLY_PRACTICE_NAME looked like before
@@ -322,5 +491,5 @@ export async function applyCompanyInfoToEnv(): Promise<{
 
 /** Test-only: reset module state between cases. */
 export function __resetCompanyInfoForTests(): void {
-  cache = null;
+  cacheByOrg.clear();
 }

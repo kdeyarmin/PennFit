@@ -11,7 +11,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
@@ -74,12 +74,20 @@ function mapThreshold(r: Record<string, unknown>) {
 router.get(
   "/admin/metric-thresholds",
   requirePermission("metrics.read"),
-  async (_req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    // metric_thresholds is not in the typed Database, so reach it via
+    // raw(); the org filter must therefore be explicit (migration 0380).
+    const supabase = getOrgScopedClient(orgId).raw();
     const { data, error } = await supabase
       .schema("resupply")
       .from("metric_thresholds")
       .select(SELECT)
+      .eq("org_id", orgId)
       .order("metric_key", { ascending: true })
       .limit(500);
     if (error) {
@@ -112,11 +120,17 @@ router.post(
     }
     const d = parsed.data;
     const nowIso = new Date().toISOString();
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId).raw();
     const { data: row, error } = await supabase
       .schema("resupply")
       .from("metric_thresholds")
       .insert({
+        org_id: orgId,
         metric_key: d.metricKey,
         comparison: d.comparison,
         threshold_value: d.thresholdValue,
@@ -185,11 +199,17 @@ router.patch(
     if (d.description !== undefined) update.description = d.description;
     if (d.enabled !== undefined) update.enabled = d.enabled;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId).raw();
     const { data: rows, error } = await supabase
       .schema("resupply")
       .from("metric_thresholds")
       .update(update)
+      .eq("org_id", orgId)
       .eq("id", idCheck.data)
       .select(SELECT);
     if (error) {
@@ -228,11 +248,17 @@ router.delete(
       res.status(400).json({ error: "invalid_id" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId).raw();
     const { data: rows, error } = await supabase
       .schema("resupply")
       .from("metric_thresholds")
       .delete()
+      .eq("org_id", orgId)
       .eq("id", idCheck.data)
       .select("id");
     if (error) {

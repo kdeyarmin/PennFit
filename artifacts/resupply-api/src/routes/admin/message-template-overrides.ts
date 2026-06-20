@@ -35,10 +35,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  getSupabaseServiceRoleClient,
-  type Database,
-} from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { isAsciiOnly } from "../../lib/message-templates/sms";
@@ -173,9 +170,13 @@ router.get(
       res.status(400).json({ error: "invalid_user_id" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: rows, error } = await supabase
-      .schema("resupply")
       .from("shop_customer_message_template_overrides")
       .select(OVERRIDE_COLUMNS)
       .eq("customer_id", idCheck.data)
@@ -209,12 +210,16 @@ router.post(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // Look up the global template (if any) to source the allowed-
     // variables list for the pre-flight check.
     const { data: globalRow, error: globalErr } = await supabase
-      .schema("resupply")
       .from("message_templates")
       .select("allowed_variables")
       .eq("template_key", parsed.data.templateKey)
@@ -251,7 +256,6 @@ router.post(
 
     const adminId = req.adminUserId ?? null;
     const { data: inserted, error: insertErr } = await supabase
-      .schema("resupply")
       .from("shop_customer_message_template_overrides")
       .insert({
         customer_id: idCheck.data,
@@ -337,9 +341,13 @@ router.patch(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: existing, error: lookupErr } = await supabase
-      .schema("resupply")
       .from("shop_customer_message_template_overrides")
       .select(OVERRIDE_COLUMNS)
       .eq("id", idCheck.data)
@@ -354,7 +362,6 @@ router.patch(
 
     // Pre-flight allowed-variables check against the linked global.
     const { data: globalRow, error: globalErr } = await supabase
-      .schema("resupply")
       .from("message_templates")
       .select("allowed_variables")
       .eq("template_key", existing.template_key)
@@ -416,7 +423,6 @@ router.patch(
     if (parsed.data.note !== undefined) updateValues.note = parsed.data.note;
 
     const { data: updated, error: updateErr } = await supabase
-      .schema("resupply")
       .from("shop_customer_message_template_overrides")
       .update(updateValues)
       .eq("id", idCheck.data)
@@ -482,9 +488,13 @@ router.delete(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: existing, error: lookupErr } = await supabase
-      .schema("resupply")
       .from("shop_customer_message_template_overrides")
       .select(OVERRIDE_COLUMNS)
       .eq("id", idCheck.data)
@@ -504,7 +514,6 @@ router.delete(
 
     const adminId = req.adminUserId ?? null;
     const { data: updated, error: updateErr } = await supabase
-      .schema("resupply")
       .from("shop_customer_message_template_overrides")
       .update({
         is_active: false,

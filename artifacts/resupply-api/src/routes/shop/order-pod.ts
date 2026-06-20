@@ -14,12 +14,14 @@
 import { Router, type IRouter } from "express";
 import { Readable } from "node:stream";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import {
   ObjectNotFoundError,
   ObjectStorageService,
 } from "../../lib/object-storage/objectStorage";
+import { requestHost } from "../../lib/request-host";
+import { resolveOrgIdByHost } from "../../lib/tenant-branding";
 
 const SESSION_ID_RE = /^cs_(test|live)_[A-Za-z0-9]{20,}$/;
 
@@ -32,9 +34,17 @@ router.get("/shop/orders/:sessionId/pod", async (req, res) => {
     res.status(400).json({ error: "invalid_session_id" });
     return;
   }
-  const supabase = getSupabaseServiceRoleClient();
+  // Public route (opaque session id is the access token) — no auth
+  // middleware populates req.orgId, so resolve the tenant from the request
+  // host (custom domain → that org; platform host / miss → seed org).
+  const orgId =
+    (await resolveOrgIdByHost(requestHost(req))) ?? (await resolveSeedOrgId());
+  if (!orgId) {
+    res.status(503).json({ error: "tenant_unavailable" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const { data: order, error } = await supabase
-    .schema("resupply")
     .from("shop_orders")
     .select("pod_object_key")
     .eq("stripe_session_id", sessionId)

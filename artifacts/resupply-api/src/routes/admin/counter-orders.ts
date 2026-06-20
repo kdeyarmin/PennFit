@@ -31,6 +31,11 @@
 //   We need Stripe to resolve the catalog + prices even though no charge
 //   is created here, so the endpoint 503s (`stripe_not_configured`) in a
 //   preview env without Stripe — mirroring the refund endpoint's posture.
+//   Connect (G6): those catalog reads target the tenant's CONNECTED account
+//   (`stripeAccountRequestOptions`), the same account the storefront catalog
+//   reads from, so a connected tenant's own price ids validate + re-price
+//   correctly. No charge is created (cash / insurance), so there is nothing
+//   else to route to the connected account.
 //
 // shop_orders shape note:
 //   `stripe_session_id` is NOT NULL + UNIQUE. Counter orders never touch
@@ -51,8 +56,8 @@ import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
 import {
-  getSupabaseServiceRoleClient,
   type Database,
+  getOrgScopedClient,
   type Json,
   type SavedShippingAddress,
 } from "@workspace/resupply-db";
@@ -63,6 +68,7 @@ import {
   readStripeConfigOrNull,
 } from "../../lib/stripe/config";
 import { validateCartItems } from "../../lib/stripe/validate-cart";
+import { stripeAccountRequestOptions } from "../../lib/stripe/connect";
 import { stripeErrLogFields } from "../../lib/stripe/err-log-fields";
 import { getActivePickupLocationById } from "../../lib/pickup/locations";
 import { adminWriteRateLimiter } from "../../middlewares/admin-rate-limit";
@@ -138,7 +144,7 @@ router.post(
   async (req, res) => {
     // Control Center gate — admins can disable counter ordering without
     // a deploy. Existing orders and the rest of the app are unaffected.
-    if (!(await isFeatureEnabled("frontdesk.counter_orders"))) {
+    if (!(await isFeatureEnabled("frontdesk.counter_orders", req.orgId))) {
       res.status(503).json({
         error: "counter_orders_disabled",
         message:
@@ -169,7 +175,16 @@ router.post(
       return;
     }
     const stripe = getStripeClient(config);
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    // Connect (G6): read the catalog + re-price from the tenant's connected
+    // account (where their products live), the SAME account the storefront
+    // reads from. NULL connected account → {} → platform account.
+    const accountOptions = await stripeAccountRequestOptions(orgId);
+    const supabase = getOrgScopedClient(orgId);
 
     // Collapse duplicate-priceId lines (sum quantities). The
     // shop_order_items unique index is
@@ -197,7 +212,6 @@ router.post(
     let customerEmail = body.customerEmail ?? null;
     if (body.patientId) {
       const { data: patientRow, error: patErr } = await supabase
-        .schema("resupply")
         .from("patients")
         .select("email")
         .eq("id", body.patientId)
@@ -252,7 +266,11 @@ router.post(
       quantity: it.quantity,
       mode: "one_time" as const,
     }));
-    const cartValidation = await validateCartItems(stripe, cartItems);
+    const cartValidation = await validateCartItems(
+      stripe,
+      cartItems,
+      accountOptions,
+    );
     if (!cartValidation.ok) {
       res.status(400).json({
         error: "cart_invalid",
@@ -278,9 +296,11 @@ router.post(
     try {
       await Promise.all(
         uniquePriceIds.map(async (priceId) => {
-          const price = await stripe.prices.retrieve(priceId, {
-            expand: ["product"],
-          });
+          const price = await stripe.prices.retrieve(
+            priceId,
+            { expand: ["product"] },
+            accountOptions,
+          );
           const productId =
             typeof price.product === "string"
               ? price.product
@@ -357,7 +377,6 @@ router.post(
     };
 
     const { data: orderRow, error: orderErr } = await supabase
-      .schema("resupply")
       .from("shop_orders")
       .insert(orderInsert)
       .select("id")
@@ -387,7 +406,6 @@ router.post(
       };
     });
     const { error: itemsErr } = await supabase
-      .schema("resupply")
       .from("shop_order_items")
       .insert(itemRows);
     if (itemsErr) throw itemsErr;

@@ -12,6 +12,7 @@ import request from "supertest";
 
 import {
   makeRequireAdminMock,
+  MOCK_ORG_ID,
   type MockAdminCtx,
 } from "../../test-helpers/auth-mocks";
 import {
@@ -120,6 +121,7 @@ describe("GET /patients/duplicates", () => {
     await request(makeApp()).get("/patients/duplicates");
     expect(getSupabaseRpcCallCount("patient_duplicate_groups")).toBe(1);
     expect(getSupabaseRpcArgs("patient_duplicate_groups")[0]).toEqual({
+      p_org_id: MOCK_ORG_ID,
       p_max_groups: 100,
     });
 
@@ -128,6 +130,7 @@ describe("GET /patients/duplicates", () => {
     stageSupabaseRpcResponse("patient_duplicate_groups", { data: [] });
     await request(makeApp()).get("/patients/duplicates?limit=25");
     expect(getSupabaseRpcArgs("patient_duplicate_groups")[0]).toEqual({
+      p_org_id: MOCK_ORG_ID,
       p_max_groups: 25,
     });
   });

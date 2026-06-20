@@ -6,12 +6,15 @@
 
 import { route, type DemoHandler } from "../types";
 import { json, sseChat } from "../respond";
+import { emptyGetFallbackBody } from "../empty";
 import {
   demoAdminIdentity,
   demoInboxCounts,
   demoDashboardSummary,
   demoPatients,
+  demoPatientDetail,
   demoConversations,
+  demoConversationDetail,
   demoEpisodes,
   demoToday,
   demoWorkItems,
@@ -20,9 +23,17 @@ import {
   demoFitterLeads,
   demoBillingDirectorSummary,
   demoAdminOrders,
+  demoAdminOrderDetail,
   demoSystemInfo,
 } from "../fixtures/admin";
 import { findDemoProduct } from "../fixtures/products";
+import {
+  demoSelectableAddons,
+  demoSelectablePlans,
+  demoSelectPlan,
+  demoTenantBilling,
+  demoUpdateAddon,
+} from "../fixtures/billing-package";
 
 function intParam(
   req: { query: URLSearchParams },
@@ -70,7 +81,7 @@ function pennPilotReply(messages: AssistantMessage[] | undefined): string {
   if (q.includes("campaign") || q.includes("bulk")) {
     return "Bulk Campaigns (/admin/bulk-campaigns) is the place: build your audience with the filters, sanity-check the recipient count, then send a batch SMS or email. The reusable content lives alongside it — Alert Library (/admin/alerts) and Automated messages (/admin/templates). (Demo answer — no real messages go out.)";
   }
-  return 'Hi, I\'m PennPilot — your guide to the admin console. Ask me how a page works or where to find something; try "walk me through processing a claim" or "where do I turn features on or off". You\'re exploring the PennFit demo, so my answers are canned samples and no data here is real.';
+  return 'Hi, I\'m CareMetric Copilot — your guide to the admin console. Ask me how a page works or where to find something; try "walk me through processing a claim" or "where do I turn features on or off". You\'re exploring the CareMetric Breathe demo, so my answers are canned samples and no data here is real.';
 }
 
 export const adminHandlers: DemoHandler[] = [
@@ -84,9 +95,11 @@ export const adminHandlers: DemoHandler[] = [
   ),
   // The Settings page derefs nested objects from this payload directly, so
   // it must be answered with a full shape — without this the router's
-  // empty-object GET fallback crashes /admin/settings (and traps the user,
-  // since the demo on/off toggle lives on that very page).
-  route("GET", "/resupply-api/admin/system-info", () => json(demoSystemInfo())),
+  // empty-object GET fallback would crash the platform System-info page
+  // (PlatformSystemInfoPage) if demo mode is ever active on it.
+  route("GET", "/resupply-api/platform/system-info", () =>
+    json(demoSystemInfo()),
+  ),
 
   // ── PennPilot (admin assistant widget) ───────────────────────────
   route("POST", "/resupply-api/admin/assistant/chat", (req) => {
@@ -130,10 +143,33 @@ export const adminHandlers: DemoHandler[] = [
       ),
     ),
   ),
+  // Single-patient detail. MUST be present: the detail page derefs
+  // `data.episodes.length` (+ conversations/fulfillments/prescriptions)
+  // for its tab counts, so the empty-object GET fallback crashes it on
+  // the click the seeded roster invites.
+  //
+  // `:id` matches ANY single segment, so it also shadows static sub-
+  // routes like `/patients/duplicates` (and export / bulk-status). Only
+  // answer for real demo patient ids; anything else gets the generic
+  // empty-collections body so e.g. the duplicates page (data.groups)
+  // renders its empty state instead of crashing on a wrong-shaped
+  // fixture.
+  route("GET", "/resupply-api/patients/:id", (_req, { id }) =>
+    /^demo-patient-\d+$/.test(id)
+      ? json(demoPatientDetail(id))
+      : json(emptyGetFallbackBody()),
+  ),
   route("GET", "/resupply-api/conversations", (req) =>
     json(
       demoConversations(intParam(req, "limit", 25), intParam(req, "offset", 0)),
     ),
+  ),
+  // Single-thread detail. MUST be present: the detail page derefs
+  // `data.messages` directly, so the router's empty-object GET fallback
+  // would crash it (ErrorBoundary "Something went wrong") the instant an
+  // explorer clicks any inbox row.
+  route("GET", "/resupply-api/conversations/:id", (_req, { id }) =>
+    json(demoConversationDetail(id)),
   ),
   route("GET", "/resupply-api/episodes", (req) =>
     json(demoEpisodes(intParam(req, "limit", 25), intParam(req, "offset", 0))),
@@ -146,10 +182,35 @@ export const adminHandlers: DemoHandler[] = [
   route("GET", "/resupply-api/admin/billing/director-summary", () =>
     json(demoBillingDirectorSummary()),
   ),
+
+  // ── tenant billing package: plan + add-on self-service ───────────
+  route("GET", "/resupply-api/admin/billing/package", () =>
+    json(demoTenantBilling()),
+  ),
+  route("GET", "/resupply-api/admin/billing/plans", () =>
+    json(demoSelectablePlans()),
+  ),
+  route("GET", "/resupply-api/admin/billing/addons", () =>
+    json(demoSelectableAddons()),
+  ),
+  route("POST", "/resupply-api/admin/billing/subscription", (req) => {
+    const body = req.json<{ planCode?: string }>() ?? {};
+    return json(demoSelectPlan(body.planCode));
+  }),
+  route("PUT", "/resupply-api/admin/billing/addons", (req) => {
+    const body = req.json<{ addonCode?: string; quantity?: number }>() ?? {};
+    return json(demoUpdateAddon(body.addonCode, body.quantity));
+  }),
   route("GET", "/api/admin/orders", (req) =>
     json(
       demoAdminOrders(intParam(req, "page", 1), intParam(req, "pageSize", 25)),
     ),
+  ),
+  // Single storefront-order detail. MUST be present: the detail page
+  // derefs `data.order.payload.*`, so the empty-object GET fallback
+  // crashes it the instant a seeded orders row is clicked.
+  route("GET", "/api/admin/orders/:id", (_req, { id }) =>
+    json(demoAdminOrderDetail(id)),
   ),
 
   // ── inventory mutations (admin maps the storefront catalog) ──────

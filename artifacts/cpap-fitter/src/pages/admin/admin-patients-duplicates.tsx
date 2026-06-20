@@ -182,12 +182,22 @@ function DuplicateGroupBlock({
       <table className="w-full text-sm">
         <thead>
           <tr className="text-left text-muted-foreground">
-            <th className="px-3 py-1.5 font-medium">Keep</th>
-            <th className="px-3 py-1.5 font-medium">Name</th>
-            <th className="px-3 py-1.5 font-medium">DOB</th>
-            <th className="px-3 py-1.5 font-medium">Pacware ID</th>
-            <th className="px-3 py-1.5 font-medium">Reachable</th>
-            <th className="px-3 py-1.5 font-medium"></th>
+            <th scope="col" className="px-3 py-1.5 font-medium">
+              Keep
+            </th>
+            <th scope="col" className="px-3 py-1.5 font-medium">
+              Name
+            </th>
+            <th scope="col" className="px-3 py-1.5 font-medium">
+              DOB
+            </th>
+            <th scope="col" className="px-3 py-1.5 font-medium">
+              Pacware ID
+            </th>
+            <th scope="col" className="px-3 py-1.5 font-medium">
+              Reachable
+            </th>
+            <th scope="col" className="px-3 py-1.5 font-medium"></th>
           </tr>
         </thead>
         <tbody>

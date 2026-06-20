@@ -8,9 +8,9 @@
 // admin trigger — and is idempotent (already-converted rows are
 // skipped).
 
-import { type getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { type getOrgScopedClient } from "@workspace/resupply-db";
 
-type Supabase = ReturnType<typeof getSupabaseServiceRoleClient>;
+type Supabase = ReturnType<typeof getOrgScopedClient>;
 
 export interface AttributionResult {
   scanned: number;
@@ -36,7 +36,6 @@ export async function attributePendingReferrals(
   // ~a month of volume, which gives the sweep plenty of overlap to
   // catch slow-converting referrals.
   const { data: orders, error: oErr } = await supabase
-    .schema("resupply")
     .from("shop_orders")
     .select("id, customer_email, created_at")
     .eq("status", "paid")
@@ -55,7 +54,6 @@ export async function attributePendingReferrals(
     // doesn't fan out to other patients' referral rows.
     const escapedEmail = email.replace(/[\\%_]/g, (c: string) => `\\${c}`);
     const { data: candidates, error: rErr } = await supabase
-      .schema("resupply")
       .from("patient_referrals")
       .select("id, referee_email, status")
       .ilike("referee_email", escapedEmail)
@@ -64,7 +62,6 @@ export async function attributePendingReferrals(
     if (rErr) throw rErr;
     for (const ref of candidates ?? []) {
       const { error: uErr } = await supabase
-        .schema("resupply")
         .from("patient_referrals")
         .update({
           status: "converted",

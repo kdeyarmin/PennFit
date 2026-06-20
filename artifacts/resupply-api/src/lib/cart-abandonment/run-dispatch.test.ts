@@ -75,6 +75,10 @@ import {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 
+// Tenant the dispatcher is invoked for. The org-scoped client filters
+// every read by it and tags every write with it.
+const ORG = "org-1";
+
 function makeCartRow(
   over: Partial<Record<string, unknown>> = {},
 ): Record<string, unknown> {
@@ -159,7 +163,7 @@ describe("runCartAbandonmentDispatch — no eligible candidates", () => {
   it("returns zero stats and makes no further DB calls when candidates list is empty", async () => {
     stageSupabaseResponse("shop_abandoned_carts", "select", { data: [] });
 
-    const stats = await runCartAbandonmentDispatch();
+    const stats = await runCartAbandonmentDispatch({ orgId: ORG });
 
     expect(stats).toEqual({
       scanned: 0,
@@ -178,7 +182,7 @@ describe("runCartAbandonmentDispatch — no eligible candidates", () => {
   it("returns zero stats when candidates query returns null data", async () => {
     stageSupabaseResponse("shop_abandoned_carts", "select", { data: null });
 
-    const stats = await runCartAbandonmentDispatch();
+    const stats = await runCartAbandonmentDispatch({ orgId: ORG });
 
     expect(stats.scanned).toBe(0);
     expect(stats.sent).toBe(0);
@@ -193,7 +197,9 @@ describe("runCartAbandonmentDispatch — DB error propagation", () => {
       error: { message: "connection timeout", code: "57P01" },
     });
 
-    await expect(runCartAbandonmentDispatch()).rejects.toMatchObject({
+    await expect(
+      runCartAbandonmentDispatch({ orgId: ORG }),
+    ).rejects.toMatchObject({
       message: "connection timeout",
     });
   });
@@ -206,7 +212,9 @@ describe("runCartAbandonmentDispatch — DB error propagation", () => {
       error: { message: "update conflict", code: "40001" },
     });
 
-    await expect(runCartAbandonmentDispatch()).rejects.toMatchObject({
+    await expect(
+      runCartAbandonmentDispatch({ orgId: ORG }),
+    ).rejects.toMatchObject({
       message: "update conflict",
     });
   });
@@ -222,7 +230,9 @@ describe("runCartAbandonmentDispatch — DB error propagation", () => {
       error: { message: "prefs table offline", code: "99999" },
     });
 
-    await expect(runCartAbandonmentDispatch()).rejects.toMatchObject({
+    await expect(
+      runCartAbandonmentDispatch({ orgId: ORG }),
+    ).rejects.toMatchObject({
       message: "prefs table offline",
     });
   });
@@ -234,7 +244,7 @@ describe("runCartAbandonmentDispatch — successful send", () => {
   it("sends email and increments sent counter for an eligible row", async () => {
     stageMinimalDispatch();
 
-    const stats = await runCartAbandonmentDispatch();
+    const stats = await runCartAbandonmentDispatch({ orgId: ORG });
 
     expect(stats).toEqual({
       scanned: 1,
@@ -281,7 +291,7 @@ describe("runCartAbandonmentDispatch — successful send", () => {
     });
     stageSupabaseResponse("shop_customers", "select", { data: [] });
 
-    const stats = await runCartAbandonmentDispatch();
+    const stats = await runCartAbandonmentDispatch({ orgId: ORG });
 
     expect(stats.scanned).toBe(3);
     expect(stats.sent).toBe(3);
@@ -298,7 +308,7 @@ describe("runCartAbandonmentDispatch — successful send", () => {
     const pinned = new Date("2026-05-20T12:00:00.000Z");
     stageMinimalDispatch();
 
-    const stats = await runCartAbandonmentDispatch({ now: pinned });
+    const stats = await runCartAbandonmentDispatch({ orgId: ORG, now: pinned });
 
     expect(stats.sent).toBe(1);
   });
@@ -314,7 +324,7 @@ describe("runCartAbandonmentDispatch — opt-out suppression", () => {
     // Stage the unclaim UPDATE.
     stageSupabaseResponse("shop_abandoned_carts", "update", { data: null });
 
-    const stats = await runCartAbandonmentDispatch();
+    const stats = await runCartAbandonmentDispatch({ orgId: ORG });
 
     expect(stats.scanned).toBe(1);
     expect(stats.skippedOptOut).toBe(1);
@@ -324,7 +334,7 @@ describe("runCartAbandonmentDispatch — opt-out suppression", () => {
     expect(getSupabaseCallCount("shop_abandoned_carts", "update")).toBe(2);
     // The unclaim UPDATE should set reminded_at to null.
     const updates = getSupabaseWritePayloads("shop_abandoned_carts", "update");
-    expect(updates[1]).toEqual({ reminded_at: null });
+    expect(updates[1]).toEqual({ reminded_at: null, org_id: ORG });
   });
 
   it("unclaims and skips a row when the customer is in a DND window", async () => {
@@ -334,7 +344,7 @@ describe("runCartAbandonmentDispatch — opt-out suppression", () => {
     });
     stageSupabaseResponse("shop_abandoned_carts", "update", { data: null });
 
-    const stats = await runCartAbandonmentDispatch();
+    const stats = await runCartAbandonmentDispatch({ orgId: ORG });
 
     expect(stats.skippedOptOut).toBe(1);
     expect(stats.sent).toBe(0);
@@ -345,7 +355,7 @@ describe("runCartAbandonmentDispatch — opt-out suppression", () => {
     // No prefs staged — the mock returns null, so mergePrefs(null) applies defaults.
     stageMinimalDispatch({ prefRows: [] });
 
-    const stats = await runCartAbandonmentDispatch();
+    const stats = await runCartAbandonmentDispatch({ orgId: ORG });
 
     expect(stats.sent).toBe(1);
     expect(stats.skippedOptOut).toBe(0);
@@ -361,7 +371,7 @@ describe("runCartAbandonmentDispatch — null email guard", () => {
     });
     stageSupabaseResponse("shop_abandoned_carts", "update", { data: null });
 
-    const stats = await runCartAbandonmentDispatch();
+    const stats = await runCartAbandonmentDispatch({ orgId: ORG });
 
     expect(stats.skippedFailed).toBe(1);
     expect(stats.sent).toBe(0);
@@ -380,7 +390,7 @@ describe("runCartAbandonmentDispatch — send outcome: not configured", () => {
     stageMinimalDispatch();
     stageSupabaseResponse("shop_abandoned_carts", "update", { data: null }); // unclaim
 
-    const stats = await runCartAbandonmentDispatch();
+    const stats = await runCartAbandonmentDispatch({ orgId: ORG });
 
     expect(stats.skippedNoConfig).toBe(1);
     expect(stats.skippedFailed).toBe(0);
@@ -401,7 +411,7 @@ describe("runCartAbandonmentDispatch — send outcome: delivery failure", () => 
     stageMinimalDispatch();
     stageSupabaseResponse("shop_abandoned_carts", "update", { data: null }); // unclaim
 
-    const stats = await runCartAbandonmentDispatch();
+    const stats = await runCartAbandonmentDispatch({ orgId: ORG });
 
     expect(stats.skippedFailed).toBe(1);
     expect(stats.skippedNoConfig).toBe(0);
@@ -441,7 +451,7 @@ describe("runCartAbandonmentDispatch — send throws", () => {
     // UnclaimMany for cart-3 (the remaining rows).
     stageSupabaseResponse("shop_abandoned_carts", "update", { data: null });
 
-    const stats = await runCartAbandonmentDispatch();
+    const stats = await runCartAbandonmentDispatch({ orgId: ORG });
 
     // First row: sent; second + third: skippedNoConfig.
     expect(stats.sent).toBe(1);
@@ -461,7 +471,7 @@ describe("runCartAbandonmentDispatch — send throws", () => {
     stageSupabaseResponse("shop_abandoned_carts", "update", { data: null });
     // No more rows, so unclaimMany is a no-op (empty ids list).
 
-    const stats = await runCartAbandonmentDispatch();
+    const stats = await runCartAbandonmentDispatch({ orgId: ORG });
 
     expect(stats.sent).toBe(0);
     expect(stats.skippedNoConfig).toBe(1);
@@ -514,7 +524,7 @@ describe("runCartAbandonmentDispatch — mixed outcomes", () => {
     stageSupabaseResponse("shop_abandoned_carts", "update", { data: null }); // unclaim c-3
     stageSupabaseResponse("shop_abandoned_carts", "update", { data: null }); // unclaim c-4
 
-    const stats = await runCartAbandonmentDispatch();
+    const stats = await runCartAbandonmentDispatch({ orgId: ORG });
 
     expect(stats.scanned).toBe(4);
     expect(stats.sent).toBe(1);
@@ -539,7 +549,7 @@ describe("runCartAbandonmentDispatch — logger", () => {
     stageMinimalDispatch();
     stageSupabaseResponse("shop_abandoned_carts", "update", { data: null });
 
-    await runCartAbandonmentDispatch({ log: { warn: warnMock } });
+    await runCartAbandonmentDispatch({ orgId: ORG, log: { warn: warnMock } });
 
     expect(warnMock).toHaveBeenCalledWith(
       expect.objectContaining({ rowId: "cart-1" }),
@@ -555,7 +565,7 @@ describe("runCartAbandonmentDispatch — logger", () => {
     stageMinimalDispatch();
     stageSupabaseResponse("shop_abandoned_carts", "update", { data: null });
 
-    await runCartAbandonmentDispatch({ log: { warn: warnMock } });
+    await runCartAbandonmentDispatch({ orgId: ORG, log: { warn: warnMock } });
 
     expect(warnMock).toHaveBeenCalledWith(
       expect.objectContaining({ rowId: "cart-1" }),
@@ -570,7 +580,9 @@ describe("runCartAbandonmentDispatch — logger", () => {
     stageSupabaseResponse("shop_abandoned_carts", "update", { data: null });
 
     // No log provided — should not throw.
-    await expect(runCartAbandonmentDispatch()).resolves.toMatchObject({
+    await expect(
+      runCartAbandonmentDispatch({ orgId: ORG }),
+    ).resolves.toMatchObject({
       skippedOptOut: 1,
     });
   });
@@ -587,7 +599,7 @@ describe("runCartAbandonmentDispatch — logger", () => {
 
     // Should resolve (not throw) even though unclaim failed.
     await expect(
-      runCartAbandonmentDispatch({ log: { warn: warnMock } }),
+      runCartAbandonmentDispatch({ orgId: ORG, log: { warn: warnMock } }),
     ).resolves.toMatchObject({ skippedOptOut: 1 });
 
     expect(warnMock).toHaveBeenCalledWith(
@@ -604,11 +616,14 @@ describe("runCartAbandonmentDispatch — claim payload", () => {
     const pinned = new Date("2026-05-21T10:00:00.000Z");
     stageMinimalDispatch();
 
-    await runCartAbandonmentDispatch({ now: pinned });
+    await runCartAbandonmentDispatch({ orgId: ORG, now: pinned });
 
     const updates = getSupabaseWritePayloads("shop_abandoned_carts", "update");
     // First update is the claim.
-    expect(updates[0]).toEqual({ reminded_at: pinned.toISOString() });
+    expect(updates[0]).toEqual({
+      reminded_at: pinned.toISOString(),
+      org_id: ORG,
+    });
   });
 });
 
@@ -642,7 +657,10 @@ describe("runCartAbandonmentDispatch — batch unclaim error path", () => {
       error: { message: "batch unclaim error" },
     });
 
-    const stats = await runCartAbandonmentDispatch({ log: { warn: warnMock } });
+    const stats = await runCartAbandonmentDispatch({
+      orgId: ORG,
+      log: { warn: warnMock },
+    });
 
     // Still resolves with the correct stats envelope.
     expect(stats.skippedNoConfig).toBe(2);
@@ -668,7 +686,7 @@ describe("runCartAbandonmentDispatch — zero claimed rows after race", () => {
     // Prefs still fetched (empty userIds → skipped in code since claimed.length === 0... wait)
     // Actually when claimedRows is null, claimed = [], so we skip prefs fetch entirely.
 
-    const stats = await runCartAbandonmentDispatch();
+    const stats = await runCartAbandonmentDispatch({ orgId: ORG });
 
     expect(stats.scanned).toBe(0);
     expect(stats.sent).toBe(0);
@@ -682,7 +700,7 @@ describe("runCartAbandonmentDispatch — feature flag gate", () => {
   it("returns zeroed stats immediately when cart_abandonment.dispatcher is disabled", async () => {
     isFeatureEnabledMock.mockResolvedValue(false);
 
-    const stats = await runCartAbandonmentDispatch();
+    const stats = await runCartAbandonmentDispatch({ orgId: ORG });
 
     expect(stats).toEqual({
       scanned: 0,
@@ -697,7 +715,7 @@ describe("runCartAbandonmentDispatch — feature flag gate", () => {
   it("makes no DB calls when the feature flag is disabled", async () => {
     isFeatureEnabledMock.mockResolvedValue(false);
 
-    await runCartAbandonmentDispatch();
+    await runCartAbandonmentDispatch({ orgId: ORG });
 
     expect(getSupabaseCallCount("shop_abandoned_carts", "select")).toBe(0);
     expect(getSupabaseCallCount("shop_abandoned_carts", "update")).toBe(0);
@@ -707,7 +725,7 @@ describe("runCartAbandonmentDispatch — feature flag gate", () => {
   it("does not invoke sendCartAbandonmentEmail when the feature flag is disabled", async () => {
     isFeatureEnabledMock.mockResolvedValue(false);
 
-    await runCartAbandonmentDispatch();
+    await runCartAbandonmentDispatch({ orgId: ORG });
 
     expect(sendCartAbandonmentEmailMock).not.toHaveBeenCalled();
   });
@@ -716,7 +734,7 @@ describe("runCartAbandonmentDispatch — feature flag gate", () => {
     isFeatureEnabledMock.mockResolvedValue(false);
     const warnMock = vi.fn();
 
-    await runCartAbandonmentDispatch({ log: { warn: warnMock } });
+    await runCartAbandonmentDispatch({ orgId: ORG, log: { warn: warnMock } });
 
     expect(warnMock).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -730,7 +748,7 @@ describe("runCartAbandonmentDispatch — feature flag gate", () => {
     isFeatureEnabledMock.mockResolvedValue(true);
     stageMinimalDispatch();
 
-    const stats = await runCartAbandonmentDispatch();
+    const stats = await runCartAbandonmentDispatch({ orgId: ORG });
 
     expect(stats.sent).toBe(1);
     expect(sendCartAbandonmentEmailMock).toHaveBeenCalledTimes(1);

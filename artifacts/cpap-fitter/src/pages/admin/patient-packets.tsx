@@ -195,12 +195,25 @@ export function AdminPatientPacketsPage() {
                     className="text-left"
                     style={{ color: "hsl(var(--ink-3))" }}
                   >
-                    <th className="px-5 py-2 font-medium">Recipient</th>
-                    <th className="px-5 py-2 font-medium">Packet</th>
-                    <th className="px-5 py-2 font-medium">Receipt</th>
-                    <th className="px-5 py-2 font-medium">Sent</th>
-                    <th className="px-5 py-2 font-medium">Signed</th>
-                    <th className="px-5 py-2 font-medium text-right">
+                    <th scope="col" className="px-5 py-2 font-medium">
+                      Recipient
+                    </th>
+                    <th scope="col" className="px-5 py-2 font-medium">
+                      Packet
+                    </th>
+                    <th scope="col" className="px-5 py-2 font-medium">
+                      Receipt
+                    </th>
+                    <th scope="col" className="px-5 py-2 font-medium">
+                      Sent
+                    </th>
+                    <th scope="col" className="px-5 py-2 font-medium">
+                      Signed
+                    </th>
+                    <th
+                      scope="col"
+                      className="px-5 py-2 font-medium text-right"
+                    >
                       Actions
                     </th>
                   </tr>

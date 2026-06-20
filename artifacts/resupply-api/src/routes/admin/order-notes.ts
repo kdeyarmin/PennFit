@@ -25,7 +25,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
@@ -61,13 +61,17 @@ router.get(
       return;
     }
     const orderId = parsed.data;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // Pre-check: order must exist. Same rationale as the customer
     // notes route — distinguish "no notes" (200 + empty array) from
     // "no order" (404).
     const { data: order } = await supabase
-      .schema("resupply")
       .from("shop_orders")
       .select("id")
       .eq("id", orderId)
@@ -79,7 +83,6 @@ router.get(
     }
 
     const { data: rows, error } = await supabase
-      .schema("resupply")
       .from("shop_order_notes")
       .select("id, body, author_email, author_user_id, created_at")
       .eq("order_id", orderId)
@@ -101,7 +104,11 @@ router.get(
     );
 
     res.json({
-      notes: (rows ?? []).map((r) => ({
+      notes: (
+        (rows ?? []) as Array<
+          Database["resupply"]["Tables"]["shop_order_notes"]["Row"]
+        >
+      ).map((r) => ({
         id: r.id,
         body: r.body ?? "",
         authorEmail: r.author_email,
@@ -137,11 +144,15 @@ router.post(
     }
     const { body } = bodyParsed.data;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // Pre-check the order to map the FK violation to a clean 404.
     const { data: order } = await supabase
-      .schema("resupply")
       .from("shop_orders")
       .select("id")
       .eq("id", orderId)
@@ -153,7 +164,6 @@ router.post(
     }
 
     const { data: inserted, error: insErr } = await supabase
-      .schema("resupply")
       .from("shop_order_notes")
       .insert({
         order_id: orderId,

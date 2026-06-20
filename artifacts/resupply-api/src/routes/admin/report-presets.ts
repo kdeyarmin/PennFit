@@ -19,10 +19,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import {
-  type Database,
-  getSupabaseServiceRoleClient,
-} from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
@@ -89,9 +86,13 @@ router.get(
       res.status(500).json({ error: "missing_admin_user_id" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("report_presets")
       .select(
         "id, user_id, name, slug, format, range_kind, range_preset, range_from, range_to, recipient, created_at, updated_at",
@@ -101,7 +102,7 @@ router.get(
       .limit(200);
     if (error) throw error;
     res.json({
-      presets: (data ?? []).map((r) => rowToApi(r as Row)),
+      presets: ((data ?? []) as Row[]).map((r) => rowToApi(r)),
     });
   },
 );
@@ -163,9 +164,13 @@ router.post(
       recipient: b.recipient ?? null,
     };
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("report_presets")
       .insert(insert)
       .select(
@@ -193,14 +198,18 @@ router.delete(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     // Owner-scope: every delete carries .eq("user_id", userId) so
     // admin A cannot delete admin B's presets via direct id guess.
     // We return 204 on success and 404 when nothing matched —
     // covers both "doesn't exist" and "not yours" without leaking
     // which.
     const { data, error } = await supabase
-      .schema("resupply")
       .from("report_presets")
       .delete()
       .eq("id", parsed.data.id)

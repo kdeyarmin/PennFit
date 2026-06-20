@@ -20,7 +20,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import {
   type Database,
   type Json,
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
 } from "@workspace/resupply-db";
 
 import {
@@ -105,7 +105,12 @@ router.post(
       payerProfileId: b.payerProfileId ?? null,
       insuranceCoverageId: b.insuranceCoverageId ?? null,
     });
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const insertRow: Database["resupply"]["Tables"]["dispense_readiness_reviews"]["Insert"] =
       {
         patient_id: idParsed.data.id,
@@ -134,7 +139,6 @@ router.post(
         created_by_email: req.adminEmail ?? "unknown",
       };
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("dispense_readiness_reviews")
       .insert(insertRow)
       .select("id")
@@ -188,9 +192,13 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data } = await supabase
-      .schema("resupply")
       .from("dispense_readiness_reviews")
       .select("*")
       .eq("patient_id", parsed.data.id)
@@ -209,9 +217,13 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data } = await supabase
-      .schema("resupply")
       .from("dispense_readiness_reviews")
       .select("*")
       .eq("id", parsed.data.reviewId)
@@ -248,9 +260,13 @@ router.patch(
       return;
     }
     const b = parsed.data;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { error } = await supabase
-      .schema("resupply")
       .from("dispense_readiness_reviews")
       .update({
         review_status: b.reviewStatus,
@@ -287,9 +303,13 @@ router.get(
   "/admin/dispense-readiness/queue",
   requirePermission("patients.read"),
   async (req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     let query = supabase
-      .schema("resupply")
       .from("dispense_readiness_reviews")
       .select(
         "id, patient_id, hcpcs_code, overall_verdict, estimated_days_to_ready, checks_failed, checks_warning, ai_summary, created_at",

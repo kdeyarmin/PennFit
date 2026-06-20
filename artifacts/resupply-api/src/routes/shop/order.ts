@@ -13,14 +13,17 @@
 
 import { Router, type IRouter } from "express";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
+import { requestHost } from "../../lib/request-host";
 import {
   SHOP_UNAVAILABLE_BODY,
   getStripeClient,
   readStripeConfigOrNull,
 } from "../../lib/stripe/config";
 import { stripeErrLogFields } from "../../lib/stripe/err-log-fields";
+import { stripeAccountRequestOptions } from "../../lib/stripe/connect";
+import { resolveOrgIdByHost } from "../../lib/tenant-branding";
 
 const SESSION_ID_RE = /^cs_(test|live)_[A-Za-z0-9]{20,}$/;
 
@@ -43,9 +46,17 @@ router.get("/shop/orders/:sessionId", async (req, res) => {
   // This stops an attacker from probing arbitrary session IDs from
   // unrelated Stripe accounts (Stripe would 404 those, but we'd
   // rather not even ask).
-  const supabase = getSupabaseServiceRoleClient();
+  // Public route (opaque session id is the access token) — no auth
+  // middleware populates req.orgId, so resolve the tenant from the request
+  // host (custom domain → that org; platform host / miss → seed org).
+  const orgId =
+    (await resolveOrgIdByHost(requestHost(req))) ?? (await resolveSeedOrgId());
+  if (!orgId) {
+    res.status(503).json({ error: "tenant_unavailable" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const { data: local, error: localError } = await supabase
-    .schema("resupply")
     .from("shop_orders")
     .select("status, pod_uploaded_at")
     .eq("stripe_session_id", sessionId)
@@ -62,11 +73,18 @@ router.get("/shop/orders/:sessionId", async (req, res) => {
   }
 
   const stripe = getStripeClient(config);
+  // Retrieve on the tenant's connected account when it has one: the session
+  // was created with stripeAccountRequestOptions(orgId) in checkout, so a
+  // platform-account retrieve would 404 for a Connect tenant. Empty for the
+  // seed / platform-account tenant (unchanged).
+  const accountOptions = await stripeAccountRequestOptions(orgId);
   let session;
   try {
-    session = await stripe.checkout.sessions.retrieve(sessionId, {
-      expand: ["line_items.data.price.product"],
-    });
+    session = await stripe.checkout.sessions.retrieve(
+      sessionId,
+      { expand: ["line_items.data.price.product"] },
+      accountOptions,
+    );
   } catch (err) {
     req.log?.warn(
       { ...stripeErrLogFields(err) },

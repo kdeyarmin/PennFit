@@ -25,7 +25,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -87,10 +87,14 @@ router.get(
     // customer's history the slower it'd be to filter client-side.
     const includeCompleted = req.query.include === "completed";
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     const { data: existsRow, error: existsErr } = await supabase
-      .schema("resupply")
       .from("shop_customers")
       .select("customer_id")
       .eq("customer_id", userId)
@@ -103,7 +107,6 @@ router.get(
     }
 
     let followupsQuery = supabase
-      .schema("resupply")
       .from("shop_customer_followups")
       .select(
         "id, body, due_at, completed_at, completed_by_email, created_by_email, created_at",
@@ -133,15 +136,19 @@ router.get(
     );
 
     res.json({
-      followups: items.map((r) => ({
-        id: r.id,
-        body: r.body,
-        dueAt: r.due_at,
-        completedAt: r.completed_at,
-        completedByEmail: r.completed_by_email,
-        createdByEmail: r.created_by_email,
-        createdAt: r.created_at,
-      })),
+      followups: items.map(
+        (
+          r: Database["resupply"]["Tables"]["shop_customer_followups"]["Row"],
+        ) => ({
+          id: r.id,
+          body: r.body,
+          dueAt: r.due_at,
+          completedAt: r.completed_at,
+          completedByEmail: r.completed_by_email,
+          createdByEmail: r.created_by_email,
+          createdAt: r.created_at,
+        }),
+      ),
     });
   },
 );
@@ -172,10 +179,14 @@ router.post(
     }
     const { body, dueAt } = bodyParsed.data;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     const { data: existsRow, error: existsErr } = await supabase
-      .schema("resupply")
       .from("shop_customers")
       .select("customer_id")
       .eq("customer_id", userId)
@@ -188,7 +199,6 @@ router.post(
     }
 
     const { data: row, error: insertErr } = await supabase
-      .schema("resupply")
       .from("shop_customer_followups")
       .insert({
         customer_id: userId,
@@ -250,10 +260,14 @@ router.patch(
     }
     const followupId = fIdCheck.data;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     const { data: row, error: lookupErr } = await supabase
-      .schema("resupply")
       .from("shop_customer_followups")
       .select("id, customer_id, completed_at, body, due_at")
       .eq("id", followupId)
@@ -285,7 +299,6 @@ router.patch(
     // another CSR raced us the row was already updated and 0 rows
     // come back — return 409 instead of 200.
     const { data: updatedRow, error: updateErr } = await supabase
-      .schema("resupply")
       .from("shop_customer_followups")
       .update({
         completed_at: nowIso,
@@ -353,10 +366,14 @@ router.patch(
     }
     const followupId = fIdCheck.data;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     const { data: row, error: lookupErr } = await supabase
-      .schema("resupply")
       .from("shop_customer_followups")
       .select("id, customer_id, completed_at, body, due_at")
       .eq("id", followupId)
@@ -376,7 +393,6 @@ router.patch(
     }
 
     const { data: updatedRow, error: updateErr } = await supabase
-      .schema("resupply")
       .from("shop_customer_followups")
       .update({
         completed_at: null,

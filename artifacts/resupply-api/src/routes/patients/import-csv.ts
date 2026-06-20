@@ -28,10 +28,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  getSupabaseServiceRoleClient,
-  type Json,
-} from "@workspace/resupply-db";
+import { getOrgScopedClient, type Json } from "@workspace/resupply-db";
 import { timezoneForUsState } from "@workspace/resupply-domain";
 
 import { logger } from "../../lib/logger";
@@ -104,7 +101,12 @@ router.post(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const nowIso = new Date().toISOString();
 
     let created = 0;
@@ -159,7 +161,6 @@ router.post(
       const derivedTimezone = timezoneForUsState(address?.state);
 
       const { data: inserted, error: insertErr } = await supabase
-        .schema("resupply")
         .from("patients")
         .insert({
           pacware_id: row.pacwareId,

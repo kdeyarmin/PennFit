@@ -161,6 +161,11 @@ export function verifyLinkToken(
   const sigBuf = base64urlDecode(sigEncoded);
   if (!sigBuf) return { valid: false, reason: "malformed" };
 
+  // getLinkHmacKey() throws when RESUPPLY_LINK_HMAC_KEY is unset. For
+  // VERIFICATION that misconfiguration must degrade to "invalid token"
+  // (the patient sees a friendly expired-link page) rather than escape
+  // as an unhandled 500 on /email/click. SIGNING keeps throwing — a
+  // send path silently minting unverifiable links would be worse.
   let expectedSig: Buffer;
   try {
     expectedSig = hmacSign(payloadEncoded);

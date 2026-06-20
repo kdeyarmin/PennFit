@@ -17,7 +17,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
@@ -77,9 +77,13 @@ router.post(
     }
     const { machineManufacturer, machineModel, notes } = bodyParsed.data;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("shop_product_compatibility")
       .insert({
         product_id: productId,
@@ -145,9 +149,13 @@ router.delete(
     }
     const entryId = entryParsed.data;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: row, error: rowErr } = await supabase
-      .schema("resupply")
       .from("shop_product_compatibility")
       .select("id, product_id, machine_manufacturer, machine_model")
       .eq("id", entryId)
@@ -163,7 +171,6 @@ router.delete(
     }
 
     const { error: delErr } = await supabase
-      .schema("resupply")
       .from("shop_product_compatibility")
       .delete()
       .eq("id", entryId)

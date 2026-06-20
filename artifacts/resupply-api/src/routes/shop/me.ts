@@ -19,7 +19,7 @@ import { z } from "zod";
 import {
   type Database,
   type Json,
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
@@ -49,6 +49,7 @@ router.get("/shop/me", attachSignedIn, async (req, res) => {
   const { email, displayName } = await readCustomerProfile(req);
 
   const row = await ensureShopCustomerRow({
+    orgId: req.orgId,
     customerId: req.userCustomerId,
     email,
     displayName,
@@ -57,9 +58,13 @@ router.get("/shop/me", attachSignedIn, async (req, res) => {
   // Recent orders summary (last 5). We DON'T expose price/line items
   // here — that's behind /shop/me/orders so the account header stays
   // light. Just enough to render "3 past orders, latest Apr 22".
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const { data: recent, error: recentErr } = await supabase
-    .schema("resupply")
     .from("shop_orders")
     .select(
       "id, stripe_session_id, status, amount_total_cents, currency, created_at",
@@ -94,7 +99,11 @@ router.get("/shop/me", attachSignedIn, async (req, res) => {
           expYear: row.default_payment_method_exp_year,
         }
       : null,
-    recentOrders: (recent ?? []).map((r) => ({
+    recentOrders: (
+      (recent ?? []) as Array<
+        Database["resupply"]["Tables"]["shop_orders"]["Row"]
+      >
+    ).map((r) => ({
       id: r.id,
       sessionId: r.stripe_session_id,
       status: r.status,
@@ -142,6 +151,7 @@ router.put("/shop/me", requireSignedIn, async (req, res) => {
 
   // Make sure the row exists (first-time PUT before any GET).
   await ensureShopCustomerRow({
+    orgId: req.orgId,
     customerId: req.userCustomerId!,
     email: null,
   });
@@ -156,9 +166,13 @@ router.put("/shop/me", requireSignedIn, async (req, res) => {
       : null) as unknown as Json;
   }
 
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const { data: row, error } = await supabase
-    .schema("resupply")
     .from("shop_customers")
     .update(updates)
     .eq("customer_id", req.userCustomerId!)

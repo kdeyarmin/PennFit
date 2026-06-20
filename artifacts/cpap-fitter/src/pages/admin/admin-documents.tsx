@@ -326,14 +326,25 @@ export function AdminDocumentsPage() {
                     className="text-left"
                     style={{ color: "hsl(var(--ink-3))" }}
                   >
-                    <th className="pl-5 pr-2 py-2 font-medium">
+                    <th scope="col" className="pl-5 pr-2 py-2 font-medium">
                       <span className="sr-only">Select</span>
                     </th>
-                    <th className="px-5 py-2 font-medium">Title</th>
-                    <th className="px-5 py-2 font-medium">Type</th>
-                    <th className="px-5 py-2 font-medium">Status</th>
-                    <th className="px-5 py-2 font-medium">Created</th>
-                    <th className="px-5 py-2 font-medium text-right">
+                    <th scope="col" className="px-5 py-2 font-medium">
+                      Title
+                    </th>
+                    <th scope="col" className="px-5 py-2 font-medium">
+                      Type
+                    </th>
+                    <th scope="col" className="px-5 py-2 font-medium">
+                      Status
+                    </th>
+                    <th scope="col" className="px-5 py-2 font-medium">
+                      Created
+                    </th>
+                    <th
+                      scope="col"
+                      className="px-5 py-2 font-medium text-right"
+                    >
                       Actions
                     </th>
                   </tr>
@@ -451,11 +462,22 @@ export function AdminDocumentsPage() {
                     className="text-left"
                     style={{ color: "hsl(var(--ink-3))" }}
                   >
-                    <th className="px-5 py-2 font-medium">Title</th>
-                    <th className="px-5 py-2 font-medium">Documents</th>
-                    <th className="px-5 py-2 font-medium">Status</th>
-                    <th className="px-5 py-2 font-medium">Created</th>
-                    <th className="px-5 py-2 font-medium text-right">
+                    <th scope="col" className="px-5 py-2 font-medium">
+                      Title
+                    </th>
+                    <th scope="col" className="px-5 py-2 font-medium">
+                      Documents
+                    </th>
+                    <th scope="col" className="px-5 py-2 font-medium">
+                      Status
+                    </th>
+                    <th scope="col" className="px-5 py-2 font-medium">
+                      Created
+                    </th>
+                    <th
+                      scope="col"
+                      className="px-5 py-2 font-medium text-right"
+                    >
                       Actions
                     </th>
                   </tr>

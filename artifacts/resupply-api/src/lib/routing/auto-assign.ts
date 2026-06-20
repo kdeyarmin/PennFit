@@ -16,11 +16,11 @@
 //
 // Returns the assigned admin id when the move went through.
 
-import type { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import type { OrgScopedClient } from "@workspace/resupply-db";
 
 import { scoreCandidates } from "./skill-score";
 
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+type SupabaseClient = OrgScopedClient;
 
 export type AutoAssignResult =
   | { assigned: true; adminUserId: string; matchedSkillCount: number }
@@ -38,7 +38,6 @@ export async function maybeAutoAssignConversation(
   conversationId: string,
 ): Promise<AutoAssignResult> {
   const { data: convo, error: convoErr } = await supabase
-    .schema("resupply")
     .from("conversations")
     .select("id, assigned_admin_user_id, required_skills")
     .eq("id", conversationId)
@@ -58,15 +57,19 @@ export async function maybeAutoAssignConversation(
   }
 
   const { data: admins, error: adminErr } = await supabase
-    .schema("resupply")
     .from("admin_users")
     .select("id, skills, availability")
     .eq("status", "active");
   if (adminErr) throw adminErr;
+  type AdminCandidate = {
+    id: string;
+    skills: unknown;
+    availability: string | null;
+  };
   // Skip reps who've flipped themselves away / do-not-assign (CSR #16).
   // Anything else (incl. a missing value) counts as available, so the
   // pre-availability behavior is preserved.
-  const adminList = (admins ?? []).filter(
+  const adminList = ((admins ?? []) as AdminCandidate[]).filter(
     (a) => a.availability !== "away" && a.availability !== "do_not_assign",
   );
   if (adminList.length === 0) {
@@ -75,7 +78,6 @@ export async function maybeAutoAssignConversation(
   const adminIds = adminList.map((a) => a.id);
 
   const { data: openConvos, error: openErr } = await supabase
-    .schema("resupply")
     .from("conversations")
     .select("assigned_admin_user_id")
     .in("assigned_admin_user_id", adminIds)
@@ -108,7 +110,6 @@ export async function maybeAutoAssignConversation(
   // write re-read.
   const nowIso = new Date().toISOString();
   const { data: claimed, error: claimErr } = await supabase
-    .schema("resupply")
     .from("conversations")
     .update({
       assigned_admin_user_id: top.adminUserId,

@@ -4,6 +4,11 @@ import { spawnSync } from "node:child_process";
 const CHECKS = [
   "scripts/check-resupply-architecture.sh",
   "scripts/check-admin-route-gates.sh",
+  // Multi-tenant isolation gate (Phase 0 workstream E1): the cutover is
+  // complete, so this fails on ANY direct getSupabaseServiceRoleClient()
+  // callsite in application code (reviewed global/auth callers exempt).
+  // See check-tenant-isolation.sh.
+  "scripts/check-tenant-isolation.sh",
 ];
 
 function commandWorks(command) {

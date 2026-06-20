@@ -137,7 +137,13 @@ router.post(
   requirePermission("bulk_campaigns.send"),
   adminRateLimit({ name: "abandoned_carts.send_due", preset: "bulk" }),
   async (req, res) => {
-    const stats = await runCartAbandonmentDispatch({ log: req.log });
+    // Fail closed: never widen to all tenants on a missing orgId.
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const stats = await runCartAbandonmentDispatch({ orgId, log: req.log });
     res.json(stats);
   },
 );

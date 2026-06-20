@@ -104,6 +104,30 @@ describe("createTwilioClient — placeCall", () => {
     ]);
   });
 
+  it("forwards machineDetection only when requested", async () => {
+    const create = vi
+      .fn<RawTwilioSdk["calls"]["create"]>()
+      .mockResolvedValue({ sid: "CA2" });
+    const sdk: RawTwilioSdk = { calls: { create } };
+    const client = createTwilioClient({
+      accountSid: "ACxxxx",
+      authToken: "tok",
+      sdkFactory: () => sdk,
+    });
+
+    await client.placeCall({
+      to: "+1",
+      from: "+1",
+      url: "https://x/y",
+      machineDetection: "Enable",
+    });
+    expect(create.mock.calls[0]?.[0]?.machineDetection).toBe("Enable");
+
+    await client.placeCall({ to: "+1", from: "+1", url: "https://x/y" });
+    // Omitted when not requested (leaves Twilio's default = no detection).
+    expect(create.mock.calls[1]?.[0]?.machineDetection).toBeUndefined();
+  });
+
   it("respects an explicit timeLimit override", async () => {
     const create = vi
       .fn<RawTwilioSdk["calls"]["create"]>()

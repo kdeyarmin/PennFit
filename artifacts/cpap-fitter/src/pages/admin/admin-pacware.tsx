@@ -27,24 +27,27 @@ import {
   Upload,
   TriangleAlert,
   CheckCircle2,
-  X,
 } from "lucide-react";
 
 import { Card } from "@/components/admin/Card";
 import { Spinner } from "@/components/admin/Spinner";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Button } from "@/components/admin/Button";
+import { AdminModal } from "@/components/admin/AdminModal";
 import {
   getPacwareStatus,
   getPacwareSettings,
   getPacwareSyncPreview,
   importPacwarePatients,
+  previewPacwarePatientHeaders,
   setPacwareAutoSync,
+  type PacwareHeaderPreview,
   type PacwareImportCommit,
   type PacwareImportPreview,
   type PacwareReport,
   type PacwareStatus,
   type PacwareSyncTarget,
+  type PatientColumnMapping,
 } from "@/lib/admin/pacware-api";
 import { todayAppDateIso } from "@/lib/utils";
 
@@ -63,10 +66,11 @@ export function AdminPacwarePage() {
           <Boxes className="h-6 w-6" /> PacWare data exchange
         </h1>
         <p className="text-sm mt-1" style={{ color: "hsl(var(--ink-3))" }}>
-          PacWare has no API, so PennFit exchanges data with it as CSV files.
-          Import patient reports (a <strong>fill-only sync</strong> that never
-          overwrites existing values), and sync PennFit data to PacWare after
-          verifying exactly what will be sent. Step-by-step instructions live in{" "}
+          PacWare has no API, so CareMetric Breathe exchanges data with it as
+          CSV files. Import patient reports (a <strong>fill-only sync</strong>{" "}
+          that never overwrites existing values), and sync CareMetric Breathe
+          data to PacWare after verifying exactly what will be sent.
+          Step-by-step instructions live in{" "}
           <code className="text-xs">
             docs/runbooks/pacware-import-export.md
           </code>
@@ -112,7 +116,7 @@ function HowToCard() {
         <div className="mt-3 grid gap-6 md:grid-cols-2 text-sm">
           <div>
             <h3 className="font-semibold mb-1">
-              Import: PacWare → PennFit (patients)
+              Import: PacWare → CareMetric Breathe (patients)
             </h3>
             <ol className="list-decimal pl-5 space-y-1" style={muted}>
               <li>
@@ -132,13 +136,14 @@ function HowToCard() {
               <li>
                 Re-running is safe: rows match on{" "}
                 <code className="text-xs">pacware_id</code> and the sync is
-                fill-only — existing PennFit values are never overwritten.
+                fill-only — existing CareMetric Breathe values are never
+                overwritten.
               </li>
             </ol>
           </div>
           <div>
             <h3 className="font-semibold mb-1">
-              Export: PennFit → PacWare (roster / resupply-due)
+              Export: CareMetric Breathe → PacWare (roster / resupply-due)
             </h3>
             <ol className="list-decimal pl-5 space-y-1" style={muted}>
               <li>
@@ -182,6 +187,11 @@ function ImportCard() {
   const [err, setErr] = useState<string | null>(null);
   const [preview, setPreview] = useState<PacwareImportPreview | null>(null);
   const [commit, setCommit] = useState<PacwareImportCommit | null>(null);
+  // "Map columns" mode: import a roster exported from ANY system, not just a
+  // PacWare report, by matching that file's headers to CareMetric fields.
+  const [mapMode, setMapMode] = useState(false);
+  const [headers, setHeaders] = useState<PacwareHeaderPreview | null>(null);
+  const [mapping, setMapping] = useState<PatientColumnMapping>({});
 
   function reset() {
     setFileName(null);
@@ -189,6 +199,8 @@ function ImportCard() {
     setPreview(null);
     setCommit(null);
     setErr(null);
+    setHeaders(null);
+    setMapping({});
     if (fileRef.current) fileRef.current.value = "";
   }
 
@@ -199,13 +211,39 @@ function ImportCard() {
     try {
       const text = await file.text();
       setCsv(text);
+      if (mapMode) {
+        // Read just the header row and pre-fill the auto-detected mapping;
+        // the operator confirms it before we parse any data rows.
+        const hp = await previewPacwarePatientHeaders(text);
+        setHeaders(hp);
+        setMapping(hp.suggestedMapping);
+      } else {
+        const res = (await importPacwarePatients(
+          text,
+          "preview",
+        )) as PacwareImportPreview;
+        setPreview(res);
+      }
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Could not read or parse file.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onPreviewMapped() {
+    if (!csv) return;
+    setBusy(true);
+    setErr(null);
+    try {
       const res = (await importPacwarePatients(
-        text,
+        csv,
         "preview",
+        mapping,
       )) as PacwareImportPreview;
       setPreview(res);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Could not read or parse file.");
+      setErr(e instanceof Error ? e.message : "Could not parse with mapping.");
     } finally {
       setBusy(false);
     }
@@ -219,6 +257,7 @@ function ImportCard() {
       const res = (await importPacwarePatients(
         csv,
         "commit",
+        mapMode ? mapping : undefined,
       )) as PacwareImportCommit;
       setCommit(res);
     } catch (e) {
@@ -237,9 +276,27 @@ function ImportCard() {
         In PacWare, run the Patient List / Patient Demographics report and
         export it to CSV. Upload it here — patients are matched on the PacWare
         account number: new patients are created, and for existing patients only{" "}
-        <strong>blank</strong> fields are filled in — a value already in PennFit
-        is never overwritten.
+        <strong>blank</strong> fields are filled in — a value already in
+        CareMetric Breathe is never overwritten.
       </p>
+
+      <label
+        className="flex items-center gap-2 text-sm mb-3 cursor-pointer select-none"
+        style={{ color: "hsl(var(--ink-2))" }}
+      >
+        <input
+          type="checkbox"
+          checked={mapMode}
+          disabled={busy}
+          onChange={(e) => {
+            reset();
+            setMapMode(e.target.checked);
+          }}
+        />
+        My roster is from another system — let me map the columns (any CSV with
+        patient ID, name &amp; date of birth works; dates and phones are
+        normalized automatically).
+      </label>
 
       <div className="flex items-center gap-3">
         <input
@@ -291,12 +348,102 @@ function ImportCard() {
         </div>
       )}
 
+      {mapMode && headers && !preview && !commit && (
+        <MappingPanel
+          headers={headers}
+          mapping={mapping}
+          busy={busy}
+          onChange={(field, value) =>
+            setMapping((m) => {
+              const next = { ...m };
+              if (value) next[field] = value;
+              else delete next[field];
+              return next;
+            })
+          }
+          onPreview={onPreviewMapped}
+        />
+      )}
+
       {preview && !commit && (
         <PreviewPanel preview={preview} onCommit={onCommit} busy={busy} />
       )}
 
       {commit && <CommitPanel commit={commit} />}
     </Card>
+  );
+}
+
+function MappingPanel({
+  headers,
+  mapping,
+  busy,
+  onChange,
+  onPreview,
+}: {
+  headers: PacwareHeaderPreview;
+  mapping: PatientColumnMapping;
+  busy: boolean;
+  onChange: (field: string, value: string) => void;
+  onPreview: () => void;
+}) {
+  const requiredOk = headers.fields
+    .filter((f) => f.required)
+    .every((f) => (mapping[f.field] ?? "") !== "");
+  return (
+    <div className="mt-4 space-y-3">
+      <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
+        Match each CareMetric field to a column in your file. Required fields
+        are marked{" "}
+        <span style={{ color: "hsl(0,84%,55%)" }} aria-hidden="true">
+          •
+        </span>
+        .
+      </p>
+      <div className="grid gap-2">
+        {headers.fields.map((f) => (
+          <div key={f.field} className="flex items-center gap-2 text-sm">
+            <label
+              className="w-48 shrink-0"
+              htmlFor={`map-${f.field}`}
+              title={f.description}
+              style={{ color: "hsl(var(--ink-2))" }}
+            >
+              {f.header}
+              {f.required && (
+                <span style={{ color: "hsl(0,84%,55%)" }} aria-hidden="true">
+                  {" "}
+                  •
+                </span>
+              )}
+            </label>
+            <select
+              id={`map-${f.field}`}
+              className="rounded-md border px-2 py-1 bg-transparent text-sm"
+              style={{ borderColor: "hsl(var(--line-1))" }}
+              value={mapping[f.field] ?? ""}
+              disabled={busy}
+              onChange={(e) => onChange(f.field, e.target.value)}
+            >
+              <option value="">— ignore —</option>
+              {headers.headers.map((h) => (
+                <option key={h} value={h}>
+                  {h}
+                </option>
+              ))}
+            </select>
+          </div>
+        ))}
+      </div>
+      <Button onClick={onPreview} disabled={busy || !requiredOk}>
+        <Upload className="h-4 w-4" /> Preview with this mapping
+      </Button>
+      {!requiredOk && (
+        <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+          Map all required (•) fields to continue.
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -345,9 +492,15 @@ function PreviewPanel({
           <table className="w-full text-xs">
             <thead>
               <tr className="text-left" style={{ color: "hsl(var(--ink-3))" }}>
-                <th className="px-2 py-1">Row</th>
-                <th className="px-2 py-1">Field</th>
-                <th className="px-2 py-1">Problem</th>
+                <th scope="col" className="px-2 py-1">
+                  Row
+                </th>
+                <th scope="col" className="px-2 py-1">
+                  Field
+                </th>
+                <th scope="col" className="px-2 py-1">
+                  Problem
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -629,143 +782,130 @@ function VerifyModal({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ backgroundColor: "rgba(0,0,0,0.4)" }}
-      onClick={onClose}
+    <AdminModal
+      title={`${title} — verify before sending`}
+      onClose={onClose}
+      className="max-w-3xl"
     >
-      <div
-        className="admin-root w-full max-w-3xl rounded-lg bg-white shadow-xl max-h-[85vh] overflow-auto"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div
-          className="flex items-center justify-between px-4 py-3 border-b"
-          style={{ borderColor: "hsl(var(--line-1))" }}
-        >
-          <h3 className="font-semibold">{title} — verify before sending</h3>
-          <button onClick={onClose} aria-label="Close">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-        <div className="p-4 space-y-3">
-          {isPending ? (
-            <Spinner />
-          ) : isError ? (
-            <ErrorPanel error={error} onRetry={() => void refetch()} />
-          ) : (
-            <>
-              <p className="text-sm">
-                <strong>{data.count}</strong> record
-                {data.count === 1 ? "" : "s"} will be synced to PacWare
-                {status ? ` (status: ${status})` : ""}. Showing the first{" "}
-                {data.sample.length}:
+      <div className="space-y-3">
+        {isPending ? (
+          <Spinner />
+        ) : isError ? (
+          <ErrorPanel error={error} onRetry={() => void refetch()} />
+        ) : (
+          <>
+            <p className="text-sm">
+              <strong>{data.count}</strong> record
+              {data.count === 1 ? "" : "s"} will be synced to PacWare
+              {status ? ` (status: ${status})` : ""}. Showing the first{" "}
+              {data.sample.length}:
+            </p>
+            {willTruncate && (
+              <div
+                className="rounded-lg border px-3 py-2 text-xs"
+                style={{
+                  borderColor: "hsl(38,92%,45%)",
+                  backgroundColor: "rgba(245,158,11,0.08)",
+                }}
+              >
+                <TriangleAlert className="h-3.5 w-3.5 inline-block mr-1" />
+                The download is capped at {SYNC_EXPORT_CAP.toLocaleString()}{" "}
+                rows — only the first {SYNC_EXPORT_CAP.toLocaleString()} of
+                these {data.count} will be included. Narrow the filter and sync
+                again for the rest.
+              </div>
+            )}
+            {(data.withheldMissingPacwareId ?? 0) > 0 && (
+              <div
+                className="rounded-lg border px-3 py-2 text-xs"
+                style={{
+                  borderColor: "hsl(38,92%,45%)",
+                  backgroundColor: "rgba(245,158,11,0.08)",
+                }}
+              >
+                <TriangleAlert className="h-3.5 w-3.5 inline-block mr-1" />
+                <strong>{data.withheldMissingPacwareId}</strong> due item
+                {data.withheldMissingPacwareId === 1 ? " is" : "s are"} withheld
+                because the patient has no PacWare ID — order entry needs an
+                account number. Open the patient&apos;s page and use{" "}
+                <em>Add</em> next to &ldquo;No PacWare ID&rdquo; in the header,
+                then sync again to include them.
+              </div>
+            )}
+            {data.sample.length === 0 ? (
+              <p
+                className="text-sm py-2"
+                style={{ color: "hsl(var(--ink-3))" }}
+              >
+                Nothing to sync right now.
               </p>
-              {willTruncate && (
-                <div
-                  className="rounded-lg border px-3 py-2 text-xs"
-                  style={{
-                    borderColor: "hsl(38,92%,45%)",
-                    backgroundColor: "rgba(245,158,11,0.08)",
-                  }}
-                >
-                  <TriangleAlert className="h-3.5 w-3.5 inline-block mr-1" />
-                  The download is capped at {SYNC_EXPORT_CAP.toLocaleString()}{" "}
-                  rows — only the first {SYNC_EXPORT_CAP.toLocaleString()} of
-                  these {data.count} will be included. Narrow the filter and
-                  sync again for the rest.
-                </div>
-              )}
-              {(data.withheldMissingPacwareId ?? 0) > 0 && (
-                <div
-                  className="rounded-lg border px-3 py-2 text-xs"
-                  style={{
-                    borderColor: "hsl(38,92%,45%)",
-                    backgroundColor: "rgba(245,158,11,0.08)",
-                  }}
-                >
-                  <TriangleAlert className="h-3.5 w-3.5 inline-block mr-1" />
-                  <strong>{data.withheldMissingPacwareId}</strong> due item
-                  {data.withheldMissingPacwareId === 1 ? " is" : "s are"}{" "}
-                  withheld because the patient has no PacWare ID — order entry
-                  needs an account number. Open the patient&apos;s page and use{" "}
-                  <em>Add</em> next to &ldquo;No PacWare ID&rdquo; in the
-                  header, then sync again to include them.
-                </div>
-              )}
-              {data.sample.length === 0 ? (
-                <p
-                  className="text-sm py-2"
-                  style={{ color: "hsl(var(--ink-3))" }}
-                >
-                  Nothing to sync right now.
-                </p>
-              ) : (
-                <div
-                  className="overflow-auto max-h-80 rounded-lg border"
-                  style={{ borderColor: "hsl(var(--line-1))" }}
-                >
-                  <table className="w-full text-xs">
-                    <thead>
+            ) : (
+              <div
+                className="overflow-auto max-h-80 rounded-lg border"
+                style={{ borderColor: "hsl(var(--line-1))" }}
+              >
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr
+                      className="text-left"
+                      style={{ color: "hsl(var(--ink-3))" }}
+                    >
+                      {columns.map((c) => (
+                        <th
+                          scope="col"
+                          key={c}
+                          className="px-2 py-1 whitespace-nowrap"
+                        >
+                          {c}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.sample.map((row, i) => (
                       <tr
-                        className="text-left"
-                        style={{ color: "hsl(var(--ink-3))" }}
+                        key={i}
+                        className="border-t"
+                        style={{ borderColor: "hsl(var(--line-2))" }}
                       >
                         {columns.map((c) => (
-                          <th key={c} className="px-2 py-1 whitespace-nowrap">
-                            {c}
-                          </th>
+                          <td key={c} className="px-2 py-1 whitespace-nowrap">
+                            {row[c] === null || row[c] === undefined
+                              ? ""
+                              : String(row[c])}
+                          </td>
                         ))}
                       </tr>
-                    </thead>
-                    <tbody>
-                      {data.sample.map((row, i) => (
-                        <tr
-                          key={i}
-                          className="border-t"
-                          style={{ borderColor: "hsl(var(--line-2))" }}
-                        >
-                          {columns.map((c) => (
-                            <td key={c} className="px-2 py-1 whitespace-nowrap">
-                              {row[c] === null || row[c] === undefined
-                                ? ""
-                                : String(row[c])}
-                            </td>
-                          ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-              {err && (
-                <div className="text-sm" style={{ color: "hsl(0,84%,45%)" }}>
-                  {err}
-                </div>
-              )}
-            </>
-          )}
-        </div>
-        <div
-          className="flex items-center justify-end gap-2 px-4 py-3 border-t"
-          style={{ borderColor: "hsl(var(--line-1))" }}
-        >
-          <button
-            className="text-sm px-3 py-1.5"
-            onClick={onClose}
-            disabled={downloading}
-          >
-            Cancel
-          </button>
-          <Button
-            onClick={confirm}
-            disabled={isPending || isError || (data?.count ?? 0) === 0}
-            isLoading={downloading}
-          >
-            <Download className="h-4 w-4" /> Confirm &amp; download CSV
-          </Button>
-        </div>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {err && (
+              <div className="text-sm" style={{ color: "hsl(0,84%,45%)" }}>
+                {err}
+              </div>
+            )}
+          </>
+        )}
       </div>
-    </div>
+      <div className="flex items-center justify-end gap-2 pt-1">
+        <button
+          className="text-sm px-3 py-1.5"
+          onClick={onClose}
+          disabled={downloading}
+        >
+          Cancel
+        </button>
+        <Button
+          onClick={confirm}
+          disabled={isPending || isError || (data?.count ?? 0) === 0}
+          isLoading={downloading}
+        >
+          <Download className="h-4 w-4" /> Confirm &amp; download CSV
+        </Button>
+      </div>
+    </AdminModal>
   );
 }
 
@@ -815,9 +955,15 @@ function ReportSpec({ report }: { report: PacwareReport }) {
       <table className="w-full text-xs">
         <thead>
           <tr className="text-left" style={{ color: "hsl(var(--ink-3))" }}>
-            <th className="py-1 pr-3">Column</th>
-            <th className="py-1 pr-3">Required</th>
-            <th className="py-1">Description</th>
+            <th scope="col" className="py-1 pr-3">
+              Column
+            </th>
+            <th scope="col" className="py-1 pr-3">
+              Required
+            </th>
+            <th scope="col" className="py-1">
+              Description
+            </th>
           </tr>
         </thead>
         <tbody>

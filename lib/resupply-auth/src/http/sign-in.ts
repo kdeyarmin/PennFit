@@ -441,7 +441,10 @@ export function makeSignInHandler(deps: AuthDeps) {
       metadata: { sessionId: session.id, role: user.role },
     });
 
-    const maxAge = ttlDays * 24 * 60 * 60;
+    // Clamp to the same 90-day absolute ceiling issueWindow applies to
+    // the DB row — a misconfigured AUTH_SESSION_TTL_DAYS > 90 must not
+    // mint a cookie that outlives the server-side session.
+    const maxAge = Math.min(ttlDays, 90) * 24 * 60 * 60;
     appendSetCookie(res, [
       buildSessionCookie(token.raw, {
         secure: deps.secureCookies,

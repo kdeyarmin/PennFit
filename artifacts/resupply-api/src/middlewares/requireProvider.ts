@@ -27,7 +27,7 @@
 import type { NextFunction, Request, RequestHandler, Response } from "express";
 
 import { checkCsrf } from "@workspace/resupply-auth";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { getAuthDeps } from "../lib/auth-deps";
 import { makeRequireSession } from "@workspace/resupply-auth";
@@ -105,8 +105,17 @@ const loadProviderAccount = async (
   // a browser back-button never re-renders cached PHI.
   res.setHeader("Cache-Control", "no-store");
   try {
-    const supabase = getSupabaseServiceRoleClient();
+    // Provider auth carries no req.orgId; provider_portal_accounts is a
+    // BLOCKED GLOBAL table (no org_id) routed through the raw client off
+    // the seed-org-scoped chokepoint.
+    const orgId = await resolveSeedOrgId();
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
+      .raw()
       .schema("resupply")
       .from("provider_portal_accounts")
       .select("id, provider_id, email_lower, status, mfa_enrolled_at")
@@ -172,8 +181,16 @@ export const requireProviderMfaEnrolled = async (
     return;
   }
   try {
-    const supabase = getSupabaseServiceRoleClient();
+    // provider_mfa_secrets is a BLOCKED GLOBAL table (no org_id); raw
+    // client off the seed-org-scoped chokepoint.
+    const orgId = await resolveSeedOrgId();
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
+      .raw()
       .schema("resupply")
       .from("provider_mfa_secrets")
       .select("id")

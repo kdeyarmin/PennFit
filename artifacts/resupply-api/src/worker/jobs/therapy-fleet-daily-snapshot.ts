@@ -17,9 +17,10 @@
 
 import type PgBoss from "pg-boss";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger.js";
+import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import {
   createQueueWithDlq,
   CRON_SCAN_QUEUE_OPTS,
@@ -59,18 +60,33 @@ export async function registerTherapyFleetSnapshotJob(
   );
 }
 
-export async function runTherapyFleetSnapshot(): Promise<FleetSnapshotResult> {
-  const supabase = getSupabaseServiceRoleClient();
+/**
+ * Capture one tenant's therapy-fleet daily snapshot. Extracted so the cron
+ * can fan out across every active tenant — therapy_fleet_daily_metrics is
+ * now keyed (org_id, metric_date) (migration 0381), so each tenant gets its
+ * own daily row, and the four summary RPCs take a leading p_org_id. Returns
+ * THIS tenant's snapshot result.
+ */
+export async function runTherapyFleetSnapshotForOrg(
+  orgId: string,
+): Promise<FleetSnapshotResult> {
+  const supabase = getOrgScopedClient(orgId);
 
   const [overview, resupply, setup, clinical] = await Promise.all([
-    supabase.schema("resupply").rpc("therapy_fleet_overview", {
+    supabase.raw().schema("resupply").rpc("therapy_fleet_overview", {
+      p_org_id: orgId,
       p_window_days: 30,
     }),
-    supabase.schema("resupply").rpc("therapy_resupply_summary", {
+    supabase.raw().schema("resupply").rpc("therapy_resupply_summary", {
+      p_org_id: orgId,
       p_due_within_days: 0,
     }),
-    supabase.schema("resupply").rpc("therapy_setup_adherence_summary"),
-    supabase.schema("resupply").rpc("therapy_clinical_signal_counts"),
+    supabase.raw().schema("resupply").rpc("therapy_setup_adherence_summary", {
+      p_org_id: orgId,
+    }),
+    supabase.raw().schema("resupply").rpc("therapy_clinical_signal_counts", {
+      p_org_id: orgId,
+    }),
   ]);
   if (overview.error) throw overview.error;
   if (resupply.error) throw resupply.error;
@@ -93,6 +109,7 @@ export async function runTherapyFleetSnapshot(): Promise<FleetSnapshotResult> {
 
   const metricDate = new Date().toISOString().slice(0, 10);
   const row = {
+    org_id: orgId,
     metric_date: metricDate,
     patients_with_data: int(ov?.patients_with_data),
     compliant: int(ov?.compliant),
@@ -109,14 +126,16 @@ export async function runTherapyFleetSnapshot(): Promise<FleetSnapshotResult> {
   };
 
   const { error: upsertErr } = await supabase
+    .raw()
     .schema("resupply")
     .from("therapy_fleet_daily_metrics")
-    .upsert(row, { onConflict: "metric_date" });
+    .upsert(row, { onConflict: "org_id,metric_date" });
   if (upsertErr) throw upsertErr;
 
   logger.info(
     {
       queue: THERAPY_FLEET_SNAPSHOT_JOB,
+      org_id: orgId,
       metric_date: metricDate,
       patients_with_data: row.patients_with_data,
     },
@@ -128,4 +147,24 @@ export async function runTherapyFleetSnapshot(): Promise<FleetSnapshotResult> {
     patientsWithData: row.patients_with_data,
     atRisk: row.at_risk,
   };
+}
+
+export async function runTherapyFleetSnapshot(): Promise<FleetSnapshotResult> {
+  const metricDate = new Date().toISOString().slice(0, 10);
+
+  // Fan out across every active tenant — each writes its own per-tenant
+  // daily row (migration 0381), with per-tenant failure isolation. The
+  // returned aggregate sums patient/at-risk counts across tenants.
+  let patientsWithData = 0;
+  let atRisk = 0;
+  await forEachActiveOrg(
+    async (orgId) => {
+      const result = await runTherapyFleetSnapshotForOrg(orgId);
+      patientsWithData += result.patientsWithData;
+      atRisk += result.atRisk;
+    },
+    { jobName: THERAPY_FLEET_SNAPSHOT_JOB },
+  );
+
+  return { metricDate, patientsWithData, atRisk };
 }

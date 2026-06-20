@@ -135,10 +135,16 @@ function BackordersPanel() {
               className="text-left border-b"
               style={{ borderColor: "hsl(var(--line-1))" }}
             >
-              <th className="py-2 font-semibold">SKU</th>
-              <th className="py-2 font-semibold">State</th>
-              <th className="py-2 font-semibold">Notes</th>
-              <th className="py-2 font-semibold"></th>
+              <th scope="col" className="py-2 font-semibold">
+                SKU
+              </th>
+              <th scope="col" className="py-2 font-semibold">
+                State
+              </th>
+              <th scope="col" className="py-2 font-semibold">
+                Notes
+              </th>
+              <th scope="col" className="py-2 font-semibold"></th>
             </tr>
           </thead>
           <tbody>
@@ -324,11 +330,19 @@ function SubstitutesPanel() {
               className="text-left border-b"
               style={{ borderColor: "hsl(var(--line-1))" }}
             >
-              <th className="py-2 font-semibold">Primary</th>
-              <th className="py-2 font-semibold">Alternative</th>
-              <th className="py-2 font-semibold">Pri.</th>
-              <th className="py-2 font-semibold">Active</th>
-              <th className="py-2 font-semibold"></th>
+              <th scope="col" className="py-2 font-semibold">
+                Primary
+              </th>
+              <th scope="col" className="py-2 font-semibold">
+                Alternative
+              </th>
+              <th scope="col" className="py-2 font-semibold">
+                Pri.
+              </th>
+              <th scope="col" className="py-2 font-semibold">
+                Active
+              </th>
+              <th scope="col" className="py-2 font-semibold"></th>
             </tr>
           </thead>
           <tbody>

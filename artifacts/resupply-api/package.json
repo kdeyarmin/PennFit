@@ -27,6 +27,7 @@
     "@workspace/resupply-integrations-office-ally": "workspace:*",
     "@workspace/resupply-integrations-pacware": "workspace:*",
     "@workspace/resupply-integrations-react-health": "workspace:*",
+    "@workspace/resupply-integrations-xps-ship": "workspace:*",
     "@workspace/resupply-messaging": "workspace:*",
     "@workspace/resupply-reminders": "workspace:*",
     "@workspace/resupply-secrets": "workspace:*",

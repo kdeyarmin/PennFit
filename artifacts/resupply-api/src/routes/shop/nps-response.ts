@@ -31,9 +31,10 @@ import { Router, type IRouter, type Request } from "express";
 import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { resolveOrgIdForSignedRecord } from "../../lib/storefront/signed-link-org";
 import { verifyNpsToken } from "../../lib/nps-token";
 
 const router: IRouter = Router();
@@ -83,7 +84,19 @@ router.post("/shop/orders/nps", npsRateLimiter, async (req, res) => {
     return;
   }
 
-  const supabase = getSupabaseServiceRoleClient();
+  // Public capture endpoint — no auth middleware populates req.orgId. The
+  // HMAC token is the authorization; derive the order's owning tenant from
+  // its record (the sanctioned signed-link pattern) so a tenant-B rating
+  // lands in tenant B regardless of which host the patient clicked from.
+  const orgId = await resolveOrgIdForSignedRecord(
+    "shop_orders",
+    verified.orderId,
+  );
+  if (!orgId) {
+    res.status(503).json({ error: "tenant_unavailable" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
 
   // Confirm the order exists and is actually delivered. The token's
   // HMAC was minted by the dispatcher when the parcel was already
@@ -92,7 +105,6 @@ router.post("/shop/orders/nps", npsRateLimiter, async (req, res) => {
   // case (the patient's feedback is valid regardless), but log a
   // warning so analytics can filter if needed.
   const { data: order } = await supabase
-    .schema("resupply")
     .from("shop_orders")
     .select("id, status, delivered_at")
     .eq("id", verified.orderId)
@@ -104,7 +116,6 @@ router.post("/shop/orders/nps", npsRateLimiter, async (req, res) => {
   }
 
   const { error: insertErr } = await supabase
-    .schema("resupply")
     .from("shop_order_nps_responses")
     .insert({
       order_id: verified.orderId,

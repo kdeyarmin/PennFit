@@ -33,10 +33,7 @@ import { Router, type IRouter } from "express";
 import { readCustomerProfile } from "../../lib/customer-profile";
 import { z } from "zod";
 
-import {
-  type Json,
-  getSupabaseServiceRoleClient,
-} from "@workspace/resupply-db";
+import { type Json, getOrgScopedClient } from "@workspace/resupply-db";
 import type { ShopAbandonedCartItem } from "@workspace/resupply-db";
 
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
@@ -107,7 +104,12 @@ router.put("/shop/me/cart-snapshot", requireSignedIn, async (req, res) => {
   }
   const { items, subtotalCents, currency } = parsed.data;
 
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const nowIso = new Date().toISOString();
 
   // Empty PUT → treat as explicit clear. Cheaper than asking the
@@ -115,7 +117,6 @@ router.put("/shop/me/cart-snapshot", requireSignedIn, async (req, res) => {
   // removed the last item.
   if (items.length === 0) {
     const { error } = await supabase
-      .schema("resupply")
       .from("shop_abandoned_carts")
       .update({
         items: [] as unknown as Json,
@@ -135,7 +136,6 @@ router.put("/shop/me/cart-snapshot", requireSignedIn, async (req, res) => {
   // re-tick (e.g. price metadata refresh) doesn't reset; a quantity
   // or composition change does.
   const { data: existing, error: existingError } = await supabase
-    .schema("resupply")
     .from("shop_abandoned_carts")
     .select("items, email")
     .eq("customer_id", customerId)
@@ -176,7 +176,6 @@ router.put("/shop/me/cart-snapshot", requireSignedIn, async (req, res) => {
   }
 
   const { error: upsertErr } = await supabase
-    .schema("resupply")
     .from("shop_abandoned_carts")
     .upsert(upsertRow, { onConflict: "customer_id" });
   if (upsertErr) throw upsertErr;
@@ -190,14 +189,18 @@ router.delete("/shop/me/cart-snapshot", requireSignedIn, async (req, res) => {
     res.status(401).json({ error: "sign_in_required" });
     return;
   }
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const nowIso = new Date().toISOString();
   // Idempotent: 200 even if no row exists. Setting items=[] +
   // cleared_at=now suppresses the dispatcher; leaves the row in
   // place so an immediate re-fill can decide whether to re-trigger
   // (handled by PUT's materially-changed path).
   const { error } = await supabase
-    .schema("resupply")
     .from("shop_abandoned_carts")
     .update({
       items: [] as unknown as Json,
@@ -216,9 +219,13 @@ router.get("/shop/me/cart-snapshot", requireSignedIn, async (req, res) => {
     res.status(401).json({ error: "sign_in_required" });
     return;
   }
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const { data: row, error } = await supabase
-    .schema("resupply")
     .from("shop_abandoned_carts")
     .select("items, subtotal_cents, currency, updated_at")
     .eq("customer_id", customerId)

@@ -6,6 +6,7 @@ import {
   type HelpStep,
 } from "@/components/help/help-article-shell";
 import { Screenshot, AccountShot } from "@/components/help/help-screens";
+import { BrandName } from "@/components/company-contact";
 
 const steps: HelpStep[] = [
   {
@@ -24,10 +25,7 @@ const steps: HelpStep[] = [
       </p>
     ),
     shot: (
-      <Screenshot
-        url="pennpaps.com/account"
-        caption="My documents and Required forms both live under the Account tab."
-      >
+      <Screenshot caption="My documents and Required forms both live under the Account tab.">
         <AccountShot />
       </Screenshot>
     ),
@@ -79,7 +77,7 @@ export function HelpDocumentsAndForms() {
       title="Upload documents & sign forms"
       Icon={FileText}
       minutes="3 min"
-      metaDescription="How to upload insurance cards, prescriptions, and referrals to your PennPaps account, track review status, and acknowledge required HIPAA and billing forms."
+      metaDescription="How to upload insurance cards, prescriptions, and referrals to your account, track review status, and acknowledge required HIPAA and billing forms."
       intro="Skip the fax machine: upload insurance cards and prescriptions straight to your account, watch their review status, and e-sign required forms in a tap."
       summary={
         <>
@@ -91,7 +89,9 @@ export function HelpDocumentsAndForms() {
         </>
       }
       prerequisites={[
-        "A PennPaps account, signed in.",
+        <>
+          A <BrandName /> account, signed in.
+        </>,
         "A PDF or a clear photo of the document (up to 10 MB).",
       ]}
       steps={steps}
@@ -103,7 +103,13 @@ export function HelpDocumentsAndForms() {
       faqs={[
         {
           q: "Who can see what I upload?",
-          a: "Only the PennPaps team — documents are stored privately on your account so our staff can verify insurance and prescriptions without you emailing anything.",
+          a: (
+            <>
+              Only the <BrandName /> team — documents are stored privately on
+              your account so our staff can verify insurance and prescriptions
+              without you emailing anything.
+            </>
+          ),
         },
         {
           q: "My file is bigger than 10 MB — what do I do?",

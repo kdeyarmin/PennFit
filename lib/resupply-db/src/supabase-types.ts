@@ -80,12 +80,36 @@ export interface Database {
           last_sent_at: string | null;
           created_at: string;
           updated_at: string;
+          // Owning tenant (migration 0378). Nullable for back-compat with
+          // pre-0378 rows until backfilled to the seed org.
+          org_id: string | null;
         };
         Insert: Partial<
           Database["public"]["Tables"]["reminder_subscriptions"]["Row"]
         >;
         Update: Partial<
           Database["public"]["Tables"]["reminder_subscriptions"]["Row"]
+        >;
+        Relationships: [];
+      };
+      newsletter_subscribers: {
+        Row: {
+          id: string;
+          email: string;
+          source: string | null;
+          created_at: string;
+          updated_at: string;
+          unsubscribed_at: string | null;
+          // Demo-lead nurture drip state (migration 0407). 0 = nothing
+          // sent, 1 = welcome sent, 2 = follow-up 1 sent, 3 = complete.
+          demo_drip_stage: number;
+          demo_drip_last_sent_at: string | null;
+        };
+        Insert: Partial<
+          Database["public"]["Tables"]["newsletter_subscribers"]["Row"]
+        >;
+        Update: Partial<
+          Database["public"]["Tables"]["newsletter_subscribers"]["Row"]
         >;
         Relationships: [];
       };
@@ -123,6 +147,157 @@ export interface Database {
   };
   resupply: {
     Tables: {
+      // Outreach playbooks (migration 0263; org_id added 0342). uuid ids.
+      outreach_playbooks: {
+        Row: {
+          org_id: string | null;
+          id: string;
+          playbook_key: string;
+          name: string;
+          situation: string;
+          description: string | null;
+          category: string;
+          is_active: boolean;
+          is_seeded: boolean;
+          created_by_email: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["outreach_playbooks"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["outreach_playbooks"]["Row"]
+        >;
+        Relationships: [];
+      };
+      outreach_playbook_steps: {
+        Row: {
+          org_id: string | null;
+          id: string;
+          playbook_id: string;
+          step_index: number;
+          day_offset: number;
+          channel: string;
+          subject: string | null;
+          body: string;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["outreach_playbook_steps"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["outreach_playbook_steps"]["Row"]
+        >;
+        Relationships: [];
+      };
+      outreach_playbook_runs: {
+        Row: {
+          org_id: string | null;
+          id: string;
+          playbook_id: string;
+          patient_id: string;
+          status: string;
+          next_step_index: number;
+          next_step_at: string | null;
+          started_by_user_id: string | null;
+          started_by_email: string | null;
+          started_at: string;
+          completed_at: string | null;
+          cancelled_at: string | null;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["outreach_playbook_runs"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["outreach_playbook_runs"]["Row"]
+        >;
+        Relationships: [];
+      };
+      outreach_playbook_step_log: {
+        Row: {
+          org_id: string | null;
+          id: string;
+          run_id: string;
+          step_index: number;
+          channel: string;
+          status: string;
+          detail: string | null;
+          call_script: string | null;
+          call_outcome: string | null;
+          completed_by_email: string | null;
+          completed_at: string | null;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["outreach_playbook_step_log"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["outreach_playbook_step_log"]["Row"]
+        >;
+        Relationships: [];
+      };
+      // Cases workspace (migration 0189; org_id added 0342). `id` is a
+      // text uuid, not a native uuid column.
+      cases: {
+        Row: {
+          org_id: string | null;
+          id: string;
+          title: string;
+          status: string;
+          priority: string;
+          patient_id: string | null;
+          customer_id: string | null;
+          assigned_to_user_id: string | null;
+          opened_by_user_id: string | null;
+          opened_by_email: string;
+          summary: string | null;
+          created_at: string;
+          updated_at: string;
+          resolved_at: string | null;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["cases"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["cases"]["Row"]>;
+        Relationships: [];
+      };
+      case_links: {
+        Row: {
+          org_id: string | null;
+          id: string;
+          case_id: string;
+          link_kind: string;
+          ref_id: string;
+          note: string | null;
+          created_by_email: string | null;
+          created_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["case_links"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["case_links"]["Row"]>;
+        Relationships: [];
+      };
+      // Patient setup checklist (migration 0191; org_id added 0342).
+      setup_checklist_items: {
+        Row: {
+          org_id: string | null;
+          id: string;
+          patient_id: string;
+          step_key: string;
+          status: string;
+          note: string | null;
+          completed_by_email: string | null;
+          completed_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["setup_checklist_items"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["setup_checklist_items"]["Row"]
+        >;
+        Relationships: [];
+      };
       // Migration 0171: canonical HCPCS reference catalog for PAP
       // resupply. min_interval_days + (max_quantity_per_period /
       // period_days) express the Medicare LCD L33718 replacement
@@ -157,6 +332,34 @@ export interface Database {
         >;
         Relationships: [];
       };
+      // Migration 0408: LCD medical-necessity edit catalog — which
+      // ICD-10 codes support a billed HCPCS (Medicare PAP baseline).
+      hcpcs_coverage_diagnoses: {
+        Row: {
+          id: string;
+          hcpcs_code: string;
+          icd10_code: string;
+          description: string | null;
+          policy: string;
+          active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          hcpcs_code: string;
+          icd10_code: string;
+          description?: string | null;
+          policy?: string;
+          active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<
+          Database["resupply"]["Tables"]["hcpcs_coverage_diagnoses"]["Insert"]
+        >;
+        Relationships: [];
+      };
       // Migration 0171: SKU-prefix → HCPCS bridge. Maps the
       // uppercase-dashed supply-family prefix the resupply engine
       // matches on (MASK, CUSHION, ...) to a representative HCPCS.
@@ -179,10 +382,60 @@ export interface Database {
         Relationships: [];
       };
       // Migration 0193: current unit cost (COGS) per shop SKU. Source for
+      // Atomic EDI ISA13 control-number counter (mig 0308). Per-tenant
+      // since 0361: PK (org_id, pool). Reserved via a CAS in
+      // lib/billing/isa13-counter.ts.
+      control_number_counters: {
+        Row: {
+          org_id: string | null;
+          pool: string;
+          value: number;
+          updated_at: string;
+        };
+        Insert: {
+          org_id?: string;
+          pool: string;
+          value: number;
+          updated_at?: string;
+        };
+        Update: Partial<
+          Database["resupply"]["Tables"]["control_number_counters"]["Insert"]
+        >;
+        Relationships: [];
+      };
       // the per-transaction cost snapshots + every owner-facing margin
       // surface (computeMargin / aggregateMargin in resupply-domain).
+      product_ship_specs: {
+        Row: {
+          org_id: string | null;
+          product_id: string;
+          weight_oz: number;
+          length_in: number | null;
+          width_in: number | null;
+          height_in: number | null;
+          label: string | null;
+          updated_at: string;
+          created_at: string;
+        };
+        Insert: {
+          org_id?: string;
+          product_id: string;
+          weight_oz: number;
+          length_in?: number | null;
+          width_in?: number | null;
+          height_in?: number | null;
+          label?: string | null;
+          updated_at?: string;
+          created_at?: string;
+        };
+        Update: Partial<
+          Database["resupply"]["Tables"]["product_ship_specs"]["Insert"]
+        >;
+        Relationships: [];
+      };
       product_costs: {
         Row: {
+          org_id: string | null;
           sku: string;
           unit_cost_cents: number;
           currency: string;
@@ -193,6 +446,7 @@ export interface Database {
           updated_at: string;
         };
         Insert: {
+          org_id?: string;
           sku: string;
           unit_cost_cents: number;
           currency?: string;
@@ -336,6 +590,7 @@ export interface Database {
       feature_flag_events: {
         Row: {
           id: string;
+          org_id: string | null;
           key: string;
           previous_enabled: boolean;
           next_enabled: boolean;
@@ -344,6 +599,7 @@ export interface Database {
         };
         Insert: {
           id?: string;
+          org_id?: string | null;
           key: string;
           previous_enabled: boolean;
           next_enabled: boolean;
@@ -683,6 +939,16 @@ export interface Database {
           birthday_email_year_sent: number | null;
           sleep_anniversary_year_sent: number | null;
           timezone: string;
+          /** Phone line type (migration 0398). NULL = never classified. */
+          phone_line_type: "mobile" | "landline" | "voip" | "unknown" | null;
+          phone_line_type_source: "lookup" | "manual" | null;
+          phone_line_type_checked_at: string | null;
+          /** SMS marketing consent (migration 0401). false = no consent on file (default, TCPA opt-in). */
+          sms_marketing_consent: boolean;
+          /** When sms_marketing_consent was last changed. NULL when never explicitly set. */
+          sms_marketing_consent_at: string | null;
+          /** Who recorded the consent. NULL when never explicitly set. */
+          sms_marketing_consent_source: "staff" | "portal" | null;
           created_at: string;
           updated_at: string;
         };
@@ -2086,9 +2352,229 @@ export interface Database {
           status: "active" | "suspended" | "archived";
           created_at: string;
           updated_at: string;
+          storefront_name: string | null;
+          tagline: string | null;
+          logo_url: string | null;
+          logo_object_path: string | null;
+          custom_domain: string | null;
+          custom_domain_status: "none" | "pending" | "verified";
+          custom_domain_token: string | null;
+          custom_domain_verified_at: string | null;
+          custom_domain_tls: "none" | "pending" | "active" | "failed";
+          custom_domain_cf_hostname_id: string | null;
+          stripe_account_id: string | null;
+          stripe_charges_enabled: boolean;
+          from_email: string | null;
+          from_name: string | null;
+          // Per-tenant internal notification recipients (migration 0379).
+          fulfillment_email: string | null;
+          lead_notification_email: string | null;
+          sms_from_number: string | null;
+          voice_from_number: string | null;
+          twilio_messaging_service_sid: string | null;
+          fax_from_number: string | null;
+          fax_telnyx_order_id: string | null;
+          fax_provisioned_at: string | null;
         };
         Insert: Partial<Database["resupply"]["Tables"]["organizations"]["Row"]>;
         Update: Partial<Database["resupply"]["Tables"]["organizations"]["Row"]>;
+        Relationships: [];
+      };
+      // Migration 0385: tenant → platform support tickets with an AI
+      // intake bot.
+      support_tickets: {
+        Row: {
+          id: string;
+          // NOT NULL in migration 0385 (created NOT NULL from the start,
+          // unlike the legacy tables backfilled to nullable org_id).
+          org_id: string;
+          subject: string;
+          status: string;
+          created_by_email: string | null;
+          created_by_user_id: string | null;
+          bot_answered: boolean;
+          // `numeric` — PostgREST serializes it as a string, so callers
+          // must `Number(...)` it (the routes do).
+          bot_confidence: number | string | null;
+          created_at: string;
+          updated_at: string;
+          last_activity_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["support_tickets"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["support_tickets"]["Row"]
+        >;
+        Relationships: [];
+      };
+      support_ticket_messages: {
+        Row: {
+          id: string;
+          ticket_id: string;
+          // NOT NULL in migration 0385.
+          org_id: string;
+          author_role: string;
+          author_email: string | null;
+          body: string;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["support_ticket_messages"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["support_ticket_messages"]["Row"]
+        >;
+        Relationships: [];
+      };
+      // Migration 0394: platform outreach email (super-admin broadcast).
+      // Platform-GLOBAL (no org_id) — the platform operator's own rows,
+      // only touched through the service-role client behind
+      // requirePlatformAdmin.
+      platform_contacts: {
+        Row: {
+          id: string;
+          email: string;
+          // DB-generated STORED column (lower(email)); the real unique key
+          // import upserts target via onConflict. Never written by app code.
+          email_lower: string;
+          name: string | null;
+          company: string | null;
+          tags: string[];
+          notes: string | null;
+          unsubscribed: boolean;
+          unsubscribed_at: string | null;
+          source: "manual" | "import";
+          created_by_email: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["platform_contacts"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["platform_contacts"]["Row"]
+        >;
+        Relationships: [];
+      };
+      platform_email_campaigns: {
+        Row: {
+          id: string;
+          name: string;
+          subject: string;
+          body_html: string | null;
+          body_text: string;
+          audience_kind:
+            | "all_tenants"
+            | "selected_tenants"
+            | "all_contacts"
+            | "contacts_by_tag"
+            | "manual_list";
+          audience_payload: Json;
+          throttle_per_minute: number;
+          status: "draft" | "sending" | "sent" | "paused" | "cancelled";
+          total_recipients: number;
+          suppressed_count: number;
+          sent_count: number;
+          failed_count: number;
+          created_by_email: string | null;
+          created_by_user_id: string | null;
+          cancelled_by_user_id: string | null;
+          started_at: string | null;
+          completed_at: string | null;
+          cancelled_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["platform_email_campaigns"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["platform_email_campaigns"]["Row"]
+        >;
+        Relationships: [];
+      };
+      platform_email_recipients: {
+        Row: {
+          id: string;
+          campaign_id: string;
+          recipient_kind: "tenant" | "contact" | "manual";
+          recipient_ref: string | null;
+          recipient_email: string;
+          recipient_name: string | null;
+          status:
+            | "pending"
+            | "suppressed"
+            | "sending"
+            | "sent"
+            | "failed"
+            | "retry_pending";
+          suppression_reason: string | null;
+          error: string | null;
+          send_attempts: number;
+          vendor_message_id: string | null;
+          sent_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["platform_email_recipients"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["platform_email_recipients"]["Row"]
+        >;
+        Relationships: [];
+      };
+      // Migration 0391: staged resupply order drafts (proposals).
+      resupply_order_drafts: {
+        Row: {
+          id: string;
+          org_id: string;
+          patient_id: string;
+          category: string;
+          source: string | null;
+          source_description: string | null;
+          next_eligible_date: string | null;
+          suggested_product_id: string | null;
+          suggested_quantity: number;
+          status: "proposed" | "approved" | "dismissed" | "ordered";
+          origin: "auto" | "manual";
+          created_by_email: string | null;
+          created_by_user_id: string | null;
+          dismissed_reason: string | null;
+          shop_order_id: string | null;
+          // Migration 0392: the sign-&-pay order request an approved draft
+          // produced (the shop_orders row backfills shop_order_id on payment).
+          csr_order_request_id: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["resupply_order_drafts"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["resupply_order_drafts"]["Row"]
+        >;
+        Relationships: [];
+      };
+      organization_agreements: {
+        Row: {
+          id: string;
+          org_id: string;
+          agreement_type: "baa" | "platform_terms";
+          version: string;
+          accepted_at: string;
+          accepted_by_user_id: string | null;
+          accepted_by_email: string | null;
+          signatory_name: string | null;
+          accepted_ip: string | null;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["organization_agreements"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["organization_agreements"]["Row"]
+        >;
         Relationships: [];
       };
       gl_account_mappings: {
@@ -2667,6 +3153,41 @@ export interface Database {
         >;
         Update: Partial<
           Database["resupply"]["Tables"]["patient_packets"]["Row"]
+        >;
+        Relationships: [];
+      };
+      refill_confirmations: {
+        Row: {
+          id: string;
+          org_id: string | null;
+          patient_id: string;
+          episode_id: string;
+          prescription_id: string | null;
+          item_sku: string | null;
+          hcpcs_code: string | null;
+          channel: "sms" | "email" | "voice" | "admin";
+          affirm_continued_use: boolean;
+          affirm_supply_low: boolean;
+          attestation_text: string;
+          requested_by:
+            | "self"
+            | "spouse"
+            | "guardian"
+            | "power_of_attorney"
+            | "caregiver"
+            | "authorized_rep"
+            | "other";
+          expected_depletion_on: string | null;
+          confirmer_ip: string | null;
+          confirmer_user_agent: string | null;
+          confirmed_at: string;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["refill_confirmations"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["refill_confirmations"]["Row"]
         >;
         Relationships: [];
       };
@@ -3478,7 +3999,7 @@ export interface Database {
         Row: {
           org_id: string | null;
           id: string;
-          twilio_fax_sid: string;
+          provider_fax_id: string | null;
           from_e164: string | null;
           to_e164: string | null;
           received_at: string;
@@ -3498,6 +4019,12 @@ export interface Database {
           ocr_status: "extracted" | "failed" | "unsupported" | "offline" | null;
           ocr_extraction: Json | null;
           ocr_extracted_at: string | null;
+          // Barcode auto-file outcome (migration 0296).
+          tracking_code_detected: string | null;
+          auto_file_status: string | null;
+          auto_filed_at: string | null;
+          signature_tracking_id: string | null;
+          chart_document_id: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -3559,6 +4086,7 @@ export interface Database {
           answered_at: string | null;
           ended_at: string | null;
           duration_seconds: number | null;
+          answered_by: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -3600,6 +4128,45 @@ export interface Database {
         >;
         Update: Partial<
           Database["resupply"]["Tables"]["equipment_assets"]["Row"]
+        >;
+        Relationships: [];
+      };
+      asset_recovery_cases: {
+        Row: {
+          org_id: string | null;
+          id: string;
+          patient_id: string | null;
+          patient_label: string | null;
+          device_label: string | null;
+          device_serial: string | null;
+          status:
+            | "identified"
+            | "outreach"
+            | "label_sent"
+            | "in_transit"
+            | "received"
+            | "redeployed"
+            | "closed_unrecovered";
+          reason:
+            | "discontinued"
+            | "non_compliant"
+            | "deceased"
+            | "upgraded"
+            | "insurance_change"
+            | "other";
+          tracking_number: string | null;
+          return_label_url: string | null;
+          notes: string | null;
+          created_by_email: string | null;
+          updated_by_email: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["asset_recovery_cases"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["asset_recovery_cases"]["Row"]
         >;
         Relationships: [];
       };
@@ -3775,9 +4342,15 @@ export interface Database {
             | "all_active_shop_customers"
             | "all_active_patients"
             | "by_patient_payer"
+            | "by_therapy_cohort"
+            | "patient_segment"
             | "manual_list";
           audience_payer: string | null;
-          channel: "email";
+          /** Composable patient-segment spec; set only when
+           * audience_kind='patient_segment' (migration 0397). Shape owned by
+           * lib/bulk-campaigns/patient-segment.ts. */
+          audience_filter: Json | null;
+          channel: "email" | "sms";
           category: "marketing" | "service" | "compliance";
           compliance_attestation: string | null;
           template_key: string;
@@ -3811,6 +4384,9 @@ export interface Database {
           recipient_kind: "patient" | "shop_customer";
           recipient_id: string;
           recipient_email: string | null;
+          /** E.164 destination snapshot for SMS campaigns (migration 0397);
+           * NULL for email campaigns and no-phone recipients. */
+          recipient_phone: string | null;
           status:
             | "pending"
             | "retry_pending"
@@ -4435,6 +5011,10 @@ export interface Database {
           caregiver_revoked_at: string | null;
           // E.164 phone captured at Stripe Checkout (migration 0247).
           phone_e164: string | null;
+          /** Phone line type (migration 0398). NULL = never classified. */
+          phone_line_type: "mobile" | "landline" | "voip" | "unknown" | null;
+          phone_line_type_source: "lookup" | "manual" | null;
+          phone_line_type_checked_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -4554,6 +5134,13 @@ export interface Database {
           source: string;
           payment_method: string | null;
           counter_csr_email: string | null;
+          // Migration 0405: XPS Ship shipping-label integration.
+          // xps_book_number is the booked shipment lookup key;
+          // xps_label_status tracks 'staged' | 'booked' | 'voided';
+          // shipping_service_code is the chosen carrier service.
+          xps_book_number: string | null;
+          xps_label_status: "staged" | "booked" | "voided" | null;
+          shipping_service_code: string | null;
         };
         Insert: Partial<Database["resupply"]["Tables"]["shop_orders"]["Row"]>;
         Update: Partial<Database["resupply"]["Tables"]["shop_orders"]["Row"]>;
@@ -4690,6 +5277,7 @@ export interface Database {
       // Migration 0205 (RT #25): short-video education library.
       education_videos: {
         Row: {
+          org_id: string | null;
           id: string;
           title: string;
           topic:
@@ -4733,6 +5321,27 @@ export interface Database {
         >;
         Update: Partial<
           Database["resupply"]["Tables"]["shop_customer_notes"]["Row"]
+        >;
+        Relationships: [];
+      };
+      business_targets: {
+        Row: {
+          org_id: string | null;
+          id: string;
+          metric_key: string;
+          period: string;
+          target_value: number;
+          unit: string | null;
+          notes: string | null;
+          created_by_email: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["business_targets"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["business_targets"]["Row"]
         >;
         Relationships: [];
       };
@@ -5398,6 +6007,9 @@ export interface Database {
           revoked_at: string | null;
           ip: string | null;
           user_agent_hash: string | null;
+          // Platform-admin act-as-tenant impersonation (migration 0356).
+          impersonated_org_id: string | null;
+          impersonator_user_id: string | null;
         };
         Insert: {
           id?: string;
@@ -5409,6 +6021,8 @@ export interface Database {
           revoked_at?: string | null;
           ip?: string | null;
           user_agent_hash?: string | null;
+          impersonated_org_id?: string | null;
+          impersonator_user_id?: string | null;
         };
         Update: Partial<
           Database["resupply_auth"]["Tables"]["sessions"]["Insert"]

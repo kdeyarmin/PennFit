@@ -164,11 +164,21 @@ function PacketTable({
           className="text-left border-b"
           style={{ borderColor: "hsl(var(--line-1))" }}
         >
-          <th className="py-2 font-semibold">Created</th>
-          <th className="py-2 font-semibold">Status</th>
-          <th className="py-2 font-semibold">Fax to</th>
-          <th className="py-2 font-semibold">Sent</th>
-          <th className="py-2 font-semibold">Signed</th>
+          <th scope="col" className="py-2 font-semibold">
+            Created
+          </th>
+          <th scope="col" className="py-2 font-semibold">
+            Status
+          </th>
+          <th scope="col" className="py-2 font-semibold">
+            Fax to
+          </th>
+          <th scope="col" className="py-2 font-semibold">
+            Sent
+          </th>
+          <th scope="col" className="py-2 font-semibold">
+            Signed
+          </th>
         </tr>
       </thead>
       <tbody>

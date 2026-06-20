@@ -21,12 +21,13 @@
 
 import {
   type Database,
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
+  resolveSeedOrgId,
 } from "@workspace/resupply-db";
 
 import { logger } from "../logger";
 
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+type SupabaseClient = ReturnType<typeof getOrgScopedClient>;
 type PriorAuthRow =
   Database["resupply"]["Tables"]["prior_authorizations"]["Row"];
 type SlaStatus = NonNullable<PriorAuthRow["mco_sla_status"]>;
@@ -43,19 +44,20 @@ export interface SweepStats {
 }
 
 export async function runPaMcoSlaSweep(): Promise<SweepStats> {
-  const supabase = getSupabaseServiceRoleClient();
   const stats: SweepStats = {
     scanned: 0,
     updated: 0,
     alertsCreated: 0,
     byStatus: { on_track: 0, at_risk: 0, missed: 0, decided: 0 },
   };
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) return stats;
+  const supabase = getOrgScopedClient(orgId);
 
   // Pull every PA that is potentially MCO-bound and currently in a
   // submitted/draft/appealed state. We deliberately include null
   // mco_sla_status so first-time tagging happens here.
   const { data: pas, error } = await supabase
-    .schema("resupply")
     .from("prior_authorizations")
     .select(
       "id, patient_id, payer_name, hcpcs_code, status, submitted_at, decision_at, mco_sla_target_date, mco_sla_status, insurance_coverage_id",
@@ -76,7 +78,6 @@ export async function runPaMcoSlaSweep(): Promise<SweepStats> {
       // Terminal — stamp once and move on.
       if (pa.mco_sla_status !== "decided") {
         const { error: decidedErr } = await supabase
-          .schema("resupply")
           .from("prior_authorizations")
           .update({ mco_sla_status: "decided" })
           .eq("id", pa.id);
@@ -100,7 +101,6 @@ export async function runPaMcoSlaSweep(): Promise<SweepStats> {
 
     if (pa.mco_sla_status !== next || pa.mco_sla_target_date !== target) {
       const { error: stampErr } = await supabase
-        .schema("resupply")
         .from("prior_authorizations")
         .update({
           mco_sla_target_date: target,
@@ -124,7 +124,6 @@ export async function runPaMcoSlaSweep(): Promise<SweepStats> {
       const alertType =
         next === "at_risk" ? "pa_mco_sla_at_risk" : "pa_mco_sla_missed";
       const { data: existing } = await supabase
-        .schema("resupply")
         .from("csr_compliance_alerts")
         .select("id")
         .eq("patient_id", pa.patient_id)
@@ -134,7 +133,6 @@ export async function runPaMcoSlaSweep(): Promise<SweepStats> {
         .limit(1);
       if (existing && existing.length > 0) continue;
       const { error: alertErr } = await supabase
-        .schema("resupply")
         .from("csr_compliance_alerts")
         .insert({
           patient_id: pa.patient_id,
@@ -207,7 +205,6 @@ async function resolvePayerLobMap(
   ];
   if (coverageIds.length === 0) return new Map();
   const { data: coverages } = await supabase
-    .schema("resupply")
     .from("insurance_coverages")
     .select("id, payer_name")
     .in("id", coverageIds);
@@ -219,7 +216,6 @@ async function resolvePayerLobMap(
   const payerNames = [...new Set(coverageToPayer.values())];
   if (payerNames.length === 0) return new Map();
   const { data: profiles } = await supabase
-    .schema("resupply")
     .from("payer_profiles")
     .select("display_name, line_of_business")
     .in("display_name", payerNames);

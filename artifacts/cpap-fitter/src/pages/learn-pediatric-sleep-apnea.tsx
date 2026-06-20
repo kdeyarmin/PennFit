@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import { ShareArticle } from "@/components/share-article";
+import { BrandName } from "@/components/company-contact";
 
 type Sign = {
   Icon: React.ComponentType<{ className?: string; strokeWidth?: number }>;
@@ -324,9 +325,10 @@ export function LearnPediatricSleepApnea() {
           <Heart className="w-3 h-3 mr-1.5" /> For pediatric patients
         </Badge>
         <p className="text-sm text-muted-foreground leading-relaxed max-w-xl mx-auto mb-5">
-          PennPaps is set up primarily for adult CPAP. For pediatric equipment,
-          we&apos;ll connect you with a partner DME with pediatric sizing and
-          fit experience. Call us and we&apos;ll route you appropriately.
+          <BrandName /> is set up primarily for adult CPAP. For pediatric
+          equipment, we&apos;ll connect you with a partner DME with pediatric
+          sizing and fit experience. Call us and we&apos;ll route you
+          appropriately.
         </p>
         <Button
           variant="outline"

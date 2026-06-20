@@ -41,7 +41,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { adminWriteRateLimiter } from "../../middlewares/admin-rate-limit";
@@ -97,7 +97,12 @@ router.post(
     const ids = Array.from(new Set(parsed.data.ids));
     const { status } = parsed.data;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // Single UPDATE with id IN (...) is the correct shape: the
     // database does the row-by-row work atomically and we get back
@@ -116,25 +121,29 @@ router.post(
     // this, a bulk-mis-click that flips 100 patients to `closed`
     // has no preserved before-state for a clean rollback.
     const { data: priorRows, error: priorRowsError } = await supabase
-      .schema("resupply")
       .from("patients")
       .select("id, status")
       .in("id", ids);
     if (priorRowsError) throw priorRowsError;
     const priorStatusById = new Map<string, string>(
-      (priorRows ?? []).map((r) => [r.id, r.status as string]),
+      ((priorRows ?? []) as Array<{ id: string; status: string }>).map((r) => [
+        r.id,
+        r.status,
+      ]),
     );
 
     const updatedAtIso = new Date().toISOString();
     const { data: updated, error } = await supabase
-      .schema("resupply")
       .from("patients")
       .update({ status, updated_at: updatedAtIso })
       .in("id", ids)
       .select("id, updated_at");
     if (error) throw error;
 
-    const updatedRows = updated ?? [];
+    const updatedRows = (updated ?? []) as Array<{
+      id: string;
+      updated_at: string;
+    }>;
     const updatedIds = new Set(updatedRows.map((r) => r.id));
     const updatedItems: UpdatedItem[] = updatedRows.map((r) => ({
       id: r.id,

@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import { ShareArticle } from "@/components/share-article";
+import { BrandName } from "@/components/company-contact";
 
 type TherapyMode = {
   abbrev: string;
@@ -370,8 +371,8 @@ export function LearnTherapyTypes() {
               Shop PAP machines
             </h3>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              Browse the CPAP, APAP, BiPAP, and accessory inventory PennPaps
-              stocks today.
+              Browse the CPAP, APAP, BiPAP, and accessory inventory{" "}
+              <BrandName /> stocks today.
             </p>
           </div>
           <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors mt-1" />

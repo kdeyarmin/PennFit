@@ -37,7 +37,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -149,10 +149,11 @@ const PAGE_SIZE = 1000;
 const HARD_CAP = 5000;
 
 async function buildClinicalInsightReport(
+  orgId: string,
   kind: ClinicalTriggerKind | undefined,
   limit: number,
 ): Promise<ClinicalInsightReport> {
-  const supabase = getSupabaseServiceRoleClient();
+  const supabase = getOrgScopedClient(orgId);
 
   const rows: TriggerEventRow[] = [];
   // Active = not dismissed AND not under a live snooze. A snooze whose
@@ -160,7 +161,6 @@ async function buildClinicalInsightReport(
   const nowIso = new Date().toISOString();
   for (let from = 0; from < HARD_CAP; from += PAGE_SIZE) {
     let q = supabase
-      .schema("resupply")
       .from("patient_smart_trigger_events")
       .select(
         "id, patient_id, kind, detected_at, window_start_date, window_end_date",
@@ -222,14 +222,13 @@ async function buildClinicalInsightReport(
 
     const [{ data: patientRows, error: pErr }, metricsRes] = await Promise.all([
       supabase
-        .schema("resupply")
         .from("patients")
         .select("id, legal_first_name, legal_last_name")
         .in("id", ids),
       // therapy_clinical_metrics (migration 0330). Best-effort: if the
       // RPC isn't applied yet / errors, entries just carry null metrics
       // rather than failing the whole report.
-      supabase.schema("resupply").rpc("therapy_clinical_metrics", {
+      supabase.raw().schema("resupply").rpc("therapy_clinical_metrics", {
         p_patient_ids: ids,
         p_window_days: METRICS_WINDOW_DAYS,
       }),
@@ -311,8 +310,13 @@ router.get(
       res.status(400).json({ error: "invalid_query" });
       return;
     }
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const { kind, limit } = parsed.data;
-    const report = await buildClinicalInsightReport(kind, limit);
+    const report = await buildClinicalInsightReport(orgId, kind, limit);
     res.json({ count: report.entries.length, ...report });
   },
 );
@@ -332,8 +336,13 @@ router.get(
       res.status(400).json({ error: "invalid_query" });
       return;
     }
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const { kind, limit } = parsed.data;
-    const report = await buildClinicalInsightReport(kind, limit);
+    const report = await buildClinicalInsightReport(orgId, kind, limit);
 
     const filename = `therapy-clinical-insights-${new Date()
       .toISOString()

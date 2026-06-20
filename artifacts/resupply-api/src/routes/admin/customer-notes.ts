@@ -24,7 +24,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
@@ -67,10 +67,14 @@ router.get(
       return;
     }
     const userId = parsed.data;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     const { data: customer } = await supabase
-      .schema("resupply")
       .from("shop_customers")
       .select("customer_id")
       .eq("customer_id", userId)
@@ -82,7 +86,6 @@ router.get(
     }
 
     const { data: rows, error } = await supabase
-      .schema("resupply")
       .from("shop_customer_notes")
       .select("id, body, author_email, author_user_id, created_at")
       .eq("customer_id", userId)
@@ -107,7 +110,11 @@ router.get(
     });
 
     res.json({
-      notes: (rows ?? []).map((r) => ({
+      notes: (
+        (rows ?? []) as Array<
+          Database["resupply"]["Tables"]["shop_customer_notes"]["Row"]
+        >
+      ).map((r) => ({
         id: r.id,
         body: r.body ?? "",
         authorEmail: r.author_email,
@@ -146,10 +153,14 @@ router.post(
     }
     const { body } = bodyParsed.data;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     const { data: customer } = await supabase
-      .schema("resupply")
       .from("shop_customers")
       .select("customer_id")
       .eq("customer_id", userId)
@@ -161,7 +172,6 @@ router.post(
     }
 
     const { data: inserted, error: insErr } = await supabase
-      .schema("resupply")
       .from("shop_customer_notes")
       .insert({
         customer_id: userId,

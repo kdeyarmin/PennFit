@@ -16,20 +16,26 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, type Database } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+
+type InsuranceClaimRow =
+  Database["resupply"]["Tables"]["insurance_claims"]["Row"];
+type InsuranceClaimLineItemRow =
+  Database["resupply"]["Tables"]["insurance_claim_line_items"]["Row"];
+type InsuranceClaimEventRow =
+  Database["resupply"]["Tables"]["insurance_claim_events"]["Row"];
 
 const router: IRouter = Router();
 
 const idParam = z.object({ claimId: z.string().uuid() });
 
 async function resolvePatientForCustomer(
+  supabase: ReturnType<typeof getOrgScopedClient>,
   customerId: string,
 ): Promise<{ patientId: string } | null> {
-  const supabase = getSupabaseServiceRoleClient();
   const { data: customer } = await supabase
-    .schema("resupply")
     .from("shop_customers")
     .select("customer_id, email_lower")
     .eq("customer_id", customerId)
@@ -47,7 +53,6 @@ async function resolvePatientForCustomer(
     (c: string) => `\\${c}`,
   );
   const { data: patients } = await supabase
-    .schema("resupply")
     .from("patients")
     .select("id")
     .ilike("email", escapedEmail)
@@ -62,14 +67,18 @@ router.get("/me/claims", async (req, res) => {
     res.status(401).json({ error: "sign_in_required" });
     return;
   }
-  const link = await resolvePatientForCustomer(customerId);
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
+  const link = await resolvePatientForCustomer(supabase, customerId);
   if (!link) {
     res.json({ claims: [] });
     return;
   }
-  const supabase = getSupabaseServiceRoleClient();
   const { data, error: claimsErr } = await supabase
-    .schema("resupply")
     .from("insurance_claims")
     .select(
       "id, payer_name, date_of_service, status, total_billed_cents, total_paid_cents, patient_responsibility_cents, submitted_at, decision_at, paid_at",
@@ -79,7 +88,7 @@ router.get("/me/claims", async (req, res) => {
     .limit(100);
   if (claimsErr) throw claimsErr;
   res.json({
-    claims: (data ?? []).map((c) => ({
+    claims: (data ?? []).map((c: InsuranceClaimRow) => ({
       id: c.id,
       payerName: c.payer_name,
       dateOfService: c.date_of_service,
@@ -105,14 +114,18 @@ router.get("/me/claims/:claimId", async (req, res) => {
     res.status(404).json({ error: "not_found" });
     return;
   }
-  const link = await resolvePatientForCustomer(customerId);
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
+  const link = await resolvePatientForCustomer(supabase, customerId);
   if (!link) {
     res.status(404).json({ error: "not_found" });
     return;
   }
-  const supabase = getSupabaseServiceRoleClient();
   const { data: claim } = await supabase
-    .schema("resupply")
     .from("insurance_claims")
     .select(
       "id, payer_name, date_of_service, status, total_billed_cents, total_paid_cents, patient_responsibility_cents, submitted_at, decision_at, paid_at, denial_reason",
@@ -128,7 +141,6 @@ router.get("/me/claims/:claimId", async (req, res) => {
   const [{ data: lines, error: linesErr }, { data: events, error: eventsErr }] =
     await Promise.all([
       supabase
-        .schema("resupply")
         .from("insurance_claim_line_items")
         .select(
           "hcpcs_code, modifier, description, quantity, billed_cents, allowed_cents, paid_cents, status",
@@ -136,7 +148,6 @@ router.get("/me/claims/:claimId", async (req, res) => {
         .eq("claim_id", claim.id)
         .order("created_at", { ascending: true }),
       supabase
-        .schema("resupply")
         .from("insurance_claim_events")
         .select("event_type, amount_cents, payer_ref, note, occurred_at")
         .eq("claim_id", claim.id)
@@ -161,7 +172,7 @@ router.get("/me/claims/:claimId", async (req, res) => {
       paidAt: claim.paid_at,
       denialReason: claim.denial_reason,
     },
-    lineItems: (lines ?? []).map((l) => ({
+    lineItems: (lines ?? []).map((l: InsuranceClaimLineItemRow) => ({
       hcpcsCode: l.hcpcs_code,
       modifier: l.modifier,
       description: l.description,
@@ -173,7 +184,7 @@ router.get("/me/claims/:claimId", async (req, res) => {
       paidCents: l.paid_cents,
       status: l.status,
     })),
-    events: (events ?? []).map((e) => ({
+    events: (events ?? []).map((e: InsuranceClaimEventRow) => ({
       eventType: e.event_type,
       amountCents: e.amount_cents,
       payerRef: e.payer_ref,
@@ -189,14 +200,18 @@ router.get("/me/billing-balance", async (req, res) => {
     res.status(401).json({ error: "sign_in_required" });
     return;
   }
-  const link = await resolvePatientForCustomer(customerId);
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
+  const link = await resolvePatientForCustomer(supabase, customerId);
   if (!link) {
     res.json({ totalOpenCents: 0, claimCount: 0, claims: [] });
     return;
   }
-  const supabase = getSupabaseServiceRoleClient();
   const { data, error: balanceErr } = await supabase
-    .schema("resupply")
     .from("insurance_claims")
     .select("id, payer_name, date_of_service, patient_responsibility_cents")
     .eq("patient_id", link.patientId)
@@ -205,13 +220,13 @@ router.get("/me/billing-balance", async (req, res) => {
   if (balanceErr) throw balanceErr;
   const claimList = data ?? [];
   const totalOpenCents = claimList.reduce(
-    (s, c) => s + c.patient_responsibility_cents,
+    (s: number, c: InsuranceClaimRow) => s + c.patient_responsibility_cents,
     0,
   );
   res.json({
     totalOpenCents,
     claimCount: claimList.length,
-    claims: claimList.map((c) => ({
+    claims: claimList.map((c: InsuranceClaimRow) => ({
       id: c.id,
       payerName: c.payer_name,
       dateOfService: c.date_of_service,

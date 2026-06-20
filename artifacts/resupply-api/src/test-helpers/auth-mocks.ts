@@ -165,6 +165,43 @@ export function makeRequireAdminMock(ref: MockAdminRef): {
   };
 }
 
+export interface MockPlatformAdminCtx {
+  userId: string;
+  email?: string | null;
+}
+
+export interface MockPlatformAdminRef {
+  current: MockPlatformAdminCtx | null;
+}
+
+/**
+ * Build the module replacement for
+ * `../middlewares/requirePlatformAdmin`. Admits (attaches the platform
+ * admin context + calls next) when the ref is set; 401s when it's null.
+ * Route tests for the `/platform/*` surface use this to bypass the real
+ * gate — the gate itself is covered by
+ * `requirePlatformAdmin-in-house.test.ts`.
+ */
+export function makeRequirePlatformAdminMock(ref: MockPlatformAdminRef): {
+  requirePlatformAdmin: (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => void;
+} {
+  return {
+    requirePlatformAdmin: (req, res, next) => {
+      if (!ref.current) {
+        res.status(401).json({ error: "Sign in required" });
+        return;
+      }
+      req.platformAdminUserId = ref.current.userId;
+      req.platformAdminEmail = ref.current.email ?? null;
+      next();
+    },
+  };
+}
+
 /**
  * Build the module replacement for
  * `../middlewares/requireSignedIn`. `requireSignedIn` 401s on a

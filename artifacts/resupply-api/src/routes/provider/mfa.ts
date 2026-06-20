@@ -21,7 +21,11 @@ import { Router, type IRouter, type Request } from "express";
 import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  getOrgScopedClient,
+  resolveSeedOrgId,
+  type OrgScopedClient,
+} from "@workspace/resupply-db";
 import {
   buildOtpauthUri,
   generateBase32Secret,
@@ -77,8 +81,14 @@ router.get(
   ...requireProvider,
   async (req, res) => {
     const account = req.providerAccount!;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = await resolveSeedOrgId();
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: rows, error } = await supabase
+      .raw()
       .schema("resupply")
       .from("provider_mfa_secrets")
       .select("id, verified_at, last_used_at, created_at")
@@ -86,12 +96,15 @@ router.get(
       .order("created_at", { ascending: true });
     if (error) throw error;
     const all = rows ?? [];
-    const verified = all.find((r) => r.verified_at) ?? null;
-    const inProgress = all.find((r) => !r.verified_at) ?? null;
+    const verified =
+      all.find((r: { verified_at: string | null }) => r.verified_at) ?? null;
+    const inProgress =
+      all.find((r: { verified_at: string | null }) => !r.verified_at) ?? null;
 
     let recoveryCodesRemaining = 0;
     if (verified) {
       const { count } = await supabase
+        .raw()
         .schema("resupply")
         .from("provider_mfa_recovery_codes")
         .select("id", { count: "exact", head: true })
@@ -118,10 +131,16 @@ router.post(
   ...requireProvider,
   async (req, res) => {
     const account = req.providerAccount!;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = await resolveSeedOrgId();
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // Refuse if already fully enrolled — re-enroll goes through disable.
     const { data: existingVerified, error: vErr } = await supabase
+      .raw()
       .schema("resupply")
       .from("provider_mfa_secrets")
       .select("id")
@@ -144,6 +163,7 @@ router.post(
 
     // Reuse the in-progress row if one exists (clicked begin twice).
     const { data: inProgress, error: ipErr } = await supabase
+      .raw()
       .schema("resupply")
       .from("provider_mfa_secrets")
       .select("id")
@@ -156,6 +176,7 @@ router.post(
 
     if (inProgress) {
       const { error: updErr } = await supabase
+        .raw()
         .schema("resupply")
         .from("provider_mfa_secrets")
         .update({ secret_base32: secretBase32, updated_at: nowIso })
@@ -163,6 +184,7 @@ router.post(
       if (updErr) throw updErr;
     } else {
       const { error: insErr } = await supabase
+        .raw()
         .schema("resupply")
         .from("provider_mfa_secrets")
         .insert({
@@ -196,8 +218,14 @@ router.post(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = await resolveSeedOrgId();
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: row, error } = await supabase
+      .raw()
       .schema("resupply")
       .from("provider_mfa_secrets")
       .select("id, secret_base32, last_used_counter")
@@ -218,6 +246,7 @@ router.post(
       // original batch exists; /recovery-codes/regenerate covers the
       // case where the provider never saw them.)
       const { data: verifiedRow, error: vErr } = await supabase
+        .raw()
         .schema("resupply")
         .from("provider_mfa_secrets")
         .select("id, secret_base32, last_used_counter")
@@ -250,6 +279,7 @@ router.post(
       }
       const repairNowIso = new Date().toISOString();
       const { error: repairBurnErr } = await supabase
+        .raw()
         .schema("resupply")
         .from("provider_mfa_secrets")
         .update({
@@ -279,6 +309,7 @@ router.post(
     // unverified, so the retry re-enters the normal path).
     let recoveryCodes: string[] | undefined;
     const { error: delStaleErr } = await supabase
+      .raw()
       .schema("resupply")
       .from("provider_mfa_recovery_codes")
       .delete()
@@ -291,6 +322,7 @@ router.post(
     }
     const batch = generateRecoveryCodes();
     const { error: insErr } = await supabase
+      .raw()
       .schema("resupply")
       .from("provider_mfa_recovery_codes")
       .insert(
@@ -308,6 +340,7 @@ router.post(
     // Stamp the secret verified + burn the counter. Error-checked: a
     // silently failed burn would leave this code replayable.
     const { error: updErr } = await supabase
+      .raw()
       .schema("resupply")
       .from("provider_mfa_secrets")
       .update({
@@ -336,11 +369,14 @@ router.post(
  * activation retryable.
  */
 async function activateProviderAccount(
-  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
+  supabase: OrgScopedClient,
   accountId: string,
   nowIso: string,
 ): Promise<void> {
+  // provider_portal_accounts is a BLOCKED GLOBAL table (no org_id) —
+  // raw client, no org filter.
   const { error: activateErr } = await supabase
+    .raw()
     .schema("resupply")
     .from("provider_portal_accounts")
     .update({ mfa_enrolled_at: nowIso, status: "active", updated_at: nowIso })
@@ -348,6 +384,7 @@ async function activateProviderAccount(
     .eq("status", "invited");
   if (activateErr) throw activateErr;
   const { error: stampEnrollErr } = await supabase
+    .raw()
     .schema("resupply")
     .from("provider_portal_accounts")
     .update({ mfa_enrolled_at: nowIso, updated_at: nowIso })
@@ -371,8 +408,14 @@ router.post(
       });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = await resolveSeedOrgId();
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: rows, error } = await supabase
+      .raw()
       .schema("resupply")
       .from("provider_mfa_secrets")
       .select("id, secret_base32, last_used_counter")
@@ -384,7 +427,7 @@ router.post(
       return;
     }
     const matched = rows.some(
-      (r) =>
+      (r: { secret_base32: string; last_used_counter: number | null }) =>
         verifyTotpCode(r.secret_base32, parsed.data.code, {
           window: 1,
           minCounter: r.last_used_counter ?? undefined,
@@ -399,12 +442,14 @@ router.post(
     }
     const nowIso = new Date().toISOString();
     const { error: delErr } = await supabase
+      .raw()
       .schema("resupply")
       .from("provider_mfa_secrets")
       .delete()
       .eq("account_id", account.id);
     if (delErr) throw delErr;
     const { error: delCodesErr } = await supabase
+      .raw()
       .schema("resupply")
       .from("provider_mfa_recovery_codes")
       .delete()
@@ -419,6 +464,7 @@ router.post(
     // failure here would leave the account flagged as enrolled with no
     // working factor — surface it instead of lying with ok:true.
     const { error: accountUpdateErr } = await supabase
+      .raw()
       .schema("resupply")
       .from("provider_portal_accounts")
       .update({ mfa_enrolled_at: null, updated_at: nowIso })
@@ -440,8 +486,14 @@ router.post(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = await resolveSeedOrgId();
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: row, error } = await supabase
+      .raw()
       .schema("resupply")
       .from("provider_mfa_secrets")
       .select("id, secret_base32, verified_at, last_used_counter")
@@ -466,6 +518,7 @@ router.post(
     // can't be replayed against /disable. Fail closed — a silently
     // failed burn would leave the code replayable.
     const { error: burnErr } = await supabase
+      .raw()
       .schema("resupply")
       .from("provider_mfa_secrets")
       .update({
@@ -475,6 +528,7 @@ router.post(
       .eq("id", row.id);
     if (burnErr) throw burnErr;
     const { error: delErr } = await supabase
+      .raw()
       .schema("resupply")
       .from("provider_mfa_recovery_codes")
       .delete()
@@ -482,6 +536,7 @@ router.post(
     if (delErr) throw delErr;
     const batch = generateRecoveryCodes();
     const { error: insErr } = await supabase
+      .raw()
       .schema("resupply")
       .from("provider_mfa_recovery_codes")
       .insert(

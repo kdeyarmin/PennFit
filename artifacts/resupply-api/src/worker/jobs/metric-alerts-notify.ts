@@ -14,7 +14,7 @@
 
 import type PgBoss from "pg-boss";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 import {
   createSendgridClient,
   EmailConfigError,
@@ -130,8 +130,12 @@ export async function runMetricAlertsNotify(): Promise<MetricAlertsNotifyStats> 
     notified: 0,
   };
 
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) return stats;
+  const supabase = getOrgScopedClient(orgId);
+
   const { data, error } = await supabase
+    .raw()
     .schema("resupply")
     .from("metric_alerts")
     .select("id, metric_key, severity, message")
@@ -204,6 +208,7 @@ export async function runMetricAlertsNotify(): Promise<MetricAlertsNotifyStats> 
   if (anySent) {
     const nowIso = new Date().toISOString();
     const { error: upErr } = await supabase
+      .raw()
       .schema("resupply")
       .from("metric_alerts")
       .update({ notified_at: nowIso, updated_at: nowIso })

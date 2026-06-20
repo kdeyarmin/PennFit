@@ -37,13 +37,14 @@
 import { Router, type IRouter } from "express";
 import type Stripe from "stripe";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
 import {
   getStripeClient,
   readStripeConfigOrNull,
 } from "../../lib/stripe/config";
+import { stripeAccountRequestOptions } from "../../lib/stripe/connect";
 
 const router: IRouter = Router();
 
@@ -106,13 +107,20 @@ router.post(
     }
     const stripe = getStripeClient(stripeConfig);
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    // Connect (G6): the order's Checkout session + charge live in the
+    // tenant's connected account, so retrieve/update must target it.
+    const accountOptions = await stripeAccountRequestOptions(orgId);
+    const supabase = getOrgScopedClient(orgId);
     // Combined ownership + status check so a single SELECT returns
     // either "yes you can re-send" or "treat as not found". We
     // intentionally don't differentiate "wrong owner" from "missing"
     // in the response — both leak information.
     const { data: orderRow } = await supabase
-      .schema("resupply")
       .from("shop_orders")
       .select("id, stripe_session_id")
       .eq("stripe_session_id", sessionId)
@@ -137,9 +145,11 @@ router.post(
       // Expanding payment_intent.latest_charge in a single retrieve
       // saves a round-trip versus retrieving the PI separately.
       // Both nested expands are documented and supported.
-      session = await stripe.checkout.sessions.retrieve(sessionId, {
-        expand: ["payment_intent.latest_charge"],
-      });
+      session = await stripe.checkout.sessions.retrieve(
+        sessionId,
+        { expand: ["payment_intent.latest_charge"] },
+        accountOptions,
+      );
     } catch (err) {
       req.log.error(
         { err, sessionId },
@@ -195,9 +205,11 @@ router.post(
       // `receipt_email` field on the charge is updated. Setting it
       // to the same string still counts as an update from Stripe's
       // perspective — confirmed in their docs and via testing.
-      await stripe.charges.update(charge.id, {
-        receipt_email: fallbackEmail,
-      });
+      await stripe.charges.update(
+        charge.id,
+        { receipt_email: fallbackEmail },
+        accountOptions,
+      );
     } catch (err) {
       req.log.error(
         { err, sessionId, chargeId: charge.id },

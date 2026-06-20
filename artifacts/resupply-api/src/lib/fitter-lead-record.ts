@@ -9,7 +9,7 @@
 // Split out of the route handler so the route's own test can stub
 // this helper without standing up a real Supabase client.
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { logger } from "./logger";
 
@@ -48,9 +48,12 @@ export async function recordFitterLead(
   input: RecordFitterLeadInput,
 ): Promise<RecordFitterLeadResult> {
   try {
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = await resolveSeedOrgId();
+    if (!orgId) {
+      return { id: null, error: "tenant context missing" };
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: inserted, error } = await supabase
-      .schema("resupply")
       .from("fitter_leads")
       .insert({
         email: input.email,

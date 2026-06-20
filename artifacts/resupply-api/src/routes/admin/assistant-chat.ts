@@ -4,7 +4,7 @@
  *
  * The staff-facing cousin of /api/chat and /shop/me/chat. It answers
  * "how does the app work / where is the page that does X" for the
- * people who operate the PennFit admin console, and can forward a
+ * people who operate the CareMetric Breathe admin console, and can forward a
  * structured feature suggestion to the super-admin(s) by email (the
  * `suggest_feature` tool — see ./../../lib/admin-assistant/*).
  *
@@ -31,9 +31,11 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import { z } from "zod";
 import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger.js";
+import { recordTenantUsage } from "../../lib/metering/usage.js";
+import { applyPlatformBrandingForOrg } from "../../lib/company-info.js";
 import { isFeatureEnabled } from "../../lib/feature-flags.js";
 import {
   buildAdminAssistantSystemPrompt,
@@ -267,9 +269,11 @@ router.post(
     const streaming = wantsStreaming(req.get("Accept"));
 
     // Control Center feature gate — operators can turn PennPilot off.
-    if (!(await isFeatureEnabled("admin.assistant"))) {
-      const offlineMessage =
-        "PennPilot is currently turned off. You can re-enable it from Control Center (/admin/control-center).";
+    if (!(await isFeatureEnabled("admin.assistant", req.orgId))) {
+      const offlineMessage = await applyPlatformBrandingForOrg(
+        "PennPilot is currently turned off. You can re-enable it from Control Center (/admin/control-center).",
+        req.orgId,
+      );
       if (streaming) {
         startSseHeaders(res);
         writeSseEvent(res, { type: "chunk", text: offlineMessage });
@@ -293,12 +297,21 @@ router.post(
         startSseHeaders(res);
         writeSseEvent(res, {
           type: "chunk",
-          text: ADMIN_OFFLINE_FALLBACK_REPLY,
+          text: await applyPlatformBrandingForOrg(
+            ADMIN_OFFLINE_FALLBACK_REPLY,
+            req.orgId,
+          ),
         });
         writeSseEvent(res, { type: "done", offline: true });
         res.end();
       } else {
-        res.json({ reply: ADMIN_OFFLINE_FALLBACK_REPLY, offline: true });
+        res.json({
+          reply: await applyPlatformBrandingForOrg(
+            ADMIN_OFFLINE_FALLBACK_REPLY,
+            req.orgId,
+          ),
+          offline: true,
+        });
       }
       return;
     }
@@ -307,11 +320,19 @@ router.post(
       adminEmail: req.adminEmail ?? null,
       adminRole: req.adminRole ?? null,
     };
-    const systemPrompt = buildAdminAssistantSystemPrompt(ctx);
-
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const systemPrompt = await applyPlatformBrandingForOrg(
+      buildAdminAssistantSystemPrompt(ctx),
+      orgId,
+    );
+    const supabase = getOrgScopedClient(orgId);
     const toolCtx: AdminAssistantToolContext = {
       supabase,
+      orgId,
       suggestingAdminEmail: req.adminEmail ?? null,
       suggestingAdminRole: req.adminRole ?? null,
     };
@@ -330,6 +351,13 @@ router.post(
     if (selection.provider === "anthropic") {
       const client = getAnthropicClient();
       if (client) {
+        // A model-backed turn — meter one AI text interaction (G12).
+        // Fire-and-forget + fail-soft: never blocks or fails the reply.
+        void recordTenantUsage({
+          orgId,
+          metricKey: "aiTextInteractionsPerMonth",
+          source: "admin.assistant",
+        });
         return streaming
           ? handleAnthropicStreaming(
               res,
@@ -347,16 +375,32 @@ router.post(
         startSseHeaders(res);
         writeSseEvent(res, {
           type: "chunk",
-          text: ADMIN_OFFLINE_FALLBACK_REPLY,
+          text: await applyPlatformBrandingForOrg(
+            ADMIN_OFFLINE_FALLBACK_REPLY,
+            req.orgId,
+          ),
         });
         writeSseEvent(res, { type: "done", offline: true });
         res.end();
       } else {
-        res.json({ reply: ADMIN_OFFLINE_FALLBACK_REPLY, offline: true });
+        res.json({
+          reply: await applyPlatformBrandingForOrg(
+            ADMIN_OFFLINE_FALLBACK_REPLY,
+            req.orgId,
+          ),
+          offline: true,
+        });
       }
       return;
     }
 
+    // OpenAI-backed turn — meter one AI text interaction (G12), same
+    // posture as the Anthropic branch above.
+    void recordTenantUsage({
+      orgId,
+      metricKey: "aiTextInteractionsPerMonth",
+      source: "admin.assistant",
+    });
     return streaming
       ? handleStreaming(res, initial, apiKey, toolCtx, messages.length)
       : handleJson(res, initial, apiKey, toolCtx, messages.length);

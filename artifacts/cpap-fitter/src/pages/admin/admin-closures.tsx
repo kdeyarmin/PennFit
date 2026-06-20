@@ -252,11 +252,19 @@ function ClosureListCard() {
               className="text-left border-b"
               style={{ borderColor: "hsl(var(--line-1))" }}
             >
-              <th className="py-2 font-semibold">Label</th>
-              <th className="py-2 font-semibold">Starts</th>
-              <th className="py-2 font-semibold">Ends</th>
-              <th className="py-2 font-semibold">State</th>
-              <th className="py-2 font-semibold"></th>
+              <th scope="col" className="py-2 font-semibold">
+                Label
+              </th>
+              <th scope="col" className="py-2 font-semibold">
+                Starts
+              </th>
+              <th scope="col" className="py-2 font-semibold">
+                Ends
+              </th>
+              <th scope="col" className="py-2 font-semibold">
+                State
+              </th>
+              <th scope="col" className="py-2 font-semibold"></th>
             </tr>
           </thead>
           <tbody>

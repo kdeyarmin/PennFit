@@ -6,6 +6,7 @@ import {
   type HelpStep,
 } from "@/components/help/help-article-shell";
 import { Screenshot, AccountShot } from "@/components/help/help-screens";
+import { BrandName } from "@/components/company-contact";
 
 const steps: HelpStep[] = [
   {
@@ -23,10 +24,7 @@ const steps: HelpStep[] = [
       </p>
     ),
     shot: (
-      <Screenshot
-        url="pennpaps.com/account"
-        caption="Designated contact lives under the Account tab."
-      >
+      <Screenshot caption="Designated contact lives under the Account tab.">
         <AccountShot />
       </Screenshot>
     ),
@@ -75,7 +73,7 @@ export function HelpCaregiverAccess() {
       title="Share updates with a caregiver"
       Icon={UserPlus}
       minutes="2 min"
-      metaDescription="How to add a designated contact to your PennPaps account so a spouse, adult child, or aide gets shipping and delivery updates — without seeing claims or billing."
+      metaDescription="How to add a designated contact to your account so a spouse, adult child, or aide gets shipping and delivery updates — without seeing claims or billing."
       intro="Many CPAP users have someone who helps manage supplies. Add them as your designated contact and they'll get shipped and delivered emails alongside you — nothing more."
       summary={
         <>
@@ -85,7 +83,9 @@ export function HelpCaregiverAccess() {
         </>
       }
       prerequisites={[
-        "A PennPaps account, signed in.",
+        <>
+          A <BrandName /> account, signed in.
+        </>,
         "Your contact's email address — and their okay to receive updates.",
       ]}
       steps={steps}

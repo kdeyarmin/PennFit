@@ -28,7 +28,7 @@
 
 import { Router, type IRouter } from "express";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
 
@@ -45,7 +45,12 @@ router.get("/shop/me/dashboard", requireSignedIn, async (req, res) => {
     return;
   }
 
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const now = new Date();
   const nowIso = now.toISOString();
 
@@ -54,12 +59,10 @@ router.get("/shop/me/dashboard", requireSignedIn, async (req, res) => {
   const [subsRes, latestOrderRes, pendingOrdersRes, cartRes] =
     await Promise.all([
       supabase
-        .schema("resupply")
         .from("shop_subscriptions")
         .select("id, status, current_period_end, cancel_at_period_end, items")
         .eq("customer_id", customerId),
       supabase
-        .schema("resupply")
         .from("shop_orders")
         .select(
           "id, stripe_session_id, status, paid_at, shipped_at, delivered_at, tracking_carrier, tracking_number, created_at",
@@ -70,14 +73,12 @@ router.get("/shop/me/dashboard", requireSignedIn, async (req, res) => {
         .limit(1)
         .maybeSingle(),
       supabase
-        .schema("resupply")
         .from("shop_orders")
         .select("*", { count: "exact", head: true })
         .eq("customer_id", customerId)
         .eq("status", "paid")
         .is("shipped_at", null),
       supabase
-        .schema("resupply")
         .from("shop_abandoned_carts")
         .select("items, updated_at, recovered_at, cleared_at")
         .eq("customer_id", customerId)
@@ -93,9 +94,11 @@ router.get("/shop/me/dashboard", requireSignedIn, async (req, res) => {
   // across the user's active/trialing subscriptions. We don't need
   // the full row, just the date + a representative item label.
   const liveStatuses = new Set(["active", "trialing", "past_due"]);
-  const liveSubs = (subsRes.data ?? []).filter((r) =>
-    liveStatuses.has(r.status),
-  );
+  const liveSubs = (
+    (subsRes.data ?? []) as Array<
+      Database["resupply"]["Tables"]["shop_subscriptions"]["Row"]
+    >
+  ).filter((r) => liveStatuses.has(r.status));
   const itemsOf = (raw: unknown): SubscriptionItem[] =>
     Array.isArray(raw) ? (raw as SubscriptionItem[]) : [];
   const upcoming = liveSubs

@@ -19,15 +19,17 @@
 // name, or the rendered text in a log line.
 
 import {
-  getSupabaseServiceRoleClient,
   type Database,
+  type OrgScopedClient,
+  getOrgScopedClient,
+  resolveSeedOrgId,
 } from "@workspace/resupply-db";
 
 import { logger } from "../logger";
 import { computeRetentionUntilAt } from "../patient-documents/retention";
 import { ObjectStorageService } from "../object-storage/objectStorage";
 
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+type SupabaseClient = OrgScopedClient;
 
 const STATEMENT_DOCUMENT_TYPE = "billing_statement";
 
@@ -57,12 +59,19 @@ export interface PersistStatementResult {
 export async function persistStatementPdfCopy(
   input: PersistStatementInput,
 ): Promise<PersistStatementResult> {
-  const supabase = input.supabase ?? getSupabaseServiceRoleClient();
-  const storage = input.storage ?? new ObjectStorageService();
   const result: PersistStatementResult = {
     objectKey: null,
     chartDocumentId: null,
   };
+  let supabase = input.supabase;
+  if (!supabase) {
+    const orgId = await resolveSeedOrgId();
+    // Fail-soft: a missing tenant degrades to "nothing persisted" (the
+    // statement row + on-demand portal re-render still work), never a throw.
+    if (!orgId) return result;
+    supabase = getOrgScopedClient(orgId);
+  }
+  const storage = input.storage ?? new ObjectStorageService();
 
   // 1. Upload the bytes to the private bucket and claim them for the
   //    patient (mirrors the inbound-MMS server-side upload pattern).
@@ -97,7 +106,6 @@ export async function persistStatementPdfCopy(
   // 2. Link the stored PDF on the statement row (so the email send can
   //    sign a real download link instead of a bare balance notice).
   const { error: linkErr } = await supabase
-    .schema("resupply")
     .from("patient_billing_statements")
     .update({ statement_pdf_object_key: objectKey })
     .eq("id", input.statementId);
@@ -136,7 +144,6 @@ export async function persistStatementPdfCopy(
         updated_at: nowIso,
       };
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("patient_documents")
       .insert(insertRow)
       .select("id")

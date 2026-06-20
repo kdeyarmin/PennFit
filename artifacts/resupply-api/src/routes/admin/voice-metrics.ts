@@ -8,7 +8,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import {
   aggregateVoiceMetrics,
@@ -35,17 +35,23 @@ router.get(
     }
     const days = parsed.data.days;
     const cutoff = new Date(Date.now() - days * 86_400_000).toISOString();
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     const { data, error } = await supabase
-      .schema("resupply")
       .from("voice_calls")
       .select("status, direction, duration_seconds, initiated_at, answered_at")
       .gte("created_at", cutoff)
       .limit(50000);
     if (error) throw error;
 
-    const rows: VoiceCallRow[] = (data ?? []).map((r) => ({
+    const rows: VoiceCallRow[] = (
+      (data ?? []) as Database["resupply"]["Tables"]["voice_calls"]["Row"][]
+    ).map((r) => ({
       status: r.status,
       direction: r.direction,
       durationSeconds: r.duration_seconds,

@@ -9,6 +9,7 @@ import request from "supertest";
 
 import {
   makeRequireAdminMock,
+  MOCK_ORG_ID,
   type MockAdminCtx,
 } from "../../test-helpers/auth-mocks";
 import {
@@ -69,6 +70,7 @@ describe("POST /patients/merge", () => {
       rowsRepointed: 12,
     });
     expect(getSupabaseRpcArgs("merge_patient_records")[0]).toEqual({
+      p_org_id: MOCK_ORG_ID,
       p_primary: PRIMARY,
       p_duplicate: DUPLICATE,
     });

@@ -28,11 +28,11 @@ import {
   createTelnyxFaxClient,
   TelnyxApiError,
 } from "@workspace/resupply-telecom";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { buildPaRequestPdf } from "../../lib/billing/pa-request-render";
 import { signPaRequestFaxToken } from "../../lib/fax-document-token";
 import { logger } from "../../lib/logger";
+import { resolveTenantFaxFrom } from "../../lib/messaging/tenant-telecom";
 import { requirePermission } from "../../middlewares/requireAdmin";
 import { getFaxPublicBaseUrl, isFaxConfigured } from "./physician-fax-outreach";
 
@@ -55,9 +55,12 @@ router.get(
       return;
     }
     const { id: patientId, paId } = parsed.data;
-    const supabase = getSupabaseServiceRoleClient();
-
-    const result = await buildPaRequestPdf(supabase, patientId, paId);
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const result = await buildPaRequestPdf(orgId, patientId, paId);
     if (!result) {
       res.status(404).json({ error: "prior_auth_not_found" });
       return;
@@ -126,13 +129,16 @@ router.post(
       return;
     }
     const { id: patientId, paId } = parsed.data;
-    const supabase = getSupabaseServiceRoleClient();
-
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     // Render once now so we (a) confirm the PA exists/belongs to the
     // patient and (b) resolve the payer's default fax number. The bytes
     // are discarded — Telnyx re-fetches via the signed URL — but rendering
     // here is the cheapest way to validate + resolve the destination.
-    const result = await buildPaRequestPdf(supabase, patientId, paId);
+    const result = await buildPaRequestPdf(orgId, patientId, paId);
     if (!result) {
       res.status(404).json({ error: "prior_auth_not_found" });
       return;
@@ -154,7 +160,12 @@ router.post(
     const token = signPaRequestFaxToken(patientId, paId);
     const mediaUrl = `${baseUrl}/resupply-api/fax/document/${token}`;
     const statusCallbackUrl = `${baseUrl}/resupply-api/fax/webhook`;
-    const fromNumber = process.env.TELNYX_FAX_FROM_NUMBER!.trim();
+    // Prefer the tenant's own provisioned fax DID (migration 0368); fall
+    // back to the platform default. isFaxConfigured() already verified the
+    // platform TELNYX_FAX_FROM_NUMBER is set.
+    const fromNumber =
+      (await resolveTenantFaxFrom(orgId)) ??
+      process.env.TELNYX_FAX_FROM_NUMBER!.trim();
 
     let faxId: string;
     try {

@@ -17,7 +17,7 @@ import { Router, type IRouter, type Request } from "express";
 import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 import PDFDocument from "pdfkit";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import {
   renderPrescriptionRequest,
@@ -25,6 +25,7 @@ import {
 } from "../lib/prescription-request-pdf";
 import { verifyPrescriptionRequestToken } from "../lib/prescription-request-token";
 import { resolvePrescriptionRequestInputs } from "../lib/prescription-request-resolver";
+import { resolveOrgIdForSignedRecord } from "../lib/storefront/signed-link-org";
 
 const router: IRouter = Router();
 
@@ -51,7 +52,19 @@ router.get("/rx-request/document/:token", rxDocLimiter, async (req, res) => {
     return;
   }
 
-  const supabase = getSupabaseServiceRoleClient();
+  // Public token route (no request tenant). The HMAC token is the
+  // authorization; derive the packet's owning tenant from its record so a
+  // tenant-B fax link renders tenant B's packet (seed when single-tenant /
+  // absent). Never 500 — a miss degrades to the not_found path below.
+  const orgId = await resolveOrgIdForSignedRecord(
+    "prescription_request_packets",
+    verified.packetId,
+  );
+  if (!orgId) {
+    res.status(404).json({ error: "not_found" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const resolved = await resolvePrescriptionRequestInputs(
     supabase,
     verified.packetId,

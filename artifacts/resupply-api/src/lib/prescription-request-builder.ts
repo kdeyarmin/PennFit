@@ -16,10 +16,11 @@
 import {
   type Database,
   type Json,
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
+  resolveSeedOrgId,
 } from "@workspace/resupply-db";
 
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+type SupabaseClient = ReturnType<typeof getOrgScopedClient>;
 
 export type BuildPacketOutcome =
   | { kind: "ok"; insert: PacketInsert }
@@ -52,9 +53,10 @@ export interface BuildPacketInput {
 export async function buildPrescriptionRequestPacketFromRx(
   input: BuildPacketInput,
 ): Promise<BuildPacketOutcome> {
-  const supabase: SupabaseClient = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) return { kind: "rx_not_found" };
+  const supabase: SupabaseClient = getOrgScopedClient(orgId);
   const { data: rx } = await supabase
-    .schema("resupply")
     .from("prescriptions")
     .select(
       "id, patient_id, provider_id, hcpcs_code, item_sku, cadence_days, valid_until",
@@ -68,7 +70,6 @@ export async function buildPrescriptionRequestPacketFromRx(
   if (!rx.hcpcs_code) return { kind: "rx_missing_hcpcs" };
 
   const { data: study } = await supabase
-    .schema("resupply")
     .from("sleep_studies")
     .select("diagnosis_icd10")
     .eq("patient_id", input.patientId)
@@ -82,7 +83,10 @@ export async function buildPrescriptionRequestPacketFromRx(
   const icd10 =
     rawIcd && /^[A-Z]\d{2}(\.\d{1,4})?$/.test(rawIcd) ? [rawIcd] : ["G47.33"];
 
+  // `providers` is a GLOBAL (non-org-scoped) table — use the unscoped
+  // client via `.raw()`.
   const { data: provider } = await supabase
+    .raw()
     .schema("resupply")
     .from("providers")
     .select("id, fax_e164")

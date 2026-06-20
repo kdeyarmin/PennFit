@@ -63,7 +63,7 @@ interface TranscriptMessage {
 }
 
 const BOT_LABELS: Record<BotKind, string> = {
-  storefront: "Storefront PennBot",
+  storefront: "Storefront assistant",
   account: "Account assistant",
   voice: "Voice agent",
 };

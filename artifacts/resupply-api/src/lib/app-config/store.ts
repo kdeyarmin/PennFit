@@ -33,10 +33,15 @@
 //     entirely (both live and boot) in case a bad row ever needs to be
 //     ignored without a DB round-trip.
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { logger } from "../logger";
-import { APP_CONFIG_KEYS, isAppConfigKey } from "./catalog";
+import {
+  APP_CONFIG_KEYS,
+  appConfigScopeOf,
+  isAppConfigKey,
+  TENANT_SCOPED_APP_CONFIG_KEYS,
+} from "./catalog";
 
 // Catalog keys are all optional/feature-gated, but guard the bootstrap
 // credentials explicitly so a future catalog edit can never make the
@@ -64,6 +69,12 @@ interface OverlayCache {
 
 let cache: OverlayCache | null = null;
 
+// Per-org overlay of a tenant's OWN tenant-scoped values (its therapy-cloud
+// + clearinghouse accounts). Keyed by orgId; short TTL like the platform
+// overlay. Distinct from `cache` (the seed/platform overlay) so a tenant's
+// business credentials never leak across tenants.
+const orgOverlayCache = new Map<string, OverlayCache>();
+
 function overlayDisabled(): boolean {
   const v = process.env.APP_CONFIG_OVERLAY_DISABLED;
   return v === "1" || v === "true";
@@ -85,11 +96,13 @@ async function loadOverridesFromDb(
   timeoutMs: number,
 ): Promise<Record<string, string>> {
   try {
-    const supabase = getSupabaseServiceRoleClient();
-    const lookup = supabase
-      .schema("resupply")
-      .from("app_config")
-      .select("key, value");
+    // Resolve the tenant for the file-local worker pattern. A missing org
+    // degrades exactly like a DB error here — "no overrides" (`{}`), so the
+    // process keeps running on its Railway env. Fail-soft, never throws.
+    const orgId = await resolveSeedOrgId();
+    if (!orgId) return {};
+    const supabase = getOrgScopedClient(orgId);
+    const lookup = supabase.from("app_config").select("key, value");
 
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<never>((_, reject) => {
@@ -161,9 +174,121 @@ export async function getEffectiveEnv(
   return { ...base, ...overrides };
 }
 
-/** Drop the cached overlay so a recent write is visible next read. */
+/**
+ * A single org's OWN tenant-scoped overrides (its therapy-cloud +
+ * clearinghouse credentials), read through the org-scoped facade so it can
+ * only ever see its own rows. Filtered to `scope: "tenant"` catalog keys —
+ * a platform key stored on a tenant's rows is ignored here (platform infra
+ * is owned by the super-admin, not a tenant). Fail-soft: `{}` on any error.
+ */
+async function loadOrgTenantOverridesFromDb(
+  orgId: string,
+  timeoutMs: number,
+): Promise<Record<string, string>> {
+  try {
+    const supabase = getOrgScopedClient(orgId);
+    const lookup = supabase.from("app_config").select("key, value");
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new AppConfigLookupTimeout()), timeoutMs);
+    });
+    let result: Awaited<typeof lookup>;
+    try {
+      result = await Promise.race([lookup, timeout]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+    const { data, error } = result;
+    if (error) throw error;
+    const out: Record<string, string> = {};
+    for (const row of data ?? []) {
+      const key = (row as { key: string }).key;
+      const value = (row as { value: string }).value;
+      if (!isAppConfigKey(key)) continue;
+      if (BOOT_CRITICAL_KEYS.has(key)) continue;
+      // Only a tenant's OWN (tenant-scoped) keys overlay here.
+      if (appConfigScopeOf(key) !== "tenant") continue;
+      if (typeof value === "string") out[key] = value;
+    }
+    return out;
+  } catch (err) {
+    const normalized =
+      err instanceof Error
+        ? err
+        : new Error(String((err as unknown) ?? "unknown"));
+    logger.warn(
+      { event: "org_tenant_overlay_load_failed", err: normalized },
+      "per-org tenant config overlay load failed; degrading to none",
+    );
+    return {};
+  }
+}
+
+async function getOrgTenantOverrides(
+  orgId: string,
+): Promise<Record<string, string>> {
+  if (overlayDisabled()) return {};
+  const now = Date.now();
+  const hit = orgOverlayCache.get(orgId);
+  if (hit && hit.expiresAt > now) return hit.overrides;
+  const overrides = await loadOrgTenantOverridesFromDb(orgId, LIVE_TIMEOUT_MS);
+  orgOverlayCache.set(orgId, { overrides, expiresAt: now + CACHE_TTL_MS });
+  return overrides;
+}
+
+/**
+ * `process.env` resolved for a SPECIFIC tenant — the per-tenant counterpart
+ * of `getEffectiveEnv()`. Two layers on top of `base`:
+ *
+ *   1. PLATFORM infra (seed org's platform-scoped values) — shared by every
+ *      tenant, owned by the super-admin (/platform/config).
+ *   2. TENANT business (this org's OWN tenant-scoped values) — its
+ *      therapy-cloud + clearinghouse accounts (/admin/system/config).
+ *
+ * Precedence: base < platform < tenant. Crucially, a NON-seed tenant does
+ * NOT inherit the platform deployment's (seed org / Railway env) business
+ * credentials for a key it hasn't set itself — those keys are stripped so a
+ * second tenant can never run its patients against another company's vendor
+ * account. The seed org keeps byte-identical single-tenant behavior.
+ *
+ * Fail-soft: any overlay read degrades to "no overrides", so a flaky lookup
+ * can't break a sync — the adapter just reports `unavailable`.
+ */
+export async function getEffectiveEnvForOrg(
+  orgId: string,
+  base: NodeJS.ProcessEnv = process.env,
+): Promise<NodeJS.ProcessEnv> {
+  const [platform, tenant, seedOrgId] = await Promise.all([
+    getConfigOverrides(),
+    getOrgTenantOverrides(orgId),
+    resolveSeedOrgId(),
+  ]);
+  const isSeed = !!seedOrgId && seedOrgId === orgId;
+
+  const merged: NodeJS.ProcessEnv = { ...base };
+  // Platform infra layer: only the seed org's PLATFORM-scoped values.
+  for (const [k, v] of Object.entries(platform)) {
+    if (typeof v === "string" && appConfigScopeOf(k) === "platform")
+      merged[k] = v;
+  }
+  // Tenant business layer: this org's own tenant-scoped values win.
+  for (const [k, v] of Object.entries(tenant)) {
+    if (typeof v === "string") merged[k] = v;
+  }
+  // A non-seed tenant must not fall back to the platform deployment's
+  // business credentials for a key it hasn't configured itself.
+  if (!isSeed) {
+    for (const key of TENANT_SCOPED_APP_CONFIG_KEYS) {
+      if (!(key in tenant)) delete merged[key];
+    }
+  }
+  return merged;
+}
+
+/** Drop the cached overlays so a recent write is visible next read. */
 export function invalidateAppConfigCache(): void {
   cache = null;
+  orgOverlayCache.clear();
 }
 
 /**
@@ -219,9 +344,101 @@ export function maskSecretHint(value: string): string {
   return `••••${value.slice(-4)}`;
 }
 
+// ────────────────────────────────────────────────────────────────────
+// Per-tenant config reader (the request-scoped counterpart of the boot
+// overlay). The overlay above folds the SEED org's rows into process.env
+// at boot — i.e. the PLATFORM defaults. This reader resolves a
+// `scope: "tenant"` key for a SPECIFIC org, falling back to the seed
+// org's value when the tenant has no row. It is the app_config analogue
+// of `isFeatureEnabled(key, orgId)` and the sanctioned path for a
+// per-request consumer (e.g. the per-tenant assistant display names) to
+// read a tenant-overridable value.
+// ────────────────────────────────────────────────────────────────────
+
+interface TenantConfigEntry {
+  value: string | null;
+  expiresAt: number;
+}
+
+// Keyed by `${orgId} ${key}`. NUL separator can't appear in a uuid
+// or an env-var name, so it's an unambiguous composite key.
+const tenantConfigCache = new Map<string, TenantConfigEntry>();
+
+async function readAppConfigValue(
+  orgId: string,
+  key: string,
+): Promise<string | null> {
+  const supabase = getOrgScopedClient(orgId);
+  const { data, error } = await supabase
+    .from("app_config")
+    .select("value")
+    .eq("key", key)
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  const value = (data as { value?: string } | null)?.value;
+  return typeof value === "string" ? value : null;
+}
+
+/**
+ * Resolve a tenant-overridable config value for `orgId`, falling back to
+ * the seed org (the platform default) when the tenant has no row, and to
+ * `null` when neither has one. Cached per (org, key) for a short TTL.
+ *
+ * Fail-soft: any DB error degrades to the seed-org value, then `null` —
+ * it never throws, so a flaky lookup can't break a request path.
+ */
+export async function getTenantConfigValue(
+  orgId: string,
+  key: string,
+): Promise<string | null> {
+  const cacheKey = `${orgId} ${key}`;
+  const now = Date.now();
+  const hit = tenantConfigCache.get(cacheKey);
+  if (hit && hit.expiresAt > now) return hit.value;
+
+  let value: string | null;
+  try {
+    value = await readAppConfigValue(orgId, key);
+    if (value === null) {
+      // No tenant row → fall back to the seed org's platform default.
+      const seedOrgId = await resolveSeedOrgId();
+      if (seedOrgId && seedOrgId !== orgId) {
+        value = await readAppConfigValue(seedOrgId, key);
+      }
+    }
+  } catch (err) {
+    logger.warn(
+      {
+        event: "tenant_config_read_failed",
+        key,
+        err: err instanceof Error ? err : new Error(String(err)),
+      },
+      "per-tenant app_config read failed; degrading to seed/default",
+    );
+    // Best-effort seed fallback on error.
+    try {
+      const seedOrgId = await resolveSeedOrgId();
+      value = seedOrgId ? await readAppConfigValue(seedOrgId, key) : null;
+    } catch {
+      value = null;
+    }
+  }
+
+  tenantConfigCache.set(cacheKey, { value, expiresAt: now + CACHE_TTL_MS });
+  return value;
+}
+
+/** Drop the per-tenant config cache (call after an admin save). */
+export function invalidateTenantConfigCache(): void {
+  tenantConfigCache.clear();
+}
+
 /** Test-only: clear the module cache between cases. */
 export function __resetAppConfigCacheForTests(): void {
   cache = null;
+  orgOverlayCache.clear();
+  tenantConfigCache.clear();
 }
 
 // Re-export the catalog key list for callers that only need the closed

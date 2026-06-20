@@ -28,7 +28,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { isPushConfigured } from "../../lib/web-push";
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
@@ -163,14 +163,18 @@ router.post(
     const { endpoint, keys } = parsed.data;
     const userAgent = req.get("user-agent")?.slice(0, 500) ?? null;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // Upsert on endpoint. If the row exists we re-bind it to this
     // customer (browser permission grants don't carry identity, so a
     // new sign-in on the same browser legitimately rebinds the
     // subscription) and clear any prior expired_at marker.
     const { error } = await supabase
-      .schema("resupply")
       .from("shop_customer_push_subscriptions")
       .upsert(
         {
@@ -212,12 +216,16 @@ router.delete(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     // Defense-in-depth: only delete rows that belong to the caller.
     // A malicious actor who learns another user's endpoint can't
     // unsubscribe them.
     const { error } = await supabase
-      .schema("resupply")
       .from("shop_customer_push_subscriptions")
       .delete()
       .eq("endpoint", parsed.data.endpoint)
@@ -234,9 +242,13 @@ router.get("/shop/me/push-subscriptions", requireSignedIn, async (req, res) => {
     res.status(401).json({ error: "sign_in_required" });
     return;
   }
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const { data: rows, error } = await supabase
-    .schema("resupply")
     .from("shop_customer_push_subscriptions")
     .select("id, user_agent, created_at")
     .eq("customer_id", customerId)
@@ -244,7 +256,13 @@ router.get("/shop/me/push-subscriptions", requireSignedIn, async (req, res) => {
     .limit(50);
   if (error) throw error;
   res.json({
-    subscriptions: (rows ?? []).map((r) => ({
+    subscriptions: (
+      (rows ?? []) as Array<{
+        id: string;
+        user_agent: string | null;
+        created_at: string;
+      }>
+    ).map((r) => ({
       id: r.id,
       // We deliberately DON'T return the endpoint URL on the SPA —
       // it's a capability token. The client only needs id +

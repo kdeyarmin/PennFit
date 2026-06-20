@@ -19,18 +19,16 @@
 import type PgBoss from "pg-boss";
 
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  type Database,
-  getSupabaseServiceRoleClient,
-} from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 import {
   type IntegrationSource,
   integrationSnapshotSchema,
 } from "@workspace/resupply-integrations";
 
-import { getIntegrationAdaptersWithDbOverrides } from "../../lib/integrations/registry.js";
+import { getIntegrationAdaptersForOrg } from "../../lib/integrations/registry.js";
 import { persistTherapyNights } from "../../lib/integrations/persist-nights.js";
 import { logger } from "../../lib/logger.js";
+import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import {
   createQueueWithDlq,
   VENDOR_SEND_QUEUE_OPTS,
@@ -160,9 +158,13 @@ export interface NightlySyncResult {
   nightsPersisted: number;
 }
 
-export async function runTherapyNightlySync(): Promise<NightlySyncResult> {
-  const supabase = getSupabaseServiceRoleClient();
-  const adapters = await getIntegrationAdaptersWithDbOverrides();
+export async function runTherapyNightlySyncForOrg(
+  orgId: string,
+): Promise<NightlySyncResult> {
+  const supabase = getOrgScopedClient(orgId);
+  // Per-tenant adapters: this org's patients are synced against the org's
+  // OWN therapy-cloud credentials, not the seed/platform account.
+  const adapters = await getIntegrationAdaptersForOrg(orgId);
   const result: NightlySyncResult = {
     scanned: 0,
     refreshed: 0,
@@ -171,7 +173,6 @@ export async function runTherapyNightlySync(): Promise<NightlySyncResult> {
   };
 
   const { data: links, error } = await supabase
-    .schema("resupply")
     .from("patient_therapy_links")
     .select("id, patient_id, source, partner_patient_id, status")
     .eq("status", "active")
@@ -214,7 +215,6 @@ export async function runTherapyNightlySync(): Promise<NightlySyncResult> {
         // above was added to fix. Throw into the per-link catch so it
         // is logged and counted as failed.
         const { error: errSnapErr } = await supabase
-          .schema("resupply")
           .from("patient_integration_snapshots")
           .upsert(
             {
@@ -237,7 +237,6 @@ export async function runTherapyNightlySync(): Promise<NightlySyncResult> {
           );
         if (errSnapErr) throw errSnapErr;
         const { error: errStampErr } = await supabase
-          .schema("resupply")
           .from("patient_therapy_links")
           .update({
             last_synced_at: fetchedAtIso,
@@ -276,7 +275,6 @@ export async function runTherapyNightlySync(): Promise<NightlySyncResult> {
       // Same as the error branch above: a dropped write here both
       // over-reports `refreshed` and (for the stamp) starves rotation.
       const { error: okSnapErr } = await supabase
-        .schema("resupply")
         .from("patient_integration_snapshots")
         .upsert(
           {
@@ -292,7 +290,6 @@ export async function runTherapyNightlySync(): Promise<NightlySyncResult> {
         );
       if (okSnapErr) throw okSnapErr;
       const { error: okStampErr } = await supabase
-        .schema("resupply")
         .from("patient_therapy_links")
         .update({
           last_synced_at: fetchedAtIso,
@@ -362,5 +359,32 @@ export async function runTherapyNightlySync(): Promise<NightlySyncResult> {
     );
   }
 
+  return result;
+}
+
+/**
+ * Run the nightly therapy-cloud sync for EVERY active tenant.
+ * `patient_therapy_links` / `patient_integration_snapshots` are
+ * tenant-scoped, so the sync fans out via `forEachActiveOrg` (per-tenant
+ * error isolation) and sums the counts. Single-tenant behavior is
+ * byte-identical to the old seed-org sweep.
+ */
+export async function runTherapyNightlySync(): Promise<NightlySyncResult> {
+  const result: NightlySyncResult = {
+    scanned: 0,
+    refreshed: 0,
+    failed: 0,
+    nightsPersisted: 0,
+  };
+  await forEachActiveOrg(
+    async (orgId) => {
+      const r = await runTherapyNightlySyncForOrg(orgId);
+      result.scanned += r.scanned;
+      result.refreshed += r.refreshed;
+      result.failed += r.failed;
+      result.nightsPersisted += r.nightsPersisted;
+    },
+    { jobName: THERAPY_NIGHTLY_SYNC_JOB },
+  );
   return result;
 }

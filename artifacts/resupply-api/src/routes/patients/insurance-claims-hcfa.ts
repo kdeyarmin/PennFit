@@ -14,7 +14,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import {
   renderHcfa1500Pdf,
@@ -43,9 +43,13 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: claim, error } = await supabase
-      .schema("resupply")
       .from("insurance_claims")
       .select(
         "id, patient_id, payer_name, date_of_service, total_billed_cents, insurance_coverage_id, payer_profile_id, referring_provider_id, denial_reason",
@@ -69,7 +73,6 @@ router.get(
       { data: sleep },
     ] = await Promise.all([
       supabase
-        .schema("resupply")
         .from("patients")
         .select("legal_first_name, legal_last_name, date_of_birth, address")
         .eq("id", claim.patient_id)
@@ -77,7 +80,6 @@ router.get(
         .maybeSingle(),
       claim.insurance_coverage_id
         ? supabase
-            .schema("resupply")
             .from("insurance_coverages")
             .select(
               "member_id, group_number, policyholder_name, policyholder_relationship",
@@ -87,14 +89,12 @@ router.get(
             .maybeSingle()
         : Promise.resolve({ data: null }),
       supabase
-        .schema("resupply")
         .from("insurance_claim_line_items")
         .select("hcpcs_code, modifier, billed_cents, quantity")
         .eq("claim_id", claim.id)
         .order("created_at", { ascending: true }),
       claim.payer_profile_id
         ? supabase
-            .schema("resupply")
             .from("payer_profiles")
             .select("payer_legal_name, claims_mailing_address")
             .eq("id", claim.payer_profile_id)
@@ -103,6 +103,7 @@ router.get(
         : Promise.resolve({ data: null }),
       claim.referring_provider_id
         ? supabase
+            .raw()
             .schema("resupply")
             .from("providers")
             .select("legal_name, npi")
@@ -114,7 +115,6 @@ router.get(
       // so the HCFA carries the real ICD-10 instead of the previously-
       // hardcoded G47.33 fallback.
       supabase
-        .schema("resupply")
         .from("sleep_studies")
         .select("diagnosis_icd10")
         .eq("patient_id", claim.patient_id)
@@ -212,7 +212,11 @@ router.get(
       referringProviderNpi: referringProvider?.npi ?? null,
       diagnosisCodes,
       priorAuthNumber: null,
-      serviceLines: (lines ?? []).map((l) => ({
+      serviceLines: (
+        (lines ?? []) as Array<
+          Database["resupply"]["Tables"]["insurance_claim_line_items"]["Row"]
+        >
+      ).map((l) => ({
         fromDate: claim.date_of_service,
         toDate: claim.date_of_service,
         placeOfService: "12",

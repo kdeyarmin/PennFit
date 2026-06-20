@@ -1,9 +1,24 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 
-import { shiftDateUtc, buildAlertMessage } from "./metric-alerts-evaluator";
+import {
+  installSupabaseMock,
+  stageSupabaseResponse,
+  stageSupabaseRpcResponse,
+  getSupabaseRpcArgs,
+  getSupabaseWritePayloads,
+  getSupabaseCallCount,
+} from "../../test-helpers/supabase-mock";
+
+const supabaseMock = installSupabaseMock();
+
+import {
+  shiftDateUtc,
+  buildAlertMessage,
+  runMetricAlertsEvaluator,
+} from "./metric-alerts-evaluator";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SRC = readFileSync(
@@ -89,5 +104,76 @@ describe("runMetricAlertsEvaluator — snapshot reads are batched", () => {
   it("batches the delta-mode baselines in one .in() over key + date", () => {
     expect(SRC).toContain('.in("metric_key", Array.from(deltaKeys))');
     expect(SRC).toContain('.in("metric_date", Array.from(baselineDates))');
+  });
+});
+
+// Multi-tenant fan-out (migration 0380). The evaluator now runs per
+// tenant: every metrics access scopes to the tenant's org_id (the RPC
+// takes p_org_id; the alert it writes carries org_id) and a breach only
+// ever fires that tenant's alert.
+describe("runMetricAlertsEvaluator — per-tenant scoping", () => {
+  beforeEach(() => supabaseMock.reset());
+
+  it("scopes the latest-snapshot RPC by org and stamps org_id on the fired alert", async () => {
+    stageSupabaseResponse("organizations", "select", {
+      data: [{ id: "org-a" }],
+    });
+    // One enabled absolute threshold for this tenant.
+    stageSupabaseResponse("metric_thresholds", "select", {
+      data: [
+        {
+          id: "thr-1",
+          metric_key: "revenue_net_cents",
+          comparison: "gt",
+          threshold_value: 100,
+          mode: "absolute",
+          severity: "warning",
+        },
+      ],
+    });
+    // Latest snapshot for the threshold's metric — value breaches gt 100.
+    stageSupabaseRpcResponse("metrics_daily_latest", {
+      data: [
+        {
+          metric_key: "revenue_net_cents",
+          metric_date: "2026-05-30",
+          metric_value: 45000,
+          unit: "cents",
+        },
+      ],
+    });
+    // The alert upsert returns the new row (a non-empty RETURNING means
+    // "newly fired").
+    stageSupabaseResponse("metric_alerts", "upsert", {
+      data: [{ id: "alert-1" }],
+    });
+
+    const stats = await runMetricAlertsEvaluator();
+    expect(stats.evaluated).toBe(1);
+    expect(stats.fired).toBe(1);
+
+    // The latest-snapshot RPC was called with the tenant's org id.
+    const rpcArgs = getSupabaseRpcArgs("metrics_daily_latest");
+    expect(rpcArgs).toHaveLength(1);
+    expect(rpcArgs[0]).toMatchObject({
+      p_org_id: "org-a",
+      p_metric_keys: ["revenue_net_cents"],
+    });
+
+    // The fired alert payload carries the tenant's org_id.
+    const alertWrites = getSupabaseWritePayloads("metric_alerts", "upsert");
+    expect(alertWrites).toHaveLength(1);
+    expect(alertWrites[0]).toMatchObject({
+      org_id: "org-a",
+      threshold_id: "thr-1",
+      metric_key: "revenue_net_cents",
+    });
+  });
+
+  it("no-ops when there are no active tenants", async () => {
+    stageSupabaseResponse("organizations", "select", { data: [] });
+    const stats = await runMetricAlertsEvaluator();
+    expect(stats).toEqual({ evaluated: 0, fired: 0 });
+    expect(getSupabaseCallCount("metric_thresholds", "select")).toBe(0);
   });
 });

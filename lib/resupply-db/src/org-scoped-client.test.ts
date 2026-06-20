@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { getOrgScopedClient, ORG_COLUMN } from "./org-scoped-client";
+import {
+  getOrgScopedClient,
+  listActiveOrgIds,
+  ORG_COLUMN,
+} from "./org-scoped-client";
 import type { ResupplySupabaseClient } from "./supabase-client";
 
 // A recording fake of the slice of the Supabase client the facade
@@ -166,5 +170,123 @@ describe("getOrgScopedClient", () => {
       .upsert([{ id: "1" }]);
     expect(captured.builder.op).toBe("upsert");
     expect(captured.builder.args[0]).toEqual([{ id: "1", [ORG_COLUMN]: ORG }]);
+  });
+});
+
+// A minimal directory-read fake: `.schema().from().select().eq().order().range()`
+// resolves to the staged `{ data, error }` envelope (PostgREST select-many
+// shape). `.range(from, to)` slices the staged data so the paginated
+// listActiveOrgIds() loop terminates on a short page; an error envelope is
+// returned verbatim on every page.
+function makeDirectoryClient(result: { data?: unknown; error?: unknown }): {
+  client: ResupplySupabaseClient;
+  lastEq?: { column: string; value: unknown };
+} {
+  const state: { lastEq?: { column: string; value: unknown } } = {};
+  const allRows: unknown[] = Array.isArray(result.data) ? result.data : [];
+  const builder = {
+    select() {
+      return this;
+    },
+    eq(column: string, value: unknown) {
+      state.lastEq = { column, value };
+      return this;
+    },
+    order() {
+      return this;
+    },
+    range(from: number, to: number) {
+      if (result.error) return Promise.resolve({ error: result.error });
+      return Promise.resolve({ data: allRows.slice(from, to + 1) });
+    },
+  };
+  const client = {
+    schema() {
+      return { from: () => builder };
+    },
+  } as unknown as ResupplySupabaseClient;
+  return {
+    client,
+    get lastEq() {
+      return state.lastEq;
+    },
+  };
+}
+
+describe("listActiveOrgIds", () => {
+  it("returns the ids of active tenants, filtering on status = active", async () => {
+    const dir = makeDirectoryClient({
+      data: [{ id: "org-a" }, { id: "org-b" }],
+    });
+    const ids = await listActiveOrgIds(dir.client);
+    expect(ids).toEqual(["org-a", "org-b"]);
+    // Assert the query shape so a regression (wrong column/value or a
+    // dropped filter) fails the test rather than silently passing.
+    expect(dir.lastEq).toEqual({ column: "status", value: "active" });
+  });
+
+  it("drops rows with a missing / empty id", async () => {
+    const { client } = makeDirectoryClient({
+      data: [{ id: "org-a" }, { id: "" }, {}, { id: "org-c" }],
+    });
+    expect(await listActiveOrgIds(client)).toEqual(["org-a", "org-c"]);
+  });
+
+  it("returns [] on a query error (fail-soft, never throws)", async () => {
+    const { client } = makeDirectoryClient({ error: { message: "boom" } });
+    expect(await listActiveOrgIds(client)).toEqual([]);
+  });
+
+  it("returns [] when the directory read throws", async () => {
+    const throwingClient = {
+      schema() {
+        throw new Error("connection refused");
+      },
+    } as unknown as ResupplySupabaseClient;
+    expect(await listActiveOrgIds(throwingClient)).toEqual([]);
+  });
+
+  it("returns [] on a mid-scan page error (skips the whole tick, no partial list)", async () => {
+    // Page 1 fills a whole page (500 rows = the internal ACTIVE_ORG_PAGE_SIZE,
+    // so the loop advances to page 2); page 2 errors. The result must be [] —
+    // never the 500 ids from page 1 — so the scheduler skips the tick rather
+    // than fanning crons out to only the first page of tenants.
+    const firstPage = Array.from({ length: 500 }, (_, i) => ({
+      id: `org-${i}`,
+    }));
+    let call = 0;
+    const builder = {
+      select() {
+        return this;
+      },
+      eq() {
+        return this;
+      },
+      order() {
+        return this;
+      },
+      range() {
+        call += 1;
+        return call === 1
+          ? Promise.resolve({ data: firstPage })
+          : Promise.resolve({ error: { message: "page 2 boom" } });
+      },
+    };
+    const client = {
+      schema: () => ({ from: () => builder }),
+    } as unknown as ResupplySupabaseClient;
+    expect(await listActiveOrgIds(client)).toEqual([]);
+  });
+
+  it("pages past the implicit row cap (no silent truncation)", async () => {
+    // 1200 active tenants: more than a single 500-row page, so an
+    // unbounded read would have dropped everyone past the cap. The
+    // paginated loop must walk all three pages and return every id.
+    const rows = Array.from({ length: 1200 }, (_, i) => ({ id: `org-${i}` }));
+    const { client } = makeDirectoryClient({ data: rows });
+    const ids = await listActiveOrgIds(client);
+    expect(ids).toHaveLength(1200);
+    expect(ids[0]).toBe("org-0");
+    expect(ids[1199]).toBe("org-1199");
   });
 });

@@ -445,12 +445,22 @@ function PayerGroupCard({
               className="text-left text-[11px] uppercase tracking-wider"
               style={{ color: "hsl(var(--ink-3))" }}
             >
-              <th className="p-3 w-8"></th>
-              <th className="p-3">Patient</th>
-              <th className="p-3">Date of service</th>
-              <th className="p-3">Eligibility</th>
-              <th className="p-3 text-right">Billed</th>
-              <th className="p-3 text-right">Patient</th>
+              <th scope="col" className="p-3 w-8"></th>
+              <th scope="col" className="p-3">
+                Patient
+              </th>
+              <th scope="col" className="p-3">
+                Date of service
+              </th>
+              <th scope="col" className="p-3">
+                Eligibility
+              </th>
+              <th scope="col" className="p-3 text-right">
+                Billed
+              </th>
+              <th scope="col" className="p-3 text-right">
+                Patient
+              </th>
             </tr>
           </thead>
           <tbody>

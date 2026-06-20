@@ -16,7 +16,7 @@
 import { Router, type IRouter, type Response } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import {
   aggregateOutreachAttribution,
@@ -71,13 +71,16 @@ function handleWindowTooLarge(err: unknown, res: Response): boolean {
   return false;
 }
 
-async function loadOutreachAttribution(cutoff: string, windowDays: number) {
-  const supabase = getSupabaseServiceRoleClient();
+async function loadOutreachAttribution(
+  cutoff: string,
+  windowDays: number,
+  orgId: string,
+) {
+  const supabase = getOrgScopedClient(orgId);
 
   const [convRes, clinRes, fulRes] = await Promise.all([
     // Resupply reminders = episode-linked conversations opened in window.
     supabase
-      .schema("resupply")
       .from("conversations")
       .select("patient_id, created_at", { count: "exact" })
       .not("episode_id", "is", null)
@@ -86,7 +89,6 @@ async function loadOutreachAttribution(cutoff: string, windowDays: number) {
       .limit(READ_CAP),
     // Clinical outreach actually sent in window.
     supabase
-      .schema("resupply")
       .from("clinical_outreach_log")
       .select("patient_id, created_at", { count: "exact" })
       .eq("status", "sent")
@@ -96,7 +98,6 @@ async function loadOutreachAttribution(cutoff: string, windowDays: number) {
     // Fulfillments from window start onward (a contact can only be
     // credited a fulfillment at/after it).
     supabase
-      .schema("resupply")
       .from("fulfillments")
       .select("patient_id, created_at", { count: "exact" })
       .gte("created_at", cutoff)
@@ -127,7 +128,12 @@ async function loadOutreachAttribution(cutoff: string, windowDays: number) {
         at: r.created_at as string,
       }));
 
-  const fulfillments: FulfillmentEvent[] = (fulRes.data ?? [])
+  const fulfillments: FulfillmentEvent[] = (
+    (fulRes.data ?? []) as Array<{
+      patient_id: string | null;
+      created_at: string | null;
+    }>
+  )
     .filter((r) => r.patient_id && r.created_at)
     .map((r) => ({
       patientId: r.patient_id as string,
@@ -152,10 +158,16 @@ router.get(
       return;
     }
     const { days, attributionWindowDays } = parsed.data;
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     try {
       const result = await loadOutreachAttribution(
         isoDaysAgo(days),
         attributionWindowDays,
+        orgId,
       );
       res.json({ windowDays: days, ...result });
     } catch (err) {
@@ -175,11 +187,17 @@ router.get(
       return;
     }
     const { days, attributionWindowDays } = parsed.data;
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     let result: Awaited<ReturnType<typeof loadOutreachAttribution>>;
     try {
       result = await loadOutreachAttribution(
         isoDaysAgo(days),
         attributionWindowDays,
+        orgId,
       );
     } catch (err) {
       if (handleWindowTooLarge(err, res)) return;

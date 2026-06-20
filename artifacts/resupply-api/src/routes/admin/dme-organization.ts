@@ -12,10 +12,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  type Database,
-  getSupabaseServiceRoleClient,
-} from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import {
   applyCompanyInfoToEnv,
@@ -207,13 +204,18 @@ function orgRowToApi(r: OrgRow) {
 router.get(
   "/admin/dme-organization",
   requirePermission("admin.tools.manage"),
-  async (_req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId).raw();
     const { data: org } = await supabase
       .schema("resupply")
       .from("dme_organization")
       .select("*")
-      .eq("singleton", true)
+      .eq("org_id", orgId)
       .limit(1)
       .maybeSingle();
     if (!org) {
@@ -262,9 +264,19 @@ router.put(
       return;
     }
     const b = parsed.data;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId).raw();
     const payload: Database["resupply"]["Tables"]["dme_organization"]["Insert"] =
       {
+        // Per-tenant billing identity (migration 0375): scope by org_id, not
+        // the legacy `singleton` flag. `.raw()` does not auto-stamp org_id, so
+        // set it explicitly — otherwise a second tenant's save would land an
+        // org_id-less row and the singleton lookup would clobber the seed.
+        org_id: orgId,
         singleton: true,
         legal_name: b.legalName,
         dba_name: b.dbaName ?? null,
@@ -317,7 +329,7 @@ router.put(
       .schema("resupply")
       .from("dme_organization")
       .select("id")
-      .eq("singleton", true)
+      .eq("org_id", orgId)
       .limit(1)
       .maybeSingle();
     let rowId: string;
@@ -386,12 +398,17 @@ router.post(
       return;
     }
     const b = parsed.data;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId).raw();
     const { data: org } = await supabase
       .schema("resupply")
       .from("dme_organization")
       .select("id")
-      .eq("singleton", true)
+      .eq("org_id", orgId)
       .limit(1)
       .maybeSingle();
     if (!org) {
@@ -472,12 +489,33 @@ router.patch(
     if (b.phoneE164 !== undefined) update.phone_e164 = b.phoneE164;
     if (b.isPrimary !== undefined) update.is_primary = b.isPrimary;
     if (b.isActive !== undefined) update.is_active = b.isActive;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId).raw();
+    // Constrain the contact to THIS tenant's org (dme_organization_contacts is
+    // organization_id-keyed, no org_id of its own): resolve the caller's org
+    // row, then scope the update by organization_id so a contact id from
+    // another tenant can't be patched.
+    const { data: orgRow } = await supabase
+      .schema("resupply")
+      .from("dme_organization")
+      .select("id")
+      .eq("org_id", orgId)
+      .limit(1)
+      .maybeSingle();
+    if (!orgRow) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
     const { data: updated, error } = await supabase
       .schema("resupply")
       .from("dme_organization_contacts")
       .update(update)
       .eq("id", idParsed.data.id)
+      .eq("organization_id", orgRow.id)
       .select("id");
     if (error) throw error;
     if (!updated || updated.length === 0) {
@@ -501,12 +539,31 @@ router.delete(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId).raw();
+    // Scope the delete to a contact owned by THIS tenant's org (see the PATCH
+    // handler) so another tenant's contact id can't be deleted.
+    const { data: orgRow } = await supabase
+      .schema("resupply")
+      .from("dme_organization")
+      .select("id")
+      .eq("org_id", orgId)
+      .limit(1)
+      .maybeSingle();
+    if (!orgRow) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
     const { error } = await supabase
       .schema("resupply")
       .from("dme_organization_contacts")
       .delete()
-      .eq("id", idParsed.data.id);
+      .eq("id", idParsed.data.id)
+      .eq("organization_id", orgRow.id);
     if (error) throw error;
     res.json({ ok: true });
   },

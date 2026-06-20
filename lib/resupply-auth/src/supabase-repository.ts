@@ -80,6 +80,8 @@ interface SessionRow {
   revoked_at: string | null;
   ip: string | null;
   user_agent_hash: string | null;
+  impersonated_org_id: string | null;
+  impersonator_user_id: string | null;
 }
 
 function rowToSession(row: SessionRow): AuthSession {
@@ -92,6 +94,8 @@ function rowToSession(row: SessionRow): AuthSession {
     revokedAt: row.revoked_at ? new Date(row.revoked_at) : null,
     ip: row.ip,
     userAgentHash: hexByteaToBufferOrNull(row.user_agent_hash),
+    impersonatedOrgId: row.impersonated_org_id ?? null,
+    impersonatorUserId: row.impersonator_user_id ?? null,
   };
 }
 
@@ -120,7 +124,7 @@ const USER_COLS =
 const CRED_COLS =
   "user_id, password_hash, algo, must_change, set_by_admin_at, updated_at";
 const SESSION_COLS =
-  "id, user_id, issued_at, expires_at, last_seen_at, revoked_at, ip, user_agent_hash";
+  "id, user_id, issued_at, expires_at, last_seen_at, revoked_at, ip, user_agent_hash, impersonated_org_id, impersonator_user_id";
 const EMAIL_TOKEN_COLS =
   "token_hash, user_id, purpose, expires_at, consumed_at, created_at";
 
@@ -306,6 +310,8 @@ export function supabaseAuthRepository(
           expires_at: input.expiresAt.toISOString(),
           ip: input.ip,
           user_agent_hash: bufferToHexByteaOrNull(input.userAgentHash),
+          impersonated_org_id: input.impersonatedOrgId ?? null,
+          impersonator_user_id: input.impersonatorUserId ?? null,
         })
         .select(SESSION_COLS)
         .single<SessionRow>();
@@ -369,6 +375,22 @@ export function supabaseAuthRepository(
           purpose: input.purpose,
           expires_at: input.expiresAt.toISOString(),
         });
+      if (error) throw error;
+    },
+
+    async expireUnconsumedEmailTokens(input) {
+      // Mark prior live tokens expired-as-of-now (NOT consumed —
+      // consumed_at means "redeemed"; an invalidated link should read
+      // as expired to the user, and to anyone auditing the rows).
+      const iso = input.at.toISOString();
+      const { error } = await supabase
+        .schema("resupply_auth")
+        .from("email_tokens")
+        .update({ expires_at: iso })
+        .eq("user_id", input.userId)
+        .eq("purpose", input.purpose)
+        .is("consumed_at", null)
+        .gt("expires_at", iso);
       if (error) throw error;
     },
 

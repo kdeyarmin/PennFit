@@ -28,12 +28,14 @@
 import type Stripe from "stripe";
 
 import {
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
+  resolveSeedOrgId,
   type Database,
-  type ResupplySupabaseClient,
+  type OrgScopedClient,
 } from "@workspace/resupply-db";
 
 import { getStripeClient, type StripeConfig } from "./config";
+import { stripeAccountRequestOptions } from "./connect";
 
 type ShopCustomerRow = Database["resupply"]["Tables"]["shop_customers"]["Row"];
 
@@ -50,13 +52,26 @@ export interface CustomerMapping {
 export async function getOrCreateStripeCustomer(
   config: StripeConfig,
   args: {
+    /** Tenant the request operates on (req.orgId). Falls back to the seed
+     *  org when omitted — single-tenant behavior, and a safe degrade. */
+    orgId?: string;
     customerId: string;
     email: string | null;
     displayName?: string | null;
   },
 ): Promise<CustomerMapping> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = args.orgId ?? (await resolveSeedOrgId());
+  if (!orgId) {
+    throw new Error(
+      "getOrCreateStripeCustomer: tenant context missing (no orgId / seed org).",
+    );
+  }
+  const supabase = getOrgScopedClient(orgId);
   const stripe = getStripeClient(config);
+  // Stripe Connect (G5): create the Customer ON the tenant's connected
+  // account when it has one (Customers are account-scoped). NULL account
+  // → {} → the platform account, unchanged.
+  const accountOpts = await stripeAccountRequestOptions(orgId);
 
   // Step 1: ensure a local row exists. The PUT /shop/me path also
   // creates this; we re-create on demand so checkout flows that
@@ -86,7 +101,10 @@ export async function getOrCreateStripeCustomer(
         source: "pennpaps-shop",
       },
     },
-    { idempotencyKey: `pennpaps-shop-customer-${args.customerId}` },
+    {
+      idempotencyKey: `pennpaps-shop-customer-${args.customerId}`,
+      ...accountOpts,
+    },
   );
 
   // Step 3: try to write the mapping. If a sibling request beat us
@@ -95,7 +113,6 @@ export async function getOrCreateStripeCustomer(
   // they're the same Stripe Customer anyway.
   try {
     const { data: updated, error } = await supabase
-      .schema("resupply")
       .from("shop_customers")
       .update({
         stripe_customer_id: customer.id,
@@ -127,9 +144,15 @@ export async function getOrCreateStripeCustomer(
 /** Read-only lookup. Returns null if no row exists yet. */
 export async function readShopCustomer(
   customerId: string,
+  orgId?: string,
 ): Promise<ShopCustomerRow | null> {
-  const supabase = getSupabaseServiceRoleClient();
-  return readRow(supabase, customerId);
+  const oid = orgId ?? (await resolveSeedOrgId());
+  if (!oid) {
+    // Tenant context missing — treat as "no row" (same null outcome
+    // readRow returns when no shop_customers row exists).
+    return null;
+  }
+  return readRow(getOrgScopedClient(oid), customerId);
 }
 
 /**
@@ -138,11 +161,20 @@ export async function readShopCustomer(
  * PUT calls don't have to handle the missing-row case.
  */
 export async function ensureShopCustomerRow(args: {
+  /** Tenant the request operates on (req.orgId). Falls back to the seed
+   *  org when omitted — single-tenant behavior, and a safe degrade. */
+  orgId?: string;
   customerId: string;
   email: string | null;
   displayName?: string | null;
 }): Promise<ShopCustomerRow> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = args.orgId ?? (await resolveSeedOrgId());
+  if (!orgId) {
+    throw new Error(
+      "ensureShopCustomerRow: tenant context missing (no orgId / seed org).",
+    );
+  }
+  const supabase = getOrgScopedClient(orgId);
   const existing = await readRow(supabase, args.customerId);
   if (existing) {
     if (args.email && args.email.toLowerCase() !== existing.email_lower) {
@@ -153,23 +185,28 @@ export async function ensureShopCustomerRow(args: {
   return insertRow(supabase, args);
 }
 
+// These helpers go through the ORG-SCOPED facade (`db.from(...)`), not
+// `.raw()`: `shop_customers` is a tenant table with a NOT NULL `org_id`,
+// so reads must filter by tenant and the insert MUST carry `org_id`
+// (the facade injects it). Using `.raw()` here would both leak across
+// tenants and fail the NOT NULL constraint on insert.
+
 async function readRow(
-  supabase: ResupplySupabaseClient,
+  db: OrgScopedClient,
   customerId: string,
 ): Promise<ShopCustomerRow | null> {
-  const { data, error } = await supabase
-    .schema("resupply")
+  const { data, error } = await db
     .from("shop_customers")
     .select("*")
     .eq("customer_id", customerId)
     .limit(1)
     .maybeSingle();
   if (error) throw error;
-  return data ?? null;
+  return (data as ShopCustomerRow | null) ?? null;
 }
 
 async function insertRow(
-  supabase: ResupplySupabaseClient,
+  db: OrgScopedClient,
   args: {
     customerId: string;
     email: string | null;
@@ -179,9 +216,8 @@ async function insertRow(
   // The original SQL path used INSERT … ON CONFLICT
   // (customer_id) DO NOTHING RETURNING. PostgREST has no DO
   // NOTHING; we INSERT and treat 23505 as the "sibling beat us"
-  // path, then re-read.
-  const { data: inserted, error: insertErr } = await supabase
-    .schema("resupply")
+  // path, then re-read. `org_id` is injected by the scoped facade.
+  const { data: inserted, error: insertErr } = await db
     .from("shop_customers")
     .insert({
       customer_id: args.customerId,
@@ -198,9 +234,9 @@ async function insertRow(
       throw insertErr;
     }
   } else if (inserted) {
-    return inserted;
+    return inserted as ShopCustomerRow;
   }
-  const refreshed = await readRow(supabase, args.customerId);
+  const refreshed = await readRow(db, args.customerId);
   if (!refreshed) {
     throw new Error(
       `shop_customers row vanished after upsert for customer_id=${args.customerId}`,
@@ -210,12 +246,11 @@ async function insertRow(
 }
 
 async function updateEmail(
-  supabase: ResupplySupabaseClient,
+  db: OrgScopedClient,
   customerId: string,
   email: string,
 ): Promise<ShopCustomerRow> {
-  const { data: updated, error } = await supabase
-    .schema("resupply")
+  const { data: updated, error } = await db
     .from("shop_customers")
     .update({
       email_lower: email.toLowerCase(),
@@ -231,7 +266,7 @@ async function updateEmail(
       `shop_customers update returned no rows for customer_id=${customerId}`,
     );
   }
-  return updated;
+  return updated as ShopCustomerRow;
 }
 
 /**
@@ -243,6 +278,9 @@ async function updateEmail(
 export async function readDefaultPaymentMethod(
   config: StripeConfig,
   stripeCustomerId: string,
+  /** Tenant whose connected account the Customer lives on (G5). The sole
+   *  caller is the webhook customer-sync, which passes its resolved org. */
+  orgId?: string,
 ): Promise<{
   id: string;
   brand: string | null;
@@ -251,9 +289,12 @@ export async function readDefaultPaymentMethod(
   expYear: number | null;
 } | null> {
   const stripe = getStripeClient(config);
-  const customer = await stripe.customers.retrieve(stripeCustomerId, {
-    expand: ["invoice_settings.default_payment_method"],
-  });
+  const accountOpts = await stripeAccountRequestOptions(orgId);
+  const customer = await stripe.customers.retrieve(
+    stripeCustomerId,
+    { expand: ["invoice_settings.default_payment_method"] },
+    accountOpts,
+  );
   if (customer.deleted) return null;
   const dpm = (customer as Stripe.Customer).invoice_settings
     ?.default_payment_method;

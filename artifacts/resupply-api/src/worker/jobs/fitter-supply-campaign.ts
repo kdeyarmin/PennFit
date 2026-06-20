@@ -67,15 +67,13 @@ import type PgBoss from "pg-boss";
 
 import {
   type Database,
-  getSupabaseServiceRoleClient,
+  type OrgScopedClient,
+  getOrgScopedClient,
 } from "@workspace/resupply-db";
 
 type FitterLeadsUpdate =
   Database["resupply"]["Tables"]["fitter_leads"]["Update"];
-import {
-  createSendgridClient,
-  EmailConfigError,
-} from "@workspace/resupply-email";
+import { EmailConfigError } from "@workspace/resupply-email";
 import {
   createTwilioSmsClient,
   TwilioConfigError,
@@ -84,6 +82,14 @@ import {
 import { isOutsideSmsSendWindow } from "../../lib/comm-prefs";
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
+import { createTenantSendgridClient } from "../../lib/email/tenant-sender.js";
+import {
+  resolveBrandingByOrgId,
+  resolveTenantBaseUrl,
+} from "../../lib/tenant-branding.js";
+import { resolveTenantSmsClientOptions } from "../../lib/messaging/tenant-telecom.js";
+import { recordOutboundMessageUsage } from "../../lib/metering/usage.js";
+import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import {
   createQueueWithDlq,
   VENDOR_SEND_QUEUE_OPTS,
@@ -165,13 +171,14 @@ interface TouchpointCopy {
   sms: string;
 }
 
-function publicBaseUrl(): string {
+function publicBaseUrl(override?: string): string {
   return (
+    override ??
     process.env.SHOP_PUBLIC_BASE_URL ??
     process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL ??
     (process.env.RAILWAY_PUBLIC_DOMAIN
       ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
-      : "https://pennpaps.com")
+      : "https://cmbreathe.com")
   ).replace(/\/$/, "");
 }
 
@@ -850,18 +857,27 @@ export function composeTouchpoint(opts: {
   }
 }
 
-function tryCreateSendgrid(): ReturnType<typeof createSendgridClient> | null {
+/** Construct the tenant SendGrid client (G6 — sends under the tenant's own
+ *  From identity, falling back to the platform default for the seed tenant);
+ *  return null on missing config so the worker degrades gracefully. */
+async function tryCreateSendgrid(
+  orgId: string,
+): Promise<Awaited<ReturnType<typeof createTenantSendgridClient>> | null> {
   try {
-    return createSendgridClient();
+    return await createTenantSendgridClient(orgId);
   } catch (err) {
     if (err instanceof EmailConfigError) return null;
     throw err;
   }
 }
 
-function tryCreateTwilioSms(): ReturnType<typeof createTwilioSmsClient> | null {
+async function tryCreateTwilioSms(
+  orgId: string,
+): Promise<ReturnType<typeof createTwilioSmsClient> | null> {
   try {
-    return createTwilioSmsClient();
+    // Send under the tenant's own number / Messaging Service when it has
+    // one (G7); falls back to the platform env default otherwise.
+    return createTwilioSmsClient(await resolveTenantSmsClientOptions(orgId));
   } catch (err) {
     if (err instanceof TwilioConfigError) return null;
     throw err;
@@ -886,20 +902,40 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
     errors: 0,
     coldSkipped: 0,
   };
+  // Fan out across every active tenant — fitter_leads is org-scoped, so each
+  // tenant is swept on its own client and a campaign touch only reaches a
+  // lead in its own org. The dispatcher flag is resolved per tenant inside
+  // the per-org body. Per-tenant failure isolation; results summed.
+  // Single-tenant: listActiveOrgIds() returns just the seed org, so this is
+  // exactly the prior one-tenant sweep.
+  await forEachActiveOrg(
+    async (orgId) => {
+      await fitterSupplyCampaignSweepForOrg(orgId, stats);
+    },
+    { jobName: JOB_NAME },
+  );
+  return stats;
+}
 
-  // Runtime feature-flag check. The boot-time RESUPPLY_FITTER_*_ENABLED
-  // env var controls whether the cron is REGISTERED at all; this DB
-  // flag controls whether a REGISTERED cron actually does work. Lets
-  // ops pause the campaign from the Control Center without a deploy.
+async function fitterSupplyCampaignSweepForOrg(
+  orgId: string,
+  stats: SupplyCampaignStats,
+): Promise<void> {
+  // Runtime feature-flag check, per tenant. The boot-time
+  // RESUPPLY_FITTER_*_ENABLED env var controls whether the cron is REGISTERED
+  // at all; this DB flag controls whether a REGISTERED cron does work for
+  // THIS tenant. Lets each tenant pause the campaign from Control Center
+  // without a deploy.
   const flagEnabled = await isFeatureEnabled(
     "fitter_supply_campaign.dispatcher",
+    orgId,
   );
   if (!flagEnabled) {
-    stats.skippedFlagDisabled = 1;
-    return stats;
+    stats.skippedFlagDisabled += 1;
+    return;
   }
 
-  const supabase = getSupabaseServiceRoleClient();
+  const supabase = getOrgScopedClient(orgId);
   const nowIso = new Date().toISOString();
 
   // Eligibility: opted-in row in pre-purchase ('campaign_active'),
@@ -908,7 +944,6 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
   // next_campaign_touch_at. The partial index
   // `fitter_leads_campaign_due_idx` (mig 0153) covers all three.
   const { data: leads, error } = await supabase
-    .schema("resupply")
     .from("fitter_leads")
     .select(
       "id, email, phone_e164, sms_opt_in, recommended_mask_id, recommended_mask_name, recommended_mask_type, campaign_touch_count, completed_at, first_name, first_order_placed_at, journey_stage, engagement_score, click_count",
@@ -925,15 +960,23 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
     .limit(BATCH_SIZE);
   if (error) throw error;
 
-  const candidates = (leads ?? []).filter(
+  const candidates = ((leads ?? []) as Partial<LeadRow>[]).filter(
     (l): l is LeadRow => typeof l.email === "string" && l.email.length > 0,
   );
-  if (candidates.length === 0) return stats;
+  if (candidates.length === 0) return;
 
-  const sendgrid = tryCreateSendgrid();
-  const twilioSms = tryCreateTwilioSms();
-  const practiceName = process.env.RESUPPLY_PRACTICE_NAME ?? "PennPaps";
-  const baseUrl = publicBaseUrl();
+  const sendgrid = await tryCreateSendgrid(orgId);
+  const twilioSms = await tryCreateTwilioSms(orgId);
+  // Brand the copy with the tenant's own storefront name (G6); for the seed
+  // tenant this resolves to "PennPaps" so single-tenant copy is unchanged.
+  const brand = await resolveBrandingByOrgId(orgId);
+  const practiceName = brand.storefrontName;
+  // Build patient links from the tenant's own storefront origin (its verified
+  // custom domain) when it has one; the seed tenant falls through to the env/
+  // default, so single-tenant is unchanged. Resolved once per tenant sweep.
+  const baseUrl = publicBaseUrl(
+    (await resolveTenantBaseUrl(orgId)) ?? undefined,
+  );
   const resumeUrl = `${baseUrl}/results`;
   const shopUrl = `${baseUrl}/shop`;
 
@@ -980,7 +1023,6 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
       ).toISOString();
       const skipIso = new Date().toISOString();
       const { data: skipClaimed, error: skipErr } = await supabase
-        .schema("resupply")
         .from("fitter_leads")
         .update({
           // Pin campaign_touch_count to the T6 value to mark the
@@ -1129,7 +1171,6 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
     if (postSendStage) claimUpdate.journey_stage = postSendStage;
 
     const { data: claimed, error: claimErr } = await supabase
-      .schema("resupply")
       .from("fitter_leads")
       .update(claimUpdate)
       .eq("id", lead.id)
@@ -1273,7 +1314,13 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
           },
         });
         stats.emailed += 1;
+        recordOutboundMessageUsage({
+          orgId,
+          channel: "email",
+          source: "fitter_supply_campaign.email",
+        });
         await recordTouch(
+          supabase,
           lead.id,
           nextTouchIndex,
           "email",
@@ -1288,6 +1335,7 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
           "fitter-lead.supply-campaign: email send failed",
         );
         await recordTouch(
+          supabase,
           lead.id,
           nextTouchIndex,
           "email",
@@ -1301,6 +1349,7 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
     } else {
       stats.skippedNoEmailConfig += 1;
       await recordTouch(
+        supabase,
         lead.id,
         nextTouchIndex,
         "email",
@@ -1325,7 +1374,13 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
             body: copy.sms,
           });
           stats.smsSent += 1;
+          recordOutboundMessageUsage({
+            orgId,
+            channel: "sms",
+            source: "fitter_supply_campaign.sms",
+          });
           await recordTouch(
+            supabase,
             lead.id,
             nextTouchIndex,
             "sms",
@@ -1340,6 +1395,7 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
             "fitter-lead.supply-campaign: sms send failed",
           );
           await recordTouch(
+            supabase,
             lead.id,
             nextTouchIndex,
             "sms",
@@ -1353,6 +1409,7 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
       } else {
         stats.skippedNoSmsConfig += 1;
         await recordTouch(
+          supabase,
           lead.id,
           nextTouchIndex,
           "sms",
@@ -1363,13 +1420,12 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
       }
     }
   }
-
-  return stats;
 }
 
 /** Best-effort write to fitter_campaign_touches. Audit log only;
  *  a failure to insert never blocks the send pipeline. */
 async function recordTouch(
+  supabase: OrgScopedClient,
   leadId: string,
   touchIndex: number,
   channel: "email" | "sms",
@@ -1378,22 +1434,18 @@ async function recordTouch(
   subjectVariantKey: string = "A",
 ): Promise<void> {
   try {
-    const supabase = getSupabaseServiceRoleClient();
-    const { error } = await supabase
-      .schema("resupply")
-      .from("fitter_campaign_touches")
-      .insert({
-        lead_id: leadId,
-        touch_index: touchIndex,
-        channel,
-        template_key: `fitter_supply_campaign.t${touchIndex}`,
-        status,
-        error_message: errorMessage,
-        // Mig 0157 — subject-line A/B variant. Default 'A' for
-        // call sites in dev/test that don't run experiments;
-        // production worker passes the bucket-assigned key.
-        subject_variant_key: subjectVariantKey,
-      });
+    const { error } = await supabase.from("fitter_campaign_touches").insert({
+      lead_id: leadId,
+      touch_index: touchIndex,
+      channel,
+      template_key: `fitter_supply_campaign.t${touchIndex}`,
+      status,
+      error_message: errorMessage,
+      // Mig 0157 — subject-line A/B variant. Default 'A' for
+      // call sites in dev/test that don't run experiments;
+      // production worker passes the bucket-assigned key.
+      subject_variant_key: subjectVariantKey,
+    });
     if (error) {
       // Unique-constraint hit is expected on a retry of a lost-race
       // claim; everything else is logged.

@@ -10,6 +10,8 @@
     "auth:bootstrap-admin": "tsx ./src/auth-bootstrap-admin.ts",
     "auth:grant-super-admin": "tsx ./src/auth-grant-super-admin.ts",
     "auth:set-admin-password": "tsx ./src/auth-set-admin-password.ts",
+    "tenant:onboard": "tsx ./src/tenant-onboard.ts",
+    "tenant:offboard": "tsx ./src/tenant-offboard.ts",
     "preflight:prod": "tsx ./src/preflight-prod-env.ts",
     "verify:deploy": "tsx ./src/verify-deploy.ts",
     "check:schema-drift": "tsx ./src/check-schema-drift.ts",
@@ -27,6 +29,7 @@
     "@workspace/resupply-db": "workspace:*",
     "@workspace/resupply-email": "workspace:*",
     "@workspace/resupply-secrets": "workspace:*",
+    "@workspace/resupply-telecom": "workspace:*",
     "stripe": "^22.1.1"
   }
 }

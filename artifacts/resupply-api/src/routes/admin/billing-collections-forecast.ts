@@ -13,7 +13,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import {
   OUTSTANDING_AR_STATUSES,
@@ -48,9 +48,13 @@ router.get(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("insurance_claims")
       .select("status, total_billed_cents, total_allowed_cents, submitted_at")
       .in("status", [...OUTSTANDING_AR_STATUSES])
@@ -99,10 +103,14 @@ router.get(
       res.status(400).json({ error: "invalid_query" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     const { data: rx, error: rxErr } = await supabase
-      .schema("resupply")
       .from("prescriptions")
       .select("patient_id, item_sku, cadence_days")
       .eq("status", "active")
@@ -121,7 +129,6 @@ router.get(
     const lastFill = new Map<string, string>();
     if (prescriptions.length > 0) {
       const { data: fills, error: fErr } = await supabase
-        .schema("resupply")
         .from("fulfillments")
         .select("patient_id, item_sku, created_at")
         .order("created_at", { ascending: false })

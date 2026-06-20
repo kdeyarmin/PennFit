@@ -158,30 +158,66 @@ One migration per domain batch, each: `ADD COLUMN org_id uuid` (nullable) →
 
 ## Workstream D — RLS backstop
 
-### D1. Per-tenant policies
+### D1. Per-tenant policies — DONE
 
-- **New migration** adding policies to tenant-scoped tables:
-  `USING (org_id = current_setting('app.current_org_id', true)::uuid)`.
-- The wrapper (C1) issues `SET LOCAL app.current_org_id = …` per request/txn.
-- Because `service_role` bypasses RLS, these **do not change runtime
-  behavior** today — they are the backstop for the day any access moves to a
-  non-bypassing role, and the evidence artifact for BAA/SOC 2.
+- **Migration `0344_org_isolation_rls_policies.sql`** adds a permissive
+  `org_isolation` policy to every tenant-scoped table:
+  `USING / WITH CHECK (org_id = current_setting('app.current_org_id', true)::uuid)`.
+  It is a **catalog-driven `DO` loop** over `resupply` base tables that
+  carry an `org_id` column (the same self-maintaining approach as 0170's
+  RLS-enable loop), so it is correct by construction and idempotent
+  (`DROP POLICY IF EXISTS` before `CREATE`).
+- Because `service_role` (and `postgres`) bypass RLS, this **does not
+  change runtime behavior** today — it is the backstop for the day any
+  access moves to a non-bypassing role, and the BAA/SOC 2 evidence
+  artifact. With the GUC unset, `current_setting(..., true)` is NULL so a
+  non-bypass role still sees nothing (the post-0170 "RLS enabled" posture
+  is preserved). Verified on a throwaway Postgres: bypass role sees all;
+  non-bypass role sees only its tenant when the GUC is set and nothing
+  when it is unset; `WITH CHECK` rejects cross-tenant writes.
+
+### D2. GUC wiring (follow-up, not blocking)
+
+- The wrapper (C1) will issue `SET LOCAL app.current_org_id = …` per
+  request/txn so the policies bind to the active tenant. This is deferred
+  until a non-bypassing role exists, since `service_role` ignores RLS —
+  the app-layer wrapper remains the real isolation guarantee until then.
+  (PostgREST has no per-statement `SET LOCAL`; this will ride a request
+  header → `app.current_org_id` mapping or an RPC, tracked separately.)
 
 ---
 
 ## Workstream E — CI isolation guard (make the invariant enforceable)
 
-### E1. New check script
+### E1. Check script — DONE (plain gate; ratchet retired in PR 0.8)
 
-- **New file:** `scripts/check-tenant-isolation.sh`, in the spirit of the
+- **File:** `scripts/check-tenant-isolation.sh`, in the spirit of the
   existing `scripts/check-resupply-architecture.sh` /
   `check-admin-route-gates.sh`.
 - Fails the build when application code (outside `lib/resupply-db` and the
   reviewed allowlist) calls `getSupabaseServiceRoleClient()` directly instead
   of `getOrgScopedClient()` — the same pattern Rule 7 uses to forbid raw `pg`
   outside `lib/resupply-db`.
-- Wire into the same CI stage as the other `check-*` scripts and the
-  pre-commit hook.
+- **Now a plain gate.** The guard launched in ratchet mode against a
+  committed baseline (`scripts/tenant-isolation-baseline.txt`) while ~390
+  files were still on the raw client mid-cutover — hard-failing on a _new_
+  offender while tolerating the shrinking known set. The per-domain `org_id`
+  cutover is now **complete**: the baseline reached empty, so **PR 0.8**
+  retired the baseline machinery (and deleted the baseline file). The guard
+  is a flat check — **any** direct `getSupabaseServiceRoleClient()` callsite
+  in application code hard-fails; there is no baseline to launder a new
+  caller onto. The reviewed global/auth exemptions (the migrator + client
+  owner `lib/resupply-db`, tests, `scripts/`, the tenant resolver
+  `middlewares/requireAdmin`, and the global `dme_organization` reader
+  `lib/billing/identity-resolver`) live in the script's `EXCLUDES`; adding
+  to that allowlist is a deliberate, reviewed change.
+- **Wired in:** the CHECKS list in `scripts/run-resupply-checks.mjs` (so it
+  runs under `pnpm verify`) and a dedicated `Tenant isolation guard` step in
+  `.github/workflows/ci.yml` (self-test + check), alongside the other
+  `check-*` self-tests. A fixture-driven `--self-test`
+  (`check-tenant-isolation.sh.test`) proves the gate catches a real direct
+  callsite (and that the exemptions / bare imports don't count) so it can't
+  decay into a vacuous pass.
 
 ### E2. Cross-tenant leakage test
 

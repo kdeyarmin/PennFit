@@ -5,7 +5,7 @@
 
 import type { Logger } from "pino";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { REFERRAL_REVIEW_EXTRACT_JOB } from "../../worker/jobs/referral-review-extract";
 import { getBoss } from "../../worker/index";
@@ -21,9 +21,10 @@ export async function openReferralReviewForFax(
   input: OpenReferralReviewForFaxInput,
   logger: Logger,
 ): Promise<{ reviewId: string | null; enqueued: boolean }> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) return { reviewId: null, enqueued: false };
+  const supabase = getOrgScopedClient(orgId);
   const { data: inserted, error } = await supabase
-    .schema("resupply")
     .from("referral_reviews")
     .insert({
       source: "fax",

@@ -63,6 +63,7 @@ router.post(
         patientId: parsed.data.id,
         hcpcsCode: bodyParsed.data?.hcpcsCode,
         requestedByEmail: req.adminEmail ?? "unknown",
+        orgId: req.orgId,
       });
       await logAudit({
         action: "eligibility.verify",

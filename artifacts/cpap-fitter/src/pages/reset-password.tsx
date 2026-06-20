@@ -44,11 +44,10 @@ export function ResetPasswordPage() {
   useEffect(stripTokenFromUrl, []);
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
-  const [submitError, setSubmitError] = useState<string | null>(
-    token
-      ? null
-      : "This page expects a reset link from your email. Check your inbox and click the link there.",
-  );
+  // When the page is opened without a token we render a dedicated
+  // "request a new link" card (below) instead of an inert form, so this
+  // starts clean.
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const reset = authHooks.useResetPassword();
   const [, setLocation] = useLocation();
 
@@ -91,73 +90,100 @@ export function ResetPasswordPage() {
 
   return (
     <AuthLayout variant="customer">
-      <form
-        onSubmit={onSubmit}
-        className="w-full max-w-sm rounded-lg shadow-sm border bg-white p-6 space-y-4"
-      >
-        <h1 className="text-xl font-semibold">Choose a new password</h1>
-
-        <label className="block text-sm">
-          <span className="font-medium">New password</span>
-          <PasswordInput
-            autoComplete="new-password"
-            minLength={12}
-            required
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            showStrength
-            helperText="At least 12 characters. Longer is stronger — passphrases of 4+ random words work great."
-            inputTestId="reset-password-input"
-          />
-        </label>
-
-        <label className="block text-sm">
-          <span className="font-medium">Confirm new password</span>
-          <PasswordInput
-            autoComplete="new-password"
-            required
-            value={confirm}
-            onChange={(e) => setConfirm(e.target.value)}
-            inputTestId="reset-confirm-password-input"
-            aria-invalid={passwordsMismatch || undefined}
-          />
-          {passwordsMismatch && (
-            <span
-              className="block text-xs mt-1 text-rose-700"
-              role="alert"
-              data-testid="reset-confirm-mismatch"
-            >
-              Passwords don&apos;t match.
-            </span>
-          )}
-        </label>
-
-        {submitError && (
+      {!token ? (
+        <div className="w-full max-w-sm rounded-lg shadow-sm border bg-white p-6 space-y-4">
+          <h1 className="text-xl font-semibold">Reset link required</h1>
           <p
             role="alert"
             className="text-sm rounded-md px-3 py-2 bg-red-50 text-red-900"
           >
-            {submitError}
+            This page needs the reset link from your email. The link may have
+            expired, or this page was opened without it.
           </p>
-        )}
-
-        <button
-          type="submit"
-          disabled={reset.isPending || !token || passwordsMismatch}
-          className="w-full rounded-md bg-[hsl(var(--penn-navy-deep))] text-white font-semibold py-2 text-sm disabled:opacity-60"
-        >
-          {reset.isPending ? "Saving…" : "Set new password"}
-        </button>
-
-        <p className="text-xs text-center">
           <Link
-            href={`${basePath}/sign-in`}
-            className="underline text-[hsl(var(--penn-navy-deep))]"
+            href={`${basePath}/forgot-password`}
+            className="block text-center rounded-md bg-[hsl(var(--penn-navy-deep))] text-white font-semibold py-2 text-sm"
           >
-            Back to sign in
+            Request a new reset link
           </Link>
-        </p>
-      </form>
+          <p className="text-xs text-center">
+            <Link
+              href={`${basePath}/sign-in`}
+              className="underline text-[hsl(var(--penn-navy-deep))]"
+            >
+              Back to sign in
+            </Link>
+          </p>
+        </div>
+      ) : (
+        <form
+          onSubmit={onSubmit}
+          className="w-full max-w-sm rounded-lg shadow-sm border bg-white p-6 space-y-4"
+        >
+          <h1 className="text-xl font-semibold">Choose a new password</h1>
+
+          <label className="block text-sm">
+            <span className="font-medium">New password</span>
+            <PasswordInput
+              autoComplete="new-password"
+              minLength={12}
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              showStrength
+              helperText="At least 12 characters. Longer is stronger — passphrases of 4+ random words work great."
+              inputTestId="reset-password-input"
+            />
+          </label>
+
+          <label className="block text-sm">
+            <span className="font-medium">Confirm new password</span>
+            <PasswordInput
+              autoComplete="new-password"
+              required
+              value={confirm}
+              onChange={(e) => setConfirm(e.target.value)}
+              inputTestId="reset-confirm-password-input"
+              aria-invalid={passwordsMismatch || undefined}
+            />
+            {passwordsMismatch && (
+              <span
+                className="block text-xs mt-1 text-rose-700"
+                role="alert"
+                data-testid="reset-confirm-mismatch"
+              >
+                Passwords don&apos;t match.
+              </span>
+            )}
+          </label>
+
+          {submitError && (
+            <p
+              role="alert"
+              className="text-sm rounded-md px-3 py-2 bg-red-50 text-red-900"
+            >
+              {submitError}
+            </p>
+          )}
+
+          <button
+            type="submit"
+            disabled={reset.isPending || !token || passwordsMismatch}
+            className="w-full rounded-md bg-[hsl(var(--penn-navy-deep))] text-white font-semibold py-2 text-sm disabled:opacity-60"
+          >
+            {reset.isPending ? "Saving…" : "Set new password"}
+          </button>
+
+          <p className="text-xs text-center">
+            <Link
+              href={`${basePath}/sign-in`}
+              className="underline text-[hsl(var(--penn-navy-deep))]"
+            >
+              Back to sign in
+            </Link>
+          </p>
+        </form>
+      )}
     </AuthLayout>
   );
 }

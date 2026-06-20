@@ -248,6 +248,67 @@ describe("requireTwilioSignature middleware", () => {
     expect(onReject).not.toHaveBeenCalled();
   });
 
+  it("accepts when the signed URL is one of several candidate hosts", () => {
+    const sig = computeSig(TOKEN, URL, PARAMS);
+    const next = vi.fn();
+    const onReject = vi.fn();
+    const mw = requireTwilioSignature({
+      getAuthToken: () => TOKEN,
+      // First candidate is a different host (won't match); the real one is
+      // second. Validation should accept on the matching candidate.
+      buildPublicUrl: () => ["https://other-host.example/voice/x", URL],
+      onReject,
+    });
+    const { res } = fakeRes();
+    mw(
+      fakeReq({ signature: sig, body: PARAMS }),
+      res,
+      next as SignatureNextFunction,
+    );
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(onReject).not.toHaveBeenCalled();
+  });
+
+  it("rejects when the signature matches none of the candidate hosts", () => {
+    const sig = computeSig(TOKEN, URL, PARAMS);
+    const next = vi.fn();
+    const onReject = vi.fn();
+    const mw = requireTwilioSignature({
+      getAuthToken: () => TOKEN,
+      buildPublicUrl: () => [
+        "https://a.example/voice/x",
+        "https://b.example/voice/x",
+      ],
+      onReject,
+    });
+    const { res } = fakeRes();
+    mw(
+      fakeReq({ signature: sig, body: PARAMS }),
+      res,
+      next as SignatureNextFunction,
+    );
+    expect(next).not.toHaveBeenCalled();
+    expect(onReject.mock.calls[0]![2]).toBe("signature_mismatch");
+  });
+
+  it("rejects when the candidate URL list is empty (fails closed)", () => {
+    const next = vi.fn();
+    const onReject = vi.fn();
+    const mw = requireTwilioSignature({
+      getAuthToken: () => TOKEN,
+      buildPublicUrl: () => [],
+      onReject,
+    });
+    const { res } = fakeRes();
+    mw(
+      fakeReq({ signature: "anything", body: PARAMS }),
+      res,
+      next as SignatureNextFunction,
+    );
+    expect(next).not.toHaveBeenCalled();
+    expect(onReject.mock.calls[0]![2]).toBe("signature_mismatch");
+  });
+
   it("default onReject (no override) sends a 403", () => {
     const next = vi.fn();
     const mw = requireTwilioSignature({

@@ -55,8 +55,9 @@ import { z } from "zod";
 import type Stripe from "stripe";
 
 import {
-  getSupabaseServiceRoleClient,
-  type ResupplySupabaseClient,
+  getOrgScopedClient,
+  type Database,
+  type OrgScopedClient,
 } from "@workspace/resupply-db";
 
 interface SubscriptionItemSnapshot {
@@ -77,6 +78,7 @@ import {
   getStripeClient,
   readStripeConfigOrNull,
 } from "../../lib/stripe/config";
+import { stripeAccountRequestOptions } from "../../lib/stripe/connect";
 import { stripeErrLogFields } from "../../lib/stripe/err-log-fields";
 import { rateLimit } from "../../middlewares/rate-limit";
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
@@ -88,12 +90,11 @@ const router: IRouter = Router();
 // targeted. Returns null if not found OR not owned — caller maps to
 // 404 to avoid leaking ownership.
 async function findOwnedSubscription(
-  supabase: ResupplySupabaseClient,
+  supabase: OrgScopedClient,
   localId: string,
   customerId: string,
 ): Promise<OwnedSubscription | null> {
   const { data, error } = await supabase
-    .schema("resupply")
     .from("shop_subscriptions")
     .select("id, stripe_subscription_id, status, cancel_at_period_end, items")
     .eq("id", localId)
@@ -123,9 +124,13 @@ router.get("/shop/me/subscriptions", requireSignedIn, async (req, res) => {
     return;
   }
 
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const { data: rows, error } = await supabase
-    .schema("resupply")
     .from("shop_subscriptions")
     .select(
       "id, stripe_subscription_id, status, items, current_period_end, cancel_at_period_end, canceled_at, created_at",
@@ -136,17 +141,19 @@ router.get("/shop/me/subscriptions", requireSignedIn, async (req, res) => {
   if (error) throw error;
 
   res.json({
-    subscriptions: (rows ?? []).map((r) => ({
-      id: r.id,
-      stripeSubscriptionId: r.stripe_subscription_id,
-      status: r.status,
-      items: r.items,
-      // PostgREST returns timestamptz as ISO string already.
-      currentPeriodEnd: r.current_period_end,
-      cancelAtPeriodEnd: r.cancel_at_period_end,
-      canceledAt: r.canceled_at,
-      createdAt: r.created_at,
-    })),
+    subscriptions: (rows ?? []).map(
+      (r: Database["resupply"]["Tables"]["shop_subscriptions"]["Row"]) => ({
+        id: r.id,
+        stripeSubscriptionId: r.stripe_subscription_id,
+        status: r.status,
+        items: r.items,
+        // PostgREST returns timestamptz as ISO string already.
+        currentPeriodEnd: r.current_period_end,
+        cancelAtPeriodEnd: r.cancel_at_period_end,
+        canceledAt: r.canceled_at,
+        createdAt: r.created_at,
+      }),
+    ),
   });
 });
 
@@ -169,13 +176,19 @@ router.post(
       return;
     }
 
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+
     const localId = req.params.id;
     if (!localId || typeof localId !== "string") {
       res.status(400).json({ error: "missing_subscription_id" });
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
     // Look up the row by our local id AND owner — never by stripe
     // subscription id directly, to make IDOR via guessing
     // sub_xxx values impossible. Belt-and-suspenders: also gate on
@@ -202,11 +215,19 @@ router.post(
       return;
     }
     const stripe = getStripeClient(config);
+    // The subscription lives on the tenant's connected account (Stripe
+    // Connect, G5) when it has one, so every operation on it must target
+    // that SAME account. Empty (platform account) for a tenant without one.
+    const acct = await stripeAccountRequestOptions(orgId);
 
     try {
-      await stripe.subscriptions.update(sub.stripeSubscriptionId, {
-        cancel_at_period_end: true,
-      });
+      await stripe.subscriptions.update(
+        sub.stripeSubscriptionId,
+        {
+          cancel_at_period_end: true,
+        },
+        acct,
+      );
     } catch (err) {
       req.log?.error(
         {
@@ -223,7 +244,6 @@ router.post(
     // the immediate next page render shouldn't show "active" with
     // no cancel flag.
     const { error: flipErr } = await supabase
-      .schema("resupply")
       .from("shop_subscriptions")
       .update({ cancel_at_period_end: true })
       .eq("id", sub.id);
@@ -272,13 +292,18 @@ router.get(
       res.status(401).json({ error: "sign_in_required" });
       return;
     }
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const localId = req.params.id;
     if (!localId || typeof localId !== "string") {
       res.status(400).json({ error: "missing_subscription_id" });
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
     const sub = await findOwnedSubscription(supabase, localId, customerId);
     if (!sub) {
       res.status(404).json({ error: "subscription_not_found" });
@@ -303,15 +328,21 @@ router.get(
       return;
     }
     const stripe = getStripeClient(config);
+    // The product/prices live on the tenant's connected account (Connect,
+    // G5) when it has one — list cadence options from that SAME account.
+    const acct = await stripeAccountRequestOptions(orgId);
 
     let priceList: Stripe.ApiList<Stripe.Price>;
     try {
-      priceList = await stripe.prices.list({
-        product: item.productId,
-        type: "recurring",
-        active: true,
-        limit: 50,
-      });
+      priceList = await stripe.prices.list(
+        {
+          product: item.productId,
+          type: "recurring",
+          active: true,
+          limit: 50,
+        },
+        acct,
+      );
     } catch (err) {
       req.log?.warn(
         {
@@ -383,13 +414,19 @@ async function handlePauseOrResume(
     return;
   }
 
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+
   const localId = req.params.id;
   if (!localId || typeof localId !== "string") {
     res.status(400).json({ error: "missing_subscription_id" });
     return;
   }
 
-  const supabase = getSupabaseServiceRoleClient();
+  const supabase = getOrgScopedClient(orgId);
   const sub = await findOwnedSubscription(supabase, localId, customerId);
   if (!sub) {
     res.status(404).json({ error: "subscription_not_found" });
@@ -409,6 +446,9 @@ async function handlePauseOrResume(
     return;
   }
   const stripe = getStripeClient(config);
+  // Operate on the tenant's connected account (Connect, G5) when it has
+  // one — that's where the subscription lives.
+  const acct = await stripeAccountRequestOptions(orgId);
 
   // Stripe accepts either a structured pause_collection object or
   // empty string to clear. The SDK's TypeScript shape is awkward
@@ -420,7 +460,7 @@ async function handlePauseOrResume(
       : { pause_collection: "" as unknown as never };
 
   try {
-    await stripe.subscriptions.update(sub.stripeSubscriptionId, payload);
+    await stripe.subscriptions.update(sub.stripeSubscriptionId, payload, acct);
   } catch (err) {
     req.log?.error(
       {
@@ -531,7 +571,12 @@ router.post(
     }
     const { priceId: newPriceId } = parsed.data;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const sub = await findOwnedSubscription(supabase, localId, customerId);
     if (!sub) {
       res.status(404).json({ error: "subscription_not_found" });
@@ -562,13 +607,16 @@ router.post(
       return;
     }
     const stripe = getStripeClient(config);
+    // Cadence swap touches the subscription, its item, and its prices —
+    // all on the tenant's connected account (Connect, G5) when it has one.
+    const acct = await stripeAccountRequestOptions(orgId);
 
     // Validate the target price is (a) recurring and (b) on the same
     // product as the current item. Fetching from Stripe — never trust
     // the client to assert these properties.
     let newPrice: Stripe.Price;
     try {
-      newPrice = await stripe.prices.retrieve(newPriceId);
+      newPrice = await stripe.prices.retrieve(newPriceId, undefined, acct);
     } catch (err) {
       req.log?.warn(
         {
@@ -598,7 +646,11 @@ router.post(
     // single item id, and swap.
     let liveSub: Stripe.Subscription;
     try {
-      liveSub = await stripe.subscriptions.retrieve(sub.stripeSubscriptionId);
+      liveSub = await stripe.subscriptions.retrieve(
+        sub.stripeSubscriptionId,
+        undefined,
+        acct,
+      );
     } catch (err) {
       req.log?.error(
         {
@@ -619,10 +671,14 @@ router.post(
     const liveItemId = liveItems[0]!.id;
 
     try {
-      await stripe.subscriptions.update(sub.stripeSubscriptionId, {
-        items: [{ id: liveItemId, price: newPriceId }],
-        proration_behavior: "none",
-      });
+      await stripe.subscriptions.update(
+        sub.stripeSubscriptionId,
+        {
+          items: [{ id: liveItemId, price: newPriceId }],
+          proration_behavior: "none",
+        },
+        acct,
+      );
     } catch (err) {
       req.log?.error(
         {
