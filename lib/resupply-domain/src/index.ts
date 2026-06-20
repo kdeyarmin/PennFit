@@ -15,7 +15,7 @@ export {
   type AdherenceResult,
 } from "./cms-adherence";
 
-export { normalizeE164 } from "./phone";
+export { normalizeE164, type NormalizeE164Options } from "./phone";
 
 export { timezoneForUsState } from "./us-timezone";
 
@@ -59,6 +59,7 @@ export {
 
 export {
   evaluateThreshold,
+  breachPersists,
   THRESHOLD_COMPARISONS,
   THRESHOLD_MODES,
   type ThresholdComparison,
@@ -78,6 +79,7 @@ export {
   parsePeriodRange,
   computeGoalPace,
   type GoalPaceStatus,
+  type GoalPaceProjectionConfidence,
   type PeriodRange,
   type GoalPaceInput,
   type GoalPaceResult,

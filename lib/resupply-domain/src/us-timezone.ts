@@ -152,14 +152,71 @@ const STATE_NAME_TO_CODE: Record<string, string> = {
 };
 
 /**
+ * ZIP3 (first three digits) → IANA zone, for the documented split
+ * states where the state-level dominant zone is wrong for the minor
+ * side. This is a deliberately CONSERVATIVE, best-effort refinement:
+ * it lists only high-confidence prefixes whose county-level zone is
+ * well established, and the function falls back to the state-level
+ * answer for every prefix not listed here — so it can only ever make
+ * a split-state patient's window MORE accurate, never regress an
+ * already-correct one. Layered on top of `STATE_TO_TZ` per the module
+ * header's "zip-prefix refinement can be layered on later" note.
+ */
+const ZIP3_TO_TZ: Record<string, string> = {
+  // Tennessee — eastern third is Eastern (Knoxville, Chattanooga,
+  // Tri-Cities) vs the Central state default.
+  "373": "America/New_York", // Chattanooga
+  "374": "America/New_York", // Chattanooga
+  "376": "America/New_York", // Johnson City / Tri-Cities
+  "377": "America/New_York", // Knoxville
+  "378": "America/New_York", // Knoxville
+  "379": "America/New_York", // Knoxville
+  // Kentucky — western counties are Central (Paducah, Bowling Green,
+  // Owensboro) vs the Eastern state default.
+  "420": "America/Chicago", // Paducah
+  "421": "America/Chicago", // Bowling Green
+  "422": "America/Chicago", // Bowling Green
+  "423": "America/Chicago", // Owensboro
+  "424": "America/Chicago", // Owensboro
+  // Florida — western panhandle is Central (Pensacola, Panama City)
+  // vs the Eastern state default.
+  "324": "America/Chicago", // Panama City
+  "325": "America/Chicago", // Pensacola
+  // Texas — far western tip is Mountain (El Paso, Hudspeth) vs Central.
+  "798": "America/Denver", // El Paso
+  "799": "America/Denver", // El Paso
+  "885": "America/Denver", // El Paso (unique-ZIP range)
+  // Idaho — northern panhandle is Pacific (Coeur d'Alene, Lewiston)
+  // vs the Mountain state default.
+  "835": "America/Los_Angeles", // Lewiston
+  "838": "America/Los_Angeles", // Coeur d'Alene
+  // Oregon — far eastern Malheur County is Mountain (Ontario) vs
+  // the Pacific state default.
+  "979": "America/Denver", // Ontario, OR
+  // Nebraska — panhandle is Mountain (Scottsbluff, Alliance) vs Central.
+  "693": "America/Denver", // Scottsbluff / Alliance
+  // North Dakota — southwest is Mountain (Dickinson) vs Central.
+  "586": "America/Denver", // Dickinson
+  // South Dakota — west river is Mountain (Rapid City) vs Central.
+  "577": "America/Denver", // Rapid City
+};
+
+/**
  * Derive the dominant IANA timezone for a US state. Accepts a USPS
  * code ("PA", "ca") or a full state name ("Pennsylvania"); returns
  * `null` for anything unrecognized — callers should leave the
  * patient's existing/default timezone untouched in that case, never
  * guess.
+ *
+ * Pass the patient's `zip` to refine the result for the handful of
+ * split states (TN, KY, FL, TX, ID, OR, NE, ND, SD): when the ZIP's
+ * 3-digit prefix is a known minor-side region the more accurate zone
+ * is returned, otherwise the state-level dominant zone stands. The zip
+ * never changes the answer for a non-split state or an unlisted prefix.
  */
 export function timezoneForUsState(
   state: string | null | undefined,
+  zip?: string | null,
 ): string | null {
   if (state == null) return null;
   const normalized = String(state).trim().toUpperCase().replace(/\s+/g, " ");
@@ -167,5 +224,17 @@ export function timezoneForUsState(
   const code =
     normalized.length === 2 ? normalized : STATE_NAME_TO_CODE[normalized];
   if (!code) return null;
-  return STATE_TO_TZ[code] ?? null;
+  const stateZone = STATE_TO_TZ[code] ?? null;
+  if (stateZone == null) return null;
+
+  // ZIP refinement: only the first three digits matter, and only for a
+  // listed split-state prefix. Everything else keeps the state zone.
+  if (zip != null) {
+    const zip3 = String(zip).replace(/\D/g, "").slice(0, 3);
+    if (zip3.length === 3) {
+      const refined = ZIP3_TO_TZ[zip3];
+      if (refined) return refined;
+    }
+  }
+  return stateZone;
 }

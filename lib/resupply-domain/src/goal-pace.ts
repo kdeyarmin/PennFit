@@ -14,6 +14,21 @@
 
 export type GoalPaceStatus = "ahead" | "on_track" | "behind" | "unknown";
 
+/**
+ * How much of the period has elapsed, and therefore how much to trust the
+ * run-rate `projectedValue`. The projection is `actual ÷ elapsed × total`,
+ * so early in a period it divides by a tiny elapsed fraction and explodes
+ * (day 1 of a 30-day month projects ~30× a single day's actual). The band
+ * lets a caller de-emphasize a low-confidence projection without us hiding
+ * it. Bands by fraction of the period elapsed (daysElapsed ÷ daysInPeriod):
+ *   * < 0.20 elapsed → "low"    (one bad/slow day skews the run-rate wildly)
+ *   * < 0.50 elapsed → "medium" (directional, but still volatile)
+ *   * ≥ 0.50 elapsed → "high"   (over half the period observed)
+ * "low" is also the value when there is no projection yet (period not
+ * started / unparseable window) — there is nothing to trust.
+ */
+export type GoalPaceProjectionConfidence = "low" | "medium" | "high";
+
 export interface PeriodRange {
   /** Inclusive start, YYYY-MM-DD. */
   startDate: string;
@@ -29,9 +44,10 @@ function pad2(n: number): string {
 
 /**
  * Parse a target `period` string into a UTC date range. Supports
- * "YYYY-MM" (calendar month) and "YYYY" (calendar year). Anything else
- * (a quarter label, free text) returns null → the caller reports
- * "pace unknown" rather than guessing a window.
+ * "YYYY-MM" (calendar month), "YYYY-Qn" (calendar quarter, n=1..4), and
+ * "YYYY" (calendar year). Anything else (free text, an out-of-range
+ * quarter) returns null → the caller reports "pace unknown" rather than
+ * guessing a window.
  */
 export function parsePeriodRange(period: string): PeriodRange | null {
   const month = /^(\d{4})-(\d{2})$/.exec(period);
@@ -45,6 +61,24 @@ export function parsePeriodRange(period: string): PeriodRange | null {
     return {
       startDate,
       endExclusiveDate: `${nextYear}-${pad2(nextMonth)}-01`,
+    };
+  }
+  // Calendar quarter "YYYY-Qn": Q1 = Jan–Mar, Q2 = Apr–Jun, Q3 = Jul–Sep,
+  // Q4 = Oct–Dec. The exclusive end is the first day of the month after the
+  // quarter (Q4 rolls into the next January). Out-of-range quarters (Q0, Q5)
+  // fall through to null.
+  const quarter = /^(\d{4})-Q([1-4])$/.exec(period);
+  if (quarter) {
+    const year = Number(quarter[1]);
+    const q = Number(quarter[2]);
+    const startMonth = (q - 1) * 3 + 1; // 1, 4, 7, 10
+    const endMonth = startMonth + 3; // 4, 7, 10, 13
+    const rollsYear = endMonth > 12;
+    const endYear = rollsYear ? year + 1 : year;
+    const endMon = rollsYear ? endMonth - 12 : endMonth;
+    return {
+      startDate: `${quarter[1]}-${pad2(startMonth)}-01`,
+      endExclusiveDate: `${endYear}-${pad2(endMon)}-01`,
     };
   }
   const yearOnly = /^(\d{4})$/.exec(period);
@@ -83,6 +117,12 @@ export interface GoalPaceResult {
   attainmentRatio: number | null;
   /** Run-rate projection to period end (actual ÷ elapsed × total). */
   projectedValue: number | null;
+  /**
+   * How much of the period has elapsed, and therefore how much to trust
+   * `projectedValue` (see GoalPaceProjectionConfidence). "low" early in the
+   * period where the run-rate explodes; "high" once over half is observed.
+   */
+  projectionConfidence: GoalPaceProjectionConfidence;
   status: GoalPaceStatus;
 }
 
@@ -96,15 +136,24 @@ export function computeGoalPace(input: GoalPaceInput): GoalPaceResult {
   const endMs = Date.parse(input.endExclusiveDate);
   const asOfMs = input.asOf ? Date.parse(input.asOf) : Date.now();
 
+  // The header documents target/actual as ≥ 0 but nothing enforced it: a
+  // negative targetValue sign-flips both expectedToDate and paceRatio,
+  // making the status band meaningless (a "behind" channel could read
+  // "ahead"). Clamp both to 0 defensively so every downstream ratio is
+  // computed from non-negative magnitudes.
+  const targetValue = Math.max(0, input.targetValue);
+  const actualToDate = Math.max(0, input.actualToDate);
+
   const unknown: GoalPaceResult = {
     daysInPeriod: 0,
     daysElapsed: 0,
-    actualToDate: input.actualToDate,
+    actualToDate,
     expectedToDate: null,
     paceRatio: null,
-    attainmentRatio:
-      input.targetValue > 0 ? input.actualToDate / input.targetValue : null,
+    attainmentRatio: targetValue > 0 ? actualToDate / targetValue : null,
     projectedValue: null,
+    // No days elapsed → no projection to trust yet.
+    projectionConfidence: "low",
     status: "unknown",
   };
 
@@ -124,12 +173,17 @@ export function computeGoalPace(input: GoalPaceInput): GoalPaceResult {
     return { ...unknown, daysInPeriod };
   }
 
-  const expectedToDate = input.targetValue * (daysElapsed / daysInPeriod);
-  const paceRatio =
-    expectedToDate > 0 ? input.actualToDate / expectedToDate : null;
-  const attainmentRatio =
-    input.targetValue > 0 ? input.actualToDate / input.targetValue : null;
-  const projectedValue = input.actualToDate * (daysInPeriod / daysElapsed);
+  const expectedToDate = targetValue * (daysElapsed / daysInPeriod);
+  const paceRatio = expectedToDate > 0 ? actualToDate / expectedToDate : null;
+  const attainmentRatio = targetValue > 0 ? actualToDate / targetValue : null;
+  const projectedValue = actualToDate * (daysInPeriod / daysElapsed);
+
+  // Trust band for the run-rate projection — see GoalPaceProjectionConfidence.
+  // Early in the period the projection divides by a tiny elapsed fraction and
+  // explodes, so flag it as low-confidence rather than presenting it as fact.
+  const elapsedFraction = daysElapsed / daysInPeriod;
+  const projectionConfidence: GoalPaceProjectionConfidence =
+    elapsedFraction < 0.2 ? "low" : elapsedFraction < 0.5 ? "medium" : "high";
 
   const status: GoalPaceStatus =
     paceRatio == null
@@ -143,11 +197,12 @@ export function computeGoalPace(input: GoalPaceInput): GoalPaceResult {
   return {
     daysInPeriod,
     daysElapsed,
-    actualToDate: input.actualToDate,
+    actualToDate,
     expectedToDate,
     paceRatio,
     attainmentRatio,
     projectedValue,
+    projectionConfidence,
     status,
   };
 }
