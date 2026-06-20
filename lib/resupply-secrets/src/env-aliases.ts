@@ -19,10 +19,16 @@
 //      single-service Railway deploy can set NEITHER.
 //   2. OPS_EMAIL        → the five operational recipient addresses, and
 //      (as a mailto:) the web-push VAPID abuse-contact subject.
-//   3. RESUPPLY_PRACTICE_NAME → SENDGRID_FROM_NAME (both are the brand
-//      display name, so it's set in one place).
-//   4. TWILIO_PHONE_NUMBER → TWILIO_VOICE_PHONE_NUMBER (one number on a
+//   3. TWILIO_PHONE_NUMBER → TWILIO_VOICE_PHONE_NUMBER (one number on a
 //      typical single-number account; the separate var is retired).
+//
+// Note: RESUPPLY_PRACTICE_NAME is deliberately NOT aliased into
+// SENDGRID_FROM_NAME anymore. The practice name is the seed *tenant's*
+// brand; folding it into the env-level SENDGRID_FROM_NAME (the PLATFORM
+// From-name default) leaked a tenant brand into platform/auth/operator
+// mail. A tenant's own From-name now comes from `organizations.from_name`
+// (migration 0360/0377); the platform default falls back to
+// DEFAULT_SENDGRID_FROM_NAME ("CareMetric Breathe") in resupply-email.
 
 type EnvLike = NodeJS.ProcessEnv | Record<string, string | undefined>;
 
@@ -97,16 +103,7 @@ export function applyEnvAliases(env: EnvLike = process.env): void {
     }
   }
 
-  // 3. SendGrid From-name defaults to the practice display name — both
-  //    are the brand, so the operator sets the name in one place.
-  if (
-    trimmed(env.SENDGRID_FROM_NAME) === "" &&
-    trimmed(env.RESUPPLY_PRACTICE_NAME) !== ""
-  ) {
-    env.SENDGRID_FROM_NAME = trimmed(env.RESUPPLY_PRACTICE_NAME);
-  }
-
-  // 4. Twilio voice caller-id is the same number as SMS on a one-number
+  // 3. Twilio voice caller-id is the same number as SMS on a one-number
   //    account; alias the retired var so any remaining reader still works.
   if (
     trimmed(env.TWILIO_VOICE_PHONE_NUMBER) === "" &&

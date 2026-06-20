@@ -77,8 +77,8 @@ No DB change in this deploy — the column still exists, just unused.
 ### Deploy 2c — drop the column (migration)
 
 Once 2b is live and **no running release writes, reads, or references**
-`twilio_fax_sid`. Drop the 0369 sync trigger + function (they reference the
-column) before the column:
+`twilio_fax_sid`. Migration `0374` drops the 0369 sync trigger + function
+(they reference the column) before the column:
 
 ```sql
 -- CONTRACT: run ONLY after 2b is live (no release references the column).

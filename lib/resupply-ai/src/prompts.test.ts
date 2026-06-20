@@ -84,3 +84,51 @@ describe("buildSystemPrompt", () => {
     ).toThrow();
   });
 });
+
+describe("buildSystemPrompt — breathe_prospect (B2B platform sales)", () => {
+  const salesInput = {
+    practiceName: "CareMetric Breathe",
+    callContext: "Inbound platform sales call.",
+    callerKind: "breathe_prospect" as const,
+  };
+
+  it("is platform-branded as CareMetric Breathe (not tenant-branded)", () => {
+    const prompt = buildSystemPrompt(salesInput);
+    expect(prompt).toContain("CareMetric Breathe");
+    // It must not present itself as a patient resupply assistant.
+    expect(prompt).not.toContain("CPAP resupply assistant");
+  });
+
+  it("routes the three call-reason skills via identify_call_reason", () => {
+    const prompt = buildSystemPrompt(salesInput);
+    expect(prompt).toContain("identify_call_reason");
+    expect(prompt).toMatch(/SALES/);
+    expect(prompt).toMatch(/CUSTOMER SERVICE/);
+    expect(prompt).toMatch(/TECH SUPPORT/);
+  });
+
+  it("quotes the subscription tiers and the per-active-patient meter", () => {
+    const prompt = buildSystemPrompt(salesInput);
+    expect(prompt).toContain("Launch");
+    expect(prompt).toContain("Growth");
+    expect(prompt).toContain("Scale");
+    expect(prompt).toContain("Enterprise");
+    expect(prompt).toContain("$499");
+    expect(prompt).toContain("$1.25");
+    expect(prompt).toContain("$2,500");
+  });
+
+  it("forbids collecting a spoken password and exposes the sales tools", () => {
+    const prompt = buildSystemPrompt(salesInput);
+    expect(prompt).toMatch(/NEVER ask for, accept, or repeat a password/i);
+    expect(prompt).toContain("send_info_email");
+    expect(prompt).toContain("capture_sales_lead");
+    expect(prompt).toContain("start_breathe_signup");
+  });
+
+  it("carries no patient PHI clauses (no DOB verification, no medical-advice scope)", () => {
+    const prompt = buildSystemPrompt(salesInput);
+    expect(prompt).not.toContain("verify_patient_identity");
+    expect(prompt).not.toContain("date of birth");
+  });
+});

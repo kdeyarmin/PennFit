@@ -48,6 +48,10 @@ import { ADMIN_PASSWORD_TTL_MS } from "@workspace/resupply-auth";
 
 import { logger } from "../../lib/logger";
 import {
+  resolveBrandingByOrgId,
+  resolveTenantBaseUrl,
+} from "../../lib/tenant-branding";
+import {
   createQueueWithDlq,
   VENDOR_SEND_QUEUE_OPTS,
 } from "../lib/queue-options";
@@ -331,6 +335,44 @@ export async function runInvitePasswordExpiryNotifySweep(
     });
   }
 
+  // Map each invited user to its tenant so the email speaks in that
+  // tenant's name and links to its own sign-in URL (seed → "PennPaps" /
+  // platform host, unchanged). The auth users/credentials tables carry no
+  // org_id; `admin_users` (org-scoped) is the user→org map, joined on
+  // `auth_user_id`. The sweep is global, so read across tenants via
+  // `.raw()`. A miss leaves the recipient on the platform default copy.
+  const orgByUserId = new Map<string, string>();
+  const { data: adminRows, error: adminErr } = await supabase
+    .raw()
+    .schema("resupply")
+    .from("admin_users")
+    .select("auth_user_id, org_id")
+    .in("auth_user_id", userIds);
+  if (adminErr) throw adminErr;
+  for (const a of (adminRows ?? []) as Array<{
+    auth_user_id: string | null;
+    org_id: string | null;
+  }>) {
+    if (a.auth_user_id && a.org_id) orgByUserId.set(a.auth_user_id, a.org_id);
+  }
+
+  // Per-recipient brand + sign-in host, falling back to the platform
+  // default copy (cfg) when the user has no resolvable tenant.
+  const tenantCopy = async (
+    userId: string,
+  ): Promise<{ practiceName: string; publicBaseUrl: string }> => {
+    const orgId = orgByUserId.get(userId);
+    if (!orgId) {
+      return {
+        practiceName: cfg.practiceName,
+        publicBaseUrl: cfg.publicBaseUrl,
+      };
+    }
+    const brand = await resolveBrandingByOrgId(orgId);
+    const base = (await resolveTenantBaseUrl(orgId)) ?? cfg.publicBaseUrl;
+    return { practiceName: brand.storefrontName, publicBaseUrl: base };
+  };
+
   const sendgrid = createSendgridClient({
     apiKey: cfg.sendgridApiKey,
     fromEmail: cfg.sendgridFromEmail,
@@ -382,9 +424,10 @@ export async function runInvitePasswordExpiryNotifySweep(
       0,
       (ADMIN_PASSWORD_TTL_MS - ageMs) / 3_600_000,
     );
+    const copy = await tenantCopy(row.user_id);
     const { subject, html, text } = composeReminderEmail({
-      practiceName: cfg.practiceName,
-      publicBaseUrl: cfg.publicBaseUrl,
+      practiceName: copy.practiceName,
+      publicBaseUrl: copy.publicBaseUrl,
       displayName: user.display_name,
       hoursRemaining,
     });
@@ -444,8 +487,9 @@ export async function runInvitePasswordExpiryNotifySweep(
       continue;
     }
 
+    const copy = await tenantCopy(row.user_id);
     const { subject, html, text } = composeExpiredEmail({
-      practiceName: cfg.practiceName,
+      practiceName: copy.practiceName,
       displayName: user.display_name,
     });
     try {

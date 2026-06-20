@@ -182,7 +182,7 @@ export async function lookupNpi(
         headers: {
           accept: "application/json",
           "user-agent":
-            "CareMetric-Breathe-Resupply/1.0 (+https://pennpaps.com)",
+            "CareMetric-Breathe-Resupply/1.0 (+https://cmbreathe.com)",
         },
       },
     );

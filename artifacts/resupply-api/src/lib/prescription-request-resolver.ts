@@ -121,7 +121,7 @@ export async function resolvePrescriptionRequestInputs(
       faxE164: provider.fax_e164 ?? null,
     },
     supplier: {
-      practiceName: await getDocumentSupplierName(),
+      practiceName: await getDocumentSupplierName(supabase.orgId),
       faxE164: supplierFax,
       email: process.env.RESUPPLY_SUPPLIER_RETURN_EMAIL?.trim() || null,
     },

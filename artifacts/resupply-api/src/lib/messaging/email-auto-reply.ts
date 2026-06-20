@@ -39,11 +39,12 @@ import {
 } from "@workspace/resupply-ai";
 
 import { logger } from "../logger";
+import { applyCompanyIdentityToText, getCompanyInfo } from "../company-info";
 import {
   DEFAULT_ANTHROPIC_MODEL_CHAT,
   selectLlmProvider,
 } from "../llm-provider";
-import { buildChatSystemPrompt } from "../storefront/chatbotKnowledge";
+import { buildChatSystemPromptBase } from "../storefront/chatbotKnowledge";
 import { redactPiiForOutbound } from "../storefront/chatbotPii";
 
 const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
@@ -154,19 +155,23 @@ export type EmailReplyResult =
   | { kind: "offline" };
 
 // The composed system prompt (knowledge base + email addendum) is large
-// and identical across calls; cache it with a short TTL so an admin-side
-// catalog/FAQ edit becomes visible within minutes, mirroring the web
-// chat route's cache.
+// and identical across calls; cache the UN-BRANDED base with a short TTL
+// so an admin-side catalog/FAQ edit becomes visible within minutes,
+// mirroring the web chat route's cache. The per-tenant company-identity
+// rewrite is applied per call on top of this base (one cache serves
+// every tenant), so a second tenant's auto-reply carries ITS brand and
+// sign-off, not the seed's.
 const SYSTEM_PROMPT_TTL_MS = 10 * 60 * 1000;
 let cachedSystemPrompt: string | null = null;
 let cachedSystemPromptAtMs = 0;
-function getEmailSystemPrompt(): string {
+function getEmailSystemPromptBase(): string {
   const now = Date.now();
   if (
     cachedSystemPrompt === null ||
     now - cachedSystemPromptAtMs > SYSTEM_PROMPT_TTL_MS
   ) {
-    cachedSystemPrompt = buildChatSystemPrompt() + "\n" + EMAIL_REPLY_ADDENDUM;
+    cachedSystemPrompt =
+      buildChatSystemPromptBase() + "\n" + EMAIL_REPLY_ADDENDUM;
     cachedSystemPromptAtMs = now;
   }
   return cachedSystemPrompt;
@@ -198,6 +203,7 @@ export function __setEmailAutoReplyFetchForTests(
 export async function generateEmailReply(
   input: EmailReplyInput,
   env: NodeJS.ProcessEnv = process.env,
+  orgId?: string,
 ): Promise<EmailReplyResult> {
   const selection = selectLlmProvider(env);
   if (selection.provider === "offline") {
@@ -205,7 +211,13 @@ export async function generateEmailReply(
   }
 
   const userPrompt = buildUserPrompt(input);
-  const systemPrompt = getEmailSystemPrompt();
+  // Brand the knowledge base + email addendum (sign-off, "to PennPaps")
+  // for the sender's tenant. Omitting orgId falls back to the warm seed
+  // identity, so single-tenant is byte-identical.
+  const systemPrompt = applyCompanyIdentityToText(
+    getEmailSystemPromptBase(),
+    await getCompanyInfo(orgId),
+  );
   const minConfidence = resolveMinConfidence(env);
 
   if (selection.provider === "anthropic") {

@@ -36,6 +36,7 @@ export {
   renderClickLanding,
   escapeHtml,
   type RenderResupplyReminderInput,
+  type ReminderVariant,
   type RenderedEmail,
   type RenderClickConfirmationInput,
   type RenderClickErrorInput,

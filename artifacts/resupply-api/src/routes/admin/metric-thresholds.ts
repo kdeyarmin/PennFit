@@ -80,11 +80,14 @@ router.get(
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
+    // metric_thresholds is not in the typed Database, so reach it via
+    // raw(); the org filter must therefore be explicit (migration 0380).
     const supabase = getOrgScopedClient(orgId).raw();
     const { data, error } = await supabase
       .schema("resupply")
       .from("metric_thresholds")
       .select(SELECT)
+      .eq("org_id", orgId)
       .order("metric_key", { ascending: true })
       .limit(500);
     if (error) {
@@ -127,6 +130,7 @@ router.post(
       .schema("resupply")
       .from("metric_thresholds")
       .insert({
+        org_id: orgId,
         metric_key: d.metricKey,
         comparison: d.comparison,
         threshold_value: d.thresholdValue,
@@ -205,6 +209,7 @@ router.patch(
       .schema("resupply")
       .from("metric_thresholds")
       .update(update)
+      .eq("org_id", orgId)
       .eq("id", idCheck.data)
       .select(SELECT);
     if (error) {
@@ -253,6 +258,7 @@ router.delete(
       .schema("resupply")
       .from("metric_thresholds")
       .delete()
+      .eq("org_id", orgId)
       .eq("id", idCheck.data)
       .select("id");
     if (error) {

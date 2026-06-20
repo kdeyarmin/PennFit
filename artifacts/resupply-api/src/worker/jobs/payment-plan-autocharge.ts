@@ -209,6 +209,14 @@ async function paymentPlanAutochargeForOrg(
   charger: OffSessionCharger,
   stats: AutochargeRunStats,
 ): Promise<void> {
+  // Per-tenant opt-in. The flag is checked HERE, per org, not once for the
+  // whole tick: gating the fan-out on a single (seed) flag read would let the
+  // seed tenant's "on" authorize off-session card charges for EVERY active
+  // tenant. isFeatureEnabled falls back to the seed flag only for orgs with no
+  // row of their own, so single-tenant behavior is unchanged.
+  if (!(await isFeatureEnabled("billing.payment_plan_autocharge", orgId))) {
+    return;
+  }
   const supabase = getOrgScopedClient(orgId);
   const sink = buildSupabaseSink(supabase);
   // Resolve the tenant's Stripe Connect routing once per tick. Empty for the
@@ -384,14 +392,9 @@ export async function registerPaymentPlanAutochargeJob(
     VENDOR_SEND_QUEUE_OPTS,
   );
   await boss.work(PAYMENT_PLAN_AUTOCHARGE_JOB, async () => {
-    const enabled = await isFeatureEnabled("billing.payment_plan_autocharge");
-    if (!enabled) {
-      logger.info(
-        { queue: PAYMENT_PLAN_AUTOCHARGE_JOB },
-        "payment-plan-autocharge: feature flag off — nothing charged",
-      );
-      return;
-    }
+    // No global flag gate here — the feature flag is enforced per-tenant in
+    // paymentPlanAutochargeForOrg so one tenant's flag can't authorize charges
+    // for another. Orgs with the flag off are skipped inside the fan-out.
     const stats = await runPaymentPlanAutocharge();
     logger.info(
       { event: "billing.payment-plan-autocharge.completed", ...stats },

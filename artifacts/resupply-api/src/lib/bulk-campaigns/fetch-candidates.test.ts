@@ -174,6 +174,9 @@ describe("fetchAudienceCandidates — all_active_patients", () => {
       email: "carol@example.test",
       status: "active",
       insurancePayer: "BCBS",
+      phone: undefined,
+      phoneLineType: undefined,
+      smsMarketingConsent: false,
     });
     expect(result.shopCandidates).toHaveLength(0);
   });
@@ -446,6 +449,123 @@ describe("fetchAudienceCandidates — by_therapy_cohort", () => {
       audienceKind: "by_therapy_cohort",
       audiencePayer: "not_a_cohort",
     });
+    expect(result.patientCandidates).toHaveLength(0);
+  });
+});
+
+// ── patient_segment (composable filter) ──────────────────────────────────────
+
+describe("fetchAudienceCandidates — patient_segment", () => {
+  // Table-aware mock: each query's first page (range from=0) returns the rows
+  // staged for the table named in the preceding .from(); later pages return []
+  // so the pagination loops terminate.
+  function makeSegmentMock(tables: Record<string, unknown[]>) {
+    const state = { table: "", from: 0 };
+    const builder = {
+      schema: (_s: string) => builder,
+      from: (t: string) => {
+        state.table = t;
+        return builder;
+      },
+      select: (_c: string) => builder,
+      eq: (_col: string, _v: unknown) => builder,
+      ilike: (_col: string, _v: unknown) => builder,
+      in: (_col: string, _v: unknown[]) => builder,
+      gte: (_col: string, _v: unknown) => builder,
+      order: (_col: string, _o?: unknown) => builder,
+      range: (from: number, _to: number) => {
+        state.from = from;
+        return builder;
+      },
+      then: (resolve: (r: QueryResult) => unknown) => {
+        const rows = state.from === 0 ? (tables[state.table] ?? []) : [];
+        return Promise.resolve(
+          resolve({ data: rows as unknown[], error: null }),
+        );
+      },
+    };
+    return builder as unknown as import("@workspace/resupply-db").OrgScopedClient;
+  }
+
+  it("intersects an equipment make filter with the failing-therapy set", async () => {
+    const supabase = makeSegmentMock({
+      equipment_assets: [
+        {
+          patient_id: "p1",
+          manufacturer: "ResMed",
+          device_class: "cpap",
+          model: "AirSense 11",
+        },
+        {
+          patient_id: "p2",
+          manufacturer: "Philips",
+          device_class: "cpap",
+          model: "DreamStation",
+        },
+      ],
+      csr_compliance_alerts: [{ patient_id: "p1" }, { patient_id: "p3" }],
+      patients: [
+        {
+          id: "p1",
+          email: "p1@example.test",
+          phone_e164: "+12155550001",
+          status: "active",
+          insurance_payer: "Medicare",
+        },
+        {
+          id: "p2",
+          email: "p2@example.test",
+          phone_e164: null,
+          status: "active",
+          insurance_payer: "Aetna",
+        },
+        {
+          id: "p3",
+          email: "p3@example.test",
+          phone_e164: "+12155550003",
+          status: "active",
+          insurance_payer: "Medicare",
+        },
+      ],
+    });
+
+    const result = await fetchAudienceCandidates(supabase, {
+      audienceKind: "patient_segment",
+      patientSegment: { manufacturers: ["resmed"], therapyFailing: true },
+    });
+
+    // p1 is the only patient in BOTH the ResMed-equipment set ({p1}) and the
+    // failing-therapy set ({p1,p3}).
+    expect(result.patientCandidates.map((p) => p.id)).toEqual(["p1"]);
+    expect(result.patientCandidates[0]?.phone).toBe("+12155550001");
+  });
+
+  it("returns nothing when the equipment filter matches no one (short-circuit)", async () => {
+    const supabase = makeSegmentMock({
+      equipment_assets: [
+        {
+          patient_id: "p1",
+          manufacturer: "ResMed",
+          device_class: "cpap",
+          model: "AirSense 11",
+        },
+      ],
+      patients: [
+        {
+          id: "p1",
+          email: "p1@example.test",
+          phone_e164: null,
+          status: "active",
+          insurance_payer: null,
+        },
+      ],
+    });
+
+    const result = await fetchAudienceCandidates(supabase, {
+      audienceKind: "patient_segment",
+      patientSegment: { manufacturers: ["Fisher & Paykel"] },
+    });
+
     expect(result.patientCandidates).toHaveLength(0);
   });
 });

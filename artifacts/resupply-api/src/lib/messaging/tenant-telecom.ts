@@ -160,6 +160,90 @@ export async function resolveTenantSmsFrom(
 }
 
 /**
+ * Apply a tenant's SMS sender override onto an SMS-send config object
+ * (the `{ twilioPhoneNumber, twilioMessagingServiceSid }` shape every
+ * `SmsSendConfig` / `createTwilioSmsClient` caller threads). Returns a
+ * NEW object — the platform-default fields are preserved unless the
+ * tenant has its own override. This is the layering-correct seam for
+ * app-side callers of `@workspace/resupply-reminders` (a lib that must
+ * not import the app): the app resolves the tenant identity and hands
+ * the resolved config into the lib.
+ *
+ * When the tenant sets ONLY a Messaging Service SID, the platform
+ * `twilioPhoneNumber` is cleared so Twilio uses the tenant's Messaging
+ * Service (a `from` + `messagingServiceSid` together is ambiguous), and
+ * vice-versa — a tenant from-number clears the platform Messaging
+ * Service SID. A tenant with NEITHER leaves both platform defaults in
+ * place (single-tenant unchanged). Fails soft via `resolveTenantSmsFrom`.
+ */
+export async function applyTenantSmsFrom<
+  T extends {
+    // Accept both the `string | undefined` (SmsSendConfig) and the
+    // `string | null` (OutreachMessagingConfig) shapes that thread an
+    // SMS sender. We only ever WRITE non-null strings back.
+    twilioPhoneNumber?: string | null;
+    twilioMessagingServiceSid?: string | null;
+  },
+>(orgId: string | undefined, cfg: T): Promise<T> {
+  const tenant = await resolveTenantSmsFrom(orgId);
+  if (!tenant.from && !tenant.messagingServiceSid) return cfg;
+  const next = { ...cfg };
+  if (tenant.messagingServiceSid) {
+    next.twilioMessagingServiceSid = tenant.messagingServiceSid;
+    next.twilioPhoneNumber = "";
+  } else if (tenant.from) {
+    next.twilioPhoneNumber = tenant.from;
+    // Clear with an EMPTY STRING, not `undefined`: when this cfg reaches
+    // `createTwilioSmsClient({ messagingServiceSid })`, `undefined` would
+    // fall back to the env Messaging Service SID and shadow the tenant's
+    // from-number (msid takes precedence). An empty string is falsy at
+    // the client's send-time guard, so the tenant's number is used.
+    next.twilioMessagingServiceSid = "";
+  }
+  return next;
+}
+
+/** Explicit sender options for `createTwilioSmsClient(...)`. */
+export interface TenantSmsClientOptions {
+  from?: string;
+  messagingServiceSid?: string;
+}
+
+/**
+ * Resolve the explicit `{ from, messagingServiceSid }` to hand
+ * `createTwilioSmsClient(...)` so the call sends under the tenant's own
+ * sender when it has one, else the platform env default.
+ *
+ * Direct `createTwilioSmsClient()` callers (no args) inherit the env
+ * `TWILIO_PHONE_NUMBER` / `TWILIO_MESSAGING_SERVICE_SID`. Passing the
+ * tenant override alone is not enough because the client prefers
+ * `messagingServiceSid` over `from`: a tenant from-number would be
+ * shadowed by the platform Messaging Service env. So we resolve the
+ * effective pair HERE — when the tenant has an override we set the
+ * chosen field and explicitly clear the opposing one; when it has none
+ * we return `{}` so the env defaults apply unchanged (single-tenant
+ * behavior preserved). Fails soft via `resolveTenantSmsFrom`.
+ */
+export async function resolveTenantSmsClientOptions(
+  orgId: string | undefined,
+): Promise<TenantSmsClientOptions> {
+  const tenant = await resolveTenantSmsFrom(orgId);
+  // Tenant Messaging Service wins (mirrors the client's own precedence).
+  if (tenant.messagingServiceSid) {
+    return { messagingServiceSid: tenant.messagingServiceSid };
+  }
+  if (tenant.from) {
+    // Explicitly clear the Messaging Service with an EMPTY STRING (not
+    // `undefined`, which the client treats as "use the env default" and
+    // would shadow the tenant's from-number, since `messagingServiceSid`
+    // takes precedence over `from`). An empty string is falsy at the
+    // client's send-time guard, so the tenant's number is actually used.
+    return { from: tenant.from, messagingServiceSid: "" };
+  }
+  return {};
+}
+
+/**
  * The tenant's outbound voice caller-id (E.164), or `null` (→ platform
  * default) when it has none. Accepts `undefined` / blank orgId → `null`.
  */

@@ -2,7 +2,7 @@
 
 One-time, point-in-time artifacts for bringing the PennPaps production project
 (`uppdjphagdildcgkvdsz`) up to the canonical migration schema. **These are NOT
-repo migrations** — they live here, not in `lib/resupply-db/drizzle/`, because
+repo migrations** — they live here, not in `lib/resupply-db/migrations/`, because
 they `CREATE TABLE` objects that the normal migration chain already creates
 (running them as part of a from-scratch replay would collide). See
 [`docs/prod-schema-reconcile-2026-05-31.md`](../../docs/prod-schema-reconcile-2026-05-31.md).

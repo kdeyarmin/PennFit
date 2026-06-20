@@ -73,6 +73,15 @@ const orderItemSchema = z
   })
   .strict();
 
+const diagnosisSchema = z
+  .object({
+    /** ICD-10 code exactly as written (e.g. "G47.33"); null if illegible. */
+    icd10: trimmed(16).nullable(),
+    /** The written description of the diagnosis, when present. */
+    description: trimmed(200).nullable(),
+  })
+  .strict();
+
 const sleepStudySchema = z
   .object({
     studyDate: trimmed(40).nullable(),
@@ -136,6 +145,17 @@ export const referralExtractionSchema = z
     insurance: insuranceSchema.nullable(),
     secondaryInsurance: insuranceSchema.nullable(),
     order: z.array(orderItemSchema).max(40),
+    /** Diagnosis codes (ICD-10) supporting the therapy — typically the OSA
+     *  diagnosis (G47.33). Defaulted so extractions stored before this field
+     *  existed still validate on read. */
+    diagnoses: z.array(diagnosisSchema).max(20).default([]),
+    /** The therapy recommended or ordered, as written ("CPAP", "Auto-CPAP",
+     *  "BiPAP", "BiPAP ST", "ASV"). null when the packet doesn't state it. */
+    recommendedTherapy: trimmed(120).nullable().default(null),
+    /** Documented comorbidities (hypertension, excessive daytime sleepiness,
+     *  mood disorder, stroke, …) that can support coverage when the AHI/RDI
+     *  is 5–14. Free text as written; used by the qualification assessment. */
+    comorbidities: z.array(trimmed(160)).max(20).default([]),
     sleepStudy: sleepStudySchema.nullable(),
     physician: physicianSchema.nullable(),
     documents: z.array(documentSectionSchema).max(20),
@@ -173,10 +193,19 @@ const SYSTEM_PROMPT =
   "Transcribe ONLY what is actually written in the document into the " +
   "requested JSON. Never guess or invent a value: if a field is not " +
   "present, return null for it (or an empty array). Dates stay exactly " +
-  "as written, EXCEPT the patient date of birth: when a full date of " +
-  "birth is legible, normalise it to YYYY-MM-DD; otherwise null. Phone " +
+  "as written, EXCEPT the patient date of birth and the sleep-study date: " +
+  "when a full date is legible, normalise it to YYYY-MM-DD; otherwise null. " +
+  "Phone " +
   "numbers: digits and leading + only when clearly legible, else as " +
-  "written. The documents array must classify every distinct section of " +
+  "written. For diagnoses, transcribe each ICD-10 code and its written " +
+  "description exactly (do NOT infer a code from a description, or a " +
+  "description from a code — leave the missing half null). For " +
+  "recommendedTherapy, copy the device/therapy the order or notes state " +
+  "(e.g. CPAP, Auto-CPAP, BiPAP, BiPAP ST, ASV); null if unstated. For " +
+  "comorbidities, list only conditions explicitly documented in the packet " +
+  "(e.g. hypertension, excessive daytime sleepiness, mood disorder, " +
+  "insomnia, ischemic heart disease, history of stroke). The documents " +
+  "array must classify every distinct section of " +
   "the packet with its 1-based inclusive page range; ranges may not " +
   "overlap and should together cover the packet. Set a section of " +
   "confidence to 'low' when the relevant pages are faint, handwritten, " +
@@ -198,6 +227,9 @@ const USER_PROMPT =
   '  "insurance": { "payerName": string | null, "planName": string | null, "memberId": string | null, "groupNumber": string | null, "policyholderName": string | null, "policyholderRelationship": string | null } | null,\n' +
   '  "secondaryInsurance": { ...same shape as insurance... } | null,\n' +
   '  "order": [ { "description": string, "hcpcs": string | null } ],\n' +
+  '  "diagnoses": [ { "icd10": string | null, "description": string | null } ],\n' +
+  '  "recommendedTherapy": string | null,   // CPAP | Auto-CPAP | BiPAP | BiPAP ST | ASV, as written\n' +
+  '  "comorbidities": [ string ],           // only conditions explicitly documented\n' +
   '  "sleepStudy": { "studyDate": string | null, "studyType": string | null, "ahi": number | null, "rdi": number | null, "odi": number | null, "totalSleepMinutes": number | null, "interpretingPhysician": string | null } | null,\n' +
   '  "physician": { "name": string | null, "npi": string | null, "phone": string | null, "fax": string | null, "clinic": string | null } | null,\n' +
   '  "documents": [ { "type": "sleep_study" | "physician_order" | "demographics" | "insurance_card" | "chart_note" | "other", "pageStart": number, "pageEnd": number, "title": string } ],\n' +

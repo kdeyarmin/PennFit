@@ -2,6 +2,7 @@ import React from "react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { useCompanyContact } from "@/lib/contact";
+import { BrandName, LegalName } from "@/components/company-contact";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import { SubscribeRemindersCta } from "@/components/subscribe-reminders-cta";
 import {
@@ -153,7 +154,7 @@ export function ReplacementSchedule() {
           <CalendarClock className="w-7 h-7 text-primary" />
         </div>
         <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">
-          PennPaps · Patient Education
+          <BrandName /> · Patient Education
         </p>
         <h1 className="text-display text-3xl md:text-5xl font-bold tracking-tight text-gradient-brand">
           When to replace your CPAP supplies
@@ -280,8 +281,8 @@ export function ReplacementSchedule() {
 
         <p className="text-xs text-muted-foreground text-center max-w-3xl mx-auto leading-relaxed">
           Cadences shown reflect typical Medicare and commercial insurance
-          allowances in the United States. Your specific plan may differ — Penn
-          Home Medical Supply verifies your benefit before each shipment.
+          allowances in the United States. Your specific plan may differ —{" "}
+          <LegalName /> verifies your benefit before each shipment.
         </p>
       </section>
 
@@ -450,9 +451,8 @@ export function ReplacementSchedule() {
           Stop tracking it yourself.
         </h2>
         <p className="text-muted-foreground max-w-xl mx-auto leading-relaxed">
-          Penn Home Medical Supply makes resupply easy — pick a mask, place an
-          order, and we handle delivery on a cadence that matches your insurance
-          allowance.
+          <LegalName /> makes resupply easy — pick a mask, place an order, and
+          we handle delivery on a cadence that matches your insurance allowance.
         </p>
         <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
           <Link href="/consent">

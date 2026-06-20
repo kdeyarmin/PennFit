@@ -92,6 +92,8 @@ export const CATEGORY_CARE = "Therapy cloud — Philips Care Orchestrator";
 export const CATEGORY_REACT_HEALTH =
   "Therapy cloud — 3B Medical (React Health)";
 export const CATEGORY_OFFICE_ALLY = "Clearinghouse (Office Ally)";
+export const CATEGORY_XPS_SHIP = "Shipping labels (XPS Ship)";
+export const CATEGORY_REMINDERS = "Resupply reminders";
 
 export const APP_CONFIG_CATALOG: readonly AppConfigSetting[] = [
   // ── Branding & assistants ─────────────────────────────────────────
@@ -317,6 +319,34 @@ export const APP_CONFIG_CATALOG: readonly AppConfigSetting[] = [
       "Browser-exposed key for Stripe.js / Checkout. Safe to reveal (pk_live_… / pk_test_…).",
     placeholder: "pk_live_…",
   },
+  {
+    // Optional DEDICATED account for platform SaaS billing (tenants paying
+    // the platform), kept off the account that processes patient/storefront
+    // checkout above. Unset → platform billing shares STRIPE_SECRET_KEY
+    // (single-account mode). Platform-scoped: super-admin only.
+    key: "STRIPE_PLATFORM_SECRET_KEY",
+    label: "Platform billing secret key",
+    category: CATEGORY_STRIPE,
+    secret: true,
+    applyMode: "restart",
+    description:
+      "Optional separate Stripe account for tenant→platform SaaS billing. Leave blank to bill on the patient-checkout account. sk_live_… in production.",
+    placeholder: "sk_live_…",
+  },
+  {
+    // Signing secret for the dedicated platform-billing account's webhook
+    // (/resupply-api/stripe/platform-webhook). Required only when
+    // STRIPE_PLATFORM_SECRET_KEY is set; in shared mode platform events
+    // arrive on the patient webhook with STRIPE_WEBHOOK_SIGNING_SECRET.
+    key: "STRIPE_PLATFORM_WEBHOOK_SIGNING_SECRET",
+    label: "Platform billing webhook signing secret",
+    category: CATEGORY_STRIPE,
+    secret: true,
+    applyMode: "restart",
+    description:
+      "Verifies webhooks from the dedicated platform-billing account. Required when a platform billing secret key is set.",
+    placeholder: "whsec_…",
+  },
 
   // ── ResMed AirView (therapy cloud — live) ─────────────────────────
   {
@@ -522,12 +552,198 @@ export const APP_CONFIG_CATALOG: readonly AppConfigSetting[] = [
     description:
       "API key for Office Ally's real-time eligibility REST API, sent verbatim in the Authorization header. Separate from the SFTP key. Used as the fallback when a saved clearinghouse connection row has no key stored on it.",
   },
+  // ── XPS Ship shipping-label integration ──────────────────────────
+  // Each DME brings its own XPS Ship account. These are tenant-scoped
+  // (CATEGORY_XPS_SHIP is a tenant business category) and read at call
+  // time by createXpsShipAdapter(getEffectiveEnvForOrg(orgId)), so a
+  // saved value takes effect "live" (no restart). The integration stays
+  // dormant until the API key + customer id + integration id + a
+  // ship-from address (name / line 1 / city / state / zip) are all set.
+  {
+    key: "XPS_SHIP_API_KEY",
+    label: "XPS API key",
+    category: CATEGORY_XPS_SHIP,
+    secret: true,
+    applyMode: "live",
+    description:
+      "XPS Ship REST API key, sent as the `Authorization: RSIS <key>` header. Generate it in XPS Webship → Settings → API.",
+  },
+  {
+    key: "XPS_SHIP_CUSTOMER_ID",
+    label: "XPS customer id",
+    category: CATEGORY_XPS_SHIP,
+    secret: false,
+    applyMode: "live",
+    description: "Your XPS customer id (the :customerId URL segment).",
+    placeholder: "CUST00001",
+  },
+  {
+    key: "XPS_SHIP_INTEGRATION_ID",
+    label: "REST API integration id",
+    category: CATEGORY_XPS_SHIP,
+    secret: false,
+    applyMode: "live",
+    description:
+      "The REST API integration id created in XPS Webship → Settings, used on the Put-Order endpoint.",
+  },
+  {
+    key: "XPS_SHIP_API_BASE_URL",
+    label: "API base URL (optional)",
+    category: CATEGORY_XPS_SHIP,
+    secret: false,
+    applyMode: "live",
+    description:
+      "Override the XPS REST base URL (default https://xpsshipper.com/restapi/v1). Leave blank for production.",
+    placeholder: "https://xpsshipper.com/restapi/v1",
+  },
+  {
+    key: "XPS_SHIP_LABEL_FORMAT",
+    label: "Label format",
+    category: CATEGORY_XPS_SHIP,
+    secret: false,
+    applyMode: "live",
+    description:
+      "Default label image format: PDF (universal) or PNG (not all carriers). Defaults to PDF.",
+    placeholder: "PDF",
+  },
+  {
+    key: "XPS_SHIP_FROM_NAME",
+    label: "Ship-from name",
+    category: CATEGORY_XPS_SHIP,
+    secret: false,
+    applyMode: "live",
+    description: "Sender / return-to name printed on every label.",
+    placeholder: "Penn Home Medical Supply",
+  },
+  {
+    key: "XPS_SHIP_FROM_COMPANY",
+    label: "Ship-from company (optional)",
+    category: CATEGORY_XPS_SHIP,
+    secret: false,
+    applyMode: "live",
+    description: "Optional company line on the ship-from address.",
+  },
+  {
+    key: "XPS_SHIP_FROM_ADDRESS1",
+    label: "Ship-from street address",
+    category: CATEGORY_XPS_SHIP,
+    secret: false,
+    applyMode: "live",
+    description: "Sender street address line 1.",
+  },
+  {
+    key: "XPS_SHIP_FROM_ADDRESS2",
+    label: "Ship-from address line 2 (optional)",
+    category: CATEGORY_XPS_SHIP,
+    secret: false,
+    applyMode: "live",
+    description: "Sender street address line 2 (suite / unit).",
+  },
+  {
+    key: "XPS_SHIP_FROM_CITY",
+    label: "Ship-from city",
+    category: CATEGORY_XPS_SHIP,
+    secret: false,
+    applyMode: "live",
+    description: "Sender city.",
+  },
+  {
+    key: "XPS_SHIP_FROM_STATE",
+    label: "Ship-from state",
+    category: CATEGORY_XPS_SHIP,
+    secret: false,
+    applyMode: "live",
+    description: "Sender 2-letter state code.",
+    placeholder: "PA",
+  },
+  {
+    key: "XPS_SHIP_FROM_ZIP",
+    label: "Ship-from ZIP",
+    category: CATEGORY_XPS_SHIP,
+    secret: false,
+    applyMode: "live",
+    description: "Sender postal code.",
+    placeholder: "19103",
+  },
+  {
+    key: "XPS_SHIP_FROM_COUNTRY",
+    label: "Ship-from country (optional)",
+    category: CATEGORY_XPS_SHIP,
+    secret: false,
+    applyMode: "live",
+    description: "Sender ISO country code. Defaults to US.",
+    placeholder: "US",
+  },
+  {
+    key: "XPS_SHIP_FROM_PHONE",
+    label: "Ship-from phone (optional)",
+    category: CATEGORY_XPS_SHIP,
+    secret: false,
+    applyMode: "live",
+    description: "Sender phone for carrier contact.",
+  },
+  {
+    key: "XPS_SHIP_FROM_EMAIL",
+    label: "Ship-from email (optional)",
+    category: CATEGORY_XPS_SHIP,
+    secret: false,
+    applyMode: "live",
+    description: "Sender email for carrier notifications.",
+  },
+  // Resupply reminder escalation cadence — tenant-tunable from Control Center.
+  // Read per-tick by reminders.escalation-scan (applyMode "live"); a blank or
+  // out-of-range value falls back to the built-in default and is clamped to a
+  // sane range on read, so a typo can never break the ladder.
+  {
+    key: "RESUPPLY_ESCALATION_DELAY_DAYS",
+    label: "Days between reminder steps",
+    category: CATEGORY_REMINDERS,
+    secret: false,
+    applyMode: "live",
+    scope: "tenant",
+    description:
+      "Minimum days to wait after the most recent reminder before the escalation ladder advances to the next channel (SMS → email → call → CSR alert). Default 3. Clamped to 1–30.",
+    placeholder: "3",
+  },
+  {
+    key: "RESUPPLY_ESCALATION_MAX_DAYS",
+    label: "Stop-nagging age (days)",
+    category: CATEGORY_REMINDERS,
+    secret: false,
+    applyMode: "live",
+    scope: "tenant",
+    description:
+      "Stop escalating an unanswered episode once its first reminder is older than this many days. Default 21. Clamped to (days-between-steps)–120.",
+    placeholder: "21",
+  },
 ];
 
 /** Fast membership set of every writable key. */
 const CATALOG_BY_KEY: ReadonlyMap<string, AppConfigSetting> = new Map(
   APP_CONFIG_CATALOG.map((s) => [s.key, s]),
 );
+
+/**
+ * Business-integration categories are inherently PER-TENANT: each DME
+ * brings its OWN partner accounts — its ResMed AirView / Philips Care
+ * Orchestrator / 3B (React Health) therapy-cloud credentials and its own
+ * Office Ally clearinghouse login. Those are the tenant's business
+ * relationships, so they belong on that tenant's admin, NOT on the
+ * platform super-admin's global integration surface. Platform infra
+ * (AI vendors, the platform's Twilio/Telnyx/SendGrid/Stripe) stays
+ * "platform" and is owned by the global super-admin.
+ *
+ * An entry's explicit `scope` still wins; this only supplies the default
+ * for the business categories so every key in them is tenant-scoped
+ * without annotating each one.
+ */
+const TENANT_BUSINESS_CATEGORIES: ReadonlySet<string> = new Set([
+  CATEGORY_AIRVIEW,
+  CATEGORY_CARE,
+  CATEGORY_REACT_HEALTH,
+  CATEGORY_OFFICE_ALLY,
+  CATEGORY_XPS_SHIP,
+]);
 
 /** Every key the catalog declares (env-var names). */
 export const APP_CONFIG_KEYS: readonly string[] = APP_CONFIG_CATALOG.map(
@@ -540,17 +756,32 @@ export function getAppConfigSetting(key: string): AppConfigSetting | undefined {
 }
 
 /**
- * The scope of a catalog key, defaulting to "platform" for any key whose
- * entry omits `scope` (and for unknown keys). Use this everywhere instead
- * of reading `.scope` directly so the default is applied consistently.
+ * The scope of a catalog key. Resolution order:
+ *   1. the entry's explicit `scope`, when set;
+ *   2. "tenant" for any key in a per-tenant business category;
+ *   3. "platform" otherwise (and for unknown keys).
+ * Use this everywhere instead of reading `.scope` directly so the default
+ * is applied consistently.
  */
 export function appConfigScopeOf(key: string): AppConfigScope {
-  return CATALOG_BY_KEY.get(key)?.scope ?? "platform";
+  const setting = CATALOG_BY_KEY.get(key);
+  if (!setting) return "platform";
+  if (setting.scope) return setting.scope;
+  if (TENANT_BUSINESS_CATEGORIES.has(setting.category)) return "tenant";
+  return "platform";
 }
 
 /** Keys a tenant owner can override for their own org (scope = "tenant"). */
 export const TENANT_SCOPED_APP_CONFIG_KEYS: readonly string[] =
-  APP_CONFIG_CATALOG.filter((s) => s.scope === "tenant").map((s) => s.key);
+  APP_CONFIG_CATALOG.filter((s) => appConfigScopeOf(s.key) === "tenant").map(
+    (s) => s.key,
+  );
+
+/** Keys owned by the global super-admin (scope = "platform"). */
+export const PLATFORM_SCOPED_APP_CONFIG_KEYS: readonly string[] =
+  APP_CONFIG_CATALOG.filter((s) => appConfigScopeOf(s.key) === "platform").map(
+    (s) => s.key,
+  );
 
 /** True iff `key` is a writable catalog setting. */
 export function isAppConfigKey(key: string): boolean {

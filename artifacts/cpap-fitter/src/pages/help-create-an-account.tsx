@@ -10,6 +10,7 @@ import {
   SignInShot,
   AccountShot,
 } from "@/components/help/help-screens";
+import { BrandName } from "@/components/company-contact";
 
 const steps: HelpStep[] = [
   {
@@ -40,10 +41,7 @@ const steps: HelpStep[] = [
       <>Submit to create the account.</>,
     ],
     shot: (
-      <Screenshot
-        url="pennpaps.com/sign-up"
-        caption="The sign-up and sign-in screens share the same clean, single-card layout."
-      >
+      <Screenshot caption="The sign-up and sign-in screens share the same clean, single-card layout.">
         <SignInShot />
       </Screenshot>
     ),
@@ -59,7 +57,9 @@ const steps: HelpStep[] = [
       </p>
     ),
     substeps: [
-      <>Open the email from PennPaps in your inbox.</>,
+      <>
+        Open the email from <BrandName /> in your inbox.
+      </>,
       <>
         Click <strong>Verify my email</strong>.
       </>,
@@ -108,10 +108,7 @@ const steps: HelpStep[] = [
       </>
     ),
     shot: (
-      <Screenshot
-        url="pennpaps.com/account"
-        caption="Your dashboard groups profile, orders, addresses, billing, and reminders into one sidebar."
-      >
+      <Screenshot caption="Your dashboard groups profile, orders, addresses, billing, and reminders into one sidebar.">
         <AccountShot />
       </Screenshot>
     ),
@@ -125,7 +122,7 @@ export function HelpCreateAnAccount() {
       title="Create an account & sign in"
       Icon={UserCircle}
       minutes="3 min"
-      metaDescription="How to create a PennPaps account, verify your email, sign in, and use your dashboard to manage profile, addresses, orders, billing, and resupply reminders."
+      metaDescription="How to create an account, verify your email, sign in, and use your dashboard to manage profile, addresses, orders, billing, and resupply reminders."
       intro="A free account saves your shipping details and order history and gives you one-tap reordering. Here's how to set one up and find your way around the dashboard."
       summary={
         <>

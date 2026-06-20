@@ -29,6 +29,7 @@ import {
 import {
   renderResupplyReminder,
   signLinkToken,
+  type ReminderVariant,
 } from "@workspace/resupply-messaging";
 
 import { safeAuditFromActor } from "./safe-audit";
@@ -58,6 +59,12 @@ export interface SendReminderEmailInput {
    * `messages.body` — never logged.
    */
   content?: { subject: string; bodyText: string };
+  /**
+   * Which escalation-ladder touch this is — picks the template subject +
+   * opening line when no custom `content` is given. Ignored when `content`
+   * is set. Defaults to "initial" (the first touch's copy, unchanged).
+   */
+  variant?: ReminderVariant;
   actor: SendActor;
 }
 
@@ -246,6 +253,7 @@ export async function sendReminderEmail(
       confirmUrl,
       editUrl,
       stopUrl,
+      variant: input.variant ?? "initial",
     });
   }
 

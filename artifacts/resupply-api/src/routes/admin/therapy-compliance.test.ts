@@ -12,12 +12,14 @@ import request from "supertest";
 
 import {
   makeRequireAdminMock,
+  MOCK_ORG_ID,
   type MockAdminCtx,
 } from "../../test-helpers/auth-mocks";
 import {
   installSupabaseMock,
   stageSupabaseResponse,
   stageSupabaseRpcResponse,
+  getSupabaseRpcArgs,
 } from "../../test-helpers/supabase-mock";
 
 const supabaseMock = installSupabaseMock();
@@ -80,6 +82,9 @@ describe("GET /admin/therapy-compliance/summary", () => {
       qualified: 18,
       onTrack: 7,
       atRisk: 5,
+    });
+    expect(getSupabaseRpcArgs("therapy_setup_adherence_summary")[0]).toEqual({
+      p_org_id: MOCK_ORG_ID,
     });
   });
 

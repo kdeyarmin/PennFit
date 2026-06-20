@@ -53,7 +53,11 @@ import {
   type SavedShippingAddress,
 } from "@workspace/resupply-db";
 
-import { applyCompanyIdentityToText } from "../../lib/company-info.js";
+import {
+  applyCompanyIdentityToText,
+  getCompanyInfo,
+  type CompanyInfo,
+} from "../../lib/company-info.js";
 import { logger } from "../../lib/logger.js";
 import {
   buildCustomerChatSystemPrompt,
@@ -115,11 +119,14 @@ const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
 const DEFAULT_MODEL = "gpt-4o-mini";
 const DEFAULT_TIMEOUT_MS = 20_000;
 
-// A function (not a constant) so the phone/email reflect the
-// admin-saved company info at reply time.
-function degradedFallbackReply(): string {
+// A function (not a constant) so the phone/email reflect the company
+// info at reply time. Pass the caller's tenant `info` (getCompanyInfo
+// (req.orgId)) so a second tenant sees ITS contact details, not the
+// seed's; omitting it falls back to the warm seed identity.
+function degradedFallbackReply(info?: CompanyInfo): string {
   return applyCompanyIdentityToText(
     "I'm having trouble answering right now. Please try again in a minute, or reach our team at (814) 471-0627 (Mon-Fri 9-5 ET) or support@pennpaps.com — they can answer anything I can't.",
+    info,
   );
 }
 
@@ -450,6 +457,12 @@ router.post(
     const selection = selectLlmProvider();
     const apiKey = process.env.OPENAI_API_KEY;
 
+    // Resolve THIS tenant's company identity once so every patient-facing
+    // string below (offline/degraded fallbacks, the system prompt's
+    // contact details) carries the caller's brand, not the seed's.
+    const companyInfo = await getCompanyInfo(orgId);
+    const degradedReply = degradedFallbackReply(companyInfo);
+
     if (selection.provider === "offline") {
       logger.info(
         {
@@ -463,12 +476,15 @@ router.post(
         startSseHeaders(res);
         writeSseEvent(res, {
           type: "chunk",
-          text: customerOfflineFallbackReply(),
+          text: customerOfflineFallbackReply(companyInfo),
         });
         writeSseEvent(res, { type: "done", offline: true });
         res.end();
       } else {
-        res.json({ reply: customerOfflineFallbackReply(), offline: true });
+        res.json({
+          reply: customerOfflineFallbackReply(companyInfo),
+          offline: true,
+        });
       }
       return;
     }
@@ -478,7 +494,7 @@ router.post(
       customerId,
       req.shopCustomerDisplayName ?? null,
     );
-    const systemPrompt = buildCustomerChatSystemPrompt(accountCtx);
+    const systemPrompt = buildCustomerChatSystemPrompt(accountCtx, companyInfo);
 
     const supabase = getOrgScopedClient(orgId);
 
@@ -524,8 +540,16 @@ router.post(
               client,
               toolCtx,
               messages.length,
+              degradedReply,
             )
-          : handleAnthropicJson(res, initial, client, toolCtx, messages.length);
+          : handleAnthropicJson(
+              res,
+              initial,
+              client,
+              toolCtx,
+              messages.length,
+              degradedReply,
+            );
       }
     }
 
@@ -534,19 +558,36 @@ router.post(
         startSseHeaders(res);
         writeSseEvent(res, {
           type: "chunk",
-          text: customerOfflineFallbackReply(),
+          text: customerOfflineFallbackReply(companyInfo),
         });
         writeSseEvent(res, { type: "done", offline: true });
         res.end();
       } else {
-        res.json({ reply: customerOfflineFallbackReply(), offline: true });
+        res.json({
+          reply: customerOfflineFallbackReply(companyInfo),
+          offline: true,
+        });
       }
       return;
     }
 
     return streaming
-      ? handleStreaming(res, initial, apiKey, toolCtx, messages.length)
-      : handleJson(res, initial, apiKey, toolCtx, messages.length);
+      ? handleStreaming(
+          res,
+          initial,
+          apiKey,
+          toolCtx,
+          messages.length,
+          degradedReply,
+        )
+      : handleJson(
+          res,
+          initial,
+          apiKey,
+          toolCtx,
+          messages.length,
+          degradedReply,
+        );
   },
 );
 
@@ -556,6 +597,7 @@ async function handleJson(
   apiKey: string,
   toolCtx: CustomerChatToolContext,
   turns: number,
+  degradedReply: string,
 ): Promise<void> {
   const fetchImpl = fetchImplOverride ?? fetch;
   const ctrl = new AbortController();
@@ -589,7 +631,7 @@ async function handleJson(
           },
           "customer chat: openai HTTP error",
         );
-        res.json({ reply: degradedFallbackReply(), degraded: true });
+        res.json({ reply: degradedReply, degraded: true });
         return;
       }
 
@@ -611,7 +653,7 @@ async function handleJson(
           { event: "customer_chat_empty_reply", round },
           "customer chat: openai returned empty content",
         );
-        res.json({ reply: degradedFallbackReply(), degraded: true });
+        res.json({ reply: degradedReply, degraded: true });
         return;
       }
 
@@ -631,7 +673,7 @@ async function handleJson(
       { event: "customer_chat_tool_cap_hit" },
       "customer chat: hit MAX_CUSTOMER_TOOL_ROUNDS without a final reply",
     );
-    res.json({ reply: degradedFallbackReply(), degraded: true });
+    res.json({ reply: degradedReply, degraded: true });
   } catch (err) {
     logger.warn(
       {
@@ -640,7 +682,7 @@ async function handleJson(
       },
       "customer chat: exception (returning degraded fallback)",
     );
-    res.json({ reply: degradedFallbackReply(), degraded: true });
+    res.json({ reply: degradedReply, degraded: true });
   } finally {
     clearTimeout(timer);
   }
@@ -777,6 +819,7 @@ async function handleStreaming(
   apiKey: string,
   toolCtx: CustomerChatToolContext,
   turns: number,
+  degradedReply: string,
 ): Promise<void> {
   startSseHeaders(res);
 
@@ -821,7 +864,7 @@ async function handleStreaming(
       );
       if (result.degraded) {
         if (totalChars === 0) {
-          safeEvent({ type: "chunk", text: degradedFallbackReply() });
+          safeEvent({ type: "chunk", text: degradedReply });
         }
         safeEvent({ type: "done", degraded: true });
         safeEnd();
@@ -846,7 +889,7 @@ async function handleStreaming(
           { event: "customer_chat_empty_reply", streaming: true, round },
           "customer chat: openai stream returned no content",
         );
-        safeEvent({ type: "chunk", text: degradedFallbackReply() });
+        safeEvent({ type: "chunk", text: degradedReply });
         degraded = true;
       }
       logger.info(
@@ -869,7 +912,7 @@ async function handleStreaming(
       "customer chat: hit MAX_CUSTOMER_TOOL_ROUNDS without a final reply",
     );
     if (totalChars === 0) {
-      safeEvent({ type: "chunk", text: degradedFallbackReply() });
+      safeEvent({ type: "chunk", text: degradedReply });
     }
     safeEvent({ type: "done", degraded: true });
     safeEnd();
@@ -883,7 +926,7 @@ async function handleStreaming(
       "customer chat: exception during stream (returning degraded fallback)",
     );
     if (totalChars === 0) {
-      safeEvent({ type: "chunk", text: degradedFallbackReply() });
+      safeEvent({ type: "chunk", text: degradedReply });
     }
     safeEvent({ type: "done", degraded: true });
     safeEnd();
@@ -997,6 +1040,7 @@ async function handleAnthropicJson(
   client: AnthropicClient,
   toolCtx: CustomerChatToolContext,
   turns: number,
+  degradedReply: string,
 ): Promise<void> {
   let messages = initialMessages;
   try {
@@ -1022,7 +1066,7 @@ async function handleAnthropicJson(
           },
           "customer chat: anthropic call failed",
         );
-        res.json({ reply: degradedFallbackReply(), degraded: true });
+        res.json({ reply: degradedReply, degraded: true });
         return;
       }
       const text = getResponseText(result.response).trim();
@@ -1042,7 +1086,7 @@ async function handleAnthropicJson(
           { event: "customer_chat_empty_reply", vendor: "anthropic", round },
           "customer chat: anthropic returned empty content",
         );
-        res.json({ reply: degradedFallbackReply(), degraded: true });
+        res.json({ reply: degradedReply, degraded: true });
         return;
       }
       logger.info(
@@ -1062,7 +1106,7 @@ async function handleAnthropicJson(
       { event: "customer_chat_tool_cap_hit", vendor: "anthropic" },
       "customer chat: hit MAX_CUSTOMER_TOOL_ROUNDS without a final reply",
     );
-    res.json({ reply: degradedFallbackReply(), degraded: true });
+    res.json({ reply: degradedReply, degraded: true });
   } catch (err) {
     logger.warn(
       {
@@ -1072,7 +1116,7 @@ async function handleAnthropicJson(
       },
       "customer chat: anthropic exception (returning degraded fallback)",
     );
-    res.json({ reply: degradedFallbackReply(), degraded: true });
+    res.json({ reply: degradedReply, degraded: true });
   }
 }
 
@@ -1082,6 +1126,7 @@ async function handleAnthropicStreaming(
   client: AnthropicClient,
   toolCtx: CustomerChatToolContext,
   turns: number,
+  degradedReply: string,
 ): Promise<void> {
   startSseHeaders(res);
 
@@ -1142,7 +1187,7 @@ async function handleAnthropicStreaming(
           "customer chat: anthropic stream failed",
         );
         if (totalChars === 0) {
-          safeEvent({ type: "chunk", text: degradedFallbackReply() });
+          safeEvent({ type: "chunk", text: degradedReply });
         }
         safeEvent({ type: "done", degraded: true });
         safeEnd();
@@ -1177,7 +1222,7 @@ async function handleAnthropicStreaming(
           },
           "customer chat: anthropic stream returned no content",
         );
-        safeEvent({ type: "chunk", text: degradedFallbackReply() });
+        safeEvent({ type: "chunk", text: degradedReply });
         safeEvent({ type: "done", degraded: true });
         safeEnd();
         return;
@@ -1206,7 +1251,7 @@ async function handleAnthropicStreaming(
       "customer chat: hit MAX_CUSTOMER_TOOL_ROUNDS without a final reply",
     );
     if (totalChars === 0) {
-      safeEvent({ type: "chunk", text: degradedFallbackReply() });
+      safeEvent({ type: "chunk", text: degradedReply });
     }
     safeEvent({ type: "done", degraded: true });
     safeEnd();
@@ -1221,7 +1266,7 @@ async function handleAnthropicStreaming(
       "customer chat: anthropic exception during stream (returning degraded fallback)",
     );
     if (totalChars === 0) {
-      safeEvent({ type: "chunk", text: degradedFallbackReply() });
+      safeEvent({ type: "chunk", text: degradedReply });
     }
     safeEvent({ type: "done", degraded: true });
     safeEnd();

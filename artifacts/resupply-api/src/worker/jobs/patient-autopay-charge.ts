@@ -183,6 +183,14 @@ async function patientAutopayChargeForOrg(
   charger: OffSessionCharger,
   stats: PatientAutopayRunStats,
 ): Promise<void> {
+  // Per-tenant opt-in. The flag is checked HERE, per org, not once for the
+  // whole tick: gating the fan-out on a single (seed) flag read would let the
+  // seed tenant's "on" authorize off-session card charges for EVERY active
+  // tenant. isFeatureEnabled falls back to the seed flag only for orgs with no
+  // row of their own, so single-tenant behavior is unchanged.
+  if (!(await isFeatureEnabled("billing.patient_autopay", orgId))) {
+    return;
+  }
   const supabase = getOrgScopedClient(orgId);
   // Resolve the tenant's Stripe Connect routing ONCE per tick. Empty for the
   // platform account (seed / not-yet-onboarded); `{ stripeAccount }` once the
@@ -454,14 +462,9 @@ export async function registerPatientAutopayChargeJob(
     VENDOR_SEND_QUEUE_OPTS,
   );
   await boss.work(PATIENT_AUTOPAY_CHARGE_JOB, async () => {
-    const enabled = await isFeatureEnabled("billing.patient_autopay");
-    if (!enabled) {
-      logger.info(
-        { queue: PATIENT_AUTOPAY_CHARGE_JOB },
-        "patient-autopay-charge: feature flag off — nothing charged",
-      );
-      return;
-    }
+    // No global flag gate here — the feature flag is enforced per-tenant in
+    // patientAutopayChargeForOrg so one tenant's flag can't authorize charges
+    // for another. Orgs with the flag off are skipped inside the fan-out.
     const stats = await runPatientAutopayCharge();
     logger.info(
       { event: "billing.patient-autopay-charge.completed", ...stats },

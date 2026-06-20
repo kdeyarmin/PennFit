@@ -197,7 +197,7 @@ router.get(
       },
       provider,
       generatedOn: new Date(),
-      supplierName: await getDocumentSupplierName(),
+      supplierName: await getDocumentSupplierName(orgId),
     };
 
     const errors = validateDwoInput(input);

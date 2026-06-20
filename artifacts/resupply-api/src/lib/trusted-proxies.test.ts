@@ -1,20 +1,11 @@
-// Regression tests for the trust-proxy predicate (app-review
-// 2026-06-10, P1-5). The safety contract: every path must resolve
-// req.ip equal-or-better than the historical `trust proxy = 1` —
-// Cloudflare-routed traffic resolves to the real client, direct
-// Railway traffic is unchanged, and X-Forwarded-For spoofing fails on
-// both paths.
-
 import express from "express";
 import request from "supertest";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createTrustProxyFn } from "./trusted-proxies";
 
-// Addresses inside Cloudflare's published ranges (one v4, one v6).
 const CF_V4 = "103.21.244.7";
 const CF_V6 = "2606:4700::1234";
-// A public address that is NOT a Cloudflare range.
 const PUBLIC = "8.8.8.8";
 const CLIENT = "9.9.9.9";
 
@@ -25,7 +16,7 @@ afterEach(() => {
 describe("createTrustProxyFn — predicate", () => {
   const trust = createTrustProxyFn();
 
-  it("trusts hop 0 unconditionally (the old trust-proxy=1 behavior)", () => {
+  it("trusts hop 0 unconditionally", () => {
     expect(trust(PUBLIC, 0)).toBe(true);
     expect(trust("garbage", 0)).toBe(true);
   });
@@ -63,37 +54,28 @@ describe("createTrustProxyFn — req.ip resolution through Express", () => {
     return app;
   }
 
-  // Supertest connects over loopback, so the socket peer (hop 0) is
-  // 127.0.0.1 — standing in for Railway's edge, trusted
-  // unconditionally. The X-Forwarded-For header is then exactly what
-  // Railway would have received and forwarded.
-
-  it("direct Railway traffic: resolves the single forwarded hop (unchanged)", async () => {
+  it("direct Railway traffic resolves the single forwarded hop", async () => {
     const res = await request(makeApp())
       .get("/ip")
       .set("X-Forwarded-For", CLIENT);
     expect(res.body.ip).toBe(CLIENT);
   });
 
-  it("Cloudflare-routed traffic: walks past the Cloudflare edge to the real client", async () => {
+  it("Cloudflare-routed traffic resolves the real client", async () => {
     const res = await request(makeApp())
       .get("/ip")
       .set("X-Forwarded-For", `${CLIENT}, ${CF_V4}`);
     expect(res.body.ip).toBe(CLIENT);
   });
 
-  it("spoofed XFF on the direct path: resolves the attacker, not the spoof", async () => {
-    // Attacker sends XFF: <fake>; Railway appends the attacker's real
-    // address — the chain Express sees is [fake, attacker].
+  it("spoofed direct-path XFF resolves the attacker", async () => {
     const res = await request(makeApp())
       .get("/ip")
       .set("X-Forwarded-For", `1.2.3.4, ${PUBLIC}`);
     expect(res.body.ip).toBe(PUBLIC);
   });
 
-  it("spoofed XFF via Cloudflare: resolves the attacker, not the spoof", async () => {
-    // Cloudflare appends the attacker's real address before its own
-    // edge entry — the chain is [fake, attacker, cf-edge].
+  it("spoofed Cloudflare-path XFF resolves the attacker", async () => {
     const res = await request(makeApp())
       .get("/ip")
       .set("X-Forwarded-For", `1.2.3.4, ${PUBLIC}, ${CF_V4}`);

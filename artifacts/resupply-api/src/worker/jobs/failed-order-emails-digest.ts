@@ -54,6 +54,8 @@ import {
   resolveSeedOrgId,
   type Database,
 } from "@workspace/resupply-db";
+
+import { PLATFORM_NAME } from "../../lib/company-info";
 import {
   createSendgridClient,
   EmailConfigError,
@@ -113,7 +115,12 @@ function composeDigestEmail(opts: {
   text: string;
 } {
   const { recipient, rows, totalCount, windowHours } = opts;
-  const subject = `PennPaps: ${totalCount} order ${
+  // This is a PLATFORM-level ops alert to RESUPPLY_ADMIN_ALERTS_EMAIL (the
+  // deployment operator's mailbox), not a tenant notice: public.orders is
+  // the legacy single-tenant fitter-orders table with no org_id, so failed
+  // rows can't be attributed to a tenant. Brand it with the platform name
+  // rather than the seed tenant ("PennPaps").
+  const subject = `${PLATFORM_NAME}: ${totalCount} order ${
     totalCount === 1 ? "confirmation failed" : "confirmations failed"
   } in the last ${windowHours}h`;
 

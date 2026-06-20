@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import { ShareArticle } from "@/components/share-article";
+import { BrandName } from "@/components/company-contact";
 
 type RiskBlock = {
   Icon: React.ComponentType<{ className?: string; strokeWidth?: number }>;
@@ -191,7 +192,7 @@ export function LearnHealthRisks() {
               The biggest predictor of whether someone gets those benefits is
               simply <span className="font-semibold">comfort</span> — whether
               the mask is wearable enough to use every night. That's the whole
-              reason PennPaps exists.
+              reason <BrandName /> exists.
             </p>
           </div>
         </div>

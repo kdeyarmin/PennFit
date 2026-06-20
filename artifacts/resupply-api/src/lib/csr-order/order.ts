@@ -16,7 +16,10 @@ import { type Json, type OrgScopedClient } from "@workspace/resupply-db";
 import { createTwilioSmsClient } from "@workspace/resupply-telecom";
 
 import { getAuthDeps } from "../auth-deps";
+import { createTenantSendgridClient } from "../email/tenant-sender.js";
 import { logger } from "../logger";
+import { resolveTenantSmsClientOptions } from "../messaging/tenant-telecom";
+import { recordOutboundMessageUsage } from "../metering/usage";
 import { resolveCompanyProfile } from "../patient-packet/company";
 import {
   effectiveTemplateContent,
@@ -258,7 +261,13 @@ export async function deliverCsrOrderInvite(input: {
   let emailSent = false;
   if (input.email) {
     try {
-      await getAuthDeps().email({
+      // Send via createSendgridClient() directly (not getAuthDeps().email,
+      // which swallows EmailConfigError/EmailApiError and resolves anyway)
+      // so an unconfigured provider or a vendor reject surfaces as a throw.
+      // That keeps emailSent — and the usage metering below — gated on a
+      // genuinely accepted send, never an over-count during a config gap.
+      const client = await createTenantSendgridClient(input.supabase.orgId);
+      await client.sendEmail({
         to: input.email,
         subject: input.reminder
           ? `Reminder: complete your ${company.legalName} order ${input.orderReference}`
@@ -281,6 +290,11 @@ export async function deliverCsrOrderInvite(input: {
         }),
       });
       emailSent = true;
+      recordOutboundMessageUsage({
+        orgId: input.supabase.orgId,
+        channel: "email",
+        source: "csr_order_invite",
+      });
     } catch (err) {
       logger.warn(
         {
@@ -299,7 +313,19 @@ export async function deliverCsrOrderInvite(input: {
     const from = process.env.TWILIO_PHONE_NUMBER ?? null;
     const messagingServiceSid =
       process.env.TWILIO_MESSAGING_SERVICE_SID ?? null;
-    if (accountSid && authToken && (from || messagingServiceSid)) {
+    // Send under the tenant's own number / Messaging Service when it has one
+    // (G7); falls back to the platform env default otherwise. Resolved before
+    // the guard so a tenant routable via its DB sender still sends even when
+    // the platform env has no default from-number/Messaging Service.
+    const tenantSms = await resolveTenantSmsClientOptions(input.supabase.orgId);
+    if (
+      accountSid &&
+      authToken &&
+      (from ||
+        messagingServiceSid ||
+        tenantSms.from ||
+        tenantSms.messagingServiceSid)
+    ) {
       const body =
         `${company.legalName}: your order ${input.orderReference} (${amount}) is ready. ` +
         `Review${input.hasDocuments ? ", sign" : ""} & pay securely here: ${input.link}` +
@@ -308,11 +334,17 @@ export async function deliverCsrOrderInvite(input: {
         const client = createTwilioSmsClient({
           accountSid,
           authToken,
-          from: from ?? undefined,
-          messagingServiceSid: messagingServiceSid ?? undefined,
+          from: tenantSms.from ?? from ?? undefined,
+          messagingServiceSid:
+            tenantSms.messagingServiceSid ?? messagingServiceSid ?? undefined,
         });
         await client.sendSms({ to: input.phone, body: body.slice(0, 480) });
         smsSent = true;
+        recordOutboundMessageUsage({
+          orgId: input.supabase.orgId,
+          channel: "sms",
+          source: "csr_order_invite",
+        });
       } catch (err) {
         logger.warn(
           {

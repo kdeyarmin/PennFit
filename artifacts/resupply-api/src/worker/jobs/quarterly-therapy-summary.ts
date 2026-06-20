@@ -368,6 +368,7 @@ async function quarterlySummarySweepForOrg(
           windowStart: startIso,
           windowEnd: endIso,
           fields: summary.fields,
+          orgId,
         });
         if (!result.configured) {
           await releaseClaim();

@@ -45,6 +45,11 @@ import {
   sendReminderManageLink,
 } from "../../lib/storefront/reminderEmail.js";
 import { requireCsrfWhenSession } from "../../middlewares/csrf.js";
+import { requestHost } from "../../lib/request-host.js";
+import {
+  resolveOrgIdByHost,
+  resolveBrandingByOrgId,
+} from "../../lib/tenant-branding.js";
 import { attachSignedIn } from "../../middlewares/requireSignedIn.js";
 
 type ReminderSubscriptionRow =
@@ -172,11 +177,12 @@ router.post("/reminders", async (req, res) => {
   const items = parsed.data.items;
   const itemsWithDue = withNextDue(items);
 
-  // Public, unauthenticated route (pattern 3): no req.orgId. Resolve the
-  // seed org to build the scoped client and degrade gracefully —
-  // reminder_subscriptions is a global public-schema table (no org_id),
-  // reached via `.raw()`, but we still resolve a tenant for the client.
-  const orgId = await resolveSeedOrgId();
+  // Public, unauthenticated route (pattern 3): no req.orgId. Resolve the tenant
+  // by HOST so a subscription on tenant B's storefront is recorded for tenant
+  // B (custom domain / subdomain → that org; apex / miss → seed). The
+  // subscription row carries org_id (migration 0378).
+  const orgId =
+    (await resolveOrgIdByHost(requestHost(req))) ?? (await resolveSeedOrgId());
   if (!orgId) {
     res.json({
       success: true,
@@ -187,16 +193,17 @@ router.post("/reminders", async (req, res) => {
   }
   const supabase = getOrgScopedClient(orgId);
 
-  // Look up by email. We branch hard here: existing rows DO NOT receive
-  // the new items in the response and DO NOT have their token disclosed.
-  // This closes a takeover hole where an attacker could submit a victim's
-  // email and read back the capability token.
+  // Look up by email WITHIN this tenant. We branch hard here: existing rows DO
+  // NOT receive the new items in the response and DO NOT have their token
+  // disclosed. This closes a takeover hole where an attacker could submit a
+  // victim's email and read back the capability token.
   const { data: existing, error: existingErr } = await supabase
     .raw()
     .schema("public")
     .from("reminder_subscriptions")
     .select("email, manage_token")
     .eq("email", email)
+    .eq("org_id", orgId)
     .limit(1)
     .maybeSingle();
   if (existingErr) throw existingErr;
@@ -211,6 +218,7 @@ router.post("/reminders", async (req, res) => {
       const result = await sendReminderManageLink({
         toEmail: existing.email,
         manageToken: existing.manage_token,
+        orgId,
       });
       emailStatus = !result.configured
         ? "skipped"
@@ -241,6 +249,7 @@ router.post("/reminders", async (req, res) => {
     .from("reminder_subscriptions")
     .insert({
       email,
+      org_id: orgId,
       manage_token: generateManageToken(),
       // The strongly-typed item array doesn't satisfy PostgREST's `Json`
       // type without a cast at the boundary.
@@ -249,7 +258,7 @@ router.post("/reminders", async (req, res) => {
       updated_at: new Date().toISOString(),
     })
     .select(
-      "id, email, manage_token, status, items, last_sent_at, created_at, updated_at",
+      "id, email, manage_token, status, items, last_sent_at, created_at, updated_at, org_id",
     )
     .limit(1)
     .maybeSingle();
@@ -279,6 +288,7 @@ router.post("/reminders", async (req, res) => {
       toEmail: row.email,
       manageToken: row.manage_token,
       items: itemsWithDue,
+      orgId,
     });
     emailStatus = !result.configured
       ? "skipped"
@@ -338,6 +348,26 @@ function resolveManageLookup(
   };
 }
 
+/**
+ * Resolve the tenant for a manage request the SAME way the subscribe path
+ * does: by HOST (custom domain / subdomain → that org; apex / miss → seed).
+ *
+ * The manage_token column is a global capability secret that identifies a
+ * row on its own, so it needs no org filter. The session/email column does:
+ * migration 0378 re-keyed reminder_subscriptions to UNIQUE(org_id, email),
+ * so the same email can legitimately exist under multiple tenants, and an
+ * unscoped `.eq("email", …)` would read/modify whichever tenant's row
+ * PostgREST returned first. Handlers apply `.eq("org_id", orgId)` only for
+ * the email column (see each `if (lookup.column === "email")` below).
+ */
+async function resolveManageOrgId(
+  req: import("express").Request,
+): Promise<string | null> {
+  return (
+    (await resolveOrgIdByHost(requestHost(req))) ?? (await resolveSeedOrgId())
+  );
+}
+
 // ---------- GET /reminders/manage[?token=...] ----------
 // Auth: token in query OR signed-in session. See resolveManageLookup.
 router.get("/reminders/manage", attachSignedIn, async (req, res) => {
@@ -347,24 +377,25 @@ router.get("/reminders/manage", attachSignedIn, async (req, res) => {
     return;
   }
   // Token/session route (pattern 3): no guaranteed req.orgId. Resolve the
-  // seed org; reminder_subscriptions is a global public-schema table
-  // reached via `.raw()`. Degrade to the existing "not found" path.
-  const orgId = await resolveSeedOrgId();
+  // tenant by host and scope the email path to it (see resolveManageOrgId).
+  const orgId = await resolveManageOrgId(req);
   if (!orgId) {
     res.status(404).json({ error: "Subscription not found" });
     return;
   }
   const supabase = getOrgScopedClient(orgId);
-  const { data: row, error } = await supabase
+  let query = supabase
     .raw()
     .schema("public")
     .from("reminder_subscriptions")
     .select(
-      "id, email, manage_token, status, items, last_sent_at, created_at, updated_at",
+      "id, email, manage_token, status, items, last_sent_at, created_at, updated_at, org_id",
     )
-    .eq(lookup.column, lookup.value)
-    .limit(1)
-    .maybeSingle();
+    .eq(lookup.column, lookup.value);
+  if (lookup.column === "email") {
+    query = query.eq("org_id", orgId);
+  }
+  const { data: row, error } = await query.limit(1).maybeSingle();
   if (error) throw error;
   if (!row) {
     res.status(404).json({ error: "Subscription not found" });
@@ -416,13 +447,13 @@ router.patch(
 
     const itemsWithDue = withNextDue(bodyParsed.data.items);
 
-    const orgId = await resolveSeedOrgId();
+    const orgId = await resolveManageOrgId(req);
     if (!orgId) {
       res.status(404).json({ error: "Subscription not found" });
       return;
     }
     const supabase = getOrgScopedClient(orgId);
-    const { data: updated, error } = await supabase
+    let query = supabase
       .raw()
       .schema("public")
       .from("reminder_subscriptions")
@@ -431,9 +462,13 @@ router.patch(
         status: "active",
         updated_at: new Date().toISOString(),
       })
-      .eq(lookup.column, lookup.value)
+      .eq(lookup.column, lookup.value);
+    if (lookup.column === "email") {
+      query = query.eq("org_id", orgId);
+    }
+    const { data: updated, error } = await query
       .select(
-        "id, email, manage_token, status, items, last_sent_at, created_at, updated_at",
+        "id, email, manage_token, status, items, last_sent_at, created_at, updated_at, org_id",
       )
       .limit(1)
       .maybeSingle();
@@ -467,13 +502,13 @@ router.post(
       res.status(lookup.status).json({ error: lookup.message });
       return;
     }
-    const orgId = await resolveSeedOrgId();
+    const orgId = await resolveManageOrgId(req);
     if (!orgId) {
       res.status(404).json({ error: "Subscription not found" });
       return;
     }
     const supabase = getOrgScopedClient(orgId);
-    const { data: updated, error } = await supabase
+    let query = supabase
       .raw()
       .schema("public")
       .from("reminder_subscriptions")
@@ -481,8 +516,12 @@ router.post(
         status: "unsubscribed",
         updated_at: new Date().toISOString(),
       })
-      .eq(lookup.column, lookup.value)
-      .select("id")
+      .eq(lookup.column, lookup.value);
+    if (lookup.column === "email") {
+      query = query.eq("org_id", orgId);
+    }
+    const { data: updated, error } = await query
+      .select("id, org_id")
       .limit(1)
       .maybeSingle();
     if (error) throw error;
@@ -490,9 +529,12 @@ router.post(
       res.status(404).json({ error: "Subscription not found" });
       return;
     }
+    // Brand the confirmation with the subscription's OWN tenant (resolved from
+    // its row, not the host) so a tenant-B unsubscribe doesn't say "PennPaps".
+    const brand = await resolveBrandingByOrgId(updated.org_id ?? undefined);
     res.json({
       success: true,
-      message: "You've been unsubscribed from PennPaps supply reminders.",
+      message: `You've been unsubscribed from ${brand.storefrontName} supply reminders.`,
     });
   },
 );

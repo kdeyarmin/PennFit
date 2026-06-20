@@ -14,14 +14,12 @@
 // the fallback strings below are used verbatim when no template row exists
 // (the row is optional — there is no seed for this key).
 
-import {
-  createSendgridClient,
-  EmailApiError,
-  EmailConfigError,
-} from "@workspace/resupply-email";
+import { EmailApiError, EmailConfigError } from "@workspace/resupply-email";
 import { renderMessage } from "@workspace/resupply-templates";
 
 import { messageTemplateLookup } from "../message-templates/lookup";
+import { createTenantSendgridClient } from "../email/tenant-sender.js";
+import { resolveBrandingByOrgId } from "../tenant-branding.js";
 
 // Human labels for the calendar event types. Kept in lock-step with the DB
 // CHECK constraint in 0242_company_calendar_events.sql + the SPA's
@@ -79,6 +77,12 @@ export interface AppointmentAssignedEmailInput {
   assignedByEmail: string | null;
   /** Absolute URL to the company calendar (built from the app base URL). */
   dashboardUrl: string;
+  /**
+   * Tenant the calendar event belongs to. When set, the notification is
+   * sent under the tenant's own From identity (G6) and branded with the
+   * tenant's storefront name; omit / undefined keeps the platform default.
+   */
+  orgId?: string;
 }
 
 export interface AppointmentAssignedEmailResult {
@@ -104,7 +108,10 @@ function buildFields(input: AppointmentAssignedEmailInput) {
   };
 }
 
-function renderText(input: AppointmentAssignedEmailInput): string {
+function renderText(
+  input: AppointmentAssignedEmailInput,
+  brandName = "PennPaps",
+): string {
   const f = buildFields(input);
   const lines = [
     `Hi ${f.greetingName},`,
@@ -120,12 +127,15 @@ function renderText(input: AppointmentAssignedEmailInput): string {
     "",
     `View it in your dashboard: ${input.dashboardUrl}`,
     "",
-    "— PennPaps",
+    `— ${brandName}`,
   );
   return lines.join("\n");
 }
 
-function renderHtml(input: AppointmentAssignedEmailInput): string {
+function renderHtml(
+  input: AppointmentAssignedEmailInput,
+  brandName = "PennPaps",
+): string {
   const f = buildFields(input);
   const locationRow = f.location
     ? `<tr><td style="padding:2px 0;color:#888;">Where</td><td style="padding:2px 0 2px 16px;color:#0a1f44;font-weight:600;">${escapeHtml(
@@ -142,7 +152,9 @@ function renderHtml(input: AppointmentAssignedEmailInput): string {
     <tr><td align="center">
       <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;padding:32px;max-width:560px;">
         <tr><td style="padding-bottom:16px;border-bottom:2px solid #c9a24a;">
-          <div style="font-size:13px;letter-spacing:0.08em;color:#7a5d00;text-transform:uppercase;font-weight:600;">PennPaps · Company calendar</div>
+          <div style="font-size:13px;letter-spacing:0.08em;color:#7a5d00;text-transform:uppercase;font-weight:600;">${escapeHtml(
+            brandName,
+          )} · Company calendar</div>
           <div style="font-size:22px;color:#0a1f44;font-weight:700;margin-top:4px;">An appointment was scheduled for you</div>
         </td></tr>
         <tr><td style="padding-top:18px;color:#333;font-size:15px;line-height:1.55;">
@@ -166,7 +178,9 @@ function renderHtml(input: AppointmentAssignedEmailInput): string {
           )}" style="display:inline-block;background:#c9a24a;color:#0a1f44;text-decoration:none;padding:13px 26px;border-radius:8px;font-weight:700;">Open the calendar</a>
         </td></tr>
         <tr><td style="padding-top:28px;border-top:1px solid #eee;color:#888;font-size:12px;line-height:1.4;">
-          You're receiving this because a teammate assigned this appointment to you in the PennPaps admin console.
+          You're receiving this because a teammate assigned this appointment to you in the ${escapeHtml(
+            brandName,
+          )} admin console.
         </td></tr>
       </table>
     </td></tr>
@@ -183,13 +197,21 @@ export async function sendAppointmentAssignedEmail(
 ): Promise<AppointmentAssignedEmailResult> {
   let client;
   try {
-    client = createSendgridClient();
+    // Send under the tenant's own From identity when configured (G6);
+    // falls back to the platform default when it isn't / orgId is unset.
+    client = await createTenantSendgridClient(input.orgId);
   } catch (err) {
     if (err instanceof EmailConfigError) {
       return { configured: false, delivered: false, error: err.message };
     }
     throw err;
   }
+
+  // Brand the notification with the tenant's own storefront name (G6). For
+  // the seed tenant this resolves to "PennPaps" (its stored brand), so
+  // single-tenant copy is unchanged.
+  const brand = await resolveBrandingByOrgId(input.orgId);
+  const brandName = brand.storefrontName;
 
   const fields = buildFields(input);
   const rendered = await renderMessage(
@@ -210,8 +232,8 @@ export async function sendAppointmentAssignedEmail(
     },
     {
       subject: "An appointment was scheduled for you",
-      bodyHtml: renderHtml(input),
-      bodyText: renderText(input),
+      bodyHtml: renderHtml(input, brandName),
+      bodyText: renderText(input, brandName),
     },
     messageTemplateLookup,
   );

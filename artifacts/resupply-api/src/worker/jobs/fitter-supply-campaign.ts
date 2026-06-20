@@ -73,10 +73,7 @@ import {
 
 type FitterLeadsUpdate =
   Database["resupply"]["Tables"]["fitter_leads"]["Update"];
-import {
-  createSendgridClient,
-  EmailConfigError,
-} from "@workspace/resupply-email";
+import { EmailConfigError } from "@workspace/resupply-email";
 import {
   createTwilioSmsClient,
   TwilioConfigError,
@@ -85,6 +82,13 @@ import {
 import { isOutsideSmsSendWindow } from "../../lib/comm-prefs";
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
+import { createTenantSendgridClient } from "../../lib/email/tenant-sender.js";
+import {
+  resolveBrandingByOrgId,
+  resolveTenantBaseUrl,
+} from "../../lib/tenant-branding.js";
+import { resolveTenantSmsClientOptions } from "../../lib/messaging/tenant-telecom.js";
+import { recordOutboundMessageUsage } from "../../lib/metering/usage.js";
 import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import {
   createQueueWithDlq,
@@ -167,13 +171,14 @@ interface TouchpointCopy {
   sms: string;
 }
 
-function publicBaseUrl(): string {
+function publicBaseUrl(override?: string): string {
   return (
+    override ??
     process.env.SHOP_PUBLIC_BASE_URL ??
     process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL ??
     (process.env.RAILWAY_PUBLIC_DOMAIN
       ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
-      : "https://pennpaps.com")
+      : "https://cmbreathe.com")
   ).replace(/\/$/, "");
 }
 
@@ -852,18 +857,27 @@ export function composeTouchpoint(opts: {
   }
 }
 
-function tryCreateSendgrid(): ReturnType<typeof createSendgridClient> | null {
+/** Construct the tenant SendGrid client (G6 — sends under the tenant's own
+ *  From identity, falling back to the platform default for the seed tenant);
+ *  return null on missing config so the worker degrades gracefully. */
+async function tryCreateSendgrid(
+  orgId: string,
+): Promise<Awaited<ReturnType<typeof createTenantSendgridClient>> | null> {
   try {
-    return createSendgridClient();
+    return await createTenantSendgridClient(orgId);
   } catch (err) {
     if (err instanceof EmailConfigError) return null;
     throw err;
   }
 }
 
-function tryCreateTwilioSms(): ReturnType<typeof createTwilioSmsClient> | null {
+async function tryCreateTwilioSms(
+  orgId: string,
+): Promise<ReturnType<typeof createTwilioSmsClient> | null> {
   try {
-    return createTwilioSmsClient();
+    // Send under the tenant's own number / Messaging Service when it has
+    // one (G7); falls back to the platform env default otherwise.
+    return createTwilioSmsClient(await resolveTenantSmsClientOptions(orgId));
   } catch (err) {
     if (err instanceof TwilioConfigError) return null;
     throw err;
@@ -951,10 +965,18 @@ async function fitterSupplyCampaignSweepForOrg(
   );
   if (candidates.length === 0) return;
 
-  const sendgrid = tryCreateSendgrid();
-  const twilioSms = tryCreateTwilioSms();
-  const practiceName = process.env.RESUPPLY_PRACTICE_NAME ?? "PennPaps";
-  const baseUrl = publicBaseUrl();
+  const sendgrid = await tryCreateSendgrid(orgId);
+  const twilioSms = await tryCreateTwilioSms(orgId);
+  // Brand the copy with the tenant's own storefront name (G6); for the seed
+  // tenant this resolves to "PennPaps" so single-tenant copy is unchanged.
+  const brand = await resolveBrandingByOrgId(orgId);
+  const practiceName = brand.storefrontName;
+  // Build patient links from the tenant's own storefront origin (its verified
+  // custom domain) when it has one; the seed tenant falls through to the env/
+  // default, so single-tenant is unchanged. Resolved once per tenant sweep.
+  const baseUrl = publicBaseUrl(
+    (await resolveTenantBaseUrl(orgId)) ?? undefined,
+  );
   const resumeUrl = `${baseUrl}/results`;
   const shopUrl = `${baseUrl}/shop`;
 
@@ -1292,6 +1314,11 @@ async function fitterSupplyCampaignSweepForOrg(
           },
         });
         stats.emailed += 1;
+        recordOutboundMessageUsage({
+          orgId,
+          channel: "email",
+          source: "fitter_supply_campaign.email",
+        });
         await recordTouch(
           supabase,
           lead.id,
@@ -1347,6 +1374,11 @@ async function fitterSupplyCampaignSweepForOrg(
             body: copy.sms,
           });
           stats.smsSent += 1;
+          recordOutboundMessageUsage({
+            orgId,
+            channel: "sms",
+            source: "fitter_supply_campaign.sms",
+          });
           await recordTouch(
             supabase,
             lead.id,

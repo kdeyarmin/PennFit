@@ -40,9 +40,11 @@ import {
   type OrgScopedClient,
 } from "@workspace/resupply-db";
 import {
+  applyPronunciation,
   buildSystemPrompt,
   createDeepgramClient,
   createElevenLabsClient,
+  createPronunciationStream,
   DEFAULT_CONVERSATIONAL_VOICE_SETTINGS,
   DEFAULT_REALTIME_GA_MODEL,
   DEFAULT_REALTIME_GA_TRANSCRIBE_MODEL,
@@ -50,6 +52,7 @@ import {
   OPENAI_TOOL_DESCRIPTORS,
   PROMPT_VERSION,
   RealtimeClient,
+  BREATHE_SALES_TOOL_NAMES,
   PATIENT_TOOL_NAMES,
   DEFAULT_TOOL_CALL_FILLER_PHRASES,
   SHOP_TOOL_NAMES,
@@ -58,6 +61,7 @@ import {
   type ElevenLabsClient,
   type ElevenLabsVoiceSettings,
   type MediaStreamSink,
+  type RealtimeNoiseReduction,
   type ToolDispatcher,
   type ToolName,
   type TranscriptTurn,
@@ -71,6 +75,7 @@ import {
   parseTwilioFrame,
 } from "@workspace/resupply-telecom";
 
+import { PLATFORM_NAME } from "../company-info";
 import { getAnthropicClient } from "../llm-provider";
 import { logger } from "../logger";
 import { recordTenantUsage } from "../metering/usage";
@@ -88,7 +93,34 @@ const OUTBOUND_DEFAULT_CALL_CONTEXT =
   "Outbound CPAP resupply check-in. Verify identity by date of birth, " +
   "review supplies due, confirm shipping address, and place the order.";
 
+// Process-level concurrent-call cap. Each accepted call opens up to three
+// upstream sockets (OpenAI Realtime, ElevenLabs TTS, Deepgram STT) and is
+// held up to ~15 min, so an unbounded burst can exhaust file descriptors /
+// vendor concurrency limits and degrade the in-process API as a whole.
+// We count active calls at the module level and reject new connections
+// over the ceiling BEFORE opening any upstream sockets. The ceiling reads
+// from VOICE_MAX_CONCURRENT_CALLS (default 50 — generous; well past the
+// real peak for a single-tenant resupply line) and is clamped to a sane
+// positive integer so a typo'd env var can't disable the call path.
+const DEFAULT_VOICE_MAX_CONCURRENT_CALLS = 50;
+let activeVoiceCallCount = 0;
+
+function voiceMaxConcurrentCalls(): number {
+  const raw = process.env.VOICE_MAX_CONCURRENT_CALLS;
+  if (!raw) return DEFAULT_VOICE_MAX_CONCURRENT_CALLS;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    return DEFAULT_VOICE_MAX_CONCURRENT_CALLS;
+  }
+  return parsed;
+}
+
 const DIAGNOSTIC_DEFAULT_CALL_CONTEXT = "Voice connection diagnostic.";
+
+const BREATHE_SALES_DEFAULT_CALL_CONTEXT =
+  "Inbound sales call to the CareMetric Breathe platform line. The caller is " +
+  "a prospective DME business. Identify why they called, then pitch, help, or " +
+  "take a message accordingly.";
 
 /**
  * Build the system prompt, degrading to the flow's stock framing when the
@@ -141,11 +173,13 @@ export async function handleVoiceWsConnection(
   pending: PendingSessionEntry,
 ): Promise<void> {
   const config = readVoiceConfigOrThrow();
-  // Voice WS has no auth tenant context — resolve the seed org (single-
-  // tenant bridge) and route DB access through the org-scoped chokepoint.
-  // If the tenant can't be resolved the call can't persist anything, so
-  // close cleanly rather than run unscoped.
-  const orgId = await resolveSeedOrgId();
+  // Voice WS has no auth tenant context — prefer the tenant the
+  // registering route (place-call / inbound-reorder) stamped on the
+  // pending session so the bridge persists + sends under the RIGHT
+  // tenant (G7). Fall back to the seed org for legacy/diagnostic entries
+  // that carry no orgId (single-tenant-correct). If neither resolves the
+  // call can't persist anything, so close cleanly rather than run unscoped.
+  const orgId = pending.orgId ?? (await resolveSeedOrgId());
   if (!orgId) {
     logger.error(
       { event: "voice_ws_no_tenant" },
@@ -159,6 +193,52 @@ export async function handleVoiceWsConnection(
     return;
   }
   const supabase = getOrgScopedClient(orgId);
+
+  // Concurrent-call cap. Reject — gracefully — before opening ANY upstream
+  // socket when we're already at the ceiling, so a burst can't exhaust FDs
+  // / vendor concurrency and take down the in-process API. The slot is
+  // reserved just before the first upstream socket opens (see
+  // `reserveCallSlot()` below) and released exactly once via
+  // `releaseCallSlot()` on EVERY teardown path.
+  const maxConcurrent = voiceMaxConcurrentCalls();
+  if (activeVoiceCallCount >= maxConcurrent) {
+    logger.warn(
+      {
+        event: "voice_max_concurrent_reached",
+        active: activeVoiceCallCount,
+        max: maxConcurrent,
+        conversationId: pending.conversationId,
+      },
+      "voice WS: concurrent-call ceiling reached; rejecting connection",
+    );
+    try {
+      // 1013 = "Try Again Later" — the right signal for transient
+      // capacity rejection (vs a protocol/auth failure).
+      ws.close(1013, "voice-capacity");
+    } catch {
+      /* already closed */
+    }
+    return;
+  }
+  // The slot is RESERVED just before the first upstream socket opens (the
+  // RealtimeClient constructor, below) — not here — so a synchronous throw
+  // in the cheap setup between now and then (dispatcher / ElevenLabs client
+  // construction) can't leak a slot. The ceiling check above and the
+  // reserve below are atomic: no `await` runs between them, so the count
+  // can't move underneath us. `releaseCallSlot()` is the exactly-once
+  // decrement, invoked from every teardown path.
+  let callSlotReserved = false;
+  let callSlotReleased = false;
+  const reserveCallSlot = (): void => {
+    if (callSlotReserved) return;
+    callSlotReserved = true;
+    activeVoiceCallCount += 1;
+  };
+  const releaseCallSlot = (): void => {
+    if (!callSlotReserved || callSlotReleased) return;
+    callSlotReleased = true;
+    activeVoiceCallCount = Math.max(0, activeVoiceCallCount - 1);
+  };
 
   let streamSid: string | null = null;
   let twilioCallSid: string | null = pending.twilioCallSid ?? null;
@@ -309,11 +389,10 @@ export async function handleVoiceWsConnection(
     );
   }
 
-  // Realtime session schema. Default "beta" (production). When an operator
-  // flips OPENAI_REALTIME_SCHEMA=ga on a preview, the resolver fills in
-  // coherent GA defaults (gpt-realtime-2 + gpt-realtime-whisper); the µ-law
-  // token (audio/pcmu) and reasoning effort ("low") default inside
-  // RealtimeClient.
+  // Realtime session schema. Default "ga" (gpt-realtime-2): the resolver
+  // fills in coherent GA defaults (gpt-realtime-2 + gpt-realtime-whisper);
+  // the µ-law token (audio/pcmu) and reasoning effort ("low") default inside
+  // RealtimeClient. Set OPENAI_REALTIME_SCHEMA=beta for the legacy fallback.
   const realtime = resolveRealtimeClientOptions(config);
   if (config.realtimeSchema === "ga") {
     logger.info(
@@ -327,31 +406,44 @@ export async function handleVoiceWsConnection(
     );
   }
 
-  const client = new RealtimeClient({
-    apiKey: config.openaiApiKey,
-    ...realtime,
-    // When ElevenLabs owns the voice, the model emits text (not audio)
-    // and the bridge synthesises it. Otherwise the model speaks (cedar).
-    generateAudio: !externalVoice,
-    instructions: buildPromptOrFallback(
-      {
-        practiceName: config.practiceName?.trim() || "PennPaps",
-        callerKind,
-        // Inbound calls (the reorder IVR) set their own context + greeting
-        // on the pending entry so the agent doesn't tell a caller who
-        // dialed in that we're calling them. Outbound (place-call) leaves
-        // both unset → the default check-in context + DEFAULT_GREETING.
-        callContext: pending.callContext ?? OUTBOUND_DEFAULT_CALL_CONTEXT,
-        ...(pending.greeting ? { greeting: pending.greeting } : {}),
-      },
-      OUTBOUND_DEFAULT_CALL_CONTEXT,
-      pending.conversationId,
-    ),
-    tools: OPENAI_TOOL_DESCRIPTORS,
-    allowedToolNames: new Set(
-      callerKind === "shop_customer" ? SHOP_TOOL_NAMES : PATIENT_TOOL_NAMES,
-    ),
-  });
+  // The RealtimeClient constructor OPENS the OpenAI WebSocket (the first
+  // upstream socket of the call). Reserve the concurrency slot here, right
+  // before that socket opens. A synchronous throw in the constructor
+  // happens after the reserve but before `finalizeAndClose` is wired, so
+  // release the slot before propagating — otherwise a construction failure
+  // would permanently consume a concurrency slot.
+  reserveCallSlot();
+  let client: RealtimeClient;
+  try {
+    client = new RealtimeClient({
+      apiKey: config.openaiApiKey,
+      ...realtime,
+      // When ElevenLabs owns the voice, the model emits text (not audio)
+      // and the bridge synthesises it. Otherwise the model speaks (cedar).
+      generateAudio: !externalVoice,
+      instructions: buildPromptOrFallback(
+        {
+          practiceName: config.practiceName?.trim() || "PennPaps",
+          callerKind,
+          // Inbound calls (the reorder IVR) set their own context + greeting
+          // on the pending entry so the agent doesn't tell a caller who
+          // dialed in that we're calling them. Outbound (place-call) leaves
+          // both unset → the default check-in context + DEFAULT_GREETING.
+          callContext: pending.callContext ?? OUTBOUND_DEFAULT_CALL_CONTEXT,
+          ...(pending.greeting ? { greeting: pending.greeting } : {}),
+        },
+        OUTBOUND_DEFAULT_CALL_CONTEXT,
+        pending.conversationId,
+      ),
+      tools: OPENAI_TOOL_DESCRIPTORS,
+      allowedToolNames: new Set(
+        callerKind === "shop_customer" ? SHOP_TOOL_NAMES : PATIENT_TOOL_NAMES,
+      ),
+    });
+  } catch (err) {
+    releaseCallSlot();
+    throw err;
+  }
 
   // RealtimeClient's constructor OPENS the OpenAI WebSocket, so a throw
   // from anything between client construction and the bridge taking
@@ -381,6 +473,10 @@ export async function handleVoiceWsConnection(
     } catch {
       /* never mask the original error with a close failure */
     }
+    // The slot was reserved above but `finalizeAndClose` never runs on
+    // this pre-bridge throw — release it here so a construction failure
+    // doesn't permanently consume a concurrency slot.
+    releaseCallSlot();
     throw err;
   }
 
@@ -558,6 +654,11 @@ export async function handleVoiceWsConnection(
   ): void => {
     if (closed) return;
     closed = true;
+    // Release the concurrent-call slot the moment teardown begins. The
+    // `closed` guard above makes this the exactly-once decrement for the
+    // normal lifecycle; the bridge-construction catch handles the
+    // pre-bridge throw separately.
+    releaseCallSlot();
     if (maxDurationTimer !== null) {
       clearTimeout(maxDurationTimer);
       maxDurationTimer = null;
@@ -857,6 +958,7 @@ function resolveRealtimeClientOptions(config: VoiceConfig): {
   transcriptionModel: string | undefined;
   reasoningEffort: "minimal" | "low" | "medium" | "high" | undefined;
   audioFormat: string | undefined;
+  noiseReduction: RealtimeNoiseReduction | undefined;
 } {
   const isGa = config.realtimeSchema === "ga";
   return {
@@ -868,6 +970,8 @@ function resolveRealtimeClientOptions(config: VoiceConfig): {
       (isGa ? DEFAULT_REALTIME_GA_TRANSCRIBE_MODEL : undefined),
     reasoningEffort: config.realtimeReasoningEffort,
     audioFormat: config.realtimeAudioFormat,
+    // undefined → RealtimeClient applies its telephony default (far_field).
+    noiseReduction: config.realtimeNoiseReduction,
   };
 }
 
@@ -1065,6 +1169,320 @@ export async function handleVoiceDiagnosticWsConnection(
     logger.warn(
       { event: "voice_diag_ws_error", err: serializeErr(err) },
       "voice diagnostic: ws error",
+    );
+    cleanup("twilio-ws-error");
+  });
+
+  await new Promise<void>((resolve) => {
+    resolveClosed = resolve;
+    if (closed) resolve();
+  });
+}
+
+/**
+ * CareMetric Breathe B2B platform SALES bridge. A prospective DME business
+ * dialed the dedicated platform sales line. Modeled on the diagnostic handler
+ * (no patient, no `conversations` row, no DB transcript / Deepgram / post-call
+ * summary) — a platform prospect is neither a patient nor a customer, so the
+ * `conversations` subject-XOR check forbids a row, and the patient transcript/
+ * finalize machinery does not apply. BUT it wires in the REAL sales tool
+ * dispatcher (lead capture, info email, tenant sign-up) and runs the same
+ * concurrency cap + max-duration + agent-speaks-first as production.
+ *
+ * The agent's voice is OpenAI's built-in `cedar` (generateAudio: true) — warm
+ * and simple; ElevenLabs can be layered on later by mirroring the production
+ * handler. Kept deliberately separate from the production handler so the real
+ * PHI voice path is never touched.
+ *
+ * The durable record of a sales call is the structured `sales_leads` row the
+ * tools write — full transcript turns are intentionally NOT persisted (no row
+ * to hang them on, and it keeps caller-stated business PII out of `messages`).
+ */
+export async function handleBreatheSalesWsConnection(
+  ws: WebSocket,
+  pending: PendingSessionEntry,
+): Promise<void> {
+  const config = readVoiceConfigOrThrow();
+
+  // Concurrency cap — reject gracefully BEFORE opening any upstream socket
+  // (same ceiling as the production handler). The slot is reserved just
+  // before the OpenAI WS opens and released on every teardown path.
+  const maxConcurrent = voiceMaxConcurrentCalls();
+  if (activeVoiceCallCount >= maxConcurrent) {
+    logger.warn(
+      {
+        event: "voice_max_concurrent_reached",
+        active: activeVoiceCallCount,
+        max: maxConcurrent,
+        conversationId: pending.conversationId,
+      },
+      "voice sales: concurrent-call ceiling reached; rejecting connection",
+    );
+    try {
+      ws.close(1013, "voice-capacity");
+    } catch {
+      /* already closed */
+    }
+    return;
+  }
+  let callSlotReserved = false;
+  let callSlotReleased = false;
+  const reserveCallSlot = (): void => {
+    if (callSlotReserved) return;
+    callSlotReserved = true;
+    activeVoiceCallCount += 1;
+  };
+  const releaseCallSlot = (): void => {
+    if (!callSlotReserved || callSlotReleased) return;
+    callSlotReleased = true;
+    activeVoiceCallCount = Math.max(0, activeVoiceCallCount - 1);
+  };
+
+  let streamSid: string | null = null;
+  let closed = false;
+  let resolveClosed: (() => void) | null = null;
+  // Sales calls are short; cap hard so a wedged call can't burn minutes.
+  const MAX_SALES_CALL_MS = 15 * 60 * 1000;
+  let maxTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // Graceful end_call drain: when the agent says goodbye and ends the call,
+  // VoiceBridge calls sink.waitForPlaybackDone() so we don't close the Twilio
+  // stream while the farewell audio is still queued (Twilio echoes a `mark`
+  // once playback reaches it). Resolvers live here so the message handler and
+  // teardown can settle them. Mirrors the patient/diagnostic sinks.
+  const pendingPlaybackMarks = new Map<string, () => void>();
+  let playbackMarkSeq = 0;
+  const settleAllPlaybackMarks = (): void => {
+    const resolvers = [...pendingPlaybackMarks.values()];
+    pendingPlaybackMarks.clear();
+    for (const resolve of resolvers) resolve();
+  };
+
+  const sink: MediaStreamSink = {
+    writeAudioBase64(b64: string): void {
+      if (closed || !streamSid) return;
+      try {
+        ws.send(encodeMediaFrame(streamSid, b64));
+      } catch (err) {
+        logger.warn(
+          {
+            event: "voice_breathe_sales_ws_send_failed",
+            err: serializeErr(err),
+          },
+          "voice sales: ws send failed",
+        );
+      }
+    },
+    clearQueuedAudio(): void {
+      if (closed || !streamSid) return;
+      try {
+        ws.send(encodeClearFrame(streamSid));
+      } catch {
+        // best-effort; barge-in clears are not load-bearing
+      }
+    },
+    waitForPlaybackDone(timeoutMs: number): Promise<void> {
+      // Already torn down (or never started) — nothing is playing.
+      if (closed || !streamSid) return Promise.resolve();
+      playbackMarkSeq += 1;
+      const name = `pf-playback-${playbackMarkSeq}`;
+      const sid = streamSid;
+      return new Promise<void>((resolve) => {
+        const timer = setTimeout(() => {
+          pendingPlaybackMarks.delete(name);
+          resolve();
+        }, timeoutMs);
+        timer.unref?.();
+        pendingPlaybackMarks.set(name, () => {
+          clearTimeout(timer);
+          resolve();
+        });
+        try {
+          ws.send(encodeMarkFrame(sid, name));
+        } catch {
+          pendingPlaybackMarks.delete(name);
+          clearTimeout(timer);
+          resolve();
+        }
+      });
+    },
+  };
+
+  // Real sales dispatcher: no patient/episode/customer, no conversations row.
+  // It resolves the seed org itself for its platform-global writes
+  // (sales_leads) and super-admin notifications.
+  const dispatcher = createVoiceToolDispatcher({
+    callerKind: "breathe_prospect",
+    conversationId: pending.conversationId,
+    ...(pending.twilioCallSid ? { twilioCallSid: pending.twilioCallSid } : {}),
+  });
+
+  const realtime = resolveRealtimeClientOptions(config);
+
+  // Reserve the slot right before the RealtimeClient constructor opens the
+  // OpenAI WS. A synchronous throw releases it before propagating.
+  reserveCallSlot();
+  let client: RealtimeClient;
+  try {
+    client = new RealtimeClient({
+      apiKey: config.openaiApiKey,
+      ...realtime,
+      // cedar voice (model produces audio). The sales line is platform-
+      // branded; practiceName is the platform name.
+      generateAudio: true,
+      instructions: buildPromptOrFallback(
+        {
+          practiceName: PLATFORM_NAME,
+          callerKind: "breathe_prospect",
+          callContext:
+            pending.callContext ?? BREATHE_SALES_DEFAULT_CALL_CONTEXT,
+          ...(pending.greeting ? { greeting: pending.greeting } : {}),
+        },
+        BREATHE_SALES_DEFAULT_CALL_CONTEXT,
+        pending.conversationId,
+      ),
+      tools: OPENAI_TOOL_DESCRIPTORS,
+      allowedToolNames: new Set(BREATHE_SALES_TOOL_NAMES),
+    });
+  } catch (err) {
+    releaseCallSlot();
+    throw err;
+  }
+
+  let bridge: VoiceBridge;
+  try {
+    bridge = new VoiceBridge({ client, sink, dispatcher });
+  } catch (err) {
+    try {
+      client.close(1011, "bridge-construction-failed");
+    } catch {
+      /* never mask the original error with a close failure */
+    }
+    releaseCallSlot();
+    throw err;
+  }
+
+  let realtimeOpened = false;
+  let twilioStarted = false;
+  let greetingRequested = false;
+  const maybeSpeakFirst = (): void => {
+    if (!pending.agentSpeaksFirst || greetingRequested || closed) return;
+    if (!realtimeOpened || !twilioStarted) return;
+    greetingRequested = true;
+    bridge.requestGreeting();
+  };
+
+  const cleanup = (reason: string): void => {
+    if (closed) return;
+    closed = true;
+    releaseCallSlot();
+    if (maxTimer !== null) {
+      clearTimeout(maxTimer);
+      maxTimer = null;
+    }
+    // Settle any in-flight playback-done wait so a teardown can't leave the
+    // end_call drain promise hanging.
+    settleAllPlaybackMarks();
+    logger.info(
+      {
+        event: "voice_breathe_sales_closed",
+        reason,
+        conversationId: pending.conversationId,
+      },
+      "voice sales: closed",
+    );
+    bridge.close(reason);
+    try {
+      ws.close(1000, "sales-closed");
+    } catch {
+      // already closed
+    }
+    if (resolveClosed) {
+      const resolve = resolveClosed;
+      resolveClosed = null;
+      resolve();
+    }
+  };
+
+  bridge.on("session.opened", () => {
+    logger.info(
+      {
+        event: "voice_breathe_sales_opened",
+        conversationId: pending.conversationId,
+      },
+      "voice sales: session opened",
+    );
+    realtimeOpened = true;
+    maybeSpeakFirst();
+  });
+  bridge.on("session.error", (err) =>
+    logger.warn(
+      {
+        event: "voice_session_error",
+        err,
+        conversationId: pending.conversationId,
+      },
+      "voice sales: session error",
+    ),
+  );
+  bridge.on("tool.invoked", (invocation) => {
+    // Observability only — name + status are non-PII (the tool layer keeps
+    // caller details out of `auditArgs`). No conversation row to audit
+    // against, so a log line is the record of which tools ran.
+    logger.info(
+      {
+        event: "voice_breathe_sales_tool",
+        name: invocation.name,
+        status: invocation.status,
+        conversationId: pending.conversationId,
+      },
+      "voice sales: tool invoked",
+    );
+  });
+  bridge.on("session.closed", (info) =>
+    cleanup(info.reason || "session-closed"),
+  );
+
+  maxTimer = setTimeout(
+    () => cleanup("max-duration-exceeded"),
+    MAX_SALES_CALL_MS,
+  );
+  maxTimer.unref?.();
+
+  ws.on("message", (raw) => {
+    const frame = parseTwilioFrame(raw as Buffer | string);
+    if (!frame) return;
+    switch (frame.event) {
+      case "start":
+        streamSid = frame.start.streamSid;
+        twilioStarted = true;
+        maybeSpeakFirst();
+        return;
+      case "media":
+        bridge.forwardCallerAudio(frame.media.payload);
+        return;
+      case "stop":
+        cleanup("twilio-stop");
+        return;
+      case "mark": {
+        // Playback marker echoed back by Twilio — settles the graceful
+        // end_call hangup's "goodbye finished playing" wait.
+        const resolveMark = pendingPlaybackMarks.get(frame.mark.name);
+        if (resolveMark) {
+          pendingPlaybackMarks.delete(frame.mark.name);
+          resolveMark();
+        }
+        return;
+      }
+      default:
+        return;
+    }
+  });
+  ws.on("close", () => cleanup("twilio-ws-closed"));
+  ws.on("error", (err) => {
+    logger.warn(
+      { event: "voice_breathe_sales_ws_error", err: serializeErr(err) },
+      "voice sales: ws error",
     );
     cleanup("twilio-ws-error");
   });
@@ -1478,7 +1896,9 @@ function buildElevenLabsSynthesizer(opts: {
       let carry = Buffer.alloc(0);
       const result = await client.streamTextToSpeech(
         {
-          text,
+          // Fix domain-term pronunciation (e.g. "CPAP" → "see-pap") before
+          // synthesis. Safe to run on the whole sentence here (HTTP path).
+          text: applyPronunciation(text),
           ...(opts.voiceId ? { voiceId: opts.voiceId } : {}),
           ...(opts.modelId ? { modelId: opts.modelId } : {}),
           voiceSettings,
@@ -1533,6 +1953,15 @@ function resolveElevenLabsVoiceSettings(
     ...(config.elevenLabsSpeed !== undefined
       ? { speed: config.elevenLabsSpeed }
       : {}),
+    ...(config.elevenLabsStyle !== undefined
+      ? { style: config.elevenLabsStyle }
+      : {}),
+    ...(config.elevenLabsSimilarityBoost !== undefined
+      ? { similarity_boost: config.elevenLabsSimilarityBoost }
+      : {}),
+    ...(config.elevenLabsUseSpeakerBoost !== undefined
+      ? { use_speaker_boost: config.elevenLabsUseSpeakerBoost }
+      : {}),
   };
 }
 
@@ -1559,6 +1988,11 @@ function buildElevenLabsStreamer(opts: {
       // Per-session re-framing buffer: ElevenLabs returns ulaw_8000 in
       // arbitrary chunk sizes; we hand Twilio uniform 160-byte frames.
       let carry = Buffer.alloc(0);
+      // Streaming-safe domain-term pronunciation (e.g. "CPAP" → "see-pap").
+      // The bridge feeds partial deltas that can split a term across pushes,
+      // so this holds the trailing partial word until a whitespace boundary
+      // (or flush/end) before rewriting + forwarding it.
+      const pron = createPronunciationStream();
       const session = openElevenLabsStream(
         {
           apiKey: opts.apiKey,
@@ -1595,7 +2029,28 @@ function buildElevenLabsStreamer(opts: {
           },
         },
       );
-      return session;
+      // Wrap the vendor session so the model's text passes through the
+      // pronunciation rewrite before ElevenLabs sees it. flush()/end() emit
+      // the held tail first so the last word of a sentence/turn is voiced.
+      return {
+        pushText(text: string): void {
+          const safe = pron.push(text);
+          if (safe) session.pushText(safe);
+        },
+        flush(): void {
+          const tail = pron.flush();
+          if (tail) session.pushText(tail);
+          session.flush();
+        },
+        end(): void {
+          const tail = pron.flush();
+          if (tail) session.pushText(tail);
+          session.end();
+        },
+        abort(): void {
+          session.abort();
+        },
+      };
     },
   };
 }

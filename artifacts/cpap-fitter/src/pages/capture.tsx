@@ -9,6 +9,7 @@ import { track } from "@/lib/track";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import { getCaptureBlockers, isCaptureReady } from "@/lib/capture-readiness";
 import { useVisionRuntimeHealth } from "@/hooks/use-vision-runtime-health";
+import { BrandName } from "@/components/company-contact";
 
 export function Capture() {
   useDocumentTitle("Take a photo");
@@ -285,8 +286,8 @@ export function Capture() {
         <p className="text-xs text-center text-muted-foreground/85 max-w-md mx-auto leading-relaxed">
           The camera is only used to measure your face on this device. Photos
           never leave your phone. If you'd rather not use the camera, you can
-          still browse our shop or use insurance — PennPaps will help you pick a
-          mask in person.
+          still browse our shop or use insurance — <BrandName /> will help you
+          pick a mask in person.
         </p>
       </div>
     );

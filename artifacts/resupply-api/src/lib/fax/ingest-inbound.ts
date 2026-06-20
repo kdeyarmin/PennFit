@@ -26,7 +26,7 @@
 // NOTE: the canonical idempotency key is `provider_fax_id` (vendor-neutral,
 // migration 0369); we store the Telnyx fax id in it. The legacy
 // `twilio_fax_sid` column is no longer written (CONTRACT step 2a) and is
-// dropped in step 2b — see docs/runbooks/fax-column-rename.md.
+// dropped in step 2c — see docs/runbooks/fax-column-rename.md.
 
 import type { Logger } from "pino";
 
@@ -58,15 +58,24 @@ const ALLOWED_CONTENT_TYPES = new Set<string>([
 const MAX_MEDIA_REDIRECTS = 3;
 
 /** Telnyx stores received-fax media on AWS S3 (pre-signed) or a
- *  telnyx.com host. Anything else is rejected to constrain SSRF. */
+ *  telnyx.com host. Anything else is rejected to constrain SSRF.
+ *
+ *  The AWS allowance is scoped to the S3 SERVICE hosts (`s3.amazonaws.com`,
+ *  the regional `s3.<region>.amazonaws.com`, and virtual-hosted-bucket
+ *  `<bucket>.s3[.<region>].amazonaws.com`) — NOT the whole `*.amazonaws.com`
+ *  surface. The old broad rule allowed every AWS service host (EC2 instance
+ *  endpoints, internal/VPC service hostnames, etc.) as an SSRF target;
+ *  pre-signed fax media only ever comes from S3, so we narrow to S3 and keep
+ *  legitimate ingestion working (the existing `s3.amazonaws.com` URLs and
+ *  redirects still match). */
 function isAllowedMediaHost(hostname: string): boolean {
   const host = hostname.toLowerCase();
-  return (
-    host === "amazonaws.com" ||
-    host.endsWith(".amazonaws.com") ||
-    host === "telnyx.com" ||
-    host.endsWith(".telnyx.com")
-  );
+  if (host === "telnyx.com" || host.endsWith(".telnyx.com")) return true;
+  // S3 only: path-style `s3.amazonaws.com` / `s3.<region>.amazonaws.com`,
+  // or virtual-hosted-style `<bucket>.s3[.<region>].amazonaws.com`.
+  if (host === "s3.amazonaws.com") return true;
+  if (/(^|\.)s3(\.[a-z0-9-]+)?\.amazonaws\.com$/.test(host)) return true;
+  return false;
 }
 
 /**
@@ -161,9 +170,9 @@ export async function ingestInboundFax(
   // Step 1: insert (or learn it already exists).
   //
   // provider_fax_id is the canonical dedupe key (migration 0369). The legacy
-  // twilio_fax_sid is no longer written (CONTRACT step 2a, migration 0370
-  // made it nullable); it is dropped in step 2b. The conflict lookup below
-  // still matches either column to cover any pre-2a rows.
+  // twilio_fax_sid is no longer written (CONTRACT step 2a, migration 0372
+  // made it nullable) and is dropped in step 2c (migration 0374). The
+  // conflict lookup below matches only provider_fax_id.
   const insertRes = await supabase
     .from("inbound_faxes")
     .insert({
@@ -181,11 +190,11 @@ export async function ingestInboundFax(
   if (insertRes.error) {
     const code = (insertRes.error as { code?: string }).code;
     if (code === "23505") {
-      // Unique violation — a duplicate of an already-recorded fax (Telnyx retry).
-      // Look up the existing row id and exit; we trust the prior attempt's
-      // media-download outcome rather than re-running it. After CONTRACT deploy
-      // 2b we only match on provider_fax_id (Phase 1 verified it is populated
-      // for all rows); see docs/runbooks/fax-column-rename.md.
+      // Unique violation on provider_fax_id — a duplicate of an
+      // already-recorded fax (Telnyx retry). Look up the existing row id and
+      // exit; we trust the prior attempt's media-download outcome rather
+      // than re-running it. (The legacy twilio_fax_sid column + its index
+      // are dropped in migration 0374, so provider_fax_id is the only key.)
       const existing = await supabase
         .from("inbound_faxes")
         .select("id")

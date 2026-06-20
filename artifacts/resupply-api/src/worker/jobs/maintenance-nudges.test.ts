@@ -8,13 +8,32 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it, beforeEach } from "vitest";
+import { describe, expect, it, beforeEach, vi } from "vitest";
 
 import {
   installSupabaseMock,
   stageSupabaseResponse,
   getSupabaseCallCount,
 } from "../../test-helpers/supabase-mock";
+
+// The per-org body now builds its email client via createTenantSendgridClient
+// and brands copy via resolveBrandingByOrgId. Mock both so the fan-out
+// proceeds to the roster scan (the client no longer comes from cfg) and the
+// brand is deterministic (seed → "PennPaps").
+vi.mock("../../lib/email/tenant-sender.js", () => ({
+  createTenantSendgridClient: vi.fn(async () => ({
+    sendEmail: vi.fn().mockResolvedValue({ messageId: "m_test" }),
+  })),
+}));
+vi.mock("../../lib/tenant-branding.js", () => ({
+  resolveBrandingByOrgId: vi.fn(async () => ({
+    storefrontName: "PennPaps",
+    legalName: "Penn Home Medical Supply",
+    tagline: "tagline",
+    logoUrl: null,
+  })),
+  resolveTenantBaseUrl: vi.fn(async () => null),
+}));
 
 const supabaseMock = installSupabaseMock();
 

@@ -36,7 +36,7 @@ import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
 import { getOrgScopedClient, type Json } from "@workspace/resupply-db";
-import { createSendgridClient } from "@workspace/resupply-email";
+import { createTenantSendgridClient } from "../../lib/email/tenant-sender";
 import {
   createTelnyxFaxClient,
   TelnyxApiError,
@@ -44,10 +44,13 @@ import {
 
 import { signManualDocumentFaxToken } from "../../lib/fax-document-token.js";
 import { logger } from "../../lib/logger.js";
+import { resolveTenantFaxFrom } from "../../lib/messaging/tenant-telecom";
 import {
   MANUAL_DOCUMENT_CATALOG,
   getManualDocumentTypeDef,
   isManualDocumentType,
+  isRequiredManualDocumentField,
+  missingRequiredManualDocumentFields,
   normalizeManualDocumentFields,
   type ManualDocumentType,
 } from "../../lib/manual-documents/catalog.js";
@@ -176,7 +179,12 @@ router.get(
         description: def.description,
         phi: def.phi,
         requiresSignature: def.requiresSignature,
-        fields: def.fields,
+        // Stamp `required` per field so the editor can mark must-fill inputs
+        // and pre-flag an incomplete document before the send call.
+        fields: def.fields.map((f) => ({
+          ...f,
+          required: isRequiredManualDocumentField(def.type, f.key),
+        })),
       })),
     });
   },
@@ -415,6 +423,9 @@ router.get(
         ),
       ),
     ].join("\n");
+    // ICD-10 diagnosis from the validated sleep-study diagnosis already on
+    // file — the DME is not authoring it — and the order is sent to the
+    // prescriber to review and sign.
     const diagnosis = studyRes.data?.diagnosis_icd10 ?? "";
     const providerAddress = formatJsonAddress(provider?.practice_address);
 
@@ -868,6 +879,20 @@ router.post(
       res.status(404).json({ error: "not_found" });
       return;
     }
+    // Completeness gate: a document must carry every required field before
+    // it leaves the building. Chart prefill fills these when the data
+    // exists; anything still blank is surfaced for a human to enter rather
+    // than faxing/emailing a half-finished clinical document.
+    const missing = missingRequiredManualDocumentFields(
+      row.document_type,
+      row.fields,
+    );
+    if (missing.length > 0) {
+      res
+        .status(422)
+        .json({ error: "document_incomplete", missingFields: missing });
+      return;
+    }
     const to = parsed.data.email ?? row.recipient_email;
     if (!to) {
       res.status(400).json({ error: "no_recipient_email" });
@@ -885,7 +910,7 @@ router.post(
     ].join("\n");
 
     try {
-      const client = createSendgridClient();
+      const client = await createTenantSendgridClient(orgId);
       await client.sendEmail({
         to,
         subject: `${row.title} — ${supplier}`,
@@ -984,6 +1009,18 @@ router.post(
       res.status(404).json({ error: "not_found" });
       return;
     }
+    // Completeness gate (same as send-email): block an incomplete document
+    // before it is dispatched, listing the required fields still blank.
+    const missing = missingRequiredManualDocumentFields(
+      row.document_type,
+      row.fields,
+    );
+    if (missing.length > 0) {
+      res
+        .status(422)
+        .json({ error: "document_incomplete", missingFields: missing });
+      return;
+    }
     const to = parsed.data.fax ?? row.recipient_fax_e164;
     if (!to) {
       res.status(400).json({ error: "no_recipient_fax" });
@@ -995,7 +1032,11 @@ router.post(
     const token = signManualDocumentFaxToken(row.id);
     const mediaUrl = `${baseUrl}/resupply-api/fax/document/${token}`;
     const statusCallbackUrl = `${baseUrl}/resupply-api/fax/webhook`;
-    const fromNumber = process.env.TELNYX_FAX_FROM_NUMBER!.trim();
+    // Prefer the tenant's own provisioned fax DID (migration 0368); fall
+    // back to the platform default isFaxConfigured() already verified is set.
+    const fromNumber =
+      (await resolveTenantFaxFrom(orgId)) ??
+      process.env.TELNYX_FAX_FROM_NUMBER!.trim();
 
     let vendorRef: string;
     try {

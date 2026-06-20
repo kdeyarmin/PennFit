@@ -184,7 +184,12 @@ async function updateMessageDelivery(
     if (status === "delivered") {
       update.delivered_at = new Date().toISOString();
     }
+    // Tenant-agnostic webhook: the Twilio message SID is globally unique, so
+    // match across ALL tenants via `.raw()`. The org-scoped client would
+    // filter by the seed org_id and silently drop a non-seed tenant's status.
     let updateQuery = supabase
+      .raw()
+      .schema("resupply")
       .from("messages")
       .update(update)
       .filter("vendor_metadata->>twilio_message_sid", "eq", messageSid);
@@ -232,7 +237,13 @@ async function updateRecallNotificationDelivery(
 ): Promise<void> {
   try {
     const supabase = getOrgScopedClient(orgId);
+    // The recall-notification id rode in the signed callback URL and is a
+    // globally-unique uuid, so match across tenants via `.raw()` (the
+    // org-scoped client would filter by the seed org_id and drop a non-seed
+    // tenant's status).
     let updateQuery = supabase
+      .raw()
+      .schema("resupply")
       .from("recall_notifications")
       .update({
         delivery_status: status,
@@ -282,7 +293,13 @@ async function updateVideoVisitInviteDelivery(
 ): Promise<void> {
   try {
     const supabase = getOrgScopedClient(orgId);
+    // The video-visit id rode in the signed callback URL and is a
+    // globally-unique uuid, so match across tenants via `.raw()` (the
+    // org-scoped client would filter by the seed org_id and drop a non-seed
+    // tenant's status).
     let updateQuery = supabase
+      .raw()
+      .schema("resupply")
       .from("video_visits")
       .update({
         invite_delivery_status: status,

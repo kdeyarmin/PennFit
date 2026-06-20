@@ -85,6 +85,7 @@ import {
   validatePrescriptionRequestInputs,
 } from "../../lib/prescription-request-pdf";
 import { resolvePrescriptionRequestInputs } from "../../lib/prescription-request-resolver";
+import { resolveTenantFaxFrom } from "../../lib/messaging/tenant-telecom";
 import { signPrescriptionRequestToken } from "../../lib/prescription-request-token";
 import {
   type SignatureTarget,
@@ -685,12 +686,15 @@ async function dispatchPacketFax(
   const token = signPrescriptionRequestToken(packet.id);
   const mediaUrl = `${baseUrl}/resupply-api/rx-request/document/${token}`;
   const statusCallbackUrl = `${baseUrl}/resupply-api/fax/webhook`;
+  // Prefer the tenant's own provisioned fax DID (migration 0368); fall back
+  // to the platform default the config check above guaranteed is set.
+  const sendFrom = (await resolveTenantFaxFrom(supabase.orgId)) ?? fromNumber;
   const faxClient = createTelnyxFaxClient();
   const nowIso = new Date().toISOString();
   try {
     const result = await faxClient.sendFax({
       to: packet.return_fax_e164,
-      from: fromNumber,
+      from: sendFrom,
       mediaUrl,
       statusCallbackUrl,
     });

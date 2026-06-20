@@ -72,6 +72,20 @@ vi.mock("@workspace/resupply-email", async () => {
   };
 });
 
+// The shipping/pickup emails brand themselves with the tenant's storefront
+// name (G6) via resolveBrandingByOrgId. The handler passes a real orgId, so
+// mock the resolver to keep the subject assertions deterministic (seed tenant
+// → "PennPaps") without staging an organizations directory read.
+vi.mock("../../lib/tenant-branding.js", () => ({
+  resolveBrandingByOrgId: vi.fn(async () => ({
+    storefrontName: "PennPaps",
+    legalName: "Penn Home Medical Supply",
+    tagline: "tagline",
+    logoUrl: null,
+  })),
+  resolveTenantBaseUrl: vi.fn(async () => null),
+}));
+
 // Web-push mock — wired into shipping notifications (Phase G.2).
 const sendPushToCustomerMock = vi.hoisted(() =>
   vi.fn<

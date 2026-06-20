@@ -824,12 +824,14 @@ async function runDeterministicChecks(
   }
 
   // ── DME organization compliance (license / accreditation / bond) ──
+  // Org-scoped: `supabase` already appends `.eq("org_id", …)`, so this reads
+  // the caller's DME org (one row per tenant, migration 0375). No singleton
+  // filter — that would exclude a non-seed tenant's row.
   const { data: org } = await supabase
     .from("dme_organization")
     .select(
       "accreditation_expires_on, state_license_expires_on, surety_bond_expires_on",
     )
-    .eq("singleton", true)
     .limit(1)
     .maybeSingle();
   if (org) {

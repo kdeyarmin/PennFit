@@ -60,6 +60,35 @@ describe("renderResupplyReminder", () => {
     expect(out.text).toContain("Penn Sleep Center");
   });
 
+  it("defaults to the unchanged 'initial' subject when no variant is given", () => {
+    expect(renderResupplyReminder(base).subject).toBe(
+      "Time to refill your CPAP supplies",
+    );
+    expect(
+      renderResupplyReminder({ ...base, variant: "initial" }).subject,
+    ).toBe("Time to refill your CPAP supplies");
+  });
+
+  it("varies the subject + opening line by escalation step", () => {
+    const followup = renderResupplyReminder({ ...base, variant: "followup" });
+    const final = renderResupplyReminder({ ...base, variant: "final" });
+
+    // Each step reads differently from the first touch (and each other).
+    expect(followup.subject).toBe("Still time to refill your CPAP supplies");
+    expect(final.subject).toBe("Last call: your CPAP refill is ready");
+    expect(followup.subject).not.toBe(final.subject);
+
+    expect(followup.text).toContain("circling back");
+    expect(followup.html).toContain("circling back");
+    expect(final.text).toContain("run low");
+    expect(final.html).toContain("run low");
+
+    // Variants keep the CTAs and never leak PHI into the subject.
+    expect(final.html).toContain(`href="${base.confirmUrl}"`);
+    expect(followup.subject).not.toContain("Alex");
+    expect(final.subject).not.toContain("Alex");
+  });
+
   it("does not include PHI (first name) in the subject", () => {
     const out = renderResupplyReminder(base);
     expect(out.subject).not.toContain("Alex");

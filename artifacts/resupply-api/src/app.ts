@@ -30,7 +30,6 @@ import {
   warmVerifiedCustomDomains,
 } from "./lib/tenant-branding";
 import { isPlatformSubdomainOrigin } from "./lib/tenant-domain";
-import { createTrustProxyFn } from "./lib/trusted-proxies";
 import { errorHandler } from "./middlewares/errorHandler";
 import {
   requireCsrfOnAdminMutations,
@@ -38,8 +37,12 @@ import {
 } from "./middlewares/csrf";
 import { adminMutationLooseLimit } from "./middlewares/rate-limit";
 import { securityHeaders } from "./middlewares/securityHeaders";
-import { stripeWebhookHandler } from "./lib/stripe/webhook-handler";
+import {
+  stripePlatformBillingWebhookHandler,
+  stripeWebhookHandler,
+} from "./lib/stripe/webhook-handler";
 import faxWebhooksRouter from "./routes/fax/webhooks";
+import { createTrustProxyFn } from "./lib/trusted-proxies";
 
 // Register the audit lib's request-id bridge once at import time so
 // any logAudit() call from inside an HTTP request automatically
@@ -57,19 +60,9 @@ applyEnvAliases();
 
 const app: Express = express();
 
-// We're behind Railway's reverse proxy. Without trust proxy, every request
-// looks like it came from 127.0.0.1, which breaks rate limiting and
-// audit-log IP capture.
-//
-// The custom domain adds Cloudflare as a SECOND hop in front of
-// Railway, so the historical `trust proxy = 1` resolved req.ip to the
-// Cloudflare colo IP for all custom-domain traffic — every IP-keyed
-// limiter bucketed those visitors together (app-review 2026-06-10,
-// P1-5). The predicate trusts hop 0 unconditionally (exactly the old
-// behavior) plus Cloudflare's published ranges at any hop, so
-// Cloudflare-routed requests resolve to the real client while direct
-// Railway traffic and spoof attempts behave exactly as before. See
-// lib/trusted-proxies.ts for the case-by-case safety argument.
+// We're behind Railway's reverse proxy, and some production domains add
+// Cloudflare as an additional hop. Trust hop 0 (Railway) plus known
+// Cloudflare ranges so req.ip resolves to the real client on both paths.
 app.set("trust proxy", createTrustProxyFn());
 
 // Security headers — mounted FIRST so every response (including the
@@ -269,6 +262,16 @@ app.post(
   express.raw({ type: "application/json", limit: "256kb" }),
   stripeWebhookHandler,
 );
+// Dedicated platform-billing (SaaS) Stripe account posts here with its
+// own signing secret — separate from the patient/Connect webhook above.
+// Same raw-body-before-express.json() contract; inert in shared-account
+// mode (returns 503/ignored). See webhook-handler.ts.
+app.post(
+  "/resupply-api/stripe/platform-webhook",
+  stripeWebhookLimiter,
+  express.raw({ type: "application/json", limit: "256kb" }),
+  stripePlatformBillingWebhookHandler,
+);
 
 // Telnyx fax webhooks (inbound fax.received + outbound delivery status)
 // are registered BEFORE express.json() for the same reason as Stripe:
@@ -453,8 +456,8 @@ logger.info(
 // `api-server` artifact). Orders cost Penn an email + a fulfillment
 // workflow per request — throttle hard. Usage events are anonymous
 // telemetry — looser limit. Both are keyed by IP via `ipKeyGenerator`
-// for IPv6-safe normalisation. `app.set("trust proxy", 1)` above is
-// what makes the IP key honest behind Railway's reverse proxy.
+// for IPv6-safe normalisation. `app.set("trust proxy", …)` above is
+// what makes the IP key honest behind reverse proxies.
 const storefrontOrderLimiter = expressRateLimit({
   windowMs: RATE_LIMITS.storefront_orders.windowMs,
   limit: RATE_LIMITS.storefront_orders.limit,
@@ -582,6 +585,56 @@ const newsletterSubscribeLimiter = expressRateLimit({
   },
 });
 app.use("/api/newsletter", newsletterSubscribeLimiter);
+
+// POST /api/demo-lead — anonymous Breathe demo-gate email capture. Same
+// drive-by form-spam abuse shape as the newsletter signup, so it reuses
+// the same tight per-IP cap.
+const demoLeadLimiter = expressRateLimit({
+  windowMs: RATE_LIMITS.newsletter_subscribe.windowMs,
+  limit: RATE_LIMITS.newsletter_subscribe.limit,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req: Request) => ipKeyGenerator(req.ip ?? "0.0.0.0"),
+  message: {
+    error:
+      "Too many demo signup attempts from this network. Please wait a few minutes and try again.",
+  },
+});
+app.use("/api/demo-lead", demoLeadLimiter);
+
+// POST /api/roi-estimate — anonymous "email me my ROI estimate". This one
+// SENDS an email to the address provided, so a tight per-IP cap also blunts
+// using it to spray mail; reuses the same marketing-form window/limit.
+const roiEstimateLimiter = expressRateLimit({
+  windowMs: RATE_LIMITS.newsletter_subscribe.windowMs,
+  limit: RATE_LIMITS.newsletter_subscribe.limit,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req: Request) => ipKeyGenerator(req.ip ?? "0.0.0.0"),
+  message: {
+    error:
+      "Too many estimate requests from this network. Please wait a few minutes and try again.",
+  },
+});
+app.use("/api/roi-estimate", roiEstimateLimiter);
+
+// POST /api/tenant-signup — public self-serve account creation. Each
+// success provisions a real tenant + admin, so cap it tightly per-IP
+// (same window/limit as the other anonymous marketing-form endpoints;
+// email verification + slug uniqueness are the other backstops, plus
+// optional Turnstile inside the handler).
+const tenantSignupLimiter = expressRateLimit({
+  windowMs: RATE_LIMITS.newsletter_subscribe.windowMs,
+  limit: RATE_LIMITS.newsletter_subscribe.limit,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req: Request) => ipKeyGenerator(req.ip ?? "0.0.0.0"),
+  message: {
+    error:
+      "Too many signup attempts from this network. Please wait a few minutes and try again.",
+  },
+});
+app.use("/api/tenant-signup", tenantSignupLimiter);
 
 // Defense-in-depth: a single CSRF gate covering every admin-tree
 // mutation on both mount prefixes. Pass-through for safe methods and
