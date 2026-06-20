@@ -41,6 +41,11 @@ import {
   type Json,
   getOrgScopedClient,
 } from "@workspace/resupply-db";
+import {
+  CUSTOMER_LAPSED_DAYS as LAPSED_DAYS,
+  WINBACK_COOLDOWN_DAYS,
+  CUSTOMER_ACTIVE_LOOKBACK_DAYS as STALE_REGISTRATION_DAYS,
+} from "@workspace/resupply-domain";
 
 import { sendWinbackEmail } from "../../lib/order-emails/send-winback-email";
 import { shouldSendEmail } from "../../lib/comm-prefs";
@@ -54,13 +59,10 @@ import {
 const JOB_NAME = "shop-customers.winback";
 const JOB_CRON = "17 13 * * 1"; // Mondays at 13:17 UTC.
 
-/** No-order window that makes a customer "lapsed." */
-const LAPSED_DAYS = 180;
-/** Don't re-win-back the same customer within 12 months. */
-const WINBACK_COOLDOWN_DAYS = 365;
-/** Ignore customers whose last paid order is older than this — they
- *  are stale registrations the win-back wouldn't help recover. */
-const STALE_REGISTRATION_DAYS = 730;
+// Recency windows (LAPSED_DAYS / WINBACK_COOLDOWN_DAYS /
+// STALE_REGISTRATION_DAYS) are shared with the deductible-reset push via
+// @workspace/resupply-domain so the 730-day "active" lookback can't drift
+// between the two jobs.
 /** Soft per-run cap so a backlog doesn't burst the email quota. */
 const PER_RUN_MAX = 200;
 

@@ -153,3 +153,45 @@ export {
   type PrimaryClaimTotals,
   type SecondaryCob,
 } from "./secondary-cob";
+
+export {
+  pickCappedRentalModifiers,
+  decideCappedRentalAdvance,
+  CAPPED_RENTAL_KX_HCPCS,
+  CAPPED_RENTAL_CYCLE_DAYS,
+  type CappedRentalAction,
+  type CappedRentalAdvanceInput,
+  type CappedRentalAdvanceDecision,
+} from "./capped-rental";
+
+export {
+  ruleApplies,
+  resolveModifiersFromRules,
+  buildAbnScope,
+  abnCoversHcpcs,
+  MODIFIER_CONDITIONS,
+  type PayerModifierCondition,
+  type ModifierRuleContext,
+  type ModifierRuleRow,
+  type AbnScope,
+} from "./payer-modifiers";
+
+export {
+  classifyExpiry,
+  headsUpSeverity,
+  PRIOR_AUTH_HEADS_UP_DAYS,
+  DWO_HEADS_UP_DAYS,
+  HEADS_UP_CRITICAL_DAYS,
+  type HeadsUpSeverity,
+  type ExpiryState,
+  type ExpiryClassification,
+} from "./authorization-expiry";
+
+export {
+  classifyCustomerRecency,
+  CUSTOMER_LAPSED_DAYS,
+  WINBACK_COOLDOWN_DAYS,
+  CUSTOMER_ACTIVE_LOOKBACK_DAYS,
+  type CustomerRecency,
+  type CustomerRecencyThresholds,
+} from "./customer-recency";
