@@ -631,6 +631,9 @@ importers:
       '@workspace/resupply-db':
         specifier: workspace:*
         version: link:../resupply-db
+      '@workspace/resupply-email':
+        specifier: workspace:*
+        version: link:../resupply-email
       argon2:
         specifier: ^0.44.0
         version: 0.44.0

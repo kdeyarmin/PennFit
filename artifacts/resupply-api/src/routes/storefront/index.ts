@@ -11,6 +11,7 @@ import usageEventsRouter from "./usage-events.js";
 import remindersRouter from "./reminders.js";
 import newsletterRouter from "./newsletter.js";
 import demoLeadRouter from "./demo-lead.js";
+import newsletterUnsubscribeRouter from "./newsletter-unsubscribe.js";
 import tenantSignupRouter from "./tenant-signup.js";
 import patientPacketsRouter from "./patient-packets.js";
 import csrOrdersRouter from "./csr-orders.js";
@@ -51,6 +52,10 @@ router.use(newsletterRouter);
 // Breathe self-serve demo gate. Platform-safe (no tenant context
 // required); rate-limited per-IP in app.ts.
 router.use(demoLeadRouter);
+// /api/newsletter-unsubscribe — public one-click unsubscribe for the
+// newsletter / demo-drip marketing list (HMAC-signed token). Mounted
+// before attachSignedIn; rate-limited at the route.
+router.use(newsletterUnsubscribeRouter);
 // /api/tenant-signup — public self-serve account creation (new org +
 // first admin, email-verified). Anonymous; honeypot + optional Turnstile
 // + per-IP rate limited in app.ts.
