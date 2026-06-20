@@ -161,7 +161,7 @@ export async function ingestInboundFax(
   // Step 1: insert (or learn it already exists).
   //
   // provider_fax_id is the canonical dedupe key (migration 0369). The legacy
-  // twilio_fax_sid is no longer written (CONTRACT step 2a, migration 0370
+  // twilio_fax_sid is no longer written (CONTRACT step 2a, migration 0372
   // made it nullable); it is dropped in step 2b. The conflict lookup below
   // still matches either column to cover any pre-2a rows.
   const insertRes = await supabase
