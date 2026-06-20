@@ -17,6 +17,7 @@ import listRouter from "./list";
 import followupsRouter from "./followups";
 import notesCreateRouter from "./notes-create";
 import notesListRouter from "./notes-list";
+import smartNotesRouter from "./smart-notes";
 import prescriptionsAttachmentRouter from "./prescriptions-attachment";
 import patientDocumentsRouter from "./patient-documents";
 import prescriptionsCreateRouter from "./prescriptions-create";
@@ -55,6 +56,12 @@ router.use(listRouter);
 router.use(createRouter);
 router.use(notesListRouter);
 router.use(notesCreateRouter);
+// /patients/:id/smart-notes — AI-reviewed, Medicare-compliance-checked
+// clinical notes (review preview, save, list). Mounted in the same
+// literal-segment-after-:id band as the notes routers; the /review and
+// /smart-notes literal segments must sit before the detail/timeline
+// param routes so they aren't swallowed.
+router.use(smartNotesRouter);
 // /patients/:id/followups — CSR-scheduled callback reminders (Phase 19).
 // Mounted alongside the notes routers since they share the same
 // "literal-segment-after-:id" pattern and shouldn't be swallowed by

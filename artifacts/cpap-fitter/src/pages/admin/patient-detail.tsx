@@ -62,6 +62,7 @@ import { OnboardingTab } from "@/pages/admin/patient-detail/OnboardingTab";
 import { FaxOutreachTab } from "@/pages/admin/patient-detail/FaxOutreachTab";
 import { FormAcksTab } from "@/pages/admin/patient-detail/FormAcksTab";
 import { IntegrationSourceCard } from "@/pages/admin/patient-detail/IntegrationSourceCard";
+import { SmartNotesTab } from "@/pages/admin/patient-detail/SmartNotesTab";
 
 type Tab =
   | "timeline"
@@ -72,6 +73,7 @@ type Tab =
   | "fulfillments"
   | "prescriptions"
   | "notes"
+  | "smart-notes"
   | "followups"
   | "onboarding"
   | "fax-outreach"
@@ -327,6 +329,12 @@ export function PatientDetailPage({ id }: { id: string }) {
           Notes
         </TabButton>
         <TabButton
+          active={tab === "smart-notes"}
+          onClick={() => setTab("smart-notes")}
+        >
+          Smart notes
+        </TabButton>
+        <TabButton
           active={tab === "followups"}
           onClick={() => setTab("followups")}
         >
@@ -450,6 +458,7 @@ export function PatientDetailPage({ id }: { id: string }) {
           />
         )}
         {tab === "notes" && <NotesTab patientId={id} />}
+        {tab === "smart-notes" && <SmartNotesTab patientId={id} />}
         {tab === "followups" && <FollowupsTab patientId={id} />}
         {tab === "onboarding" && <OnboardingTab patientId={id} />}
         {tab === "fax-outreach" && (

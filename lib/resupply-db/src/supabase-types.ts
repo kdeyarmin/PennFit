@@ -4922,6 +4922,26 @@ export interface Database {
         Update: Partial<Database["resupply"]["Tables"]["patient_notes"]["Row"]>;
         Relationships: [];
       };
+      smart_notes: {
+        Row: {
+          org_id: string | null;
+          id: string;
+          patient_id: string;
+          note_text: string;
+          author_email: string;
+          author_user_id: string | null;
+          compliant: boolean;
+          compliance_score: number;
+          review: unknown;
+          comparison: unknown;
+          review_provider: string;
+          prompt_version: string | null;
+          created_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["smart_notes"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["smart_notes"]["Row"]>;
+        Relationships: [];
+      };
       shop_subscriptions: {
         Row: {
           org_id: string | null;
