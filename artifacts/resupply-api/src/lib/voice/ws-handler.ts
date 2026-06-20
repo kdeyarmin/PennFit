@@ -389,11 +389,10 @@ export async function handleVoiceWsConnection(
     );
   }
 
-  // Realtime session schema. Default "beta" (production). When an operator
-  // flips OPENAI_REALTIME_SCHEMA=ga on a preview, the resolver fills in
-  // coherent GA defaults (gpt-realtime-2 + gpt-realtime-whisper); the µ-law
-  // token (audio/pcmu) and reasoning effort ("low") default inside
-  // RealtimeClient.
+  // Realtime session schema. Default "ga" (gpt-realtime-2): the resolver
+  // fills in coherent GA defaults (gpt-realtime-2 + gpt-realtime-whisper);
+  // the µ-law token (audio/pcmu) and reasoning effort ("low") default inside
+  // RealtimeClient. Set OPENAI_REALTIME_SCHEMA=beta for the legacy fallback.
   const realtime = resolveRealtimeClientOptions(config);
   if (config.realtimeSchema === "ga") {
     logger.info(

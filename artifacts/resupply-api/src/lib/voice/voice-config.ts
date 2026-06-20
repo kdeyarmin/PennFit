@@ -269,11 +269,14 @@ export function readVoiceConfigOrNull(
       env.ELEVENLABS_TTS_TRANSPORT?.trim().toLowerCase() === "http"
         ? "http"
         : "ws",
-    // Realtime stays on the proven beta schema unless explicitly set to
-    // `ga` (the gpt-realtime-2 spike). The ws-handler fills in coherent GA
-    // model/STT defaults when the schema is `ga`.
+    // Realtime now defaults to the `ga` schema (gpt-realtime-2); set
+    // OPENAI_REALTIME_SCHEMA=beta to fall back to the legacy beta schema.
+    // The ws-handler fills in coherent GA model/STT defaults when the
+    // schema is `ga`.
     realtimeSchema:
-      env.OPENAI_REALTIME_SCHEMA?.trim().toLowerCase() === "ga" ? "ga" : "beta",
+      env.OPENAI_REALTIME_SCHEMA?.trim().toLowerCase() === "beta"
+        ? "beta"
+        : "ga",
     realtimeModel: env.OPENAI_REALTIME_MODEL?.trim() || undefined,
     realtimeReasoningEffort: parseReasoningEffort(
       env.OPENAI_REALTIME_REASONING_EFFORT,

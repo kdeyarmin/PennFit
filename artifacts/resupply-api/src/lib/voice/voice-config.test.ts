@@ -174,8 +174,12 @@ describe("readVoiceConfigOrNull — optional value parsing", () => {
     ).toBe("ws");
   });
 
-  it("resolves the Realtime schema: only 'ga' → ga, else beta", () => {
-    expect(readVoiceConfigOrNull(fullEnv())?.realtimeSchema).toBe("beta");
+  it("resolves the Realtime schema: defaults to ga, only explicit 'beta' → beta", () => {
+    expect(readVoiceConfigOrNull(fullEnv())?.realtimeSchema).toBe("ga");
+    expect(
+      readVoiceConfigOrNull(fullEnv({ OPENAI_REALTIME_SCHEMA: "BETA" }))
+        ?.realtimeSchema,
+    ).toBe("beta");
     expect(
       readVoiceConfigOrNull(fullEnv({ OPENAI_REALTIME_SCHEMA: "GA" }))
         ?.realtimeSchema,
@@ -183,7 +187,7 @@ describe("readVoiceConfigOrNull — optional value parsing", () => {
     expect(
       readVoiceConfigOrNull(fullEnv({ OPENAI_REALTIME_SCHEMA: "v1" }))
         ?.realtimeSchema,
-    ).toBe("beta");
+    ).toBe("ga");
   });
 
   it("accepts a valid reasoning effort and drops a typo to undefined", () => {
