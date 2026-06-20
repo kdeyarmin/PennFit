@@ -68,6 +68,16 @@ into `placeResupplyOrderForConversation` / `pausePatient` / `reactivatePatient`
 and the two FHIR reads; add an `org_id` filter to `resolveCallerByPhone`. This
 is a contained, well-defined fix — the callers already have the tenant.
 
+**Status (this PR):** the High rows above plus the eligibility quick-check
+row are **fixed** — `orgId` is now threaded through the SMS confirm/STOP/START
+path, the FHIR `Patient`/`$everything` reads (now scoped to the calling
+admin's `req.orgId`), the three voice post-call helpers (CSR handoff, summary
+message, Deepgram transcript — falling back to seed only when the session
+carries no org), and the eligibility quick-check (fail-closed on `req.orgId`,
+matching the sibling verify route). The Med inbound-voice caller-ID
+(`resolveCallerByPhone`) and Low davinci-PAS token rows remain open for a
+follow-up. Full `resupply-api` suite (6,263 tests) stays green.
+
 ## 3. Billing / revenue-cycle domain
 
 The EDI parsers (837P/835/277CA/999/271), payment plans, secondary COB, and
