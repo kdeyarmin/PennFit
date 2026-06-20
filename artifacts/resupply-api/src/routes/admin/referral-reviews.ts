@@ -50,10 +50,17 @@ import {
   ObjectStorageService,
 } from "../../lib/object-storage/objectStorage";
 import { computeRetentionUntilAt } from "../../lib/patient-documents/retention";
+import { resolveCompanyProfile } from "../../lib/patient-packet/company";
 import {
+  referralExtractionSchema,
   referralSectionTypes,
+  type ReferralExtraction,
   type ReferralSectionType,
 } from "../../lib/referral-review/extract";
+import {
+  assembleReferralReport,
+  renderReferralReviewReport,
+} from "../../lib/referral-review/report-pdf";
 import { runReviewExtraction } from "../../lib/referral-review/run";
 import {
   buildSectionFilename,
@@ -206,7 +213,51 @@ const SECTION_FILING: Record<
   other: { documentType: "referral", label: "Referral Document" },
 };
 
+/** Safe-parse the stored extraction jsonb into a typed ReferralExtraction.
+ *  Returns null when there's no extraction or it doesn't match the schema
+ *  (the schema's defaults backfill fields added after the row was stored). */
+function parseStoredExtraction(raw: unknown): ReferralExtraction | null {
+  if (raw == null) return null;
+  const parsed = referralExtractionSchema.safeParse(raw);
+  return parsed.success ? parsed.data : null;
+}
+
+/** Map the extraction's free-text study type to the sleep_studies enum. */
+function mapStudyTypeToEnum(
+  raw: string | null | undefined,
+): "psg" | "hsat" | "split_night" | "re_titration" | null {
+  const s = (raw ?? "").toLowerCase();
+  if (!s.trim()) return null;
+  if (s.includes("split")) return "split_night";
+  if (s.includes("titrat")) return "re_titration";
+  if (
+    s.includes("home") ||
+    s.includes("hsat") ||
+    s.includes("hst") ||
+    s.includes("watchpat") ||
+    s.includes("type iii") ||
+    s.includes("type 3")
+  ) {
+    return "hsat";
+  }
+  if (
+    s.includes("psg") ||
+    s.includes("polysomn") ||
+    s.includes("in-lab") ||
+    s.includes("in lab") ||
+    s.includes("attended")
+  ) {
+    return "psg";
+  }
+  return null;
+}
+
 function reviewToJson(row: ReferralReviewRow) {
+  // When an extraction is on file, surface the qualification verdict +
+  // completeness checklist so the UI can show them without re-rendering the
+  // report PDF. PHI-free shape (numbers + labels); never logged.
+  const extraction = parseStoredExtraction(row.extraction);
+  const report = extraction ? assembleReferralReport(extraction) : null;
   return {
     id: row.id,
     source: row.source,
@@ -225,6 +276,8 @@ function reviewToJson(row: ReferralReviewRow) {
     dismissNote: row.dismiss_note,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    // Derived analysis (null until an extraction exists).
+    report,
   };
 }
 
@@ -787,6 +840,10 @@ router.post(
       }
     }
 
+    // The stored extraction drives the sleep-study row and the report PDF
+    // below (the edited form covers patient + insurance + document sections).
+    const extraction = parseStoredExtraction(review.extraction);
+
     // 1. Create the patient (same insert shape as POST /patients).
     const nowIso = new Date().toISOString();
     const derivedTimezone = timezoneForUsState(body.patient.address?.state);
@@ -844,6 +901,47 @@ router.post(
           "referral_review_accept_coverage_insert_failed",
         );
         warnings.push(`${rank}_coverage_not_saved`);
+      }
+    }
+
+    // 2.5. Sleep study — file the extracted study as a sleep_studies row so
+    //      the qualifying AHI/RDI + diagnosis land in the chart, not just as a
+    //      PDF. Best-effort; the table requires a study date, a mappable type,
+    //      and a finite AHI.
+    const ss = extraction?.sleepStudy ?? null;
+    if (ss) {
+      const studyType = mapStudyTypeToEnum(ss.studyType);
+      const studyDate =
+        ss.studyDate && ISO_DATE.test(ss.studyDate) ? ss.studyDate : null;
+      const ahi =
+        typeof ss.ahi === "number" && Number.isFinite(ss.ahi) ? ss.ahi : null;
+      const rdi =
+        typeof ss.rdi === "number" && Number.isFinite(ss.rdi) ? ss.rdi : null;
+      const diagnosisIcd10 =
+        extraction?.diagnoses.find((d) => d.icd10)?.icd10 ?? null;
+      if (studyDate && studyType && ahi != null && ahi >= 0 && ahi <= 150) {
+        const { error: ssErr } = await supabase.from("sleep_studies").insert({
+          patient_id: patientId,
+          study_date: studyDate,
+          study_type: studyType,
+          ahi,
+          rdi: rdi != null && rdi >= 0 && rdi <= 150 ? rdi : null,
+          diagnosis_icd10: diagnosisIcd10,
+          source: "external_lab",
+          created_at: nowIso,
+          updated_at: nowIso,
+        });
+        if (ssErr) {
+          logger.warn(
+            { err: ssErr.message, review_id_first8: review.id.slice(0, 8) },
+            "referral_review_accept_sleep_study_failed",
+          );
+          warnings.push("sleep_study_not_saved");
+        }
+      } else {
+        // A study was on the referral but lacked the minimum fields to record
+        // it discretely — it's still filed as a PDF section below.
+        warnings.push("sleep_study_incomplete");
       }
     }
 
@@ -957,6 +1055,53 @@ router.post(
       }
     }
 
+    // 3.5. Generate the Referral Review Report and file it to the chart —
+    //      the demographics/diagnosis/sleep-study/therapy/qualification
+    //      summary distilled from the packet. Best-effort.
+    if (extraction) {
+      try {
+        const company = await resolveCompanyProfile(supabase);
+        const reportPdf = await renderReferralReviewReport({
+          extraction,
+          supplierName: company.legalName,
+        });
+        const objectKey = await uploadChartPdf(reportPdf, patientId);
+        const retentionUntilAt = computeRetentionUntilAt({
+          createdAt: new Date(nowIso),
+          documentType: "referral",
+        }).toISOString();
+        const { data: reportRow, error: reportErr } = await supabase
+          .from("patient_documents")
+          .insert({
+            patient_id: patientId,
+            object_key: objectKey,
+            document_type: "referral",
+            filename: buildSectionFilename(
+              "Referral Review Report",
+              patientName,
+            ),
+            content_type: "application/pdf",
+            size_bytes: reportPdf.byteLength,
+            reviewed_at: nowIso,
+            reviewed_by_admin_id: req.adminUserId ?? null,
+            retention_until_at: retentionUntilAt,
+            created_at: nowIso,
+            updated_at: nowIso,
+          })
+          .select("id")
+          .limit(1)
+          .maybeSingle();
+        if (reportErr) throw reportErr;
+        if (reportRow) documentIds.push(reportRow.id);
+      } catch (err) {
+        logger.warn(
+          { err, review_id_first8: review.id.slice(0, 8) },
+          "referral_review_accept_report_failed",
+        );
+        warnings.push("report_not_filed");
+      }
+    }
+
     // 4. Attach the source fax to the new chart.
     if (review.inbound_fax_id) {
       const { error: faxErr } = await supabase
@@ -1020,6 +1165,178 @@ router.post(
     });
 
     res.status(201).json({ patientId, documentIds, warnings });
+  },
+);
+
+// ── Review report PDF ───────────────────────────────────────────────
+// The distilled summary (demographics, diagnosis, sleep study, therapy,
+// qualification verdict, missing-items checklist) the reviewer can read in
+// place of the 100-page packet.
+router.get(
+  "/admin/referral-reviews/:id/report",
+  requirePermission("patients.read"),
+  async (req, res) => {
+    const params = idParam.safeParse(req.params);
+    if (!params.success) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+    const { data: review, error } = await supabase
+      .from("referral_reviews")
+      .select("id, extraction")
+      .eq("id", params.data.id)
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    if (!review) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const extraction = parseStoredExtraction(review.extraction);
+    if (!extraction) {
+      res.status(409).json({ error: "no_extraction" });
+      return;
+    }
+    const company = await resolveCompanyProfile(supabase);
+    const pdf = await renderReferralReviewReport({
+      extraction,
+      supplierName: company.legalName,
+    });
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `inline; filename="referral-review-${review.id.slice(0, 8)}.pdf"`,
+    );
+    res.send(pdf);
+  },
+);
+
+// ── Request missing info from the referring provider ────────────────
+// Builds a ready-to-send fax/letter to the referring physician listing the
+// items the referral is missing (a valid prescription, insurance, a
+// clarification, …). Returns a draft manual document the operator reviews and
+// sends — nothing leaves the building automatically.
+router.post(
+  "/admin/referral-reviews/:id/request-from-provider",
+  requirePermission("patients.update"),
+  adminRateLimit({
+    name: "referral_reviews.request_provider",
+    preset: "mutation",
+  }),
+  async (req, res) => {
+    const params = idParam.safeParse(req.params);
+    if (!params.success) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+    const { data: review, error } = await supabase
+      .from("referral_reviews")
+      .select("id, extraction")
+      .eq("id", params.data.id)
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    if (!review) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const extraction = parseStoredExtraction(review.extraction);
+    if (!extraction) {
+      res.status(409).json({ error: "no_extraction" });
+      return;
+    }
+    const { completeness } = assembleReferralReport(extraction);
+    if (completeness.providerRequests.length === 0) {
+      res.status(400).json({ error: "nothing_to_request" });
+      return;
+    }
+
+    const company = await resolveCompanyProfile(supabase);
+    const patientName =
+      `${extraction.patient.firstName ?? ""} ${extraction.patient.lastName ?? ""}`.trim() ||
+      "the referred patient";
+    const dob = extraction.patient.dob
+      ? ` (DOB ${extraction.patient.dob})`
+      : "";
+    const physician = extraction.physician;
+    const numbered = completeness.providerRequests
+      .map((r, i) => `${i + 1}. ${r}`)
+      .join("\n");
+    const body = [
+      `Thank you for your referral of ${patientName}${dob}.`,
+      "",
+      "Before we can proceed with the patient's equipment, we need the " +
+        "following from your office:",
+      "",
+      numbered,
+      "",
+      `Please fax the requested documentation to ${company.legalName}` +
+        `${company.phone ? ` (${company.phone})` : ""} at your earliest ` +
+        "convenience so we can serve your patient without delay.",
+      "",
+      "Thank you,",
+      company.legalName,
+    ].join("\n");
+
+    const nowIso = new Date().toISOString();
+    const { data: doc, error: docErr } = await supabase
+      .from("manual_documents")
+      .insert({
+        document_type: "other",
+        title: `Referral — additional information needed: ${patientName}`,
+        fields: {} as unknown as Json,
+        body,
+        recipient_name: physician?.clinic
+          ? `${physician?.name ?? "Referring provider"} — ${physician.clinic}`
+          : (physician?.name ?? "Referring provider"),
+        recipient_fax_e164: physician?.fax ?? null,
+        status: "draft",
+        created_by_email: req.adminEmail ?? null,
+        created_at: nowIso,
+        updated_at: nowIso,
+      })
+      .select("id")
+      .single();
+    if (docErr) throw docErr;
+
+    await logAudit({
+      action: "referral_review.request_from_provider",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "referral_reviews",
+      targetId: review.id,
+      // PHI-safe: ids + counts only.
+      metadata: {
+        manual_document_id: doc.id,
+        requested_items: completeness.providerRequests.length,
+      },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn(
+        { err },
+        "referral_review.request_from_provider audit failed",
+      );
+    });
+
+    res
+      .status(201)
+      .json({
+        manualDocumentId: doc.id,
+        requests: completeness.providerRequests,
+      });
   },
 );
 

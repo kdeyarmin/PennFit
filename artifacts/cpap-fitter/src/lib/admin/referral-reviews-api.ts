@@ -61,6 +61,9 @@ export interface ReferralExtraction {
   insurance: ReferralExtractionInsurance | null;
   secondaryInsurance: ReferralExtractionInsurance | null;
   order: Array<{ description: string; hcpcs: string | null }>;
+  diagnoses: Array<{ icd10: string | null; description: string | null }>;
+  recommendedTherapy: string | null;
+  comorbidities: string[];
   sleepStudy: {
     studyDate: string | null;
     studyType: string | null;
@@ -87,6 +90,45 @@ export interface ReferralExtraction {
   };
 }
 
+export type PapQualificationVerdict =
+  | "qualifies"
+  | "qualifies_with_comorbidity"
+  | "conditional"
+  | "not_qualifying"
+  | "unknown";
+
+export interface PapQualification {
+  verdict: PapQualificationVerdict;
+  qualifyingValue: number | null;
+  metric: "AHI" | "RDI" | null;
+  hasDocumentedComorbidity: boolean;
+  summary: string;
+  details: string[];
+}
+
+export type ReferralCompletenessStatus = "present" | "attention" | "missing";
+
+export interface ReferralCompletenessItem {
+  key: string;
+  label: string;
+  status: ReferralCompletenessStatus;
+  detail: string;
+  request?: string;
+}
+
+export interface ReferralCompleteness {
+  items: ReferralCompletenessItem[];
+  outstandingCount: number;
+  complete: boolean;
+  providerRequests: string[];
+}
+
+/** Derived analysis surfaced alongside the extraction (null until extracted). */
+export interface ReferralReport {
+  qualification: PapQualification;
+  completeness: ReferralCompleteness;
+}
+
 export interface ReferralReview {
   id: string;
   source: "fax" | "upload";
@@ -105,6 +147,7 @@ export interface ReferralReview {
   dismissNote: string | null;
   createdAt: string;
   updatedAt: string;
+  report: ReferralReport | null;
 }
 
 export interface ReferralReviewDetail extends ReferralReview {
@@ -272,4 +315,21 @@ export function createReferralReviewFromUpload(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ objectPath }),
   });
+}
+
+/** The generated Referral Review Report PDF (demographics, diagnosis, sleep
+ *  study, therapy, qualification verdict, missing-items checklist). */
+export function referralReviewReportUrl(id: string): string {
+  return `/resupply-api/admin/referral-reviews/${encodeURIComponent(id)}/report`;
+}
+
+/** Build a ready-to-send draft fax/letter to the referring provider for the
+ *  referral's missing items. Returns the new manual document's id. */
+export function requestFromProvider(
+  id: string,
+): Promise<{ manualDocumentId: string; requests: string[] }> {
+  return jsonFetch(
+    `/admin/referral-reviews/${encodeURIComponent(id)}/request-from-provider`,
+    { method: "POST", headers: { "Content-Type": "application/json" } },
+  );
 }
