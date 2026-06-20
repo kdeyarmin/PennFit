@@ -88,10 +88,12 @@ describe("patient-packet reminder sweep — unlinked packet SMS fallback", () =>
 
     expect(stats.reminded).toBe(1);
     expect(deliverMock).toHaveBeenCalledTimes(1);
-    const arg = deliverMock.mock.calls[0]![0] as {
-      email: string | null;
-      phone: string | null;
-    };
+    // The mock's impl declares no params, so its recorded call args type as
+    // empty tuples; re-view them as the single delivery-input arg we pass.
+    const calls = deliverMock.mock.calls as unknown as Array<
+      [{ email: string | null; phone: string | null }]
+    >;
+    const arg = calls[0]![0];
     expect(arg.email).toBe("pat@example.test");
     // The fix: the unlinked packet's captured phone is used for SMS.
     expect(arg.phone).toBe("+12155550123");
