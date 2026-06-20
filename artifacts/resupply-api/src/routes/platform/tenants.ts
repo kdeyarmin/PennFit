@@ -236,8 +236,8 @@ async function setTenantStatus(
     targetTable: "organizations",
     targetId: id,
     metadata: { slug: (existing as { slug: string }).slug, status: nextStatus },
-    ip: null,
-    userAgent: null,
+    ip: req.ip ?? null,
+    userAgent: req.get("user-agent") ?? null,
   }).catch((err) => {
     logger.warn({ err }, "platform: tenant status audit write failed");
   });
