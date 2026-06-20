@@ -528,6 +528,68 @@ describe("preflightClaim", () => {
     expect(out.items.some((i) => i.key === "modifier_combination")).toBe(false);
     expect(out.readyToSubmit).toBe(true);
   });
+
+  it("warns (without blocking) when the diagnosis doesn't support the HCPCS", async () => {
+    // R06.83 (snoring) is not a covered indication for E0601 under LCD
+    // L33718 — surface a non-blocking medical-necessity warning.
+    stageHappyPath({}, { diagnosisOverride: "R06.83" });
+    stageSupabaseResponse("hcpcs_coverage_diagnoses", "select", {
+      data: [
+        { hcpcs_code: "E0601", icd10_code: "G4733", policy: "LCD L33718" },
+      ],
+    });
+    const out = await preflightClaim(CLAIM_ID);
+    const item = out.items.find((i) => i.key === "medical_necessity_dx");
+    expect(item?.severity).toBe("warning");
+    expect(item?.detail).toContain("E0601");
+    expect(item?.detail).toContain("LCD L33718");
+    // Advisory only — medical necessity never flips the submit gate.
+    expect(out.readyToSubmit).toBe(true);
+  });
+
+  it("adds no medical_necessity_dx item when the diagnosis is covered", async () => {
+    // Default happy path: E0601 line + G47.33 diagnosis — a covered match.
+    stageHappyPath();
+    stageSupabaseResponse("hcpcs_coverage_diagnoses", "select", {
+      data: [
+        { hcpcs_code: "E0601", icd10_code: "G4733", policy: "LCD L33718" },
+      ],
+    });
+    const out = await preflightClaim(CLAIM_ID);
+    expect(out.items.some((i) => i.key === "medical_necessity_dx")).toBe(false);
+    expect(out.readyToSubmit).toBe(true);
+  });
+
+  it("queries the coverage catalog with canonical (uppercase) HCPCS codes", async () => {
+    // A non-canonical line code (" e0601 ") must be normalised to the
+    // catalog's "E0601" BEFORE the exact-match `.in()` query, or the lookup
+    // returns no rows and silently skips the warning (false negative).
+    stageHappyPath(
+      {},
+      {
+        diagnosisOverride: "R06.83",
+        linesOverride: [
+          {
+            id: LINE_ID,
+            hcpcs_code: " e0601 ",
+            modifier: "RR,KX",
+            billed_cents: 24999,
+            quantity: 1,
+          },
+        ],
+      },
+    );
+    stageSupabaseResponse("hcpcs_coverage_diagnoses", "select", {
+      data: [
+        { hcpcs_code: "E0601", icd10_code: "G4733", policy: "LCD L33718" },
+      ],
+    });
+    await preflightClaim(CLAIM_ID);
+    const inCall = supabaseMock
+      .filterCalls("hcpcs_coverage_diagnoses", "select")
+      .find((f) => f.verb === "in");
+    expect(inCall?.args[1]).toEqual(["E0601"]);
+  });
 });
 
 describe("isNocHcpcs", () => {

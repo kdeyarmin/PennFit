@@ -332,6 +332,34 @@ export interface Database {
         >;
         Relationships: [];
       };
+      // Migration 0408: LCD medical-necessity edit catalog — which
+      // ICD-10 codes support a billed HCPCS (Medicare PAP baseline).
+      hcpcs_coverage_diagnoses: {
+        Row: {
+          id: string;
+          hcpcs_code: string;
+          icd10_code: string;
+          description: string | null;
+          policy: string;
+          active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          hcpcs_code: string;
+          icd10_code: string;
+          description?: string | null;
+          policy?: string;
+          active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<
+          Database["resupply"]["Tables"]["hcpcs_coverage_diagnoses"]["Insert"]
+        >;
+        Relationships: [];
+      };
       // Migration 0171: SKU-prefix → HCPCS bridge. Maps the
       // uppercase-dashed supply-family prefix the resupply engine
       // matches on (MASK, CUSHION, ...) to a representative HCPCS.
