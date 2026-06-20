@@ -231,6 +231,39 @@ which is exactly the gap §6 closes for patient packets.
    accreditation-rollup view is added — the manual-documents warning is the
    live operator-facing guard today.)
 
+5. **Outbound documents must be complete before they send.** Staff-authored
+   **manual documents** (CMN, prescription/order, agreement, delivery
+   ticket, fax cover) and **manual-document packets** previously had no
+   notion of a required field and no pre-send check — a half-filled CMN
+   could be faxed out. Now:
+   - The catalog carries a per-type **required-field** set
+     (`REQUIRED_FIELD_KEYS`): the supplier-known identity/content a document
+     is genuinely invalid without (e.g. a prescription needs patient name +
+     DOB + prescriber name + NPI + items). Fields a downstream signer
+     completes (ICD-10, length-of-need) are deliberately **not** required,
+     so the gate never blocks the very send that asks the prescriber to fill
+     them.
+   - **Auto-populate:** these required fields are exactly what chart prefill
+     (`/admin/manual-documents/prefill`) fills from the patient record,
+     provider directory, and latest sleep study — so when the data is in the
+     system it lands in the document automatically (blank-only merge; typed
+     values are never overwritten).
+   - **Flag before send:** `send-email` / `send-fax` (single doc **and**
+     packet) now return **`422 document_incomplete`** with the exact
+     `missingFields` (or `incompleteDocuments`) when any required field is
+     still blank — nothing leaves the building half-finished. The editor
+     marks required inputs with a `*`, shows which are outstanding, and
+     disables the Send buttons (filing an in-progress draft to a chart stays
+     allowed). So: system data fills the document automatically, and
+     anything still needed is flagged for entry **before** it can be sent —
+     enforced server-side, surfaced client-side.
+   - Note: the **prescription-request packets** (the physician-fax order)
+     already validated completeness via
+     `validatePrescriptionRequestInputs()` (NPI, ICD-10, return fax,
+     length-of-need); **patient e-sign packets** auto-fill via merge tokens
+     and the patient supplies the signer fields — so this gap was specific
+     to the manual-documents surface.
+
 ---
 
 ## 7. Remaining recommendations (not engineering blockers)
@@ -268,5 +301,19 @@ review and confirmed still-open here:
 - `artifacts/cpap-fitter/src/pages/admin/patient-packets.tsx` (Outstanding
   filter, Reminders column, age hint)
 
-All API-package tests pass (6,168). This review reflects the code state at
-the time of writing.
+Document-completeness gate (manual documents):
+
+- `artifacts/resupply-api/src/lib/manual-documents/catalog.ts`
+  (`REQUIRED_FIELD_KEYS`, `missingRequiredManualDocumentFields`,
+  `isRequiredManualDocumentField`) + `catalog.test.ts`
+- `artifacts/resupply-api/src/routes/admin/manual-documents.ts` (catalog
+  `required` flag + send-email/send-fax gate) + `manual-documents.test.ts`
+- `artifacts/resupply-api/src/routes/admin/manual-document-packets.ts`
+  (bundle send gate)
+- `artifacts/cpap-fitter/src/lib/admin/{manual-documents-api,send-error}.ts`
+  (required flag + `document_incomplete` message)
+- `artifacts/cpap-fitter/src/pages/admin/admin-documents/{document-editor,send-actions}.tsx`
+  (required markers, pre-send flag, blocked Send buttons)
+
+All API-package tests pass. This review reflects the code state at the time
+of writing.

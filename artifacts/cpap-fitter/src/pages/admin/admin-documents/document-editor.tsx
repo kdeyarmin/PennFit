@@ -213,6 +213,22 @@ function DocumentEditorForm({
       setRecipientFax(prefill.recipient.fax);
   };
 
+  // Required fields the document is invalid without (the server blocks a
+  // send while any are blank — chart prefill fills them when the data
+  // exists). Flagged here so the operator can complete them before sending
+  // rather than bouncing off the server gate.
+  const missingRequired = (def?.fields ?? []).filter(
+    (f) => f.required && !(fields[f.key] ?? "").trim(),
+  );
+  const sendBlockedReason =
+    missingRequired.length > 0
+      ? `Fill in ${
+          missingRequired.length === 1
+            ? "this required field"
+            : "these required fields"
+        } before sending: ${missingRequired.map((f) => f.label).join(", ")}.`
+      : null;
+
   return (
     <Card
       title={doc.title}
@@ -303,9 +319,27 @@ function DocumentEditorForm({
             >
               Details
             </h3>
+            {def.fields.some((f) => f.required) && (
+              <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+                Fields marked
+                <span style={{ color: "hsl(0 70% 45%)" }}> *</span> are required
+                before this document can be sent.
+              </p>
+            )}
             {def.fields.map((f) => (
               <div key={f.key}>
-                <Label htmlFor={`f-${f.key}`}>{f.label}</Label>
+                <Label htmlFor={`f-${f.key}`}>
+                  {f.label}
+                  {f.required && (
+                    <span
+                      aria-hidden="true"
+                      title="Required before sending"
+                      style={{ color: "hsl(0 70% 45%)" }}
+                    >
+                      {" *"}
+                    </span>
+                  )}
+                </Label>
                 {f.kind === "textarea" ? (
                   <Textarea
                     id={`f-${f.key}`}
@@ -393,6 +427,7 @@ function DocumentEditorForm({
           defaultFax={recipientFax}
           persist={persistDocument}
           onChanged={onSaved}
+          sendBlockedReason={sendBlockedReason}
         />
         {ConfirmDialogEl}
       </div>

@@ -4,7 +4,7 @@
 // in-code constant, so this endpoint must always return all six types
 // for any staff role with patients.read.
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import express, { type Express } from "express";
 import request from "supertest";
 
@@ -12,7 +12,10 @@ import {
   makeRequireAdminMock,
   type MockAdminCtx,
 } from "../../test-helpers/auth-mocks";
-import { installSupabaseMock } from "../../test-helpers/supabase-mock";
+import {
+  installSupabaseMock,
+  stageSupabaseResponse,
+} from "../../test-helpers/supabase-mock";
 
 const supabaseMock = installSupabaseMock();
 
@@ -215,5 +218,72 @@ describe("GET /admin/manual-documents/prefill", () => {
     expect(res.body.fields.clinical_justification).toContain(
       "Sleep study date: ______________   AHI/RDI: ______________",
     );
+  });
+});
+
+describe("GET /admin/manual-documents/catalog — required flags", () => {
+  it("stamps `required` on the fields a document is invalid without", () => {
+    mockAdmin.current = ADMIN;
+    return request(makeApp())
+      .get("/admin/manual-documents/catalog")
+      .then((res) => {
+        expect(res.status).toBe(200);
+        const rx = res.body.types.find(
+          (t: { type: string }) => t.type === "prescription",
+        );
+        const required = new Set(
+          rx.fields
+            .filter((f: { required?: boolean }) => f.required)
+            .map((f: { key: string }) => f.key),
+        );
+        expect(required.has("prescriber_npi")).toBe(true);
+        expect(required.has("items_ordered")).toBe(true);
+        // A field the prescriber completes is NOT required to send.
+        expect(required.has("directions")).toBe(false);
+      });
+  });
+});
+
+describe("send gate — incomplete documents are blocked before dispatch", () => {
+  const DOC_ID = "11111111-1111-4111-8111-111111111111";
+  beforeEach(() => {
+    vi.stubEnv("SENDGRID_API_KEY", "SG.test-key");
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("422s an incomplete prescription on send-email, listing what's missing", async () => {
+    mockAdmin.current = ADMIN;
+    // loadManualDocumentRow → a prescription with the identity filled but
+    // the prescriber NPI + items still blank.
+    stageSupabaseResponse("manual_documents", "select", {
+      data: {
+        id: DOC_ID,
+        document_type: "prescription",
+        title: "PAP order",
+        fields: {
+          patient_name: "Jordan Rivera",
+          date_of_birth: "1980-02-02",
+          prescriber_name: "Dr. Ada Lin",
+        },
+        body: null,
+        recipient_name: "Dr. Ada Lin",
+        recipient_address: null,
+        recipient_email: "dr@example.test",
+        recipient_fax_e164: null,
+        status: "draft",
+      },
+    });
+
+    const res = await request(makeApp())
+      .post(`/admin/manual-documents/${DOC_ID}/send-email`)
+      .send({});
+
+    expect(res.status).toBe(422);
+    expect(res.body.error).toBe("document_incomplete");
+    expect(
+      res.body.missingFields.map((m: { key: string }) => m.key).sort(),
+    ).toEqual(["items_ordered", "prescriber_npi"]);
   });
 });

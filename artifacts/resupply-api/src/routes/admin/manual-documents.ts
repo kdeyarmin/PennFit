@@ -49,6 +49,8 @@ import {
   MANUAL_DOCUMENT_CATALOG,
   getManualDocumentTypeDef,
   isManualDocumentType,
+  isRequiredManualDocumentField,
+  missingRequiredManualDocumentFields,
   normalizeManualDocumentFields,
   type ManualDocumentType,
 } from "../../lib/manual-documents/catalog.js";
@@ -177,7 +179,12 @@ router.get(
         description: def.description,
         phi: def.phi,
         requiresSignature: def.requiresSignature,
-        fields: def.fields,
+        // Stamp `required` per field so the editor can mark must-fill inputs
+        // and pre-flag an incomplete document before the send call.
+        fields: def.fields.map((f) => ({
+          ...f,
+          required: isRequiredManualDocumentField(def.type, f.key),
+        })),
       })),
     });
   },
@@ -869,6 +876,20 @@ router.post(
       res.status(404).json({ error: "not_found" });
       return;
     }
+    // Completeness gate: a document must carry every required field before
+    // it leaves the building. Chart prefill fills these when the data
+    // exists; anything still blank is surfaced for a human to enter rather
+    // than faxing/emailing a half-finished clinical document.
+    const missing = missingRequiredManualDocumentFields(
+      row.document_type,
+      row.fields,
+    );
+    if (missing.length > 0) {
+      res
+        .status(422)
+        .json({ error: "document_incomplete", missingFields: missing });
+      return;
+    }
     const to = parsed.data.email ?? row.recipient_email;
     if (!to) {
       res.status(400).json({ error: "no_recipient_email" });
@@ -983,6 +1004,18 @@ router.post(
     const row = await loadManualDocumentRow(supabase, idParsed.data.id);
     if (!row) {
       res.status(404).json({ error: "not_found" });
+      return;
+    }
+    // Completeness gate (same as send-email): block an incomplete document
+    // before it is dispatched, listing the required fields still blank.
+    const missing = missingRequiredManualDocumentFields(
+      row.document_type,
+      row.fields,
+    );
+    if (missing.length > 0) {
+      res
+        .status(422)
+        .json({ error: "document_incomplete", missingFields: missing });
       return;
     }
     const to = parsed.data.fax ?? row.recipient_fax_e164;
