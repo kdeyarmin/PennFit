@@ -93,24 +93,25 @@ type BillingPlanRow = Pick<
   | "stripe_synced_at"
 >;
 
-interface BillingAddonRow {
-  id: string;
-  code: string;
-  name: string;
-  category: string | null;
-  description: string | null;
-  recurring_price_cents: number | null;
-  one_time_min_cents: number | null;
-  one_time_max_cents: number | null;
-  unit_label: string | null;
-  usage_metric: string | null;
-  pass_through_note: string | null;
-  is_active: boolean;
-  sort_order: number;
-  stripe_product_id: string | null;
-  stripe_price_id: string | null;
-  stripe_synced_at: string | null;
-}
+type BillingAddonRow = Pick<
+  Database["resupply"]["Tables"]["billing_addons"]["Row"],
+  | "id"
+  | "code"
+  | "name"
+  | "category"
+  | "description"
+  | "recurring_price_cents"
+  | "one_time_min_cents"
+  | "one_time_max_cents"
+  | "unit_label"
+  | "usage_metric"
+  | "pass_through_note"
+  | "is_active"
+  | "sort_order"
+  | "stripe_product_id"
+  | "stripe_price_id"
+  | "stripe_synced_at"
+>;
 
 interface TenantBillingAddonRow {
   id: string;
