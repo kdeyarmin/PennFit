@@ -251,9 +251,9 @@ which is exactly the gap §6 closes for patient packets.
      name + NPI + items + ICD-10 + length-of-need.
    - **Auto-populate:** these required fields are exactly what chart prefill
      (`/admin/manual-documents/prefill`) fills from the patient record,
-     provider directory, latest sleep study, and the **inbound referral
-     order's validated ICD-10** (the referral packet's diagnosis is preferred
-     over the study's). So when the data is in the system it lands in the
+     provider directory, and latest sleep study — including the **validated
+     ICD-10 diagnosis** from the sleep study (a diagnosis already on file, not
+     authored by the DME). So when the data is in the system it lands in the
      document automatically (blank-only merge; typed values are never
      overwritten); the length of need is the one field the DME fills, and the
      gate flags it until they do.

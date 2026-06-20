@@ -220,12 +220,12 @@ describe("GET /admin/manual-documents/prefill", () => {
     );
   });
 
-  it("prefills ICD-10 from the inbound referral order (preferred over the study)", async () => {
+  it("prefills the prescription ICD-10 from the sleep-study diagnosis", async () => {
     mockAdmin.current = ADMIN;
     supabaseMock.stage("patients", "select", {
       data: {
-        id: "33333333-3333-4333-8333-333333333333",
-        legal_first_name: "Referred",
+        id: "55555555-5555-4555-8555-555555555555",
+        legal_first_name: "Dx",
         legal_last_name: "Patient",
         date_of_birth: "1975-06-07",
         phone_e164: null,
@@ -234,31 +234,22 @@ describe("GET /admin/manual-documents/prefill", () => {
       },
     });
     supabaseMock.stage("prescriptions", "select", { data: [] });
-    // A study exists with one diagnosis…
     supabaseMock.stage("sleep_studies", "select", {
       data: {
-        diagnosis_icd10: "G47.30",
+        diagnosis_icd10: "G47.33",
         study_date: "2026-05-01",
         ahi: "20",
         rdi: null,
         interpreting_provider_id: null,
       },
     });
-    // …but the referral order carries the validated referring-provider
-    // diagnosis, which wins.
-    supabaseMock.stage("inbound_referral_orders", "select", {
-      data: {
-        icd10_codes_json: ["G47.33", "E66.9"],
-        received_at: "2026-06-01",
-      },
-    });
 
     const res = await request(makeApp()).get(
-      "/admin/manual-documents/prefill?patientId=33333333-3333-4333-8333-333333333333&documentType=prescription",
+      "/admin/manual-documents/prefill?patientId=55555555-5555-4555-8555-555555555555&documentType=prescription",
     );
 
     expect(res.status).toBe(200);
-    expect(res.body.fields.icd10_codes).toBe("G47.33, E66.9");
+    expect(res.body.fields.icd10_codes).toBe("G47.33");
   });
 });
 
