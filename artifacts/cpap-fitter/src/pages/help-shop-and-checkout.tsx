@@ -6,6 +6,7 @@ import {
   type HelpStep,
 } from "@/components/help/help-article-shell";
 import { Screenshot, ShopShot, CartShot } from "@/components/help/help-screens";
+import { BrandName, WebsiteHost } from "@/components/company-contact";
 
 const steps: HelpStep[] = [
   {
@@ -22,10 +23,7 @@ const steps: HelpStep[] = [
       </p>
     ),
     shot: (
-      <Screenshot
-        url="pennpaps.com/shop"
-        caption="The shop lists supplies as product cards, with a search box and your cart in the top corner."
-      >
+      <Screenshot caption="The shop lists supplies as product cards, with a search box and your cart in the top corner.">
         <ShopShot />
       </Screenshot>
     ),
@@ -82,10 +80,7 @@ const steps: HelpStep[] = [
       </>,
     ],
     shot: (
-      <Screenshot
-        url="pennpaps.com/shop/cart"
-        caption="Adjust quantities with the steppers; the summary keeps a live total."
-      >
+      <Screenshot caption="Adjust quantities with the steppers; the summary keeps a live total.">
         <CartShot />
       </Screenshot>
     ),
@@ -95,9 +90,9 @@ const steps: HelpStep[] = [
     body: (
       <p>
         Checkout is handled by <strong>Stripe</strong>, our secure payment
-        processor — PennPaps never sees or stores your full card number. Enter
-        your shipping and payment details and confirm. You&apos;ll get an order
-        confirmation by email, and you can{" "}
+        processor — <BrandName /> never sees or stores your full card number.
+        Enter your shipping and payment details and confirm. You&apos;ll get an
+        order confirmation by email, and you can{" "}
         <Link
           href="/help/track-your-order"
           className="text-primary hover:underline"
@@ -107,8 +102,13 @@ const steps: HelpStep[] = [
         anytime.
       </p>
     ),
-    warning:
-      "If checkout doesn't open, your browser may be blocking the secure payment window — disable any pop-up blocker for pennpaps.com and try again.",
+    warning: (
+      <>
+        If checkout doesn&apos;t open, your browser may be blocking the secure
+        payment window — disable any pop-up blocker for <WebsiteHost /> and try
+        again.
+      </>
+    ),
   },
 ];
 
@@ -119,8 +119,14 @@ export function HelpShopAndCheckout() {
       title="Shop supplies & check out"
       Icon={ShoppingCart}
       minutes="3 min"
-      metaDescription="How to shop CPAP supplies on PennPaps: browsing and searching products, adding to your cart, reviewing quantities, and checking out securely with Stripe."
-      intro="Need replacement cushions, filters, or tubing? The PennPaps shop works like any online store. Here's how to find supplies, build your cart, and check out safely."
+      metaDescription="How to shop CPAP supplies: browsing and searching products, adding to your cart, reviewing quantities, and checking out securely with Stripe."
+      intro={
+        <>
+          Need replacement cushions, filters, or tubing? The <BrandName /> shop
+          works like any online store. Here&apos;s how to find supplies, build
+          your cart, and check out safely.
+        </>
+      }
       summary={
         <>
           Open <strong>Shop</strong>, search or browse for supplies, add them to
@@ -145,7 +151,13 @@ export function HelpShopAndCheckout() {
         },
         {
           q: "Is my payment secure?",
-          a: "Yes. Checkout runs through Stripe, a PCI-compliant payment processor. Your full card details never touch PennPaps' servers.",
+          a: (
+            <>
+              Yes. Checkout runs through Stripe, a PCI-compliant payment
+              processor. Your full card details never touch <BrandName />
+              &apos;s servers.
+            </>
+          ),
         },
         {
           q: "Can I bill supplies to insurance instead?",

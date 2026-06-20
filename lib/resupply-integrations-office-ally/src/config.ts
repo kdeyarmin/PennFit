@@ -161,10 +161,87 @@ export function readOfficeAllyRealtimeConfigOrNull(
   // All-or-null, mirroring readOfficeAllyConfigOrNull: a partial config
   // degrades to the SFTP path rather than half-attempting real-time.
   if (!url || !apiKey) return null;
+  // The 270 we POST here is PHI in cleartext-on-the-wire and the URL is
+  // operator-supplied, so an https + host-allowlist check is mandatory:
+  // it stops a misconfigured (http://) endpoint from sending a 270 in
+  // the clear, and stops a malicious/typo'd host from turning this into
+  // an SSRF exfiltration sink. Fail-soft per the reader contract — a URL
+  // that doesn't validate returns null (degrade to the SFTP path), never
+  // throws at boot.
+  if (!isAllowedOfficeAllyEdiUrl(url)) return null;
   return {
     url,
     apiKey,
     timeoutMs: parseTimeoutMs(env.OFFICE_ALLY_REALTIME_TIMEOUT_MS),
+  };
+}
+
+/**
+ * True iff `raw` is a well-formed HTTPS URL whose host is Office Ally's
+ * EDI domain (`officeally.io` or any `*.officeally.io` subdomain — the
+ * real-time endpoint lives at `edi.officeally.io`). Anything else
+ * (http, a non-OA host, a malformed URL) is rejected so the 270 PHI
+ * never leaves over cleartext or to an attacker-chosen host. Pure /
+ * never throws.
+ */
+export function isAllowedOfficeAllyEdiUrl(raw: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== "https:") return false;
+  const host = parsed.hostname.toLowerCase();
+  return host === "officeally.io" || host.endsWith(".officeally.io");
+}
+
+// Insurance discovery over Office Ally's EDI REST API. A SEPARATE endpoint
+// from real-time eligibility (the "search every payer for this person"
+// service vs. "is this one coverage active"), but the SAME issued EDI API
+// account — so it reuses the real-time Authorization key and only needs its
+// own endpoint URL. Fully optional and fail-soft: when its env is absent,
+// `createInsuranceDiscoveryTransport(null)` degrades to a no-op that reports
+// `unavailable` and the discovery route returns a clean "not configured"
+// reason instead of throwing.
+//
+//   OFFICE_ALLY_DISCOVERY_URL          — the insurance-discovery endpoint URL
+//   OFFICE_ALLY_REALTIME_API_KEY       — API key, sent verbatim in the
+//                                        Authorization header (legacy alias:
+//                                        OFFICE_ALLY_REALTIME_PASSWORD)
+//
+// Optional:
+//   OFFICE_ALLY_DISCOVERY_TIMEOUT_MS   — per-request timeout (default 30000)
+export interface OfficeAllyDiscoveryConfig {
+  /** Full insurance-discovery endpoint URL. */
+  url: string;
+  /** API key, sent verbatim in the Authorization header (the SAME OA EDI
+   *  account/key as real-time eligibility). */
+  apiKey: string;
+  timeoutMs: number;
+}
+
+export function readOfficeAllyDiscoveryConfigOrNull(
+  env: NodeJS.ProcessEnv = process.env,
+): OfficeAllyDiscoveryConfig | null {
+  // Stub mode means "don't transmit anywhere" — honor it here too.
+  if (env.OFFICE_ALLY_STUB === "1") return null;
+  const url = env.OFFICE_ALLY_DISCOVERY_URL?.trim();
+  const apiKey =
+    env.OFFICE_ALLY_REALTIME_API_KEY?.trim() ||
+    env.OFFICE_ALLY_REALTIME_PASSWORD?.trim();
+  // All-or-null, mirroring the real-time reader: a partial config reports
+  // unavailable rather than half-attempting a discovery search.
+  if (!url || !apiKey) return null;
+  // The request carries demographics (PHI) and the URL is operator-supplied,
+  // so the same https + Office-Ally-host allowlist the real-time reader
+  // applies is mandatory here — it stops a cleartext (http://) endpoint and
+  // an SSRF-to-attacker-host typo. Fail-soft: an invalid URL returns null.
+  if (!isAllowedOfficeAllyEdiUrl(url)) return null;
+  return {
+    url,
+    apiKey,
+    timeoutMs: parseTimeoutMs(env.OFFICE_ALLY_DISCOVERY_TIMEOUT_MS),
   };
 }
 

@@ -44,7 +44,11 @@ import {
 
 import { signManualDocumentPacketFaxToken } from "../../lib/fax-document-token.js";
 import { logger } from "../../lib/logger.js";
-import { getManualDocumentTypeDef } from "../../lib/manual-documents/catalog.js";
+import { resolveTenantFaxFrom } from "../../lib/messaging/tenant-telecom";
+import {
+  getManualDocumentTypeDef,
+  missingRequiredManualDocumentFields,
+} from "../../lib/manual-documents/catalog.js";
 import {
   loadManualDocumentPacketRow,
   loadPacketDocuments,
@@ -235,6 +239,33 @@ async function loadPacketForRender(
     return null;
   }
   return { packet, documents };
+}
+
+/**
+ * Per-document completeness across a packet: any constituent document still
+ * missing a required field (same rule as the single-document send gate).
+ * Empty array means every document in the bundle is complete to send.
+ */
+function incompletePacketDocuments(documents: ManualDocumentRow[]): Array<{
+  documentId: string;
+  title: string;
+  missingFields: Array<{ key: string; label: string }>;
+}> {
+  const out: Array<{
+    documentId: string;
+    title: string;
+    missingFields: Array<{ key: string; label: string }>;
+  }> = [];
+  for (const d of documents) {
+    const missingFields = missingRequiredManualDocumentFields(
+      d.document_type,
+      d.fields,
+    );
+    if (missingFields.length > 0) {
+      out.push({ documentId: d.id, title: d.title, missingFields });
+    }
+  }
+  return out;
 }
 
 // ── List ───────────────────────────────────────────────────────────
@@ -604,6 +635,16 @@ router.post(
     const loaded = await loadPacketForRender(supabase, idParsed.data.id, res);
     if (!loaded) return;
     const { packet, documents } = loaded;
+    // Completeness gate: every document in the bundle must carry its
+    // required fields before the packet is dispatched.
+    const incomplete = incompletePacketDocuments(documents);
+    if (incomplete.length > 0) {
+      res.status(422).json({
+        error: "document_incomplete",
+        incompleteDocuments: incomplete,
+      });
+      return;
+    }
     const to = parsed.data.email ?? packet.recipient_email;
     if (!to) {
       res.status(400).json({ error: "no_recipient_email" });
@@ -717,6 +758,16 @@ router.post(
     const loaded = await loadPacketForRender(supabase, idParsed.data.id, res);
     if (!loaded) return;
     const { packet, documents } = loaded;
+    // Completeness gate (same as send-email): block the bundle if any
+    // document is missing a required field.
+    const incomplete = incompletePacketDocuments(documents);
+    if (incomplete.length > 0) {
+      res.status(422).json({
+        error: "document_incomplete",
+        incompleteDocuments: incomplete,
+      });
+      return;
+    }
     const to = parsed.data.fax ?? packet.recipient_fax_e164;
     if (!to) {
       res.status(400).json({ error: "no_recipient_fax" });
@@ -728,7 +779,11 @@ router.post(
     const token = signManualDocumentPacketFaxToken(packet.id);
     const mediaUrl = `${baseUrl}/resupply-api/fax/document/${token}`;
     const statusCallbackUrl = `${baseUrl}/resupply-api/fax/webhook`;
-    const fromNumber = process.env.TELNYX_FAX_FROM_NUMBER!.trim();
+    // Prefer the tenant's own provisioned fax DID (migration 0368); fall
+    // back to the platform default isFaxConfigured() already verified is set.
+    const fromNumber =
+      (await resolveTenantFaxFrom(orgId)) ??
+      process.env.TELNYX_FAX_FROM_NUMBER!.trim();
 
     let vendorRef: string;
     try {

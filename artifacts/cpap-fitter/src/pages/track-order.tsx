@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/card";
 import { CheckCircle2, Package, Search } from "lucide-react";
 import { useDocumentTitle } from "@/hooks/use-document-title";
+import { useCompanyContact } from "@/lib/contact";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const REF_RE = /^(PENN-)?[A-Za-z0-9]{4,12}$/;
@@ -65,9 +66,10 @@ function formatStatus(s: string | null): {
 }
 
 export function TrackOrder() {
+  const company = useCompanyContact();
   useDocumentTitle(
-    "Track my order — PennPaps",
-    "Look up a PennPaps order status without signing in. Enter your order reference and email.",
+    `Track my order — ${company.name}`,
+    `Look up a ${company.name} order status without signing in. Enter your order reference and email.`,
   );
 
   const [reference, setReference] = useState("");
@@ -142,8 +144,8 @@ export function TrackOrder() {
           Track my order
         </h1>
         <p className="text-base text-muted-foreground max-w-xl mx-auto leading-relaxed">
-          Enter your PennPaps order reference (from your confirmation email) and
-          the email you used to place it. No login needed.
+          Enter your {company.name} order reference (from your confirmation
+          email) and the email you used to place it. No login needed.
         </p>
       </header>
 

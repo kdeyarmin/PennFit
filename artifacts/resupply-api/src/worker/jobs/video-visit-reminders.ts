@@ -151,7 +151,7 @@ function publicBaseUrl(
     env.RESUPPLY_VOICE_PUBLIC_BASE_URL ??
     (env.RAILWAY_PUBLIC_DOMAIN
       ? `https://${env.RAILWAY_PUBLIC_DOMAIN}`
-      : "https://pennpaps.com")
+      : "https://cmbreathe.com")
   ).replace(/\/$/, "");
 }
 

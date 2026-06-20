@@ -40,6 +40,7 @@ import { type Json, getOrgScopedClient } from "@workspace/resupply-db";
 import { timezoneForUsState } from "@workspace/resupply-domain";
 
 import { logger } from "../../lib/logger";
+import { classifyAndCachePhoneLineType } from "../../lib/messaging/phone-line-type";
 import { adminWriteRateLimiter } from "../../middlewares/admin-rate-limit";
 import { withIdempotency } from "../../middlewares/idempotency";
 import { requireAdmin } from "../../middlewares/requireAdmin";
@@ -192,6 +193,14 @@ router.post(
       throw insErr;
     }
     const id = inserted.id;
+
+    // Classify the phone line type (Twilio Lookup) in the background so the
+    // record knows whether it's a cell and bulk SMS can gate to cellular.
+    // Fire-and-forget — never delays or fails the create response, and is a
+    // no-op when Lookup creds are unset.
+    if (body.phoneE164) {
+      void classifyAndCachePhoneLineType({ orgId, kind: "patient", id });
+    }
 
     // Phone search now hits the indexed `patients.phone_e164`
     // column directly (see ./list.ts), so there's no separate

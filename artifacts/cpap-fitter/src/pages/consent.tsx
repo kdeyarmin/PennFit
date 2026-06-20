@@ -26,6 +26,7 @@ import { useDocumentTitle } from "@/hooks/use-document-title";
 import { useFitterStore } from "@/hooks/use-fitter-store";
 import { submitFitterLead } from "@/lib/shop-api";
 import { formatUsPhone } from "@/lib/format-phone";
+import { BrandName } from "@/components/company-contact";
 
 // Lightweight RFC-5322-ish check. The order form's zod schema runs a
 // stricter validation at submit time; this one just guards the
@@ -175,8 +176,8 @@ export function Consent() {
             Privacy & Consent
           </CardTitle>
           <CardDescription className="text-center text-lg max-w-xl mx-auto">
-            At PennPaps, your privacy is our absolute priority. Before we begin,
-            please review how PennPaps protects your data.
+            At <BrandName />, your privacy is our absolute priority. Before we
+            begin, please review how <BrandName /> protects your data.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-8">
@@ -232,9 +233,10 @@ export function Consent() {
                 Camera measurements stay on your device.{" "}
                 <strong>However, when you submit an order</strong>, the contact,
                 shipping, insurance, and prescription details you enter are
-                stored in PennPaps's secure database so our fulfillment team can
-                ship your mask and bill your insurance. You'll re-confirm this
-                at checkout. See our{" "}
+                stored in <BrandName />
+                's secure database so our fulfillment team can ship your mask
+                and bill your insurance. You'll re-confirm this at checkout. See
+                our{" "}
                 <Link href="/privacy" className="underline hover:text-primary">
                   Privacy Policy
                 </Link>{" "}
@@ -257,18 +259,18 @@ export function Consent() {
                   Biometric Information Privacy Disclosure
                 </p>
                 <p className="text-foreground/80 leading-relaxed">
-                  To provide mask recommendations, PennPaps uses facial
+                  To provide mask recommendations, <BrandName /> uses facial
                   recognition technology to extract numerical measurements (such
                   as the distance between your nose and chin).
                   <strong>
                     {" "}
                     No images or biometric identifiers are stored, recorded, or
-                    transmitted to PennPaps or any third party.
+                    transmitted to <BrandName /> or any third party.
                   </strong>
                 </p>
                 <p className="text-foreground/80 leading-relaxed">
                   Only the extracted numerical values (in millimeters) and your
-                  questionnaire answers are sent securely to the PennPaps
+                  questionnaire answers are sent securely to the <BrandName />{" "}
                   recommendation engine.
                 </p>
               </div>
@@ -358,7 +360,7 @@ export function Consent() {
                   htmlFor="email-consent"
                   className="font-medium cursor-pointer"
                 >
-                  I agree to receive emails from PennPaps
+                  I agree to receive emails from <BrandName />
                 </label>
                 <p className="text-sm text-muted-foreground">
                   Mask recommendation, fitting follow-ups, and product news. You
@@ -443,7 +445,7 @@ export function Consent() {
                     htmlFor="sms-consent"
                     className="font-medium cursor-pointer"
                   >
-                    I agree to receive text messages from PennPaps
+                    I agree to receive text messages from <BrandName />
                   </label>
                   <p className="text-sm text-muted-foreground">
                     Order shipped &amp; delivered notifications, fitting

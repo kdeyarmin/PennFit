@@ -279,7 +279,8 @@ export function Home() {
             </h2>
             <p className="text-muted-foreground leading-relaxed">
               Browse plain-language guides, jump straight to ordering and
-              insurance answers, or take a walkthrough of how PennPaps works.
+              insurance answers, or take a walkthrough of how{" "}
+              {branding.storefrontName} works.
             </p>
           </div>
 
@@ -313,7 +314,7 @@ export function Home() {
                 {
                   href: "/how-it-works",
                   Icon: Compass,
-                  title: "How PennPaps works",
+                  title: "How it works",
                   cta: "See the walkthrough",
                   testid: "home-resource-how-it-works",
                   halo: "icon-halo-navy",

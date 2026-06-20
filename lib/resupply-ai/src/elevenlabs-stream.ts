@@ -52,6 +52,15 @@ import {
 const DEFAULT_WS_URL = "wss://api.elevenlabs.io/v1";
 const WS_OPEN = 1;
 
+// Connect/handshake deadline. If ElevenLabs accepts the TCP connection but
+// stalls before emitting `open`/`error`/`close`, the session would never
+// fire onError/onClosed and the socket would leak while the caller hears
+// dead air. We arm this timer right after creating the WS and surface an
+// `open_timeout` error (same shape as every other onError) if `open` hasn't
+// landed by the deadline, then close the socket. Cleared in the open/error/
+// close handlers so it never fires spuriously.
+const OPEN_TIMEOUT_MS = 6_000;
+
 // ElevenLabs' recommended chunk schedule: synthesise after ~120 chars,
 // then progressively larger windows. Small first window = fast first
 // audio; larger later windows = smoother prosody once the caller is
@@ -163,6 +172,32 @@ export function openElevenLabsStream(
         headers,
       }) as unknown as ElevenLabsStreamWebSocketLike);
 
+  // Arm the connect deadline immediately. If `open` hasn't fired by the
+  // time it elapses, the handshake has stalled — surface an error and tear
+  // the socket down so it doesn't leak (and the caller's turn drops cleanly
+  // rather than hanging on dead air). Cleared in open/error/close.
+  let openTimer: ReturnType<typeof setTimeout> | null = setTimeout(() => {
+    openTimer = null;
+    if (opened || aborted) return;
+    handlers.onError({
+      code: "open_timeout",
+      message: `elevenlabs stream-input did not open within ${OPEN_TIMEOUT_MS}ms`,
+    });
+    try {
+      ws.close(1000, "open_timeout");
+    } catch {
+      /* already closing */
+    }
+  }, OPEN_TIMEOUT_MS);
+  // Don't keep the event loop alive solely for this timer.
+  openTimer.unref?.();
+  const clearOpenTimer = (): void => {
+    if (openTimer !== null) {
+      clearTimeout(openTimer);
+      openTimer = null;
+    }
+  };
+
   const emitClosed = (): void => {
     if (closedEmitted || aborted) return;
     closedEmitted = true;
@@ -182,6 +217,7 @@ export function openElevenLabsStream(
   };
 
   ws.on("open", () => {
+    clearOpenTimer();
     if (aborted) {
       try {
         ws.close(1000, "aborted");
@@ -250,11 +286,13 @@ export function openElevenLabsStream(
   });
 
   ws.on("error", (err) => {
+    clearOpenTimer();
     if (aborted) return;
     handlers.onError({ code: "ws_error", message: err.message });
   });
 
   ws.on("close", () => {
+    clearOpenTimer();
     emitClosed();
   });
 

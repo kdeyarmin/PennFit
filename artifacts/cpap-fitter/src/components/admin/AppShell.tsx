@@ -19,6 +19,7 @@ import {
   LifeBuoy,
   Store,
   Printer,
+  PhoneCall,
   Inbox,
   MessageSquareText,
   ListChecks,
@@ -48,6 +49,7 @@ import {
   BellRing,
   ScrollText,
   ShieldCheck,
+  ScanSearch,
   FlaskConical,
   UsersRound,
   ScanFace,
@@ -584,6 +586,14 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             hint: "Storefront orders — fulfill, refund, look up",
           },
           {
+            href: "/admin/shipping",
+            label: "Shipping labels",
+            icon: TruckIcon,
+            matchPrefix: "/admin/shipping",
+            requiredPermission: "returns.manage",
+            hint: "Print XPS shipping labels with the patient address merged in; tracking auto-fills",
+          },
+          {
             href: "/admin/shop/subscriptions",
             label: "Subscriptions",
             icon: Repeat,
@@ -754,6 +764,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             icon: ShieldCheck,
             matchPrefix: "/admin/billing/verify",
             hint: "Run an on-demand insurance verification (270/271) for any patient — or a quick check with no patient record",
+          },
+          {
+            href: "/admin/billing/insurance-discovery",
+            label: "Insurance discovery",
+            icon: ScanSearch,
+            matchPrefix: "/admin/billing/insurance-discovery",
+            hint: "Search the payer network from demographics to find active coverage when insurance is unknown or a coverage came back inactive (add-on)",
           },
           {
             href: "/admin/billing/eligibility",
@@ -1038,6 +1055,14 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             hint: "Resupply funnel, compliance cohorts, CSR productivity",
           },
           {
+            href: "/admin/reorder-reminders",
+            label: "Reorder Reminders",
+            icon: BellRing,
+            matchPrefix: "/admin/reorder-reminders",
+            requiredPermission: "reports.read",
+            hint: "Reorder reminder funnel — due → reminded → confirmed → shipped, with per-channel conversion",
+          },
+          {
             href: "/admin/therapy-usage-report",
             label: "Therapy Report",
             icon: ScrollText,
@@ -1162,6 +1187,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         hint: "Practice settings, closures, team accounts, and your own security",
         tabs: [
           {
+            href: "/admin/setup",
+            label: "Set up your workspace",
+            icon: ListChecks,
+            matchPrefix: "/admin/setup",
+            hint: "Guided checklist: brand, domain, phone/SMS/fax numbers, email sender, and payments",
+          },
+          {
             href: "/admin/settings",
             label: "Settings",
             icon: Settings,
@@ -1183,11 +1215,25 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             hint: "Your storefront name, tagline, and logo — plus wiring up your own custom domain",
           },
           {
+            href: "/admin/phone-settings",
+            label: "Phone & SMS",
+            icon: PhoneCall,
+            matchPrefix: "/admin/phone-settings",
+            hint: "Your own voice + SMS numbers for the voice agent and resupply texting",
+          },
+          {
             href: "/admin/fax-settings",
             label: "Fax number",
             icon: Printer,
             matchPrefix: "/admin/fax-settings",
             hint: "Your practice's own fax number for inbound and outbound faxes",
+          },
+          {
+            href: "/admin/email-settings",
+            label: "Email From address",
+            icon: Mail,
+            matchPrefix: "/admin/email-settings",
+            hint: "Send patient email from your own address (with SendGrid domain-auth status)",
           },
           {
             href: "/admin/closures",

@@ -88,7 +88,7 @@ Nothing else changes; no migration or deploy involved.
 
 | Piece                                       | Location                                                                                              |
 | ------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| Flag seed (OFF)                             | `lib/resupply-db/drizzle/0251_billing_line_ordering_provider_flag.sql`                                |
+| Flag seed (OFF)                             | `lib/resupply-db/migrations/0251_billing_line_ordering_provider_flag.sql`                             |
 | Flag enum                                   | `artifacts/resupply-api/src/lib/feature-flags.ts`                                                     |
 | Per-line attach (gated)                     | `artifacts/resupply-api/src/lib/billing/office-ally-batch.ts` (`buildOneDetail` → `orderingProvider`) |
 | EDI emit (2420E `NM1*DK` + N3/N4 + REF\*0B) | `lib/resupply-integrations-office-ally/src/edi/837p.ts`                                               |

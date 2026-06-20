@@ -21,6 +21,11 @@ describe("platform billing route wiring", () => {
     expect(SRC).toContain('"/platform/billing/tenants/:id/addons"');
     expect(SRC).toContain('"/platform/billing/usage-events"');
     expect(SRC).toContain('"/platform/billing/catalog/stripe/sync"');
+    // Catalog price-edit endpoints (populate to tenants + marketing + Stripe).
+    expect(SRC).toContain('"/platform/billing/catalog/plans/:code"');
+    expect(SRC).toContain('"/platform/billing/catalog/addons/:code"');
+    // Deliberate roll-out of new catalog pricing to live tenant subscriptions.
+    expect(SRC).toContain('"/platform/billing/tenants/resync-stripe"');
     expect(SRC).toContain('"/platform/billing/tenants/:id/stripe/customer"');
     expect(SRC).toContain(
       '"/platform/billing/tenants/:id/stripe/subscription"',
@@ -40,13 +45,12 @@ describe("platform billing route wiring", () => {
     expect(SRC).toContain("syncTenantStripeSubscription");
     // Auditable so the super-admin portal can see who chose what.
     expect(SRC).toContain("tenant.billing.subscription.selected");
-    // Switching plans must carry the live Stripe linkage forward so the
-    // sync UPDATES the existing subscription rather than creating a second
-    // one (which would double-bill the tenant).
-    expect(SRC).toContain("Preserve the live Stripe linkage");
-    expect(SRC).toContain(
-      "stripe_subscription_id: prior?.stripe_subscription_id",
-    );
+    // Switching plans is atomic: the cancel-then-insert that carries the live
+    // Stripe linkage forward (so the sync UPDATES the existing subscription
+    // rather than creating a second one and double-billing) runs inside the
+    // swap_tenant_subscription SECURITY DEFINER RPC (migration 0389), not as
+    // two separate PostgREST calls that could strand the tenant.
+    expect(SRC).toContain("swap_tenant_subscription");
   });
 
   it("exposes tenant self-service add-on listing and selection", () => {
@@ -60,23 +64,23 @@ describe("platform billing route wiring", () => {
     expect(SRC).toContain("custom_recurring_price_cents: null");
   });
 
-  it("carries Stripe linkage forward on the platform plan-change route too", () => {
-    // The platform-admin PUT shares the cancel-then-insert pattern; without
-    // carrying the Stripe IDs forward a later sync would create a duplicate
-    // subscription and double-bill the tenant.
-    expect(SRC).toContain(
-      "stripe_subscription_id: priorSub?.stripe_subscription_id",
-    );
+  it("uses the atomic assign RPC on the platform plan-change route too", () => {
+    // The platform-admin PUT shares the same atomicity requirement; it runs
+    // the assign_tenant_subscription SECURITY DEFINER RPC (migration 0389),
+    // which carries the Stripe IDs forward inside one transaction so a later
+    // sync can't create a duplicate subscription and double-bill the tenant.
+    expect(SRC).toContain("assign_tenant_subscription");
   });
 
-  it("moves (nulls) the Stripe subscription id off the canceled row", () => {
-    // tenant_billing_subscriptions has a partial UNIQUE index on
-    // stripe_subscription_id (migration 0363). Both plan-change routes carry
-    // the id onto the new active row, so the canceled row MUST release it —
-    // otherwise the carry-forward insert violates the index and the plan
-    // change fails for any Stripe-synced tenant. Asserted on both routes.
-    const nulls = SRC.match(/stripe_subscription_id: null/g) ?? [];
-    expect(nulls.length).toBeGreaterThanOrEqual(2);
+  it("performs both plan-change swaps through atomic SECURITY DEFINER RPCs", () => {
+    // The cancel-then-insert — including releasing stripe_subscription_id off
+    // the canceled row so the carry-forward insert can't violate the partial
+    // UNIQUE index from migration 0363 — now lives inside the
+    // swap_/assign_tenant_subscription RPCs (migration 0389), each wrapped in
+    // one transaction with a FOR UPDATE lock that also serializes concurrent
+    // double-clicks. Both routes invoke their RPC.
+    expect(SRC).toContain('.rpc("swap_tenant_subscription"');
+    expect(SRC).toContain('.rpc("assign_tenant_subscription"');
   });
 
   it("counts active locations by is_active, not a nonexistent status column", () => {
@@ -104,7 +108,8 @@ describe("platform billing route wiring", () => {
     // Both the tenant self-service PUT and the platform-admin PUT must treat a
     // 23505 on the read-then-insert path as idempotent (the partial unique
     // index on (org_id, addon_id) WHERE status='active', migration 0362).
-    const fallbacks = SRC.match(/!existing && write\.error\.code === "23505"/g) ?? [];
+    const fallbacks =
+      SRC.match(/!existing && write\.error\.code === "23505"/g) ?? [];
     expect(fallbacks.length).toBeGreaterThanOrEqual(2);
     // The platform route's write must be reassignable (let, not const) so the
     // fallback can replace it.
@@ -121,6 +126,9 @@ describe("platform billing route wiring", () => {
     // All four mutation routes feed the activity panel.
     const recorded = SRC.match(/await recordBillingEvent\(/g) ?? [];
     expect(recorded.length).toBeGreaterThanOrEqual(4);
+    // The activity feed is filterable to a single tenant (org_id).
+    expect(SRC).toContain("tenantId: z.string().uuid().optional()");
+    expect(SRC).toContain('query.eq("org_id", tenantId)');
   });
 
   it("exposes the cost/proration preview endpoints for both surfaces", () => {

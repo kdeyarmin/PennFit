@@ -19,7 +19,7 @@
 import { Router, type IRouter, type Response } from "express";
 import { z } from "zod";
 
-import { getOrgScopedClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import {
   aggregateRevenueBySource,
@@ -57,7 +57,15 @@ function isoDaysAgo(days: number): string {
 async function loadRevenueBySource(cutoff: string, orgId: string) {
   const supabase = getOrgScopedClient(orgId);
 
-  const [shopRes, fulRes, clinicalRes] = await Promise.all([
+  // public.orders is the LEGACY clinical-intake form table (migration 0027):
+  // it has NO org_id column and is written only by the seed tenant's intake
+  // flow, so a head-count of it is meaningful only for the seed tenant.
+  // Counting it for any other tenant would surface a CROSS-TENANT number, so
+  // non-seed tenants get 0 here until the intake table is tenant-scoped.
+  const seedOrgId = await resolveSeedOrgId();
+  const includeClinicalIntake = seedOrgId !== null && orgId === seedOrgId;
+
+  const [shopRes, fulRes] = await Promise.all([
     supabase
       .from("shop_orders")
       .select("status, amount_total_cents", { count: "exact" })
@@ -70,19 +78,9 @@ async function loadRevenueBySource(cutoff: string, orgId: string) {
       .gte("created_at", cutoff)
       .order("created_at", { ascending: false })
       .limit(READ_CAP),
-    // Head-only count — public.orders holds PHI; we never pull its rows.
-    // public.orders is the clinical-intake form table, not a tenant-
-    // scoped resupply table, so it stays on the unscoped service client.
-    supabase
-      .raw()
-      .schema("public")
-      .from("orders")
-      .select("id", { count: "exact", head: true })
-      .gte("created_at", cutoff),
   ]);
   if (shopRes.error) throw shopRes.error;
   if (fulRes.error) throw fulRes.error;
-  if (clinicalRes.error) throw clinicalRes.error;
 
   // Fail fast rather than silently undercount: if either capped read
   // matched more rows than we pulled, the aggregate would be wrong.
@@ -90,10 +88,23 @@ async function loadRevenueBySource(cutoff: string, orgId: string) {
     throw new RevenueWindowTooLargeError(READ_CAP);
   }
 
+  // Head-only count — public.orders holds PHI; we never pull its rows.
+  let clinicalFormOrderCount = 0;
+  if (includeClinicalIntake) {
+    const clinicalRes = await supabase
+      .raw()
+      .schema("public")
+      .from("orders")
+      .select("id", { count: "exact", head: true })
+      .gte("created_at", cutoff);
+    if (clinicalRes.error) throw clinicalRes.error;
+    clinicalFormOrderCount = clinicalRes.count ?? 0;
+  }
+
   return aggregateRevenueBySource({
     shopOrders: (shopRes.data ?? []) as ShopOrderRow[],
     fulfillments: (fulRes.data ?? []) as FulfillmentRow[],
-    clinicalFormOrderCount: clinicalRes.count ?? 0,
+    clinicalFormOrderCount,
   });
 }
 

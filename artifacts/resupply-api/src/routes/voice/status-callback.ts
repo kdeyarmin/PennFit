@@ -195,6 +195,9 @@ router.post("/voice/status-callback", signatureMiddleware, async (req, res) => {
       // Direction is structural (inbound vs outbound), not PHI.
       direction: typeof body.Direction === "string" ? body.Direction : null,
       durationSeconds: parseCallDuration(body.CallDuration),
+      // AMD verdict (human / machine_* / fax / unknown) — structural, not PHI.
+      // Lets the escalation distinguish a live answer from voicemail.
+      answeredBy: typeof body.AnsweredBy === "string" ? body.AnsweredBy : null,
       nowIso: new Date().toISOString(),
     });
   } catch (err) {

@@ -6,6 +6,7 @@ import { Card } from "@/components/admin/Card";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Spinner } from "@/components/admin/Spinner";
 import { useToast } from "@/hooks/use-toast";
+import { AddonExplainer } from "@/lib/admin/addon-details";
 import {
   type BillingAddon,
   type BillingPlan,
@@ -337,6 +338,7 @@ function AddonSelector({
                   {addon.passThroughNote}
                 </p>
               )}
+              <AddonExplainer addon={addon} />
               <div className="mt-4">
                 {!isRecurring ? (
                   <a

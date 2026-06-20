@@ -40,7 +40,7 @@ import { logger } from "./logger";
 /**
  * Every feature flag the catalog supports. Keep this list in lockstep
  * with the seed migration in
- * lib/resupply-db/drizzle/0149_feature_flags.sql — a typo here vs.
+ * lib/resupply-db/migrations/0149_feature_flags.sql — a typo here vs.
  * there means the toggle in the admin UI silently no-ops.
  */
 export const FEATURE_FLAG_KEYS = [
@@ -62,6 +62,7 @@ export const FEATURE_FLAG_KEYS = [
   "billing.auto_submit_claims",
   "billing.eligibility_precheck",
   "billing.eligibility_precheck_refresh",
+  "insurance.discovery",
   "billing.line_ordering_provider",
   "billing.payment_plan_autocharge",
   "billing.patient_autopay",
@@ -72,7 +73,12 @@ export const FEATURE_FLAG_KEYS = [
   "resupply.entitlement_enforcement",
   "resupply.eligibility_enforcement",
   "resupply.usage_compliance_check",
+  "resupply.refill_affirmation_capture",
+  "resupply.refill_window_enforcement",
+  "resupply.auto_order_drafts",
   "reminder_escalation.dispatcher",
+  "reminder_escalation.voice",
+  "voice.breathe_sales",
   "storefront.auto_reminder_enrollment",
   "alerts.auto_dispatch",
   "therapy_fleet.auto_outreach",

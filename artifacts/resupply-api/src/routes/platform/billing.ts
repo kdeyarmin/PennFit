@@ -87,6 +87,73 @@ const previewBody = z.discriminatedUnion("kind", [
     quantity: z.number().int().min(0).max(9999),
   }),
 ]);
+
+// Catalog edits (platform super-admin). These change the BASE plan/addon
+// pricing + presentation that every tenant account and the public
+// marketing page read from, and that the Stripe catalog sync mints prices
+// from. Every field is optional so the UI can PATCH-style send only what
+// changed; an explicit `null` clears a nullable column.
+const catalogCodeParam = z.object({
+  code: z.string().regex(/^[a-z0-9_]+$/),
+});
+const planEditBody = z
+  .object({
+    name: z.string().trim().min(1).max(120).optional(),
+    description: z.string().max(2000).nullable().optional(),
+    monthlyPriceCents: z
+      .number()
+      .int()
+      .min(0)
+      .max(100_000_000)
+      .nullable()
+      .optional(),
+    onboardingFeeCents: z
+      .number()
+      .int()
+      .min(0)
+      .max(100_000_000)
+      .nullable()
+      .optional(),
+    allowances: z.record(z.string(), z.number().int().min(0)).optional(),
+    features: z.array(z.string().max(200)).max(60).optional(),
+    isPublic: z.boolean().optional(),
+    sortOrder: z.number().int().min(0).max(10_000).optional(),
+  })
+  .strict();
+const addonEditBody = z
+  .object({
+    name: z.string().trim().min(1).max(160).optional(),
+    description: z.string().max(2000).nullable().optional(),
+    category: z.string().max(80).optional(),
+    recurringPriceCents: z
+      .number()
+      .int()
+      .min(0)
+      .max(100_000_000)
+      .nullable()
+      .optional(),
+    oneTimeMinCents: z
+      .number()
+      .int()
+      .min(0)
+      .max(100_000_000)
+      .nullable()
+      .optional(),
+    oneTimeMaxCents: z
+      .number()
+      .int()
+      .min(0)
+      .max(100_000_000)
+      .nullable()
+      .optional(),
+    unitLabel: z.string().max(80).nullable().optional(),
+    usageMetric: z.string().max(80).nullable().optional(),
+    passThroughNote: z.string().max(2000).nullable().optional(),
+    isActive: z.boolean().optional(),
+    sortOrder: z.number().int().min(0).max(10_000).optional(),
+  })
+  .strict();
+
 const usageEventBody = z.object({
   tenantId: z.string().uuid().optional(),
   // Allows the camelCase console metric keys (e.g. aiTextInteractionsPerMonth)
@@ -203,6 +270,23 @@ interface OrgDirectoryRow {
 async function rawClient(): Promise<RawClient | null> {
   const seedOrgId = await resolveSeedOrgId();
   return seedOrgId ? getOrgScopedClient(seedOrgId).raw() : null;
+}
+
+// Best-effort push of the catalog to Stripe after a price edit. Fail-soft:
+// Stripe being unconfigured or erroring must never fail the catalog edit —
+// the DB is the source of truth for tenant accounts and the marketing page,
+// and an operator can always re-run the explicit "Sync catalog to Stripe"
+// action. (Editing the price clears the stale immutable Stripe price id, so
+// this sync mints a fresh price at the new amount.)
+async function resyncCatalogToStripe(): Promise<void> {
+  try {
+    await syncPlatformBillingCatalogToStripe();
+  } catch (err) {
+    logger.error(
+      { event: "platform_billing_catalog_edit_stripe_resync_failed", err },
+      "platform billing catalog edit Stripe resync failed (non-fatal)",
+    );
+  }
 }
 
 async function countTable(
@@ -331,7 +415,10 @@ function mapAddon(row: BillingAddonRow) {
   };
 }
 
-async function catalog(res: Response, raw: RawClient): Promise<void> {
+/** Read + map the full catalog, or null on a DB error (already logged). */
+async function loadCatalog(
+  raw: RawClient,
+): Promise<{ plans: unknown[]; addons: unknown[] } | null> {
   const [plans, addons] = await Promise.all([
     raw
       .schema("resupply")
@@ -352,13 +439,71 @@ async function catalog(res: Response, raw: RawClient): Promise<void> {
       },
       "billing catalog read failed",
     );
+    return null;
+  }
+  return {
+    plans: (plans.data ?? []).map(mapPlan),
+    addons: (addons.data ?? []).map(mapAddon),
+  };
+}
+
+async function catalog(res: Response, raw: RawClient): Promise<void> {
+  const data = await loadCatalog(raw);
+  if (!data) {
     res.status(500).json({ error: "billing_catalog_failed" });
     return;
   }
-  res.json({
-    plans: (plans.data ?? []).map(mapPlan),
-    addons: (addons.data ?? []).map(mapAddon),
-  });
+  res.json(data);
+}
+
+const ACTIVE_SUB_STATUSES = ["active", "trialing", "past_due"];
+
+/** How many tenants currently bill the OLD price for this plan and so
+ *  would change on a re-sync: on this plan, no per-tenant custom price,
+ *  and an existing Stripe subscription. */
+async function countTenantsAffectedByPlan(
+  raw: RawClient,
+  planId: string,
+): Promise<number> {
+  const { count, error } = await raw
+    .schema("resupply")
+    .from("tenant_billing_subscriptions")
+    .select("id", { count: "exact", head: true })
+    .eq("plan_id", planId)
+    .in("status", ACTIVE_SUB_STATUSES)
+    .is("custom_monthly_price_cents", null)
+    .not("stripe_subscription_id", "is", null);
+  if (error) return 0;
+  return count ?? 0;
+}
+
+/** How many tenants bill the OLD price for this add-on: have it active with
+ *  no per-tenant custom price, on an org with a live Stripe subscription. */
+async function countTenantsAffectedByAddon(
+  raw: RawClient,
+  addonId: string,
+): Promise<number> {
+  const { data, error } = await raw
+    .schema("resupply")
+    .from("tenant_billing_addons")
+    .select("org_id")
+    .eq("addon_id", addonId)
+    .eq("status", "active")
+    .is("custom_recurring_price_cents", null);
+  if (error) return 0;
+  const orgIds = Array.from(
+    new Set(((data ?? []) as Array<{ org_id: string }>).map((r) => r.org_id)),
+  );
+  if (orgIds.length === 0) return 0;
+  const { count, error: subErr } = await raw
+    .schema("resupply")
+    .from("tenant_billing_subscriptions")
+    .select("id", { count: "exact", head: true })
+    .in("org_id", orgIds)
+    .in("status", ACTIVE_SUB_STATUSES)
+    .not("stripe_subscription_id", "is", null);
+  if (subErr) return 0;
+  return count ?? 0;
 }
 
 async function tenantBilling(orgId: string, res: Response): Promise<void> {
@@ -595,14 +740,17 @@ async function buildBillingPreview(
       .maybeSingle();
     if (error || !addon) return { ok: false, error: "addon_not_found" };
     const existing = state.addonByCode.get(change.addonCode);
-    // Catalog rate for a not-yet-active add-on; keep the existing (possibly
-    // custom) unit price when one is already on the subscription.
-    const unitCents =
-      existing?.unitCents ??
-      (addon.recurring_price_cents as number | null) ??
-      0;
-    const currentContribution = (existing?.quantity ?? 0) * unitCents;
-    const newContribution = change.quantity * unitCents;
+    const catalogUnit = (addon.recurring_price_cents as number | null) ?? 0;
+    // The current line bills at whatever unit is on the subscription today —
+    // which may be a platform-set custom price.
+    const currentUnit = existing?.unitCents ?? catalogUnit;
+    // The new line bills at the CATALOG rate: both UI save paths driven by
+    // this preview clear any custom price (tenant self-service writes
+    // custom_recurring_price_cents=null; the platform add-on editor sends no
+    // custom price), so the projected total must use catalog pricing or it
+    // would mis-state what the save actually charges.
+    const currentContribution = (existing?.quantity ?? 0) * currentUnit;
+    const newContribution = change.quantity * catalogUnit;
     newMonthlyCents =
       currentMonthlyCents - currentContribution + newContribution;
     changeLabel =
@@ -714,74 +862,22 @@ router.post(
       res.status(403).json({ error: "plan_not_self_selectable" });
       return;
     }
-    // Carry the existing Stripe identity forward when switching plans. The
-    // new active row must keep the prior stripe_customer_id /
-    // stripe_subscription_id / stripe_account_ref so the subsequent
-    // syncTenantStripeSubscription() UPDATES the existing Stripe
-    // subscription (swapping its line items to the new plan) instead of
-    // creating a second one — leaving the old subscription billing would
-    // double-charge the tenant.
-    const { data: prior, error: priorErr } = await raw
+    // Switch plans atomically. The cancel-then-insert (carrying the prior
+    // Stripe linkage forward so syncTenantStripeSubscription() UPDATES the
+    // existing Stripe subscription instead of creating a second one) runs
+    // inside a single SECURITY DEFINER transaction (migration 0389) with a
+    // FOR UPDATE lock on the row being replaced. This guarantees the tenant
+    // is never left with zero current subscriptions if the insert fails, and
+    // serializes concurrent double-clicks against the
+    // tenant_billing_one_current_plan_uq partial unique index.
+    const { error: swapErr } = await raw
       .schema("resupply")
-      .from("tenant_billing_subscriptions")
-      .select(
-        "stripe_customer_id, stripe_subscription_id, stripe_account_ref, stripe_status, current_period_start, current_period_end, last_invoice_id, last_invoice_status",
-      )
-      .eq("org_id", req.orgId)
-      .in("status", ["active", "trialing", "past_due"])
-      .limit(1)
-      .maybeSingle();
-    if (priorErr) {
-      res.status(500).json({ error: "subscription_update_failed" });
-      return;
-    }
-    const { error: cancelErr } = await raw
-      .schema("resupply")
-      .from("tenant_billing_subscriptions")
-      .update({
-        status: "canceled",
-        updated_at: new Date().toISOString(),
-        updated_by_email: req.adminEmail ?? null,
-        // MOVE the Stripe linkage off the canceled row onto the new active
-        // row below. tenant_billing_subscriptions has a partial UNIQUE index
-        // on stripe_subscription_id (migration 0363), so the same id can
-        // live on only one row — leaving it here would make the carry-forward
-        // insert violate the index and fail the plan change.
-        stripe_customer_id: null,
-        stripe_subscription_id: null,
-        stripe_account_ref: null,
-        stripe_status: null,
-        current_period_start: null,
-        current_period_end: null,
-        last_invoice_id: null,
-        last_invoice_status: null,
-      })
-      .eq("org_id", req.orgId)
-      .in("status", ["active", "trialing", "past_due"]);
-    if (cancelErr) {
-      res.status(500).json({ error: "subscription_update_failed" });
-      return;
-    }
-    const { error: insErr } = await raw
-      .schema("resupply")
-      .from("tenant_billing_subscriptions")
-      .insert({
-        org_id: req.orgId,
-        plan_id: plan.id,
-        status: "active",
-        notes: "",
-        updated_by_email: req.adminEmail ?? null,
-        // Preserve the live Stripe linkage from the plan being replaced.
-        stripe_customer_id: prior?.stripe_customer_id ?? null,
-        stripe_subscription_id: prior?.stripe_subscription_id ?? null,
-        stripe_account_ref: prior?.stripe_account_ref ?? null,
-        stripe_status: prior?.stripe_status ?? null,
-        current_period_start: prior?.current_period_start ?? null,
-        current_period_end: prior?.current_period_end ?? null,
-        last_invoice_id: prior?.last_invoice_id ?? null,
-        last_invoice_status: prior?.last_invoice_status ?? null,
+      .rpc("swap_tenant_subscription", {
+        p_org_id: req.orgId,
+        p_plan_id: plan.id,
+        p_updated_by_email: req.adminEmail ?? null,
       });
-    if (insErr) {
+    if (swapErr) {
       res.status(500).json({ error: "subscription_update_failed" });
       return;
     }
@@ -1145,6 +1241,273 @@ router.get(
   },
 );
 
+// ── PUT /platform/billing/catalog/plans/:code ───────────────────────
+// Edit a subscription plan's BASE pricing + presentation. This is the
+// catalog row every tenant account and the public marketing page read
+// from, and the source the Stripe catalog sync mints prices from — so an
+// edit here populates all three. When the monthly price actually changes
+// we clear the stored (immutable) Stripe price id so the follow-up sync
+// mints a fresh Stripe price at the new amount (the product id is reused),
+// then best-effort re-sync the catalog to Stripe. A Stripe hiccup never
+// fails the edit: the DB is the source of truth for tenant accounts + the
+// marketing page.
+router.put(
+  "/platform/billing/catalog/plans/:code",
+  adminWriteRateLimiter,
+  requirePlatformAdmin,
+  async (req: Request, res: Response): Promise<void> => {
+    const param = catalogCodeParam.safeParse(req.params);
+    const body = planEditBody.safeParse(req.body);
+    if (!param.success) {
+      res.status(400).json({ error: "invalid_code" });
+      return;
+    }
+    if (!body.success) {
+      res
+        .status(400)
+        .json({ error: "invalid_plan", details: body.error.flatten() });
+      return;
+    }
+    const raw = await rawClient();
+    if (!raw) {
+      res.status(503).json({ error: "tenant_directory_unavailable" });
+      return;
+    }
+    const { data: existing, error: exErr } = await raw
+      .schema("resupply")
+      .from("billing_plans")
+      .select("*")
+      .eq("code", param.data.code)
+      .maybeSingle();
+    if (exErr || !existing) {
+      res.status(404).json({ error: "plan_not_found" });
+      return;
+    }
+    const b = body.data;
+    const patch: Record<string, unknown> = {
+      updated_at: new Date().toISOString(),
+    };
+    if (b.name !== undefined) patch.name = b.name;
+    if (b.description !== undefined) patch.description = b.description;
+    if (b.monthlyPriceCents !== undefined)
+      patch.monthly_price_cents = b.monthlyPriceCents;
+    if (b.onboardingFeeCents !== undefined)
+      patch.onboarding_fee_cents = b.onboardingFeeCents;
+    if (b.allowances !== undefined) patch.allowances = b.allowances;
+    if (b.features !== undefined) patch.features = b.features;
+    if (b.isPublic !== undefined) patch.is_public = b.isPublic;
+    if (b.sortOrder !== undefined) patch.sort_order = b.sortOrder;
+
+    const priceChanged =
+      b.monthlyPriceCents !== undefined &&
+      (b.monthlyPriceCents ?? null) !== (existing.monthly_price_cents ?? null);
+    if (priceChanged) {
+      patch.stripe_price_id = null;
+      patch.stripe_synced_at = null;
+    }
+
+    const { error: updErr } = await raw
+      .schema("resupply")
+      .from("billing_plans")
+      .update(patch)
+      .eq("id", existing.id);
+    if (updErr) {
+      res.status(500).json({ error: "plan_update_failed" });
+      return;
+    }
+    await logAudit({
+      action: "platform.billing.catalog.plan.updated",
+      adminEmail: req.platformAdminEmail ?? "platform-admin",
+      adminUserId: req.platformAdminUserId ?? null,
+      targetTable: "billing_plans",
+      targetId: existing.id,
+      metadata: { code: param.data.code, priceChanged },
+      ip: null,
+      userAgent: null,
+    }).catch(() => undefined);
+    // When the price changed: re-mint the catalog Stripe price, and report
+    // how many tenants still bill the old amount so the UI can offer a
+    // deliberate re-sync (we never auto-reprice live tenant subscriptions).
+    const affectedTenants = priceChanged
+      ? await countTenantsAffectedByPlan(raw, existing.id)
+      : 0;
+    if (priceChanged) await resyncCatalogToStripe();
+    const data = await loadCatalog(raw);
+    if (!data) {
+      res.status(500).json({ error: "billing_catalog_failed" });
+      return;
+    }
+    res.json({ ...data, affectedTenants });
+  },
+);
+
+// ── PUT /platform/billing/catalog/addons/:code ──────────────────────
+// Edit an add-on's BASE pricing + presentation (recurring or one-time).
+// Same populate-everywhere + Stripe-reprice posture as the plan edit
+// above; the immutable Stripe price is reminted only when the recurring
+// price actually changes.
+router.put(
+  "/platform/billing/catalog/addons/:code",
+  adminWriteRateLimiter,
+  requirePlatformAdmin,
+  async (req: Request, res: Response): Promise<void> => {
+    const param = catalogCodeParam.safeParse(req.params);
+    const body = addonEditBody.safeParse(req.body);
+    if (!param.success) {
+      res.status(400).json({ error: "invalid_code" });
+      return;
+    }
+    if (!body.success) {
+      res
+        .status(400)
+        .json({ error: "invalid_addon", details: body.error.flatten() });
+      return;
+    }
+    const raw = await rawClient();
+    if (!raw) {
+      res.status(503).json({ error: "tenant_directory_unavailable" });
+      return;
+    }
+    const { data: existing, error: exErr } = await raw
+      .schema("resupply")
+      .from("billing_addons")
+      .select("*")
+      .eq("code", param.data.code)
+      .maybeSingle();
+    if (exErr || !existing) {
+      res.status(404).json({ error: "addon_not_found" });
+      return;
+    }
+    const b = body.data;
+    const patch: Record<string, unknown> = {
+      updated_at: new Date().toISOString(),
+    };
+    if (b.name !== undefined) patch.name = b.name;
+    if (b.description !== undefined) patch.description = b.description;
+    if (b.category !== undefined) patch.category = b.category;
+    if (b.recurringPriceCents !== undefined)
+      patch.recurring_price_cents = b.recurringPriceCents;
+    if (b.oneTimeMinCents !== undefined)
+      patch.one_time_min_cents = b.oneTimeMinCents;
+    if (b.oneTimeMaxCents !== undefined)
+      patch.one_time_max_cents = b.oneTimeMaxCents;
+    if (b.unitLabel !== undefined) patch.unit_label = b.unitLabel;
+    if (b.usageMetric !== undefined) patch.usage_metric = b.usageMetric;
+    if (b.passThroughNote !== undefined)
+      patch.pass_through_note = b.passThroughNote;
+    if (b.isActive !== undefined) patch.is_active = b.isActive;
+    if (b.sortOrder !== undefined) patch.sort_order = b.sortOrder;
+
+    const priceChanged =
+      b.recurringPriceCents !== undefined &&
+      (b.recurringPriceCents ?? null) !==
+        (existing.recurring_price_cents ?? null);
+    if (priceChanged) {
+      patch.stripe_price_id = null;
+      patch.stripe_synced_at = null;
+    }
+
+    const { error: updErr } = await raw
+      .schema("resupply")
+      .from("billing_addons")
+      .update(patch)
+      .eq("id", existing.id);
+    if (updErr) {
+      res.status(500).json({ error: "addon_update_failed" });
+      return;
+    }
+    await logAudit({
+      action: "platform.billing.catalog.addon.updated",
+      adminEmail: req.platformAdminEmail ?? "platform-admin",
+      adminUserId: req.platformAdminUserId ?? null,
+      targetTable: "billing_addons",
+      targetId: existing.id,
+      metadata: { code: param.data.code, priceChanged },
+      ip: null,
+      userAgent: null,
+    }).catch(() => undefined);
+    const affectedTenants = priceChanged
+      ? await countTenantsAffectedByAddon(raw, existing.id)
+      : 0;
+    if (priceChanged) await resyncCatalogToStripe();
+    const data = await loadCatalog(raw);
+    if (!data) {
+      res.status(500).json({ error: "billing_catalog_failed" });
+      return;
+    }
+    res.json({ ...data, affectedTenants });
+  },
+);
+
+// ── POST /platform/billing/tenants/resync-stripe ────────────────────
+// Re-sync every tenant's live Stripe subscription to the CURRENT catalog
+// (and per-tenant custom) pricing. The deliberate counterpart to a catalog
+// price edit: editing the catalog never auto-reprices live subscriptions
+// (that would prorate every tenant unexpectedly); the operator triggers
+// this when they're ready to roll the new price out. Tenants with a custom
+// override re-resolve to their custom price (a no-op), so running it over
+// everyone is safe. Best-effort per tenant; one failure doesn't abort.
+router.post(
+  "/platform/billing/tenants/resync-stripe",
+  adminWriteRateLimiter,
+  requirePlatformAdmin,
+  async (req: Request, res: Response): Promise<void> => {
+    const raw = await rawClient();
+    if (!raw) {
+      res.status(503).json({ error: "tenant_directory_unavailable" });
+      return;
+    }
+    const { data, error } = await raw
+      .schema("resupply")
+      .from("tenant_billing_subscriptions")
+      .select("org_id")
+      .in("status", ACTIVE_SUB_STATUSES)
+      .not("stripe_subscription_id", "is", null);
+    if (error) {
+      res.status(500).json({ error: "tenant_resync_failed" });
+      return;
+    }
+    const orgIds = Array.from(
+      new Set(((data ?? []) as Array<{ org_id: string }>).map((r) => r.org_id)),
+    );
+    let synced = 0;
+    let failed = 0;
+    for (const orgId of orgIds) {
+      try {
+        await syncTenantStripeSubscription({
+          orgId,
+          adminEmail: req.platformAdminEmail ?? null,
+        });
+        synced += 1;
+      } catch (err) {
+        failed += 1;
+        if (err instanceof PlatformBillingAccountChangedError) {
+          logger.warn(
+            { event: "tenant_resync_account_changed", orgId },
+            "tenant Stripe resync skipped — account changed",
+          );
+        } else {
+          logger.error(
+            { event: "tenant_resync_failed", orgId, err },
+            "tenant Stripe resync failed",
+          );
+        }
+      }
+    }
+    await logAudit({
+      action: "platform.billing.tenants.stripe.resynced",
+      adminEmail: req.platformAdminEmail ?? "platform-admin",
+      adminUserId: req.platformAdminUserId ?? null,
+      targetTable: "tenant_billing_subscriptions",
+      targetId: "fleet",
+      metadata: { total: orgIds.length, synced, failed },
+      ip: null,
+      userAgent: null,
+    }).catch(() => undefined);
+    res.json({ total: orgIds.length, synced, failed });
+  },
+);
+
 // ── GET /platform/billing/summary ───────────────────────────────────
 // Fleet recurring-revenue (MRR) rollup for the super-admin dashboard:
 // total MRR, ARPU, paying/trialing/past-due counts, and an MRR-by-plan
@@ -1429,73 +1792,27 @@ router.put(
       res.status(404).json({ error: "plan_not_found" });
       return;
     }
-    const { data: priorSub, error: priorSubErr } = await raw
+    // Assign the plan atomically. The cancel-then-insert — carrying the live
+    // Stripe linkage forward so a later syncTenantStripeSubscription() UPDATES
+    // the existing subscription instead of creating a second one and leaving
+    // the old one billing — runs inside a single SECURITY DEFINER transaction
+    // (migration 0389) with a FOR UPDATE lock on the row being replaced. The
+    // tenant is never left with zero current subscriptions if the insert
+    // fails. Carries the operator-chosen status + custom pricing + notes.
+    const { error: assignErr } = await raw
       .schema("resupply")
-      .from("tenant_billing_subscriptions")
-      .select(
-        "stripe_customer_id, stripe_subscription_id, stripe_account_ref, stripe_status, current_period_start, current_period_end, last_invoice_id, last_invoice_status",
-      )
-      .eq("org_id", param.data.id)
-      .in("status", ["active", "trialing", "past_due"])
-      .limit(1)
-      .maybeSingle();
-    if (priorSubErr) {
-      res.status(500).json({ error: "subscription_update_failed" });
-      return;
-    }
-    const { error: cancelErr } = await raw
-      .schema("resupply")
-      .from("tenant_billing_subscriptions")
-      .update({
-        status: "canceled",
-        updated_at: new Date().toISOString(),
-        updated_by_email: req.platformAdminEmail ?? null,
-        // MOVE the Stripe linkage off the canceled row onto the new active
-        // row below — the partial UNIQUE index on stripe_subscription_id
-        // (migration 0363) allows the id on only one row, so leaving it here
-        // would make the carry-forward insert violate the index.
-        stripe_customer_id: null,
-        stripe_subscription_id: null,
-        stripe_account_ref: null,
-        stripe_status: null,
-        current_period_start: null,
-        current_period_end: null,
-        last_invoice_id: null,
-        last_invoice_status: null,
-      })
-      .eq("org_id", param.data.id)
-      .in("status", ["active", "trialing", "past_due"]);
-    if (cancelErr) {
-      res.status(500).json({ error: "subscription_update_failed" });
-      return;
-    }
-    const { error: insErr } = await raw
-      .schema("resupply")
-      .from("tenant_billing_subscriptions")
-      .insert({
-        org_id: param.data.id,
-        plan_id: plan.id,
-        status: body.data.status,
-        custom_monthly_price_cents: body.data.customMonthlyPriceCents ?? null,
-        custom_onboarding_fee_cents: body.data.customOnboardingFeeCents ?? null,
-        custom_allowances: body.data.customAllowances ?? {},
-        notes: body.data.notes ?? "",
-        updated_by_email: req.platformAdminEmail ?? null,
-        // Carry the live Stripe linkage forward so a later
-        // syncTenantStripeSubscription() UPDATES the existing subscription
-        // (swapping its line items to the new plan) instead of creating a
-        // second one and leaving the old one billing — see the same guard
-        // on the tenant self-select route.
-        stripe_customer_id: priorSub?.stripe_customer_id ?? null,
-        stripe_subscription_id: priorSub?.stripe_subscription_id ?? null,
-        stripe_account_ref: priorSub?.stripe_account_ref ?? null,
-        stripe_status: priorSub?.stripe_status ?? null,
-        current_period_start: priorSub?.current_period_start ?? null,
-        current_period_end: priorSub?.current_period_end ?? null,
-        last_invoice_id: priorSub?.last_invoice_id ?? null,
-        last_invoice_status: priorSub?.last_invoice_status ?? null,
+      .rpc("assign_tenant_subscription", {
+        p_org_id: param.data.id,
+        p_plan_id: plan.id,
+        p_status: body.data.status,
+        p_custom_monthly_price_cents: body.data.customMonthlyPriceCents ?? null,
+        p_custom_onboarding_fee_cents:
+          body.data.customOnboardingFeeCents ?? null,
+        p_custom_allowances: body.data.customAllowances ?? {},
+        p_notes: body.data.notes ?? "",
+        p_updated_by_email: req.platformAdminEmail ?? null,
       });
-    if (insErr) {
+    if (assignErr) {
       res.status(500).json({ error: "subscription_update_failed" });
       return;
     }
@@ -1714,6 +2031,11 @@ const billingActivityQuery = z.object({
       if (!Number.isFinite(n) || n <= 0) return 25;
       return Math.min(n, 100);
     }),
+  // Optional tenant filter — scopes the feed to a single org so the panel
+  // can show one tenant's billing history. `.catch` keeps a bad/empty
+  // tenantId from failing the whole parse (which would also drop a valid
+  // `limit`): an invalid value just disables the filter (→ unfiltered).
+  tenantId: z.string().uuid().optional().catch(undefined),
 });
 
 interface BillingEventRow {
@@ -1734,17 +2056,20 @@ router.get(
   async (req, res): Promise<void> => {
     const parsed = billingActivityQuery.safeParse(req.query);
     const limit = parsed.success ? parsed.data.limit : 25;
+    const tenantId = parsed.success ? parsed.data.tenantId : undefined;
     const raw = await rawClient();
     if (!raw) {
       res.status(503).json({ error: "tenant_directory_unavailable" });
       return;
     }
-    const { data, error } = await raw
+    let query = raw
       .schema("resupply")
       .from("tenant_billing_events")
       .select(
         "id, org_id, action, actor, operator_email, summary, metadata, occurred_at",
-      )
+      );
+    if (tenantId) query = query.eq("org_id", tenantId);
+    const { data, error } = await query
       .order("occurred_at", { ascending: false })
       .limit(limit);
     if (error) {

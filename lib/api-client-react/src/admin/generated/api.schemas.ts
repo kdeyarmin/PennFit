@@ -885,6 +885,11 @@ export interface PatientDetail {
   lastName: string;
   status: PatientDetailStatus;
   hasPhone: boolean;
+  /** Classified phone line type (cell vs. landline/VoIP), or null when not
+   *  yet classified. Drives whether bulk SMS may target this number. */
+  phoneLineType?: "mobile" | "landline" | "voip" | "unknown" | null;
+  /** How phoneLineType was set: 'lookup' (Twilio) or 'manual' (override). */
+  phoneLineTypeSource?: "lookup" | "manual" | null;
   hasEmail: boolean;
   /** Free-text payer name set by an admin. Used as a match
 target by frequency_rules. NULL means no payer recorded.
@@ -938,6 +943,16 @@ when there is no portal account / no matching customer. Drives the
 "view customer record" jump on the detail page.
  */
   linkedCustomerUserId?: string | null;
+  /** Whether the patient has given express written consent to receive
+marketing SMS (TCPA opt-in). false = no consent on file (default).
+Settable via PATCH /patients/{id}. */
+  smsMarketingConsent: boolean;
+  /** ISO timestamp of when smsMarketingConsent was last changed, or null
+when it has never been explicitly set. */
+  smsMarketingConsentAt?: string | null;
+  /** Who recorded the consent: 'staff' (admin via settings panel) or
+'portal' (patient self-served). Null when consent has never been set. */
+  smsMarketingConsentSource?: "staff" | "portal" | null;
 }
 
 export type ConversationListItemChannel =
@@ -1289,6 +1304,16 @@ export const PatientUpdateStatus = {
   closed: "closed",
 } as const;
 
+export type PatientUpdatePhoneLineType =
+  (typeof PatientUpdatePhoneLineType)[keyof typeof PatientUpdatePhoneLineType];
+
+export const PatientUpdatePhoneLineType = {
+  mobile: "mobile",
+  landline: "landline",
+  voip: "voip",
+  unknown: "unknown",
+} as const;
+
 /**
  * Body for PATCH /patients/{id}. All fields are independently
 optional; sending `null` explicitly clears the field, omitting
@@ -1320,6 +1345,12 @@ backfill path for patients created before PacWare knew them.
    */
   cadenceOverrideDays?: number | null;
   channelPreference?: PatientUpdateChannelPreference;
+  /** Manual override of the phone line type (cell vs. landline/VoIP).
+A concrete value is authoritative and the Twilio Lookup backfill
+never overwrites it; null clears the override so a future lookup
+can re-classify. Drives whether bulk SMS may target this number.
+ */
+  phoneLineType?: PatientUpdatePhoneLineType | null;
   /** Business branch (location) servicing this patient. A uuid
 assigns the patient to that location (must reference an active
 location, else 422 invalid_location); null clears the
@@ -1338,6 +1369,12 @@ saw. Echo back the `updatedAt` field returned by
 GET /patients/{id} or a prior PATCH response.
  */
   expectedUpdatedAt?: string;
+  /** Express written consent for marketing SMS (TCPA opt-in).
+true = consent recorded; false = consent withdrawn / not given.
+When set, the server stamps sms_marketing_consent_at and records
+source='staff'.
+ */
+  smsMarketingConsent?: boolean;
 }
 
 /**

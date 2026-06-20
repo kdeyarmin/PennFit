@@ -52,6 +52,8 @@ export interface BillingAddon {
   unitLabel: string | null;
   usageMetric: string | null;
   passThroughNote: string | null;
+  isActive?: boolean | null;
+  sortOrder?: number | null;
   stripeProductId?: string | null;
   stripePriceId?: string | null;
   stripeSyncedAt?: string | null;
@@ -199,16 +201,95 @@ export interface BillingActivityEvent {
   occurredAt: string;
 }
 
+/** Recent billing activity across the fleet. Pass `tenantId` to scope the
+ *  feed to a single tenant's billing history. */
 export function fetchPlatformBillingActivity(
   limit = 25,
+  tenantId?: string,
 ): Promise<{ activity: BillingActivityEvent[] }> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (tenantId) params.set("tenantId", tenantId);
   return jsonFetch<{ activity: BillingActivityEvent[] }>(
-    `/platform/billing/activity?limit=${encodeURIComponent(String(limit))}`,
+    `/platform/billing/activity?${params.toString()}`,
   );
 }
 
 export function fetchPlatformBillingCatalog(): Promise<BillingCatalogResponse> {
   return jsonFetch<BillingCatalogResponse>("/platform/billing/catalog");
+}
+
+/** Editable fields on a catalog plan. Only the keys present are changed;
+ *  an explicit `null` clears a nullable column. A monthly-price change
+ *  re-mints the plan's Stripe price on the server (best-effort). */
+export interface CatalogPlanEdit {
+  name?: string;
+  description?: string | null;
+  monthlyPriceCents?: number | null;
+  onboardingFeeCents?: number | null;
+  allowances?: Record<string, number>;
+  features?: string[];
+  isPublic?: boolean;
+  sortOrder?: number;
+}
+
+/** Editable fields on a catalog add-on. */
+export interface CatalogAddonEdit {
+  name?: string;
+  description?: string | null;
+  category?: string;
+  recurringPriceCents?: number | null;
+  oneTimeMinCents?: number | null;
+  oneTimeMaxCents?: number | null;
+  unitLabel?: string | null;
+  usageMetric?: string | null;
+  passThroughNote?: string | null;
+  isActive?: boolean;
+  sortOrder?: number;
+}
+
+/** A catalog edit returns the refreshed catalog plus, on a price change,
+ *  the count of tenants still billing the OLD price (existing Stripe
+ *  subscriptions aren't auto-repriced — the operator re-syncs deliberately
+ *  via {@link resyncTenantStripeSubscriptions}). */
+export interface CatalogEditResponse extends BillingCatalogResponse {
+  affectedTenants?: number;
+}
+
+/** Edit a plan's base pricing/presentation. The change populates to every
+ *  tenant account, the public marketing page, and (on a price change)
+ *  Stripe. Returns the refreshed catalog + affected-tenant count. */
+export function updateCatalogPlan(
+  code: string,
+  edit: CatalogPlanEdit,
+): Promise<CatalogEditResponse> {
+  return jsonFetch<CatalogEditResponse>(
+    `/platform/billing/catalog/plans/${encodeURIComponent(code)}`,
+    { method: "PUT", body: JSON.stringify(edit) },
+  );
+}
+
+/** Re-sync every tenant's live Stripe subscription to the current catalog
+ *  (+ custom) pricing. The deliberate counterpart to a catalog price edit. */
+export function resyncTenantStripeSubscriptions(): Promise<{
+  total: number;
+  synced: number;
+  failed: number;
+}> {
+  return jsonFetch("/platform/billing/tenants/resync-stripe", {
+    method: "POST",
+  });
+}
+
+/** Edit an add-on's base pricing/presentation. Returns the refreshed
+ *  catalog + affected-tenant count. */
+export function updateCatalogAddon(
+  code: string,
+  edit: CatalogAddonEdit,
+): Promise<CatalogEditResponse> {
+  return jsonFetch<CatalogEditResponse>(
+    `/platform/billing/catalog/addons/${encodeURIComponent(code)}`,
+    { method: "PUT", body: JSON.stringify(edit) },
+  );
 }
 
 // ── Fleet recurring-revenue (MRR) summary ───────────────────────────

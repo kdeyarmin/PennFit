@@ -121,9 +121,13 @@ router.get(
           .select("id, name, is_active")
           .order("name", { ascending: true })
           .limit(500),
-        // The rollup RPC is not org-aware; keep it on the unscoped
-        // client until a tenant-scoped RPC exists.
-        supabase.raw().schema("resupply").rpc("location_rollup"),
+        // The rollup RPC is tenant-scoped (migration 0387): it filters
+        // patients + admin_users by p_org_id internally, so a SECURITY
+        // DEFINER body can't leak across tenants.
+        supabase
+          .raw()
+          .schema("resupply")
+          .rpc("location_rollup", { p_org_id: orgId }),
       ]);
     if (locErr) throw locErr;
     if (rollErr) throw rollErr;

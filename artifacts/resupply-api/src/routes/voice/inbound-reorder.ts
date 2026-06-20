@@ -252,7 +252,7 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
   // conversation is bound to the shop customer (customer_id) and the agent
   // runs in "shop_customer" mode. Falls back to a human on any hiccup.
   if (!patientId && shopCustomerId && !ambiguous) {
-    if (!(await isFeatureEnabled("voice.agent", req.orgId))) {
+    if (!(await isFeatureEnabled("voice.agent", orgId))) {
       logger.info(
         { event: "voice.inbound-reorder.agent_disabled", callSid: CallSid },
         "voice.inbound-reorder: voice agent disabled; transferring shop caller",
@@ -398,7 +398,7 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
   // the unchanged WS upgrade handler then claims it and runs the bridge.
   // Anything else falls back to a human, which is strictly better than
   // greeting the caller and dropping them.
-  if (!(await isFeatureEnabled("voice.agent", req.orgId))) {
+  if (!(await isFeatureEnabled("voice.agent", orgId))) {
     logger.info(
       { event: "voice.inbound-reorder.agent_disabled", callSid: CallSid },
       "voice.inbound-reorder: voice agent disabled; transferring to human",

@@ -19,6 +19,7 @@ import { Lock, Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { useBiometricLockPreference } from "@/hooks/use-biometric-lock-preference";
+import { useCompanyContact } from "@/lib/contact";
 import {
   isNativeApp,
   promptBiometric,
@@ -36,6 +37,7 @@ type GateState =
 
 export function BiometricLockGate({ children }: { children: ReactNode }) {
   const pref = useBiometricLockPreference();
+  const c = useCompanyContact();
   const [state, setState] = useState<GateState>({ kind: "checking" });
 
   useEffect(() => {
@@ -70,7 +72,7 @@ export function BiometricLockGate({ children }: { children: ReactNode }) {
 
   const tryUnlock = async () => {
     setState({ kind: "checking" });
-    const result = await promptBiometric("Unlock PennPaps");
+    const result = await promptBiometric(`Unlock ${c.name}`);
     if (result.kind === "ok") {
       try {
         window.sessionStorage.setItem(SESSION_FLAG, "1");
@@ -84,9 +86,9 @@ export function BiometricLockGate({ children }: { children: ReactNode }) {
       const platform = getNativePlatform();
       const settingsPath =
         platform === "ios"
-          ? "Settings → PennPaps → Face ID & Passcode"
+          ? `Settings → ${c.name} → Face ID & Passcode`
           : platform === "android"
-            ? "Settings → Apps → PennPaps → Permissions"
+            ? `Settings → Apps → ${c.name} → Permissions`
             : "your device's app settings";
       setState({
         kind: "denied",
@@ -123,7 +125,7 @@ export function BiometricLockGate({ children }: { children: ReactNode }) {
           Locked
         </h1>
         <p className="text-xs text-muted-foreground mt-1.5">
-          You asked PennPaps to require Face ID / Touch ID before opening your
+          You asked {c.name} to require Face ID / Touch ID before opening your
           account. One quick scan and you&apos;re back in.
         </p>
 
