@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 
 import {
+  abnCoversHcpcs,
+  buildAbnScope,
   resolveModifiersFromRules,
   ruleApplies,
   type ModifierRuleContext,
@@ -90,5 +92,46 @@ describe("resolveModifiersFromRules", () => {
       { condition: "always", modifiers_csv: "KX, , TOOLONG, K", priority: 1 },
     ];
     expect(resolveModifiersFromRules(bad, baseCtx)).toEqual(["KX"]);
+  });
+});
+
+describe("buildAbnScope / abnCoversHcpcs", () => {
+  it("no ABN acks → covers nothing", () => {
+    const scope = buildAbnScope([]);
+    expect(scope.coversAll).toBe(false);
+    expect(abnCoversHcpcs(scope, "E0601")).toBe(false);
+  });
+
+  it("a general ABN (null/empty hcpcs_codes) covers every line", () => {
+    expect(
+      abnCoversHcpcs(buildAbnScope([{ hcpcs_codes: null }]), "E0601"),
+    ).toBe(true);
+    expect(abnCoversHcpcs(buildAbnScope([{ hcpcs_codes: [] }]), "A7030")).toBe(
+      true,
+    );
+  });
+
+  it("an item-scoped ABN covers only its listed HCPCS", () => {
+    const scope = buildAbnScope([{ hcpcs_codes: ["E0601", "A7030"] }]);
+    expect(scope.coversAll).toBe(false);
+    expect(abnCoversHcpcs(scope, "E0601")).toBe(true);
+    expect(abnCoversHcpcs(scope, "A7030")).toBe(true);
+    // A different item the patient never signed an ABN for is NOT covered.
+    expect(abnCoversHcpcs(scope, "E0470")).toBe(false);
+  });
+
+  it("normalises case/whitespace on both sides", () => {
+    const scope = buildAbnScope([{ hcpcs_codes: [" e0601 "] }]);
+    expect(abnCoversHcpcs(scope, "e0601")).toBe(true);
+    expect(abnCoversHcpcs(scope, " E0601")).toBe(true);
+  });
+
+  it("a general ABN unions with an item-scoped one → covers all", () => {
+    const scope = buildAbnScope([
+      { hcpcs_codes: ["E0601"] },
+      { hcpcs_codes: null },
+    ]);
+    expect(scope.coversAll).toBe(true);
+    expect(abnCoversHcpcs(scope, "E0470")).toBe(true);
   });
 });

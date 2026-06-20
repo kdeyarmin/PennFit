@@ -87,3 +87,49 @@ export function resolveModifiersFromRules(
   }
   return mods;
 }
+
+// ── ABN scope ──────────────────────────────────────────────────────────────
+//
+// A signed ABN is item-specific in practice: the patient accepts liability for
+// a particular expected-non-coverage item, identified by its HCPCS. These pure
+// helpers turn a patient's signed ABN acknowledgement rows into a per-line
+// answer so `isAbnOnFile` is set correctly for EACH billed HCPCS rather than
+// flipped on for the whole claim by any one ABN. See migration 0417.
+
+/** A signed-ABN footprint for one patient. */
+export interface AbnScope {
+  /** A GENERAL (un-scoped) ABN is on file — applies to every line. */
+  coversAll: boolean;
+  /** HCPCS explicitly covered by item-scoped ABNs (normalised upper-case). */
+  codes: ReadonlySet<string>;
+}
+
+/**
+ * Build an {@link AbnScope} from a patient's signed ABN acknowledgement rows.
+ * A row with no `hcpcs_codes` (NULL/empty) is a GENERAL ABN and covers every
+ * line; a row with codes scopes the ABN to only those HCPCS. Mixed rows
+ * union: a general ABN plus an item-scoped one still covers everything.
+ */
+export function buildAbnScope(
+  acks: ReadonlyArray<{ hcpcs_codes: string[] | null }>,
+): AbnScope {
+  let coversAll = false;
+  const codes = new Set<string>();
+  for (const ack of acks) {
+    const list = ack.hcpcs_codes;
+    if (!list || list.length === 0) {
+      coversAll = true;
+      continue;
+    }
+    for (const c of list) {
+      const norm = c.trim().toUpperCase();
+      if (norm) codes.add(norm);
+    }
+  }
+  return { coversAll, codes };
+}
+
+/** Whether a signed ABN is on file for a specific billed HCPCS line. */
+export function abnCoversHcpcs(scope: AbnScope, hcpcsCode: string): boolean {
+  return scope.coversAll || scope.codes.has(hcpcsCode.trim().toUpperCase());
+}

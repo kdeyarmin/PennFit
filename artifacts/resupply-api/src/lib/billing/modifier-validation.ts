@@ -12,10 +12,11 @@
 // claim preflight gate and any line editor that wants to warn inline, and
 // is exhaustively unit-tested.
 //
-// The rules encoded here are the unambiguous hard contradictions only —
-// payer-specific nuances (e.g. bilateral RT/LT two-line conventions) are
-// intentionally NOT flagged here to keep the validator free of false
-// positives.
+// `validateModifierCombination` encodes the unambiguous HARD contradictions
+// (error severity — the payer rejects the line as unprocessable).
+// `findModifierAdvisories` covers softer, payer-sensitive conventions
+// (warning severity) — e.g. the bilateral RT/LT two-line rule — kept
+// separate so the hard validator stays free of false positives.
 
 /** Coverage / liability attestation modifiers. */
 const KX = "KX"; // coverage criteria on file ARE met — expect payment
@@ -36,6 +37,10 @@ const UE = "UE"; // purchased used
 
 /** Capped-rental month-band modifiers — at most one per line. */
 const CAPPED_RENTAL_MONTHS = ["KH", "KI", "KJ"] as const;
+
+/** Anatomical side modifiers — bilateral items bill on TWO lines. */
+const RT = "RT"; // right side
+const LT = "LT"; // left side
 
 export type ModifierConflictCode =
   | "kx_with_liability"
@@ -155,4 +160,52 @@ export function validateModifierCombination(
   }
 
   return conflicts;
+}
+
+export type ModifierAdvisoryCode = "bilateral_one_line";
+
+export interface ModifierAdvisory {
+  /** Stable machine code so callers can branch / dedupe. */
+  code: ModifierAdvisoryCode;
+  /** The specific modifiers the advisory is about, uppercased. */
+  modifiers: string[];
+  /** One-line CSR-facing explanation. */
+  message: string;
+}
+
+/**
+ * Soft, payer-sensitive modifier advisories for a single line — distinct
+ * from `validateModifierCombination`'s hard contradictions. These are
+ * conventions a CSR should review (warning severity), not universal hard
+ * rejections, so they never block submit.
+ *
+ * Accepts an array of modifiers or the comma-joined string stored on
+ * `insurance_claim_line_items.modifier`.
+ */
+export function findModifierAdvisories(
+  raw: readonly string[] | string | null | undefined,
+): ModifierAdvisory[] {
+  const list = Array.isArray(raw)
+    ? raw
+    : typeof raw === "string"
+      ? raw.split(",")
+      : [];
+  const mods = normalizeModifiers(list);
+  const has = (m: string) => mods.includes(m);
+  const advisories: ModifierAdvisory[] = [];
+
+  // Bilateral items (RT + LT on one line) should be split onto TWO lines —
+  // one RT, one LT, 1 unit each. The Medicare DME MACs (and many commercial
+  // payers) reject or mis-price an `RTLT` combined line. Payer-specific, so
+  // a warning rather than a hard block.
+  if (has(RT) && has(LT)) {
+    advisories.push({
+      code: "bilateral_one_line",
+      modifiers: [RT, LT],
+      message:
+        "RT and LT are on the same line — bilateral items should be billed on two separate lines (one RT, one LT, 1 unit each), not combined as RTLT, or the payer may reject or mis-price the line.",
+    });
+  }
+
+  return advisories;
 }

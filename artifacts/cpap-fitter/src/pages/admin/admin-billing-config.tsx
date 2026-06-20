@@ -20,7 +20,9 @@ import {
   DollarSign,
   ListChecks,
   PlugZap,
+  ShieldCheck,
   Sliders,
+  Upload,
 } from "lucide-react";
 
 import { Card } from "@/components/admin/Card";
@@ -79,6 +81,20 @@ const SECTIONS: ReadonlyArray<{
     description:
       "Reusable HCPCS line patterns the claim-builder snaps to when fulfillments are billed.",
     icon: ListChecks,
+  },
+  {
+    href: "/admin/billing/config/payer-coverage-diagnoses",
+    label: "Coverage overrides",
+    description:
+      "Per-payer medical-necessity coverage — the ICD-10 codes a payer accepts for a HCPCS. Overrides the national Medicare-LCD default in the claim preflight diagnosis check.",
+    icon: ShieldCheck,
+  },
+  {
+    href: "/admin/billing/config/cms-import",
+    label: "CMS fee-schedule import",
+    description:
+      "Bulk-load Medicare allowable amounts from the quarterly CMS DMEPOS fee schedule grid, by payer + state + effective date.",
+    icon: Upload,
   },
 ];
 

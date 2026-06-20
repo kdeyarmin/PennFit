@@ -344,6 +344,16 @@ app.use("/api/provider/queue", express.json({ limit: "1mb" }));
 // payload). Once parsed, express.json below is a no-op for this request.
 app.use("/resupply-api/admin/pacware/import", express.json({ limit: "12mb" }));
 
+// The CMS DMEPOS fee-schedule import POSTs a whole state grid (or the full
+// national grid) as JSON ({ csv: "..." }); even a single-state export easily
+// exceeds the 100 KB cap (the route + Zod also cap the payload at 30 MB).
+// Dedicated larger parser BEFORE the global one — same pattern as the
+// PacWare import above. Once parsed, express.json below is a no-op here.
+app.use(
+  "/resupply-api/admin/payer-fee-schedules/import-cms",
+  express.json({ limit: "30mb" }),
+);
+
 app.use(express.json({ limit: "100kb" }));
 app.use(express.urlencoded({ extended: true, limit: "100kb" }));
 

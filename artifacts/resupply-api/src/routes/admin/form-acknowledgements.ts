@@ -17,7 +17,13 @@ import { z } from "zod";
 
 import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
-import { INTAKE_FORMS } from "../../lib/intake-forms/catalog";
+import {
+  INTAKE_FORMS,
+  type FormKind,
+  getFormCurrentVersion,
+} from "../../lib/intake-forms/catalog";
+import { logger } from "../../lib/logger";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -25,6 +31,9 @@ const router: IRouter = Router();
 const FORM_KINDS = Object.keys(INTAKE_FORMS) as Array<
   keyof typeof INTAKE_FORMS
 >;
+
+// Dotted ABNs are billed dotless; the scope list stores HCPCS, not ICD-10.
+const HCPCS_RE = /^[A-Z]\d{4}$/;
 
 router.get(
   "/admin/form-acknowledgements/summary",
@@ -123,7 +132,7 @@ router.get(
     const { data, error } = await supabase
       .from("patient_form_acknowledgements")
       .select(
-        "id, form_kind, form_version, signed_at, signed_from_ip, source, notes",
+        "id, form_kind, form_version, signed_at, signed_from_ip, source, notes, hcpcs_codes",
       )
       .eq("patient_id", idParse.data)
       .order("signed_at", { ascending: false });
@@ -141,10 +150,142 @@ router.get(
         signedFromIp: r.signed_from_ip,
         source: r.source,
         notes: r.notes,
+        // ABN-only item scope (null/empty = applies to every line).
+        hcpcsCodes: r.hcpcs_codes ?? null,
         currentVersion:
           INTAKE_FORMS[r.form_kind as keyof typeof INTAKE_FORMS]?.version ??
           null,
       })),
+    });
+  },
+);
+
+// ---------------------------------------------------------------------------
+// POST /admin/patients/:id/form-acknowledgements — record a CSR-captured
+// acknowledgement (e.g. a paper ABN the patient signed in the office).
+//
+// For an ABN this is where item scope is set: `hcpcsCodes` limits the ABN to
+// specific billed items so the modifier engine only stamps GA on those lines
+// (migration 0417). Omitting `hcpcsCodes` records a GENERAL ABN that applies
+// to every line — the historical patient-level behaviour. Re-recording at the
+// same form version REPLACES the prior scope (upsert), so the operator submits
+// the full item list each time rather than appending.
+// ---------------------------------------------------------------------------
+const recordBody = z
+  .object({
+    formKind: z.enum([
+      "hipaa_npp",
+      "aob",
+      "abn",
+      "financial_responsibility",
+      "supplier_standards",
+    ]),
+    hcpcsCodes: z
+      .array(
+        z
+          .string()
+          .trim()
+          .transform((s) => s.toUpperCase())
+          .refine((s) => HCPCS_RE.test(s), "must be a HCPCS code like E0601"),
+      )
+      .max(50)
+      .optional(),
+    notes: z.string().trim().max(500).optional(),
+  })
+  .strict();
+
+router.post(
+  "/admin/patients/:id/form-acknowledgements",
+  requirePermission("patients.update"),
+  adminRateLimit({ name: "form_acknowledgement.record", preset: "mutation" }),
+  async (req, res) => {
+    const idParse = z.string().uuid().safeParse(req.params.id);
+    if (!idParse.success) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const parsed = recordBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "invalid_body",
+        issues: parsed.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
+      });
+      return;
+    }
+    const { formKind, notes } = parsed.data;
+    // Item scope only makes sense for an ABN — reject it on other forms so
+    // the column never carries meaningless data.
+    if (parsed.data.hcpcsCodes && formKind !== "abn") {
+      res.status(400).json({ error: "hcpcs_scope_abn_only" });
+      return;
+    }
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+
+    // Confirm the patient belongs to the caller's org before writing.
+    const { data: patient, error: patErr } = await supabase
+      .from("patients")
+      .select("id")
+      .eq("id", idParse.data)
+      .limit(1)
+      .maybeSingle();
+    if (patErr) throw patErr;
+    if (!patient) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+
+    // Dedupe + drop empties; an empty list is treated as "no scope" (general).
+    const codes = parsed.data.hcpcsCodes
+      ? [...new Set(parsed.data.hcpcsCodes)]
+      : null;
+    const hcpcsCodes = codes && codes.length > 0 ? codes : null;
+    const formVersion = getFormCurrentVersion(formKind as FormKind);
+
+    const { data, error } = await supabase
+      .from("patient_form_acknowledgements")
+      .upsert(
+        {
+          patient_id: idParse.data,
+          form_kind: formKind,
+          form_version: formVersion,
+          source: "csr_recorded",
+          signed_from_ip: req.ip ?? null,
+          notes: notes ?? null,
+          hcpcs_codes: hcpcsCodes,
+        },
+        { onConflict: "patient_id,form_kind,form_version" },
+      )
+      .select("id")
+      .single();
+    if (error) {
+      res.status(500).json({ error: "record_failed", message: error.message });
+      return;
+    }
+
+    logger.info(
+      {
+        event: "admin.form_acknowledgement.recorded",
+        patient_id: idParse.data,
+        form_kind: formKind,
+        // HCPCS are billing codes, not PHI — but log the count, not the list.
+        hcpcs_scope_count: hcpcsCodes?.length ?? 0,
+        adminEmail: req.adminEmail,
+      },
+      "admin.form_acknowledgement.recorded",
+    );
+    res.status(201).json({
+      id: data.id,
+      formKind,
+      formVersion,
+      hcpcsCodes,
     });
   },
 );

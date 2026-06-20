@@ -39,7 +39,10 @@ import {
   type DenialRiskStat,
 } from "./denial-risk";
 import { getCachedEligibility } from "./eligibility-verifier";
-import { validateModifierCombination } from "./modifier-validation";
+import {
+  validateModifierCombination,
+  findModifierAdvisories,
+} from "./modifier-validation";
 import {
   evaluateCoverageDiagnosis,
   type CoverageDiagnosisRow,
@@ -703,6 +706,33 @@ export async function preflightClaim(
       });
     }
 
+    // ── Bilateral RT/LT convention (payer-sensitive, non-blocking) ─
+    // A line carrying both RT and LT should be split into two lines (one
+    // RT, one LT, 1 unit each); many payers reject/mis-price a combined
+    // RTLT line. A warning (not a hard error) because it's payer-specific.
+    const bilateral = (lines as ClaimLineRow[])
+      .map((l) => ({ line: l, advisories: findModifierAdvisories(l.modifier) }))
+      .filter((x) => x.advisories.length > 0);
+    if (bilateral.length > 0) {
+      const first = bilateral[0]!;
+      items.push({
+        key: "bilateral_modifier",
+        severity: "warning",
+        label:
+          bilateral.length === 1
+            ? "Bilateral modifiers on one line"
+            : `Bilateral modifiers on ${bilateral.length} lines`,
+        detail: `${first.line.hcpcs_code} (${(first.line.modifier ?? "").trim()}): ${first.advisories
+          .map((a) => a.message)
+          .join(" ")}`,
+        fixAction: {
+          kind: "edit_line_item",
+          claimId: claim.id,
+          lineId: first.line.id,
+        },
+      });
+    }
+
     // ── Diagnosis supports the billed HCPCS (LCD medical necessity) ─
     // A diagnosis can be ON FILE yet not SUPPORT the code billed — e.g. a
     // PAP device (E0601) requires an obstructive-sleep-apnea diagnosis
@@ -730,19 +760,33 @@ export async function preflightClaim(
               .filter((c) => c.length > 0),
           ),
         ];
-        const { data: coverage, error: covErr } = await supabase
+        // Fetch the national rows (payer_profile_id NULL) plus any override
+        // rows for THIS claim's payer; the evaluator prefers the payer's set
+        // per HCPCS (migration 0415).
+        let coverageQuery = supabase
           .raw()
           .schema("resupply")
           .from("hcpcs_coverage_diagnoses")
-          .select("hcpcs_code, icd10_code, policy")
+          .select("hcpcs_code, icd10_code, policy, payer_profile_id")
           .in("hcpcs_code", distinctHcpcs)
           .eq("active", true);
+        coverageQuery = claim.payer_profile_id
+          ? coverageQuery.or(
+              `payer_profile_id.is.null,payer_profile_id.eq.${claim.payer_profile_id}`,
+            )
+          : coverageQuery.is("payer_profile_id", null);
+        const { data: coverage, error: covErr } = await coverageQuery;
         if (covErr) throw covErr;
         const rows = (coverage ?? []) as CoverageDiagnosisRow[];
         const unsupported = distinctHcpcs
           .map((hcpcs) => ({
             hcpcs,
-            evald: evaluateCoverageDiagnosis(hcpcs, diagnosisCodes, rows),
+            evald: evaluateCoverageDiagnosis(
+              hcpcs,
+              diagnosisCodes,
+              rows,
+              claim.payer_profile_id,
+            ),
           }))
           .filter((x) => x.evald.hasRules && !x.evald.covered);
         if (unsupported.length > 0) {

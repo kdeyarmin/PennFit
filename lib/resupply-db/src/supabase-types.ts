@@ -342,6 +342,8 @@ export interface Database {
           description: string | null;
           policy: string;
           active: boolean;
+          // Migration 0415: per-payer override; NULL = national default.
+          payer_profile_id: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -352,6 +354,7 @@ export interface Database {
           description?: string | null;
           policy?: string;
           active?: boolean;
+          payer_profile_id?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -4748,6 +4751,10 @@ export interface Database {
           source: "patient_portal" | "csr_recorded" | "paper_scan";
           document_id: string | null;
           notes: string | null;
+          // Optional HCPCS scope for an ABN (mig 0417): NULL/empty = a general
+          // ABN that applies to every line; a non-empty list scopes the ABN to
+          // only those HCPCS. NULL for non-ABN forms.
+          hcpcs_codes: string[] | null;
           created_at: string;
         };
         Insert: Partial<
@@ -5924,6 +5931,27 @@ export interface Database {
               ok: false;
               error: "not_found" | "already_submitted" | "duplicate_line";
             };
+      };
+      // Mig 0416 — atomic CMS DMEPOS fee-schedule replace for the
+      // /admin/payer-fee-schedules/import-cms endpoint. Deletes the prior
+      // cms_published rows for (payer, effective_from) and inserts the new
+      // grid in ONE transaction; returns the swap counts.
+      replace_cms_fee_schedule: {
+        Args: {
+          p_org_id: string;
+          p_payer_profile_id: string;
+          p_effective_from: string;
+          p_rows: Array<{
+            hcpcs_code: string;
+            modifier: string | null;
+            allowed_cents: number;
+            notes: string | null;
+          }>;
+        };
+        Returns: {
+          replaced: number;
+          accepted: number;
+        };
       };
     };
     Enums: { [_ in never]: never };

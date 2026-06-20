@@ -529,6 +529,37 @@ describe("preflightClaim", () => {
     expect(out.readyToSubmit).toBe(true);
   });
 
+  it("warns (without blocking) on a bilateral RT/LT line", async () => {
+    // RT+LT on one line is a payer-sensitive convention, not a hard reject —
+    // surface a non-blocking warning, don't flip the submit gate.
+    stageHappyPath(
+      {},
+      {
+        linesOverride: [
+          {
+            id: LINE_ID,
+            hcpcs_code: "L1832",
+            modifier: "RT,LT",
+            billed_cents: 24999,
+            quantity: 1,
+          },
+        ],
+      },
+    );
+    const out = await preflightClaim(CLAIM_ID);
+    const item = out.items.find((i) => i.key === "bilateral_modifier");
+    expect(item?.severity).toBe("warning");
+    expect(item?.detail).toContain("L1832");
+    expect(item?.fixAction).toEqual({
+      kind: "edit_line_item",
+      claimId: CLAIM_ID,
+      lineId: LINE_ID,
+    });
+    // Advisory only — never blocks submit.
+    expect(out.readyToSubmit).toBe(true);
+    expect(out.items.some((i) => i.key === "modifier_combination")).toBe(false);
+  });
+
   it("warns (without blocking) when the diagnosis doesn't support the HCPCS", async () => {
     // R06.83 (snoring) is not a covered indication for E0601 under LCD
     // L33718 — surface a non-blocking medical-necessity warning.

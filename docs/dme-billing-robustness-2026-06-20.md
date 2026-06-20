@@ -119,15 +119,17 @@ and the existing condition enum.
 After this change, the short list of things that are _actually not built_ and
 would further harden DME billing:
 
-| #   | Item                                                                                                                                     | Type    | Notes                                                                                                                       |
-| --- | ---------------------------------------------------------------------------------------------------------------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------- |
-| 1   | ~~**HCPCS↔diagnosis (LCD) medical-necessity edits**~~ — **DONE** (see _LCD medical-necessity edit_ below)                                | Build   | Shipped: `hcpcs_coverage_diagnoses` catalog (mig 0408) + `coverage-diagnosis.ts` evaluator + preflight warning.             |
-| 2   | **Bilateral `RT`/`LT` two-line convention** — CMS wants bilateral items on two lines (RT, LT, 1 unit each), not `RTLT`/qty 2 on one line | Build   | Add as a preflight _warning_ (not a hard block — payer-specific). Natural follow-on to the new validator.                   |
-| 3   | **CMS DMEPOS fee-schedule auto-import/versioning** — fee schedules are uploaded manually per payer                                       | Build   | Ingest the quarterly CMS DMEPOS fee-schedule file to keep `payer_fee_schedules` current automatically.                      |
-| 4   | **ABN scoping** — the ABN acknowledgement is patient-level, not per-HCPCS/per-episode                                                    | Build   | Today "ABN on file" = any signed ABN for the patient. A per-item ABN record would let `GA` attach only to the covered line. |
-| 5   | **Same-or-Similar automation (HETS)** — currently a manual entry                                                                         | Ops     | Needs a CMS HETS connection; the route + manual workflow already exist.                                                     |
-| 6   | **Live therapy-cloud data (ResMed/Philips/3B)** — adapters are production-ready                                                          | Bus-dev | Gated on executed partner BAAs/OAuth, not on code.                                                                          |
-| 7   | **Multi-location / multi-tenant billing identity**                                                                                       | Build   | Schema is forward-compatible (mig 0132); defer until a concrete second-location/resale trigger.                             |
+| #   | Item                                                                                                      | Type    | Notes                                                                                                                                                                                                                                                             |
+| --- | --------------------------------------------------------------------------------------------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | ~~**HCPCS↔diagnosis (LCD) medical-necessity edits**~~ — **DONE** (see _LCD medical-necessity edit_ below) | Build   | Shipped: `hcpcs_coverage_diagnoses` catalog (mig 0408) + `coverage-diagnosis.ts` evaluator + preflight warning.                                                                                                                                                   |
+| 2   | ~~**Bilateral `RT`/`LT` two-line convention**~~ — **DONE**                                                | Build   | Shipped: `findModifierAdvisories()` in `modifier-validation.ts` + a non-blocking `bilateral_modifier` preflight warning when RT+LT sit on one line.                                                                                                               |
+| 3   | ~~**CMS DMEPOS fee-schedule auto-import**~~ — **DONE**                                                    | Build   | Shipped: `cms-dmepos-fee-schedule.ts` parser (header-driven grid) + `POST /admin/payer-fee-schedules/import-cms` → `payer_fee_schedules`.                                                                                                                         |
+| 3b  | ~~**Per-payer coverage overrides**~~ — **DONE**                                                           | Build   | Shipped: `payer_profile_id` on `hcpcs_coverage_diagnoses` (mig 0415) + evaluator override resolution + `/admin/payer-coverage-diagnoses` CRUD.                                                                                                                    |
+| 4   | ~~**ABN scoping** — the ABN acknowledgement is patient-level, not per-HCPCS~~ — **DONE**                  | Build   | Shipped: optional `hcpcs_codes` scope on `patient_form_acknowledgements` (mig 0417) + per-line resolution in `claim-builder.ts` (`buildAbnScope`/`abnCoversHcpcs`) + a CSR record endpoint. NULL scope = general ABN (back-compat). See _ABN item scoping_ below. |
+| 4b  | ~~**Admin SPA pages** for the per-payer coverage overrides + CMS fee import~~ — **DONE**                  | Build   | Shipped: `/admin/billing/config/payer-coverage-diagnoses` (coverage CRUD) + `/admin/billing/config/cms-import` (CMS importer), in the billing-config hub.                                                                                                         |
+| 5   | **Same-or-Similar automation (HETS)** — currently a manual entry                                          | Ops     | Needs a CMS HETS connection; the route + manual workflow already exist.                                                                                                                                                                                           |
+| 6   | **Live therapy-cloud data (ResMed/Philips/3B)** — adapters are production-ready                           | Bus-dev | Gated on executed partner BAAs/OAuth, not on code.                                                                                                                                                                                                                |
+| 7   | **Multi-location / multi-tenant billing identity**                                                        | Build   | Schema is forward-compatible (mig 0132); defer until a concrete second-location/resale trigger.                                                                                                                                                                   |
 
 ### Bottom line
 
@@ -191,3 +193,40 @@ of the recurring DME denial traps.
 Validated by a fresh full migration replay (400 migrations) + idempotent re-run,
 the `coverage-diagnosis` unit tests, and two `preflightClaim` integration tests
 (an unsupported diagnosis warns without blocking; a covered one is silent).
+
+---
+
+## Part 4 — ABN item scoping (closes open item #4)
+
+A signed Advance Beneficiary Notice (CMS-R-131) is item-specific: the patient
+accepts financial liability for a **particular** expected-non-coverage item.
+The modifier engine reads "ABN on file" to flip an expected-non-coverage line
+from **`GZ`** (supplier write-off) to **`GA`** (patient liable). Until now that
+signal was patient-LEVEL — any signed ABN stamped `GA` on **every**
+expected-non-coverage line, even items the patient never signed an ABN for,
+over-shifting liability to the patient.
+
+This change scopes the ABN to specific items:
+
+- **`patient_form_acknowledgements.hcpcs_codes text[]`** (migration 0417,
+  nullable, additive) — an optional HCPCS scope on the ABN row. `NULL`/empty =
+  a **general** ABN that applies to every line (identical to the prior
+  behaviour, so every existing row is unchanged); a non-empty list scopes the
+  ABN to only those HCPCS. Meaningful only for `form_kind = 'abn'`.
+- **Per-line resolution** (`claim-builder.ts`) — `resolveRuleContext` now reads
+  all of a patient's signed ABN rows and builds an `AbnScope`
+  (`buildAbnScope`); the per-line modifier loop sets `isAbnOnFile` for **each**
+  billed HCPCS via `abnCoversHcpcs(scope, hcpcs)`, so `GA` only lands on a line
+  the patient actually signed an ABN for. Pure + unit-tested in
+  `modifier-rules.ts` / `.test.ts`. **Fail-soft:** a lookup error yields no
+  ABN (never silently shifts liability to the patient).
+- **Capture** (`POST /admin/patients/:id/form-acknowledgements`,
+  `patients.update`) — records a CSR-captured acknowledgement (e.g. a paper
+  ABN signed in the office); for an ABN, `hcpcsCodes` sets the item scope
+  (omit for a general ABN). Re-recording at the same form version replaces the
+  scope. The per-patient GET now surfaces `hcpcsCodes`.
+
+**Behaviour-safe / back-compat:** every existing ABN row has `hcpcs_codes IS
+NULL` → general → covers all, so claim output is byte-identical until an
+operator records an item-scoped ABN. Validated by the `buildAbnScope` /
+`abnCoversHcpcs` unit tests and the full resupply-api suite.

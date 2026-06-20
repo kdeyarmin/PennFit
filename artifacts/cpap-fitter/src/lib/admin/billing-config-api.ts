@@ -80,6 +80,19 @@ async function sendJSON<T>(
   return (await res.json()) as T;
 }
 
+async function deleteJSON(path: string): Promise<void> {
+  const url = `${BASE}${path}`;
+  const res = await fetch(url, {
+    method: "DELETE",
+    credentials: "same-origin",
+    headers: { Accept: "application/json", ...csrfHeader() },
+  });
+  if (!res.ok) {
+    const data = await parseErrorBody(res);
+    throw new ApiError(res, data, { method: "DELETE", url });
+  }
+}
+
 // ─── Payer profiles ────────────────────────────────────────────────
 
 export type PayerLineOfBusiness =
@@ -295,6 +308,80 @@ export async function importPayerFeeScheduleCsv(
     "errors" in data;
   if (res.ok || looksLikeResult) {
     return data as FeeScheduleImportResult;
+  }
+  throw new ApiError(res, data, { method: "POST", url });
+}
+
+// ─── Per-payer coverage-diagnosis overrides ────────────────────────
+
+export interface PayerCoverageDiagnosis {
+  id: string;
+  hcpcsCode: string;
+  icd10Code: string;
+  description: string | null;
+  policy: string;
+  active: boolean;
+}
+
+export function fetchPayerCoverageDiagnoses(
+  payerProfileId: string,
+): Promise<{ overrides: PayerCoverageDiagnosis[] }> {
+  return getJSON("/admin/payer-coverage-diagnoses", { payerProfileId });
+}
+
+export function createPayerCoverageDiagnosis(body: {
+  payerProfileId: string;
+  hcpcs: string;
+  icd10: string;
+  description?: string;
+}): Promise<{ id: string }> {
+  return sendJSON("POST", "/admin/payer-coverage-diagnoses", body);
+}
+
+export function deletePayerCoverageDiagnosis(id: string): Promise<void> {
+  return deleteJSON(
+    `/admin/payer-coverage-diagnoses/${encodeURIComponent(id)}`,
+  );
+}
+
+// ─── CMS DMEPOS fee-schedule import ────────────────────────────────
+
+export interface CmsFeeScheduleImportResult {
+  accepted: number;
+  /** Prior cms_published rows swapped out for this payer + effective date. */
+  replaced?: number;
+  warnings: string[];
+}
+
+/**
+ * Import the CMS DMEPOS fee schedule grid for a payer + state
+ * (POST /admin/payer-fee-schedules/import-cms, admin-only). Like the CSV
+ * import, a 400 with no parseable rows still returns the `{ accepted,
+ * warnings }` envelope so the operator sees why nothing imported.
+ */
+export async function importPayerFeeScheduleCms(body: {
+  payerProfileId: string;
+  state: string;
+  effectiveFrom: string;
+  rural?: boolean;
+  csv: string;
+}): Promise<CmsFeeScheduleImportResult> {
+  const url = `${BASE}/admin/payer-fee-schedules/import-cms`;
+  const res = await fetch(url, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      ...csrfHeader(),
+    },
+    body: JSON.stringify(body),
+  });
+  const data = await parseErrorBody(res);
+  const looksLikeResult =
+    typeof data === "object" && data !== null && "accepted" in data;
+  if (res.ok || looksLikeResult) {
+    return data as CmsFeeScheduleImportResult;
   }
   throw new ApiError(res, data, { method: "POST", url });
 }
