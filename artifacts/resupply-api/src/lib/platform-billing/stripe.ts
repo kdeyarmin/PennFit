@@ -17,7 +17,10 @@ import {
 const PLATFORM_BILLING_SCOPE = "platform_tenant";
 
 type RawClient = ReturnType<ReturnType<typeof getOrgScopedClient>["raw"]>;
-type OrganizationRow = Database["resupply"]["Tables"]["organizations"]["Row"];
+type OrganizationRow = Pick<
+  Database["resupply"]["Tables"]["organizations"]["Row"],
+  "id" | "slug" | "name" | "storefront_name"
+>;
 
 interface SyncableCatalogRow {
   id: string;
