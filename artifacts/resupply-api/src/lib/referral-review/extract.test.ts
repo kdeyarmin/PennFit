@@ -68,6 +68,9 @@ const VALID_EXTRACTION: ReferralExtraction = {
     { description: "CPAP device", hcpcs: "E0601" },
     { description: "Full face mask", hcpcs: "A7030" },
   ],
+  diagnoses: [{ icd10: "G47.33", description: "Obstructive sleep apnea" }],
+  recommendedTherapy: "CPAP",
+  comorbidities: ["hypertension"],
   sleepStudy: {
     studyDate: "2026-04-12",
     studyType: "home sleep test",

@@ -570,3 +570,116 @@ describe("POST /admin/referral-reviews/:id/dismiss", () => {
     expect(res.status).toBe(409);
   });
 });
+
+/** A complete extraction (every required top-level field) so the stored-
+ *  extraction schema parses and the report/qualification/completeness derive. */
+function fullExtraction(over: Record<string, unknown> = {}) {
+  return {
+    patient: {
+      firstName: "Jane",
+      lastName: "Doe",
+      dob: "1960-02-03",
+      phone: "+14155551212",
+      email: null,
+      address: null,
+    },
+    insurance: {
+      payerName: "Highmark",
+      planName: null,
+      memberId: "ABC123",
+      groupNumber: null,
+      policyholderName: null,
+      policyholderRelationship: null,
+    },
+    secondaryInsurance: null,
+    order: [{ description: "CPAP device", hcpcs: "E0601" }],
+    diagnoses: [{ icd10: "G47.33", description: "OSA" }],
+    recommendedTherapy: "CPAP",
+    comorbidities: [],
+    sleepStudy: {
+      studyDate: "2026-04-12",
+      studyType: "home sleep test",
+      ahi: 22,
+      rdi: null,
+      odi: null,
+      totalSleepMinutes: 400,
+      interpretingPhysician: null,
+    },
+    physician: {
+      name: "Dr. House",
+      npi: "1234567890",
+      phone: null,
+      fax: "+14125550001",
+      clinic: "Sleep Center",
+    },
+    documents: [
+      { type: "physician_order", pageStart: 1, pageEnd: 1, title: "Order" },
+      { type: "chart_note", pageStart: 2, pageEnd: 2, title: "Note" },
+    ],
+    summary: "New CPAP setup.",
+    confidence: {
+      patient: "high",
+      insurance: "high",
+      order: "high",
+      sleepStudy: "high",
+    },
+    ...over,
+  };
+}
+
+describe("GET /admin/referral-reviews/:id/report", () => {
+  it("streams a report PDF for an extracted review", async () => {
+    stageSupabaseResponse("referral_reviews", "select", {
+      data: { id: REVIEW_ID, extraction: fullExtraction() },
+    });
+    const res = await request(makeApp()).get(
+      `/admin/referral-reviews/${REVIEW_ID}/report`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers["content-type"]).toContain("application/pdf");
+    expect(res.body.subarray(0, 5).toString("latin1")).toBe("%PDF-");
+  });
+
+  it("409s when there is no usable extraction", async () => {
+    stageSupabaseResponse("referral_reviews", "select", {
+      data: { id: REVIEW_ID, extraction: null },
+    });
+    const res = await request(makeApp()).get(
+      `/admin/referral-reviews/${REVIEW_ID}/report`,
+    );
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("no_extraction");
+  });
+});
+
+describe("POST /admin/referral-reviews/:id/request-from-provider", () => {
+  it("creates a draft manual document for the missing items", async () => {
+    // Drop insurance + diagnosis so there's something to request.
+    stageSupabaseResponse("referral_reviews", "select", {
+      data: {
+        id: REVIEW_ID,
+        extraction: fullExtraction({ insurance: null, diagnoses: [] }),
+      },
+    });
+    stageSupabaseResponse("manual_documents", "insert", {
+      data: { id: DOC_ID },
+    });
+    const res = await request(makeApp())
+      .post(`/admin/referral-reviews/${REVIEW_ID}/request-from-provider`)
+      .send({});
+    expect(res.status).toBe(201);
+    expect(res.body.manualDocumentId).toBe(DOC_ID);
+    expect(res.body.requests.length).toBeGreaterThan(0);
+  });
+
+  it("400s when nothing is missing", async () => {
+    stageSupabaseResponse("referral_reviews", "select", {
+      data: { id: REVIEW_ID, extraction: fullExtraction() },
+    });
+    const res = await request(makeApp())
+      .post(`/admin/referral-reviews/${REVIEW_ID}/request-from-provider`)
+      .send({});
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("nothing_to_request");
+  });
+});

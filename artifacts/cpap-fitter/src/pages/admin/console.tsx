@@ -581,6 +581,11 @@ const AdminBillingVerifyPage = lazyWithRetry(() =>
     default: m.AdminBillingVerifyPage,
   })),
 );
+const AdminInsuranceDiscoveryPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-insurance-discovery").then((m) => ({
+    default: m.AdminInsuranceDiscoveryPage,
+  })),
+);
 const AdminBillingEligibilityWorklistPage = lazyWithRetry(() =>
   import("@/pages/admin/admin-billing-eligibility-worklist").then((m) => ({
     default: m.AdminBillingEligibilityWorklistPage,
@@ -874,6 +879,10 @@ function AdminConsole() {
             <Route
               path="/admin/billing/verify"
               component={AdminBillingVerifyPage}
+            />
+            <Route
+              path="/admin/billing/insurance-discovery"
+              component={AdminInsuranceDiscoveryPage}
             />
             <Route
               path="/admin/billing/prior-auths"
