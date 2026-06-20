@@ -1,5 +1,13 @@
 # Domain-layer review — gaps & enhancement opportunities (2026-06-20)
 
+> **Status: all recommendations in this document have been implemented**
+> on branch `claude/domain-review-gaps-xoauz8`. The §2 correctness pass,
+> every §3 module enhancement, and all twelve §4 new/relocated pure
+> modules now ship with tests; the domain package carries 213 passing
+> tests, the architecture purity check passes, and the full API package
+> typechecks (`tsc --build`) and its affected suites are green. The text
+> below is preserved as the original review; treat each item as **done**.
+
 A thorough review of the application's **domain logic** — the pure,
 side-effect-free business rules that decide eligibility, timing, money,
 and compliance. The lens is deliberately narrow and code-level: not
