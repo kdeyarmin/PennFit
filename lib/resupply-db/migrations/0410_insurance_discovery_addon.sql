@@ -1,4 +1,4 @@
--- 0409_insurance_discovery_addon — "Insurance discovery" platform billing
+-- 0410_insurance_discovery_addon — "Insurance discovery" platform billing
 -- add-on + its `insurance.discovery` feature-flag gate.
 --
 -- Insurance discovery searches Office Ally's payer network from patient

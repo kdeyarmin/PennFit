@@ -1,4 +1,4 @@
--- 0408_clearinghouse_insurance_discovery — DB-configurable insurance
+-- 0409_clearinghouse_insurance_discovery — DB-configurable insurance
 -- discovery endpoint on clearinghouse_credentials.
 --
 -- Insurance discovery (lib/resupply-integrations-office-ally/src/transport/
