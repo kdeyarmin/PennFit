@@ -1331,12 +1331,10 @@ router.post(
       );
     });
 
-    res
-      .status(201)
-      .json({
-        manualDocumentId: doc.id,
-        requests: completeness.providerRequests,
-      });
+    res.status(201).json({
+      manualDocumentId: doc.id,
+      requests: completeness.providerRequests,
+    });
   },
 );
 
