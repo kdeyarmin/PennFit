@@ -1,10 +1,9 @@
 // Bare lowercase request host, honoring the proxy-forwarded host.
 //
-// The app runs behind Cloudflare + Railway (two proxy hops), so the
-// browser-visible host arrives in `X-Forwarded-Host`, not `Host`. Tenant
-// resolution (host → org_id / branding) keys off this value, so every
-// caller must read it the same way — hence one shared helper instead of
-// the per-route copies that were drifting apart.
+// The app runs behind reverse proxies, so the browser-visible host can arrive
+// in `X-Forwarded-Host`, not `Host`. Tenant resolution (host → org_id / branding)
+// keys off this value, so every caller must read it the same way — hence one
+// shared helper instead of per-route copies that were drifting apart.
 
 import type { Request } from "express";
 
