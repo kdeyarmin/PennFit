@@ -199,11 +199,12 @@ which is exactly the gap §6 closes for patient packets.
    once, a later opt-out is never re-enabled by a redeploy.
 
 2. **Outstanding (unsigned) patient-packet worklist.**
-   `GET /admin/patient-packets?status=outstanding` returns every packet
-   still awaiting signature (`sent` + `viewed`), **oldest sent first**, so
-   the most overdue paperwork surfaces at the top. Both packet-list
-   endpoints now also return `first_viewed_at`, `reminder_count`, and
-   `last_reminded_at`. The admin page adds the **Outstanding** filter, a
+   `GET /admin/patient-packets?status=outstanding` returns the packets still
+   awaiting signature (`sent` + `viewed`), **oldest sent first**, so the most
+   overdue paperwork surfaces at the top. It returns up to 500 by default
+   (vs. 100 for the recent-list view), with a `?limit=` override (1..1000) to
+   page a larger backlog. Both packet-list endpoints now also return
+   `first_viewed_at`, `reminder_count`, and `last_reminded_at`. The admin page adds the **Outstanding** filter, a
    **Reminders** column (nudge count + last-nudged date), and an age hint
    on the Sent column. This gives patient packets the same
    "what hasn't come back, and have we chased it?" visibility the provider

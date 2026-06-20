@@ -148,10 +148,6 @@ async function patientPacketReminderSweepForOrg(
         .filter((id: string | null): id is string => Boolean(id)),
     ),
   );
-  const { data: patients } = await supabase
-    .from("patients")
-    .select("id, phone_e164, timezone, address")
-    .in("id", patientIds);
   const patientById = new Map<
     string,
     {
@@ -160,12 +156,23 @@ async function patientPacketReminderSweepForOrg(
       address: { zip?: string } | null;
     }
   >();
-  for (const p of patients ?? []) {
-    patientById.set(p.id, {
-      phone_e164: p.phone_e164,
-      timezone: (p as { timezone?: string | null }).timezone ?? null,
-      address: (p as { address?: { zip?: string } | null }).address ?? null,
-    });
+  // Only query when there's at least one linked patient to resolve. A batch
+  // of entirely unlinked (contact-only) packets leaves patientIds empty;
+  // skipping the `.in("id", [])` round-trip avoids both a pointless query and
+  // any PostgREST empty-list edge case — the unlinked packets fall through to
+  // their recipient_phone for SMS below.
+  if (patientIds.length > 0) {
+    const { data: patients } = await supabase
+      .from("patients")
+      .select("id, phone_e164, timezone, address")
+      .in("id", patientIds);
+    for (const p of patients ?? []) {
+      patientById.set(p.id, {
+        phone_e164: p.phone_e164,
+        timezone: (p as { timezone?: string | null }).timezone ?? null,
+        address: (p as { address?: { zip?: string } | null }).address ?? null,
+      });
+    }
   }
 
   for (const c of rows) {
