@@ -41,7 +41,7 @@ import {
   getOrgScopedClient,
   type OrgScopedClient,
 } from "@workspace/resupply-db";
-import { timezoneForUsState } from "@workspace/resupply-domain";
+import { normalizeE164, timezoneForUsState } from "@workspace/resupply-domain";
 
 import { logger } from "../../lib/logger";
 import { ObjectAlreadyOwnedError } from "../../lib/object-storage/objectAcl";
@@ -253,11 +253,12 @@ function mapStudyTypeToEnum(
 }
 
 /**
- * Normalize a transcribed study date to YYYY-MM-DD. The extraction prompt
- * normalizes the patient DOB but leaves the study date "as written", so it
- * commonly arrives US-numeric ("04/12/2026", "4/12/26"). Handles ISO and US
- * M/D/Y (slash or dash, 2- or 4-digit year), rejecting impossible dates via a
- * UTC round-trip; anything else returns null (we never guess a clinical date).
+ * Normalize a transcribed study date to YYYY-MM-DD. The extraction prompt now
+ * asks for an ISO study date, but the model can still echo what's printed on
+ * the study ("04/12/2026", "4/12/26"), so this is the defensive backstop before
+ * we write the date to sleep_studies. Handles ISO and US M/D/Y (slash or dash,
+ * 2- or 4-digit year), rejecting impossible dates via a UTC round-trip;
+ * anything else returns null (we never guess a clinical date).
  */
 function normalizeToIsoDate(raw: string | null | undefined): string | null {
   if (!raw) return null;
@@ -965,7 +966,7 @@ router.post(
         });
         if (ssErr) {
           logger.warn(
-            { err: ssErr.message, review_id_first8: review.id.slice(0, 8) },
+            { code: ssErr.code, review_id_first8: review.id.slice(0, 8) },
             "referral_review_accept_sleep_study_failed",
           );
           warnings.push("sleep_study_not_saved");
@@ -1214,7 +1215,7 @@ router.get(
       return;
     }
     const orgId = req.orgId;
-    if (!orgId) {
+    if (!orgId || !orgId.trim()) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
@@ -1240,6 +1241,8 @@ router.get(
       extraction,
       supplierName: company.legalName,
     });
+    // The report PDF is transcribed PHI — keep it out of any shared cache.
+    res.setHeader("Cache-Control", "no-store");
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader(
       "Content-Disposition",
@@ -1268,7 +1271,7 @@ router.post(
       return;
     }
     const orgId = req.orgId;
-    if (!orgId) {
+    if (!orgId || !orgId.trim()) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
@@ -1314,9 +1317,11 @@ router.post(
       "",
       numbered,
       "",
-      `Please fax the requested documentation to ${company.legalName}` +
-        `${company.phone ? ` (${company.phone})` : ""} at your earliest ` +
-        "convenience so we can serve your patient without delay.",
+      `Please return the requested documentation to ${company.legalName} at ` +
+        "your earliest convenience so we can serve your patient without delay." +
+        (company.phone
+          ? ` If you have any questions, you can reach us at ${company.phone}.`
+          : ""),
       "",
       "Thank you,",
       company.legalName,
@@ -1333,7 +1338,7 @@ router.post(
         recipient_name: physician?.clinic
           ? `${physician?.name ?? "Referring provider"} — ${physician.clinic}`
           : (physician?.name ?? "Referring provider"),
-        recipient_fax_e164: physician?.fax ?? null,
+        recipient_fax_e164: normalizeE164(physician?.fax) ?? null,
         status: "draft",
         created_by_email: req.adminEmail ?? null,
         created_at: nowIso,

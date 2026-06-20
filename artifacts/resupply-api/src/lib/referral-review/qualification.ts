@@ -27,6 +27,26 @@ export const QUALIFYING_COMORBIDITIES = [
   "history of stroke",
 ] as const;
 
+/** Patterns that recognise a CMS-qualifying comorbidity across common
+ *  phrasings/abbreviations, so a documented condition that ISN'T one of these
+ *  (e.g. diabetes, obesity) does not wrongly clear the 5–14 band. Matching is
+ *  conservative — an unrecognised phrasing falls to "conditional" (under-
+ *  qualifying is the safe direction for a coverage decision). */
+const QUALIFYING_COMORBIDITY_PATTERNS: RegExp[] = [
+  /excessive daytime sleepiness|hypersomnia|\beds\b|sleepiness/i,
+  /impaired cognition|cognitive (impairment|dysfunction|decline)/i,
+  /mood disorder|depression|anxiety/i,
+  /insomnia/i,
+  /hypertension|high blood pressure|\bhtn\b/i,
+  /ischemic heart disease|coronary (artery )?disease|\bcad\b|angina/i,
+  /stroke|\bcva\b|cerebrovascular|\btia\b/i,
+];
+
+/** Whether a single documented condition is one CMS accepts for the 5–14 band. */
+export function isQualifyingComorbidity(text: string): boolean {
+  return QUALIFYING_COMORBIDITY_PATTERNS.some((re) => re.test(text));
+}
+
 export type PapQualificationVerdict =
   | "qualifies"
   | "qualifies_with_comorbidity"
@@ -74,6 +94,10 @@ export function assessPapQualification(
     .map((c) => (typeof c === "string" ? c.trim() : ""))
     .filter((c) => c.length > 0);
   const hasDocumentedComorbidity = comorbidities.length > 0;
+  // Only conditions CMS actually lists clear the 5–14 band. A documented but
+  // non-qualifying condition (e.g. diabetes, obesity) must NOT auto-qualify.
+  const qualifyingComorbidities = comorbidities.filter(isQualifyingComorbidity);
+  const hasQualifyingComorbidity = qualifyingComorbidities.length > 0;
 
   // The qualifying value is the greater of AHI and RDI.
   let qualifyingValue: number | null = null;
@@ -119,18 +143,30 @@ export function assessPapQualification(
   }
 
   if (qualifyingValue >= 5) {
-    if (hasDocumentedComorbidity) {
+    if (hasQualifyingComorbidity) {
       return {
         verdict: "qualifies_with_comorbidity",
         qualifyingValue,
         metric,
         hasDocumentedComorbidity,
-        summary: `${shown} (5–14) with a documented comorbidity — meets the coverage criteria.`,
+        summary: `${shown} (5–14) with a qualifying comorbidity — meets the coverage criteria.`,
         details: [
-          `Documented comorbidity on the referral: ${comorbidities.join(", ")}.`,
-          "An AHI or RDI of 5–14 qualifies when paired with a documented comorbidity.",
+          `Qualifying comorbidity on the referral: ${qualifyingComorbidities.join(", ")}.`,
+          "An AHI or RDI of 5–14 qualifies when paired with a CMS-listed comorbidity.",
         ],
       };
+    }
+    const details = [
+      `A 5–14 AHI/RDI requires one of: ${QUALIFYING_COMORBIDITIES.join(", ")}.`,
+    ];
+    if (hasDocumentedComorbidity) {
+      details.push(
+        `The referral documents ${comorbidities.join(", ")}, but none of these is a CMS-listed qualifying comorbidity — request documentation of a qualifying condition from the provider before dispensing.`,
+      );
+    } else {
+      details.push(
+        "No qualifying comorbidity was found in the referral — request documentation of one from the provider before dispensing.",
+      );
     }
     return {
       verdict: "conditional",
@@ -138,10 +174,7 @@ export function assessPapQualification(
       metric,
       hasDocumentedComorbidity,
       summary: `${shown} (5–14) — qualifies only with a documented comorbidity; none found on the referral.`,
-      details: [
-        `A 5–14 AHI/RDI requires one of: ${QUALIFYING_COMORBIDITIES.join(", ")}.`,
-        "No qualifying comorbidity was found in the referral — request documentation of one from the provider before dispensing.",
-      ],
+      details,
     };
   }
 

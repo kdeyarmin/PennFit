@@ -1,6 +1,9 @@
 import { describe, it, expect } from "vitest";
 
-import { assessPapQualification } from "./qualification";
+import {
+  assessPapQualification,
+  isQualifyingComorbidity,
+} from "./qualification";
 
 describe("assessPapQualification", () => {
   it("qualifies on AHI >= 15 with no comorbidity needed", () => {
@@ -27,6 +30,36 @@ describe("assessPapQualification", () => {
     expect(q.verdict).toBe("qualifies_with_comorbidity");
     expect(q.hasDocumentedComorbidity).toBe(true);
     expect(q.details.join(" ")).toContain("hypertension");
+  });
+
+  it("recognises a qualifying comorbidity by abbreviation/synonym", () => {
+    // "HTN" and "depression" are common shorthand for two CMS-listed
+    // conditions (hypertension, mood disorder) and must clear the band.
+    const q = assessPapQualification({
+      ahi: 9,
+      rdi: null,
+      comorbidities: ["HTN"],
+    });
+    expect(q.verdict).toBe("qualifies_with_comorbidity");
+    expect(q.details.join(" ")).toContain("HTN");
+    expect(isQualifyingComorbidity("depression")).toBe(true);
+    expect(isQualifyingComorbidity("EDS")).toBe(true);
+  });
+
+  it("stays conditional when the documented condition is NOT CMS-qualifying", () => {
+    // Diabetes/obesity are real comorbidities but not on the CMS 5–14 list —
+    // they must not auto-clear coverage.
+    const q = assessPapQualification({
+      ahi: 9,
+      rdi: null,
+      comorbidities: ["type 2 diabetes", "obesity"],
+    });
+    expect(q.verdict).toBe("conditional");
+    expect(q.hasDocumentedComorbidity).toBe(true);
+    // It surfaces the documented-but-non-qualifying conditions for the operator.
+    expect(q.details.join(" ")).toContain("type 2 diabetes");
+    expect(q.details.join(" ")).toMatch(/qualifying/i);
+    expect(isQualifyingComorbidity("type 2 diabetes")).toBe(false);
   });
 
   it("is conditional in the 5–14 band with NO comorbidity", () => {
