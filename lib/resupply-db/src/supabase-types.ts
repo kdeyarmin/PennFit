@@ -100,6 +100,10 @@ export interface Database {
           created_at: string;
           updated_at: string;
           unsubscribed_at: string | null;
+          // Demo-lead nurture drip state (migration 0407). 0 = nothing
+          // sent, 1 = welcome sent, 2 = follow-up 1 sent, 3 = complete.
+          demo_drip_stage: number;
+          demo_drip_last_sent_at: string | null;
         };
         Insert: Partial<
           Database["public"]["Tables"]["newsletter_subscribers"]["Row"]

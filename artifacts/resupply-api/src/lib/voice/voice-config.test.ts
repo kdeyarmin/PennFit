@@ -111,6 +111,57 @@ describe("readVoiceConfigOrNull — optional value parsing", () => {
     ).toBe(0.95);
   });
 
+  it("clamps ELEVENLABS_STYLE / ELEVENLABS_SIMILARITY_BOOST into [0,1]", () => {
+    expect(
+      readVoiceConfigOrNull(fullEnv({ ELEVENLABS_STYLE: "0.15" }))
+        ?.elevenLabsStyle,
+    ).toBe(0.15);
+    expect(
+      readVoiceConfigOrNull(fullEnv({ ELEVENLABS_STYLE: "5" }))
+        ?.elevenLabsStyle,
+    ).toBe(1);
+    expect(
+      readVoiceConfigOrNull(fullEnv({ ELEVENLABS_SIMILARITY_BOOST: "0.9" }))
+        ?.elevenLabsSimilarityBoost,
+    ).toBe(0.9);
+    // Unset → undefined (tuned defaults apply downstream).
+    expect(readVoiceConfigOrNull(fullEnv())?.elevenLabsStyle).toBeUndefined();
+  });
+
+  it("parses ELEVENLABS_USE_SPEAKER_BOOST: unset → undefined, else truthiness", () => {
+    expect(
+      readVoiceConfigOrNull(fullEnv())?.elevenLabsUseSpeakerBoost,
+    ).toBeUndefined();
+    expect(
+      readVoiceConfigOrNull(fullEnv({ ELEVENLABS_USE_SPEAKER_BOOST: "false" }))
+        ?.elevenLabsUseSpeakerBoost,
+    ).toBe(false);
+    expect(
+      readVoiceConfigOrNull(fullEnv({ ELEVENLABS_USE_SPEAKER_BOOST: "true" }))
+        ?.elevenLabsUseSpeakerBoost,
+    ).toBe(true);
+  });
+
+  it("resolves OPENAI_REALTIME_NOISE_REDUCTION: valid values pass, typos → undefined", () => {
+    expect(
+      readVoiceConfigOrNull(fullEnv())?.realtimeNoiseReduction,
+    ).toBeUndefined();
+    expect(
+      readVoiceConfigOrNull(
+        fullEnv({ OPENAI_REALTIME_NOISE_REDUCTION: "near_field" }),
+      )?.realtimeNoiseReduction,
+    ).toBe("near_field");
+    expect(
+      readVoiceConfigOrNull(fullEnv({ OPENAI_REALTIME_NOISE_REDUCTION: "off" }))
+        ?.realtimeNoiseReduction,
+    ).toBe("off");
+    expect(
+      readVoiceConfigOrNull(
+        fullEnv({ OPENAI_REALTIME_NOISE_REDUCTION: "loud" }),
+      )?.realtimeNoiseReduction,
+    ).toBeUndefined();
+  });
+
   it("resolves the TTS transport: only 'http' (case/space-insensitive) → http, else ws", () => {
     expect(readVoiceConfigOrNull(fullEnv())?.elevenLabsTransport).toBe("ws");
     expect(

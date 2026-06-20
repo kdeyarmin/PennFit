@@ -12,6 +12,7 @@ import remindersRouter from "./reminders.js";
 import newsletterRouter from "./newsletter.js";
 import demoLeadRouter from "./demo-lead.js";
 import roiEstimateRouter from "./roi-estimate.js";
+import newsletterUnsubscribeRouter from "./newsletter-unsubscribe.js";
 import tenantSignupRouter from "./tenant-signup.js";
 import patientPacketsRouter from "./patient-packets.js";
 import csrOrdersRouter from "./csr-orders.js";
@@ -56,6 +57,10 @@ router.use(demoLeadRouter);
 // Breathe ROI calculator. Captures the lead + emails the estimate (numbers
 // recomputed server-side). Platform-safe; rate-limited per-IP in app.ts.
 router.use(roiEstimateRouter);
+// /api/newsletter-unsubscribe — public one-click unsubscribe for the
+// newsletter / demo-drip marketing list (HMAC-signed token). Mounted
+// before attachSignedIn; rate-limited at the route.
+router.use(newsletterUnsubscribeRouter);
 // /api/tenant-signup — public self-serve account creation (new org +
 // first admin, email-verified). Anonymous; honeypot + optional Turnstile
 // + per-IP rate limited in app.ts.
