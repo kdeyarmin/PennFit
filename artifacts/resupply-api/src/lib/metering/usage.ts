@@ -39,6 +39,11 @@ export const USAGE_METRIC_KEYS = [
   "billingTransactionsPerMonth",
   "faxEvents",
   "aiVoiceEvents",
+  // Completed virtual mask fittings (migration 0418). The Virtual Mask
+  // Fitter plan includes a monthly amount and bills per-fitting beyond it
+  // (fitter_fitting_metered add-on). Incremented once per completed
+  // fitting that comes back from a patient's signed link.
+  "fitterFittingsPerMonth",
 ] as const;
 
 export type UsageMetricKey = (typeof USAGE_METRIC_KEYS)[number];

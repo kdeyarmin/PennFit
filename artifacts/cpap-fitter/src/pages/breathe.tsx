@@ -3851,6 +3851,22 @@ const PLANS: {
   featured?: boolean;
 }[] = [
   {
+    name: "Virtual Mask Fitter",
+    price: "$149",
+    cadence: "/mo",
+    monthlyCents: 14900,
+    setup: "No setup fee · 25 fittings/mo, then $3 each",
+    blurb:
+      "Standalone AI mask fitter — text a patient a link, get the perfect mask & size back. No in-office fittings, no wasted sample masks.",
+    highlights: [
+      "AI virtual mask fitter — on-device facial measurement",
+      "Text or email a fitting link to any patient or prospect",
+      "Perfect mask type + size back in your fitter worklist",
+      "Photos never leave the patient's phone — only measurements",
+      "25 completed fittings/month, then per-fitting pricing",
+    ],
+  },
+  {
     name: "Launch",
     price: "$799",
     cadence: "/mo",

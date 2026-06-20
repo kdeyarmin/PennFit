@@ -1310,6 +1310,80 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
   },
 ];
 
+// Standalone "Virtual Mask Fitter" plan (migration 0418). A tenant whose
+// /me reports productScope === "mask_fitter" subscribed to JUST the AI mask
+// fitter, so the console collapses to the fitter worklist + the account
+// essentials they need to run it (brand the link, manage their plan, basic
+// settings). Every operational module is hidden — and the backend
+// independently 403s them, so this is purely the matching UX, not the
+// security boundary. The SPA route guard (useMaskFitterRouteGuard) redirects
+// any URL outside these prefixes back to the fitter worklist.
+const MASK_FITTER_NAV_GROUPS: ReadonlyArray<NavGroup> = [
+  {
+    label: "Mask Fitter",
+    items: [
+      {
+        label: "Fitter Invites",
+        icon: ScanFace,
+        href: "/admin/fitter-invites",
+        matchPrefix: "/admin/fitter-invites",
+        hint: "Invite patients to the AI mask fitter + review the mask & size that come back",
+      },
+      {
+        label: "Fitter Prospects",
+        icon: UsersRound,
+        href: "/admin/fitter-leads",
+        matchPrefix: "/admin/fitter-leads",
+        hint: "Fitter funnel + supply-campaign conversion",
+      },
+    ],
+  },
+  {
+    label: "Account",
+    items: [
+      {
+        label: "Storefront branding",
+        icon: Store,
+        href: "/admin/storefront-branding",
+        matchPrefix: "/admin/storefront-branding",
+        hint: "Brand the fitting link — your name, logo, and custom domain",
+      },
+      {
+        label: "Billing",
+        icon: Wallet,
+        href: "/account/billing",
+        matchPrefix: "/account/billing",
+        hint: "Manage your Virtual Mask Fitter subscription and usage",
+      },
+      {
+        label: "Settings",
+        icon: Settings,
+        href: "/admin/settings",
+        matchPrefix: "/admin/settings",
+        hint: "Workspace settings and your account security",
+      },
+    ],
+  },
+];
+
+/** SPA route prefixes a mask_fitter-scoped tenant may visit. Mirrors the
+ *  server allowlist in lib/product-scope.ts; the server is the real gate. */
+const MASK_FITTER_ALLOWED_ROUTE_PREFIXES: readonly string[] = [
+  "/admin/fitter-invites",
+  "/admin/fitter-leads",
+  "/admin/storefront-branding",
+  "/admin/settings",
+  "/account/billing",
+];
+
+/** The nav a tenant sees for its plan scope: the curated fitter-only nav
+ *  for the standalone Virtual Mask Fitter plan, else the full console nav. */
+function navGroupsForScope(
+  productScope: string | undefined,
+): ReadonlyArray<NavGroup> {
+  return productScope === "mask_fitter" ? MASK_FITTER_NAV_GROUPS : NAV_GROUPS;
+}
+
 function NavItem({
   href,
   label,
@@ -1622,6 +1696,7 @@ function SidebarNavBody({
   onItemClick,
   isAdminConfirmed,
   permissions,
+  productScope,
 }: {
   location: string;
   /** Shared nav-group expansion state, owned by the parent AppShell. */
@@ -1636,6 +1711,9 @@ function SidebarNavBody({
   /** Granular permission keys the caller holds (from /admin/me). Used
    *  to hide nav entries whose `requiredPermission` they lack. */
   permissions: ReadonlySet<string>;
+  /** Platform product scope from /me. "mask_fitter" swaps the full
+   *  console nav for the curated fitter-only nav. */
+  productScope?: string;
 }) {
   // Phase 16 — actionable-work counts powering nav badges. Cached for
   // 30s so paging through the SPA doesn't hammer the endpoint, but
@@ -1664,10 +1742,12 @@ function SidebarNavBody({
   // requiredPermission (and at least one visible tab) is always shown.
   // The server-side `requirePermission(...)` is the real boundary; this
   // only avoids showing a link that would 403.
-  const visibleGroups = NAV_GROUPS.map((group) => ({
-    ...group,
-    items: group.items.filter((link) => sectionVisible(link, permissions)),
-  })).filter((group) => group.items.length > 0);
+  const visibleGroups = navGroupsForScope(productScope)
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((link) => sectionVisible(link, permissions)),
+    }))
+    .filter((group) => group.items.length > 0);
 
   // Resolve "which sidebar entry is active" once per render so a section
   // and one of its tabs don't both highlight.
@@ -1792,10 +1872,15 @@ function SectionSubNav({
   location,
   isAdminConfirmed,
   permissions,
+  productScope,
 }: {
   location: string;
   isAdminConfirmed: boolean;
   permissions: ReadonlySet<string>;
+  /** Platform product scope from /me — scopes the active-section lookup to
+   *  the same nav the sidebar renders, so a fitter-only tenant never gets a
+   *  full-console section's tab bar. */
+  productScope?: string;
 }) {
   // Reuses the same query key as the sidebar, so TanStack serves it from
   // cache — no extra request, badges stay in lockstep with the sidebar.
@@ -1809,7 +1894,7 @@ function SectionSubNav({
     enabled: isAdminConfirmed,
   });
 
-  const active = pickActiveTarget(location, NAV_GROUPS);
+  const active = pickActiveTarget(location, navGroupsForScope(productScope));
   if (!active?.section.tabs) return null;
   const tabs = visibleTabs(active.section, permissions);
   if (tabs.length <= 1) return null;
@@ -2074,8 +2159,26 @@ export function AppShell({
     if (adminMe?.multiLocationEnabled) set.add(MULTI_LOCATION_NAV_TOKEN);
     return set;
   }, [adminPermissions, adminMe?.multiLocationEnabled]);
-  const [location] = useLocation();
+  // Platform product scope (migration 0418). "mask_fitter" collapses the
+  // console to the fitter-only nav and guards the routes.
+  const productScope = adminMe?.productScope;
+  const [location, setLocation] = useLocation();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+
+  // Route guard for the standalone Virtual Mask Fitter plan: a scoped tenant
+  // that lands on (or deep-links to) a console route outside its allowlist is
+  // bounced to the fitter worklist. The server independently 403s those
+  // routes — this just keeps the SPA from rendering a page that would only
+  // show errors. No-op for "full" scope (every normal tenant). `/account/*`
+  // (e.g. billing) is a separate top-level router, so it's never guarded here.
+  useEffect(() => {
+    if (productScope !== "mask_fitter") return;
+    if (!location.startsWith("/admin")) return;
+    const allowed = MASK_FITTER_ALLOWED_ROUTE_PREFIXES.some((prefix) =>
+      location.startsWith(prefix),
+    );
+    if (!allowed) setLocation("/admin/fitter-invites", { replace: true });
+  }, [productScope, location, setLocation]);
 
   // ── Shared sidebar nav state ──────────────────────────────────────────────
   // Both the desktop sidebar and the mobile drawer render SidebarNavBody.
@@ -2083,9 +2186,10 @@ export function AppShell({
   // and only one localStorage writer — preventing the CSS-hidden instance
   // from clobbering toggle changes made by the visible one.
 
+  const scopedNavGroups = navGroupsForScope(productScope);
   const activeGroup = findGroupForActiveHref(
-    NAV_GROUPS,
-    pickActiveHref(location, NAV_GROUPS),
+    scopedNavGroups,
+    pickActiveHref(location, scopedNavGroups),
   );
 
   const [navExpanded, setNavExpanded] = useState<Set<string>>(() =>
@@ -2232,6 +2336,7 @@ export function AppShell({
                     onItemClick={() => setMobileNavOpen(false)}
                     isAdminConfirmed={!!adminEmail}
                     permissions={navPermissions}
+                    productScope={productScope}
                   />
                 </nav>
               </SheetContent>
@@ -2265,6 +2370,7 @@ export function AppShell({
                 onToggleGroup={toggleNavGroup}
                 isAdminConfirmed={!!adminEmail}
                 permissions={navPermissions}
+                productScope={productScope}
               />
             </nav>
           </aside>
@@ -2281,6 +2387,7 @@ export function AppShell({
                 location={location}
                 isAdminConfirmed={!!adminEmail}
                 permissions={navPermissions}
+                productScope={productScope}
               />
             ) : null}
             {children}

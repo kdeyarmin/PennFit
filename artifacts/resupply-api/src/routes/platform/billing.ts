@@ -190,6 +190,7 @@ interface BillingPlanRow {
   sort_order: number | null;
   allowances: Record<string, unknown> | null;
   features: string[] | null;
+  product_scope: string | null;
   stripe_product_id: string | null;
   stripe_price_id: string | null;
   stripe_synced_at: string | null;
@@ -371,6 +372,9 @@ async function currentUsage(orgId: string) {
       billingTransactionsPerMonth: metered("billingTransactionsPerMonth"),
       faxEvents: metered("faxEvents"),
       aiVoiceEvents: metered("aiVoiceEvents"),
+      // Completed virtual mask fittings this month (migration 0418).
+      // Drives the Virtual Mask Fitter plan's included-vs-overage usage.
+      fitterFittingsPerMonth: metered("fitterFittingsPerMonth"),
     },
   };
 }
@@ -388,6 +392,7 @@ function mapPlan(row: BillingPlanRow) {
     sortOrder: row.sort_order,
     allowances: row.allowances ?? {},
     features: row.features ?? [],
+    productScope: row.product_scope ?? "full",
     stripeProductId: row.stripe_product_id ?? null,
     stripePriceId: row.stripe_price_id ?? null,
     stripeSyncedAt: row.stripe_synced_at ?? null,
