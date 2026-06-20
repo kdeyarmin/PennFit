@@ -127,6 +127,13 @@ function tenureInDays(createdAt: Date, now: Date): number {
   );
 }
 
+/** Canonicalize a free-text match key (payer name, SKU) so trivial
+ *  case/whitespace drift between the rule and the patient/prescription
+ *  doesn't silently miss a match. */
+function normalizeMatch(value: string): string {
+  return value.trim().toLowerCase();
+}
+
 function ruleMatches(
   rule: OutreachRule,
   patient: OutreachPatient,
@@ -136,7 +143,12 @@ function ruleMatches(
   if (!rule.active) return false;
   if (
     rule.matchItemSkuPrefix !== null &&
-    !prescription.itemSku.startsWith(rule.matchItemSkuPrefix)
+    // SKU prefix is matched case-insensitively (and trimmed): SKUs are
+    // not reliably canonicalized upstream, so a case/whitespace drift
+    // ("AX-100" vs "ax-100 ") must not silently miss the rule.
+    !normalizeMatch(prescription.itemSku).startsWith(
+      normalizeMatch(rule.matchItemSkuPrefix),
+    )
   ) {
     return false;
   }
@@ -147,9 +159,13 @@ function ruleMatches(
     // the payer first. This is the safe default: silently matching
     // unknown-payer patients to a payer-specific rule would route
     // outreach into a regime they shouldn't be in.
+    // Payer is free-text, so compare case- and whitespace-insensitively:
+    // "Aetna", "aetna ", and "AETNA" must all match the same rule rather
+    // than silently falling through to the prescription-default cadence.
     if (
       patient.insurancePayer === null ||
-      patient.insurancePayer !== rule.matchInsurancePayer
+      normalizeMatch(patient.insurancePayer) !==
+        normalizeMatch(rule.matchInsurancePayer)
     ) {
       return false;
     }
