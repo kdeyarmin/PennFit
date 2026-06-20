@@ -25,6 +25,9 @@ export interface ManualDocumentField {
   kind: ManualDocumentFieldKind;
   placeholder?: string;
   renderWhenBlank?: boolean;
+  /** Must carry a value before the document can be sent (chart prefill
+   *  fills these when the data exists; the send routes reject any blank). */
+  required?: boolean;
 }
 
 export interface ManualDocumentTypeDef {
