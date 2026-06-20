@@ -31,7 +31,7 @@ GA is the default, but it still rewrites the live, PHI‑touching voice
 session, so confirm it on a preview before trusting it in production:
 
 - It cannot be integration‑tested from CI — only against a real OpenAI key
-  - a real call.
+  with a real call.
 - A few GA wire details were **not fully documented** at build time and
   should be confirmed on a preview (below). They're all env‑overridable so
   validation needs **no code change** — just env edits + a test call.
