@@ -28,6 +28,7 @@ import conversationsSearchRouter from "./admin/conversations-search.js";
 import conversationDraftReplyRouter from "./admin/conversation-draft-reply.js";
 import clickToDialRouter from "./admin/click-to-dial.js";
 import shopOrdersAdminRouter from "./admin/shop-orders.js";
+import xpsShippingAdminRouter from "./admin/xps-shipping.js";
 import counterOrdersRouter from "./admin/counter-orders.js";
 import csrOrderRequestsAdminRouter from "./admin/csr-order-requests.js";
 import shopProductsAdminRouter from "./admin/shop-products.js";
@@ -59,6 +60,7 @@ import referralReviewsRouter from "./admin/referral-reviews.js";
 import equipmentRecallsRouter from "./admin/equipment-recalls.js";
 import assetRecoveryRouter from "./admin/asset-recovery.js";
 import analyticsRouter from "./admin/analytics.js";
+import reorderRemindersRouter from "./admin/reorder-reminders.js";
 import analyticsOutreachAttributionRouter from "./admin/analytics-outreach-attribution.js";
 import analyticsMarginRouter from "./admin/analytics-margin.js";
 import analyticsRevenueBySourceRouter from "./admin/analytics-revenue-by-source.js";
@@ -101,6 +103,7 @@ import integrationsErrorsRouter from "./admin/integrations-errors.js";
 import therapyFleetRouter from "./admin/therapy-fleet.js";
 import therapyClinicalInsightsRouter from "./admin/therapy-clinical-insights.js";
 import therapyResupplyRouter from "./admin/therapy-resupply.js";
+import resupplyOrderDraftsRouter from "./admin/resupply-order-drafts.js";
 import therapyComplianceRouter from "./admin/therapy-compliance.js";
 import integrationsRefreshSuppliesRouter from "./admin/integrations-refresh-supplies.js";
 import integrationsSyncEquipmentRouter from "./admin/integrations-sync-equipment.js";
@@ -112,6 +115,7 @@ import glAccountMappingsRouter from "./admin/gl-account-mappings.js";
 import reportPresetsRouter from "./admin/report-presets.js";
 import featureFlagsRouter from "./admin/feature-flags.js";
 import appConfigRouter from "./admin/app-config.js";
+import agreementsRouter from "./admin/agreements.js";
 import npsSummaryRouter from "./admin/nps-summary.js";
 import deliveryFailuresRouter from "./admin/delivery-failures.js";
 import outboundMessagesRouter from "./admin/outbound-messages.js";
@@ -130,6 +134,11 @@ import patientTherapyLinksRouter from "./admin/patient-therapy-links.js";
 import patientIntegrationsRouter from "./admin/patient-integrations.js";
 import smartTriggersRouter from "./admin/smart-triggers.js";
 import physicianFaxOutreachRouter from "./admin/physician-fax-outreach.js";
+import faxSettingsRouter from "./admin/fax-settings.js";
+import phoneSettingsRouter from "./admin/phone-settings.js";
+import emailSettingsRouter from "./admin/email-settings.js";
+import tenantSetupRouter from "./admin/tenant-setup.js";
+import catalogSeedRouter from "./admin/catalog-seed.js";
 import shopBackInStockAdminRouter from "./admin/shop-back-in-stock.js";
 import shopSubsMetricsRouter from "./admin/shop-subscriptions-metrics.js";
 import insuranceLeadsAdminRouter from "./admin/insurance-leads.js";
@@ -164,6 +173,7 @@ import clearinghouseCredentialsRouter from "./admin/clearinghouse-credentials.js
 import goodFaithEstimatesRouter from "./admin/good-faith-estimates.js";
 import pecosStatusRouter from "./admin/pecos-status.js";
 import eligibilityChecksRouter from "./admin/eligibility-checks.js";
+import refillConfirmationsRouter from "./admin/refill-confirmations.js";
 import sameOrSimilarRouter from "./admin/same-or-similar.js";
 import cappedRentalCyclesRouter from "./admin/capped-rental-cycles.js";
 import dwoDocumentsRouter from "./admin/dwo-documents.js";
@@ -174,6 +184,8 @@ import davinciPasSubmitRouter from "./admin/davinci-pas-submit.js";
 import priorAuthRequestFormRouter from "./admin/prior-auth-request-form.js";
 import billingBenchmarksRouter from "./admin/billing-benchmarks.js";
 import billingBatchSubmitRouter from "./admin/billing-batch-submit.js";
+import billingExport837pRouter from "./admin/billing-export-837p.js";
+import stripeConnectRouter from "./admin/stripe-connect.js";
 import claimPaperworkRouter from "./admin/claim-paperwork.js";
 import billingAutoSubmitRouter from "./admin/billing-auto-submit.js";
 import billingStatementsRouter from "./admin/billing-statements.js";
@@ -188,7 +200,7 @@ import webhookTestSendRouter from "./admin/webhook-test-send.js";
 import payerFeeSchedulesImportRouter from "./admin/payer-fee-schedules-import.js";
 import systemIntegrationsStatusRouter from "./admin/system-integrations-status.js";
 import pacwareRouter from "./admin/pacware.js";
-import connectionTestsRouter from "./admin/connection-tests.js";
+import platformConnectionTestsRouter from "./platform/connection-tests.js";
 import proxyChainRouter from "./admin/proxy-chain.js";
 import botPlaygroundRouter from "./admin/bot-playground.js";
 import documentationPacketsRouter from "./admin/documentation-packets.js";
@@ -203,7 +215,17 @@ import emailRouter from "./email/index.js";
 import episodesRouter from "./episodes/index.js";
 import healthRouter from "./health.js";
 import meRouter from "./me.js";
+import platformAnalyticsRouter from "./platform/analytics.js";
+import platformImpersonationRouter from "./platform/impersonation.js";
+import platformMeRouter from "./platform/me.js";
 import platformTenantsRouter from "./platform/tenants.js";
+import platformBillingRouter from "./platform/billing.js";
+import platformConfigRouter from "./platform/config.js";
+import platformSupportRouter from "./platform/support.js";
+import platformOutreachContactsRouter from "./platform/outreach-contacts.js";
+import platformOutreachCampaignsRouter from "./platform/outreach-campaigns.js";
+import platformUnsubscribeRouter from "./platform/unsubscribe.js";
+import adminSupportRouter from "./admin/support.js";
 import patientsRouter from "./patients/index.js";
 import rulesRouter from "./rules/index.js";
 import complianceRulesRouter from "./compliance-rules/index.js";
@@ -223,7 +245,18 @@ router.use(healthRouter);
 router.use(meRouter);
 // Platform super-admin (G4): cross-tenant operator surface, gated by
 // requirePlatformAdmin (the tier above a tenant admin).
+router.use(platformMeRouter);
 router.use(platformTenantsRouter);
+router.use(platformAnalyticsRouter);
+router.use(platformBillingRouter);
+router.use(platformConfigRouter);
+router.use(platformSupportRouter);
+router.use(platformConnectionTestsRouter);
+router.use(platformImpersonationRouter);
+router.use(platformOutreachContactsRouter);
+router.use(platformOutreachCampaignsRouter);
+// Public (no auth): one-click unsubscribe clicked from outreach emails.
+router.use(platformUnsubscribeRouter);
 // Public shop routes (no auth) — patient-facing cash-pay catalog,
 // Stripe Hosted Checkout, and order summary lookup. Mounted before
 // the admin-gated routes so the literal /shop/* paths can never be
@@ -336,6 +369,18 @@ router.use(smartTriggersRouter);
 // TELNYX_API_KEY / TELNYX_FAX_CONNECTION_ID / TELNYX_FAX_FROM_NUMBER
 // are set; otherwise the row is created with status='pending'.
 router.use(physicianFaxOutreachRouter);
+// /admin/organization/fax-settings — view / auto-provision (Telnyx) /
+// manually set a tenant's own fax number (migration 0368).
+router.use(faxSettingsRouter);
+// /admin/organization/phone-settings — view / auto-provision (Twilio) /
+// manually set a tenant's own voice + SMS numbers (migration 0364).
+router.use(phoneSettingsRouter);
+// /admin/organization/email-settings — view / set a tenant's own From
+// identity (migration 0360) + live SendGrid domain-auth status.
+router.use(emailSettingsRouter);
+// /admin/organization/setup-checklist — per-tenant onboarding checklist
+// (branding, domain, numbers, sender, payments, team, catalog).
+router.use(tenantSetupRouter);
 // /admin/(patients/:id)/prescription-requests — physician-faxable
 // pre-populated prescriptions. Telnyx dispatch, signed-PDF return,
 // CSR-stamped lifecycle. Renders via lib/prescription-request-pdf.ts.
@@ -539,6 +584,9 @@ router.use(pecosStatusRouter);
 // /admin/patients/:id/insurance-coverages/:coverageId/verify-eligibility
 // + /admin/patients/:id/eligibility-checks — X12 270/271 round-trip.
 router.use(eligibilityChecksRouter);
+// /admin/patients/:id/refill-confirmations — Medicare/payer refill
+// attestations (continued use + supply running low) captured at confirm.
+router.use(refillConfirmationsRouter);
 // /admin/patients/:id/same-or-similar — Medicare HETS Same-or-Similar
 // cache. Manual recording today; HETS adapter lands later.
 router.use(sameOrSimilarRouter);
@@ -571,6 +619,9 @@ router.use(priorAuthRequestFormRouter);
 router.use(billingBenchmarksRouter);
 // /admin/billing/batch-submit-office-ally — multi-claim 837P batch.
 router.use(billingBatchSubmitRouter);
+// /admin/billing/claims/export-837p — download a clearinghouse-neutral 837P.
+router.use(billingExport837pRouter);
+router.use(stripeConnectRouter);
 // /admin/billing/auto-submit/* — staged-approval auto-submission: the
 // "ready to transmit" worklist (preflight-clean + active eligibility),
 // automation status, and the operator approve-and-submit action.
@@ -613,10 +664,6 @@ router.use(systemIntegrationsStatusRouter);
 // patient-roster import (sync), and CSV exports (roster + resupply-due).
 // PacWare has no API; this is the documented CSV bridge.
 router.use(pacwareRouter);
-// /admin/connection-tests/* — super-admin "send a test" diagnostics for
-// email / SMS / voice / chat. Verifies a credential (including one just
-// saved in System Configuration) actually works. system.config.manage.
-router.use(connectionTestsRouter);
 // /admin/diagnostics/proxy-chain — echoes the forwarding-header chain
 // (socket peer, XFF, CF-Connecting-IP) plus Express's req.ip resolution
 // for the calling request. Operator tool for confirming Railway's XFF
@@ -652,10 +699,16 @@ router.use(webhookDeliveryRetryRouter);
 // that produces a plain-English action plan with specific "how to
 // obtain" guidance for every gap.
 router.use(dispenseReadinessRouter);
+// /admin/support/* — tenant-facing support tickets with an AI intake bot
+// (requireAdmin + support.tickets feature gate on the router).
+router.use(adminSupportRouter);
 // /admin/shop/products/* — operator tooling for the cash-pay catalog
 // itself. Today: PATCH stock_count metadata on a Stripe Product.
 // requireAdmin gate is on the router itself.
 router.use(shopProductsAdminRouter);
+// POST /admin/shop/catalog/seed — one-click "load starter catalog" into the
+// tenant's own Stripe account (idempotent). Gated by admin.tools.manage.
+router.use(catalogSeedRouter);
 // /admin/storefront-branding/* — a tenant configures their own
 // storefront name / tagline / logo and binds + verifies a custom domain.
 router.use(storefrontBrandingAdminRouter);
@@ -663,6 +716,11 @@ router.use(storefrontBrandingAdminRouter);
 // (tracking entry, mark-delivered, address override, refund issuance).
 // requireAdmin gate is on the router itself.
 router.use(shopOrdersAdminRouter);
+// /admin/shipping/xps/* + /admin/shop/orders/:orderId/shipping/* — XPS
+// Ship shipping-label integration: rate-shop, merge the patient address
+// onto a label, book + print it, and auto-fill tracking. requirePermission
+// gate is on each route.
+router.use(xpsShippingAdminRouter);
 // /admin/shop/counter-orders — Front Desk walk-in ordering. A CSR rings
 // up a cash or bill-to-insurance order for a walk-in customer without
 // Stripe Hosted Checkout. requirePermission("orders.create") gate is on
@@ -712,7 +770,7 @@ router.use(alertMessageOverridesRouter);
 // (lib/resupply-templates) falls back to each call site's
 // hard-coded baseline when the table is missing or the lookup
 // fails, so this route is forward-safe even before the migration
-// is journaled — see lib/resupply-db/drizzle/0067_message_templates.sql
+// is journaled — see lib/resupply-db/migrations/0067_message_templates.sql
 // for the journal posture.
 router.use(messageTemplatesRouter);
 // /admin/outreach-playbooks/* — situation-based contact templates:
@@ -750,9 +808,10 @@ router.use(opsStatusRouter);
 // /admin/voice/metrics — voice-call timing metrics (volume, answer
 // rate, handle + ring time) from the voice_calls ledger. Read-only.
 router.use(voiceMetricsRouter);
-// /admin/account-setup — new-account / production launch checklist.
+// /platform/account-setup — new-account / production launch checklist.
 // Read-only "is this done?" feed (env presence + DB probes) for the
-// Settings -> Account Setup page. Never returns env-var values.
+// platform console's Account setup page. Platform super-admin only;
+// never returns env-var values.
 router.use(accountSetupRouter);
 // /admin/inbox-counts — actionable-work counters for nav badges
 // (awaiting-reply convs, pending returns, pending reviews). Read-
@@ -811,6 +870,9 @@ router.use(assetRecoveryRouter);
 // analytics at /admin/storefront/analytics which covers orders +
 // email health + mask popularity.
 router.use(analyticsRouter);
+// /admin/reorder-reminders/* — reorder-reminder funnel (due → reminded →
+// confirmed → shipped) with per-channel (sms/email/voice) conversion.
+router.use(reorderRemindersRouter);
 // /admin/analytics/revenue-by-source — order volume + cash revenue split
 // across the storefront / resupply-fulfillment / clinical-form channels.
 router.use(analyticsRevenueBySourceRouter);
@@ -945,6 +1007,11 @@ router.use(therapyClinicalInsightsRouter);
 // vendor supply rosters whose nextEligibleDate has arrived, surfaced as
 // a fleet "due/overdue" queue (with CSV export) to drive resupply orders.
 router.use(therapyResupplyRouter);
+// /admin/therapy-resupply/draft-orders — staged resupply order proposals
+// (review queue + batch-stage + dismiss). A draft is a proposal a CSR
+// reviews and approves into the sign-&-pay order flow; nothing is charged
+// automatically. Staged manually here or by the resupply.auto-draft worker.
+router.use(resupplyOrderDraftsRouter);
 // /admin/therapy-compliance/* — CMS 90-day setup-adherence tracker:
 // best rolling 30-day count per in-window patient + qualify/at-risk
 // classification (with CSV export) to protect Medicare reimbursement.
@@ -990,6 +1057,7 @@ router.use(featureFlagsRouter);
 // enter/rotate integration credentials + platform secrets (migration
 // 0211). super_admin-only (system.config.manage).
 router.use(appConfigRouter);
+router.use(agreementsRouter);
 // /admin/nps/recent — last-N-days NPS rollup for the post-delivery
 // follow-up. Surfaces band counts + canonical NPS score + a comment
 // tail. Powered by shop_order_nps_responses (migration 0127).
@@ -1003,8 +1071,9 @@ router.use(outboundMessagesRouter);
 // /admin/lookup — global cross-entity lookup bar. Phone (HMAC),
 // email, UUID, and Stripe-session-id-aware. Read-only.
 router.use(lookupRouter);
-// /admin/system-info — read-only env + deployment metadata for ops
-// triage. Never returns env-var values, only "is this set?" booleans.
+// /platform/system-info — read-only env + deployment metadata for ops
+// triage. Platform super-admin only; never returns env-var values, only
+// "is this set?" booleans.
 router.use(systemInfoRouter);
 // /admin/shop/customers/* — Customer 360 surface (search/list +
 // detail + reorder-on-behalf). Read-mostly; the only write is the

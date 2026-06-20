@@ -19,7 +19,7 @@ env:
   # The pnpm version pinned in root package.json. Mirror it explicitly so
   # the workflow runner uses the same interpreter the lockfile was
   # produced with.
-  PNPM_VERSION: "11.6.0"
+  PNPM_VERSION: "11.7.0"
   NODE_VERSION: "24"
 
 jobs:
@@ -287,10 +287,11 @@ jobs:
     name: Integration (PostgREST)
     runs-on: ubuntu-latest
 
-    # Runs the DB-backed Supabase integration test(s) — currently
-    # invite-password-expiry-notify.integration.test.ts — against a REAL
-    # PostgREST surface (the service-role data path), not just a Postgres
-    # container. We don't spin up the full managed Supabase stack (Kong +
+    # Runs the DB-backed Supabase integration test(s) — the worker
+    # `*.integration.test.ts` suite (invite-password-expiry-notify and the
+    # multi-tenant cron fan-out tests, e.g. maintenance-nudges) — against a
+    # REAL PostgREST surface (the service-role data path), not just a
+    # Postgres container. We don't spin up the full managed Supabase stack (Kong +
     # GoTrue + Storage): a standalone PostgREST binary plus a tiny
     # /rest/v1 path proxy is enough for what these tests exercise. The
     # bootstrap lives in scripts/ci/start-test-postgrest.sh.
@@ -348,7 +349,14 @@ jobs:
       - name: Run PostgREST integration tests
         run: |
           pnpm --filter @workspace/resupply-api exec \
-            vitest run src/worker/jobs/invite-password-expiry-notify.integration.test.ts
+            vitest run \
+              src/worker/jobs/invite-password-expiry-notify.integration.test.ts \
+              src/worker/jobs/maintenance-nudges.integration.test.ts \
+              src/worker/jobs/video-visit-reminders.integration.test.ts \
+              src/worker/jobs/recall-notifications-send.integration.test.ts \
+              src/worker/jobs/patient-packet-reminders.integration.test.ts \
+              src/worker/jobs/pacware-ready-to-sync-digest.integration.test.ts \
+              src/worker/jobs/reminders.integration.test.ts
 
   a11y:
     name: A11y (Playwright + axe)

@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 
 import { permissionsForRole } from "@workspace/resupply-auth";
 
+import { getPendingAgreementTypes } from "../lib/agreements/status";
 import { isFeatureEnabled } from "../lib/feature-flags";
 import { adminReadRateLimiter } from "../middlewares/admin-rate-limit";
 import { requireAdmin } from "../middlewares/requireAdmin";
@@ -67,6 +68,12 @@ router.get("/me", adminReadRateLimiter, requireAdmin, async (req, res) => {
     "multi_location.enabled",
     req.orgId,
   );
+  // Onboarding agreements gate (G16). The required agreements (BAA +
+  // platform terms) this tenant hasn't yet signed at the current version.
+  // The SPA blocks the console with an accept screen until this is empty.
+  // Fails closed (all required types pending) when the tenant context or
+  // DB lookup is unavailable — an unsigned tenant must never slip through.
+  const pendingAgreements = await getPendingAgreementTypes(req.orgId);
   res.json({
     userId: req.adminUserId ?? "",
     email: req.adminEmail ?? "",
@@ -78,6 +85,14 @@ router.get("/me", adminReadRateLimiter, requireAdmin, async (req, res) => {
     // this value.
     locationId: req.adminLocationId ?? null,
     multiLocationEnabled,
+    // Platform-admin impersonation (G4). True when this admin session is a
+    // platform super-admin acting AS a tenant; `orgId` is then the
+    // impersonated tenant. The SPA reads this to render the persistent
+    // "you are impersonating — stop" banner. NULL/false for every normal
+    // tenant-admin session.
+    impersonation: req.impersonation === true,
+    impersonatedOrgId: req.impersonation === true ? (req.orgId ?? null) : null,
+    pendingAgreements,
   });
 });
 

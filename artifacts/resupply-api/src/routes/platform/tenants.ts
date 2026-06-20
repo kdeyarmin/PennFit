@@ -67,6 +67,57 @@ function toTenantView(o: OrgRow) {
 
 const tenantIdParam = z.object({ id: z.string().uuid() });
 
+// Mirrors the DB CHECK `organizations_slug_format`
+// (0331_organizations_tenant.sql): a URL-safe lowercase label.
+const createTenantBody = z.object({
+  slug: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .min(1)
+    .max(63)
+    .regex(
+      /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/,
+      "slug must be a URL-safe lowercase label (a-z, 0-9, hyphens)",
+    ),
+  name: z.string().trim().min(1).max(200),
+});
+
+/**
+ * Provision a new tenant's feature-flag rows by copying the seed tenant's
+ * current catalog (keys + enabled + metadata). Since the Phase-1 rekey
+ * (migration 0350) feature_flags is keyed `(org_id, key)`, a fresh org
+ * has no rows until this runs — without them a tenant admin can't toggle
+ * anything in Control Center. Idempotent (`ON CONFLICT (org_id, key) DO
+ * NOTHING`). Mirrors `provisionFeatureFlags` in scripts/tenant-onboard.ts
+ * (the CLI path); kept in sync deliberately.
+ */
+async function provisionTenantFeatureFlags(
+  raw: ReturnType<ReturnType<typeof getOrgScopedClient>["raw"]>,
+  seedOrgId: string,
+  newOrgId: string,
+): Promise<number> {
+  const { data: seedFlags, error } = await raw
+    .schema("resupply")
+    .from("feature_flags")
+    .select("key, enabled, description, category")
+    .eq("org_id", seedOrgId);
+  if (error) throw error;
+  const rows = (seedFlags ?? []).map((f) => ({
+    org_id: newOrgId,
+    key: (f as { key: string }).key,
+    enabled: (f as { enabled: boolean }).enabled,
+    description: (f as { description: string | null }).description,
+    category: (f as { category: string | null }).category,
+  }));
+  if (rows.length === 0) return 0;
+  const { error: insErr } = await raw
+    .schema("resupply")
+    .from("feature_flags")
+    .upsert(rows, { onConflict: "org_id,key", ignoreDuplicates: true });
+  if (insErr) throw insErr;
+  return rows.length;
+}
 router.get(
   "/platform/tenants",
   adminReadRateLimiter,
@@ -279,4 +330,177 @@ router.get(
   },
 );
 
+/**
+ * Create a new tenant SHELL: the `organizations` row + its feature-flag
+ * provisioning. The first ADMIN is intentionally NOT created here — that
+ * path (auth user + set-password link) stays the `tenant:onboard` CLI,
+ * which an operator runs to invite the tenant's owner. So this gives the
+ * platform console a "create the tenant" button; the admin invite is a
+ * deliberate, separate step.
+ */
+router.post(
+  "/platform/tenants",
+  adminWriteRateLimiter,
+  requirePlatformAdmin,
+  async (req: Request, res: Response): Promise<void> => {
+    const parsed = createTenantBody.safeParse(req.body);
+    if (!parsed.success) {
+      res
+        .status(400)
+        .json({ error: "invalid_tenant", details: parsed.error.flatten() });
+      return;
+    }
+    const { slug, name } = parsed.data;
+
+    const seedOrgId = await resolveSeedOrgId();
+    if (!seedOrgId) {
+      res.status(503).json({ error: "tenant_directory_unavailable" });
+      return;
+    }
+    const raw = getOrgScopedClient(seedOrgId).raw();
+
+    // Insert the org. The unique index on slug turns a duplicate into a
+    // 23505 we translate to 409 (a friendlier signal than a 500).
+    const { data: created, error: insErr } = await raw
+      .schema("resupply")
+      .from("organizations")
+      .insert({ slug, name })
+      .select(TENANT_SELECT)
+      .limit(1)
+      .maybeSingle();
+    if (insErr) {
+      if ((insErr as { code?: string }).code === "23505") {
+        res.status(409).json({ error: "slug_already_exists" });
+        return;
+      }
+      logger.error(
+        { event: "platform_tenant_create_failed", err: insErr },
+        "platform: tenant create failed",
+      );
+      res.status(500).json({ error: "tenant_create_failed" });
+      return;
+    }
+    if (!created) {
+      res.status(500).json({ error: "tenant_create_failed" });
+      return;
+    }
+    const tenant = toTenantView(created as OrgRow);
+
+    // Provision feature flags so the new tenant's admins can toggle
+    // features. Best-effort: a flag-provisioning hiccup must NOT undo a
+    // successfully-created org (the operator can re-run provisioning),
+    // so we log and continue rather than 500 the create.
+    let flagsProvisioned = 0;
+    try {
+      flagsProvisioned = await provisionTenantFeatureFlags(
+        raw,
+        seedOrgId,
+        tenant.id,
+      );
+    } catch (err) {
+      logger.warn(
+        {
+          event: "platform_tenant_flag_provision_failed",
+          err,
+          orgId: tenant.id,
+        },
+        "platform: tenant created but feature-flag provisioning failed",
+      );
+    }
+
+    invalidateBrandingCache();
+    await logAudit({
+      action: "platform.tenant.created",
+      adminEmail: req.platformAdminEmail ?? "platform-admin",
+      adminUserId: req.platformAdminUserId ?? null,
+      targetTable: "organizations",
+      targetId: tenant.id,
+      metadata: { slug, flagsProvisioned },
+      ip: null,
+      userAgent: null,
+    }).catch((err) => {
+      logger.warn({ err }, "platform: tenant create audit write failed");
+    });
+
+    res.status(201).json({ tenant, flagsProvisioned });
+  },
+);
+
+// ── GET /platform/overview ──────────────────────────────────────────
+// One-call fleet snapshot for the super-admin dashboard: every tenant
+// plus its headline usage counts, so the "see all tenants" view loads
+// without N per-tenant round-trips. AGGREGATE COUNTS ONLY — no patient
+// PHI ever crosses this surface; a super-admin who needs a tenant's real
+// records uses audited impersonation (act-as-tenant) instead.
+//
+// Fan-out is bounded by the number of tenants (a handful) and each count
+// is a HEAD request (no rows returned). A per-tenant count failure
+// degrades that tenant's number to null rather than failing the whole
+// dashboard.
+router.get(
+  "/platform/overview",
+  adminReadRateLimiter,
+  requirePlatformAdmin,
+  async (_req, res): Promise<void> => {
+    const seedOrgId = await resolveSeedOrgId();
+    if (!seedOrgId) {
+      res.status(503).json({ error: "tenant_directory_unavailable" });
+      return;
+    }
+    const { data, error } = await getOrgScopedClient(seedOrgId)
+      .raw()
+      .schema("resupply")
+      .from("organizations")
+      .select(TENANT_SELECT)
+      .order("created_at", { ascending: true });
+    if (error) {
+      logger.error(
+        { event: "platform_overview_list_failed", err: error },
+        "platform: overview tenant list failed",
+      );
+      res.status(500).json({ error: "overview_failed" });
+      return;
+    }
+
+    const tenants = await Promise.all(
+      ((data ?? []) as OrgRow[]).map(async (o) => {
+        const db = getOrgScopedClient(o.id);
+        const usageEntries = await Promise.all(
+          USAGE_COUNTS.map(async ([label, table]) => {
+            try {
+              const { count, error: countErr } = await db
+                .from(table)
+                .select("*", { count: "exact", head: true });
+              if (countErr) throw countErr;
+              return [label, count ?? 0] as const;
+            } catch (err) {
+              // Degrade this one metric to null; keep the rest. Log with
+              // tenant + table context so a persistent null (RLS/grant
+              // misconfig, PostgREST blip) is diagnosable, not invisible.
+              logger.warn(
+                {
+                  event: "platform_overview_count_failed",
+                  err,
+                  orgId: o.id,
+                  table,
+                },
+                "platform: overview per-tenant count failed; degrading to null",
+              );
+              return [label, null] as const;
+            }
+          }),
+        );
+        return {
+          ...toTenantView(o),
+          usage: Object.fromEntries(usageEntries) as Record<
+            string,
+            number | null
+          >,
+        };
+      }),
+    );
+
+    res.json({ tenants, generatedAt: new Date().toISOString() });
+  },
+);
 export default router;

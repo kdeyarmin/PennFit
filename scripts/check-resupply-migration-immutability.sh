@@ -4,7 +4,7 @@
 #
 # Background:
 #   lib/resupply-db/scripts/migrate.mjs dedups applied migrations by the
-#   sha256 of each file's CONTENT (the drizzle.resupply_migrations.hash
+#   sha256 of each file's CONTENT (the migrations.resupply_migrations.hash
 #   column), NOT by filename. So editing an already-shipped migration
 #   changes its hash, and the deploy-time migrator treats the file as a
 #   brand-new PENDING migration and RE-APPLIES it against production. If
@@ -21,7 +21,7 @@
 #   reconciled by hand.
 #
 # Rule enforced here:
-#   A migration file under lib/resupply-db/drizzle/ that ALREADY EXISTS on
+#   A migration file under lib/resupply-db/migrations/ that ALREADY EXISTS on
 #   the base ref (i.e. is "shipped") must NOT be modified, deleted, or
 #   renamed. The correct way to change a shipped migration's effect is a
 #   NEW, higher-numbered corrective migration written idempotently — never
@@ -36,7 +36,7 @@
 # an already-applied migration idempotent in place rather than add a new
 # corrective migration):
 #   Record the file's basename in
-#       lib/resupply-db/drizzle/.migration-edit-allowlist
+#       lib/resupply-db/migrations/.migration-edit-allowlist
 #   in the SAME change, so the override is reviewed in the PR diff. Remove
 #   the entry once the edit has shipped. (Pre-commit can also be skipped
 #   with SKIP_HOOKS=1 / git commit --no-verify, but CI honors only the
@@ -63,8 +63,8 @@ fi
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
-MIGRATIONS_GLOB='lib/resupply-db/drizzle/*.sql'
-ALLOWLIST_FILE='lib/resupply-db/drizzle/.migration-edit-allowlist'
+MIGRATIONS_GLOB='lib/resupply-db/migrations/*.sql'
+ALLOWLIST_FILE='lib/resupply-db/migrations/.migration-edit-allowlist'
 
 BASE_REF="${BASE_REF:-HEAD}"
 DIFF_TARGET="${DIFF_TARGET---cached}"

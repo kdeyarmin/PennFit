@@ -13,6 +13,17 @@
 
 import { useSyncExternalStore } from "react";
 
+/**
+ * The platform/parent-product brand. `PennFit` is only the repository
+ * codename and `PennPaps` is one tenant operating on the platform — when
+ * the software refers to *itself* (the admin workstation chrome, the SaaS
+ * product name) it is always **CareMetric Breathe**. Mirrors the
+ * server-side `PLATFORM_NAME` in
+ * `artifacts/resupply-api/src/lib/company-info.ts`. Tenant-specific
+ * surfaces use the host-resolved `storefrontName` instead.
+ */
+export const PLATFORM_NAME = "CareMetric Breathe";
+
 export interface StorefrontBranding {
   /** Short customer-facing brand shown in the header/hero. */
   storefrontName: string;
@@ -22,6 +33,15 @@ export interface StorefrontBranding {
   tagline: string;
   /** Public URL of the tenant's logo, or null to use the bundled default. */
   logoUrl: string | null;
+  /**
+   * Whether these values are the host-resolved tenant brand (true) or the
+   * bundled compile-time fallback (false, before the fetch lands / if it
+   * fails). The storefront ignores this — its bundled default IS the Penn
+   * tenant's brand. The SHARED admin chrome uses it to avoid showing one
+   * tenant's name (the "PennPaps" fallback) on another tenant's host until
+   * branding resolves: it renders a tenant-neutral label while `false`.
+   */
+  resolved: boolean;
 }
 
 export const DEFAULT_BRANDING: StorefrontBranding = {
@@ -29,6 +49,7 @@ export const DEFAULT_BRANDING: StorefrontBranding = {
   legalName: "Penn Home Medical Supply",
   tagline: "Your CPAP, made simple. Fit. Shop. Resupply.",
   logoUrl: null,
+  resolved: false,
 };
 
 let current: StorefrontBranding = DEFAULT_BRANDING;
@@ -56,6 +77,9 @@ function startBrandingFetch(): void {
         legalName: nonEmpty(d.legalName) ? d.legalName : current.legalName,
         tagline: nonEmpty(d.tagline) ? d.tagline : current.tagline,
         logoUrl: nonEmpty(d.logoUrl) ? d.logoUrl : null,
+        // The fetch landed — this is the host-resolved brand now, even when
+        // the values happen to equal the bundled default (the Penn host).
+        resolved: true,
       };
       const changed = (
         Object.keys(next) as Array<keyof StorefrontBranding>

@@ -1,6 +1,8 @@
-// Hand-rolled fetch wrappers for /admin/connection-tests — backs the
-// "Connection tests" section on the super-admin System Configuration
-// page. Same pattern as app-config-api.ts (cookie auth + CSRF header).
+// Hand-rolled fetch wrappers for /platform/connection-tests — backs the
+// "Connection tests" tab on the global super-admin (/platform) console.
+// These verify the PLATFORM infrastructure (SendGrid, Twilio, AI vendors)
+// the super-admin manages; they are gated by requirePlatformAdmin.
+// Same pattern as platform-config-api.ts (cookie auth + CSRF header).
 //
 // Each "send test" performs ONE real vendor round-trip server-side. A
 // failed test resolves to a 200 with `{ ok: false, … }` (the request
@@ -67,7 +69,7 @@ async function jsonFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 export const getConnectionTestStatus = () =>
-  jsonFetch<ConnectionTestStatus>("/admin/connection-tests/status");
+  jsonFetch<ConnectionTestStatus>("/platform/connection-tests/status");
 
 const postJson = (path: string, body: unknown) =>
   jsonFetch<ConnectionTestResult>(path, {
@@ -77,13 +79,13 @@ const postJson = (path: string, body: unknown) =>
   });
 
 export const sendTestEmail = (to: string) =>
-  postJson("/admin/connection-tests/email", { to });
+  postJson("/platform/connection-tests/email", { to });
 
 export const sendTestSms = (to: string) =>
-  postJson("/admin/connection-tests/sms", { to });
+  postJson("/platform/connection-tests/sms", { to });
 
 export const sendTestVoice = (to: string) =>
-  postJson("/admin/connection-tests/voice", { to });
+  postJson("/platform/connection-tests/voice", { to });
 
 export const runChatConnectionTest = () =>
-  postJson("/admin/connection-tests/chat", {});
+  postJson("/platform/connection-tests/chat", {});

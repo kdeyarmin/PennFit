@@ -510,15 +510,17 @@ export function HelpArticleShell({
                     <Sparkles className="w-4 h-4" />
                     Ask {contact.assistantStorefrontName}
                   </Button>
-                  <a href={`tel:${contact.phoneE164}`}>
-                    <Button
-                      variant="outline"
-                      className="rounded-full glass-panel border-border/60 gap-2"
-                    >
-                      <PhoneCall className="w-4 h-4" />
-                      {contact.phoneDisplay}
-                    </Button>
-                  </a>
+                  {contact.phoneE164 && (
+                    <a href={`tel:${contact.phoneE164}`}>
+                      <Button
+                        variant="outline"
+                        className="rounded-full glass-panel border-border/60 gap-2"
+                      >
+                        <PhoneCall className="w-4 h-4" />
+                        {contact.phoneDisplay}
+                      </Button>
+                    </a>
+                  )}
                 </div>
               </div>
             </div>

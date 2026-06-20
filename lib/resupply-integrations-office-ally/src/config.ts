@@ -161,11 +161,39 @@ export function readOfficeAllyRealtimeConfigOrNull(
   // All-or-null, mirroring readOfficeAllyConfigOrNull: a partial config
   // degrades to the SFTP path rather than half-attempting real-time.
   if (!url || !apiKey) return null;
+  // The 270 we POST here is PHI in cleartext-on-the-wire and the URL is
+  // operator-supplied, so an https + host-allowlist check is mandatory:
+  // it stops a misconfigured (http://) endpoint from sending a 270 in
+  // the clear, and stops a malicious/typo'd host from turning this into
+  // an SSRF exfiltration sink. Fail-soft per the reader contract — a URL
+  // that doesn't validate returns null (degrade to the SFTP path), never
+  // throws at boot.
+  if (!isAllowedRealtimeUrl(url)) return null;
   return {
     url,
     apiKey,
     timeoutMs: parseTimeoutMs(env.OFFICE_ALLY_REALTIME_TIMEOUT_MS),
   };
+}
+
+/**
+ * True iff `raw` is a well-formed HTTPS URL whose host is Office Ally's
+ * EDI domain (`officeally.io` or any `*.officeally.io` subdomain — the
+ * real-time endpoint lives at `edi.officeally.io`). Anything else
+ * (http, a non-OA host, a malformed URL) is rejected so the 270 PHI
+ * never leaves over cleartext or to an attacker-chosen host. Pure /
+ * never throws.
+ */
+function isAllowedRealtimeUrl(raw: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== "https:") return false;
+  const host = parsed.hostname.toLowerCase();
+  return host === "officeally.io" || host.endsWith(".officeally.io");
 }
 
 export function resolveOutboxDir(env: NodeJS.ProcessEnv = process.env): string {

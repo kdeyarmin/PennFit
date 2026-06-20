@@ -35,7 +35,7 @@ export interface AccountSetupResponse {
 }
 
 export async function fetchAccountSetup(): Promise<AccountSetupResponse> {
-  const url = "/resupply-api/admin/account-setup";
+  const url = "/resupply-api/platform/account-setup";
   const res = await fetch(url, {
     headers: { Accept: "application/json" },
   });

@@ -29,6 +29,7 @@ import {
   isVerifiedCustomDomainOrigin,
   warmVerifiedCustomDomains,
 } from "./lib/tenant-branding";
+import { isPlatformSubdomainOrigin } from "./lib/tenant-domain";
 import { createTrustProxyFn } from "./lib/trusted-proxies";
 import { errorHandler } from "./middlewares/errorHandler";
 import {
@@ -37,7 +38,10 @@ import {
 } from "./middlewares/csrf";
 import { adminMutationLooseLimit } from "./middlewares/rate-limit";
 import { securityHeaders } from "./middlewares/securityHeaders";
-import { stripeWebhookHandler } from "./lib/stripe/webhook-handler";
+import {
+  stripePlatformBillingWebhookHandler,
+  stripeWebhookHandler,
+} from "./lib/stripe/webhook-handler";
 import faxWebhooksRouter from "./routes/fax/webhooks";
 
 // Register the audit lib's request-id bridge once at import time so
@@ -167,7 +171,11 @@ app.use(
     origin: (origin, cb) => {
       if (!origin) return cb(null, true);
       if (allowedOrigins.includes(origin)) return cb(null, true);
-      return cb(null, isVerifiedCustomDomainOrigin(origin));
+      if (isVerifiedCustomDomainOrigin(origin)) return cb(null, true);
+      // Platform subdomains (`<slug>.<base>`, G10) are our own hosts —
+      // admit them like the apex so a tenant served at its slug subdomain
+      // can call the API cross-origin without binding a custom domain.
+      return cb(null, isPlatformSubdomainOrigin(origin));
     },
     credentials: true,
   }),
@@ -263,6 +271,16 @@ app.post(
   stripeWebhookLimiter,
   express.raw({ type: "application/json", limit: "256kb" }),
   stripeWebhookHandler,
+);
+// Dedicated platform-billing (SaaS) Stripe account posts here with its
+// own signing secret — separate from the patient/Connect webhook above.
+// Same raw-body-before-express.json() contract; inert in shared-account
+// mode (returns 503/ignored). See webhook-handler.ts.
+app.post(
+  "/resupply-api/stripe/platform-webhook",
+  stripeWebhookLimiter,
+  express.raw({ type: "application/json", limit: "256kb" }),
+  stripePlatformBillingWebhookHandler,
 );
 
 // Telnyx fax webhooks (inbound fax.received + outbound delivery status)
@@ -577,6 +595,56 @@ const newsletterSubscribeLimiter = expressRateLimit({
   },
 });
 app.use("/api/newsletter", newsletterSubscribeLimiter);
+
+// POST /api/demo-lead — anonymous Breathe demo-gate email capture. Same
+// drive-by form-spam abuse shape as the newsletter signup, so it reuses
+// the same tight per-IP cap.
+const demoLeadLimiter = expressRateLimit({
+  windowMs: RATE_LIMITS.newsletter_subscribe.windowMs,
+  limit: RATE_LIMITS.newsletter_subscribe.limit,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req: Request) => ipKeyGenerator(req.ip ?? "0.0.0.0"),
+  message: {
+    error:
+      "Too many demo signup attempts from this network. Please wait a few minutes and try again.",
+  },
+});
+app.use("/api/demo-lead", demoLeadLimiter);
+
+// POST /api/roi-estimate — anonymous "email me my ROI estimate". This one
+// SENDS an email to the address provided, so a tight per-IP cap also blunts
+// using it to spray mail; reuses the same marketing-form window/limit.
+const roiEstimateLimiter = expressRateLimit({
+  windowMs: RATE_LIMITS.newsletter_subscribe.windowMs,
+  limit: RATE_LIMITS.newsletter_subscribe.limit,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req: Request) => ipKeyGenerator(req.ip ?? "0.0.0.0"),
+  message: {
+    error:
+      "Too many estimate requests from this network. Please wait a few minutes and try again.",
+  },
+});
+app.use("/api/roi-estimate", roiEstimateLimiter);
+
+// POST /api/tenant-signup — public self-serve account creation. Each
+// success provisions a real tenant + admin, so cap it tightly per-IP
+// (same window/limit as the other anonymous marketing-form endpoints;
+// email verification + slug uniqueness are the other backstops, plus
+// optional Turnstile inside the handler).
+const tenantSignupLimiter = expressRateLimit({
+  windowMs: RATE_LIMITS.newsletter_subscribe.windowMs,
+  limit: RATE_LIMITS.newsletter_subscribe.limit,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req: Request) => ipKeyGenerator(req.ip ?? "0.0.0.0"),
+  message: {
+    error:
+      "Too many signup attempts from this network. Please wait a few minutes and try again.",
+  },
+});
+app.use("/api/tenant-signup", tenantSignupLimiter);
 
 // Defense-in-depth: a single CSRF gate covering every admin-tree
 // mutation on both mount prefixes. Pass-through for safe methods and

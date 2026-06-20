@@ -14,6 +14,7 @@ import {
   stageSupabaseResponse,
   getSupabaseWritePayloads,
   getSupabaseFilterCalls,
+  getSupabaseCallCount,
 } from "../../test-helpers/supabase-mock";
 
 const supabaseMock = installSupabaseMock();
@@ -23,7 +24,13 @@ vi.mock("@workspace/resupply-email", () => ({
   createSendgridClient: () => ({
     sendEmail: sendEmailMock,
   }),
-  DEFAULT_SENDGRID_FROM_EMAIL: "info@pennpaps.com",
+  DEFAULT_SENDGRID_FROM_EMAIL: "noreply@cmbreathe.com",
+}));
+
+// The sweep now fans out per active tenant and gates each on the
+// `fitter_reengage.dispatcher` flag; force it on so the per-org body runs.
+vi.mock("../../lib/feature-flags", () => ({
+  isFeatureEnabled: vi.fn(async () => true),
 }));
 
 import {
@@ -43,6 +50,11 @@ const FULL_CFG = {
 beforeEach(() => {
   sendEmailMock.mockClear();
   supabaseMock.reset();
+  // Fan-out reads `organizations`; stage a single active org so the
+  // per-tenant cases behave as the prior one-tenant sweep.
+  stageSupabaseResponse("organizations", "select", {
+    data: [{ id: "00000000-0000-4000-8000-000000000001" }],
+  });
 });
 
 describe("composeReengageEmail", () => {
@@ -321,6 +333,23 @@ describe("runFitterLeadReengageSweep", () => {
     expect(stats.scanned).toBe(0);
     expect(sendEmailMock).not.toHaveBeenCalled();
   });
+
+  it("scans each active tenant's leads (multi-tenant fan-out)", async () => {
+    supabaseMock.reset();
+    stageSupabaseResponse("organizations", "select", {
+      data: [{ id: "org-a" }, { id: "org-b" }],
+    });
+    // Each tenant's lead scan comes back empty → nothing sent.
+    stageSupabaseResponse("fitter_leads", "select", { data: [] });
+    stageSupabaseResponse("fitter_leads", "select", { data: [] });
+
+    const stats = await runFitterLeadReengageSweep(FULL_CFG);
+    expect(stats.scanned).toBe(0);
+    expect(stats.emailed).toBe(0);
+    // Each active tenant ran its own lead scan.
+    expect(getSupabaseCallCount("fitter_leads", "select")).toBe(2);
+    expect(sendEmailMock).not.toHaveBeenCalled();
+  });
 });
 
 describe("composeReengageEmail — HTML escaping", () => {
@@ -388,9 +417,9 @@ describe("readReengageMessagingConfig", () => {
   it("returns null for credentials that are not in env", () => {
     const cfg = readReengageMessagingConfig({});
     expect(cfg.sendgridApiKey).toBeNull();
-    // From address always resolves to the single canonical default
-    // (ADR 018) — it is no longer gated on the env var being set.
-    expect(cfg.sendgridFromEmail).toBe("info@pennpaps.com");
+    // From address always resolves to the platform default — it is no
+    // longer gated on the env var being set.
+    expect(cfg.sendgridFromEmail).toBe("noreply@cmbreathe.com");
     expect(cfg.sendgridFromName).toBeNull();
     expect(cfg.publicBaseUrl).toBe("");
   });

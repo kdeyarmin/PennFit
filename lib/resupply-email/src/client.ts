@@ -156,13 +156,36 @@ export interface SendgridClient {
 }
 
 /**
- * The platform's single outbound From address (ADR 016 / 018): one
- * sender identity — info@pennpaps.com — across every environment. Used
- * as the default when SENDGRID_FROM_EMAIL is unset so a deploy that only
- * has the API key still sends from the canonical address (and the admin
- * "connection test" can pass with just the key set).
+ * The PLATFORM's default outbound From address — the CareMetric Breathe
+ * platform identity (cmbreathe.com). Used when neither an explicit option,
+ * `SENDGRID_FROM_EMAIL`, nor a per-tenant `organizations.from_email`
+ * (migration 0360) is set, so a deploy with only the API key still sends
+ * from the canonical platform address.
+ *
+ * This is the PLATFORM fallback, NOT a tenant address: the Penn Home Medical
+ * Supply tenant ("PennPaps") has its OWN explicit sender pinned to
+ * info@pennpaps.com (migration 0377), so moving this default to cmbreathe.com
+ * does not change Penn's mail — it only changes the default every other
+ * (unconfigured) tenant inherits.
+ *
+ * Deliverability: cmbreathe.com must be authenticated (SPF/DKIM) in SendGrid
+ * for this From to reach inboxes.
  */
-export const DEFAULT_SENDGRID_FROM_EMAIL = "info@pennpaps.com";
+export const DEFAULT_SENDGRID_FROM_EMAIL = "noreply@cmbreathe.com";
+
+/**
+ * The PLATFORM's default sender display name — the CareMetric Breathe
+ * platform identity. Used when neither an explicit `fromName` option,
+ * `SENDGRID_FROM_NAME`, nor a per-tenant `organizations.from_name`
+ * (migration 0360) is set, so unconfigured tenants render a branded
+ * "From" name rather than a bare email address.
+ *
+ * Like the From email, this is the PLATFORM fallback, NOT a tenant name:
+ * the Penn Home Medical Supply tenant pins its own "Penn Home Medical
+ * Supply" name (migration 0377), so this default only affects tenants
+ * that haven't set their own.
+ */
+export const DEFAULT_SENDGRID_FROM_NAME = "CareMetric Breathe";
 
 /**
  * Build a SendgridClient.
@@ -172,9 +195,10 @@ export const DEFAULT_SENDGRID_FROM_EMAIL = "info@pennpaps.com";
  * required value — it throws EmailConfigError at construction (NOT at
  * first send) when it is missing. The From address is a fixed platform
  * constant: when SENDGRID_FROM_EMAIL is unset it defaults to
- * {@link DEFAULT_SENDGRID_FROM_EMAIL} (info@pennpaps.com), so the
- * "one From address" rule (ADR 016/018) holds with zero extra
- * configuration. SENDGRID_FROM_NAME is optional (display name only).
+ * {@link DEFAULT_SENDGRID_FROM_EMAIL} (noreply@cmbreathe.com — the platform
+ * identity), so a deploy with only the API key still sends. A per-tenant
+ * sender (resolveTenantSender → fromEmail option) still wins.
+ * SENDGRID_FROM_NAME is optional (display name only).
  *
  * Production fail-closed: a missing API key should never silently degrade
  * to "email didn't go out" — it must surface as a 503 at the route
@@ -193,7 +217,15 @@ export function createSendgridClient(
     fromEmailCandidate && fromEmailCandidate !== ""
       ? fromEmailCandidate
       : DEFAULT_SENDGRID_FROM_EMAIL;
-  const fromName = opts.fromName ?? process.env.SENDGRID_FROM_NAME;
+  // Display name only. An explicit override (option or env) wins; an
+  // unset/blank value falls back to the platform constant so unconfigured
+  // tenants still render a branded sender name rather than a bare address.
+  const fromNameOverride = opts.fromName ?? process.env.SENDGRID_FROM_NAME;
+  const fromNameCandidate = fromNameOverride?.trim();
+  const fromName =
+    fromNameCandidate && fromNameCandidate !== ""
+      ? fromNameCandidate
+      : DEFAULT_SENDGRID_FROM_NAME;
 
   if (!apiKey) {
     throw new EmailConfigError(

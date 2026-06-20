@@ -173,20 +173,31 @@ describe("getOrgScopedClient", () => {
   });
 });
 
-// A minimal directory-read fake: `.schema().from().select().eq()` resolves
-// to the staged `{ data, error }` envelope (PostgREST select-many shape).
+// A minimal directory-read fake: `.schema().from().select().eq().order().range()`
+// resolves to the staged `{ data, error }` envelope (PostgREST select-many
+// shape). `.range(from, to)` slices the staged data so the paginated
+// listActiveOrgIds() loop terminates on a short page; an error envelope is
+// returned verbatim on every page.
 function makeDirectoryClient(result: { data?: unknown; error?: unknown }): {
   client: ResupplySupabaseClient;
   lastEq?: { column: string; value: unknown };
 } {
   const state: { lastEq?: { column: string; value: unknown } } = {};
+  const allRows: unknown[] = Array.isArray(result.data) ? result.data : [];
   const builder = {
     select() {
       return this;
     },
     eq(column: string, value: unknown) {
       state.lastEq = { column, value };
-      return Promise.resolve(result);
+      return this;
+    },
+    order() {
+      return this;
+    },
+    range(from: number, to: number) {
+      if (result.error) return Promise.resolve({ error: result.error });
+      return Promise.resolve({ data: allRows.slice(from, to + 1) });
     },
   };
   const client = {
@@ -233,5 +244,49 @@ describe("listActiveOrgIds", () => {
       },
     } as unknown as ResupplySupabaseClient;
     expect(await listActiveOrgIds(throwingClient)).toEqual([]);
+  });
+
+  it("returns [] on a mid-scan page error (skips the whole tick, no partial list)", async () => {
+    // Page 1 fills a whole page (500 rows = the internal ACTIVE_ORG_PAGE_SIZE,
+    // so the loop advances to page 2); page 2 errors. The result must be [] —
+    // never the 500 ids from page 1 — so the scheduler skips the tick rather
+    // than fanning crons out to only the first page of tenants.
+    const firstPage = Array.from({ length: 500 }, (_, i) => ({
+      id: `org-${i}`,
+    }));
+    let call = 0;
+    const builder = {
+      select() {
+        return this;
+      },
+      eq() {
+        return this;
+      },
+      order() {
+        return this;
+      },
+      range() {
+        call += 1;
+        return call === 1
+          ? Promise.resolve({ data: firstPage })
+          : Promise.resolve({ error: { message: "page 2 boom" } });
+      },
+    };
+    const client = {
+      schema: () => ({ from: () => builder }),
+    } as unknown as ResupplySupabaseClient;
+    expect(await listActiveOrgIds(client)).toEqual([]);
+  });
+
+  it("pages past the implicit row cap (no silent truncation)", async () => {
+    // 1200 active tenants: more than a single 500-row page, so an
+    // unbounded read would have dropped everyone past the cap. The
+    // paginated loop must walk all three pages and return every id.
+    const rows = Array.from({ length: 1200 }, (_, i) => ({ id: `org-${i}` }));
+    const { client } = makeDirectoryClient({ data: rows });
+    const ids = await listActiveOrgIds(client);
+    expect(ids).toHaveLength(1200);
+    expect(ids[0]).toBe("org-0");
+    expect(ids[1199]).toBe("org-1199");
   });
 });

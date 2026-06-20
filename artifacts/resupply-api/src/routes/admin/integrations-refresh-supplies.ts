@@ -27,7 +27,7 @@ import {
   integrationSnapshotSchema,
 } from "@workspace/resupply-integrations";
 
-import { getIntegrationAdaptersWithDbOverrides } from "../../lib/integrations/registry";
+import { getIntegrationAdaptersForOrg } from "../../lib/integrations/registry";
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -70,7 +70,7 @@ router.post(
       res.json({ refreshed: 0, sources: [] });
       return;
     }
-    const adapters = await getIntegrationAdaptersWithDbOverrides();
+    const adapters = await getIntegrationAdaptersForOrg(orgId);
     const refreshedSources: string[] = [];
     let failed = 0;
     for (const link of links) {

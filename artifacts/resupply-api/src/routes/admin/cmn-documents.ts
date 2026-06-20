@@ -346,7 +346,7 @@ router.get(
     const supplierName =
       identity.source !== "stub"
         ? identity.billingProvider.organizationName
-        : await getDocumentSupplierName();
+        : await getDocumentSupplierName(orgId);
 
     const pdf = await renderCmnPdf({
       formType: c.form_type,

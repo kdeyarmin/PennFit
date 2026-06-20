@@ -47,6 +47,7 @@ import {
   getOrgScopedClient,
   resolveSeedOrgId,
 } from "@workspace/resupply-db";
+import { normalizeE164 } from "@workspace/resupply-domain";
 import { renderMessage } from "@workspace/resupply-templates";
 
 import { messageTemplateLookup } from "../../lib/message-templates/lookup.js";
@@ -55,7 +56,9 @@ import {
   customArgsFor,
   TICK_INTERVAL_SECONDS,
 } from "../../lib/bulk-campaigns/dispatch-helpers.js";
+import { isKnownNonMobileLineType } from "../../lib/bulk-campaigns/resolve-audience.js";
 import { logger } from "../../lib/logger.js";
+import { recordOutboundMessageUsage } from "../../lib/metering/usage.js";
 import {
   createQueueWithDlq,
   VENDOR_SEND_QUEUE_OPTS,
@@ -77,6 +80,14 @@ const PENDING_STATUSES = ["pending", "retry_pending"] as const;
 
 export interface BulkCampaignTickPayload {
   campaignId: string;
+  /**
+   * The tenant that owns this campaign. Threaded through the enqueue→tick
+   * chain so the tick operates on the RIGHT tenant's data (a campaign belongs
+   * to one org). Optional for back-compat: a tick enqueued before this deploy
+   * carries no orgId and the worker falls back to the seed org — which is
+   * single-tenant-correct (every campaign was the seed tenant's).
+   */
+  orgId?: string;
 }
 
 type CampaignRow = Database["resupply"]["Tables"]["bulk_campaigns"]["Row"];
@@ -133,22 +144,33 @@ export async function processTick(
   payload: BulkCampaignTickPayload,
   log: typeof logger,
 ): Promise<void> {
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) {
+  // Bootstrap a client just to read the campaign by PK. New ticks carry orgId
+  // in the payload; a tick enqueued by the pre-deploy helper carries none.
+  const payloadOrgId = payload.orgId?.trim();
+  const bootstrapOrgId = payloadOrgId || (await resolveSeedOrgId());
+  if (!bootstrapOrgId) {
     log.warn(
       { campaignId: payload.campaignId },
-      "bulk_campaigns.tick: no seed org resolved — skipping tick",
+      "bulk_campaigns.tick: no org resolved — skipping tick",
     );
     return;
   }
-  const supabase = getOrgScopedClient(orgId);
 
-  // 1. Re-read the campaign state so a pause/cancel that landed
-  //    after the tick was scheduled is honored.
-  const { data: campaign, error: cErr } = await supabase
+  // 1. Re-read the campaign state so a pause/cancel that landed after the tick
+  //    was scheduled is honored. Read `bulk_campaigns` UNSCOPED by PK via the
+  //    service-role `.raw()` escape hatch (campaign id is globally unique): an
+  //    org-less tick for a NON-seed campaign is still found, instead of being
+  //    mis-scoped to the seed tenant — which would read as "missing", return
+  //    without re-enqueueing, and strand the campaign in 'sending'. We then
+  //    scope every subsequent read/write to the campaign's OWNER org.
+  const { data: campaign, error: cErr } = await getOrgScopedClient(
+    bootstrapOrgId,
+  )
+    .raw()
+    .schema("resupply")
     .from("bulk_campaigns")
     .select(
-      "id, name, status, throttle_per_minute, template_key, category, sent_count, failed_count, total_recipients, suppressed_count",
+      "id, org_id, name, status, throttle_per_minute, template_key, category, channel, sent_count, failed_count, total_recipients, suppressed_count",
     )
     .eq("id", payload.campaignId)
     .limit(1)
@@ -174,6 +196,20 @@ export async function processTick(
     );
     return;
   }
+
+  // The campaign's real owner: the payload orgId when present, else the org_id
+  // read off the row (org-less tick), else the seed bootstrap. Every read and
+  // write below — and the raw counter UPDATE — is scoped to it.
+  const orgId =
+    payloadOrgId ||
+    (campaign.org_id as string | null)?.trim() ||
+    bootstrapOrgId;
+  const supabase = getOrgScopedClient(orgId);
+
+  // Delivery channel. Defaults to 'email' for campaigns created before the
+  // SMS channel landed (and for the test fixtures that omit it), so the
+  // email send path is byte-identical to before.
+  const channel: "email" | "sms" = campaign.channel === "sms" ? "sms" : "email";
 
   // 1b. Recover orphaned recipients. A prior tick claims a batch
   //     pending → sending in one update, then sends + finalizes each row.
@@ -215,7 +251,9 @@ export async function processTick(
   const batchSize = batchSizeForThrottle(campaign.throttle_per_minute);
   const { data: pendingRows, error: pErr } = await supabase
     .from("bulk_campaign_recipients")
-    .select("id, recipient_kind, recipient_id, recipient_email, send_attempts")
+    .select(
+      "id, recipient_kind, recipient_id, recipient_email, recipient_phone, send_attempts",
+    )
     .eq("campaign_id", campaign.id)
     .in("status", PENDING_STATUSES)
     .limit(batchSize);
@@ -231,7 +269,7 @@ export async function processTick(
     // No more pending. Only finalize if nothing is mid-flight either —
     // a non-stale 'sending' row (in-flight or not-yet-reclaimed orphan)
     // means the campaign isn't actually done.
-    await finalizeOrReschedule(boss, supabase, campaign.id, log);
+    await finalizeOrReschedule(boss, supabase, campaign.id, log, orgId);
     return;
   }
 
@@ -252,6 +290,7 @@ export async function processTick(
   const claimed: Array<{
     id: string;
     recipient_email: string | null;
+    recipient_phone: string | null;
     recipient_kind: string;
     recipient_id: string;
     send_attempts: number;
@@ -264,7 +303,7 @@ export async function processTick(
       .in("id", idChunk)
       .in("status", PENDING_STATUSES)
       .select(
-        "id, recipient_email, recipient_kind, recipient_id, send_attempts",
+        "id, recipient_email, recipient_phone, recipient_kind, recipient_id, send_attempts",
       );
     if (claimErr) {
       log.error(
@@ -283,7 +322,7 @@ export async function processTick(
       { campaignId: campaign.id },
       "bulk_campaigns.tick: race lost on claim, deferring",
     );
-    await enqueueNextTick(boss, campaign.id);
+    await enqueueNextTick(boss, campaign.id, orgId);
     return;
   }
 
@@ -294,7 +333,7 @@ export async function processTick(
     renderable = await renderMessage(
       {
         templateKey: campaign.template_key,
-        channel: "email",
+        channel,
         variables: {},
       },
       // Empty fallback — if the template is missing or the DB is
@@ -329,21 +368,13 @@ export async function processTick(
       );
     }
     // Roll the claimed batch back to pending so the resume can pick
-    // them up. Chunk the `.in()` at 200 for the same URL-length reason
-    // as the claim above.
-    const winningIdList = Array.from(winningIds);
-    for (let i = 0; i < winningIdList.length; i += 200) {
-      const { error: rollbackErr } = await supabase
-        .from("bulk_campaign_recipients")
-        .update({ status: "pending" })
-        .in("id", winningIdList.slice(i, i + 200));
-      if (rollbackErr) {
-        log.error(
-          { err: rollbackErr.message, campaignId: campaign.id },
-          "bulk_campaigns.tick: recipient rollback chunk failed — stale-lease recovery will reclaim after expiry",
-        );
-      }
-    }
+    // them up.
+    await rollbackRecipientsToPending(
+      supabase,
+      Array.from(winningIds),
+      campaign.id,
+      log,
+    );
     return;
   }
 
@@ -358,101 +389,181 @@ export async function processTick(
   //    address — the UPDATE re-reads from the row and RETURNING gives
   //    us the freshest value. Using `pendingRows` here lost that
   //    update and shipped to the OLD address.
-  // Construct the SendGrid client ONCE per tick, not once per recipient.
-  // The prior per-row `await import(...).then(createSendgridClient)` rebuilt
-  // the client (and re-ran the dynamic import) for every claimed recipient —
-  // up to `batchSizeForThrottle` (600 at max throttle) constructions per
-  // tick. The client is stateless across sends, so a single instance serves
-  // the whole batch. A config error surfaces here (failing the tick so
-  // pg-boss DLQs it and the stale-'sending' recovery reclaims the batch back
-  // to 'pending' on a later tick) instead of burning every recipient to
-  // 'failed' on what is really a one-off misconfiguration.
-  const sendgridClient = await import("@workspace/resupply-email").then((m) =>
-    m.createSendgridClient(),
-  );
+  // Construct the channel-specific sender ONCE per tick, not once per
+  // recipient. The client is stateless across sends, so a single instance
+  // serves the whole batch. A config error surfaces here (failing the tick
+  // so pg-boss DLQs it and the stale-'sending' recovery reclaims the batch
+  // back to 'pending' on a later tick) instead of burning every recipient
+  // to 'failed' on what is really a one-off misconfiguration.
+  //
+  // Both senders return a normalized `{ messageId }` so the per-row
+  // bookkeeping below (finalize / retry / suppress) is channel-agnostic.
+  let sendEmail:
+    | ((args: {
+        to: string;
+        subject: string;
+        html: string;
+        text: string;
+        customArgs: Record<string, string>;
+      }) => Promise<{ messageId: string }>)
+    | null = null;
+  let sendSms:
+    | ((to: string, body: string) => Promise<{ messageId: string }>)
+    | null = null;
+
+  if (channel === "email") {
+    const { createTenantSendgridClient } =
+      await import("../../lib/email/tenant-sender.js");
+    const sendgridClient = await createTenantSendgridClient(orgId);
+    sendEmail = (args) => sendgridClient.sendEmail(args);
+  } else {
+    // SMS path. A missing Twilio config pauses the campaign (like a broken
+    // template) rather than failing every recipient — an operator can fix
+    // creds and resume. Roll the claimed batch back to 'pending' first.
+    const { readSmsConfigOrNull } =
+      await import("../../lib/messaging/messaging-config.js");
+    const smsCfg = readSmsConfigOrNull();
+    if (!smsCfg) {
+      log.error(
+        { campaignId: campaign.id },
+        "bulk_campaigns.tick: SMS not configured (Twilio creds unset); pausing campaign",
+      );
+      const { error: pauseErr } = await supabase
+        .from("bulk_campaigns")
+        .update({ status: "paused" })
+        .eq("id", campaign.id);
+      if (pauseErr) {
+        log.error(
+          { err: pauseErr, campaignId: campaign.id },
+          "bulk_campaigns.tick: failed to pause SMS campaign after missing config",
+        );
+      }
+      await rollbackRecipientsToPending(
+        supabase,
+        Array.from(winningIds),
+        campaign.id,
+        log,
+      );
+      return;
+    }
+    const { resolveTenantSmsClientOptions } =
+      await import("../../lib/messaging/tenant-telecom.js");
+    const tenantOpts = await resolveTenantSmsClientOptions(orgId);
+    const { createTwilioSmsClient } =
+      await import("@workspace/resupply-telecom");
+    const smsClient = createTwilioSmsClient({
+      accountSid: smsCfg.twilioAccountSid,
+      authToken: smsCfg.twilioAuthToken,
+      from: smsCfg.twilioPhoneNumber,
+      messagingServiceSid: smsCfg.twilioMessagingServiceSid,
+      // Tenant override (clears the opposing routing field when present).
+      ...tenantOpts,
+    });
+    sendSms = async (to, body) => {
+      const r = await smsClient.sendSms({ to, body });
+      return { messageId: r.messageSid };
+    };
+  }
   let sent = 0;
   let failed = 0;
   let retried = 0;
   let suppressedAtSend = 0;
   for (const row of claimed ?? []) {
     if (!winningIds.has(row.id)) continue;
-    const email = row.recipient_email;
-    if (!email) {
-      // Should be impossible — resolver suppresses empty emails —
-      // but defensively flip to failed if encountered.
-      const { error: noEmailErr } = await supabase
+    // Resolve the channel-specific destination from the snapshot. For SMS
+    // we re-normalize to E.164 at send time (the snapshot may predate a
+    // contact-info edit); a number that won't normalize is a permanent
+    // failure for this recipient.
+    let destination: string | null;
+    if (channel === "sms") {
+      destination = row.recipient_phone
+        ? normalizeE164(row.recipient_phone)
+        : null;
+    } else {
+      destination =
+        row.recipient_email && row.recipient_email.trim().length > 0
+          ? row.recipient_email
+          : null;
+    }
+    if (!destination) {
+      // Should be rare — resolver suppresses empty contacts — but
+      // defensively flip to failed if encountered.
+      const noContactReason =
+        channel === "sms" ? "no_phone_at_send_time" : "no_email_at_send_time";
+      const { error: noContactErr } = await supabase
         .from("bulk_campaign_recipients")
-        .update({ status: "failed", error: "no_email_at_send_time" })
+        .update({ status: "failed", error: noContactReason })
         .eq("id", row.id);
-      if (noEmailErr) {
+      if (noContactErr) {
         log.warn(
-          { err: noEmailErr.message, recipientId: row.id },
-          "bulk_campaigns.tick: failed to mark no-email recipient — stale-lease recovery will reclaim",
+          { err: noContactErr.message, recipientId: row.id },
+          "bulk_campaigns.tick: failed to mark no-contact recipient — stale-lease recovery will reclaim",
         );
       }
       failed += 1;
       continue;
     }
-    // Re-check opt-out at send time. resolve-audience filters at
-    // enqueue, but a patient who unsubscribes between the campaign's
-    // resolveAudience pass and this tick (campaigns can run for hours)
-    // would otherwise still receive the message. Compliance categories
-    // (recall / HIPAA notice) intentionally bypass this gate — the
-    // resolver makes the same exception at enqueue time.
-    const optedOut = await isRecipientOptedOut(
+    // Re-check at send time. resolve-audience filters at enqueue, but a
+    // campaign that runs for hours can ship to a recipient who opted out
+    // (STOP / unsubscribe / pref flip) or whose number was newly classified
+    // as a landline since enqueue. Email compliance categories bypass the
+    // marketing/service opt-out gate; a non-active patient (STOP) is an
+    // absolute opt-out on either channel. For SMS, a KNOWN non-mobile line
+    // (landline/voip) is suppressed too — "SMS only to cellular".
+    const recheck = await recheckRecipientAtSend(
       supabase,
       row.recipient_kind,
       row.recipient_id,
       campaign.category,
+      channel,
     );
-    if (optedOut) {
-      const { error: supErr } = await supabase
-        .from("bulk_campaign_recipients")
-        .update({
-          status: "suppressed",
-          suppression_reason: "opted_out_at_send_time",
-        })
-        .eq("id", row.id);
-      if (supErr) {
-        log.error(
-          { err: supErr.message, recipientId: row.id, campaignId: campaign.id },
-          "bulk_campaigns.tick: suppression update failed — marking recipient failed",
-        );
-        const { error: failMarkErr } = await supabase
-          .from("bulk_campaign_recipients")
-          .update({ status: "failed", error: supErr.message.slice(0, 500) })
-          .eq("id", row.id);
-        if (failMarkErr) {
-          log.error(
-            {
-              err: failMarkErr.message,
-              recipientId: row.id,
-              campaignId: campaign.id,
-            },
-            "bulk_campaigns.tick: failed-mark update also failed — recipient status is stale",
-          );
-        }
-        failed += 1;
-        continue;
-      }
-      suppressedAtSend += 1;
+    const atSendSuppression: string | null = recheck.optedOut
+      ? "opted_out_at_send_time"
+      : channel === "sms" && isKnownNonMobileLineType(recheck.lineType)
+        ? "phone_not_mobile_at_send_time"
+        : null;
+    if (atSendSuppression) {
+      const result = await suppressRecipientAtSend(
+        supabase,
+        row.id,
+        campaign.id,
+        atSendSuppression,
+        log,
+      );
+      if (result === "suppressed") suppressedAtSend += 1;
+      else failed += 1;
       continue;
     }
     try {
-      const result = await sendgridClient.sendEmail({
-        to: email,
-        subject:
-          renderable.subject ?? `(no subject for ${campaign.template_key})`,
-        html: renderable.bodyHtml ?? renderable.bodyText,
-        text: renderable.bodyText,
-        customArgs: customArgsFor(campaign.id, row.id),
+      let messageId: string;
+      if (channel === "sms") {
+        const r = await sendSms!(destination, renderable.bodyText);
+        messageId = r.messageId;
+      } else {
+        const r = await sendEmail!({
+          to: destination,
+          subject:
+            renderable.subject ?? `(no subject for ${campaign.template_key})`,
+          html: renderable.bodyHtml ?? renderable.bodyText,
+          text: renderable.bodyText,
+          customArgs: customArgsFor(campaign.id, row.id),
+        });
+        messageId = r.messageId;
+      }
+      // Vendor accepted — the recipient will receive this message even if
+      // the row finalize below fails (the recipient is then parked, never
+      // re-sent), so count the outbound message here.
+      recordOutboundMessageUsage({
+        orgId,
+        channel,
+        source: "bulk_campaign",
       });
       const { error: finalizeErr } = await supabase
         .from("bulk_campaign_recipients")
         .update({
           status: "sent",
           sent_at: new Date().toISOString(),
-          vendor_message_id: result.messageId,
+          vendor_message_id: messageId,
         })
         .eq("id", row.id);
       if (finalizeErr) {
@@ -466,7 +577,7 @@ export async function processTick(
             err: finalizeErr.message,
             recipientId: row.id,
             campaignId: campaign.id,
-            vendorMessageId: result.messageId,
+            vendorMessageId: messageId,
             event: "bulk_campaign_finalize_failed_after_vendor_accept",
           },
           "bulk_campaigns.tick: 'sent' finalize failed after vendor accept — parking recipient as failed to prevent duplicate send",
@@ -562,13 +673,17 @@ export async function processTick(
     // them as one number; the per-recipient `suppression_reason` on
     // bulk_campaign_recipients distinguishes them when investigators
     // need to know.
+    // Raw `pg` bypasses the org-scoped facade, so the tenant predicate is
+    // EXPLICIT here (the no-direct-pg-without-org_id invariant). The campaign
+    // id is the PK so `WHERE id` already targets one row; `AND org_id` keeps
+    // this raw write tenant-scoped like every facade write in this tick.
     const result = await pool.query(
       `UPDATE resupply.bulk_campaigns
        SET sent_count = sent_count + $1,
            failed_count = failed_count + $2,
            suppressed_count = suppressed_count + $3
-       WHERE id = $4`,
-      [sent, failed, suppressedAtSend, campaign.id],
+       WHERE id = $4 AND org_id = $5`,
+      [sent, failed, suppressedAtSend, campaign.id, orgId],
     );
     if (result.rowCount === 0) {
       log.warn(
@@ -622,7 +737,7 @@ export async function processTick(
     return;
   }
 
-  await finalizeOrReschedule(boss, supabase, campaign.id, log);
+  await finalizeOrReschedule(boss, supabase, campaign.id, log, orgId);
 }
 
 /**
@@ -646,6 +761,7 @@ async function finalizeOrReschedule(
   supabase: OrgScopedClient,
   campaignId: string,
   log: typeof logger,
+  orgId: string,
 ): Promise<void> {
   const { count: remaining, error } = await supabase
     .from("bulk_campaign_recipients")
@@ -658,7 +774,7 @@ async function finalizeOrReschedule(
       { err: error, campaignId },
       "bulk_campaigns.tick: remaining-work count failed — rescheduling",
     );
-    await enqueueNextTick(boss, campaignId);
+    await enqueueNextTick(boss, campaignId, orgId);
     return;
   }
   if (!remaining || remaining === 0) {
@@ -673,7 +789,7 @@ async function finalizeOrReschedule(
         { campaignId },
         "bulk_campaigns.tick: campaign finalize failed — rescheduling",
       );
-      await enqueueNextTick(boss, campaignId);
+      await enqueueNextTick(boss, campaignId, orgId);
       return;
     }
     log.info(
@@ -682,62 +798,173 @@ async function finalizeOrReschedule(
     );
     return;
   }
-  await enqueueNextTick(boss, campaignId);
+  await enqueueNextTick(boss, campaignId, orgId);
 }
 
 /**
- * Re-check whether a recipient is opted-out of the campaign's
- * category at SEND time. The resolver did this at enqueue time, but
- * a campaign that runs for hours can ship to a patient who
- * unsubscribed in between — this gate closes that window.
- *
- * Posture: any error here (Supabase blip, deleted row, malformed
- * prefs JSON) returns `false` (= not opted-out, proceed with send).
- * The principle: a failed re-check should not silently block a
- * compliant send; the enqueue-time gate has already filtered the
- * known opt-outs, and this is the second line of defense for the
- * narrow window where prefs changed mid-campaign.
+ * Roll a claimed batch of recipients back to 'pending' so a resume (or a
+ * later tick) can re-pick them. Chunks the `.in()` at 200 ids for the same
+ * URL-length reason as the claim UPDATE. Best-effort: a failed chunk is
+ * logged and the stale-'sending' lease recovery reclaims it after expiry.
  */
-async function isRecipientOptedOut(
+async function rollbackRecipientsToPending(
+  supabase: OrgScopedClient,
+  ids: string[],
+  campaignId: string,
+  log: typeof logger,
+): Promise<void> {
+  for (let i = 0; i < ids.length; i += 200) {
+    const { error } = await supabase
+      .from("bulk_campaign_recipients")
+      .update({ status: "pending" })
+      .in("id", ids.slice(i, i + 200));
+    if (error) {
+      log.error(
+        // Pass the error OBJECT (not .message) so the logger's err.* redaction
+        // applies — a PostgREST message/details can echo PHI.
+        { err: error, campaignId },
+        "bulk_campaigns.tick: recipient rollback chunk failed — stale-lease recovery will reclaim after expiry",
+      );
+    }
+  }
+}
+
+/**
+ * Suppress a recipient at SEND time with the given reason. Returns
+ * "suppressed" on success; on a failed suppression UPDATE it parks the
+ * recipient as "failed" (so a stale-lease reclaim doesn't re-send) and
+ * returns "failed". Shared by the opt-out and not-mobile at-send gates.
+ */
+async function suppressRecipientAtSend(
+  supabase: OrgScopedClient,
+  rowId: string,
+  campaignId: string,
+  reason: string,
+  log: typeof logger,
+): Promise<"suppressed" | "failed"> {
+  const { error: supErr } = await supabase
+    .from("bulk_campaign_recipients")
+    .update({ status: "suppressed", suppression_reason: reason })
+    .eq("id", rowId);
+  if (!supErr) return "suppressed";
+  log.error(
+    { err: supErr, recipientId: rowId, campaignId },
+    "bulk_campaigns.tick: suppression update failed — marking recipient failed",
+  );
+  const { error: failMarkErr } = await supabase
+    .from("bulk_campaign_recipients")
+    .update({ status: "failed", error: supErr.message.slice(0, 500) })
+    .eq("id", rowId);
+  if (failMarkErr) {
+    log.error(
+      { err: failMarkErr, recipientId: rowId, campaignId },
+      "bulk_campaigns.tick: failed-mark update also failed — recipient status is stale",
+    );
+  }
+  return "failed";
+}
+
+interface AtSendRecheck {
+  /** Recipient opted out since enqueue (STOP/unsubscribe or pref flip). */
+  optedOut: boolean;
+  /** Current classified phone line type, or null when unknown. */
+  lineType: "mobile" | "landline" | "voip" | "unknown" | null;
+}
+
+const NOT_OPTED_OUT: AtSendRecheck = { optedOut: false, lineType: null };
+
+/**
+ * Re-check a recipient at SEND time. The resolver did this at enqueue time,
+ * but a campaign that runs for hours can ship to a recipient who opted out
+ * (STOP / unsubscribe / pref flip) or whose number was newly classified as a
+ * landline in between — this gate closes that window. One query returns both
+ * the opt-out decision and the current line type (the SMS path consults the
+ * latter to keep "SMS only to cellular" true even for late classifications).
+ *
+ * Opt-out sources, by recipient kind:
+ *   * patient — the only opt-out signal is a non-'active' status (paused =
+ *     STOP/unsubscribed). ABSOLUTE on either channel; NOT bypassed by the
+ *     compliance category.
+ *   * shop_customer — the per-channel communication_preferences flags
+ *     (sms/email × marketing/service). Compliance bypasses these, mirroring
+ *     the enqueue-time resolver.
+ *
+ * Posture: any error (Supabase blip, deleted row, malformed prefs JSON)
+ * returns the not-opted-out / unknown-line-type default — a failed re-check
+ * should not block a send the enqueue-time gate already cleared, and unknown
+ * line types are allowed under the allow-unknown SMS policy.
+ */
+async function recheckRecipientAtSend(
   supabase: OrgScopedClient,
   kind: string,
   id: string,
   category: string,
-): Promise<boolean> {
-  // Which preference key gates this category? Mirrors the policy in
-  // lib/bulk-campaigns/resolve-audience.ts.
+  channel: "email" | "sms",
+): Promise<AtSendRecheck> {
+  if (kind === "patient") {
+    try {
+      const { data } = await supabase
+        .from("patients")
+        .select("status, phone_line_type, sms_marketing_consent")
+        .eq("id", id)
+        .limit(1)
+        .maybeSingle();
+      if (!data) return NOT_OPTED_OUT;
+      const lineType =
+        (data.phone_line_type as AtSendRecheck["lineType"]) ?? null;
+      // patient_not_active is an absolute opt-out (mirrors enqueue-time check).
+      // Marketing SMS additionally requires sms_marketing_consent (TCPA opt-in).
+      const optedOut =
+        data.status !== "active" ||
+        (channel === "sms" &&
+          category === "marketing" &&
+          data.sms_marketing_consent !== true);
+      return { optedOut, lineType };
+    } catch {
+      return NOT_OPTED_OUT;
+    }
+  }
+
+  if (kind !== "shop_customer") return NOT_OPTED_OUT;
+
+  // Which preference key gates this category on this channel? Mirrors the
+  // policy in lib/bulk-campaigns/resolve-audience.ts. Compliance bypasses.
   const prefKey =
     category === "marketing"
-      ? "emailMarketing"
+      ? channel === "sms"
+        ? "smsMarketing"
+        : "emailMarketing"
       : category === "service"
-        ? "emailResupplyReminders"
+        ? channel === "sms"
+          ? "smsTransactional"
+          : "emailResupplyReminders"
         : null;
-  if (!prefKey) return false;
-
-  // At send time, only shop customers can be re-checked from the
-  // generated schema source used here. Patients do not expose a
-  // `communication_preferences` column in the generated Database
-  // types, so querying `patients` here is both invalid and wasted
-  // work. Preserve the existing fail-open posture by skipping the
-  // re-check for patient recipients until preferences are resolved
-  // from the correct source.
-  if (kind !== "shop_customer") return false;
 
   try {
     const { data } = await supabase
       .from("shop_customers")
-      .select("communication_preferences")
+      .select("communication_preferences, phone_line_type")
       .eq("customer_id", id)
       .limit(1)
       .maybeSingle();
+    if (!data) return NOT_OPTED_OUT;
+    const lineType =
+      (data.phone_line_type as AtSendRecheck["lineType"]) ?? null;
     const prefs =
-      data && typeof data.communication_preferences === "object"
+      typeof data.communication_preferences === "object"
         ? (data.communication_preferences as Record<string, unknown> | null)
         : null;
-    if (!prefs) return false;
-    return prefs[prefKey] === false;
+    // SMS is opt-IN (default false → missing pref means not opted in); email
+    // stays opt-OUT. Mirrors the enqueue-time resolver.
+    const optedOut = Boolean(
+      prefKey &&
+      (channel === "sms"
+        ? prefs?.[prefKey] !== true
+        : prefs?.[prefKey] === false),
+    );
+    return { optedOut, lineType };
   } catch {
-    return false;
+    return NOT_OPTED_OUT;
   }
 }
 
@@ -791,10 +1018,11 @@ async function markCampaignSent(
 export async function enqueueNextTick(
   boss: PgBoss,
   campaignId: string,
+  orgId?: string,
 ): Promise<void> {
   await boss.send(
     BULK_CAMPAIGN_TICK_JOB,
-    { campaignId },
+    { campaignId, orgId },
     { startAfter: TICK_INTERVAL_SECONDS },
   );
 }
@@ -804,8 +1032,9 @@ export async function enqueueNextTick(
 export async function enqueueImmediateTick(
   boss: PgBoss,
   campaignId: string,
+  orgId?: string,
 ): Promise<void> {
-  await boss.send(BULK_CAMPAIGN_TICK_JOB, { campaignId });
+  await boss.send(BULK_CAMPAIGN_TICK_JOB, { campaignId, orgId });
 }
 
 // Silence unused-import lint when CampaignRow isn't referenced

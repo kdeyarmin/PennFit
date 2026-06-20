@@ -21,7 +21,7 @@
 // PHI posture: list / detail responses include from_e164 (sender
 // fax — physician PHI) because CSRs need it to recognize the
 // originating office. Logger receives only the row id and a
-// first-8 prefix of the twilio_fax_sid, never the From.
+// first-8 prefix of the provider_fax_id, never the From.
 
 import { Router, type IRouter } from "express";
 import { Readable } from "node:stream";
@@ -123,7 +123,7 @@ router.get(
     let query = supabase
       .from("inbound_faxes")
       .select(
-        "id, twilio_fax_sid, from_e164, to_e164, received_at, num_pages, media_object_key, media_content_type, media_size_bytes, status, attached_patient_id, attached_provider_id, attached_prescription_id, attached_document_type, assigned_admin_user_id, triaged_at, notes, created_at, tracking_code_detected, auto_file_status, auto_filed_at, signature_tracking_id, chart_document_id",
+        "id, provider_fax_id, from_e164, to_e164, received_at, num_pages, media_object_key, media_content_type, media_size_bytes, status, attached_patient_id, attached_provider_id, attached_prescription_id, attached_document_type, assigned_admin_user_id, triaged_at, notes, created_at, tracking_code_detected, auto_file_status, auto_filed_at, signature_tracking_id, chart_document_id",
       )
       .order("received_at", { ascending: false })
       .limit(q.data.limit);
@@ -158,7 +158,7 @@ router.get(
     res.json({
       faxes: rows.map((r) => ({
         id: r.id,
-        twilioFaxSid: r.twilio_fax_sid,
+        providerFaxId: r.provider_fax_id,
         fromE164: r.from_e164,
         toE164: r.to_e164,
         receivedAt: r.received_at,
@@ -224,7 +224,7 @@ router.get(
       .maybeSingle();
     res.json({
       id: row.id,
-      twilioFaxSid: row.twilio_fax_sid,
+      providerFaxId: row.provider_fax_id,
       fromE164: row.from_e164,
       toE164: row.to_e164,
       receivedAt: row.received_at,
@@ -277,7 +277,7 @@ router.get(
     const supabase = getOrgScopedClient(orgId);
     const { data: row, error } = await supabase
       .from("inbound_faxes")
-      .select("id, media_object_key, media_content_type, twilio_fax_sid")
+      .select("id, media_object_key, media_content_type, provider_fax_id")
       .eq("id", params.data.id)
       .limit(1)
       .maybeSingle();
@@ -305,7 +305,7 @@ router.get(
       targetTable: "inbound_faxes",
       targetId: row.id,
       metadata: {
-        twilio_fax_sid: row.twilio_fax_sid,
+        provider_fax_id: row.provider_fax_id,
       },
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
@@ -363,7 +363,7 @@ router.post(
     const supabase = getOrgScopedClient(orgId);
     const { data: row, error } = await supabase
       .from("inbound_faxes")
-      .select("id, media_object_key, media_content_type, twilio_fax_sid")
+      .select("id, media_object_key, media_content_type, provider_fax_id")
       .eq("id", params.data.id)
       .limit(1)
       .maybeSingle();
@@ -423,7 +423,7 @@ router.post(
       // PHI-safe: status + sid prefix only, never the extracted fields.
       metadata: {
         ocr_status: result.status,
-        twilio_fax_sid: row.twilio_fax_sid,
+        provider_fax_id: row.provider_fax_id,
       },
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
@@ -468,7 +468,7 @@ router.post(
     const { data: row, error } = await supabase
       .from("inbound_faxes")
       .select(
-        "id, media_object_key, media_content_type, auto_file_status, twilio_fax_sid",
+        "id, media_object_key, media_content_type, auto_file_status, provider_fax_id",
       )
       .eq("id", params.data.id)
       .limit(1)
@@ -523,7 +523,7 @@ router.post(
         // also logged by the signature-tracking route) + sid prefix.
         auto_file_status: outcome.status,
         tracking_code: outcome.trackingCode,
-        twilio_fax_sid: row.twilio_fax_sid,
+        provider_fax_id: row.provider_fax_id,
       },
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,

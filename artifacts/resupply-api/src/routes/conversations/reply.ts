@@ -32,12 +32,17 @@ import {
   type ReplyInConversationOutcome,
 } from "@workspace/resupply-reminders";
 import { TwilioConfigError } from "@workspace/resupply-telecom";
-import {
-  createSendgridClient,
-  EmailConfigError,
-} from "@workspace/resupply-email";
+import { EmailConfigError } from "@workspace/resupply-email";
 
 import { logger } from "../../lib/logger";
+import { applyTenantEmailSender } from "../../lib/email/apply-tenant-email-sender";
+import { createTenantSendgridClient } from "../../lib/email/tenant-sender";
+import {
+  resolveBrandingByOrgId,
+  resolveTenantBaseUrl,
+} from "../../lib/tenant-branding";
+import { applyTenantSmsFrom } from "../../lib/messaging/tenant-telecom";
+import { recordOutboundMessageUsage } from "../../lib/metering/usage";
 import { sendPushToCustomer } from "../../lib/web-push";
 import {
   appendAdminInAppReply,
@@ -155,8 +160,18 @@ router.post(
         // and scopes internally via getOrgScopedClient(orgId, supabase).
         supabase: earlyDb.raw(),
         orgId,
-        smsCfg: { ...cfg.sms, practiceName: cfg.practiceName },
-        emailCfg: { ...cfg.email, practiceName: cfg.practiceName },
+        // Reply SMS under the tenant's own number / Messaging Service when
+        // configured (G7); falls back to the platform default otherwise.
+        smsCfg: await applyTenantSmsFrom(orgId, {
+          ...cfg.sms,
+          practiceName: cfg.practiceName,
+        }),
+        // Reply under the tenant's own From identity when configured (G6);
+        // falls back to the platform default when it isn't.
+        emailCfg: await applyTenantEmailSender(orgId, {
+          ...cfg.email,
+          practiceName: cfg.practiceName,
+        }),
         conversationId,
         body,
         actor: {
@@ -184,6 +199,15 @@ router.post(
 
     switch (outcome.status) {
       case "ok":
+        // replyInConversation only returns "ok" after the patient's
+        // SMS/email vendor accepted the reply (voice/in-app never reach
+        // here), so meter the outbound patient-facing message. The
+        // channel is the conversation's own channel resolved above.
+        recordOutboundMessageUsage({
+          orgId,
+          channel: channelRow.channel === "sms" ? "sms" : "email",
+          source: "conversation_reply",
+        });
         res.status(201).json({
           messageId: outcome.messageId,
           conversationId: outcome.conversationId,
@@ -423,6 +447,16 @@ async function tryNotifyCustomerOfReply(input: {
       : null,
   };
 
+  // Resolve the tenant's brand + base URL once so every channel (push,
+  // email) speaks in the tenant's name and links to its own domain
+  // (seed → "PennPaps" / pennpaps.com, unchanged).
+  const orgId = supabase.orgId;
+  const brand = await resolveBrandingByOrgId(orgId);
+  const brandName = brand.storefrontName;
+  const legalName = brand.legalName || brandName;
+  const baseUrl =
+    (await resolveTenantBaseUrl(orgId)) ?? "https://cmbreathe.com";
+
   // Push fan-out runs independently of the email opt-in — push is
   // its own channel that the customer enables explicitly via the
   // browser permission prompt. We treat the in-app reply as the
@@ -430,7 +464,7 @@ async function tryNotifyCustomerOfReply(input: {
   // into. PHI: same posture as the email — the push title and body
   // contain no PHI, just "you have a new message".
   void sendPushToCustomer(row.customerId, {
-    title: "New message from PennPaps",
+    title: `New message from ${brandName}`,
     body: "Customer service replied. Tap to read.",
     url: "/account/messages",
     tag: `csr_reply:${input.conversationId}`,
@@ -494,7 +528,9 @@ async function tryNotifyCustomerOfReply(input: {
 
   let sg;
   try {
-    sg = createSendgridClient();
+    // Send under the tenant's own From identity when configured (G6);
+    // falls back to the platform default when the tenant has none.
+    sg = await createTenantSendgridClient(orgId);
   } catch (err) {
     if (err instanceof EmailConfigError) {
       // Preview / dev — no SENDGRID_API_KEY. Skip silently. The
@@ -512,21 +548,30 @@ async function tryNotifyCustomerOfReply(input: {
     : "Hi";
   await sg.sendEmail({
     to: row.email,
-    subject: "New message from PennPaps customer service",
+    subject: `New message from ${brandName} customer service`,
     text:
       `${greeting},\n\n` +
-      `You have a new message from the PennPaps customer-service team.\n\n` +
-      `Sign in to your account at https://pennpaps.com/account to read and reply.\n\n` +
-      `— Penn Home Medical Supply\n`,
+      `You have a new message from the ${brandName} customer-service team.\n\n` +
+      `Sign in to your account at ${baseUrl}/account to read and reply.\n\n` +
+      `— ${legalName}\n`,
     html:
       `<p>${greeting},</p>` +
-      `<p>You have a new message from the PennPaps customer-service team.</p>` +
-      `<p><a href="https://pennpaps.com/account" style="color: #003B71">Sign in to your account</a> to read and reply.</p>` +
-      `<p style="color: #6b7280; font-size: 12px">Penn Home Medical Supply</p>`,
+      `<p>You have a new message from the ${brandName} customer-service team.</p>` +
+      `<p><a href="${baseUrl}/account" style="color: #003B71">Sign in to your account</a> to read and reply.</p>` +
+      `<p style="color: #6b7280; font-size: 12px">${legalName}</p>`,
     customArgs: {
       conversation_id: input.conversationId,
       kind: "in_app_reply_notification",
     },
+  });
+
+  // The in-app message itself is a portal write, not a billable
+  // channel send; the "you have a new message" nudge email IS an
+  // outbound patient-facing email, so meter it here.
+  recordOutboundMessageUsage({
+    orgId: supabase.orgId,
+    channel: "email",
+    source: "in_app_reply_notification",
   });
 
   // Stamp the throttle timestamp AFTER a successful SendGrid send.

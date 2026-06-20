@@ -150,10 +150,10 @@ router.post(
       return;
     }
     const supabase = getOrgScopedClient(orgId);
-    // dme_organization is a global singleton (not org-scoped); the
-    // billing-identity helper reads it via the unscoped client and reads
-    // tenant clearinghouse credentials via the org-scoped client it builds
-    // from orgId.
+    // The billing-identity helper reads dme_organization ORG-SCOPED (by the
+    // caller's org_id) and the tenant's clearinghouse credentials, failing
+    // closed for a non-seed tenant without its own identity — so the GFE
+    // issuer block carries THIS tenant's NPI/name, never the seed's.
     const identity = await resolveBillingIdentity({ orgId });
     if (identity.source === "stub") {
       res.status(409).json({

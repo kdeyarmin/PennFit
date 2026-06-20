@@ -30,6 +30,7 @@ import {
   getStripeClient,
   readStripeConfigOrNull,
 } from "../../lib/stripe/config";
+import { stripeAccountRequestOptions } from "../../lib/stripe/connect";
 import {
   adminRateLimit,
   adminReadRateLimiter,
@@ -523,8 +524,20 @@ router.post(
     }
 
     const stripe = getStripeClient(config);
+    // Create the setup session ON THE TENANT'S connected account (G5) when it
+    // has one, so the customer + mandated payment method are minted on the
+    // SAME account the autocharge worker later debits. Empty for the platform
+    // account (seed / not-yet-onboarded), unchanged from before Connect.
+    const accountOptions = await stripeAccountRequestOptions(orgId);
     // Reuse the plan's customer if one was already minted; otherwise let
     // Checkout create one (customer_creation='always' in setup mode).
+    //
+    // G5 NOTE: deliberately NOT routed to a connected account. `setup`-mode
+    // saves a card that the off-session worker (payment-plan-autocharge.ts,
+    // still seed-pinned → platform account) later charges. The saved
+    // PaymentMethod is account-scoped, so the setup and the charge must run
+    // on the same account — move both onto the connected account together
+    // when that worker is fanned out per tenant (G2).
     let session;
     try {
       session = await stripe.checkout.sessions.create(
@@ -550,7 +563,10 @@ router.post(
             },
           },
         },
-        { idempotencyKey: `pennpaps-autopay-setup-${plan.id}` },
+        {
+          idempotencyKey: `pennpaps-autopay-setup-${plan.id}`,
+          ...accountOptions,
+        },
       );
     } catch (err) {
       // Log the Error object so pino's serializer redacts message/stack

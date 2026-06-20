@@ -30,11 +30,12 @@
 import type PgBoss from "pg-boss";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { isOutsideSmsSendWindow } from "../../lib/comm-prefs";
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
+import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import {
   buildPacketSigningLink,
   deliverPacketLink,
@@ -74,14 +75,42 @@ interface SweepStats {
 }
 
 export async function runPatientPacketReminderSweep(): Promise<SweepStats> {
-  if (!(await isFeatureEnabled("patient_packets.autoremind"))) {
-    return { skipped: true, scanned: 0, reminded: 0, emailSent: 0, smsSent: 0 };
-  }
+  const stats: SweepStats = {
+    scanned: 0,
+    reminded: 0,
+    emailSent: 0,
+    smsSent: 0,
+  };
 
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) {
-    return { scanned: 0, reminded: 0, emailSent: 0, smsSent: 0 };
-  }
+  // Fan out across every active tenant. The `patient_packets.autoremind`
+  // flag is checked PER TENANT (feature_flags is (org_id, key)), so one
+  // tenant's opt-out never nudges another's packets. patient_packets and
+  // patients are tenant-scoped — each tenant is swept on its own client.
+  let anyEnabled = false;
+  await forEachActiveOrg(
+    async (orgId) => {
+      if (!(await isFeatureEnabled("patient_packets.autoremind", orgId)))
+        return;
+      anyEnabled = true;
+      await patientPacketReminderSweepForOrg(orgId, stats);
+    },
+    { jobName: REMINDER_JOB },
+  );
+  // Preserve the historical "skipped" signal: true when NO active tenant
+  // had the feature on (matches the prior single-tenant flag-off return).
+  if (!anyEnabled) stats.skipped = true;
+  return stats;
+}
+
+/**
+ * Run the packet-reminder sweep for a SINGLE tenant, accumulating into the
+ * shared `stats`. The compare-and-set claim, the rollback, and the BATCH
+ * cap all apply per tenant.
+ */
+async function patientPacketReminderSweepForOrg(
+  orgId: string,
+  stats: SweepStats,
+): Promise<void> {
   const supabase = getOrgScopedClient(orgId);
   const now = Date.now();
   const nowIso = new Date(now).toISOString();
@@ -107,13 +136,8 @@ export async function runPatientPacketReminderSweep(): Promise<SweepStats> {
   if (error) throw error;
 
   const rows = candidates ?? [];
-  const stats: SweepStats = {
-    scanned: rows.length,
-    reminded: 0,
-    emailSent: 0,
-    smsSent: 0,
-  };
-  if (rows.length === 0) return stats;
+  stats.scanned += rows.length;
+  if (rows.length === 0) return;
 
   // Bulk-resolve patient phone numbers (+ timezone for the TCPA
   // send-window gate) for the SMS channel.
@@ -259,8 +283,6 @@ export async function runPatientPacketReminderSweep(): Promise<SweepStats> {
       logger.warn({ err }, "patient_packet.reminded audit write failed");
     });
   }
-
-  return stats;
 }
 
 export async function registerPatientPacketReminderJob(

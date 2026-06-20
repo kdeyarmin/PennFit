@@ -16,8 +16,17 @@ import {
 
 const supabaseMock = installSupabaseMock();
 
+// The route resolves its tenant from the token's order via this helper
+// (covered by signed-link-org.test). Stub it to the seed org so these
+// tests exercise the route, not the cross-tenant lookup.
+const SEED_ORG = "00000000-0000-4000-8000-000000000000";
+vi.mock("../../lib/storefront/signed-link-org", () => ({
+  resolveOrgIdForSignedRecord: vi.fn(async () => SEED_ORG),
+}));
+
 import maskFitResponseRouter from "./mask-fit-response";
 import { signMaskFitToken } from "../../lib/mask-fit-token";
+import { resolveOrgIdForSignedRecord } from "../../lib/storefront/signed-link-org";
 
 function makeApp(): Express {
   const app = express();
@@ -63,6 +72,11 @@ describe("POST /shop/orders/mask-fit", () => {
       .send({ token, comment: "leaks at the bridge of my nose" });
     expect(res.status).toBe(200);
     expect(res.body.ok).toBe(true);
+    // The tenant was resolved from the token's order, not a fixed seed.
+    expect(vi.mocked(resolveOrgIdForSignedRecord)).toHaveBeenCalledWith(
+      "shop_orders",
+      "order-1",
+    );
   });
 
   it("400s a malformed body", async () => {

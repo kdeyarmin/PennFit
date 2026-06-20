@@ -40,7 +40,6 @@ import {
   type CommunicationPreferences,
   type Json,
   getOrgScopedClient,
-  resolveSeedOrgId,
   type OrgScopedClient,
 } from "@workspace/resupply-db";
 
@@ -48,6 +47,7 @@ import { buildQuarterlySummary } from "../../lib/therapy-summary/build-quarterly
 import { sendQuarterlySummaryEmail } from "../../lib/order-emails/send-quarterly-summary-email";
 import { shouldSendEmail } from "../../lib/comm-prefs";
 import { logger } from "../../lib/logger";
+import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import {
   createQueueWithDlq,
   VENDOR_SEND_QUEUE_OPTS,
@@ -158,18 +158,6 @@ async function loadOptInStatuses(
 }
 
 export async function runQuarterlyTherapySummary(): Promise<QuarterlySummaryStats> {
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) {
-    return {
-      candidates: 0,
-      sent: 0,
-      skippedNoData: 0,
-      skippedOptedOut: 0,
-      skippedNoShopCustomer: 0,
-      failed: 0,
-    };
-  }
-  const supabase = getOrgScopedClient(orgId);
   const stats: QuarterlySummaryStats = {
     candidates: 0,
     sent: 0,
@@ -178,6 +166,29 @@ export async function runQuarterlyTherapySummary(): Promise<QuarterlySummaryStat
     skippedNoShopCustomer: 0,
     failed: 0,
   };
+  await forEachActiveOrg(
+    async (orgId) => {
+      await quarterlySummarySweepForOrg(orgId, stats);
+    },
+    { jobName: JOB_NAME },
+  );
+  return stats;
+}
+
+/**
+ * Run the quarterly-summary sweep for a SINGLE tenant, accumulating into
+ * the shared `stats`. `patients` / `patient_therapy_nights` /
+ * `shop_customers` are org-scoped, so each tenant is swept on its own
+ * org-scoped client and a summary only ever reaches a patient in their own
+ * org. The PER_RUN_MAX send budget (and MAX_SCANNED_PER_RUN scan cap) is
+ * tracked per tenant (local counter) so a busy tenant can't starve the
+ * others out of their send budget.
+ */
+async function quarterlySummarySweepForOrg(
+  orgId: string,
+  stats: QuarterlySummaryStats,
+): Promise<void> {
+  const supabase = getOrgScopedClient(orgId);
 
   const cooldownThreshold = isoDaysAgo(RESEND_COOLDOWN_DAYS);
 
@@ -195,8 +206,11 @@ export async function runQuarterlyTherapySummary(): Promise<QuarterlySummaryStat
   const MAX_SCANNED_PER_RUN = PER_RUN_MAX * 50;
   let lastPatientId: string | null = null;
   let scannedTotal = 0;
+  // Per-tenant send counter — the PER_RUN_MAX budget is each tenant's, not
+  // shared, so one tenant's backlog never starves another's summaries.
+  let sentThisOrg = 0;
   pages: while (
-    stats.sent < PER_RUN_MAX &&
+    sentThisOrg < PER_RUN_MAX &&
     scannedTotal < MAX_SCANNED_PER_RUN
   ) {
     let pageQuery = supabase
@@ -237,7 +251,7 @@ export async function runQuarterlyTherapySummary(): Promise<QuarterlySummaryStat
     );
 
     for (const patient of rows) {
-      if (stats.sent >= PER_RUN_MAX) break pages;
+      if (sentThisOrg >= PER_RUN_MAX) break pages;
       stats.candidates += 1;
 
       const gate = optInByEmail.get(patient.email.toLowerCase()) ?? {
@@ -354,6 +368,7 @@ export async function runQuarterlyTherapySummary(): Promise<QuarterlySummaryStat
           windowStart: startIso,
           windowEnd: endIso,
           fields: summary.fields,
+          orgId,
         });
         if (!result.configured) {
           await releaseClaim();
@@ -369,6 +384,7 @@ export async function runQuarterlyTherapySummary(): Promise<QuarterlySummaryStat
           continue;
         }
         stats.sent += 1;
+        sentThisOrg += 1;
       } catch (err) {
         await releaseClaim();
         stats.failed += 1;
@@ -382,8 +398,6 @@ export async function runQuarterlyTherapySummary(): Promise<QuarterlySummaryStat
       }
     }
   }
-
-  return stats;
 }
 
 export async function registerQuarterlyTherapySummaryJob(

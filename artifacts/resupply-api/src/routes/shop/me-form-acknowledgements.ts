@@ -13,7 +13,10 @@ import { z } from "zod";
 
 import { getOrgScopedClient } from "@workspace/resupply-db";
 
-import { applyCompanyIdentityToText } from "../../lib/company-info";
+import {
+  applyCompanyIdentityToText,
+  getCompanyInfo,
+} from "../../lib/company-info";
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
 import {
   INTAKE_FORMS,
@@ -82,6 +85,9 @@ router.get(
         };
       }
     }
+    // Resolve THIS patient's tenant identity so the form copy carries
+    // their own practice name, not the seed tenant's (the sync default).
+    const companyInfo = await getCompanyInfo(orgId);
     res.json({
       patientLinked: true,
       forms: FORM_KINDS.map((kind) => {
@@ -91,8 +97,8 @@ router.get(
           kind,
           title: descriptor.title,
           // The catalog text carries the historical company name;
-          // rewrite it to the admin-saved identity at serve time.
-          body: applyCompanyIdentityToText(descriptor.body),
+          // rewrite it to the tenant's saved identity at serve time.
+          body: applyCompanyIdentityToText(descriptor.body, companyInfo),
           currentVersion: descriptor.version,
           lastSignedVersion: ack?.version ?? null,
           lastSignedAt: ack?.signedAt ?? null,

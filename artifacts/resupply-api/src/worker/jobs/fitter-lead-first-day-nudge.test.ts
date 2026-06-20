@@ -11,9 +11,17 @@ import {
   installSupabaseMock,
   stageSupabaseResponse,
   getSupabaseFilterCalls,
+  getSupabaseCallCount,
 } from "../../test-helpers/supabase-mock";
 
 const supabaseMock = installSupabaseMock();
+
+// The sweep now fans out per active tenant and gates each on the
+// `fitter_first_day_nudge.dispatcher` flag; force it on so the per-org body
+// runs (the send pipeline itself is exercised elsewhere).
+vi.mock("../../lib/feature-flags", () => ({
+  isFeatureEnabled: vi.fn(async () => true),
+}));
 
 import {
   composeFirstDayEmail,
@@ -24,6 +32,11 @@ import {
 beforeEach(() => {
   supabaseMock.reset();
   vi.unstubAllEnvs();
+  // Fan-out reads `organizations`; stage a single active org so the
+  // per-tenant cases behave as the prior one-tenant sweep.
+  stageSupabaseResponse("organizations", "select", {
+    data: [{ id: "00000000-0000-4000-8000-000000000001" }],
+  });
 });
 
 describe("composeFirstDayEmail", () => {
@@ -98,5 +111,21 @@ describe("runFirstDayNudgeSweep — eligibility predicate", () => {
       verb: "is",
       args: ["first_day_nudged_at", null],
     });
+  });
+
+  it("scans each active tenant's leads (multi-tenant fan-out)", async () => {
+    supabaseMock.reset();
+    stageSupabaseResponse("organizations", "select", {
+      data: [{ id: "org-a" }, { id: "org-b" }],
+    });
+    // Each tenant's lead scan comes back empty → nothing sent.
+    stageSupabaseResponse("fitter_leads", "select", { data: [] });
+    stageSupabaseResponse("fitter_leads", "select", { data: [] });
+
+    const stats = await runFirstDayNudgeSweep();
+    expect(stats.scanned).toBe(0);
+    expect(stats.emailed).toBe(0);
+    // Each active tenant ran its own lead scan.
+    expect(getSupabaseCallCount("fitter_leads", "select")).toBe(2);
   });
 });

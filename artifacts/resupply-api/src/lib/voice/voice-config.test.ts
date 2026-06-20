@@ -15,6 +15,7 @@ import {
   readVoiceConfigOrNull,
   readVoiceConfigOrThrow,
   readVoicePublicBaseUrlOrNull,
+  readVoicePublicBaseUrls,
 } from "./voice-config";
 
 // The three required keys plus a public-base-URL source. Spread and
@@ -110,6 +111,57 @@ describe("readVoiceConfigOrNull — optional value parsing", () => {
     ).toBe(0.95);
   });
 
+  it("clamps ELEVENLABS_STYLE / ELEVENLABS_SIMILARITY_BOOST into [0,1]", () => {
+    expect(
+      readVoiceConfigOrNull(fullEnv({ ELEVENLABS_STYLE: "0.15" }))
+        ?.elevenLabsStyle,
+    ).toBe(0.15);
+    expect(
+      readVoiceConfigOrNull(fullEnv({ ELEVENLABS_STYLE: "5" }))
+        ?.elevenLabsStyle,
+    ).toBe(1);
+    expect(
+      readVoiceConfigOrNull(fullEnv({ ELEVENLABS_SIMILARITY_BOOST: "0.9" }))
+        ?.elevenLabsSimilarityBoost,
+    ).toBe(0.9);
+    // Unset → undefined (tuned defaults apply downstream).
+    expect(readVoiceConfigOrNull(fullEnv())?.elevenLabsStyle).toBeUndefined();
+  });
+
+  it("parses ELEVENLABS_USE_SPEAKER_BOOST: unset → undefined, else truthiness", () => {
+    expect(
+      readVoiceConfigOrNull(fullEnv())?.elevenLabsUseSpeakerBoost,
+    ).toBeUndefined();
+    expect(
+      readVoiceConfigOrNull(fullEnv({ ELEVENLABS_USE_SPEAKER_BOOST: "false" }))
+        ?.elevenLabsUseSpeakerBoost,
+    ).toBe(false);
+    expect(
+      readVoiceConfigOrNull(fullEnv({ ELEVENLABS_USE_SPEAKER_BOOST: "true" }))
+        ?.elevenLabsUseSpeakerBoost,
+    ).toBe(true);
+  });
+
+  it("resolves OPENAI_REALTIME_NOISE_REDUCTION: valid values pass, typos → undefined", () => {
+    expect(
+      readVoiceConfigOrNull(fullEnv())?.realtimeNoiseReduction,
+    ).toBeUndefined();
+    expect(
+      readVoiceConfigOrNull(
+        fullEnv({ OPENAI_REALTIME_NOISE_REDUCTION: "near_field" }),
+      )?.realtimeNoiseReduction,
+    ).toBe("near_field");
+    expect(
+      readVoiceConfigOrNull(fullEnv({ OPENAI_REALTIME_NOISE_REDUCTION: "off" }))
+        ?.realtimeNoiseReduction,
+    ).toBe("off");
+    expect(
+      readVoiceConfigOrNull(
+        fullEnv({ OPENAI_REALTIME_NOISE_REDUCTION: "loud" }),
+      )?.realtimeNoiseReduction,
+    ).toBeUndefined();
+  });
+
   it("resolves the TTS transport: only 'http' (case/space-insensitive) → http, else ws", () => {
     expect(readVoiceConfigOrNull(fullEnv())?.elevenLabsTransport).toBe("ws");
     expect(
@@ -122,8 +174,12 @@ describe("readVoiceConfigOrNull — optional value parsing", () => {
     ).toBe("ws");
   });
 
-  it("resolves the Realtime schema: only 'ga' → ga, else beta", () => {
-    expect(readVoiceConfigOrNull(fullEnv())?.realtimeSchema).toBe("beta");
+  it("resolves the Realtime schema: defaults to ga, only explicit 'beta' → beta", () => {
+    expect(readVoiceConfigOrNull(fullEnv())?.realtimeSchema).toBe("ga");
+    expect(
+      readVoiceConfigOrNull(fullEnv({ OPENAI_REALTIME_SCHEMA: "BETA" }))
+        ?.realtimeSchema,
+    ).toBe("beta");
     expect(
       readVoiceConfigOrNull(fullEnv({ OPENAI_REALTIME_SCHEMA: "GA" }))
         ?.realtimeSchema,
@@ -131,7 +187,7 @@ describe("readVoiceConfigOrNull — optional value parsing", () => {
     expect(
       readVoiceConfigOrNull(fullEnv({ OPENAI_REALTIME_SCHEMA: "v1" }))
         ?.realtimeSchema,
-    ).toBe("beta");
+    ).toBe("ga");
   });
 
   it("accepts a valid reasoning effort and drops a typo to undefined", () => {
@@ -213,6 +269,46 @@ describe("readVoicePublicBaseUrlOrNull", () => {
 
   it("returns null when neither source is set", () => {
     expect(readVoicePublicBaseUrlOrNull({})).toBeNull();
+  });
+});
+
+describe("readVoicePublicBaseUrls — multi-host allowlist", () => {
+  it("returns the single configured host when only the singular var is set", () => {
+    expect(
+      readVoicePublicBaseUrls({
+        RESUPPLY_VOICE_PUBLIC_BASE_URL: "https://pennpaps.com/",
+      }),
+    ).toEqual(["https://pennpaps.com"]);
+  });
+
+  it("unions the comma-separated allowlist with the singular var, deduped", () => {
+    expect(
+      readVoicePublicBaseUrls({
+        RESUPPLY_VOICE_PUBLIC_BASE_URLS:
+          "https://cmbreathe.com, https://pennpaps.com/",
+        RESUPPLY_VOICE_PUBLIC_BASE_URL: "https://pennpaps.com",
+      }),
+    ).toEqual(["https://cmbreathe.com", "https://pennpaps.com"]);
+  });
+
+  it("strips trailing slashes and ignores blank entries", () => {
+    expect(
+      readVoicePublicBaseUrls({
+        RESUPPLY_VOICE_PUBLIC_BASE_URLS: "https://cmbreathe.com/, ,",
+      }),
+    ).toEqual(["https://cmbreathe.com"]);
+  });
+
+  it("includes the RAILWAY_PUBLIC_DOMAIN fallback when no explicit URL is set", () => {
+    expect(
+      readVoicePublicBaseUrls({
+        RAILWAY_PUBLIC_DOMAIN: "pennfit.up.railway.app",
+      }),
+    ).toEqual(["https://pennfit.up.railway.app"]);
+  });
+
+  it("returns an empty array when nothing is configured (fails closed)", () => {
+    expect(readVoicePublicBaseUrls({})).toEqual([]);
   });
 });
 

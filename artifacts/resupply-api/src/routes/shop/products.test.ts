@@ -39,6 +39,22 @@ vi.mock("../../lib/feature-flags", () => ({
   isFeatureEnabled: vi.fn(async () => featureEnabled.value),
 }));
 
+// Stripe Connect (G6): the catalog read routes to the tenant's connected
+// account. Default → platform account ({}); per-tenant test overrides it.
+const stripeAccountRequestOptionsMock = vi.fn(async (_orgId: unknown) => ({}));
+vi.mock("../../lib/stripe/connect", () => ({
+  stripeAccountRequestOptions: (orgId: unknown) =>
+    stripeAccountRequestOptionsMock(orgId),
+}));
+
+// Host → tenant resolution for this public route. Default → null (platform).
+const resolveOrgIdByHostMock = vi.fn(
+  async (_host: unknown): Promise<string | null> => null,
+);
+vi.mock("../../lib/tenant-branding", () => ({
+  resolveOrgIdByHost: (host: unknown) => resolveOrgIdByHostMock(host),
+}));
+
 import productsRouter, { invalidateShopProductsCache } from "./products";
 
 function makeApp(): Express {
@@ -77,6 +93,10 @@ beforeEach(() => {
   getStripeClientMock.mockReset();
   getPreviewCatalogMock.mockReset();
   featureEnabled.value = true;
+  stripeAccountRequestOptionsMock.mockReset();
+  stripeAccountRequestOptionsMock.mockResolvedValue({});
+  resolveOrgIdByHostMock.mockReset();
+  resolveOrgIdByHostMock.mockResolvedValue(null);
 
   getStripeClientMock.mockReturnValue({
     products: { list: stripeProductsList },
@@ -250,5 +270,53 @@ describe("GET /shop/products — purchasingEnabled", () => {
     // catalog still renders so shoppers can browse.
     expect(res.body.previewMode).toBe(false);
     expect(res.body.products).toHaveLength(1);
+  });
+});
+
+describe("GET /shop/products — per-tenant (Connect) catalog", () => {
+  it("reads each tenant's catalog from its own connected account", async () => {
+    readStripeConfigOrNullMock.mockReturnValue({
+      secretKey: "skTENANT_scope",
+      publishableKey: "pk_test_x",
+    });
+    // products.list returns a different catalog per connected account.
+    stripeProductsList.mockImplementation(
+      async (
+        _params: unknown,
+        opts: { stripeAccount?: string } | undefined,
+      ) => {
+        if (opts?.stripeAccount === "acct_A")
+          return { data: [freshProduct("prodA", "Mask A", 1000)] };
+        if (opts?.stripeAccount === "acct_B")
+          return { data: [freshProduct("prodB", "Mask B", 2000)] };
+        return { data: [] };
+      },
+    );
+    // Two storefront hosts → two tenants → two connected accounts.
+    resolveOrgIdByHostMock.mockResolvedValueOnce("orgA");
+    resolveOrgIdByHostMock.mockResolvedValueOnce("orgB");
+    stripeAccountRequestOptionsMock.mockImplementation(
+      async (orgId: unknown) =>
+        orgId === "orgA"
+          ? { stripeAccount: "acct_A" }
+          : { stripeAccount: "acct_B" },
+    );
+
+    const resA = await request(makeApp()).get("/shop/products");
+    const resB = await request(makeApp()).get("/shop/products");
+
+    expect(resA.body.products.map((p: { id: string }) => p.id)).toEqual([
+      "prodA",
+    ]);
+    expect(resB.body.products.map((p: { id: string }) => p.id)).toEqual([
+      "prodB",
+    ]);
+    // Each list call carried the tenant's own account header — no cross-leak.
+    expect(stripeProductsList).toHaveBeenCalledWith(expect.anything(), {
+      stripeAccount: "acct_A",
+    });
+    expect(stripeProductsList).toHaveBeenCalledWith(expect.anything(), {
+      stripeAccount: "acct_B",
+    });
   });
 });

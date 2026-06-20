@@ -48,6 +48,11 @@ vi.mock("../../lib/fax-document-token", () => ({
   signFaxDocumentToken: () => "test-fax-token",
 }));
 
+// Capture billing-usage metering (faxEvents) without touching the DB.
+vi.mock("../../lib/metering/usage", () => ({
+  recordTenantUsage: vi.fn(async () => {}),
+}));
+
 // Fax client mock — captures sendFax calls.
 const sendFaxMock = vi.fn<() => Promise<{ id: string; status: string }>>(
   async () => ({ id: "tx_test_id", status: "queued" }),
@@ -63,6 +68,7 @@ vi.mock("@workspace/resupply-telecom", async () => {
 });
 
 import physicianFaxOutreachRouter from "./physician-fax-outreach";
+import { recordTenantUsage } from "../../lib/metering/usage";
 
 function makeApp(): Express {
   const app = express();
@@ -101,6 +107,7 @@ beforeEach(() => {
   supabaseMock.reset();
   sendFaxMock.mockClear();
   logAuditMock.mockClear();
+  vi.mocked(recordTenantUsage).mockClear();
 });
 afterEach(() => {
   for (const k of TELNYX_FAX_ENV_KEYS) {
@@ -232,6 +239,10 @@ describe("POST /admin/physician-fax-outreach", () => {
     });
 
     expect(sendFaxMock).toHaveBeenCalledOnce();
+    // A transmitted fax is metered as one billable fax event (G12).
+    expect(vi.mocked(recordTenantUsage)).toHaveBeenCalledWith(
+      expect.objectContaining({ metricKey: "faxEvents" }),
+    );
     const faxCallArgs = sendFaxMock.mock.calls as unknown as Array<
       Array<{
         to: string;
@@ -287,6 +298,8 @@ describe("POST /admin/physician-fax-outreach", () => {
       provider: "not_configured",
     });
     expect(sendFaxMock).not.toHaveBeenCalled();
+    // Nothing transmitted → nothing metered.
+    expect(vi.mocked(recordTenantUsage)).not.toHaveBeenCalled();
   });
 
   it("returns status=failed and stamps DB when Telnyx throws", async () => {

@@ -97,7 +97,7 @@ const adapterState = vi.hoisted(
   }),
 );
 vi.mock("../../lib/integrations/registry", () => ({
-  getIntegrationAdaptersWithDbOverrides: async () =>
+  getIntegrationAdaptersForOrg: async () =>
     new Map([
       [
         "resmed_airview",

@@ -25,6 +25,7 @@ import {
   readStripeConfigOrNull,
   getStripeClient,
 } from "../../lib/stripe/config";
+import { stripeAccountRequestOptions } from "../../lib/stripe/connect";
 import {
   projectProduct,
   type ShopCategory,
@@ -155,6 +156,10 @@ router.get(
     }
 
     const stripe = getStripeClient(stripeConfig);
+    // Read product metadata from the tenant's connected account (when set)
+    // so reorder cards reflect THEIR catalog — the same account checkout
+    // routes to. NULL connected account → {} → platform account.
+    const accountOptions = await stripeAccountRequestOptions(req.orgId);
     const productIds = Array.from(new Set(rows.map((r) => r.productId)));
     const productMap = new Map<
       string,
@@ -167,9 +172,11 @@ router.get(
     await Promise.all(
       productIds.map(async (id) => {
         try {
-          const product = await stripe.products.retrieve(id, {
-            expand: ["default_price"],
-          });
+          const product = await stripe.products.retrieve(
+            id,
+            { expand: ["default_price"] },
+            accountOptions,
+          );
           if (product.deleted) return;
           const projected = projectProduct(product as never);
           if (!projected) return;

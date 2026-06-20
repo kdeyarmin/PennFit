@@ -54,6 +54,19 @@ vi.mock("@workspace/resupply-email", async () => {
   };
 });
 
+// The cart-abandonment email brands its subject with the tenant storefront
+// name (G6); mock the resolver so the assertion is deterministic (seed →
+// "PennPaps").
+vi.mock("../../lib/tenant-branding.js", () => ({
+  resolveBrandingByOrgId: vi.fn(async () => ({
+    storefrontName: "PennPaps",
+    legalName: "Penn Home Medical Supply",
+    tagline: "tagline",
+    logoUrl: null,
+  })),
+  resolveTenantBaseUrl: vi.fn(async () => null),
+}));
+
 import { EmailConfigError } from "@workspace/resupply-email";
 
 import abandonedCartsRouter from "./abandoned-carts";

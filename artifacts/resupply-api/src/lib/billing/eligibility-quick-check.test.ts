@@ -76,11 +76,16 @@ vi.mock("./identity-resolver", () => ({
   })),
 }));
 
+vi.mock("../metering/usage", () => ({
+  recordTenantUsage: vi.fn(async () => {}),
+}));
+
 import {
   allocateControlNumbers,
   build270,
   createRealtimeEligibilityTransport,
 } from "@workspace/resupply-integrations-office-ally";
+import { recordTenantUsage } from "../metering/usage";
 
 import {
   PayerProfileNotFoundError,
@@ -130,7 +135,10 @@ function stageElectronicPayer(): void {
   });
 }
 
-beforeEach(() => supabaseMock.reset());
+beforeEach(() => {
+  supabaseMock.reset();
+  vi.mocked(recordTenantUsage).mockClear();
+});
 
 describe("quickCheckEligibility — payer gates", () => {
   it("throws PayerProfileNotFoundError when the payer id is unknown", async () => {
@@ -175,6 +183,8 @@ describe("quickCheckEligibility — real-time only, no persistence", () => {
     expect(
       vi.mocked(createRealtimeEligibilityTransport),
     ).not.toHaveBeenCalled();
+    // No round-trip happened → nothing metered.
+    expect(vi.mocked(recordTenantUsage)).not.toHaveBeenCalled();
     expect(supabaseMock.writePayloads("eligibility_checks", "insert")).toEqual(
       [],
     );
@@ -199,6 +209,14 @@ describe("quickCheckEligibility — real-time only, no persistence", () => {
     expect(result.benefits.deductibleCents).toBe(50000);
     expect(result.benefits.coinsurancePct).toBe(20);
     expect(result.benefits.messages).toEqual(["CPAP SUPPLIES COVERED"]);
+
+    // The real-time round-trip is metered as one billing transaction (G12).
+    expect(vi.mocked(recordTenantUsage)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metricKey: "billingTransactionsPerMonth",
+        source: "eligibility.quick_check",
+      }),
+    );
 
     // The whole point: nothing was written anywhere.
     expect(supabaseMock.writePayloads("eligibility_checks", "insert")).toEqual(

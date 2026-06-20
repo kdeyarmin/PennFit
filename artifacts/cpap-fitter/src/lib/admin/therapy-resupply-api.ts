@@ -86,6 +86,80 @@ export const getResupplyOpportunities = (params: {
   }>(`/admin/therapy-resupply/opportunities?${q.toString()}`);
 };
 
+// ── Order drafts (proposals staged from opportunities) ────────────────
+
+export type DraftStatus = "proposed" | "approved" | "dismissed" | "ordered";
+
+export interface ResupplyDraft {
+  id: string;
+  patientId: string;
+  patientName: string | null;
+  category: SupplyCategory | string;
+  source: string | null;
+  sourceDescription: string | null;
+  nextEligibleDate: string | null;
+  suggestedProductId: string | null;
+  suggestedQuantity: number;
+  status: DraftStatus;
+  origin: "auto" | "manual";
+  createdAt: string;
+}
+
+export interface DraftSeedInput {
+  patientId: string;
+  category: string;
+  source?: string | null;
+  sourceDescription?: string | null;
+  nextEligibleDate?: string | null;
+}
+
+export interface ApproveDraftInput {
+  customerName: string;
+  customerEmail?: string | null;
+  customerPhone?: string | null;
+  items: { description: string; quantity: number; unitAmountCents: number }[];
+  noteToCustomer?: string | null;
+  deliver?: boolean;
+}
+
+const jsonPost = <T>(path: string, body: unknown) =>
+  jsonFetch<T>(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+export const listResupplyDrafts = (
+  status: DraftStatus = "proposed",
+  limit = 200,
+) =>
+  jsonFetch<{ status: DraftStatus; count: number; drafts: ResupplyDraft[] }>(
+    `/admin/therapy-resupply/draft-orders?status=${status}&limit=${limit}`,
+  );
+
+export const createResupplyDrafts = (items: DraftSeedInput[]) =>
+  jsonPost<{ staged: number; skipped: number }>(
+    `/admin/therapy-resupply/draft-orders`,
+    { items },
+  );
+
+export const dismissResupplyDraft = (id: string, reason?: string) =>
+  jsonPost<{ ok: true; id: string }>(
+    `/admin/therapy-resupply/draft-orders/${id}/dismiss`,
+    reason ? { reason } : {},
+  );
+
+export const approveResupplyDraft = (id: string, body: ApproveDraftInput) =>
+  jsonPost<{
+    ok: true;
+    draftId: string;
+    orderRequestId: string;
+    orderReference: string;
+    link: string;
+    emailSent: boolean;
+    smsSent: boolean;
+  }>(`/admin/therapy-resupply/draft-orders/${id}/approve`, body);
+
 /** Build the CSV-export URL the browser can navigate to / download. */
 export const resupplyOpportunitiesCsvUrl = (params: {
   dueWithinDays: number;

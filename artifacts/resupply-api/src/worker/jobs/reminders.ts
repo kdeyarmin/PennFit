@@ -80,11 +80,16 @@ import { DEFAULT_SENDGRID_FROM_EMAIL } from "@workspace/resupply-email";
 import {
   sendReminderEmail,
   sendReminderSms,
+  type ReminderVariant,
   type SendActor,
 } from "@workspace/resupply-reminders";
 import { hasLinkHmacKey } from "@workspace/resupply-secrets";
 
 import { logger } from "../../lib/logger.js";
+import { applyTenantEmailSender } from "../../lib/email/apply-tenant-email-sender.js";
+import { applyTenantSmsFrom } from "../../lib/messaging/tenant-telecom.js";
+import { forEachActiveOrg } from "../lib/for-each-active-org.js";
+import { recordOutboundMessageUsage } from "../../lib/metering/usage.js";
 import {
   createQueueWithDlq,
   CRON_SCAN_QUEUE_OPTS,
@@ -120,9 +125,9 @@ export const SEND_EMAIL_JOB = "reminders.send-email";
  * TTL = 22h (intentionally less than 24h so the next-day scan can
  * resend cleanly when a patient's cadence is daily).
  */
-async function tryClaimReminderDedupKey(
+export async function tryClaimReminderDedupKey(
   supabase: OrgScopedClient,
-  channel: "sms" | "email",
+  channel: "sms" | "email" | "voice",
   patientId: string,
   episodeId: string,
   jobId: string,
@@ -205,7 +210,7 @@ async function tryClaimReminderDedupKey(
   );
 }
 
-async function releaseReminderDedupKey(
+export async function releaseReminderDedupKey(
   supabase: OrgScopedClient,
   key: string,
   jobId: string,
@@ -245,6 +250,21 @@ export interface ScanJobData {
 export interface SendJobData {
   patientId: string;
   episodeId: string;
+  /**
+   * The tenant this reminder belongs to. Stamped by the per-tenant scan
+   * fan-out so the send worker claims its dedup key + reads on the RIGHT
+   * tenant's org-scoped client. Optional for back-compat: a job enqueued by
+   * the pre-fan-out scheduler (still in flight across a deploy) carries no
+   * orgId, and the worker falls back to the seed org — single-tenant-correct.
+   */
+  orgId?: string;
+  /**
+   * Which escalation-ladder touch this send is — selects the copy variant
+   * (initial / followup / final). The hourly scan stamps "initial" (first
+   * touch); the escalation scan stamps the step it resolved. Absent → the
+   * send helper defaults to "initial".
+   */
+  variant?: ReminderVariant;
 }
 
 interface ScanRow {
@@ -280,7 +300,7 @@ function daysBetween(earlier: Date, later: Date): number {
  */
 const QUIET_HOURS_START = 9; // 09:00 local — earliest send
 const QUIET_HOURS_END = 20; // 20:00 local — latest send (exclusive)
-function isWithinQuietHours(now: Date, timezone: string): boolean {
+export function isWithinQuietHours(now: Date, timezone: string): boolean {
   let hour: number;
   try {
     const fmt = new Intl.DateTimeFormat("en-US", {
@@ -423,10 +443,12 @@ export const __testing = {
  * SQL filter.
  */
 export async function scanForDueReminders(
+  orgId: string,
   asOf: Date = new Date(),
 ): Promise<ScanRow[]> {
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) return [];
+  // Empty / whitespace orgId → no tenant to scan (return empty rather than
+  // letting getOrgScopedClient throw on a blank id).
+  if (!orgId || !orgId.trim()) return [];
   const supabase = getOrgScopedClient(orgId);
   const quietCutoff = new Date(asOf.getTime() - QUIET_PERIOD_MS);
   const quietCutoffIso = quietCutoff.toISOString();
@@ -880,22 +902,38 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
     try {
       const data = jobs[0]?.data ?? {};
       const asOf = data.asOfIso ? new Date(data.asOfIso) : new Date();
-      const rows = await scanForDueReminders(asOf);
-      logger.info(
-        { count: rows.length },
-        "reminders.scan: enqueueing per-patient send jobs",
+      // Fan out the scan across EVERY active tenant. Each tenant's due
+      // reminders are scanned on its own org-scoped client, and every
+      // enqueued send carries its `orgId` so the send worker claims the
+      // dedup key + reads on the right tenant. Per-tenant failure isolation
+      // means one tenant's scan error can't drop another tenant's reminders.
+      let enqueued = 0;
+      await forEachActiveOrg(
+        async (orgId) => {
+          const rows = await scanForDueReminders(orgId, asOf);
+          for (const row of rows) {
+            const send: SendJobData = {
+              patientId: row.patientId,
+              episodeId: row.episodeId,
+              orgId,
+              // First touch always uses the gentle "initial" copy; the
+              // escalation scan is what advances the variant.
+              variant: "initial",
+            };
+            if (row.channel === "sms") {
+              await boss.send(SEND_SMS_JOB, send);
+            } else {
+              await boss.send(SEND_EMAIL_JOB, send);
+            }
+            enqueued += 1;
+          }
+        },
+        { jobName: SCAN_JOB },
       );
-      for (const row of rows) {
-        const send: SendJobData = {
-          patientId: row.patientId,
-          episodeId: row.episodeId,
-        };
-        if (row.channel === "sms") {
-          await boss.send(SEND_SMS_JOB, send);
-        } else {
-          await boss.send(SEND_EMAIL_JOB, send);
-        }
-      }
+      logger.info(
+        { count: enqueued },
+        "reminders.scan: enqueued per-patient send jobs across active tenants",
+      );
     } catch (err) {
       logger.error({ err }, "reminders.scan: job failed");
       throw err;
@@ -913,11 +951,15 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
       );
       return;
     }
-    const orgId = await resolveSeedOrgId();
+    // Prefer the tenant stamped by the per-tenant scan fan-out; fall back
+    // to the seed org for jobs enqueued before the fan-out deploy. Treat an
+    // empty/whitespace payload orgId as absent (a blank id would otherwise
+    // throw in getOrgScopedClient instead of using the seed fallback).
+    const orgId = j.data.orgId?.trim() || (await resolveSeedOrgId());
     if (!orgId) {
       logger.warn(
         { job_id: j.id },
-        "reminders.send-sms: no seed org resolved — skipping",
+        "reminders.send-sms: no org resolved — skipping",
       );
       return;
     }
@@ -938,9 +980,13 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
     try {
       outcome = await sendReminderSms({
         supabase: supabase.raw(),
-        cfg: cfg.sms,
+        orgId,
+        // Send under the tenant's own number / Messaging Service when it
+        // has one; falls back to the platform default otherwise (G7).
+        cfg: await applyTenantSmsFrom(orgId, cfg.sms),
         patientId: j.data.patientId,
         episodeId: j.data.episodeId,
+        variant: j.data.variant,
         actor,
       });
     } catch (err) {
@@ -977,6 +1023,14 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
           `reminders.send-sms: retryable failure: ${outcome.status}`,
         );
       }
+    } else {
+      // One patient-facing SMS went out (the dedup claim above makes this
+      // once-per (patient, episode, day) — no double-count on retry).
+      recordOutboundMessageUsage({
+        orgId,
+        channel: "sms",
+        source: "reminders.sms",
+      });
     }
   });
 
@@ -991,11 +1045,15 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
       );
       return;
     }
-    const orgId = await resolveSeedOrgId();
+    // Prefer the tenant stamped by the per-tenant scan fan-out; fall back
+    // to the seed org for jobs enqueued before the fan-out deploy. Treat an
+    // empty/whitespace payload orgId as absent (a blank id would otherwise
+    // throw in getOrgScopedClient instead of using the seed fallback).
+    const orgId = j.data.orgId?.trim() || (await resolveSeedOrgId());
     if (!orgId) {
       logger.warn(
         { job_id: j.id },
-        "reminders.send-email: no seed org resolved — skipping",
+        "reminders.send-email: no org resolved — skipping",
       );
       return;
     }
@@ -1015,9 +1073,13 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
     try {
       outcome = await sendReminderEmail({
         supabase: supabase.raw(),
-        cfg: cfg.email,
+        orgId,
+        // Send under the tenant's own From identity when configured (G6);
+        // falls back to the platform default when it isn't.
+        cfg: await applyTenantEmailSender(orgId, cfg.email),
         patientId: j.data.patientId,
         episodeId: j.data.episodeId,
+        variant: j.data.variant,
         actor,
       });
     } catch (err) {
@@ -1052,6 +1114,14 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
           `reminders.send-email: retryable failure: ${outcome.status}`,
         );
       }
+    } else {
+      // One patient-facing email went out (dedup-claimed once-per
+      // (patient, episode, day) — no double-count on retry).
+      recordOutboundMessageUsage({
+        orgId,
+        channel: "email",
+        source: "reminders.email",
+      });
     }
   });
 

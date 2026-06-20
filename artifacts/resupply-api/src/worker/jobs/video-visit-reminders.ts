@@ -25,7 +25,7 @@
 
 import type PgBoss from "pg-boss";
 
-import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 import {
   createSendgridClient,
   EmailConfigError,
@@ -37,8 +37,15 @@ import {
 
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
-import { readPracticeName } from "../../lib/messaging/messaging-config";
+import { createTenantSendgridClient } from "../../lib/email/tenant-sender.js";
+import {
+  resolveBrandingByOrgId,
+  resolveTenantBaseUrl,
+} from "../../lib/tenant-branding.js";
+import { recordOutboundMessageUsage } from "../../lib/metering/usage.js";
+import { resolveTenantSmsClientOptions } from "../../lib/messaging/tenant-telecom";
 import { signVideoVisitToken } from "../../lib/video/video-visit-token";
+import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import {
   createQueueWithDlq,
   VENDOR_SEND_QUEUE_OPTS,
@@ -134,13 +141,17 @@ function formatStartTime(scheduledAt: string): string {
   });
 }
 
-function publicBaseUrl(env: NodeJS.ProcessEnv = process.env): string {
+function publicBaseUrl(
+  override?: string,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
   return (
+    override ??
     env.SHOP_PUBLIC_BASE_URL ??
     env.RESUPPLY_VOICE_PUBLIC_BASE_URL ??
     (env.RAILWAY_PUBLIC_DOMAIN
       ? `https://${env.RAILWAY_PUBLIC_DOMAIN}`
-      : "https://pennpaps.com")
+      : "https://cmbreathe.com")
   ).replace(/\/$/, "");
 }
 
@@ -184,40 +195,69 @@ function escapeHtml(s: string): string {
     .replace(/'/g, "&#39;");
 }
 
-/** Run a single sweep. Exported for tests. */
-export async function runVideoVisitReminderSweep(
-  now: Date = new Date(),
-): Promise<ReminderSweepStats> {
-  const stats: ReminderSweepStats = {
+function emptyReminderStats(): ReminderSweepStats {
+  return {
     scanned: 0,
     sent: 0,
     skippedNoChannel: 0,
     skippedClaimRace: 0,
     errors: 0,
   };
+}
 
-  if (!(await isFeatureEnabled("telehealth.video"))) return stats;
+/** Vendor clients are global today (per-tenant telecom is G7), so they're
+ *  built once per run and threaded into every tenant's sweep. The PER-TENANT
+ *  feature flags decide whether each tenant is swept and over which channels. */
+interface VendorClients {
+  twilio: ReturnType<typeof createTwilioSmsClient> | null;
+  sendgrid: ReturnType<typeof createSendgridClient> | null;
+}
+
+/**
+ * Run the video-visit reminder sweep for a SINGLE tenant, accumulating into
+ * the shared `stats`. Extracted so the cron can fan out across every active
+ * tenant — `video_visits` (and the joined `patients`) are tenant-scoped, so
+ * each tenant is swept on its own org-scoped client and a reminder never
+ * reaches another tenant's patient. The telehealth + per-channel reminder
+ * flags are checked PER TENANT (`feature_flags` is `(org_id, key)`), so one
+ * tenant's opt-out never sweeps another's visits.
+ */
+async function videoVisitReminderSweepForOrg(
+  orgId: string,
+  now: Date,
+  clients: VendorClients,
+  stats: ReminderSweepStats,
+): Promise<void> {
+  if (!(await isFeatureEnabled("telehealth.video", orgId))) return;
   const [smsFlag, emailFlag] = await Promise.all([
-    isFeatureEnabled("sms.reminders"),
-    isFeatureEnabled("email.reminders"),
+    isFeatureEnabled("sms.reminders", orgId),
+    isFeatureEnabled("email.reminders", orgId),
   ]);
-  // Deliverability = flag ON and the vendor client constructible.
-  // Computed once per sweep, BEFORE any row is claimed.
-  const twilio = smsFlag ? tryCreateTwilioSms() : null;
-  const sendgrid = emailFlag ? tryCreateSendgrid() : null;
-  const avail: ChannelAvailability = { sms: !!twilio, email: !!sendgrid };
-  if (!avail.sms && !avail.email) return stats;
+  // Deliverability = this tenant's flag ON and the vendor client
+  // constructible. Computed BEFORE any row is claimed so a row is never
+  // claimed for a channel that can't send.
+  const avail: ChannelAvailability = {
+    sms: !!clients.twilio && smsFlag,
+    email: !!clients.sendgrid && emailFlag,
+  };
+  if (!avail.sms && !avail.email) return;
 
-  // Single-tenant bridge: no per-tenant job payload yet, so sweep the one
-  // seed org. Becomes a per-org loop when a 2nd tenant lands.
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) {
-    logger.warn(
-      { queue: REMINDER_JOB },
-      "video-visit reminder sweep: could not resolve seed org — skipping",
-    );
-    return stats;
-  }
+  // Send under the tenant's own number / Messaging Service when it has
+  // one (G7); falls back to the platform default otherwise. The global
+  // `clients.twilio` proves SMS is constructible (availability gate
+  // above); we build a tenant-scoped sender for the actual send.
+  const tenantTwilio = avail.sms
+    ? createTwilioSmsClient(await resolveTenantSmsClientOptions(orgId))
+    : null;
+
+  // Send under the tenant's own From identity (G6); the global
+  // `clients.sendgrid` already proved constructibility in the avail gate,
+  // mirroring the tenant SMS pattern above. For the seed tenant this resolves
+  // to the platform default From, so single-tenant behavior is unchanged.
+  const tenantSendgrid = avail.email
+    ? await createTenantSendgridClient(orgId)
+    : null;
+
   const supabase = getOrgScopedClient(orgId);
   const windowEnd = new Date(now.getTime() + REMINDER_WINDOW_MS).toISOString();
   const { data, error } = await supabase
@@ -234,8 +274,15 @@ export async function runVideoVisitReminderSweep(
   if (error) throw error;
 
   const visits = (data ?? []) as unknown as ReminderVisitRow[];
-  const practiceName = readPracticeName();
-  const base = publicBaseUrl();
+  // Brand the reminder copy with the tenant's own storefront name (G6); for
+  // the seed tenant this resolves to "PennPaps" so single-tenant copy is
+  // unchanged.
+  const brand = await resolveBrandingByOrgId(orgId);
+  const practiceName = brand.storefrontName;
+  // Build patient links from the tenant's own storefront origin (its verified
+  // custom domain) when it has one; the seed tenant falls through to the env/
+  // default, so single-tenant is unchanged. Resolved once per tenant sweep.
+  const base = publicBaseUrl((await resolveTenantBaseUrl(orgId)) ?? undefined);
 
   for (const visit of visits) {
     stats.scanned += 1;
@@ -282,10 +329,11 @@ export async function runVideoVisitReminderSweep(
       });
 
       if (target.channel === "sms") {
-        // Non-null by construction: avail.sms implied twilio above.
-        await twilio!.sendSms({ to: target.to, body: message.sms });
+        // Non-null by construction: avail.sms implied tenantTwilio above.
+        await tenantTwilio!.sendSms({ to: target.to, body: message.sms });
       } else {
-        await sendgrid!.sendEmail({
+        // Non-null by construction: avail.email implied tenantSendgrid above.
+        await tenantSendgrid!.sendEmail({
           to: target.to,
           // No PHI in the subject line.
           subject: message.subject,
@@ -294,6 +342,11 @@ export async function runVideoVisitReminderSweep(
         });
       }
       stats.sent += 1;
+      recordOutboundMessageUsage({
+        orgId,
+        channel: target.channel === "sms" ? "sms" : "email",
+        source: "video_visit_reminder",
+      });
     } catch (err) {
       stats.errors += 1;
       logger.warn(
@@ -306,6 +359,33 @@ export async function runVideoVisitReminderSweep(
       );
     }
   }
+}
+
+/**
+ * Run the video-visit reminder sweep for EVERY active tenant. Builds the
+ * vendor clients once, then fans out with per-tenant failure isolation
+ * (forEachActiveOrg), aggregating each tenant's tally. Exported for tests.
+ */
+export async function runVideoVisitReminderSweep(
+  now: Date = new Date(),
+): Promise<ReminderSweepStats> {
+  const stats = emptyReminderStats();
+
+  // Build the vendor clients once (global telecom today). If NEITHER is
+  // constructible there is nothing deliverable anywhere — skip the fan-out.
+  const clients: VendorClients = {
+    twilio: tryCreateTwilioSms(),
+    sendgrid: tryCreateSendgrid(),
+  };
+  if (!clients.twilio && !clients.sendgrid) return stats;
+
+  await forEachActiveOrg(
+    async (orgId) => {
+      await videoVisitReminderSweepForOrg(orgId, now, clients, stats);
+    },
+    { jobName: REMINDER_JOB },
+  );
+
   return stats;
 }
 

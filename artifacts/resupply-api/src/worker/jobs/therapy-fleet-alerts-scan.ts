@@ -31,7 +31,6 @@ import {
   DEFAULT_COMMUNICATION_PREFERENCES,
   getOrgScopedClient,
   type OrgScopedClient,
-  resolveSeedOrgId,
 } from "@workspace/resupply-db";
 import {
   type SendActor,
@@ -45,7 +44,10 @@ import {
   shouldSendSms,
 } from "../../lib/comm-prefs.js";
 import { isFeatureEnabled } from "../../lib/feature-flags.js";
+import { recordOutboundMessageUsage } from "../../lib/metering/usage.js";
 import { logger } from "../../lib/logger.js";
+import { applyTenantSmsFrom } from "../../lib/messaging/tenant-telecom.js";
+import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import { claimDedupKey } from "../../lib/dedup-keys.js";
 import {
   createQueueWithDlq,
@@ -174,9 +176,30 @@ export async function runTherapyFleetAlertsScan(): Promise<AlertsScanResult> {
     resolved: 0,
     messaged: 0,
   };
+  // Fan out across every active tenant — the worklist/adherence RPCs and
+  // therapy_fleet_alerts are org-scoped (the `.raw()` reads/writes filter by
+  // org_id explicitly), and the auto_outreach / sms.reminders flags resolve
+  // per tenant — so a tenant only alerts/texts its own patients, and only
+  // when it has enabled outreach. Per-tenant failure isolation; results
+  // summed. Single-tenant: listActiveOrgIds() returns just the seed org, so
+  // this is exactly the prior one-tenant sweep.
+  await forEachActiveOrg(
+    async (orgId) => {
+      await therapyFleetAlertsScanForOrg(orgId, result);
+    },
+    { jobName: THERAPY_FLEET_ALERTS_JOB },
+  );
+  logger.info(
+    { queue: THERAPY_FLEET_ALERTS_JOB, ...result },
+    "therapy fleet alerts scan complete",
+  );
+  return result;
+}
 
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) return result;
+async function therapyFleetAlertsScanForOrg(
+  orgId: string,
+  result: AlertsScanResult,
+): Promise<void> {
   const supabase = getOrgScopedClient(orgId);
 
   // ── 1. detect ──────────────────────────────────────────────────
@@ -233,7 +256,7 @@ export async function runTherapyFleetAlertsScan(): Promise<AlertsScanResult> {
       },
     });
   }
-  result.detected = detected.length;
+  result.detected += detected.length;
 
   const detectedKeys = new Set(
     detected.map((d) => `${d.patientId}|${d.alertType}`),
@@ -325,7 +348,7 @@ export async function runTherapyFleetAlertsScan(): Promise<AlertsScanResult> {
       }
       created += 1;
     }
-    result.created = created;
+    result.created += created;
   }
 
   // Auto-resolve open alerts the patient no longer trips. Chunked:
@@ -361,9 +384,12 @@ export async function runTherapyFleetAlertsScan(): Promise<AlertsScanResult> {
 
   // ── 3. opt-in patient auto-outreach (flag-gated) ───────────────
   const outreachOn =
-    (await isFeatureEnabled("therapy_fleet.auto_outreach")) &&
-    (await isFeatureEnabled("sms.reminders"));
-  const cfg = outreachOn ? readSmsConfig() : null;
+    (await isFeatureEnabled("therapy_fleet.auto_outreach", orgId)) &&
+    (await isFeatureEnabled("sms.reminders", orgId));
+  const baseCfg = outreachOn ? readSmsConfig() : null;
+  // Send under the tenant's own number / Messaging Service when it has
+  // one (G7); falls back to the platform default otherwise.
+  const cfg = baseCfg ? await applyTenantSmsFrom(orgId, baseCfg) : null;
   if (outreachOn && cfg) {
     // Only newly-created, patient-appropriate alerts trigger a send.
     const candidates = newAlerts.filter((d) =>
@@ -399,12 +425,6 @@ export async function runTherapyFleetAlertsScan(): Promise<AlertsScanResult> {
       }
     }
   }
-
-  logger.info(
-    { queue: THERAPY_FLEET_ALERTS_JOB, ...result },
-    "therapy fleet alerts scan complete",
-  );
-  return result;
 }
 
 // Returns true iff a message was actually dispatched. Enforces explicit
@@ -505,7 +525,14 @@ async function maybeSendAdherenceSms(
       body,
       actor,
     });
-    if (outcome.status === "ok") return true;
+    if (outcome.status === "ok") {
+      recordOutboundMessageUsage({
+        orgId: supabase.orgId,
+        channel: "sms",
+        source: "therapy_fleet_adherence.sms",
+      });
+      return true;
+    }
     // Didn't actually dispatch (e.g. no routable phone) — release the cap
     // key so a later run can retry instead of suppressing for 14 days.
     await releaseAdherenceCapKey(supabase, capKey);

@@ -186,8 +186,9 @@ describe("share-article.tsx — handleEmail URL construction", () => {
     expect(SRC).toContain("blurb");
   });
 
-  it("appends '— shared from PennPaps' to the email body", () => {
-    expect(SRC).toContain("shared from PennPaps");
+  it("appends '— shared from {brandName}' (resolving tenant brand) to the email body", () => {
+    expect(SRC).toContain("shared from ${brandName}");
+    expect(SRC).toContain("useCompanyContact");
   });
 
   it("uses window.location.href to navigate to the mailto link", () => {

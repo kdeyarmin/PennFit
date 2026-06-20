@@ -28,18 +28,17 @@ import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
 import { getOrgScopedClient } from "@workspace/resupply-db";
-import {
-  createSendgridClient,
-  EmailConfigError,
-} from "@workspace/resupply-email";
+import { EmailConfigError } from "@workspace/resupply-email";
 import {
   createTwilioSmsClient,
   TwilioConfigError,
 } from "@workspace/resupply-telecom";
 
 import { createAdhocPaymentCheckoutSession } from "../../lib/billing/patient-payment";
+import { createTenantSendgridClient } from "../../lib/email/tenant-sender";
 import { logger } from "../../lib/logger";
 import { readPracticeName } from "../../lib/messaging/messaging-config";
+import { resolveTenantSmsClientOptions } from "../../lib/messaging/tenant-telecom";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
@@ -72,22 +71,30 @@ function publicBaseUrl(): string {
     process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL ??
     (process.env.RAILWAY_PUBLIC_DOMAIN
       ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
-      : "https://pennpaps.com")
+      : "https://cmbreathe.com")
   ).replace(/\/$/, "");
 }
 
-function tryCreateSendgrid(): ReturnType<typeof createSendgridClient> | null {
+async function tryCreateSendgrid(
+  orgId: string,
+): Promise<Awaited<ReturnType<typeof createTenantSendgridClient>> | null> {
   try {
-    return createSendgridClient();
+    // Send from the tenant's own From identity when configured (G6);
+    // falls back to the platform default when it isn't.
+    return await createTenantSendgridClient(orgId);
   } catch (err) {
     if (err instanceof EmailConfigError) return null;
     throw err;
   }
 }
 
-function tryCreateTwilioSms(): ReturnType<typeof createTwilioSmsClient> | null {
+async function tryCreateTwilioSms(
+  orgId: string,
+): Promise<ReturnType<typeof createTwilioSmsClient> | null> {
   try {
-    return createTwilioSmsClient();
+    // Send under the tenant's own number / Messaging Service when it has
+    // one (G7); falls back to the platform env default otherwise.
+    return createTwilioSmsClient(await resolveTenantSmsClientOptions(orgId));
   } catch (err) {
     if (err instanceof TwilioConfigError) return null;
     throw err;
@@ -164,6 +171,7 @@ function renderPaymentEmailText(
  *  caller can still hand the staff member a copy-able link. */
 async function deliverPaymentLink(opts: {
   channel: "email" | "sms";
+  orgId: string;
   email: string | null;
   phone: string | null;
   firstName: string | null;
@@ -177,7 +185,7 @@ async function deliverPaymentLink(opts: {
   try {
     if (opts.channel === "email") {
       if (!opts.email) return { delivered: false, reason: "no_email" };
-      const sendgrid = tryCreateSendgrid();
+      const sendgrid = await tryCreateSendgrid(opts.orgId);
       if (!sendgrid) return { delivered: false, reason: "no_email_config" };
       await sendgrid.sendEmail({
         to: opts.email,
@@ -204,7 +212,7 @@ async function deliverPaymentLink(opts: {
     // GSM-7 segment-count concern that drives the templated reminders is
     // not worth a clamp here.
     if (!opts.phone) return { delivered: false, reason: "no_phone" };
-    const twilio = tryCreateTwilioSms();
+    const twilio = await tryCreateTwilioSms(opts.orgId);
     if (!twilio) return { delivered: false, reason: "no_sms_config" };
     await twilio.sendSms({
       to: opts.phone,
@@ -332,6 +340,7 @@ router.post(
       successUrl: `${base}/account/billing?paid=1`,
       cancelUrl: `${base}/account/billing?cancelled=1`,
       initiatorEmail: req.adminEmail ?? "unknown",
+      orgId,
     });
     if ("error" in session) {
       const status =
@@ -348,6 +357,7 @@ router.post(
 
     const delivery = await deliverPaymentLink({
       channel: body.channel,
+      orgId,
       email: recipientEmail,
       phone: recipientPhone,
       firstName: patient.legal_first_name ?? null,

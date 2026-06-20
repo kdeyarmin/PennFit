@@ -49,12 +49,24 @@ import {
 
 import type { SavedShippingAddress } from "@workspace/resupply-db";
 
+import {
+  resolveOrgIdByConnectedAccount,
+  setChargesEnabledByAccount,
+} from "./connect";
+import { enterWebhookOrg, resolveWebhookOrgId } from "./webhook-org-context";
+
 type ShopOrderUpdate = Database["resupply"]["Tables"]["shop_orders"]["Update"];
 
 import { maybeDispatchPaymentFailedAlert } from "../alerts/payment-failed-trigger";
+import { recordOutboundMessageUsage } from "../metering/usage";
+import { handlePlatformTenantStripeEvent } from "../platform-billing/stripe";
 import { getBoss } from "../../worker/index.js";
 import { PAYMENT_FAILED_ALERT_JOB } from "../../worker/jobs/payment-failed-alert.js";
-import { getStripeClient, readStripeConfigOrNull } from "./config";
+import {
+  getStripeClient,
+  readPlatformBillingStripeConfigOrNull,
+  readStripeConfigOrNull,
+} from "./config";
 import { stripeErrLogFields } from "./err-log-fields";
 import {
   sendOrderConfirmationEmail,
@@ -275,6 +287,20 @@ export const stripeWebhookHandler: RequestHandler = async (
     return;
   }
 
+  // Resolve which tenant this event belongs to ONCE, then bind it for the
+  // whole handler tree (G5 Connect routing). A Connect event carries
+  // `account` (the connected account) → reverse-map to its org; a platform
+  // event (no account) → the seed org. Handlers read this via
+  // resolveWebhookOrgId(). With no connected accounts configured,
+  // event.account is always absent, so this resolves to the seed org
+  // exactly as before.
+  let webhookOrgId = await resolveSeedOrgId();
+  if (event.account) {
+    webhookOrgId =
+      (await resolveOrgIdByConnectedAccount(event.account)) ?? webhookOrgId;
+  }
+  if (webhookOrgId) enterWebhookOrg(webhookOrgId);
+
   try {
     switch (event.type) {
       case "checkout.session.completed":
@@ -328,6 +354,11 @@ export const stripeWebhookHandler: RequestHandler = async (
               session,
               paidRow,
               log,
+              // Pass the EVENT's connected account (immutable for this event)
+              // so the historical line-item read targets the account the
+              // session was created on, even across disconnect/reconnect or
+              // a replayed/async webhook. Undefined for platform events.
+              event.account ?? null,
             );
           } catch (itemsErr) {
             log?.warn?.(
@@ -442,6 +473,7 @@ export const stripeWebhookHandler: RequestHandler = async (
       case "customer.subscription.created":
       case "customer.subscription.updated":
       case "customer.subscription.deleted": {
+        if (await handlePlatformTenantStripeEvent(event)) break;
         // Subscribe & Save mirror — see webhook-handlers/subscription.ts
         // for the upsert + last_stripe_event_at ordering guard.
         await handleSubscriptionEvent(event, log);
@@ -497,7 +529,26 @@ export const stripeWebhookHandler: RequestHandler = async (
         await handlePaymentMethodDetached(event, log);
         break;
       }
+      case "account.updated": {
+        // G5 Connect onboarding: a tenant's connected account changed.
+        // Platform-billing gets first dibs (its own Connect surface); else
+        // flip our routing gate to match Stripe's charges_enabled so a
+        // tenant's storefront charges start flowing the moment onboarding
+        // completes (and stop if Stripe ever disables the account).
+        if (await handlePlatformTenantStripeEvent(event)) break;
+        const account = event.data.object as Stripe.Account;
+        await setChargesEnabledByAccount(
+          account.id,
+          account.charges_enabled === true,
+        );
+        break;
+      }
+      case "invoice.paid": {
+        await handlePlatformTenantStripeEvent(event);
+        break;
+      }
       case "invoice.payment_failed": {
+        if (await handlePlatformTenantStripeEvent(event)) break;
         // Subscribe & Save renewal payment failed. The companion
         // `customer.subscription.updated` event (delivered alongside)
         // already moves shop_subscriptions.status to `past_due`, so
@@ -669,6 +720,136 @@ export const stripeWebhookHandler: RequestHandler = async (
   res.status(200).json({ received: true });
 };
 
+// ── Dedicated platform-billing webhook ──────────────────────────────
+//
+// When the operator provisions a SEPARATE Stripe account for tenant→
+// platform SaaS billing (STRIPE_PLATFORM_SECRET_KEY set), that account
+// posts its webhooks HERE — a distinct endpoint with its own signing
+// secret (STRIPE_PLATFORM_WEBHOOK_SIGNING_SECRET) — instead of the
+// patient/Connect webhook. This keeps the two accounts' event streams
+// (and their signing secrets) cleanly separated.
+//
+// In SHARED mode (no dedicated key) this endpoint is inert: the platform
+// account IS the patient account, so its billing events arrive on
+// /stripe/webhook, where the same `handlePlatformTenantStripeEvent` is
+// still dispatched first for the subscription/invoice families. Stripe
+// should simply not be pointed here in that mode.
+//
+// Mounting contract mirrors the main handler: express.raw body parser,
+// registered before express.json (signature verification needs the exact
+// bytes). Dispatch is limited to platform-billing events — anything else
+// is acked so the dedicated account's Stripe stops retrying.
+export const stripePlatformBillingWebhookHandler: RequestHandler = async (
+  req: Request,
+  res: Response,
+) => {
+  const config = readPlatformBillingStripeConfigOrNull();
+  if (!config || config.mode !== "dedicated" || !config.webhookSigningSecret) {
+    req.log?.warn(
+      { hasConfig: !!config, mode: config?.mode ?? null },
+      "platform-billing stripe webhook hit while not in dedicated mode / not configured",
+    );
+    // Same production-vs-dev posture as the main handler: 503 in prod so a
+    // misconfigured dedicated webhook surfaces loudly via Stripe's retry
+    // alerts; 200 elsewhere so a stray delivery doesn't burn the retry
+    // budget on preview/dev.
+    if (process.env.NODE_ENV === "production") {
+      res.status(503).json({ error: "platform_billing_webhook_unconfigured" });
+    } else {
+      res
+        .status(200)
+        .json({ ok: true, ignored: "platform_billing_not_dedicated" });
+    }
+    return;
+  }
+
+  const signature = req.headers["stripe-signature"];
+  if (typeof signature !== "string") {
+    res.status(400).json({ error: "missing_stripe_signature" });
+    return;
+  }
+
+  const rawBody = req.body;
+  if (!Buffer.isBuffer(rawBody)) {
+    req.log?.error(
+      { bodyType: typeof rawBody },
+      "platform-billing stripe webhook: raw body was not a Buffer — body parser order is wrong",
+    );
+    res.status(400).json({ error: "raw_body_missing" });
+    return;
+  }
+
+  const stripe = getStripeClient(config);
+  let event: Stripe.Event;
+  try {
+    event = stripe.webhooks.constructEvent(
+      rawBody,
+      signature,
+      config.webhookSigningSecret,
+    );
+  } catch (err) {
+    req.log?.warn(
+      { ...stripeErrLogFields(err) },
+      "platform-billing stripe webhook signature verification failed",
+    );
+    res.status(400).json({ error: "invalid_signature" });
+    return;
+  }
+
+  const log = req.log?.child?.({
+    stripeEventId: event.id,
+    type: event.type,
+    channel: "platform-billing",
+  });
+
+  // Same event-id idempotency gate as the main handler — the dedup table
+  // is global and Stripe event ids are unique across accounts, so a
+  // dedicated-account event never collides with a patient-account one.
+  const dedupeOutcome = await tryRecordWebhookEvent(event.id, event.type, log);
+  if (dedupeOutcome === "duplicate") {
+    log?.info?.(
+      "platform-billing stripe webhook: event_id already recorded — deduped",
+    );
+    res.status(200).json({ ok: true, deduped: true });
+    return;
+  }
+  if (dedupeOutcome === "error") {
+    res.status(500).json({ error: "dedup_unavailable" });
+    return;
+  }
+  const dedupeInserted = dedupeOutcome === "inserted";
+
+  // Platform billing is seed-org scoped (handlePlatformTenantStripeEvent →
+  // rawClient() resolves the seed org). Bind it so any scoped reads inside
+  // resolve, mirroring the main handler's org-context binding.
+  const seedOrgId = await resolveSeedOrgId();
+  if (seedOrgId) enterWebhookOrg(seedOrgId);
+
+  try {
+    const handled = await handlePlatformTenantStripeEvent(event);
+    if (!handled) {
+      // Not a platform-billing event (or not ours). Only the SaaS-billing
+      // event families should be routed to this endpoint from the dedicated
+      // account's dashboard; ack anything else so Stripe stops retrying.
+      log?.debug?.(
+        "platform-billing stripe webhook: event not handled — acking",
+      );
+    }
+  } catch (err) {
+    if (dedupeInserted) {
+      await tryDeleteWebhookEventRecord(event.id, log);
+    }
+    log?.error?.(
+      { err, ...stripeErrLogFields(err) },
+      "platform-billing stripe webhook handler threw — Stripe will retry",
+    );
+    res.status(500).json({ error: "internal_error" });
+    return;
+  }
+
+  res.status(200).json({ received: true });
+};
+
 async function markStatusByPaymentIntent(
   paymentIntentId: string,
   _statusHint: "refunded",
@@ -687,7 +868,7 @@ async function markStatusByPaymentIntent(
       | undefined;
   },
 ): Promise<void> {
-  const orgId = await resolveSeedOrgId();
+  const orgId = await resolveWebhookOrgId();
   if (!orgId) {
     // Tenant context missing — treat like an unknown payment_intent
     // (skip the refund mirror; same non-throwing "nothing to do" path).
@@ -862,7 +1043,7 @@ export async function sendOrderConfirmationIfFirst(args: {
   { skipped: true; reason: string } | { skipped: false; delivered: boolean }
 > {
   const { session, paidOrderId, items, log } = args;
-  const orgId = await resolveSeedOrgId();
+  const orgId = await resolveWebhookOrgId();
   if (!orgId) {
     // Tenant context missing — skip the send (same non-throwing "skip"
     // outcome used when the row is missing or already sent).
@@ -972,6 +1153,8 @@ export async function sendOrderConfirmationIfFirst(args: {
       shippingAddress:
         (claimed.shipping_address_json as unknown as SavedShippingAddress | null) ??
         null,
+      // Send under the tenant's own From identity when configured (G6).
+      orgId,
     });
 
     if (!result.configured) {
@@ -991,6 +1174,12 @@ export async function sendOrderConfirmationIfFirst(args: {
       return { skipped: false, delivered: false };
     }
 
+    // Patient-facing email the vendor accepted — meter it.
+    recordOutboundMessageUsage({
+      orgId,
+      channel: "email",
+      source: "shop_order_confirmation",
+    });
     log?.info?.(
       { orderId: claimed.id, messageId: result.messageId ?? null },
       "order confirmation email delivered",

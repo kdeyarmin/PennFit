@@ -36,6 +36,14 @@ export {
   type PacwareRowError,
   type PacwareParseResult,
   parsePacwarePatientCsv,
+  type PatientColumnMapping,
+  type PatientImportFieldInfo,
+  type PatientCsvHeaderPreview,
+  parsePatientCsvWithMapping,
+  patientImportFields,
+  previewPatientCsvHeaders,
+  normalizeDateToIso,
+  normalizePhoneToE164,
 } from "./parse";
 
 export {

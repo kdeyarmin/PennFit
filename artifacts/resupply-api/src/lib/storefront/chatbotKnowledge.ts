@@ -27,7 +27,10 @@ import {
   type MaskEntry,
   type MaskType,
 } from "../../data/maskCatalog.js";
-import { applyCompanyIdentityToText } from "../company-info.js";
+import {
+  applyCompanyIdentityToText,
+  type CompanyInfo,
+} from "../company-info.js";
 
 /** Number of conversation turns the chat route will accept per call. */
 export const MAX_CHAT_TURNS = 12;
@@ -1863,11 +1866,14 @@ with the support phone (814) 471-0627 or support@pennpaps.com
 `;
 
 /**
- * Build the full system prompt the chat route hands to the LLM.
- * Pure function of the static knowledge sections + the live mask
- * catalog. Result is deterministic per deploy.
+ * Assemble the system prompt's static + catalog sections WITHOUT the
+ * per-tenant company-identity rewrite. This is the expensive part (the
+ * live mask catalog) and is cacheable per deploy; callers that know
+ * their tenant apply `applyCompanyIdentityToText(base, info)` per
+ * request so a second tenant's saved phone/email/brand appears instead
+ * of the seed's. Result is deterministic per deploy.
  */
-export function buildChatSystemPrompt(): string {
+export function buildChatSystemPromptBase(): string {
   const prompt = [
     `You are PennBot — the warm, knowledgeable support voice of PennPaps.com (Penn Home Medical Supply, a Pennsylvania durable medical equipment provider focused on CPAP supplies and sleep therapy). You talk to prospective and current patients on the PennPaps website. Most are 40+ years old. Many are tired, anxious, or new to CPAP and overwhelmed by the medical/insurance vocabulary. Your job is to make them feel taken care of — accurate, brief, human.`,
     `Today's relevant facts about the storefront and catalog are below. Use them to answer questions about CPAP masks, supplies, insurance, the resupply program, the cash-pay shop, returns, and how PennPaps works. If a fact isn't in this knowledge or isn't well-known general CPAP guidance, say so and offer to connect them with a human — never invent.`,
@@ -1908,17 +1914,26 @@ export function buildChatSystemPrompt(): string {
     .map((s) => s.trim())
     .join("\n\n");
 
-  // The knowledge text above ships with the historical brand/contact
-  // strings; rewrite them to whatever the admin saved on the Company
-  // information page (no-op until the org row exists).
-  const rewritten = applyCompanyIdentityToText(prompt);
-  if (rewritten.length > MAX_SYSTEM_PROMPT_CHARS) {
+  if (prompt.length > MAX_SYSTEM_PROMPT_CHARS) {
     throw new Error(
-      `chatbotKnowledge: system prompt is ${rewritten.length} chars, ` +
+      `chatbotKnowledge: system prompt is ${prompt.length} chars, ` +
         `over the ${MAX_SYSTEM_PROMPT_CHARS} cap. Trim before deploying.`,
     );
   }
-  return rewritten;
+  return prompt;
+}
+
+/**
+ * The full system prompt with the historical brand/contact strings
+ * rewritten to the tenant's saved Company-information identity. Pass
+ * `info` (from `getCompanyInfo(orgId)`) on per-request, tenant-aware
+ * surfaces; omitting it falls back to the warm seed-tenant identity
+ * (`getCompanyInfoSync()` inside `applyCompanyIdentityToText`), so
+ * existing callers (email auto-reply, bot playground, tests) are
+ * unchanged.
+ */
+export function buildChatSystemPrompt(info?: CompanyInfo): string {
+  return applyCompanyIdentityToText(buildChatSystemPromptBase(), info);
 }
 
 /**
@@ -1928,8 +1943,9 @@ export function buildChatSystemPrompt(): string {
  * (not a constant) so the phone/email/hours reflect the admin-saved
  * company info at reply time.
  */
-export function offlineFallbackReply(): string {
+export function offlineFallbackReply(info?: CompanyInfo): string {
   return applyCompanyIdentityToText(
     "Sorry — chat is offline at the moment. The fastest way to reach us is (814) 471-0627 Mon-Fri 9-5 ET, or support@pennpaps.com any time. Our /faq and /insurance pages also cover most questions if you want to take a look.",
+    info,
   );
 }

@@ -135,7 +135,7 @@ describe("POST /admin/inbound-faxes/:id/ocr", () => {
         id: FAX_ID,
         media_object_key: "obj/key",
         media_content_type: "application/pdf",
-        twilio_fax_sid: "FX123",
+        provider_fax_id: "FX123",
       },
     });
     stageSupabaseResponse("inbound_faxes", "update", { data: null });
@@ -159,7 +159,7 @@ describe("POST /admin/inbound-faxes/:id/ocr", () => {
         id: FAX_ID,
         media_object_key: "obj/key",
         media_content_type: "image/png",
-        twilio_fax_sid: "FX9",
+        provider_fax_id: "FX9",
       },
     });
     stageSupabaseResponse("inbound_faxes", "update", { data: null });

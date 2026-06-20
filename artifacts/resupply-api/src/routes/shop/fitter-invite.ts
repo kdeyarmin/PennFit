@@ -21,14 +21,11 @@ import { Router, type IRouter } from "express";
 import rateLimit from "express-rate-limit";
 import { z } from "zod";
 
-import {
-  type Database,
-  getOrgScopedClient,
-  resolveSeedOrgId,
-} from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { verifyFitterInviteToken } from "../../lib/fitter-invite-token";
+import { resolveOrgIdForSignedRecord } from "../../lib/storefront/signed-link-org";
 
 type FitterInvitesUpdate =
   Database["resupply"]["Tables"]["fitter_invites"]["Update"];
@@ -59,7 +56,12 @@ router.get("/shop/fitter-invite/resolve", resolveLimiter, async (req, res) => {
     return;
   }
 
-  const orgId = await resolveSeedOrgId();
+  // Resolve the tenant FROM the invite the token references (the link
+  // carries no host/session), so a tenant-B invite lands in tenant B.
+  const orgId = await resolveOrgIdForSignedRecord(
+    "fitter_invites",
+    verified.inviteId,
+  );
   if (!orgId) {
     res.status(503).json({ error: "tenant_unavailable" });
     return;
@@ -237,7 +239,11 @@ router.post(
       return;
     }
 
-    const orgId = await resolveSeedOrgId();
+    // Resolve the tenant FROM the token-referenced invite (see GET above).
+    const orgId = await resolveOrgIdForSignedRecord(
+      "fitter_invites",
+      verified.inviteId,
+    );
     if (!orgId) {
       res.status(503).json({ error: "tenant_unavailable" });
       return;

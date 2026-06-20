@@ -1,6 +1,6 @@
 ---
 name: pennfit-migrations
-description: How to safely write, review, test, and ship PennFit database migrations — the repo's #1 footgun area (multiple production incidents). Covers the hand-written-SQL + content-hash ledger model, the frozen `_journal.json`, the immutability rule (never edit a shipped migration), the prefix moratorium, idempotency, transaction opt-out, the `RUN_DB_MIGRATIONS` deploy gate, and the one-time ledger baseline. Use whenever adding/editing/reviewing a `lib/resupply-db/drizzle/*.sql` file, making a schema change (CREATE/ALTER TABLE, index, enum, backfill), diagnosing a failed deploy-time migration, or baselining/adopting the ledger.
+description: How to safely write, review, test, and ship PennFit database migrations — the repo's #1 footgun area (multiple production incidents). Covers the hand-written-SQL + content-hash ledger model, the frozen `_journal.json`, the immutability rule (never edit a shipped migration), the prefix moratorium, idempotency, transaction opt-out, the `RUN_DB_MIGRATIONS` deploy gate, and the one-time ledger baseline. Use whenever adding/editing/reviewing a `lib/resupply-db/migrations/*.sql` file, making a schema change (CREATE/ALTER TABLE, index, enum, backfill), diagnosing a failed deploy-time migration, or baselining/adopting the ledger.
 ---
 
 # PennFit migration safety
@@ -10,16 +10,16 @@ they have caused several production incidents (see `docs/`:
 `migration-state-investigation-2026-05-08`,
 `db-schema-drift-2026-05-29`, `incident-signin-500-schema-drift-2026-05-30`,
 `prod-schema-reconcile-2026-05-31`). Read this before touching
-`lib/resupply-db/drizzle/`.
+`lib/resupply-db/migrations/`.
 
 ## The model (know this first)
 
 - **Supabase (PostgREST) is the runtime data path, but schema changes are
-  NOT.** Schema is hand-written SQL in `lib/resupply-db/drizzle/*.sql`,
+  NOT.** Schema is hand-written SQL in `lib/resupply-db/migrations/*.sql`,
   applied by `lib/resupply-db/scripts/migrate.mjs` (raw `pg`). There is no
-  Drizzle/`drizzle-kit` anymore — the directory name is historical.
+  ORM (no `drizzle-orm`/`drizzle-kit`) — migrations are plain SQL files.
 - **The ledger dedups by CONTENT HASH, not filename.** Applied migrations
-  are tracked in `drizzle.resupply_migrations(id, hash, created_at)`. A file
+  are tracked in `migrations.resupply_migrations(id, hash, created_at)`. A file
   is "pending" iff its **sha256(content)** is not already in the ledger.
   Two consequences drive every rule below: (1) editing a shipped file
   changes its hash → it re-applies; (2) the filesystem (not the journal) is
@@ -42,7 +42,7 @@ existed).
 - **Fix:** add a NEW, higher-numbered, idempotent corrective migration that
   brings the schema to the desired state. Never edit in place.
 - **Escape hatch (rare):** add the basename to
-  `lib/resupply-db/drizzle/.migration-edit-allowlist` in the same change so
+  `lib/resupply-db/migrations/.migration-edit-allowlist` in the same change so
   the override is reviewed in the PR diff; remove it once shipped.
 - **Enforced by** `scripts/check-resupply-migration-immutability.sh`
   (pre-commit + CI; CI honors only the allowlist, not `--no-verify`).
@@ -59,7 +59,7 @@ by another file makes apply order filesystem-dependent (a fresh deploy may
 apply one of the pair and silently skip the other).
 - Find the next prefix:
   ```bash
-  ls lib/resupply-db/drizzle/*.sql \
+  ls lib/resupply-db/migrations/*.sql \
     | sed -E 's#.*/([0-9]{4})_.*#\1#' | sort -n | tail -1
   # next = that + 1, zero-padded to 4 digits (e.g. 0230 → 0231)
   ```
@@ -89,15 +89,16 @@ constraints/enum values that lack an `IF NOT EXISTS`.
 
 ### M6 — Schema placement + Supabase exposure
 Tables live in `resupply.*` (runtime) and `resupply_auth.*` (auth); the
-ledger is `drizzle.resupply_migrations`. The migrator pre-creates the
-`drizzle`, `auth`, `resupply`, and `resupply_auth` schemas. **Any new schema
+ledger is `migrations.resupply_migrations`. The migrator pre-creates the
+`migrations`, `auth`, `resupply`, and `resupply_auth` schemas (and renames a
+legacy `drizzle` history schema into `migrations` on first run). **Any new schema
 must be added to Supabase Studio → Project Settings → API → "Exposed
 schemas"** or every PostgREST query against it 503s at runtime.
 
 ## Adding a migration — the procedure
 
 1. **Pick the next free prefix** (M3) and create
-   `lib/resupply-db/drizzle/NNNN_description.sql`.
+   `lib/resupply-db/migrations/NNNN_description.sql`.
 2. **Write idempotent SQL** (M4), splitting statements with
    `--> statement-breakpoint` (M5). Add `-- migrate: no-transaction` as the
    first line only if required.

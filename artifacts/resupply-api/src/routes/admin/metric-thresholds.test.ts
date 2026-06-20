@@ -6,12 +6,14 @@ import request from "supertest";
 
 import {
   makeRequireAdminMock,
+  MOCK_ORG_ID,
   type MockAdminCtx,
 } from "../../test-helpers/auth-mocks";
 import {
   installSupabaseMock,
   stageSupabaseResponse,
   getSupabaseCallCount,
+  getSupabaseWritePayloads,
 } from "../../test-helpers/supabase-mock";
 
 const supabaseMock = installSupabaseMock();
@@ -146,6 +148,13 @@ describe("POST /admin/metric-thresholds", () => {
     });
     expect(res.status).toBe(201);
     expect(res.body).toMatchObject({ id: ID, metricKey: "orders_paid_count" });
+    // The insert stamps the caller's tenant org_id (migration 0380).
+    const inserts = getSupabaseWritePayloads("metric_thresholds", "insert");
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0]).toMatchObject({
+      org_id: MOCK_ORG_ID,
+      metric_key: "orders_paid_count",
+    });
     expect(logAuditMock).toHaveBeenCalledTimes(1);
     expect((logAuditMock.mock.calls[0]?.[0] as { action: string }).action).toBe(
       "metric_threshold.create",

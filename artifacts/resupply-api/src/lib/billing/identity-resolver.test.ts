@@ -23,6 +23,11 @@ import {
   resolveClearinghouse,
 } from "./identity-resolver";
 
+// resolveSeedOrgId() reads `organizations` by the seed slug; stage it so the
+// resolvers resolve a concrete seed org and read the (org-scoped) DB rows.
+const SEED_ORG_ID = "00000000-0000-4000-8000-000000000001";
+const OTHER_ORG_ID = "00000000-0000-4000-8000-0000000000b2";
+
 const FULL_ENV = {
   OFFICE_ALLY_ETIN: "12345ETIN",
   OFFICE_ALLY_BILLING_ORG_NAME: "EnvDME LLC",
@@ -39,6 +44,11 @@ const FULL_ENV = {
 
 beforeEach(() => {
   supabaseMock.reset();
+  // Seed-org directory lookup for resolveSeedOrgId(). Cached after the first
+  // resolve, but stage every test so order doesn't matter.
+  stageSupabaseResponse("organizations", "select", {
+    data: { id: SEED_ORG_ID },
+  });
 });
 
 describe("resolveBillingIdentity", () => {
@@ -117,6 +127,22 @@ describe("resolveBillingIdentity", () => {
     expect(result.usageIndicator).toBe("T");
     expect(result.submitter.organizationName).toContain("STUB");
   });
+
+  it("does NOT use the seed env identity for a NON-seed tenant (fail closed)", async () => {
+    // Regression (multi-tenant #1): the env vars carry the seed tenant's NPI.
+    // A second tenant with no DB identity of its own must fail closed to a
+    // STUB — never silently build its 837P under the seed NPI.
+    stageSupabaseResponse("dme_organization", "select", { data: null });
+    stageSupabaseResponse("clearinghouse_credentials", "select", {
+      data: null,
+    });
+    const result = await resolveBillingIdentity({
+      orgId: OTHER_ORG_ID,
+      env: { ...FULL_ENV },
+    });
+    expect(result.source).toBe("stub");
+    expect(result.billingProvider.npi).toBe("0000000000");
+  });
 });
 
 describe("resolveClearinghouse", () => {
@@ -160,6 +186,21 @@ describe("resolveClearinghouse", () => {
       data: null,
     });
     const result = await resolveClearinghouse({ env: {} });
+    expect(result.source).toBe("stub");
+    expect(result.config).toBeNull();
+  });
+
+  it("does NOT use the seed env SFTP transport for a NON-seed tenant (fail closed)", async () => {
+    // Regression (multi-tenant #2): the OFFICE_ALLY_* SFTP env is the seed
+    // tenant's account. A non-seed tenant without its own clearinghouse row
+    // must fail closed (no transport) rather than upload over the seed SFTP.
+    stageSupabaseResponse("clearinghouse_credentials", "select", {
+      data: null,
+    });
+    const result = await resolveClearinghouse({
+      orgId: OTHER_ORG_ID,
+      env: { ...FULL_ENV },
+    });
     expect(result.source).toBe("stub");
     expect(result.config).toBeNull();
   });
@@ -236,12 +277,15 @@ describe("resolveClearinghouse — real-time eligibility config", () => {
     const result = await resolveClearinghouse({
       env: {
         ...FULL_ENV,
-        OFFICE_ALLY_REALTIME_URL: "https://oa.example/env-rt",
+        // Must be an https *.officeally.io host — the realtime config reader
+        // rejects any other host so the 270 (PHI) can't be POSTed in cleartext
+        // or to an SSRF target (see readOfficeAllyRealtimeConfigOrNull).
+        OFFICE_ALLY_REALTIME_URL: "https://edi.officeally.io/env-rt",
         OFFICE_ALLY_REALTIME_API_KEY: "envkey",
       },
     });
     expect(result.source).toBe("env");
-    expect(result.realtimeConfig?.url).toBe("https://oa.example/env-rt");
+    expect(result.realtimeConfig?.url).toBe("https://edi.officeally.io/env-rt");
     expect(result.realtimeConfig?.apiKey).toBe("envkey");
   });
 
@@ -285,7 +329,9 @@ describe("resolveClearinghouse — real-time eligibility config", () => {
     });
     const result = await resolveClearinghouse({
       env: {
-        OFFICE_ALLY_REALTIME_URL: "https://oa.example/env-rt",
+        // Valid host so the ONLY reason realtimeConfig is null is the DB
+        // "disabled" toggle — not URL rejection.
+        OFFICE_ALLY_REALTIME_URL: "https://edi.officeally.io/env-rt",
         OFFICE_ALLY_REALTIME_API_KEY: "envkey",
       },
     });

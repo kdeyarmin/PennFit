@@ -130,7 +130,7 @@ router.get(
 
     const result = findBestAdherenceWindow(nights, anchorDate, asOfDate);
 
-    const supplierName = await getDocumentSupplierName();
+    const supplierName = await getDocumentSupplierName(orgId);
     const inputs: AttestationInputs = {
       patient: {
         legalFirstName: patientRow.legal_first_name,

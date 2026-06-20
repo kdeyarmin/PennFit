@@ -30,6 +30,7 @@ import {
   installSupabaseMock,
   stageSupabaseResponse,
   getSupabaseCallCount,
+  getSupabaseWritePayloads,
 } from "../../test-helpers/supabase-mock";
 
 const supabaseMock = installSupabaseMock();
@@ -49,7 +50,12 @@ vi.mock("../../lib/logger", () => ({
   },
 }));
 
+vi.mock("../../lib/metering/usage", () => ({
+  recordTenantUsage: vi.fn(async () => {}),
+}));
+
 import statusCallbackRouter from "./status-callback";
+import { recordTenantUsage } from "../../lib/metering/usage";
 
 function makeApp(): Express {
   const app = express();
@@ -63,6 +69,7 @@ describe("POST /voice/status-callback", () => {
     supabaseMock.reset();
     logAuditMock.mockReset().mockResolvedValue(undefined);
     loggerWarnMock.mockReset();
+    vi.mocked(recordTenantUsage).mockClear();
   });
   afterEach(() => {
     /* no env to restore */
@@ -109,6 +116,14 @@ describe("POST /voice/status-callback", () => {
       .send({ CallSid: "CA1", CallStatus: "completed" });
     expect(res.status).toBe(200);
     expect(getSupabaseCallCount("conversations", "update")).toBe(1);
+    // Tenant-agnostic webhook keyed by the globally-unique conversation id:
+    // the close must NOT be org-scoped (the facade forces org_id onto the
+    // patch), else a non-seed tenant's call would never close.
+    const [closePatch] = getSupabaseWritePayloads(
+      "conversations",
+      "update",
+    ) as Array<Record<string, unknown>>;
+    expect(closePatch).not.toHaveProperty("org_id");
     expect(logAuditMock).toHaveBeenCalledTimes(1);
     const audit = logAuditMock.mock.calls[0][0];
     expect(audit.action).toBe("voice.call.completed");
@@ -119,6 +134,26 @@ describe("POST /voice/status-callback", () => {
       twilio_status: "completed",
       source: "status_callback",
     });
+    // First close → one aiVoiceEvents metered (G12).
+    expect(vi.mocked(recordTenantUsage)).toHaveBeenCalledWith(
+      expect.objectContaining({ metricKey: "aiVoiceEvents" }),
+    );
+  });
+
+  it("does not audit or meter a re-delivered (already-closed) callback", async () => {
+    // Empty update return = the row was already closed (ws-handler or a
+    // prior callback won) → not the first close, so neither the audit nor
+    // the aiVoiceEvents metric fires (no double-count).
+    stageSupabaseResponse("conversations", "update", { data: [], error: null });
+    const res = await request(makeApp())
+      .post(
+        "/resupply-api/voice/status-callback?conversationId=11111111-1111-4111-8111-111111111111",
+      )
+      .type("form")
+      .send({ CallSid: "CA1", CallStatus: "completed" });
+    expect(res.status).toBe(200);
+    expect(logAuditMock).not.toHaveBeenCalled();
+    expect(vi.mocked(recordTenantUsage)).not.toHaveBeenCalled();
   });
 
   it.each(["failed", "busy", "no-answer", "canceled"])(
