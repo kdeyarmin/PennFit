@@ -92,12 +92,12 @@ These conversion changes do **not** loosen any safety rule:
 - **Voice naturalness knobs (no prompt change needed).** Beyond the prompt,
   the phone agent's "sounds human" levers are env-tunable and A/B-able via
   the admin bot-playground test call: the ElevenLabs voice itself
-  (`ELEVENLABS_VOICE_ID` — the biggest lever; the default is the stock
-  "Rachel"), expressiveness (`ELEVENLABS_STYLE` / `_SIMILARITY_BOOST` /
+  (`ELEVENLABS_VOICE_ID` — the biggest lever; the default is the warm
+  "Charlotte"), expressiveness (`ELEVENLABS_STYLE` / `_SIMILARITY_BOOST` /
   `_USE_SPEAKER_BOOST` / `_STABILITY` / `_SPEED`), caller-audio noise
   reduction (`OPENAI_REALTIME_NOISE_REDUCTION`, default `far_field` for
-  telephony), and the optional gpt-realtime-2 brain
-  (`OPENAI_REALTIME_SCHEMA=ga`, validate on a preview per
+  telephony), and the gpt-realtime-2 brain (now the **default** GA schema;
+  set `OPENAI_REALTIME_SCHEMA=beta` for the legacy rollback per
   `docs/runbooks/realtime-ga-migration.md`). Domain-term pronunciation
   (e.g. "CPAP" → "see-pap") is handled automatically at the TTS boundary by
   `lib/resupply-ai/src/tts-pronunciation.ts` — extend that map (with a test)

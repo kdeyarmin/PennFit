@@ -49,8 +49,9 @@ checklist. Overrides for correcting wire values during validation:
 | `OPENAI_REALTIME_AUDIO_FORMAT`     | µ‑law wire token                | `audio/pcmu`              |
 | `OPENAI_REALTIME_REASONING_EFFORT` | `minimal`/`low`/`medium`/`high` | `low`                     |
 
-**Rollback is instant:** unset `OPENAI_REALTIME_SCHEMA` → back to
-beta/`gpt-realtime`. No deploy needed beyond the env change.
+**GA is now the default** (unset → `ga`). **Rollback is instant:** set
+`OPENAI_REALTIME_SCHEMA=beta` → back to beta/`gpt-realtime`. No deploy
+needed beyond the env change.
 
 ## Placing the test call — the no‑patient diagnostic line
 
