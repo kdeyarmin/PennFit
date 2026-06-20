@@ -11,6 +11,7 @@ import {
   OrderFormShot,
   OrderSuccessShot,
 } from "@/components/help/help-screens";
+import { BrandName, LegalName } from "@/components/company-contact";
 
 const steps: HelpStep[] = [
   {
@@ -30,10 +31,7 @@ const steps: HelpStep[] = [
       </p>
     ),
     shot: (
-      <Screenshot
-        url="pennpaps.com/results"
-        caption="Pick the mask you want from your ranked results to start the order."
-      >
+      <Screenshot caption="Pick the mask you want from your ranked results to start the order.">
         <FitterResultsShot />
       </Screenshot>
     ),
@@ -56,10 +54,7 @@ const steps: HelpStep[] = [
       <>Double-check the address; it&apos;s where your mask ships.</>,
     ],
     shot: (
-      <Screenshot
-        url="pennpaps.com/order"
-        caption="The order form keeps a live summary alongside the fields you fill in."
-      >
+      <Screenshot caption="The order form keeps a live summary alongside the fields you fill in.">
         <OrderFormShot />
       </Screenshot>
     ),
@@ -76,8 +71,12 @@ const steps: HelpStep[] = [
     substeps: [
       <>Enter your insurance provider and member ID.</>,
       <>
-        Choose <strong>&ldquo;PennPaps has it on file&rdquo;</strong> if we
-        already have your prescription…
+        Choose{" "}
+        <strong>
+          &ldquo;
+          <BrandName /> has it on file&rdquo;
+        </strong>{" "}
+        if we already have your prescription…
       </>,
       <>
         …or enter your sleep provider&apos;s details and we&apos;ll coordinate
@@ -92,8 +91,8 @@ const steps: HelpStep[] = [
     body: (
       <p>
         Review the summary one last time and tap <strong>Submit order</strong>.
-        Submitting sends the order to Penn Home Medical Supply, where a team
-        member verifies your insurance and prescription before anything ships.
+        Submitting sends the order to <LegalName />, where a team member
+        verifies your insurance and prescription before anything ships.
       </p>
     ),
     warning:
@@ -116,10 +115,7 @@ const steps: HelpStep[] = [
       </p>
     ),
     shot: (
-      <Screenshot
-        url="pennpaps.com/order-success"
-        caption="Your reference number appears here and in the confirmation email — keep it for tracking."
-      >
+      <Screenshot caption="Your reference number appears here and in the confirmation email — keep it for tracking.">
         <OrderSuccessShot />
       </Screenshot>
     ),
@@ -134,7 +130,7 @@ export function HelpPlaceAnOrder() {
       title="Order your recommended mask"
       Icon={PackageCheck}
       minutes="4 min"
-      metaDescription="How to order a CPAP mask from PennPaps: choosing a mask from your results, entering shipping, insurance, and prescription details, submitting, and saving your confirmation."
+      metaDescription="How to order a CPAP mask: choosing a mask from your results, entering shipping, insurance, and prescription details, submitting, and saving your confirmation."
       intro="Found your match? Turning a recommendation into a real order takes about four minutes. Here's every step, including how insurance and prescriptions are handled."
       summary={
         <>
@@ -178,7 +174,7 @@ export function HelpPlaceAnOrder() {
           ),
         },
         {
-          q: "What if PennPaps doesn't have my prescription?",
+          q: "What if you don't have my prescription?",
           a: "Tell us your sleep provider on the order form and we'll reach out to coordinate one. You don't have to chase your doctor's office yourself.",
         },
         {

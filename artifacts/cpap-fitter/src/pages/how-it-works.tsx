@@ -38,12 +38,12 @@ const steps = [
   {
     icon: Camera,
     title: "2. Capture Your Face",
-    body: "Use your device's front-facing camera to take a clear, well-lit photo of your face. PennPaps will guide you through framing.",
+    body: "Use your device's front-facing camera to take a clear, well-lit photo of your face. We'll guide you through framing.",
   },
   {
     icon: Ruler,
     title: "3. Generate Measurements",
-    body: "PennPaps's on-device facial landmark engine derives numerical measurements (such as nose width and face height in millimeters) from the captured image, then immediately discards the image.",
+    body: "Our on-device facial landmark engine derives numerical measurements (such as nose width and face height in millimeters) from the captured image, then immediately discards the image.",
   },
   {
     icon: ClipboardList,
@@ -53,12 +53,12 @@ const steps = [
   {
     icon: Sparkles,
     title: "5. See Your Recommendations",
-    body: "PennPaps ranks masks from our catalog using your measurements and questionnaire — with a clear explanation of why each one fits.",
+    body: "We rank masks from our catalog using your measurements and questionnaire — with a clear explanation of why each one fits.",
   },
   {
     icon: PackageCheck,
     title: "6. Place Your Order",
-    body: "Pick a mask, fill in your shipping, insurance, and prescription details, and submit. PennPaps receives the order and follows up directly.",
+    body: "Pick a mask, fill in your shipping, insurance, and prescription details, and submit. We receive the order and follow up directly.",
   },
 ];
 
@@ -100,28 +100,29 @@ const faqs = [
     a: "You can retake the photo as many times as you like — nothing is uploaded. If a measurement looks off, try better lighting, remove anything covering your face, and make sure you're looking straight ahead at eye level.",
   },
   {
-    q: "Does PennPaps work on a phone, tablet, and computer?",
+    q: "Does the fitter work on a phone, tablet, and computer?",
     a: "Yes — anything with a front-facing camera and a modern browser (Chrome, Safari, Edge, or Firefox) works. Phones tend to give the best results because it's easier to hold the camera at eye level.",
   },
   {
     q: "Is my photo stored or sent anywhere?",
-    a: "No. The image is processed entirely in your browser by Google's MediaPipe library. Only the resulting numerical measurements (in millimeters) are sent to PennPaps's recommendation server. The photo itself is discarded the moment the measurements are extracted.",
+    a: "No. The image is processed entirely in your browser by Google's MediaPipe library. Only the resulting numerical measurements (in millimeters) are sent to our recommendation server. The photo itself is discarded the moment the measurements are extracted.",
   },
   {
     q: "What if I don't like any of the recommended masks?",
-    a: "You can browse the full catalog from the header at any time, or contact PennPaps directly — our team can help you find alternatives based on your insurance coverage and clinical needs.",
+    a: "You can browse the full catalog from the header at any time, or contact us directly — our team can help you find alternatives based on your insurance coverage and clinical needs.",
   },
   {
     q: "Do I need a prescription to order a CPAP mask?",
-    a: "Yes. CPAP masks are prescription medical devices. The order form lets you indicate that you have an existing prescription on file with PennPaps, or our team will reach out to coordinate getting one from your provider.",
+    a: "Yes. CPAP masks are prescription medical devices. The order form lets you indicate that you have an existing prescription on file with us, or our team will reach out to coordinate getting one from your provider.",
   },
 ];
 
 export function HowItWorks() {
-  const assistantName = useCompanyContact().assistantStorefrontName;
+  const contact = useCompanyContact();
+  const assistantName = contact.assistantStorefrontName;
   useDocumentTitle(
     "Virtual Mask Fitter",
-    "How the PennPaps Virtual Mask Fitter works: a 3-minute on-device face capture matches you to the right CPAP mask. Your face image never leaves your phone.",
+    `How the ${contact.name} Virtual Mask Fitter works: a 3-minute on-device face capture matches you to the right CPAP mask. Your face image never leaves your phone.`,
   );
   return (
     <div className="container max-w-4xl mx-auto px-4 py-12 space-y-14 animate-shimmer-in">
@@ -150,6 +151,31 @@ export function HowItWorks() {
           matches you to the right CPAP mask — plus how to get the most accurate
           fit.
         </p>
+        {/* Primary, above-the-fold CTA. The full how-it-works explainer
+            runs long, so surface the actual "start the fitter" action up
+            top — the camera-capture flow begins at /consent — instead of
+            burying it under the FAQ at the bottom of the page. */}
+        <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
+          <Link href="/consent">
+            <Button
+              size="lg"
+              className="w-full sm:w-auto h-12 px-8 rounded-full btn-primary-glow gap-2"
+              data-testid="how-it-works-hero-start"
+            >
+              <Camera className="w-5 h-5" />
+              Get fitted for a mask
+            </Button>
+          </Link>
+          <Link href="/shop">
+            <Button
+              size="lg"
+              variant="outline"
+              className="w-full sm:w-auto h-12 px-8 rounded-full glass-panel border-border/60"
+            >
+              Shop CPAP supplies
+            </Button>
+          </Link>
+        </div>
       </header>
 
       {/* Tutorial video */}
@@ -259,8 +285,8 @@ export function HowItWorks() {
                 <CheckCircle2 className="w-5 h-5 text-primary shrink-0 mt-0.5" />
                 <span>
                   <strong>Mention claustrophobia or skin sensitivities.</strong>{" "}
-                  These factors steer PennPaps toward minimal-contact pillow
-                  styles or hypoallergenic cushion materials.
+                  These factors steer {contact.name} toward minimal-contact
+                  pillow styles or hypoallergenic cushion materials.
                 </span>
               </li>
               <li className="flex gap-3">
@@ -297,7 +323,7 @@ export function HowItWorks() {
               </h3>
               <p className="text-sm text-muted-foreground leading-relaxed">
                 Your photo is processed entirely in your browser and is never
-                uploaded. The only information sent to PennPaps is your
+                uploaded. The only information sent to {contact.name} is your
                 numerical face measurements, your questionnaire answers, and —
                 if you place an order — the contact, insurance, and prescription
                 details you submit on the order form.
@@ -355,7 +381,7 @@ export function HowItWorks() {
             </div>
             <div className="space-y-1">
               <h3 className="font-semibold tracking-tight text-foreground">
-                When to Call PennPaps Directly
+                When to Call {contact.name} Directly
               </h3>
               <p className="text-sm text-muted-foreground leading-relaxed">
                 Our online fitter and shop are convenient, but they're not a

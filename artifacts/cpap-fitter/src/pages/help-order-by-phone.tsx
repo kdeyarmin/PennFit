@@ -15,12 +15,16 @@ function buildSteps(contact: CompanyContact): HelpStep[] {
       body: (
         <p>
           Call{" "}
-          <a
-            href={`tel:${contact.phoneE164}`}
-            className="text-primary hover:underline"
-          >
-            {contact.phoneDisplay}
-          </a>
+          {contact.phoneE164 ? (
+            <a
+              href={`tel:${contact.phoneE164}`}
+              className="text-primary hover:underline"
+            >
+              {contact.phoneDisplay}
+            </a>
+          ) : (
+            "our resupply line"
+          )}
           . Our voice assistant answers right away — day or night — and our team
           is available Monday–Friday, 9a–5p ET. The same number is in the site
           footer and on every reminder text we send.
@@ -87,7 +91,7 @@ export function HelpOrderByPhone() {
       title="Order by phone with the voice assistant"
       Icon={Phone}
       minutes="2 min"
-      metaDescription="How PennPaps phone ordering works: call the resupply line, verify your identity, reorder supplies with the AI voice assistant, and reach a person whenever you want."
+      metaDescription="How phone ordering works: call the resupply line, verify your identity, reorder supplies with the AI voice assistant, and reach a person whenever you want."
       intro="Prefer the phone to a website? Call the resupply line and our voice assistant takes your reorder in a natural conversation — with a real person one sentence away."
       summary={
         <>
@@ -116,7 +120,13 @@ export function HelpOrderByPhone() {
       faqs={[
         {
           q: "Am I talking to a robot?",
-          a: "You're talking to PennPaps' AI voice assistant — it identifies itself, speaks naturally, and hands off to a human team member whenever you ask or whenever the call needs one.",
+          a: (
+            <>
+              You&apos;re talking to {contact.name}&apos;s AI voice assistant —
+              it identifies itself, speaks naturally, and hands off to a human
+              team member whenever you ask or whenever the call needs one.
+            </>
+          ),
         },
         {
           q: "Can I call after hours?",
@@ -124,7 +134,13 @@ export function HelpOrderByPhone() {
         },
         {
           q: "Is my information safe on the call?",
-          a: "The assistant verifies your date of birth before sharing anything account-specific, and call summaries are visible only to PennPaps staff.",
+          a: (
+            <>
+              The assistant verifies your date of birth before sharing anything
+              account-specific, and call summaries are visible only to{" "}
+              {contact.name} staff.
+            </>
+          ),
         },
       ]}
       related={[

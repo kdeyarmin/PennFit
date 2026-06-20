@@ -34,7 +34,7 @@ import {
   type IntegrationSource,
 } from "@workspace/resupply-integrations";
 
-import { getIntegrationAdaptersWithDbOverrides } from "../../lib/integrations/registry";
+import { getIntegrationAdaptersForOrg } from "../../lib/integrations/registry";
 import { persistTherapyNights } from "../../lib/integrations/persist-nights";
 import { diffSettings } from "../../lib/integrations/diff-settings";
 import { linkEquipmentFromSnapshot } from "../../lib/integrations/link-equipment";
@@ -150,7 +150,7 @@ router.get(
     const linkRows = linksRes.data ?? [];
     const snapshotRows = snapshotsRes.data ?? [];
 
-    const adapters = await getIntegrationAdaptersWithDbOverrides();
+    const adapters = await getIntegrationAdaptersForOrg(orgId);
     const linkBySource = new Map<string, (typeof linkRows)[number]>();
     for (const row of linkRows) {
       // Prefer the active link if there are multiple history rows
@@ -249,7 +249,7 @@ router.post(
     }
     const partnerPatientId = link.partner_patient_id;
 
-    const adapter = (await getIntegrationAdaptersWithDbOverrides()).get(source);
+    const adapter = (await getIntegrationAdaptersForOrg(orgId)).get(source);
     if (!adapter) {
       // Should be unreachable — refreshBody validates source is in
       // INTEGRATION_SOURCES and the registry seeds one adapter per

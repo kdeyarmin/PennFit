@@ -284,6 +284,7 @@ async function lifecycleTouchpointsSweepForOrg(
         toEmail: row.email,
         firstName: row.legal_first_name,
         kind: "birthday",
+        orgId,
       });
       if (!r.delivered) {
         // Roll back the stamp so next tick can retry. Check the
@@ -413,6 +414,7 @@ async function lifecycleTouchpointsSweepForOrg(
         firstName: row.legal_first_name,
         kind: "sleep_anniversary",
         yearsOnTherapy: currentYear - firstYear,
+        orgId,
       });
       if (!r.delivered) {
         const { error: rollbackErr } = await supabase

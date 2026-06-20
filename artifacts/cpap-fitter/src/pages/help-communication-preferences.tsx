@@ -6,6 +6,7 @@ import {
   type HelpStep,
 } from "@/components/help/help-article-shell";
 import { Screenshot, AccountShot } from "@/components/help/help-screens";
+import { BrandName } from "@/components/company-contact";
 
 const steps: HelpStep[] = [
   {
@@ -22,10 +23,7 @@ const steps: HelpStep[] = [
       </p>
     ),
     shot: (
-      <Screenshot
-        url="pennpaps.com/account"
-        caption="Communication preferences live under the Account tab."
-      >
+      <Screenshot caption="Communication preferences live under the Account tab.">
         <AccountShot />
       </Screenshot>
     ),
@@ -107,8 +105,14 @@ export function HelpCommunicationPreferences() {
       title="Communication preferences & opting out"
       Icon={Bell}
       minutes="3 min"
-      metaDescription="How to control PennPaps emails, text messages, browser notifications, and quiet hours — including how STOP works and which messages always send."
-      intro="Decide exactly how PennPaps reaches you: which emails and texts you get, a quiet-hours window for overnight, and optional browser notifications."
+      metaDescription="How to control your emails, text messages, browser notifications, and quiet hours — including how STOP works and which messages always send."
+      intro={
+        <>
+          Decide exactly how <BrandName /> reaches you: which emails and texts
+          you get, a quiet-hours window for overnight, and optional browser
+          notifications.
+        </>
+      }
       summary={
         <>
           Open{" "}
@@ -118,7 +122,11 @@ export function HelpCommunicationPreferences() {
           <strong>STOP</strong> to any text stops all texts.
         </>
       }
-      prerequisites={["A PennPaps account, signed in."]}
+      prerequisites={[
+        <>
+          A <BrandName /> account, signed in.
+        </>,
+      ]}
       steps={steps}
       next={{
         href: "/help/resupply-reminders",

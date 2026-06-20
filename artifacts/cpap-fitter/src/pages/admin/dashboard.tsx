@@ -2,6 +2,7 @@ import { Link } from "wouter";
 import { useGetDashboardSummary } from "@workspace/api-client-react/admin";
 import { KpiCard } from "@/components/admin/Card";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
+import { SetupProgressCard } from "@/components/admin/SetupProgressCard";
 import { TodayWorklistSection } from "@/pages/admin/admin-today";
 
 // Admin Home landing. This is the single start-of-day screen — it merges
@@ -86,6 +87,8 @@ export function DashboardPage() {
       </header>
 
       {isError && <ErrorPanel error={error} onRetry={() => void refetch()} />}
+
+      <SetupProgressCard />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {kpis.map((k) => (

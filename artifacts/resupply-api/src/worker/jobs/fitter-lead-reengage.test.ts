@@ -24,7 +24,7 @@ vi.mock("@workspace/resupply-email", () => ({
   createSendgridClient: () => ({
     sendEmail: sendEmailMock,
   }),
-  DEFAULT_SENDGRID_FROM_EMAIL: "info@pennpaps.com",
+  DEFAULT_SENDGRID_FROM_EMAIL: "noreply@cmbreathe.com",
 }));
 
 // The sweep now fans out per active tenant and gates each on the
@@ -417,9 +417,9 @@ describe("readReengageMessagingConfig", () => {
   it("returns null for credentials that are not in env", () => {
     const cfg = readReengageMessagingConfig({});
     expect(cfg.sendgridApiKey).toBeNull();
-    // From address always resolves to the single canonical default
-    // (ADR 018) — it is no longer gated on the env var being set.
-    expect(cfg.sendgridFromEmail).toBe("info@pennpaps.com");
+    // From address always resolves to the platform default — it is no
+    // longer gated on the env var being set.
+    expect(cfg.sendgridFromEmail).toBe("noreply@cmbreathe.com");
     expect(cfg.sendgridFromName).toBeNull();
     expect(cfg.publicBaseUrl).toBe("");
   });

@@ -34,6 +34,7 @@ import { Input, Label, Select } from "@/components/admin/Input";
 import { LOCATIONS_QUERY_KEY, listLocations } from "@/lib/admin/locations-api";
 
 type ChannelChoice = "" | "sms" | "email" | "voice";
+type LineTypeChoice = "" | "mobile" | "landline" | "voip" | "unknown";
 
 export function SettingsCard({
   patient,
@@ -58,6 +59,18 @@ export function SettingsCard({
   );
   const [locationId, setLocationId] = useState<string>(
     patient.locationId ?? "",
+  );
+  // The control reflects the MANUAL override only: empty = "Auto" (let Twilio
+  // Lookup classify), a value = a manual override. We don't seed it from a
+  // lookup-classified value, so selecting any value (even one matching the
+  // current auto value) is a real change that pins it as a manual override.
+  const [phoneLineType, setPhoneLineType] = useState<LineTypeChoice>(
+    (patient.phoneLineTypeSource === "manual"
+      ? (patient.phoneLineType ?? "")
+      : "") as LineTypeChoice,
+  );
+  const [smsMarketingConsent, setSmsMarketingConsent] = useState<boolean>(
+    patient.smsMarketingConsent ?? false,
   );
   const [error, setError] = useState<string | null>(null);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
@@ -95,19 +108,28 @@ export function SettingsCard({
     );
     setChannel((patient.channelPreference ?? "") as ChannelChoice);
     setLocationId(patient.locationId ?? "");
+    setPhoneLineType(
+      (patient.phoneLineTypeSource === "manual"
+        ? (patient.phoneLineType ?? "")
+        : "") as LineTypeChoice,
+    );
+    setSmsMarketingConsent(patient.smsMarketingConsent ?? false);
     setError(null);
   }, [
     patient.insurancePayer,
     patient.cadenceOverrideDays,
     patient.channelPreference,
     patient.locationId,
+    patient.phoneLineType,
+    patient.phoneLineTypeSource,
+    patient.smsMarketingConsent,
   ]);
 
   function buildPatch(): {
-    body: Record<string, string | number | null>;
+    body: Record<string, string | number | boolean | null>;
     error: string | null;
   } {
-    const body: Record<string, string | number | null> = {};
+    const body: Record<string, string | number | boolean | null> = {};
     // insurance: empty string clears, anything else is a set.
     const insTrim = insurancePayer.trim();
     const insOnServer = patient.insurancePayer ?? "";
@@ -144,6 +166,21 @@ export function SettingsCard({
     const locOnServer = patient.locationId ?? "";
     if (multiLocationEnabled && locationId !== locOnServer) {
       body.locationId = locationId === "" ? null : locationId;
+    }
+    // phone line type: compare against the MANUAL override on the server only
+    // (a lookup-classified value is not an override). Empty clears the manual
+    // override (lets Twilio Lookup re-classify); a concrete value pins it.
+    const ltOnServer =
+      patient.phoneLineTypeSource === "manual"
+        ? (patient.phoneLineType ?? "")
+        : "";
+    if (phoneLineType !== ltOnServer) {
+      body.phoneLineType = phoneLineType === "" ? null : phoneLineType;
+    }
+    // SMS marketing consent: a boolean toggle; send only when it changed.
+    const consentOnServer = patient.smsMarketingConsent ?? false;
+    if (smsMarketingConsent !== consentOnServer) {
+      body.smsMarketingConsent = smsMarketingConsent;
     }
     return { body, error: null };
   }
@@ -202,6 +239,8 @@ export function SettingsCard({
     if (patient.insurancePayer != null) body.insurancePayer = null;
     if (patient.cadenceOverrideDays != null) body.cadenceOverrideDays = null;
     if (patient.channelPreference != null) body.channelPreference = null;
+    // Clear a manual line-type override too (back to auto Twilio Lookup).
+    if (patient.phoneLineTypeSource === "manual") body.phoneLineType = null;
     if (Object.keys(body).length === 0) {
       setStatusMsg("Nothing to reset — already on defaults.");
       return;
@@ -226,7 +265,8 @@ export function SettingsCard({
   const hasOverride =
     patient.insurancePayer != null ||
     patient.cadenceOverrideDays != null ||
-    patient.channelPreference != null;
+    patient.channelPreference != null ||
+    patient.phoneLineTypeSource === "manual";
 
   return (
     <Card>
@@ -295,6 +335,31 @@ export function SettingsCard({
             Voice is admin-initiated only.
           </p>
         </div>
+        <div>
+          <Label htmlFor="patient-line-type">Phone line type</Label>
+          <Select
+            id="patient-line-type"
+            value={phoneLineType}
+            options={[
+              { value: "mobile", label: "Mobile (cell)" },
+              { value: "landline", label: "Landline" },
+              { value: "voip", label: "VoIP" },
+              { value: "unknown", label: "Unknown" },
+            ]}
+            emptyOptionLabel={
+              patient.hasPhone ? "Auto (Twilio Lookup)" : "No phone on file"
+            }
+            onChange={(e) => setPhoneLineType(e.target.value as LineTypeChoice)}
+            disabled={isPending || !patient.hasPhone}
+          />
+          <p className="mt-1 text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+            {patient.phoneLineTypeSource === "manual"
+              ? `Manually set${patient.phoneLineType ? ` to ${patient.phoneLineType}` : ""}. Bulk SMS only sends to mobile.`
+              : patient.phoneLineType
+                ? `Auto-classified by Twilio: ${patient.phoneLineType}. Pick a value to override. Bulk SMS only sends to mobile.`
+                : "Not yet classified. Bulk SMS only sends to mobile."}
+          </p>
+        </div>
         {multiLocationEnabled && (
           <div>
             <Label htmlFor="patient-location">Branch / location</Label>
@@ -311,6 +376,44 @@ export function SettingsCard({
             </p>
           </div>
         )}
+        <div className="md:col-span-3">
+          <label className="flex items-start gap-2">
+            <input
+              id="patient-sms-marketing-consent"
+              type="checkbox"
+              className="mt-0.5"
+              checked={smsMarketingConsent}
+              onChange={(e) => setSmsMarketingConsent(e.target.checked)}
+              disabled={isPending}
+            />
+            <span>
+              <span className="text-sm font-medium">
+                SMS marketing consent (TCPA)
+              </span>
+              <p
+                className="mt-0.5 text-xs"
+                style={{ color: "hsl(var(--ink-3))" }}
+              >
+                Check to record that this patient has given express written
+                consent to receive marketing text messages. Required before bulk
+                marketing SMS campaigns can reach this patient.
+                {patient.smsMarketingConsentAt && (
+                  <span>
+                    {" "}
+                    Last updated:{" "}
+                    {new Date(
+                      patient.smsMarketingConsentAt,
+                    ).toLocaleDateString()}
+                    {patient.smsMarketingConsentSource
+                      ? ` (${patient.smsMarketingConsentSource})`
+                      : ""}
+                    .
+                  </span>
+                )}
+              </p>
+            </span>
+          </label>
+        </div>
       </div>
 
       {error && (

@@ -60,6 +60,9 @@ import {
   shouldSendSms,
 } from "../../lib/comm-prefs.js";
 import { isFeatureEnabled } from "../../lib/feature-flags.js";
+import { applyTenantEmailSender } from "../../lib/email/apply-tenant-email-sender.js";
+import { applyTenantSmsFrom } from "../../lib/messaging/tenant-telecom.js";
+import { recordOutboundMessageUsage } from "../../lib/metering/usage.js";
 import { logger } from "../../lib/logger.js";
 import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import {
@@ -508,13 +511,21 @@ async function outreachPlaybookSweepForOrg(
         }
         const outcome = await sendReminderSms({
           supabase: supabase.raw(),
-          cfg: cfg.sms,
+          orgId,
+          // Send under the tenant's own number / Messaging Service when
+          // it has one (G7); falls back to the platform default.
+          cfg: await applyTenantSmsFrom(orgId, cfg.sms),
           patientId: run.patient_id,
           body: rendered,
           actor,
         });
         if (outcome.status === "ok") {
           stats.smsSent += 1;
+          recordOutboundMessageUsage({
+            orgId,
+            channel: "sms",
+            source: "outreach_playbook.sms",
+          });
           await recordStep(orgId, {
             runId: run.id,
             stepIndex: step.step_index,
@@ -563,13 +574,21 @@ async function outreachPlaybookSweepForOrg(
       });
       const outcome = await sendReminderEmail({
         supabase: supabase.raw(),
-        cfg: cfg.email,
+        orgId,
+        // Send under the tenant's own From identity when configured (G6);
+        // falls back to the platform default when it isn't.
+        cfg: await applyTenantEmailSender(orgId, cfg.email),
         patientId: run.patient_id,
         content: { subject, bodyText: rendered },
         actor,
       });
       if (outcome.status === "ok") {
         stats.emailsSent += 1;
+        recordOutboundMessageUsage({
+          orgId,
+          channel: "email",
+          source: "outreach_playbook.email",
+        });
         await recordStep(orgId, {
           runId: run.id,
           stepIndex: step.step_index,

@@ -16,6 +16,7 @@ import { LogIn, LogOut, MessageSquare, Package, User } from "lucide-react";
 
 import { SignedIn, useShopIdentity } from "@/lib/identity";
 import { useShopMessagesUnread } from "@/hooks/use-shop-messages-unread";
+import { useCompanyContact } from "@/lib/contact";
 
 export function UserMenu() {
   const [location] = useLocation();
@@ -57,6 +58,7 @@ function initialFor(email: string | null, displayName: string | null): string {
 
 function UserPill() {
   const { email, displayName, signOut } = useShopIdentity();
+  const c = useCompanyContact();
   const [open, setOpen] = useState(false);
   const [, setLocation] = useLocation();
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -89,7 +91,7 @@ function UserPill() {
         // doesn't depend on the visual dot.
         aria-label={
           unreadCsr > 0
-            ? `Account menu — ${unreadCsr} new message${unreadCsr === 1 ? "" : "s"} from PennPaps`
+            ? `Account menu — ${unreadCsr} new message${unreadCsr === 1 ? "" : "s"} from ${c.name}`
             : "Account menu"
         }
         className="relative h-9 w-9 rounded-full bg-[hsl(var(--penn-navy)/0.10)] text-[hsl(var(--penn-navy))] font-semibold text-sm flex items-center justify-center hover:bg-[hsl(var(--penn-navy)/0.18)] transition-colors"
@@ -127,8 +129,8 @@ function UserPill() {
             >
               <MessageSquare className="h-4 w-4" />
               {unreadCsr === 1
-                ? "1 new message from PennPaps"
-                : `${unreadCsr} new messages from PennPaps`}
+                ? `1 new message from ${c.name}`
+                : `${unreadCsr} new messages from ${c.name}`}
             </Link>
           )}
           <Link

@@ -114,13 +114,15 @@ router.get(
         .map((r) => r.endExclusiveDate)
         .sort()
         .at(-1) as string;
-      // metrics_daily is not org-scoped (analytics rollup, no org_id);
-      // read it through the unscoped client.
+      // metrics_daily is now per-tenant (migration 0380). It's not in the
+      // typed Database, so it's reached via raw() and the org filter must
+      // be explicit — the pace-to-goal actuals are THIS tenant's only.
       const { data: metrics, error: metricsErr } = await supabase
         .raw()
         .schema("resupply")
         .from("metrics_daily")
         .select("metric_key, metric_date, metric_value")
+        .eq("org_id", orgId)
         .in("metric_key", metricKeys)
         .gte("metric_date", minStart)
         .lt("metric_date", maxEnd)

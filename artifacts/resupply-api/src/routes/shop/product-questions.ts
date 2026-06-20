@@ -24,6 +24,8 @@ import {
   resolveSeedOrgId,
 } from "@workspace/resupply-db";
 
+import { requestHost } from "../../lib/request-host";
+import { resolveOrgIdByHost } from "../../lib/tenant-branding";
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
 
 const router: IRouter = Router();
@@ -53,9 +55,12 @@ router.get("/shop/products/:productId/questions", async (req, res) => {
   }
   const productId = parsed.data;
 
-  // Public product Q&A list — no signed-in customer, so resolve the
-  // single seed tenant (the single-tenant bridge) for the scoped read.
-  const orgId = await resolveSeedOrgId();
+  // Public product Q&A list — no auth middleware populates req.orgId, so
+  // resolve the tenant from the request host (custom domain → that org;
+  // platform host / miss → seed org) so a second tenant's Q&A doesn't read
+  // the seed tenant's data.
+  const orgId =
+    (await resolveOrgIdByHost(requestHost(req))) ?? (await resolveSeedOrgId());
   if (!orgId) {
     res.status(503).json({ error: "tenant_unavailable" });
     return;

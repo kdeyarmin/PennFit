@@ -31,6 +31,8 @@ import {
   sendQuizResultsEmail,
   type QuizRiskBand,
 } from "../../lib/order-emails/send-quiz-results-email";
+import { resolveOrgIdByHost } from "../../lib/tenant-branding";
+import { requestHost } from "../../lib/request-host";
 
 const router: IRouter = Router();
 
@@ -157,6 +159,12 @@ router.post("/shop/quiz-leads", async (req, res) => {
     "shop/quiz-leads: submission processed",
   );
 
+  // Public route (no auth middleware populates req.orgId): resolve the
+  // tenant from the request host so the results email sends under that
+  // tenant's From identity and brand (G6). Custom domain → that org;
+  // platform host / miss → seed org (single-tenant unchanged).
+  const orgId = (await resolveOrgIdByHost(requestHost(req))) ?? undefined;
+
   // Transactional results email. Fire-and-forget against the
   // response so a SendGrid 5xx never blocks the 200. The patient
   // can always re-take the quiz if the email never arrives —
@@ -168,6 +176,7 @@ router.post("/shop/quiz-leads", async (req, res) => {
         score: data.score,
         band: computedBand as QuizRiskBand,
         symptoms: data.symptoms,
+        orgId,
       });
       if (!result.configured) {
         req.log?.info?.(

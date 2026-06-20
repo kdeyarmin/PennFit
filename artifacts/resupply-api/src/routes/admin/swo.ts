@@ -173,7 +173,7 @@ router.get(
       faxE164: providerRes.data.fax_e164,
     };
 
-    const supplierName = await getDocumentSupplierName();
+    const supplierName = await getDocumentSupplierName(orgId);
     const inputs: SwoInputs = {
       patient,
       prescription,

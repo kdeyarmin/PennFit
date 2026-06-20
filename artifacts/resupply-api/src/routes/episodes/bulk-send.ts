@@ -34,6 +34,8 @@ import { TwilioConfigError } from "@workspace/resupply-telecom";
 import { EmailConfigError } from "@workspace/resupply-email";
 
 import { logger } from "../../lib/logger";
+import { applyTenantEmailSender } from "../../lib/email/apply-tenant-email-sender";
+import { recordOutboundMessageUsage } from "../../lib/metering/usage";
 import { readMessagingConfigOrNull } from "../../lib/messaging/messaging-config";
 import { adminWriteRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
@@ -141,6 +143,19 @@ router.post(
 
     const results: ItemResult[] = [];
 
+    // Resolve the tenant's own From identity ONCE for the whole batch (G6);
+    // falls back to the platform default when the tenant has no override.
+    const emailCfg =
+      channel === "email"
+        ? await applyTenantEmailSender(orgId, {
+            sendgridApiKey: cfg.email.sendgridApiKey,
+            sendgridFromEmail: cfg.email.sendgridFromEmail,
+            sendgridFromName: cfg.email.sendgridFromName,
+            publicBaseUrl: cfg.email.publicBaseUrl,
+            practiceName: cfg.practiceName,
+          })
+        : null;
+
     for (const episodeId of episodeIds) {
       const patientId = patientByEpisode.get(episodeId);
       if (!patientId) {
@@ -177,13 +192,8 @@ router.post(
         } else {
           outcome = await sendReminderEmail({
             supabase: supabase.raw(),
-            cfg: {
-              sendgridApiKey: cfg.email.sendgridApiKey,
-              sendgridFromEmail: cfg.email.sendgridFromEmail,
-              sendgridFromName: cfg.email.sendgridFromName,
-              publicBaseUrl: cfg.email.publicBaseUrl,
-              practiceName: cfg.practiceName,
-            },
+            // emailCfg is non-null on the email branch (resolved above).
+            cfg: emailCfg!,
             patientId,
             episodeId,
             actor,
@@ -230,6 +240,11 @@ router.post(
       }
 
       if (outcome.status === "ok") {
+        recordOutboundMessageUsage({
+          orgId,
+          channel,
+          source: "admin.bulk_send",
+        });
         results.push({
           episodeId,
           status: "ok",

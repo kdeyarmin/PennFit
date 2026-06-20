@@ -153,7 +153,10 @@ router.get(
     const { data, error } = await supabase
       .raw()
       .schema("resupply")
-      .rpc("therapy_fleet_overview", { p_window_days: windowDays });
+      .rpc("therapy_fleet_overview", {
+        p_org_id: orgId,
+        p_window_days: windowDays,
+      });
     if (error) throw error;
 
     // The RPC returns a single-row table.
@@ -200,7 +203,7 @@ interface DailyMetricRow {
   resupply_items_due: number | string;
   setups_in_window: number | string;
   setups_at_risk: number | string;
-  // Added in migration 0338; null on historical rows captured before it.
+  // Added in migration 0411; null on historical rows captured before it.
   clinical_signals_open: number | string | null;
   clinical_signals_high: number | string | null;
   clinical_signals_medium: number | string | null;
@@ -236,6 +239,7 @@ router.get(
       .select(
         "metric_date, patients_with_data, compliant, at_risk, non_compliant, high_leak, resupply_items_due, setups_in_window, setups_at_risk, clinical_signals_open, clinical_signals_high, clinical_signals_medium",
       )
+      .eq("org_id", orgId)
       .gte("metric_date", cutoff)
       .order("metric_date", { ascending: true })
       .limit(366);

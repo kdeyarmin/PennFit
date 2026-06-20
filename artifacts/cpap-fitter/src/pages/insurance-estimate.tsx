@@ -45,6 +45,7 @@ import {
   type PersonalEstimateResponse,
 } from "@/lib/me-billing-api";
 import { submitInsuranceEstimate } from "@/lib/shop-api";
+import { useCompanyContact } from "@/lib/contact";
 
 // Lightweight email-shape guard. Server still validates canonically.
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -67,8 +68,9 @@ interface LearnedRange {
 }
 
 export function InsuranceEstimate() {
+  const c = useCompanyContact();
   useDocumentTitle(
-    "Quick CPAP coverage check — PennPaps",
+    `Quick CPAP coverage check — ${c.name}`,
     "Get a conservative estimate of your out-of-pocket cost per CPAP resupply in 30 seconds. No member-id required.",
   );
 

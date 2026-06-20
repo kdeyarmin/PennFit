@@ -80,12 +80,16 @@ import { DEFAULT_SENDGRID_FROM_EMAIL } from "@workspace/resupply-email";
 import {
   sendReminderEmail,
   sendReminderSms,
+  type ReminderVariant,
   type SendActor,
 } from "@workspace/resupply-reminders";
 import { hasLinkHmacKey } from "@workspace/resupply-secrets";
 
 import { logger } from "../../lib/logger.js";
+import { applyTenantEmailSender } from "../../lib/email/apply-tenant-email-sender.js";
+import { applyTenantSmsFrom } from "../../lib/messaging/tenant-telecom.js";
 import { forEachActiveOrg } from "../lib/for-each-active-org.js";
+import { recordOutboundMessageUsage } from "../../lib/metering/usage.js";
 import {
   createQueueWithDlq,
   CRON_SCAN_QUEUE_OPTS,
@@ -121,9 +125,9 @@ export const SEND_EMAIL_JOB = "reminders.send-email";
  * TTL = 22h (intentionally less than 24h so the next-day scan can
  * resend cleanly when a patient's cadence is daily).
  */
-async function tryClaimReminderDedupKey(
+export async function tryClaimReminderDedupKey(
   supabase: OrgScopedClient,
-  channel: "sms" | "email",
+  channel: "sms" | "email" | "voice",
   patientId: string,
   episodeId: string,
   jobId: string,
@@ -206,7 +210,7 @@ async function tryClaimReminderDedupKey(
   );
 }
 
-async function releaseReminderDedupKey(
+export async function releaseReminderDedupKey(
   supabase: OrgScopedClient,
   key: string,
   jobId: string,
@@ -254,6 +258,13 @@ export interface SendJobData {
    * orgId, and the worker falls back to the seed org — single-tenant-correct.
    */
   orgId?: string;
+  /**
+   * Which escalation-ladder touch this send is — selects the copy variant
+   * (initial / followup / final). The hourly scan stamps "initial" (first
+   * touch); the escalation scan stamps the step it resolved. Absent → the
+   * send helper defaults to "initial".
+   */
+  variant?: ReminderVariant;
 }
 
 interface ScanRow {
@@ -289,7 +300,7 @@ function daysBetween(earlier: Date, later: Date): number {
  */
 const QUIET_HOURS_START = 9; // 09:00 local — earliest send
 const QUIET_HOURS_END = 20; // 20:00 local — latest send (exclusive)
-function isWithinQuietHours(now: Date, timezone: string): boolean {
+export function isWithinQuietHours(now: Date, timezone: string): boolean {
   let hour: number;
   try {
     const fmt = new Intl.DateTimeFormat("en-US", {
@@ -905,6 +916,9 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
               patientId: row.patientId,
               episodeId: row.episodeId,
               orgId,
+              // First touch always uses the gentle "initial" copy; the
+              // escalation scan is what advances the variant.
+              variant: "initial",
             };
             if (row.channel === "sms") {
               await boss.send(SEND_SMS_JOB, send);
@@ -967,9 +981,12 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
       outcome = await sendReminderSms({
         supabase: supabase.raw(),
         orgId,
-        cfg: cfg.sms,
+        // Send under the tenant's own number / Messaging Service when it
+        // has one; falls back to the platform default otherwise (G7).
+        cfg: await applyTenantSmsFrom(orgId, cfg.sms),
         patientId: j.data.patientId,
         episodeId: j.data.episodeId,
+        variant: j.data.variant,
         actor,
       });
     } catch (err) {
@@ -1006,6 +1023,14 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
           `reminders.send-sms: retryable failure: ${outcome.status}`,
         );
       }
+    } else {
+      // One patient-facing SMS went out (the dedup claim above makes this
+      // once-per (patient, episode, day) — no double-count on retry).
+      recordOutboundMessageUsage({
+        orgId,
+        channel: "sms",
+        source: "reminders.sms",
+      });
     }
   });
 
@@ -1049,9 +1074,12 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
       outcome = await sendReminderEmail({
         supabase: supabase.raw(),
         orgId,
-        cfg: cfg.email,
+        // Send under the tenant's own From identity when configured (G6);
+        // falls back to the platform default when it isn't.
+        cfg: await applyTenantEmailSender(orgId, cfg.email),
         patientId: j.data.patientId,
         episodeId: j.data.episodeId,
+        variant: j.data.variant,
         actor,
       });
     } catch (err) {
@@ -1086,6 +1114,14 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
           `reminders.send-email: retryable failure: ${outcome.status}`,
         );
       }
+    } else {
+      // One patient-facing email went out (dedup-claimed once-per
+      // (patient, episode, day) — no double-count on retry).
+      recordOutboundMessageUsage({
+        orgId,
+        channel: "email",
+        source: "reminders.email",
+      });
     }
   });
 

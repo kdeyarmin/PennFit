@@ -34,22 +34,27 @@ import type Stripe from "stripe";
 import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import {
+  requireAdmin,
   requireAdminOnly,
   requirePermission,
 } from "../../middlewares/requireAdmin";
 import { rateLimit } from "../../middlewares/rate-limit";
+import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import {
   getStripeClient,
   readStripeConfigOrNull,
 } from "../../lib/stripe/config";
+import { stripeAccountRequestOptions } from "../../lib/stripe/connect";
 import {
   isShopCategory,
   projectProduct,
   SHOP_CATEGORIES,
   type ShopProductView,
 } from "../../lib/stripe/products-meta";
+import { getPreviewCatalog } from "../../lib/stripe/preview-catalog";
 import { stripeErrLogFields } from "../../lib/stripe/err-log-fields";
 import { dispatchBackInStockForProduct } from "../../lib/back-in-stock-record";
+import { resolveTenantBaseUrl } from "../../lib/tenant-branding";
 import { invalidateShopProductsCache } from "../shop/products";
 
 const router: IRouter = Router();
@@ -143,6 +148,10 @@ router.patch(
     }
 
     const stripe = getStripeClient(config);
+    // Connect (G6): every catalog read/write targets the tenant's connected
+    // account — the SAME account the storefront reads from and checkout
+    // routes to. NULL connected account → {} → platform account.
+    const accountOptions = await stripeAccountRequestOptions(req.orgId);
 
     // Catalog-membership guard: retrieve + project the product BEFORE
     // mutating it. Without this guard the route would happily write
@@ -156,9 +165,11 @@ router.patch(
     // editor and worth it for the safety property.
     let existing;
     try {
-      existing = await stripe.products.retrieve(productId, {
-        expand: ["default_price"],
-      });
+      existing = await stripe.products.retrieve(
+        productId,
+        { expand: ["default_price"] },
+        accountOptions,
+      );
     } catch (err) {
       const status =
         typeof (err as { statusCode?: number })?.statusCode === "number"
@@ -200,13 +211,17 @@ router.patch(
 
     let updated;
     try {
-      updated = await stripe.products.update(productId, {
-        metadata: metadataPatch,
-        // Re-expand default_price so projectProduct can reuse the same
-        // projection used by the public catalog endpoint without a
-        // second round trip.
-        expand: ["default_price"],
-      });
+      updated = await stripe.products.update(
+        productId,
+        {
+          metadata: metadataPatch,
+          // Re-expand default_price so projectProduct can reuse the same
+          // projection used by the public catalog endpoint without a
+          // second round trip.
+          expand: ["default_price"],
+        },
+        accountOptions,
+      );
     } catch (err) {
       // Stripe SDK throws StripeError subclasses for 4xx/5xx; we
       // forward the status when known so the UI can disambiguate
@@ -253,9 +268,13 @@ router.patch(
     const nowIn =
       typeof projected.stockCount === "number" && projected.stockCount > 0;
     if (wasOut && nowIn) {
+      // Point the email link at the tenant's own verified custom domain
+      // when it has one (seed → pennpaps.com via the env fallback), and
+      // scope the dispatch to this admin's tenant.
       const baseUrl =
-        process.env.SHOP_PUBLIC_BASE_URL?.replace(/\/$/, "") ||
-        "https://pennpaps.com";
+        (await resolveTenantBaseUrl(req.orgId)) ??
+        (process.env.SHOP_PUBLIC_BASE_URL?.replace(/\/$/, "") ||
+          "https://cmbreathe.com");
       const priceLabel =
         typeof projected.price?.unitAmount === "number"
           ? `$${(projected.price.unitAmount / 100).toFixed(2)}`
@@ -266,6 +285,7 @@ router.patch(
         productImageUrl: projected.imageUrl ?? null,
         productUrl: `${baseUrl}/shop/p/${encodeURIComponent(productId)}`,
         priceLabel,
+        orgId: req.orgId,
       }).catch((err) => {
         // Not a Stripe failure (the dispatch path is DB + email), so
         // the categorized Stripe fields don't apply — log the error
@@ -324,12 +344,18 @@ router.patch(
       return;
     }
     const stripe = getStripeClient(config);
+    // Connect (G6): every catalog read/write targets the tenant's connected
+    // account — the SAME account the storefront reads from and checkout
+    // routes to. NULL connected account → {} → platform account.
+    const accountOptions = await stripeAccountRequestOptions(req.orgId);
 
     let existing;
     try {
-      existing = await stripe.products.retrieve(productId, {
-        expand: ["default_price"],
-      });
+      existing = await stripe.products.retrieve(
+        productId,
+        { expand: ["default_price"] },
+        accountOptions,
+      );
     } catch (err) {
       const status =
         typeof (err as { statusCode?: number })?.statusCode === "number"
@@ -361,10 +387,11 @@ router.patch(
 
     let updated;
     try {
-      updated = await stripe.products.update(productId, {
-        metadata: metadataPatch,
-        expand: ["default_price"],
-      });
+      updated = await stripe.products.update(
+        productId,
+        { metadata: metadataPatch, expand: ["default_price"] },
+        accountOptions,
+      );
     } catch (err) {
       const status =
         typeof (err as { statusCode?: number })?.statusCode === "number"
@@ -452,15 +479,21 @@ router.patch(
       return;
     }
     const stripe = getStripeClient(config);
+    // Connect (G6): every catalog read/write targets the tenant's connected
+    // account — the SAME account the storefront reads from and checkout
+    // routes to. NULL connected account → {} → platform account.
+    const accountOptions = await stripeAccountRequestOptions(req.orgId);
 
     // Catalog-membership guard — same fence as the stock/threshold
     // handlers. Also gives us the current default price (id, amount,
     // currency) that steps 1–3 below need.
     let existing;
     try {
-      existing = await stripe.products.retrieve(productId, {
-        expand: ["default_price"],
-      });
+      existing = await stripe.products.retrieve(
+        productId,
+        { expand: ["default_price"] },
+        accountOptions,
+      );
     } catch (err) {
       const status =
         typeof (err as { statusCode?: number })?.statusCode === "number"
@@ -497,11 +530,14 @@ router.patch(
     // the existing default price so a non-USD catalog round-trips.
     let newPrice: { id: string };
     try {
-      newPrice = await stripe.prices.create({
-        product: productId,
-        unit_amount: unitAmountCents,
-        currency: previousPrice.currency,
-      });
+      newPrice = await stripe.prices.create(
+        {
+          product: productId,
+          unit_amount: unitAmountCents,
+          currency: previousPrice.currency,
+        },
+        accountOptions,
+      );
     } catch (err) {
       const status =
         typeof (err as { statusCode?: number })?.statusCode === "number"
@@ -522,10 +558,11 @@ router.patch(
     // price and checkout only accepts it.
     let updated;
     try {
-      updated = await stripe.products.update(productId, {
-        default_price: newPrice.id,
-        expand: ["default_price"],
-      });
+      updated = await stripe.products.update(
+        productId,
+        { default_price: newPrice.id, expand: ["default_price"] },
+        accountOptions,
+      );
     } catch (err) {
       const status =
         typeof (err as { statusCode?: number })?.statusCode === "number"
@@ -553,7 +590,11 @@ router.patch(
     // failure leaves an unused-but-active price object behind, which
     // validate-cart already refuses to sell.
     try {
-      await stripe.prices.update(previousPrice.id, { active: false });
+      await stripe.prices.update(
+        previousPrice.id,
+        { active: false },
+        accountOptions,
+      );
     } catch (err) {
       req.log?.warn?.(
         { productId, priceId: previousPrice.id, ...stripeErrLogFields(err) },
@@ -567,12 +608,15 @@ router.patch(
     // the operator can fix in the Stripe Dashboard.
     let recurringRotated = false;
     try {
-      const recurringList = await stripe.prices.list({
-        product: productId,
-        active: true,
-        type: "recurring",
-        limit: 100,
-      });
+      const recurringList = await stripe.prices.list(
+        {
+          product: productId,
+          active: true,
+          type: "recurring",
+          limit: 100,
+        },
+        accountOptions,
+      );
       const oldRecurring = recurringList.data;
       if (oldRecurring.length > 0) {
         // Mirror the cadence of the price the storefront actually
@@ -588,22 +632,29 @@ router.patch(
             return p.id < best.id ? p : best;
           }, null);
         if (mirrored?.recurring) {
-          const newRecurring = await stripe.prices.create({
-            product: productId,
-            unit_amount: unitAmountCents,
-            currency: previousPrice.currency,
-            recurring: {
-              interval: mirrored.recurring.interval,
-              interval_count: mirrored.recurring.interval_count ?? 1,
+          const newRecurring = await stripe.prices.create(
+            {
+              product: productId,
+              unit_amount: unitAmountCents,
+              currency: previousPrice.currency,
+              recurring: {
+                interval: mirrored.recurring.interval,
+                interval_count: mirrored.recurring.interval_count ?? 1,
+              },
             },
-          });
+            accountOptions,
+          );
           // Only retire the old recurring prices once the replacement
           // exists — otherwise the SKU would lose its Subscribe toggle
           // entirely on a mid-flight failure.
           for (const old of oldRecurring) {
             if (old.id === newRecurring.id) continue;
             try {
-              await stripe.prices.update(old.id, { active: false });
+              await stripe.prices.update(
+                old.id,
+                { active: false },
+                accountOptions,
+              );
             } catch (err) {
               req.log?.warn?.(
                 { productId, priceId: old.id, ...stripeErrLogFields(err) },
@@ -907,12 +958,18 @@ router.patch(
       return;
     }
     const stripe = getStripeClient(config);
+    // Connect (G6): every catalog read/write targets the tenant's connected
+    // account — the SAME account the storefront reads from and checkout
+    // routes to. NULL connected account → {} → platform account.
+    const accountOptions = await stripeAccountRequestOptions(req.orgId);
 
     let existing;
     try {
-      existing = await stripe.products.retrieve(productId, {
-        expand: ["default_price"],
-      });
+      existing = await stripe.products.retrieve(
+        productId,
+        { expand: ["default_price"] },
+        accountOptions,
+      );
     } catch (err) {
       const status =
         typeof (err as { statusCode?: number })?.statusCode === "number"
@@ -971,7 +1028,11 @@ router.patch(
 
     let updated;
     try {
-      updated = await stripe.products.update(productId, updatePayload);
+      updated = await stripe.products.update(
+        productId,
+        updatePayload,
+        accountOptions,
+      );
     } catch (err) {
       const status =
         typeof (err as { statusCode?: number })?.statusCode === "number"
@@ -1046,15 +1107,21 @@ router.post(
       return;
     }
     const stripe = getStripeClient(config);
+    // Connect (G6): every catalog read/write targets the tenant's connected
+    // account — the SAME account the storefront reads from and checkout
+    // routes to. NULL connected account → {} → platform account.
+    const accountOptions = await stripeAccountRequestOptions(req.orgId);
 
     // Catalog-membership guard — same fence as the PATCH handlers.
     // Keeps this endpoint from being a generic "deactivate any Stripe
     // product" lever.
     let existing;
     try {
-      existing = await stripe.products.retrieve(productId, {
-        expand: ["default_price"],
-      });
+      existing = await stripe.products.retrieve(
+        productId,
+        { expand: ["default_price"] },
+        accountOptions,
+      );
     } catch (err) {
       const status =
         typeof (err as { statusCode?: number })?.statusCode === "number"
@@ -1088,7 +1155,11 @@ router.post(
     }
 
     try {
-      await stripe.products.update(productId, { active: false });
+      await stripe.products.update(
+        productId,
+        { active: false },
+        accountOptions,
+      );
     } catch (err) {
       const status =
         typeof (err as { statusCode?: number })?.statusCode === "number"
@@ -1138,13 +1209,20 @@ router.get(
       return;
     }
     const stripe = getStripeClient(config);
+    // Connect (G6): every catalog read/write targets the tenant's connected
+    // account — the SAME account the storefront reads from and checkout
+    // routes to. NULL connected account → {} → platform account.
+    const accountOptions = await stripeAccountRequestOptions(req.orgId);
 
     let inactive;
     try {
       // One page of 100 covers this catalog (~30 active SKUs today);
       // an account would need 100+ ARCHIVED shop products before
       // pagination matters, at which point cleanup is overdue anyway.
-      inactive = await stripe.products.list({ active: false, limit: 100 });
+      inactive = await stripe.products.list(
+        { active: false, limit: 100 },
+        accountOptions,
+      );
     } catch (err) {
       const status =
         typeof (err as { statusCode?: number })?.statusCode === "number"
@@ -1206,12 +1284,18 @@ router.post(
       return;
     }
     const stripe = getStripeClient(config);
+    // Connect (G6): every catalog read/write targets the tenant's connected
+    // account — the SAME account the storefront reads from and checkout
+    // routes to. NULL connected account → {} → platform account.
+    const accountOptions = await stripeAccountRequestOptions(req.orgId);
 
     let existing;
     try {
-      existing = await stripe.products.retrieve(productId, {
-        expand: ["default_price"],
-      });
+      existing = await stripe.products.retrieve(
+        productId,
+        { expand: ["default_price"] },
+        accountOptions,
+      );
     } catch (err) {
       const status =
         typeof (err as { statusCode?: number })?.statusCode === "number"
@@ -1252,10 +1336,13 @@ router.post(
     // at create/seed time), so safe to interpolate into the Stripe
     // search query.
     try {
-      const collision = await stripe.products.search({
-        query: `metadata['shop_sku']:'${sku}' AND active:'true'`,
-        limit: 1,
-      });
+      const collision = await stripe.products.search(
+        {
+          query: `metadata['shop_sku']:'${sku}' AND active:'true'`,
+          limit: 1,
+        },
+        accountOptions,
+      );
       if (collision.data[0]) {
         res.status(409).json({
           error: "sku_conflict",
@@ -1279,7 +1366,7 @@ router.post(
     }
 
     try {
-      await stripe.products.update(productId, { active: true });
+      await stripe.products.update(productId, { active: true }, accountOptions);
     } catch (err) {
       const status =
         typeof (err as { statusCode?: number })?.statusCode === "number"
@@ -1453,6 +1540,10 @@ router.post(
       return;
     }
     const stripe = getStripeClient(config);
+    // Connect (G6): every catalog read/write targets the tenant's connected
+    // account — the SAME account the storefront reads from and checkout
+    // routes to. NULL connected account → {} → platform account.
+    const accountOptions = await stripeAccountRequestOptions(req.orgId);
 
     // SKU collision guard. Search Stripe for an active product
     // already carrying this `metadata.shop_sku`. The SKU regex
@@ -1460,10 +1551,13 @@ router.post(
     // into the Stripe search query string.
     let existingBySku;
     try {
-      existingBySku = await stripe.products.search({
-        query: `metadata['shop_sku']:'${input.sku}' AND active:'true'`,
-        limit: 1,
-      });
+      existingBySku = await stripe.products.search(
+        {
+          query: `metadata['shop_sku']:'${input.sku}' AND active:'true'`,
+          limit: 1,
+        },
+        accountOptions,
+      );
     } catch (err) {
       const status =
         typeof (err as { statusCode?: number })?.statusCode === "number"
@@ -1519,7 +1613,7 @@ router.post(
 
     let product: { id: string };
     try {
-      product = await stripe.products.create(createPayload);
+      product = await stripe.products.create(createPayload, accountOptions);
     } catch (err) {
       const status =
         typeof (err as { statusCode?: number })?.statusCode === "number"
@@ -1538,11 +1632,14 @@ router.post(
     // Create one-time price.
     let price: { id: string };
     try {
-      price = await stripe.prices.create({
-        product: product.id,
-        unit_amount: input.unitAmountCents,
-        currency: "usd",
-      });
+      price = await stripe.prices.create(
+        {
+          product: product.id,
+          unit_amount: input.unitAmountCents,
+          currency: "usd",
+        },
+        accountOptions,
+      );
     } catch (err) {
       const status =
         typeof (err as { statusCode?: number })?.statusCode === "number"
@@ -1567,15 +1664,18 @@ router.post(
     let recurringPriceId: string | null = null;
     if (input.recurringInterval && input.recurringIntervalCount) {
       try {
-        const recurring = await stripe.prices.create({
-          product: product.id,
-          unit_amount: input.unitAmountCents,
-          currency: "usd",
-          recurring: {
-            interval: input.recurringInterval,
-            interval_count: input.recurringIntervalCount,
+        const recurring = await stripe.prices.create(
+          {
+            product: product.id,
+            unit_amount: input.unitAmountCents,
+            currency: "usd",
+            recurring: {
+              interval: input.recurringInterval,
+              interval_count: input.recurringIntervalCount,
+            },
           },
-        });
+          accountOptions,
+        );
         recurringPriceId = recurring.id;
       } catch (err) {
         req.log?.warn?.(
@@ -1590,10 +1690,11 @@ router.post(
     // pipeline below has the same shape /shop/products consumes.
     let updated;
     try {
-      updated = await stripe.products.update(product.id, {
-        default_price: price.id,
-        expand: ["default_price"],
-      });
+      updated = await stripe.products.update(
+        product.id,
+        { default_price: price.id, expand: ["default_price"] },
+        accountOptions,
+      );
     } catch (err) {
       const status =
         typeof (err as { statusCode?: number })?.statusCode === "number"
@@ -1633,6 +1734,57 @@ router.post(
       "shop/admin/products: product created",
     );
     res.status(201).json({ product: projected });
+  },
+);
+
+// GET /admin/shop/products — session-scoped catalog for the admin
+// inventory editor. The PUBLIC GET /shop/products resolves the tenant by
+// REQUEST HOST (correct for the storefront), but the admin console must
+// read the catalog for the ADMIN's OWN tenant regardless of which host the
+// console is served on — otherwise a connected tenant browsing the console
+// on the platform domain would see the platform catalog instead of theirs.
+// We resolve the tenant from the session (req.orgId) and read THAT account,
+// the same one the mutation handlers above write to.
+//
+// Gate: requireAdmin (not admin.tools.manage) — viewing inventory is
+// staff-wide; only the mutations above carry the supervisor-tier permission.
+// adminReadRateLimiter runs BEFORE requireAdmin (which does a DB session
+// lookup) so an authenticated GET isn't unbounded — and it's the direct
+// express-rate-limit instance CodeQL's missing-rate-limiting query
+// recognizes (the wrapped factories aren't traced). See admin-rate-limit.ts.
+router.get(
+  "/admin/shop/products",
+  adminReadRateLimiter,
+  requireAdmin,
+  async (req, res) => {
+    const config = readStripeConfigOrNull();
+    if (!config) {
+      // Preview parity with the public endpoint: surface the fixture catalog
+      // so the inventory UI still renders (edits then 503 with a clear
+      // "set STRIPE_SECRET_KEY" message).
+      res.json({ previewMode: true, products: getPreviewCatalog() });
+      return;
+    }
+    const stripe = getStripeClient(config);
+    const accountOptions = await stripeAccountRequestOptions(req.orgId);
+    let list: Awaited<ReturnType<typeof stripe.products.list>>;
+    try {
+      list = await stripe.products.list(
+        { active: true, limit: 100, expand: ["data.default_price"] },
+        accountOptions,
+      );
+    } catch (err) {
+      req.log?.warn?.(
+        { ...stripeErrLogFields(err) },
+        "shop/admin/products: list failed (admin catalog)",
+      );
+      res.status(502).json({ error: "stripe_list_failed" });
+      return;
+    }
+    const products = list.data
+      .map(projectProduct)
+      .filter((p): p is ShopProductView => p !== null);
+    res.json({ previewMode: false, products });
   },
 );
 

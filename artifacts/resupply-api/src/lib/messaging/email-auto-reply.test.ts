@@ -10,6 +10,65 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { CompanyInfo } from "../company-info";
+
+// A second tenant's saved identity (source "database" so the brand/
+// contact rewrite fires) plus a neutral fallback (source "fallback" →
+// no-op rewrite) returned for every other orgId so the rest of the
+// suite is unaffected and never hits a real Supabase lookup.
+const { TENANT_B_INFO, FALLBACK_INFO } = vi.hoisted(() => {
+  const base = {
+    faxE164: null,
+    websiteUrl: null,
+    address: null,
+    organizationalNpi: null,
+    assistantStorefrontName: "PennBot",
+    assistantAdminName: "PennPilot",
+  };
+  const TENANT_B_INFO: CompanyInfo = {
+    ...base,
+    name: "Acme Respiratory",
+    legalName: "Acme Respiratory LLC",
+    phoneE164: "+15551230000",
+    phoneDisplay: "(555) 123-0000",
+    supportPhoneE164: "+15551230000",
+    supportPhoneDisplay: "(555) 123-0000",
+    supportEmail: "help@acmeresp.com",
+    generalEmail: "info@acmeresp.com",
+    billingEmail: "billing@acmeresp.com",
+    websiteUrl: "https://acmeresp.com",
+    supportHours: "Mon–Fri 8a–6p CT",
+    source: "database",
+  };
+  const FALLBACK_INFO: CompanyInfo = {
+    ...base,
+    name: "PennPaps",
+    legalName: "Penn Home Medical Supply",
+    phoneE164: "+18144710627",
+    phoneDisplay: "(814) 471-0627",
+    supportPhoneE164: "+18144710627",
+    supportPhoneDisplay: "(814) 471-0627",
+    supportEmail: "support@pennpaps.com",
+    generalEmail: "info@pennpaps.com",
+    billingEmail: "info@pennpaps.com",
+    supportHours: "Mon–Fri 9a–5p ET",
+    source: "fallback",
+  };
+  return { TENANT_B_INFO, FALLBACK_INFO };
+});
+
+// Keep the real module (applyCompanyIdentityToText etc.) but pin
+// getCompanyInfo so the tenant rewrite is deterministic and offline.
+vi.mock("../company-info", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../company-info")>();
+  return {
+    ...actual,
+    getCompanyInfo: vi.fn(async (orgId?: string) =>
+      orgId === "org-b" ? TENANT_B_INFO : FALLBACK_INFO,
+    ),
+  };
+});
+
 import {
   generateEmailReply,
   __setEmailAutoReplyFetchForTests,
@@ -184,5 +243,32 @@ describe("generateEmailReply", () => {
     );
     const result = await generateEmailReply(INPUT);
     expect(result).toEqual({ kind: "handoff" });
+  });
+
+  it("brands the system prompt + sign-off for the sender's tenant", async () => {
+    let capturedSystem = "";
+    __setEmailAutoReplyFetchForTests(
+      vi.fn(async (_url: string, init: { body?: string }) => {
+        const sent = JSON.parse(init.body ?? "{}") as {
+          messages: Array<{ role: string; content: string }>;
+        };
+        capturedSystem = sent.messages[0]?.content ?? "";
+        return openAiReply(
+          JSON.stringify({ handoff: false, confidence: 0.95, reply: "Hi" }),
+        );
+      }) as unknown as typeof fetch,
+    );
+
+    await generateEmailReply(INPUT, process.env, "org-b");
+
+    // The knowledge base + email addendum carry the second tenant's
+    // brand, contact details, and legal sign-off — no seed leak.
+    expect(capturedSystem).toContain("Acme Respiratory");
+    expect(capturedSystem).toContain("help@acmeresp.com");
+    expect(capturedSystem).toContain("Acme Respiratory LLC"); // addendum sign-off
+    expect(capturedSystem).not.toContain("PennPaps");
+    expect(capturedSystem).not.toContain("support@pennpaps.com");
+    expect(capturedSystem).not.toContain("(814) 471-0627");
+    expect(capturedSystem).not.toContain("Penn Home Medical Supply");
   });
 });

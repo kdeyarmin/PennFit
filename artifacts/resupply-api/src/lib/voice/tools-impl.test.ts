@@ -428,7 +428,17 @@ describe("VoiceToolDispatcher — place_resupply_order result mapping", () => {
       name: "place_resupply_order",
       args: { skus: ["A7030", "A7034"], address_confirmed: true },
     });
-    expect(placeOrder).toHaveBeenCalledWith({ conversationId: "conv-1" });
+    expect(placeOrder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversationId: "conv-1",
+        // The spoken confirmation carries the refill attestation.
+        affirmation: expect.objectContaining({
+          channel: "voice",
+          continuedUse: true,
+          supplyLow: true,
+        }),
+      }),
+    );
     expect(result.result).toEqual({
       ok: true,
       order_id: "ful-123",

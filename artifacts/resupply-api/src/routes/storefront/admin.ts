@@ -466,6 +466,8 @@ router.get("/admin/reminders", async (req, res) => {
     .select(
       "id, email, manage_token, status, items, last_sent_at, created_at, updated_at",
     )
+    // Tenant-scoped (migration 0378) — a tenant admin sees only ITS subscribers.
+    .eq("org_id", orgId)
     .order("created_at", { ascending: false })
     .limit(2000);
   if (error) throw error;
@@ -526,7 +528,9 @@ router.post("/admin/reminders/send-due", requireCsrf, async (req, res) => {
     .schema("public")
     .from("reminder_subscriptions")
     .select("id, email, manage_token, items, last_sent_at")
-    .eq("status", "active");
+    .eq("status", "active")
+    // Tenant-scoped (migration 0378) — only send to THIS tenant's subscribers.
+    .eq("org_id", orgId);
   if (error) throw error;
 
   let sent = 0;
@@ -554,6 +558,7 @@ router.post("/admin/reminders/send-due", requireCsrf, async (req, res) => {
       toEmail: row.email,
       manageToken: row.manage_token,
       dueItems,
+      orgId,
     });
 
     if (!result.configured) {
@@ -618,8 +623,9 @@ router.post("/admin/reminders/send-due", requireCsrf, async (req, res) => {
     // Read the same env vars the shared SendGrid integration reads, so
     // this readiness flag matches what `createSendgridClient()` will
     // actually do. The API key is the only requirement — the From address
-    // now defaults in code to info@pennpaps.com when SENDGRID_FROM_EMAIL
-    // is unset (ADR 018), so it is not part of the readiness check.
+    // now defaults in code to the platform identity (noreply@cmbreathe.com)
+    // when SENDGRID_FROM_EMAIL is unset, so it is not part of the readiness
+    // check.
     sendgridConfigured: Boolean(process.env.SENDGRID_API_KEY),
   });
 });

@@ -38,6 +38,7 @@ import { createAdhocPaymentCheckoutSession } from "../../lib/billing/patient-pay
 import { createTenantSendgridClient } from "../../lib/email/tenant-sender";
 import { logger } from "../../lib/logger";
 import { readPracticeName } from "../../lib/messaging/messaging-config";
+import { resolveTenantSmsClientOptions } from "../../lib/messaging/tenant-telecom";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
@@ -70,7 +71,7 @@ function publicBaseUrl(): string {
     process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL ??
     (process.env.RAILWAY_PUBLIC_DOMAIN
       ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
-      : "https://pennpaps.com")
+      : "https://cmbreathe.com")
   ).replace(/\/$/, "");
 }
 
@@ -87,9 +88,13 @@ async function tryCreateSendgrid(
   }
 }
 
-function tryCreateTwilioSms(): ReturnType<typeof createTwilioSmsClient> | null {
+async function tryCreateTwilioSms(
+  orgId: string,
+): Promise<ReturnType<typeof createTwilioSmsClient> | null> {
   try {
-    return createTwilioSmsClient();
+    // Send under the tenant's own number / Messaging Service when it has
+    // one (G7); falls back to the platform env default otherwise.
+    return createTwilioSmsClient(await resolveTenantSmsClientOptions(orgId));
   } catch (err) {
     if (err instanceof TwilioConfigError) return null;
     throw err;
@@ -207,7 +212,7 @@ async function deliverPaymentLink(opts: {
     // GSM-7 segment-count concern that drives the templated reminders is
     // not worth a clamp here.
     if (!opts.phone) return { delivered: false, reason: "no_phone" };
-    const twilio = tryCreateTwilioSms();
+    const twilio = await tryCreateTwilioSms(opts.orgId);
     if (!twilio) return { delivered: false, reason: "no_sms_config" };
     await twilio.sendSms({
       to: opts.phone,

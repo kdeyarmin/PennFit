@@ -12,8 +12,8 @@ What lands in Stage 1:
 - The `auth` Postgres schema (`auth.users`, `auth.password_credentials`,
   `auth.sessions`, `auth.email_tokens`, `auth.login_attempts`) is
   created by the hand-written migration `0022_in_house_auth.sql`
-  under `lib/resupply-db/drizzle/` (directory name is historical;
-  see `lib/resupply-db/README.md`). Row shapes are now sourced from
+  under `lib/resupply-db/migrations/` (see `lib/resupply-db/README.md`).
+  Row shapes are now sourced from
   the generated Supabase `Database` types in
   `@workspace/resupply-db`; callers read and write via the
   service-role client.

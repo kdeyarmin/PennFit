@@ -15,14 +15,12 @@
 // customerId is null on every send. Cross-referencing by email at
 // lookup time is a separate enhancement.
 
-import {
-  createSendgridClient,
-  EmailApiError,
-  EmailConfigError,
-} from "@workspace/resupply-email";
+import { EmailApiError, EmailConfigError } from "@workspace/resupply-email";
 import { renderMessage } from "@workspace/resupply-templates";
 
 import { messageTemplateLookup } from "./message-templates/lookup";
+import { createTenantSendgridClient } from "./email/tenant-sender.js";
+import { resolveBrandingByOrgId } from "./tenant-branding.js";
 
 export interface BackInStockEmailPayload {
   email: string;
@@ -31,6 +29,20 @@ export interface BackInStockEmailPayload {
   productImageUrl?: string | null;
   productUrl: string;
   priceLabel?: string | null;
+  /**
+   * Tenant the signup belongs to. When set and the tenant has its own
+   * From identity (migration 0360), the alert is sent under it (G6);
+   * otherwise the platform default From is used. Omit / undefined leaves
+   * the platform default unchanged.
+   */
+  orgId?: string;
+  /**
+   * Tenant storefront brand to render in the copy. Defaults to "PennPaps"
+   * inside the renderers so the byte-for-byte fallback / __forTests output
+   * is unchanged when not provided; sendBackInStockEmail threads the
+   * resolved tenant brand here (G6).
+   */
+  brandName?: string;
 }
 
 export interface BackInStockEmailResult {
@@ -71,17 +83,18 @@ function renderPriceBlockHtml(priceLabel: string | null): string {
 }
 
 function renderHtml(p: BackInStockEmailPayload): string {
+  const brandName = p.brandName ?? "PennPaps";
   return `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f7f4ec;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f7f4ec;padding:24px 0;">
     <tr><td align="center">
       <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;padding:32px;max-width:560px;">
         <tr><td style="padding-bottom:16px;border-bottom:2px solid #c9a24a;">
-          <div style="font-size:13px;letter-spacing:0.08em;color:#7a5d00;text-transform:uppercase;font-weight:600;">PennPaps · Back in stock</div>
+          <div style="font-size:13px;letter-spacing:0.08em;color:#7a5d00;text-transform:uppercase;font-weight:600;">${escapeHtml(brandName)} · Back in stock</div>
           <div style="font-size:22px;color:#0a1f44;font-weight:700;margin-top:4px;">${escapeHtml(p.productName)} is available again</div>
         </td></tr>
         ${renderImageBlockHtml(p.productImageUrl ?? null)}
         <tr><td style="padding-top:18px;color:#333;font-size:15px;line-height:1.55;">
-          Good news — the item you asked us to watch is back in stock at PennPaps. Stock can run low quickly, so grab one while it's available.
+          Good news — the item you asked us to watch is back in stock at ${escapeHtml(brandName)}. Stock can run low quickly, so grab one while it's available.
           ${renderPriceBlockHtml(p.priceLabel ?? null)}
         </td></tr>
         <tr><td align="center" style="padding-top:24px;">
@@ -96,8 +109,9 @@ function renderHtml(p: BackInStockEmailPayload): string {
 }
 
 function renderText(p: BackInStockEmailPayload): string {
+  const brandName = p.brandName ?? "PennPaps";
   const lines = [
-    `${p.productName} is back in stock at PennPaps.`,
+    `${p.productName} is back in stock at ${brandName}.`,
     "",
     "Stock can run low quickly, so grab one while it's available:",
     p.productUrl,
@@ -133,13 +147,24 @@ export async function sendBackInStockEmail(
 ): Promise<BackInStockEmailResult> {
   let client;
   try {
-    client = createSendgridClient();
+    // Send under the tenant's own From identity when configured (G6);
+    // falls back to the platform default when it isn't / orgId is unset.
+    client = await createTenantSendgridClient(payload.orgId);
   } catch (err) {
     if (err instanceof EmailConfigError) {
       return { configured: false, delivered: false, error: err.message };
     }
     throw err;
   }
+
+  // Brand the email with the tenant's own storefront name (G6). For the seed
+  // tenant this resolves to "PennPaps" (its stored brand), so single-tenant
+  // copy is unchanged; a second tenant's alert carries ITS brand.
+  const brand = await resolveBrandingByOrgId(payload.orgId);
+  const renderPayload: BackInStockEmailPayload = {
+    ...payload,
+    brandName: brand.storefrontName,
+  };
 
   // Fallback strings preserve byte-for-byte the prior behaviour when
   // no template row exists or the lookup fails.
@@ -155,8 +180,8 @@ export async function sendBackInStockEmail(
     },
     {
       subject: `Back in stock: ${payload.productName}`,
-      bodyHtml: renderHtml(payload),
-      bodyText: renderText(payload),
+      bodyHtml: renderHtml(renderPayload),
+      bodyText: renderText(renderPayload),
     },
     messageTemplateLookup,
   );

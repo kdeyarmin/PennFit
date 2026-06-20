@@ -16,8 +16,10 @@ import {
 } from "@/lib/admin/inbox-counts-api";
 import {
   LayoutDashboard,
+  LifeBuoy,
   Store,
   Printer,
+  PhoneCall,
   Inbox,
   MessageSquareText,
   ListChecks,
@@ -47,6 +49,7 @@ import {
   BellRing,
   ScrollText,
   ShieldCheck,
+  ScanSearch,
   FlaskConical,
   UsersRound,
   ScanFace,
@@ -583,6 +586,14 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             hint: "Storefront orders — fulfill, refund, look up",
           },
           {
+            href: "/admin/shipping",
+            label: "Shipping labels",
+            icon: TruckIcon,
+            matchPrefix: "/admin/shipping",
+            requiredPermission: "returns.manage",
+            hint: "Print XPS shipping labels with the patient address merged in; tracking auto-fills",
+          },
+          {
             href: "/admin/shop/subscriptions",
             label: "Subscriptions",
             icon: Repeat,
@@ -753,6 +764,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             icon: ShieldCheck,
             matchPrefix: "/admin/billing/verify",
             hint: "Run an on-demand insurance verification (270/271) for any patient — or a quick check with no patient record",
+          },
+          {
+            href: "/admin/billing/insurance-discovery",
+            label: "Insurance discovery",
+            icon: ScanSearch,
+            matchPrefix: "/admin/billing/insurance-discovery",
+            hint: "Search the payer network from demographics to find active coverage when insurance is unknown or a coverage came back inactive (add-on)",
           },
           {
             href: "/admin/billing/eligibility",
@@ -1037,6 +1055,14 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             hint: "Resupply funnel, compliance cohorts, CSR productivity",
           },
           {
+            href: "/admin/reorder-reminders",
+            label: "Reorder Reminders",
+            icon: BellRing,
+            matchPrefix: "/admin/reorder-reminders",
+            requiredPermission: "reports.read",
+            hint: "Reorder reminder funnel — due → reminded → confirmed → shipped, with per-channel conversion",
+          },
+          {
             href: "/admin/therapy-usage-report",
             label: "Therapy Report",
             icon: ScrollText,
@@ -1055,7 +1081,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             label: "Storefront Analytics",
             icon: BarChart3,
             matchPrefix: "/admin/pennpaps/analytics",
-            hint: "PennPaps storefront traffic & revenue",
+            hint: "Storefront traffic & revenue",
           },
         ],
       },
@@ -1064,6 +1090,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
   {
     label: "System",
     items: [
+      {
+        label: "Support",
+        icon: LifeBuoy,
+        href: "/admin/support",
+        matchPrefix: "/admin/support",
+        hint: "File a support request — our AI assistant answers how-to questions instantly, and a person handles the rest",
+      },
       {
         label: "Automation",
         icon: ScrollText,
@@ -1154,11 +1187,18 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         hint: "Practice settings, closures, team accounts, and your own security",
         tabs: [
           {
+            href: "/admin/setup",
+            label: "Set up your workspace",
+            icon: ListChecks,
+            matchPrefix: "/admin/setup",
+            hint: "Guided checklist: brand, domain, phone/SMS/fax numbers, email sender, and payments",
+          },
+          {
             href: "/admin/settings",
             label: "Settings",
             icon: Settings,
             matchPrefix: "/admin/settings",
-            hint: "Practice settings & integrations",
+            hint: "Toggle the client-only demo sandbox",
           },
           {
             href: "/admin/company-information",
@@ -1175,11 +1215,25 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             hint: "Your storefront name, tagline, and logo — plus wiring up your own custom domain",
           },
           {
+            href: "/admin/phone-settings",
+            label: "Phone & SMS",
+            icon: PhoneCall,
+            matchPrefix: "/admin/phone-settings",
+            hint: "Your own voice + SMS numbers for the voice agent and resupply texting",
+          },
+          {
             href: "/admin/fax-settings",
             label: "Fax number",
             icon: Printer,
             matchPrefix: "/admin/fax-settings",
             hint: "Your practice's own fax number for inbound and outbound faxes",
+          },
+          {
+            href: "/admin/email-settings",
+            label: "Email From address",
+            icon: Mail,
+            matchPrefix: "/admin/email-settings",
+            hint: "Send patient email from your own address (with SendGrid domain-auth status)",
           },
           {
             href: "/admin/closures",
@@ -1218,43 +1272,22 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         ],
       },
       {
-        // Set-and-forget surfaces, in launch order: work the checklist,
-        // enter vendor credentials, test the connections, switch the
-        // features on, then rehearse the bots.
+        // Set-and-forget surfaces: enter your own integration
+        // credentials, switch features on, then rehearse the bots. The
+        // deployment launch checklist, platform packages/pricing, and
+        // shared infrastructure all live on the platform super-admin
+        // console — they're global, not per-tenant.
         label: "Setup & advanced",
         icon: SlidersHorizontal,
-        hint: "Launch checklist, vendor credentials & connection tests, feature switches, bot rehearsal",
+        hint: "Your integration credentials, feature switches, and bot rehearsal",
         tabs: [
           {
-            href: "/admin/account-setup",
-            label: "Account Setup",
-            icon: ClipboardCheck,
-            matchPrefix: "/admin/account-setup",
-            hint: "New-account / production launch checklist",
-          },
-          {
             href: "/admin/system/configuration",
-            label: "Configuration & tests",
+            label: "Configuration",
             icon: SlidersHorizontal,
             matchPrefix: "/admin/system/configuration",
             requiredPermission: "system.config.manage",
-            hint: "Integration credentials & platform secrets, plus send-a-test for email/SMS/voice/chat (super-admin)",
-          },
-          {
-            href: "/admin/connection-tests",
-            label: "Connection tests",
-            icon: Plug,
-            matchPrefix: "/admin/connection-tests",
-            requiredPermission: "system.config.manage",
-            hint: "Send a real test email, SMS, voice call, or AI chat to confirm credentials work (super-admin)",
-          },
-          {
-            href: "/admin/platform-billing",
-            label: "Platform billing",
-            icon: CircleDollarSign,
-            matchPrefix: "/admin/platform-billing",
-            requiredPermission: "system.config.manage",
-            hint: "Super-admin tenant packages, add-ons, pricing overrides, and usage tracking",
+            hint: "Your branding and your own integration accounts (therapy-cloud, clearinghouse)",
           },
           {
             href: "/admin/control-center",

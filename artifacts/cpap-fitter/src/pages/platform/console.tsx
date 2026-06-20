@@ -19,7 +19,7 @@
 // tokens must stay scoped under that class).
 
 import { useMemo, useState } from "react";
-import { Link, Redirect, Route, Switch } from "wouter";
+import { Link, Redirect, Route, Switch, useLocation } from "wouter";
 
 import {
   ApiError,
@@ -32,19 +32,51 @@ import {
   useImpersonateTenant,
   type PlatformTenant,
 } from "@workspace/api-client-react/admin";
-import { useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import {
+  clearPlatformConfig,
+  fetchPlatformConfig,
+  setPlatformConfig,
+  type PlatformConfigSetting,
+} from "@/lib/admin/platform-config-api";
+import {
+  fetchPlatformAnalytics,
+  type PlatformAnalyticsResponse,
+  type PlatformAnalyticsTenantRow,
+} from "@/lib/admin/platform-analytics-api";
+import {
+  fetchFleetBillingSummary,
+  formatMoney,
+} from "@/lib/admin/platform-billing-api";
+import {
+  getPlatformSupportTicket,
+  listPlatformSupportTickets,
+  replyPlatformSupportTicket,
+  setPlatformSupportStatus,
+  statusLabel as supportStatusLabel,
+  statusVariant as supportStatusVariant,
+  type SupportMessage,
+  type SupportTicket,
+  type SupportTicketStatus,
+} from "@/lib/admin/support-api";
 import { Badge } from "@/components/admin/Badge";
 import { Button } from "@/components/admin/Button";
-import { Card } from "@/components/admin/Card";
+import { Card, KpiCard } from "@/components/admin/Card";
+import { ConnectionTests } from "@/components/admin/ConnectionTests";
 import { EmptyState } from "@/components/admin/EmptyState";
 import { Input, Label } from "@/components/admin/Input";
 import { PageHeader } from "@/components/admin/PageHeader";
+import { Sparkline } from "@/components/admin/Sparkline";
 import { Spinner } from "@/components/admin/Spinner";
 import { Table, type Column } from "@/components/admin/Table";
 import { authHooks } from "@/lib/admin/auth-hooks";
 import { useDashboardIdentity } from "@/lib/admin/identity";
 import { NotAuthorizedPage } from "@/pages/admin/not-authorized";
+import { PlatformOutreachPage } from "@/pages/platform/outreach";
+import { AdminPlatformBillingPage } from "@/pages/admin/admin-platform-billing";
+import { AdminAccountSetupPage } from "@/pages/admin/account-setup";
+import { PlatformSystemInfoPage } from "@/pages/admin/admin-settings";
 
 // admin.css ships the design tokens (--penn-navy, --ink-*, --surface-*)
 // the platform console reuses. Imported here so the styles ride the lazy
@@ -378,6 +410,1001 @@ function TenantDirectory() {
   );
 }
 
+// ── Analytics dashboard (cross-tenant aggregates — no PHI) ──────────
+
+function fmtCount(v: number | null | undefined): string {
+  return v == null ? "—" : v.toLocaleString();
+}
+
+function fmtUsd(cents: number | null | undefined, decimals = 0): string {
+  if (cents == null) return "—";
+  return (cents / 100).toLocaleString(undefined, {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
+}
+
+const WINDOW_OPTIONS = [7, 30, 90] as const;
+
+// Period-over-period change chip. A null delta ("no prior baseline") is
+// rendered as muted text rather than a fabricated +100%.
+function DeltaBadge({ pct }: { pct: number | null }) {
+  if (pct == null) {
+    return (
+      <span className="text-[11px]" style={{ color: "hsl(var(--ink-3))" }}>
+        no prior data
+      </span>
+    );
+  }
+  const up = pct >= 0;
+  const color = up ? "hsl(152 60% 30%)" : "hsl(354 70% 42%)";
+  return (
+    <span
+      className="text-[11px] font-semibold tabular-nums"
+      style={{ color }}
+      title="vs. the previous equal-length period"
+    >
+      {up ? "▲" : "▼"} {Math.abs(pct).toFixed(1)}%
+    </span>
+  );
+}
+
+// One labelled trend line: headline total + delta on the left, a
+// dependency-free SVG sparkline on the right.
+function TrendRow({
+  label,
+  total,
+  values,
+  delta,
+  color,
+}: {
+  label: string;
+  total: string;
+  values: number[];
+  delta: number | null;
+  color?: string;
+}) {
+  return (
+    <div
+      className="flex items-center justify-between gap-4 py-3 border-t first:border-t-0"
+      style={{ borderColor: "hsl(var(--line-1))" }}
+    >
+      <div className="min-w-0">
+        <div
+          className="text-xs font-medium"
+          style={{ color: "hsl(var(--ink-2))" }}
+        >
+          {label}
+        </div>
+        <div className="flex items-baseline gap-2">
+          <span
+            className="text-lg font-semibold tabular-nums"
+            style={{ color: "hsl(var(--ink-1))" }}
+          >
+            {total}
+          </span>
+          <DeltaBadge pct={delta} />
+        </div>
+      </div>
+      <Sparkline
+        values={values}
+        width={160}
+        height={36}
+        color={color}
+        ariaLabel={`${label} trend`}
+      />
+    </div>
+  );
+}
+
+// A compact stat block for the MRR card (label over a big number).
+function RevenueStat({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+}) {
+  return (
+    <div>
+      <div
+        className="text-[10px] uppercase tracking-[0.18em] font-semibold"
+        style={{ color: "hsl(var(--penn-gold-deep))" }}
+      >
+        {label}
+      </div>
+      <div
+        className="text-2xl font-semibold tabular-nums leading-tight"
+        style={{ color: "hsl(var(--ink-1))" }}
+      >
+        {value}
+      </div>
+      {hint && (
+        <div className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+          {hint}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Fleet recurring-revenue (MRR) card — the platform's own SaaS revenue,
+// independent of the analytics window above. Billing may be unconfigured
+// for a fresh fleet, in which case this degrades to an empty state.
+function FleetRevenueCard() {
+  const { data, isPending, isError } = useQuery({
+    queryKey: ["platform-billing-summary"],
+    queryFn: fetchFleetBillingSummary,
+  });
+
+  return (
+    <Card
+      title="Recurring revenue (MRR)"
+      subtitle="Platform subscription revenue across all tenants — what tenants pay to run on the platform (distinct from storefront GMV above)."
+    >
+      {isError ? (
+        <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+          Couldn't load billing — it may not be configured for this fleet yet.
+        </p>
+      ) : isPending ? (
+        <Spinner label="Loading revenue…" />
+      ) : !data || data.payingTenants === 0 ? (
+        <EmptyState
+          title="No active subscriptions yet."
+          hint="Assign tenants to a plan from the platform billing console."
+        />
+      ) : (
+        <div className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-3">
+            <RevenueStat
+              label="MRR"
+              value={`${formatMoney(data.mrrCents)}/mo`}
+              hint={
+                data.atRiskMrrCents > 0
+                  ? `${formatMoney(data.atRiskMrrCents)} past-due (at risk)`
+                  : `${formatMoney(data.addonMrrCents)} from add-ons`
+              }
+            />
+            <RevenueStat
+              label="ARPU"
+              value={`${formatMoney(data.arpuCents)}/mo`}
+              hint="per paying tenant"
+            />
+            <RevenueStat
+              label="Paying tenants"
+              value={data.payingTenants.toLocaleString()}
+              hint={`${data.trialingTenants} trialing · ${data.unsubscribedTenants} unsubscribed`}
+            />
+          </div>
+          {data.byPlan.length > 0 && (
+            <div
+              className="border-t pt-3"
+              style={{ borderColor: "hsl(var(--line-1))" }}
+            >
+              <div
+                className="text-[11px] font-medium mb-2"
+                style={{ color: "hsl(var(--ink-2))" }}
+              >
+                MRR by plan
+              </div>
+              <div className="space-y-1">
+                {data.byPlan.map((p) => (
+                  <div
+                    key={p.planCode}
+                    className="flex items-center justify-between text-xs"
+                  >
+                    <span style={{ color: "hsl(var(--ink-2))" }}>
+                      {p.planName}{" "}
+                      <span style={{ color: "hsl(var(--ink-3))" }}>
+                        ({p.tenants})
+                      </span>
+                    </span>
+                    <span
+                      className="tabular-nums font-medium"
+                      style={{ color: "hsl(var(--ink-1))" }}
+                    >
+                      {formatMoney(p.mrrCents)}/mo
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+// Client-side CSV cell guard: RFC-4180 quoting + formula-injection
+// neutralisation (mirrors the backend safeCsvCell) so an exported
+// leaderboard can't smuggle a `=`/`+`/`-`/`@` formula into a spreadsheet.
+function csvCell(value: unknown): string {
+  if (value == null) return "";
+  let s = String(value);
+  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+  if (/[",\n\r]/.test(s)) s = `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
+function downloadTenantsCsv(
+  rows: PlatformAnalyticsTenantRow[],
+  days: number,
+): void {
+  const header = [
+    "Tenant",
+    "Slug",
+    "Status",
+    `Revenue (${days}d, USD)`,
+    `Paid orders (${days}d)`,
+    `New patients (${days}d)`,
+    "Patients (all-time)",
+    "Orders (all-time)",
+    "Conversations (all-time)",
+  ];
+  const lines = [
+    header,
+    ...rows.map((t) => [
+      t.name ?? t.slug,
+      t.slug,
+      t.status,
+      (t.windowGmvCents / 100).toFixed(2),
+      String(t.windowOrders),
+      String(t.windowNewPatients),
+      t.patients == null ? "" : String(t.patients),
+      t.orders == null ? "" : String(t.orders),
+      t.conversations == null ? "" : String(t.conversations),
+    ]),
+  ];
+  const csv = lines.map((r) => r.map(csvCell).join(",")).join("\r\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `fleet-tenants-${days}d-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function PlatformDashboard() {
+  const [days, setDays] = useState<number>(30);
+  const { data, isPending, isError, refetch, isFetching } =
+    useQuery<PlatformAnalyticsResponse>({
+      queryKey: ["platform-analytics", days],
+      queryFn: () => fetchPlatformAnalytics(days),
+    });
+
+  const columns = useMemo<Column<PlatformAnalyticsTenantRow>[]>(
+    () => [
+      {
+        key: "name",
+        header: "Tenant",
+        render: (t) => (
+          <div>
+            <div className="font-medium" style={{ color: "hsl(var(--ink-1))" }}>
+              {t.name ?? t.slug}
+            </div>
+            <div className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+              {t.slug}
+            </div>
+          </div>
+        ),
+        sortable: true,
+        sortValue: (t) => (t.name ?? t.slug).toLowerCase(),
+      },
+      {
+        key: "status",
+        header: "Status",
+        render: (t) => (
+          <Badge variant={statusVariant(t.status)}>{t.status}</Badge>
+        ),
+        sortable: true,
+        sortValue: (t) => t.status,
+      },
+      {
+        key: "gmv",
+        header: "Revenue",
+        className: "text-right tabular-nums",
+        render: (t) => fmtUsd(t.windowGmvCents),
+        sortable: true,
+        sortValue: (t) => t.windowGmvCents,
+      },
+      {
+        key: "orders",
+        header: "Paid orders",
+        className: "text-right tabular-nums",
+        render: (t) => fmtCount(t.windowOrders),
+        sortable: true,
+        sortValue: (t) => t.windowOrders,
+      },
+      {
+        key: "newPatients",
+        header: "New patients",
+        className: "text-right tabular-nums",
+        render: (t) => fmtCount(t.windowNewPatients),
+        sortable: true,
+        sortValue: (t) => t.windowNewPatients,
+      },
+      {
+        key: "patients",
+        header: "Patients (all-time)",
+        className: "text-right tabular-nums",
+        render: (t) => fmtCount(t.patients),
+        sortable: true,
+        sortValue: (t) => t.patients ?? -1,
+      },
+    ],
+    [],
+  );
+
+  const win = data?.window;
+  const totals = data?.totals;
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title="Dashboard"
+        description="Fleet-wide activity across every tenant. Aggregate counts and revenue only — no patient data is shown here. To see a tenant's actual records, impersonate it from the Tenants tab (audited)."
+        actions={
+          <>
+            <div
+              className="inline-flex rounded-md overflow-hidden border"
+              style={{ borderColor: "hsl(var(--line-1))" }}
+              role="group"
+              aria-label="Time window"
+            >
+              {WINDOW_OPTIONS.map((opt) => {
+                const active = opt === days;
+                return (
+                  <button
+                    key={opt}
+                    type="button"
+                    onClick={() => setDays(opt)}
+                    aria-pressed={active}
+                    className="px-3 py-1.5 text-xs font-medium"
+                    style={{
+                      color: active
+                        ? "hsl(var(--surface-1))"
+                        : "hsl(var(--ink-2))",
+                      backgroundColor: active
+                        ? "hsl(var(--penn-navy))"
+                        : "transparent",
+                    }}
+                  >
+                    {opt}d
+                  </button>
+                );
+              })}
+            </div>
+            <Button
+              intent="secondary"
+              size="sm"
+              isLoading={isFetching}
+              onClick={() => void refetch()}
+            >
+              Refresh
+            </Button>
+          </>
+        }
+      />
+
+      {isError ? (
+        <Card title="Couldn't load analytics">
+          <EmptyState
+            title="The analytics query failed."
+            hint="A transient error — try again."
+            action={
+              <Button
+                intent="secondary"
+                size="sm"
+                onClick={() => void refetch()}
+              >
+                Retry
+              </Button>
+            }
+          />
+        </Card>
+      ) : (
+        <>
+          {/* Headline KPI tiles */}
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <KpiCard
+              label="Active tenants"
+              value={isPending ? "" : fmtCount(totals?.tenants.active)}
+              isLoading={isPending}
+              hint={
+                totals
+                  ? `${totals.tenants.total} total · ${totals.tenants.suspended} suspended` +
+                    (win && win.newTenants > 0
+                      ? ` · +${win.newTenants} new`
+                      : "")
+                  : undefined
+              }
+            />
+            <KpiCard
+              label={`Revenue · ${days}d`}
+              tone="gold"
+              value={isPending ? "" : fmtUsd(win?.gmvCents ?? 0)}
+              isLoading={isPending}
+              hint={
+                win
+                  ? `${win.newOrders.toLocaleString()} paid orders this period`
+                  : undefined
+              }
+            />
+            <KpiCard
+              label={`New patients · ${days}d`}
+              value={isPending ? "" : fmtCount(win?.newPatients)}
+              isLoading={isPending}
+              hint={
+                totals?.patients != null
+                  ? `${totals.patients.toLocaleString()} all-time`
+                  : undefined
+              }
+            />
+            <KpiCard
+              label={`Conversations · ${days}d`}
+              value={isPending ? "" : fmtCount(win?.newConversations)}
+              isLoading={isPending}
+              hint={
+                totals?.conversations != null
+                  ? `${totals.conversations.toLocaleString()} all-time`
+                  : undefined
+              }
+            />
+          </div>
+
+          <FleetRevenueCard />
+
+          {isPending || !data ? (
+            <Card title="Fleet trends">
+              <Spinner label="Loading analytics…" />
+            </Card>
+          ) : (
+            <>
+              <Card
+                title="Fleet trends"
+                subtitle={`Daily totals across all tenants for the last ${days} days. Δ compares this period to the one before it.`}
+              >
+                <TrendRow
+                  label="Revenue (GMV)"
+                  total={fmtUsd(data.window.gmvCents)}
+                  values={data.series.gmvCents.map((c) => c / 100)}
+                  delta={data.window.delta.gmvCents}
+                  color="hsl(var(--penn-gold-deep))"
+                />
+                <TrendRow
+                  label="New patients"
+                  total={data.window.newPatients.toLocaleString()}
+                  values={data.series.newPatients}
+                  delta={data.window.delta.newPatients}
+                />
+                <TrendRow
+                  label="Paid orders"
+                  total={data.window.newOrders.toLocaleString()}
+                  values={data.series.newOrders}
+                  delta={data.window.delta.newOrders}
+                />
+                <TrendRow
+                  label="Conversations"
+                  total={data.window.newConversations.toLocaleString()}
+                  values={data.series.newConversations}
+                  delta={data.window.delta.newConversations}
+                />
+              </Card>
+
+              <Card
+                title="Tenant leaderboard"
+                subtitle={`Ranked by revenue over the last ${days} days. Click a column to re-sort.`}
+                action={
+                  data.tenants.length > 0 ? (
+                    <Button
+                      intent="secondary"
+                      size="sm"
+                      onClick={() => downloadTenantsCsv(data.tenants, days)}
+                    >
+                      Export CSV
+                    </Button>
+                  ) : undefined
+                }
+              >
+                <Table<PlatformAnalyticsTenantRow>
+                  columns={columns}
+                  rows={data.tenants}
+                  rowKey={(t) => t.id}
+                  initialSort={{ key: "gmv", dir: "desc" }}
+                  emptyState={<EmptyState title="No tenants yet." />}
+                />
+              </Card>
+
+              <p className="text-[11px]" style={{ color: "hsl(var(--ink-3))" }}>
+                Generated {new Date(data.generatedAt).toLocaleString()} · all
+                times UTC-bucketed
+              </p>
+            </>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── Global integrations (platform infra credentials) ───────────────
+
+function configStatus(s: PlatformConfigSetting): {
+  label: string;
+  variant: "success" | "muted" | "neutral";
+} {
+  if (s.source === "db") return { label: "Set", variant: "success" };
+  if (s.source === "env")
+    return { label: "From environment", variant: "muted" };
+  return { label: "Not set", variant: "neutral" };
+}
+
+function ConfigSettingRow({ setting }: { setting: PlatformConfigSetting }) {
+  const queryClient = useQueryClient();
+  const [value, setValue] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  function invalidate() {
+    void queryClient.invalidateQueries({ queryKey: ["platform-config"] });
+  }
+
+  const save = useMutation({
+    mutationFn: () => setPlatformConfig(setting.key, value),
+    onSuccess: () => {
+      setValue("");
+      setError(null);
+      invalidate();
+    },
+    onError: () => setError("Couldn't save that value."),
+  });
+  const clear = useMutation({
+    mutationFn: () => clearPlatformConfig(setting.key),
+    onSuccess: () => {
+      // Clear any stale "couldn't clear" message so a successful retry
+      // doesn't leave the old error visible.
+      setError(null);
+      invalidate();
+    },
+    onError: () => setError("Couldn't clear that value."),
+  });
+
+  const status = configStatus(setting);
+  const applyBadge =
+    setting.applyMode === "live" ? "Applies live" : "Applies on next deploy";
+
+  return (
+    <div
+      className="py-3 border-t first:border-t-0"
+      style={{ borderColor: "hsl(var(--line-1))" }}
+    >
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div>
+          <div
+            className="text-sm font-medium"
+            style={{ color: "hsl(var(--ink-1))" }}
+          >
+            {setting.label}
+          </div>
+          <div className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+            {setting.description}
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Badge variant={status.variant}>{status.label}</Badge>
+          {setting.hint && (
+            <span
+              className="text-xs font-mono"
+              style={{ color: "hsl(var(--ink-2))" }}
+            >
+              {setting.hint}
+            </span>
+          )}
+        </div>
+      </div>
+      <div className="mt-2 flex items-center gap-2 flex-wrap">
+        <Input
+          type={setting.secret ? "password" : "text"}
+          value={value}
+          placeholder={setting.placeholder ?? "Enter a value…"}
+          autoComplete="off"
+          onChange={(e) => setValue(e.target.value)}
+          className="flex-1 min-w-[12rem]"
+        />
+        <Button
+          intent="secondary"
+          size="sm"
+          disabled={value.trim().length === 0 || save.isPending}
+          isLoading={save.isPending}
+          onClick={() => save.mutate()}
+        >
+          Save
+        </Button>
+        {setting.source === "db" && (
+          <Button
+            intent="ghost"
+            size="sm"
+            disabled={clear.isPending}
+            isLoading={clear.isPending}
+            onClick={() => clear.mutate()}
+          >
+            Clear
+          </Button>
+        )}
+        <span className="text-[11px]" style={{ color: "hsl(var(--ink-3))" }}>
+          {applyBadge}
+        </span>
+      </div>
+      {error && (
+        <p className="text-xs mt-1" style={{ color: "hsl(354 75% 38%)" }}>
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function GlobalIntegrations() {
+  const { data, isPending, isError, refetch } = useQuery({
+    queryKey: ["platform-config"],
+    queryFn: fetchPlatformConfig,
+  });
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title="Global integrations"
+        description="Platform-wide infrastructure credentials — the AI vendors and the platform's own Twilio, Telnyx, SendGrid, and Stripe. Shared by every tenant. A tenant's OWN business accounts (its therapy-cloud and clearinghouse logins) live in that tenant's own settings."
+      />
+      {data?.overlayDisabled && (
+        <Card title="Overlay disabled">
+          <p className="text-xs" style={{ color: "hsl(var(--ink-2))" }}>
+            APP_CONFIG_OVERLAY_DISABLED is set, so saved values are NOT applied
+            to the running process. Unset it to resume using saved
+            configuration.
+          </p>
+        </Card>
+      )}
+      {isPending ? (
+        <Spinner label="Loading configuration…" />
+      ) : isError ? (
+        <EmptyState
+          title="Couldn't load configuration."
+          hint="A transient error — try again."
+          action={
+            <Button intent="secondary" size="sm" onClick={() => void refetch()}>
+              Retry
+            </Button>
+          }
+        />
+      ) : (
+        <>
+          {(data?.categories ?? []).map((cat) => (
+            <Card key={cat.category} title={cat.category}>
+              {cat.settings.map((s) => (
+                <ConfigSettingRow key={s.key} setting={s} />
+              ))}
+            </Card>
+          ))}
+          {data?.webhookReference?.endpoints.length ? (
+            <Card title="Telephony webhook URLs">
+              <p
+                className="text-xs mb-2"
+                style={{ color: "hsl(var(--ink-3))" }}
+              >
+                Paste these into each vendor portal (Twilio for voice/SMS,
+                Telnyx for fax).
+              </p>
+              {data.webhookReference.endpoints.map((e) => (
+                <div
+                  key={e.id}
+                  className="py-2 border-t first:border-t-0"
+                  style={{ borderColor: "hsl(var(--line-1))" }}
+                >
+                  <div
+                    className="text-xs font-medium"
+                    style={{ color: "hsl(var(--ink-1))" }}
+                  >
+                    {e.label}
+                  </div>
+                  <div
+                    className="text-xs font-mono break-all"
+                    style={{ color: "hsl(var(--ink-2))" }}
+                  >
+                    {e.url}
+                  </div>
+                </div>
+              ))}
+            </Card>
+          ) : null}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── Support queue (cross-tenant tickets the bot escalated) ─────────
+
+const SUPPORT_FILTERS: ReadonlyArray<{
+  value: SupportTicketStatus | "all";
+  label: string;
+}> = [
+  { value: "awaiting_platform", label: "Needs reply" },
+  { value: "awaiting_tenant", label: "Waiting on tenant" },
+  { value: "resolved", label: "Resolved" },
+  { value: "all", label: "All" },
+];
+
+function SupportMessageRow({ m }: { m: SupportMessage }) {
+  const label =
+    m.authorRole === "bot"
+      ? "Support bot"
+      : m.authorRole === "platform"
+        ? "You (support)"
+        : "Tenant";
+  return (
+    <div
+      className="rounded-lg px-3 py-2 border"
+      style={{
+        borderColor: "hsl(var(--line-1))",
+        backgroundColor:
+          m.authorRole === "tenant"
+            ? "hsl(var(--surface-2))"
+            : "hsl(var(--penn-navy) / 0.06)",
+      }}
+    >
+      <div className="flex items-center gap-2 mb-1">
+        <span
+          className="text-[11px] font-semibold"
+          style={{ color: "hsl(var(--ink-2))" }}
+        >
+          {label}
+        </span>
+        {m.authorRole === "bot" && <Badge variant="info">AI</Badge>}
+        <span className="text-[10px]" style={{ color: "hsl(var(--ink-3))" }}>
+          {new Date(m.createdAt).toLocaleString()}
+        </span>
+      </div>
+      <p
+        className="text-sm whitespace-pre-wrap leading-snug"
+        style={{ color: "hsl(var(--ink-1))" }}
+      >
+        {m.body}
+      </p>
+    </div>
+  );
+}
+
+function PlatformTicketThread({ id }: { id: string }) {
+  const queryClient = useQueryClient();
+  const [reply, setReply] = useState("");
+  const detail = useQuery({
+    queryKey: ["platform-support-ticket", id],
+    queryFn: () => getPlatformSupportTicket(id),
+  });
+  const invalidate = () => {
+    void queryClient.invalidateQueries({
+      queryKey: ["platform-support-ticket", id],
+    });
+    void queryClient.invalidateQueries({ queryKey: ["platform-support"] });
+  };
+  const send = useMutation({
+    mutationFn: () => replyPlatformSupportTicket(id, reply.trim()),
+    onSuccess: () => {
+      setReply("");
+      invalidate();
+    },
+  });
+  const setStatus = useMutation({
+    mutationFn: (status: SupportTicketStatus) =>
+      setPlatformSupportStatus(id, status),
+    onSuccess: invalidate,
+  });
+
+  if (detail.isPending) return <Spinner label="Loading ticket…" />;
+  if (detail.isError || !detail.data) {
+    return <EmptyState title="Couldn't load that ticket." hint="Try again." />;
+  }
+  const { ticket, messages } = detail.data;
+  const closed = ticket.status === "resolved" || ticket.status === "closed";
+
+  return (
+    <Card
+      title={ticket.subject}
+      subtitle={
+        ticket.tenant
+          ? `${ticket.tenant.name ?? ticket.tenant.slug} · ${ticket.createdByEmail ?? "unknown"}`
+          : (ticket.createdByEmail ?? undefined)
+      }
+      action={
+        <Badge variant={supportStatusVariant(ticket.status)}>
+          {supportStatusLabel(ticket.status)}
+        </Badge>
+      }
+    >
+      <div className="space-y-3">
+        {messages.map((m) => (
+          <SupportMessageRow key={m.id} m={m} />
+        ))}
+      </div>
+      <div
+        className="mt-4 pt-4 border-t space-y-2"
+        style={{ borderColor: "hsl(var(--line-1))" }}
+      >
+        <textarea
+          className="w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2"
+          style={{
+            borderColor: "hsl(var(--line-1))",
+            backgroundColor: "hsl(var(--surface-1))",
+            color: "hsl(var(--ink-1))",
+          }}
+          rows={3}
+          maxLength={6000}
+          value={reply}
+          onChange={(e) => setReply(e.target.value)}
+          placeholder="Reply to the tenant…"
+        />
+        <div className="flex items-center justify-between gap-2">
+          {closed ? (
+            <Button
+              intent="ghost"
+              size="sm"
+              isLoading={setStatus.isPending}
+              onClick={() => setStatus.mutate("awaiting_platform")}
+            >
+              Reopen
+            </Button>
+          ) : (
+            <Button
+              intent="ghost"
+              size="sm"
+              isLoading={setStatus.isPending}
+              onClick={() => setStatus.mutate("resolved")}
+            >
+              Mark resolved
+            </Button>
+          )}
+          <Button
+            size="sm"
+            disabled={reply.trim().length === 0 || send.isPending}
+            isLoading={send.isPending}
+            onClick={() => send.mutate()}
+          >
+            Send reply
+          </Button>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function PlatformSupport() {
+  const [filter, setFilter] = useState<SupportTicketStatus | "all">(
+    "awaiting_platform",
+  );
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const list = useQuery({
+    queryKey: ["platform-support", filter],
+    queryFn: () =>
+      listPlatformSupportTickets(filter === "all" ? undefined : filter),
+  });
+
+  const tickets = list.data?.tickets ?? [];
+  const activeId = selectedId ?? tickets[0]?.id ?? null;
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title="Support queue"
+        description="Tickets tenants filed across the fleet. The intake bot auto-answers how-to questions; anything it escalates lands here as “Needs reply”."
+        actions={
+          <div
+            className="inline-flex rounded-md overflow-hidden border flex-wrap"
+            style={{ borderColor: "hsl(var(--line-1))" }}
+            role="group"
+            aria-label="Filter tickets"
+          >
+            {SUPPORT_FILTERS.map((f) => {
+              const active = f.value === filter;
+              return (
+                <button
+                  key={f.value}
+                  type="button"
+                  onClick={() => {
+                    setFilter(f.value);
+                    setSelectedId(null);
+                  }}
+                  aria-pressed={active}
+                  className="px-3 py-1.5 text-xs font-medium"
+                  style={{
+                    color: active
+                      ? "hsl(var(--surface-1))"
+                      : "hsl(var(--ink-2))",
+                    backgroundColor: active
+                      ? "hsl(var(--penn-navy))"
+                      : "transparent",
+                  }}
+                >
+                  {f.label}
+                </button>
+              );
+            })}
+          </div>
+        }
+      />
+      <div className="grid gap-6 lg:grid-cols-[360px_1fr] items-start">
+        <Card title="Tickets">
+          {list.isPending ? (
+            <Spinner label="Loading…" />
+          ) : tickets.length === 0 ? (
+            <EmptyState title="No tickets here." hint="Nothing in this view." />
+          ) : (
+            <ul className="space-y-1">
+              {tickets.map((t: SupportTicket) => {
+                const active = t.id === activeId;
+                return (
+                  <li key={t.id}>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedId(t.id)}
+                      className="w-full text-left rounded-md px-3 py-2 border"
+                      style={{
+                        borderColor: active
+                          ? "hsl(var(--penn-navy))"
+                          : "hsl(var(--line-1))",
+                        backgroundColor: active
+                          ? "hsl(var(--penn-navy) / 0.06)"
+                          : "transparent",
+                      }}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span
+                          className="text-sm font-medium truncate"
+                          style={{ color: "hsl(var(--ink-1))" }}
+                        >
+                          {t.subject}
+                        </span>
+                        <Badge variant={supportStatusVariant(t.status)}>
+                          {supportStatusLabel(t.status)}
+                        </Badge>
+                      </div>
+                      <div
+                        className="text-[11px]"
+                        style={{ color: "hsl(var(--ink-3))" }}
+                      >
+                        {(t.tenant?.name ?? t.tenant?.slug ?? "tenant") +
+                          " · " +
+                          new Date(t.lastActivityAt).toLocaleDateString()}
+                      </div>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </Card>
+        {activeId ? (
+          <PlatformTicketThread id={activeId} />
+        ) : (
+          <Card title="No ticket selected">
+            <EmptyState
+              title="Select a ticket to view the conversation."
+              hint="Reply, resolve, or reopen from here."
+            />
+          </Card>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Shell ──────────────────────────────────────────────────────────
 
 function PlatformShell({
@@ -400,26 +1427,30 @@ function PlatformShell({
           backgroundColor: "hsl(var(--surface-2))",
         }}
       >
-        <div className="mx-auto max-w-5xl px-4 py-3 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
+        <div className="mx-auto max-w-5xl px-4 py-3 flex items-center justify-between gap-x-4 gap-y-2 flex-wrap">
+          <div className="flex items-center gap-2 min-w-0">
             <span
-              className="text-sm font-bold tracking-tight"
+              className="text-sm font-bold tracking-tight truncate"
               style={{ color: "hsl(var(--ink-1))" }}
             >
               CareMetric Breathe
             </span>
             <Badge variant="info">Platform</Badge>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 min-w-0">
             <Link
               href="/admin"
-              className="text-xs font-medium"
+              className="text-xs font-medium whitespace-nowrap"
               style={{ color: "hsl(var(--penn-navy))" }}
             >
               Admin console
             </Link>
             {email && (
-              <span className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+              <span
+                className="text-xs truncate hidden sm:inline"
+                style={{ color: "hsl(var(--ink-3))" }}
+                title={email}
+              >
                 {email}
               </span>
             )}
@@ -435,8 +1466,73 @@ function PlatformShell({
           </div>
         </div>
       </header>
+      <PlatformNav />
       <main className="mx-auto max-w-5xl px-4 py-8">{children}</main>
     </div>
+  );
+}
+
+const PLATFORM_NAV: ReadonlyArray<{ href: string; label: string }> = [
+  { href: "/platform", label: "Dashboard" },
+  { href: "/platform/tenants", label: "Tenants" },
+  { href: "/platform/outreach", label: "Outreach" },
+  { href: "/platform/billing", label: "Billing" },
+  { href: "/platform/support", label: "Support" },
+  { href: "/platform/integrations", label: "Global integrations" },
+  { href: "/platform/connection-tests", label: "Connection tests" },
+  { href: "/platform/account-setup", label: "Account setup" },
+  { href: "/platform/system", label: "System info" },
+];
+
+function PlatformConnectionTests() {
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title="Connection tests"
+        description="Send a real test email, SMS, voice call, or AI chat to confirm the platform's SendGrid / Twilio / AI vendor credentials actually work."
+      />
+      <ConnectionTests />
+    </div>
+  );
+}
+
+function PlatformNav() {
+  const [location] = useLocation();
+  return (
+    <nav
+      className="border-b"
+      style={{
+        borderColor: "hsl(var(--line-1))",
+        backgroundColor: "hsl(var(--surface-1))",
+      }}
+      aria-label="Platform navigation"
+    >
+      {/* On narrow screens the eight tabs exceed the viewport width, so the
+          row scrolls horizontally instead of overflowing the page. Items
+          stay on one line (`whitespace-nowrap` + `shrink-0`). */}
+      <div className="mx-auto max-w-5xl px-4 flex items-center gap-1 overflow-x-auto">
+        {PLATFORM_NAV.map((item) => {
+          const active =
+            item.href === "/platform"
+              ? location === "/platform"
+              : location === item.href || location.startsWith(`${item.href}/`);
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              aria-current={active ? "page" : undefined}
+              className="text-xs font-medium px-3 py-2.5 -mb-px border-b-2 whitespace-nowrap shrink-0"
+              style={{
+                color: active ? "hsl(var(--penn-navy))" : "hsl(var(--ink-3))",
+                borderColor: active ? "hsl(var(--penn-navy))" : "transparent",
+              }}
+            >
+              {item.label}
+            </Link>
+          );
+        })}
+      </div>
+    </nav>
   );
 }
 
@@ -477,8 +1573,25 @@ function PlatformConsole() {
   return (
     <PlatformShell email={data?.email ?? null}>
       <Switch>
-        <Route path="/platform" component={TenantDirectory} />
+        <Route path="/platform" component={PlatformDashboard} />
         <Route path="/platform/tenants" component={TenantDirectory} />
+        <Route path="/platform/outreach" component={PlatformOutreachPage} />
+        <Route path="/platform/billing" component={AdminPlatformBillingPage} />
+        <Route path="/platform/support" component={PlatformSupport} />
+        {/* Legacy "Fleet overview" URL — folded into the Dashboard. */}
+        <Route path="/platform/overview">
+          <Redirect to="/platform" replace />
+        </Route>
+        <Route path="/platform/integrations" component={GlobalIntegrations} />
+        <Route
+          path="/platform/connection-tests"
+          component={PlatformConnectionTests}
+        />
+        <Route
+          path="/platform/account-setup"
+          component={AdminAccountSetupPage}
+        />
+        <Route path="/platform/system" component={PlatformSystemInfoPage} />
         <Route>
           <Redirect to="/platform" replace />
         </Route>

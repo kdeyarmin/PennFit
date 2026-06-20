@@ -92,7 +92,15 @@ export interface AutoEnrollSweepStats {
  * without a recent/open coaching plan, and open a plan for the early-risk
  * ones (capped per run). Returns a stats envelope for the worker to log.
  */
-export async function runCoachingAutoEnrollSweep(): Promise<AutoEnrollSweepStats> {
+export async function runCoachingAutoEnrollSweep(
+  /**
+   * Tenant to sweep. The daily cron fans out across every active tenant
+   * (worker/jobs/coaching-auto-enroll.ts) and ALWAYS passes an explicit
+   * orgId. Left optional only for any non-cron caller, which falls back to
+   * the seed org for back-compat.
+   */
+  explicitOrgId?: string,
+): Promise<AutoEnrollSweepStats> {
   const stats: AutoEnrollSweepStats = {
     candidates: 0,
     scored: 0,
@@ -103,7 +111,7 @@ export async function runCoachingAutoEnrollSweep(): Promise<AutoEnrollSweepStats
   // Resolve the tenant for the file-local worker pattern. A missing org
   // degrades to the zeroed stats envelope (the same "nothing to do" shape
   // the no-candidates branch returns).
-  const orgId = await resolveSeedOrgId();
+  const orgId = explicitOrgId ?? (await resolveSeedOrgId());
   if (!orgId) return stats;
   const supabase = getOrgScopedClient(orgId);
 

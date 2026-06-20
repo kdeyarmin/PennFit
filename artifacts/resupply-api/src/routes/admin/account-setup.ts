@@ -14,18 +14,18 @@
 //
 // Privacy posture (identical to /admin/system-info): env-var VALUES
 // are NEVER returned — only "is this set?" booleans and small live
-// counts. There is no raw pg / drizzle here; the only data path is the
+// counts. There is no raw pg / ORM here; the only data path is the
 // Supabase service-role client, and every DB probe is individually
 // wrapped so this page still renders when the database isn't set up
 // yet — which is the whole point of a setup checklist.
 
 import { Router, type IRouter } from "express";
 
-import { getOrgScopedClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 import { hasLinkHmacKey } from "@workspace/resupply-secrets";
 
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePlatformAdmin } from "../../middlewares/requirePlatformAdmin";
 
 const router: IRouter = Router();
 
@@ -497,13 +497,18 @@ async function probeFirstAdmin(orgId: string): Promise<ProbeResult> {
 }
 
 router.get(
-  "/admin/account-setup",
+  "/platform/account-setup",
   adminReadRateLimiter,
-  requireAdmin,
-  async (req, res) => {
-    const orgId = req.orgId;
+  requirePlatformAdmin,
+  async (_req, res) => {
+    // The launch checklist describes the whole deployment, so it's a
+    // platform super-admin surface (requirePlatformAdmin), not a
+    // per-tenant one. The two org-scoped probes (schema reachability and
+    // "is there a first admin") run against the platform's own tenant —
+    // the seed org — which is the deployment's canonical first tenant.
+    const orgId = await resolveSeedOrgId();
     if (!orgId) {
-      res.status(500).json({ error: "tenant_context_missing" });
+      res.status(500).json({ error: "seed_org_unavailable" });
       return;
     }
     const [schema, admin] = await Promise.all([

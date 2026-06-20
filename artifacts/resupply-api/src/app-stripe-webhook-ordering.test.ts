@@ -41,12 +41,21 @@ vi.hoisted(() => {
 const captured = vi.hoisted(() => ({
   body: null as unknown,
   isBuffer: false,
+  platformBody: null as unknown,
+  platformIsBuffer: false,
 }));
 
 vi.mock("./lib/stripe/webhook-handler", () => ({
   stripeWebhookHandler: (req: Request, res: Response) => {
     captured.body = req.body;
     captured.isBuffer = Buffer.isBuffer(req.body);
+    res.status(200).send("ok");
+  },
+  // The dedicated platform-billing webhook is mounted with the same
+  // raw-body-before-express.json() contract; pin it the same way.
+  stripePlatformBillingWebhookHandler: (req: Request, res: Response) => {
+    captured.platformBody = req.body;
+    captured.platformIsBuffer = Buffer.isBuffer(req.body);
     res.status(200).send("ok");
   },
 }));
@@ -65,5 +74,18 @@ describe("Stripe webhook middleware ordering", () => {
 
     expect(captured.isBuffer).toBe(true);
     expect((captured.body as Buffer).toString("utf8")).toBe(payload);
+  });
+
+  it("delivers a raw Buffer body to the dedicated platform-billing handler too", async () => {
+    const payload = '{"id":"evt_test_platform_ordering","type":"ping"}';
+
+    await request(app)
+      .post("/resupply-api/stripe/platform-webhook")
+      .set("content-type", "application/json")
+      .send(payload)
+      .expect(200);
+
+    expect(captured.platformIsBuffer).toBe(true);
+    expect((captured.platformBody as Buffer).toString("utf8")).toBe(payload);
   });
 });

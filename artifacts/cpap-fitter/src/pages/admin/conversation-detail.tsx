@@ -103,6 +103,26 @@ export function ConversationDetailPage({ id }: { id: string }) {
     );
   }
 
+  // Defensive: a 200 with a malformed / empty body (no id) would
+  // otherwise crash on the `data.messages` deref below and bubble to
+  // the top-level ErrorBoundary ("Something went wrong"). Render a
+  // recoverable empty state instead so the operator keeps their nav.
+  if (!data.id) {
+    return (
+      <div className="space-y-4 max-w-4xl">
+        <BackLink />
+        <Card>
+          <EmptyState
+            title="Conversation unavailable."
+            hint="This thread couldn't be loaded. Go back to the inbox and try again."
+          />
+        </Card>
+      </div>
+    );
+  }
+
+  const messages = data.messages ?? [];
+
   return (
     /*
       Keyed on the conversation id: this page receives a NEW `id` prop
@@ -234,14 +254,14 @@ export function ConversationDetailPage({ id }: { id: string }) {
           </Card>
 
           <Card>
-            {data.messages.length === 0 ? (
+            {messages.length === 0 ? (
               <EmptyState
                 title="No messages yet."
                 hint="Use the action bar below to send the first reminder."
               />
             ) : (
               <ol className="flex flex-col gap-3">
-                {data.messages.map((m) => {
+                {messages.map((m) => {
                   const isOutbound = m.direction === "outbound";
                   return (
                     <li
@@ -1302,7 +1322,7 @@ function CoachingNotesPanel({
     conversationId,
     "coaching-notes",
   ] as const;
-  const { data, isPending, isError, error } = useQuery({
+  const { data, isPending, isError, error, refetch } = useQuery({
     queryKey,
     queryFn: () => listConversationCoachingNotes(conversationId),
   });
@@ -1322,7 +1342,7 @@ function CoachingNotesPanel({
       {isPending ? (
         <Spinner />
       ) : isError ? (
-        <ErrorPanel error={error} onRetry={() => undefined} />
+        <ErrorPanel error={error} onRetry={() => void refetch()} />
       ) : (data?.notes ?? []).length === 0 ? (
         <p className="text-sm text-muted-foreground">
           No coaching notes yet on this conversation.
@@ -1506,6 +1526,22 @@ function TriagePanel({
     initialSnoozedUntil,
   );
   const [error, setError] = useState<string | null>(null);
+
+  // Tags/snooze are immediate-save (no local dirty/editing buffer), so a
+  // straight re-sync is correct. The parent only remounts on conversation id
+  // change, but the query polls every 60s and refetches after edits — without
+  // these effects, a teammate tagging/snoozing the same thread would never
+  // reach this panel's local state, and a later local save would drop their
+  // change. Depend on a stable key (not the array identity) to avoid an
+  // effect loop from a fresh array on every render.
+  const initialTagsKey = initialTags.join(",");
+  useEffect(() => {
+    setTags(initialTags);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialTagsKey]);
+  useEffect(() => {
+    setSnoozeIso(initialSnoozedUntil);
+  }, [initialSnoozedUntil]);
 
   const saveTags = useMutation({
     mutationFn: (next: string[]) => triageApi.setTags(conversationId, next),

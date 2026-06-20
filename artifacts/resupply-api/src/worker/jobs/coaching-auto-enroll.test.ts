@@ -25,6 +25,13 @@ vi.mock("../../lib/clinical/coaching-auto-enroll", () => ({
   runCoachingAutoEnrollSweep: runSweepMock,
 }));
 
+const listActiveOrgIdsMock = vi.hoisted(() => vi.fn());
+// The cron now fans out across active tenants via forEachActiveOrg, which
+// calls listActiveOrgIds. Pin it to a single tenant for these tests.
+vi.mock("@workspace/resupply-db", () => ({
+  listActiveOrgIds: listActiveOrgIdsMock,
+}));
+
 const logCalls = vi.hoisted(() => ({
   info: vi.fn(),
   error: vi.fn(),
@@ -62,6 +69,8 @@ beforeEach(() => {
     enrolled: 0,
     skippedExistingPlan: 0,
   });
+  listActiveOrgIdsMock.mockReset();
+  listActiveOrgIdsMock.mockResolvedValue(["org-1"]);
   logCalls.info.mockClear();
   logCalls.error.mockClear();
   logCalls.warn.mockClear();
@@ -131,10 +140,12 @@ describe("coaching-plan.auto-enroll-sweep — handler behaviour", () => {
     const handler = boss.work.mock.calls[0][1] as () => Promise<void>;
     await handler();
 
-    expect(runSweepMock).toHaveBeenCalledTimes(1);
+    // Sweep gets the explicit tenant org (never the seed-org default).
+    expect(runSweepMock).toHaveBeenCalledWith("org-1");
     expect(logCalls.info).toHaveBeenCalledWith(
       expect.objectContaining({
         event: "coaching-plan.auto-enroll-sweep.completed",
+        org_id: "org-1",
         candidates: 12,
         enrolled: 2,
         skippedExistingPlan: 3,
@@ -144,15 +155,16 @@ describe("coaching-plan.auto-enroll-sweep — handler behaviour", () => {
     expect(logCalls.error).not.toHaveBeenCalled();
   });
 
-  it("rethrows after logging when the sweep fails (pg-boss retry signal)", async () => {
+  it("isolates a tenant's sweep failure without aborting the scheduler tick", async () => {
+    // forEachActiveOrg logs + tallies the per-tenant failure and never
+    // rejects, so one tenant's DB error can't crash the shared tick.
     process.env.RESUPPLY_COACHING_AUTO_ENROLL_ENABLED = "1";
     const boss = makeBoss();
     runSweepMock.mockRejectedValueOnce(new Error("DB down"));
     await registerCoachingAutoEnrollJob(boss as never);
 
     const handler = boss.work.mock.calls[0][1] as () => Promise<void>;
-    await expect(handler()).rejects.toThrow("DB down");
-    expect(logCalls.error).toHaveBeenCalled();
+    await expect(handler()).resolves.toBeUndefined();
   });
 });
 

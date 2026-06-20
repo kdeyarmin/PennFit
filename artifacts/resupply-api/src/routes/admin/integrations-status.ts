@@ -23,7 +23,7 @@ import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import {
   getIntegrationAdapters,
-  getIntegrationAdaptersWithDbOverrides,
+  getIntegrationAdaptersForOrg,
 } from "../../lib/integrations/registry";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
@@ -60,7 +60,7 @@ router.get(
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
-    const adapters = await getIntegrationAdaptersWithDbOverrides();
+    const adapters = await getIntegrationAdaptersForOrg(orgId);
     const db = getOrgScopedClient(orgId);
     const cutoff = new Date(
       Date.now() - LOOKBACK_DAYS * 86400_000,

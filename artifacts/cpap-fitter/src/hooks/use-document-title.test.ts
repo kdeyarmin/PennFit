@@ -26,37 +26,38 @@ const SRC = readFileSync(
 // SECTION 1 — Static source guards
 // ---------------------------------------------------------------------------
 
-describe("use-document-title — SITE_TITLE_SUFFIX constant", () => {
-  it("defines SITE_TITLE_SUFFIX", () => {
-    expect(SRC).toContain("SITE_TITLE_SUFFIX");
+describe("use-document-title — per-tenant title suffix", () => {
+  it("derives the title suffix from the resolving tenant's brand", () => {
+    // Multi-tenant: the tab-title suffix comes from the live company brand
+    // (useCompanyContact), not a hardcoded constant.
+    expect(SRC).toContain("useCompanyContact");
+    expect(SRC).toContain("siteTitleSuffix");
+    expect(SRC).toContain("` — ${company.name}`");
   });
 
-  it("SITE_TITLE_SUFFIX includes the PennPaps brand name", () => {
-    expect(SRC).toContain("PennPaps");
+  it("uses an em-dash separator", () => {
+    expect(SRC).toContain(" — $");
   });
 
-  it("SITE_TITLE_SUFFIX uses an em-dash separator", () => {
-    expect(SRC).toContain(" — PennPaps");
-  });
-
-  it("SITE_TITLE_SUFFIX includes the full practice name", () => {
-    expect(SRC).toContain("Penn Home Medical Supply");
+  it("does NOT hardcode the seed tenant brand in the title suffix", () => {
+    // The seed tenant ("PennPaps" / "Penn Home Medical Supply") must not be
+    // baked into the shared bundle as the title suffix for every tenant.
+    expect(SRC).not.toContain(" — PennPaps");
+    expect(SRC).not.toContain("Penn Home Medical Supply");
   });
 });
 
-describe("use-document-title — CANONICAL_ORIGIN constant", () => {
-  it("defines CANONICAL_ORIGIN", () => {
-    expect(SRC).toContain("CANONICAL_ORIGIN");
+describe("use-document-title — canonical origin", () => {
+  it("canonicalizes to the LIVE origin so each tenant self-canonicalizes", () => {
+    // Each tenant is served at its own apex in production, so the canonical
+    // (and OG/JSON-LD url) must derive from window.location.origin — never a
+    // hardcoded seed-tenant host.
+    expect(SRC).toContain("window.location.origin");
+    expect(SRC).toContain("canonicalOrigin");
   });
 
-  it("hardcodes the production origin (not window.location.origin)", () => {
-    expect(SRC).toContain('"https://pennpaps.com"');
-    expect(SRC).not.toContain("window.location.origin");
-  });
-
-  it("does not include a trailing slash in CANONICAL_ORIGIN", () => {
-    // A trailing slash would produce double-slashes in canonical URLs.
-    expect(SRC).not.toContain('"https://pennpaps.com/"');
+  it("does NOT hardcode the seed tenant origin", () => {
+    expect(SRC).not.toContain('"https://pennpaps.com"');
   });
 });
 
@@ -79,8 +80,8 @@ describe("use-document-title — hook export and signature", () => {
 });
 
 describe("use-document-title — title building logic", () => {
-  it("builds full title by appending SITE_TITLE_SUFFIX to pageTitle", () => {
-    expect(SRC).toContain("`${pageTitle}${SITE_TITLE_SUFFIX}`");
+  it("builds full title by appending the tenant title suffix to pageTitle", () => {
+    expect(SRC).toContain("`${pageTitle}${siteTitleSuffix}`");
   });
 
   it("uses previous title as fallback when pageTitle is empty", () => {
@@ -88,7 +89,7 @@ describe("use-document-title — title building logic", () => {
     // falls through to `previousTitle` so the tab title is unchanged.
     expect(SRC).toContain(": previousTitle");
     // The ternary produces the full title when pageTitle is truthy.
-    expect(SRC).toContain("? `${pageTitle}${SITE_TITLE_SUFFIX}`");
+    expect(SRC).toContain("? `${pageTitle}${siteTitleSuffix}`");
   });
 });
 
@@ -115,8 +116,8 @@ describe("use-document-title — canonical URL computation", () => {
     expect(SRC).toContain('.replace(/\\/+$/, "")');
   });
 
-  it("builds the canonical href by prepending CANONICAL_ORIGIN", () => {
-    expect(SRC).toContain("`${CANONICAL_ORIGIN}${canonicalPath}`");
+  it("builds the canonical href by prepending the live canonical origin", () => {
+    expect(SRC).toContain("`${canonicalOrigin}${canonicalPath}`");
   });
 });
 

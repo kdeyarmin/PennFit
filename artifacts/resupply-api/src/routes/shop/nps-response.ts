@@ -31,9 +31,10 @@ import { Router, type IRouter, type Request } from "express";
 import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { z } from "zod";
 
-import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { resolveOrgIdForSignedRecord } from "../../lib/storefront/signed-link-org";
 import { verifyNpsToken } from "../../lib/nps-token";
 
 const router: IRouter = Router();
@@ -83,7 +84,14 @@ router.post("/shop/orders/nps", npsRateLimiter, async (req, res) => {
     return;
   }
 
-  const orgId = await resolveSeedOrgId();
+  // Public capture endpoint — no auth middleware populates req.orgId. The
+  // HMAC token is the authorization; derive the order's owning tenant from
+  // its record (the sanctioned signed-link pattern) so a tenant-B rating
+  // lands in tenant B regardless of which host the patient clicked from.
+  const orgId = await resolveOrgIdForSignedRecord(
+    "shop_orders",
+    verified.orderId,
+  );
   if (!orgId) {
     res.status(503).json({ error: "tenant_unavailable" });
     return;

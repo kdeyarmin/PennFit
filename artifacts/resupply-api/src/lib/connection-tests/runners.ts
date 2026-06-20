@@ -137,9 +137,9 @@ function nonEmpty(v: string | undefined | null): v is string {
 }
 
 function emailConfigured(env: NodeJS.ProcessEnv): boolean {
-  // The From address is a fixed platform constant that createSendgridClient
-  // defaults to (info@pennpaps.com), so the API key is the only thing that
-  // actually gates whether we can send.
+  // The From address is a platform constant that createSendgridClient
+  // defaults to (noreply@cmbreathe.com), so the API key is the only thing
+  // that actually gates whether we can send.
   return nonEmpty(env.SENDGRID_API_KEY);
 }
 
@@ -322,11 +322,15 @@ export async function runSmsTest(
       };
     }
     if (err instanceof TwilioApiError) {
+      // An empty Messaging Service Sender Pool (21704 / 21703) is often
+      // rejected synchronously at create time. Append the actionable hint
+      // so the operator gets the real fix, not a bare code.
+      const hint = twilioSenderPoolHint(err.code);
       return {
         ok: false,
         channel: "sms",
         code: "upstream_error",
-        message: cap(err.message),
+        message: cap(hint ? `${err.message} — ${hint}` : err.message),
         upstream: { status: err.status ?? null, code: err.code ?? null },
       };
     }
@@ -368,19 +372,25 @@ export async function runSmsTest(
 
   if (delivery.terminal) {
     // Reached undelivered / failed — a real, carrier-level failure. Surface
-    // the Twilio error code (e.g. 30032 = toll-free number not verified)
-    // so the operator gets an actionable reason instead of a false green.
+    // the Twilio error code (e.g. 30032 = toll-free number not verified,
+    // 21704 = Messaging Service Sender Pool is empty) so the operator gets
+    // an actionable reason instead of a false green. The empty-pool family
+    // gets its own hint — the generic toll-free/10DLC default would
+    // actively mislead, since nothing was ever sent for lack of a sender.
     const codePart =
       delivery.errorCode != null ? ` (Twilio error ${delivery.errorCode})` : "";
     const reason = delivery.errorMessage ? `: ${delivery.errorMessage}` : "";
+    const hint =
+      twilioSenderPoolHint(delivery.errorCode) ??
+      "Common cause: the sender number's toll-free/10DLC verification is " +
+        "not yet approved.";
     return {
       ok: false,
       channel: "sms",
       code: "upstream_error",
       message: cap(
         `Twilio accepted the message but the carrier reported it as ` +
-          `"${delivery.status}"${codePart}${reason}. Common cause: the ` +
-          `sender number's toll-free/10DLC verification is not yet approved.`,
+          `"${delivery.status}"${codePart}${reason}. ${hint}`,
       ),
       upstream: { status: null, code: delivery.errorCode ?? null },
     };
@@ -615,6 +625,37 @@ async function runOpenAiChatTest(
 function cap(s: string, max = 300): string {
   if (s.length <= max) return s;
   return `${s.slice(0, max - 1)}…`;
+}
+
+/**
+ * Actionable operator guidance for the Twilio "Messaging Service has no
+ * usable sender" error family, or null when we have no special advice
+ * (the caller falls back to its generic hint).
+ *
+ *   * 21704 — the Messaging Service's Sender Pool is empty.
+ *   * 21703 — the Messaging Service has no sender eligible for THIS
+ *             message (no phone number / short code / alpha sender it can
+ *             pick for the destination).
+ *
+ * Both present identically to an operator — nothing was ever sent because
+ * Twilio had no `From` to choose — and the fix is the same: add an
+ * SMS-capable number to the service's Sender Pool. This is deliberately
+ * NOT the toll-free/10DLC verification case (e.g. 30032), so the default
+ * "verification not approved" hint would actively mislead here.
+ */
+function twilioSenderPoolHint(
+  code: number | string | null | undefined,
+): string | null {
+  const n = typeof code === "string" ? Number(code) : code;
+  if (n === 21704 || n === 21703) {
+    return (
+      "The Messaging Service has no usable sender in its Sender Pool. Add " +
+      "an SMS-capable phone number to the Messaging Service in the Twilio " +
+      "Console (Messaging → Services → your service → Sender Pool), then " +
+      "retry."
+    );
+  }
+  return null;
 }
 
 /** Pull the human-readable `error.message` out of an OpenAI error body. */

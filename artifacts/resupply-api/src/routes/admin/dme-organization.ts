@@ -215,7 +215,7 @@ router.get(
       .schema("resupply")
       .from("dme_organization")
       .select("*")
-      .eq("singleton", true)
+      .eq("org_id", orgId)
       .limit(1)
       .maybeSingle();
     if (!org) {
@@ -272,6 +272,11 @@ router.put(
     const supabase = getOrgScopedClient(orgId).raw();
     const payload: Database["resupply"]["Tables"]["dme_organization"]["Insert"] =
       {
+        // Per-tenant billing identity (migration 0375): scope by org_id, not
+        // the legacy `singleton` flag. `.raw()` does not auto-stamp org_id, so
+        // set it explicitly — otherwise a second tenant's save would land an
+        // org_id-less row and the singleton lookup would clobber the seed.
+        org_id: orgId,
         singleton: true,
         legal_name: b.legalName,
         dba_name: b.dbaName ?? null,
@@ -324,7 +329,7 @@ router.put(
       .schema("resupply")
       .from("dme_organization")
       .select("id")
-      .eq("singleton", true)
+      .eq("org_id", orgId)
       .limit(1)
       .maybeSingle();
     let rowId: string;
@@ -403,7 +408,7 @@ router.post(
       .schema("resupply")
       .from("dme_organization")
       .select("id")
-      .eq("singleton", true)
+      .eq("org_id", orgId)
       .limit(1)
       .maybeSingle();
     if (!org) {
@@ -490,11 +495,27 @@ router.patch(
       return;
     }
     const supabase = getOrgScopedClient(orgId).raw();
+    // Constrain the contact to THIS tenant's org (dme_organization_contacts is
+    // organization_id-keyed, no org_id of its own): resolve the caller's org
+    // row, then scope the update by organization_id so a contact id from
+    // another tenant can't be patched.
+    const { data: orgRow } = await supabase
+      .schema("resupply")
+      .from("dme_organization")
+      .select("id")
+      .eq("org_id", orgId)
+      .limit(1)
+      .maybeSingle();
+    if (!orgRow) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
     const { data: updated, error } = await supabase
       .schema("resupply")
       .from("dme_organization_contacts")
       .update(update)
       .eq("id", idParsed.data.id)
+      .eq("organization_id", orgRow.id)
       .select("id");
     if (error) throw error;
     if (!updated || updated.length === 0) {
@@ -524,11 +545,25 @@ router.delete(
       return;
     }
     const supabase = getOrgScopedClient(orgId).raw();
+    // Scope the delete to a contact owned by THIS tenant's org (see the PATCH
+    // handler) so another tenant's contact id can't be deleted.
+    const { data: orgRow } = await supabase
+      .schema("resupply")
+      .from("dme_organization")
+      .select("id")
+      .eq("org_id", orgId)
+      .limit(1)
+      .maybeSingle();
+    if (!orgRow) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
     const { error } = await supabase
       .schema("resupply")
       .from("dme_organization_contacts")
       .delete()
-      .eq("id", idParsed.data.id);
+      .eq("id", idParsed.data.id)
+      .eq("organization_id", orgRow.id);
     if (error) throw error;
     res.json({ ok: true });
   },

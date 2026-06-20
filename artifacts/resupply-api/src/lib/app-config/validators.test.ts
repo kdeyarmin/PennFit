@@ -5,6 +5,8 @@ import {
   FORMAT_RULE_KEYS,
   checkConfigFormat,
   configFormatHint,
+  isPhoneNumberConfigKey,
+  normalizeConfigValueForSave,
 } from "./validators";
 
 describe("checkConfigFormat", () => {
@@ -53,6 +55,52 @@ describe("checkConfigFormat", () => {
   it("exposes a human hint for keys with a rule", () => {
     expect(configFormatHint("OPENAI_API_KEY")).toBeTruthy();
     expect(configFormatHint("DEEPGRAM_API_KEY")).toBeNull();
+  });
+});
+
+describe("normalizeConfigValueForSave", () => {
+  it("upgrades a bare US number to E.164 for phone-number keys", () => {
+    // The exact case that motivated this: an operator typing the number
+    // without the +1 country code.
+    expect(
+      normalizeConfigValueForSave("TWILIO_PHONE_NUMBER", "8149169606"),
+    ).toBe("+18149169606");
+    expect(
+      normalizeConfigValueForSave("TWILIO_PHONE_NUMBER", "(814) 916-9606"),
+    ).toBe("+18149169606");
+    expect(
+      normalizeConfigValueForSave("TWILIO_PHONE_NUMBER", "1 814 916 9606"),
+    ).toBe("+18149169606");
+    expect(
+      normalizeConfigValueForSave("TELNYX_FAX_FROM_NUMBER", "2155551234"),
+    ).toBe("+12155551234");
+  });
+
+  it("leaves an already-E.164 number unchanged (idempotent)", () => {
+    expect(
+      normalizeConfigValueForSave("TWILIO_PHONE_NUMBER", "+18149169606"),
+    ).toBe("+18149169606");
+  });
+
+  it("passes an unparseable value through so the advisory check can flag it", () => {
+    expect(normalizeConfigValueForSave("TWILIO_PHONE_NUMBER", "12345")).toBe(
+      "12345",
+    );
+  });
+
+  it("never rewrites non-phone keys", () => {
+    const sid = "AC" + "a".repeat(32);
+    expect(normalizeConfigValueForSave("TWILIO_ACCOUNT_SID", sid)).toBe(sid);
+    expect(normalizeConfigValueForSave("OPENAI_API_KEY", "sk-abc")).toBe(
+      "sk-abc",
+    );
+  });
+
+  it("recognises which keys are phone-number keys", () => {
+    expect(isPhoneNumberConfigKey("TWILIO_PHONE_NUMBER")).toBe(true);
+    expect(isPhoneNumberConfigKey("TELNYX_FAX_FROM_NUMBER")).toBe(true);
+    expect(isPhoneNumberConfigKey("TWILIO_ACCOUNT_SID")).toBe(false);
+    expect(isPhoneNumberConfigKey("OPENAI_API_KEY")).toBe(false);
   });
 });
 

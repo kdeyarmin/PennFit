@@ -631,15 +631,17 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   Talk to us
                 </div>
                 <ul className="space-y-1 text-sm">
-                  <li>
-                    <a
-                      href={`tel:${contact.phoneE164}`}
-                      className="text-muted-foreground hover:text-primary transition-colors"
-                      data-testid="footer-support-phone"
-                    >
-                      {contact.phoneDisplay}
-                    </a>
-                  </li>
+                  {contact.phoneE164 && (
+                    <li>
+                      <a
+                        href={`tel:${contact.phoneE164}`}
+                        className="text-muted-foreground hover:text-primary transition-colors"
+                        data-testid="footer-support-phone"
+                      >
+                        {contact.phoneDisplay}
+                      </a>
+                    </li>
+                  )}
                   <li>
                     <a
                       href={`mailto:${contact.email}`}

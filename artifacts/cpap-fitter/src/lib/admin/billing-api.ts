@@ -414,6 +414,58 @@ export function quickCheckEligibility(
   );
 }
 
+// ─── Insurance discovery (no patient record) ────────────────────────
+
+export interface DiscoveredCoverage {
+  payerName: string;
+  payerId: string | null;
+  memberId: string | null;
+  planName: string | null;
+  isActive: boolean;
+  coverageStart: string | null;
+  coverageEnd: string | null;
+}
+
+export type InsuranceDiscoveryResult =
+  | {
+      status: "found";
+      coverages: DiscoveredCoverage[];
+      activeCount: number;
+      latencyMs: number;
+    }
+  | { status: "none"; latencyMs: number };
+
+export interface InsuranceDiscoveryRequest {
+  firstName: string;
+  lastName: string;
+  /** YYYY-MM-DD */
+  dateOfBirth: string;
+  gender?: "M" | "F" | "U";
+  /** SSN digits — optional, lifts the match rate. */
+  ssn?: string;
+  /** A stale member-id hint, when on hand. */
+  memberId?: string;
+  /** 5- or 9-digit ZIP. */
+  postalCode?: string;
+  /** As-of date for the search (YYYY-MM-DD); defaults to today. */
+  serviceDate?: string;
+}
+
+/**
+ * Search the payer network for active coverage from typed-in demographics.
+ * Nothing is persisted server-side. Non-2xx surfaces as ApiError whose body
+ * carries { error, message } (addon_not_enabled / discovery_not_configured /
+ * discovery_failed).
+ */
+export function runInsuranceDiscovery(
+  body: InsuranceDiscoveryRequest,
+): Promise<InsuranceDiscoveryResult> {
+  return postJSON<InsuranceDiscoveryResult>(
+    "/admin/billing/insurance-discovery",
+    body,
+  );
+}
+
 // ─── Prior-auth queue (system-wide) ─────────────────────────────────
 
 export type PriorAuthStatus =

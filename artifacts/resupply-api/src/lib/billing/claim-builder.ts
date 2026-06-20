@@ -493,12 +493,26 @@ async function resolveRuleContext(
   ).length;
   const isCompliant = compliantNights >= COMPLIANCE_MIN_NIGHTS;
 
+  // ABN on file — any signed Advance Beneficiary Notice acknowledgement for
+  // this patient. Drives the `if_abn_on_file` payer rule (e.g. stamp GA on
+  // an expected-non-coverage line). A lookup error degrades to "no ABN" so
+  // we never silently shift liability to the patient on bad data.
+  const { data: abnAck } = await supabase
+    .from("patient_form_acknowledgements")
+    .select("id")
+    .eq("patient_id", patientId)
+    .eq("form_kind", "abn")
+    .limit(1)
+    .maybeSingle();
+  const isAbnOnFile = Boolean(abnAck);
+
   return {
     rentalMonth,
     isPurchased: false,
     isCompliant,
     isInitialDispense: !priorCpapLines || priorCpapLines.length === 0,
     hasPriorAuth,
+    isAbnOnFile,
   };
 }
 

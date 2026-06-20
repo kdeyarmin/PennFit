@@ -78,8 +78,8 @@ export function AdminOrders() {
             Orders
           </h1>
           <p className="text-muted-foreground mt-1 text-sm">
-            All orders submitted through PennPaps. Click a row to view full
-            patient detail.
+            All orders submitted through your storefront. Click a row to view
+            full patient details.
           </p>
         </div>
       </div>

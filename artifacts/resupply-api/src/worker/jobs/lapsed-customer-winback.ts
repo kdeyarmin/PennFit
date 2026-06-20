@@ -278,6 +278,7 @@ async function winbackSweepForOrg(
           toEmail: row.email_lower,
           firstName,
           monthsSinceLastOrder: monthsSince,
+          orgId,
         });
         if (!result.configured) {
           await rollbackWinbackStamp(
