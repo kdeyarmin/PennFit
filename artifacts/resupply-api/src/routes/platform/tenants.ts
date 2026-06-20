@@ -118,7 +118,6 @@ async function provisionTenantFeatureFlags(
   if (insErr) throw insErr;
   return rows.length;
 }
-
 router.get(
   "/platform/tenants",
   adminReadRateLimiter,
@@ -237,8 +236,8 @@ async function setTenantStatus(
     targetTable: "organizations",
     targetId: id,
     metadata: { slug: (existing as { slug: string }).slug, status: nextStatus },
-    ip: null,
-    userAgent: null,
+    ip: req.ip ?? null,
+    userAgent: req.get("user-agent") ?? null,
   }).catch((err) => {
     logger.warn({ err }, "platform: tenant status audit write failed");
   });
@@ -504,5 +503,4 @@ router.get(
     res.json({ tenants, generatedAt: new Date().toISOString() });
   },
 );
-
 export default router;
