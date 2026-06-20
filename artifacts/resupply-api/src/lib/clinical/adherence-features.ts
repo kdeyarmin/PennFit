@@ -11,9 +11,12 @@
 // week-1→week-2 trend, so a trained model can later supersede the
 // heuristic on the same inputs.
 
-const COMPLIANT_MINUTES = 240;
-const CMS_COMPLIANT_NIGHTS = 21;
-const CMS_WINDOW_DAYS = 30;
+import {
+  COMPLIANT_MINUTES_PER_NIGHT as COMPLIANT_MINUTES,
+  CMS_COMPLIANT_NIGHTS,
+  WINDOW_DAYS as CMS_WINDOW_DAYS,
+} from "@workspace/resupply-domain";
+
 const HIGH_LEAK_LMIN = 24;
 
 export interface TherapyNightInput {

@@ -36,6 +36,7 @@ import {
   type CsrComplianceAlertType,
   type OrgScopedClient,
 } from "@workspace/resupply-db";
+import { COMPLIANT_MINUTES_PER_NIGHT as MIN_GOOD_NIGHT_MINUTES } from "@workspace/resupply-domain";
 
 import { maybeDispatchLowUsageCheckinAlert } from "./alerts/low-usage-checkin-trigger";
 import { logger } from "./logger";
@@ -83,7 +84,6 @@ interface JourneyScanRow {
 }
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
-const MIN_GOOD_NIGHT_MINUTES = 240; // 4 hours
 const DEFAULT_CAP = 200;
 
 export async function scanCompliance(

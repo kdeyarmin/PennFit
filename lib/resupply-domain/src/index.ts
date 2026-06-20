@@ -3,6 +3,18 @@
 
 export { RENEWAL_WINDOW_DAYS } from "./dispatcher-constants";
 
+export {
+  COMPLIANT_MINUTES_PER_NIGHT,
+  COMPLIANCE_NIGHT_RATIO,
+  WINDOW_DAYS,
+  ATTESTATION_HORIZON_DAYS,
+  CMS_COMPLIANT_NIGHTS,
+  findBestAdherenceWindow,
+  type AdherenceNight,
+  type AdherenceWindow,
+  type AdherenceResult,
+} from "./cms-adherence";
+
 export { normalizeE164 } from "./phone";
 
 export { timezoneForUsState } from "./us-timezone";
