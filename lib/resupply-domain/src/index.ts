@@ -92,3 +92,64 @@ export {
   type ChannelEconomics,
   type LtvCacReport,
 } from "./ltv-cac";
+
+export {
+  generateInstallmentSchedule,
+  computePlanSummary,
+  derivePlanStatus,
+  type PlanFrequency,
+  type ScheduledInstallment,
+  type InstallmentStatus,
+  type InstallmentRow,
+  type PlanSummary,
+} from "./payment-plan";
+
+export {
+  evaluateSameOrSimilar,
+  SAME_OR_SIMILAR_STATUSES,
+  SAME_OR_SIMILAR_WINDOW_MONTHS,
+  type SameOrSimilarStatus,
+  type SameOrSimilarInput,
+  type SameOrSimilarResult,
+} from "./same-or-similar";
+
+export { prorateCents, type ProrationInput } from "./proration";
+
+export {
+  patientRespBreakdown,
+  PR_DEDUCTIBLE_CARC,
+  PR_COINSURANCE_CARC,
+  PR_COPAY_CARC,
+  type EraAdjustment,
+  type EraClaimAdjustments,
+  type PatientRespBreakdown,
+} from "./era-patient-responsibility";
+
+export {
+  validateSwoCompleteness,
+  isSwoComplete,
+  type SwoInputs,
+  type SwoValidationError,
+} from "./written-order";
+
+export {
+  buildVerificationWorklist,
+  classifyEligibilityRecency,
+  DEFAULT_ELIGIBILITY_STALE_DAYS,
+  DEFAULT_ELIGIBILITY_TERMINATION_LOOKAHEAD_DAYS,
+  type CoverageInput,
+  type VerificationStatus,
+  type VerificationWorkItem,
+  type VerificationWorklist,
+} from "./eligibility-recheck";
+
+export {
+  deriveSecondaryCob,
+  filterSecondaryEligible,
+  type CobDerivation,
+  type CobIneligibleReason,
+  type EligibleCandidate,
+  type EligibleItem,
+  type PrimaryClaimTotals,
+  type SecondaryCob,
+} from "./secondary-cob";

@@ -16,6 +16,8 @@
 //
 // Posture: aggregate dollar math only — no patient data, no PHI.
 
+import { prorateCents } from "@workspace/resupply-domain";
+
 /** Inputs describing the current and proposed recurring monthly cost, plus
  *  the current billing period (when known) so we can prorate. */
 export interface BillingPreviewInput {
@@ -101,8 +103,11 @@ export function computeBillingPreview(
   const clampedNow = Math.min(Math.max(now, startMs), endMs);
   const daysRemaining = dayspan(clampedNow, endMs);
 
-  const fraction = periodDays > 0 ? daysRemaining / periodDays : 0;
-  const proratedNowCents = Math.round(deltaMonthlyCents * fraction);
+  const proratedNowCents = prorateCents({
+    amountCents: deltaMonthlyCents,
+    daysRemaining,
+    periodDays,
+  });
 
   return {
     currentMonthlyCents,
