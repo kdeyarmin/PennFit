@@ -21,7 +21,7 @@ router.get("/storefront-branding", async (req, res) => {
   const branding = await resolveBrandingByHost(requestHost(req));
   // Vary on the forwarded host so a shared edge cache can't serve one
   // tenant's brand to another.
-  res.set("Vary", "X-Forwarded-Host");
+  res.set("Vary", "X-Forwarded-Host, Host");
   res.set("Cache-Control", "public, max-age=300");
   res.json(branding);
 });
