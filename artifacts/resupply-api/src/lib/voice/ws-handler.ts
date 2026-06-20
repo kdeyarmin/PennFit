@@ -725,6 +725,7 @@ export async function handleVoiceWsConnection(
         pending.conversationId,
         twilioCallSid,
         deepgramTurns,
+        pending.orgId,
       );
     }
     // Fire-and-forget post-call summarization (Claude Sonnet 4.6 when
@@ -736,6 +737,7 @@ export async function handleVoiceWsConnection(
       practiceName: config.practiceName ?? "PennPaps",
       endReason: reason,
       turns: turnHistory,
+      orgId: pending.orgId,
     });
     try {
       ws.close(
@@ -1628,11 +1630,15 @@ async function writeDeepgramAuditTranscript(
   conversationId: string,
   twilioCallSid: string | null,
   deepgramTurns: ReadonlyArray<string>,
+  // The call's tenant (pending.orgId). Falls back to the seed org only
+  // when the session carries no org — never overrides a known tenant,
+  // which previously mis-tagged non-seed transcripts to the seed org.
+  orgIdInput: string | undefined,
 ): Promise<void> {
   const fullTranscript = deepgramTurns.join(" ");
   let transcriptMessageId: string | null = null;
   try {
-    const orgId = await resolveSeedOrgId();
+    const orgId = orgIdInput ?? (await resolveSeedOrgId());
     if (!orgId) throw new Error("tenant context missing");
     const supabase = getOrgScopedClient(orgId);
     const { data: inserted, error } = await supabase
@@ -1694,6 +1700,13 @@ interface RunPostCallSummaryInput {
   practiceName: string;
   endReason: string;
   turns: ReadonlyArray<TurnForSummary>;
+  /**
+   * The call's tenant (pending.orgId). Threaded into the summary-message
+   * write and the CSR-handoff routing so a non-seed tenant's escalation
+   * isn't silently dropped (the handoff read is org-scoped) and the
+   * summary isn't tagged to the seed org. Undefined → seed fallback.
+   */
+  orgId: string | undefined;
 }
 
 /**
@@ -1774,6 +1787,7 @@ async function runPostCallSummary(
         conversationId: input.conversationId,
         outcome: summary.outcome,
         sentiment: summary.sentiment,
+        orgId: input.orgId,
       });
     }
   } catch (err) {
@@ -1813,7 +1827,7 @@ async function persistSummaryMessage(
     lines.push("Human follow-up recommended.");
   }
   try {
-    const orgId = await resolveSeedOrgId();
+    const orgId = input.orgId ?? (await resolveSeedOrgId());
     if (!orgId) throw new Error("tenant context missing");
     const supabase = getOrgScopedClient(orgId);
     const { error } = await supabase.from("messages").insert({

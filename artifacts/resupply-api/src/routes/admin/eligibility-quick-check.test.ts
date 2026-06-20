@@ -149,6 +149,10 @@ describe("POST /admin/billing/eligibility-quick-check", () => {
     expect(res.body.payerName).toBe("Acme Health");
     expect(res.body.benefits.isActive).toBe(true);
     expect(vi.mocked(quickCheckEligibility)).toHaveBeenCalledWith({
+      // The caller's tenant (req.orgId) is now threaded through so the
+      // payer-profile lookup + billing identity scope to the right tenant
+      // instead of always resolving the seed org.
+      orgId: expect.any(String),
       payerProfileId: PAYER_PROFILE_ID,
       subscriber: {
         firstName: "Alice",

@@ -48,6 +48,7 @@ describe("routeVoiceHandoffToCsrQueue — fresh escalation", () => {
     stageSupabaseResponse("conversations", "update", { data: null });
 
     await routeVoiceHandoffToCsrQueue({
+      orgId: undefined,
       conversationId: "conv_1",
       outcome: "Patient asked about a billing question we couldn't resolve.",
       sentiment: "concerned",
@@ -82,6 +83,7 @@ describe("routeVoiceHandoffToCsrQueue — fresh escalation", () => {
     stageSupabaseResponse("conversations", "update", { data: null });
 
     await routeVoiceHandoffToCsrQueue({
+      orgId: undefined,
       conversationId: "conv_distress",
       outcome: "Caller expressed distress about adherence.",
       sentiment: "distressed",
@@ -106,6 +108,7 @@ describe("routeVoiceHandoffToCsrQueue — never downgrades priority", () => {
     stageSupabaseResponse("conversations", "update", { data: null });
 
     await routeVoiceHandoffToCsrQueue({
+      orgId: undefined,
       conversationId: "conv_urgent",
       outcome: "Routine refill confirmation.",
       sentiment: "neutral",
@@ -129,6 +132,7 @@ describe("routeVoiceHandoffToCsrQueue — already escalated", () => {
     });
 
     await routeVoiceHandoffToCsrQueue({
+      orgId: undefined,
       conversationId: "conv_already",
       outcome: "Caller mentioned a different concern.",
       sentiment: "concerned",
@@ -144,6 +148,7 @@ describe("routeVoiceHandoffToCsrQueue — missing row", () => {
 
     await expect(
       routeVoiceHandoffToCsrQueue({
+        orgId: undefined,
         conversationId: "conv_missing",
         outcome: "Anything",
         sentiment: "neutral",
@@ -168,6 +173,7 @@ describe("routeVoiceHandoffToCsrQueue — tag dedup", () => {
     stageSupabaseResponse("conversations", "update", { data: null });
 
     await routeVoiceHandoffToCsrQueue({
+      orgId: undefined,
       conversationId: "conv_tagged",
       outcome: "Re-flagged on a second voice attempt.",
       sentiment: "concerned",
@@ -195,6 +201,7 @@ describe("routeVoiceHandoffToCsrQueue — escalation_reason truncation", () => {
     stageSupabaseResponse("conversations", "update", { data: null });
 
     await routeVoiceHandoffToCsrQueue({
+      orgId: undefined,
       conversationId: "conv_long",
       outcome: longOutcome,
       sentiment: "concerned",
@@ -217,6 +224,7 @@ describe("routeVoiceHandoffToCsrQueue — fault tolerance", () => {
 
     await expect(
       routeVoiceHandoffToCsrQueue({
+        orgId: undefined,
         conversationId: "conv_err",
         outcome: "anything",
         sentiment: "neutral",
@@ -241,6 +249,7 @@ describe("routeVoiceHandoffToCsrQueue — fault tolerance", () => {
 
     await expect(
       routeVoiceHandoffToCsrQueue({
+        orgId: undefined,
         conversationId: "conv_update_err",
         outcome: "anything",
         sentiment: "neutral",

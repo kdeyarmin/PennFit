@@ -18,7 +18,7 @@
 // 270 payload and NOWHERE else — never logged, never persisted, never
 // echoed into audit metadata. Log lines carry timing + outcome only.
 
-import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 import {
   allocateControlNumbers,
   build270,
@@ -34,6 +34,11 @@ import {
 } from "./identity-resolver";
 
 export interface QuickEligibilityCheckInput {
+  /** Calling admin's tenant (req.orgId). Scopes the payer-profile lookup,
+   *  billing identity, and clearinghouse ISA to the right tenant. Fails
+   *  closed when absent — never falls back to the seed org, which would
+   *  query the wrong tenant's payer profiles and billing identity. */
+  orgId: string | undefined;
   /** payer_profiles.id — the payer to query. Must accept electronic
    *  270/271 (office_ally_payer_id set, not paper_only). */
   payerProfileId: string;
@@ -117,7 +122,7 @@ function nextQuickCheckSequence(): number {
 export async function quickCheckEligibility(
   input: QuickEligibilityCheckInput,
 ): Promise<QuickEligibilityCheckResult> {
-  const orgId = await resolveSeedOrgId();
+  const orgId = input.orgId;
   if (!orgId) {
     throw new Error("tenant context missing");
   }

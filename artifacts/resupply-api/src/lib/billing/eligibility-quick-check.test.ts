@@ -145,6 +145,7 @@ describe("quickCheckEligibility — payer gates", () => {
     stageSupabaseResponse("payer_profiles", "select", { data: null });
     await expect(
       quickCheckEligibility({
+        orgId: "00000000-0000-4000-8000-000000000000",
         payerProfileId: PAYER_PROFILE_ID,
         subscriber: SUBSCRIBER,
       }),
@@ -163,6 +164,7 @@ describe("quickCheckEligibility — payer gates", () => {
     });
     await expect(
       quickCheckEligibility({
+        orgId: "00000000-0000-4000-8000-000000000000",
         payerProfileId: PAYER_PROFILE_ID,
         subscriber: SUBSCRIBER,
       }),
@@ -175,6 +177,7 @@ describe("quickCheckEligibility — real-time only, no persistence", () => {
     stageElectronicPayer();
 
     const result = await quickCheckEligibility({
+      orgId: "00000000-0000-4000-8000-000000000000",
       payerProfileId: PAYER_PROFILE_ID,
       subscriber: SUBSCRIBER,
     });
@@ -195,6 +198,7 @@ describe("quickCheckEligibility — real-time only, no persistence", () => {
     vi.mocked(resolveClearinghouse).mockResolvedValueOnce(REALTIME_RESOLVED);
 
     const result = await quickCheckEligibility({
+      orgId: "00000000-0000-4000-8000-000000000000",
       payerProfileId: PAYER_PROFILE_ID,
       subscriber: SUBSCRIBER,
       hcpcsCode: "E0601",
@@ -233,6 +237,7 @@ describe("quickCheckEligibility — real-time only, no persistence", () => {
     vi.mocked(resolveClearinghouse).mockResolvedValueOnce(REALTIME_RESOLVED);
 
     await quickCheckEligibility({
+      orgId: "00000000-0000-4000-8000-000000000000",
       payerProfileId: PAYER_PROFILE_ID,
       subscriber: { ...SUBSCRIBER, gender: "F" },
       hcpcsCode: "E0601",
@@ -258,12 +263,14 @@ describe("quickCheckEligibility — real-time only, no persistence", () => {
     stageElectronicPayer();
     vi.mocked(resolveClearinghouse).mockResolvedValueOnce(REALTIME_RESOLVED);
     await quickCheckEligibility({
+      orgId: "00000000-0000-4000-8000-000000000000",
       payerProfileId: PAYER_PROFILE_ID,
       subscriber: SUBSCRIBER,
     });
     stageElectronicPayer();
     vi.mocked(resolveClearinghouse).mockResolvedValueOnce(REALTIME_RESOLVED);
     await quickCheckEligibility({
+      orgId: "00000000-0000-4000-8000-000000000000",
       payerProfileId: PAYER_PROFILE_ID,
       subscriber: SUBSCRIBER,
     });
@@ -286,6 +293,7 @@ describe("quickCheckEligibility — real-time only, no persistence", () => {
     } as unknown as ReturnType<typeof createRealtimeEligibilityTransport>);
 
     const result = await quickCheckEligibility({
+      orgId: "00000000-0000-4000-8000-000000000000",
       payerProfileId: PAYER_PROFILE_ID,
       subscriber: SUBSCRIBER,
     });

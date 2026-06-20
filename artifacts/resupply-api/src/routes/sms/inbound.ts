@@ -783,6 +783,7 @@ router.post(
     try {
       twimlBody = await dispatchIntent({
         supabase,
+        orgId,
         intent,
         conversationId,
         patientId,
@@ -871,6 +872,13 @@ router.post(
 
 interface DispatchInput {
   supabase: OrgScopedClient;
+  /**
+   * The tenant resolved from the called (Twilio `To`) number. Threaded
+   * into the order-flow helpers so confirm / STOP / START act on the
+   * caller's actual tenant rather than falling back to the seed org —
+   * which silently no-ops for any non-seed tenant.
+   */
+  orgId: string;
   intent: Intent;
   conversationId: string;
   patientId: string;
@@ -905,6 +913,7 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
         smsAsksRefillAttestation(lastOutbound.body);
       const result = await placeResupplyOrderForConversation({
         conversationId: input.conversationId,
+        orgId: input.orgId,
         // The patient's YES reply to attestation-bearing copy ("reply YES
         // if you still use ... and are low on supplies") is the recorded
         // Medicare/payer refill attestation.
@@ -1113,7 +1122,7 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
     }
     case "stop": {
       // Carrier-mandated. No conditions, no exceptions.
-      await pausePatient(input.patientId);
+      await pausePatient(input.patientId, input.orgId);
       const { error: stopErr } = await supabase
         .from("conversations")
         .update({ status: "closed", updated_at: nowIso })
@@ -1141,7 +1150,7 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
       // Carrier-mandated opt-in. Reverse a STOP-induced pause so the
       // patient resumes receiving reminders, then close the
       // conversation (a keyword reply, not a dialog turn).
-      await reactivatePatient(input.patientId);
+      await reactivatePatient(input.patientId, input.orgId);
       const { error: startErr } = await supabase
         .from("conversations")
         .update({ status: "closed", updated_at: nowIso })
