@@ -4,11 +4,13 @@
 -- PAP/OSA baseline (L33718) to the Respiratory Assist Device policy
 -- (LCD L33800 / Policy Article A52517). RADs — E0470 (bilevel WITHOUT
 -- backup rate) and E0471 (bilevel WITH backup rate / BiPAP-ST) — are
--- covered for four NON-OSA clinical categories:
---   * central sleep apnea (CSA) / complex sleep apnea
---   * sleep-related hypoventilation syndrome (incl. obesity hypoventilation)
---   * severe chronic obstructive pulmonary disease (COPD)
---   * restrictive thoracic disorders (neuromuscular / chest-wall)
+-- covered for four NON-OSA clinical categories. This migration seeds the
+-- first three; the fourth (restrictive thoracic) is intentionally DEFERRED
+-- (see the Scope note below), so it is NOT yet covered by the catalog:
+--   * central sleep apnea (CSA) / complex sleep apnea                [seeded]
+--   * sleep-related hypoventilation syndrome (incl. obesity hypovent.) [seeded]
+--   * severe chronic obstructive pulmonary disease (COPD)            [seeded]
+--   * restrictive thoracic disorders (neuromuscular / chest-wall)    [deferred]
 --
 -- Why this matters for the preflight edit: without these rows, an E0471
 -- claim carrying a genuine RAD diagnosis (e.g. primary central sleep apnea
