@@ -490,6 +490,44 @@ describe("preflightClaim", () => {
       claimId: CLAIM_ID,
     });
   });
+
+  it("blocks submit on an invalid modifier combination (KX + GA)", async () => {
+    // KX (coverage criteria met) and GA (expected non-coverage, ABN on
+    // file) on the same line reject as unprocessable — preflight must
+    // surface a blocking error and flip readyToSubmit to false.
+    stageHappyPath(
+      {},
+      {
+        linesOverride: [
+          {
+            id: LINE_ID,
+            hcpcs_code: "E0601",
+            modifier: "KX,GA",
+            billed_cents: 24999,
+            quantity: 1,
+          },
+        ],
+      },
+    );
+    const out = await preflightClaim(CLAIM_ID);
+    const item = out.items.find((i) => i.key === "modifier_combination");
+    expect(item?.severity).toBe("error");
+    expect(item?.detail).toContain("E0601");
+    expect(item?.fixAction).toEqual({
+      kind: "edit_line_item",
+      claimId: CLAIM_ID,
+      lineId: LINE_ID,
+    });
+    expect(out.readyToSubmit).toBe(false);
+  });
+
+  it("adds no modifier_combination item for a valid line (RR,KX)", async () => {
+    // The default happy-path line carries the valid "RR,KX" combo.
+    stageHappyPath();
+    const out = await preflightClaim(CLAIM_ID);
+    expect(out.items.some((i) => i.key === "modifier_combination")).toBe(false);
+    expect(out.readyToSubmit).toBe(true);
+  });
 });
 
 describe("isNocHcpcs", () => {

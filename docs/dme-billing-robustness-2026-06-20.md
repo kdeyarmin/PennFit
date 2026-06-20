@@ -1,0 +1,138 @@
+# DME billing robustness — current state & modifier-accuracy hardening (2026-06-20)
+
+**Audience:** Penn Home Medical Supply / CareMetric Breathe ownership + engineering.
+**Method:** Code-verified read of the billing stack (EDI builders/parsers in
+`lib/resupply-integrations-office-ally`, the `lib/billing/*` engine, the
+`/admin/billing/*` routes + SPA, and the `insurance_claims` schema), then a
+narrow, well-scoped hardening change. Supersedes the gap lists in
+[`feature-gaps-analysis-2026-06-14.md`](./feature-gaps-analysis-2026-06-14.md)
+and
+[`dme-billing-software-and-office-ally-research-2026-06-09.md`](./dme-billing-software-and-office-ally-research-2026-06-09.md)
+where they are now stale.
+
+---
+
+## TL;DR
+
+1. **PennFit is already a best-in-class DME billing system.** It ships the full
+   X12 5010 revenue cycle — 837P, 270/271, 276/277, 277CA, 835/ERA, 999 — plus
+   AI claim scrubbing + denial prediction, capped-rental modifier rotation with
+   live 4/70 compliance gating, Da Vinci PAS prior-auth, payer/fee-schedule/
+   modifier-rule catalogs, and patient collections (statements, autopay, plans).
+   On the dimensions that move cash it meets or exceeds Brightree / Bonafide /
+   NikoHealth / WellSky.
+
+2. **The prior gap docs are now stale on their headline items** — both have
+   been built since they were written:
+   - _"Auto-draft secondary/COB on primary 835 post" (the 06-14 doc's only
+     "genuinely worthwhile new build")_ → **shipped.** `auto-workflow-engine.ts`
+     Pass 4 (`runSecondaryClaimPass`) drafts the secondary behind the seeded
+     `billing.auto_secondary_claims` flag (migrations 0324/0328), reusing the
+     shared `secondary-claim-generator`.
+   - _"Itemize patient responsibility (copay/coinsurance/deductible) from ERA
+     CAS segments" (06-14 P2)_ → **shipped.** `era-reconciler.ts`
+     `patientRespBreakdown()` buckets CARC 1/2/3 from the PR-group CAS at both
+     claim and line level onto `deductible_cents` / `coinsurance_cents` /
+     `copay_cents`.
+
+3. **This change closes the two remaining modifier-accuracy gaps** — both are
+   among the DME denial traps the 06-09 research itself enumerated (§1.2), and
+   both were still open in code:
+   - **Invalid modifier-combination validation** (new) — blocks the hard-reject
+     combinations (`KX` with `GA`/`GZ`/`GY`/`GX`, two liability modifiers,
+     rental + purchase, new + used, two capped-rental month bands) at preflight
+     before they reach the payer.
+   - **ABN-on-file wired into the modifier engine** — the `if_abn_on_file`
+     payer-rule condition was hardcoded `false` ("not modelled today") even
+     though signed ABNs are captured in `patient_form_acknowledgements`. It now
+     reads that data, so an `if_abn_on_file → GA` rule actually fires.
+
+---
+
+## Part 1 — What this change adds
+
+### 1.1 Invalid modifier-combination validator (prevents hard rejections)
+
+Certain HCPCS modifier pairs reject the claim **line** as _unprocessable_ (a
+front-end/clearinghouse reject, not a coverage denial) — the line never
+adjudicates and the charge is simply lost until a corrected claim is filed. The
+canonical DME example (06-09 §1.2 trap #3): **`KX` (coverage criteria met)
+must never sit on the same line as `GA`/`GZ`/`GY`/`GX` (expected
+non-coverage)** — they are contradictory.
+
+New pure module **`artifacts/resupply-api/src/lib/billing/modifier-validation.ts`**
+— `validateModifierCombination(modifiers)` returns every contradiction found:
+
+| Code                            | Rule                                                       |
+| ------------------------------- | ---------------------------------------------------------- |
+| `kx_with_liability`             | `KX` together with any of `GA`/`GZ`/`GY`/`GX`              |
+| `liability_modifier_exclusive`  | more than one of the primary liability mods `GA`/`GZ`/`GY` |
+| `rental_with_purchase`          | `RR` together with `NU` or `UE`                            |
+| `purchase_new_used_exclusive`   | `NU` together with `UE`                                    |
+| `capped_rental_month_exclusive` | more than one of `KH`/`KI`/`KJ`                            |
+
+It is deliberately limited to **unambiguous hard contradictions** so it never
+false-positives (e.g. the valid voluntary-notice `GX`+`GY` pairing passes;
+payer-specific bilateral `RT`/`LT` two-line conventions are intentionally not
+flagged here). Fully unit-tested in `modifier-validation.test.ts` (21 cases).
+
+**Wired into the submit gate:** `claim-preflight.ts` runs it per line and emits
+an `error`-severity `modifier_combination` item (with an `edit_line_item`
+fix-action) — so a contradictory line **blocks submit** the same way the
+NOC-narrative and bill-hold checks do, and a corrected line goes out the first
+time instead of bouncing.
+
+### 1.2 ABN-on-file → modifier engine (`if_abn_on_file` activated)
+
+A signed Advance Beneficiary Notice (CMS-R-131) determines liability on an
+expected-non-coverage line: with an ABN on file you bill **`GA`** and the
+**patient** is liable; without one you bill `GZ` and the supplier must write it
+off. PennFit already captures signed ABNs in
+`patient_form_acknowledgements` (`form_kind='abn'`, migration 0106; the Option
+1/2/3 choice in 0315) and already defines the `if_abn_on_file` payer-rule
+condition (migration 0130) — but the rule engine hardcoded that condition to
+`false`, so the rule could never fire.
+
+This change:
+
+- adds `isAbnOnFile` to `ModifierRuleContext` and makes
+  `ruleApplies("if_abn_on_file", ctx)` return it (`modifier-rules.ts`);
+- resolves it in `claim-builder.ts` from a signed ABN acknowledgement for the
+  patient (lookup error → `false`, so bad data never silently shifts liability
+  to the patient);
+- exposes it as `abnOnFile` on the manual modifier-preview endpoint
+  (`/admin/payer-modifier-rules/resolve`).
+
+**Behaviour-safe:** no seeded `payer_modifier_rules` row uses `if_abn_on_file`
+today, so this is **latent capability** — it changes zero existing claim output
+until an operator configures such a rule. And when they do, the new validator
+guarantees the resulting `GA` can never silently collide with a `KX` rule on
+the same line.
+
+**No migration.** Everything above is code/types/tests against existing tables
+and the existing condition enum.
+
+---
+
+## Part 2 — Genuinely open items (verified, prioritized)
+
+After this change, the short list of things that are _actually not built_ and
+would further harden DME billing:
+
+| #   | Item                                                                                                                                                                   | Type    | Notes                                                                                                                       |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------- |
+| 1   | **HCPCS↔diagnosis (LCD) medical-necessity edits** — preflight verifies a diagnosis is _present_, not that the ICD-10 _supports_ the billed HCPCS under the payer's LCD | Build   | Deeper coverage-rule engine; meaningful denial reduction but a larger effort. The AI scrubber partially covers it today.    |
+| 2   | **Bilateral `RT`/`LT` two-line convention** — CMS wants bilateral items on two lines (RT, LT, 1 unit each), not `RTLT`/qty 2 on one line                               | Build   | Add as a preflight _warning_ (not a hard block — payer-specific). Natural follow-on to the new validator.                   |
+| 3   | **CMS DMEPOS fee-schedule auto-import/versioning** — fee schedules are uploaded manually per payer                                                                     | Build   | Ingest the quarterly CMS DMEPOS fee-schedule file to keep `payer_fee_schedules` current automatically.                      |
+| 4   | **ABN scoping** — the ABN acknowledgement is patient-level, not per-HCPCS/per-episode                                                                                  | Build   | Today "ABN on file" = any signed ABN for the patient. A per-item ABN record would let `GA` attach only to the covered line. |
+| 5   | **Same-or-Similar automation (HETS)** — currently a manual entry                                                                                                       | Ops     | Needs a CMS HETS connection; the route + manual workflow already exist.                                                     |
+| 6   | **Live therapy-cloud data (ResMed/Philips/3B)** — adapters are production-ready                                                                                        | Bus-dev | Gated on executed partner BAAs/OAuth, not on code.                                                                          |
+| 7   | **Multi-location / multi-tenant billing identity**                                                                                                                     | Build   | Schema is forward-compatible (mig 0132); defer until a concrete second-location/resale trigger.                             |
+
+### Bottom line
+
+The billing engine was already comprehensive; the highest-leverage remaining
+work is **accuracy hardening at the line level**, and the two most common
+modifier traps (KX/liability contradictions and ABN-driven `GA`) are now closed.
+The rest of the open list is either a larger coverage-rule build (item 1) or
+business-development/ops (items 5–6), not a quick code win.
