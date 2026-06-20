@@ -148,17 +148,34 @@ _present_ (the latest sleep study's ICD-10); it now also verifies the diagnosis
 whose diagnosis isn't a covered indication denies for medical necessity — one
 of the recurring DME denial traps.
 
-- **`hcpcs_coverage_diagnoses` catalog** (migration 0408) — a GLOBAL reference
-  table (like `hcpcs_codes`/`denial_codes`, no `org_id`, deny-all RLS) mapping a
-  billable HCPCS to the ICD-10 codes that support it, seeded with the Medicare
-  PAP baseline (LCD L33718 / Article A52467: obstructive sleep apnea **G47.33**
-  for the OSA-covered PAP devices E0601 (CPAP) and E0470 (bilevel without
-  backup) and the resupply accessories billed against them). **E0471**
-  (bilevel-ST, with backup rate) is intentionally NOT seeded — OSA does not
-  support it under L33718; it is a RAD device (L33800) for central/complex
-  apnea and hypoventilation, so it yields "no opinion" rather than a false
-  "covered". Per-payer commercial overrides and the RAD (L33800) diagnosis set
-  are documented follow-ons.
+- **`hcpcs_coverage_diagnoses` catalog** (migration 0408; extended by 0409) — a
+  GLOBAL reference table (like `hcpcs_codes`/`denial_codes`, no `org_id`,
+  deny-all RLS) mapping a billable HCPCS to the ICD-10 codes that support it.
+  Seeded with two CMS policies:
+  - **PAP / OSA — LCD L33718** (Article A52467): obstructive sleep apnea
+    **G47.33** for E0601 (CPAP), E0470 (bilevel without backup), and the
+    resupply accessories billed against them.
+  - **RAD — LCD L33800** (Article A52517): all four non-OSA respiratory
+    indications for E0470 and E0471 — central/complex sleep apnea
+    (G47.31/G47.37), hypoventilation incl. OHS (G47.34/35/36, E66.2), severe
+    COPD (J44.x), and restrictive thoracic disorders (neuromuscular families
+    G12/G35/G70/G71/… and thoracic-cage kyphosis/scoliosis M40.0-2/M41 +
+    congenital Q67/Q76 leaves). **E0471 (bilevel-ST, backup rate) is
+    deliberately NOT given G47.33** — OSA doesn't justify a backup-rate device,
+    so an E0471 + primary-OSA claim still warns; E0470 is dual-policy (OSA under
+    L33718 + RAD under L33800).
+
+  **Caveat (documented in the migration):** A52517 publishes **no enumerated
+  ICD-10 "covered codes" table** for RAD — it is a narrative, criteria-driven
+  policy (qualifying diagnosis **+** a physiologic test). So the RAD rows are a
+  **clinical crosswalk of screening signals** (necessary-but-not-sufficient),
+  sized to keep a genuine RAD claim from false-warning; they are not a CMS
+  allow-list and the physiologic gates live in the documentation. Family roots
+  are used only where every leaf qualifies (e.g. `G71`); mixed families use
+  specific leaves so a prefix can't over-claim (kyphosis `M40.0/1/2` not
+  lordosis; diaphragm leaf `J98.6` not all of `J98`). **Per-payer commercial
+  overrides** remain a documented follow-on.
+
 - **`coverage-diagnosis.ts`** — a pure, unit-tested evaluator that normalises
   ICD-10 codes (dotless, uppercase) and matches a claim diagnosis to a covered
   code by **prefix** (a category code covers its children; a covered specific
