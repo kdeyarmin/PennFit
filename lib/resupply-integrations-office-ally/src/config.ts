@@ -196,6 +196,55 @@ function isAllowedRealtimeUrl(raw: string): boolean {
   return host === "officeally.io" || host.endsWith(".officeally.io");
 }
 
+// Insurance discovery over Office Ally's EDI REST API. A SEPARATE endpoint
+// from real-time eligibility (the "search every payer for this person"
+// service vs. "is this one coverage active"), but the SAME issued EDI API
+// account — so it reuses the real-time Authorization key and only needs its
+// own endpoint URL. Fully optional and fail-soft: when its env is absent,
+// `createInsuranceDiscoveryTransport(null)` degrades to a no-op that reports
+// `unavailable` and the discovery route returns a clean "not configured"
+// reason instead of throwing.
+//
+//   OFFICE_ALLY_DISCOVERY_URL          — the insurance-discovery endpoint URL
+//   OFFICE_ALLY_REALTIME_API_KEY       — API key, sent verbatim in the
+//                                        Authorization header (legacy alias:
+//                                        OFFICE_ALLY_REALTIME_PASSWORD)
+//
+// Optional:
+//   OFFICE_ALLY_DISCOVERY_TIMEOUT_MS   — per-request timeout (default 30000)
+export interface OfficeAllyDiscoveryConfig {
+  /** Full insurance-discovery endpoint URL. */
+  url: string;
+  /** API key, sent verbatim in the Authorization header (the SAME OA EDI
+   *  account/key as real-time eligibility). */
+  apiKey: string;
+  timeoutMs: number;
+}
+
+export function readOfficeAllyDiscoveryConfigOrNull(
+  env: NodeJS.ProcessEnv = process.env,
+): OfficeAllyDiscoveryConfig | null {
+  // Stub mode means "don't transmit anywhere" — honor it here too.
+  if (env.OFFICE_ALLY_STUB === "1") return null;
+  const url = env.OFFICE_ALLY_DISCOVERY_URL?.trim();
+  const apiKey =
+    env.OFFICE_ALLY_REALTIME_API_KEY?.trim() ||
+    env.OFFICE_ALLY_REALTIME_PASSWORD?.trim();
+  // All-or-null, mirroring the real-time reader: a partial config reports
+  // unavailable rather than half-attempting a discovery search.
+  if (!url || !apiKey) return null;
+  // The request carries demographics (PHI) and the URL is operator-supplied,
+  // so the same https + Office-Ally-host allowlist the real-time reader
+  // applies is mandatory here — it stops a cleartext (http://) endpoint and
+  // an SSRF-to-attacker-host typo. Fail-soft: an invalid URL returns null.
+  if (!isAllowedRealtimeUrl(url)) return null;
+  return {
+    url,
+    apiKey,
+    timeoutMs: parseTimeoutMs(env.OFFICE_ALLY_DISCOVERY_TIMEOUT_MS),
+  };
+}
+
 export function resolveOutboxDir(env: NodeJS.ProcessEnv = process.env): string {
   const raw = env.OFFICE_ALLY_FILE_OUTBOX_DIR?.trim();
   return raw ? resolve(raw) : resolve(process.cwd(), "outputs", "office-ally");

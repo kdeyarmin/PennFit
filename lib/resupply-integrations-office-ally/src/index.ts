@@ -95,9 +95,11 @@ export {
   isOfficeAllyStubMode,
   readOfficeAllyConfigOrNull,
   readOfficeAllyRealtimeConfigOrNull,
+  readOfficeAllyDiscoveryConfigOrNull,
   resolveOutboxDir,
   type OfficeAllyConfig,
   type OfficeAllyRealtimeConfig,
+  type OfficeAllyDiscoveryConfig,
 } from "./config";
 
 export {
@@ -114,6 +116,13 @@ export {
   type FetchLike,
   type RealtimeTransportDeps,
 } from "./transport/realtime";
+export {
+  createInsuranceDiscoveryTransport,
+  buildDiscoveryRequestBody,
+  extractCoverageRows,
+  normalizeCoverage,
+  type DiscoveryTransportDeps,
+} from "./transport/discovery";
 export {
   classifyEdiPayload,
   downloadFile,
@@ -132,6 +141,12 @@ export type {
   EligibilityRealtimeResult,
   EligibilityRealtimeTransport,
   EligibilityRequest,
+  DiscoveredCoverage,
+  InsuranceDiscoveryFailure,
+  InsuranceDiscoveryOutcome,
+  InsuranceDiscoveryRequest,
+  InsuranceDiscoveryResult,
+  InsuranceDiscoveryTransport,
   SubmissionTransport,
   SubmissionTransportKind,
   UploadFailure,
