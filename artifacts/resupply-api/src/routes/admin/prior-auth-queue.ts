@@ -23,7 +23,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { requirePermission } from "../../middlewares/requireAdmin";
 
@@ -35,6 +35,24 @@ const querySchema = z
     limit: z.coerce.number().int().positive().max(200).optional(),
   })
   .strict();
+
+// Raw prior_authorizations row shape for the selectCols projection —
+// the org-scoped facade returns a loosely-typed builder.
+interface PaRow {
+  id: string;
+  patient_id: string;
+  payer_name: string;
+  hcpcs_code: string;
+  status: string;
+  auth_number: string | null;
+  submitted_at: string | null;
+  decision_at: string | null;
+  approved_through: string | null;
+  mco_sla_status: string | null;
+  mco_sla_target_date: string | null;
+  created_at: string;
+  updated_at: string;
+}
 
 interface BucketRow {
   id: string;
@@ -90,7 +108,13 @@ router.get(
       .slice(0, 10); // approved_through is a DATE
     const todayIso = new Date(now).toISOString().slice(0, 10);
 
-    const supabase = getSupabaseServiceRoleClient();
+    // Fail closed: never widen to all tenants on a missing orgId.
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const db = getOrgScopedClient(orgId);
     const selectCols =
       "id, patient_id, payer_name, hcpcs_code, status, auth_number, submitted_at, decision_at, approved_through, mco_sla_status, mco_sla_target_date, created_at, updated_at";
 
@@ -101,24 +125,21 @@ router.get(
       { data: expiring, error: expiringErr },
       { data: drafts, error: draftsErr },
     ] = await Promise.all([
-      supabase
-        .schema("resupply")
+      db
         .from("prior_authorizations")
         .select(selectCols)
         .eq("mco_sla_status", "at_risk")
         .in("status", ["submitted", "appealed"])
         .order("mco_sla_target_date", { ascending: true })
         .limit(limit),
-      supabase
-        .schema("resupply")
+      db
         .from("prior_authorizations")
         .select(selectCols)
         .eq("mco_sla_status", "missed")
         .in("status", ["submitted", "appealed"])
         .order("mco_sla_target_date", { ascending: true })
         .limit(limit),
-      supabase
-        .schema("resupply")
+      db
         .from("prior_authorizations")
         .select(selectCols)
         .in("status", ["submitted", "appealed"])
@@ -126,8 +147,7 @@ router.get(
         .is("decision_at", null)
         .order("submitted_at", { ascending: true })
         .limit(limit),
-      supabase
-        .schema("resupply")
+      db
         .from("prior_authorizations")
         .select(selectCols)
         .eq("status", "approved")
@@ -136,8 +156,7 @@ router.get(
         .lte("approved_through", expiryCutoff)
         .order("approved_through", { ascending: true })
         .limit(limit),
-      supabase
-        .schema("resupply")
+      db
         .from("prior_authorizations")
         .select(selectCols)
         .eq("status", "draft")
@@ -150,7 +169,7 @@ router.get(
     if (expiringErr) throw expiringErr;
     if (draftsErr) throw draftsErr;
 
-    function shape(rows: typeof atRisk): BucketRow[] {
+    function shape(rows: PaRow[] | null): BucketRow[] {
       return (rows ?? []).map((r) => ({
         id: r.id,
         patientId: r.patient_id,

@@ -250,7 +250,7 @@ function CoverBand({
         className="flex items-center gap-2 text-[11px] font-semibold uppercase"
         style={{ letterSpacing: "0.22em", color: "hsl(var(--penn-gold-soft))" }}
       >
-        <span>PennFit</span>
+        <span>CareMetric Breathe</span>
         <span style={{ opacity: 0.5 }}>·</span>
         <span>{contact.name} Therapy Management</span>
       </div>
@@ -700,7 +700,7 @@ function ReportFooter() {
             color: "hsl(var(--penn-navy))",
           }}
         >
-          PennFit · {contact.name}
+          CareMetric Breathe · {contact.name}
         </span>
         <span>{contact.generalEmail}</span>
       </div>
@@ -749,6 +749,7 @@ function Th({
 }) {
   return (
     <th
+      scope="col"
       className="py-2 text-[11px] font-semibold uppercase"
       style={{
         letterSpacing: "0.06em",

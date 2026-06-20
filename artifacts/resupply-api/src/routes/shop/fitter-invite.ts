@@ -21,13 +21,11 @@ import { Router, type IRouter } from "express";
 import rateLimit from "express-rate-limit";
 import { z } from "zod";
 
-import {
-  type Database,
-  getSupabaseServiceRoleClient,
-} from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { verifyFitterInviteToken } from "../../lib/fitter-invite-token";
+import { resolveOrgIdForSignedRecord } from "../../lib/storefront/signed-link-org";
 
 type FitterInvitesUpdate =
   Database["resupply"]["Tables"]["fitter_invites"]["Update"];
@@ -58,9 +56,18 @@ router.get("/shop/fitter-invite/resolve", resolveLimiter, async (req, res) => {
     return;
   }
 
-  const supabase = getSupabaseServiceRoleClient();
+  // Resolve the tenant FROM the invite the token references (the link
+  // carries no host/session), so a tenant-B invite lands in tenant B.
+  const orgId = await resolveOrgIdForSignedRecord(
+    "fitter_invites",
+    verified.inviteId,
+  );
+  if (!orgId) {
+    res.status(503).json({ error: "tenant_unavailable" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const { data: invite, error } = await supabase
-    .schema("resupply")
     .from("fitter_invites")
     .select("id, status, recipient_email, recipient_name, expires_at")
     .eq("id", verified.inviteId)
@@ -90,7 +97,6 @@ router.get("/shop/fitter-invite/resolve", resolveLimiter, async (req, res) => {
       // Best-effort lazy stamp — the expired response is correct
       // regardless, and a DB hiccup must not 500 the patient.
       const { error: expireErr } = await supabase
-        .schema("resupply")
         .from("fitter_invites")
         .update({ status: "expired", updated_at: new Date().toISOString() })
         .eq("id", invite.id);
@@ -115,7 +121,6 @@ router.get("/shop/fitter-invite/resolve", resolveLimiter, async (req, res) => {
     // Best-effort — failing to record the open must not block the
     // patient from starting the fitter.
     const { error: openErr } = await supabase
-      .schema("resupply")
       .from("fitter_invites")
       .update({ status: "opened", opened_at: nowIso, updated_at: nowIso })
       .eq("id", invite.id)
@@ -186,13 +191,13 @@ const completeBody = z
  *  than one match is treated as "no match" — we never auto-cross-link
  *  PHI on an ambiguous identity (mirrors me-documents findPatientByEmail). */
 async function findUniquePatient(
+  orgId: string,
   email: string | null,
   phone: string | null,
 ): Promise<string | null> {
-  const supabase = getSupabaseServiceRoleClient();
+  const supabase = getOrgScopedClient(orgId);
   if (email) {
     const { data, error } = await supabase
-      .schema("resupply")
       .from("patients")
       .select("id")
       .eq("email", email)
@@ -203,7 +208,6 @@ async function findUniquePatient(
   }
   if (phone) {
     const { data, error } = await supabase
-      .schema("resupply")
       .from("patients")
       .select("id")
       .eq("phone_e164", phone)
@@ -235,9 +239,17 @@ router.post(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    // Resolve the tenant FROM the token-referenced invite (see GET above).
+    const orgId = await resolveOrgIdForSignedRecord(
+      "fitter_invites",
+      verified.inviteId,
+    );
+    if (!orgId) {
+      res.status(503).json({ error: "tenant_unavailable" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: invite, error } = await supabase
-      .schema("resupply")
       .from("fitter_invites")
       .select(
         "id, status, patient_id, recipient_email, recipient_phone_e164, opened_at, expires_at",
@@ -274,6 +286,7 @@ router.post(
     if (!patientId) {
       try {
         const match = await findUniquePatient(
+          orgId,
           invite.recipient_email,
           invite.recipient_phone_e164,
         );
@@ -321,7 +334,6 @@ router.post(
     }
 
     const { error: updErr } = await supabase
-      .schema("resupply")
       .from("fitter_invites")
       .update(update)
       .eq("id", invite.id);

@@ -19,7 +19,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 import {
   sendReminderSms,
   type SendReminderOutcome,
@@ -27,7 +27,9 @@ import {
 import { TwilioConfigError } from "@workspace/resupply-telecom";
 
 import { logger } from "../../lib/logger";
+import { recordOutboundMessageUsage } from "../../lib/metering/usage";
 import { readMessagingConfigOrNull } from "../../lib/messaging/messaging-config";
+import { applyTenantSmsFrom } from "../../lib/messaging/tenant-telecom";
 import { adminWriteRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
@@ -78,18 +80,32 @@ router.post(
     }
     const { patientId, episodeId, body } = parsed.data;
 
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+
+    // Resolve the tenant's own SMS sender (number / Messaging Service),
+    // falling back to the platform default when the tenant has none. We
+    // override the cfg HERE (app side) rather than inside the shared
+    // reminders lib, which must not import the app's tenant resolver.
+    const smsCfg = await applyTenantSmsFrom(orgId, {
+      twilioAccountSid: cfg.sms.twilioAccountSid,
+      twilioAuthToken: cfg.sms.twilioAuthToken,
+      twilioPhoneNumber: cfg.sms.twilioPhoneNumber,
+      twilioMessagingServiceSid: cfg.sms.twilioMessagingServiceSid,
+      publicBaseUrl: cfg.sms.publicBaseUrl,
+      practiceName: cfg.practiceName,
+    });
+
     let outcome: SendReminderOutcome;
     try {
       outcome = await sendReminderSms({
-        supabase: getSupabaseServiceRoleClient(),
-        cfg: {
-          twilioAccountSid: cfg.sms.twilioAccountSid,
-          twilioAuthToken: cfg.sms.twilioAuthToken,
-          twilioPhoneNumber: cfg.sms.twilioPhoneNumber,
-          twilioMessagingServiceSid: cfg.sms.twilioMessagingServiceSid,
-          publicBaseUrl: cfg.sms.publicBaseUrl,
-          practiceName: cfg.practiceName,
-        },
+        supabase: supabase.raw(),
+        orgId,
+        cfg: smsCfg,
         patientId,
         episodeId,
         body,
@@ -115,6 +131,11 @@ router.post(
 
     switch (outcome.status) {
       case "ok":
+        recordOutboundMessageUsage({
+          orgId,
+          channel: "sms",
+          source: "admin.send_reminder.sms",
+        });
         res.status(201).json({
           conversationId: outcome.conversationId,
           messageSid: outcome.vendorRef,

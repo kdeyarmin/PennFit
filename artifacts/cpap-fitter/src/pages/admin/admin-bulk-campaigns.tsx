@@ -31,12 +31,16 @@ import {
   resumeBulkCampaign,
   startBulkCampaign,
   TICK_INTERVAL_SECONDS,
+  SEGMENT_DEVICE_CLASSES,
   type AudienceKind,
   type BulkCampaignDetail,
   type BulkCampaignListItem,
   type CampaignStatus,
   type Category,
+  type Channel,
   type CreateDraftRequest,
+  type PatientSegmentFilter,
+  type SegmentDeviceClass,
   type TherapyCohort,
 } from "@/lib/admin/bulk-campaigns-api";
 
@@ -59,8 +63,9 @@ export function AdminBulkCampaignsPage() {
             Bulk campaigns
           </h1>
           <p className="text-sm mt-1" style={{ color: "hsl(var(--ink-3))" }}>
-            Compose audience + template + preview recipient counts. Phase A
-            persists the draft; Phase B will add the worker that actually sends.
+            Build an audience (segment by equipment, therapy status, payer, …),
+            pick an email or SMS template, preview the recipient counts, then
+            start sending.
           </p>
         </div>
         <Button onClick={() => setShowNew(true)}>
@@ -118,7 +123,24 @@ const AUDIENCE_LABEL: Record<AudienceKind, string> = {
   all_active_patients: "All active patients",
   by_patient_payer: "Patients by payer",
   by_therapy_cohort: "Therapy cohort",
+  patient_segment: "Patient segment",
   manual_list: "Manual list",
+};
+
+const DEVICE_CLASS_LABEL: Record<SegmentDeviceClass, string> = {
+  cpap: "CPAP",
+  auto_cpap: "Auto-CPAP",
+  bipap: "BiPAP",
+  asv: "ASV",
+  avaps: "AVAPS",
+  humidifier: "Humidifier",
+  oximeter: "Oximeter",
+  other: "Other",
+};
+
+const CHANNEL_LABEL: Record<Channel, string> = {
+  email: "Email",
+  sms: "Text message (SMS)",
 };
 
 const THERAPY_COHORT_OPTIONS: ReadonlyArray<{
@@ -150,22 +172,45 @@ function CampaignsTable({
           className="text-left border-b"
           style={{ borderColor: "hsl(var(--line-1))" }}
         >
-          <th className="py-2 font-semibold">Name</th>
-          <th className="py-2 font-semibold">Audience</th>
-          <th className="py-2 font-semibold">Category</th>
-          <th className="py-2 font-semibold text-right">Total</th>
-          <th className="py-2 font-semibold text-right">Pending</th>
-          <th className="py-2 font-semibold text-right">Suppressed</th>
-          <th className="py-2 font-semibold">Status</th>
+          <th scope="col" className="py-2 font-semibold">
+            Name
+          </th>
+          <th scope="col" className="py-2 font-semibold">
+            Audience
+          </th>
+          <th scope="col" className="py-2 font-semibold">
+            Category
+          </th>
+          <th scope="col" className="py-2 font-semibold text-right">
+            Total
+          </th>
+          <th scope="col" className="py-2 font-semibold text-right">
+            Pending
+          </th>
+          <th scope="col" className="py-2 font-semibold text-right">
+            Suppressed
+          </th>
+          <th scope="col" className="py-2 font-semibold">
+            Status
+          </th>
         </tr>
       </thead>
       <tbody>
         {rows.map((r) => (
           <tr
             key={r.id}
-            className="border-b cursor-pointer hover:bg-[hsl(var(--bg-2))]"
+            className="border-b cursor-pointer hover:bg-[hsl(var(--bg-2))] focus-visible:outline-none focus-visible:bg-[hsl(var(--bg-2))] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[hsl(var(--penn-navy))]"
             style={{ borderColor: "hsl(var(--line-2))" }}
+            tabIndex={0}
+            role="button"
+            aria-label={`Open campaign ${r.name}`}
             onClick={() => onSelect(r.id)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onSelect(r.id);
+              }
+            }}
           >
             <td className="py-1.5">
               <div className="font-medium">{r.name}</div>
@@ -181,6 +226,15 @@ function CampaignsTable({
                   · {r.audiencePayer}
                 </span>
               )}
+              {r.audienceFilterSummary && (
+                <span className="text-muted-foreground">
+                  {" "}
+                  · {r.audienceFilterSummary}
+                </span>
+              )}
+              <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                {r.channel}
+              </div>
             </td>
             <td className="py-1.5 text-xs">{CATEGORY_LABEL[r.category]}</td>
             <td className="py-1.5 text-right tabular-nums">
@@ -217,21 +271,50 @@ function NewCampaignModal({
 }) {
   const qc = useQueryClient();
   const [name, setName] = useState("");
+  const [channel, setChannel] = useState<Channel>("email");
   const [audienceKind, setAudienceKind] = useState<AudienceKind>(
     "all_active_shop_customers",
   );
   const [audiencePayer, setAudiencePayer] = useState("");
   const [therapyCohort, setTherapyCohort] = useState<TherapyCohort>("at_risk");
+  // Segment-builder fields (audienceKind='patient_segment').
+  const [segManufacturers, setSegManufacturers] = useState("");
+  const [segDeviceClasses, setSegDeviceClasses] = useState<
+    ReadonlySet<SegmentDeviceClass>
+  >(new Set());
+  const [segModelContains, setSegModelContains] = useState("");
+  const [segTherapyFailing, setSegTherapyFailing] = useState(false);
+  const [segPayer, setSegPayer] = useState("");
+  const [segNotContactedDays, setSegNotContactedDays] = useState("");
   const [category, setCategory] = useState<Category>("marketing");
   const [complianceAttestation, setComplianceAttestation] = useState("");
   const [templateKey, setTemplateKey] = useState("");
   const [throttle, setThrottle] = useState(120);
   const [error, setError] = useState<string | null>(null);
 
+  const buildSegment = (): PatientSegmentFilter => {
+    const seg: PatientSegmentFilter = {};
+    const makes = segManufacturers
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (makes.length > 0) seg.manufacturers = makes;
+    if (segDeviceClasses.size > 0) seg.deviceClasses = [...segDeviceClasses];
+    if (segModelContains.trim())
+      seg.equipmentModelContains = segModelContains.trim();
+    if (segTherapyFailing) seg.therapyFailing = true;
+    if (segPayer.trim()) seg.insurancePayer = segPayer.trim();
+    const days = Number(segNotContactedDays);
+    if (Number.isInteger(days) && days >= 1) seg.notContactedInDays = days;
+    return seg;
+  };
+  const segmentCriteriaCount = Object.keys(buildSegment()).length;
+
   const create = useMutation({
     mutationFn: () => {
       const body: CreateDraftRequest = {
         name: name.trim(),
+        channel,
         audienceKind,
         audiencePayer:
           audienceKind === "by_patient_payer"
@@ -239,6 +322,8 @@ function NewCampaignModal({
             : null,
         therapyCohort:
           audienceKind === "by_therapy_cohort" ? therapyCohort : undefined,
+        patientSegment:
+          audienceKind === "patient_segment" ? buildSegment() : undefined,
         category,
         complianceAttestation:
           category === "compliance"
@@ -260,7 +345,17 @@ function NewCampaignModal({
     name.trim().length > 0 &&
     templateKey.trim().length > 0 &&
     (audienceKind !== "by_patient_payer" || audiencePayer.trim().length > 0) &&
+    (audienceKind !== "patient_segment" || segmentCriteriaCount > 0) &&
     (category !== "compliance" || complianceAttestation.trim().length >= 10);
+
+  const toggleDeviceClass = (dc: SegmentDeviceClass) => {
+    setSegDeviceClasses((prev) => {
+      const next = new Set(prev);
+      if (next.has(dc)) next.delete(dc);
+      else next.add(dc);
+      return next;
+    });
+  };
 
   return (
     <ModalShell title="New bulk campaign" onClose={onClose}>
@@ -274,6 +369,27 @@ function NewCampaignModal({
             maxLength={200}
             aria-label="Campaign name"
           />
+        </div>
+
+        <div>
+          <Label>Channel</Label>
+          <select
+            value={channel}
+            onChange={(e) => setChannel(e.target.value as Channel)}
+            aria-label="Channel"
+            className="w-full rounded border px-2 py-1.5 text-sm"
+            style={{ borderColor: "hsl(var(--line-1))" }}
+          >
+            <option value="email">Email</option>
+            <option value="sms">Text message (SMS)</option>
+          </select>
+          {channel === "sms" && (
+            <p className="text-[10px] text-muted-foreground mt-1">
+              Sends via Twilio. Only recipients with a phone on file are
+              reached; opted-out (STOP) patients are always suppressed. Keep the
+              SMS template short and include opt-out wording.
+            </p>
+          )}
         </div>
 
         <div>
@@ -294,6 +410,9 @@ function NewCampaignModal({
             </option>
             <option value="by_therapy_cohort">
               Therapy cohort (at-risk adherence)
+            </option>
+            <option value="patient_segment">
+              Patient segment (equipment / therapy / payer)
             </option>
             <option value="manual_list">Manual list (Phase B)</option>
           </select>
@@ -330,6 +449,110 @@ function NewCampaignModal({
                 </option>
               ))}
             </select>
+          </div>
+        )}
+
+        {audienceKind === "patient_segment" && (
+          <div
+            className="col-span-2 rounded border p-3 space-y-3"
+            style={{ borderColor: "hsl(var(--line-1))" }}
+          >
+            <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+              Build an audience of <strong>active patients</strong> matching
+              every criterion below. Leave a field blank to ignore it; set at
+              least one.
+            </p>
+
+            <div>
+              <Label>Equipment manufacturer(s)</Label>
+              <Input
+                value={segManufacturers}
+                onChange={(e) => setSegManufacturers(e.target.value)}
+                placeholder="ResMed, Philips, 3B Medical"
+                aria-label="Equipment manufacturers"
+              />
+              <p className="text-[10px] text-muted-foreground mt-1">
+                Comma-separated; matches a patient's active equipment.
+              </p>
+            </div>
+
+            <div>
+              <Label>Device type</Label>
+              <div className="flex flex-wrap gap-1.5">
+                {SEGMENT_DEVICE_CLASSES.map((dc) => {
+                  const on = segDeviceClasses.has(dc);
+                  return (
+                    <button
+                      type="button"
+                      key={dc}
+                      onClick={() => toggleDeviceClass(dc)}
+                      aria-pressed={on}
+                      className={`rounded-full border px-2.5 py-1 text-xs ${
+                        on
+                          ? "bg-[hsl(var(--penn-navy))] text-white border-transparent"
+                          : "text-muted-foreground"
+                      }`}
+                      style={
+                        on ? undefined : { borderColor: "hsl(var(--line-1))" }
+                      }
+                    >
+                      {DEVICE_CLASS_LABEL[dc]}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Equipment / mask model contains</Label>
+                <Input
+                  value={segModelContains}
+                  onChange={(e) => setSegModelContains(e.target.value)}
+                  placeholder="DreamWear, AirFit P10, …"
+                  aria-label="Equipment model contains"
+                />
+              </div>
+              <div>
+                <Label>Insurance payer</Label>
+                <Input
+                  value={segPayer}
+                  onChange={(e) => setSegPayer(e.target.value)}
+                  placeholder="Medicare, Aetna, …"
+                  aria-label="Segment insurance payer"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 items-end">
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={segTherapyFailing}
+                  onChange={(e) => setSegTherapyFailing(e.target.checked)}
+                  aria-label="Failing therapy"
+                />
+                Failing therapy (open low-adherence alert)
+              </label>
+              <div>
+                <Label>Not contacted in (days)</Label>
+                <Input
+                  type="number"
+                  value={segNotContactedDays}
+                  onChange={(e) => setSegNotContactedDays(e.target.value)}
+                  min={1}
+                  max={3650}
+                  placeholder="e.g. 90"
+                  aria-label="Not contacted in days"
+                />
+              </div>
+            </div>
+
+            {segmentCriteriaCount === 0 && (
+              <p className="text-[10px] text-rose-700">
+                Set at least one filter to define the segment.
+              </p>
+            )}
           </div>
         )}
 
@@ -370,8 +593,8 @@ function NewCampaignModal({
             aria-label="Template key"
           />
           <p className="text-[10px] text-muted-foreground mt-1">
-            From the Message Templates library — must already exist and be
-            active.
+            From the Message Templates library — must already exist as an active{" "}
+            <strong>{CHANNEL_LABEL[channel]}</strong> template.
           </p>
         </div>
 
@@ -565,8 +788,12 @@ function CampaignDetailBody({
       </div>
 
       <dl className="text-xs grid grid-cols-2 gap-x-4 gap-y-1">
+        <KV k="Channel" v={CHANNEL_LABEL[data.channel]} />
         <KV k="Audience" v={AUDIENCE_LABEL[data.audienceKind]} />
         {data.audiencePayer && <KV k="Payer" v={data.audiencePayer} />}
+        {data.audienceFilterSummary && (
+          <KV k="Segment" v={data.audienceFilterSummary} />
+        )}
         <KV k="Category" v={CATEGORY_LABEL[data.category]} />
         <KV k="Template" v={data.templateKey} />
         <KV k="Throttle / min" v={String(data.throttlePerMinute)} />
@@ -600,11 +827,21 @@ function CampaignDetailBody({
                 className="text-left border-b"
                 style={{ borderColor: "hsl(var(--line-1))" }}
               >
-                <th className="py-1.5">Kind</th>
-                <th className="py-1.5">Recipient</th>
-                <th className="py-1.5">Email</th>
-                <th className="py-1.5">Status</th>
-                <th className="py-1.5">Reason</th>
+                <th scope="col" className="py-1.5">
+                  Kind
+                </th>
+                <th scope="col" className="py-1.5">
+                  Recipient
+                </th>
+                <th scope="col" className="py-1.5">
+                  Contact
+                </th>
+                <th scope="col" className="py-1.5">
+                  Status
+                </th>
+                <th scope="col" className="py-1.5">
+                  Reason
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -632,7 +869,9 @@ function CampaignDetailBody({
                       </Link>
                     )}
                   </td>
-                  <td className="py-1">{r.recipientEmail ?? "—"}</td>
+                  <td className="py-1">
+                    {r.recipientEmail ?? r.recipientPhone ?? "—"}
+                  </td>
                   <td className="py-1">{r.status}</td>
                   <td className="py-1 text-muted-foreground">
                     {r.suppressionReason ?? "—"}

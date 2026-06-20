@@ -28,7 +28,7 @@ import { z } from "zod";
 
 import { normalizeE164 } from "@workspace/resupply-domain";
 import {
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
   escapePostgRESTContainsPattern,
 } from "@workspace/resupply-db";
 
@@ -68,9 +68,13 @@ router.get(
     }
     const { status, search, locationId, limit, offset } = parsed.data;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     let query = supabase
-      .schema("resupply")
       .from("patients")
       .select(
         "id, pacware_id, legal_first_name, legal_last_name, status, phone_e164, email, location_id, created_at, updated_at",
@@ -106,11 +110,23 @@ router.get(
 
     const { data: rows, count, error } = await query;
     if (error) throw error;
+    const patientRows = (rows ?? []) as Array<{
+      id: string;
+      pacware_id: string | null;
+      legal_first_name: string | null;
+      legal_last_name: string | null;
+      status: string;
+      phone_e164: string | null;
+      email: string | null;
+      location_id: string | null;
+      created_at: string;
+      updated_at: string;
+    }>;
 
     // Bulk-fetch the latest-message projection for the rows on this
     // page. Single round-trip; the `.in()` filter is cheap because the
     // projection is patient-scoped (one row per patient).
-    const ids = (rows ?? []).map((r) => r.id);
+    const ids = patientRows.map((r) => r.id);
     let latestById = new Map<
       string,
       {
@@ -121,7 +137,6 @@ router.get(
     >();
     if (ids.length > 0) {
       const { data: latest, error: latestErr } = await supabase
-        .schema("resupply")
         .from("patient_latest_message")
         .select(
           "patient_id, last_message_at, last_message_direction, last_message_preview",
@@ -129,7 +144,14 @@ router.get(
         .in("patient_id", ids);
       if (latestErr) throw latestErr;
       latestById = new Map(
-        (latest ?? []).map((l) => [
+        (
+          (latest ?? []) as Array<{
+            patient_id: string;
+            last_message_at: string;
+            last_message_direction: string;
+            last_message_preview: string;
+          }>
+        ).map((l) => [
           l.patient_id,
           {
             last_message_at: l.last_message_at,
@@ -141,7 +163,7 @@ router.get(
     }
 
     res.status(200).json({
-      items: (rows ?? []).map((r) => {
+      items: patientRows.map((r) => {
         const latest = latestById.get(r.id);
         return {
           id: r.id,

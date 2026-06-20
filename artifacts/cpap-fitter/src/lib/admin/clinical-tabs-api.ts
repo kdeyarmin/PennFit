@@ -341,6 +341,11 @@ export interface InsuranceClaim {
   totalAllowedCents: number;
   totalPaidCents: number;
   patientResponsibilityCents: number;
+  // Itemized patient-responsibility breakdown from the 835 PR-group CAS
+  // adjustments (migration 0327); 0 when the payer supplied no breakdown.
+  deductibleCents: number;
+  coinsuranceCents: number;
+  copayCents: number;
   submittedAt: string | null;
   decisionAt: string | null;
   paidAt: string | null;
@@ -563,3 +568,52 @@ export const submitInsuranceClaimToOfficeAlly = (
       body: JSON.stringify(body ?? {}),
     },
   );
+
+/**
+ * Build + download a clearinghouse-neutral 837P for the given claims (the
+ * "export the 837P and upload it to the clearinghouse of your choice" path).
+ * Streams the file as an attachment — not JSON — so it bypasses jsonFetch.
+ * `receiverId` is the target clearinghouse's interchange receiver id (ISA08);
+ * blank uses the server default.
+ */
+export async function downloadClaims837p(
+  claimIds: string[],
+  receiverId?: string,
+): Promise<void> {
+  const path = "/admin/billing/claims/export-837p";
+  const res = await fetch(`/resupply-api${path}`, {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      Accept: "application/edi-x12, application/json",
+      "Content-Type": "application/json",
+      ...csrfHeader(),
+    },
+    body: JSON.stringify(
+      receiverId && receiverId.trim() !== ""
+        ? { claimIds, receiverId: receiverId.trim() }
+        : { claimIds },
+    ),
+  });
+  if (!res.ok) {
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      // not JSON
+    }
+    throw new ApiError(res, data, { method: "POST", url: path });
+  }
+  const cd = res.headers.get("Content-Disposition") ?? "";
+  const match = cd.match(/filename="?([^"]+)"?/);
+  const filename = match?.[1] ?? "claims-837p.txt";
+  const blob = await res.blob();
+  const blobUrl = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = blobUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+}

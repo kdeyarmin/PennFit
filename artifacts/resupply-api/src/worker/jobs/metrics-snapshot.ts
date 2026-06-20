@@ -19,9 +19,10 @@
 
 import type PgBoss from "pg-boss";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import { createQueueWithDlq, CRON_SCAN_QUEUE_OPTS } from "../lib/queue-options";
 
 export const METRICS_SNAPSHOT_JOB = "metrics.daily-snapshot";
@@ -109,16 +110,25 @@ export interface MetricsSnapshotStats {
   written: number;
 }
 
-export async function runMetricsSnapshot(
-  now: Date = new Date(),
-): Promise<MetricsSnapshotStats> {
+/**
+ * Snapshot one tenant's headline KPIs for the given UTC day-window.
+ * Extracted so the cron can fan out across every active tenant — the
+ * metrics substrate (migration 0380) is now keyed (org_id, metric_date,
+ * metric_key), so each tenant gets its OWN daily series: shop_orders is
+ * read on the tenant's own org-scoped client and every metrics_daily row
+ * is stamped with the tenant's org_id. Returns the number of rows written
+ * for THIS tenant.
+ */
+export async function runMetricsSnapshotForOrg(
+  orgId: string,
+  now: Date,
+): Promise<number> {
   const { metricDate, startIso, endIso } = dailyWindowUtc(now);
-  const supabase = getSupabaseServiceRoleClient();
+  const supabase = getOrgScopedClient(orgId);
 
   // Bounded fetch: one day of paid orders. Sum in JS (PostgREST has no
   // portable SUM here) — the daily order volume is small.
   const { data: orders, error } = await supabase
-    .schema("resupply")
     .from("shop_orders")
     .select("amount_total_cents, amount_refunded_cents")
     .eq("status", "paid")
@@ -141,17 +151,39 @@ export async function runMetricsSnapshot(
     revenueRefundedCents: refundedCents,
   });
 
+  // metrics_daily is NOT in the typed Database, so reach it via raw();
+  // stamp the tenant's org_id on every row and upsert on the re-keyed
+  // (org_id, metric_date, metric_key) PK (migration 0380).
   const capturedAt = new Date().toISOString();
   const { error: upErr } = await supabase
+    .raw()
     .schema("resupply")
     .from("metrics_daily")
     .upsert(
-      rows.map((r) => ({ ...r, captured_at: capturedAt })),
-      { onConflict: "metric_date,metric_key" },
+      rows.map((r) => ({ ...r, org_id: orgId, captured_at: capturedAt })),
+      { onConflict: "org_id,metric_date,metric_key" },
     );
   if (upErr) throw upErr;
 
-  return { metricDate, written: rows.length };
+  return rows.length;
+}
+
+export async function runMetricsSnapshot(
+  now: Date = new Date(),
+): Promise<MetricsSnapshotStats> {
+  const { metricDate } = dailyWindowUtc(now);
+
+  // Fan out across every active tenant — each writes its own per-tenant
+  // daily snapshot (migration 0380), with per-tenant failure isolation.
+  let written = 0;
+  await forEachActiveOrg(
+    async (orgId) => {
+      written += await runMetricsSnapshotForOrg(orgId, now);
+    },
+    { jobName: METRICS_SNAPSHOT_JOB },
+  );
+
+  return { metricDate, written };
 }
 
 export async function registerMetricsSnapshotJob(boss: PgBoss): Promise<void> {

@@ -85,7 +85,7 @@ export function MobileCtaBar() {
           <span>Shop</span>
         </Link>
         <Link
-          href="/faq"
+          href="/help"
           className="flex flex-col items-center justify-center gap-1 px-2 py-2.5 text-[hsl(var(--penn-navy))] active:bg-secondary/40 transition-colors"
           data-testid="mobile-cta-talk"
         >

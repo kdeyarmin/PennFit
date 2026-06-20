@@ -18,7 +18,7 @@
 
 import { Router, type IRouter } from "express";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
@@ -34,8 +34,14 @@ router.get(
   "/admin/billing/dashboard",
   adminReadRateLimiter,
   requireAdmin,
-  async (_req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+  async (req, res) => {
+    // Fail closed: never widen to all tenants on a missing orgId.
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const db = getOrgScopedClient(orgId);
     const now = Date.now();
     const draftStaleCutoff = new Date(
       now - DRAFT_STALE_HOURS * 3600 * 1000,
@@ -51,8 +57,7 @@ router.get(
     ).toISOString();
 
     const results = await Promise.all([
-      supabase
-        .schema("resupply")
+      db
         .from("insurance_claims")
         .select(
           "id, patient_id, payer_name, total_billed_cents, created_at, updated_at",
@@ -61,8 +66,7 @@ router.get(
         .lte("created_at", draftStaleCutoff)
         .order("created_at", { ascending: true })
         .limit(50),
-      supabase
-        .schema("resupply")
+      db
         .from("insurance_claims")
         .select(
           "id, patient_id, payer_name, total_billed_cents, denial_reason, decision_at",
@@ -71,8 +75,7 @@ router.get(
         .gte("decision_at", denialCutoff)
         .order("decision_at", { ascending: false })
         .limit(50),
-      supabase
-        .schema("resupply")
+      db
         .from("insurance_claims")
         .select(
           "id, patient_id, payer_name, total_billed_cents, submitted_at, office_ally_submission_id",
@@ -81,8 +84,7 @@ router.get(
         .lte("submitted_at", stuckCutoff)
         .order("submitted_at", { ascending: true })
         .limit(50),
-      supabase
-        .schema("resupply")
+      db
         .from("era_files")
         .select(
           "id, file_name, claims_paid_count, claims_denied_count, rejection_reason, ingested_at",
@@ -90,8 +92,7 @@ router.get(
         .eq("status", "partial")
         .order("ingested_at", { ascending: false })
         .limit(20),
-      supabase
-        .schema("resupply")
+      db
         .from("fulfillments")
         .select("id, patient_id, item_sku, quantity, shipped_at")
         .gte("shipped_at", fulfillmentCutoff)
@@ -107,13 +108,47 @@ router.get(
     for (const r of results) {
       if (r.error) throw r.error;
     }
-    const [
-      { data: drafts },
-      { data: denied },
-      { data: stuck },
-      { data: partialEras },
-      { data: recentFulfillments },
-    ] = results;
+    // The org-scoped facade returns loosely-typed builder results, so
+    // pin each result set to the shape its `.select(...)` requested.
+    const drafts = (results[0].data ?? []) as Array<{
+      id: string;
+      patient_id: string | null;
+      payer_name: string | null;
+      total_billed_cents: number | null;
+      created_at: string;
+      updated_at: string;
+    }>;
+    const denied = (results[1].data ?? []) as Array<{
+      id: string;
+      patient_id: string | null;
+      payer_name: string | null;
+      total_billed_cents: number | null;
+      denial_reason: string | null;
+      decision_at: string | null;
+    }>;
+    const stuck = (results[2].data ?? []) as Array<{
+      id: string;
+      patient_id: string | null;
+      payer_name: string | null;
+      total_billed_cents: number | null;
+      submitted_at: string | null;
+      office_ally_submission_id: string | null;
+    }>;
+    const partialEras = (results[3].data ?? []) as Array<{
+      id: string;
+      file_name: string;
+      claims_paid_count: number | null;
+      claims_denied_count: number | null;
+      rejection_reason: string | null;
+      ingested_at: string | null;
+    }>;
+    const recentFulfillments = (results[4].data ?? []) as Array<{
+      id: string;
+      patient_id: string | null;
+      item_sku: string;
+      quantity: number | null;
+      shipped_at: string | null;
+    }>;
 
     // Filter fulfillments to "no claim yet". One batched lookup of every
     // fulfillment that already has a claim, instead of a count query per
@@ -121,13 +156,14 @@ router.get(
     const fulfillmentIds = (recentFulfillments ?? []).map((f) => f.id);
     const billedFulfillmentIds = new Set<string>();
     if (fulfillmentIds.length > 0) {
-      const { data: claimedRows, error: claimedErr } = await supabase
-        .schema("resupply")
+      const { data: claimedRows, error: claimedErr } = await db
         .from("insurance_claims")
         .select("fulfillment_id")
         .in("fulfillment_id", fulfillmentIds);
       if (claimedErr) throw claimedErr;
-      for (const c of claimedRows ?? []) {
+      for (const c of (claimedRows ?? []) as Array<{
+        fulfillment_id: string | null;
+      }>) {
         if (c.fulfillment_id) billedFulfillmentIds.add(c.fulfillment_id);
       }
     }

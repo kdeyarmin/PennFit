@@ -13,10 +13,22 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
+
+// The org-scoped client's `.select()` is dynamically typed (any), so we
+// annotate the row shapes read back from each table.
+type ConversationRow = Database["resupply"]["Tables"]["conversations"]["Row"];
+type PatientNameRow = Pick<
+  Database["resupply"]["Tables"]["patients"]["Row"],
+  "id" | "legal_first_name" | "legal_last_name"
+>;
+type CustomerLiteRow = Pick<
+  Database["resupply"]["Tables"]["shop_customers"]["Row"],
+  "customer_id" | "display_name" | "email_lower"
+>;
 
 const listQuery = z
   .object({
@@ -89,12 +101,17 @@ router.get(
       offset,
     } = parsed.data;
 
-    const supabase = getSupabaseServiceRoleClient();
+    // Fail closed: never widen to all tenants on a missing orgId.
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const db = getOrgScopedClient(orgId);
 
     // Sort: escalated first (NULLS LAST so non-SLA threads don't push
     // to the top), then SLA ascending, then last-message recency.
-    let query = supabase
-      .schema("resupply")
+    let query = db
       .from("conversations")
       .select(
         "id, patient_id, customer_id, episode_id, channel, status, last_message_at, created_at, assigned_admin_user_id, assigned_at, priority, sla_due_at, escalated_at, escalation_reason, snoozed_until",
@@ -144,8 +161,9 @@ router.get(
       query = query.or(`snoozed_until.is.null,snoozed_until.lte.${nowIso}`);
     }
 
-    const { data: rows, count, error } = await query;
+    const { data: rawRows, count, error } = await query;
     if (error) throw error;
+    const rows: ConversationRow[] = rawRows ?? [];
 
     // Bulk-fetch the joined identity rows. The original SQL query
     // LEFT JOINed patients + shop_customers; PostgREST has no JOIN, so
@@ -153,30 +171,24 @@ router.get(
     // round-trip per side.
     const patientIds = Array.from(
       new Set(
-        (rows ?? [])
-          .map((r) => r.patient_id)
-          .filter((v): v is string => v !== null),
+        rows.map((r) => r.patient_id).filter((v): v is string => v !== null),
       ),
     );
     const customerIds = Array.from(
       new Set(
-        (rows ?? [])
-          .map((r) => r.customer_id)
-          .filter((v): v is string => v !== null),
+        rows.map((r) => r.customer_id).filter((v): v is string => v !== null),
       ),
     );
 
     const [patientsRes, customersRes] = await Promise.all([
       patientIds.length > 0
-        ? supabase
-            .schema("resupply")
+        ? db
             .from("patients")
             .select("id, legal_first_name, legal_last_name")
             .in("id", patientIds)
         : Promise.resolve({ data: [], error: null } as const),
       customerIds.length > 0
-        ? supabase
-            .schema("resupply")
+        ? db
             .from("shop_customers")
             .select("customer_id, display_name, email_lower")
             .in("customer_id", customerIds)
@@ -185,14 +197,18 @@ router.get(
     if (patientsRes.error) throw patientsRes.error;
     if (customersRes.error) throw customersRes.error;
     const patientsById = new Map(
-      (patientsRes.data ?? []).map((p) => [p.id, p] as const),
+      ((patientsRes.data ?? []) as PatientNameRow[]).map(
+        (p) => [p.id, p] as const,
+      ),
     );
     const customersById = new Map(
-      (customersRes.data ?? []).map((c) => [c.customer_id, c] as const),
+      ((customersRes.data ?? []) as CustomerLiteRow[]).map(
+        (c) => [c.customer_id, c] as const,
+      ),
     );
 
     res.status(200).json({
-      items: (rows ?? []).map((r) => {
+      items: rows.map((r) => {
         const pt = r.patient_id ? patientsById.get(r.patient_id) : undefined;
         const cu = r.customer_id ? customersById.get(r.customer_id) : undefined;
         return {

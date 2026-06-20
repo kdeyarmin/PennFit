@@ -13,7 +13,7 @@
 
 import { Router, type IRouter } from "express";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
@@ -24,15 +24,20 @@ router.get(
   "/admin/billing/benchmarks",
   adminReadRateLimiter,
   requireAdmin,
-  async (_req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+  async (req, res) => {
+    // Fail closed: never widen to all tenants on a missing orgId.
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const db = getOrgScopedClient(orgId);
 
     // Pull last-180-day decided claims as the population for the
     // distribution stats. The decided population gives stable history
     // without overweighting in-flight noise.
     const cutoff = new Date(Date.now() - 180 * 24 * 3600 * 1000).toISOString();
-    const { data: claims, error: claimsErr } = await supabase
-      .schema("resupply")
+    const { data: claims, error: claimsErr } = await db
       .from("insurance_claims")
       .select(
         "id, payer_name, status, total_billed_cents, total_paid_cents, submitted_at, decision_at, paid_at, predicted_denial_probability",
@@ -43,7 +48,17 @@ router.get(
     // Throw — a swallowed error rendered the benchmarks as all-zero
     // (same swallowed-`error` class as billing-dashboard).
     if (claimsErr) throw claimsErr;
-    const claimList = claims ?? [];
+    const claimList = (claims ?? []) as Array<{
+      id: string;
+      payer_name: string;
+      status: string;
+      total_billed_cents: number;
+      total_paid_cents: number;
+      submitted_at: string | null;
+      decision_at: string | null;
+      paid_at: string | null;
+      predicted_denial_probability: number | null;
+    }>;
 
     // ── DSO (days from submit → paid). ────────────────────────────
     const dsoDays = claimList

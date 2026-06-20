@@ -11,6 +11,7 @@ import {
   FitterCaptureShot,
   FitterResultsShot,
 } from "@/components/help/help-screens";
+import { BrandName } from "@/components/company-contact";
 
 const steps: HelpStep[] = [
   {
@@ -58,10 +59,7 @@ const steps: HelpStep[] = [
       </>,
     ],
     shot: (
-      <Screenshot
-        url="pennpaps.com/consent"
-        caption="The consent screen explains exactly what leaves your device — your photo never does."
-      >
+      <Screenshot caption="The consent screen explains exactly what leaves your device — your photo never does.">
         <ConsentShot />
       </Screenshot>
     ),
@@ -120,7 +118,7 @@ const steps: HelpStep[] = [
     title: "Review your ranked recommendations",
     body: (
       <p>
-        PennPaps ranks masks from our catalog using your measurements and
+        <BrandName /> ranks masks from our catalog using your measurements and
         questionnaire, with a clear match score and a plain-English explanation
         of <em>why</em> each one fits you. The strongest match is flagged{" "}
         <strong>Best fit</strong>.
@@ -138,10 +136,7 @@ const steps: HelpStep[] = [
       </>,
     ],
     shot: (
-      <Screenshot
-        url="pennpaps.com/results"
-        caption="Each recommendation shows a match score and the reasoning behind it; the top result is badged Best fit."
-      >
+      <Screenshot caption="Each recommendation shows a match score and the reasoning behind it; the top result is badged Best fit.">
         <FitterResultsShot />
       </Screenshot>
     ),
@@ -155,7 +150,7 @@ export function HelpFindYourMask() {
       title="Find your mask with the Virtual Fitter"
       Icon={ScanFace}
       minutes="3 min"
-      metaDescription="Step-by-step guide to the PennPaps Virtual Mask Fitter: consent, on-device face capture, the questionnaire, and reading your ranked mask recommendations."
+      metaDescription="Step-by-step guide to the Virtual Mask Fitter: consent, on-device face capture, the questionnaire, and reading your ranked mask recommendations."
       intro="The Virtual Mask Fitter matches you to the right CPAP mask from a quick on-device face scan and a few questions. Here's exactly what to expect, screen by screen."
       summary={
         <>

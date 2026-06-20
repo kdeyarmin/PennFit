@@ -45,6 +45,7 @@ import {
   setDownloadHeaders,
   type ReportModule,
   type CsvSink,
+  reportOrgId,
 } from "./shared";
 
 export type CombinedFinancialRow = QuickbooksRowInput & {
@@ -79,14 +80,15 @@ export function buildCombinedFinancialRows(
 }
 
 export async function fetchCombinedFinancial(
+  orgId: string,
   from: Date,
   to: Date,
 ): Promise<CombinedFinancialRow[]> {
   const [orders, returns, claims, payments] = await Promise.all([
-    fetchOrders(from, to),
-    fetchReturns(from, to),
-    fetchInsuranceClaims(from, to),
-    fetchPatientPayments(from, to),
+    fetchOrders(orgId, from, to),
+    fetchReturns(orgId, from, to),
+    fetchInsuranceClaims(orgId, from, to),
+    fetchPatientPayments(orgId, from, to),
   ]);
   return buildCombinedFinancialRows(orders, returns, claims, payments);
 }
@@ -138,8 +140,10 @@ export const allFinancialReport: ReportModule = {
       "/admin/reports/all-financial.csv",
       requirePermission("reports.read"),
       async (req, res) => {
+        const orgId = reportOrgId(req, res);
+        if (!orgId) return;
         const { from, to } = parseRange(req);
-        const rows = await fetchCombinedFinancial(from, to);
+        const rows = await fetchCombinedFinancial(orgId, from, to);
         setDownloadHeaders(
           res,
           "text/csv; charset=utf-8",
@@ -153,8 +157,10 @@ export const allFinancialReport: ReportModule = {
       "/admin/reports/all-financial.pdf",
       requirePermission("reports.read"),
       async (req, res) => {
+        const orgId = reportOrgId(req, res);
+        if (!orgId) return;
         const { from, to } = parseRange(req);
-        const rows = await fetchCombinedFinancial(from, to);
+        const rows = await fetchCombinedFinancial(orgId, from, to);
         const inflow = rows
           .filter((r) => r.amountUsd > 0)
           .reduce((s, r) => s + r.amountUsd, 0);
@@ -200,8 +206,10 @@ export const allFinancialReport: ReportModule = {
       "/admin/reports/all-financial.iif",
       requirePermission("reports.read"),
       async (req, res) => {
+        const orgId = reportOrgId(req, res);
+        if (!orgId) return;
         const { from, to } = parseRange(req);
-        const rows = await fetchCombinedFinancial(from, to);
+        const rows = await fetchCombinedFinancial(orgId, from, to);
         const iif = await renderIifWithAccounts({
           from: from.toISOString().slice(0, 10),
           to: to.toISOString().slice(0, 10),
@@ -221,8 +229,10 @@ export const allFinancialReport: ReportModule = {
       "/admin/reports/all-financial.qbo.csv",
       requirePermission("reports.read"),
       async (req, res) => {
+        const orgId = reportOrgId(req, res);
+        if (!orgId) return;
         const { from, to } = parseRange(req);
-        const rows = await fetchCombinedFinancial(from, to);
+        const rows = await fetchCombinedFinancial(orgId, from, to);
         const csv = renderQboCsv({
           from: from.toISOString().slice(0, 10),
           to: to.toISOString().slice(0, 10),
@@ -239,14 +249,17 @@ export const allFinancialReport: ReportModule = {
     );
   },
 
-  async buildEmailCsv(from, to) {
+  async buildEmailCsv(orgId, from, to) {
     const { res, collect } = bufferedRes();
-    writeCombinedFinancialCsv(res, await fetchCombinedFinancial(from, to));
+    writeCombinedFinancialCsv(
+      res,
+      await fetchCombinedFinancial(orgId, from, to),
+    );
     return collect();
   },
 
-  async buildEmailPdf(from, to) {
-    const rows = await fetchCombinedFinancial(from, to);
+  async buildEmailPdf(orgId, from, to) {
+    const rows = await fetchCombinedFinancial(orgId, from, to);
     const inflow = rows
       .filter((r) => r.amountUsd > 0)
       .reduce((s, r) => s + r.amountUsd, 0);
@@ -281,7 +294,7 @@ export const allFinancialReport: ReportModule = {
     return pdf;
   },
 
-  async buildEmailQbRows(from, to) {
-    return fetchCombinedFinancial(from, to);
+  async buildEmailQbRows(orgId, from, to) {
+    return fetchCombinedFinancial(orgId, from, to);
   },
 };

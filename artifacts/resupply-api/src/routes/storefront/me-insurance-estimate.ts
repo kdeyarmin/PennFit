@@ -18,7 +18,10 @@
 
 import { Router, type IRouter } from "express";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  getOrgScopedClient,
+  type OrgScopedClient,
+} from "@workspace/resupply-db";
 
 const router: IRouter = Router();
 
@@ -34,11 +37,10 @@ const router: IRouter = Router();
  * @throws Error when a database query fails; the error message includes the underlying database error
  */
 async function resolvePatientForCustomer(
+  supabase: OrgScopedClient,
   customerId: string,
 ): Promise<{ patientId: string } | null> {
-  const supabase = getSupabaseServiceRoleClient();
   const { data: customer, error: customerError } = await supabase
-    .schema("resupply")
     .from("shop_customers")
     .select("customer_id, email_lower")
     .eq("customer_id", customerId)
@@ -61,7 +63,6 @@ async function resolvePatientForCustomer(
     (c: string) => `\\${c}`,
   );
   const { data: patients, error: patientError } = await supabase
-    .schema("resupply")
     .from("patients")
     .select("id")
     .ilike("email", escapedEmail)
@@ -89,18 +90,24 @@ router.get("/me/insurance-estimate", async (req, res) => {
     res.status(401).json({ error: "sign_in_required" });
     return;
   }
-  const link = await resolvePatientForCustomer(customerId);
+  // Authenticated handler (pattern 1): a present shopCustomerId means
+  // `attachSignedIn` populated req.orgId. Fail closed if it's missing.
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
+  const link = await resolvePatientForCustomer(supabase, customerId);
   if (!link) {
     res.json({ available: false });
     return;
   }
-  const supabase = getSupabaseServiceRoleClient();
 
   // Newest parsed check first. We skip queued/submitted/rejected/
   // transport_failed because their financial fields are unreliable
   // (queued/submitted = not back yet; rejected = no parsed numbers).
   const { data: check, error: checkError } = await supabase
-    .schema("resupply")
     .from("eligibility_checks")
     .select(
       "is_active, in_network, deductible_cents, deductible_met_cents, oop_max_cents, oop_met_cents, copay_cents, coinsurance_pct, requires_prior_auth, payer_profile_id, responded_at",
@@ -127,7 +134,6 @@ router.get("/me/insurance-estimate", async (req, res) => {
   let payerName: string | null = null;
   if (check.payer_profile_id) {
     const { data: payer, error: payerError } = await supabase
-      .schema("resupply")
       .from("payer_profiles")
       .select("display_name")
       .eq("id", check.payer_profile_id)

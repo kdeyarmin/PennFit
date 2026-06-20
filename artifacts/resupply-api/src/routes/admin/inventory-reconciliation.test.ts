@@ -611,7 +611,8 @@ describe("POST /admin/shop/inventory/reconciliations/:id/submit", () => {
       "update",
     ) as Array<Record<string, unknown>>;
     expect(updates).toHaveLength(1);
-    expect(updates[0]).toEqual({ applied: true });
+    // The org-scoped facade tags every write with the tenant id.
+    expect(updates[0]).toEqual({ applied: true, org_id: expect.any(String) });
   });
 
   it("records partial Stripe failures and still flips the reconciliation", async () => {

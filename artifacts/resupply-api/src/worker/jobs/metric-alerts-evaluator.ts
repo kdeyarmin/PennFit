@@ -16,7 +16,7 @@
 
 import type PgBoss from "pg-boss";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 import {
   evaluateThreshold,
   type ThresholdComparison,
@@ -24,6 +24,7 @@ import {
 } from "@workspace/resupply-domain";
 
 import { logger } from "../../lib/logger";
+import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import { createQueueWithDlq, CRON_SCAN_QUEUE_OPTS } from "../lib/queue-options";
 
 export const METRIC_ALERTS_EVALUATOR_JOB = "metrics.alerts-evaluator";
@@ -81,12 +82,26 @@ export interface MetricAlertsEvaluatorStats {
   fired: number;
 }
 
-export async function runMetricAlertsEvaluator(): Promise<MetricAlertsEvaluatorStats> {
-  const supabase = getSupabaseServiceRoleClient();
+/**
+ * Evaluate one tenant's enabled metric_thresholds against that tenant's
+ * latest metrics_daily snapshot, firing this tenant's metric_alerts.
+ * Extracted so the cron can fan out across every active tenant — the
+ * metrics substrate (migration 0380) is now keyed per tenant, so a
+ * tenant's thresholds only ever see that tenant's metrics and a breach
+ * only ever fires that tenant's alert. Every metrics access is scoped to
+ * `orgId` (the three tables are reached via raw() — not in the typed
+ * Database — so the org filter is explicit).
+ */
+export async function runMetricAlertsEvaluatorForOrg(
+  orgId: string,
+): Promise<MetricAlertsEvaluatorStats> {
+  const supabase = getOrgScopedClient(orgId);
   const { data: thresholdData, error } = await supabase
+    .raw()
     .schema("resupply")
     .from("metric_thresholds")
     .select("*")
+    .eq("org_id", orgId)
     .eq("enabled", true);
   if (error) throw error;
 
@@ -108,8 +123,12 @@ export async function runMetricAlertsEvaluator(): Promise<MetricAlertsEvaluatorS
   >();
   if (metricKeys.length > 0) {
     const { data: latestRows, error: latestErr } = await supabase
+      .raw()
       .schema("resupply")
-      .rpc("metrics_daily_latest", { p_metric_keys: metricKeys });
+      .rpc("metrics_daily_latest", {
+        p_org_id: orgId,
+        p_metric_keys: metricKeys,
+      });
     if (latestErr) throw latestErr;
     for (const r of (latestRows ?? []) as Array<{
       metric_key: string;
@@ -141,9 +160,11 @@ export async function runMetricAlertsEvaluator(): Promise<MetricAlertsEvaluatorS
   }
   if (deltaKeys.size > 0 && baselineDates.size > 0) {
     const { data: baseRows, error: baseErr } = await supabase
+      .raw()
       .schema("resupply")
       .from("metrics_daily")
       .select("metric_key, metric_date, metric_value")
+      .eq("org_id", orgId)
       .in("metric_key", Array.from(deltaKeys))
       .in("metric_date", Array.from(baselineDates));
     if (baseErr) throw baseErr;
@@ -199,10 +220,12 @@ export async function runMetricAlertsEvaluator(): Promise<MetricAlertsEvaluatorS
     });
 
     const { data: insData, error: insErr } = await supabase
+      .raw()
       .schema("resupply")
       .from("metric_alerts")
       .upsert(
         {
+          org_id: orgId,
           threshold_id: thresholdId,
           metric_key: metricKey,
           metric_date: metricDate,
@@ -228,6 +251,23 @@ export async function runMetricAlertsEvaluator(): Promise<MetricAlertsEvaluatorS
     if (Array.isArray(insData) && insData.length > 0) fired += 1;
   }
 
+  return { evaluated, fired };
+}
+
+export async function runMetricAlertsEvaluator(): Promise<MetricAlertsEvaluatorStats> {
+  // Fan out across every active tenant — each evaluates its own thresholds
+  // against its own metrics (migration 0380), with per-tenant failure
+  // isolation. Tallies are summed across tenants.
+  let evaluated = 0;
+  let fired = 0;
+  await forEachActiveOrg(
+    async (orgId) => {
+      const orgStats = await runMetricAlertsEvaluatorForOrg(orgId);
+      evaluated += orgStats.evaluated;
+      fired += orgStats.fired;
+    },
+    { jobName: METRIC_ALERTS_EVALUATOR_JOB },
+  );
   return { evaluated, fired };
 }
 

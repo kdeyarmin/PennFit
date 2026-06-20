@@ -19,7 +19,7 @@ env:
   # The pnpm version pinned in root package.json. Mirror it explicitly so
   # the workflow runner uses the same interpreter the lockfile was
   # produced with.
-  PNPM_VERSION: "11.5.2"
+  PNPM_VERSION: "11.7.0"
   NODE_VERSION: "24"
 
 jobs:
@@ -130,6 +130,17 @@ jobs:
         run: |
           scripts/check-admin-route-gates.sh --self-test
           scripts/check-admin-route-gates.sh
+
+      # Multi-tenant isolation gate (Phase 0 workstream E1). The
+      # --self-test plants a direct callsite in a fixture tree and asserts
+      # the checker catches it; the bare invocation enforces that NO file
+      # calls getSupabaseServiceRoleClient() directly in application code
+      # (the cutover is complete — only the reviewed global/auth callers
+      # in the script's EXCLUDES are exempt).
+      - name: Tenant isolation guard
+        run: |
+          scripts/check-tenant-isolation.sh --self-test
+          scripts/check-tenant-isolation.sh
 
       # Fixture-driven negative-test harnesses for the guard scripts:
       # each `--self-test` execs the sibling `*.sh.test`, which builds a
@@ -276,10 +287,11 @@ jobs:
     name: Integration (PostgREST)
     runs-on: ubuntu-latest
 
-    # Runs the DB-backed Supabase integration test(s) — currently
-    # invite-password-expiry-notify.integration.test.ts — against a REAL
-    # PostgREST surface (the service-role data path), not just a Postgres
-    # container. We don't spin up the full managed Supabase stack (Kong +
+    # Runs the DB-backed Supabase integration test(s) — the worker
+    # `*.integration.test.ts` suite (invite-password-expiry-notify and the
+    # multi-tenant cron fan-out tests, e.g. maintenance-nudges) — against a
+    # REAL PostgREST surface (the service-role data path), not just a
+    # Postgres container. We don't spin up the full managed Supabase stack (Kong +
     # GoTrue + Storage): a standalone PostgREST binary plus a tiny
     # /rest/v1 path proxy is enough for what these tests exercise. The
     # bootstrap lives in scripts/ci/start-test-postgrest.sh.
@@ -337,7 +349,14 @@ jobs:
       - name: Run PostgREST integration tests
         run: |
           pnpm --filter @workspace/resupply-api exec \
-            vitest run src/worker/jobs/invite-password-expiry-notify.integration.test.ts
+            vitest run \
+              src/worker/jobs/invite-password-expiry-notify.integration.test.ts \
+              src/worker/jobs/maintenance-nudges.integration.test.ts \
+              src/worker/jobs/video-visit-reminders.integration.test.ts \
+              src/worker/jobs/recall-notifications-send.integration.test.ts \
+              src/worker/jobs/patient-packet-reminders.integration.test.ts \
+              src/worker/jobs/pacware-ready-to-sync-digest.integration.test.ts \
+              src/worker/jobs/reminders.integration.test.ts
 
   a11y:
     name: A11y (Playwright + axe)

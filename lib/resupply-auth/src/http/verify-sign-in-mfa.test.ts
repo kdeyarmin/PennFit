@@ -415,3 +415,72 @@ describe("verify-sign-in-mfa: partial legacy configuration", () => {
     expect(markSpy).not.toHaveBeenCalled();
   });
 });
+
+// ── brute-force counter fail-closed ──────────────────────────────────────────
+
+describe("verify-sign-in-mfa: failure-count probe errors fail CLOSED", () => {
+  it("returns 429 (not unlimited guesses) when countRecentFailures throws", async () => {
+    const repo = makeMemoryRepo();
+    const userId = "u_closed";
+    void repo.__putUser({
+      id: userId,
+      emailLower: "closed@example.com",
+      displayName: null,
+      role: "agent",
+      status: "active",
+      emailVerifiedAt: new Date(),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    // Simulate the DB probe failing — the gate this counter backs must
+    // fail closed, matching checkLoginRateLimit on the password step.
+    repo.countRecentFailures = async () => {
+      throw new Error("db unavailable");
+    };
+
+    const probeErrors: unknown[] = [];
+    const env = readAuthEnv({ AUTH_PROVIDER: "in_house" });
+    const deps: AuthDeps = {
+      env,
+      repo,
+      audit: () => {},
+      email: () => {},
+      publicBaseUrl: "https://example.test",
+      secureCookies: false,
+      mfa: {
+        async findActiveSecret() {
+          return { secretBase32: STUB_SECRET_BASE32, lastUsedCounter: null };
+        },
+        async recordVerify() {},
+      },
+      mfaChallengeHmacKey: HMAC_KEY,
+      rateLimitOnError: (err) => {
+        probeErrors.push(err);
+      },
+    };
+
+    const app = express();
+    app.use(express.json());
+    const testLimiter = expressRateLimit({
+      windowMs: 60 * 1000,
+      limit: 10_000,
+      standardHeaders: false,
+      legacyHeaders: false,
+    });
+    app.post("/verify-mfa", testLimiter, makeVerifySignInMfaHandler(deps));
+
+    const challengeToken = mintMfaChallengeToken({
+      uid: userId,
+      hmacKey: HMAC_KEY,
+    });
+    const res = await postVerifyMfa(app, {
+      challengeToken,
+      code: "000000",
+    });
+
+    expect(res.status).toBe(429);
+    expect(res.headers["retry-after"]).toBeDefined();
+    // The observability hook saw the probe failure.
+    expect(probeErrors).toHaveLength(1);
+  });
+});

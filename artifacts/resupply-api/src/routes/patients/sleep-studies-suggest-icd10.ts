@@ -11,7 +11,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import {
   ICD10_PROMPT_VERSION,
@@ -52,9 +52,13 @@ router.post(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: study } = await supabase
-      .schema("resupply")
       .from("sleep_studies")
       .select("id, patient_id, diagnosis_icd10")
       .eq("id", idParsed.data.studyId)
@@ -82,7 +86,6 @@ router.post(
       // If this write fails, reporting applied:true (and the audit row)
       // would be a lie — fail the request instead.
       const { error: applyErr } = await supabase
-        .schema("resupply")
         .from("sleep_studies")
         .update({
           diagnosis_icd10: out.icd10,
@@ -138,9 +141,13 @@ router.post(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: study } = await supabase
-      .schema("resupply")
       .from("sleep_studies")
       .select("id, diagnosis_source, diagnosis_icd10")
       .eq("id", idParsed.data.studyId)
@@ -159,7 +166,6 @@ router.post(
       return;
     }
     const { error: acceptErr } = await supabase
-      .schema("resupply")
       .from("sleep_studies")
       .update({
         diagnosis_source: "ai_accepted",

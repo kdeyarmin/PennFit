@@ -156,7 +156,7 @@ export function validateSwoInputs(inputs: SwoInputs): SwoValidationError[] {
  * Plain-text item description that goes alongside the HCPCS code on
  * the SWO. The SKU is what we order against in Pacware; the
  * narrative is what the practitioner reads. Best-effort: we don't
- * have a SKU→description catalog in PennFit, so we derive a
+ * have a SKU→description catalog in CareMetric Breathe, so we derive a
  * reasonable description from the HCPCS code (a small static map)
  * and fall back to the raw SKU when we don't recognize the code.
  *

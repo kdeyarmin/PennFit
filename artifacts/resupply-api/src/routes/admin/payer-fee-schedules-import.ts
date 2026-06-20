@@ -7,7 +7,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { parseFeeScheduleCsv } from "../../lib/billing/fee-schedule-csv";
 import { logger } from "../../lib/logger";
@@ -45,9 +45,13 @@ router.post(
       });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: payer } = await supabase
-      .schema("resupply")
       .from("payer_profiles")
       .select("id, display_name")
       .eq("id", parsed.data.payerProfileId)
@@ -66,7 +70,6 @@ router.post(
       return;
     }
     const { error: insertErr } = await supabase
-      .schema("resupply")
       .from("payer_fee_schedules")
       .insert(rows);
     if (insertErr) {

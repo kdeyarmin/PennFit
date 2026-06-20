@@ -20,7 +20,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { adminWriteRateLimiter } from "../../middlewares/admin-rate-limit";
@@ -61,10 +61,14 @@ router.patch(
     const { rxId } = idParsed.data;
     const { status: nextStatus } = bodyParsed.data;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     const { data: rx, error: rxError } = await supabase
-      .schema("resupply")
       .from("prescriptions")
       .select("id, patient_id, item_sku, status")
       .eq("id", rxId)
@@ -100,7 +104,6 @@ router.patch(
     }
 
     const { error } = await supabase
-      .schema("resupply")
       .from("prescriptions")
       .update({ status: nextStatus, updated_at: new Date().toISOString() })
       .eq("id", rxId);

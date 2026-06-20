@@ -35,7 +35,22 @@ vi.mock("./secondary-claim-generator", async (importOriginal) => {
 });
 
 import { runSecondaryClaimPass } from "./auto-workflow-engine";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  getOrgScopedClient,
+  getSupabaseServiceRoleClient,
+} from "@workspace/resupply-db";
+
+const TEST_ORG_ID = "00000000-0000-0000-0000-000000000001";
+
+// The pass now takes an OrgScopedClient; wrap the mocked service-role
+// client through the facade (test seam) so the staged responses still
+// flow through.
+function orgScoped() {
+  return getOrgScopedClient(
+    TEST_ORG_ID,
+    getSupabaseServiceRoleClient() as never,
+  );
+}
 
 function freshStats() {
   return {
@@ -74,7 +89,7 @@ describe("runSecondaryClaimPass", () => {
   it("no-ops when the feature flag is disabled", async () => {
     flagEnabled.current = false;
     const stats = freshStats();
-    await runSecondaryClaimPass(getSupabaseServiceRoleClient(), stats);
+    await runSecondaryClaimPass(orgScoped(), stats);
     expect(stats.secondaryClaimsDrafted).toBe(0);
     expect(generateMock).not.toHaveBeenCalled();
   });
@@ -99,7 +114,7 @@ describe("runSecondaryClaimPass", () => {
     });
 
     const stats = freshStats();
-    await runSecondaryClaimPass(getSupabaseServiceRoleClient(), stats);
+    await runSecondaryClaimPass(orgScoped(), stats);
 
     expect(generateMock).toHaveBeenCalledWith(expect.anything(), "c1");
     expect(stats.secondaryClaimsDrafted).toBe(1);
@@ -137,7 +152,7 @@ describe("runSecondaryClaimPass", () => {
     });
 
     const stats = freshStats();
-    await runSecondaryClaimPass(getSupabaseServiceRoleClient(), stats);
+    await runSecondaryClaimPass(orgScoped(), stats);
 
     expect(generateMock).toHaveBeenCalledTimes(1);
     expect(generateMock).toHaveBeenCalledWith(expect.anything(), "c2");
@@ -154,7 +169,7 @@ describe("runSecondaryClaimPass", () => {
       .mockResolvedValueOnce({ status: "create_failed" });
 
     const stats = freshStats();
-    await runSecondaryClaimPass(getSupabaseServiceRoleClient(), stats);
+    await runSecondaryClaimPass(orgScoped(), stats);
 
     expect(stats.secondaryClaimsDrafted).toBe(0);
     expect(stats.errors).toBe(1);
@@ -164,7 +179,7 @@ describe("runSecondaryClaimPass", () => {
   it("returns early when there are no candidates", async () => {
     stageSupabaseResponse("insurance_claims", "select", { data: [] });
     const stats = freshStats();
-    await runSecondaryClaimPass(getSupabaseServiceRoleClient(), stats);
+    await runSecondaryClaimPass(orgScoped(), stats);
     expect(generateMock).not.toHaveBeenCalled();
     expect(stats.secondaryClaimsDrafted).toBe(0);
   });
@@ -174,7 +189,7 @@ describe("runSecondaryClaimPass", () => {
       error: { message: "boom" },
     });
     const stats = freshStats();
-    await runSecondaryClaimPass(getSupabaseServiceRoleClient(), stats);
+    await runSecondaryClaimPass(orgScoped(), stats);
     expect(stats.errors).toBe(1);
     expect(generateMock).not.toHaveBeenCalled();
   });
@@ -187,7 +202,7 @@ describe("runSecondaryClaimPass", () => {
       error: { message: "boom" },
     });
     const stats = freshStats();
-    await runSecondaryClaimPass(getSupabaseServiceRoleClient(), stats);
+    await runSecondaryClaimPass(orgScoped(), stats);
     expect(stats.errors).toBe(1);
     // Must NOT proceed to draft (which would risk duplicate creates).
     expect(generateMock).not.toHaveBeenCalled();

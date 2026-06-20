@@ -27,7 +27,7 @@
 //     Bucket name for the public asset path used by searchPublicObject.
 
 import { randomUUID } from "crypto";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 import {
   ObjectAclPolicy,
   ObjectPermission,
@@ -77,12 +77,15 @@ export interface StoredObjectHandle extends StoredObject {
 async function readObjectMetadata(
   obj: StoredObject,
 ): Promise<{ size: number; contentType: string }> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) throw new ObjectNotFoundError();
+  const supabase = getOrgScopedClient(orgId);
   const slashIdx = obj.path.lastIndexOf("/");
   const dir = slashIdx >= 0 ? obj.path.slice(0, slashIdx) : "";
   const base = slashIdx >= 0 ? obj.path.slice(slashIdx + 1) : obj.path;
-  const { data, error } = await supabase.storage
-    .from(obj.bucket)
+  const { data, error } = await supabase
+    .raw()
+    .storage.from(obj.bucket)
     .list(dir, { search: base });
   const entry = data?.find((e) => e.name === base);
   if (error || !entry) {
@@ -109,8 +112,13 @@ async function deleteObject(
   obj: StoredObject,
   opts: { ignoreNotFound?: boolean } = {},
 ): Promise<void> {
-  const supabase = getSupabaseServiceRoleClient();
-  const { error } = await supabase.storage.from(obj.bucket).remove([obj.path]);
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) return;
+  const supabase = getOrgScopedClient(orgId);
+  const { error } = await supabase
+    .raw()
+    .storage.from(obj.bucket)
+    .remove([obj.path]);
   if (error) {
     if (
       opts.ignoreNotFound &&
@@ -172,12 +180,15 @@ export class ObjectStorageService {
   ): Promise<StoredObjectHandle | null> {
     const bucket = optionalPublicBucket();
     if (!bucket) return null;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = await resolveSeedOrgId();
+    if (!orgId) return null;
+    const supabase = getOrgScopedClient(orgId);
     const slashIdx = filePath.lastIndexOf("/");
     const dir = slashIdx >= 0 ? filePath.slice(0, slashIdx) : "";
     const base = slashIdx >= 0 ? filePath.slice(slashIdx + 1) : filePath;
-    const { data, error } = await supabase.storage
-      .from(bucket)
+    const { data, error } = await supabase
+      .raw()
+      .storage.from(bucket)
       .list(dir, { search: base });
     if (error) return null;
     const hasExactMatch = data?.some((entry) => entry.name === base) ?? false;
@@ -203,12 +214,15 @@ export class ObjectStorageService {
     file: StoredObject,
     cacheTtlSec: number = 3600,
   ): Promise<Response> {
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = await resolveSeedOrgId();
+    if (!orgId) throw new ObjectNotFoundError();
+    const supabase = getOrgScopedClient(orgId);
     const aclPolicy = await this.tryGetAcl(file);
     const isPublic = aclPolicy?.visibility === "public";
 
-    const { data, error } = await supabase.storage
-      .from(file.bucket)
+    const { data, error } = await supabase
+      .raw()
+      .storage.from(file.bucket)
       .download(file.path);
     if (error || !data) {
       throw new ObjectNotFoundError();
@@ -233,12 +247,19 @@ export class ObjectStorageService {
    */
   async getObjectEntityUploadURL(): Promise<string> {
     const bucket = requirePrivateBucket();
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = await resolveSeedOrgId();
+    if (!orgId) {
+      throw new Error(
+        "Failed to mint signed upload URL: tenant context missing",
+      );
+    }
+    const supabase = getOrgScopedClient(orgId);
     const objectId = randomUUID();
     const path = `uploads/${objectId}`;
 
-    const { data, error } = await supabase.storage
-      .from(bucket)
+    const { data, error } = await supabase
+      .raw()
+      .storage.from(bucket)
       .createSignedUploadUrl(path);
     if (error || !data?.signedUrl) {
       throw new Error(
@@ -289,12 +310,15 @@ export class ObjectStorageService {
     const bucket = requirePrivateBucket();
 
     // Existence check via list + exact name match.
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = await resolveSeedOrgId();
+    if (!orgId) throw new ObjectNotFoundError();
+    const supabase = getOrgScopedClient(orgId);
     const slashIdx = tail.lastIndexOf("/");
     const dir = slashIdx >= 0 ? tail.slice(0, slashIdx) : "";
     const base = slashIdx >= 0 ? tail.slice(slashIdx + 1) : tail;
-    const { data, error } = await supabase.storage
-      .from(bucket)
+    const { data, error } = await supabase
+      .raw()
+      .storage.from(bucket)
       .list(dir, { search: base });
     const hasExactMatch = data?.some((entry) => entry.name === base) ?? false;
     if (error || !hasExactMatch) {
@@ -397,8 +421,13 @@ export class ObjectStorageService {
    */
   private async tryGetAcl(file: StoredObject): Promise<ObjectAclPolicy | null> {
     try {
-      const supabase = getSupabaseServiceRoleClient();
+      const orgId = await resolveSeedOrgId();
+      if (!orgId) return null;
+      const supabase = getOrgScopedClient(orgId);
+      // `object_storage_acls` is a GLOBAL (non-org-scoped) table — use the
+      // unscoped client via `.raw()`.
       const { data } = await supabase
+        .raw()
         .schema("resupply")
         .from("object_storage_acls")
         .select("policy")
@@ -424,10 +453,17 @@ export async function createSignedDownloadUrl(
   file: StoredObject,
   ttlSec: number = 900,
 ): Promise<string> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    throw new Error(
+      `Failed to sign download URL for ${file.bucket}/${file.path}: tenant context missing`,
+    );
+  }
+  const supabase = getOrgScopedClient(orgId);
   const expiresIn = Math.min(Math.max(1, ttlSec), MAX_SIGNED_URL_TTL_SECONDS);
-  const { data, error } = await supabase.storage
-    .from(file.bucket)
+  const { data, error } = await supabase
+    .raw()
+    .storage.from(file.bucket)
     .createSignedUrl(file.path, expiresIn);
   if (error || !data?.signedUrl) {
     throw new Error(

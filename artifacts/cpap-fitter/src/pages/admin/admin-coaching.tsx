@@ -14,6 +14,7 @@ import { Spinner } from "@/components/admin/Spinner";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Button } from "@/components/admin/Button";
 import { Input } from "@/components/admin/Input";
+import { usePromptDialog, type PromptFn } from "@/hooks/use-prompt-dialog";
 import {
   createCoachingPlan,
   listCoachingPlans,
@@ -179,6 +180,7 @@ function PlanListCard({ showClosed }: { showClosed: boolean }) {
   const invalidate = () => {
     void qc.invalidateQueries({ queryKey: ["admin", "coaching", "plans"] });
   };
+  const [prompt, PromptDialogEl] = usePromptDialog();
 
   const plans = useMemo(() => data?.plans ?? [], [data]);
   const baseTitle = showClosed ? "All plans" : "Open plans";
@@ -199,22 +201,42 @@ function PlanListCard({ showClosed }: { showClosed: boolean }) {
               className="text-left border-b"
               style={{ borderColor: "hsl(var(--line-1))" }}
             >
-              <th className="py-2 font-semibold">Patient</th>
-              <th className="py-2 font-semibold">Status</th>
-              <th className="py-2 font-semibold">Target</th>
-              <th className="py-2 font-semibold">Latest</th>
-              <th className="py-2 font-semibold">Outreach</th>
-              <th className="py-2 font-semibold">Opened</th>
-              <th className="py-2 font-semibold">Next moves</th>
+              <th scope="col" className="py-2 font-semibold">
+                Patient
+              </th>
+              <th scope="col" className="py-2 font-semibold">
+                Status
+              </th>
+              <th scope="col" className="py-2 font-semibold">
+                Target
+              </th>
+              <th scope="col" className="py-2 font-semibold">
+                Latest
+              </th>
+              <th scope="col" className="py-2 font-semibold">
+                Outreach
+              </th>
+              <th scope="col" className="py-2 font-semibold">
+                Opened
+              </th>
+              <th scope="col" className="py-2 font-semibold">
+                Next moves
+              </th>
             </tr>
           </thead>
           <tbody>
             {plans.map((p) => (
-              <PlanRow key={p.id} plan={p} onChanged={invalidate} />
+              <PlanRow
+                key={p.id}
+                plan={p}
+                onChanged={invalidate}
+                prompt={prompt}
+              />
             ))}
           </tbody>
         </table>
       )}
+      {PromptDialogEl}
     </Card>
   );
 }
@@ -222,9 +244,11 @@ function PlanListCard({ showClosed }: { showClosed: boolean }) {
 function PlanRow({
   plan,
   onChanged,
+  prompt,
 }: {
   plan: CoachingPlan;
   onChanged: () => void;
+  prompt: PromptFn;
 }) {
   const transition = useMutation({
     // The terminal-state resolution note is collected in the click
@@ -301,16 +325,26 @@ function PlanRow({
                 type="button"
                 onClick={() => {
                   const isTerminal = n === "resolved" || n === "abandoned";
-                  if (isTerminal) {
-                    const note = window.prompt(
-                      `Closing the plan as "${n}". Resolution note (required):`,
-                    );
-                    // Cancelled or empty → no-op (don't fire the mutation).
-                    if (!note || note.trim().length === 0) return;
-                    transition.mutate({ next: n, resolutionNote: note });
+                  if (!isTerminal) {
+                    transition.mutate({ next: n });
                     return;
                   }
-                  transition.mutate({ next: n });
+                  // Terminal close needs a resolution note — collect it
+                  // in a styled, accessible prompt (void-ed IIFE so the
+                  // onClick stays a sync `() => void`).
+                  void (async () => {
+                    const note = await prompt({
+                      title: `Close plan as "${STATUS_LABEL[n]}"`,
+                      description:
+                        "A resolution note is required to close a plan.",
+                      placeholder: "What happened / how it resolved",
+                      submitLabel: "Close plan",
+                      required: true,
+                    });
+                    // null = cancelled; required:true guarantees non-empty.
+                    if (note === null) return;
+                    transition.mutate({ next: n, resolutionNote: note.trim() });
+                  })();
                 }}
                 disabled={transition.isPending}
                 className="rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider transition-colors"

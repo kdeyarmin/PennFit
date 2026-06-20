@@ -52,6 +52,10 @@ import {
   type ClinicalInsightEntry,
   type ClinicalTriggerKind,
 } from "@/lib/admin/therapy-fleet-api";
+import {
+  dismissSmartTrigger,
+  snoozeSmartTrigger,
+} from "@/lib/admin/smart-triggers-api";
 import { appDateIsoOffset } from "@/lib/utils";
 
 const ALERT_LABELS: Record<string, string> = {
@@ -207,6 +211,25 @@ export function AdminTherapyFleetPage() {
       getClinicalInsights({ kind: clinicalKind ?? undefined, limit: 500 }),
     refetchOnWindowFocus: false,
   });
+  // Inline triage on the clinical-insights queue. "review" dismisses the
+  // event (handled); "snooze" hides it for N days, after which it
+  // re-surfaces. Both reuse the existing smart-trigger endpoints and just
+  // refetch so the row drops + the count badges update.
+  const triageMutation = useMutation({
+    mutationFn: (vars: {
+      id: string;
+      action: "review" | "snooze";
+      days?: number;
+    }) =>
+      vars.action === "snooze"
+        ? snoozeSmartTrigger(vars.id, vars.days ?? 7)
+        : dismissSmartTrigger(vars.id),
+    onSuccess: () => {
+      void qc.invalidateQueries({
+        queryKey: ["admin", "therapy-fleet", "clinical-insights"],
+      });
+    },
+  });
   const resolveMutation = useMutation({
     mutationFn: (id: string) => resolveFleetAlert(id),
     onSuccess: () => {
@@ -270,10 +293,15 @@ export function AdminTherapyFleetPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <label className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+          <label
+            htmlFor="fleet-window"
+            className="text-xs"
+            style={{ color: "hsl(var(--ink-3))" }}
+          >
             Window
           </label>
           <select
+            id="fleet-window"
             value={windowDays}
             onChange={(e) => setWindowDays(Number(e.target.value))}
             className="rounded-md border px-2 py-1.5 text-sm"
@@ -408,7 +436,7 @@ export function AdminTherapyFleetPage() {
           title="Fleet trend"
           subtitle="Daily snapshot — is the work moving the numbers?"
         >
-          <div className="grid gap-6 sm:grid-cols-3">
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
             <TrendStat
               label="Compliance rate"
               points={trendQ.data.points}
@@ -434,6 +462,13 @@ export function AdminTherapyFleetPage() {
               value={(p) => p.setupsAtRisk}
               fmt={(v) => String(Math.round(v))}
               color="hsl(38 95% 45%)"
+            />
+            <TrendStat
+              label="Clinical signals open"
+              points={trendQ.data.points}
+              value={(p) => p.clinicalSignalsOpen}
+              fmt={(v) => String(Math.round(v))}
+              color="hsl(265 60% 55%)"
             />
           </div>
         </Card>
@@ -481,7 +516,7 @@ export function AdminTherapyFleetPage() {
           />
         ) : worklistQ.data.entries.length === 0 ? (
           <p className="text-sm py-3" style={{ color: "hsl(var(--ink-3))" }}>
-            No patients match this filter — the fleet is in good shape. 🎉
+            No patients match this filter — the fleet is in good shape.
           </p>
         ) : (
           <WorklistTable
@@ -548,10 +583,20 @@ export function AdminTherapyFleetPage() {
           />
         ) : clinicalQ.data.entries.length === 0 ? (
           <p className="text-sm py-3" style={{ color: "hsl(var(--ink-3))" }}>
-            No active clinical signals for this filter. 🎉
+            No active clinical signals for this filter.
           </p>
         ) : (
-          <ClinicalInsightsTable entries={clinicalQ.data.entries} />
+          <ClinicalInsightsTable
+            entries={clinicalQ.data.entries}
+            onTriage={(id, action, days) =>
+              triageMutation.mutate({ id, action, days })
+            }
+            pendingId={
+              triageMutation.isPending
+                ? triageMutation.variables?.id
+                : undefined
+            }
+          />
         )}
       </Card>
     </div>
@@ -560,18 +605,33 @@ export function AdminTherapyFleetPage() {
 
 function ClinicalInsightsTable({
   entries,
+  onTriage,
+  pendingId,
 }: {
   entries: ClinicalInsightEntry[];
+  onTriage: (id: string, action: "review" | "snooze", days?: number) => void;
+  pendingId?: string;
 }) {
   return (
     <div className="overflow-x-auto -mx-1">
       <table className="w-full text-sm">
         <thead>
           <tr className="text-left" style={{ color: "hsl(var(--ink-3))" }}>
-            <th className="font-medium py-1.5 px-1">Signal</th>
-            <th className="font-medium py-1.5 px-1">Patient</th>
-            <th className="font-medium py-1.5 px-1">Recent therapy (14d)</th>
-            <th className="font-medium py-1.5 px-1">Detected</th>
+            <th scope="col" className="font-medium py-1.5 px-1">
+              Signal
+            </th>
+            <th scope="col" className="font-medium py-1.5 px-1">
+              Patient
+            </th>
+            <th scope="col" className="font-medium py-1.5 px-1">
+              Recent therapy (14d)
+            </th>
+            <th scope="col" className="font-medium py-1.5 px-1">
+              Detected
+            </th>
+            <th scope="col" className="font-medium py-1.5 px-1 text-right">
+              Triage
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -609,6 +669,36 @@ function ClinicalInsightsTable({
                   style={{ color: "hsl(var(--ink-3))" }}
                 >
                   {new Date(e.detectedAt).toLocaleDateString()}
+                </td>
+                <td className="py-1.5 px-1 whitespace-nowrap text-right">
+                  <div className="inline-flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      disabled={pendingId === e.id}
+                      onClick={() => onTriage(e.id, "snooze", 7)}
+                      className="text-[12px] px-2 py-0.5 rounded border hover:bg-[hsl(var(--surface-2))] disabled:opacity-50"
+                      style={{
+                        borderColor: "hsl(var(--line-2))",
+                        color: "hsl(var(--ink-2))",
+                      }}
+                      title="Hide for 7 days, then re-surface"
+                    >
+                      Snooze 7d
+                    </button>
+                    <button
+                      type="button"
+                      disabled={pendingId === e.id}
+                      onClick={() => onTriage(e.id, "review")}
+                      className="text-[12px] px-2 py-0.5 rounded border hover:bg-[hsl(var(--surface-2))] disabled:opacity-50"
+                      style={{
+                        borderColor: "hsl(var(--line-2))",
+                        color: "hsl(var(--penn-navy))",
+                      }}
+                      title="Mark reviewed — clears it from the queue"
+                    >
+                      Mark reviewed
+                    </button>
+                  </div>
                 </td>
               </tr>
             );
@@ -953,15 +1043,33 @@ function WorklistTable({
             className="text-left border-b"
             style={{ borderColor: "hsl(var(--line-1))" }}
           >
-            <th className="py-2 font-semibold">Patient</th>
-            <th className="py-2 font-semibold">Priority</th>
-            <th className="py-2 font-semibold">Reasons</th>
-            <th className="py-2 font-semibold text-right">Nights ≥4h</th>
-            <th className="py-2 font-semibold text-right">Avg usage</th>
-            <th className="py-2 font-semibold text-right">Avg AHI</th>
-            <th className="py-2 font-semibold text-right">Avg leak</th>
-            <th className="py-2 font-semibold text-right">Last night</th>
-            <th className="py-2 font-semibold text-right">Triage</th>
+            <th scope="col" className="py-2 font-semibold">
+              Patient
+            </th>
+            <th scope="col" className="py-2 font-semibold">
+              Priority
+            </th>
+            <th scope="col" className="py-2 font-semibold">
+              Reasons
+            </th>
+            <th scope="col" className="py-2 font-semibold text-right">
+              Nights ≥4h
+            </th>
+            <th scope="col" className="py-2 font-semibold text-right">
+              Avg usage
+            </th>
+            <th scope="col" className="py-2 font-semibold text-right">
+              Avg AHI
+            </th>
+            <th scope="col" className="py-2 font-semibold text-right">
+              Avg leak
+            </th>
+            <th scope="col" className="py-2 font-semibold text-right">
+              Last night
+            </th>
+            <th scope="col" className="py-2 font-semibold text-right">
+              Triage
+            </th>
           </tr>
         </thead>
         <tbody>

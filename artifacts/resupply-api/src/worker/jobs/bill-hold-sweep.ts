@@ -20,11 +20,12 @@
 
 import type PgBoss from "pg-boss";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { seedDefaultRequirementsForClaim } from "../../lib/billing/bill-hold.js";
 import { isFeatureEnabled } from "../../lib/feature-flags.js";
 import { logger } from "../../lib/logger.js";
+import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import {
   createQueueWithDlq,
   CRON_SCAN_QUEUE_OPTS,
@@ -51,52 +52,53 @@ export interface BillHoldSweepStats {
   remindersBumped: number;
 }
 
-export async function runBillHoldSweep(
-  supabase = getSupabaseServiceRoleClient(),
-): Promise<BillHoldSweepStats> {
-  const stats: BillHoldSweepStats = {
-    skipped: false,
-    draftClaimsScanned: 0,
-    claimsSeeded: 0,
-    requirementsCreated: 0,
-    remindersBumped: 0,
-  };
-
-  if (!(await isFeatureEnabled("billing.bill_hold"))) {
-    stats.skipped = true;
-    return stats;
-  }
+/**
+ * Run the bill-hold sweep for a SINGLE tenant, accumulating into the
+ * shared `stats`. Extracted so the cron can fan out across every active
+ * tenant. `insurance_claims` / `claim_paperwork_requirements` are
+ * tenant-scoped.
+ */
+async function billHoldSweepForOrg(
+  orgId: string,
+  stats: BillHoldSweepStats,
+): Promise<void> {
+  const supabase = getOrgScopedClient(orgId);
 
   // ── 1. Backfill: seed defaults onto draft claims with no requirements ──
   const { data: drafts, error: draftErr } = await supabase
-    .schema("resupply")
     .from("insurance_claims")
     .select("id")
     .eq("status", "draft")
     .order("created_at", { ascending: true })
     .limit(SEED_SCAN_CAP);
   if (draftErr) throw draftErr;
-  const draftIds = (drafts ?? []).map((c) => (c as { id: string }).id);
-  stats.draftClaimsScanned = draftIds.length;
+  const draftIds = (drafts ?? []).map(
+    (c: { id: string }) => (c as { id: string }).id,
+  );
+  stats.draftClaimsScanned += draftIds.length;
 
   if (draftIds.length > 0) {
     // Which of these already carry a requirement? One read, then seed the rest.
     const { data: withReqs, error: reqErr } = await supabase
-      .schema("resupply")
       .from("claim_paperwork_requirements")
       .select("claim_id")
       .in("claim_id", draftIds);
     if (reqErr) throw reqErr;
     const haveReqs = new Set(
       (withReqs ?? [])
-        .map((r) => (r as { claim_id: string | null }).claim_id)
-        .filter((id): id is string => id != null),
+        .map(
+          (r: { claim_id: string | null }) =>
+            (r as { claim_id: string | null }).claim_id,
+        )
+        .filter((id: string | null): id is string => id != null),
     );
     for (const claimId of draftIds) {
       if (haveReqs.has(claimId)) continue;
       try {
         const result = await seedDefaultRequirementsForClaim(claimId, {
-          supabase,
+          // Shared helper not yet cut over — pass the unscoped client it
+          // is typed for (recipe-2 §B).
+          supabase: supabase.raw(),
           createdByEmail: "system:bill-hold-sweep",
         });
         if (result.created > 0) {
@@ -113,7 +115,7 @@ export async function runBillHoldSweep(
   }
 
   // ── 2. Auto-remind stale outstanding requirements ───────────────────
-  if (await isFeatureEnabled("billing.bill_hold_auto_remind")) {
+  if (await isFeatureEnabled("billing.bill_hold_auto_remind", orgId)) {
     const now = Date.now();
     const createdBefore = new Date(
       now - REMIND_AFTER_DAYS * MS_PER_DAY,
@@ -122,7 +124,6 @@ export async function runBillHoldSweep(
       now - REMIND_INTERVAL_DAYS * MS_PER_DAY,
     ).toISOString();
     const { data: stale, error: staleErr } = await supabase
-      .schema("resupply")
       .from("claim_paperwork_requirements")
       .select("id, reminder_count, last_reminded_at")
       .eq("status", "outstanding")
@@ -141,7 +142,6 @@ export async function runBillHoldSweep(
       // Skip if reminded within the interval.
       if (r.last_reminded_at && r.last_reminded_at > remindBefore) continue;
       const { error: updErr } = await supabase
-        .schema("resupply")
         .from("claim_paperwork_requirements")
         .update({
           reminder_count: (r.reminder_count ?? 0) + 1,
@@ -159,7 +159,33 @@ export async function runBillHoldSweep(
       }
     }
   }
+}
 
+/**
+ * Run the bill-hold sweep for EVERY active tenant. The `billing.bill_hold`
+ * feature flag is checked PER TENANT (`feature_flags` is `(org_id, key)`),
+ * so one tenant's opt-out doesn't sweep another's claims. `skipped`
+ * reports that NO active tenant had the feature on.
+ */
+export async function runBillHoldSweep(): Promise<BillHoldSweepStats> {
+  const stats: BillHoldSweepStats = {
+    skipped: false,
+    draftClaimsScanned: 0,
+    claimsSeeded: 0,
+    requirementsCreated: 0,
+    remindersBumped: 0,
+  };
+
+  let anyEnabled = false;
+  await forEachActiveOrg(
+    async (orgId) => {
+      if (!(await isFeatureEnabled("billing.bill_hold", orgId))) return;
+      anyEnabled = true;
+      await billHoldSweepForOrg(orgId, stats);
+    },
+    { jobName: BILL_HOLD_SWEEP_JOB },
+  );
+  stats.skipped = !anyEnabled;
   return stats;
 }
 

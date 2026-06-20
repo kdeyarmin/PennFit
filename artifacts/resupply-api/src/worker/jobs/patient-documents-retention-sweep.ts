@@ -6,7 +6,7 @@
 //
 // Why this exists:
 //   HIPAA Privacy Rule §164.530(j)(2) sets a 6-year minimum
-//   retention for documents covered by the standard. PennFit
+//   retention for documents covered by the standard. CareMetric Breathe
 //   never destroyed patient documents automatically; the table
 //   grew until manually pruned. Surveyors flag the absence of a
 //   documented retention process as a Tier-2 deficiency.
@@ -36,10 +36,11 @@
 import type PgBoss from "pg-boss";
 
 import { logAuditBestEffort } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { computeRetentionUntilAt } from "../../lib/patient-documents/retention";
+import { forEachActiveOrg } from "../lib/for-each-active-org";
 import { createQueueWithDlq, CRON_SCAN_QUEUE_OPTS } from "../lib/queue-options";
 
 const SWEEP_JOB = "patient-documents.retention-sweep";
@@ -51,10 +52,12 @@ interface SweepStats {
   flagged: number;
 }
 
-/** Exported for test injection. Runs one sweep cycle and returns
- *  the counts so a test can assert behavior without scheduling. */
-export async function runRetentionSweep(): Promise<SweepStats> {
-  const supabase = getSupabaseServiceRoleClient();
+/** Run one retention sweep for a SINGLE tenant. Exported for test
+ *  injection (a test drives this with a fixed org). */
+export async function runRetentionSweepForOrg(
+  orgId: string,
+): Promise<SweepStats> {
+  const supabase = getOrgScopedClient(orgId);
 
   // ── 1. Backfill retention_until_at for legacy rows ──────────────
   // We process in batches so a deploy on a 100k-row table doesn't
@@ -63,7 +66,6 @@ export async function runRetentionSweep(): Promise<SweepStats> {
   let backfilled = 0;
   while (true) {
     const { data: rows, error } = await supabase
-      .schema("resupply")
       .from("patient_documents")
       .select("id, document_type, created_at")
       .is("retention_until_at", null)
@@ -85,7 +87,6 @@ export async function runRetentionSweep(): Promise<SweepStats> {
         documentType: row.document_type,
       });
       const { error: updErr } = await supabase
-        .schema("resupply")
         .from("patient_documents")
         .update({ retention_until_at: until.toISOString() })
         .eq("id", row.id);
@@ -113,7 +114,6 @@ export async function runRetentionSweep(): Promise<SweepStats> {
   const FLAG_BATCH_SIZE = 500;
   const nowIso = new Date().toISOString();
   const { data: eligible, error: eligibleErr } = await supabase
-    .schema("resupply")
     .from("patient_documents")
     .select("id, patient_id, document_type, size_bytes, retention_until_at")
     .lte("retention_until_at", nowIso)
@@ -123,11 +123,16 @@ export async function runRetentionSweep(): Promise<SweepStats> {
     .order("retention_until_at", { ascending: true })
     .limit(FLAG_BATCH_SIZE);
   if (eligibleErr) throw eligibleErr;
-  const eligibleList = eligible ?? [];
+  const eligibleList = (eligible ?? []) as Array<{
+    id: string;
+    patient_id: string | null;
+    document_type: string | null;
+    size_bytes: number | null;
+    retention_until_at: string | null;
+  }>;
   let flaggedList: typeof eligibleList = [];
   if (eligibleList.length > 0) {
     const { data: flaggedRows, error: flagErr } = await supabase
-      .schema("resupply")
       .from("patient_documents")
       .update({ retention_marked_at: nowIso })
       .in(
@@ -183,6 +188,26 @@ export async function runRetentionSweep(): Promise<SweepStats> {
     );
   }
 
+  return { backfilled, flagged };
+}
+
+/**
+ * Run the retention sweep for EVERY active tenant. `patient_documents`
+ * is tenant-scoped, so the sweep fans out via `forEachActiveOrg`
+ * (per-tenant error isolation) and sums the counts. Single-tenant
+ * behavior is byte-identical to the old seed-org sweep.
+ */
+export async function runRetentionSweep(): Promise<SweepStats> {
+  let backfilled = 0;
+  let flagged = 0;
+  await forEachActiveOrg(
+    async (orgId) => {
+      const s = await runRetentionSweepForOrg(orgId);
+      backfilled += s.backfilled;
+      flagged += s.flagged;
+    },
+    { jobName: SWEEP_JOB },
+  );
   return { backfilled, flagged };
 }
 

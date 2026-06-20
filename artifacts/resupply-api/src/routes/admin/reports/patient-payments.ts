@@ -15,7 +15,7 @@
 // "check memo: re: my husband's CPAP") are intentionally NOT pulled,
 // mirroring the insurance-claims fetcher.
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import {
   customerKeyForId,
@@ -36,6 +36,7 @@ import {
   setDownloadHeaders,
   type ReportModule,
   type CsvSink,
+  reportOrgId,
 } from "./shared";
 
 export interface PatientPaymentRow {
@@ -51,15 +52,15 @@ export interface PatientPaymentRow {
 }
 
 export async function fetchPatientPayments(
+  orgId: string,
   from: Date,
   to: Date,
 ): Promise<PatientPaymentRow[]> {
-  const supabase = getSupabaseServiceRoleClient();
+  const supabase = getOrgScopedClient(orgId);
   // Clamp on created_at (consistent with orders/returns); the QB
   // builder anchors each receipt on succeeded_at so the ledger date
   // reflects when the cash actually landed.
   const { data, error } = await supabase
-    .schema("resupply")
     .from("patient_payments")
     .select(
       "id, patient_id, stripe_payment_intent_id, amount_cents, currency, status, source, succeeded_at, created_at",
@@ -137,8 +138,10 @@ export const patientPaymentsReport: ReportModule = {
       "/admin/reports/patient-payments.csv",
       requirePermission("reports.read"),
       async (req, res) => {
+        const orgId = reportOrgId(req, res);
+        if (!orgId) return;
         const { from, to } = parseRange(req);
-        const rows = await fetchPatientPayments(from, to);
+        const rows = await fetchPatientPayments(orgId, from, to);
         setDownloadHeaders(
           res,
           "text/csv; charset=utf-8",
@@ -152,8 +155,10 @@ export const patientPaymentsReport: ReportModule = {
       "/admin/reports/patient-payments.pdf",
       requirePermission("reports.read"),
       async (req, res) => {
+        const orgId = reportOrgId(req, res);
+        if (!orgId) return;
         const { from, to } = parseRange(req);
-        const rows = await fetchPatientPayments(from, to);
+        const rows = await fetchPatientPayments(orgId, from, to);
         const collected = rows
           .filter((p) => p.status === "succeeded")
           .reduce((s, p) => s + centsToDollars(p.amount_cents), 0);
@@ -197,8 +202,10 @@ export const patientPaymentsReport: ReportModule = {
       "/admin/reports/patient-payments.iif",
       requirePermission("reports.read"),
       async (req, res) => {
+        const orgId = reportOrgId(req, res);
+        if (!orgId) return;
         const { from, to } = parseRange(req);
-        const rows = await fetchPatientPayments(from, to);
+        const rows = await fetchPatientPayments(orgId, from, to);
         const iif = await renderIifWithAccounts({
           from: from.toISOString().slice(0, 10),
           to: to.toISOString().slice(0, 10),
@@ -218,8 +225,10 @@ export const patientPaymentsReport: ReportModule = {
       "/admin/reports/patient-payments.qbo.csv",
       requirePermission("reports.read"),
       async (req, res) => {
+        const orgId = reportOrgId(req, res);
+        if (!orgId) return;
         const { from, to } = parseRange(req);
-        const rows = await fetchPatientPayments(from, to);
+        const rows = await fetchPatientPayments(orgId, from, to);
         const csv = renderQboCsv({
           from: from.toISOString().slice(0, 10),
           to: to.toISOString().slice(0, 10),
@@ -236,14 +245,14 @@ export const patientPaymentsReport: ReportModule = {
     );
   },
 
-  async buildEmailCsv(from, to) {
+  async buildEmailCsv(orgId, from, to) {
     const { res, collect } = bufferedRes();
-    writePatientPaymentsCsv(res, await fetchPatientPayments(from, to));
+    writePatientPaymentsCsv(res, await fetchPatientPayments(orgId, from, to));
     return collect();
   },
 
-  async buildEmailPdf(from, to) {
-    const rows = await fetchPatientPayments(from, to);
+  async buildEmailPdf(orgId, from, to) {
+    const rows = await fetchPatientPayments(orgId, from, to);
     const collected = rows
       .filter((p) => p.status === "succeeded")
       .reduce((s, p) => s + centsToDollars(p.amount_cents), 0);
@@ -276,7 +285,9 @@ export const patientPaymentsReport: ReportModule = {
     return pdf;
   },
 
-  async buildEmailQbRows(from, to) {
-    return buildQbRowsFromPatientPayments(await fetchPatientPayments(from, to));
+  async buildEmailQbRows(orgId, from, to) {
+    return buildQbRowsFromPatientPayments(
+      await fetchPatientPayments(orgId, from, to),
+    );
   },
 };

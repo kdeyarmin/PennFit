@@ -127,7 +127,7 @@
 import type PgBoss from "pg-boss";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger.js";
 import {
@@ -360,13 +360,22 @@ export function buildProductionSweepDeps(
   asOf: Date,
   graceMs: number,
 ): SweepDeps {
-  const supabase = getSupabaseServiceRoleClient();
   return {
     asOf,
     graceMs,
     listObjects: () => listAttachmentObjects(),
     attachmentKeyOf: (n) => attachmentKeyForObjectName(n),
     loadReferencedKeys: async () => {
+      const orgId = await resolveSeedOrgId();
+      if (!orgId) return new Set<string>();
+      // GLOBAL read (multi-tenant correctness): the storage bucket is
+      // shared across ALL tenants, so an attachment is an orphan only if
+      // NO tenant references it. We therefore read the referenced keys
+      // across every tenant via `.raw()` (unscoped) — a seed-org-scoped
+      // `.from()` would miss another tenant's references and delete their
+      // PHI attachment. Reading only the key columns (never content) for
+      // a global-bucket janitor is a legitimate platform operation.
+      const raw = getOrgScopedClient(orgId).raw();
       // Two SELECTs (one per writer) instead of a single UNION SQL —
       // PostgREST has no UNION, the result Set is built in one place
       // (here), and the queries fan out cleanly. Cost is identical in
@@ -384,7 +393,7 @@ export function buildProductionSweepDeps(
       const PAGE_SIZE = 1000;
       const set = new Set<string>();
       for (let from = 0; ; from += PAGE_SIZE) {
-        const { data, error } = await supabase
+        const { data, error } = await raw
           .schema("resupply")
           .from("prescriptions")
           .select("id, attachment_object_key")
@@ -399,7 +408,7 @@ export function buildProductionSweepDeps(
         if (data.length < PAGE_SIZE) break;
       }
       for (let from = 0; ; from += PAGE_SIZE) {
-        const { data, error } = await supabase
+        const { data, error } = await raw
           .schema("resupply")
           .from("message_attachments")
           .select("id, object_key")
@@ -415,16 +424,25 @@ export function buildProductionSweepDeps(
       return set;
     },
     isStillReferenced: async (attachmentKey) => {
+      const orgId = await resolveSeedOrgId();
+      // Fail closed: with no tenant context we cannot prove the key is
+      // referenced, so report "still referenced" to BLOCK the delete
+      // (never vaporise bytes we can't verify).
+      if (!orgId) return true;
+      // GLOBAL recheck (see loadReferencedKeys): any tenant referencing
+      // the key blocks the delete, so probe across ALL tenants via
+      // `.raw()` rather than the seed-scoped facade.
+      const raw = getOrgScopedClient(orgId).raw();
       // Pre-delete recheck — same widening as loadReferencedKeys:
       // either writer claiming the key counts as "still referenced".
       // Two head:true count probes in parallel.
       const [presRes, msgRes] = await Promise.all([
-        supabase
+        raw
           .schema("resupply")
           .from("prescriptions")
           .select("*", { count: "exact", head: true })
           .eq("attachment_object_key", attachmentKey),
-        supabase
+        raw
           .schema("resupply")
           .from("message_attachments")
           .select("*", { count: "exact", head: true })
@@ -478,8 +496,19 @@ export function buildProductionSweepDeps(
       // swallowed — a missing summary row is preferable to a failed
       // sweep job that was otherwise successful.
       try {
-        const supabase = getSupabaseServiceRoleClient();
+        const orgId = await resolveSeedOrgId();
+        if (!orgId) {
+          logger.warn(
+            "attachment-sweep: no seed org resolved — skipping worker_run_summary insert (liveness record will lag)",
+          );
+          return;
+        }
+        // worker_run_summary is a GLOBAL (non-tenant) table — write it
+        // through the unscoped client so the facade doesn't try to tag a
+        // nonexistent org_id column.
+        const supabase = getOrgScopedClient(orgId);
         const { error } = await supabase
+          .raw()
           .schema("resupply")
           .from("worker_run_summary")
           .insert({

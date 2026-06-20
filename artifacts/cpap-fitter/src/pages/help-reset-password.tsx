@@ -10,6 +10,7 @@ import {
   SignInShot,
   PasswordResetShot,
 } from "@/components/help/help-screens";
+import { BrandName } from "@/components/company-contact";
 
 const steps: HelpStep[] = [
   {
@@ -25,10 +26,7 @@ const steps: HelpStep[] = [
       </p>
     ),
     shot: (
-      <Screenshot
-        url="pennpaps.com/sign-in"
-        caption="The sign-in card has a “Forgot password” link beneath the password field."
-      >
+      <Screenshot caption="The sign-in card has a “Forgot password” link beneath the password field.">
         <SignInShot />
       </Screenshot>
     ),
@@ -43,10 +41,7 @@ const steps: HelpStep[] = [
       </p>
     ),
     shot: (
-      <Screenshot
-        url="pennpaps.com/forgot-password"
-        caption="Enter your account email and we'll send a secure, time-limited reset link."
-      >
+      <Screenshot caption="Enter your account email and we'll send a secure, time-limited reset link.">
         <PasswordResetShot />
       </Screenshot>
     ),
@@ -56,13 +51,15 @@ const steps: HelpStep[] = [
     title: "Open the reset link in your email",
     body: (
       <p>
-        Check your inbox for an email from PennPaps and click{" "}
+        Check your inbox for an email from <BrandName /> and click{" "}
         <strong>Reset my password</strong>. The link is time-limited, so use it
         soon after it arrives.
       </p>
     ),
     substeps: [
-      <>Open the PennPaps password-reset email.</>,
+      <>
+        Open the <BrandName /> password-reset email.
+      </>,
       <>
         Click the <strong>Reset my password</strong> button or link.
       </>,
@@ -91,7 +88,7 @@ export function HelpResetPassword() {
       title="Reset your password"
       Icon={KeyRound}
       minutes="2 min"
-      metaDescription="How to reset a forgotten PennPaps password: use the Forgot password link, open the secure reset email, and choose a new password."
+      metaDescription="How to reset a forgotten password: use the Forgot password link, open the secure reset email, and choose a new password."
       intro="Locked out? Resetting your password takes about two minutes and only needs access to your email. Here's the whole flow."
       summary={
         <>

@@ -38,10 +38,15 @@ import {
   createSendgridClient,
   DEFAULT_SENDGRID_FROM_EMAIL,
 } from "@workspace/resupply-email";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 import { createTwilioSmsClient } from "@workspace/resupply-telecom";
 
 import { logger } from "../../lib/logger";
+import { createTenantSendgridClient } from "../../lib/email/tenant-sender.js";
+import { resolveBrandingByOrgId } from "../../lib/tenant-branding.js";
+import { applyTenantSmsFrom } from "../../lib/messaging/tenant-telecom.js";
+import { recordOutboundMessageUsage } from "../../lib/metering/usage.js";
+import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import {
   createQueueWithDlq,
   VENDOR_SEND_QUEUE_OPTS,
@@ -156,6 +161,15 @@ export type SendOutcome =
 export async function sendRecallNotification(
   ctx: RecallNotificationContext,
   cfg: MessagingConfig,
+  /**
+   * Tenant the recall belongs to (G6). When provided, the EMAIL leg sends
+   * under the tenant's own From identity via `createTenantSendgridClient`;
+   * omitting it (the pure-function test seam) keeps the cfg-built client so
+   * existing tests stage SendGrid via `cfg` unchanged. The brand name in the
+   * body comes from `cfg.practiceName`, which the caller pre-resolves to the
+   * tenant's storefront name.
+   */
+  orgId?: string,
 ): Promise<SendOutcome> {
   const subject = `Important: ${ctx.recall.title}`;
   const bodyText = [
@@ -176,11 +190,16 @@ export async function sendRecallNotification(
   // description; SMS is the short-form fallback.
   if (ctx.patient.email && cfg.sendgridApiKey && cfg.sendgridFromName) {
     try {
-      const client = createSendgridClient({
-        apiKey: cfg.sendgridApiKey,
-        fromEmail: cfg.sendgridFromEmail,
-        fromName: cfg.sendgridFromName,
-      });
+      // G6: send under the tenant's own From identity when an orgId is in
+      // play (the worker path); the pure-function test seam (no orgId) keeps
+      // the cfg-built client so staged SendGrid responses still apply.
+      const client = orgId
+        ? await createTenantSendgridClient(orgId)
+        : createSendgridClient({
+            apiKey: cfg.sendgridApiKey,
+            fromEmail: cfg.sendgridFromEmail,
+            fromName: cfg.sendgridFromName,
+          });
       await client.sendEmail({
         to: ctx.patient.email,
         subject,
@@ -290,8 +309,47 @@ export function runRecallSendSweep(
 async function runRecallSendSweepInner(
   cfg: MessagingConfig,
 ): Promise<SweepStats> {
-  const supabase = getSupabaseServiceRoleClient();
   const stats: SweepStats = { attempted: 0, sent: 0, failed: 0, skipped: 0 };
+  // Fan out across every active tenant — recall_notifications,
+  // equipment_recalls, and patients are tenant-scoped, so each tenant is
+  // swept on its own org-scoped client and a recall notice only ever
+  // reaches a patient in the recall's own org. Per-tenant failure isolation
+  // keeps one tenant's bad row from aborting the rest.
+  await forEachActiveOrg(
+    async (orgId) => {
+      await recallSendSweepForOrg(orgId, cfg, stats);
+    },
+    { jobName: SEND_JOB },
+  );
+  return stats;
+}
+
+/**
+ * Run the recall-notification send sweep for a SINGLE tenant, accumulating
+ * into the shared `stats`. The per-row claim (queued → sending → terminal)
+ * and the BATCH_SIZE cap both apply per tenant.
+ */
+async function recallSendSweepForOrg(
+  orgId: string,
+  baseCfg: MessagingConfig,
+  stats: SweepStats,
+): Promise<void> {
+  const supabase = getOrgScopedClient(orgId);
+
+  // Send under the tenant's own number / Messaging Service when it has
+  // one (G7); falls back to the platform default otherwise. Resolved
+  // once per tenant and threaded into every sendRecallNotification call.
+  const cfg = await applyTenantSmsFrom(orgId, baseCfg);
+
+  // Brand the notice copy with the tenant's own storefront name (G6); for the
+  // seed tenant this resolves to "PennPaps" so single-tenant copy is
+  // unchanged. The email From identity is applied inside
+  // sendRecallNotification via the orgId we thread through below.
+  const brand = await resolveBrandingByOrgId(orgId);
+  const tenantCfg: MessagingConfig = {
+    ...cfg,
+    practiceName: brand.storefrontName,
+  };
 
   // Phase 0 — reclaim orphaned claims. A worker that flipped a row to
   // 'sending' (below) and then crashed before the terminal flip would
@@ -302,7 +360,6 @@ async function runRecallSendSweepInner(
   // from under itself.
   const leaseCutoff = new Date(Date.now() - SENDING_LEASE_MS).toISOString();
   const { error: reclaimErr } = await supabase
-    .schema("resupply")
     .from("recall_notifications")
     .update({ status: "queued", updated_at: new Date().toISOString() })
     .eq("status", "sending")
@@ -317,29 +374,31 @@ async function runRecallSendSweepInner(
   }
 
   const { data: queued, error } = await supabase
-    .schema("resupply")
     .from("recall_notifications")
     .select("id, recall_id, asset_id, patient_id")
     .eq("status", "queued")
     .order("created_at", { ascending: true })
     .limit(BATCH_SIZE);
   if (error) throw error;
-  const rows = queued ?? [];
-  if (rows.length === 0) return stats;
+  const rows = (queued ?? []) as Array<{
+    id: string;
+    recall_id: string;
+    asset_id: string;
+    patient_id: string;
+  }>;
+  if (rows.length === 0) return;
 
   const recallIds = Array.from(new Set(rows.map((r) => r.recall_id)));
   const patientIds = Array.from(new Set(rows.map((r) => r.patient_id)));
 
   const [recalls, patients] = await Promise.all([
     supabase
-      .schema("resupply")
       .from("equipment_recalls")
       .select(
         "id, title, description, severity, recall_reference, reference_url",
       )
       .in("id", recallIds),
     supabase
-      .schema("resupply")
       .from("patients")
       .select("id, email, phone_e164")
       .in("id", patientIds),
@@ -348,10 +407,25 @@ async function runRecallSendSweepInner(
   if (patients.error) throw patients.error;
 
   const recallById = new Map(
-    (recalls.data ?? []).map((r) => [r.id, r] as const),
+    (
+      (recalls.data ?? []) as Array<{
+        id: string;
+        title: string;
+        description: string | null;
+        severity: string;
+        recall_reference: string | null;
+        reference_url: string | null;
+      }>
+    ).map((r) => [r.id, r] as const),
   );
   const patientById = new Map(
-    (patients.data ?? []).map((p) => [p.id, p] as const),
+    (
+      (patients.data ?? []) as Array<{
+        id: string;
+        email: string | null;
+        phone_e164: string | null;
+      }>
+    ).map((p) => [p.id, p] as const),
   );
 
   for (const row of rows) {
@@ -364,7 +438,6 @@ async function runRecallSendSweepInner(
       // sibling worker that already finished this row doesn't get
       // its terminal status overwritten by 'skipped'.
       const { error: skipErr } = await supabase
-        .schema("resupply")
         .from("recall_notifications")
         .update({
           status: "skipped",
@@ -392,7 +465,6 @@ async function runRecallSendSweepInner(
     // cannot give. Phase 0 above re-queues a claim whose worker died.
     const claimIso = new Date().toISOString();
     const { data: claimed, error: claimErr } = await supabase
-      .schema("resupply")
       .from("recall_notifications")
       .update({ status: "sending", updated_at: claimIso })
       .eq("id", row.id)
@@ -427,7 +499,8 @@ async function runRecallSendSweepInner(
           phoneE164: patient.phone_e164,
         },
       },
-      cfg,
+      tenantCfg,
+      orgId,
     );
 
     // Terminal flip: sending -> sent/failed/skipped, gated on
@@ -438,8 +511,12 @@ async function runRecallSendSweepInner(
     // on a genuinely stuck claim.
     const nowIso = new Date().toISOString();
     if (outcome.kind === "sent") {
+      recordOutboundMessageUsage({
+        orgId,
+        channel: outcome.channel,
+        source: "recall_notification",
+      });
       const { error: sentErr } = await supabase
-        .schema("resupply")
         .from("recall_notifications")
         .update({
           status: "sent",
@@ -464,7 +541,6 @@ async function runRecallSendSweepInner(
       stats.sent += 1;
     } else if (outcome.kind === "failed") {
       const { error: failedErr } = await supabase
-        .schema("resupply")
         .from("recall_notifications")
         .update({
           status: "failed",
@@ -483,7 +559,6 @@ async function runRecallSendSweepInner(
       stats.failed += 1;
     } else {
       const { error: skippedErr } = await supabase
-        .schema("resupply")
         .from("recall_notifications")
         .update({
           status: "skipped",
@@ -501,8 +576,6 @@ async function runRecallSendSweepInner(
       stats.skipped += 1;
     }
   }
-
-  return stats;
 }
 
 export async function registerRecallNotificationSendJob(

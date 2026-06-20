@@ -4,11 +4,11 @@
 // it. Returns null when the row is gone so the route can 404. No PHI in
 // the URL (the token carries only the row id); bytes are never logged.
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import type { OrgScopedClient } from "@workspace/resupply-db";
 
 import { loadManualDocumentRow, renderManualDocumentRowToPdf } from "./service";
 
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+type SupabaseClient = OrgScopedClient;
 
 export async function renderManualDocumentForFax(
   supabase: SupabaseClient,
@@ -16,5 +16,5 @@ export async function renderManualDocumentForFax(
 ): Promise<Buffer | null> {
   const row = await loadManualDocumentRow(supabase, manualDocumentId);
   if (!row) return null;
-  return renderManualDocumentRowToPdf(supabase, row);
+  return renderManualDocumentRowToPdf(row);
 }

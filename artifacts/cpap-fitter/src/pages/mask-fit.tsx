@@ -15,6 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CheckCircle2, Wind } from "lucide-react";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import { csrfHeader } from "@/lib/csrf";
+import { BrandName } from "@/components/company-contact";
 
 function readSearchParam(name: string): string | null {
   if (typeof window === "undefined") return null;
@@ -25,7 +26,7 @@ const OUTCOMES = ["good", "leaking", "uncomfortable"] as const;
 type Outcome = (typeof OUTCOMES)[number];
 
 export function MaskFitLanding() {
-  useDocumentTitle("Thanks for the feedback — PennPaps");
+  useDocumentTitle("Thanks for the feedback");
   const [, setLocation] = useLocation();
   const [token] = useState(() => readSearchParam("t") ?? "");
   const [fit] = useState<Outcome | null>(() => {
@@ -190,7 +191,7 @@ export function MaskFitLanding() {
               )}
               <div className="pt-2">
                 <Link href="/" className="text-sm text-primary hover:underline">
-                  Back to PennPaps
+                  Back to <BrandName />
                 </Link>
               </div>
             </>

@@ -282,6 +282,7 @@ export function PatientDetailPage({ id }: { id: string }) {
         className="flex gap-1 border-b"
         style={{ borderColor: "hsl(var(--line-1))" }}
         role="tablist"
+        aria-label="Patient detail sections"
       >
         <TabButton
           active={tab === "timeline"}

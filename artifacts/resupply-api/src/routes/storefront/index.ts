@@ -1,12 +1,19 @@
 import { Router, type IRouter } from "express";
 import healthRouter from "./health.js";
 import companyInfoRouter from "./company-info.js";
+import platformPricingRouter from "./platform-pricing.js";
+import storefrontBrandingRouter from "./storefront-branding.js";
 import recommendRouter from "./recommend.js";
 import ordersRouter from "./orders.js";
 import trackOrderRouter from "./track-order.js";
 import adminRouter from "./admin.js";
 import usageEventsRouter from "./usage-events.js";
 import remindersRouter from "./reminders.js";
+import newsletterRouter from "./newsletter.js";
+import demoLeadRouter from "./demo-lead.js";
+import roiEstimateRouter from "./roi-estimate.js";
+import newsletterUnsubscribeRouter from "./newsletter-unsubscribe.js";
+import tenantSignupRouter from "./tenant-signup.js";
 import patientPacketsRouter from "./patient-packets.js";
 import csrOrdersRouter from "./csr-orders.js";
 import chatRouter from "./chat.js";
@@ -24,12 +31,40 @@ router.use(healthRouter);
 // /api/company-info — public business identity (name, support phone /
 // email / hours) sourced from the admin Company information page.
 router.use(companyInfoRouter);
+// /api/platform/pricing — PUBLIC SaaS plan catalog for the platform
+// marketing site (cmbreathe.com). Reads the same billing catalog the
+// super-admin edits, so a price change reaches the marketing page with no
+// redeploy. Never exposes Stripe ids or tenant data.
+router.use(platformPricingRouter);
+// /api/storefront-branding — public, host-resolved per-tenant brand
+// (storefront name, tagline, logo). Drives the storefront's header/hero
+// so a tenant on a verified custom domain sees their own identity.
+router.use(storefrontBrandingRouter);
 router.use(recommendRouter);
 router.use(ordersRouter);
 router.use(trackOrderRouter);
 router.use(adminRouter);
 router.use(usageEventsRouter);
 router.use(remindersRouter);
+// /api/newsletter/subscribe — anonymous marketing email capture.
+// Mounted before attachSignedIn; rate-limited per-IP in app.ts.
+router.use(newsletterRouter);
+// /api/demo-lead — anonymous marketing email capture for the public
+// Breathe self-serve demo gate. Platform-safe (no tenant context
+// required); rate-limited per-IP in app.ts.
+router.use(demoLeadRouter);
+// /api/roi-estimate — anonymous "email me my ROI estimate" from the public
+// Breathe ROI calculator. Captures the lead + emails the estimate (numbers
+// recomputed server-side). Platform-safe; rate-limited per-IP in app.ts.
+router.use(roiEstimateRouter);
+// /api/newsletter-unsubscribe — public one-click unsubscribe for the
+// newsletter / demo-drip marketing list (HMAC-signed token). Mounted
+// before attachSignedIn; rate-limited at the route.
+router.use(newsletterUnsubscribeRouter);
+// /api/tenant-signup — public self-serve account creation (new org +
+// first admin, email-verified). Anonymous; honeypot + optional Turnstile
+// + per-IP rate limited in app.ts.
+router.use(tenantSignupRouter);
 // /api/patient-packets/view + /sign — public e-signature flow for the
 // new-patient document packet. Token-gated (HMAC); no login. Mounted
 // before attachSignedIn so it stays unauthenticated.
@@ -71,8 +106,5 @@ router.use(meBillingRouter);
 // recent parsed 270/271 on file. Falls back to the static
 // payer-average table when unavailable.
 router.use(meInsuranceEstimateRouter);
-// /api/me/rights-requests + /api/me/disclosures — HIPAA
-// §164.522/524/526/528 rights submission + the §164.528 accounting
-// of disclosures (non-TPO entries from patient_disclosure_log).
 
 export default router;

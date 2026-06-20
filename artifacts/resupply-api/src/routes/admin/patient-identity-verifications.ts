@@ -13,7 +13,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
@@ -32,9 +32,13 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("patient_identity_verifications")
       .select("id, method, result, notes, verified_by_user_id, created_at")
       .eq("patient_id", idParse.data)
@@ -42,7 +46,10 @@ router.get(
       .limit(50);
     if (error) throw error;
     res.json({
-      verifications: (data ?? []).map((r) => ({
+      verifications: (
+        (data ??
+          []) as Database["resupply"]["Tables"]["patient_identity_verifications"]["Row"][]
+      ).map((r) => ({
         id: r.id,
         method: r.method,
         result: r.result,
@@ -86,9 +93,13 @@ router.post(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("patient_identity_verifications")
       .insert({
         patient_id: idParse.data,

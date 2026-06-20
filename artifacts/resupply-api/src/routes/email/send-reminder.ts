@@ -9,7 +9,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 import { EmailConfigError } from "@workspace/resupply-email";
 import {
   sendReminderEmail,
@@ -17,6 +17,8 @@ import {
 } from "@workspace/resupply-reminders";
 
 import { logger } from "../../lib/logger";
+import { applyTenantEmailSender } from "../../lib/email/apply-tenant-email-sender";
+import { recordOutboundMessageUsage } from "../../lib/metering/usage";
 import { readMessagingConfigOrNull } from "../../lib/messaging/messaging-config";
 import { adminWriteRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
@@ -59,17 +61,30 @@ router.post(
     }
     const { patientId, episodeId } = parsed.data;
 
+    // Fail closed: never widen to all tenants on a missing orgId.
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+
     let outcome: SendReminderOutcome;
     try {
       outcome = await sendReminderEmail({
-        supabase: getSupabaseServiceRoleClient(),
-        cfg: {
+        // sendReminderEmail is a shared lib/resupply-reminders helper not
+        // in this wave's file list; it's typed for the raw service-role
+        // client. Pass the unscoped client (`.raw()`) per cutover §B.
+        supabase: supabase.raw(),
+        // Send under the tenant's own From identity when configured (G6);
+        // falls back to the platform default when it isn't.
+        cfg: await applyTenantEmailSender(orgId, {
           sendgridApiKey: cfg.email.sendgridApiKey,
           sendgridFromEmail: cfg.email.sendgridFromEmail,
           sendgridFromName: cfg.email.sendgridFromName,
           publicBaseUrl: cfg.email.publicBaseUrl,
           practiceName: cfg.practiceName,
-        },
+        }),
         patientId,
         episodeId,
         actor: {
@@ -94,6 +109,11 @@ router.post(
 
     switch (outcome.status) {
       case "ok":
+        recordOutboundMessageUsage({
+          orgId,
+          channel: "email",
+          source: "admin.send_reminder.email",
+        });
         res.status(201).json({
           conversationId: outcome.conversationId,
           messageId: outcome.vendorRef,

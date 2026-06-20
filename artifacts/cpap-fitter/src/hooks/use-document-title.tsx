@@ -1,17 +1,6 @@
 import { useEffect } from "react";
 
-const SITE_TITLE_SUFFIX = " — PennPaps by Penn Home Medical Supply";
-
-/*
- * Production origin used to mint canonical URLs. We deliberately
- * hardcode the prod hostname (rather than reading the live origin
- * from the browser) so preview/staging deploys — which serve the
- * same SPA HTML on a different host — point search engines at the
- * production URL and de-duplicate cleanly. The basePath segment
- * (e.g. `/cpap-fitter`) is NOT included because production serves
- * PennPaps at the apex.
- */
-const CANONICAL_ORIGIN = "https://pennpaps.com";
+import { useCompanyContact } from "@/lib/contact";
 
 // Helper — find an existing meta tag by name OR property, or create
 // it. We return both the element and whether we just created it so
@@ -64,6 +53,13 @@ export function useDocumentTitle(
   description?: string,
   options?: DocumentTitleOptions,
 ) {
+  // Brand the tab-title suffix to the resolving tenant (the storefront brand
+  // name, "CareMetric Breathe" as the platform default) instead of hardcoding
+  // the seed tenant. The live value arrives with /api/company-info.
+  const company = useCompanyContact();
+  const siteTitleSuffix = ` — ${company.name}`;
+  const publisherName = company.legalName || company.name;
+
   useEffect(() => {
     const previousTitle = document.title;
     const metaDesc = document.querySelector<HTMLMetaElement>(
@@ -72,7 +68,7 @@ export function useDocumentTitle(
     const previousDesc = metaDesc?.getAttribute("content") ?? null;
 
     const fullTitle = pageTitle
-      ? `${pageTitle}${SITE_TITLE_SUFFIX}`
+      ? `${pageTitle}${siteTitleSuffix}`
       : previousTitle;
     document.title = fullTitle;
     if (description && metaDesc) {
@@ -80,12 +76,14 @@ export function useDocumentTitle(
     }
 
     /*
-     * Per-page canonical. We strip the artifact basePath (e.g.
-     * "/cpap-fitter" in subpath previews) so the canonical points at
-     * the production-shaped URL. Query strings and trailing slashes
-     * are stripped to avoid collapsing the canonical's value across
-     * tracking-tagged inbound links.
+     * Per-page canonical. Multi-tenant: each tenant is served at its OWN
+     * apex in production, so we canonicalize to the LIVE origin rather than a
+     * hardcoded host — a non-Penn tenant must never canonicalize to
+     * pennpaps.com. We strip the artifact basePath (e.g. "/cpap-fitter" in
+     * subpath previews) and query strings / trailing slashes so the
+     * canonical's value doesn't fragment across tracking-tagged inbound links.
      */
+    const canonicalOrigin = window.location.origin;
     const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
     const rawPath = window.location.pathname;
     const trimmedPath =
@@ -94,7 +92,7 @@ export function useDocumentTitle(
         : rawPath;
     const canonicalPath =
       trimmedPath.length > 1 ? trimmedPath.replace(/\/+$/, "") : "/";
-    const canonicalHref = `${CANONICAL_ORIGIN}${canonicalPath}`;
+    const canonicalHref = `${canonicalOrigin}${canonicalPath}`;
 
     let canonicalEl = document.querySelector<HTMLLinkElement>(
       'link[rel="canonical"]',
@@ -190,8 +188,8 @@ export function useDocumentTitle(
         url: canonicalHref,
         publisher: {
           "@type": "Organization",
-          name: "Penn Home Medical Supply",
-          url: CANONICAL_ORIGIN,
+          name: publisherName,
+          url: canonicalOrigin,
         },
         ...(options.schema === "MedicalWebPage"
           ? {
@@ -242,5 +240,5 @@ export function useDocumentTitle(
         schemaScript.parentNode.removeChild(schemaScript);
       }
     };
-  }, [pageTitle, description, options?.schema]);
+  }, [pageTitle, description, options?.schema, siteTitleSuffix, publisherName]);
 }

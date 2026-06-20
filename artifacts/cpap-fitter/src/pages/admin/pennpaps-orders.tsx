@@ -78,8 +78,8 @@ export function AdminOrders() {
             Orders
           </h1>
           <p className="text-muted-foreground mt-1 text-sm">
-            All orders submitted through PennPaps. Click a row to view full
-            patient detail.
+            All orders submitted through your storefront. Click a row to view
+            full patient details.
           </p>
         </div>
       </div>
@@ -137,13 +137,27 @@ export function AdminOrders() {
             <table className="w-full text-sm">
               <thead className="text-xs text-muted-foreground uppercase tracking-wide bg-muted/30">
                 <tr>
-                  <th className="text-left py-3 px-4">Reference</th>
-                  <th className="text-left py-3 px-4">Patient</th>
-                  <th className="text-left py-3 px-4">Email</th>
-                  <th className="text-left py-3 px-4">Mask</th>
-                  <th className="text-left py-3 px-4">Ship to</th>
-                  <th className="text-left py-3 px-4">Status</th>
-                  <th className="text-left py-3 px-4">Submitted</th>
+                  <th scope="col" className="text-left py-3 px-4">
+                    Reference
+                  </th>
+                  <th scope="col" className="text-left py-3 px-4">
+                    Patient
+                  </th>
+                  <th scope="col" className="text-left py-3 px-4">
+                    Email
+                  </th>
+                  <th scope="col" className="text-left py-3 px-4">
+                    Mask
+                  </th>
+                  <th scope="col" className="text-left py-3 px-4">
+                    Ship to
+                  </th>
+                  <th scope="col" className="text-left py-3 px-4">
+                    Status
+                  </th>
+                  <th scope="col" className="text-left py-3 px-4">
+                    Submitted
+                  </th>
                 </tr>
               </thead>
               <tbody>

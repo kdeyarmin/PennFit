@@ -12,7 +12,7 @@
 // can mock just this helper (alongside the SendGrid one) without
 // pulling in a real DB pool.
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { logger } from "./logger";
 
@@ -47,9 +47,12 @@ export async function recordInsuranceLead(
   input: RecordInsuranceLeadInput,
 ): Promise<RecordInsuranceLeadResult> {
   try {
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = await resolveSeedOrgId();
+    if (!orgId) {
+      return { id: null, error: "tenant context missing" };
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: inserted, error } = await supabase
-      .schema("resupply")
       .from("insurance_leads")
       .insert({
         full_name: input.fullName,
@@ -97,9 +100,10 @@ export async function stampInsuranceLeadDelivery(
 ): Promise<void> {
   if (!id) return;
   try {
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = await resolveSeedOrgId();
+    if (!orgId) return;
+    const supabase = getOrgScopedClient(orgId);
     const { error } = await supabase
-      .schema("resupply")
       .from("insurance_leads")
       .update({
         notification_email_delivered: flags.notificationDelivered,

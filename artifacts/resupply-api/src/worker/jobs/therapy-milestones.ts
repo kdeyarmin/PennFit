@@ -44,12 +44,13 @@
 import type PgBoss from "pg-boss";
 
 import {
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
   type Database,
   type Json,
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import {
   createQueueWithDlq,
   VENDOR_SEND_QUEUE_OPTS,
@@ -214,7 +215,6 @@ export function detectMilestones(
  * @returns MilestoneStats containing counts for the run: `patientsScanned`, per-kind `inserted` totals, `sent`, `sendSkipped`, and `sendFailed`.
  */
 export async function runTherapyMilestones(): Promise<MilestoneStats> {
-  const supabase = getSupabaseServiceRoleClient();
   const stats: MilestoneStats = {
     patientsScanned: 0,
     inserted: { "100_nights": 0, "365_nights": 0, first_adherence_month: 0 },
@@ -222,6 +222,29 @@ export async function runTherapyMilestones(): Promise<MilestoneStats> {
     sendSkipped: 0,
     sendFailed: 0,
   };
+  await forEachActiveOrg(
+    async (orgId) => {
+      await therapyMilestonesSweepForOrg(orgId, stats);
+    },
+    { jobName: JOB_NAME },
+  );
+  return stats;
+}
+
+/**
+ * Run the milestone evaluate + send phases for a SINGLE tenant,
+ * accumulating into the shared `stats`. `patient_therapy_nights`,
+ * `patient_milestones`, and `patients` are org-scoped, so each tenant is
+ * swept on its own org-scoped client and a celebration only ever reaches a
+ * patient in their own org. Per-tenant failure isolation keeps one tenant's
+ * error from aborting the rest. Single-tenant: `listActiveOrgIds()` returns
+ * just the seed org, so this is exactly the prior one-tenant sweep.
+ */
+async function therapyMilestonesSweepForOrg(
+  orgId: string,
+  stats: MilestoneStats,
+): Promise<void> {
+  const supabase = getOrgScopedClient(orgId);
 
   // ── EVALUATE ────────────────────────────────────────────────────
   // Find patients with night-data activity in the last N days. Anyone
@@ -246,7 +269,6 @@ export async function runTherapyMilestones(): Promise<MilestoneStats> {
   const patientIdSet = new Set<string>();
   for (let from = 0; ; from += PAGE_SIZE) {
     const { data: page, error: actErr } = await supabase
-      .schema("resupply")
       .from("patient_therapy_nights")
       .select("patient_id")
       .gte("updated_at", `${activitySince}T00:00:00.000Z`)
@@ -261,7 +283,7 @@ export async function runTherapyMilestones(): Promise<MilestoneStats> {
   }
 
   const uniquePatientIds = Array.from(patientIdSet);
-  stats.patientsScanned = uniquePatientIds.length;
+  stats.patientsScanned += uniquePatientIds.length;
 
   // Batch the existing-milestone lookup instead of one query per patient.
   // The prior per-patient `.eq("patient_id", …)` read was an N+1 that grew
@@ -274,7 +296,6 @@ export async function runTherapyMilestones(): Promise<MilestoneStats> {
   for (let i = 0; i < uniquePatientIds.length; i += 200) {
     const idChunk = uniquePatientIds.slice(i, i + 200);
     const { data: existingRows, error: existingErr } = await supabase
-      .schema("resupply")
       .from("patient_therapy_milestones")
       .select("patient_id, milestone_kind")
       .in("patient_id", idChunk);
@@ -330,7 +351,6 @@ export async function runTherapyMilestones(): Promise<MilestoneStats> {
     let nightReadFailed = false;
     for (let page = 0; page < MAX_NIGHT_PAGES; page++) {
       const { data: rows, error: nightsErr } = await supabase
-        .schema("resupply")
         .from("patient_therapy_nights")
         .select("night_date, usage_minutes")
         .eq("patient_id", patientId)
@@ -371,7 +391,6 @@ export async function runTherapyMilestones(): Promise<MilestoneStats> {
       !detected.some((m) => m.kind === "first_adherence_month")
     ) {
       const { data: recentNights, error: recentErr } = await supabase
-        .schema("resupply")
         .from("patient_therapy_nights")
         .select("night_date, usage_minutes")
         .eq("patient_id", patientId)
@@ -410,7 +429,6 @@ export async function runTherapyMilestones(): Promise<MilestoneStats> {
         metric_snapshot: m.metricSnapshot as Json,
       };
       const { error: insErr } = await supabase
-        .schema("resupply")
         .from("patient_therapy_milestones")
         .insert(insertRow);
       if (insErr) {
@@ -436,7 +454,6 @@ export async function runTherapyMilestones(): Promise<MilestoneStats> {
   // newly-inserted milestone on an inactive patient still deserves
   // the celebration).
   const { data: pending, error: pendErr } = await supabase
-    .schema("resupply")
     .from("patient_therapy_milestones")
     .select("id, patient_id, milestone_kind, metric_snapshot")
     .is("notified_at", null)
@@ -446,7 +463,9 @@ export async function runTherapyMilestones(): Promise<MilestoneStats> {
   // Batch-resolve recipient email + first name for every pending
   // milestone up front (one query per 200 patients) instead of a
   // per-row lookup inside the send loop.
-  const pendingRows = pending ?? [];
+  const pendingRows = (pending ?? []) as Array<
+    Database["resupply"]["Tables"]["patient_therapy_milestones"]["Row"]
+  >;
   const pendingPatientIds = [
     ...new Set(pendingRows.map((r) => r.patient_id).filter(Boolean)),
   ];
@@ -458,7 +477,6 @@ export async function runTherapyMilestones(): Promise<MilestoneStats> {
   for (let i = 0; i < pendingPatientIds.length; i += PATIENT_CHUNK) {
     const chunk = pendingPatientIds.slice(i, i + PATIENT_CHUNK);
     const { data: patientRows, error: patientsErr } = await supabase
-      .schema("resupply")
       .from("patients")
       .select("id, email, legal_first_name")
       .in("id", chunk);
@@ -481,7 +499,6 @@ export async function runTherapyMilestones(): Promise<MilestoneStats> {
     // Claim the row first (atomic stamp). Wins iff still null.
     const claimIso = new Date().toISOString();
     const { data: claimed, error: claimErr } = await supabase
-      .schema("resupply")
       .from("patient_therapy_milestones")
       .update({
         notified_at: claimIso,
@@ -508,7 +525,6 @@ export async function runTherapyMilestones(): Promise<MilestoneStats> {
 
     const releaseClaim = async (): Promise<void> => {
       const { error: releaseErr } = await supabase
-        .schema("resupply")
         .from("patient_therapy_milestones")
         .update({ notified_at: null, notification_channel: null })
         .eq("id", claimed.id);
@@ -524,7 +540,6 @@ export async function runTherapyMilestones(): Promise<MilestoneStats> {
     let patient = patientById.get(claimed.patient_id) ?? null;
     if (!patient) {
       const { data: fallbackPatient, error: patientError } = await supabase
-        .schema("resupply")
         .from("patients")
         .select("email, legal_first_name")
         .eq("id", claimed.patient_id)
@@ -574,6 +589,7 @@ export async function runTherapyMilestones(): Promise<MilestoneStats> {
         firstName: patient.legal_first_name,
         kind: claimed.milestone_kind as MilestoneKind,
         metrics: { totalNights, adherencePct },
+        orgId,
       });
       if (!result.configured) {
         await releaseClaim();
@@ -636,8 +652,6 @@ export async function runTherapyMilestones(): Promise<MilestoneStats> {
       );
     }
   }
-
-  return stats;
 }
 
 export async function registerTherapyMilestonesJob(

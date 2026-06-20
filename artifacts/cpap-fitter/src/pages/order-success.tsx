@@ -83,7 +83,36 @@ export function OrderSuccess() {
       });
   };
 
-  if (!confirmation) return null;
+  if (!confirmation) {
+    // GuardedOrderSuccess verified the sessionStorage key existed, but
+    // the parse can still fail (corrupted value, storage cleared
+    // between guard and mount). A blank page strands the customer —
+    // tell them the order DID go through and route them somewhere
+    // useful instead.
+    return (
+      <div className="container max-w-2xl mx-auto px-4 py-16 text-center">
+        <h1 className="text-2xl font-semibold mb-3">
+          We couldn&apos;t load your confirmation details
+        </h1>
+        <p className="text-muted-foreground mb-8">
+          Don&apos;t worry — if you just placed an order, it was received. Check
+          your email for the confirmation, or contact us and we&apos;ll look it
+          up for you.
+        </p>
+        <div className="flex flex-wrap items-center justify-center gap-3">
+          <Button asChild>
+            <Link href="/">
+              <Home className="w-4 h-4 mr-2" />
+              Return home
+            </Link>
+          </Button>
+          <Button asChild variant="outline">
+            <Link href="/track-order">Track my order</Link>
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   const handleStartOver = () => {
     sessionStorage.removeItem("fitter_order_confirmation");
@@ -149,8 +178,8 @@ export function OrderSuccess() {
               </Button>
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              Save this reference for your records and to mention when calling
-              Penn Home Medical Supply.
+              Save this reference for your records and to mention when calling{" "}
+              {contact.legalName}.
             </p>
           </div>
 
@@ -188,9 +217,9 @@ export function OrderSuccess() {
           </h3>
           <ol className="space-y-4 text-sm">
             <Step n={1}>
-              <strong>Within 1 business day:</strong> A Penn Home Medical Supply
-              team member will call or email you to confirm your order and
-              verify your insurance benefits.
+              <strong>Within 1 business day:</strong> A {contact.legalName} team
+              member will call or email you to confirm your order and verify
+              your insurance benefits.
             </Step>
             <Step n={2}>
               <strong>Prescription verification:</strong> If we don't already
@@ -212,21 +241,23 @@ export function OrderSuccess() {
             Questions about your order?
           </h4>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-            <a
-              href={`tel:${contact.phoneE164}`}
-              className="flex items-center gap-2.5 text-muted-foreground hover:text-primary transition-colors"
-              data-testid="order-success-phone"
-            >
-              <div className="h-8 w-8 rounded-lg icon-halo-navy flex items-center justify-center shrink-0">
-                <Phone className="w-3.5 h-3.5" />
-              </div>
-              <span className="flex flex-col leading-tight">
-                <span className="font-medium text-foreground">
-                  {contact.phoneDisplay}
+            {contact.phoneE164 && (
+              <a
+                href={`tel:${contact.phoneE164}`}
+                className="flex items-center gap-2.5 text-muted-foreground hover:text-primary transition-colors"
+                data-testid="order-success-phone"
+              >
+                <div className="h-8 w-8 rounded-lg icon-halo-navy flex items-center justify-center shrink-0">
+                  <Phone className="w-3.5 h-3.5" />
+                </div>
+                <span className="flex flex-col leading-tight">
+                  <span className="font-medium text-foreground">
+                    {contact.phoneDisplay}
+                  </span>
+                  <span className="text-xs">Call {contact.name}</span>
                 </span>
-                <span className="text-xs">Call PennPaps</span>
-              </span>
-            </a>
+              </a>
+            )}
             <a
               href={`mailto:${contact.email}`}
               className="flex items-center gap-2.5 text-muted-foreground hover:text-primary transition-colors"
@@ -239,7 +270,7 @@ export function OrderSuccess() {
                 <span className="font-medium text-foreground break-all">
                   {contact.email}
                 </span>
-                <span className="text-xs">Email PennPaps</span>
+                <span className="text-xs">Email {contact.name}</span>
               </span>
             </a>
           </div>
@@ -256,9 +287,9 @@ export function OrderSuccess() {
       <div className="flex items-start gap-3 text-xs text-muted-foreground p-4 rounded-xl callout-navy mb-8">
         <ShieldCheck className="w-4 h-4 mt-0.5 text-primary shrink-0" />
         <p>
-          Your order details have been securely transmitted to and stored by
-          Penn Home Medical Supply for fulfillment. They are not retained on
-          this website.
+          Your order details have been securely transmitted to and stored by{" "}
+          {contact.legalName} for fulfillment. They are not retained on this
+          website.
         </p>
       </div>
 

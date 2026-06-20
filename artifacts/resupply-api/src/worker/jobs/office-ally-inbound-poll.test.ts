@@ -16,7 +16,16 @@ import {
 
 const supabaseMock = installSupabaseMock();
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  getOrgScopedClient,
+  getSupabaseServiceRoleClient,
+} from "@workspace/resupply-db";
+
+// The dispatch helpers now take the org-scoped client; wrap the mock
+// service-role client through the facade's test seam.
+const TEST_ORG_ID = "00000000-0000-0000-0000-000000000001";
+const orgClient = () =>
+  getOrgScopedClient(TEST_ORG_ID, getSupabaseServiceRoleClient());
 
 import { dispatch835 } from "./office-ally-inbound-poll";
 
@@ -41,7 +50,7 @@ describe("dispatch835 — duplicate 835 idempotency guard", () => {
       data: { id: "era-1", status: "processed" },
     });
 
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = orgClient();
     const queued = await dispatch835(
       supabase,
       "inbound-1",

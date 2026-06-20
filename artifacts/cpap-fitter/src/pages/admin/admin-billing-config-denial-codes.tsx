@@ -104,12 +104,24 @@ export function AdminBillingConfigDenialCodesPage() {
                   className="text-left text-[11px] uppercase tracking-wider sticky top-0 bg-white"
                   style={{ color: "hsl(var(--ink-3))" }}
                 >
-                  <th className="p-3">System</th>
-                  <th className="p-3">Code</th>
-                  <th className="p-3">Description</th>
-                  <th className="p-3">Category</th>
-                  <th className="p-3">Recommended action</th>
-                  <th className="p-3">Terminal</th>
+                  <th scope="col" className="p-3">
+                    System
+                  </th>
+                  <th scope="col" className="p-3">
+                    Code
+                  </th>
+                  <th scope="col" className="p-3">
+                    Description
+                  </th>
+                  <th scope="col" className="p-3">
+                    Category
+                  </th>
+                  <th scope="col" className="p-3">
+                    Recommended action
+                  </th>
+                  <th scope="col" className="p-3">
+                    Terminal
+                  </th>
                 </tr>
               </thead>
               <tbody>

@@ -13,7 +13,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import {
   adminReadRateLimiter,
@@ -51,10 +51,14 @@ router.get(
   // the pre-auth window.
   adminReadRateLimiter,
   requireAdmin,
-  async (_req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("admin_users")
       .select("id, email_lower, display_name, role, availability")
       .eq("status", "active")
@@ -64,7 +68,11 @@ router.get(
       return;
     }
     res.json({
-      agents: (data ?? []).map((a) => ({
+      agents: (
+        (data ?? []) as Array<
+          Database["resupply"]["Tables"]["admin_users"]["Row"]
+        >
+      ).map((a) => ({
         adminUserId: a.id,
         email: a.email_lower,
         displayName: a.display_name,
@@ -85,9 +93,13 @@ router.get(
       res.status(401).json({ error: "no_user" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("admin_users")
       .select("id, availability, phone_e164")
       .eq("id", userId)
@@ -133,9 +145,13 @@ router.put(
     }
     const phone = parsed.data.phoneE164 === "" ? null : parsed.data.phoneE164;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("admin_users")
       .update({ phone_e164: phone, updated_at: new Date().toISOString() })
       .eq("id", userId)
@@ -184,9 +200,13 @@ router.patch(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("admin_users")
       .update({
         availability: parsed.data.availability,

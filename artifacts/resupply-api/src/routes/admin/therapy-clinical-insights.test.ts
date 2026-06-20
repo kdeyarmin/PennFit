@@ -21,6 +21,7 @@ import {
   stageSupabaseResponse,
   stageSupabaseRpcResponse,
   getSupabaseRpcArgs,
+  getSupabaseFilterCalls,
 } from "../../test-helpers/supabase-mock";
 
 const supabaseMock = installSupabaseMock();
@@ -151,6 +152,18 @@ describe("GET /admin/therapy-fleet/clinical-insights", () => {
       (e: { patientId: string }) => e.patientId === P2,
     );
     expect(p2Entry.metrics).toBeNull();
+    // Active = not dismissed AND not under a live snooze (mig 0337): the
+    // events read filters on dismissed_at IS NULL plus an `.or` excluding
+    // unexpired snoozes.
+    const filters = getSupabaseFilterCalls(
+      "patient_smart_trigger_events",
+      "select",
+    );
+    expect(filters.some((c) => c.verb === "is")).toBe(true);
+    const orFilter = filters.find((c) => c.verb === "or");
+    expect(orFilter).toBeDefined();
+    expect(String(orFilter?.args[0])).toContain("snoozed_until.is.null");
+    expect(String(orFilter?.args[0])).toContain("snoozed_until.lt.");
     // The RPC was called with the (deduped) patient-id set + window.
     const rpcArgs = getSupabaseRpcArgs("therapy_clinical_metrics")[0] as {
       p_patient_ids: string[];

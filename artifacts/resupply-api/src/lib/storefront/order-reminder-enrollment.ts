@@ -23,7 +23,8 @@
 import { randomBytes } from "node:crypto";
 
 import {
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
+  resolveSeedOrgId,
   type Json,
 } from "@workspace/resupply-db";
 
@@ -115,6 +116,8 @@ export function mergeReminderItems(
 export interface AutoEnrollInput {
   email: string;
   lineItems: ReadonlyArray<OrderLineItemLike>;
+  /** Owning tenant of the order. Defaults to the seed org when omitted. */
+  orgId?: string;
   now?: Date;
   log?: { warn?: (obj: unknown, msg?: string) => void } | null;
 }
@@ -138,7 +141,12 @@ export interface AutoEnrollResult {
 export async function autoEnrollReminderFromOrder(
   input: AutoEnrollInput,
 ): Promise<AutoEnrollResult> {
-  if (!(await isFeatureEnabled("storefront.auto_reminder_enrollment"))) {
+  const orgId = input.orgId?.trim() || (await resolveSeedOrgId());
+  if (!orgId) {
+    return { enrolled: false, reason: "disabled" };
+  }
+  // Per-tenant gate: the order's own tenant decides whether auto-enrollment is on.
+  if (!(await isFeatureEnabled("storefront.auto_reminder_enrollment", orgId))) {
     return { enrolled: false, reason: "disabled" };
   }
 
@@ -148,13 +156,15 @@ export async function autoEnrollReminderFromOrder(
   if (items.length === 0) return { enrolled: false, reason: "no_consumables" };
 
   const email = input.email.trim().toLowerCase();
-  const supabase = getSupabaseServiceRoleClient();
+  const supabase = getOrgScopedClient(orgId);
 
   const { data: existing, error: lookupErr } = await supabase
+    .raw()
     .schema("public")
     .from("reminder_subscriptions")
     .select("email, status, items")
     .eq("email", email)
+    .eq("org_id", orgId)
     .limit(1)
     .maybeSingle();
   if (lookupErr) throw lookupErr;
@@ -170,22 +180,26 @@ export async function autoEnrollReminderFromOrder(
       return { enrolled: false, reason: "no_change" };
     }
     const { error: updErr } = await supabase
+      .raw()
       .schema("public")
       .from("reminder_subscriptions")
       .update({
         items: merged as unknown as Json,
         updated_at: now.toISOString(),
       })
-      .eq("email", email);
+      .eq("email", email)
+      .eq("org_id", orgId);
     if (updErr) throw updErr;
     return { enrolled: true, reason: "ok_merged" };
   }
 
   const { error: insErr } = await supabase
+    .raw()
     .schema("public")
     .from("reminder_subscriptions")
     .insert({
       email,
+      org_id: orgId,
       manage_token: randomBytes(32).toString("hex"),
       items: items as unknown as Json,
       status: "active",

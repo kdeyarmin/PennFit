@@ -16,13 +16,15 @@
 // inserted but before its notified_at is stamped — the same atomic-
 // claim pattern used by the shipping notification.
 
-import {
-  createSendgridClient,
-  EmailApiError,
-  EmailConfigError,
-} from "@workspace/resupply-email";
+import { EmailApiError, EmailConfigError } from "@workspace/resupply-email";
 
-const DEFAULT_BASE_URL = "https://pennpaps.com";
+import { createTenantSendgridClient } from "../email/tenant-sender.js";
+import {
+  resolveBrandingByOrgId,
+  resolveTenantBaseUrl,
+} from "../tenant-branding.js";
+
+const DEFAULT_BASE_URL = "https://cmbreathe.com";
 
 export type MilestoneKind =
   | "100_nights"
@@ -43,6 +45,13 @@ export interface SendTherapyMilestoneEmailInput {
     adherencePct?: number;
   };
   baseUrlOverride?: string;
+  /**
+   * Tenant the patient belongs to. When set and the tenant has its own
+   * From identity (migration 0360), the email is sent under it (G6) and
+   * the copy carries the tenant's storefront brand; otherwise the platform
+   * default From/brand is used. Omit / undefined leaves it unchanged.
+   */
+  orgId?: string;
 }
 
 export interface SendTherapyMilestoneEmailResult {
@@ -117,7 +126,9 @@ export async function sendTherapyMilestoneEmail(
 ): Promise<SendTherapyMilestoneEmailResult> {
   let client;
   try {
-    client = createSendgridClient();
+    // Send under the tenant's own From identity when configured (G6);
+    // falls back to the platform default when it isn't / orgId is unset.
+    client = await createTenantSendgridClient(input.orgId);
   } catch (err) {
     if (err instanceof EmailConfigError) {
       return { configured: false, delivered: false, error: err.message };
@@ -125,8 +136,18 @@ export async function sendTherapyMilestoneEmail(
     throw err;
   }
 
+  // Brand the email with the tenant's own storefront name (G6). For the seed
+  // tenant this resolves to "PennPaps" (its stored brand), so single-tenant
+  // copy is unchanged; a second tenant's email carries ITS brand.
+  const brand = await resolveBrandingByOrgId(input.orgId);
+  const brandName = brand.storefrontName;
+
   const c = copyFor(input.kind, input.metrics);
-  const base = publicBaseUrl(input.baseUrlOverride);
+  const base = publicBaseUrl(
+    input.baseUrlOverride ??
+      (await resolveTenantBaseUrl(input.orgId)) ??
+      undefined,
+  );
   const therapyUrl = `${base}/account#therapy`;
   const greeting = input.firstName
     ? `Hi ${escapeHtml(input.firstName)},`
@@ -140,7 +161,7 @@ export async function sendTherapyMilestoneEmail(
     `See your therapy summary: ${therapyUrl}`,
     "",
     "Sleep well,",
-    "The PennPaps team",
+    `The ${brandName} team`,
   ].join("\n");
 
   const html = `<!doctype html>
@@ -160,7 +181,7 @@ export async function sendTherapyMilestoneEmail(
           <a href="${escapeHtml(therapyUrl)}" style="display:inline-block;background:#0f1d3a;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:8px;font-size:14px;font-weight:600;">See your therapy summary</a>
         </td></tr>
         <tr><td style="padding:16px 28px 24px;border-top:1px solid #eef0f5;font-size:12px;color:#8b95a9;">
-          Sleep well, the PennPaps team
+          Sleep well, the ${escapeHtml(brandName)} team
         </td></tr>
       </table>
     </td></tr>

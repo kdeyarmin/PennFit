@@ -1,4 +1,4 @@
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { logger } from "./logger";
 import { isWorkerReady } from "../worker/index.js";
@@ -98,10 +98,18 @@ async function checkDb(): Promise<void> {
   // The supabase-js PostgrestBuilder is a PromiseLike, so we lift it
   // into a real Promise via Promise.resolve before composing with the
   // withTimeout race wrapper.
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    // The seed-org lookup is itself a DB read; a null result means the
+    // DB / PostgREST path is unreachable (or the org row is missing),
+    // which is exactly the failure this probe exists to surface.
+    throw new Error("tenant context missing");
+  }
+  const supabase = getOrgScopedClient(orgId);
   const { error } = await withTimeout(
     Promise.resolve(
       supabase
+        .raw()
         .schema("resupply")
         .from("feature_flags")
         .select("key", { head: true })

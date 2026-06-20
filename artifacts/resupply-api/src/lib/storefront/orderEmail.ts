@@ -32,11 +32,13 @@
  */
 
 import { randomInt } from "node:crypto";
+import { EmailApiError, EmailConfigError } from "@workspace/resupply-email";
+
+import { createTenantSendgridClient } from "../email/tenant-sender.js";
 import {
-  createSendgridClient,
-  EmailApiError,
-  EmailConfigError,
-} from "@workspace/resupply-email";
+  resolveBrandingByOrgId,
+  resolveOrgNotificationEmail,
+} from "../tenant-branding.js";
 
 export interface OrderPayload {
   chosenMask: {
@@ -111,9 +113,13 @@ export function generateOrderReference(): string {
  * This text is NOT logged anywhere — it lives in memory only until handed to
  * the SMTP client.
  */
-function composeEmailBody(order: OrderPayload, orderReference: string): string {
+function composeEmailBody(
+  order: OrderPayload,
+  orderReference: string,
+  brandName: string,
+): string {
   const lines: string[] = [];
-  lines.push(`PENNPAPS — NEW MASK ORDER`);
+  lines.push(`${brandName.toUpperCase()} — NEW MASK ORDER`);
   lines.push(`Reference: ${orderReference}`);
   lines.push(`Submitted: ${new Date().toISOString()}`);
   lines.push("");
@@ -183,7 +189,7 @@ function composeEmailBody(order: OrderPayload, orderReference: string): string {
   );
   lines.push("");
   lines.push(
-    "This order was submitted through PennPaps. No data is stored on the server.",
+    `This order was submitted through ${brandName}. No data is stored on the server.`,
   );
   return lines.join("\n");
 }
@@ -209,7 +215,7 @@ function bodyToHtml(text: string): string {
  */
 export async function sendOrderToPenn(
   order: OrderPayload,
-  options: { orderReference?: string } = {},
+  options: { orderReference?: string; orgId?: string } = {},
 ): Promise<SendOrderResult> {
   // The route may pass a pre-generated reference so the DB row, email, and
   // patient-facing response all share the same value. Fall back to a
@@ -217,7 +223,11 @@ export async function sendOrderToPenn(
   const orderReference = options.orderReference ?? generateOrderReference();
   const deliveredAt = new Date().toISOString();
 
-  const toEmail = process.env.PENN_FULFILLMENT_EMAIL;
+  // Route the fulfillment notification to the TENANT's own inbox when set
+  // (migration 0379), else the platform env default (the seed operator).
+  const toEmail =
+    (await resolveOrgNotificationEmail(options.orgId, "fulfillment_email")) ??
+    process.env.PENN_FULFILLMENT_EMAIL;
   if (!toEmail) {
     return {
       configured: false,
@@ -230,7 +240,8 @@ export async function sendOrderToPenn(
 
   let client;
   try {
-    client = createSendgridClient();
+    // Send under the tenant's own From identity when configured (G6).
+    client = await createTenantSendgridClient(options.orgId);
   } catch (err) {
     if (err instanceof EmailConfigError) {
       return {
@@ -250,8 +261,12 @@ export async function sendOrderToPenn(
     };
   }
 
-  const body = composeEmailBody(order, orderReference);
-  const subject = `PennPaps Order ${orderReference} — ${order.chosenMask.modelNumber} for ${order.patient.lastName}`;
+  // Brand the notification with the tenant's storefront name (seed →
+  // "PennPaps", unchanged).
+  const brandName = (await resolveBrandingByOrgId(options.orgId))
+    .storefrontName;
+  const body = composeEmailBody(order, orderReference, brandName);
+  const subject = `${brandName} Order ${orderReference} — ${order.chosenMask.modelNumber} for ${order.patient.lastName}`;
 
   // Set the patient as the reply-to so the fulfillment team can reply
   // directly. SendGrid accepts the standard "Name <email>" string format,

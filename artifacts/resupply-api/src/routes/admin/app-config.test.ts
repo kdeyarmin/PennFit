@@ -1,17 +1,18 @@
-// Tests for /admin/system/config — super-admin System Configuration.
+// Tests for /admin/system/config — the TENANT System Configuration store.
 //
 // Coverage:
-//   1. Every route requires `system.config.manage` (super_admin only):
-//      401 unauthenticated, 403 for a non-super role.
-//   2. GET groups the catalog by category and MASKS secret values —
-//      the plaintext never appears in the response.
-//   3. Non-secret config is returned in full.
-//   4. PUT rejects unknown keys (404) and bad bodies (400); on success
-//      it upserts, masks the secret in the response, and writes an
-//      app_config_events row.
+//   1. Every route requires `system.config.manage` (the tenant Owner role):
+//      401 unauthenticated, 403 for a lower role.
+//   2. GET exposes ONLY tenant-scoped keys (branding + the tenant's own
+//      business integrations), MASKS secrets, and shows non-secret config
+//      in full.
+//   3. The security property: shared PLATFORM credentials (OpenAI, Stripe,
+//      Twilio, …) never appear here, and PUT/DELETE on a platform key 404s.
+//   4. PUT rejects unknown keys (404) and bad bodies (400); on success it
+//      upserts, masks the secret, and writes a tenant-scoped event.
 //   5. DELETE clears a saved value.
 
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import express, { type Express } from "express";
 import request from "supertest";
 
@@ -77,9 +78,13 @@ function flattenSettings(body: {
   return m;
 }
 
-function stubSuperAdmin() {
+// A secret + a non-secret TENANT-scoped business-integration key.
+const TENANT_SECRET_KEY = "AIRVIEW_CLIENT_SECRET";
+const TENANT_URL_KEY = "AIRVIEW_API_BASE_URL";
+
+function stubOwner() {
   // role "admin" → granular defaults to "admin" → effective super_admin,
-  // which holds every permission including system.config.manage.
+  // which holds system.config.manage (the tenant's Owner).
   mockAdmin.current = {
     userId: "u_admin_1",
     email: "owner@example.com",
@@ -98,7 +103,7 @@ describe("GET /admin/system/config", () => {
     expect(res.status).toBe(401);
   });
 
-  it("returns 403 for a non-super-admin role", async () => {
+  it("returns 403 for a non-owner role", async () => {
     mockAdmin.current = {
       userId: "u_sup_1",
       email: "supervisor@example.com",
@@ -113,27 +118,28 @@ describe("GET /admin/system/config", () => {
     });
   });
 
-  it("masks secret values and never leaks the plaintext", async () => {
-    stubSuperAdmin();
-    const SECRET = "sk-super-secret-7f3a";
+  it("masks secrets, shows non-secret config, and never leaks a platform credential", async () => {
+    stubOwner();
+    const SECRET = "av-secret-7f3a";
     stageSupabaseResponse("app_config", "select", {
       data: [
         {
-          key: "OPENAI_API_KEY",
+          key: TENANT_SECRET_KEY,
           value: SECRET,
           updated_by_email: "owner@example.com",
           updated_at: "2026-06-01T00:00:00.000Z",
         },
         {
-          key: "AIRVIEW_API_BASE_URL",
+          key: TENANT_URL_KEY,
           value: "https://airview.example.com",
           updated_by_email: "owner@example.com",
           updated_at: "2026-06-01T00:00:00.000Z",
         },
         {
-          // Malformed on purpose — a Stripe secret that isn't sk_/rk_.
-          key: "STRIPE_SECRET_KEY",
-          value: "totally-wrong",
+          // A PLATFORM credential happens to live on this org's rows — it
+          // must be filtered OUT of the tenant surface entirely.
+          key: "OPENAI_API_KEY",
+          value: "sk-platform-secret",
           updated_by_email: "owner@example.com",
           updated_at: "2026-06-01T00:00:00.000Z",
         },
@@ -144,158 +150,48 @@ describe("GET /admin/system/config", () => {
     expect(res.status).toBe(200);
 
     const settings = flattenSettings(res.body);
-    const openai = settings.get("OPENAI_API_KEY")!;
-    expect(openai.secret).toBe(true);
-    expect(openai.source).toBe("db");
-    expect(openai.configured).toBe(true);
-    // Masked — only the last 4 chars revealed.
-    expect(openai.hint).toBe("••••7f3a");
-    // "sk-…" matches the OpenAI format rule.
-    expect(openai.formatValid).toBe(true);
 
-    // Non-secret config is shown in full.
-    const airview = settings.get("AIRVIEW_API_BASE_URL")!;
-    expect(airview.secret).toBe(false);
-    expect(airview.hint).toBe("https://airview.example.com");
-    expect(airview.formatValid).toBe(true);
+    // Tenant secret: masked, source db.
+    const secret = settings.get(TENANT_SECRET_KEY)!;
+    expect(secret.secret).toBe(true);
+    expect(secret.source).toBe("db");
+    expect(secret.configured).toBe(true);
+    expect(secret.hint).toBe("••••7f3a");
 
-    // Soft format check flags the malformed Stripe key (non-blocking).
-    const stripe = settings.get("STRIPE_SECRET_KEY")!;
-    expect(stripe.formatValid).toBe(false);
+    // Tenant non-secret config: shown in full; URL rule passes.
+    const url = settings.get(TENANT_URL_KEY)!;
+    expect(url.secret).toBe(false);
+    expect(url.hint).toBe("https://airview.example.com");
+    expect(url.formatValid).toBe(true);
 
-    // A key with no format rule reports null (never flagged).
-    expect(settings.get("DEEPGRAM_API_KEY")!.formatValid).toBeNull();
+    // The security property: shared platform credentials never appear here.
+    expect(settings.get("OPENAI_API_KEY")).toBeUndefined();
+    expect(settings.get("STRIPE_SECRET_KEY")).toBeUndefined();
+    expect(settings.get("TWILIO_AUTH_TOKEN")).toBeUndefined();
 
-    // Hard guarantee: the secret plaintext is nowhere in the payload.
+    // Telephony webhooks are platform-scoped — not on the tenant surface.
+    expect(res.body.webhookReference).toBeNull();
+    expect(res.body.twilioWebhooks).toBeNull();
+    // The overlay kill-switch DOES affect tenant overlays, so the flag must
+    // be present for the tenant page's warning (regression guard).
+    expect(res.body.overlayDisabled).toBe(false);
+
+    // Hard guarantee: no secret plaintext anywhere in the payload.
     expect(JSON.stringify(res.body)).not.toContain(SECRET);
-  });
-});
-
-describe("GET /admin/system/config — telephony webhook reference", () => {
-  const BASE_KEY = "RESUPPLY_VOICE_PUBLIC_BASE_URL";
-  let savedBase: string | undefined;
-  let savedRailway: string | undefined;
-
-  beforeEach(() => {
-    // Hermetic: the reference URLs resolve from these env vars unless a
-    // db value is staged, so pin them off for a predictable baseline.
-    savedBase = process.env[BASE_KEY];
-    savedRailway = process.env.RAILWAY_PUBLIC_DOMAIN;
-    delete process.env[BASE_KEY];
-    delete process.env.RAILWAY_PUBLIC_DOMAIN;
-  });
-  afterEach(() => {
-    if (savedBase === undefined) delete process.env[BASE_KEY];
-    else process.env[BASE_KEY] = savedBase;
-    if (savedRailway === undefined) delete process.env.RAILWAY_PUBLIC_DOMAIN;
-    else process.env.RAILWAY_PUBLIC_DOMAIN = savedRailway;
-  });
-
-  it("derives the full webhook URLs from the LIVE env base URL (slash stripped)", async () => {
-    stubSuperAdmin();
-    process.env[BASE_KEY] = "https://pennfit.example.com/";
-    stageSupabaseResponse("app_config", "select", { data: [] });
-
-    const res = await request(makeApp()).get("/admin/system/config");
-    expect(res.status).toBe(200);
-
-    const w = res.body.webhookReference;
-    expect(w.baseUrl).toBe("https://pennfit.example.com");
-    expect(w.baseUrlSource).toBe("env");
-    expect(w.baseUrlKey).toBe(BASE_KEY);
-    expect(w.pendingRestart).toBe(false);
-
-    // Back-compat alias for admin SPA bundles cached before the
-    // twilioWebhooks → webhookReference rename.
-    expect(res.body.twilioWebhooks).toEqual(w);
-
-    const urls: Record<string, string> = Object.fromEntries(
-      (w.endpoints as Array<{ id: string; url: string }>).map((e) => [
-        e.id,
-        e.url,
-      ]),
-    );
-    expect(urls.voice_inbound).toBe(
-      "https://pennfit.example.com/resupply-api/voice/inbound-reorder",
-    );
-    expect(urls.sms_inbound).toBe(
-      "https://pennfit.example.com/resupply-api/sms/inbound",
-    );
-    expect(urls.sms_status).toBe(
-      "https://pennfit.example.com/resupply-api/sms/status-callback",
-    );
-    expect(urls.fax_webhook).toBe(
-      "https://pennfit.example.com/resupply-api/fax/webhook",
-    );
-  });
-
-  it("keeps showing the LIVE URLs (not a saved-but-unapplied value) and flags pendingRestart", async () => {
-    stubSuperAdmin();
-    // The running process still uses the env value; a different value was
-    // saved in the UI but only applies on the next deploy.
-    process.env[BASE_KEY] = "https://live.example.com";
-    stageSupabaseResponse("app_config", "select", {
-      data: [
-        {
-          key: BASE_KEY,
-          value: "https://new.example.com",
-          updated_by_email: "owner@example.com",
-          updated_at: "2026-06-01T00:00:00.000Z",
-        },
-      ],
-    });
-
-    const res = await request(makeApp()).get("/admin/system/config");
-    expect(res.status).toBe(200);
-
-    const w = res.body.webhookReference;
-    // URLs reflect what the live process signs/emits, NOT the saved value.
-    expect(w.baseUrl).toBe("https://live.example.com");
-    expect(w.baseUrlSource).toBe("env");
-    expect(w.pendingRestart).toBe(true);
-    const sms = (w.endpoints as Array<{ id: string; url: string }>).find(
-      (e) => e.id === "sms_inbound",
-    );
-    expect(sms?.url).toBe("https://live.example.com/resupply-api/sms/inbound");
-  });
-
-  it("falls back to the Railway domain when only RAILWAY_PUBLIC_DOMAIN is set", async () => {
-    stubSuperAdmin();
-    process.env.RAILWAY_PUBLIC_DOMAIN = "pennfit.up.railway.app";
-    stageSupabaseResponse("app_config", "select", { data: [] });
-
-    const res = await request(makeApp()).get("/admin/system/config");
-    expect(res.status).toBe(200);
-    expect(res.body.webhookReference.baseUrl).toBe(
-      "https://pennfit.up.railway.app",
-    );
-    expect(res.body.webhookReference.baseUrlSource).toBe("railway");
-    expect(res.body.webhookReference.pendingRestart).toBe(false);
-  });
-
-  it("returns no URLs when no base URL is configured", async () => {
-    stubSuperAdmin();
-    stageSupabaseResponse("app_config", "select", { data: [] });
-
-    const res = await request(makeApp()).get("/admin/system/config");
-    expect(res.status).toBe(200);
-    expect(res.body.webhookReference.baseUrl).toBeNull();
-    expect(res.body.webhookReference.baseUrlSource).toBe("unset");
-    expect(res.body.webhookReference.endpoints).toEqual([]);
-    expect(res.body.webhookReference.pendingRestart).toBe(false);
+    expect(JSON.stringify(res.body)).not.toContain("sk-platform-secret");
   });
 });
 
 describe("PUT /admin/system/config/:key", () => {
   it("returns 401 when unauthenticated", async () => {
     const res = await request(makeApp())
-      .put("/admin/system/config/OPENAI_API_KEY")
-      .send({ value: "sk-x" });
+      .put(`/admin/system/config/${TENANT_SECRET_KEY}`)
+      .send({ value: "x" });
     expect(res.status).toBe(401);
   });
 
   it("returns 404 for an unknown key", async () => {
-    stubSuperAdmin();
+    stubOwner();
     const res = await request(makeApp())
       .put("/admin/system/config/NOT_A_REAL_KEY")
       .send({ value: "x" });
@@ -303,65 +199,72 @@ describe("PUT /admin/system/config/:key", () => {
     expect(res.body.error).toBe("unknown_key");
   });
 
-  it("returns 400 for an empty value", async () => {
-    stubSuperAdmin();
+  it("404s a PLATFORM key so the tenant surface can't write a shared secret", async () => {
+    stubOwner();
     const res = await request(makeApp())
       .put("/admin/system/config/OPENAI_API_KEY")
+      .send({ value: "sk-should-be-rejected" });
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe("unknown_key");
+  });
+
+  it("returns 400 for an empty value", async () => {
+    stubOwner();
+    const res = await request(makeApp())
+      .put(`/admin/system/config/${TENANT_SECRET_KEY}`)
       .send({ value: "   " });
     expect(res.status).toBe(400);
     expect(res.body.error).toBe("invalid_body");
   });
 
-  it("upserts the value, masks the response, and writes an event", async () => {
-    stubSuperAdmin();
-    // prior-row probe → no existing value
+  it("upserts the value, masks the response, and writes a tenant-scoped event", async () => {
+    stubOwner();
     stageSupabaseResponse("app_config", "select", { data: null });
-    // upsert RETURNING row
     stageSupabaseResponse("app_config", "upsert", {
       data: {
-        key: "OPENAI_API_KEY",
-        value: "sk-live-abcd9999",
+        key: TENANT_SECRET_KEY,
+        value: "av-live-abcd9999",
         updated_by_email: "owner@example.com",
         updated_at: "2026-06-02T00:00:00.000Z",
       },
     });
 
     const res = await request(makeApp())
-      .put("/admin/system/config/OPENAI_API_KEY")
-      .send({ value: "sk-live-abcd9999" });
+      .put(`/admin/system/config/${TENANT_SECRET_KEY}`)
+      .send({ value: "av-live-abcd9999" });
 
     expect(res.status).toBe(200);
     expect(res.body.setting).toMatchObject({
-      key: "OPENAI_API_KEY",
+      key: TENANT_SECRET_KEY,
       secret: true,
       source: "db",
       hint: "••••9999",
     });
-    expect(JSON.stringify(res.body)).not.toContain("sk-live-abcd9999");
+    expect(JSON.stringify(res.body)).not.toContain("av-live-abcd9999");
 
-    // The upsert payload carried the actor + value.
     const upserts = supabaseMock.writePayloads("app_config", "upsert");
     expect(upserts).toHaveLength(1);
     expect(upserts[0]).toMatchObject({
-      key: "OPENAI_API_KEY",
-      value: "sk-live-abcd9999",
+      key: TENANT_SECRET_KEY,
+      value: "av-live-abcd9999",
       updated_by_email: "owner@example.com",
     });
+    expect((upserts[0] as Record<string, unknown>).org_id).toBeTruthy();
 
-    // An app_config_events row was written (value-free).
     const events = supabaseMock.writePayloads("app_config_events", "insert");
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({
-      key: "OPENAI_API_KEY",
+      key: TENANT_SECRET_KEY,
       action: "set",
       had_previous: false,
       operator_email: "owner@example.com",
     });
+    expect((events[0] as Record<string, unknown>).org_id).toBeTruthy();
   });
 });
 
 describe("DELETE /admin/system/config/:key", () => {
-  it("returns 403 for a non-super-admin role", async () => {
+  it("returns 403 for a non-owner role", async () => {
     mockAdmin.current = {
       userId: "u_csr_1",
       email: "csr@example.com",
@@ -369,27 +272,38 @@ describe("DELETE /admin/system/config/:key", () => {
       granularRole: "csr",
     };
     const res = await request(makeApp()).delete(
-      "/admin/system/config/OPENAI_API_KEY",
+      `/admin/system/config/${TENANT_SECRET_KEY}`,
     );
     expect(res.status).toBe(403);
   });
 
+  it("404s a PLATFORM key on delete too", async () => {
+    stubOwner();
+    const res = await request(makeApp()).delete(
+      "/admin/system/config/STRIPE_SECRET_KEY",
+    );
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe("unknown_key");
+  });
+
   it("clears a saved value and reports removed", async () => {
-    stubSuperAdmin();
-    // delete RETURNING the removed row
+    stubOwner();
     stageSupabaseResponse("app_config", "delete", {
-      data: [{ key: "OPENAI_API_KEY" }],
+      data: [{ key: TENANT_SECRET_KEY }],
     });
 
     const res = await request(makeApp()).delete(
-      "/admin/system/config/OPENAI_API_KEY",
+      `/admin/system/config/${TENANT_SECRET_KEY}`,
     );
     expect(res.status).toBe(200);
     expect(res.body.removed).toBe(true);
-    expect(res.body.setting.key).toBe("OPENAI_API_KEY");
+    expect(res.body.setting.key).toBe(TENANT_SECRET_KEY);
 
     const events = supabaseMock.writePayloads("app_config_events", "insert");
     expect(events).toHaveLength(1);
-    expect(events[0]).toMatchObject({ key: "OPENAI_API_KEY", action: "clear" });
+    expect(events[0]).toMatchObject({
+      key: TENANT_SECRET_KEY,
+      action: "clear",
+    });
   });
 });

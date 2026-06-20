@@ -355,6 +355,12 @@ export function ShopCart() {
     null,
   );
   const [previewMode, setPreviewMode] = useState<boolean | null>(null);
+  // The catalog probe below fails open (purchasing enabled) so a
+  // transient hiccup never blocks a real customer. When it does fail we
+  // can't actually confirm Stripe is reachable, so flag it and warn the
+  // shopper their checkout might not go through — better than letting
+  // them discover it at the payment step.
+  const [probeFailed, setProbeFailed] = useState(false);
   // Auth + saved-card probe for the Express Checkout button. Same
   // tri-state pattern as previewMode: `null` means "still finding out"
   // and we hide the Express button until we know — flashing a button
@@ -426,15 +432,19 @@ export function ShopCart() {
         }
         setPurchasingEnabled(r.purchasingEnabled);
         setPreviewMode(r.previewMode);
+        setProbeFailed(false);
         setCatalog(r.products);
       })
       .catch(() => {
         // Fail open to "live" so a transient products fetch failure
         // doesn't block a real customer's checkout. The button click
         // path still surfaces the real error if checkout itself fails.
+        // Flag the failure so we can warn the shopper checkout may not
+        // go through, rather than letting them find out at payment.
         if (active) {
           setPurchasingEnabled(true);
           setPreviewMode(false);
+          setProbeFailed(true);
         }
       });
     return () => {
@@ -1047,6 +1057,26 @@ export function ShopCart() {
                     </span>{" "}
                     Your cart is saved — check back soon, or use the insurance
                     flow below ($0 with a prescription).
+                  </p>
+                </div>
+              )}
+              {/* Catalog probe failed — we fail open so checkout isn't
+                  blocked, but we genuinely don't know if Stripe is
+                  reachable, so warn the shopper instead of letting them
+                  hit an opaque error at the payment step. */}
+              {probeFailed && (
+                <div
+                  className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-3 mb-3 flex items-start gap-2"
+                  data-testid="cart-probe-failed-banner"
+                  role="status"
+                >
+                  <Info className="w-4 h-4 shrink-0 mt-0.5 text-amber-700" />
+                  <p className="text-xs leading-relaxed text-amber-900">
+                    <span className="font-semibold">
+                      We couldn&apos;t verify checkout availability.
+                    </span>{" "}
+                    You can still try to check out, but if it doesn&apos;t go
+                    through, refresh the page and try again in a moment.
                   </p>
                 </div>
               )}

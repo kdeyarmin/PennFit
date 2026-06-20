@@ -20,7 +20,7 @@ export type AutoFileStatus =
 
 export interface InboundFaxListItem {
   id: string;
-  twilioFaxSid: string;
+  providerFaxId: string | null;
   fromE164: string | null;
   toE164: string | null;
   receivedAt: string;

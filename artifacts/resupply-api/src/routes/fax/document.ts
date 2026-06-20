@@ -17,7 +17,7 @@ import { Router, type IRouter, type Request } from "express";
 import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 import PDFDocument from "pdfkit";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { renderAppealPdfForLetterId } from "../../lib/billing/appeal-letter-render.js";
 import { buildPaRequestPdf } from "../../lib/billing/pa-request-render.js";
@@ -25,6 +25,7 @@ import { getDocumentSupplierName } from "../../lib/company-info.js";
 import { verifyFaxDocumentToken } from "../../lib/fax-document-token.js";
 import { renderManualDocumentPacketForFax } from "../../lib/manual-documents/packet-service.js";
 import { renderManualDocumentForFax } from "../../lib/manual-documents/render-for-fax.js";
+import { resolveOrgIdForSignedRecord } from "../../lib/storefront/signed-link-org.js";
 
 const router: IRouter = Router();
 
@@ -57,16 +58,25 @@ router.get("/fax/document/:token", faxDocumentLimiter, async (req, res) => {
     return;
   }
 
-  const supabase = getSupabaseServiceRoleClient();
+  // Public signed-link route: there is no req.orgId. Each kind resolves
+  // its OWN tenant FROM the record the token references (the one sanctioned
+  // cross-tenant read), so a tenant-B fax document renders under tenant B —
+  // not the seed org. Degrades to 404 when it can't resolve; never 500s a
+  // signed-link fetch.
 
   // Appeal-letter faxes render the stored appeal PDF (claim_appeal_letters
   // row) instead of the physician cover letter. Same signed-URL posture;
   // no PHI in the URL, and the PDF bytes are never logged.
   if (verified.kind === "appeal_letter") {
-    const result = await renderAppealPdfForLetterId(
-      supabase,
+    const orgId = await resolveOrgIdForSignedRecord(
+      "claim_appeal_letters",
       verified.outreachId,
     );
+    if (!orgId) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const result = await renderAppealPdfForLetterId(orgId, verified.outreachId);
     if (!result.ok) {
       const status = result.reason === "no_dme_organization" ? 409 : 404;
       res.status(status).json({ error: result.reason });
@@ -86,7 +96,18 @@ router.get("/fax/document/:token", faxDocumentLimiter, async (req, res) => {
   // routes/admin/manual-documents.ts). Same signed-URL posture; no PHI
   // in the URL, and the PDF bytes are never logged.
   if (verified.kind === "manual_document") {
-    const pdf = await renderManualDocumentForFax(supabase, verified.outreachId);
+    const orgId = await resolveOrgIdForSignedRecord(
+      "manual_documents",
+      verified.outreachId,
+    );
+    if (!orgId) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const pdf = await renderManualDocumentForFax(
+      getOrgScopedClient(orgId),
+      verified.outreachId,
+    );
     if (!pdf) {
       res.status(404).json({ error: "not_found" });
       return;
@@ -102,8 +123,16 @@ router.get("/fax/document/:token", faxDocumentLimiter, async (req, res) => {
   // sheet + each member document). Same signed-URL posture; no PHI in
   // the URL, and the PDF bytes are never logged.
   if (verified.kind === "manual_document_packet") {
+    const orgId = await resolveOrgIdForSignedRecord(
+      "manual_document_packets",
+      verified.outreachId,
+    );
+    if (!orgId) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
     const pdf = await renderManualDocumentPacketForFax(
-      supabase,
+      getOrgScopedClient(orgId),
       verified.outreachId,
     );
     if (!pdf) {
@@ -128,7 +157,17 @@ router.get("/fax/document/:token", faxDocumentLimiter, async (req, res) => {
     }
     const patientId = verified.outreachId.slice(0, sep);
     const paId = verified.outreachId.slice(sep + 1);
-    const result = await buildPaRequestPdf(supabase, patientId, paId);
+    const orgId = await resolveOrgIdForSignedRecord(
+      "prior_authorizations",
+      paId,
+    );
+    if (!orgId) {
+      res.status(404).json({ error: "prior_auth_not_found" });
+      return;
+    }
+    // buildPaRequestPdf builds its own org-scoped client; pass the tenant
+    // resolved from the prior_authorizations record the token references.
+    const result = await buildPaRequestPdf(orgId, patientId, paId);
     if (!result) {
       res.status(404).json({ error: "prior_auth_not_found" });
       return;
@@ -140,8 +179,17 @@ router.get("/fax/document/:token", faxDocumentLimiter, async (req, res) => {
     return;
   }
 
+  // Default: the physician cover letter, keyed by the outreach row id.
+  const orgId = await resolveOrgIdForSignedRecord(
+    "physician_fax_outreach",
+    verified.outreachId,
+  );
+  if (!orgId) {
+    res.status(404).json({ error: "not_found" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const { data: row, error } = await supabase
-    .schema("resupply")
     .from("physician_fax_outreach")
     .select("physician_name, cover_letter_text")
     .eq("id", verified.outreachId)

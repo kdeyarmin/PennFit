@@ -14,7 +14,7 @@
 
 import { Router, type IRouter } from "express";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
@@ -25,8 +25,14 @@ router.get(
   "/dashboard/summary",
   adminReadRateLimiter,
   requireAdmin,
-  async (_req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+  async (req, res) => {
+    // Fail closed: never widen to all tenants on a missing orgId.
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const db = getOrgScopedClient(orgId);
     const sevenDaysAgo = new Date(
       Date.now() - 7 * 24 * 60 * 60 * 1000,
     ).toISOString();
@@ -39,29 +45,24 @@ router.get(
       { count: fulfillmentsThisWeek },
       { count: pausedPatients },
     ] = await Promise.all([
-      supabase
-        .schema("resupply")
+      db
         .from("conversations")
         .select("*", { count: "exact", head: true })
         .in("status", ["open", "awaiting_patient", "awaiting_admin"]),
-      supabase
-        .schema("resupply")
+      db
         .from("conversations")
         .select("*", { count: "exact", head: true })
         .eq("status", "awaiting_admin"),
-      supabase
-        .schema("resupply")
+      db
         .from("episodes")
         .select("*", { count: "exact", head: true })
         .in("status", ["outreach_pending", "awaiting_response"])
         .lte("due_at", nowIso),
-      supabase
-        .schema("resupply")
+      db
         .from("fulfillments")
         .select("*", { count: "exact", head: true })
         .gte("created_at", sevenDaysAgo),
-      supabase
-        .schema("resupply")
+      db
         .from("patients")
         .select("*", { count: "exact", head: true })
         .eq("status", "paused"),

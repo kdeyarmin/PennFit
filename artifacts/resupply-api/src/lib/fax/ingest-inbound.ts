@@ -23,16 +23,18 @@
 // Allowed document types are PDF (Telnyx's default) and TIFF. Image
 // types are NOT allowed — a fax is by definition a document.
 //
-// NOTE: the DB column is still named `twilio_fax_sid` (renaming it is a
-// production migration tracked separately); we store the Telnyx fax id
-// in it. It remains the unique idempotency key.
+// NOTE: the canonical idempotency key is `provider_fax_id` (vendor-neutral,
+// migration 0369); we store the Telnyx fax id in it. The legacy
+// `twilio_fax_sid` column is no longer written (CONTRACT step 2a) and is
+// dropped in step 2c — see docs/runbooks/fax-column-rename.md.
 
 import type { Logger } from "pino";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { autoMatchInboundFaxToPaperwork } from "../billing/bill-hold";
 import { isFeatureEnabled } from "../feature-flags";
+import { resolveOrgIdByFaxNumber } from "../messaging/tenant-telecom";
 import { ObjectStorageService } from "../object-storage/objectStorage";
 import { openReferralReviewForFax } from "../referral-review/open-for-fax";
 
@@ -56,15 +58,24 @@ const ALLOWED_CONTENT_TYPES = new Set<string>([
 const MAX_MEDIA_REDIRECTS = 3;
 
 /** Telnyx stores received-fax media on AWS S3 (pre-signed) or a
- *  telnyx.com host. Anything else is rejected to constrain SSRF. */
+ *  telnyx.com host. Anything else is rejected to constrain SSRF.
+ *
+ *  The AWS allowance is scoped to the S3 SERVICE hosts (`s3.amazonaws.com`,
+ *  the regional `s3.<region>.amazonaws.com`, and virtual-hosted-bucket
+ *  `<bucket>.s3[.<region>].amazonaws.com`) — NOT the whole `*.amazonaws.com`
+ *  surface. The old broad rule allowed every AWS service host (EC2 instance
+ *  endpoints, internal/VPC service hostnames, etc.) as an SSRF target;
+ *  pre-signed fax media only ever comes from S3, so we narrow to S3 and keep
+ *  legitimate ingestion working (the existing `s3.amazonaws.com` URLs and
+ *  redirects still match). */
 function isAllowedMediaHost(hostname: string): boolean {
   const host = hostname.toLowerCase();
-  return (
-    host === "amazonaws.com" ||
-    host.endsWith(".amazonaws.com") ||
-    host === "telnyx.com" ||
-    host.endsWith(".telnyx.com")
-  );
+  if (host === "telnyx.com" || host.endsWith(".telnyx.com")) return true;
+  // S3 only: path-style `s3.amazonaws.com` / `s3.<region>.amazonaws.com`,
+  // or virtual-hosted-style `<bucket>.s3[.<region>].amazonaws.com`.
+  if (host === "s3.amazonaws.com") return true;
+  if (/(^|\.)s3(\.[a-z0-9-]+)?\.amazonaws\.com$/.test(host)) return true;
+  return false;
 }
 
 /**
@@ -102,7 +113,7 @@ async function fetchAllowlistedMedia(
 }
 
 export interface IngestInboundFaxInput {
-  /** Telnyx fax id (UUID). Stored in the `twilio_fax_sid` column. */
+  /** Telnyx fax id (UUID). Stored in `provider_fax_id`. */
   telnyxFaxId: string;
   fromE164: string | null;
   toE164: string | null;
@@ -121,7 +132,7 @@ export type IngestInboundFaxOutcome =
  * Idempotent inbound-fax ingest.
  *
  * Flow:
- *   1. Insert the row (returning id). Conflict on twilio_fax_sid
+ *   1. Insert the row (returning id). Conflict on provider_fax_id
  *      means a Telnyx retry — we look up the existing id and return
  *      `already_recorded` without re-downloading.
  *   2. If a media URL is present, download the fax bytes; otherwise
@@ -139,14 +150,33 @@ export async function ingestInboundFax(
   logger: Logger,
   storageImpl?: ObjectStorageService,
 ): Promise<IngestInboundFaxOutcome> {
-  const supabase = getSupabaseServiceRoleClient();
+  // Route the inbound fax to the tenant that owns the called number
+  // (migration 0368). Unknown / unprovisioned numbers fall back to the
+  // seed tenant — the historical single-tenant behavior. Fails soft, so a
+  // routing-lookup blip lands the fax in the seed queue rather than losing
+  // it.
+  const orgId =
+    (await resolveOrgIdByFaxNumber(input.toE164 ?? undefined)) ??
+    (await resolveSeedOrgId());
+  if (!orgId) {
+    logger.warn(
+      { fax_id_first8: input.telnyxFaxId.slice(0, 8) },
+      "fax_inbound_tenant_context_missing",
+    );
+    return { kind: "errored" };
+  }
+  const supabase = getOrgScopedClient(orgId);
 
   // Step 1: insert (or learn it already exists).
+  //
+  // provider_fax_id is the canonical dedupe key (migration 0369). The legacy
+  // twilio_fax_sid is no longer written (CONTRACT step 2a, migration 0372
+  // made it nullable) and is dropped in step 2c (migration 0374). The
+  // conflict lookup below matches only provider_fax_id.
   const insertRes = await supabase
-    .schema("resupply")
     .from("inbound_faxes")
     .insert({
-      twilio_fax_sid: input.telnyxFaxId,
+      provider_fax_id: input.telnyxFaxId,
       from_e164: input.fromE164 ?? null,
       to_e164: input.toE164 ?? null,
       num_pages: input.numPages ?? null,
@@ -160,14 +190,15 @@ export async function ingestInboundFax(
   if (insertRes.error) {
     const code = (insertRes.error as { code?: string }).code;
     if (code === "23505") {
-      // Unique violation on twilio_fax_sid — Telnyx retry. Look up
-      // the existing row id and exit; we trust the prior attempt's
-      // media-download outcome rather than re-running it.
+      // Unique violation on provider_fax_id — a duplicate of an
+      // already-recorded fax (Telnyx retry). Look up the existing row id and
+      // exit; we trust the prior attempt's media-download outcome rather
+      // than re-running it. (The legacy twilio_fax_sid column + its index
+      // are dropped in migration 0374, so provider_fax_id is the only key.)
       const existing = await supabase
-        .schema("resupply")
         .from("inbound_faxes")
         .select("id")
-        .eq("twilio_fax_sid", input.telnyxFaxId)
+        .eq("provider_fax_id", input.telnyxFaxId)
         .limit(1)
         .maybeSingle();
       if (existing.data) {
@@ -186,11 +217,11 @@ export async function ingestInboundFax(
   rowId = insertRes.data.id;
 
   // Step 2: try to download the media bytes. Best-effort.
-  const media = await tryPersistMedia(input, rowId, logger, storageImpl);
+  const media = await tryPersistMedia(input, rowId, orgId, logger, storageImpl);
 
   // Step 3: barcode auto-file (opt-in). When `fax.auto_file_signed` is on
   // and this is a signed copy of a document we sent out, read the printed
-  // PennFit tracking code, file the fax into the patient's chart, mark the
+  // tracking code, file the fax into the patient's chart, mark the
   // signature returned, and release the bill hold. Runs BEFORE the
   // fax-number match below so the precise per-document match takes
   // precedence. Best-effort — never throws; an unmatched fax just stays
@@ -224,7 +255,7 @@ export async function ingestInboundFax(
   // run after a barcode match could release an UNRELATED requirement's hold
   // with the same fax. Best-effort + never throws.
   if (!barcodeFiled) {
-    await autoMatchInboundFaxToPaperwork(rowId, input.fromE164, supabase);
+    await autoMatchInboundFaxToPaperwork(rowId, input.fromE164, supabase.raw());
   }
 
   // Step 5: referral review (opt-in). When `fax.referral_review` is on and
@@ -310,6 +341,7 @@ const MEDIA_NOT_PERSISTED: PersistMediaResult = {
 async function tryPersistMedia(
   input: IngestInboundFaxInput,
   rowId: string,
+  orgId: string,
   logger: Logger,
   storageImpl?: ObjectStorageService,
 ): Promise<PersistMediaResult> {
@@ -493,9 +525,11 @@ async function tryPersistMedia(
     return MEDIA_NOT_PERSISTED;
   }
 
-  const supabase = getSupabaseServiceRoleClient();
+  // Patch the SAME tenant's row the insert went to (passed in), not a
+  // re-resolved seed org — otherwise a fax routed to a non-seed tenant
+  // would patch the wrong org's table and lose its media key.
+  const supabase = getOrgScopedClient(orgId);
   const { error: patchErr } = await supabase
-    .schema("resupply")
     .from("inbound_faxes")
     .update({
       media_object_key: objectKey,

@@ -1,20 +1,30 @@
-// /admin/settings — read-only environment + deployment metadata.
+// /admin/settings (tenant) + the platform System-info page.
 //
-// All data comes from /admin/system-info. Env-var values are never
-// returned by the backend; this page only renders presence ("is this
-// set?") booleans plus a few benign-to-display values (Postgres
-// version, server time, uptime, public URLs).
+// This file exports TWO pages that share the system-info fetch helpers:
 //
-// Why a Settings page exists separately from Operations:
-//   * Operations is action-oriented: vendor health (am I broken
-//     right now?) and dispatcher buttons.
-//   * Settings is configuration-oriented: deployment metadata,
-//     allowlist sizes, secret presence, etc. — the kind
-//     of stuff ops checks during incident triage or onboarding a
-//     new admin.
+//   * AdminSettingsPage — the tenant /admin/settings page. Deployment
+//     metadata is GLOBAL (it describes the whole CareMetric Breathe
+//     deployment, not one tenant), so it now lives on the platform
+//     super-admin console; the only thing a tenant admin manages here is
+//     the client-only Demo mode toggle, which stays so it's reachable
+//     from inside the tenant console.
+//   * PlatformSystemInfoPage — read-only environment + deployment
+//     metadata, mounted on the platform super-admin console
+//     (/platform/system). All data comes from /platform/system-info
+//     (gated by requirePlatformAdmin). Env-var VALUES are never returned
+//     by the backend; it renders
+//     presence ("is this set?") booleans plus a few benign-to-display
+//     values (Postgres version, server time, uptime, public URLs).
+//
+// Why deployment metadata is configuration-oriented (vs Operations,
+// which is action-oriented vendor health): it's the kind of thing ops
+// checks during incident triage or when onboarding a new admin.
 
 import { useQuery } from "@tanstack/react-query";
 import { useDemoMode } from "@/demo/DemoModeProvider";
+import { Spinner } from "@/components/admin/Spinner";
+import { ErrorPanel } from "@/components/admin/ErrorPanel";
+import { PageHeader } from "@/components/admin/PageHeader";
 
 interface SystemInfo {
   server: {
@@ -26,7 +36,7 @@ interface SystemInfo {
     nodeEnv: string | null;
   };
   database: {
-    migrationCount: number;
+    migrationCount: number | null;
     lastMigrationAt: string | null;
   };
   publicUrls: {
@@ -55,8 +65,8 @@ interface SystemInfo {
 // empty-object (`{}`) fallback for unhandled API GETs, or future backend
 // shape drift (see the `encryption`-key regression that motivated
 // admin-settings.render.test.tsx). Validating here turns that class of
-// failure into `query.isError`, which renders recoverably AND keeps the
-// demo on/off toggle (rendered above the data branch) reachable.
+// failure into `query.isError`, which renders the platform System-info
+// page recoverably instead of crashing into the global ErrorBoundary.
 export function isSystemInfo(value: unknown): value is SystemInfo {
   if (typeof value !== "object" || value === null) return false;
   const o = value as Record<string, unknown>;
@@ -73,7 +83,7 @@ export function isSystemInfo(value: unknown): value is SystemInfo {
 }
 
 export async function fetchSystemInfo(): Promise<SystemInfo> {
-  const res = await fetch("/resupply-api/admin/system-info", {
+  const res = await fetch("/resupply-api/platform/system-info", {
     headers: { Accept: "application/json" },
   });
   if (!res.ok) throw new Error(`Failed to load system info (${res.status})`);
@@ -84,35 +94,48 @@ export async function fetchSystemInfo(): Promise<SystemInfo> {
   return body;
 }
 
+// Tenant /admin/settings — just the client-only Demo mode toggle.
+// Deployment metadata is global and lives on the platform console (see
+// PlatformSystemInfoPage); a tenant admin has nothing deployment-level
+// to configure here. Keeping the toggle on its own page (with no data
+// fetch) means it can never be trapped behind a failed system-info load.
 export function AdminSettingsPage() {
+  return (
+    <div className="space-y-6 max-w-5xl" data-testid="admin-settings-page">
+      <PageHeader
+        title="Settings"
+        description="Toggle the client-only demo sandbox. Deployment metadata and vendor configuration live on the platform super-admin console."
+      />
+      <DemoModeCard />
+    </div>
+  );
+}
+
+// Platform /platform/system — read-only deployment metadata. Mounted on
+// the super-admin console, gated by requirePlatformAdmin upstream.
+export function PlatformSystemInfoPage() {
   const query = useQuery({
     queryKey: ["admin-system-info"],
     queryFn: fetchSystemInfo,
   });
 
   return (
-    <div className="space-y-6 max-w-5xl" data-testid="admin-settings-page">
-      <header className="space-y-1">
-        <h1
-          className="text-2xl font-bold tracking-tight"
-          style={{ color: "hsl(var(--ink-1))" }}
-        >
-          Settings
-        </h1>
-        <p className="text-sm text-slate-600">
-          Deployment metadata, vendor configuration, and secret presence.
-          Read-only — env-var values are never surfaced; only "is this set?"
-          booleans plus a few benign-to-display fields.
-        </p>
-      </header>
-      <DemoModeCard />
+    <div
+      className="space-y-6 max-w-5xl"
+      data-testid="platform-system-info-page"
+    >
+      <PageHeader
+        title="System info"
+        description={`Deployment metadata, vendor configuration, and secret presence. Read-only — env-var values are never surfaced; only "is this set?" booleans plus a few benign-to-display fields.`}
+      />
       {query.isPending ? (
-        <div className="text-sm text-slate-500">Loading…</div>
+        <Spinner />
       ) : query.isError ? (
-        <div className="text-sm text-rose-700" role="alert">
-          Couldn&apos;t load system info:{" "}
-          {query.error instanceof Error ? query.error.message : "unknown"}.
-        </div>
+        <ErrorPanel
+          error={query.error}
+          onRetry={() => void query.refetch()}
+          title="Couldn't load system info"
+        />
       ) : query.data ? (
         <Body data={query.data} />
       ) : null}
@@ -179,9 +202,18 @@ function DemoModeCard() {
 
 function Body({ data }: { data: SystemInfo }) {
   const uptimeLabel = formatUptime(data.server.uptimeSeconds);
+  // Migration bookkeeping lives in a schema only the deploy migrator
+  // can reach — null means "not tracked here", which must not render
+  // as the alarming "0 / never".
+  const migrationsApplied =
+    data.database.migrationCount === null
+      ? "Not tracked here — see deploy logs or the Supabase dashboard"
+      : String(data.database.migrationCount);
   const lastMigration = data.database.lastMigrationAt
     ? new Date(data.database.lastMigrationAt).toLocaleString()
-    : "never";
+    : data.database.migrationCount === null
+      ? "Not tracked here"
+      : "never";
 
   return (
     <div className="space-y-6">
@@ -201,7 +233,7 @@ function Body({ data }: { data: SystemInfo }) {
       <Card title="Database">
         <DefList
           rows={[
-            ["Migrations applied", String(data.database.migrationCount)],
+            ["Migrations applied", migrationsApplied],
             ["Last migration", lastMigration],
           ]}
         />

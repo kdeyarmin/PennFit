@@ -1,6 +1,6 @@
 // /admin/account-setup — new-account / production launch checklist.
 //
-// A read-only "is this done?" feed for standing up a fresh PennFit
+// A read-only "is this done?" feed for standing up a fresh CareMetric Breathe
 // deployment, surfaced as a two-tab checklist in the admin console
 // (Settings -> Account Setup). It mirrors the procedure in
 // docs/runbooks/production-launch.md:
@@ -14,18 +14,18 @@
 //
 // Privacy posture (identical to /admin/system-info): env-var VALUES
 // are NEVER returned — only "is this set?" booleans and small live
-// counts. There is no raw pg / drizzle here; the only data path is the
+// counts. There is no raw pg / ORM here; the only data path is the
 // Supabase service-role client, and every DB probe is individually
 // wrapped so this page still renders when the database isn't set up
 // yet — which is the whole point of a setup checklist.
 
 import { Router, type IRouter } from "express";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 import { hasLinkHmacKey } from "@workspace/resupply-secrets";
 
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePlatformAdmin } from "../../middlewares/requirePlatformAdmin";
 
 const router: IRouter = Router();
 
@@ -436,13 +436,12 @@ export function buildChecklistItems(
 // Each probe is fully wrapped: a database that isn't set up yet (or a
 // transient outage) yields an "unknown" row with a reason, never a 500.
 
-async function probeSchema(): Promise<ProbeResult> {
+async function probeSchema(orgId: string): Promise<ProbeResult> {
   try {
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
     // The same lightweight HEAD count /readyz uses. Success doubles as
     // confirmation the resupply schema is exposed to PostgREST.
     const { error } = await supabase
-      .schema("resupply")
       .from("feature_flags")
       .select("*", { count: "estimated", head: true });
     if (error) {
@@ -464,11 +463,10 @@ async function probeSchema(): Promise<ProbeResult> {
   }
 }
 
-async function probeFirstAdmin(): Promise<ProbeResult> {
+async function probeFirstAdmin(orgId: string): Promise<ProbeResult> {
   try {
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
     const { count, error } = await supabase
-      .schema("resupply")
       .from("admin_users")
       .select("*", { count: "exact", head: true })
       .eq("status", "active")
@@ -499,13 +497,23 @@ async function probeFirstAdmin(): Promise<ProbeResult> {
 }
 
 router.get(
-  "/admin/account-setup",
+  "/platform/account-setup",
   adminReadRateLimiter,
-  requireAdmin,
+  requirePlatformAdmin,
   async (_req, res) => {
+    // The launch checklist describes the whole deployment, so it's a
+    // platform super-admin surface (requirePlatformAdmin), not a
+    // per-tenant one. The two org-scoped probes (schema reachability and
+    // "is there a first admin") run against the platform's own tenant —
+    // the seed org — which is the deployment's canonical first tenant.
+    const orgId = await resolveSeedOrgId();
+    if (!orgId) {
+      res.status(500).json({ error: "seed_org_unavailable" });
+      return;
+    }
     const [schema, admin] = await Promise.all([
-      probeSchema(),
-      probeFirstAdmin(),
+      probeSchema(orgId),
+      probeFirstAdmin(orgId),
     ]);
     const items = buildChecklistItems({
       env: process.env,

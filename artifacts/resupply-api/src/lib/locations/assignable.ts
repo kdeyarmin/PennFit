@@ -11,9 +11,7 @@
 // concern (clearing an assignment is always allowed) — this only runs
 // for a concrete id.
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
-
-type Supabase = ReturnType<typeof getSupabaseServiceRoleClient>;
+import type { OrgScopedClient } from "@workspace/resupply-db";
 
 export type LocationAssignmentCheck =
   | { ok: true; name: string }
@@ -24,13 +22,16 @@ export type LocationAssignmentCheck =
  * Deactivated locations are rejected so a row can't be parked on a
  * branch that's been retired (existing assignments to it are left
  * untouched — only NEW assignments are blocked).
+ *
+ * Takes an org-scoped client so the lookup is constrained to the caller's
+ * tenant: a user-supplied `locationId` belonging to another org reads as
+ * `not_found` rather than silently assigning a row to a foreign branch.
  */
 export async function assertAssignableLocation(
-  supabase: Supabase,
+  supabase: OrgScopedClient,
   locationId: string,
 ): Promise<LocationAssignmentCheck> {
   const { data, error } = await supabase
-    .schema("resupply")
     .from("locations")
     .select("id, name, is_active")
     .eq("id", locationId)

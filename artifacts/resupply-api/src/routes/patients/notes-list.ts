@@ -13,7 +13,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
@@ -35,12 +35,16 @@ router.get(
     }
     const { id } = parsed.data;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // Verify the patient exists first so the dashboard's 404 surface
     // for a deleted patient is consistent with /patients/:id.
     const { data: patient } = await supabase
-      .schema("resupply")
       .from("patients")
       .select("id")
       .eq("id", id)
@@ -52,7 +56,6 @@ router.get(
     }
 
     const { data: rows, error } = await supabase
-      .schema("resupply")
       .from("patient_notes")
       .select("id, body, author_email, author_user_id, created_at")
       .eq("patient_id", id)
@@ -78,7 +81,15 @@ router.get(
     });
 
     res.json({
-      notes: (rows ?? []).map((r) => ({
+      notes: (
+        (rows ?? []) as Array<{
+          id: string;
+          body: string | null;
+          author_email: string | null;
+          author_user_id: string | null;
+          created_at: string;
+        }>
+      ).map((r) => ({
         id: r.id,
         body: r.body ?? "",
         authorEmail: r.author_email,

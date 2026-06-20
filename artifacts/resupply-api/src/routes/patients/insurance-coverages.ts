@@ -13,10 +13,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  type Database,
-  getSupabaseServiceRoleClient,
-} from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 type InsuranceCoverageUpdate =
   Database["resupply"]["Tables"]["insurance_coverages"]["Update"];
@@ -87,9 +84,13 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("insurance_coverages")
       .select(
         "id, rank, payer_name, plan_name, member_id, group_number, policyholder_name, policyholder_relationship, effective_date, termination_date, in_network, deductible_cents, deductible_met_cents, oop_max_cents, copay_cents, capped_rental_status, verified_at, notes, created_at, updated_at",
@@ -99,7 +100,11 @@ router.get(
     if (error) throw error;
 
     res.json({
-      coverages: (data ?? []).map((r) => ({
+      coverages: (
+        (data ?? []) as Array<
+          Database["resupply"]["Tables"]["insurance_coverages"]["Row"]
+        >
+      ).map((r) => ({
         id: r.id,
         rank: r.rank,
         payerName: r.payer_name,
@@ -147,10 +152,14 @@ router.post(
       return;
     }
     const b = parsed.data;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     const { data: patient } = await supabase
-      .schema("resupply")
       .from("patients")
       .select("id")
       .eq("id", idParsed.data.id)
@@ -162,7 +171,6 @@ router.post(
     }
 
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("insurance_coverages")
       .insert({
         patient_id: idParsed.data.id,
@@ -277,9 +285,13 @@ router.patch(
       updates.capped_rental_status = fields.cappedRentalStatus;
     if (fields.notes !== undefined) updates.notes = fields.notes;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: updated, error } = await supabase
-      .schema("resupply")
       .from("insurance_coverages")
       .update(updates)
       .eq("id", idParsed.data.covId)

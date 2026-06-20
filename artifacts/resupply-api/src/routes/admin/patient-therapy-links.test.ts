@@ -14,6 +14,7 @@ import request from "supertest";
 
 import {
   makeRequireAdminMock,
+  MOCK_ORG_ID,
   type MockAdminCtx,
 } from "../../test-helpers/auth-mocks";
 import {
@@ -113,6 +114,17 @@ describe("GET /admin/patients/:id/therapy-links", () => {
     // Timestamps come back as ISO strings, not Date objects.
     expect(typeof res.body.links[0].createdAt).toBe("string");
     expect(res.body.links[0].lastSyncedAt).toBeNull();
+  });
+
+  it("fails closed with 500 when tenant context is missing", async () => {
+    // Authenticated admin but no resolved org_id (e.g. a resolution
+    // hiccup): the route must refuse, never widen to all tenants.
+    mockAdmin.current = { ...ADMIN, orgId: null };
+    const res = await request(makeApp()).get(
+      `/admin/patients/${PATIENT_ID}/therapy-links`,
+    );
+    expect(res.status).toBe(500);
+    expect(res.body.error).toBe("tenant_context_missing");
   });
 });
 
@@ -262,7 +274,9 @@ describe("PATCH /admin/patients/:id/therapy-links/:linkId", () => {
     expect(res.status).toBe(200);
     expect(res.body.link.status).toBe("paused");
     const updates = getSupabaseWritePayloads("patient_therapy_links", "update");
-    expect(updates[0]).toEqual({ status: "paused" });
+    // The org-scoped client forces org_id onto the patch (a row can't
+    // be moved between tenants); the route's own fields are unchanged.
+    expect(updates[0]).toMatchObject({ status: "paused", org_id: MOCK_ORG_ID });
 
     const audit = logAuditMock.mock.calls[0]?.[0] as {
       action: string;
@@ -310,7 +324,10 @@ describe("DELETE /admin/patients/:id/therapy-links/:linkId", () => {
     expect(res.status).toBe(200);
     expect(res.body.link.status).toBe("revoked");
     const updates = getSupabaseWritePayloads("patient_therapy_links", "update");
-    expect(updates[0]).toEqual({ status: "revoked" });
+    expect(updates[0]).toMatchObject({
+      status: "revoked",
+      org_id: MOCK_ORG_ID,
+    });
 
     const audit = logAuditMock.mock.calls[0]?.[0] as { action: string };
     expect(audit.action).toBe("patient.therapy_link.revoked");

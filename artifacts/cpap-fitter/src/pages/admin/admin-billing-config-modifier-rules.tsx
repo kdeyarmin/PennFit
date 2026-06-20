@@ -116,13 +116,27 @@ export function AdminBillingConfigModifierRulesPage() {
                   className="text-left text-[11px] uppercase tracking-wider sticky top-0 bg-white"
                   style={{ color: "hsl(var(--ink-3))" }}
                 >
-                  <th className="p-3">Payer</th>
-                  <th className="p-3">HCPCS</th>
-                  <th className="p-3">Condition</th>
-                  <th className="p-3">Modifiers</th>
-                  <th className="p-3 text-right">Priority</th>
-                  <th className="p-3">Rationale</th>
-                  <th className="p-3">Active</th>
+                  <th scope="col" className="p-3">
+                    Payer
+                  </th>
+                  <th scope="col" className="p-3">
+                    HCPCS
+                  </th>
+                  <th scope="col" className="p-3">
+                    Condition
+                  </th>
+                  <th scope="col" className="p-3">
+                    Modifiers
+                  </th>
+                  <th scope="col" className="p-3 text-right">
+                    Priority
+                  </th>
+                  <th scope="col" className="p-3">
+                    Rationale
+                  </th>
+                  <th scope="col" className="p-3">
+                    Active
+                  </th>
                 </tr>
               </thead>
               <tbody>

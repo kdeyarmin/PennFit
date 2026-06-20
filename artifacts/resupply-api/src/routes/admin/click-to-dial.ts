@@ -22,7 +22,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 import {
   createTwilioClient,
   TwilioApiError,
@@ -30,6 +30,7 @@ import {
 } from "@workspace/resupply-telecom";
 
 import { logger } from "../../lib/logger";
+import { resolveTenantVoiceFrom } from "../../lib/messaging/tenant-telecom";
 import { readVoiceConfigOrNull } from "../../lib/voice/voice-config";
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -110,10 +111,14 @@ router.post(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     const patientRes = await supabase
-      .schema("resupply")
       .from("patients")
       .select("id, phone_e164, status")
       .eq("id", patientId)
@@ -156,7 +161,6 @@ router.post(
 
     // The agent's own bridge number — Twilio dials THIS first.
     const agentRes = await supabase
-      .schema("resupply")
       .from("admin_users")
       .select("phone_e164")
       .eq("id", req.adminUserId ?? "")
@@ -181,7 +185,6 @@ router.post(
     // Create the disposition up front so an abandoned/failed dial still
     // leaves a trail.
     const insertRes = await supabase
-      .schema("resupply")
       .from("call_dispositions")
       .insert({
         patient_id: patientId,
@@ -202,6 +205,11 @@ router.post(
       dispositionId,
     )}`;
 
+    // Dial the agent leg from the tenant's own voice caller-id when it
+    // has one (G7), else the platform default. Fails soft to the default.
+    const callerId =
+      (await resolveTenantVoiceFrom(orgId)) ?? config.twilioPhoneNumber;
+
     let callSid: string;
     try {
       const twilio = createTwilioClient({
@@ -210,13 +218,12 @@ router.post(
       });
       const result = await twilio.placeCall({
         to: agentPhone,
-        from: config.twilioPhoneNumber,
+        from: callerId,
         url: twimlUrl,
       });
       callSid = result.sid;
     } catch (err) {
       const { error: failOutcomeErr } = await supabase
-        .schema("resupply")
         .from("call_dispositions")
         .update({ outcome: "failed", updated_at: new Date().toISOString() })
         .eq("id", dispositionId);
@@ -253,7 +260,6 @@ router.post(
     }
 
     const { error: sidUpdateErr } = await supabase
-      .schema("resupply")
       .from("call_dispositions")
       .update({
         twilio_call_sid: callSid,
@@ -293,9 +299,13 @@ router.post(
       res.status(400).json({ error: "invalid_patient_id" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("call_dispositions")
       .select("id, outcome, note, agent_email, created_at")
       .eq("patient_id", bodyParsed.data.patientId)
@@ -347,9 +357,13 @@ router.post(
     }
     const { outcome, note } = bodyParsed.data;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const updateRes = await supabase
-      .schema("resupply")
       .from("call_dispositions")
       .update({
         outcome,

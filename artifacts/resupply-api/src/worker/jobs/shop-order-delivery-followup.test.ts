@@ -17,6 +17,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   installSupabaseMock,
   stageSupabaseResponse,
+  getSupabaseCallCount,
 } from "../../test-helpers/supabase-mock";
 
 const supabaseMock = installSupabaseMock();
@@ -58,6 +59,13 @@ import { runDeliveryFollowupSweep } from "./shop-order-delivery-followup";
 
 beforeEach(() => {
   supabaseMock.reset();
+  // The sweep fans out across active tenants (forEachActiveOrg →
+  // listActiveOrgIds reads `organizations`). Stage a single active org
+  // so the per-tenant assertions below behave as the prior one-tenant
+  // sweep. The multi-tenant fan-out block re-stages this explicitly.
+  stageSupabaseResponse("organizations", "select", {
+    data: [{ id: "org_seed" }],
+  });
   sendDeliveryFollowupEmailMock.mockReset();
   sendDeliveryFollowupEmailMock.mockResolvedValue({
     configured: true,
@@ -245,5 +253,47 @@ describe("runDeliveryFollowupSweep", () => {
     });
     const stats = await runDeliveryFollowupSweep();
     expect(stats).toMatchObject({ considered: 1, failed: 1, sent: 0 });
+  });
+});
+
+describe("runDeliveryFollowupSweep — multi-tenant fan-out", () => {
+  it("sweeps each active tenant and sums their stats", async () => {
+    // Two active tenants; re-stage organizations (beforeEach staged one).
+    supabaseMock.reset();
+    sendDeliveryFollowupEmailMock.mockReset();
+    stageSupabaseResponse("organizations", "select", {
+      data: [{ id: "org_a" }, { id: "org_b" }],
+    });
+    // Each tenant has one eligible order whose claim is lost (returns
+    // null) → skipped+=1. Keeps the per-tenant body simple while still
+    // proving the fan-out reads each tenant's own queue and accumulates.
+    for (const oid of ["a", "b"]) {
+      stageSupabaseResponse("shop_orders", "select", {
+        data: [
+          {
+            id: `ord_${oid}`,
+            stripe_session_id: `cs_${oid}`,
+            customer_id: `cust_${oid}`,
+            customer_email: `${oid}@a.test`,
+            delivered_at: "2026-05-01T00:00:00Z",
+          },
+        ],
+      });
+      stageSupabaseResponse("shop_orders", "update", { data: null });
+    }
+    const stats = await runDeliveryFollowupSweep();
+    // One candidate considered per tenant, both lost the claim race.
+    expect(stats).toMatchObject({ considered: 2, skipped: 2, sent: 0 });
+    // Each active tenant read its own candidate queue.
+    expect(getSupabaseCallCount("shop_orders", "select")).toBe(2);
+    expect(sendDeliveryFollowupEmailMock).not.toHaveBeenCalled();
+  });
+
+  it("no-ops when there are no active tenants (no candidate read)", async () => {
+    supabaseMock.reset();
+    stageSupabaseResponse("organizations", "select", { data: [] });
+    const stats = await runDeliveryFollowupSweep();
+    expect(stats).toEqual({ considered: 0, sent: 0, skipped: 0, failed: 0 });
+    expect(getSupabaseCallCount("shop_orders", "select")).toBe(0);
   });
 });

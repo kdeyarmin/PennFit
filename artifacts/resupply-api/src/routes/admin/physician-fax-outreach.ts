@@ -34,7 +34,11 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  getOrgScopedClient,
+  type Database,
+  type OrgScopedClient,
+} from "@workspace/resupply-db";
 import {
   createTelnyxFaxClient,
   TelnyxApiError,
@@ -42,6 +46,8 @@ import {
 
 import { signFaxDocumentToken } from "../../lib/fax-document-token.js";
 import { logger } from "../../lib/logger.js";
+import { resolveTenantFaxFrom } from "../../lib/messaging/tenant-telecom.js";
+import { recordTenantUsage } from "../../lib/metering/usage.js";
 import { rateLimit } from "../../middlewares/rate-limit.js";
 import { requirePermission } from "../../middlewares/requireAdmin.js";
 
@@ -128,6 +134,8 @@ interface DispatchResult {
  * (create + dispatch) and the POST /:id/retry (re-dispatch) handlers.
  */
 async function dispatchFax(
+  supabase: OrgScopedClient,
+  orgId: string,
   outreachId: string,
   to: string,
 ): Promise<DispatchResult> {
@@ -137,13 +145,16 @@ async function dispatchFax(
 
   // isFaxConfigured() already verified getFaxPublicBaseUrl() is non-null.
   const baseUrl = getFaxPublicBaseUrl()!;
-  const supabase = getSupabaseServiceRoleClient();
 
   const faxClient = createTelnyxFaxClient();
   const token = signFaxDocumentToken(outreachId);
   const mediaUrl = `${baseUrl}/resupply-api/fax/document/${token}`;
   const statusCallbackUrl = `${baseUrl}/resupply-api/fax/webhook`;
-  const fromNumber = process.env.TELNYX_FAX_FROM_NUMBER!.trim();
+  // Prefer the tenant's own provisioned fax DID (migration 0368); fall
+  // back to the platform default when the tenant has none. isFaxConfigured()
+  // already verified TELNYX_FAX_FROM_NUMBER is set.
+  const tenantFrom = await resolveTenantFaxFrom(orgId);
+  const fromNumber = tenantFrom ?? process.env.TELNYX_FAX_FROM_NUMBER!.trim();
 
   // Scope try/catch to the Telnyx API call only. A DB failure after a
   // successful send must NOT fall into the catch path — that would mark
@@ -165,7 +176,6 @@ async function dispatchFax(
 
     const nowIso = new Date().toISOString();
     const { error: failErr } = await supabase
-      .schema("resupply")
       .from("physician_fax_outreach")
       .update({
         status: "failed",
@@ -194,7 +204,6 @@ async function dispatchFax(
   // also update the row when delivery completes, giving a second correction path.
   const sentIso = new Date().toISOString();
   const { error: stampErr } = await supabase
-    .schema("resupply")
     .from("physician_fax_outreach")
     .update({
       status: "sent",
@@ -218,6 +227,15 @@ async function dispatchFax(
       "physician_fax_outreach: fax accepted by Telnyx but DB stamp failed",
     );
   }
+
+  // Telnyx accepted a fax transmission — meter one billable fax event for
+  // the tenant (G12). Fire-and-forget + fail-soft; covers both the initial
+  // dispatch and the retry route, which both run through here.
+  void recordTenantUsage({
+    orgId,
+    metricKey: "faxEvents",
+    source: "physician_fax_outreach.dispatch",
+  });
 
   return { status: "sent", provider: "telnyx", vendorRef: result.id };
 }
@@ -246,10 +264,14 @@ router.post(
       return;
     }
     const data = parsed.data;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     const { data: patient, error: patientErr } = await supabase
-      .schema("resupply")
       .from("patients")
       .select("id")
       .eq("id", data.patientId)
@@ -262,7 +284,6 @@ router.post(
     }
     if (data.prescriptionId) {
       const { data: rx, error: rxErr } = await supabase
-        .schema("resupply")
         .from("prescriptions")
         .select("id, patient_id")
         .eq("id", data.prescriptionId)
@@ -276,7 +297,6 @@ router.post(
     }
 
     const { data: inserted, error: insertErr } = await supabase
-      .schema("resupply")
       .from("physician_fax_outreach")
       .insert({
         patient_id: data.patientId,
@@ -294,7 +314,12 @@ router.post(
       throw new Error("physician_fax_outreach insert returned no rows");
     const id = inserted.id;
 
-    const dispatch = await dispatchFax(id, data.physicianFaxE164);
+    const dispatch = await dispatchFax(
+      supabase,
+      orgId,
+      id,
+      data.physicianFaxE164,
+    );
 
     await logAudit({
       action: "physician_fax_outreach.created",
@@ -360,9 +385,13 @@ router.post(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: row, error: lookupErr } = await supabase
-      .schema("resupply")
       .from("physician_fax_outreach")
       .select("id, status, physician_fax_e164, patient_id, updated_at")
       .eq("id", outreachId)
@@ -392,7 +421,6 @@ router.post(
     // faxes. PostgREST round-trips timestamptz losslessly so the
     // updated_at equality is exact.
     const { data: claimed, error: claimErr } = await supabase
-      .schema("resupply")
       .from("physician_fax_outreach")
       .update({ updated_at: new Date().toISOString() })
       .eq("id", outreachId)
@@ -406,7 +434,12 @@ router.post(
       return;
     }
 
-    const dispatch = await dispatchFax(row.id, row.physician_fax_e164);
+    const dispatch = await dispatchFax(
+      supabase,
+      orgId,
+      row.id,
+      row.physician_fax_e164,
+    );
 
     await logAudit({
       action: "physician_fax_outreach.retried",
@@ -453,9 +486,13 @@ router.get(
       res.status(400).json({ error: "invalid_query" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: rows, error } = await supabase
-      .schema("resupply")
       .from("physician_fax_outreach")
       .select(
         "id, patient_id, prescription_id, physician_name, physician_fax_e164, status, vendor_ref, vendor_name, sent_at, delivered_at, failed_at, failure_reason, created_by_email, created_at",
@@ -464,8 +501,10 @@ router.get(
       .order("created_at", { ascending: false })
       .limit(50);
     if (error) throw error;
+    type OutreachRow =
+      Database["resupply"]["Tables"]["physician_fax_outreach"]["Row"];
     res.json({
-      outreach: (rows ?? []).map((r) => ({
+      outreach: ((rows ?? []) as OutreachRow[]).map((r) => ({
         id: r.id,
         patientId: r.patient_id,
         prescriptionId: r.prescription_id,

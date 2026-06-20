@@ -31,7 +31,7 @@ import {
   getResponseToolCalls,
   sendWithRetry,
 } from "@workspace/resupply-ai";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import {
   DEFAULT_ANTHROPIC_MODEL_CHAT,
@@ -523,9 +523,25 @@ export async function askSleepCoach(
 async function assembleContext(
   patientId: string,
 ): Promise<Record<string, unknown>> {
-  const supabase = getSupabaseServiceRoleClient();
+  // Resolve the tenant for the file-local worker pattern. A missing org
+  // degrades to the same shape an empty-data patient produces — the
+  // coach then answers from the system prompt without any rollup, the
+  // same behavior as a patient with no nights on file.
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    return {
+      patient: { initials: "", dobYear: null },
+      last7Days: {
+        daysWithData: 0,
+        compliantNightsOf7: 0,
+        avgUsageMinutes: null,
+        avgAhi: null,
+        maxLeakRateLMin: null,
+      },
+    };
+  }
+  const supabase = getOrgScopedClient(orgId);
   const { data: patient } = await supabase
-    .schema("resupply")
     .from("patients")
     .select("legal_first_name, legal_last_name, date_of_birth")
     .eq("id", patientId)
@@ -535,7 +551,6 @@ async function assembleContext(
     .toISOString()
     .slice(0, 10);
   const { data: nights } = await supabase
-    .schema("resupply")
     .from("patient_therapy_nights")
     .select(
       "night_date, usage_minutes, ahi, leak_rate_l_min, pressure_p95_cmh2o",
@@ -543,7 +558,13 @@ async function assembleContext(
     .eq("patient_id", patientId)
     .gte("night_date", since)
     .limit(14);
-  const withData = (nights ?? []).filter((n) => n.usage_minutes !== null);
+  const withData = (
+    (nights ?? []) as Array<{
+      usage_minutes: number | null;
+      ahi: string | null;
+      leak_rate_l_min: string | null;
+    }>
+  ).filter((n) => n.usage_minutes !== null);
   const avgUsageMin = withData.length
     ? Math.round(
         withData.reduce((s, n) => s + (n.usage_minutes ?? 0), 0) /

@@ -31,6 +31,8 @@ import {
 } from "@/components/ui/accordion";
 import { InsuranceLeadForm } from "@/components/insurance-lead-form";
 import { openPennBot } from "@/lib/chat-events";
+import { useCompanyContact } from "@/lib/contact";
+import { BrandName, LegalName } from "@/components/company-contact";
 
 type Step = {
   Icon: React.ComponentType<{ className?: string }>;
@@ -145,7 +147,7 @@ const faqs: FaqRow[] = [
     q: "Which insurance plans do you work with?",
     a: (
       <>
-        Penn Home Medical Supply works with <strong>Medicare</strong>,{" "}
+        <LegalName /> works with <strong>Medicare</strong>,{" "}
         <strong>Medicaid</strong>, and most major commercial insurers (Aetna,
         Anthem/BCBS, Cigna, Humana, UnitedHealthcare, and many regional plans).
         If you're not sure your plan is in-network, start an order — verifying
@@ -208,9 +210,10 @@ const faqs: FaqRow[] = [
 ];
 
 export function Insurance() {
+  const c = useCompanyContact();
   useDocumentTitle(
     "How insurance works",
-    "How CPAP insurance billing works at Penn Home Medical Supply: $0 typical out-of-pocket, what's covered, the replacement schedule, and how we coordinate your prescription.",
+    `How CPAP insurance billing works at ${c.legalName}: $0 typical out-of-pocket, what's covered, the replacement schedule, and how we coordinate your prescription.`,
   );
   return (
     <div className="container max-w-5xl mx-auto px-4 py-12 space-y-14 animate-shimmer-in">
@@ -219,7 +222,9 @@ export function Insurance() {
         <div className="flex justify-center">
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full glass-panel text-primary text-sm font-medium shadow-sm">
             <ShieldCheck className="w-4 h-4" />
-            <span>Insurance &amp; Billing at PennPaps</span>
+            <span>
+              Insurance &amp; Billing at <BrandName />
+            </span>
           </div>
         </div>
         <div className="flex justify-center">
@@ -299,7 +304,7 @@ export function Insurance() {
       <section className="space-y-5">
         <div className="text-center space-y-2 max-w-2xl mx-auto">
           <h2 className="text-display text-2xl md:text-3xl font-semibold tracking-tight">
-            How a PennPaps insurance order works
+            How a <BrandName /> insurance order works
           </h2>
           <p className="text-muted-foreground">
             From the order form to your front door, here's exactly what happens
@@ -513,9 +518,9 @@ export function Insurance() {
                 No insurance? You can still order direct.
               </h3>
               <p className="text-sm text-muted-foreground leading-relaxed">
-                The PennPaps shop sells the same cushions, filters, tubing, and
-                bundles on a cash-pay basis — no prescription needed for most
-                consumables, and we ship fast.
+                The <BrandName /> shop sells the same cushions, filters, tubing,
+                and bundles on a cash-pay basis — no prescription needed for
+                most consumables, and we ship fast.
               </p>
               <div className="flex flex-wrap gap-3 pt-2">
                 <Link href="/shop">

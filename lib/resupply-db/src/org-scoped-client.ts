@@ -181,6 +181,12 @@ let cachedSeedOrgId: string | null = null;
  */
 export async function resolveSeedOrgId(): Promise<string | null> {
   if (cachedSeedOrgId) return cachedSeedOrgId;
+  // Best-effort, never throws (per the contract above): the auth
+  // middleware resolves req.orgId through here on EVERY request, and
+  // that path is deliberately not fail-closed while org_id is
+  // unenforced — so a thrown query error (not just a PostgREST `error`
+  // field) must degrade to "no org", not 500 the whole admin/customer
+  // surface. Catch both shapes.
   try {
     const supabase = getSupabaseServiceRoleClient();
     const { data, error } = await supabase
@@ -194,12 +200,6 @@ export async function resolveSeedOrgId(): Promise<string | null> {
     cachedSeedOrgId = data.id;
     return cachedSeedOrgId;
   } catch {
-    // Honor the documented contract: return null rather than throwing.
-    // The service-role client can throw if its env isn't configured (or
-    // the query builder can throw on a transient client error). Callers
-    // (the auth middleware) treat a null org as "attach none and
-    // continue" — org_id is not yet an access gate, so a resolution
-    // hiccup must NOT take down the admin / signed-in surface.
     return null;
   }
 }
@@ -207,4 +207,70 @@ export async function resolveSeedOrgId(): Promise<string | null> {
 /** Reset the cached seed-org id. Tests only. */
 export function __resetSeedOrgIdForTests(): void {
   cachedSeedOrgId = null;
+}
+
+/**
+ * List the ids of every ACTIVE tenant (`organizations.status = 'active'`).
+ *
+ * This is the multi-tenant counterpart to `resolveSeedOrgId()` for code
+ * that has no request context — chiefly the recurring worker crons, which
+ * must do their sweep for EVERY tenant, not just the seed org. A caller
+ * iterates the returned ids and builds a `getOrgScopedClient(orgId)` per
+ * tenant (or enqueues one per-org job item carrying `org_id`).
+ *
+ * Like `resolveSeedOrgId()` this is a TENANT-DIRECTORY read (it resolves
+ * *which* orgs exist), so it legitimately uses the service-role client.
+ *
+ * Fail-soft: returns `[]` on any lookup error so a flaky directory read
+ * skips a tick rather than throwing inside a scheduler. Suspended /
+ * archived tenants are intentionally excluded — their crons should not
+ * run. NOT cached: tenant status changes (suspend/reactivate) must take
+ * effect on the next tick without a process restart.
+ *
+ * PAGINATED: PostgREST caps an unbounded select at ~1000 rows. This is
+ * the fan-out source for EVERY per-tenant cron, so an implicit cap would
+ * SILENTLY drop tenants past it — their reminders/sweeps would just stop
+ * running. We page with `.range()` until a short page proves the table is
+ * exhausted rather than trusting a single unbounded read. A stable
+ * `.order("id")` is REQUIRED before paginating — without an ORDER BY,
+ * Postgres returns rows in an arbitrary order that can differ per request,
+ * so pages could overlap or skip rows (a tenant processed twice or missed).
+ * Any page-read error returns `[]` so the scheduler skips the WHOLE tick
+ * (and retries next tick) rather than fanning out to only some tenants.
+ */
+/** Per-page window for the active-org scan. Below PostgREST's ~1000-row
+ *  implicit cap so each `.range()` call returns a full page. */
+const ACTIVE_ORG_PAGE_SIZE = 500;
+
+export async function listActiveOrgIds(
+  client: ResupplySupabaseClient = getSupabaseServiceRoleClient(),
+): Promise<string[]> {
+  try {
+    const supabase = client;
+    const ids: string[] = [];
+    for (let from = 0; ; from += ACTIVE_ORG_PAGE_SIZE) {
+      const { data, error } = await supabase
+        .schema("resupply")
+        .from("organizations")
+        .select("id")
+        .eq("status", "active")
+        .order("id")
+        .range(from, from + ACTIVE_ORG_PAGE_SIZE - 1);
+      // Fail-soft on ANY page error: returning the ids gathered so far would
+      // silently fan out to only the tenants before the failed page and skip
+      // every one after it. Skipping the whole tick (it retries next run) is
+      // strictly safer than a partial, undetectable run.
+      if (error) return [];
+      if (!data || data.length === 0) break;
+      for (const row of data) {
+        const id = (row as { id?: string }).id;
+        if (typeof id === "string" && id.length > 0) ids.push(id);
+      }
+      // A short page means we've reached the end of the table.
+      if (data.length < ACTIVE_ORG_PAGE_SIZE) break;
+    }
+    return ids;
+  } catch {
+    return [];
+  }
 }

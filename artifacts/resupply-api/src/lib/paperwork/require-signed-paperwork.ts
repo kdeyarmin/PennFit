@@ -28,7 +28,7 @@
 // patient id (a UUID the caller already holds), and the caller logs
 // counts only.
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { isFeatureEnabled } from "../feature-flags";
 
@@ -81,7 +81,7 @@ const NOT_REQUIRED: PaperworkGateDecision = {
   missingForms: [],
 };
 
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+type SupabaseClient = ReturnType<typeof getOrgScopedClient>;
 
 /**
  * Resolve the clinical patient behind a shop order's customer, if any.
@@ -93,7 +93,6 @@ async function resolvePatientIdForCustomer(
   customerId: string,
 ): Promise<string | null> {
   const { data: customer, error: custErr } = await supabase
-    .schema("resupply")
     .from("shop_customers")
     .select("auth_user_id")
     .eq("customer_id", customerId)
@@ -103,7 +102,6 @@ async function resolvePatientIdForCustomer(
   if (!customer?.auth_user_id) return null;
 
   const { data: patient, error: patientErr } = await supabase
-    .schema("resupply")
     .from("patients")
     .select("id")
     .eq("portal_auth_user_id", customer.auth_user_id)
@@ -125,7 +123,6 @@ async function payerRequiresPaperwork(
   patientId: string,
 ): Promise<boolean> {
   const { data: coverage, error: covErr } = await supabase
-    .schema("resupply")
     .from("insurance_coverages")
     .select("payer_name")
     .eq("patient_id", patientId)
@@ -136,7 +133,6 @@ async function payerRequiresPaperwork(
   if (!coverage?.payer_name) return false;
 
   const { data: payer, error: payerErr } = await supabase
-    .schema("resupply")
     .from("payer_profiles")
     .select("requires_signed_paperwork")
     .eq("is_active", true)
@@ -157,12 +153,13 @@ async function loadRequiredFormStatuses(
   patientId: string,
 ): Promise<RequiredFormStatus[]> {
   const { data, error } = await supabase
-    .schema("resupply")
     .from("patient_form_acknowledgements")
     .select("form_kind")
     .eq("patient_id", patientId);
   if (error) throw error;
-  const signed = new Set<string>((data ?? []).map((r) => r.form_kind));
+  const signed = new Set<string>(
+    (data ?? []).map((r: { form_kind: string }) => r.form_kind),
+  );
   return REQUIRED_PAPERWORK_FORMS.map((f) => ({
     kind: f.kind,
     label: f.label,
@@ -184,7 +181,9 @@ export async function evaluatePaperworkGateForCustomer(
   // Guest / non-clinical order — nothing to sign, never gated.
   if (!customerId) return NOT_REQUIRED;
 
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) return NOT_REQUIRED;
+  const supabase = getOrgScopedClient(orgId);
   const patientId = await resolvePatientIdForCustomer(supabase, customerId);
   if (!patientId) return NOT_REQUIRED;
 

@@ -50,9 +50,12 @@ import type PgBoss from "pg-boss";
 
 import { escapeHtml } from "@workspace/resupply-messaging";
 import {
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
+  resolveSeedOrgId,
   type Database,
 } from "@workspace/resupply-db";
+
+import { PLATFORM_NAME } from "../../lib/company-info";
 import {
   createSendgridClient,
   EmailConfigError,
@@ -112,7 +115,12 @@ function composeDigestEmail(opts: {
   text: string;
 } {
   const { recipient, rows, totalCount, windowHours } = opts;
-  const subject = `PennPaps: ${totalCount} order ${
+  // This is a PLATFORM-level ops alert to RESUPPLY_ADMIN_ALERTS_EMAIL (the
+  // deployment operator's mailbox), not a tenant notice: public.orders is
+  // the legacy single-tenant fitter-orders table with no org_id, so failed
+  // rows can't be attributed to a tenant. Brand it with the platform name
+  // rather than the seed tenant ("PennPaps").
+  const subject = `${PLATFORM_NAME}: ${totalCount} order ${
     totalCount === 1 ? "confirmation failed" : "confirmations failed"
   } in the last ${windowHours}h`;
 
@@ -178,13 +186,21 @@ export async function runFailedEmailDigest(
     return { failedCount: 0, sent: false, skippedReason: "no_recipient" };
   }
 
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    return { failedCount: 0, sent: false, skippedReason: "no_failures" };
+  }
+
   const now = opts.now ?? new Date();
   const cutoffIso = new Date(now.getTime() - DIGEST_LOOKBACK_MS).toISOString();
 
-  const supabase = getSupabaseServiceRoleClient();
+  const supabase = getOrgScopedClient(orgId);
   // We deliberately select only the two PHI-safe columns. The
   // patient_* columns and the `payload` jsonb stay in the database.
+  // public.orders is cross-schema (not a tenant resupply table), so it
+  // goes through the unscoped escape hatch.
   const { count, error: countError } = await supabase
+    .raw()
     .schema("public")
     .from("orders")
     .select("id", { count: "exact", head: true })
@@ -198,6 +214,7 @@ export async function runFailedEmailDigest(
   }
 
   const { data: rows, error } = await supabase
+    .raw()
     .schema("public")
     .from("orders")
     .select("order_reference, created_at")

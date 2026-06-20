@@ -164,20 +164,39 @@ function PacketTable({
           className="text-left border-b"
           style={{ borderColor: "hsl(var(--line-1))" }}
         >
-          <th className="py-2 font-semibold">Created</th>
-          <th className="py-2 font-semibold">Status</th>
-          <th className="py-2 font-semibold">Fax to</th>
-          <th className="py-2 font-semibold">Sent</th>
-          <th className="py-2 font-semibold">Signed</th>
+          <th scope="col" className="py-2 font-semibold">
+            Created
+          </th>
+          <th scope="col" className="py-2 font-semibold">
+            Status
+          </th>
+          <th scope="col" className="py-2 font-semibold">
+            Fax to
+          </th>
+          <th scope="col" className="py-2 font-semibold">
+            Sent
+          </th>
+          <th scope="col" className="py-2 font-semibold">
+            Signed
+          </th>
         </tr>
       </thead>
       <tbody>
         {rows.map((r) => (
           <tr
             key={r.id}
-            className="border-b cursor-pointer hover:bg-[hsl(var(--bg-2))]"
+            className="border-b cursor-pointer hover:bg-[hsl(var(--bg-2))] focus-visible:outline-none focus-visible:bg-[hsl(var(--bg-2))] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[hsl(var(--penn-navy))]"
             style={{ borderColor: "hsl(var(--line-2))" }}
+            tabIndex={0}
+            role="button"
+            aria-label="Open prescription request details"
             onClick={() => onSelect(r.id)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onSelect(r.id);
+              }
+            }}
           >
             <td className="py-2 text-xs">
               {new Date(r.createdAt).toLocaleString(undefined, {

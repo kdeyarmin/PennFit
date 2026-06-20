@@ -11,7 +11,7 @@
 // PHI posture: same as the CSR-facing analyzer — initials + DOB year +
 // HCPCS / modifiers / amounts only.
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { logger } from "../logger";
 
@@ -80,9 +80,12 @@ export async function explainDenialToPatient(
   if (!apiKey) {
     return errored("OPENAI_API_KEY not configured");
   }
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    return errored("tenant context missing");
+  }
+  const supabase = getOrgScopedClient(orgId);
   const { data: claim } = await supabase
-    .schema("resupply")
     .from("insurance_claims")
     .select(
       "id, status, payer_name, date_of_service, total_billed_cents, denial_reason",
@@ -94,7 +97,6 @@ export async function explainDenialToPatient(
     return errored("claim not found or not denied");
   }
   const { data: lines } = await supabase
-    .schema("resupply")
     .from("insurance_claim_line_items")
     .select("hcpcs_code, denial_reason, paid_cents, allowed_cents")
     .eq("claim_id", claim.id);
@@ -106,7 +108,7 @@ export async function explainDenialToPatient(
       headerDenialReason: claim.denial_reason,
       totalBilledCents: claim.total_billed_cents,
     },
-    lines: (lines ?? []).map((l) => ({
+    lines: (lines ?? []).map((l: Record<string, unknown>) => ({
       hcpcsCode: l.hcpcs_code,
       denialReason: l.denial_reason,
       paidCents: l.paid_cents,

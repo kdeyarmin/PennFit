@@ -9,6 +9,7 @@
 export {
   createSendgridClient,
   DEFAULT_SENDGRID_FROM_EMAIL,
+  DEFAULT_SENDGRID_FROM_NAME,
   EmailConfigError,
   EmailApiError,
   type SendEmailInput,
@@ -38,6 +39,17 @@ export {
   type RetryPolicy,
   type WithRetryHooks,
 } from "./retry";
+
+export {
+  renderBrandedEmail,
+  brandedButton,
+  paragraph,
+  textParagraph,
+  BREATHE_COLORS,
+  PLATFORM_BRAND_NAME,
+  type BrandedEmailOptions,
+  type BrandedEmailButton,
+} from "./layout";
 
 export {
   parseSendgridEventBatch,

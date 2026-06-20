@@ -9,14 +9,14 @@
 //
 // PHI posture: returns PDF bytes + ids only; nothing is logged here.
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import type { OrgScopedClient } from "@workspace/resupply-db";
 
 import { resolveCompanyProfile } from "./company";
 import { renderPacketDocumentSections } from "./content";
 import { renderPatientPacketPdf, type PacketPdfInput } from "./packet-pdf";
 import { PROOF_OF_DELIVERY_KEY } from "./templates";
 
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+type SupabaseClient = OrgScopedClient;
 
 export interface SignedPacketPdf {
   pdf: Buffer;
@@ -39,7 +39,6 @@ export async function buildSignedPacketPdf(
   packetId: string,
 ): Promise<SignedPacketPdf | null> {
   const { data: packet, error } = await supabase
-    .schema("resupply")
     .from("patient_packets")
     .select(
       "id, patient_id, title, status, recipient_name, recipient_email, recipient_phone, sent_at, completed_at, delivery_details",
@@ -52,7 +51,6 @@ export async function buildSignedPacketPdf(
 
   const [docsRes, sigRes, company] = await Promise.all([
     supabase
-      .schema("resupply")
       .from("patient_packet_documents")
       .select(
         "document_key, title, requires_signature, content_version, content_sections, sort_order",
@@ -60,7 +58,6 @@ export async function buildSignedPacketPdf(
       .eq("packet_id", packet.id)
       .order("sort_order", { ascending: true }),
     supabase
-      .schema("resupply")
       .from("patient_packet_signatures")
       .select("*")
       .eq("packet_id", packet.id)
@@ -73,7 +70,14 @@ export async function buildSignedPacketPdf(
   if (sigRes.error) throw sigRes.error;
 
   const sig = sigRes.data;
-  const docs = docsRes.data ?? [];
+  const docs = (docsRes.data ?? []) as Array<{
+    document_key: string;
+    title: string;
+    requires_signature: boolean;
+    content_version: string | null;
+    content_sections: unknown;
+    sort_order: number;
+  }>;
   const deliveryDetails = (packet.delivery_details ??
     null) as PacketPdfInput["deliveryDetails"];
   const { pdf } = await renderPatientPacketPdf({

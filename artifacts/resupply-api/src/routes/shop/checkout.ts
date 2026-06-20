@@ -28,7 +28,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import {
   SHOP_UNAVAILABLE_BODY,
@@ -38,6 +38,7 @@ import {
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { getActivePickupLocationById } from "../../lib/pickup/locations";
 import { getOrCreateStripeCustomer } from "../../lib/stripe/customer";
+import { stripeAccountRequestOptions } from "../../lib/stripe/connect";
 import { validateCartItems } from "../../lib/stripe/validate-cart";
 import { stripeErrLogFields } from "../../lib/stripe/err-log-fields";
 import { readCustomerProfile } from "../../lib/customer-profile";
@@ -130,7 +131,7 @@ router.post(
     // from the UI (e.g. during an outage or inventory freeze) without
     // a deploy; existing orders and webhooks keep flowing because the
     // gate is only on this create-session endpoint.
-    if (!(await isFeatureEnabled("storefront.checkout"))) {
+    if (!(await isFeatureEnabled("storefront.checkout", req.orgId))) {
       res.status(503).json({
         error: "checkout_disabled",
         message:
@@ -190,7 +191,7 @@ router.post(
         });
         return;
       }
-      if (!(await isFeatureEnabled("storefront.pickup"))) {
+      if (!(await isFeatureEnabled("storefront.pickup", req.orgId))) {
         res.status(400).json({
           error: "pickup_unavailable",
           message: "In-store pickup isn't available right now.",
@@ -246,13 +247,23 @@ router.post(
       .digest("hex");
 
     const stripe = getStripeClient(config);
+    // Stripe Connect (G5): route the Checkout session + its Customer to the
+    // tenant's connected account when set; NULL → {} → platform account.
+    const connectOptions = await stripeAccountRequestOptions(req.orgId);
 
     // Catalog guard: every price in the cart must belong to the approved
     // shop catalog and respect stock/type constraints. The sibling
     // /shop/me/quick-checkout route applies the same guard; without it a
     // tampered cart could check out stale/legacy prices, out-of-stock
     // items, or SKUs intentionally excluded from /shop/products.
-    const cartValidation = await validateCartItems(stripe, items);
+    // Validate against the SAME account the Checkout session is created on
+    // (connectOptions) so a connected tenant's cart is checked against their
+    // catalog, not the platform's — otherwise every line is price_not_found.
+    const cartValidation = await validateCartItems(
+      stripe,
+      items,
+      connectOptions,
+    );
     if (!cartValidation.ok) {
       req.log?.warn(
         { errors: cartValidation.errors },
@@ -282,6 +293,7 @@ router.post(
         const profile = await readCustomerProfile(req);
         customerEmail = profile.email;
         const mapping = await getOrCreateStripeCustomer(config, {
+          orgId: req.orgId,
           customerId: req.userCustomerId,
           email: customerEmail,
           displayName: profile.displayName,
@@ -355,7 +367,7 @@ router.post(
             },
             automatic_tax: { enabled: false },
           },
-          { idempotencyKey },
+          { idempotencyKey, ...connectOptions },
         );
       } else {
         session = await stripe.checkout.sessions.create(
@@ -406,7 +418,7 @@ router.post(
             // dashboard without code changes.
             automatic_tax: { enabled: false },
           },
-          { idempotencyKey },
+          { idempotencyKey, ...connectOptions },
         );
       }
     } catch (err) {
@@ -441,22 +453,26 @@ router.post(
     // initial insert; later lifecycle transitions own the row. Mirrors
     // the quick-checkout mirror-upsert. (`status` is the source of truth
     // here; we deliberately do not re-touch `updated_at` on conflict.)
-    const supabase = getSupabaseServiceRoleClient();
-    const { error: upsertErr } = await supabase
-      .schema("resupply")
-      .from("shop_orders")
-      .upsert(
-        {
-          stripe_session_id: session.id,
-          status: "pending",
-          cart_hash: cartHash,
-          fulfillment_method: fulfillmentMethod,
-          ...(pickupLocationId ? { pickup_location_id: pickupLocationId } : {}),
-          ...(req.userCustomerId ? { customer_id: req.userCustomerId } : {}),
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "stripe_session_id", ignoreDuplicates: true },
-      );
+    // attachSignedIn allows guest checkout, so req.orgId may be unset;
+    // fall back to the seed tenant (single-tenant bridge) for guests.
+    const orgId = req.orgId ?? (await resolveSeedOrgId());
+    if (!orgId) {
+      res.status(503).json({ error: "tenant_unavailable" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+    const { error: upsertErr } = await supabase.from("shop_orders").upsert(
+      {
+        stripe_session_id: session.id,
+        status: "pending",
+        cart_hash: cartHash,
+        fulfillment_method: fulfillmentMethod,
+        ...(pickupLocationId ? { pickup_location_id: pickupLocationId } : {}),
+        ...(req.userCustomerId ? { customer_id: req.userCustomerId } : {}),
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "stripe_session_id", ignoreDuplicates: true },
+    );
     if (upsertErr) {
       req.log?.error(
         { err: upsertErr, sessionId: session.id },

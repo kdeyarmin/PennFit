@@ -45,6 +45,13 @@ const SAVED_ENV = { ...process.env };
 
 beforeEach(() => {
   supabaseMock.reset();
+  // The scan fans out across active tenants (forEachActiveOrg →
+  // listActiveOrgIds reads `organizations`); stage a single active org so
+  // the per-tenant cases below behave as the prior one-tenant scan. The
+  // multi-tenant fan-out case re-stages this explicitly.
+  stageSupabaseResponse("organizations", "select", {
+    data: [{ id: "00000000-0000-4000-8000-000000000001" }],
+  });
   featureEnabled.value = false;
   sendSmsMock.mockClear();
   // Pin the clock inside the 9am–8pm patient-local TCPA send window
@@ -221,5 +228,41 @@ describe("runTherapyFleetAlertsScan — auto-outreach (flag-gated)", () => {
     expect(result.created).toBe(2);
     expect(result.messaged).toBe(0);
     expect(sendSmsMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("runTherapyFleetAlertsScan — multi-tenant fan-out", () => {
+  it("scans each active tenant and sums the results", async () => {
+    // Two active tenants, each detecting one new alert (no open rows, flag
+    // off → nothing sent). The counts must SUM (2/2/0/0), not reflect only
+    // the last tenant.
+    supabaseMock.reset();
+    featureEnabled.value = false;
+    stageSupabaseResponse("organizations", "select", {
+      data: [{ id: "org-a" }, { id: "org-b" }],
+    });
+    for (const _org of ["a", "b"]) {
+      stageSupabaseRpcResponse("therapy_fleet_worklist", {
+        data: [
+          {
+            patient_id: P1,
+            reasons: ["compliance_risk"],
+            nights_over_4h: "8",
+            avg_ahi: "3.0",
+            avg_leak_l_min: "30",
+            days_since_last_night: "2",
+          },
+        ],
+      });
+      stageSupabaseRpcResponse("therapy_setup_adherence_list", { data: [] });
+      // No open alerts for this tenant → the one detection is brand new.
+      stageSupabaseResponse("therapy_fleet_alerts", "select", { data: [] });
+    }
+
+    const result = await runTherapyFleetAlertsScan();
+    expect(result.detected).toBe(2);
+    expect(result.created).toBe(2);
+    expect(result.resolved).toBe(0);
+    expect(result.messaged).toBe(0);
   });
 });

@@ -6,9 +6,11 @@ import { useDocumentTitle } from "@/hooks/use-document-title";
 import { useDocumentMeta } from "@/hooks/use-document-meta";
 import { useSearchShortcut } from "@/hooks/use-search-shortcut";
 import {
+  BrandName,
   SupportEmailText,
   SupportPhoneText,
 } from "@/components/company-contact";
+import { useCompanyContact } from "@/lib/contact";
 import {
   Accordion,
   AccordionContent,
@@ -68,7 +70,7 @@ const sections: FaqSection[] = [
             at home) confirms obstructive sleep apnea. If you snore loudly, wake
             gasping for air, fall asleep during the day, or your bed partner has
             noticed you stop breathing, ask your primary care provider about a
-            sleep study. PennPaps is for patients who already have a
+            sleep study. <BrandName /> is for patients who already have a
             prescription — we don't diagnose sleep apnea.
           </>
         ),
@@ -94,8 +96,8 @@ const sections: FaqSection[] = [
             often feel strange — slightly claustrophobic, mildly noisy, or like
             too much air. The mask matters more than anything else here:
             switching to a better-fitting mask is the single most common fix for
-            early CPAP frustration, which is exactly what PennPaps is built to
-            help with.
+            early CPAP frustration, which is exactly what <BrandName /> is built
+            to help with.
           </>
         ),
       },
@@ -129,7 +131,7 @@ const sections: FaqSection[] = [
             and stomach sleepers), <strong>nasal masks</strong> (a triangular
             cushion over the nose — a good middle ground), and{" "}
             <strong>full-face masks</strong> (covering nose and mouth — best for
-            mouth breathers, higher pressures, or congestion). PennPaps
+            mouth breathers, higher pressures, or congestion). <BrandName />{" "}
             considers all three and ranks the best matches for your face and
             sleep style.
           </>
@@ -142,8 +144,8 @@ const sections: FaqSection[] = [
             The biggest factors are: do you breathe through your mouth at night,
             what pressure has your provider prescribed, do you sleep on your
             side, and do you have facial hair, claustrophobia, or skin
-            sensitivities. The PennPaps questionnaire walks you through all of
-            these and weights the recommendations accordingly.
+            sensitivities. The <BrandName /> questionnaire walks you through all
+            of these and weights the recommendations accordingly.
           </>
         ),
       },
@@ -165,8 +167,8 @@ const sections: FaqSection[] = [
           <>
             Significant weight loss or gain, dental work, or facial surgery can
             change how a mask seals. If your mask suddenly leaks more or feels
-            wrong, retake the PennPaps scan — your measurements may have shifted
-            enough that a different size or style is now a better match.
+            wrong, retake the <BrandName /> scan — your measurements may have
+            shifted enough that a different size or style is now a better match.
           </>
         ),
       },
@@ -210,8 +212,8 @@ const sections: FaqSection[] = [
             Most US insurance plans (Medicare, Medicaid, and most commercial
             insurers) cover CPAP supplies on a regular replacement schedule —
             typically a new mask every three months and replacement cushions and
-            headgear monthly. PennPaps will verify your coverage and let you
-            know your out-of-pocket cost before shipping.
+            headgear monthly. <BrandName /> will verify your coverage and let
+            you know your out-of-pocket cost before shipping.
           </>
         ),
       },
@@ -239,7 +241,7 @@ const sections: FaqSection[] = [
               href="/shop"
               className="text-primary underline-offset-4 hover:underline"
             >
-              PennPaps shop
+              <BrandName /> shop
             </Link>{" "}
             on a cash-pay basis (no prescription needed for most consumables
             like filters, tubing, and humidifier chambers). You don't need to
@@ -248,7 +250,7 @@ const sections: FaqSection[] = [
         ),
       },
       {
-        q: "Do I need a PennPaps account to place an order?",
+        q: "Do I need an account to place an order?",
         a: (
           <>
             No — you can check out as a guest. Creating a free{" "}
@@ -416,7 +418,7 @@ const sections: FaqSection[] = [
         ),
       },
       {
-        q: "When should I stop and call PennPaps?",
+        q: "When should I stop and call us?",
         a: (
           <>
             Stop using the mask and contact us if you develop persistent skin
@@ -536,9 +538,10 @@ function filterFaqs(query: string): FaqMatch[] {
 }
 
 export function Faq() {
+  const contact = useCompanyContact();
   useDocumentTitle(
     "Frequently asked questions",
-    "Answers about CPAP fitting, supplies, prescriptions, insurance, and resupply from Penn Home Medical Supply.",
+    `Answers about CPAP fitting, supplies, prescriptions, insurance, and resupply from ${contact.legalName}.`,
   );
   useDocumentMeta({
     jsonLd: {
@@ -582,7 +585,7 @@ export function Faq() {
         <div className="flex justify-center">
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full glass-panel text-primary text-sm font-medium shadow-sm">
             <HelpCircle className="w-4 h-4" />
-            <span>Answers from PennPaps</span>
+            <span>Answers from {contact.name}</span>
           </div>
         </div>
         <div className="flex justify-center">
@@ -601,6 +604,22 @@ export function Faq() {
           Honest, jargon-free answers to the questions our patients ask most —
           covering CPAP basics, choosing a mask, ordering, daily care, and
           common troubleshooting.
+        </p>
+        <p className="text-sm text-muted-foreground">
+          Looking for step-by-step how-tos?{" "}
+          <Link
+            href="/help"
+            className="text-[hsl(var(--penn-gold))] hover:underline font-medium"
+          >
+            Help Center
+          </Link>{" "}
+          · Want the in-depth version?{" "}
+          <Link
+            href="/learn"
+            className="text-[hsl(var(--penn-gold))] hover:underline font-medium"
+          >
+            Learn
+          </Link>
         </p>
 
         {/*
@@ -837,8 +856,8 @@ export function Faq() {
                 Still have questions?
               </h3>
               <p className="text-sm text-muted-foreground leading-relaxed">
-                PennPaps's care team is available to help with clinical fit,
-                insurance, prescriptions, and resupply timing. Anything you
+                {contact.name}'s care team is available to help with clinical
+                fit, insurance, prescriptions, and resupply timing. Anything you
                 don't see here, we're happy to answer one-on-one.
               </p>
               <div className="flex flex-wrap gap-3 pt-2">
@@ -856,7 +875,7 @@ export function Faq() {
                     variant="ghost"
                     className="rounded-full text-muted-foreground hover:text-primary gap-2"
                   >
-                    See how PennPaps works
+                    See how {contact.name} works
                   </Button>
                 </Link>
               </div>

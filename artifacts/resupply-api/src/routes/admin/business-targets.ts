@@ -13,7 +13,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 import { parsePeriodRange, computeGoalPace } from "@workspace/resupply-domain";
 
 import { logger } from "../../lib/logger";
@@ -69,9 +69,13 @@ router.get(
     const parsed = listQuery.safeParse(req.query);
     const period = parsed.success ? parsed.data.period : undefined;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     let query = supabase
-      .schema("resupply")
       .from("business_targets")
       .select(TARGET_SELECT)
       .order("period", { ascending: false })
@@ -110,10 +114,15 @@ router.get(
         .map((r) => r.endExclusiveDate)
         .sort()
         .at(-1) as string;
+      // metrics_daily is now per-tenant (migration 0380). It's not in the
+      // typed Database, so it's reached via raw() and the org filter must
+      // be explicit — the pace-to-goal actuals are THIS tenant's only.
       const { data: metrics, error: metricsErr } = await supabase
+        .raw()
         .schema("resupply")
         .from("metrics_daily")
         .select("metric_key, metric_date, metric_value")
+        .eq("org_id", orgId)
         .in("metric_key", metricKeys)
         .gte("metric_date", minStart)
         .lt("metric_date", maxEnd)
@@ -181,9 +190,13 @@ router.put(
     }
     const d = parsed.data;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("business_targets")
       .upsert(
         {

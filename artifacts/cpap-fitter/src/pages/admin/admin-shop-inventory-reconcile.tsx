@@ -307,6 +307,7 @@ export function AdminShopInventoryReconcilePage() {
 function Th({ children }: { children?: React.ReactNode }) {
   return (
     <th
+      scope="col"
       style={{
         padding: "10px 12px",
         fontSize: 12,

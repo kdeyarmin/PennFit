@@ -17,7 +17,7 @@
 import { Router, type IRouter } from "express";
 
 import { normalizeE164 } from "@workspace/resupply-domain";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
@@ -76,7 +76,13 @@ router.get(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    // Fail closed: never widen to all tenants on a missing orgId.
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const db = getOrgScopedClient(orgId);
     const hits: Hit[] = [];
 
     // Phone? Strip non-digits and check.
@@ -86,8 +92,7 @@ router.get(
         digits.length === 10 ? `+1${digits}` : `+${digits}`,
       );
       if (e164) {
-        const { data: rows } = await supabase
-          .schema("resupply")
+        const { data: rows } = await db
           .from("patients")
           .select("id, legal_first_name, legal_last_name, pacware_id")
           .eq("phone_e164", e164)
@@ -112,8 +117,7 @@ router.get(
     // store email in plaintext on the cash-pay surface).
     if (q.includes("@")) {
       const emailLower = q.toLowerCase();
-      const { data: rows } = await supabase
-        .schema("resupply")
+      const { data: rows } = await db
         .from("shop_customers")
         .select("customer_id, email_lower, display_name")
         .eq("email_lower", emailLower)
@@ -135,29 +139,25 @@ router.get(
     // four queries are independent so we fire them in parallel.
     if (UUID_RE.test(q)) {
       const [patRes, convRes, epRes, fuRes] = await Promise.all([
-        supabase
-          .schema("resupply")
+        db
           .from("patients")
           .select("id, legal_first_name, legal_last_name, pacware_id")
           .eq("id", q)
           .limit(1)
           .maybeSingle(),
-        supabase
-          .schema("resupply")
+        db
           .from("conversations")
           .select("id, patient_id, channel, status")
           .eq("id", q)
           .limit(1)
           .maybeSingle(),
-        supabase
-          .schema("resupply")
+        db
           .from("episodes")
           .select("id, status, due_at")
           .eq("id", q)
           .limit(1)
           .maybeSingle(),
-        supabase
-          .schema("resupply")
+        db
           .from("fulfillments")
           .select("id, status")
           .eq("id", q)
@@ -211,8 +211,7 @@ router.get(
 
     // Stripe Checkout Session id (full or last-12).
     if (STRIPE_SESSION_RE.test(q)) {
-      const { data: order } = await supabase
-        .schema("resupply")
+      const { data: order } = await db
         .from("shop_orders")
         .select("id, stripe_session_id, status, amount_total_cents")
         .eq("stripe_session_id", q)
@@ -232,8 +231,7 @@ router.get(
       // `.like('*<tail>')` (the `*` wildcard is PostgREST's stand-in
       // for SQL `%`). The tail is regex-validated so it can't smuggle
       // metacharacters.
-      const { data: rows } = await supabase
-        .schema("resupply")
+      const { data: rows } = await db
         .from("shop_orders")
         .select("id, stripe_session_id, status")
         .like("stripe_session_id", `*${q}`)

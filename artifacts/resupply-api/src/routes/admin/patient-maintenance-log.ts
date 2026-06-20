@@ -6,7 +6,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { requirePermission } from "../../middlewares/requireAdmin";
 
@@ -24,9 +24,14 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
-    const { data, error } = await supabase
-      .schema("resupply")
+    // Fail closed: never widen to all tenants on a missing orgId.
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const db = getOrgScopedClient(orgId);
+    const { data, error } = await db
       .from("patient_maintenance_log")
       .select("id, task_key, completed_at, source, created_at")
       .eq("patient_id", idParse.data)
@@ -34,10 +39,18 @@ router.get(
       .limit(200);
     if (error) throw error;
 
+    const rows = (data ?? []) as Array<{
+      id: string;
+      task_key: string;
+      completed_at: string;
+      source: string;
+      created_at: string;
+    }>;
+
     // Group latest-per-task so the CSR sees "cushion clean: 6 days
     // ago" without scanning the full list.
     const latestByTask: Record<string, string> = {};
-    for (const r of data ?? []) {
+    for (const r of rows) {
       if (
         !latestByTask[r.task_key] ||
         r.completed_at > latestByTask[r.task_key]!
@@ -47,7 +60,7 @@ router.get(
     }
 
     res.json({
-      entries: (data ?? []).map((r) => ({
+      entries: rows.map((r) => ({
         id: r.id,
         taskKey: r.task_key,
         completedAt: r.completed_at,

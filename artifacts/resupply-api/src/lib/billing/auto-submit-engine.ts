@@ -28,7 +28,11 @@
 // module logs names — only counts + ids ever reach the logger. The
 // Office Ally batch core owns the EDI build and never logs the payload.
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  getOrgScopedClient,
+  resolveSeedOrgId,
+  type OrgScopedClient,
+} from "@workspace/resupply-db";
 
 import { preflightClaim } from "./claim-preflight";
 import {
@@ -37,7 +41,7 @@ import {
   type BatchSubmitResult,
 } from "./office-ally-batch";
 
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+type SupabaseClient = OrgScopedClient;
 
 /** A parsed 270/271 older than this no longer counts as current. */
 export const ELIGIBILITY_FRESH_DAYS = 90;
@@ -182,6 +186,13 @@ export function groupReadyClaims(claims: ReadyClaim[]): ReadyGroup[] {
 export interface SelectReadyOpts {
   /** Cap the number of ready claims returned (preflight is run up to this). */
   maxClaims?: number;
+  /**
+   * Tenant whose draft claims to scan. Defaults to the seed org (the cron
+   * path, until the worker fans out per tenant); request handlers pass the
+   * caller's `req.orgId` so claims are selected from the RIGHT tenant.
+   * Ignored when an explicit `supabase` client is injected (tests).
+   */
+  orgId?: string;
   /** Cap the draft-claim scan window. */
   scanCap?: number;
   /** Override eligibility freshness window (days). */
@@ -220,9 +231,32 @@ interface DraftClaimRow {
 export async function selectSubmissionReadyClaims(
   opts: SelectReadyOpts = {},
 ): Promise<SubmissionReadiness> {
-  const supabase = opts.supabase ?? getSupabaseServiceRoleClient();
-  const preflight = opts.preflight ?? preflightClaim;
   const nowMs = opts.nowMs ?? Date.now();
+  let supabase: SupabaseClient;
+  if (opts.supabase) {
+    supabase = opts.supabase;
+  } else {
+    // Distinguish "no orgId supplied" (the cron path → seed org) from
+    // "orgId supplied but blank" (an upstream bug → fail closed, NOT a
+    // silent seed fallback that could leak cross-tenant). Only an
+    // UNDEFINED orgId defaults to seed.
+    const trimmedOrgId = opts.orgId?.trim();
+    const orgId =
+      opts.orgId === undefined ? await resolveSeedOrgId() : trimmedOrgId;
+    if (!orgId) {
+      return {
+        groups: [],
+        readyClaimCount: 0,
+        readyPayerCount: 0,
+        readyTotalBilledCents: 0,
+        excluded: [],
+        scannedCount: 0,
+        generatedAt: new Date(nowMs).toISOString(),
+      };
+    }
+    supabase = getOrgScopedClient(orgId);
+  }
+  const preflight = opts.preflight ?? preflightClaim;
   const maxClaims = opts.maxClaims ?? DEFAULT_MAX_CLAIMS_PER_RUN;
   // When a specific claim-id set is supplied (operator approval), the
   // scan must cover all of them so none is dropped by the default cap.
@@ -237,7 +271,6 @@ export async function selectSubmissionReadyClaims(
   // 1. Pull the oldest draft claims (oldest first → submit the claims
   //    closest to their timely-filing deadline before newer ones).
   let filter = supabase
-    .schema("resupply")
     .from("insurance_claims")
     .select(
       "id, patient_id, payer_profile_id, insurance_coverage_id, total_billed_cents, date_of_service",
@@ -388,7 +421,6 @@ async function loadLatestParsedEligibility(
   >();
   if (coverageIds.length === 0) return map;
   const { data, error } = await supabase
-    .schema("resupply")
     .from("eligibility_checks")
     .select("insurance_coverage_id, is_active, responded_at")
     .in("insurance_coverage_id", coverageIds)
@@ -425,7 +457,6 @@ async function loadPayerNames(
   const map = new Map<string, string>();
   if (payerProfileIds.length === 0) return map;
   const { data, error } = await supabase
-    .schema("resupply")
     .from("payer_profiles")
     .select("id, display_name")
     .in("id", payerProfileIds);
@@ -443,7 +474,6 @@ async function loadPatientNames(
   const map = new Map<string, string>();
   if (patientIds.length === 0) return map;
   const { data, error } = await supabase
-    .schema("resupply")
     .from("patients")
     .select("id, legal_first_name, legal_last_name")
     .in("id", patientIds);
@@ -471,6 +501,13 @@ export interface RunAutoSubmitOpts {
   triggeredBy: "operator" | "cron";
   ip?: string | null;
   userAgent?: string | null;
+  /**
+   * Tenant to select + submit claims for. Defaults to the seed org (the
+   * cron path); the operator route passes `req.orgId`. Threaded into both
+   * the claim selection and the 837P batch submit so a tenant admin's run
+   * never touches another tenant's claims or clearinghouse.
+   */
+  orgId?: string;
 }
 
 export interface AutoSubmitRunResult {
@@ -524,10 +561,17 @@ export async function runAutoSubmitBatch(
   // Operator-approval path: evaluate EXACTLY the approved claims (scoped
   // by id) so a claim the operator picked is never silently dropped by
   // the per-run cap that bounds the unattended "submit all" scan.
+  // Only include `orgId` when it's actually set, so the cron path's opts
+  // shape stays `{ claimIds, maxClaims }` (no `orgId: undefined` key).
+  const orgIdOpt = opts.orgId ? { orgId: opts.orgId } : {};
   const readiness = await select(
     approvedClaimIds
-      ? { claimIds: approvedClaimIds, maxClaims: approvedClaimIds.length }
-      : { maxClaims },
+      ? {
+          claimIds: approvedClaimIds,
+          maxClaims: approvedClaimIds.length,
+          ...orgIdOpt,
+        }
+      : { maxClaims, ...orgIdOpt },
   );
   const readyById = new Map<string, ReadyClaim>();
   for (const g of readiness.groups) {
@@ -559,6 +603,7 @@ export async function runAutoSubmitBatch(
       adminUserId: opts.submittedByUserId ?? null,
       ip: opts.ip ?? null,
       userAgent: opts.userAgent ?? null,
+      orgId: opts.orgId,
     });
     if (result.ok) {
       submissions.push({

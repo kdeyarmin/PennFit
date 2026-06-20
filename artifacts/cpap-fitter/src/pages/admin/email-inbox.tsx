@@ -181,7 +181,7 @@ export function EmailInboxPage() {
             <>
               <Table
                 columns={cols}
-                rows={data.items}
+                rows={data.items ?? []}
                 rowKey={(r) => r.id}
                 onRowClick={(r) => setLocation(`/admin/conversations/${r.id}`)}
                 emptyState={
@@ -200,9 +200,9 @@ export function EmailInboxPage() {
                 }
               />
               <Pagination
-                total={data.total}
-                limit={data.limit}
-                offset={data.offset}
+                total={data.total ?? 0}
+                limit={data.limit ?? PAGE_SIZE}
+                offset={data.offset ?? 0}
                 onChange={setOffset}
                 isLoading={isFetching}
               />

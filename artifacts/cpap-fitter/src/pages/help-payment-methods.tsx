@@ -6,6 +6,7 @@ import {
   type HelpStep,
 } from "@/components/help/help-article-shell";
 import { Screenshot, AccountShot } from "@/components/help/help-screens";
+import { BrandName } from "@/components/company-contact";
 
 const steps: HelpStep[] = [
   {
@@ -22,10 +23,7 @@ const steps: HelpStep[] = [
       </p>
     ),
     shot: (
-      <Screenshot
-        url="pennpaps.com/account"
-        caption="The Saved card panel sits alongside your account tabs."
-      >
+      <Screenshot caption="The Saved card panel sits alongside your account tabs.">
         <AccountShot />
       </Screenshot>
     ),
@@ -40,7 +38,13 @@ const steps: HelpStep[] = [
         straight back to your account when you&apos;re done.
       </p>
     ),
-    note: "PennPaps never sees or stores your card number. Payments run through Stripe, and only the brand, last four digits, and expiry are visible on your account.",
+    note: (
+      <>
+        <BrandName /> never sees or stores your card number. Payments run
+        through Stripe, and only the brand, last four digits, and expiry are
+        visible on your account.
+      </>
+    ),
   },
   {
     title: "No card saved yet?",
@@ -75,7 +79,7 @@ export function HelpPaymentMethods() {
       title="Payment methods & billing"
       Icon={CreditCard}
       minutes="2 min"
-      metaDescription="How to manage your PennPaps payment method: view the saved card, update card or billing details through Stripe's secure portal, and fix a past-due auto-ship payment."
+      metaDescription="How to manage your payment method: view the saved card, update card or billing details through Stripe's secure portal, and fix a past-due auto-ship payment."
       intro="Your saved card powers one-tap reorders and auto-ship. Here's where it lives, how to update it securely, and what to do when a payment fails."
       summary={
         <>
@@ -86,7 +90,11 @@ export function HelpPaymentMethods() {
           automatically.
         </>
       }
-      prerequisites={["A PennPaps account, signed in."]}
+      prerequisites={[
+        <>
+          A <BrandName /> account, signed in.
+        </>,
+      ]}
       steps={steps}
       next={{
         href: "/help/manage-subscriptions",
@@ -95,7 +103,7 @@ export function HelpPaymentMethods() {
       }}
       faqs={[
         {
-          q: "Does PennPaps store my card number?",
+          q: "Is my card number stored here?",
           a: "No. Cards are stored by Stripe, our payment processor. Your account only ever shows the brand, last four digits, and expiration.",
         },
         {

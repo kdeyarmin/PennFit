@@ -21,10 +21,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  type Database,
-  getSupabaseServiceRoleClient,
-} from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 type PriorAuthorizationUpdate =
   Database["resupply"]["Tables"]["prior_authorizations"]["Update"];
@@ -123,9 +120,13 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("prior_authorizations")
       .select(
         "id, insurance_coverage_id, hcpcs_code, payer_name, auth_number, status, requested_at, submitted_at, decision_at, approved_through, denial_reason, document_id, notes, created_at, updated_at",
@@ -135,7 +136,11 @@ router.get(
     if (error) throw error;
 
     res.json({
-      priorAuthorizations: (data ?? []).map((r) => ({
+      priorAuthorizations: (
+        (data ?? []) as Array<
+          Database["resupply"]["Tables"]["prior_authorizations"]["Row"]
+        >
+      ).map((r) => ({
         id: r.id,
         insuranceCoverageId: r.insurance_coverage_id,
         hcpcsCode: r.hcpcs_code,
@@ -178,10 +183,14 @@ router.post(
       return;
     }
     const b = parsed.data;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     const { data: patient } = await supabase
-      .schema("resupply")
       .from("patients")
       .select("id")
       .eq("id", idParsed.data.id)
@@ -193,7 +202,6 @@ router.post(
     }
 
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("prior_authorizations")
       .insert({
         patient_id: idParsed.data.id,
@@ -266,12 +274,16 @@ router.patch(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // If status is changing, validate the transition.
     if (fields.status !== undefined) {
       const { data: existing } = await supabase
-        .schema("resupply")
         .from("prior_authorizations")
         .select("status")
         .eq("id", idParsed.data.paId)
@@ -313,7 +325,6 @@ router.patch(
     if (fields.notes !== undefined) updates.notes = fields.notes;
 
     const { data: updated, error } = await supabase
-      .schema("resupply")
       .from("prior_authorizations")
       .update(updates)
       .eq("id", idParsed.data.paId)

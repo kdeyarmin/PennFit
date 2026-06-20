@@ -22,8 +22,8 @@ import { describe, it, expect } from "vitest";
 import { FEATURE_FLAG_KEYS } from "./feature-flags";
 
 const here = dirname(fileURLToPath(import.meta.url));
-// artifacts/resupply-api/src/lib -> repo root -> lib/resupply-db/drizzle
-const DRIZZLE_DIR = join(
+// artifacts/resupply-api/src/lib -> repo root -> lib/resupply-db/migrations
+const MIGRATIONS_DIR = join(
   here,
   "..",
   "..",
@@ -31,15 +31,15 @@ const DRIZZLE_DIR = join(
   "..",
   "lib",
   "resupply-db",
-  "drizzle",
+  "migrations",
 );
 
 /** Keys seeded by any migration's `INSERT INTO resupply.feature_flags`. */
 function seededFlagKeys(): Set<string> {
   const keys = new Set<string>();
-  const files = readdirSync(DRIZZLE_DIR).filter((f) => f.endsWith(".sql"));
+  const files = readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith(".sql"));
   for (const file of files) {
-    const sql = readFileSync(join(DRIZZLE_DIR, file), "utf8");
+    const sql = readFileSync(join(MIGRATIONS_DIR, file), "utf8");
     if (!sql.includes("resupply.feature_flags")) continue;
     // A feature-flag VALUES tuple is uniquely shaped: ('key', true|false,
     // ...). The enabled boolean immediately follows the key (possibly

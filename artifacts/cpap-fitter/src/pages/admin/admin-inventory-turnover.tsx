@@ -176,13 +176,27 @@ function ProductTable({ products }: { products: InvProductRow[] }) {
       <table className="w-full text-sm min-w-[860px]">
         <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-600">
           <tr>
-            <th className="text-left px-3 py-2">Product</th>
-            <th className="text-right px-3 py-2">On hand</th>
-            <th className="text-right px-3 py-2">Inv value</th>
-            <th className="text-right px-3 py-2">COGS (yr)</th>
-            <th className="text-right px-3 py-2">Turnover</th>
-            <th className="text-right px-3 py-2">Waiting</th>
-            <th className="text-right px-3 py-2">Stockout $</th>
+            <th scope="col" className="text-left px-3 py-2">
+              Product
+            </th>
+            <th scope="col" className="text-right px-3 py-2">
+              On hand
+            </th>
+            <th scope="col" className="text-right px-3 py-2">
+              Inv value
+            </th>
+            <th scope="col" className="text-right px-3 py-2">
+              COGS (yr)
+            </th>
+            <th scope="col" className="text-right px-3 py-2">
+              Turnover
+            </th>
+            <th scope="col" className="text-right px-3 py-2">
+              Waiting
+            </th>
+            <th scope="col" className="text-right px-3 py-2">
+              Stockout $
+            </th>
           </tr>
         </thead>
         <tbody>

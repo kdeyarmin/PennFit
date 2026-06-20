@@ -30,11 +30,12 @@
 import type PgBoss from "pg-boss";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { isOutsideSmsSendWindow } from "../../lib/comm-prefs";
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
+import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import {
   buildPacketSigningLink,
   deliverPacketLink,
@@ -74,11 +75,43 @@ interface SweepStats {
 }
 
 export async function runPatientPacketReminderSweep(): Promise<SweepStats> {
-  if (!(await isFeatureEnabled("patient_packets.autoremind"))) {
-    return { skipped: true, scanned: 0, reminded: 0, emailSent: 0, smsSent: 0 };
-  }
+  const stats: SweepStats = {
+    scanned: 0,
+    reminded: 0,
+    emailSent: 0,
+    smsSent: 0,
+  };
 
-  const supabase = getSupabaseServiceRoleClient();
+  // Fan out across every active tenant. The `patient_packets.autoremind`
+  // flag is checked PER TENANT (feature_flags is (org_id, key)), so one
+  // tenant's opt-out never nudges another's packets. patient_packets and
+  // patients are tenant-scoped — each tenant is swept on its own client.
+  let anyEnabled = false;
+  await forEachActiveOrg(
+    async (orgId) => {
+      if (!(await isFeatureEnabled("patient_packets.autoremind", orgId)))
+        return;
+      anyEnabled = true;
+      await patientPacketReminderSweepForOrg(orgId, stats);
+    },
+    { jobName: REMINDER_JOB },
+  );
+  // Preserve the historical "skipped" signal: true when NO active tenant
+  // had the feature on (matches the prior single-tenant flag-off return).
+  if (!anyEnabled) stats.skipped = true;
+  return stats;
+}
+
+/**
+ * Run the packet-reminder sweep for a SINGLE tenant, accumulating into the
+ * shared `stats`. The compare-and-set claim, the rollback, and the BATCH
+ * cap all apply per tenant.
+ */
+async function patientPacketReminderSweepForOrg(
+  orgId: string,
+  stats: SweepStats,
+): Promise<void> {
+  const supabase = getOrgScopedClient(orgId);
   const now = Date.now();
   const nowIso = new Date(now).toISOString();
   const sentBefore = new Date(
@@ -89,7 +122,6 @@ export async function runPatientPacketReminderSweep(): Promise<SweepStats> {
   ).toISOString();
 
   const { data: candidates, error } = await supabase
-    .schema("resupply")
     .from("patient_packets")
     .select(
       "id, patient_id, link_version, reminder_count, recipient_name, recipient_email, sent_at, status, expires_at, last_reminded_at",
@@ -104,19 +136,15 @@ export async function runPatientPacketReminderSweep(): Promise<SweepStats> {
   if (error) throw error;
 
   const rows = candidates ?? [];
-  const stats: SweepStats = {
-    scanned: rows.length,
-    reminded: 0,
-    emailSent: 0,
-    smsSent: 0,
-  };
-  if (rows.length === 0) return stats;
+  stats.scanned += rows.length;
+  if (rows.length === 0) return;
 
   // Bulk-resolve patient phone numbers (+ timezone for the TCPA
   // send-window gate) for the SMS channel.
-  const patientIds = Array.from(new Set(rows.map((r) => r.patient_id)));
+  const patientIds = Array.from(
+    new Set(rows.map((r: { patient_id: string }) => r.patient_id)),
+  );
   const { data: patients } = await supabase
-    .schema("resupply")
     .from("patients")
     .select("id, phone_e164, timezone, address")
     .in("id", patientIds);
@@ -145,7 +173,6 @@ export async function runPatientPacketReminderSweep(): Promise<SweepStats> {
     // Claim: compare-and-set on (reminder_count, link_version) so two
     // overlapping sweeps can't both nudge the same packet.
     const { data: claimed, error: claimErr } = await supabase
-      .schema("resupply")
       .from("patient_packets")
       .update({
         link_version: nextVersion,
@@ -216,7 +243,6 @@ export async function runPatientPacketReminderSweep(): Promise<SweepStats> {
       // just wrote, so a concurrent admin resend is never clobbered):
       // the old link works again and the slot is retried next sweep.
       const { error: rollbackErr } = await supabase
-        .schema("resupply")
         .from("patient_packets")
         .update({
           link_version: c.link_version,
@@ -257,8 +283,6 @@ export async function runPatientPacketReminderSweep(): Promise<SweepStats> {
       logger.warn({ err }, "patient_packet.reminded audit write failed");
     });
   }
-
-  return stats;
 }
 
 export async function registerPatientPacketReminderJob(

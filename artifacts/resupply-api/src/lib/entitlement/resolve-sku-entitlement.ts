@@ -35,6 +35,13 @@ export interface ResolveSkuEntitlementArgs {
 export type SkuEntitlement = ResupplyEntitlementResult & {
   hcpcsCode: string;
   skuPrefix: string;
+  /** When this HCPCS family was last dispensed to the patient (newest
+   *  non-cancelled fulfillment), or null if never. Surfaced so callers
+   *  can derive the CMS refill window without re-querying fulfillments. */
+  lastFulfilledAt: Date | null;
+  /** The HCPCS replacement interval (= expected supply duration), used
+   *  as the supply-duration input to the refill-window calculation. */
+  minIntervalDays: number;
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -111,5 +118,11 @@ export async function resolveSkuEntitlement(
     now,
   });
 
-  return { ...result, hcpcsCode: hcpcs.code, skuPrefix: match.sku_prefix };
+  return {
+    ...result,
+    hcpcsCode: hcpcs.code,
+    skuPrefix: match.sku_prefix,
+    lastFulfilledAt,
+    minIntervalDays: hcpcs.min_interval_days,
+  };
 }

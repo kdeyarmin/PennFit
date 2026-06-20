@@ -1,6 +1,6 @@
 // /admin/asset-recovery — worklist for recovering CPAP machines from
 // patients who discontinued therapy, so the device can be refurbished
-// and redeployed. PennFit already detects likely discontinuation
+// and redeployed. CareMetric Breathe already detects likely discontinuation
 // (low-usage smart triggers + lapsed-customer win-back); this is the
 // human action queue that moves a device from "identified" through to
 // "received" / "redeployed". Viewing needs cases.read; create/advance

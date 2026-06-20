@@ -18,6 +18,8 @@ import { RefreshCw, Webhook } from "lucide-react";
 
 import { Badge } from "@/components/admin/Badge";
 import { Button } from "@/components/admin/Button";
+import { Spinner } from "@/components/admin/Spinner";
+import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import {
   listWebhookDeliveries,
   retryWebhookDelivery,
@@ -116,12 +118,13 @@ export function AdminWebhookDeliveriesPage() {
       </div>
 
       {query.isPending ? (
-        <div className="text-sm text-slate-500">Loading…</div>
+        <Spinner />
       ) : query.isError ? (
-        <div className="text-sm text-rose-700" role="alert">
-          Couldn&apos;t load deliveries:{" "}
-          {query.error instanceof Error ? query.error.message : "unknown"}.
-        </div>
+        <ErrorPanel
+          error={query.error}
+          onRetry={() => void query.refetch()}
+          title="Couldn't load deliveries"
+        />
       ) : query.data.deliveries.length === 0 ? (
         <div className="text-sm text-slate-500" data-testid="deliveries-empty">
           No {filter === "all" ? "" : `${filter} `}deliveries.
@@ -139,13 +142,27 @@ function DeliveriesTable({ deliveries }: { deliveries: WebhookDelivery[] }) {
       <table className="w-full text-sm min-w-[820px]">
         <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-600">
           <tr>
-            <th className="text-left px-3 py-2">When</th>
-            <th className="text-left px-3 py-2">Event</th>
-            <th className="text-left px-3 py-2">Status</th>
-            <th className="text-right px-3 py-2">Attempts</th>
-            <th className="text-right px-3 py-2">HTTP</th>
-            <th className="text-left px-3 py-2">Last error</th>
-            <th className="text-right px-3 py-2">Action</th>
+            <th scope="col" className="text-left px-3 py-2">
+              When
+            </th>
+            <th scope="col" className="text-left px-3 py-2">
+              Event
+            </th>
+            <th scope="col" className="text-left px-3 py-2">
+              Status
+            </th>
+            <th scope="col" className="text-right px-3 py-2">
+              Attempts
+            </th>
+            <th scope="col" className="text-right px-3 py-2">
+              HTTP
+            </th>
+            <th scope="col" className="text-left px-3 py-2">
+              Last error
+            </th>
+            <th scope="col" className="text-right px-3 py-2">
+              Action
+            </th>
           </tr>
         </thead>
         <tbody>

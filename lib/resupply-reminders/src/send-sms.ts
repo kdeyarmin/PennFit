@@ -17,7 +17,10 @@
 //     phone number plaintext, never the admin's typed text.
 
 import { normalizeE164 } from "@workspace/resupply-domain";
+import type { ReminderVariant } from "@workspace/resupply-messaging";
 import {
+  getOrgScopedClient,
+  resolveSeedOrgId,
   tryUpsertPatientLatestMessageSb,
   type Json,
   type ResupplySupabaseClient,
@@ -32,25 +35,94 @@ import type { SendActor, SendReminderOutcome, SmsSendConfig } from "./types";
 
 export interface SendReminderSmsInput {
   supabase: ResupplySupabaseClient;
+  /**
+   * Tenant the send happens in. Every tenant-scoped read/write goes
+   * through `getOrgScopedClient(orgId, supabase)` so a reminder can
+   * only ever touch the caller's tenant. Optional with a seed-org
+   * bridge: when omitted the original operating company is resolved,
+   * so callers that don't yet thread orgId (the worker jobs) keep
+   * working without an atomic all-callers change (Phase 0 cutover).
+   */
+  orgId?: string;
   cfg: SmsSendConfig;
   patientId: string;
   episodeId?: string;
   /**
    * Optional override for the message body. When absent we render a
-   * default reminder template. Admin-typed bodies are passed through
-   * verbatim to Twilio and stored as-is in `messages.body`.
+   * default reminder template (selected by `variant`). Admin-typed bodies
+   * are passed through verbatim to Twilio and stored as-is in
+   * `messages.body`.
    */
   body?: string;
+  /**
+   * Which escalation-ladder touch this is — picks the default body when no
+   * explicit `body` override is given. Ignored when `body` is set. Defaults
+   * to "initial" (the first touch's copy, unchanged).
+   */
+  variant?: ReminderVariant;
   actor: SendActor;
+}
+
+/**
+ * Default reminder SMS body per escalation step. All three are kept under
+ * one GSM-7 segment (160 chars for a typical name/practice) and free of
+ * UCS-2-triggering characters (em-dash, curly quotes, ellipsis) — Twilio
+ * silently switches the whole message to UCS-2 (70-char segments) on a
+ * single non-GSM-7 character, tripling the per-message cost at scale.
+ * "initial" is byte-for-byte the historical copy.
+ */
+export function defaultReminderSmsBody(
+  variant: ReminderVariant,
+  firstName: string,
+  practiceName: string,
+): string {
+  // Each YES is the patient's Medicare/payer refill attestation, so the
+  // copy asks them to confirm BOTH that they still use the equipment AND
+  // that they are running low before replying YES (see
+  // REFILL_AFFIRMATION_STATEMENT). Kept GSM-7-safe (no em-dash, curly
+  // quotes, or ellipsis) so Twilio doesn't upgrade the whole message to
+  // UCS-2 and triple the per-segment cost.
+  switch (variant) {
+    case "followup":
+      return `Hi ${firstName}, ${practiceName} checking back. Reply YES if you still use your CPAP and are low on supplies, EDIT to change address, STOP to opt out.`;
+    case "final":
+      return `Last reminder, ${firstName}: reply YES if you still use your CPAP and are low on supplies and ${practiceName} ships today, or STOP to opt out.`;
+    case "initial":
+    default:
+      return `Hi ${firstName}, it's ${practiceName}. Time for a CPAP refill. Reply YES if you still use it and are low on supplies, EDIT to change address, STOP to opt out.`;
+  }
+}
+
+/**
+ * True when an outbound SMS body asked the patient to confirm the two
+ * Medicare/payer refill attestations (still using the equipment AND
+ * running low) before replying YES — i.e. the body is one of the
+ * `defaultReminderSmsBody` variants, not a custom/admin/playbook body or
+ * older copy that didn't ask. The inbound `YES` handler uses this so it
+ * only records a `refill_confirmations` attestation when the prompt the
+ * patient was actually replying to asked for it — never manufacturing a
+ * false attestation for a legacy or custom prompt.
+ *
+ * Kept here, beside `defaultReminderSmsBody`, so the question wording and
+ * its detector move together; `send-sms.variants.test.ts` pins that every
+ * default variant satisfies it.
+ */
+export function smsAsksRefillAttestation(body: string): boolean {
+  const b = body.toLowerCase();
+  return b.includes("still use") && b.includes("low on supplies");
 }
 
 export async function sendReminderSms(
   input: SendReminderSmsInput,
 ): Promise<SendReminderOutcome> {
   const { supabase, cfg, patientId, actor } = input;
+  // Tenant isolation chokepoint: scope every read/write to orgId. The
+  // seed-org bridge resolves the original operating company when a
+  // caller hasn't threaded orgId yet (see input doc).
+  const orgId = input.orgId ?? (await resolveSeedOrgId()) ?? "";
+  const db = getOrgScopedClient(orgId, supabase);
 
-  const { data: patient, error: patientErr } = await supabase
-    .schema("resupply")
+  const { data: patient, error: patientErr } = await db
     .from("patients")
     .select("id, status, phone_e164, legal_first_name")
     .eq("id", patientId)
@@ -66,8 +138,7 @@ export async function sendReminderSms(
   // Resolve episode — explicit if provided, else most recent.
   let episodeId = input.episodeId;
   if (!episodeId) {
-    const { data: recent, error: recentErr } = await supabase
-      .schema("resupply")
+    const { data: recent, error: recentErr } = await db
       .from("episodes")
       .select("id")
       .eq("patient_id", patientId)
@@ -78,8 +149,7 @@ export async function sendReminderSms(
     episodeId = recent?.id;
     if (!episodeId) return { status: "no_episode_for_patient" };
   } else {
-    const { data: ep, error: epErr } = await supabase
-      .schema("resupply")
+    const { data: ep, error: epErr } = await db
       .from("episodes")
       .select("id, patient_id")
       .eq("id", episodeId)
@@ -104,14 +174,13 @@ export async function sendReminderSms(
   // confirmations) will route to whichever row Postgres returns
   // first. We refuse to send before the ambiguity exists, audit it,
   // and let an admin de-duplicate the patient roster.
-  const { data: otherOwners, error: otherOwnersErr } = await supabase
-    .schema("resupply")
+  const { data: otherOwners, error: otherOwnersErr } = await db
     .from("patients")
     .select("id")
     .eq("phone_e164", normalizedPhone)
     .limit(2); // need at most 2 rows to detect the conflict
   if (otherOwnersErr) throw otherOwnersErr;
-  const otherIds = (otherOwners ?? [])
+  const otherIds = ((otherOwners ?? []) as Array<{ id: string }>)
     .map((r) => r.id)
     .filter((id) => id !== patientId);
   if (otherIds.length > 0) {
@@ -147,8 +216,7 @@ export async function sendReminderSms(
     messagingServiceSid: cfg.twilioMessagingServiceSid,
   });
 
-  const { data: insertedConv, error: insertConvErr } = await supabase
-    .schema("resupply")
+  const { data: insertedConv, error: insertConvErr } = await db
     .from("conversations")
     .insert({
       patient_id: patientId,
@@ -168,8 +236,7 @@ export async function sendReminderSms(
   // failure exit (vendor error AND unexpected throw) — see the
   // quiet-period rationale above.
   const deleteOrphanConversation = async (): Promise<void> => {
-    const { error: deleteConvErr } = await supabase
-      .schema("resupply")
+    const { error: deleteConvErr } = await db
       .from("conversations")
       .delete()
       .eq("id", conversationId);
@@ -190,15 +257,16 @@ export async function sendReminderSms(
     }
   };
 
-  // Default body: kept under the 160-char GSM-7 segment cap AND
-  // free of UCS-2-triggering characters (em-dash, curly quotes,
-  // ellipsis). Twilio silently switches the whole message to
-  // UCS-2 (70-char segments) if it sees a non-GSM-7 character, so
-  // a single em-dash quietly turns every reminder into a 3-segment
-  // charge — at high outreach volume that's real money.
+  // Default body: variant-selected, GSM-7-safe (see defaultReminderSmsBody).
+  // An explicit `input.body` override (admin-typed / outreach playbook)
+  // still wins and is passed through verbatim.
   const messageBody =
     input.body ??
-    `Hi ${patient.legal_first_name ?? "there"}, it's ${cfg.practiceName}. You're due for a CPAP refill. Reply YES to ship to the address on file, EDIT to change it, or STOP to opt out.`;
+    defaultReminderSmsBody(
+      input.variant ?? "initial",
+      patient.legal_first_name ?? "there",
+      cfg.practiceName,
+    );
 
   const statusCallbackUrl = `${cfg.publicBaseUrl}/resupply-api/sms/status-callback?conversationId=${encodeURIComponent(
     conversationId,
@@ -254,21 +322,17 @@ export async function sendReminderSms(
   // retry, which would re-call this function and send a duplicate SMS.
   // The vendorRef in the log is sufficient for ops to manually reconcile.
   try {
-    const { error: insertMsgErr } = await supabase
-      .schema("resupply")
-      .from("messages")
-      .insert({
-        conversation_id: conversationId,
-        direction: "outbound",
-        sender_role: "agent",
-        body: messageBody,
-        delivery_status: "queued",
-        vendor_metadata: { twilio_message_sid: messageSid } as unknown as Json,
-        sent_at: sentAtIso,
-      });
+    const { error: insertMsgErr } = await db.from("messages").insert({
+      conversation_id: conversationId,
+      direction: "outbound",
+      sender_role: "agent",
+      body: messageBody,
+      delivery_status: "queued",
+      vendor_metadata: { twilio_message_sid: messageSid } as unknown as Json,
+      sent_at: sentAtIso,
+    });
     if (insertMsgErr) throw insertMsgErr;
-    const { error: stampConvErr } = await supabase
-      .schema("resupply")
+    const { error: stampConvErr } = await db
       .from("conversations")
       .update({
         external_ref: messageSid,
@@ -319,6 +383,7 @@ export async function sendReminderSms(
     body: messageBody,
     direction: "outbound",
     messageAt: sentAt,
+    orgId: orgId || undefined,
   });
 
   await safeAuditFromActor({

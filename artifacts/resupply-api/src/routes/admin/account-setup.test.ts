@@ -1,19 +1,20 @@
-// Route + assembler tests for /admin/account-setup (new-account /
+// Route + assembler tests for /platform/account-setup (new-account /
 // production launch checklist).
 //
 //   * buildChecklistItems(...) — pure assembler: env booleans flip the
 //     required/optional rows; DB-probe outcomes pass straight through;
 //     env VALUES never leak into the response.
-//   * GET /admin/account-setup — 401 without admin, 200 shape with the
-//     two DB probes staged (schema present + first-admin count).
+//   * GET /platform/account-setup — 401 without a platform admin, 200
+//     shape with the two DB probes (schema present + first-admin count)
+//     run against the seed org resolved by resolveSeedOrgId().
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import express, { type Express } from "express";
 import request from "supertest";
 
 import {
-  makeRequireAdminMock,
-  type MockAdminCtx,
+  makeRequirePlatformAdminMock,
+  type MockPlatformAdminCtx,
 } from "../../test-helpers/auth-mocks";
 import {
   installSupabaseMock,
@@ -23,10 +24,10 @@ import {
 const supabaseMock = installSupabaseMock();
 
 const { mockAdmin } = vi.hoisted(() => ({
-  mockAdmin: { current: null as MockAdminCtx | null },
+  mockAdmin: { current: null as MockPlatformAdminCtx | null },
 }));
-vi.mock("../../middlewares/requireAdmin", () =>
-  makeRequireAdminMock(mockAdmin),
+vi.mock("../../middlewares/requirePlatformAdmin", () =>
+  makeRequirePlatformAdminMock(mockAdmin),
 );
 
 import accountSetupRouter, {
@@ -210,19 +211,19 @@ describe("buildChecklistItems", () => {
   });
 });
 
-describe("GET /admin/account-setup", () => {
+describe("GET /platform/account-setup", () => {
   beforeEach(() => {
     mockAdmin.current = null;
     supabaseMock.reset();
   });
 
   it("401s without admin", async () => {
-    const res = await request(makeApp()).get("/admin/account-setup");
+    const res = await request(makeApp()).get("/platform/account-setup");
     expect(res.status).toBe(401);
   });
 
   it("returns the checklist for an admin (schema + admin probes succeed)", async () => {
-    mockAdmin.current = { userId: "u", email: "ops@x", role: "admin" };
+    mockAdmin.current = { userId: "u", email: "ops@x" };
     stageSupabaseResponse("feature_flags", "select", {
       data: null,
       count: 0,
@@ -233,7 +234,7 @@ describe("GET /admin/account-setup", () => {
       count: 2,
       error: null,
     });
-    const res = await request(makeApp()).get("/admin/account-setup");
+    const res = await request(makeApp()).get("/platform/account-setup");
     expect(res.status).toBe(200);
     expect(typeof res.body.generatedAt).toBe("string");
     expect(Array.isArray(res.body.items)).toBe(true);
@@ -246,7 +247,7 @@ describe("GET /admin/account-setup", () => {
   });
 
   it("reports first-admin incomplete when no admins exist", async () => {
-    mockAdmin.current = { userId: "u", email: "ops@x", role: "admin" };
+    mockAdmin.current = { userId: "u", email: "ops@x" };
     stageSupabaseResponse("feature_flags", "select", {
       data: null,
       count: 0,
@@ -257,20 +258,20 @@ describe("GET /admin/account-setup", () => {
       count: 0,
       error: null,
     });
-    const res = await request(makeApp()).get("/admin/account-setup");
+    const res = await request(makeApp()).get("/platform/account-setup");
     const items = res.body.items as AccountSetupItem[];
     expect(byId(items, "first-admin").status).toBe("incomplete");
   });
 
   it("marks the schema row unknown when the DB query errors", async () => {
-    mockAdmin.current = { userId: "u", email: "ops@x", role: "admin" };
+    mockAdmin.current = { userId: "u", email: "ops@x" };
     stageSupabaseResponse("feature_flags", "select", {
       error: { message: 'relation "resupply.feature_flags" does not exist' },
     });
     stageSupabaseResponse("admin_users", "select", {
       error: { message: 'relation "resupply.admin_users" does not exist' },
     });
-    const res = await request(makeApp()).get("/admin/account-setup");
+    const res = await request(makeApp()).get("/platform/account-setup");
     expect(res.status).toBe(200);
     const items = res.body.items as AccountSetupItem[];
     expect(byId(items, "db-schema").status).toBe("unknown");

@@ -14,7 +14,7 @@ import { randomBytes } from "node:crypto";
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
 
@@ -48,12 +48,12 @@ function generateCode(length = 10): string {
 }
 
 async function resolveSinglePatientByEmail(
+  orgId: string,
   customerEmail: string,
 ): Promise<string | null> {
-  const supabase = getSupabaseServiceRoleClient();
+  const supabase = getOrgScopedClient(orgId);
   const escaped = customerEmail.replace(/[\\%_]/g, (c) => `\\${c}`);
   const { data: rows, error } = await supabase
-    .schema("resupply")
     .from("patients")
     .select("id")
     .ilike("email", escaped)
@@ -69,14 +69,23 @@ router.get("/shop/me/referrals", requireSignedIn, async (req, res) => {
     res.json({ referrals: [], patientLinked: false, stats: null });
     return;
   }
-  const patientId = await resolveSinglePatientByEmail(email);
+  const orgIdForLookup = req.orgId;
+  if (!orgIdForLookup) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const patientId = await resolveSinglePatientByEmail(orgIdForLookup, email);
   if (!patientId) {
     res.json({ referrals: [], patientLinked: false, stats: null });
     return;
   }
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const { data, error } = await supabase
-    .schema("resupply")
     .from("patient_referrals")
     .select(
       "id, code, referee_email, referee_name, status, converted_at, created_at",
@@ -85,7 +94,9 @@ router.get("/shop/me/referrals", requireSignedIn, async (req, res) => {
     .order("created_at", { ascending: false })
     .limit(50);
   if (error) throw error;
-  const rows = data ?? [];
+  const rows = (data ?? []) as Array<
+    Database["resupply"]["Tables"]["patient_referrals"]["Row"]
+  >;
   const stats = {
     total: rows.length,
     converted: rows.filter((r) => r.status === "converted").length,
@@ -124,7 +135,12 @@ router.post("/shop/me/referrals", requireSignedIn, async (req, res) => {
     res.status(400).json({ error: "invalid_body" });
     return;
   }
-  const patientId = await resolveSinglePatientByEmail(email);
+  const orgIdForLookup = req.orgId;
+  if (!orgIdForLookup) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const patientId = await resolveSinglePatientByEmail(orgIdForLookup, email);
   if (!patientId) {
     res.status(404).json({ error: "patient_not_linked" });
     return;
@@ -132,11 +148,15 @@ router.post("/shop/me/referrals", requireSignedIn, async (req, res) => {
   // Single retry on the very unlikely event of a code collision —
   // 62^10 ≈ 8.4e17 space so this branch is effectively unreachable,
   // but the dedupe index would otherwise surface a confusing 23505.
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const code = generateCode();
     const { data, error } = await supabase
-      .schema("resupply")
       .from("patient_referrals")
       .insert({
         referrer_patient_id: patientId,

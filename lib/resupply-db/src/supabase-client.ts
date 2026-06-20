@@ -41,18 +41,28 @@ let cachedClient: ResupplySupabaseClient | null = null;
 // upstream proxy timeouts that would otherwise fire first.
 export const DEFAULT_SUPABASE_FETCH_TIMEOUT_MS = 30_000;
 
+// Upper bound on the override. The whole point of the timeout is to keep
+// a stalled fetch from holding a worker slot indefinitely; a fat-fingered
+// huge value (e.g. an extra zero) would re-introduce exactly the hang the
+// default exists to prevent. 120s is comfortably above the slowest
+// legitimate query and still well under the upstream proxy timeouts.
+export const MAX_SUPABASE_FETCH_TIMEOUT_MS = 120_000;
+
 /**
  * Resolve the per-request fetch timeout from a raw env value
  * (`SUPABASE_FETCH_TIMEOUT_MS`). Invalid, zero, or negative values
  * fall back to the default — same posture as `resolvePgBossPoolMax`
- * / `DB_POOL_MAX`.
+ * / `DB_POOL_MAX`. A valid override is clamped to
+ * `MAX_SUPABASE_FETCH_TIMEOUT_MS` so a misconfigured huge value can't
+ * defeat the worker-slot protection the timeout provides.
  */
 export function resolveSupabaseFetchTimeoutMs(
   raw: string | undefined,
   fallback: number = DEFAULT_SUPABASE_FETCH_TIMEOUT_MS,
 ): number {
   const parsed = parseInt(raw ?? "", 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.min(parsed, MAX_SUPABASE_FETCH_TIMEOUT_MS);
 }
 
 /**

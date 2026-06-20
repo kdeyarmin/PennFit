@@ -29,6 +29,7 @@ import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Spinner } from "@/components/admin/Spinner";
 import { Sparkline } from "@/components/admin/Sparkline";
 import type { SmartTriggerKind } from "@/lib/admin/smart-triggers-api";
+import { buildClinicalEvidenceSeries } from "@/lib/admin/clinical-evidence";
 
 const BASE = "/resupply-api";
 
@@ -240,6 +241,14 @@ export function PatientResupplyTab({ patientId }: { patientId: string }) {
                       >
                         window {t.windowStartDate} → {t.windowEndDate}
                       </span>
+                      {isClinical && (
+                        <EvidenceSparkline
+                          kind={t.kind}
+                          nights={data.nights}
+                          windowStartDate={t.windowStartDate}
+                          windowEndDate={t.windowEndDate}
+                        />
+                      )}
                     </div>
                     <span
                       className="text-[11px] whitespace-nowrap"
@@ -529,6 +538,63 @@ function TherapyTrendsCard({ nights }: { nights: TherapyNight[] }) {
         />
       </div>
     </Card>
+  );
+}
+
+// Per-signal evidence cutout: the metric that fired a CLINICAL trigger,
+// sliced to the rule's detection window. Lets a clinician see WHY the
+// signal fired (the trend shape) without leaving the patient page —
+// pressure for pressure_at_max, AHI for the AHI signals, usage for the
+// adherence signals.
+function EvidenceSparkline({
+  kind,
+  nights,
+  windowStartDate,
+  windowEndDate,
+}: {
+  kind: SmartTriggerKind;
+  nights: TherapyNight[];
+  windowStartDate: string;
+  windowEndDate: string;
+}) {
+  const series = buildClinicalEvidenceSeries(
+    kind,
+    nights,
+    windowStartDate,
+    windowEndDate,
+  );
+  if (!series) return null;
+  if (series.sampleCount === 0) {
+    return (
+      <span
+        className="block text-[11px] mt-1"
+        style={{ color: "hsl(var(--ink-3))" }}
+      >
+        {series.label}: no nights on file in this window
+      </span>
+    );
+  }
+  return (
+    <div className="mt-1.5 flex items-center gap-2">
+      <Sparkline
+        values={series.values}
+        color={series.color}
+        width={120}
+        height={24}
+        ariaLabel={`${series.label} trend over the detection window`}
+      />
+      <span
+        className="text-[11px] tabular-nums whitespace-nowrap"
+        style={{ color: "hsl(var(--ink-3))" }}
+      >
+        {series.label}{" "}
+        <span style={{ color: "hsl(var(--ink-1))", fontWeight: 600 }}>
+          {series.latest == null ? "—" : series.latest.toFixed(1)}
+          {series.unit}
+        </span>{" "}
+        · {series.sampleCount} night{series.sampleCount === 1 ? "" : "s"}
+      </span>
+    </div>
   );
 }
 

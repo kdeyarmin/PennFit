@@ -18,7 +18,7 @@
 
 import { Router, type IRouter } from "express";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { requirePermission } from "../../middlewares/requireAdmin";
 
@@ -36,7 +36,13 @@ router.get(
   "/admin/followups",
   requirePermission("conversations.manage"),
   async (req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+    // Fail closed: never widen to all tenants on a missing orgId.
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const db = getOrgScopedClient(orgId);
 
     // The original SQL implementation joined each followup table
     // against its identity table. PostgREST exposes embedded selects
@@ -46,15 +52,13 @@ router.get(
     // Two-step is cleaner and round-trip cost is bounded: at most 4
     // queries, all within the same Supabase region.
     const [shopFollowupsRes, patientFollowupsRes] = await Promise.all([
-      supabase
-        .schema("resupply")
+      db
         .from("shop_customer_followups")
         .select("id, customer_id, body, due_at, created_by_email, created_at")
         .is("completed_at", null)
         .order("due_at", { ascending: true })
         .limit(PER_SIDE_CAP),
-      supabase
-        .schema("resupply")
+      db
         .from("patient_followups")
         .select("id, patient_id, body, due_at, created_by_email, created_at")
         .is("completed_at", null)
@@ -64,8 +68,22 @@ router.get(
     if (shopFollowupsRes.error) throw shopFollowupsRes.error;
     if (patientFollowupsRes.error) throw patientFollowupsRes.error;
 
-    const shopFollowups = shopFollowupsRes.data ?? [];
-    const patientFollowups = patientFollowupsRes.data ?? [];
+    const shopFollowups = (shopFollowupsRes.data ?? []) as Array<{
+      id: string;
+      customer_id: string;
+      body: string;
+      due_at: string;
+      created_by_email: string | null;
+      created_at: string;
+    }>;
+    const patientFollowups = (patientFollowupsRes.data ?? []) as Array<{
+      id: string;
+      patient_id: string;
+      body: string;
+      due_at: string;
+      created_by_email: string | null;
+      created_at: string;
+    }>;
     const customerIds = Array.from(
       new Set(shopFollowups.map((r) => r.customer_id)),
     );
@@ -75,15 +93,13 @@ router.get(
 
     const [customersRes, patientsRes] = await Promise.all([
       customerIds.length > 0
-        ? supabase
-            .schema("resupply")
+        ? db
             .from("shop_customers")
             .select("customer_id, display_name, email_lower")
             .in("customer_id", customerIds)
         : Promise.resolve({ data: [], error: null } as const),
       patientIds.length > 0
-        ? supabase
-            .schema("resupply")
+        ? db
             .from("patients")
             .select("id, legal_first_name, legal_last_name")
             .in("id", patientIds)
@@ -92,13 +108,21 @@ router.get(
     if (customersRes.error) throw customersRes.error;
     if (patientsRes.error) throw patientsRes.error;
 
-    const customerByIdEntries = (customersRes.data ?? []).map(
-      (c) => [c.customer_id, c] as const,
-    );
+    const customerByIdEntries = (
+      (customersRes.data ?? []) as Array<{
+        customer_id: string;
+        display_name: string | null;
+        email_lower: string | null;
+      }>
+    ).map((c) => [c.customer_id, c] as const);
     const customerById = new Map(customerByIdEntries);
-    const patientByIdEntries = (patientsRes.data ?? []).map(
-      (p) => [p.id, p] as const,
-    );
+    const patientByIdEntries = (
+      (patientsRes.data ?? []) as Array<{
+        id: string;
+        legal_first_name: string;
+        legal_last_name: string;
+      }>
+    ).map((p) => [p.id, p] as const);
     const patientById = new Map(patientByIdEntries);
 
     const merged = [

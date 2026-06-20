@@ -141,6 +141,14 @@ export function makeForgotPasswordHandler(
 
     const t = now();
     const token = issueToken();
+    // Invalidate any earlier still-live reset links first — repeat
+    // forgot-password requests must not leave a stack of concurrently
+    // valid tokens sitting in the user's inbox.
+    await deps.repo.expireUnconsumedEmailTokens({
+      userId: user.id,
+      purpose: "password_reset",
+      at: t,
+    });
     await deps.repo.insertEmailToken({
       tokenHash: token.hash,
       userId: user.id,

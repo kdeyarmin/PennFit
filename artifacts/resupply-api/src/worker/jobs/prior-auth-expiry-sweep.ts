@@ -55,9 +55,10 @@
 import type PgBoss from "pg-boss";
 
 import { logAuditBestEffort } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { forEachActiveOrg } from "../lib/for-each-active-org";
 import { createQueueWithDlq, CRON_SCAN_QUEUE_OPTS } from "../lib/queue-options";
 
 const SWEEP_JOB = "prior-auth.expiry-sweep";
@@ -112,10 +113,11 @@ function addDays(base: Date, days: number): Date {
  * @returns The populated `ExpirySweepStats` containing counts of expired records, total heads-up alerts queued, and per-window counts for 30, 14, and 7 day windows.
  * @throws If the initial query for overdue prior authorizations fails.
  */
-export async function runPriorAuthExpirySweep(
+export async function runPriorAuthExpirySweepForOrg(
+  orgId: string,
   today: Date = new Date(),
 ): Promise<ExpirySweepStats> {
-  const supabase = getSupabaseServiceRoleClient();
+  const supabase = getOrgScopedClient(orgId);
   const todayIso = isoDate(today);
 
   const stats: ExpirySweepStats = {
@@ -147,7 +149,6 @@ export async function runPriorAuthExpirySweep(
     let cursor = "";
     for (;;) {
       let q = supabase
-        .schema("resupply")
         .from("prior_authorizations")
         .select(
           "id, patient_id, hcpcs_code, payer_name, approved_through, auth_number",
@@ -177,7 +178,6 @@ export async function runPriorAuthExpirySweep(
     // partial unique index, so the duplicate INSERT would throw a
     // 23505) and over-report the expired count.
     const { data: claimed, error: updErr } = await supabase
-      .schema("resupply")
       .from("prior_authorizations")
       .update({ status: "expired" })
       .eq("id", row.id)
@@ -200,7 +200,6 @@ export async function runPriorAuthExpirySweep(
     // CSR alert — critical: patient may need a dispense block until
     // the renewal lands.
     const { error: alertErr } = await supabase
-      .schema("resupply")
       .from("csr_compliance_alerts")
       .insert({
         patient_id: row.patient_id,
@@ -273,7 +272,6 @@ export async function runPriorAuthExpirySweep(
       let cursor = "";
       for (;;) {
         let q = supabase
-          .schema("resupply")
           .from("prior_authorizations")
           .select(
             "id, patient_id, hcpcs_code, payer_name, approved_through, auth_number",
@@ -305,7 +303,6 @@ export async function runPriorAuthExpirySweep(
       // already exists in 'open' state. metric_snapshot is jsonb so we
       // use ->> to compare a specific field.
       const { data: existing, error: existingErr } = await supabase
-        .schema("resupply")
         .from("csr_compliance_alerts")
         .select("id")
         .eq("patient_id", row.patient_id)
@@ -329,7 +326,6 @@ export async function runPriorAuthExpirySweep(
         win <= 7 ? "critical" : "warning";
 
       const { error: headsUpErr } = await supabase
-        .schema("resupply")
         .from("csr_compliance_alerts")
         .insert({
           patient_id: row.patient_id,
@@ -357,6 +353,35 @@ export async function runPriorAuthExpirySweep(
     }
   }
 
+  return stats;
+}
+
+/**
+ * Run the expiry sweep for EVERY active tenant. `prior_authorizations`
+ * and `csr_compliance_alerts` are tenant-scoped, so the sweep fans out
+ * via `forEachActiveOrg` (per-tenant error isolation) and sums the
+ * counts. Single-tenant behavior is byte-identical to the old seed-org
+ * sweep.
+ */
+export async function runPriorAuthExpirySweep(
+  today: Date = new Date(),
+): Promise<ExpirySweepStats> {
+  const stats: ExpirySweepStats = {
+    expired: 0,
+    headsUpQueued: 0,
+    windows: { 30: 0, 14: 0, 7: 0 },
+  };
+  await forEachActiveOrg(
+    async (orgId) => {
+      const s = await runPriorAuthExpirySweepForOrg(orgId, today);
+      stats.expired += s.expired;
+      stats.headsUpQueued += s.headsUpQueued;
+      stats.windows[30] += s.windows[30];
+      stats.windows[14] += s.windows[14];
+      stats.windows[7] += s.windows[7];
+    },
+    { jobName: SWEEP_JOB },
+  );
   return stats;
 }
 

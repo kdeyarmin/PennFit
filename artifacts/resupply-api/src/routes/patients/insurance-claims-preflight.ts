@@ -8,7 +8,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { preflightClaim } from "../../lib/billing/claim-preflight";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -33,9 +33,13 @@ router.get(
     // mismatched :id / :claimId pairing would return another patient's
     // claim preflight (ICD-10 diagnosis, payer, HCPCS lines) — an IDOR.
     // preflightClaim() looks the claim up by id only, so we gate here.
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: owned, error: ownErr } = await supabase
-      .schema("resupply")
       .from("insurance_claims")
       .select("id")
       .eq("id", parsed.data.claimId)

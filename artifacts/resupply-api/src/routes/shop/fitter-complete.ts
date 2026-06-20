@@ -30,12 +30,12 @@ import rateLimit from "express-rate-limit";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 
-import {
-  type Database,
-  getSupabaseServiceRoleClient,
-} from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { requestHost } from "../../lib/request-host";
+import { resolveOrgIdByHost } from "../../lib/tenant-branding";
+import { resolveOrgIdForSignedRecord } from "../../lib/storefront/signed-link-org";
 
 type FitterLeadsUpdate =
   Database["resupply"]["Tables"]["fitter_leads"]["Update"];
@@ -286,14 +286,24 @@ router.post("/shop/fitter-complete", async (req, res) => {
   const data = parse.data;
 
   try {
-    const supabase = getSupabaseServiceRoleClient();
+    // Email-based enrollment from the /results page — no token record id
+    // to derive the tenant from, so resolve it from the request HOST (the
+    // tenant whose storefront the patient is on). Fails soft to the seed
+    // org for the platform host / single-tenant.
+    const orgId = await resolveOrgIdByHost(requestHost(req));
+    if (!orgId) {
+      // No tenant context — mirror the best-effort posture: never 5xx
+      // the /results page, just report "not enrolled".
+      res.json({ ok: true, enrolled: false, reason: "error" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // Find the most-recent lead row for this email. We don't error
     // if there's no row (the patient may have submitted /consent
     // before this column existed, or via a different device) — we
     // just no-op and return 200 so the patient flow keeps moving.
     const { data: rows, error: lookupErr } = await supabase
-      .schema("resupply")
       .from("fitter_leads")
       .select("id, journey_stage, marketing_opt_in, completed_at")
       .eq("email", data.email)
@@ -340,7 +350,6 @@ router.post("/shop/fitter-complete", async (req, res) => {
       // Still stamp completed_at so admin reporting knows the
       // patient finished the fitter, but don't schedule a touch.
       const { error: updateErr } = await supabase
-        .schema("resupply")
         .from("fitter_leads")
         .update({
           completed_at: new Date().toISOString(),
@@ -366,7 +375,6 @@ router.post("/shop/fitter-complete", async (req, res) => {
     ).toISOString();
 
     const { error: updateErr } = await supabase
-      .schema("resupply")
       .from("fitter_leads")
       .update({
         completed_at: nowIso,
@@ -598,19 +606,34 @@ router.get("/shop/track/o", openTrackingRateLimiter, async (req, res) => {
   // when crossing the threshold. We do this in a single Supabase
   // RPC-style update to keep the latency low (the patient is
   // waiting for the pixel response).
-  recordOpenEvent(verify.leadId, verify.touchIndex).catch((err) => {
-    // Async fire-and-forget; never block the pixel response.
-    logger.warn({ err, leadId: verify.leadId }, "shop/track/o: record failed");
-  });
+  const recordVerify = verify;
+  // Resolve the tenant FROM the lead the open-tracking token references.
+  resolveOrgIdForSignedRecord("fitter_leads", recordVerify.leadId)
+    .then((orgId) => {
+      if (!orgId) return;
+      return recordOpenEvent(
+        orgId,
+        recordVerify.leadId,
+        recordVerify.touchIndex,
+      );
+    })
+    .catch((err) => {
+      // Async fire-and-forget; never block the pixel response.
+      logger.warn(
+        { err, leadId: recordVerify.leadId },
+        "shop/track/o: record failed",
+      );
+    });
 
   sendPixel();
 });
 
 async function recordOpenEvent(
+  orgId: string,
   leadId: string,
   touchIndex: number,
 ): Promise<void> {
-  const supabase = getSupabaseServiceRoleClient();
+  const supabase = getOrgScopedClient(orgId);
   // Read → compute → write. PostgREST doesn't expose a server-side
   // increment expression, so we do the read-modify-write here. The
   // tight loop on this code path is tiny (one open per send per
@@ -618,7 +641,6 @@ async function recordOpenEvent(
   // concurrent open by the same recipient at the same instant might
   // be counted once instead of twice — acceptable for a noisy signal.
   const { data: lead, error: readErr } = await supabase
-    .schema("resupply")
     .from("fitter_leads")
     .select("id, engagement_score, hot_lead_at, journey_stage, first_order_id")
     .eq("id", leadId)
@@ -654,7 +676,6 @@ async function recordOpenEvent(
     update.hot_lead_at = nowIso;
   }
   const { error: writeErr } = await supabase
-    .schema("resupply")
     .from("fitter_leads")
     .update(update)
     .eq("id", leadId);
@@ -677,6 +698,7 @@ async function recordOpenEvent(
   // signal is lost (engagement_score is already bumped above).
   try {
     const { error: rpcErr } = await supabase
+      .raw()
       .schema("resupply")
       .rpc("record_fitter_touch_open", {
         p_lead_id: leadId,
@@ -829,7 +851,7 @@ function publicBaseUrl(): string {
     process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL ??
     (process.env.RAILWAY_PUBLIC_DOMAIN
       ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
-      : "https://pennpaps.com")
+      : "https://cmbreathe.com")
   ).replace(/\/$/, "");
 }
 
@@ -877,15 +899,26 @@ router.get("/shop/track/c", clickTrackRateLimiter, async (req, res) => {
     req.socket?.remoteAddress ||
     req.headers["x-forwarded-for"]?.toString().split(",")[0]?.trim() ||
     null;
-  recordClickEvent(
-    verify.leadId,
-    verify.touchIndex,
-    verify.linkKey,
-    verify.variantKey,
-    submitterIp,
-  ).catch((err) => {
-    logger.warn({ err, leadId: verify.leadId }, "shop/track/c: record failed");
-  });
+  const clickVerify = verify;
+  // Resolve the tenant FROM the lead the click-tracking token references.
+  resolveOrgIdForSignedRecord("fitter_leads", clickVerify.leadId)
+    .then((orgId) => {
+      if (!orgId) return;
+      return recordClickEvent(
+        orgId,
+        clickVerify.leadId,
+        clickVerify.touchIndex,
+        clickVerify.linkKey,
+        clickVerify.variantKey,
+        submitterIp,
+      );
+    })
+    .catch((err) => {
+      logger.warn(
+        { err, leadId: clickVerify.leadId },
+        "shop/track/c: record failed",
+      );
+    });
 
   res.redirect(302, dest);
 });
@@ -897,16 +930,16 @@ router.get("/shop/track/c", clickTrackRateLimiter, async (req, res) => {
 const CLICK_SCORE_WEIGHT = 5;
 
 async function recordClickEvent(
+  orgId: string,
   leadId: string,
   touchIndex: number,
   linkKey: string,
   variantKey: string,
   submitterIp: string | null,
 ): Promise<void> {
-  const supabase = getSupabaseServiceRoleClient();
+  const supabase = getOrgScopedClient(orgId);
   // 1. Read the lead row so we can decide whether to flip hot.
   const { data: lead, error: readErr } = await supabase
-    .schema("resupply")
     .from("fitter_leads")
     .select(
       "id, engagement_score, click_count, hot_lead_at, journey_stage, first_order_id",
@@ -931,7 +964,6 @@ async function recordClickEvent(
   // shouldn't block the engagement-score bump.
   try {
     const { error: clickInsertErr } = await supabase
-      .schema("resupply")
       .from("fitter_campaign_clicks")
       .insert({
         lead_id: leadId,
@@ -975,7 +1007,6 @@ async function recordClickEvent(
     update.hot_lead_at = nowIso;
   }
   const { error: writeErr } = await supabase
-    .schema("resupply")
     .from("fitter_leads")
     .update(update)
     .eq("id", leadId);
@@ -1072,9 +1103,17 @@ router.get(
     }
 
     try {
-      const supabase = getSupabaseServiceRoleClient();
+      // Resolve the tenant FROM the lead the unsubscribe token references.
+      const orgId = await resolveOrgIdForSignedRecord(
+        "fitter_leads",
+        verify.leadId,
+      );
+      if (!orgId) {
+        res.status(500).type("text/html").send(unsubscribeHtml("error"));
+        return;
+      }
+      const supabase = getOrgScopedClient(orgId);
       const { error } = await supabase
-        .schema("resupply")
         .from("fitter_leads")
         .update({
           journey_stage: "unsubscribed",

@@ -26,9 +26,11 @@ import { Router, type IRouter, type Request } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 import { requireTwilioSignature } from "@workspace/resupply-telecom";
 
+import { resolveOrgIdForSignedRecord } from "../../lib/storefront/signed-link-org";
+import { resolveBrandingByOrgId } from "../../lib/tenant-branding";
 import { voiceScriptForDay } from "../../lib/checkin-dispatcher";
 import { logger } from "../../lib/logger";
 import {
@@ -65,15 +67,35 @@ const VALID_DAYS: ReadonlyArray<OnboardingDayLabel> = [
 router.post(
   "/voice/checkin-twiml",
   signatureMiddleware,
-  (req: Request, res) => {
+  async (req: Request, res) => {
     const cfg = readVoiceConfigOrNull();
     const dayRaw = (req.query["day"] ?? "").toString();
     const day = (VALID_DAYS as readonly string[]).includes(dayRaw)
       ? (dayRaw as OnboardingDayLabel)
       : "day7";
-    const script = voiceScriptForDay(day);
     const patientId = (req.query["patientId"] ?? "").toString();
     const journeyId = (req.query["journeyId"] ?? "").toString();
+
+    // Brand the spoken script with the patient's tenant (the patient id rode
+    // in the signed URL). Seed / unresolved → "PennPaps", unchanged.
+    //
+    // Fail-soft: this is a Twilio webhook, so a tenant-lookup hiccup
+    // (PostgREST/network) must NEVER 500 — that would drop the patient's
+    // check-in call. resolveOrgIdForSignedRecord isn't itself guarded, so
+    // catch here and fall back to the default brand (resolveBrandingByOrgId
+    // is already fail-soft).
+    let orgId: string | null = null;
+    try {
+      orgId = await resolveOrgIdForSignedRecord("patients", patientId);
+    } catch (err) {
+      logger.warn(
+        { err },
+        "voice.checkin_twiml: tenant resolution failed; using default brand",
+      );
+    }
+    const brandName = (await resolveBrandingByOrgId(orgId ?? undefined))
+      .storefrontName;
+    const script = voiceScriptForDay(day, brandName);
 
     // The press-1 callback URL embeds the same identifiers so we don't
     // have to rely on Twilio re-sending them. Dropping back through
@@ -102,7 +124,7 @@ router.post(
           `    <Say voice="Polly.Joanna">If you would like a member of our team to call you back, press 1 now. Otherwise just hang up.</Say>`,
           `  </Gather>`,
           // <Gather> falls through here on timeout — no input, hang up.
-          `  <Say voice="Polly.Joanna">Thanks for using Penn Paps. Goodbye.</Say>`,
+          `  <Say voice="Polly.Joanna">Thanks for using ${escapeXmlText(brandName)}. Goodbye.</Say>`,
           `  <Hangup/>`,
           `</Response>`,
         ].join("\n"),
@@ -155,13 +177,32 @@ router.post(
       ? dayRaw
       : null;
 
-    const supabase = getSupabaseServiceRoleClient();
+    // Webhook: no req.orgId. The patient id rode in the signed TwiML URL and
+    // is globally unique, so resolve the tenant FROM the patient record (not
+    // the seed org) — otherwise a non-seed tenant's check-in call dead-ends
+    // because the scoped patient lookup below would filter to the seed org.
+    // A miss falls back to seed and degrades to the same Goodbye hangup this
+    // handler already returns for an unknown patient, so a tenant-context gap
+    // never 5xx-loops Twilio.
+    const orgId = await resolveOrgIdForSignedRecord("patients", patientId);
+    if (!orgId) {
+      res
+        .status(200)
+        .type("application/xml")
+        .send(
+          [
+            `<?xml version="1.0" encoding="UTF-8"?>`,
+            `<Response><Say voice="Polly.Joanna">Thanks. Goodbye.</Say><Hangup/></Response>`,
+          ].join("\n"),
+        );
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // Belt-and-braces: confirm the patient exists before we insert.
     // A malicious caller who somehow forged a Twilio signature still
     // can't use this endpoint to create alerts for arbitrary UUIDs.
     const { data: existsRow, error: existsErr } = await supabase
-      .schema("resupply")
       .from("patients")
       .select("id")
       .eq("id", patientId)
@@ -194,7 +235,6 @@ router.post(
     }
 
     const { error: insertErr } = await supabase
-      .schema("resupply")
       .from("csr_compliance_alerts")
       .insert({
         patient_id: patientId,

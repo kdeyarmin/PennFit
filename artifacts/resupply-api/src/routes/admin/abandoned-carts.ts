@@ -39,7 +39,7 @@
 import { Router, type IRouter } from "express";
 
 import {
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
   type ShopAbandonedCartItem,
 } from "@workspace/resupply-db";
 
@@ -59,10 +59,15 @@ router.get(
   "/admin/shop/abandoned-carts",
   adminReadRateLimiter,
   requireAdmin,
-  async (_req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
-    const { data: rows, error } = await supabase
-      .schema("resupply")
+  async (req, res) => {
+    // Fail closed: never widen to all tenants on a missing orgId.
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const db = getOrgScopedClient(orgId);
+    const { data: rows, error } = await db
       .from("shop_abandoned_carts")
       .select(
         "id, customer_id, email, items, subtotal_cents, currency, updated_at, reminded_at, recovered_at, cleared_at, created_at",
@@ -85,7 +90,21 @@ router.get(
     }
 
     res.json({
-      rows: (rows ?? []).map((r) => {
+      rows: (
+        (rows ?? []) as Array<{
+          id: string;
+          customer_id: string | null;
+          email: string | null;
+          items: unknown;
+          subtotal_cents: number | null;
+          currency: string | null;
+          updated_at: string;
+          reminded_at: string | null;
+          recovered_at: string | null;
+          cleared_at: string | null;
+          created_at: string;
+        }>
+      ).map((r) => {
         const items = (r.items ?? []) as unknown as ShopAbandonedCartItem[];
         return {
           id: r.id,
@@ -118,7 +137,13 @@ router.post(
   requirePermission("bulk_campaigns.send"),
   adminRateLimit({ name: "abandoned_carts.send_due", preset: "bulk" }),
   async (req, res) => {
-    const stats = await runCartAbandonmentDispatch({ log: req.log });
+    // Fail closed: never widen to all tenants on a missing orgId.
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const stats = await runCartAbandonmentDispatch({ orgId, log: req.log });
     res.json(stats);
   },
 );

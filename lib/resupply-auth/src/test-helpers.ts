@@ -141,6 +141,8 @@ export function makeMemoryRepo(now: () => Date = () => new Date()): MemoryRepo {
         revokedAt: null,
         ip: input.ip,
         userAgentHash: input.userAgentHash,
+        impersonatedOrgId: input.impersonatedOrgId ?? null,
+        impersonatorUserId: input.impersonatorUserId ?? null,
       };
       sessions.set(session.id, session);
       sessionsByHash.set(input.tokenHash.toString("hex"), session);
@@ -178,6 +180,18 @@ export function makeMemoryRepo(now: () => Date = () => new Date()): MemoryRepo {
         consumedAt: null,
         createdAt: now(),
       });
+    },
+    async expireUnconsumedEmailTokens(input) {
+      for (const row of emailTokens.values()) {
+        if (
+          row.userId === input.userId &&
+          row.purpose === input.purpose &&
+          !row.consumedAt &&
+          row.expiresAt.getTime() > input.at.getTime()
+        ) {
+          row.expiresAt = input.at;
+        }
+      }
     },
     async consumeEmailToken(input) {
       const key = input.tokenHash.toString("hex");

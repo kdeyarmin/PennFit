@@ -12,11 +12,14 @@
 // queue both stay idempotent so a CSR can hit "Run match" twice
 // without double-touching anything.
 
-import type { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import type { Database, OrgScopedClient } from "@workspace/resupply-db";
 
 import { recallMatchesAsset, type RecallSerialMatch } from "./recall-match";
 
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+type EquipmentAssetRow =
+  Database["resupply"]["Tables"]["equipment_assets"]["Row"];
+type RecallNotificationRow =
+  Database["resupply"]["Tables"]["recall_notifications"]["Row"];
 
 export interface BulkMatchResult {
   recallId: string;
@@ -27,12 +30,11 @@ export interface BulkMatchResult {
 }
 
 export async function runRecallBulkMatch(
-  supabase: SupabaseClient,
+  supabase: OrgScopedClient,
   recallId: string,
 ): Promise<BulkMatchResult> {
   // 1. Load the recall row + its match criteria.
   const { data: recall, error: recallErr } = await supabase
-    .schema("resupply")
     .from("equipment_recalls")
     .select("id, manufacturer, model_match, serial_match, status")
     .eq("id", recallId)
@@ -48,7 +50,6 @@ export async function runRecallBulkMatch(
   // the model + serial filters. The (manufacturer, model, status)
   // index makes this cheap.
   const { data: candidates, error: candErr } = await supabase
-    .schema("resupply")
     .from("equipment_assets")
     .select("id, patient_id, manufacturer, model, serial_number, recall_id")
     .ilike("manufacturer", recall.manufacturer)
@@ -56,7 +57,7 @@ export async function runRecallBulkMatch(
   if (candErr) throw candErr;
 
   const serialMatch = (recall.serial_match ?? null) as RecallSerialMatch;
-  const matched = (candidates ?? []).filter((a) =>
+  const matched = ((candidates ?? []) as EquipmentAssetRow[]).filter((a) =>
     recallMatchesAsset({
       asset: {
         manufacturer: a.manufacturer,
@@ -87,7 +88,6 @@ export async function runRecallBulkMatch(
   // wins, and matches our idempotency posture.
   const matchedIds = matched.map((a) => a.id);
   const { error: updErr } = await supabase
-    .schema("resupply")
     .from("equipment_assets")
     .update({ recall_id: recallId, status: "recalled" })
     .in("id", matchedIds)
@@ -97,18 +97,18 @@ export async function runRecallBulkMatch(
   // 4. Check which (recall, asset) pairs already have a
   // notifications row so we can report newlyQueued vs alreadyQueued.
   const { data: existing, error: existingErr } = await supabase
-    .schema("resupply")
     .from("recall_notifications")
     .select("asset_id")
     .eq("recall_id", recallId)
     .in("asset_id", matchedIds);
   if (existingErr) throw existingErr;
-  const alreadyQueued = new Set((existing ?? []).map((r) => r.asset_id));
+  const alreadyQueued = new Set(
+    ((existing ?? []) as RecallNotificationRow[]).map((r) => r.asset_id),
+  );
   const toInsert = matched.filter((a) => !alreadyQueued.has(a.id));
 
   if (toInsert.length > 0) {
     const { error: insErr } = await supabase
-      .schema("resupply")
       .from("recall_notifications")
       .insert(
         toInsert.map((a) => ({

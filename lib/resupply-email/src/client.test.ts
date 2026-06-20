@@ -42,11 +42,12 @@ describe("createSendgridClient", () => {
     expect(() => createSendgridClient()).toThrow(/SENDGRID_API_KEY/);
   });
 
-  it("defaults the From address to info@pennpaps.com when SENDGRID_FROM_EMAIL is unset", async () => {
+  it("defaults the From address to the platform identity (noreply@cmbreathe.com) when SENDGRID_FROM_EMAIL is unset", async () => {
     process.env.SENDGRID_API_KEY = "SG.xxx";
     // SENDGRID_FROM_EMAIL intentionally left unset — the From address is a
     // fixed platform constant, so the client must NOT throw and must send
-    // from info@pennpaps.com (ADR 016/018).
+    // from the CareMetric Breathe platform address (per-tenant senders, e.g.
+    // Penn's info@pennpaps.com, override it via the fromEmail option).
     const send = vi
       .fn()
       .mockResolvedValue([
@@ -61,7 +62,8 @@ describe("createSendgridClient", () => {
       text: "t",
     });
     expect(send.mock.calls[0]?.[0].from).toEqual({
-      email: "info@pennpaps.com",
+      email: "noreply@cmbreathe.com",
+      name: "CareMetric Breathe",
     });
   });
 
@@ -110,9 +112,12 @@ describe("createSendgridClient", () => {
     });
   });
 
-  it("sends without from-name when SENDGRID_FROM_NAME is unset", async () => {
+  it("falls back to the platform from-name when SENDGRID_FROM_NAME is unset", async () => {
     process.env.SENDGRID_API_KEY = "SG.xxx";
     process.env.SENDGRID_FROM_EMAIL = "no-reply@penn.example";
+    // SENDGRID_FROM_NAME intentionally left unset — the display name is a
+    // platform constant fallback, so an unconfigured tenant still renders a
+    // branded "From" name (CareMetric Breathe) rather than a bare address.
     const send = vi
       .fn()
       .mockResolvedValue([
@@ -132,6 +137,7 @@ describe("createSendgridClient", () => {
 
     expect(send.mock.calls[0]?.[0].from).toEqual({
       email: "no-reply@penn.example",
+      name: "CareMetric Breathe",
     });
   });
 

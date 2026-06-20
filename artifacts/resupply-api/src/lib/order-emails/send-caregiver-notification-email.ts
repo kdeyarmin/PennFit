@@ -25,13 +25,15 @@
 // caregiver opt-in. The patient's UI section makes the scope
 // explicit.
 
-import {
-  createSendgridClient,
-  EmailApiError,
-  EmailConfigError,
-} from "@workspace/resupply-email";
+import { EmailApiError, EmailConfigError } from "@workspace/resupply-email";
 
-const DEFAULT_BASE_URL = "https://pennpaps.com";
+import { createTenantSendgridClient } from "../email/tenant-sender.js";
+import {
+  resolveBrandingByOrgId,
+  resolveTenantBaseUrl,
+} from "../tenant-branding.js";
+
+const DEFAULT_BASE_URL = "https://cmbreathe.com";
 
 export type CaregiverEventKind = "shipped" | "delivered";
 
@@ -48,6 +50,14 @@ export interface SendCaregiverNotificationEmailInput {
   carrier?: string | null;
   trackingNumber?: string | null;
   baseUrlOverride?: string;
+  /**
+   * Tenant the order belongs to. When set and the tenant has its own
+   * From identity (migration 0360), the notification is sent under it
+   * (G6) and the copy carries the tenant's storefront brand; otherwise
+   * the platform default From/brand is used. Omit / undefined leaves the
+   * platform default unchanged.
+   */
+  orgId?: string;
 }
 
 export interface SendCaregiverNotificationEmailResult {
@@ -86,20 +96,21 @@ function copyFor(
   patientLabel: string,
   carrier: string | null | undefined,
   trackingNumber: string | null | undefined,
+  brandName: string,
 ): Copy {
   if (kind === "shipped") {
     const trail =
       carrier && trackingNumber ? ` (${carrier} ${trackingNumber})` : "";
     return {
-      subject: `Shipped: PennPaps supplies for ${patientLabel}`,
+      subject: `Shipped: ${brandName} supplies for ${patientLabel}`,
       headline: `Supplies are on the way to ${patientLabel}`,
-      body: `PennPaps just shipped a CPAP supplies order to ${patientLabel}${trail}. We're sending this to you because ${patientLabel} listed you as a designated contact for shipment updates.`,
+      body: `${brandName} just shipped a CPAP supplies order to ${patientLabel}${trail}. We're sending this to you because ${patientLabel} listed you as a designated contact for shipment updates.`,
     };
   }
   return {
-    subject: `Delivered: PennPaps supplies for ${patientLabel}`,
+    subject: `Delivered: ${brandName} supplies for ${patientLabel}`,
     headline: `Delivered to ${patientLabel}`,
-    body: `According to the carrier, ${patientLabel}'s PennPaps supplies have been delivered. We're sending this to you because ${patientLabel} listed you as a designated contact for shipment updates.`,
+    body: `According to the carrier, ${patientLabel}'s ${brandName} supplies have been delivered. We're sending this to you because ${patientLabel} listed you as a designated contact for shipment updates.`,
   };
 }
 
@@ -108,7 +119,9 @@ export async function sendCaregiverNotificationEmail(
 ): Promise<SendCaregiverNotificationEmailResult> {
   let client;
   try {
-    client = createSendgridClient();
+    // Send under the tenant's own From identity when configured (G6);
+    // falls back to the platform default when it isn't / orgId is unset.
+    client = await createTenantSendgridClient(input.orgId);
   } catch (err) {
     if (err instanceof EmailConfigError) {
       return { configured: false, delivered: false, error: err.message };
@@ -116,7 +129,17 @@ export async function sendCaregiverNotificationEmail(
     throw err;
   }
 
-  const base = publicBaseUrl(input.baseUrlOverride);
+  // Brand the email with the tenant's own storefront name (G6). For the seed
+  // tenant this resolves to "PennPaps" (its stored brand), so single-tenant
+  // copy is unchanged; a second tenant's notification carries ITS brand.
+  const brand = await resolveBrandingByOrgId(input.orgId);
+  const brandName = brand.storefrontName;
+
+  const base = publicBaseUrl(
+    input.baseUrlOverride ??
+      (await resolveTenantBaseUrl(input.orgId)) ??
+      undefined,
+  );
   const removeUrl = `${base}/account#caregiver`;
   const patientLabel = input.patientFirstName?.trim() || "your contact";
   const copy = copyFor(
@@ -124,6 +147,7 @@ export async function sendCaregiverNotificationEmail(
     patientLabel,
     input.carrier,
     input.trackingNumber,
+    brandName,
   );
   const greeting = `Hi ${escapeHtml(input.caregiverName.split(" ")[0] ?? input.caregiverName)},`;
 
@@ -135,7 +159,7 @@ export async function sendCaregiverNotificationEmail(
     "If you'd rather not receive these, ask the account holder to remove you",
     `from their designated contacts: ${removeUrl}`,
     "",
-    "—The PennPaps team",
+    `—The ${brandName} team`,
   ].join("\n");
 
   const html = `<!doctype html>
@@ -156,7 +180,7 @@ export async function sendCaregiverNotificationEmail(
           </p>
         </td></tr>
         <tr><td style="padding:16px 28px 24px;border-top:1px solid #eef0f5;font-size:12px;color:#8b95a9;">
-          The PennPaps team
+          The ${escapeHtml(brandName)} team
         </td></tr>
       </table>
     </td></tr>

@@ -248,10 +248,11 @@ function CustomerChatSectionInner(): React.JSX.Element | null {
 
   const greeting = useMemo(() => {
     const name = displayName?.split(" ")[0] ?? null;
+    const bot = contact.assistantStorefrontName;
     return name
-      ? `Hi ${name}! I'm PennBot — happy to help with your orders, subscriptions, device, or supplies. And if you ever need a real person, I can pass you straight to the team. What can I do for you?`
-      : "Hi, I'm PennBot — happy to help with your orders, subscriptions, device, or supplies. And if you ever need a real person, I can pass you straight to the team. What can I do for you?";
-  }, [displayName]);
+      ? `Hi ${name}! I'm ${bot} — happy to help with your orders, subscriptions, device, or supplies. And if you ever need a real person, I can pass you straight to the team. What can I do for you?`
+      : `Hi, I'm ${bot} — happy to help with your orders, subscriptions, device, or supplies. And if you ever need a real person, I can pass you straight to the team. What can I do for you?`;
+  }, [displayName, contact.assistantStorefrontName]);
 
   const sendMessage = useCallback(
     async (rawText: string) => {
@@ -437,7 +438,9 @@ function CustomerChatSectionInner(): React.JSX.Element | null {
       <header className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <Bot className="h-5 w-5 text-muted-foreground" />
-          <h2 className="font-semibold">Ask PennBot about your account</h2>
+          <h2 className="font-semibold">
+            Ask {contact.assistantStorefrontName} about your account
+          </h2>
         </div>
         {hasMessages && (
           <Button
@@ -457,8 +460,9 @@ function CustomerChatSectionInner(): React.JSX.Element | null {
         <ShieldCheck className="h-4 w-4 mt-0.5 shrink-0" />
         <span>
           Quick answers about your orders, subscriptions, device, and supplies.
-          For prescriptions, refunds, or anything PennBot can&apos;t handle,
-          send a message above or call {contact.phoneDisplay}.
+          For prescriptions, refunds, or anything{" "}
+          {contact.assistantStorefrontName} can&apos;t handle, send a message
+          above or call {contact.phoneDisplay}.
         </span>
       </p>
 
@@ -514,7 +518,7 @@ function CustomerChatSectionInner(): React.JSX.Element | null {
           maxLength={MAX_USER_MESSAGE_CHARS}
           disabled={busy}
           data-testid="customer-chat-input"
-          aria-label="Message PennBot"
+          aria-label={`Message ${contact.assistantStorefrontName}`}
           className="flex-1 resize-none"
         />
         <Button

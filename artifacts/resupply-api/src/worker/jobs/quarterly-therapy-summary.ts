@@ -39,13 +39,15 @@ import {
   DEFAULT_COMMUNICATION_PREFERENCES,
   type CommunicationPreferences,
   type Json,
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
+  type OrgScopedClient,
 } from "@workspace/resupply-db";
 
 import { buildQuarterlySummary } from "../../lib/therapy-summary/build-quarterly-html";
 import { sendQuarterlySummaryEmail } from "../../lib/order-emails/send-quarterly-summary-email";
 import { shouldSendEmail } from "../../lib/comm-prefs";
 import { logger } from "../../lib/logger";
+import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import {
   createQueueWithDlq,
   VENDOR_SEND_QUEUE_OPTS,
@@ -111,7 +113,7 @@ type OptInStatus = { optedIn: boolean; hadShopCustomer: boolean };
  * (`.eq` on email_lower) semantics as the original per-row lookup.
  */
 async function loadOptInStatuses(
-  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
+  supabase: OrgScopedClient,
   emails: readonly string[],
 ): Promise<Map<string, OptInStatus>> {
   const lowered = [...new Set(emails.map((e) => e.toLowerCase()))];
@@ -120,7 +122,6 @@ async function loadOptInStatuses(
   for (let i = 0; i < lowered.length; i += CHUNK) {
     const chunk = lowered.slice(i, i + CHUNK);
     const { data: custRows, error } = await supabase
-      .schema("resupply")
       .from("shop_customers")
       .select("email_lower, communication_preferences")
       .in("email_lower", chunk);
@@ -157,7 +158,6 @@ async function loadOptInStatuses(
 }
 
 export async function runQuarterlyTherapySummary(): Promise<QuarterlySummaryStats> {
-  const supabase = getSupabaseServiceRoleClient();
   const stats: QuarterlySummaryStats = {
     candidates: 0,
     sent: 0,
@@ -166,6 +166,29 @@ export async function runQuarterlyTherapySummary(): Promise<QuarterlySummaryStat
     skippedNoShopCustomer: 0,
     failed: 0,
   };
+  await forEachActiveOrg(
+    async (orgId) => {
+      await quarterlySummarySweepForOrg(orgId, stats);
+    },
+    { jobName: JOB_NAME },
+  );
+  return stats;
+}
+
+/**
+ * Run the quarterly-summary sweep for a SINGLE tenant, accumulating into
+ * the shared `stats`. `patients` / `patient_therapy_nights` /
+ * `shop_customers` are org-scoped, so each tenant is swept on its own
+ * org-scoped client and a summary only ever reaches a patient in their own
+ * org. The PER_RUN_MAX send budget (and MAX_SCANNED_PER_RUN scan cap) is
+ * tracked per tenant (local counter) so a busy tenant can't starve the
+ * others out of their send budget.
+ */
+async function quarterlySummarySweepForOrg(
+  orgId: string,
+  stats: QuarterlySummaryStats,
+): Promise<void> {
+  const supabase = getOrgScopedClient(orgId);
 
   const cooldownThreshold = isoDaysAgo(RESEND_COOLDOWN_DAYS);
 
@@ -183,12 +206,14 @@ export async function runQuarterlyTherapySummary(): Promise<QuarterlySummaryStat
   const MAX_SCANNED_PER_RUN = PER_RUN_MAX * 50;
   let lastPatientId: string | null = null;
   let scannedTotal = 0;
+  // Per-tenant send counter — the PER_RUN_MAX budget is each tenant's, not
+  // shared, so one tenant's backlog never starves another's summaries.
+  let sentThisOrg = 0;
   pages: while (
-    stats.sent < PER_RUN_MAX &&
+    sentThisOrg < PER_RUN_MAX &&
     scannedTotal < MAX_SCANNED_PER_RUN
   ) {
     let pageQuery = supabase
-      .schema("resupply")
       .from("patients")
       .select(
         "id, email, legal_first_name, legal_last_name, date_of_birth, quarterly_summary_last_sent_at",
@@ -208,7 +233,9 @@ export async function runQuarterlyTherapySummary(): Promise<QuarterlySummaryStat
     scannedTotal += candidates.length;
     lastPatientId = candidates[candidates.length - 1]!.id;
 
-    const rows: PatientRow[] = candidates.filter(
+    const rows: PatientRow[] = (
+      candidates as Array<Omit<PatientRow, "email"> & { email: string | null }>
+    ).filter(
       (r): r is PatientRow => typeof r.email === "string" && r.email.length > 0,
     );
 
@@ -224,7 +251,7 @@ export async function runQuarterlyTherapySummary(): Promise<QuarterlySummaryStat
     );
 
     for (const patient of rows) {
-      if (stats.sent >= PER_RUN_MAX) break pages;
+      if (sentThisOrg >= PER_RUN_MAX) break pages;
       stats.candidates += 1;
 
       const gate = optInByEmail.get(patient.email.toLowerCase()) ?? {
@@ -250,7 +277,6 @@ export async function runQuarterlyTherapySummary(): Promise<QuarterlySummaryStat
       const endIso = windowEnd.toISOString().slice(0, 10);
 
       const { data: nights, error: nightsErr } = await supabase
-        .schema("resupply")
         .from("patient_therapy_nights")
         .select("night_date, usage_minutes, ahi, leak_rate_l_min")
         .eq("patient_id", patient.id)
@@ -275,7 +301,14 @@ export async function runQuarterlyTherapySummary(): Promise<QuarterlySummaryStat
         windowStart: startIso,
         windowEnd: endIso,
         practiceName,
-        nights: (nights ?? []).map((n) => ({
+        nights: (
+          (nights ?? []) as Array<{
+            night_date: string;
+            usage_minutes: number | null;
+            ahi: number | null;
+            leak_rate_l_min: number | null;
+          }>
+        ).map((n) => ({
           nightDate: n.night_date,
           usageMinutes: n.usage_minutes,
           ahi: n.ahi == null ? null : Number(n.ahi),
@@ -292,7 +325,6 @@ export async function runQuarterlyTherapySummary(): Promise<QuarterlySummaryStat
       // Atomic claim — stamp before the send.
       const claimIso = new Date().toISOString();
       const { data: claimed, error: claimErr } = await supabase
-        .schema("resupply")
         .from("patients")
         .update({ quarterly_summary_last_sent_at: claimIso })
         .eq("id", patient.id)
@@ -315,7 +347,6 @@ export async function runQuarterlyTherapySummary(): Promise<QuarterlySummaryStat
 
       const releaseClaim = async (): Promise<void> => {
         const { error: releaseErr } = await supabase
-          .schema("resupply")
           .from("patients")
           .update({
             quarterly_summary_last_sent_at:
@@ -337,6 +368,7 @@ export async function runQuarterlyTherapySummary(): Promise<QuarterlySummaryStat
           windowStart: startIso,
           windowEnd: endIso,
           fields: summary.fields,
+          orgId,
         });
         if (!result.configured) {
           await releaseClaim();
@@ -352,6 +384,7 @@ export async function runQuarterlyTherapySummary(): Promise<QuarterlySummaryStat
           continue;
         }
         stats.sent += 1;
+        sentThisOrg += 1;
       } catch (err) {
         await releaseClaim();
         stats.failed += 1;
@@ -365,8 +398,6 @@ export async function runQuarterlyTherapySummary(): Promise<QuarterlySummaryStat
       }
     }
   }
-
-  return stats;
 }
 
 export async function registerQuarterlyTherapySummaryJob(

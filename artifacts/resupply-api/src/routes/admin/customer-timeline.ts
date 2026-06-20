@@ -11,7 +11,7 @@
 
 import { Router, type IRouter } from "express";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -100,10 +100,15 @@ router.get(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
-    const sb = (table: string, cols: string) =>
-      supabase
-        .schema("resupply")
+    // Fail closed: never widen to all tenants on a missing orgId.
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const db = getOrgScopedClient(orgId);
+    const sb = (table: Parameters<typeof db.from>[0], cols: string) =>
+      db
         .from(table)
         .select(cols)
         .eq("customer_id", customerId)

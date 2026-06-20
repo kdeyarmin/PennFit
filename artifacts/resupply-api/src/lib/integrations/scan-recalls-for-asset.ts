@@ -9,11 +9,11 @@
 // constraint: a duplicate insert returns a 23505 error which we
 // treat as a no-op, the same pattern used by evaluatePatientSmartTriggers.
 
-import { type getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { type getOrgScopedClient } from "@workspace/resupply-db";
 
 import { recallMatchesAsset } from "../equipment/recall-match";
 
-type Supabase = ReturnType<typeof getSupabaseServiceRoleClient>;
+type Supabase = ReturnType<typeof getOrgScopedClient>;
 
 export interface RecallScanOutcome {
   matchedRecallIds: string[];
@@ -32,7 +32,6 @@ export async function scanRecallsForAsset(
   assetId: string,
 ): Promise<RecallScanOutcome> {
   const { data: asset, error: aErr } = await supabase
-    .schema("resupply")
     .from("equipment_assets")
     .select("id, patient_id, manufacturer, model, serial_number, status")
     .eq("id", assetId)
@@ -44,7 +43,6 @@ export async function scanRecallsForAsset(
     return { matchedRecallIds: [], notificationsQueued: 0 };
 
   const { data: recalls, error: rErr } = await supabase
-    .schema("resupply")
     .from("equipment_recalls")
     .select("id, manufacturer, model_match, serial_match, status")
     .eq("status", "active")
@@ -73,7 +71,6 @@ export async function scanRecallsForAsset(
     matched.push(recall.id);
 
     const { error: insErr } = await supabase
-      .schema("resupply")
       .from("recall_notifications")
       .insert({
         recall_id: recall.id,

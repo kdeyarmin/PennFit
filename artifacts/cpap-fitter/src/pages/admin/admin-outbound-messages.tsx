@@ -11,6 +11,9 @@ import { Link } from "wouter";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 
 import { humanizeStatus } from "@/components/admin/Badge";
+import { Spinner } from "@/components/admin/Spinner";
+import { ErrorPanel } from "@/components/admin/ErrorPanel";
+import { PageHeader } from "@/components/admin/PageHeader";
 import {
   fetchOutboundMessages,
   type OutboundChannelFilter,
@@ -74,19 +77,10 @@ export function AdminOutboundMessagesPage() {
       className="space-y-6 max-w-6xl"
       data-testid="admin-outbound-messages-page"
     >
-      <header className="space-y-1">
-        <h1
-          className="text-2xl font-bold tracking-tight"
-          style={{ color: "hsl(var(--ink-1))" }}
-        >
-          Outbound messages
-        </h1>
-        <p className="text-sm text-slate-600">
-          Every outbound SMS and email with its delivery result. Statuses are
-          stamped by the Twilio and SendGrid delivery webhooks; a message stays
-          “pending” until the vendor reports back. Refreshes once per minute.
-        </p>
-      </header>
+      <PageHeader
+        title="Outbound messages"
+        description="Every outbound SMS and email with its delivery result. Statuses are stamped by the Twilio and SendGrid delivery webhooks; a message stays “pending” until the vendor reports back. Refreshes once per minute."
+      />
 
       <div className="flex flex-wrap items-center gap-3">
         <div
@@ -160,21 +154,22 @@ export function AdminOutboundMessagesPage() {
                 result === k ? "ring-2 ring-offset-1 ring-slate-400" : ""
               }`}
             >
-              {RESULT_LABEL[k]} · {data.counts[k]}
+              {RESULT_LABEL[k]} · {data.counts?.[k] ?? 0}
             </button>
           ))}
         </div>
       ) : null}
 
       {query.isPending ? (
-        <div className="text-sm text-slate-500">Loading…</div>
+        <Spinner />
       ) : query.isError ? (
-        <div className="text-sm text-rose-700" role="alert">
-          Couldn&apos;t load outbound messages:{" "}
-          {query.error instanceof Error ? query.error.message : "unknown"}.
-        </div>
+        <ErrorPanel
+          error={query.error}
+          onRetry={() => void query.refetch()}
+          title="Couldn't load outbound messages"
+        />
       ) : data ? (
-        data.items.length === 0 ? (
+        (data.items ?? []).length === 0 ? (
           <div
             className="text-sm text-slate-500"
             data-testid="outbound-messages-empty"
@@ -187,18 +182,34 @@ export function AdminOutboundMessagesPage() {
               <table className="w-full text-sm min-w-[760px]">
                 <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-600">
                   <tr>
-                    <th className="text-left px-3 py-2">When</th>
-                    <th className="text-left px-3 py-2">Channel</th>
-                    <th className="text-left px-3 py-2">Result</th>
-                    <th className="text-left px-3 py-2">Status</th>
-                    <th className="text-left px-3 py-2">Sent by</th>
-                    <th className="text-left px-3 py-2">Patient</th>
-                    <th className="text-left px-3 py-2">Error</th>
-                    <th className="text-left px-3 py-2">Thread</th>
+                    <th scope="col" className="text-left px-3 py-2">
+                      When
+                    </th>
+                    <th scope="col" className="text-left px-3 py-2">
+                      Channel
+                    </th>
+                    <th scope="col" className="text-left px-3 py-2">
+                      Result
+                    </th>
+                    <th scope="col" className="text-left px-3 py-2">
+                      Status
+                    </th>
+                    <th scope="col" className="text-left px-3 py-2">
+                      Sent by
+                    </th>
+                    <th scope="col" className="text-left px-3 py-2">
+                      Patient
+                    </th>
+                    <th scope="col" className="text-left px-3 py-2">
+                      Error
+                    </th>
+                    <th scope="col" className="text-left px-3 py-2">
+                      Thread
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
-                  {data.items.map((m) => (
+                  {(data.items ?? []).map((m) => (
                     <MessageRow key={m.id} row={m} />
                   ))}
                 </tbody>

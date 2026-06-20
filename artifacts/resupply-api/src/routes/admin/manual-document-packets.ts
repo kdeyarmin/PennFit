@@ -32,10 +32,11 @@ import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
 import {
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
   type Json,
+  type OrgScopedClient,
 } from "@workspace/resupply-db";
-import { createSendgridClient } from "@workspace/resupply-email";
+import { createTenantSendgridClient } from "../../lib/email/tenant-sender";
 import {
   createTelnyxFaxClient,
   TelnyxApiError,
@@ -43,6 +44,7 @@ import {
 
 import { signManualDocumentPacketFaxToken } from "../../lib/fax-document-token.js";
 import { logger } from "../../lib/logger.js";
+import { resolveTenantFaxFrom } from "../../lib/messaging/tenant-telecom";
 import { getManualDocumentTypeDef } from "../../lib/manual-documents/catalog.js";
 import {
   loadManualDocumentPacketRow,
@@ -144,16 +146,15 @@ function dedupeIds(ids: string[]): string[] {
 
 /** Verify every id has a manual_documents row; returns the missing ids. */
 async function findMissingDocumentIds(
-  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
+  supabase: OrgScopedClient,
   ids: string[],
 ): Promise<string[]> {
   const { data, error } = await supabase
-    .schema("resupply")
     .from("manual_documents")
     .select("id")
     .in("id", ids);
   if (error) throw error;
-  const found = new Set((data ?? []).map((r) => r.id));
+  const found = new Set((data ?? []).map((r: { id: string }) => r.id));
   return ids.filter((id) => !found.has(id));
 }
 
@@ -164,7 +165,7 @@ async function findMissingDocumentIds(
  * never 500 (a retry would re-send the packet).
  */
 async function stampMemberDocumentsSent(
-  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
+  supabase: OrgScopedClient,
   documents: ManualDocumentRow[],
   channel: "email" | "fax",
   nowIso: string,
@@ -175,7 +176,6 @@ async function stampMemberDocumentsSent(
       ? { last_emailed_at: nowIso }
       : { last_faxed_at: nowIso };
   const { error: stampErr } = await supabase
-    .schema("resupply")
     .from("manual_documents")
     .update({ ...stamp, updated_at: nowIso })
     .in("id", ids);
@@ -187,7 +187,6 @@ async function stampMemberDocumentsSent(
   }
   // Status advances draft → sent; an attached document stays attached.
   const { error: statusErr } = await supabase
-    .schema("resupply")
     .from("manual_documents")
     .update({ status: "sent", updated_at: nowIso })
     .in("id", ids)
@@ -216,7 +215,7 @@ async function stampMemberDocumentsSent(
 /** Load packet + members; handles the shared 404/409 plumbing for the
  *  pdf/send routes. Returns null after responding on any failure. */
 async function loadPacketForRender(
-  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
+  supabase: OrgScopedClient,
   id: string,
   res: import("express").Response,
 ): Promise<{
@@ -245,14 +244,18 @@ router.get(
   adminReadRateLimiter,
   requirePermission("patients.read"),
   async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId || !orgId.trim()) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const parsed = listQuery.safeParse(req.query);
     if (!parsed.success) {
       res.status(400).json({ error: "invalid_query" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
     let query = supabase
-      .schema("resupply")
       .from("manual_document_packets")
       .select(MANUAL_DOCUMENT_PACKET_ROW_COLUMNS)
       .order("created_at", { ascending: false })
@@ -275,6 +278,11 @@ router.post(
     preset: "sensitive",
   }),
   async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId || !orgId.trim()) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const parsed = createBody.safeParse(req.body ?? {});
     if (!parsed.success) {
       invalidBody(res, parsed.error);
@@ -283,7 +291,7 @@ router.post(
     const b = parsed.data;
     const documentIds = dedupeIds(b.documentIds);
 
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
     const missing = await findMissingDocumentIds(supabase, documentIds);
     if (missing.length > 0) {
       res
@@ -294,7 +302,6 @@ router.post(
 
     const nowIso = new Date().toISOString();
     const { data: inserted, error } = await supabase
-      .schema("resupply")
       .from("manual_document_packets")
       .insert({
         title: b.title,
@@ -340,12 +347,17 @@ router.get(
   adminReadRateLimiter,
   requirePermission("patients.read"),
   async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId || !orgId.trim()) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const parsed = idParam.safeParse(req.params);
     if (!parsed.success) {
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
     const packet = await loadManualDocumentPacketRow(supabase, parsed.data.id);
     if (!packet) {
       res.status(404).json({ error: "not_found" });
@@ -357,7 +369,7 @@ router.get(
     );
     res.json({
       packet,
-      documents: documents.map((d) => ({
+      documents: documents.map((d: ManualDocumentRow) => ({
         id: d.id,
         document_type: d.document_type,
         title: d.title,
@@ -377,6 +389,11 @@ router.patch(
     preset: "sensitive",
   }),
   async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId || !orgId.trim()) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const idParsed = idParam.safeParse(req.params);
     if (!idParsed.success) {
       res.status(404).json({ error: "not_found" });
@@ -389,7 +406,7 @@ router.patch(
     }
     const b = parsed.data;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
     const existing = await loadManualDocumentPacketRow(
       supabase,
       idParsed.data.id,
@@ -429,7 +446,6 @@ router.patch(
     }
 
     const { error: updErr } = await supabase
-      .schema("resupply")
       .from("manual_document_packets")
       .update(patch)
       .eq("id", idParsed.data.id);
@@ -464,14 +480,18 @@ router.delete(
     preset: "destroy",
   }),
   async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId || !orgId.trim()) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const parsed = idParam.safeParse(req.params);
     if (!parsed.success) {
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
     const { error } = await supabase
-      .schema("resupply")
       .from("manual_document_packets")
       .delete()
       .eq("id", parsed.data.id);
@@ -500,12 +520,17 @@ router.get(
   adminReadRateLimiter,
   requirePermission("patients.read"),
   async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId || !orgId.trim()) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const parsed = idParam.safeParse(req.params);
     if (!parsed.success) {
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
     const loaded = await loadPacketForRender(supabase, parsed.data.id, res);
     if (!loaded) return;
     let pdf: Buffer;
@@ -556,6 +581,11 @@ router.post(
     preset: "sensitive",
   }),
   async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId || !orgId.trim()) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const idParsed = idParam.safeParse(req.params);
     if (!idParsed.success) {
       res.status(404).json({ error: "not_found" });
@@ -571,7 +601,7 @@ router.post(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
     const loaded = await loadPacketForRender(supabase, idParsed.data.id, res);
     if (!loaded) return;
     const { packet, documents } = loaded;
@@ -597,7 +627,7 @@ router.post(
     ].join("\n");
 
     try {
-      const client = createSendgridClient();
+      const client = await createTenantSendgridClient(orgId);
       await client.sendEmail({
         to,
         subject: `${packet.title} — ${supplier}`,
@@ -627,7 +657,6 @@ router.post(
     // Best-effort stamp — the email already went out, so a failed status
     // write must not 500 (a retry would send a duplicate email).
     const { error: stampErr } = await supabase
-      .schema("resupply")
       .from("manual_document_packets")
       .update({ last_emailed_at: nowIso, status: "sent", updated_at: nowIso })
       .eq("id", packet.id);
@@ -665,6 +694,11 @@ router.post(
     preset: "sensitive",
   }),
   async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId || !orgId.trim()) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const idParsed = idParam.safeParse(req.params);
     if (!idParsed.success) {
       res.status(404).json({ error: "not_found" });
@@ -680,7 +714,7 @@ router.post(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
     const loaded = await loadPacketForRender(supabase, idParsed.data.id, res);
     if (!loaded) return;
     const { packet, documents } = loaded;
@@ -695,7 +729,11 @@ router.post(
     const token = signManualDocumentPacketFaxToken(packet.id);
     const mediaUrl = `${baseUrl}/resupply-api/fax/document/${token}`;
     const statusCallbackUrl = `${baseUrl}/resupply-api/fax/webhook`;
-    const fromNumber = process.env.TELNYX_FAX_FROM_NUMBER!.trim();
+    // Prefer the tenant's own provisioned fax DID (migration 0368); fall
+    // back to the platform default isFaxConfigured() already verified is set.
+    const fromNumber =
+      (await resolveTenantFaxFrom(orgId)) ??
+      process.env.TELNYX_FAX_FROM_NUMBER!.trim();
 
     let vendorRef: string;
     try {
@@ -724,7 +762,6 @@ router.post(
     // Best-effort stamp — the fax was already dispatched, so a failed
     // status write must not 500 (a retry would send a duplicate fax).
     const { error: stampErr } = await supabase
-      .schema("resupply")
       .from("manual_document_packets")
       .update({ last_faxed_at: nowIso, status: "sent", updated_at: nowIso })
       .eq("id", packet.id);

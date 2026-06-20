@@ -12,12 +12,13 @@
 import { Router, type IRouter } from "express";
 import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { isFeatureEnabled } from "../lib/feature-flags";
 import { readPracticeName } from "../lib/messaging/messaging-config";
 import { resolveIceServers } from "../lib/video/ice-servers";
 import { verifyVideoVisitToken } from "../lib/video/video-visit-token";
+import { resolveOrgIdForSignedRecord } from "../lib/storefront/signed-link-org";
 
 const router: IRouter = Router();
 
@@ -49,14 +50,26 @@ router.get("/video-visit/session", sessionLimiter, async (req, res) => {
     res.status(404).json({ state: "invalid" });
     return;
   }
-  if (!(await isFeatureEnabled("telehealth.video"))) {
+  if (!(await isFeatureEnabled("telehealth.video", req.orgId))) {
     res.status(503).json({ state: "disabled" });
     return;
   }
 
-  const supabase = getSupabaseServiceRoleClient();
+  // Public token route (no request tenant). Derive the visit's owning
+  // tenant from its record (the HMAC token is the authorization) so a
+  // tenant-B invite link joins tenant B's visit; seed when single-tenant /
+  // absent. A miss degrades to the signed-link 404 below — never 500.
+  const orgId = await resolveOrgIdForSignedRecord(
+    "video_visits",
+    verified.visitId,
+  );
+  if (!orgId) {
+    // No tenant context — treat the link as not resolvable (signed-link 404).
+    res.status(404).json({ state: "invalid" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const { data: visit, error } = await supabase
-    .schema("resupply")
     .from("video_visits")
     .select("id, status, purpose, scheduled_at, link_version")
     .eq("id", verified.visitId)

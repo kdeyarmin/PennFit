@@ -36,7 +36,7 @@ import {
   type Database,
   type Json,
   type PhysicianInfo,
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
 } from "@workspace/resupply-db";
 import { logAudit } from "@workspace/resupply-audit";
 
@@ -127,10 +127,14 @@ const updateBody = z
 
 router.get("/shop/me/clinical-info", requireSignedIn, async (req, res) => {
   const customerId = req.userCustomerId!;
-  await ensureShopCustomerRow({ customerId, email: null });
-  const supabase = getSupabaseServiceRoleClient();
+  await ensureShopCustomerRow({ orgId: req.orgId, customerId, email: null });
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const { data: row } = await supabase
-    .schema("resupply")
     .from("shop_customers")
     .select("cpap_device_json, physician_info_json, facial_measurements_json")
     .eq("customer_id", customerId)
@@ -156,9 +160,14 @@ router.put("/shop/me/clinical-info", requireSignedIn, async (req, res) => {
     return;
   }
   const customerId = req.userCustomerId!;
-  await ensureShopCustomerRow({ customerId, email: null });
+  await ensureShopCustomerRow({ orgId: req.orgId, customerId, email: null });
 
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const updates: ShopCustomersUpdate = {
     updated_at: new Date().toISOString(),
   };
@@ -214,7 +223,6 @@ router.put("/shop/me/clinical-info", requireSignedIn, async (req, res) => {
     // No-op PUT — return the current values without touching the
     // row or writing an audit line.
     const { data: row } = await supabase
-      .schema("resupply")
       .from("shop_customers")
       .select("cpap_device_json, physician_info_json, facial_measurements_json")
       .eq("customer_id", customerId)
@@ -229,7 +237,6 @@ router.put("/shop/me/clinical-info", requireSignedIn, async (req, res) => {
   }
 
   const { data: row, error } = await supabase
-    .schema("resupply")
     .from("shop_customers")
     .update(updates)
     .eq("customer_id", customerId)
