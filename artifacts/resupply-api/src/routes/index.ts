@@ -195,6 +195,7 @@ import webhookEventCatalogRouter from "./admin/webhook-event-catalog.js";
 import billingDirectorRouter from "./admin/billing-director.js";
 import eligibilityRecentRouter from "./admin/eligibility-recent.js";
 import eligibilityQuickCheckRouter from "./admin/eligibility-quick-check.js";
+import insuranceDiscoveryRouter from "./admin/insurance-discovery.js";
 import priorAuthQueueRouter from "./admin/prior-auth-queue.js";
 import webhookTestSendRouter from "./admin/webhook-test-send.js";
 import payerFeeSchedulesImportRouter from "./admin/payer-fee-schedules-import.js";
@@ -648,6 +649,11 @@ router.use(eligibilityRecentRouter);
 // /admin/billing/eligibility-quick-check — patient-less real-time
 // 270/271 from typed-in subscriber details; persists nothing.
 router.use(eligibilityQuickCheckRouter);
+// /admin/billing/insurance-discovery — patient-less coverage search:
+// find active insurance from demographics when it's unknown or a
+// coverage on file came back inactive. Gated by the insurance.discovery
+// add-on flag; persists nothing.
+router.use(insuranceDiscoveryRouter);
 // /admin/billing/prior-auth-queue — system-wide PA queue grouped
 // by at-risk / missed SLA / awaiting decision / expiring soon /
 // drafts. Source for the admin PA director page.
