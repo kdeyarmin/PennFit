@@ -39,6 +39,7 @@ import {
   type DenialRiskStat,
 } from "./denial-risk";
 import { getCachedEligibility } from "./eligibility-verifier";
+import { validateModifierCombination } from "./modifier-validation";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -660,6 +661,40 @@ export async function preflightClaim(
           kind: "edit_line_item",
           claimId: claim.id,
           lineId: first.id,
+        },
+      });
+    }
+
+    // ── Invalid modifier combinations (hard payer rejections) ──────
+    // Certain modifier pairs reject the line as *unprocessable* (not a
+    // coverage denial): KX alongside a liability modifier (GA/GZ/GY/GX),
+    // two primary liability modifiers, rental + purchase, new + used, or
+    // two capped-rental month bands. Surface them as a blocking error so a
+    // corrected line goes out the first time instead of a guaranteed
+    // rejection. See lib/billing/modifier-validation.ts.
+    const modifierConflicts = (lines as ClaimLineRow[])
+      .map((l) => ({
+        line: l,
+        conflicts: validateModifierCombination(l.modifier),
+      }))
+      .filter((x) => x.conflicts.length > 0);
+    if (modifierConflicts.length > 0) {
+      const first = modifierConflicts[0]!;
+      const firstMods = (first.line.modifier ?? "").trim();
+      items.push({
+        key: "modifier_combination",
+        severity: "error",
+        label:
+          modifierConflicts.length === 1
+            ? "Invalid modifier combination on a line"
+            : `Invalid modifier combinations on ${modifierConflicts.length} lines`,
+        detail: `${first.line.hcpcs_code} (${firstMods}): ${first.conflicts
+          .map((c) => c.message)
+          .join(" ")}`,
+        fixAction: {
+          kind: "edit_line_item",
+          claimId: claim.id,
+          lineId: first.line.id,
         },
       });
     }
