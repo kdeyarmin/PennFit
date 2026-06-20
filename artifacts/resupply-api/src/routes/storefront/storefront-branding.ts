@@ -23,7 +23,7 @@ router.get("/storefront-branding", async (req, res) => {
   );
   // Vary on the forwarded host so a shared edge cache can't serve one
   // tenant's brand to another.
-  res.set("Vary", "X-Forwarded-Host");
+  res.set("Vary", "X-Forwarded-Host, Host");
   res.set("Cache-Control", "public, max-age=300");
   // `isPlatform` tells the SPA whether `/` is the CareMetric Breathe
   // marketing home (platform host) or a tenant storefront.
