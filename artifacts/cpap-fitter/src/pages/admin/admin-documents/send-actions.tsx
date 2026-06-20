@@ -22,12 +22,19 @@ export function SendActions({
   defaultFax,
   persist,
   onChanged,
+  sendBlockedReason = null,
 }: {
   documentId: string;
   defaultEmail: string;
   defaultFax: string;
   persist: () => Promise<unknown>;
   onChanged: () => void;
+  /**
+   * When set, outbound sends (email + fax) are disabled and this reason is
+   * shown — e.g. required fields are still blank. Filing to a chart is left
+   * enabled so an in-progress draft can still be parked on the chart.
+   */
+  sendBlockedReason?: string | null;
 }) {
   // The destination inputs mirror the Recipient block above (including
   // "Prefill from chart") until the operator types a different
@@ -111,6 +118,19 @@ export function SendActions({
         Send &amp; file
       </h3>
 
+      {sendBlockedReason && (
+        <div
+          className="rounded-md border px-3 py-2 text-sm"
+          style={{
+            borderColor: "hsl(38 92% 50% / 0.5)",
+            backgroundColor: "hsl(38 92% 50% / 0.08)",
+            color: "hsl(var(--ink-2))",
+          }}
+        >
+          {sendBlockedReason}
+        </div>
+      )}
+
       {/* Email */}
       <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
         <div>
@@ -126,7 +146,12 @@ export function SendActions({
         <Button
           intent="secondary"
           isLoading={emailMut.isPending}
+          disabled={Boolean(sendBlockedReason)}
           onClick={() => {
+            if (sendBlockedReason) {
+              setMsg({ kind: "err", text: sendBlockedReason });
+              return;
+            }
             if (!email.trim()) {
               setMsg({ kind: "err", text: "Enter an email address first." });
               return;
@@ -153,7 +178,12 @@ export function SendActions({
         <Button
           intent="secondary"
           isLoading={faxMut.isPending}
+          disabled={Boolean(sendBlockedReason)}
           onClick={() => {
+            if (sendBlockedReason) {
+              setMsg({ kind: "err", text: sendBlockedReason });
+              return;
+            }
             if (!fax.trim()) {
               setMsg({ kind: "err", text: "Enter a fax number first." });
               return;

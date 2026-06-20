@@ -49,6 +49,7 @@ import {
   BellRing,
   ScrollText,
   ShieldCheck,
+  ScanSearch,
   FlaskConical,
   UsersRound,
   ScanFace,
@@ -763,6 +764,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             icon: ShieldCheck,
             matchPrefix: "/admin/billing/verify",
             hint: "Run an on-demand insurance verification (270/271) for any patient — or a quick check with no patient record",
+          },
+          {
+            href: "/admin/billing/insurance-discovery",
+            label: "Insurance discovery",
+            icon: ScanSearch,
+            matchPrefix: "/admin/billing/insurance-discovery",
+            hint: "Search the payer network from demographics to find active coverage when insurance is unknown or a coverage came back inactive (add-on)",
           },
           {
             href: "/admin/billing/eligibility",

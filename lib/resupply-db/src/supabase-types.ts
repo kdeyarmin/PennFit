@@ -3735,6 +3735,8 @@ export interface Database {
           realtime_receiver_id: string | null;
           realtime_timeout_ms: number | null;
           realtime_password: string | null;
+          discovery_enabled: boolean;
+          discovery_url: string | null;
           created_at: string;
           updated_at: string;
         };
