@@ -19,10 +19,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  type Database,
-  getSupabaseServiceRoleClient,
-} from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 type SubstituteUpdate =
   Database["resupply"]["Tables"]["shop_sku_substitutes"]["Update"];
@@ -84,10 +81,14 @@ router.get(
   // (which has no backorder workflow). The legacy file note flagged
   // backorder MARKS as "CSR day-to-day"; this matches that.
   requirePermission("inventory.read"),
-  async (_req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("shop_backorders")
       .select(
         "id, sku, marked_at, cleared_at, notes, marked_by_user_id, created_at",
@@ -97,7 +98,11 @@ router.get(
       .limit(500);
     if (error) throw error;
     res.json({
-      backorders: (data ?? []).map((r) => ({
+      backorders: (
+        (data ?? []) as Array<
+          Database["resupply"]["Tables"]["shop_backorders"]["Row"]
+        >
+      ).map((r) => ({
         id: r.id,
         sku: r.sku,
         markedAt: r.marked_at,
@@ -131,9 +136,13 @@ router.post(
       });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("shop_backorders")
       .insert({
         sku: parsed.data.sku,
@@ -185,9 +194,13 @@ router.post(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: row, error: lookupErr } = await supabase
-      .schema("resupply")
       .from("shop_backorders")
       .select("id, sku, cleared_at, notes")
       .eq("id", params.data.id)
@@ -212,7 +225,6 @@ router.post(
         : `cleared: ${parsed.data.notes}`
       : row.notes;
     const { error: updErr } = await supabase
-      .schema("resupply")
       .from("shop_backorders")
       .update({ cleared_at: nowIso, notes: mergedNotes })
       .eq("id", row.id);
@@ -243,9 +255,13 @@ router.get(
   requirePermission("inventory.read"),
   async (req, res) => {
     const primary = req.query.primary_sku;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     let query = supabase
-      .schema("resupply")
       .from("shop_sku_substitutes")
       .select(
         "id, primary_sku, alternative_sku, priority, active, notes, created_at, updated_at",
@@ -263,7 +279,11 @@ router.get(
     const { data, error } = await query;
     if (error) throw error;
     res.json({
-      substitutes: (data ?? []).map((r) => ({
+      substitutes: (
+        (data ?? []) as Array<
+          Database["resupply"]["Tables"]["shop_sku_substitutes"]["Row"]
+        >
+      ).map((r) => ({
         id: r.id,
         primarySku: r.primary_sku,
         alternativeSku: r.alternative_sku,
@@ -293,9 +313,13 @@ router.post(
       });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("shop_sku_substitutes")
       .insert({
         primary_sku: parsed.data.primarySku,
@@ -357,9 +381,13 @@ router.patch(
     if (parsed.data.priority != null) update.priority = parsed.data.priority;
     if (parsed.data.active != null) update.active = parsed.data.active;
     if (parsed.data.notes !== undefined) update.notes = parsed.data.notes;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { error } = await supabase
-      .schema("resupply")
       .from("shop_sku_substitutes")
       .update(update)
       .eq("id", params.data.id);
@@ -378,9 +406,13 @@ router.delete(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { error } = await supabase
-      .schema("resupply")
       .from("shop_sku_substitutes")
       .delete()
       .eq("id", params.data.id);

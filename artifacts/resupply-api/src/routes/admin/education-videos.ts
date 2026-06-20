@@ -11,7 +11,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { isEducationTopic } from "../../lib/storefront/education-videos";
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
@@ -66,10 +66,14 @@ router.get(
   "/admin/education-videos",
   adminReadRateLimiter,
   requirePermission("reports.read"),
-  async (_req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("education_videos")
       .select("*")
       .order("sort_order", { ascending: true })
@@ -93,9 +97,13 @@ router.post(
       return;
     }
     const b = parsed.data;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("education_videos")
       .insert({
         title: b.title,
@@ -146,9 +154,13 @@ router.patch(
     if (b.sortOrder !== undefined) update.sort_order = b.sortOrder;
     if (b.active !== undefined) update.active = b.active;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("education_videos")
       .update(update as never)
       .eq("id", idOk.data)

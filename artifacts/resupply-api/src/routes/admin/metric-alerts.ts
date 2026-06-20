@@ -12,7 +12,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
@@ -38,16 +38,26 @@ router.get(
   "/admin/metric-alerts",
   requirePermission("metrics.read"),
   async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+
     const parsed = listQuery.safeParse(req.query);
     const status = parsed.success ? parsed.data.status : undefined;
 
-    const supabase = getSupabaseServiceRoleClient();
+    // metric_alerts is not in the typed Database, so reach it via raw();
+    // the org filter must therefore be explicit (migration 0380).
     let query = supabase
+      .raw()
       .schema("resupply")
       .from("metric_alerts")
       .select(
         "id, threshold_id, metric_key, metric_date, observed_value, compared_value, baseline_value, severity, message, status, notified_at, created_at",
       )
+      .eq("org_id", orgId)
       .order("created_at", { ascending: false })
       .limit(200);
     // Default to the actionable feed (open) unless an explicit filter is
@@ -106,11 +116,19 @@ router.patch(
     }
     const { status } = parsed.data;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+
     const { data: updatedData, error } = await supabase
+      .raw()
       .schema("resupply")
       .from("metric_alerts")
       .update({ status, updated_at: new Date().toISOString() })
+      .eq("org_id", orgId)
       .eq("id", id)
       .select("id, status")
       .maybeSingle();

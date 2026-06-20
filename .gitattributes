@@ -7,7 +7,7 @@
 # Auto-generated files — DO NOT line-merge.
 #
 # Git's default three-way merge on these produces either garbled output
-# (lockfiles) or syntactically-broken JSON (the drizzle journal). Marking
+# (lockfiles) or syntactically-broken JSON (the migrations journal). Marking
 # them `-diff merge=binary` makes Git treat each side as opaque, so a
 # conflict surfaces as a single "pick one side" decision instead of
 # hundreds of inline `<<<<<<<` hunks. This is also what GitHub's
@@ -31,7 +31,7 @@
 # ---------------------------------------------------------------------------
 
 pnpm-lock.yaml                                  -diff merge=binary
-lib/resupply-db/drizzle/meta/_journal.json      -diff merge=binary
+lib/resupply-db/migrations/meta/_journal.json      -diff merge=binary
 
 # ---------------------------------------------------------------------------
 # Binary assets — never diff, never line-merge.

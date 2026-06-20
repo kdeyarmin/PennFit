@@ -33,19 +33,43 @@ vi.mock("../lib/auth-deps", () => ({
 // attach and the fail-closed paths (P2-19).
 type AdminUsersLookupResult =
   | {
-      data: { role: string; location_id: string | null } | null;
+      data: {
+        role: string;
+        location_id: string | null;
+        org_id?: string | null;
+      } | null;
       error: { message: string } | null;
     }
   | "throw";
 let mockAdminUsersLookup: AdminUsersLookupResult = { data: null, error: null };
+// Drives the G4 impersonation re-check: requireAdmin re-verifies the
+// impersonator is STILL in resupply.platform_admins on every request. Default
+// to a present row (the impersonator is an active platform admin). Set to
+// `{ data: null }` to simulate a revoked platform admin, or "throw" to
+// simulate a lookup error — both must fail closed (401).
+let mockPlatformAdminLookup:
+  | {
+      data: { auth_user_id: string } | null;
+      error: { message: string } | null;
+    }
+  | "throw" = { data: { auth_user_id: "platform-admin" }, error: null };
+// Drives the G16 agreements gate: the rows hasPendingAgreements() reads from
+// organization_agreements for the resolved org. Empty ⇒ unsigned ⇒ blocked.
+let mockAgreementRows: Array<{ agreement_type: string; version: string }> = [];
 vi.mock("@workspace/resupply-db", () => ({
   getSupabaseServiceRoleClient: () => ({
     schema: () => ({
-      from: () => ({
+      from: (table: string) => ({
         select: () => ({
           eq: () => ({
             limit: () => ({
               maybeSingle: async () => {
+                if (table === "platform_admins") {
+                  if (mockPlatformAdminLookup === "throw") {
+                    throw new Error("platform_admins lookup blew up");
+                  }
+                  return mockPlatformAdminLookup;
+                }
                 if (mockAdminUsersLookup === "throw") {
                   throw new Error("admin_users lookup blew up");
                 }
@@ -57,9 +81,29 @@ vi.mock("@workspace/resupply-db", () => ({
       }),
     }),
   }),
+  // Org-scoped facade behind the agreements gate's organization_agreements
+  // read (hasPendingAgreements awaits .from(...).select(...) directly).
+  getOrgScopedClient: () => ({
+    from: () => ({
+      select: async () => ({ data: mockAgreementRows, error: null }),
+    }),
+  }),
+  // requireAdmin resolves the (single-tenant) seed org_id best-effort to
+  // attach req.orgId. Default to none — exercising the "no org attached"
+  // branch a fresh environment hits before the seed tenant is cached (which
+  // also means the agreements gate is skipped for the legacy test cases).
+  resolveSeedOrgId: async () => null,
 }));
 
 import { requireAdmin, requireAdminOnly } from "./requireAdmin";
+import { REQUIRED_AGREEMENTS } from "../lib/agreements";
+import { invalidatePendingAgreementsCache } from "../lib/agreements/status";
+
+// All required agreements at their current versions — a fully-signed tenant.
+const ALL_SIGNED_ROWS = REQUIRED_AGREEMENTS.map((a) => ({
+  agreement_type: a.type,
+  version: a.version,
+}));
 
 function makeApp(): Express {
   const app = express();
@@ -79,12 +123,34 @@ function makeApp(): Express {
       adminGranularRole: req.adminGranularRole,
     });
   });
+  // Separate route that surfaces the tenant + impersonation context for
+  // the G4 impersonation tests (kept off /protected so its exact-shape
+  // assertions stay intact).
+  app.get("/imp-protected", limiter, requireAdmin, (req, res) => {
+    res.json({
+      ok: true,
+      adminRole: req.adminRole,
+      adminGranularRole: req.adminGranularRole,
+      orgId: req.orgId ?? null,
+      impersonation: req.impersonation ?? false,
+      impersonatorUserId: req.impersonatorUserId ?? null,
+    });
+  });
   app.get("/admin-only", limiter, requireAdminOnly, (req, res) => {
     res.json({ ok: true, adminRole: req.adminRole });
   });
   // State-changing route to exercise the in-gate CSRF enforcement.
   app.post("/protected", limiter, requireAdmin, (req, res) => {
     res.json({ ok: true, adminEmail: req.adminEmail });
+  });
+  // Allowlisted endpoints for the G16 agreements gate — these must pass
+  // even when the tenant has unsigned agreements (so they can sign). The
+  // gate matches on req.originalUrl, so the mount paths matter here.
+  app.get("/me", limiter, requireAdmin, (_req, res) => {
+    res.json({ ok: true, endpoint: "me" });
+  });
+  app.get("/admin/agreements", limiter, requireAdmin, (_req, res) => {
+    res.json({ ok: true, endpoint: "agreements" });
   });
   return app;
 }
@@ -123,6 +189,8 @@ async function seedSignedInUser(
     status?: "active" | "locked" | "revoked" | "invited";
     expiresAt?: Date;
     revokedAt?: Date | null;
+    impersonatedOrgId?: string | null;
+    impersonatorUserId?: string | null;
   },
 ): Promise<{ cookie: string }> {
   // Plant the user directly via the repo's escape hatch — bypassing
@@ -161,6 +229,8 @@ async function seedSignedInUser(
     expiresAt: opts.expiresAt ?? new Date(Date.now() + 60_000),
     ip: null,
     userAgentHash: null,
+    impersonatedOrgId: opts.impersonatedOrgId ?? null,
+    impersonatorUserId: opts.impersonatorUserId ?? null,
   });
   if (opts.revokedAt) {
     await repo.revokeSession(session.id, opts.revokedAt);
@@ -174,6 +244,15 @@ describe("requireAdmin — in-house pf_session cookie path", () => {
   beforeEach(() => {
     mockDeps = null;
     mockAdminUsersLookup = { data: null, error: null };
+    // Default: the impersonator is an active platform admin (present row).
+    mockPlatformAdminLookup = {
+      data: { auth_user_id: "platform-admin" },
+      error: null,
+    };
+    // Reset the agreements gate between cases (the pending cache is
+    // module-level and would otherwise leak across tests).
+    mockAgreementRows = [];
+    invalidatePendingAgreementsCache();
     originalEnv = {
       RESUPPLY_ADMIN_EMAILS: process.env.RESUPPLY_ADMIN_EMAILS,
       NODE_ENV: process.env.NODE_ENV,
@@ -369,6 +448,32 @@ describe("requireAdmin — in-house pf_session cookie path", () => {
       expect(res.body.adminGranularRole).toBe("csr");
     });
 
+    it("binds req.orgId to the admin's OWN admin_users.org_id, not the seed org", async () => {
+      const { deps, repo } = await buildDepsWithRepo();
+      mockDeps = deps;
+      // A non-seed tenant admin must be scoped to THEIR org — the gate reads
+      // admin_users.org_id, so it can never collapse a tenant-B admin onto the
+      // seed tenant's data.
+      mockAdminUsersLookup = {
+        data: { role: "admin", location_id: null, org_id: "org-b" },
+        error: null,
+      };
+      mockAgreementRows = ALL_SIGNED_ROWS; // org-b has signed → gate passes
+      const { cookie } = await seedSignedInUser(repo, {
+        id: "u_tenant_b",
+        email: "admin@tenant-b.example",
+        role: "admin",
+      });
+
+      const res = await request(makeApp())
+        .get("/imp-protected")
+        .set("Cookie", cookie);
+
+      expect(res.status).toBe(200);
+      expect(res.body.orgId).toBe("org-b");
+      expect(res.body.impersonation).toBe(false);
+    });
+
     it("falls back to the coarse role when NO admin_users row exists (legacy)", async () => {
       const { deps, repo } = await buildDepsWithRepo();
       mockDeps = deps;
@@ -495,6 +600,156 @@ describe("requireAdmin — in-house pf_session cookie path", () => {
       const res = await request(makeApp()).post("/protected");
 
       expect(res.status).toBe(401);
+    });
+  });
+
+  describe("platform-admin impersonation (G4)", () => {
+    const TARGET_ORG = "22222222-2222-4222-8222-222222222222";
+
+    it("binds the request to the impersonated org with full admin access", async () => {
+      const { deps, repo } = await buildDepsWithRepo();
+      mockDeps = deps;
+      // An admin_users lookup MUST NOT happen on the impersonation path —
+      // make it throw to prove the branch returns before reaching it.
+      mockAdminUsersLookup = "throw";
+      const { cookie } = await seedSignedInUser(repo, {
+        id: "u_platform",
+        email: "ops@cmbreathe.example",
+        role: "admin",
+        impersonatedOrgId: TARGET_ORG,
+        impersonatorUserId: "u_platform",
+      });
+
+      const res = await request(makeApp())
+        .get("/imp-protected")
+        .set("Cookie", cookie);
+
+      expect(res.status).toBe(200);
+      // Bound to the TARGET org (not the impersonator's own / seed org).
+      expect(res.body.orgId).toBe(TARGET_ORG);
+      // Full tenant-admin access (DB role 'admin' → super_admin effective).
+      expect(res.body.adminRole).toBe("admin");
+      expect(res.body.adminGranularRole).toBe("admin");
+      // Flagged + attributable.
+      expect(res.body.impersonation).toBe(true);
+      expect(res.body.impersonatorUserId).toBe("u_platform");
+    });
+
+    it("normal (non-impersonation) sessions are unaffected", async () => {
+      const { deps, repo } = await buildDepsWithRepo();
+      mockDeps = deps;
+      mockAdminUsersLookup = { data: null, error: null };
+      const { cookie } = await seedSignedInUser(repo, {
+        id: "u_admin",
+        email: "csr@penn.example",
+        role: "admin",
+      });
+
+      const res = await request(makeApp())
+        .get("/imp-protected")
+        .set("Cookie", cookie);
+
+      expect(res.status).toBe(200);
+      expect(res.body.impersonation).toBe(false);
+      expect(res.body.impersonatorUserId).toBeNull();
+    });
+
+    it("rejects an impersonation session when the impersonator is no longer a platform admin (401)", async () => {
+      const { deps, repo } = await buildDepsWithRepo();
+      mockDeps = deps;
+      // The impersonator was removed from platform_admins after the cookie was
+      // minted — the per-request re-check must cut their cross-tenant access
+      // immediately, not wait for the session TTL to expire.
+      mockPlatformAdminLookup = { data: null, error: null };
+      const { cookie } = await seedSignedInUser(repo, {
+        id: "u_platform",
+        email: "ops@cmbreathe.example",
+        role: "admin",
+        impersonatedOrgId: TARGET_ORG,
+        impersonatorUserId: "u_platform",
+      });
+
+      const res = await request(makeApp())
+        .get("/imp-protected")
+        .set("Cookie", cookie);
+
+      expect(res.status).toBe(401);
+    });
+
+    it("fails closed (401) when the platform_admins re-check errors", async () => {
+      const { deps, repo } = await buildDepsWithRepo();
+      mockDeps = deps;
+      mockPlatformAdminLookup = "throw";
+      const { cookie } = await seedSignedInUser(repo, {
+        id: "u_platform",
+        email: "ops@cmbreathe.example",
+        role: "admin",
+        impersonatedOrgId: TARGET_ORG,
+        impersonatorUserId: "u_platform",
+      });
+
+      const res = await request(makeApp())
+        .get("/imp-protected")
+        .set("Cookie", cookie);
+
+      expect(res.status).toBe(401);
+    });
+  });
+
+  // ── G16 onboarding agreements gate ────────────────────────────────────
+  describe("agreements gate", () => {
+    async function seedAdminWithOrg(): Promise<{ cookie: string }> {
+      const { deps, repo } = await buildDepsWithRepo();
+      mockDeps = deps;
+      // admin_users row carries an org_id → req.orgId resolves, so the gate
+      // engages (the legacy cases leave org unresolved and skip it).
+      mockAdminUsersLookup = {
+        data: { role: "admin", location_id: null, org_id: "org-gate" },
+        error: null,
+      };
+      return seedSignedInUser(repo, {
+        id: "u_admin",
+        email: "owner@tenant.example",
+        role: "admin",
+      });
+    }
+
+    it("blocks the admin API (403) when the tenant has unsigned agreements", async () => {
+      const { cookie } = await seedAdminWithOrg();
+      mockAgreementRows = []; // nothing signed
+      const res = await request(makeApp())
+        .get("/protected")
+        .set("Cookie", cookie);
+      expect(res.status).toBe(403);
+      expect(res.body.error).toBe("agreements_required");
+    });
+
+    it("admits the admin API once every required agreement is signed", async () => {
+      const { cookie } = await seedAdminWithOrg();
+      mockAgreementRows = ALL_SIGNED_ROWS;
+      const res = await request(makeApp())
+        .get("/protected")
+        .set("Cookie", cookie);
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+    });
+
+    it("allows the /me identity endpoint through even when unsigned", async () => {
+      const { cookie } = await seedAdminWithOrg();
+      mockAgreementRows = [];
+      const res = await request(makeApp()).get("/me").set("Cookie", cookie);
+      expect(res.status).toBe(200);
+      expect(res.body.endpoint).toBe("me");
+    });
+
+    it("allows the agreements endpoints through even when unsigned", async () => {
+      const { cookie } = await seedAdminWithOrg();
+      mockAgreementRows = [];
+      const res = await request(makeApp())
+        .get("/admin/agreements")
+        .set("Cookie", cookie);
+      expect(res.status).toBe(200);
+      expect(res.body.endpoint).toBe("agreements");
     });
   });
 });

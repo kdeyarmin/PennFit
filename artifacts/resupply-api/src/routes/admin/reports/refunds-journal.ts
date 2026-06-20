@@ -15,12 +15,11 @@ import {
   rangeSlug,
   setDownloadHeaders,
   type ReportModule,
+  type CsvSink,
+  reportOrgId,
 } from "./shared";
 
-export function writeRefundsCsv(
-  res: import("express").Response,
-  rows: ReturnRow[],
-): void {
+export function writeRefundsCsv(res: CsvSink, rows: ReturnRow[]): void {
   const headers = [
     "return_id",
     "order_id",
@@ -66,8 +65,10 @@ export const refundsJournalReport: ReportModule = {
       "/admin/reports/refunds-journal.csv",
       requirePermission("reports.read"),
       async (req, res) => {
+        const orgId = reportOrgId(req, res);
+        if (!orgId) return;
         const { from, to } = parseRange(req);
-        const rows = await fetchReturns(from, to);
+        const rows = await fetchReturns(orgId, from, to);
         setDownloadHeaders(
           res,
           "text/csv; charset=utf-8",
@@ -81,8 +82,10 @@ export const refundsJournalReport: ReportModule = {
       "/admin/reports/refunds-journal.pdf",
       requirePermission("reports.read"),
       async (req, res) => {
+        const orgId = reportOrgId(req, res);
+        if (!orgId) return;
         const { from, to } = parseRange(req);
-        const allReturns = await fetchReturns(from, to);
+        const allReturns = await fetchReturns(orgId, from, to);
         const rows = allReturns.filter(
           (r) => r.refund_cents != null && r.refund_cents > 0,
         );
@@ -126,20 +129,17 @@ export const refundsJournalReport: ReportModule = {
     );
   },
 
-  async buildEmailCsv(from, to) {
+  async buildEmailCsv(orgId, from, to) {
     const { res, collect } = bufferedRes();
-    writeRefundsCsv(
-      res as unknown as import("express").Response,
-      await fetchReturns(from, to),
-    );
+    writeRefundsCsv(res, await fetchReturns(orgId, from, to));
     return collect();
   },
 
   // The email PDF deliberately uses a slimmer column shape than the
   // GET handler — the duplication is intentional (see the note on
   // the email route's per-slug PDF builders).
-  async buildEmailPdf(from, to) {
-    const allReturns = await fetchReturns(from, to);
+  async buildEmailPdf(orgId, from, to) {
+    const allReturns = await fetchReturns(orgId, from, to);
     const rows = allReturns.filter(
       (r) => r.refund_cents != null && r.refund_cents > 0,
     );

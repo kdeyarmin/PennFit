@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { Link } from "wouter";
 
 import {
   usePatientPackets,
@@ -9,7 +10,6 @@ import {
   useVoidPatientPacket,
   getPatientPacketsQueryKey,
   patientPacketPdfUrl,
-  type PatientPacketStatus,
   type PacketDeliveryDetails,
 } from "@workspace/api-client-react/admin";
 import { Button } from "@/components/admin/Button";
@@ -20,43 +20,11 @@ import { EmptyState } from "@/components/admin/EmptyState";
 import { ErrorPanel, describeError } from "@/components/admin/ErrorPanel";
 import { DeliveryItemsEditor } from "@/components/admin/DeliveryItemsEditor";
 import { PacketEditForm } from "@/components/admin/PacketEditForm";
-
-type BadgeVariant =
-  | "neutral"
-  | "info"
-  | "success"
-  | "warning"
-  | "danger"
-  | "muted";
-
-const STATUS_VARIANT: Record<PatientPacketStatus, BadgeVariant> = {
-  draft: "muted",
-  sent: "info",
-  viewed: "info",
-  completed: "success",
-  voided: "danger",
-  expired: "warning",
-};
-const STATUS_LABEL: Record<PatientPacketStatus, string> = {
-  draft: "Draft",
-  sent: "Sent",
-  viewed: "Opened",
-  completed: "Signed",
-  voided: "Voided",
-  expired: "Expired",
-};
-
-function fmtDate(iso: string | null): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime())
-    ? "—"
-    : d.toLocaleDateString(undefined, {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-      });
-}
+import {
+  fmtPatientPacketDate as fmtDate,
+  patientPacketReceiptLabel,
+  patientPacketReceiptVariant,
+} from "@/components/admin/patient-packet-status";
 
 export function PatientPacketsTab({
   patientId,
@@ -90,10 +58,12 @@ export function PatientPacketsTab({
 
   const templates = templatesQuery.data?.templates ?? [];
   const packets = packetsQuery.data?.packets ?? [];
+  const onboardingTemplates = templates.filter((t) => !t.standalone);
+  const standaloneTemplateCount = templates.length - onboardingTemplates.length;
 
   useEffect(() => {
-    const list = templatesQuery.data?.templates;
-    if (!seeded && list && list.length > 0) {
+    const list = templatesQuery.data?.templates?.filter((t) => !t.standalone);
+    if (!seeded && list) {
       const init: Record<string, boolean> = {};
       for (const t of list) init[t.key] = t.defaultIncluded;
       setSelectedKeys(init);
@@ -101,7 +71,7 @@ export function PatientPacketsTab({
     }
   }, [templatesQuery.data, seeded]);
 
-  const chosen = templates.filter((t) => selectedKeys[t.key]);
+  const chosen = onboardingTemplates.filter((t) => selectedKeys[t.key]);
 
   const refresh = () => {
     void qc.invalidateQueries({
@@ -137,12 +107,12 @@ export function PatientPacketsTab({
       setLinkResult(res.signingLink);
       setFeedback(
         res.emailSent && res.smsSent
-          ? "Packet sent — emailed and texted to the patient."
+          ? "Packet sent by email and text. Track receipt below; once signed, the signed PDF is available here and in the chart filing flow."
           : res.emailSent
-            ? "Packet sent — emailed to the patient."
+            ? "Packet sent by email. Track receipt below; once signed, the signed PDF is available here and in the chart filing flow."
             : res.smsSent
-              ? "Packet sent — texted to the patient."
-              : "Packet created — share the link below.",
+              ? "Packet sent by text. Track receipt below; once signed, the signed PDF is available here and in the chart filing flow."
+              : "Packet created. Share the link below and track receipt in the packet list.",
       );
       setShowSend(false);
       refresh();
@@ -153,21 +123,36 @@ export function PatientPacketsTab({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between gap-3">
         <div>
           <h3
             className="text-sm font-semibold"
             style={{ color: "hsl(var(--ink-1))" }}
           >
-            Document packets
+            Quick send onboarding packet
           </h3>
           <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
-            Send onboarding documents for electronic signature.
+            Send this patient's onboarding documents for electronic signature.
+            Use the full sender for ABN, refill, custom, or alternate-contact
+            packets.
           </p>
         </div>
-        <Button size="sm" onClick={() => setShowSend((s) => !s)}>
-          {showSend ? "Cancel" : "Send packet"}
-        </Button>
+        <div className="flex flex-wrap justify-end gap-2">
+          <Link
+            href="/admin/patient-packets"
+            className="inline-flex items-center justify-center rounded-md border px-3 py-1.5 text-xs font-semibold transition-all"
+            style={{
+              backgroundColor: "hsl(var(--surface-2))",
+              color: "hsl(var(--penn-navy-deep))",
+              borderColor: "hsl(var(--penn-gold))",
+            }}
+          >
+            Full sender
+          </Link>
+          <Button size="sm" onClick={() => setShowSend((s) => !s)}>
+            {showSend ? "Cancel" : "Quick send"}
+          </Button>
+        </div>
       </div>
 
       {showSend && (
@@ -176,12 +161,17 @@ export function PatientPacketsTab({
           style={{ borderColor: "hsl(var(--line-1))" }}
         >
           <div>
-            <Label htmlFor="pkt-docs">Documents</Label>
+            <Label htmlFor="pkt-docs">Onboarding documents</Label>
             {templatesQuery.isPending ? (
               <Spinner label="Loading documents…" />
+            ) : onboardingTemplates.length === 0 ? (
+              <EmptyState
+                title="No onboarding templates"
+                hint="Open the full Document packets page to review the template catalog."
+              />
             ) : (
               <div className="space-y-1.5" id="pkt-docs">
-                {templates.map((t) => (
+                {onboardingTemplates.map((t) => (
                   <label
                     key={t.key}
                     className="flex items-start gap-2 rounded-md border px-3 py-2 cursor-pointer"
@@ -224,6 +214,16 @@ export function PatientPacketsTab({
                 ))}
               </div>
             )}
+            {standaloneTemplateCount > 0 && (
+              <p
+                className="mt-2 text-xs"
+                style={{ color: "hsl(var(--ink-3))" }}
+              >
+                Standalone forms such as ABN or refill confirmations are sent
+                from the full Document packets page so they are not bundled with
+                onboarding paperwork.
+              </p>
+            )}
           </div>
 
           <div>
@@ -231,6 +231,7 @@ export function PatientPacketsTab({
             <div className="flex gap-2" id="pkt-ch">
               <button
                 type="button"
+                aria-pressed={useEmailCh}
                 onClick={() => setUseEmailCh((v) => !v)}
                 className="rounded-md border px-3 py-1.5 text-sm font-medium"
                 style={{
@@ -249,6 +250,7 @@ export function PatientPacketsTab({
               </button>
               <button
                 type="button"
+                aria-pressed={useSmsCh}
                 onClick={() => setUseSmsCh((v) => !v)}
                 className="rounded-md border px-3 py-1.5 text-sm font-medium"
                 style={{
@@ -302,8 +304,12 @@ export function PatientPacketsTab({
             </div>
           )}
 
-          <Button onClick={handleSend} isLoading={send.isPending}>
-            Send packet
+          <Button
+            onClick={handleSend}
+            isLoading={send.isPending}
+            disabled={chosen.length === 0}
+          >
+            Send onboarding packet
           </Button>
         </div>
       )}
@@ -362,7 +368,7 @@ export function PatientPacketsTab({
             <thead>
               <tr className="text-left" style={{ color: "hsl(var(--ink-3))" }}>
                 <th className="py-2 pr-4 font-medium">Packet</th>
-                <th className="py-2 pr-4 font-medium">Status</th>
+                <th className="py-2 pr-4 font-medium">Receipt</th>
                 <th className="py-2 pr-4 font-medium">Sent</th>
                 <th className="py-2 pr-4 font-medium">Signed</th>
                 <th className="py-2 font-medium text-right">Actions</th>
@@ -384,8 +390,8 @@ export function PatientPacketsTab({
                       {p.title}
                     </td>
                     <td className="py-2 pr-4">
-                      <Badge variant={STATUS_VARIANT[p.status]}>
-                        {STATUS_LABEL[p.status]}
+                      <Badge variant={patientPacketReceiptVariant(p)}>
+                        {patientPacketReceiptLabel(p)}
                       </Badge>
                     </td>
                     <td
@@ -409,7 +415,7 @@ export function PatientPacketsTab({
                           className="text-xs font-semibold mr-3"
                           style={{ color: "hsl(var(--penn-navy))" }}
                         >
-                          PDF
+                          Signed PDF
                         </a>
                       )}
                       {open && (

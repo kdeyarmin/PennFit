@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  BREATHE_SALES_TOOL_NAMES,
   OPENAI_TOOL_DESCRIPTORS,
   TOOL_ARG_SCHEMAS,
   TOOL_NAMES,
@@ -29,6 +30,20 @@ const EXAMPLES: Record<ToolName, Record<string, unknown>> = {
   },
   request_human_handoff: { reason: "patient_distress" },
   end_call: { outcome: "completed" },
+  identify_call_reason: { reason: "sales" },
+  send_info_email: { email: "owner@acme-dme.example", topic: "pricing" },
+  capture_sales_lead: {
+    contact_name: "Pat Owner",
+    company_name: "Acme DME",
+    phone: "+18145551212",
+    email: "owner@acme-dme.example",
+    interest_tier: "growth",
+    message: "Wants a callback about pricing for ~3000 patients.",
+  },
+  start_breathe_signup: {
+    org_name: "Acme DME",
+    admin_email: "owner@acme-dme.example",
+  },
 };
 
 describe("tool descriptors / schemas", () => {
@@ -105,6 +120,38 @@ describe("tool descriptors / schemas", () => {
     expect(r.success).toBe(false);
   });
 
+  it("BREATHE_SALES_TOOL_NAMES is a subset of TOOL_NAMES with no patient/shop tools", () => {
+    const all = new Set<ToolName>(TOOL_NAMES);
+    for (const name of BREATHE_SALES_TOOL_NAMES)
+      expect(all.has(name)).toBe(true);
+    // The sales line must NOT expose any patient/shop side-effect tool.
+    const forbidden: ToolName[] = [
+      "verify_patient_identity",
+      "verify_shop_customer_identity",
+      "lookup_resupply_inventory",
+      "place_resupply_order",
+      "get_customer_chart",
+      "update_shipping_address",
+    ];
+    const sales = new Set<ToolName>(BREATHE_SALES_TOOL_NAMES);
+    for (const f of forbidden) expect(sales.has(f)).toBe(false);
+  });
+
+  it("start_breathe_signup has NO password field (no spoken passwords)", () => {
+    const withPassword = TOOL_ARG_SCHEMAS.start_breathe_signup.safeParse({
+      org_name: "Acme DME",
+      admin_email: "owner@acme-dme.example",
+      password: "hunter2hunter2",
+    });
+    expect(withPassword.success).toBe(false);
+    const descriptor = OPENAI_TOOL_DESCRIPTORS.find(
+      (d) => d.name === "start_breathe_signup",
+    );
+    expect(Object.keys(descriptor?.parameters.properties ?? {})).not.toContain(
+      "password",
+    );
+  });
+
   it("end_call constrains outcome to the allowed enum", () => {
     expect(
       TOOL_ARG_SCHEMAS.end_call.safeParse({ outcome: "anything-goes" }).success,
@@ -160,5 +207,48 @@ describe("summarizeToolArgsForAudit", () => {
       outcome: "order_placed",
     });
     expect(end.outcome).toBe("order_placed");
+  });
+
+  it("never echoes a lead's contact PII (capture_sales_lead)", () => {
+    const out = summarizeToolArgsForAudit("capture_sales_lead", {
+      contact_name: "Pat Owner",
+      company_name: "Acme DME",
+      phone: "+18145551212",
+      email: "owner@acme-dme.example",
+      interest_tier: "growth",
+      message: "Call me back about pricing.",
+    });
+    const blob = JSON.stringify(out);
+    expect(blob).not.toContain("Pat Owner");
+    expect(blob).not.toContain("Acme DME");
+    expect(blob).not.toContain("8145551212");
+    expect(blob).not.toContain("owner@acme-dme.example");
+    expect(blob).not.toContain("Call me back");
+    expect(out.has_email).toBe(true);
+    expect(out.interest_tier).toBe("growth");
+    expect(out.message_len).toBeGreaterThan(0);
+  });
+
+  it("never echoes the recipient or signup details (send_info_email / start_breathe_signup)", () => {
+    const email = summarizeToolArgsForAudit("send_info_email", {
+      email: "owner@acme-dme.example",
+      topic: "pricing",
+      notes: "secret note",
+    });
+    const emailBlob = JSON.stringify(email);
+    expect(emailBlob).not.toContain("owner@acme-dme.example");
+    expect(emailBlob).not.toContain("secret note");
+    expect(email.topic).toBe("pricing");
+    expect(email.has_email).toBe(true);
+
+    const signup = summarizeToolArgsForAudit("start_breathe_signup", {
+      org_name: "Acme DME",
+      admin_email: "owner@acme-dme.example",
+    });
+    const signupBlob = JSON.stringify(signup);
+    expect(signupBlob).not.toContain("Acme DME");
+    expect(signupBlob).not.toContain("owner@acme-dme.example");
+    expect(signup.has_org_name).toBe(true);
+    expect(signup.has_admin_email).toBe(true);
   });
 });

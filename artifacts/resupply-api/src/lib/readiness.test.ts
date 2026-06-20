@@ -8,17 +8,30 @@ vi.mock("@workspace/resupply-db", async () => {
   const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
     "@workspace/resupply-db",
   );
-  return {
-    ...actual,
-    getSupabaseServiceRoleClient: () => ({
-      schema: () => ({
-        from: () => ({
-          select: () => ({
-            limit: () => builderMock(),
-          }),
+  const makeMockClient = () => ({
+    schema: () => ({
+      from: () => ({
+        select: () => ({
+          limit: () => builderMock(),
         }),
       }),
     }),
+  });
+  return {
+    ...actual,
+    getSupabaseServiceRoleClient: () => makeMockClient(),
+    getOrgScopedClient: (
+      orgId: string,
+      client?: Parameters<typeof actual.getOrgScopedClient>[1],
+    ) =>
+      actual.getOrgScopedClient(
+        orgId,
+        client ??
+          (makeMockClient() as unknown as Parameters<
+            typeof actual.getOrgScopedClient
+          >[1]),
+      ),
+    resolveSeedOrgId: async () => "00000000-0000-0000-0000-000000000001",
   };
 });
 

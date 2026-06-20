@@ -80,6 +80,26 @@ describe("preflightClaim", () => {
     expect(out.errorCount).toBe(0);
   });
 
+  it("blocks submit when required paperwork is still outstanding", async () => {
+    stageHappyPath(
+      {},
+      {
+        paperworkOverride: [
+          {
+            status: "outstanding",
+            required: true,
+            label: "Signed proof of delivery",
+          },
+        ],
+      },
+    );
+    const out = await preflightClaim(CLAIM_ID);
+    const item = out.items.find((i) => i.key === "bill_hold");
+    expect(item?.severity).toBe("error");
+    expect(item?.label).toBe("On bill hold — signed paperwork outstanding");
+    expect(out.readyToSubmit).toBe(false);
+  });
+
   it("surfaces active coverage from a recent parsed 271", async () => {
     stageHappyPath();
     stageSupabaseResponse("eligibility_checks", "select", {
@@ -470,6 +490,106 @@ describe("preflightClaim", () => {
       claimId: CLAIM_ID,
     });
   });
+
+  it("blocks submit on an invalid modifier combination (KX + GA)", async () => {
+    // KX (coverage criteria met) and GA (expected non-coverage, ABN on
+    // file) on the same line reject as unprocessable — preflight must
+    // surface a blocking error and flip readyToSubmit to false.
+    stageHappyPath(
+      {},
+      {
+        linesOverride: [
+          {
+            id: LINE_ID,
+            hcpcs_code: "E0601",
+            modifier: "KX,GA",
+            billed_cents: 24999,
+            quantity: 1,
+          },
+        ],
+      },
+    );
+    const out = await preflightClaim(CLAIM_ID);
+    const item = out.items.find((i) => i.key === "modifier_combination");
+    expect(item?.severity).toBe("error");
+    expect(item?.detail).toContain("E0601");
+    expect(item?.fixAction).toEqual({
+      kind: "edit_line_item",
+      claimId: CLAIM_ID,
+      lineId: LINE_ID,
+    });
+    expect(out.readyToSubmit).toBe(false);
+  });
+
+  it("adds no modifier_combination item for a valid line (RR,KX)", async () => {
+    // The default happy-path line carries the valid "RR,KX" combo.
+    stageHappyPath();
+    const out = await preflightClaim(CLAIM_ID);
+    expect(out.items.some((i) => i.key === "modifier_combination")).toBe(false);
+    expect(out.readyToSubmit).toBe(true);
+  });
+
+  it("warns (without blocking) when the diagnosis doesn't support the HCPCS", async () => {
+    // R06.83 (snoring) is not a covered indication for E0601 under LCD
+    // L33718 — surface a non-blocking medical-necessity warning.
+    stageHappyPath({}, { diagnosisOverride: "R06.83" });
+    stageSupabaseResponse("hcpcs_coverage_diagnoses", "select", {
+      data: [
+        { hcpcs_code: "E0601", icd10_code: "G4733", policy: "LCD L33718" },
+      ],
+    });
+    const out = await preflightClaim(CLAIM_ID);
+    const item = out.items.find((i) => i.key === "medical_necessity_dx");
+    expect(item?.severity).toBe("warning");
+    expect(item?.detail).toContain("E0601");
+    expect(item?.detail).toContain("LCD L33718");
+    // Advisory only — medical necessity never flips the submit gate.
+    expect(out.readyToSubmit).toBe(true);
+  });
+
+  it("adds no medical_necessity_dx item when the diagnosis is covered", async () => {
+    // Default happy path: E0601 line + G47.33 diagnosis — a covered match.
+    stageHappyPath();
+    stageSupabaseResponse("hcpcs_coverage_diagnoses", "select", {
+      data: [
+        { hcpcs_code: "E0601", icd10_code: "G4733", policy: "LCD L33718" },
+      ],
+    });
+    const out = await preflightClaim(CLAIM_ID);
+    expect(out.items.some((i) => i.key === "medical_necessity_dx")).toBe(false);
+    expect(out.readyToSubmit).toBe(true);
+  });
+
+  it("queries the coverage catalog with canonical (uppercase) HCPCS codes", async () => {
+    // A non-canonical line code (" e0601 ") must be normalised to the
+    // catalog's "E0601" BEFORE the exact-match `.in()` query, or the lookup
+    // returns no rows and silently skips the warning (false negative).
+    stageHappyPath(
+      {},
+      {
+        diagnosisOverride: "R06.83",
+        linesOverride: [
+          {
+            id: LINE_ID,
+            hcpcs_code: " e0601 ",
+            modifier: "RR,KX",
+            billed_cents: 24999,
+            quantity: 1,
+          },
+        ],
+      },
+    );
+    stageSupabaseResponse("hcpcs_coverage_diagnoses", "select", {
+      data: [
+        { hcpcs_code: "E0601", icd10_code: "G4733", policy: "LCD L33718" },
+      ],
+    });
+    await preflightClaim(CLAIM_ID);
+    const inCall = supabaseMock
+      .filterCalls("hcpcs_coverage_diagnoses", "select")
+      .find((f) => f.verb === "in");
+    expect(inCall?.args[1]).toEqual(["E0601"]);
+  });
 });
 
 describe("isNocHcpcs", () => {
@@ -529,6 +649,11 @@ interface DataOverrides {
       | "suspended";
     enrollment_effective_on?: string | null;
   };
+  paperworkOverride?: Array<{
+    status: "outstanding" | "satisfied" | "waived" | "voided";
+    required: boolean;
+    label: string;
+  }>;
 }
 
 function stageHappyPath(
@@ -557,6 +682,7 @@ function stageHappyPath(
       fulfillment_id: null,
     },
   });
+  stageClaimPaperwork(data.paperworkOverride);
   stagePayerProfile(
     data.payerOverride ?? {
       paper_only: false,
@@ -581,6 +707,24 @@ function stageHappyPath(
     );
     return new Date(todayUtc - daysAgo * MS_PER_DAY).toISOString().slice(0, 10);
   }
+}
+
+function stageClaimPaperwork(
+  rows:
+    | Array<{
+        status: "outstanding" | "satisfied" | "waived" | "voided";
+        required: boolean;
+        label: string;
+      }>
+    | undefined = [
+    { status: "satisfied", required: true, label: "Signed prescription" },
+    { status: "satisfied", required: true, label: "Proof of delivery" },
+    { status: "satisfied", required: true, label: "Assignment of Benefits" },
+  ],
+): void {
+  stageSupabaseResponse("claim_paperwork_requirements", "select", {
+    data: rows,
+  });
 }
 
 function stagePayerProfile(overrides: {

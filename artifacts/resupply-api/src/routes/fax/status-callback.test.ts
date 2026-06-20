@@ -115,6 +115,10 @@ describe("POST /fax/status-callback", () => {
     expect(patch).toMatchObject({ status: "delivered" });
     expect(typeof patch.delivered_at).toBe("string");
     expect(patch).not.toHaveProperty("failed_at");
+    // Tenant-agnostic webhook keyed by the globally-unique vendor_ref: the
+    // update must NOT be org-scoped (the facade forces org_id onto the
+    // patch), else a non-seed tenant's fax status would be dropped.
+    expect(patch).not.toHaveProperty("org_id");
   });
 
   it("maps fax.failed → status='failed' + failed_at + failure_reason", async () => {

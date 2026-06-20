@@ -41,6 +41,12 @@ export interface ManualDocumentField {
   kind: ManualDocumentFieldKind;
   /** Placeholder shown in the empty input. Never a default value. */
   placeholder?: string;
+  /**
+   * Render a professional blank line in the PDF even when the stored draft
+   * value is empty. This keeps payer-required identifiers visible while the
+   * editor input itself remains genuinely blank for chart prefill.
+   */
+  renderWhenBlank?: boolean;
 }
 
 export interface ManualDocumentTypeDef {
@@ -72,26 +78,49 @@ export const MANUAL_DOCUMENT_CATALOG: readonly ManualDocumentTypeDef[] = [
     phi: true,
     requiresSignature: true,
     fields: [
-      { key: "patient_name", label: "Patient name", kind: "text" },
-      { key: "date_of_birth", label: "Date of birth", kind: "text" },
-      { key: "ordering_physician", label: "Ordering physician", kind: "text" },
-      { key: "physician_npi", label: "Physician NPI", kind: "text" },
+      {
+        key: "patient_name",
+        label: "Patient name",
+        kind: "text",
+        renderWhenBlank: true,
+      },
+      {
+        key: "date_of_birth",
+        label: "Date of birth",
+        kind: "text",
+        renderWhenBlank: true,
+      },
+      {
+        key: "ordering_physician",
+        label: "Ordering physician",
+        kind: "text",
+        renderWhenBlank: true,
+      },
+      {
+        key: "physician_npi",
+        label: "Physician NPI",
+        kind: "text",
+        renderWhenBlank: true,
+      },
       {
         key: "physician_phone",
         label: "Physician phone",
         kind: "text",
         placeholder: "+12155551234",
+        renderWhenBlank: true,
       },
       {
         key: "physician_fax",
         label: "Physician fax",
         kind: "text",
         placeholder: "+12155551234",
+        renderWhenBlank: true,
       },
       {
         key: "physician_address",
         label: "Physician address",
         kind: "textarea",
+        renderWhenBlank: true,
       },
       { key: "diagnosis", label: "Diagnosis / ICD-10", kind: "textarea" },
       { key: "equipment", label: "Equipment / HCPCS", kind: "textarea" },
@@ -110,26 +139,49 @@ export const MANUAL_DOCUMENT_CATALOG: readonly ManualDocumentTypeDef[] = [
     phi: true,
     requiresSignature: true,
     fields: [
-      { key: "patient_name", label: "Patient name", kind: "text" },
-      { key: "date_of_birth", label: "Date of birth", kind: "text" },
-      { key: "prescriber_name", label: "Prescriber name", kind: "text" },
-      { key: "prescriber_npi", label: "Prescriber NPI", kind: "text" },
+      {
+        key: "patient_name",
+        label: "Patient name",
+        kind: "text",
+        renderWhenBlank: true,
+      },
+      {
+        key: "date_of_birth",
+        label: "Date of birth",
+        kind: "text",
+        renderWhenBlank: true,
+      },
+      {
+        key: "prescriber_name",
+        label: "Prescriber name",
+        kind: "text",
+        renderWhenBlank: true,
+      },
+      {
+        key: "prescriber_npi",
+        label: "Prescriber NPI",
+        kind: "text",
+        renderWhenBlank: true,
+      },
       {
         key: "prescriber_phone",
         label: "Prescriber phone",
         kind: "text",
         placeholder: "+12155551234",
+        renderWhenBlank: true,
       },
       {
         key: "prescriber_fax",
         label: "Prescriber fax",
         kind: "text",
         placeholder: "+12155551234",
+        renderWhenBlank: true,
       },
       {
         key: "prescriber_address",
         label: "Prescriber address",
         kind: "textarea",
+        renderWhenBlank: true,
       },
       { key: "date_of_service", label: "Date of service", kind: "date" },
       { key: "items_ordered", label: "Items ordered", kind: "textarea" },
@@ -146,7 +198,12 @@ export const MANUAL_DOCUMENT_CATALOG: readonly ManualDocumentTypeDef[] = [
     phi: false,
     requiresSignature: true,
     fields: [
-      { key: "party_name", label: "Party / patient name", kind: "text" },
+      {
+        key: "party_name",
+        label: "Party / patient name",
+        kind: "text",
+        renderWhenBlank: true,
+      },
       { key: "agreement_type", label: "Agreement type", kind: "text" },
       { key: "effective_date", label: "Effective date", kind: "date" },
       { key: "terms", label: "Terms", kind: "textarea" },
@@ -159,10 +216,30 @@ export const MANUAL_DOCUMENT_CATALOG: readonly ManualDocumentTypeDef[] = [
     phi: true,
     requiresSignature: true,
     fields: [
-      { key: "patient_name", label: "Patient name", kind: "text" },
-      { key: "delivery_address", label: "Delivery address", kind: "textarea" },
-      { key: "delivery_date", label: "Delivery date", kind: "date" },
-      { key: "items_delivered", label: "Items delivered", kind: "textarea" },
+      {
+        key: "patient_name",
+        label: "Patient name",
+        kind: "text",
+        renderWhenBlank: true,
+      },
+      {
+        key: "delivery_address",
+        label: "Delivery address",
+        kind: "textarea",
+        renderWhenBlank: true,
+      },
+      {
+        key: "delivery_date",
+        label: "Delivery date",
+        kind: "date",
+        renderWhenBlank: true,
+      },
+      {
+        key: "items_delivered",
+        label: "Items delivered",
+        kind: "textarea",
+        renderWhenBlank: true,
+      },
       { key: "order_reference", label: "Order reference", kind: "text" },
       { key: "serial_numbers", label: "Serial numbers", kind: "textarea" },
     ],

@@ -1,6 +1,11 @@
 import { describe, it, expect } from "vitest";
+import type PDFKit from "pdfkit";
 
-import { renderManualDocumentPdf, type ManualDocumentPdfInput } from "./pdf";
+import {
+  drawManualDocument,
+  renderManualDocumentPdf,
+  type ManualDocumentPdfInput,
+} from "./pdf";
 
 function input(
   over: Partial<ManualDocumentPdfInput> = {},
@@ -68,4 +73,62 @@ describe("renderManualDocumentPdf", () => {
       .length;
     expect(pages).toBe(1);
   });
+
+  it("renders a visible blank for renderWhenBlank fields that are omitted", () => {
+    const textCalls: string[] = [];
+    const mockDoc = createMockPdfDoc(textCalls);
+
+    drawManualDocument(
+      mockDoc as unknown as PDFKit.PDFDocument,
+      input({
+        fields: {
+          patient_name: "Jordan Rivera",
+          diagnosis: "G47.33 Obstructive sleep apnea",
+          equipment: "E0601 CPAP",
+        },
+        body: null,
+      }),
+    );
+
+    const dateOfBirthLabelIndex = textCalls.indexOf("Date of birth: ");
+    expect(dateOfBirthLabelIndex).toBeGreaterThan(-1);
+    expect(textCalls[dateOfBirthLabelIndex + 1]).toContain(
+      "________________________________",
+    );
+  });
 });
+
+function createMockPdfDoc(textCalls: string[]) {
+  return {
+    y: 72,
+    page: { margins: { bottom: 72 } },
+    fontSize() {
+      return this;
+    },
+    font() {
+      return this;
+    },
+    fillColor() {
+      return this;
+    },
+    text(value: string) {
+      textCalls.push(value);
+      return this;
+    },
+    moveDown() {
+      return this;
+    },
+    moveTo() {
+      return this;
+    },
+    lineTo() {
+      return this;
+    },
+    strokeColor() {
+      return this;
+    },
+    stroke() {
+      return this;
+    },
+  };
+}

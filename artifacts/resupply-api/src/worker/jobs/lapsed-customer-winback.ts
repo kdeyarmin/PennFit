@@ -39,12 +39,13 @@ import {
   DEFAULT_COMMUNICATION_PREFERENCES,
   type CommunicationPreferences,
   type Json,
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
 } from "@workspace/resupply-db";
 
 import { sendWinbackEmail } from "../../lib/order-emails/send-winback-email";
 import { shouldSendEmail } from "../../lib/comm-prefs";
 import { logger } from "../../lib/logger";
+import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import {
   createQueueWithDlq,
   VENDOR_SEND_QUEUE_OPTS,
@@ -99,12 +100,12 @@ function readPrefs(raw: Json | null): CommunicationPreferences {
  * Throws on Supabase failure so the error propagates to the caller.
  */
 async function rollbackWinbackStamp(
+  orgId: string,
   customerId: string,
   winbackSentAt: string | null,
 ): Promise<void> {
-  const supabase = getSupabaseServiceRoleClient();
+  const supabase = getOrgScopedClient(orgId);
   const { error } = await supabase
-    .schema("resupply")
     .from("shop_customers")
     .update({ winback_sent_at: winbackSentAt })
     .eq("customer_id", customerId);
@@ -116,16 +117,41 @@ async function rollbackWinbackStamp(
 }
 
 /**
- * Exported for testability. Pure DB + send work.
+ * Exported for testability. Fans out across every ACTIVE tenant —
+ * `shop_customers` / `shop_orders` are org-scoped, so each tenant is
+ * swept on its own org-scoped client and a win-back email only ever
+ * reaches a shopper in that customer's own org. Per-tenant failure
+ * isolation keeps one tenant's error from aborting the rest; the stats
+ * are summed across tenants. Single-tenant: `listActiveOrgIds()` returns
+ * just the seed org, so this is exactly the prior one-tenant sweep.
  */
 export async function runLapsedCustomerWinback(): Promise<WinbackStats> {
-  const supabase = getSupabaseServiceRoleClient();
   const stats: WinbackStats = {
     candidates: 0,
     sent: 0,
     skipped: 0,
     failed: 0,
   };
+  await forEachActiveOrg(
+    async (orgId) => {
+      await winbackSweepForOrg(orgId, stats);
+    },
+    { jobName: JOB_NAME },
+  );
+  return stats;
+}
+
+/**
+ * Run the win-back sweep for a SINGLE tenant, accumulating into the shared
+ * `stats`. The PER_RUN_MAX send cap and MAX_SCANNED_PER_RUN scan cap are
+ * tracked per tenant (local counters) so a busy tenant can't starve the
+ * others out of their weekly send budget.
+ */
+async function winbackSweepForOrg(
+  orgId: string,
+  stats: WinbackStats,
+): Promise<void> {
+  const supabase = getOrgScopedClient(orgId);
 
   const lapsedThreshold = isoDaysAgo(LAPSED_DAYS);
   const cooldownThreshold = isoDaysAgo(WINBACK_COOLDOWN_DAYS);
@@ -145,9 +171,11 @@ export async function runLapsedCustomerWinback(): Promise<WinbackStats> {
   const MAX_SCANNED_PER_RUN = PER_RUN_MAX * 50;
   let lastCustomerId: string | null = null;
   let scanned = 0;
-  pages: while (stats.sent < PER_RUN_MAX && scanned < MAX_SCANNED_PER_RUN) {
+  // Per-tenant send counter — the PER_RUN_MAX budget is each tenant's, not
+  // shared, so one tenant's backlog never starves another's win-backs.
+  let sentThisOrg = 0;
+  pages: while (sentThisOrg < PER_RUN_MAX && scanned < MAX_SCANNED_PER_RUN) {
     let query = supabase
-      .schema("resupply")
       .from("shop_customers")
       .select(
         "customer_id, email_lower, display_name, communication_preferences, winback_sent_at",
@@ -164,12 +192,14 @@ export async function runLapsedCustomerWinback(): Promise<WinbackStats> {
     if (!candidates || candidates.length === 0) break;
     scanned += candidates.length;
     lastCustomerId = candidates[candidates.length - 1]!.customer_id;
-    const rows: WinbackCandidate[] = candidates.filter(
-      (r): r is WinbackCandidate => typeof r.email_lower === "string",
-    );
+    const rows: WinbackCandidate[] = (
+      candidates as Array<
+        Omit<WinbackCandidate, "email_lower"> & { email_lower: string | null }
+      >
+    ).filter((r): r is WinbackCandidate => typeof r.email_lower === "string");
 
     for (const row of rows) {
-      if (stats.sent >= PER_RUN_MAX) break pages;
+      if (sentThisOrg >= PER_RUN_MAX) break pages;
       stats.candidates += 1;
 
       const prefs = readPrefs(row.communication_preferences);
@@ -183,7 +213,6 @@ export async function runLapsedCustomerWinback(): Promise<WinbackStats> {
       //    CASE in select(). Both reads hit the existing
       //    shop_orders(customer_id, paid_at) index.
       const { data: lastOrder } = await supabase
-        .schema("resupply")
         .from("shop_orders")
         .select("paid_at")
         .eq("customer_id", row.customer_id)
@@ -224,7 +253,6 @@ export async function runLapsedCustomerWinback(): Promise<WinbackStats> {
       //    can retry.
       const claimIso = new Date().toISOString();
       const { data: claimed, error: claimErr } = await supabase
-        .schema("resupply")
         .from("shop_customers")
         .update({ winback_sent_at: claimIso })
         .eq("customer_id", row.customer_id)
@@ -250,14 +278,23 @@ export async function runLapsedCustomerWinback(): Promise<WinbackStats> {
           toEmail: row.email_lower,
           firstName,
           monthsSinceLastOrder: monthsSince,
+          orgId,
         });
         if (!result.configured) {
-          await rollbackWinbackStamp(row.customer_id, row.winback_sent_at);
+          await rollbackWinbackStamp(
+            orgId,
+            row.customer_id,
+            row.winback_sent_at,
+          );
           stats.skipped += 1;
           continue;
         }
         if (!result.delivered) {
-          await rollbackWinbackStamp(row.customer_id, row.winback_sent_at);
+          await rollbackWinbackStamp(
+            orgId,
+            row.customer_id,
+            row.winback_sent_at,
+          );
           stats.failed += 1;
           logger.warn(
             { customerId: row.customer_id, err: result.error },
@@ -266,9 +303,14 @@ export async function runLapsedCustomerWinback(): Promise<WinbackStats> {
           continue;
         }
         stats.sent += 1;
+        sentThisOrg += 1;
       } catch (err) {
         try {
-          await rollbackWinbackStamp(row.customer_id, row.winback_sent_at);
+          await rollbackWinbackStamp(
+            orgId,
+            row.customer_id,
+            row.winback_sent_at,
+          );
         } catch (rollbackErr) {
           logger.error(
             {
@@ -294,8 +336,6 @@ export async function runLapsedCustomerWinback(): Promise<WinbackStats> {
     // Short page → no more candidates.
     if (candidates.length < PAGE) break;
   }
-
-  return stats;
 }
 
 export async function registerLapsedCustomerWinbackJob(

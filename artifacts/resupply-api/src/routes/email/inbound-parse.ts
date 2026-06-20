@@ -53,18 +53,17 @@ import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 import busboy from "busboy";
 
 import {
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
+  resolveSeedOrgId,
   tryUpsertPatientLatestMessageSb,
   type Json,
-  type ResupplySupabaseClient,
+  type OrgScopedClient,
 } from "@workspace/resupply-db";
-import {
-  createSendgridClient,
-  EmailApiError,
-  EmailConfigError,
-} from "@workspace/resupply-email";
+import { EmailApiError, EmailConfigError } from "@workspace/resupply-email";
 
 import { logger } from "../../lib/logger";
+import { getCompanyInfo } from "../../lib/company-info";
+import { createTenantSendgridClient } from "../../lib/email/tenant-sender";
 import { claimDedupKey } from "../../lib/dedup-keys";
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { selectLlmProvider } from "../../lib/llm-provider";
@@ -202,18 +201,32 @@ router.post("/email/inbound-parse", inboundParseLimiter, async (req, res) => {
     return;
   }
 
-  const supabase = getSupabaseServiceRoleClient();
+  // Public webhook: there is no req.orgId. Derive the tenant from the SENDER
+  // patient (an inbound reply belongs to whichever tenant the sender is a
+  // patient of), NOT the seed org — otherwise a non-seed tenant's patient
+  // reply would never match the patient lookup and would be dropped as
+  // "unknown_email". Resolve seed only for a `.raw()` client handle and ACK
+  // 200 if even that is unavailable so SendGrid stops retrying.
+  const seedOrgId = await resolveSeedOrgId();
+  if (!seedOrgId) {
+    res.status(200).json({ ok: true });
+    return;
+  }
 
-  // Case-insensitive email match. Patients' emails aren't normalized
-  // at insert time, so compare via .ilike() with LIKE-metachar
-  // escapes (`_` could legitimately appear in a local part). Pull up
-  // to 2 rows so we can detect ambiguous matches (one address shared
-  // between accounts) and bail rather than mis-routing PHI.
+  // Case-insensitive email match across ALL tenants (`.raw()`). Patients'
+  // emails aren't normalized at insert time, so compare via .ilike() with
+  // LIKE-metachar escapes (`_` could legitimately appear in a local part).
+  // Pull up to 2 rows so we can detect ambiguous matches — now including the
+  // same address shared by patients in DIFFERENT tenants — and bail rather
+  // than mis-routing PHI.
   const escapedEmail = fromEmail.replace(/[\\%_]/g, (c) => `\\${c}`);
-  const { data: lookupRows, error: lookupErr } = await supabase
+  const { data: lookupRows, error: lookupErr } = await getOrgScopedClient(
+    seedOrgId,
+  )
+    .raw()
     .schema("resupply")
     .from("patients")
-    .select("id")
+    .select("id, org_id")
     .ilike("email", escapedEmail)
     .limit(2);
   if (lookupErr) throw lookupErr;
@@ -254,6 +267,14 @@ router.post("/email/inbound-parse", inboundParseLimiter, async (req, res) => {
     return;
   }
 
+  // The matched patient's tenant drives every subsequent read/write + the
+  // auto-reply From identity. (org_id is NOT NULL, so a real match always
+  // carries one; fall back to seed defensively.)
+  const orgId =
+    (lookupRows?.[0] as { org_id?: string | null } | undefined)?.org_id ??
+    seedOrgId;
+  const supabase = getOrgScopedClient(orgId);
+
   // 5. Find or create the live email conversation. Reuse any LIVE
   // conversation ('open', 'awaiting_admin', or 'awaiting_patient') for
   // this patient so a multi-turn exchange stays one thread — the same
@@ -267,7 +288,6 @@ router.post("/email/inbound-parse", inboundParseLimiter, async (req, res) => {
   // patient's most recent episode.
   let conversationId: string | null;
   const { data: openConv, error: openConvErr } = await supabase
-    .schema("resupply")
     .from("conversations")
     .select("id")
     .eq("patient_id", patientId)
@@ -281,7 +301,6 @@ router.post("/email/inbound-parse", inboundParseLimiter, async (req, res) => {
     conversationId = openConv.id;
   } else {
     const { data: recentEp, error: epErr } = await supabase
-      .schema("resupply")
       .from("episodes")
       .select("id")
       .eq("patient_id", patientId)
@@ -309,7 +328,6 @@ router.post("/email/inbound-parse", inboundParseLimiter, async (req, res) => {
       return;
     }
     const { data: inserted, error: insertConvErr } = await supabase
-      .schema("resupply")
       .from("conversations")
       .insert({
         patient_id: patientId,
@@ -340,7 +358,6 @@ router.post("/email/inbound-parse", inboundParseLimiter, async (req, res) => {
 
   const inboundIso = inboundAt.toISOString();
   const { data: insertedMsg, error: insertMsgErr } = await supabase
-    .schema("resupply")
     .from("messages")
     .insert({
       conversation_id: conversationId,
@@ -361,7 +378,6 @@ router.post("/email/inbound-parse", inboundParseLimiter, async (req, res) => {
   if (insertMsgErr) throw insertMsgErr;
   const inboundMessageId = insertedMsg?.id ?? null;
   const { error: stampConvErr } = await supabase
-    .schema("resupply")
     .from("conversations")
     .update({ last_message_at: inboundIso, updated_at: inboundIso })
     .eq("id", conversationId);
@@ -423,9 +439,11 @@ router.post("/email/inbound-parse", inboundParseLimiter, async (req, res) => {
     });
   }
 
-  // 8. Refresh latest-message projection (best-effort).
+  // 8. Refresh latest-message projection (best-effort). The projection
+  // helper is a shared db helper typed for the raw service-role client;
+  // pass the unscoped client (`.raw()`) per cutover §B.
   await tryUpsertPatientLatestMessageSb(
-    supabase,
+    supabase.raw(),
     {
       conversationId,
       body,
@@ -450,9 +468,12 @@ router.post("/email/inbound-parse", inboundParseLimiter, async (req, res) => {
   let autoReplied = false;
   if (selectLlmProvider().provider !== "offline") {
     try {
-      if (await isFeatureEnabled("email.auto_reply")) {
+      // Gate on the SENDER patient's tenant (req.orgId is undefined on this
+      // webhook), so the auto-reply flag is honored per the patient's org.
+      if (await isFeatureEnabled("email.auto_reply", orgId)) {
         autoReplied = await attemptEmailAutoReply({
           supabase,
+          orgId,
           conversationId,
           patientId,
           toEmail: fromEmail,
@@ -487,7 +508,6 @@ router.post("/email/inbound-parse", inboundParseLimiter, async (req, res) => {
   // awaiting_admin so a teammate sees the reply in the inbox.
   const nextStatus = autoReplied ? "awaiting_patient" : "awaiting_admin";
   const { error: statusErr } = await supabase
-    .schema("resupply")
     .from("conversations")
     .update({ status: nextStatus, updated_at: inboundIso })
     .eq("id", conversationId);
@@ -520,7 +540,9 @@ router.post("/email/inbound-parse", inboundParseLimiter, async (req, res) => {
 // ---------------------------------------------------------------------------
 
 interface AttemptEmailAutoReplyInput {
-  supabase: ResupplySupabaseClient;
+  supabase: OrgScopedClient;
+  /** Tenant the inbound thread belongs to — drives the per-tenant From (G6). */
+  orgId: string;
   conversationId: string;
   patientId: string;
   /** Patient's email address (the inbound `From`) — where the reply goes. */
@@ -563,6 +585,7 @@ async function attemptEmailAutoReply(
 ): Promise<boolean> {
   const {
     supabase,
+    orgId,
     conversationId,
     patientId,
     toEmail,
@@ -586,7 +609,9 @@ async function attemptEmailAutoReply(
   // auto-reply existed.
   if (rfcMessageId) {
     const msgIdClaim = await claimDedupKey(
-      supabase,
+      // claimDedupKey is a shared helper typed for the raw service-role
+      // client (worker_dedup_keys is its own table); pass `.raw()`.
+      supabase.raw(),
       `email-auto-reply:msgid:${sha256Hex(rfcMessageId)}`,
       new Date(Date.now() + AUTO_REPLY_MSGID_TTL_MS).toISOString(),
     );
@@ -605,7 +630,7 @@ async function attemptEmailAutoReply(
   }
   const bucket = Math.floor(Date.now() / AUTO_REPLY_SENDER_BUCKET_MS);
   const senderClaim = await claimDedupKey(
-    supabase,
+    supabase.raw(),
     `email-auto-reply:sender:${sha256Hex(toEmail.toLowerCase())}:${bucket}`,
     new Date((bucket + 2) * AUTO_REPLY_SENDER_BUCKET_MS).toISOString(),
   );
@@ -626,14 +651,20 @@ async function attemptEmailAutoReply(
   // row we just inserted (its body is passed separately as the message to
   // reply to). Oldest-first after the reverse.
   const { data: recent, error: recentErr } = await supabase
-    .schema("resupply")
     .from("messages")
     .select("id, direction, body, created_at")
     .eq("conversation_id", conversationId)
     .order("created_at", { ascending: false })
     .limit(7);
   if (recentErr) throw recentErr;
-  const thread = (recent ?? [])
+  const thread = (
+    (recent ?? []) as Array<{
+      id: string;
+      direction: string;
+      body: string | null;
+      created_at: string;
+    }>
+  )
     .slice()
     .reverse()
     .filter((m) => m.id !== inboundMessageId && m.body !== null)
@@ -643,11 +674,19 @@ async function attemptEmailAutoReply(
       body: (m.body as string) ?? "",
     }));
 
-  const drafted = await generateEmailReply({
-    body: inboundBody,
-    subject: inboundSubject,
-    thread,
-  });
+  // Brand the auto-reply for the SENDER's tenant (orgId derived from the
+  // sender patient): the system prompt's knowledge + sign-off and the
+  // reply subject carry this tenant's identity, not the seed's.
+  const companyInfo = await getCompanyInfo(orgId);
+  const drafted = await generateEmailReply(
+    {
+      body: inboundBody,
+      subject: inboundSubject,
+      thread,
+    },
+    process.env,
+    orgId,
+  );
   if (drafted.kind !== "reply") return false;
 
   const cfg = readEmailConfigOrNull();
@@ -655,11 +694,9 @@ async function attemptEmailAutoReply(
 
   let sg;
   try {
-    sg = createSendgridClient({
-      apiKey: cfg.sendgridApiKey,
-      fromEmail: cfg.sendgridFromEmail,
-      fromName: cfg.sendgridFromName,
-    });
+    // Send the auto-reply under the tenant's own From identity when
+    // configured (G6); falls back to the platform default when it isn't.
+    sg = await createTenantSendgridClient(orgId);
   } catch (err) {
     if (err instanceof EmailConfigError) {
       logger.warn(
@@ -674,7 +711,7 @@ async function attemptEmailAutoReply(
     throw err;
   }
 
-  const subjectLine = buildReplySubject(inboundSubject);
+  const subjectLine = buildReplySubject(inboundSubject, companyInfo.name);
   let vendorRef: string;
   try {
     const r = await sg.sendEmail({
@@ -712,7 +749,6 @@ async function attemptEmailAutoReply(
   const sentIso = sentAt.toISOString();
   let outboundMessageId: string | null = null;
   const { data: outMsg, error: outErr } = await supabase
-    .schema("resupply")
     .from("messages")
     .insert({
       conversation_id: conversationId,
@@ -744,7 +780,7 @@ async function attemptEmailAutoReply(
   }
 
   // Refresh the latest-message projection for the outbound (best-effort).
-  await tryUpsertPatientLatestMessageSb(supabase, {
+  await tryUpsertPatientLatestMessageSb(supabase.raw(), {
     conversationId,
     body: drafted.reply,
     direction: "outbound",
@@ -780,12 +816,15 @@ async function attemptEmailAutoReply(
  * CR/LF — the SendGrid client rejects header newlines, but failing here
  * would lose the reply rather than just losing the prefix.
  */
-function buildReplySubject(subject: string | null): string {
+function buildReplySubject(
+  subject: string | null,
+  brandName = "PennPaps",
+): string {
   const base = (subject ?? "")
     .replace(/[\r\n]+/g, " ")
     .trim()
     .slice(0, 200);
-  if (!base) return "Re: Your message to PennPaps";
+  if (!base) return `Re: Your message to ${brandName}`;
   return /^re:/i.test(base) ? base : `Re: ${base}`;
 }
 

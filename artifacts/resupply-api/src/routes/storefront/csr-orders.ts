@@ -27,7 +27,10 @@ import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  getOrgScopedClient,
+  type OrgScopedClient,
+} from "@workspace/resupply-db";
 
 import {
   lookupPaymentState,
@@ -36,6 +39,7 @@ import {
 } from "../../lib/csr-order/order";
 import { verifyCsrOrderToken } from "../../lib/csr-order/token";
 import { logger } from "../../lib/logger";
+import { resolveOrgIdForSignedRecord } from "../../lib/storefront/signed-link-org";
 import { resolveCompanyProfile } from "../../lib/patient-packet/company";
 import { renderPacketDocumentSections } from "../../lib/patient-packet/content";
 import {
@@ -43,6 +47,7 @@ import {
   getStripeClient,
   readStripeConfigOrNull,
 } from "../../lib/stripe/config";
+import { stripeAccountRequestOptions } from "../../lib/stripe/connect";
 import { stripeErrLogFields } from "../../lib/stripe/err-log-fields";
 
 const router: IRouter = Router();
@@ -88,20 +93,30 @@ type ResolvedOrderRow = {
 const ORDER_COLUMNS =
   "id, order_reference, status, customer_name, customer_email, items, amount_total_cents, currency, note_to_customer, documents, link_version, expires_at, signed_at, signer_name, stripe_session_id";
 
-// Verify a token against a freshly-loaded order row. Returns the order
-// when the link is valid + open, or an error code to surface.
-async function resolveOpenOrder(
-  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
-  token: string,
-): Promise<
-  | { ok: true; order: ResolvedOrderRow }
+// Verify a token against a freshly-loaded order row. The signed token is
+// the authorization, so we resolve the order's TENANT from its record
+// (so a tenant-B link lands in tenant B) and scope every read/write to it.
+// Returns the order + its org-scoped client, or an error code to surface.
+async function resolveOpenOrder(token: string): Promise<
+  | {
+      ok: true;
+      order: ResolvedOrderRow;
+      supabase: OrgScopedClient;
+      orgId: string;
+    }
   | { ok: false; code: "invalid" | "not_found" | "expired" | "canceled" }
 > {
   const verified = verifyCsrOrderToken(token);
   if (!verified.valid) return { ok: false, code: "invalid" };
 
+  const orgId = await resolveOrgIdForSignedRecord(
+    "csr_order_requests",
+    verified.orderRequestId,
+  );
+  if (!orgId) return { ok: false, code: "not_found" };
+  const supabase = getOrgScopedClient(orgId);
+
   const { data: order, error } = await supabase
-    .schema("resupply")
     .from("csr_order_requests")
     .select(ORDER_COLUMNS)
     .eq("id", verified.orderRequestId)
@@ -117,7 +132,7 @@ async function resolveOpenOrder(
   if (order.expires_at && new Date(order.expires_at).getTime() < Date.now()) {
     return { ok: false, code: "expired" };
   }
-  return { ok: true, order: order as ResolvedOrderRow };
+  return { ok: true, order: order as ResolvedOrderRow, supabase, orgId };
 }
 
 function errorStatus(code: "invalid" | "not_found" | "expired" | "canceled") {
@@ -131,13 +146,13 @@ router.get("/csr-orders/view", viewLimiter, async (req, res) => {
     res.status(400).json({ error: "missing_token" });
     return;
   }
-  const supabase = getSupabaseServiceRoleClient();
-  const resolved = await resolveOpenOrder(supabase, token);
+  const resolved = await resolveOpenOrder(token);
   if (!resolved.ok) {
     res.status(errorStatus(resolved.code)).json({ error: resolved.code });
     return;
   }
   const order = resolved.order;
+  const supabase = resolved.supabase;
 
   const company = await resolveCompanyProfile(supabase);
   const payment = await lookupPaymentState(supabase, order.stripe_session_id);
@@ -145,7 +160,6 @@ router.get("/csr-orders/view", viewLimiter, async (req, res) => {
   // First view? Stamp it (best-effort; never blocks the read).
   if (order.status === "sent") {
     const { error: viewStampErr } = await supabase
-      .schema("resupply")
       .from("csr_order_requests")
       .update({
         status: "viewed",
@@ -233,13 +247,13 @@ router.post("/csr-orders/sign", mutateLimiter, async (req, res) => {
   }
   const b = parsed.data;
 
-  const supabase = getSupabaseServiceRoleClient();
-  const resolved = await resolveOpenOrder(supabase, b.token);
+  const resolved = await resolveOpenOrder(b.token);
   if (!resolved.ok) {
     res.status(errorStatus(resolved.code)).json({ error: resolved.code });
     return;
   }
   const order = resolved.order;
+  const supabase = resolved.supabase;
   if (order.signed_at) {
     res.status(409).json({ error: "already_signed" });
     return;
@@ -264,7 +278,6 @@ router.post("/csr-orders/sign", mutateLimiter, async (req, res) => {
   // still unsigned. The link stays valid (same version) so the
   // customer can continue straight to payment.
   const { data: updated, error: updErr } = await supabase
-    .schema("resupply")
     .from("csr_order_requests")
     .update({
       status: "signed",
@@ -318,13 +331,13 @@ router.post("/csr-orders/checkout", mutateLimiter, async (req, res) => {
     return;
   }
 
-  const supabase = getSupabaseServiceRoleClient();
-  const resolved = await resolveOpenOrder(supabase, parsed.data.token);
+  const resolved = await resolveOpenOrder(parsed.data.token);
   if (!resolved.ok) {
     res.status(errorStatus(resolved.code)).json({ error: resolved.code });
     return;
   }
   const order = resolved.order;
+  const supabase = resolved.supabase;
 
   // Server-side gate: paperwork must be signed before payment.
   if (!order.signed_at) {
@@ -339,6 +352,12 @@ router.post("/csr-orders/checkout", mutateLimiter, async (req, res) => {
   }
 
   const stripe = getStripeClient(config);
+  // Route this tenant's charge to its connected Stripe account when one is
+  // live (G5). Empty `{}` for the seed/unconnected tenant → platform
+  // account, unchanged. The SAME options must scope the session-reuse
+  // retrieve below, or a connected-account session would 404 on the
+  // platform key and get needlessly re-minted.
+  const connectOptions = await stripeAccountRequestOptions(resolved.orgId);
 
   // Reuse an in-flight session when it's still open — a double-click
   // (or a back-button return) lands on the same Stripe page instead of
@@ -347,6 +366,8 @@ router.post("/csr-orders/checkout", mutateLimiter, async (req, res) => {
     try {
       const existing = await stripe.checkout.sessions.retrieve(
         order.stripe_session_id,
+        undefined,
+        connectOptions,
       );
       if (existing.payment_status === "paid") {
         res.status(409).json({ error: "already_paid" });
@@ -378,30 +399,35 @@ router.post("/csr-orders/checkout", mutateLimiter, async (req, res) => {
 
   let session;
   try {
-    session = await stripe.checkout.sessions.create({
-      mode: "payment",
-      ...(order.customer_email ? { customer_email: order.customer_email } : {}),
-      // Free-form CSR pricing: ad-hoc price_data per line (these are
-      // not catalog SKUs — the CSR set the description + amount).
-      line_items: items.map((it) => ({
-        price_data: {
-          currency: order.currency,
-          product_data: { name: it.description.slice(0, 250) },
-          unit_amount: it.unitAmountCents,
+    session = await stripe.checkout.sessions.create(
+      {
+        mode: "payment",
+        ...(order.customer_email
+          ? { customer_email: order.customer_email }
+          : {}),
+        // Free-form CSR pricing: ad-hoc price_data per line (these are
+        // not catalog SKUs — the CSR set the description + amount).
+        line_items: items.map((it) => ({
+          price_data: {
+            currency: order.currency,
+            product_data: { name: it.description.slice(0, 250) },
+            unit_amount: it.unitAmountCents,
+          },
+          quantity: it.quantity,
+        })),
+        success_url: `${returnBase}&checkout=success`,
+        cancel_url: `${returnBase}&checkout=cancel`,
+        shipping_address_collection: { allowed_countries: ["US"] },
+        phone_number_collection: { enabled: true },
+        metadata: {
+          source: "pennfit-csr-order",
+          csr_order_request_id: order.id,
+          order_reference: order.order_reference,
         },
-        quantity: it.quantity,
-      })),
-      success_url: `${returnBase}&checkout=success`,
-      cancel_url: `${returnBase}&checkout=cancel`,
-      shipping_address_collection: { allowed_countries: ["US"] },
-      phone_number_collection: { enabled: true },
-      metadata: {
-        source: "pennfit-csr-order",
-        csr_order_request_id: order.id,
-        order_reference: order.order_reference,
+        automatic_tax: { enabled: false },
       },
-      automatic_tax: { enabled: false },
-    });
+      connectOptions,
+    );
   } catch (err) {
     req.log?.error(
       { ...stripeErrLogFields(err), orderRequestId: order.id },
@@ -425,19 +451,16 @@ router.post("/csr-orders/checkout", mutateLimiter, async (req, res) => {
   // or-IGNORE on conflict for the same reason as /shop/checkout: a
   // webhook that already advanced the row must never be reverted.
   const nowIso = new Date().toISOString();
-  const { error: mirrorErr } = await supabase
-    .schema("resupply")
-    .from("shop_orders")
-    .upsert(
-      {
-        stripe_session_id: session.id,
-        status: "pending",
-        fulfillment_method: "ship",
-        customer_email: order.customer_email,
-        updated_at: nowIso,
-      },
-      { onConflict: "stripe_session_id", ignoreDuplicates: true },
-    );
+  const { error: mirrorErr } = await supabase.from("shop_orders").upsert(
+    {
+      stripe_session_id: session.id,
+      status: "pending",
+      fulfillment_method: "ship",
+      customer_email: order.customer_email,
+      updated_at: nowIso,
+    },
+    { onConflict: "stripe_session_id", ignoreDuplicates: true },
+  );
   if (mirrorErr) {
     req.log?.error(
       { err: mirrorErr, sessionId: session.id, orderRequestId: order.id },
@@ -450,7 +473,6 @@ router.post("/csr-orders/checkout", mutateLimiter, async (req, res) => {
   // Point the request at the latest session (payment state derivation
   // joins on this).
   const { error: linkErr } = await supabase
-    .schema("resupply")
     .from("csr_order_requests")
     .update({ stripe_session_id: session.id, updated_at: nowIso })
     .eq("id", order.id);

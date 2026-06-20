@@ -24,10 +24,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import {
-  getSupabaseServiceRoleClient,
-  type Database,
-} from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 import { EmailConfigError } from "@workspace/resupply-email";
 import { TwilioConfigError } from "@workspace/resupply-telecom";
 
@@ -156,11 +153,15 @@ function disallowedTokens(
 router.get(
   "/admin/alerts",
   requirePermission("admin.tools.manage"),
-  async (_req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const [defsRes, msgsRes] = await Promise.all([
       supabase
-        .schema("resupply")
         .from("alert_definitions")
         .select(
           "key, name, description, category, severity, channels, allowed_variables, is_active",
@@ -169,7 +170,6 @@ router.get(
         .order("name", { ascending: true })
         .limit(500),
       supabase
-        .schema("resupply")
         .from("alert_messages")
         .select(
           "alert_key, channel, subject, body_html, body_text, is_active, updated_at, updated_by",
@@ -198,9 +198,13 @@ router.get(
       res.status(400).json({ error: "invalid_key" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: def, error: defErr } = await supabase
-      .schema("resupply")
       .from("alert_definitions")
       .select(
         "key, name, description, category, severity, channels, allowed_variables, is_active",
@@ -214,7 +218,6 @@ router.get(
       return;
     }
     const { data: msgs, error: msgErr } = await supabase
-      .schema("resupply")
       .from("alert_messages")
       .select(
         "alert_key, channel, subject, body_html, body_text, is_active, updated_at, updated_by",
@@ -261,10 +264,14 @@ router.patch(
     }
     const alertKey = keyCheck.data;
     const channel = channelCheck.data;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     const { data: def, error: defErr } = await supabase
-      .schema("resupply")
       .from("alert_definitions")
       .select("key, allowed_variables")
       .eq("key", alertKey)
@@ -277,7 +284,6 @@ router.patch(
     }
 
     const { data: existing, error: existingErr } = await supabase
-      .schema("resupply")
       .from("alert_messages")
       .select("subject, body_html, body_text, channel")
       .eq("alert_key", alertKey)
@@ -349,7 +355,6 @@ router.patch(
       updateValues.is_active = parsed.data.isActive;
 
     const { data: updated, error: updateErr } = await supabase
-      .schema("resupply")
       .from("alert_messages")
       .update(updateValues)
       .eq("alert_key", alertKey)

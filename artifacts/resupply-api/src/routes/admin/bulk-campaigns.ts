@@ -16,10 +16,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  type Database,
-  getSupabaseServiceRoleClient,
-} from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { fetchAudienceCandidates } from "../../lib/bulk-campaigns/fetch-candidates";
 import { isFeatureEnabled } from "../../lib/feature-flags";
@@ -27,7 +24,13 @@ import {
   resolveAudience,
   type AudienceKind,
   type Category,
+  type Channel,
 } from "../../lib/bulk-campaigns/resolve-audience";
+import {
+  patientSegmentFilterSchema,
+  summarizePatientSegment,
+  type PatientSegmentFilter,
+} from "../../lib/bulk-campaigns/patient-segment";
 import {
   isLegalCampaignTransition,
   type CampaignStatus,
@@ -40,16 +43,31 @@ import { enqueueImmediateTick } from "../../worker/jobs/bulk-campaign-tick.js";
 
 const router: IRouter = Router();
 
+type BulkCampaignRow = Database["resupply"]["Tables"]["bulk_campaigns"]["Row"];
+type BulkCampaignRecipientRow =
+  Database["resupply"]["Tables"]["bulk_campaign_recipients"]["Row"];
+
 const idParam = z.object({ id: z.string().uuid() });
+
+/** Safely render a stored audience_filter jsonb as a PHI-free one-liner for
+ *  the campaign list / detail UI; null for non-segment campaigns or an
+ *  unrecognized shape. */
+function summarizeAudienceFilter(raw: unknown): string | null {
+  if (!raw || typeof raw !== "object") return null;
+  const parsed = patientSegmentFilterSchema.safeParse(raw);
+  return parsed.success ? summarizePatientSegment(parsed.data) : null;
+}
 
 const AUDIENCE_KIND_VALUES: AudienceKind[] = [
   "all_active_shop_customers",
   "all_active_patients",
   "by_patient_payer",
   "by_therapy_cohort",
+  "patient_segment",
   "manual_list",
 ];
 const CATEGORY_VALUES: Category[] = ["marketing", "service", "compliance"];
+const CHANNEL_VALUES: Channel[] = ["email", "sms"];
 
 // RT clinical cohorts (C-R1). The selector is carried in the
 // `audience_payer` column (a generic audience parameter) so it threads
@@ -72,11 +90,21 @@ const draftBody = z
     /** Required when audienceKind='by_therapy_cohort'. Selects which
      *  open-compliance-alert cohort to target. Stored in audience_payer. */
     therapyCohort: z.enum(THERAPY_COHORT_VALUES).optional(),
+    /** Required when audienceKind='patient_segment'. Composable patient
+     *  filter (equipment make/class/model, failing therapy, payer,
+     *  recency). Persisted to bulk_campaigns.audience_filter. */
+    patientSegment: patientSegmentFilterSchema.optional(),
     /** Required when audienceKind='manual_list'. Each id is a UUID;
      *  recipientKind is determined by the order in shop/patient
      *  arrays. */
     manualShopCustomerIds: z.array(z.string().uuid()).max(50_000).optional(),
     manualPatientIds: z.array(z.string().uuid()).max(50_000).optional(),
+    /** Delivery channel. Email goes through SendGrid; SMS through Twilio.
+     *  Defaults to email. */
+    channel: z
+      .enum(CHANNEL_VALUES as [Channel, ...Channel[]])
+      .optional()
+      .default("email"),
     category: z.enum(CATEGORY_VALUES as [Category, ...Category[]]),
     complianceAttestation: z.string().trim().max(2000).nullable().optional(),
     templateKey: z.string().trim().min(1).max(120),
@@ -103,6 +131,13 @@ const draftBody = z
     {
       path: ["therapyCohort"],
       message: "therapyCohort is required when audienceKind=by_therapy_cohort.",
+    },
+  )
+  .refine(
+    (b) => b.audienceKind !== "patient_segment" || Boolean(b.patientSegment),
+    {
+      path: ["patientSegment"],
+      message: "patientSegment is required when audienceKind=patient_segment.",
     },
   )
   .refine(
@@ -137,18 +172,22 @@ router.post(
       return;
     }
     const b = parsed.data;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // Verify the template exists + is active for the channel we're
     // about to send. The send-side worker will re-check at send
     // time too (handles late deactivation), but failing here keeps
     // a CSR from creating a campaign against a typo'd key.
     const { data: tpl, error: tplErr } = await supabase
-      .schema("resupply")
       .from("message_templates")
       .select("template_key, channel, is_active")
       .eq("template_key", b.templateKey)
-      .eq("channel", "email")
+      .eq("channel", b.channel)
       .limit(1)
       .maybeSingle();
     if (tplErr) {
@@ -165,7 +204,7 @@ router.post(
     if (!tpl) {
       res.status(400).json({
         error: "template_not_found",
-        message: `No active email template with key "${b.templateKey}".`,
+        message: `No active ${b.channel} template with key "${b.templateKey}".`,
       });
       return;
     }
@@ -187,12 +226,16 @@ router.post(
         ? (b.therapyCohort ?? null)
         : (b.audiencePayer ?? null);
 
+    const patientSegment: PatientSegmentFilter | null =
+      b.audienceKind === "patient_segment" ? (b.patientSegment ?? null) : null;
+
     // ── Pull candidates ───────────────────────────────────────────
     const { shopCandidates, patientCandidates } = await fetchAudienceCandidates(
       supabase,
       {
         audienceKind: b.audienceKind,
         audiencePayer: audienceParam,
+        patientSegment,
         manualShopCustomerIds: b.manualShopCustomerIds,
         manualPatientIds: b.manualPatientIds,
       },
@@ -201,20 +244,21 @@ router.post(
       audienceKind: b.audienceKind,
       audiencePayer: audienceParam,
       category: b.category,
+      channel: b.channel,
       shopCustomers: shopCandidates,
       patients: patientCandidates,
     });
 
     // ── Persist the campaign + recipients ─────────────────────────
     const { data: campaign, error: campaignErr } = await supabase
-      .schema("resupply")
       .from("bulk_campaigns")
       .insert({
         name: b.name,
         description: b.description ?? null,
         audience_kind: b.audienceKind,
         audience_payer: audienceParam,
-        channel: "email",
+        audience_filter: patientSegment,
+        channel: b.channel,
         category: b.category,
         compliance_attestation: b.complianceAttestation ?? null,
         template_key: b.templateKey,
@@ -238,11 +282,11 @@ router.post(
           recipient_kind: r.recipientKind,
           recipient_id: r.recipientId,
           recipient_email: r.recipientEmail,
+          recipient_phone: r.recipientPhone,
           status: r.status,
           suppression_reason: r.suppressionReason,
         }));
         const { error } = await supabase
-          .schema("resupply")
           .from("bulk_campaign_recipients")
           .insert(slice);
         if (error) throw error;
@@ -257,12 +301,16 @@ router.post(
       targetId: campaign.id,
       metadata: {
         audience_kind: b.audienceKind,
+        channel: b.channel,
         category: b.category,
         template_key: b.templateKey,
+        segment: patientSegment
+          ? summarizePatientSegment(patientSegment)
+          : null,
         total: resolved.totals.total,
         pending: resolved.totals.pending,
         suppressed: resolved.totals.suppressed,
-        // Recipient ids/emails withheld — the row count alone is
+        // Recipient ids/contacts withheld — the row count alone is
         // the meaningful audit dimension here.
       },
       ip: req.ip ?? null,
@@ -284,22 +332,27 @@ router.post(
 router.get(
   "/admin/bulk-campaigns",
   requirePermission("bulk_campaigns.send"),
-  async (_req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("bulk_campaigns")
       .select("*")
       .order("created_at", { ascending: false })
       .limit(100);
     if (error) throw error;
     res.json({
-      campaigns: (data ?? []).map((r) => ({
+      campaigns: ((data ?? []) as BulkCampaignRow[]).map((r) => ({
         id: r.id,
         name: r.name,
         description: r.description,
         audienceKind: r.audience_kind,
         audiencePayer: r.audience_payer,
+        audienceFilterSummary: summarizeAudienceFilter(r.audience_filter),
         channel: r.channel,
         category: r.category,
         templateKey: r.template_key,
@@ -332,9 +385,13 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("bulk_campaigns")
       .select("*")
       .eq("id", params.data.id)
@@ -350,10 +407,9 @@ router.get(
     // Suppressed-first ordering puts the reasons in front of the
     // CSR (they're what needs explaining).
     const { data: recipients, error: rErr } = await supabase
-      .schema("resupply")
       .from("bulk_campaign_recipients")
       .select(
-        "id, recipient_kind, recipient_id, recipient_email, status, suppression_reason",
+        "id, recipient_kind, recipient_id, recipient_email, recipient_phone, status, suppression_reason",
       )
       .eq("campaign_id", row.id)
       .order("status", { ascending: false })
@@ -366,6 +422,8 @@ router.get(
       description: row.description,
       audienceKind: row.audience_kind,
       audiencePayer: row.audience_payer,
+      audienceFilter: row.audience_filter,
+      audienceFilterSummary: summarizeAudienceFilter(row.audience_filter),
       channel: row.channel,
       category: row.category,
       complianceAttestation: row.compliance_attestation,
@@ -381,14 +439,17 @@ router.get(
       startedAt: row.started_at,
       completedAt: row.completed_at,
       cancelledAt: row.cancelled_at,
-      recipients: (recipients ?? []).map((r) => ({
-        id: r.id,
-        recipientKind: r.recipient_kind,
-        recipientId: r.recipient_id,
-        recipientEmail: r.recipient_email,
-        status: r.status,
-        suppressionReason: r.suppression_reason,
-      })),
+      recipients: ((recipients ?? []) as BulkCampaignRecipientRow[]).map(
+        (r) => ({
+          id: r.id,
+          recipientKind: r.recipient_kind,
+          recipientId: r.recipient_id,
+          recipientEmail: r.recipient_email,
+          recipientPhone: r.recipient_phone,
+          status: r.status,
+          suppressionReason: r.suppression_reason,
+        }),
+      ),
     });
   },
 );
@@ -409,7 +470,7 @@ interface TransitionPlan {
   /** Per-transition audit action. */
   auditAction: string;
   /** Side effect to run after the DB update succeeds. */
-  sideEffect?: (campaignId: string) => Promise<void>;
+  sideEffect?: (campaignId: string, orgId: string | undefined) => Promise<void>;
 }
 
 function planFor(
@@ -420,10 +481,10 @@ function planFor(
       return {
         to: "sending",
         auditAction: "bulk_campaign.start",
-        sideEffect: async (id) => {
+        sideEffect: async (id, orgId) => {
           const boss = getBoss();
           if (boss) {
-            await enqueueImmediateTick(boss, id);
+            await enqueueImmediateTick(boss, id, orgId);
           } else {
             // The worker isn't booted (dev / test environment).
             // Mark the campaign sending anyway — the next worker
@@ -443,10 +504,10 @@ function planFor(
       return {
         to: "sending",
         auditAction: "bulk_campaign.resume",
-        sideEffect: async (id) => {
+        sideEffect: async (id, orgId) => {
           const boss = getBoss();
           if (boss) {
-            await enqueueImmediateTick(boss, id);
+            await enqueueImmediateTick(boss, id, orgId);
           }
         },
       };
@@ -467,10 +528,14 @@ function makeTransitionHandler(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     const { data: existing, error: getErr } = await supabase
-      .schema("resupply")
       .from("bulk_campaigns")
       .select("id, status, total_recipients, suppressed_count")
       .eq("id", params.data.id)
@@ -497,7 +562,7 @@ function makeTransitionHandler(
     // campaign even after they've turned the feature off.
     if (
       (action === "start" || action === "resume") &&
-      !(await isFeatureEnabled("bulk_campaigns.send"))
+      !(await isFeatureEnabled("bulk_campaigns.send", req.orgId))
     ) {
       res.status(503).json({
         error: "feature_disabled",
@@ -552,7 +617,6 @@ function makeTransitionHandler(
     }
 
     const { data: updated, error: updErr } = await supabase
-      .schema("resupply")
       .from("bulk_campaigns")
       .update(updates)
       .eq("id", params.data.id)
@@ -569,7 +633,7 @@ function makeTransitionHandler(
 
     if (plan.sideEffect) {
       try {
-        await plan.sideEffect(params.data.id);
+        await plan.sideEffect(params.data.id, orgId);
       } catch (err) {
         logger.error(
           {
@@ -664,11 +728,17 @@ router.post(
       res.status(404).json({ error: "campaign_not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: campaign, error: lookupErr } = await supabase
-      .schema("resupply")
       .from("bulk_campaigns")
-      .select("id, status, audience_kind, audience_payer, category")
+      .select(
+        "id, status, audience_kind, audience_payer, audience_filter, channel, category",
+      )
       .eq("id", idCheck.data)
       .limit(1)
       .maybeSingle();
@@ -699,11 +769,33 @@ router.post(
       return;
     }
 
+    // Re-validate the stored segment spec (defensive — the column is jsonb).
+    const segParse =
+      campaign.audience_kind === "patient_segment"
+        ? patientSegmentFilterSchema.safeParse(campaign.audience_filter)
+        : null;
+    const regenSegment: PatientSegmentFilter | null =
+      segParse && segParse.success ? segParse.data : null;
+    // Refuse rather than wipe: a patient_segment campaign whose stored filter
+    // no longer parses would otherwise resolve to zero candidates, and the
+    // delete-then-reinsert below would silently destroy the drafted audience
+    // and report success. Bail with a clear error instead.
+    if (campaign.audience_kind === "patient_segment" && !regenSegment) {
+      res.status(409).json({
+        error: "invalid_segment_filter",
+        message:
+          "This campaign's stored segment filter is missing or invalid. Cancel and create a fresh draft to rebuild the audience.",
+      });
+      return;
+    }
+    const regenChannel: Channel = campaign.channel === "sms" ? "sms" : "email";
+
     const { shopCandidates, patientCandidates } = await fetchAudienceCandidates(
       supabase,
       {
         audienceKind: campaign.audience_kind as AudienceKind,
         audiencePayer: campaign.audience_payer,
+        patientSegment: regenSegment,
       },
     );
 
@@ -711,6 +803,7 @@ router.post(
       audienceKind: campaign.audience_kind as AudienceKind,
       audiencePayer: campaign.audience_payer,
       category: campaign.category as Category,
+      channel: regenChannel,
       shopCustomers: shopCandidates,
       patients: patientCandidates,
     });
@@ -720,7 +813,6 @@ router.post(
     // that's the audit story; the prior recipient rows aren't
     // re-needed.
     const { error: delErr } = await supabase
-      .schema("resupply")
       .from("bulk_campaign_recipients")
       .delete()
       .eq("campaign_id", idCheck.data);
@@ -734,11 +826,11 @@ router.post(
           recipient_kind: r.recipientKind,
           recipient_id: r.recipientId,
           recipient_email: r.recipientEmail,
+          recipient_phone: r.recipientPhone,
           status: r.status,
           suppression_reason: r.suppressionReason,
         }));
         const { error } = await supabase
-          .schema("resupply")
           .from("bulk_campaign_recipients")
           .insert(slice);
         if (error) throw error;
@@ -747,7 +839,6 @@ router.post(
 
     // Refresh materialized counters.
     const { error: updErr } = await supabase
-      .schema("resupply")
       .from("bulk_campaigns")
       .update({
         total_recipients: resolved.totals.total,
@@ -795,9 +886,13 @@ router.get(
       res.status(404).json({ error: "campaign_not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: campaign } = await supabase
-      .schema("resupply")
       .from("bulk_campaigns")
       .select("id, name")
       .eq("id", idCheck.data)
@@ -815,6 +910,7 @@ router.get(
         "recipient_kind",
         "recipient_id",
         "recipient_email",
+        "recipient_phone",
         "status",
         "suppression_reason",
         "created_at",
@@ -832,10 +928,9 @@ router.get(
     let offset = 0;
     while (true) {
       const { data, error } = await supabase
-        .schema("resupply")
         .from("bulk_campaign_recipients")
         .select(
-          "recipient_kind, recipient_id, recipient_email, status, suppression_reason, created_at",
+          "recipient_kind, recipient_id, recipient_email, recipient_phone, status, suppression_reason, created_at",
         )
         .eq("campaign_id", idCheck.data)
         .order("created_at", { ascending: true })
@@ -850,6 +945,7 @@ router.get(
             r.recipient_kind,
             r.recipient_id,
             r.recipient_email,
+            r.recipient_phone ?? "",
             r.status,
             r.suppression_reason ?? "",
             r.created_at,

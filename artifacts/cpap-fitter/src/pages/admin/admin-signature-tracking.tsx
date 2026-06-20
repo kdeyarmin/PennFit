@@ -255,12 +255,25 @@ export function AdminSignatureTrackingPage() {
                     className="text-left"
                     style={{ color: "hsl(var(--ink-3))" }}
                   >
-                    <th className="px-4 py-2 font-medium">Tracking #</th>
-                    <th className="px-4 py-2 font-medium">Document</th>
-                    <th className="px-4 py-2 font-medium">Patient</th>
-                    <th className="px-4 py-2 font-medium">Provider</th>
-                    <th className="px-4 py-2 font-medium">Sent</th>
-                    <th className="px-4 py-2 font-medium text-right">
+                    <th scope="col" className="px-4 py-2 font-medium">
+                      Tracking #
+                    </th>
+                    <th scope="col" className="px-4 py-2 font-medium">
+                      Document
+                    </th>
+                    <th scope="col" className="px-4 py-2 font-medium">
+                      Patient
+                    </th>
+                    <th scope="col" className="px-4 py-2 font-medium">
+                      Provider
+                    </th>
+                    <th scope="col" className="px-4 py-2 font-medium">
+                      Sent
+                    </th>
+                    <th
+                      scope="col"
+                      className="px-4 py-2 font-medium text-right"
+                    >
                       Actions
                     </th>
                   </tr>

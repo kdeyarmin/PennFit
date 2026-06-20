@@ -8,7 +8,9 @@
 
 import type Stripe from "stripe";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
+
+import { resolveWebhookOrgId } from "../webhook-org-context";
 
 /**
  * Handle payment_method.detached: clear the stored default-PM pointer
@@ -28,9 +30,16 @@ export async function handlePaymentMethodDetached(
 ): Promise<void> {
   const pm = event.data.object as Stripe.PaymentMethod;
   if (typeof pm.id === "string") {
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = await resolveWebhookOrgId();
+    if (!orgId) {
+      log?.warn?.(
+        { paymentMethodId: pm.id },
+        "shop_customers: default-PM clear on detach skipped — tenant context missing",
+      );
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { error: clearErr } = await supabase
-      .schema("resupply")
       .from("shop_customers")
       .update({
         default_payment_method_id: null,

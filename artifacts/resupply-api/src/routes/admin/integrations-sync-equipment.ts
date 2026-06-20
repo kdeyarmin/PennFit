@@ -14,7 +14,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 import type { DeviceSettings } from "@workspace/resupply-integrations";
 
 import { linkEquipmentFromSnapshot } from "../../lib/integrations/link-equipment";
@@ -36,9 +36,14 @@ router.post(
       return;
     }
     const patientId = idParse.data;
-    const supabase = getSupabaseServiceRoleClient();
+    // Fail closed: never widen to all tenants on a missing orgId.
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: snapshots, error } = await supabase
-      .schema("resupply")
       .from("patient_integration_snapshots")
       .select("source, payload, fetch_status")
       .eq("patient_id", patientId)

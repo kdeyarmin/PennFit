@@ -36,7 +36,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
@@ -84,12 +84,16 @@ router.get(
     }
     const { id } = parsed.data;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // Confirm the patient exists (and grab the createdAt for the
     // patient_created marker).
     const { data: patient, error: patientErr } = await supabase
-      .schema("resupply")
       .from("patients")
       .select("id, created_at")
       .eq("id", id)
@@ -110,26 +114,22 @@ router.get(
     const [prescriptionsRes, episodesRes, conversationsRes, fulfillmentsRes] =
       await Promise.all([
         supabase
-          .schema("resupply")
           .from("prescriptions")
           .select("id, item_sku, cadence_days, created_at")
           .eq("patient_id", id)
           .order("created_at", { ascending: false })
           .limit(200),
         supabase
-          .schema("resupply")
           .from("episodes")
           .select("id, prescription_id, status, due_at, created_at")
           .eq("patient_id", id)
           .order("created_at", { ascending: false })
           .limit(200),
         supabase
-          .schema("resupply")
           .from("conversations")
           .select("id, episode_id, channel")
           .eq("patient_id", id),
         supabase
-          .schema("resupply")
           .from("fulfillments")
           .select(
             "id, episode_id, item_sku, quantity, status, submitted_at, shipped_at, delivered_at, created_at",
@@ -167,12 +167,11 @@ router.get(
     // conversations.patient_id. Now we fetch the patient's conversation
     // ids first (above) and use `.in()` here. If the patient has no
     // conversations there's nothing to fetch — skip the round-trip.
-    const conversationIds = conversationRows.map((c) => c.id);
+    const conversationIds = conversationRows.map((c: { id: string }) => c.id);
     const messageRows =
       conversationIds.length > 0
         ? await (async () => {
             const { data, error } = await supabase
-              .schema("resupply")
               .from("messages")
               .select(
                 "id, conversation_id, direction, sender_role, delivery_status, sent_at, created_at",

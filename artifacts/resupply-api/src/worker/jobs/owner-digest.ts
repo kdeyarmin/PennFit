@@ -15,12 +15,13 @@
 
 import type PgBoss from "pg-boss";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 import {
   createSendgridClient,
   EmailConfigError,
 } from "@workspace/resupply-email";
 
+import { PLATFORM_NAME } from "../../lib/company-info";
 import { logger } from "../../lib/logger";
 import {
   createQueueWithDlq,
@@ -90,6 +91,15 @@ function dateMinusDays(asOfMs: number, days: number): string {
  * Pure: fold the last two weeks of daily metrics into per-KPI
  * this-week / prior-week sums + delta, and pick the single highest-
  * priority open alert. No I/O — unit-tested directly.
+ *
+ * Platform-wide grain (migration 0380): metrics_daily is now keyed
+ * (org_id, metric_date, metric_key), so the read can return MULTIPLE rows
+ * for the same (metric_date, metric_key) — one per tenant. This owner
+ * digest is deployment-wide, so those per-tenant rows must be SUMMED, not
+ * de-duplicated or picked arbitrarily. The window reduce below already
+ * sums every matching row regardless of org, so cross-tenant totals fall
+ * out for free; the explicit `metricValue` cleanse keeps a non-finite
+ * value from one tenant's row from poisoning the platform total.
  */
 export function buildOwnerDigest(
   rows: readonly DigestMetricRow[],
@@ -102,6 +112,10 @@ export function buildOwnerDigest(
   const thisWeekStart = dateMinusDays(base, 7);
   const priorWeekStart = dateMinusDays(base, 14);
 
+  // Sum every matching daily row in [lo, hiExcl) for this metric key. With
+  // the per-tenant grain this folds BOTH dimensions — across the days of
+  // the week AND across every tenant's row for the same day — into one
+  // platform-wide total.
   const sumInRange = (key: string, lo: string, hiExcl: string): number =>
     rows.reduce(
       (s, r) =>
@@ -169,7 +183,7 @@ function fmtDelta(deltaPct: number | null): string {
 /** Pure: render the digest to a plain-text email body. */
 export function formatDigestText(digest: OwnerDigest): string {
   const lines = [
-    `PennPaps weekly owner digest — week of ${digest.windowStart}`,
+    `${PLATFORM_NAME} weekly owner digest — week of ${digest.windowStart}`,
     "",
   ];
   for (const m of digest.metrics) {
@@ -219,21 +233,38 @@ export interface OwnerDigestResult {
 export async function runOwnerDigest(
   deps: DigestDeps = {},
 ): Promise<OwnerDigestResult> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    return {
+      hasData: false,
+      emailed: 0,
+      skippedNoSendgrid: false,
+      skippedNoRecipients: true,
+    };
+  }
+  // The seed org is resolved only to build a client; this is a PLATFORM
+  // digest, so both reads go through raw() and deliberately span EVERY
+  // tenant (no .eq("org_id", …) filter). After the per-tenant re-key
+  // (migration 0380) metrics_daily returns one row per tenant per (date,
+  // metric_key); buildOwnerDigest sums those into deployment-wide totals.
+  const supabase = getOrgScopedClient(orgId);
   const cutoff = dateMinusDays(Date.now(), 14);
 
   const [metricsRes, alertsRes] = await Promise.all([
     supabase
+      .raw()
       .schema("resupply")
       .from("metrics_daily")
       .select("metric_key, metric_date, metric_value")
       .gte("metric_date", cutoff)
       .limit(5000),
     supabase
+      .raw()
       .schema("resupply")
       .from("metric_alerts")
       .select("severity, metric_key, metric_date, message, status")
       .eq("status", "open")
+      .order("metric_date", { ascending: false })
       .limit(200),
   ]);
   if (metricsRes.error) throw metricsRes.error;
@@ -290,7 +321,7 @@ export async function runOwnerDigest(
   await sendImpl(
     sendgrid,
     recipients,
-    `PennPaps weekly digest — week of ${digest.windowStart}`,
+    `${PLATFORM_NAME} weekly digest — week of ${digest.windowStart}`,
     formatDigestText(digest),
   );
 

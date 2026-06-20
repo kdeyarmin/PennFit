@@ -63,7 +63,7 @@ export function AdminBillingBillHoldPage() {
         <Card>
           <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
             No claims are on bill hold. Every claim with tracked paperwork has
-            it on file. 🎉
+            it on file.
           </p>
         </Card>
       ) : (

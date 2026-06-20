@@ -21,7 +21,8 @@ import { randomUUID } from "node:crypto";
 
 import { normalizeE164 } from "@workspace/resupply-domain";
 import {
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
+  resolveSeedOrgId,
   type ResupplySupabaseClient,
 } from "@workspace/resupply-db";
 import {
@@ -45,6 +46,10 @@ import {
   readEmailConfigOrNull,
   readSmsConfigOrNull,
 } from "../messaging/messaging-config";
+import {
+  applyTenantSmsFrom,
+  resolveTenantVoiceFrom,
+} from "../messaging/tenant-telecom";
 import { readVoiceConfigOrNull } from "../voice/voice-config";
 import { getAlertVoiceScripts } from "./voice-scripts";
 
@@ -162,14 +167,20 @@ function isMissingRelationError(error: unknown): boolean {
 export async function dispatchAlert(
   input: DispatchAlertInput,
 ): Promise<DispatchAlertOutcome> {
-  const supabase = input.supabase ?? getSupabaseServiceRoleClient();
+  // Resolve the tenant for the file-local worker pattern. When a caller
+  // injects a client (test seam), bind the scoped facade to it so the
+  // body uniformly uses `.from()`; otherwise resolve the seed org. A
+  // missing org degrades to `alert_not_found` (the same fail-closed
+  // "nothing to dispatch" outcome the route already maps to a 404).
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) return { status: "alert_not_found" };
+  const supabase = getOrgScopedClient(orgId, input.supabase);
   const { alertKey, channel, patientId } = input;
 
   // 1. Alert definition. A missing table (migration 0179 not yet
   // applied on this environment) degrades to `alert_not_found` rather
   // than throwing a 500 — the route stays forward-deploy-safe.
   const { data: def, error: defErr } = await supabase
-    .schema("resupply")
     .from("alert_definitions")
     .select("key, channels, allowed_variables, is_active")
     .eq("key", alertKey)
@@ -193,7 +204,6 @@ export async function dispatchAlert(
   // (if any), in parallel — both are single unique-index hits.
   const [globalRes, overrideRes] = await Promise.all([
     supabase
-      .schema("resupply")
       .from("alert_messages")
       .select("subject, body_html, body_text, is_active")
       .eq("alert_key", alertKey)
@@ -201,7 +211,6 @@ export async function dispatchAlert(
       .limit(1)
       .maybeSingle(),
     supabase
-      .schema("resupply")
       .from("alert_message_overrides")
       .select("subject, body_html, body_text, is_active")
       .eq("patient_id", patientId)
@@ -245,7 +254,6 @@ export async function dispatchAlert(
 
   // 3. Patient.
   const { data: patient, error: patientErr } = await supabase
-    .schema("resupply")
     .from("patients")
     .select("id, status, email, phone_e164, legal_first_name")
     .eq("id", patientId)
@@ -326,11 +334,14 @@ export async function dispatchAlert(
     const cfg = readSmsConfigOrNull();
     if (!cfg) return { status: "messaging_not_configured" };
     try {
+      // Send under the tenant's own number / Messaging Service when it
+      // has one (G7); falls back to the platform default otherwise.
+      const tenantCfg = await applyTenantSmsFrom(orgId, cfg);
       const sms = createTwilioSmsClient({
-        accountSid: cfg.twilioAccountSid,
-        authToken: cfg.twilioAuthToken,
-        from: cfg.twilioPhoneNumber,
-        messagingServiceSid: cfg.twilioMessagingServiceSid,
+        accountSid: tenantCfg.twilioAccountSid,
+        authToken: tenantCfg.twilioAuthToken,
+        from: tenantCfg.twilioPhoneNumber,
+        messagingServiceSid: tenantCfg.twilioMessagingServiceSid,
       });
       const r = await sms.sendSms({ to: normalized, body: rendered.bodyText });
       return { status: "ok", channel, vendorRef: r.messageSid };
@@ -353,6 +364,10 @@ export async function dispatchAlert(
   const ref = randomUUID();
   getAlertVoiceScripts().register(ref, rendered.bodyText);
   const base = voiceCfg.publicBaseUrl;
+  // Call from the tenant's own voice caller-id when it has one (G7),
+  // else the platform default. Fails soft to the default.
+  const callerId =
+    (await resolveTenantVoiceFrom(orgId)) ?? voiceCfg.twilioPhoneNumber;
   try {
     const twilio = createTwilioClient({
       accountSid: voiceCfg.twilioAccountSid,
@@ -360,7 +375,7 @@ export async function dispatchAlert(
     });
     const r = await twilio.placeCall({
       to: normalized,
-      from: voiceCfg.twilioPhoneNumber,
+      from: callerId,
       url: `${base}/resupply-api/voice/alert-twiml?ref=${encodeURIComponent(ref)}`,
       statusCallbackUrl: `${base}/resupply-api/voice/status-callback?conversationId=${encodeURIComponent(ref)}`,
     });

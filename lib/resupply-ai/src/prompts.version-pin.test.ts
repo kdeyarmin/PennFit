@@ -90,6 +90,33 @@ const PROMPT_VERSION_HASHES: Readonly<Record<string, string>> = {
   // Patient-only clause, so the shop variant hash is unchanged.
   "2026-06-10.v9":
     "4a391e87b41122ef5cd4a9361457c4385835ebf51f7690206c4413c0dc8ed1fe",
+  // v10 adds a patient-flow resupply-conversion clause: after reading
+  // back what's due, gently move toward placing the order, handle common
+  // hesitations ("still have some", cost/coverage) with care, and mention
+  // auto-ship + hand off to set it up. Patient-only clause, so the shop
+  // variant hash is unchanged.
+  "2026-06-14.v10":
+    "05fc068dde89418e69165756635271358cf39a1e63c0c91719a44c63c4167310",
+  // v11 adds the breathe_prospect caller-kind (the CareMetric Breathe B2B
+  // platform sales agent). The PATIENT render is byte-for-byte unchanged, so
+  // this hash matches v10's; the sales variant is pinned separately in
+  // BREATHE_SALES_PROMPT_HASH below.
+  "2026-06-19.v11":
+    "05fc068dde89418e69165756635271358cf39a1e63c0c91719a44c63c4167310",
+  // v12 adds the patient-flow refill attestation: before placing the
+  // order the agent confirms out loud that the patient still uses their
+  // equipment and is running low (CMS DMEPOS refill requirement).
+  // Patient-only clause, so the shop + breathe-sales variants are
+  // unchanged.
+  "2026-06-19.v12":
+    "dbae7c07e5f190b3ce1b800939ece9b3ec4b90d7a8304cb61644d3f196d5eb73",
+  // v13 enriches the shared "How to speak" block with five naturalness
+  // techniques (mirror the caller's vocabulary, vary sentence rhythm,
+  // react before answering, don't parrot, occasional discourse markers).
+  // The block is SHARED across all three caller kinds, so the shop +
+  // breathe-sales variant hashes below move too.
+  "2026-06-19.v13":
+    "137d96d03a342a03d084da0851638bf77e406259f5d2764c5a6236f55b073402",
 };
 
 function renderCanonicalPrompt(): string {
@@ -116,7 +143,16 @@ function hashStrippingVersionLine(prompt: string, version: string): string {
  * Update the same way: render, take the printed hash, record it here.
  */
 const SHOP_PROMPT_HASH =
-  "e2d9c7ad6fe44263a5e4d7ee630f6a61a7d32d7b3f0ee05d1791c3d754356195";
+  "c8bfc44a35b78e5ef4f98b905415fb8037fa267683ebc8ae0949e44b7a8222b2";
+
+/**
+ * The CareMetric Breathe sales (breathe_prospect) variant renders its own
+ * persona / skills / pricing-knowledge / tools clauses. Pinned separately so
+ * drift in the sales prompt is caught too. Update the same way: render, take
+ * the printed hash, record it here.
+ */
+const BREATHE_SALES_PROMPT_HASH =
+  "512009a0c3674c0d3681058d7f229c86ce2be574b6ca69d5347de4e34c14fcb4";
 
 describe("PROMPT_VERSION drift detector", () => {
   it("has a recorded hash for the currently-shipped PROMPT_VERSION", () => {
@@ -174,6 +210,19 @@ describe("PROMPT_VERSION drift detector", () => {
       throw new Error(
         `Shop prompt drift. Expected ${SHOP_PROMPT_HASH}, got ${actual}. ` +
           "If the change was intended, record the value above in SHOP_PROMPT_HASH.",
+      );
+    }
+  });
+
+  it("the breathe_prospect (sales) variant matches its recorded hash", () => {
+    const actual = hashStrippingVersionLine(
+      buildSystemPrompt({ ...CANONICAL_INPUT, callerKind: "breathe_prospect" }),
+      PROMPT_VERSION,
+    );
+    if (actual !== BREATHE_SALES_PROMPT_HASH) {
+      throw new Error(
+        `Breathe sales prompt drift. Expected ${BREATHE_SALES_PROMPT_HASH}, got ${actual}. ` +
+          "If the change was intended, record the value above in BREATHE_SALES_PROMPT_HASH.",
       );
     }
   });

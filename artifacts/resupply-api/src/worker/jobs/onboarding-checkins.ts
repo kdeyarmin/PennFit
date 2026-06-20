@@ -25,6 +25,7 @@ import type PgBoss from "pg-boss";
 import { dispatchDueCheckins } from "../../lib/checkin-dispatcher";
 import { scanCompliance } from "../../lib/compliance-scanner";
 import { logger } from "../../lib/logger";
+import { forEachActiveOrg } from "../lib/for-each-active-org";
 import {
   createQueueWithDlq,
   CRON_SCAN_QUEUE_OPTS,
@@ -44,41 +45,42 @@ export async function registerOnboardingCheckinJobs(
   await createQueueWithDlq(boss, SCAN_JOB, CRON_SCAN_QUEUE_OPTS);
 
   await boss.work(DISPATCH_JOB, async () => {
-    try {
-      const summary = await dispatchDueCheckins({
-        actor: { kind: "system" },
-      });
-      logger.info({ summary }, "onboarding-checkins.dispatch: completed");
-    } catch (err) {
-      logger.error(
-        {
-          err:
-            err instanceof Error
-              ? { name: err.name, message: err.message }
-              : err,
-        },
-        "onboarding-checkins.dispatch: failed",
-      );
-      throw err;
-    }
+    // Fan out across every active tenant. Onboarding journeys + the
+    // dispatcher's feature flag (patient_onboarding.dispatcher) are
+    // tenant-scoped, so each tenant is swept on its own org — the
+    // dispatcher gets an explicit orgId here (never the seed-org default,
+    // which also keys its single-flight guard per tenant). forEachActiveOrg
+    // isolates per-tenant failures so one tenant's vendor error can't abort
+    // the rest of the sweep.
+    await forEachActiveOrg(
+      async (orgId) => {
+        const summary = await dispatchDueCheckins({
+          actor: { kind: "system" },
+          orgId,
+        });
+        logger.info(
+          { summary, org_id: orgId },
+          "onboarding-checkins.dispatch: completed",
+        );
+      },
+      { jobName: DISPATCH_JOB },
+    );
   });
 
   await boss.work(SCAN_JOB, async () => {
-    try {
-      const summary = await scanCompliance();
-      logger.info({ summary }, "onboarding-checkins.scan: completed");
-    } catch (err) {
-      logger.error(
-        {
-          err:
-            err instanceof Error
-              ? { name: err.name, message: err.message }
-              : err,
-        },
-        "onboarding-checkins.scan: failed",
-      );
-      throw err;
-    }
+    // Fan out across every active tenant. csr_compliance_alerts +
+    // patient_onboarding_journeys are tenant-scoped, so each tenant is
+    // scanned on its own org (explicit orgId, never the seed-org default).
+    await forEachActiveOrg(
+      async (orgId) => {
+        const summary = await scanCompliance({ orgId });
+        logger.info(
+          { summary, org_id: orgId },
+          "onboarding-checkins.scan: completed",
+        );
+      },
+      { jobName: SCAN_JOB },
+    );
   });
 
   await boss.schedule(DISPATCH_JOB, DISPATCH_CRON);

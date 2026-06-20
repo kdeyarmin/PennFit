@@ -39,6 +39,7 @@ import type PgBoss from "pg-boss";
 
 import { logger } from "../../lib/logger";
 import { runRxRenewalSendDue } from "../../lib/rx-renewal/dispatcher";
+import { forEachActiveOrg } from "../lib/for-each-active-org";
 import {
   createQueueWithDlq,
   VENDOR_SEND_QUEUE_OPTS,
@@ -63,62 +64,77 @@ export async function registerRxRenewalSendJob(boss: PgBoss): Promise<void> {
       userAgent: null,
     };
 
-    // Run both channels regardless of individual failures so one
-    // broken channel doesn't block the other. Collect errors and
-    // re-throw at the end so pg-boss marks the job failed and the
-    // SOC monitor can see the gap in the schedule.
-    const channelErrors: Error[] = [];
+    // Fan out across every active tenant. `prescriptions`/`patients` are
+    // tenant-scoped, so each tenant must be swept on its own org. The
+    // dispatcher takes an explicit orgId here (never the seed-org default).
+    // forEachActiveOrg isolates per-tenant failures — one tenant's broken
+    // channel (the AggregateError below) is logged and tallied without
+    // aborting the sweep of the remaining tenants.
+    await forEachActiveOrg(
+      async (orgId) => {
+        // Run both channels regardless of individual failures so one
+        // broken channel doesn't block the other. Collect errors and
+        // re-throw at the end so the per-tenant failure is logged by
+        // forEachActiveOrg and the SOC monitor can see the gap.
+        const channelErrors: Error[] = [];
 
-    // Email first — higher delivery rate + cheaper than SMS.
-    try {
-      const emailOutcome = await runRxRenewalSendDue("email", actor);
-      if (emailOutcome.status === "not_configured") {
-        logger.warn(
-          { source: "cron" },
-          "rx-renewal.send-due: SendGrid not configured — skipping email channel",
-        );
-      } else {
-        logger.info(
-          { source: "cron", ...emailOutcome },
-          "rx-renewal.send-due: email channel complete",
-        );
-      }
-    } catch (err) {
-      logger.error(
-        { channel: "email", err },
-        "rx-renewal.send-due: email channel threw",
-      );
-      channelErrors.push(err instanceof Error ? err : new Error(String(err)));
-    }
+        // Email first — higher delivery rate + cheaper than SMS.
+        try {
+          const emailOutcome = await runRxRenewalSendDue("email", actor, orgId);
+          if (emailOutcome.status === "not_configured") {
+            logger.warn(
+              { source: "cron", org_id: orgId },
+              "rx-renewal.send-due: SendGrid not configured — skipping email channel",
+            );
+          } else {
+            logger.info(
+              { source: "cron", org_id: orgId, ...emailOutcome },
+              "rx-renewal.send-due: email channel complete",
+            );
+          }
+        } catch (err) {
+          logger.error(
+            { channel: "email", org_id: orgId, err },
+            "rx-renewal.send-due: email channel threw",
+          );
+          channelErrors.push(
+            err instanceof Error ? err : new Error(String(err)),
+          );
+        }
 
-    // Then SMS — mops up patients with no email on file.
-    try {
-      const smsOutcome = await runRxRenewalSendDue("sms", actor);
-      if (smsOutcome.status === "not_configured") {
-        logger.warn(
-          { source: "cron" },
-          "rx-renewal.send-due: Twilio not configured — skipping SMS channel",
-        );
-      } else {
-        logger.info(
-          { source: "cron", ...smsOutcome },
-          "rx-renewal.send-due: SMS channel complete",
-        );
-      }
-    } catch (err) {
-      logger.error(
-        { channel: "sms", err },
-        "rx-renewal.send-due: SMS channel threw",
-      );
-      channelErrors.push(err instanceof Error ? err : new Error(String(err)));
-    }
+        // Then SMS — mops up patients with no email on file.
+        try {
+          const smsOutcome = await runRxRenewalSendDue("sms", actor, orgId);
+          if (smsOutcome.status === "not_configured") {
+            logger.warn(
+              { source: "cron", org_id: orgId },
+              "rx-renewal.send-due: Twilio not configured — skipping SMS channel",
+            );
+          } else {
+            logger.info(
+              { source: "cron", org_id: orgId, ...smsOutcome },
+              "rx-renewal.send-due: SMS channel complete",
+            );
+          }
+        } catch (err) {
+          logger.error(
+            { channel: "sms", org_id: orgId, err },
+            "rx-renewal.send-due: SMS channel threw",
+          );
+          channelErrors.push(
+            err instanceof Error ? err : new Error(String(err)),
+          );
+        }
 
-    if (channelErrors.length > 0) {
-      throw new AggregateError(
-        channelErrors,
-        `rx-renewal.send-due: ${channelErrors.length} channel(s) failed`,
-      );
-    }
+        if (channelErrors.length > 0) {
+          throw new AggregateError(
+            channelErrors,
+            `rx-renewal.send-due: ${channelErrors.length} channel(s) failed`,
+          );
+        }
+      },
+      { jobName: SEND_JOB },
+    );
   });
 
   await boss.schedule(SEND_JOB, SEND_CRON);

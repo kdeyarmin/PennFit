@@ -74,6 +74,12 @@ describe("POST /voice/click-to-dial-twiml", () => {
   });
 
   it("bridges by Dialing the patient when everything resolves", async () => {
+    // 1) resolveOrgIdForSignedRecord reads the disposition's org_id first
+    //    (tenant is derived from the record, not the seed org).
+    stageSupabaseResponse("call_dispositions", "select", {
+      data: { org_id: "00000000-0000-4000-8000-000000000001" },
+    });
+    // 2) the handler's own disposition → patient lookups.
     stageSupabaseResponse("call_dispositions", "select", {
       data: { id: DISPOSITION_ID, patient_id: PATIENT_ID },
     });

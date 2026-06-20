@@ -10,10 +10,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  type Database,
-  getSupabaseServiceRoleClient,
-} from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
@@ -93,12 +90,16 @@ router.get(
   "/admin/payer-fee-schedules",
   requirePermission("reports.read"),
   async (req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     let query = supabase
-      .schema("resupply")
       .from("payer_fee_schedules")
       .select(
-        "id, payer_profile_id, hcpcs_code, modifier, allowed_cents, effective_from, effective_through, source, notes, created_at, updated_at",
+        "id, payer_profile_id, hcpcs_code, modifier, allowed_cents, effective_from, effective_through, source, notes, created_at, updated_at, org_id",
       )
       .order("effective_from", { ascending: false })
       .limit(500);
@@ -150,12 +151,16 @@ router.get(
         ? req.query.onDate
         : new Date().toISOString().slice(0, 10);
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("payer_fee_schedules")
       .select(
-        "id, payer_profile_id, hcpcs_code, modifier, allowed_cents, effective_from, effective_through, source, notes, created_at, updated_at",
+        "id, payer_profile_id, hcpcs_code, modifier, allowed_cents, effective_from, effective_through, source, notes, created_at, updated_at, org_id",
       )
       .eq("payer_profile_id", payerProfileId)
       .eq("hcpcs_code", hcpcs)
@@ -163,7 +168,9 @@ router.get(
       .or(`effective_through.is.null,effective_through.gte.${onDate}`)
       .order("effective_from", { ascending: false });
     if (error) throw error;
-    const candidates = data ?? [];
+    const candidates = (data ?? []) as Array<
+      Database["resupply"]["Tables"]["payer_fee_schedules"]["Row"]
+    >;
     if (candidates.length === 0) {
       res.status(404).json({ error: "not_found" });
       return;
@@ -206,9 +213,13 @@ router.post(
       });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("payer_fee_schedules")
       .insert({
         payer_profile_id: b.payerProfileId,
@@ -277,9 +288,13 @@ router.patch(
       update.effective_through = b.effectiveThrough;
     if (b.source !== undefined) update.source = b.source;
     if (b.notes !== undefined) update.notes = b.notes;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { error } = await supabase
-      .schema("resupply")
       .from("payer_fee_schedules")
       .update(update)
       .eq("id", idParsed.data.id);

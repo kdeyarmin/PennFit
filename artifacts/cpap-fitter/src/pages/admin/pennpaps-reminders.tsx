@@ -23,6 +23,7 @@ import {
 import { Bell, Send, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { useDocumentTitle } from "@/hooks/admin/use-document-title";
 import { labelForSku } from "@/lib/admin/reminder-skus";
+import { formatAppDate, todayAppDateIso } from "@/lib/utils";
 
 export function AdminReminders() {
   useDocumentTitle("Admin · Reminders");
@@ -157,7 +158,7 @@ export function AdminReminders() {
 }
 
 function SubscriberRow({ sub }: { sub: AdminReminderSubscriber }) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayAppDateIso();
   return (
     <Card className="border-0 glass-card rounded-2xl">
       <CardContent className="p-5">
@@ -167,9 +168,9 @@ function SubscriberRow({ sub }: { sub: AdminReminderSubscriber }) {
               {sub.email}
             </p>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Joined {new Date(sub.createdAt).toLocaleDateString()}
+              Joined {formatAppDate(sub.createdAt)}
               {sub.lastSentAt &&
-                ` · last reminded ${new Date(sub.lastSentAt).toLocaleDateString()}`}
+                ` · last reminded ${formatAppDate(sub.lastSentAt)}`}
             </p>
           </div>
           <div className="flex gap-2">

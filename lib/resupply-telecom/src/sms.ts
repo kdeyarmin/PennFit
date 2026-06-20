@@ -60,12 +60,69 @@ export interface SendSmsResult {
 }
 
 /**
+ * A point-in-time delivery status for a previously-sent message, as
+ * reported by the Twilio Message resource (NOT the status webhook).
+ * Used by {@link TwilioSmsClient.confirmDelivery} so a caller without a
+ * webhook (e.g. the admin "send a test SMS" button) can still learn
+ * whether the message actually delivered rather than only that Twilio
+ * *accepted* it.
+ */
+export interface SmsDeliveryStatus {
+  /**
+   * Twilio message status: queued | sending | sent | delivered |
+   * undelivered | failed | accepted | … . `sent` (carrier-accepted) is
+   * NOT terminal; only delivered / undelivered / failed are.
+   */
+  status: string;
+  /** Twilio numeric error code (e.g. 30032 toll-free unverified), or null. */
+  errorCode: number | null;
+  /** Twilio human-readable error string, or null. */
+  errorMessage: string | null;
+}
+
+export interface ConfirmDeliveryOptions {
+  /**
+   * Max wall-clock to wait for a TERMINAL status (delivered /
+   * undelivered / failed) before giving up and returning the last
+   * non-terminal status observed. Default 8000ms.
+   */
+  timeoutMs?: number;
+  /** Delay between polls of the Message resource. Default 1500ms. */
+  pollIntervalMs?: number;
+  /** Test seam — defaults to a real setTimeout-based sleep. */
+  sleep?: (ms: number) => Promise<void>;
+}
+
+export interface ConfirmDeliveryResult extends SmsDeliveryStatus {
+  /** True once `status` reached delivered / undelivered / failed. */
+  terminal: boolean;
+  /** True only when the message reached the terminal `delivered` state. */
+  delivered: boolean;
+}
+
+/**
  * Minimal contract the underlying Twilio SDK must satisfy. Tests
  * provide a fake matching this shape. Typed loosely on purpose —
- * Twilio's published types are huge and we depend on one method.
+ * Twilio's published types are huge and we depend on a couple of
+ * methods.
+ *
+ * `messages` is BOTH callable (`messages(sid).fetch()` — read a message)
+ * AND carries `.create` (send a message), mirroring the real SDK. Tests
+ * that only exercise sending can keep passing `{ messages: { create } }`
+ * (cast through `unknown`); the callable half is only touched by
+ * {@link TwilioSmsClient.confirmDelivery}.
  */
+export interface RawTwilioMessageContext {
+  fetch(): Promise<{
+    sid: string;
+    status: string;
+    errorCode?: number | null;
+    errorMessage?: string | null;
+  }>;
+}
+
 export interface RawTwilioMessagingSdk {
-  messages: {
+  messages: ((sid: string) => RawTwilioMessageContext) & {
     create(opts: {
       to: string;
       from?: string;
@@ -96,6 +153,52 @@ export interface CreateTwilioSmsClientOptions {
 
 export interface TwilioSmsClient {
   sendSms(input: SendSmsInput): Promise<SendSmsResult>;
+  /**
+   * Poll the Twilio Message resource until it reaches a terminal
+   * delivery state (delivered / undelivered / failed) or the timeout
+   * elapses. Lets a caller WITHOUT a status webhook (e.g. the admin
+   * connection test) distinguish "Twilio accepted it" from "it actually
+   * delivered" — the former returns a SID immediately even when the
+   * carrier later blocks the message (toll-free unverified, etc).
+   *
+   * Never throws for a transient fetch error: it keeps the last status
+   * seen and retries until the window closes, then returns the best
+   * information it has (`terminal: false` if no terminal state was
+   * reached).
+   */
+  confirmDelivery(
+    messageSid: string,
+    opts?: ConfirmDeliveryOptions,
+  ): Promise<ConfirmDeliveryResult>;
+}
+
+const TERMINAL_DELIVERY_STATUSES = new Set([
+  "delivered",
+  "undelivered",
+  "failed",
+]);
+
+const DEFAULT_CONFIRM_TIMEOUT_MS = 8_000;
+const DEFAULT_CONFIRM_POLL_INTERVAL_MS = 1_500;
+// Floor for the poll interval. Guards against a tight loop hammering the
+// Twilio API if a caller passes 0 / a tiny value, and (with the coercion
+// below) against a NaN/negative value producing a never-terminating loop.
+const MIN_CONFIRM_POLL_INTERVAL_MS = 250;
+
+function defaultSleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Coerce a caller-supplied millisecond option to a finite, non-negative
+ * number, falling back to `fallback` for NaN / Infinity / negative input.
+ * Without this a `NaN` timeout makes `deadline` NaN and the loop-exit
+ * comparison is never true → an infinite tight poll loop.
+ */
+function coerceMs(value: number | undefined, fallback: number): number {
+  if (value === undefined) return fallback;
+  if (!Number.isFinite(value) || value < 0) return fallback;
+  return value;
 }
 
 /**
@@ -215,6 +318,60 @@ export function createTwilioSmsClient(
           );
         },
       });
+    },
+
+    async confirmDelivery(messageSid, confirmOpts = {}) {
+      // Coerce caller options to finite, sane values. A NaN/negative
+      // timeout would make `deadline` NaN (loop never exits); a
+      // NaN/tiny poll interval would tight-loop on the Twilio API.
+      const timeoutMs = coerceMs(
+        confirmOpts.timeoutMs,
+        DEFAULT_CONFIRM_TIMEOUT_MS,
+      );
+      const pollIntervalMs = Math.max(
+        MIN_CONFIRM_POLL_INTERVAL_MS,
+        coerceMs(confirmOpts.pollIntervalMs, DEFAULT_CONFIRM_POLL_INTERVAL_MS),
+      );
+      const sleep = confirmOpts.sleep ?? defaultSleep;
+      const deadline = Date.now() + timeoutMs;
+
+      // Best-known status across polls. Defaults to "unknown" so a caller
+      // whose every fetch fails still gets a well-formed, non-terminal
+      // result instead of an exception.
+      let last: SmsDeliveryStatus = {
+        status: "unknown",
+        errorCode: null,
+        errorMessage: null,
+      };
+
+      // Poll until terminal or the window closes. We always do at least
+      // one fetch even if the timeout is tiny.
+      for (;;) {
+        try {
+          const msg = await sdk.messages(messageSid).fetch();
+          last = {
+            status: msg.status,
+            errorCode: msg.errorCode ?? null,
+            errorMessage: msg.errorMessage ?? null,
+          };
+          if (TERMINAL_DELIVERY_STATUSES.has(msg.status)) {
+            return {
+              ...last,
+              terminal: true,
+              delivered: msg.status === "delivered",
+            };
+          }
+        } catch {
+          // Transient read failure — keep the last status and retry until
+          // the deadline. We deliberately don't surface this as an error:
+          // confirmDelivery is a best-effort overlay on a send that
+          // already succeeded.
+        }
+        if (Date.now() + pollIntervalMs >= deadline) break;
+        await sleep(pollIntervalMs);
+      }
+
+      return { ...last, terminal: false, delivered: false };
     },
   };
 }

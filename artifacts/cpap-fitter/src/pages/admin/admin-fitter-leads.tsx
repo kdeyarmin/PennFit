@@ -32,6 +32,7 @@ import {
   unsubscribeFitterLead,
 } from "@/lib/admin/fitter-leads-api";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
+import { PageHeader } from "@/components/admin/PageHeader";
 
 const STAGE_STYLE: Record<
   FitterLeadJourneyStage,
@@ -236,24 +237,22 @@ export function AdminFitterLeadsPage() {
 
   return (
     <div className="space-y-6" data-testid="admin-fitter-leads-page">
-      <header className="space-y-1">
-        <h1
-          className="text-2xl font-bold tracking-tight"
-          style={{ color: "hsl(var(--ink-1))" }}
-        >
-          Fitter prospects
-        </h1>
-        <p className="text-sm text-slate-600 max-w-2xl">
-          Patients who started or finished the at-home mask fitter on{" "}
-          <span className="font-mono text-xs">/consent → /results</span>.
-          Completing the fitter enrolls a lead into a{" "}
-          <strong>6-touch pre-purchase nurture</strong> over 60 days. Placing an
-          order flips them into the{" "}
-          <strong>4-touch post-purchase re-order nurture</strong> (cushion at
-          30d, filter at 60d, headgear at 90d, full refresh at 180d) so
-          first-time buyers turn into recurring supply orders.
-        </p>
-      </header>
+      <PageHeader
+        title="Fitter prospects"
+        descriptionClassName="max-w-2xl"
+        description={
+          <>
+            Patients who started or finished the at-home mask fitter on{" "}
+            <span className="font-mono text-xs">/consent → /results</span>.
+            Completing the fitter enrolls a lead into a{" "}
+            <strong>6-touch pre-purchase nurture</strong> over 60 days. Placing
+            an order flips them into the{" "}
+            <strong>4-touch post-purchase re-order nurture</strong> (cushion at
+            30d, filter at 60d, headgear at 90d, full refresh at 180d) so
+            first-time buyers turn into recurring supply orders.
+          </>
+        }
+      />
 
       {/* Headline KPIs — conversion rate + hot-leads CSR queue. */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -347,16 +346,30 @@ export function AdminFitterLeadsPage() {
         <table className="w-full text-xs min-w-[720px]">
           <thead style={{ backgroundColor: "#f8fafc", color: "#475569" }}>
             <tr>
-              <th className="text-left px-3 py-2 font-semibold">Touch</th>
-              <th className="text-right px-3 py-2 font-semibold">
+              <th scope="col" className="text-left px-3 py-2 font-semibold">
+                Touch
+              </th>
+              <th scope="col" className="text-right px-3 py-2 font-semibold">
                 Email sends
               </th>
-              <th className="text-right px-3 py-2 font-semibold">Opens</th>
-              <th className="text-right px-3 py-2 font-semibold">Open %</th>
-              <th className="text-right px-3 py-2 font-semibold">Clicks</th>
-              <th className="text-right px-3 py-2 font-semibold">Click %</th>
-              <th className="text-right px-3 py-2 font-semibold">SMS sends</th>
-              <th className="text-right px-3 py-2 font-semibold">Failures</th>
+              <th scope="col" className="text-right px-3 py-2 font-semibold">
+                Opens
+              </th>
+              <th scope="col" className="text-right px-3 py-2 font-semibold">
+                Open %
+              </th>
+              <th scope="col" className="text-right px-3 py-2 font-semibold">
+                Clicks
+              </th>
+              <th scope="col" className="text-right px-3 py-2 font-semibold">
+                Click %
+              </th>
+              <th scope="col" className="text-right px-3 py-2 font-semibold">
+                SMS sends
+              </th>
+              <th scope="col" className="text-right px-3 py-2 font-semibold">
+                Failures
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -600,20 +613,36 @@ export function AdminFitterLeadsPage() {
         <table className="w-full text-sm min-w-[960px]">
           <thead style={{ backgroundColor: "#f8fafc" }}>
             <tr style={{ color: "#475569" }}>
-              <th className="text-left px-3 py-2 font-semibold">Patient</th>
-              <th className="text-left px-3 py-2 font-semibold">Source</th>
-              <th className="text-left px-3 py-2 font-semibold">
+              <th scope="col" className="text-left px-3 py-2 font-semibold">
+                Patient
+              </th>
+              <th scope="col" className="text-left px-3 py-2 font-semibold">
+                Source
+              </th>
+              <th scope="col" className="text-left px-3 py-2 font-semibold">
                 Recommended mask
               </th>
-              <th className="text-left px-3 py-2 font-semibold">Stage</th>
-              <th className="text-left px-3 py-2 font-semibold">Touches</th>
-              <th className="text-left px-3 py-2 font-semibold">Engaged</th>
-              <th className="text-left px-3 py-2 font-semibold">
+              <th scope="col" className="text-left px-3 py-2 font-semibold">
+                Stage
+              </th>
+              <th scope="col" className="text-left px-3 py-2 font-semibold">
+                Touches
+              </th>
+              <th scope="col" className="text-left px-3 py-2 font-semibold">
+                Engaged
+              </th>
+              <th scope="col" className="text-left px-3 py-2 font-semibold">
                 Last engaged
               </th>
-              <th className="text-left px-3 py-2 font-semibold">Next touch</th>
-              <th className="text-left px-3 py-2 font-semibold">Started</th>
-              <th className="text-right px-3 py-2 font-semibold">Actions</th>
+              <th scope="col" className="text-left px-3 py-2 font-semibold">
+                Next touch
+              </th>
+              <th scope="col" className="text-left px-3 py-2 font-semibold">
+                Started
+              </th>
+              <th scope="col" className="text-right px-3 py-2 font-semibold">
+                Actions
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -627,7 +656,7 @@ export function AdminFitterLeadsPage() {
                 </td>
               </tr>
             )}
-            {!isPending && rows.length === 0 && (
+            {!isPending && !isError && rows.length === 0 && (
               <tr>
                 <td
                   colSpan={10}

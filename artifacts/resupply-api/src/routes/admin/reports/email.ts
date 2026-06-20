@@ -62,6 +62,7 @@ const emailReportBody = z
 // to SendGrid as an attachment. Dispatches through the registry —
 // each report module owns its own CSV/PDF/QB builders.
 async function buildReportArtifact(
+  orgId: string,
   slug: ReportSlug,
   format: ReportFormat,
   from: Date,
@@ -73,7 +74,7 @@ async function buildReportArtifact(
   // existing streaming writers via the buffered-response shim.
   if (format === "csv") {
     return {
-      buffer: await mod.buildEmailCsv(from, to),
+      buffer: await mod.buildEmailCsv(orgId, from, to),
       contentType: "text/csv; charset=utf-8",
       filenameExt: "csv",
     };
@@ -85,7 +86,7 @@ async function buildReportArtifact(
   // per-report.
   if (format === "pdf") {
     return {
-      buffer: await mod.buildEmailPdf(from, to),
+      buffer: await mod.buildEmailPdf(orgId, from, to),
       contentType: "application/pdf",
       filenameExt: "pdf",
     };
@@ -101,7 +102,7 @@ async function buildReportArtifact(
         `${slug} does not support QuickBooks export`,
       );
     }
-    const rows = await mod.buildEmailQbRows(from, to);
+    const rows = await mod.buildEmailQbRows(orgId, from, to);
     const fromIso = from.toISOString().slice(0, 10);
     const toIso = to.toISOString().slice(0, 10);
     if (format === "iif") {
@@ -178,9 +179,20 @@ export function registerEmailRoute(router: IRouter): void {
       const effectiveTo =
         days > MAX_DAYS ? new Date(from.getTime() + MAX_DAYS * 86400_000) : to;
 
+      const orgId = req.orgId;
+      if (!orgId) {
+        res.status(500).json({ error: "tenant_context_missing" });
+        return;
+      }
       let artifact;
       try {
-        artifact = await buildReportArtifact(slug, format, from, effectiveTo);
+        artifact = await buildReportArtifact(
+          orgId,
+          slug,
+          format,
+          from,
+          effectiveTo,
+        );
       } catch (err) {
         if (err instanceof ReportEmailValidationError) {
           res.status(400).json({

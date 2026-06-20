@@ -28,7 +28,7 @@
 // need to remember the 404/410 mark-expired dance. Centralizing it
 // here keeps the dispatcher code straight-line and audit-correct.
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { logger } from "../logger";
 
@@ -152,9 +152,14 @@ export async function sendPushToCustomer(
   }
   sdk.setVapidDetails(config.subject, config.publicKey, config.privateKey);
 
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    // Same fail-soft posture as the not-configured branches above: no
+    // tenant context → nothing to deliver to, return zero counts.
+    return { delivered: 0, expired: 0, transient: 0 };
+  }
+  const supabase = getOrgScopedClient(orgId);
   const { data: rowsData, error: rowsErr } = await supabase
-    .schema("resupply")
     .from("shop_customer_push_subscriptions")
     .select("id, endpoint, auth_b64, p256dh_b64")
     .eq("customer_id", customerId)
@@ -179,7 +184,7 @@ export async function sendPushToCustomer(
   let transient = 0;
 
   await Promise.all(
-    rows.map(async (row) => {
+    rows.map(async (row: Record<string, string>) => {
       try {
         await sdk.sendNotification(
           {
@@ -237,9 +242,12 @@ export async function sendPushToCustomerByEmail(
   if (!isPushConfigured()) {
     return { delivered: 0, expired: 0, transient: 0 };
   }
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    return { delivered: 0, expired: 0, transient: 0 };
+  }
+  const supabase = getOrgScopedClient(orgId);
   const { data: rowsData, error } = await supabase
-    .schema("resupply")
     .from("shop_customers")
     .select("customer_id")
     .eq("email_lower", lower)
@@ -270,10 +278,11 @@ function pushErrorStatus(err: unknown): number | null {
 
 async function markExpired(subscriptionId: string): Promise<void> {
   try {
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = await resolveSeedOrgId();
+    if (!orgId) throw new Error("tenant context missing");
+    const supabase = getOrgScopedClient(orgId);
     const nowIso = new Date().toISOString();
     const { error } = await supabase
-      .schema("resupply")
       .from("shop_customer_push_subscriptions")
       .update({ expired_at: nowIso, updated_at: nowIso })
       .eq("id", subscriptionId);

@@ -114,8 +114,9 @@ describe("refill_continued_use template", () => {
     const t = getPacketTemplate("refill_continued_use")!;
     const text = JSON.stringify(t.build(FALLBACK_COMPANY));
     expect(text).toMatch(/still using my PAP device/i);
-    expect(text).toMatch(/10-day supply or less/i);
-    expect(text).toMatch(/14 calendar days/i);
+    expect(text).toMatch(/affirmatively confirm/i);
+    expect(text).toMatch(/within 30 calendar days/i);
+    expect(text).toMatch(/10 calendar days/i);
     expect(text).toMatch(/requested by me/i);
     expect(text).toContain(FALLBACK_COMPANY.legalName);
   });
@@ -154,6 +155,7 @@ describe("abn_medicare template", () => {
   it("carries the CMS-R-131 wording elements", () => {
     const t = getPacketTemplate("abn_medicare")!;
     const body = JSON.stringify(t.build(FALLBACK_COMPANY));
+    expect(body).toMatch(/official CMS-R-131 ABN form/i);
     expect(body).toMatch(/Medicare may not pay/i);
     expect(body).toMatch(/1-800-MEDICARE/);
     const options = JSON.stringify(t.choice);

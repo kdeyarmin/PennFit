@@ -1,9 +1,9 @@
 # `@workspace/resupply-auth-react`
 
 Headless React hooks + a small fetch client for the in-house auth
-API exposed by `lib/resupply-auth`. Designed to be consumed by both
-`artifacts/resupply-dashboard` (staff) and `artifacts/cpap-fitter`
-(customer + admin) without imposing a UI library.
+API exposed by `lib/resupply-auth`. Designed to be consumed by the
+customer and admin surfaces inside `artifacts/cpap-fitter` without imposing
+a UI library.
 
 What's in here:
 

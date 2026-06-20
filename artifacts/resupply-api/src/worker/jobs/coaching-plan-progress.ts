@@ -28,15 +28,13 @@
 
 import type PgBoss from "pg-boss";
 
-import {
-  type Database,
-  getSupabaseServiceRoleClient,
-} from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 type CoachingPlanUpdate =
   Database["resupply"]["Tables"]["patient_coaching_plans"]["Update"];
 
 import { logger } from "../../lib/logger";
+import { forEachActiveOrg } from "../lib/for-each-active-org";
 import {
   createQueueWithDlq,
   VENDOR_SEND_QUEUE_OPTS,
@@ -53,16 +51,13 @@ export interface ProgressSweepStats {
   movedToImproving: number;
 }
 
-export async function runCoachingProgressSweep(): Promise<ProgressSweepStats> {
-  const supabase = getSupabaseServiceRoleClient();
-  const stats: ProgressSweepStats = {
-    scanned: 0,
-    updated: 0,
-    movedToImproving: 0,
-  };
+async function coachingProgressSweepForOrg(
+  orgId: string,
+  stats: ProgressSweepStats,
+): Promise<void> {
+  const supabase = getOrgScopedClient(orgId);
 
   const { data: plans, error } = await supabase
-    .schema("resupply")
     .from("patient_coaching_plans")
     .select(
       "id, patient_id, status, target_compliance_pct, latest_compliance_pct, latest_outreach_at, updated_at",
@@ -71,7 +66,7 @@ export async function runCoachingProgressSweep(): Promise<ProgressSweepStats> {
     .limit(500);
   if (error) throw error;
   const planList = plans ?? [];
-  if (planList.length === 0) return stats;
+  if (planList.length === 0) return;
 
   const windowStart = new Date();
   windowStart.setUTCDate(windowStart.getUTCDate() - WINDOW_DAYS);
@@ -80,7 +75,6 @@ export async function runCoachingProgressSweep(): Promise<ProgressSweepStats> {
   for (const plan of planList) {
     stats.scanned += 1;
     const { data: nights, error: nightsErr } = await supabase
-      .schema("resupply")
       .from("patient_therapy_nights")
       .select("usage_minutes, night_date, source")
       // Order by usage_minutes desc so the dedup loop below keeps
@@ -150,7 +144,6 @@ export async function runCoachingProgressSweep(): Promise<ProgressSweepStats> {
     }
 
     const { error: updErr } = await supabase
-      .schema("resupply")
       .from("patient_coaching_plans")
       .update(update)
       .eq("id", plan.id);
@@ -163,7 +156,23 @@ export async function runCoachingProgressSweep(): Promise<ProgressSweepStats> {
     }
     stats.updated += 1;
   }
+}
 
+/**
+ * Run the coaching-plan progress sweep for EVERY active tenant.
+ * `patient_coaching_plans` / `patient_therapy_nights` are tenant-scoped,
+ * so the sweep fans out via `forEachActiveOrg` and accumulates the
+ * counts. Single-tenant behavior unchanged.
+ */
+export async function runCoachingProgressSweep(): Promise<ProgressSweepStats> {
+  const stats: ProgressSweepStats = {
+    scanned: 0,
+    updated: 0,
+    movedToImproving: 0,
+  };
+  await forEachActiveOrg((orgId) => coachingProgressSweepForOrg(orgId, stats), {
+    jobName: PROGRESS_JOB,
+  });
   return stats;
 }
 

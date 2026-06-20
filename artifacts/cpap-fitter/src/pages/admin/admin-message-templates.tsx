@@ -25,6 +25,8 @@
 import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { PageHeader } from "@/components/admin/PageHeader";
+
 import {
   type MessageTemplate,
   type PatchTemplateBody,
@@ -64,24 +66,22 @@ function normalizeTemplate(t: MessageTemplate): MessageTemplate {
 export function AdminMessageTemplatesPage() {
   return (
     <div className="space-y-6" data-testid="admin-message-templates-page">
-      <header className="space-y-1">
-        <h1
-          className="text-2xl font-bold tracking-tight"
-          style={{ color: "hsl(var(--ink-1))" }}
-        >
-          Automated messages
-        </h1>
-        <p className="text-sm text-slate-600">
-          Edit the copy that customer-facing automated messages use. Templates
-          support placeholders like{" "}
-          <code className="rounded bg-slate-100 px-1 py-0.5 text-xs">
-            {"{{first_name}}"}
-          </code>
-          ; only the variables listed under each row are substituted. Edits take
-          effect within 5 minutes (the render path caches lookups). Deactivate a
-          row to fall back to the hard-coded baseline shipped with the code.
-        </p>
-      </header>
+      <PageHeader
+        title="Automated messages"
+        description={
+          <>
+            Edit the copy that customer-facing automated messages use. Templates
+            support placeholders like{" "}
+            <code className="rounded bg-slate-100 px-1 py-0.5 text-xs">
+              {"{{first_name}}"}
+            </code>
+            ; only the variables listed under each row are substituted. Edits
+            take effect within 5 minutes (the render path caches lookups).
+            Deactivate a row to fall back to the hard-coded baseline shipped
+            with the code.
+          </>
+        }
+      />
       <TemplateList />
     </div>
   );

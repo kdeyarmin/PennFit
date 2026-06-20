@@ -30,7 +30,7 @@
 
 import { Router, type IRouter } from "express";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
 import { rateLimit } from "../../middlewares/rate-limit";
@@ -55,7 +55,12 @@ router.get(
   exportRateLimit,
   async (req, res) => {
     const customerId = req.userCustomerId!;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // Explicit column lists (NOT `*`) so a future column added to any
     // of these tables doesn't auto-leak into the customer-facing
@@ -75,7 +80,6 @@ router.get(
       cartsRes,
     ] = await Promise.all([
       supabase
-        .schema("resupply")
         .from("shop_customers")
         .select(
           "customer_id, stripe_customer_id, display_name, email_lower, shipping_address_json, default_payment_method_brand, default_payment_method_last4, default_payment_method_exp_month, default_payment_method_exp_year, communication_preferences, cpap_device_json, physician_info_json, facial_measurements_json, caregiver_email, caregiver_name, caregiver_consent_at, caregiver_revoked_at, membership_tier, membership_started_at, membership_renews_at, created_at, updated_at",
@@ -83,7 +87,6 @@ router.get(
         .eq("customer_id", customerId)
         .limit(1),
       supabase
-        .schema("resupply")
         .from("shop_orders")
         .select(
           "id, stripe_session_id, stripe_payment_intent_id, status, amount_total_cents, currency, tracking_carrier, tracking_number, shipped_at, delivered_at, shipping_address_json, customer_email, paid_at, created_at, updated_at",
@@ -91,14 +94,12 @@ router.get(
         .eq("customer_id", customerId)
         .order("created_at", { ascending: false }),
       supabase
-        .schema("resupply")
         .from("shop_order_items")
         .select(
           "id, order_id, product_id, price_id, quantity, unit_amount_cents, currency, paid_at, created_at",
         )
         .eq("customer_id", customerId),
       supabase
-        .schema("resupply")
         .from("shop_subscriptions")
         .select(
           "id, stripe_subscription_id, stripe_customer_id, status, items, current_period_end, cancel_at_period_end, canceled_at, initial_amount_total_cents, created_at, updated_at",
@@ -106,7 +107,6 @@ router.get(
         .eq("customer_id", customerId)
         .order("created_at", { ascending: false }),
       supabase
-        .schema("resupply")
         .from("shop_returns")
         .select(
           "id, order_id, stripe_session_id, status, reason, reason_note, resolution, refund_cents, stripe_refund_id, exchange_product_id, exchange_price_id, exchange_order_id, return_label_url, return_carrier, return_tracking_number, created_at, updated_at, approved_at, rejected_at, shipped_back_at, received_at, resolved_at, closed_at",
@@ -114,14 +114,12 @@ router.get(
         .eq("customer_id", customerId)
         .order("created_at", { ascending: false }),
       supabase
-        .schema("resupply")
         .from("shop_reviews")
         .select(
           "id, product_id, rating, title, body, author_display_name, author_email, status, created_at, updated_at",
         )
         .eq("customer_id", customerId),
       supabase
-        .schema("resupply")
         .from("shop_abandoned_carts")
         .select(
           "id, email, items, subtotal_cents, currency, updated_at, reminded_at, recovered_at, cleared_at, created_at",
@@ -169,7 +167,11 @@ router.get(
           exportedAt,
           customerId,
           profile: customers[0] ?? null,
-          orders: orders.map((o) => ({
+          orders: (
+            orders as Array<
+              Database["resupply"]["Tables"]["shop_orders"]["Row"]
+            >
+          ).map((o) => ({
             ...o,
             items: itemsByOrder.get(o.id) ?? [],
           })),

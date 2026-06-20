@@ -9,10 +9,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  type Database,
-  getSupabaseServiceRoleClient,
-} from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
@@ -82,7 +79,12 @@ router.get(
   "/admin/denial-codes",
   requirePermission("reports.read"),
   async (req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId).raw();
     let query = supabase
       .schema("resupply")
       .from("denial_codes")
@@ -132,7 +134,12 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId).raw();
     const { data, error } = await supabase
       .schema("resupply")
       .from("denial_codes")
@@ -169,7 +176,12 @@ router.post(
       return;
     }
     const b = parsed.data;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId).raw();
     const { data, error } = await supabase
       .schema("resupply")
       .from("denial_codes")
@@ -238,7 +250,12 @@ router.patch(
     if (b.recommendedAction !== undefined)
       update.recommended_action = b.recommendedAction;
     if (b.isTerminal !== undefined) update.is_terminal = b.isTerminal;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId).raw();
     const { error } = await supabase
       .schema("resupply")
       .from("denial_codes")

@@ -160,7 +160,11 @@ describe("POST /chat", () => {
     const payload = JSON.parse(init.body as string);
     expect(payload.model).toBe("gpt-4o-mini");
     expect(payload.messages[0].role).toBe("system");
-    expect(payload.messages[0].content).toMatch(/PennBot/);
+    // The route applies applyPlatformBranding() to the system prompt, so
+    // the in-source "PennBot" placeholder resolves to the tenant's
+    // configured storefront-assistant name — the CareMetric platform
+    // default here (no tenant override in the test environment).
+    expect(payload.messages[0].content).toMatch(/CareMetric Assistant/);
     expect(payload.messages[0].content).toMatch(/AirFit/);
     expect(payload.messages[1]).toEqual({
       role: "user",

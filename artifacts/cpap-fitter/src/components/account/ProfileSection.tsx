@@ -9,7 +9,7 @@
 // scoped to this section since it's the primary write surface on
 // the page.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { CheckCircle2, Loader2, MapPin, User as UserIcon } from "lucide-react";
 
@@ -25,9 +25,11 @@ import {
 export function ProfileSection({
   profile,
   onSaved,
+  onDirtyChange,
 }: {
   profile: NonNullable<ShopMeResponse["profile"]>;
   onSaved: () => void;
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const [displayName, setDisplayName] = useState(profile.displayName ?? "");
   const [addr, setAddr] = useState<SavedShippingAddress>(
@@ -69,6 +71,10 @@ export function ProfileSection({
   // user tries to close / reload the tab with edits in flight.
   // Cleared automatically once `dirty` flips false (after save).
   useUnsavedChangesWarning(dirty);
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+    return () => onDirtyChange?.(false);
+  }, [dirty, onDirtyChange]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();

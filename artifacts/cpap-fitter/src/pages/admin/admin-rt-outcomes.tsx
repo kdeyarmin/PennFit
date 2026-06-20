@@ -139,21 +139,40 @@ export function AdminRtOutcomesPage() {
                       className="text-left text-[10px] uppercase tracking-wider"
                       style={{ color: "hsl(var(--ink-3))" }}
                     >
-                      <th className="py-2 pr-3 font-semibold">Therapist</th>
-                      <th className="py-2 px-2 font-semibold text-right">
+                      <th scope="col" className="py-2 pr-3 font-semibold">
+                        Therapist
+                      </th>
+                      <th
+                        scope="col"
+                        className="py-2 px-2 font-semibold text-right"
+                      >
                         Enc.
                       </th>
-                      <th className="py-2 px-2 font-semibold text-right">
+                      <th
+                        scope="col"
+                        className="py-2 px-2 font-semibold text-right"
+                      >
                         Patients
                       </th>
-                      <th className="py-2 px-2 font-semibold text-right">
+                      <th
+                        scope="col"
+                        className="py-2 px-2 font-semibold text-right"
+                      >
                         Follow-ups
                       </th>
-                      <th className="py-2 px-2 font-semibold text-right">
+                      <th
+                        scope="col"
+                        className="py-2 px-2 font-semibold text-right"
+                      >
                         Interv.
                       </th>
-                      <th className="py-2 pl-2 font-semibold">Mix</th>
-                      <th className="py-2 pl-3 font-semibold text-right">
+                      <th scope="col" className="py-2 pl-2 font-semibold">
+                        Mix
+                      </th>
+                      <th
+                        scope="col"
+                        className="py-2 pl-3 font-semibold text-right"
+                      >
                         Last active
                       </th>
                     </tr>

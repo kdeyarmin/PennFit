@@ -42,6 +42,7 @@ import {
 } from "lucide-react";
 
 import { Card } from "@/components/admin/Card";
+import { CopyableId } from "@/components/admin/CopyableId";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Spinner } from "@/components/admin/Spinner";
 import { Badge, conversationStatusLabel } from "@/components/admin/Badge";
@@ -234,7 +235,7 @@ function CustomerHeader({
               fontFamily: "monospace",
             }}
           >
-            {profile.userId}
+            <CopyableId value={profile.userId} title="Copy customer ID" />
             {profile.isGuest && (
               <span style={{ marginLeft: 8 }}>
                 <Badge variant="muted">Guest</Badge>

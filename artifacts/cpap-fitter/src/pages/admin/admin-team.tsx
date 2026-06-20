@@ -26,6 +26,9 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { Spinner } from "@/components/admin/Spinner";
+import { ErrorPanel } from "@/components/admin/ErrorPanel";
+import { PageHeader } from "@/components/admin/PageHeader";
 import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 import {
   deleteMember,
@@ -43,10 +46,16 @@ import { useGetAdminMe } from "@workspace/api-client-react/admin";
 
 // Display labels for every DB-persisted role. Legacy values map onto
 // one of the 3 effective buckets so the UI shows a consistent
-// "Super admin / Admin / Customer service rep" vocabulary even for
-// rows persisted under one of the older role names.
+// "Owner / Admin / Customer service rep" vocabulary even for rows
+// persisted under one of the older role names.
+//
+// "Super Admin" is deliberately NOT used here: it now names the GLOBAL
+// platform tier (platform_admins — see the /platform super-admin
+// console), which sits above every tenant. A tenant's TOP role is the
+// "Owner" (full access within that one tenant, including its System
+// Configuration); the mid tier is "Admin".
 const ROLE_LABEL: Record<TeamRole, string> = {
-  admin: "Super admin",
+  admin: "Owner",
   supervisor: "Admin",
   compliance_officer: "Admin",
   csr: "Customer service rep",
@@ -71,20 +80,10 @@ const STATUS_TONE: Record<TeamStatus, string> = {
 export function AdminTeamPage() {
   return (
     <div className="space-y-6" data-testid="admin-team-page">
-      <header className="space-y-1">
-        <h1
-          className="text-2xl font-bold tracking-tight"
-          style={{ color: "hsl(var(--ink-1))" }}
-        >
-          Team
-        </h1>
-        <p className="text-sm text-slate-600">
-          Invite admins and customer-service reps. Invitees receive a sign-up
-          link by email and must accept before they can log in. Revoking removes
-          access immediately; pending and revoked invites can also be deleted
-          entirely, as if they were never sent.
-        </p>
-      </header>
+      <PageHeader
+        title="Team"
+        description="Invite admins and customer-service reps. Invitees receive a sign-up link by email and must accept before they can log in. Revoking removes access immediately; pending and revoked invites can also be deleted entirely, as if they were never sent."
+      />
       <InviteCard />
       <TeamList />
     </div>
@@ -106,14 +105,14 @@ function TeamList() {
     };
   }, [query.data]);
 
-  if (query.isPending)
-    return <div className="text-sm text-slate-500">Loading…</div>;
+  if (query.isPending) return <Spinner />;
   if (query.isError) {
     return (
-      <div className="text-sm text-rose-700" role="alert">
-        Couldn&apos;t load team:{" "}
-        {query.error instanceof Error ? query.error.message : "unknown error"}.
-      </div>
+      <ErrorPanel
+        error={query.error}
+        onRetry={() => void query.refetch()}
+        title="Couldn't load team"
+      />
     );
   }
 
@@ -576,7 +575,7 @@ function InviteCard() {
             onChange={(e) => setEmail(e.target.value)}
             aria-label="Email"
             className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
-            placeholder="csr@pennpaps.com"
+            placeholder="csr@example.com"
             autoComplete="off"
           />
         </div>

@@ -120,7 +120,7 @@ export function AdminFitterInvitesPage() {
         <Card>
           <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
             {status === "holding"
-              ? "Holding area is empty — no completed fittings waiting to be assigned. 🎉"
+              ? "Holding area is empty — no completed fittings waiting to be assigned."
               : "No fitter invites yet."}
           </p>
         </Card>

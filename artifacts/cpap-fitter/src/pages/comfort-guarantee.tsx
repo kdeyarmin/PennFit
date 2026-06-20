@@ -26,7 +26,7 @@ export function ComfortGuaranteePage() {
   const contact = useCompanyContact();
   useDocumentTitle(
     "60-day comfort guarantee",
-    "Penn Home Medical Supply backs every CPAP mask with a 60-day comfort guarantee — swap for a different size or style if it doesn't fit.",
+    `${contact.legalName} backs every CPAP mask with a 60-day comfort guarantee — swap for a different size or style if it doesn't fit.`,
   );
 
   return (
@@ -36,7 +36,7 @@ export function ComfortGuaranteePage() {
           <ShieldCheck className="w-7 h-7 text-primary" />
         </div>
         <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">
-          PennPaps · Customer Promise
+          {contact.name} · Customer Promise
         </p>
         <h1 className="text-display text-3xl md:text-5xl font-bold tracking-tight text-gradient-brand">
           60-day comfort guarantee
@@ -150,7 +150,8 @@ export function ComfortGuaranteePage() {
             </div>
             <ul className="text-sm text-muted-foreground space-y-2 list-disc pl-5">
               <li>
-                Mask systems (frame + cushion + headgear) bought from PennPaps.
+                Mask systems (frame + cushion + headgear) bought from{" "}
+                {contact.name}.
               </li>
               <li>Mask cushions purchased on their own.</li>
               <li>Headgear and frames purchased on their own.</li>
@@ -218,7 +219,8 @@ export function ComfortGuaranteePage() {
             }
             data-testid="comfort-guarantee-ask-pennbot"
           >
-            <Sparkles className="w-4 h-4 mr-2" /> Ask PennBot
+            <Sparkles className="w-4 h-4 mr-2" /> Ask{" "}
+            {contact.assistantStorefrontName}
           </Button>
           <Link href="/shop/orders">
             <Button>

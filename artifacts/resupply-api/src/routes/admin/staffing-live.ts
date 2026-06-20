@@ -10,7 +10,7 @@
 
 import { Router, type IRouter } from "express";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { requirePermission } from "../../middlewares/requireAdmin";
 import { buildLiveStaffing } from "../../lib/staffing/build-live-staffing";
@@ -26,41 +26,46 @@ const router: IRouter = Router();
 router.get(
   "/admin/staffing/live",
   requirePermission("reports.read"),
-  async (_req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // Active staff roster + their current availability.
     const { data: admins, error: adminsErr } = await supabase
-      .schema("resupply")
       .from("admin_users")
       .select("id, email_lower, display_name, role, availability")
       .eq("status", "active");
     if (adminsErr) throw adminsErr;
-    const agents = (admins ?? []).map((a) => ({
-      id: a.id,
-      email: a.email_lower,
-      displayName: a.display_name,
-      role: a.role,
-      availability: a.availability,
-    }));
+    const agents = (admins ?? []).map(
+      (a: Database["resupply"]["Tables"]["admin_users"]["Row"]) => ({
+        id: a.id,
+        email: a.email_lower,
+        displayName: a.display_name,
+        role: a.role,
+        availability: a.availability,
+      }),
+    );
 
     // Every OPEN conversation's assignee (null = unassigned backlog).
     // Capped for safety on very large queues.
     const { data: convos, error: convErr } = await supabase
-      .schema("resupply")
       .from("conversations")
       .select("assigned_admin_user_id")
       .in("status", OPEN_CONVERSATION_STATUSES)
       .limit(20000);
     if (convErr) throw convErr;
     const openConversationAssignees = (convos ?? []).map(
-      (c) => c.assigned_admin_user_id ?? null,
+      (c: Database["resupply"]["Tables"]["conversations"]["Row"]) =>
+        c.assigned_admin_user_id ?? null,
     );
 
     // Who's on shift right now (started, not ended, not called off).
     const nowIso = new Date().toISOString();
     const { data: shifts, error: shiftErr } = await supabase
-      .schema("resupply")
       .from("csr_shifts")
       .select("staff_user_id")
       .lte("starts_at", nowIso)
@@ -69,8 +74,11 @@ router.get(
       .limit(2000);
     if (shiftErr) throw shiftErr;
     const onShiftIds = (shifts ?? [])
-      .map((s) => s.staff_user_id)
-      .filter((id): id is string => Boolean(id));
+      .map(
+        (s: Database["resupply"]["Tables"]["csr_shifts"]["Row"]) =>
+          s.staff_user_id,
+      )
+      .filter((id: string | null): id is string => Boolean(id));
 
     res.json(
       buildLiveStaffing({ agents, openConversationAssignees, onShiftIds }),

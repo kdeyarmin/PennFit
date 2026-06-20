@@ -4,7 +4,7 @@
 // window-bounded DB reads, this module reduces them — so the math is
 // unit-testable without Postgres.
 //
-// PennFit captures orders through three independent channels and, until
+// CareMetric Breathe captures orders through three independent channels and, until
 // now, had no single view of where order volume and cash revenue come
 // from:
 //   * storefront          — cash-pay Stripe orders (resupply.shop_orders).

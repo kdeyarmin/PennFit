@@ -15,6 +15,7 @@ import {
   type PatchShopProductDetailsInput,
   type ShopProductDetails,
 } from "@/lib/admin/shop-inventory-api";
+import { ManufacturerAutocomplete } from "@/components/ManufacturerAutocomplete";
 
 // Edit Shop Product page — catalog copy only.
 //
@@ -476,11 +477,10 @@ export function AdminShopProductEditPage() {
               <label htmlFor="manufacturer" style={FIELD_LABEL_STYLE}>
                 Manufacturer
               </label>
-              <input
+              <ManufacturerAutocomplete
                 id="manufacturer"
-                type="text"
                 value={form.manufacturer}
-                onChange={(e) => update("manufacturer", e.target.value)}
+                onValueChange={(v) => update("manufacturer", v)}
                 style={INPUT_STYLE}
                 disabled={isSubmitting}
               />

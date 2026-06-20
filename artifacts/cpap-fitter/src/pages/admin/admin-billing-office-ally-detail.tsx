@@ -327,14 +327,28 @@ function ClaimsTable({ claims }: { claims: OaSubmissionLinkedClaim[] }) {
                 className="text-left text-[11px] uppercase tracking-wider"
                 style={{ color: "hsl(var(--ink-3))" }}
               >
-                <th className="p-2">Patient</th>
-                <th className="p-2">Payer</th>
-                <th className="p-2">DOS</th>
-                <th className="p-2">Claim #</th>
-                <th className="p-2">Status</th>
-                <th className="p-2">277CA outcome</th>
-                <th className="p-2 text-right">Billed</th>
-                <th className="p-2" />
+                <th scope="col" className="p-2">
+                  Patient
+                </th>
+                <th scope="col" className="p-2">
+                  Payer
+                </th>
+                <th scope="col" className="p-2">
+                  DOS
+                </th>
+                <th scope="col" className="p-2">
+                  Claim #
+                </th>
+                <th scope="col" className="p-2">
+                  Status
+                </th>
+                <th scope="col" className="p-2">
+                  277CA outcome
+                </th>
+                <th scope="col" className="p-2 text-right">
+                  Billed
+                </th>
+                <th scope="col" className="p-2" />
               </tr>
             </thead>
             <tbody>

@@ -18,13 +18,14 @@
 
 import { Router, type IRouter } from "express";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
 import {
   readStripeConfigOrNull,
   getStripeClient,
 } from "../../lib/stripe/config";
+import { stripeAccountRequestOptions } from "../../lib/stripe/connect";
 import {
   projectProduct,
   type ShopCategory,
@@ -48,7 +49,12 @@ router.get(
   requireSignedIn,
   async (req, res) => {
     const customerId = req.userCustomerId!;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // PostgREST has no GROUP BY / aggregate, so we fetch the line
     // items + their parent order statuses and aggregate in JS. The
@@ -65,7 +71,6 @@ router.get(
     // change the surfaced suggestions while cutting the worst-case
     // transfer 5×.
     const { data: items, error: itemsErr } = await supabase
-      .schema("resupply")
       .from("shop_order_items")
       .select("order_id, product_id, paid_at, quantity")
       .eq("customer_id", customerId)
@@ -73,17 +78,30 @@ router.get(
       .limit(200);
     if (itemsErr) throw itemsErr;
 
-    const orderIds = Array.from(new Set((items ?? []).map((i) => i.order_id)));
+    const orderIds = Array.from(
+      new Set(
+        (
+          (items ?? []) as Array<
+            Database["resupply"]["Tables"]["shop_order_items"]["Row"]
+          >
+        ).map((i) => i.order_id),
+      ),
+    );
     let paidOrderIds = new Set<string>();
     if (orderIds.length > 0) {
       const { data: orders, error: ordersErr } = await supabase
-        .schema("resupply")
         .from("shop_orders")
         .select("id, status")
         .in("id", orderIds);
       if (ordersErr) throw ordersErr;
       paidOrderIds = new Set(
-        (orders ?? []).filter((o) => o.status === "paid").map((o) => o.id),
+        (
+          (orders ?? []) as Array<
+            Database["resupply"]["Tables"]["shop_orders"]["Row"]
+          >
+        )
+          .filter((o) => o.status === "paid")
+          .map((o) => o.id),
       );
     }
 
@@ -138,6 +156,10 @@ router.get(
     }
 
     const stripe = getStripeClient(stripeConfig);
+    // Read product metadata from the tenant's connected account (when set)
+    // so reorder cards reflect THEIR catalog — the same account checkout
+    // routes to. NULL connected account → {} → platform account.
+    const accountOptions = await stripeAccountRequestOptions(req.orgId);
     const productIds = Array.from(new Set(rows.map((r) => r.productId)));
     const productMap = new Map<
       string,
@@ -150,9 +172,11 @@ router.get(
     await Promise.all(
       productIds.map(async (id) => {
         try {
-          const product = await stripe.products.retrieve(id, {
-            expand: ["default_price"],
-          });
+          const product = await stripe.products.retrieve(
+            id,
+            { expand: ["default_price"] },
+            accountOptions,
+          );
           if (product.deleted) return;
           const projected = projectProduct(product as never);
           if (!projected) return;

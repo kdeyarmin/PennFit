@@ -1,7 +1,8 @@
-// Route tests for /admin/system-info — focuses on the HTTP contract
-// (auth gating) and the vendor-presence computation, in particular that
-// it resolves consolidated env aliases over the EFFECTIVE env so a
-// credential entered in System Configuration reads as "configured" here.
+// Route tests for /platform/system-info — focuses on the HTTP contract
+// (platform-admin auth gating) and the vendor-presence computation, in
+// particular that it resolves consolidated env aliases over the EFFECTIVE
+// env so a credential entered in System Configuration reads as
+// "configured" here.
 //
 // Regression: the "voice phone" row reads the retired
 // TWILIO_VOICE_PHONE_NUMBER alias, but the only number the catalog (and
@@ -15,15 +16,15 @@ import express, { type Express } from "express";
 import request from "supertest";
 
 import {
-  makeRequireAdminMock,
-  type MockAdminCtx,
+  makeRequirePlatformAdminMock,
+  type MockPlatformAdminCtx,
 } from "../../test-helpers/auth-mocks";
 
 const { mockAdmin } = vi.hoisted(() => ({
-  mockAdmin: { current: null as MockAdminCtx | null },
+  mockAdmin: { current: null as MockPlatformAdminCtx | null },
 }));
-vi.mock("../../middlewares/requireAdmin", () =>
-  makeRequireAdminMock(mockAdmin),
+vi.mock("../../middlewares/requirePlatformAdmin", () =>
+  makeRequirePlatformAdminMock(mockAdmin),
 );
 
 // getEffectiveEnv would otherwise hit Supabase; pin it per test. The real
@@ -49,8 +50,6 @@ function asAdmin() {
   mockAdmin.current = {
     userId: "u1",
     email: "boss@pennpaps.com",
-    role: "admin",
-    granularRole: "admin",
   };
 }
 
@@ -62,7 +61,7 @@ beforeEach(() => {
 
 describe("auth gating", () => {
   it("401 when not signed in", async () => {
-    const res = await request(makeApp()).get("/admin/system-info");
+    const res = await request(makeApp()).get("/platform/system-info");
     expect(res.status).toBe(401);
   });
 });
@@ -78,7 +77,7 @@ describe("vendor presence", () => {
       TWILIO_PHONE_NUMBER: "+12158675309",
     });
 
-    const res = await request(makeApp()).get("/admin/system-info");
+    const res = await request(makeApp()).get("/platform/system-info");
     expect(res.status).toBe(200);
     expect(res.body.vendors.twilio.voicePhoneConfigured).toBe(true);
   });
@@ -87,7 +86,7 @@ describe("vendor presence", () => {
     asAdmin();
     mockGetEffectiveEnv.mockResolvedValue({});
 
-    const res = await request(makeApp()).get("/admin/system-info");
+    const res = await request(makeApp()).get("/platform/system-info");
     expect(res.status).toBe(200);
     expect(res.body.vendors.twilio.voicePhoneConfigured).toBe(false);
   });
@@ -103,7 +102,7 @@ describe("vendor presence", () => {
       SENDGRID_API_KEY: "SG.xxx",
     });
 
-    const res = await request(makeApp()).get("/admin/system-info");
+    const res = await request(makeApp()).get("/platform/system-info");
     expect(res.status).toBe(200);
     expect(res.body.vendors.sendgrid.configured).toBe(true);
     expect(res.body.vendors.sendgrid.fromEmailConfigured).toBe(true);
@@ -117,7 +116,7 @@ describe("vendor presence", () => {
     // (info@pennpaps.com) always exists.
     mockGetEffectiveEnv.mockResolvedValue({});
 
-    const res = await request(makeApp()).get("/admin/system-info");
+    const res = await request(makeApp()).get("/platform/system-info");
     expect(res.status).toBe(200);
     expect(res.body.vendors.sendgrid.configured).toBe(false);
     expect(res.body.vendors.sendgrid.fromEmailConfigured).toBe(false);
@@ -131,7 +130,7 @@ describe("vendor presence", () => {
       OPENAI_API_KEY: "sk-x",
     });
 
-    const res = await request(makeApp()).get("/admin/system-info");
+    const res = await request(makeApp()).get("/platform/system-info");
     expect(res.status).toBe(200);
     expect(res.body.vendors.stripe.secretKeyConfigured).toBe(true);
     expect(res.body.vendors.stripe.webhookSecretConfigured).toBe(false);

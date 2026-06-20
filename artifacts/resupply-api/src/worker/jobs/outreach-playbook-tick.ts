@@ -40,7 +40,7 @@ import type PgBoss from "pg-boss";
 
 import {
   DEFAULT_COMMUNICATION_PREFERENCES,
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
   type CommunicationPreferences,
 } from "@workspace/resupply-db";
 import {
@@ -60,7 +60,11 @@ import {
   shouldSendSms,
 } from "../../lib/comm-prefs.js";
 import { isFeatureEnabled } from "../../lib/feature-flags.js";
+import { applyTenantEmailSender } from "../../lib/email/apply-tenant-email-sender.js";
+import { applyTenantSmsFrom } from "../../lib/messaging/tenant-telecom.js";
+import { recordOutboundMessageUsage } from "../../lib/metering/usage.js";
 import { logger } from "../../lib/logger.js";
+import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import {
   renderPlaybookBody,
   stepDueAt,
@@ -166,20 +170,25 @@ function parsePrefs(raw: unknown): CommunicationPreferences {
 
 /** Best-effort step-log write. The UNIQUE (run_id, step_index)
  *  constraint absorbs lost-race duplicates (23505 is expected then). */
-async function recordStep(opts: {
-  runId: string;
-  stepIndex: number;
-  channel: PlaybookChannel;
-  status: "sent" | "failed" | "skipped" | "call_due";
-  detail?: string | null;
-  callScript?: string | null;
-}): Promise<void> {
+async function recordStep(
+  orgId: string,
+  opts: {
+    runId: string;
+    stepIndex: number;
+    channel: PlaybookChannel;
+    status: "sent" | "failed" | "skipped" | "call_due";
+    detail?: string | null;
+    callScript?: string | null;
+  },
+): Promise<void> {
   try {
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
     const { error } = await supabase
+      .raw()
       .schema("resupply")
       .from("outreach_playbook_step_log")
       .insert({
+        org_id: orgId,
         run_id: opts.runId,
         step_index: opts.stepIndex,
         channel: opts.channel,
@@ -220,33 +229,58 @@ export async function runOutreachPlaybookSweep(
     errors: 0,
     flagDisabled: false,
   };
+  // Fan out across every active tenant — outreach_playbook_runs / _step_log
+  // are org-scoped (the `.raw()` reads/writes filter by org_id explicitly),
+  // and the dispatcher flag resolves per tenant. Per-tenant failure
+  // isolation; results summed. Single-tenant: listActiveOrgIds() returns just
+  // the seed org, so this is exactly the prior one-tenant sweep.
+  await forEachActiveOrg(
+    async (orgId) => {
+      await outreachPlaybookSweepForOrg(orgId, now, stats);
+    },
+    { jobName: JOB_NAME },
+  );
+  return stats;
+}
 
-  if (!(await isFeatureEnabled("outreach_playbooks.dispatcher"))) {
+async function outreachPlaybookSweepForOrg(
+  orgId: string,
+  now: Date,
+  stats: PlaybookTickStats,
+): Promise<void> {
+  // Per-tenant runtime kill switch (Control Center). `flagDisabled` is an
+  // informational OR across tenants — true if any active tenant had the
+  // dispatcher paused this tick.
+  if (!(await isFeatureEnabled("outreach_playbooks.dispatcher", orgId))) {
     stats.flagDisabled = true;
-    return stats;
+    return;
   }
 
-  const supabase = getSupabaseServiceRoleClient();
+  const supabase = getOrgScopedClient(orgId);
   const nowIso = now.toISOString();
 
   const { data: runs, error: runsErr } = await supabase
+    .raw()
     .schema("resupply")
     .from("outreach_playbook_runs")
     .select("id, playbook_id, patient_id, next_step_index, started_at")
+    .eq("org_id", orgId)
     .eq("status", "active")
     .lte("next_step_at", nowIso)
     .order("next_step_at", { ascending: true })
     .limit(BATCH_SIZE);
   if (runsErr) throw runsErr;
   const runRows = (runs ?? []) as RunRow[];
-  if (runRows.length === 0) return stats;
+  if (runRows.length === 0) return;
 
   // Steps for every playbook in the batch, one query.
   const playbookIds = [...new Set(runRows.map((r) => r.playbook_id))];
   const { data: steps, error: stepsErr } = await supabase
+    .raw()
     .schema("resupply")
     .from("outreach_playbook_steps")
     .select("playbook_id, step_index, day_offset, channel, subject, body")
+    .eq("org_id", orgId)
     .in("playbook_id", playbookIds)
     .order("step_index", { ascending: true });
   if (stepsErr) throw stepsErr;
@@ -270,6 +304,7 @@ export async function runOutreachPlaybookSweep(
     // Pointer past the (possibly edited) cadence — the run is done.
     if (!step) {
       const { error } = await supabase
+        .raw()
         .schema("resupply")
         .from("outreach_playbook_runs")
         .update({
@@ -278,6 +313,7 @@ export async function runOutreachPlaybookSweep(
           next_step_at: null,
           updated_at: nowIso,
         })
+        .eq("org_id", orgId)
         .eq("id", run.id)
         .eq("status", "active")
         .eq("next_step_index", run.next_step_index);
@@ -295,7 +331,6 @@ export async function runOutreachPlaybookSweep(
 
     // Patient gate: must still exist and be active.
     const { data: patient, error: patientErr } = await supabase
-      .schema("resupply")
       .from("patients")
       .select(
         "id, status, legal_first_name, communication_preferences, timezone, address",
@@ -319,6 +354,7 @@ export async function runOutreachPlaybookSweep(
     } | null;
     if (!patientRow || patientRow.status !== "active") {
       const { error } = await supabase
+        .raw()
         .schema("resupply")
         .from("outreach_playbook_runs")
         .update({
@@ -326,13 +362,14 @@ export async function runOutreachPlaybookSweep(
           cancelled_at: nowIso,
           updated_at: nowIso,
         })
+        .eq("org_id", orgId)
         .eq("id", run.id)
         .eq("status", "active");
       if (error) {
         stats.errors += 1;
       } else {
         stats.cancelledRuns += 1;
-        await recordStep({
+        await recordStep(orgId, {
           runId: run.id,
           stepIndex: run.next_step_index,
           channel: step.channel,
@@ -367,6 +404,7 @@ export async function runOutreachPlaybookSweep(
           })))
     ) {
       const { error } = await supabase
+        .raw()
         .schema("resupply")
         .from("outreach_playbook_runs")
         .update({
@@ -375,6 +413,7 @@ export async function runOutreachPlaybookSweep(
           ).toISOString(),
           updated_at: nowIso,
         })
+        .eq("org_id", orgId)
         .eq("id", run.id)
         .eq("status", "active")
         .eq("next_step_index", run.next_step_index);
@@ -406,9 +445,11 @@ export async function runOutreachPlaybookSweep(
       claim.completed_at = nowIso;
     }
     const { data: claimed, error: claimErr } = await supabase
+      .raw()
       .schema("resupply")
       .from("outreach_playbook_runs")
       .update(claim)
+      .eq("org_id", orgId)
       .eq("id", run.id)
       .eq("status", "active")
       .eq("next_step_index", run.next_step_index)
@@ -434,7 +475,7 @@ export async function runOutreachPlaybookSweep(
 
     try {
       if (step.channel === "call") {
-        await recordStep({
+        await recordStep(orgId, {
           runId: run.id,
           stepIndex: step.step_index,
           channel: "call",
@@ -448,7 +489,7 @@ export async function runOutreachPlaybookSweep(
       if (step.channel === "sms") {
         if (!cfg.sms) {
           stats.skipped += 1;
-          await recordStep({
+          await recordStep(orgId, {
             runId: run.id,
             stepIndex: step.step_index,
             channel: "sms",
@@ -459,7 +500,7 @@ export async function runOutreachPlaybookSweep(
         }
         if (!shouldSendSms(prefs, "transactional", now)) {
           stats.skipped += 1;
-          await recordStep({
+          await recordStep(orgId, {
             runId: run.id,
             stepIndex: step.step_index,
             channel: "sms",
@@ -469,15 +510,23 @@ export async function runOutreachPlaybookSweep(
           continue;
         }
         const outcome = await sendReminderSms({
-          supabase,
-          cfg: cfg.sms,
+          supabase: supabase.raw(),
+          orgId,
+          // Send under the tenant's own number / Messaging Service when
+          // it has one (G7); falls back to the platform default.
+          cfg: await applyTenantSmsFrom(orgId, cfg.sms),
           patientId: run.patient_id,
           body: rendered,
           actor,
         });
         if (outcome.status === "ok") {
           stats.smsSent += 1;
-          await recordStep({
+          recordOutboundMessageUsage({
+            orgId,
+            channel: "sms",
+            source: "outreach_playbook.sms",
+          });
+          await recordStep(orgId, {
             runId: run.id,
             stepIndex: step.step_index,
             channel: "sms",
@@ -485,7 +534,7 @@ export async function runOutreachPlaybookSweep(
           });
         } else {
           stats.errors += 1;
-          await recordStep({
+          await recordStep(orgId, {
             runId: run.id,
             stepIndex: step.step_index,
             channel: "sms",
@@ -499,7 +548,7 @@ export async function runOutreachPlaybookSweep(
       // email
       if (!cfg.email || !cfg.hmacKeyReady) {
         stats.skipped += 1;
-        await recordStep({
+        await recordStep(orgId, {
           runId: run.id,
           stepIndex: step.step_index,
           channel: "email",
@@ -510,7 +559,7 @@ export async function runOutreachPlaybookSweep(
       }
       if (!shouldSendEmail(prefs, "resupplyReminder", now)) {
         stats.skipped += 1;
-        await recordStep({
+        await recordStep(orgId, {
           runId: run.id,
           stepIndex: step.step_index,
           channel: "email",
@@ -524,15 +573,23 @@ export async function runOutreachPlaybookSweep(
         practiceName: cfg.practiceName,
       });
       const outcome = await sendReminderEmail({
-        supabase,
-        cfg: cfg.email,
+        supabase: supabase.raw(),
+        orgId,
+        // Send under the tenant's own From identity when configured (G6);
+        // falls back to the platform default when it isn't.
+        cfg: await applyTenantEmailSender(orgId, cfg.email),
         patientId: run.patient_id,
         content: { subject, bodyText: rendered },
         actor,
       });
       if (outcome.status === "ok") {
         stats.emailsSent += 1;
-        await recordStep({
+        recordOutboundMessageUsage({
+          orgId,
+          channel: "email",
+          source: "outreach_playbook.email",
+        });
+        await recordStep(orgId, {
           runId: run.id,
           stepIndex: step.step_index,
           channel: "email",
@@ -540,7 +597,7 @@ export async function runOutreachPlaybookSweep(
         });
       } else {
         stats.errors += 1;
-        await recordStep({
+        await recordStep(orgId, {
           runId: run.id,
           stepIndex: step.step_index,
           channel: "email",
@@ -562,7 +619,7 @@ export async function runOutreachPlaybookSweep(
         },
         "outreach-playbooks: step send threw",
       );
-      await recordStep({
+      await recordStep(orgId, {
         runId: run.id,
         stepIndex: step.step_index,
         channel: step.channel,
@@ -571,8 +628,6 @@ export async function runOutreachPlaybookSweep(
       });
     }
   }
-
-  return stats;
 }
 
 export async function registerOutreachPlaybookTickJob(

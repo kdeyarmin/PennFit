@@ -41,11 +41,13 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 export const DEFAULT_ELEVENLABS_MODEL = "eleven_flash_v2_5";
 
 /**
- * "Rachel" — ElevenLabs' default warm female voice. Good neutral
- * starting point for CPAP demographic (skews older, mixed gender).
- * Swap with any voice ID from the ElevenLabs voice library.
+ * "Charlotte" — a warm, natural conversational ElevenLabs voice. Chosen
+ * over the stock "Rachel" for a softer, more personable read on patient
+ * calls (the CPAP demographic skews older, mixed gender).
+ * Swap with any voice ID from the ElevenLabs voice library via
+ * `ELEVENLABS_VOICE_ID`.
  */
-export const DEFAULT_ELEVENLABS_VOICE_ID = "21m00Tcm4TlvDq8ikWAM";
+export const DEFAULT_ELEVENLABS_VOICE_ID = "XB0fDUnXU5powFXDhCwa";
 
 /**
  * Audio output formats ElevenLabs supports. For Twilio Media Streams

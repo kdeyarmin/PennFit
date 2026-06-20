@@ -25,13 +25,20 @@
 
 import type PgBoss from "pg-boss";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  getOrgScopedClient,
+  resolveSeedOrgId,
+  type OrgScopedClient,
+} from "@workspace/resupply-db";
 import {
   createSendgridClient,
   EmailConfigError,
 } from "@workspace/resupply-email";
 
+import { resolveSuperAdminRecipients } from "../../lib/admin-assistant/adminAssistantTools";
 import { logger } from "../../lib/logger";
+import { stripeAccountRequestOptions } from "../../lib/stripe/connect";
+import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import {
   createQueueWithDlq,
   VENDOR_SEND_QUEUE_OPTS,
@@ -70,14 +77,6 @@ interface BelowThresholdSku {
   threshold: number;
 }
 
-function parseRecipientList(raw: string | undefined): string[] {
-  if (!raw) return [];
-  return raw
-    .split(",")
-    .map((s) => s.trim().toLowerCase())
-    .filter((s) => s.length > 0 && s.includes("@"));
-}
-
 function effectiveThreshold(product: ShopProductView): number {
   // `null` means "use the storefront default of 5". `0` is an
   // explicit opt-out — the storefront never shows the low badge
@@ -87,12 +86,15 @@ function effectiveThreshold(product: ShopProductView): number {
   return product.lowStockThreshold;
 }
 
-function renderDigest(skus: BelowThresholdSku[]): {
+function renderDigest(
+  skus: BelowThresholdSku[],
+  practiceName: string,
+): {
   subject: string;
   html: string;
   text: string;
 } {
-  const subject = `PennPaps inventory alert — ${skus.length} SKU${
+  const subject = `${practiceName} inventory alert — ${skus.length} SKU${
     skus.length === 1 ? "" : "s"
   } below threshold`;
 
@@ -160,41 +162,57 @@ function escapeHtml(s: string): string {
     .replace(/'/g, "&#39;");
 }
 
-export async function runLowStockAlerts(): Promise<LowStockAlertStats> {
-  const stats: LowStockAlertStats = {
-    scanned: 0,
-    belowThreshold: 0,
-    newAlerts: 0,
-    cooldownSkipped: 0,
-    resolved: 0,
-    recipients: 0,
-    emailSent: false,
-  };
+/** Built once per tick and threaded into every per-tenant sweep. */
+interface LowStockRunContext {
+  stripe: ReturnType<typeof getStripeClient>;
+  /** The seed/platform tenant — the one org that owns the platform catalog. */
+  seedOrgId: string | null;
+  practiceName: string;
+}
 
-  const config = readStripeConfigOrNull();
-  if (!config) {
-    logger.info(
-      { event: "shop-inventory.low-stock-alerts.skipped_no_stripe" },
-      "low-stock-alerts: Stripe not configured, skipping",
-    );
-    return stats;
+/**
+ * Scan ONE tenant's Stripe catalog for low stock and alert ITS admins.
+ * Extracted so the cron can fan out across active tenants. The catalog is
+ * per-tenant under Stripe Connect (G5): the product list is routed to the
+ * tenant's connected account via `stripeAccountRequestOptions(orgId)`. A
+ * non-seed tenant with NO connected account owns no catalog of its own, so
+ * it is skipped — it must not alert on the platform/seed catalog that isn't
+ * theirs. The `low_stock_alert_state` dedup is per-tenant (org-scoped
+ * client), and recipients are the tenant's own active super-admins (env
+ * fallback). Mutates the shared aggregate `stats`.
+ */
+async function lowStockAlertsForOrg(
+  orgId: string,
+  ctx: LowStockRunContext,
+  stats: LowStockAlertStats,
+): Promise<void> {
+  const { stripe, seedOrgId, practiceName } = ctx;
+
+  // Stripe Connect (G5): route the catalog read to the tenant's connected
+  // account. NULL account → {} → the platform account. A non-seed tenant
+  // without a connected account has no catalog yet, so skip rather than scan
+  // (and alert on) the platform catalog that belongs to the seed tenant.
+  const accountOpts = await stripeAccountRequestOptions(orgId);
+  if (orgId !== seedOrgId && !accountOpts.stripeAccount) {
+    return;
   }
-  const stripe = getStripeClient(config);
 
-  // Page through every active product. The PennPaps catalog is small
-  // (dozens) so this is usually one round-trip, but we MUST page
-  // rather than `limit: 100` once — otherwise SKUs beyond page 1 are
-  // never scanned for alerts and an in-progress alert can never
-  // resolve. Hard cap at 10 pages (1000 products) as a defense bound.
+  // Page through every active product. The catalog is small (dozens) so this
+  // is usually one round-trip, but we MUST page rather than `limit: 100` once
+  // — otherwise SKUs beyond page 1 are never scanned and an in-progress alert
+  // can never resolve. Hard cap at 10 pages (1000 products) as a defense bound.
   const products: ShopProductView[] = [];
   let startingAfter: string | undefined;
   for (let page = 0; page < 10; page++) {
-    const list = await stripe.products.list({
-      active: true,
-      limit: 100,
-      expand: ["data.default_price"],
-      ...(startingAfter ? { starting_after: startingAfter } : {}),
-    });
+    const list = await stripe.products.list(
+      {
+        active: true,
+        limit: 100,
+        expand: ["data.default_price"],
+        ...(startingAfter ? { starting_after: startingAfter } : {}),
+      },
+      accountOpts,
+    );
     for (const p of list.data) {
       const projected = projectProduct(p);
       if (projected) products.push(projected);
@@ -202,7 +220,7 @@ export async function runLowStockAlerts(): Promise<LowStockAlertStats> {
     if (!list.has_more || list.data.length === 0) break;
     startingAfter = list.data[list.data.length - 1]!.id;
   }
-  stats.scanned = products.length;
+  stats.scanned += products.length;
 
   // Two buckets:
   //   below — products currently at/below threshold (eligible to alert)
@@ -227,9 +245,9 @@ export async function runLowStockAlerts(): Promise<LowStockAlertStats> {
       recoveredIds.push(p.id);
     }
   }
-  stats.belowThreshold = below.length;
+  stats.belowThreshold += below.length;
 
-  const supabase = getSupabaseServiceRoleClient();
+  const supabase = getOrgScopedClient(orgId);
   const nowIso = new Date().toISOString();
   const cooldownCutoff = new Date(
     Date.now() - ALERT_COOLDOWN_HOURS * 60 * 60 * 1000,
@@ -240,7 +258,6 @@ export async function runLowStockAlerts(): Promise<LowStockAlertStats> {
   // the next dip alert again.
   if (recoveredIds.length > 0) {
     const { data: resolved, error: resolveErr } = await supabase
-      .schema("resupply")
       .from("low_stock_alert_state")
       .update({ last_resolved_at: nowIso, updated_at: nowIso })
       .in("product_id", recoveredIds)
@@ -253,23 +270,22 @@ export async function runLowStockAlerts(): Promise<LowStockAlertStats> {
         "low-stock-alerts: failed to mark resolved",
       );
     } else {
-      stats.resolved = (resolved ?? []).length;
+      stats.resolved += (resolved ?? []).length;
     }
   }
 
   if (below.length === 0) {
     logger.info(
-      { event: "shop-inventory.low-stock-alerts.no_alerts" },
+      { event: "shop-inventory.low-stock-alerts.no_alerts", org_id: orgId },
       "low-stock-alerts: no SKUs below threshold",
     );
-    return stats;
+    return;
   }
 
   // Decide which below-threshold SKUs are actually alert-eligible
   // (never alerted, or recovered since last alert, or cooldown expired).
   const belowIds = below.map((b) => b.productId);
   const { data: stateRows, error: stateErr } = await supabase
-    .schema("resupply")
     .from("low_stock_alert_state")
     .select("product_id, last_alerted_at, last_resolved_at")
     .in("product_id", belowIds);
@@ -279,7 +295,13 @@ export async function runLowStockAlerts(): Promise<LowStockAlertStats> {
     );
   }
   const stateById = new Map(
-    (stateRows ?? []).map((r) => [
+    (
+      (stateRows ?? []) as Array<{
+        product_id: string;
+        last_alerted_at: string | null;
+        last_resolved_at: string | null;
+      }>
+    ).map((r) => [
       r.product_id,
       {
         lastAlertedAt: r.last_alerted_at,
@@ -308,34 +330,37 @@ export async function runLowStockAlerts(): Promise<LowStockAlertStats> {
     }
     stats.cooldownSkipped += 1;
   }
-  stats.newAlerts = alertable.length;
+  stats.newAlerts += alertable.length;
 
   if (alertable.length === 0) {
     logger.info(
       {
         event: "shop-inventory.low-stock-alerts.suppressed",
+        org_id: orgId,
         belowThreshold: below.length,
-        cooldownSkipped: stats.cooldownSkipped,
       },
       "low-stock-alerts: all below-threshold SKUs are within cooldown",
     );
-    return stats;
+    return;
   }
 
-  const recipients = parseRecipientList(process.env.RESUPPLY_ADMIN_EMAILS);
-  stats.recipients = recipients.length;
+  // Per-tenant recipients: the org's own active super-admins, falling back to
+  // the platform RESUPPLY_ADMIN_EMAILS allowlist when the tenant has none.
+  const recipients = await resolveSuperAdminRecipients(supabase);
+  stats.recipients += recipients.length;
   if (recipients.length === 0) {
     logger.warn(
       {
         event: "shop-inventory.low-stock-alerts.no_recipients",
+        org_id: orgId,
         wouldAlert: alertable.length,
       },
-      "low-stock-alerts: RESUPPLY_ADMIN_EMAILS is empty; no email sent",
+      "low-stock-alerts: no tenant recipients (admins or env); no email sent",
     );
     // Still upsert state so we don't repeatedly compute the same
     // alertable set without actually delivering anything.
-    await upsertAlertState(alertable, nowIso);
-    return stats;
+    await upsertAlertState(orgId, alertable, nowIso);
+    return;
   }
 
   let sendgrid;
@@ -344,18 +369,19 @@ export async function runLowStockAlerts(): Promise<LowStockAlertStats> {
   } catch (err) {
     if (err instanceof EmailConfigError) {
       logger.warn(
-        {
-          event: "shop-inventory.low-stock-alerts.email_unconfigured",
-          message: err.message,
-        },
+        { event: "shop-inventory.low-stock-alerts.email_unconfigured", err },
         "low-stock-alerts: email not configured; skipping send",
       );
-      return stats;
+      return;
     }
     throw err;
   }
 
-  const { subject, html, text } = renderDigest(alertable);
+  // Brand the subject with THIS tenant's name, not the process-global env
+  // practice name (which is the seed tenant's) — the recipients are this
+  // tenant's admins.
+  const brand = await resolveTenantBrandName(supabase, orgId, practiceName);
+  const { subject, html, text } = renderDigest(alertable, brand);
   let anySent = false;
   for (const to of recipients) {
     try {
@@ -368,22 +394,115 @@ export async function runLowStockAlerts(): Promise<LowStockAlertStats> {
       );
     }
   }
-  stats.emailSent = anySent;
+  stats.emailSent = stats.emailSent || anySent;
 
   // Even on partial send failure, stamp state so the next tick
   // honours the cooldown for the SKUs we tried to alert on. The
   // worst case is a 24h re-attempt for SKUs whose alerts didn't
   // reach anyone — acceptable vs hammering SendGrid every 6h.
-  await upsertAlertState(alertable, nowIso);
+  await upsertAlertState(orgId, alertable, nowIso);
+}
+
+/**
+ * Scan EVERY active tenant's catalog for low stock. Builds the Stripe client
+ * once, resolves the seed tenant, then fans out per tenant with per-tenant
+ * failure isolation (`forEachActiveOrg`) — routing each catalog read to the
+ * tenant's connected account and alerting its own admins. The returned stats
+ * are aggregated across tenants.
+ */
+export async function runLowStockAlerts(): Promise<LowStockAlertStats> {
+  const stats: LowStockAlertStats = {
+    scanned: 0,
+    belowThreshold: 0,
+    newAlerts: 0,
+    cooldownSkipped: 0,
+    resolved: 0,
+    recipients: 0,
+    emailSent: false,
+  };
+
+  const config = readStripeConfigOrNull();
+  if (!config) {
+    logger.info(
+      { event: "shop-inventory.low-stock-alerts.skipped_no_stripe" },
+      "low-stock-alerts: Stripe not configured, skipping",
+    );
+    return stats;
+  }
+  const stripe = getStripeClient(config);
+  const seedOrgId = await resolveSeedOrgId();
+  if (!seedOrgId) {
+    // Fail-soft: without the seed org we can't attribute the platform catalog
+    // to a tenant, so the seed/platform catalog is skipped this tick (the gate
+    // below treats every org as non-seed). Connected tenants still alert on
+    // their own accounts. Log so this degraded tick isn't silent.
+    logger.warn(
+      { event: "shop-inventory.low-stock-alerts.no_seed_org" },
+      "low-stock-alerts: seed org unresolved — platform catalog skipped this tick (connected tenants unaffected)",
+    );
+  }
+  const practiceName = process.env.RESUPPLY_PRACTICE_NAME ?? "PennPaps";
+
+  await forEachActiveOrg(
+    async (orgId) => {
+      await lowStockAlertsForOrg(
+        orgId,
+        { stripe, seedOrgId, practiceName },
+        stats,
+      );
+    },
+    { jobName: ALERT_JOB },
+  );
 
   return stats;
 }
 
+/**
+ * The tenant's customer-facing brand for the alert subject. Reads the org's
+ * storefront/legal name from the GLOBAL organizations directory via `.raw()`
+ * (the org-scoped facade would wrongly filter that table), falling back to
+ * the platform practice name on any miss/error so a DB blip never blocks the
+ * alert.
+ */
+async function resolveTenantBrandName(
+  supabase: OrgScopedClient,
+  orgId: string,
+  fallback: string,
+): Promise<string> {
+  try {
+    const { data, error } = await supabase
+      .raw()
+      .schema("resupply")
+      .from("organizations")
+      .select("storefront_name, name")
+      .eq("id", orgId)
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    const row = data as {
+      storefront_name: string | null;
+      name: string | null;
+    } | null;
+    return row?.storefront_name?.trim() || row?.name?.trim() || fallback;
+  } catch (err) {
+    logger.warn(
+      {
+        event: "shop-inventory.low-stock-alerts.brand_lookup_failed",
+        err,
+        org_id: orgId,
+      },
+      "low-stock-alerts: tenant brand lookup failed; using platform practice name",
+    );
+    return fallback;
+  }
+}
+
 async function upsertAlertState(
+  orgId: string,
   alertable: BelowThresholdSku[],
   nowIso: string,
 ): Promise<void> {
-  const supabase = getSupabaseServiceRoleClient();
+  const supabase = getOrgScopedClient(orgId);
   const rows = alertable.map((sku) => ({
     product_id: sku.productId,
     last_observed_count: sku.stockCount,
@@ -395,9 +514,12 @@ async function upsertAlertState(
     updated_at: nowIso,
   }));
   const { error } = await supabase
-    .schema("resupply")
     .from("low_stock_alert_state")
-    .upsert(rows, { onConflict: "product_id" });
+    // (org_id, product_id) PK (migration 0373) — the org-scoped facade
+    // injects org_id, so the conflict target must include it. Two connected
+    // Stripe accounts can share a product id; conflicting on product_id alone
+    // would overwrite the OTHER tenant's alert state.
+    .upsert(rows, { onConflict: "org_id,product_id" });
   if (error) {
     logger.warn({ err: error }, "low-stock-alerts: state upsert failed");
   }

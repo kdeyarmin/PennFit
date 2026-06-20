@@ -18,6 +18,7 @@ import { Building2 } from "lucide-react";
 import { Card } from "@/components/admin/Card";
 import { Spinner } from "@/components/admin/Spinner";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
+import { StripeConnectCard } from "@/components/admin/StripeConnectCard";
 import {
   ACCREDITATION_BODIES,
   type DmeOrgBody,
@@ -295,6 +296,8 @@ export function AdminBillingConfigOrganizationPage() {
           this page is identity only.
         </p>
       </header>
+
+      <StripeConnectCard />
 
       {section("Identity", IDENTITY)}
       {section("Physical address", addressFields("physical"))}

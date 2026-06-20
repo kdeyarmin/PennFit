@@ -30,6 +30,7 @@ import {
 
 import { Spinner } from "@/components/admin/Spinner";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
+import { PageHeader } from "@/components/admin/PageHeader";
 import {
   fetchAccountSetup,
   type AccountSetupItem,
@@ -86,21 +87,11 @@ export function AdminAccountSetupPage() {
 
   return (
     <div className="space-y-6 max-w-5xl" data-testid="admin-account-setup-page">
-      <header className="space-y-1">
-        <h1
-          className="text-2xl font-bold tracking-tight flex items-center gap-2"
-          style={{ color: "hsl(var(--ink-1))" }}
-        >
-          <ClipboardCheck className="h-6 w-6" aria-hidden />
-          Account Setup
-        </h1>
-        <p className="text-sm text-slate-600">
-          Everything needed to stand up a fresh PennFit deployment. Required
-          items check themselves off as the server detects them; operator-run
-          steps are ticked here and remembered in this browser. Mirrors the
-          production-launch runbook.
-        </p>
-      </header>
+      <PageHeader
+        icon={ClipboardCheck}
+        title="Account Setup"
+        description="Everything needed to stand up a fresh CareMetric Breathe deployment. Required items check themselves off as the server detects them; operator-run steps are ticked here and remembered in this browser. Mirrors the production-launch runbook."
+      />
 
       {query.isPending ? (
         <Spinner label="Checking setup status…" />

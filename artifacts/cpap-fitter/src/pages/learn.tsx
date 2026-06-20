@@ -5,9 +5,11 @@ import { LearnVideoLibrary } from "@/components/learn-video-library";
 import { NewsletterSignup } from "@/components/newsletter-signup";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import {
+  BrandName,
   SupportEmailText,
   SupportPhoneText,
 } from "@/components/company-contact";
+import { useCompanyContact } from "@/lib/contact";
 import {
   BookOpen,
   Moon,
@@ -87,7 +89,7 @@ const categoryMeta: Record<
     eyebrow: "Coordination",
     title: "Working with Your Care Team",
     caption:
-      "How PennPaps and your sleep medicine provider divide responsibilities so you don't have to be the messenger.",
+      "How we and your sleep medicine provider divide responsibilities so you don't have to be the messenger.",
   },
 };
 
@@ -180,7 +182,7 @@ const articles: Article[] = [
         cover only the nose with a triangular cushion — a comfortable middle
         ground for most patients. <strong>Full-face masks</strong> cover both
         nose and mouth — the right call if you're a mouth-breather, run high
-        pressures, or struggle with chronic congestion. PennPaps weighs all
+        pressures, or struggle with chronic congestion. <BrandName /> weighs all
         three against your face shape and questionnaire answers before
         recommending.
       </>
@@ -200,9 +202,9 @@ const articles: Article[] = [
         mask is almost always the better choice. Stomach sleepers face the same
         constraint and benefit from minimal-contact styles. Back sleepers can
         wear any mask comfortably, so the decision comes down to whether you
-        mouth-breathe and what pressure you're prescribed. PennPaps's
-        questionnaire asks about position so we don't recommend a mask that'll
-        fight your favorite sleeping pose.
+        mouth-breathe and what pressure you're prescribed. Our questionnaire
+        asks about position so we don't recommend a mask that'll fight your
+        favorite sleeping pose.
       </>
     ),
   },
@@ -250,8 +252,8 @@ const articles: Article[] = [
           cushions every 2–4 weeks, headgear every 6 months, tubing every 3
           months, filters monthly
         </em>{" "}
-        cadence. PennPaps's resupply program tracks your schedule and reaches
-        out when you're due — you don't have to remember.
+        cadence. Our resupply program tracks your schedule and reaches out when
+        you're due — you don't have to remember.
       </>
     ),
   },
@@ -411,10 +413,10 @@ const articles: Article[] = [
     category: "team",
     body: (
       <>
-        PennPaps handles the equipment side: mask fitting, ordering, insurance
-        verification, and resupply. Your sleep medicine provider handles the
-        clinical side: diagnosing apnea, prescribing CPAP, setting your
-        pressure, and adjusting therapy if symptoms change. The two work
+        <BrandName /> handles the equipment side: mask fitting, ordering,
+        insurance verification, and resupply. Your sleep medicine provider
+        handles the clinical side: diagnosing apnea, prescribing CPAP, setting
+        your pressure, and adjusting therapy if symptoms change. The two work
         together — we'll coordinate prescriptions and pressure changes with your
         provider's office on your behalf, so you don't have to be the messenger
         between us.
@@ -455,9 +457,10 @@ const articlesByCategory = CATEGORY_ORDER.map((category) => ({
 }));
 
 export function Learn() {
+  const c = useCompanyContact();
   useDocumentTitle(
     "Learn — CPAP guides",
-    "Plain-English CPAP guides from Penn Home Medical Supply: sleep apnea basics, mask choice, cleaning, building a routine, common objections, replacement schedules, and what to expect on therapy.",
+    `Plain-English CPAP guides from ${c.legalName}: sleep apnea basics, mask choice, cleaning, building a routine, common objections, replacement schedules, and what to expect on therapy.`,
   );
   return (
     <div className="container max-w-5xl mx-auto px-4 py-12 space-y-14 animate-shimmer-in">
@@ -466,7 +469,9 @@ export function Learn() {
         <div className="flex justify-center">
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full glass-panel text-primary text-sm font-medium shadow-sm">
             <BookOpen className="w-4 h-4" />
-            <span>Patient Education from PennPaps</span>
+            <span>
+              Patient Education from <BrandName />
+            </span>
           </div>
         </div>
         <div className="flex justify-center">
@@ -493,6 +498,22 @@ export function Learn() {
             className="text-[hsl(var(--penn-gold))] hover:underline font-medium"
           >
             Prefer to watch? See our short video guides →
+          </Link>
+        </p>
+        <p className="text-sm text-muted-foreground">
+          Just need a quick answer?{" "}
+          <Link
+            href="/faq"
+            className="text-[hsl(var(--penn-gold))] hover:underline font-medium"
+          >
+            FAQ
+          </Link>{" "}
+          · Looking for step-by-step how-tos?{" "}
+          <Link
+            href="/help"
+            className="text-[hsl(var(--penn-gold))] hover:underline font-medium"
+          >
+            Help Center
           </Link>
         </p>
       </header>
@@ -736,9 +757,9 @@ export function Learn() {
                 Educational, not medical advice
               </h3>
               <p className="text-sm text-muted-foreground leading-relaxed">
-                These articles are general patient education from the team at
-                PennPaps. They aren't a substitute for personalized advice from
-                your sleep medicine provider. If you're experiencing new or
+                These articles are general patient education from the team at{" "}
+                <BrandName />. They aren't a substitute for personalized advice
+                from your sleep medicine provider. If you're experiencing new or
                 worsening symptoms — daytime sleepiness, choking episodes,
                 persistent skin breakdown, or changes in how your therapy feels
                 — please contact your provider.
@@ -788,7 +809,7 @@ export function Learn() {
               </h3>
               <p className="text-sm text-muted-foreground leading-relaxed">
                 The mega-page that organizes the whole library by topic and
-                journey stage. If you only read one thing on PennPaps, read
+                journey stage. If you only read one thing on <BrandName />, read
                 this.
               </p>
             </div>
@@ -1134,11 +1155,11 @@ export function Learn() {
           </div>
           <div className="space-y-1 flex-1">
             <h3 className="font-semibold tracking-tight group-hover:text-primary transition-colors">
-              How PennPaps works
+              How <BrandName /> works
             </h3>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              A walkthrough of every part of PennPaps — the fitter, the shop,
-              customer accounts, and how resupply works.
+              A walkthrough of every part of <BrandName /> — the fitter, the
+              shop, customer accounts, and how resupply works.
             </p>
           </div>
           <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors mt-1" />

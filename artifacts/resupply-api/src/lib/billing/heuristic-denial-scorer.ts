@@ -23,11 +23,15 @@
 // The weights sum non-linearly (we cap at 0.95 so no single claim is
 // "guaranteed denied" — that would discourage CSRs from working it).
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  getOrgScopedClient,
+  type OrgScopedClient,
+  resolveSeedOrgId,
+} from "@workspace/resupply-db";
 
 import { logger } from "../logger";
 
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+type SupabaseClient = OrgScopedClient;
 
 export interface ScoringFactor {
   key: string;
@@ -62,11 +66,16 @@ const MEDICARE_LIKE_LOBS = new Set(["medicare_part_b", "medicare_advantage"]);
 const CAPPED_RENTAL_HCPCS = new Set(["E0601", "E0470", "E0471", "E0562"]);
 
 export async function scoreClaim(claimId: string): Promise<DenialScore | null> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    // No tenant context — no opinion (the scorer is advisory and the
+    // caller already handles a null score as "unscored").
+    return null;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const factors: ScoringFactor[] = [];
 
   const { data: claim } = await supabase
-    .schema("resupply")
     .from("insurance_claims")
     .select(
       "id, patient_id, payer_profile_id, insurance_coverage_id, referring_provider_id, date_of_service, total_billed_cents",
@@ -94,7 +103,6 @@ export async function scoreClaim(claimId: string): Promise<DenialScore | null> {
   } | null = null;
   if (claim.payer_profile_id) {
     const { data } = await supabase
-      .schema("resupply")
       .from("payer_profiles")
       .select("display_name, line_of_business, requires_prior_auth_dme")
       .eq("id", claim.payer_profile_id)
@@ -121,7 +129,6 @@ export async function scoreClaim(claimId: string): Promise<DenialScore | null> {
 
   // 3. Diagnosis (from latest sleep study).
   const { data: sleep } = await supabase
-    .schema("resupply")
     .from("sleep_studies")
     .select("diagnosis_icd10")
     .eq("patient_id", claim.patient_id)
@@ -140,7 +147,6 @@ export async function scoreClaim(claimId: string): Promise<DenialScore | null> {
 
   // 4. Subscriber address (5010 hard requirement).
   const { data: patient } = await supabase
-    .schema("resupply")
     .from("patients")
     .select("address")
     .eq("id", claim.patient_id)
@@ -156,17 +162,20 @@ export async function scoreClaim(claimId: string): Promise<DenialScore | null> {
 
   // 5. Per-line analysis.
   const { data: lines } = await supabase
-    .schema("resupply")
     .from("insurance_claim_line_items")
     .select("hcpcs_code, modifier, billed_cents, quantity")
     .eq("claim_id", claim.id);
-  const lineList = lines ?? [];
+  const lineList = (lines ?? []) as Array<{
+    hcpcs_code: string;
+    modifier: string | null;
+    billed_cents: number;
+    quantity: number;
+  }>;
 
   // 5a. Prior-auth requirement.
   if (payer?.requires_prior_auth_dme && lineList.length > 0) {
     const hcpcsList = lineList.map((l) => l.hcpcs_code);
     const { data: pas } = await supabase
-      .schema("resupply")
       .from("prior_authorizations")
       .select("auth_number, status, hcpcs_code, approved_through")
       .eq("patient_id", claim.patient_id)
@@ -184,6 +193,7 @@ export async function scoreClaim(claimId: string): Promise<DenialScore | null> {
   // 5b. PECOS (Medicare-like only).
   if (isMedicareLike && claim.referring_provider_id) {
     const { data: provider } = await supabase
+      .raw()
       .schema("resupply")
       .from("providers")
       .select("npi")
@@ -192,6 +202,7 @@ export async function scoreClaim(claimId: string): Promise<DenialScore | null> {
       .maybeSingle();
     if (provider?.npi) {
       const { data: pecos } = await supabase
+        .raw()
         .schema("resupply")
         .from("providers_pecos_status")
         .select("enrollment_status")
@@ -236,7 +247,6 @@ export async function scoreClaim(claimId: string): Promise<DenialScore | null> {
       claim.date_of_service ?? new Date().toISOString().slice(0, 10);
     for (const line of lineList) {
       const { data: fee } = await supabase
-        .schema("resupply")
         .from("payer_fee_schedules")
         .select("allowed_cents")
         .eq("payer_profile_id", claim.payer_profile_id)
@@ -310,9 +320,18 @@ export async function scoreAndPersist(
 ): Promise<DenialScore | null> {
   const score = await scoreClaim(claimId);
   if (!score) return null;
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    // Tenant context vanished between scoring and persist — the score
+    // is advisory, so return it unpersisted rather than throwing.
+    logger.warn(
+      { claimId },
+      "heuristic-denial-scorer: persist skipped (tenant context missing)",
+    );
+    return score;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const { error } = await supabase
-    .schema("resupply")
     .from("insurance_claims")
     .update({
       predicted_denial_probability: score.probability,

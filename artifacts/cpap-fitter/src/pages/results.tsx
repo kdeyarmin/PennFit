@@ -36,6 +36,7 @@ import { useCart } from "@/hooks/use-cart";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { MaskRecommendationCard } from "@/components/mask-recommendation-card";
 import { ComfortGuarantee } from "@/components/comfort-guarantee";
+import { BrandName } from "@/components/company-contact";
 
 export function Results() {
   useDocumentTitle("Your mask matches");
@@ -259,7 +260,7 @@ export function Results() {
   if (error) {
     // The orval-generated client throws an ApiError with a typed `data`
     // payload of `{ error: string; details?: string[] }` — see
-    // api-server's error responses. Falling back to the generic Error
+    // resupply-api's error responses. Falling back to the generic Error
     // message is enough for offline / network failures.
     const apiError = error as ApiError<{ error?: string; details?: string[] }>;
     const message =
@@ -369,7 +370,7 @@ export function Results() {
           <div className="inline-flex items-center gap-3">
             <div className="h-px w-10 bg-gradient-to-r from-transparent to-[hsl(var(--penn-gold))]" />
             <span className="text-xs font-semibold uppercase tracking-[0.32em] text-[hsl(var(--penn-navy))]/75">
-              PennPaps · Recommendation
+              <BrandName /> · Recommendation
             </span>
             <div className="h-px w-10 bg-gradient-to-l from-transparent to-[hsl(var(--penn-gold))]" />
           </div>

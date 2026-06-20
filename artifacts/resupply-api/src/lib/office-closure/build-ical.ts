@@ -54,7 +54,7 @@ export function buildClosuresIcal(opts: {
   const lines: string[] = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
-    `PRODID:-//PennFit//Office Closures//EN`,
+    `PRODID:-//CareMetric Breathe//Office Closures//EN`,
     "CALSCALE:GREGORIAN",
     "METHOD:PUBLISH",
     fold(`X-WR-CALNAME:${escText(opts.practiceName)} office closures`),

@@ -28,10 +28,12 @@ describe("resolvePayerProfileForEra", () => {
       matchReason: "era_payer_id",
     });
     const filterCalls = getSupabaseFilterCalls("payer_profiles", "select");
-    // First eq call should be against era_payer_id with the parsed
-    // payer id from the 835.
-    const firstEq = filterCalls.find((c) => c.verb === "eq");
-    expect(firstEq?.args).toEqual(["era_payer_id", "54771"]);
+    // The lookup filters on era_payer_id with the parsed payer id from the
+    // 835 (alongside the facade's auto-injected org_id scope).
+    const eraEq = filterCalls.find(
+      (c) => c.verb === "eq" && c.args[0] === "era_payer_id",
+    );
+    expect(eraEq?.args).toEqual(["era_payer_id", "54771"]);
   });
 
   it("falls through era_payer_id → office_ally_payer_id when first lookup misses", async () => {

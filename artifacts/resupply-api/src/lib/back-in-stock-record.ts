@@ -9,9 +9,10 @@
 // regardless of delivery outcome (we don't want a transient SendGrid
 // blip to re-fire on the next admin save).
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { logger } from "./logger";
+import { recordOutboundMessageUsage } from "./metering/usage";
 import {
   sendBackInStockEmail,
   type BackInStockEmailPayload,
@@ -34,13 +35,18 @@ export async function recordBackInStockSignup(
   input: RecordBackInStockSignupInput,
 ): Promise<RecordBackInStockSignupResult> {
   try {
-    const supabase = getSupabaseServiceRoleClient();
+    // Resolve the tenant for the file-local worker pattern. A missing org
+    // degrades to the same "error" outcome the catch below returns.
+    const orgId = await resolveSeedOrgId();
+    if (!orgId) {
+      return { status: "error", error: "tenant context missing" };
+    }
+    const supabase = getOrgScopedClient(orgId);
     // The original SQL path used ON CONFLICT (product_id, email)
     // WHERE notified_at IS NULL DO NOTHING against a partial unique
     // index. PostgREST has no `DO NOTHING WHERE`, so we INSERT and
     // catch the 23505 unique-violation as the "duplicate" branch.
     const { data: inserted, error } = await supabase
-      .schema("resupply")
       .from("shop_back_in_stock_notifications")
       .insert({
         product_id: input.productId,
@@ -82,6 +88,13 @@ export interface DispatchBackInStockInput {
   /** Hard cap on how many emails to send per dispatch. Pending rows
    *  beyond this stay pending and will fire on a future stock save. */
   maxFanout?: number;
+  /**
+   * Tenant whose queue to drain. When set, the dispatch is scoped to
+   * (and branded/sent under) that tenant; when omitted it falls back to
+   * the seed org (`resolveSeedOrgId()`), so single-tenant callers are
+   * unchanged.
+   */
+  orgId?: string;
 }
 
 export interface DispatchBackInStockResult {
@@ -117,13 +130,19 @@ export async function dispatchBackInStockForProduct(
     failed: 0,
   };
   try {
-    const supabase = getSupabaseServiceRoleClient();
+    // Scope to the caller's tenant when provided (so a second tenant
+    // drains its own queue), else the seed org for legacy callers. A
+    // missing org degrades to the zeroed result envelope (the same
+    // "nothing to do" shape the no-candidates branch returns).
+    // Best-effort — never throws.
+    const orgId = input.orgId ?? (await resolveSeedOrgId());
+    if (!orgId) return result;
+    const supabase = getOrgScopedClient(orgId);
     const max = Math.max(1, Math.min(input.maxFanout ?? 200, 500));
 
     // Step 1 — pick the eligible candidate ids, oldest-first so a
     // backlog drains fairly.
     const { data: candidates, error: candidatesErr } = await supabase
-      .schema("resupply")
       .from("shop_back_in_stock_notifications")
       .select("id, email")
       .eq("product_id", input.productId)
@@ -131,7 +150,7 @@ export async function dispatchBackInStockForProduct(
       .order("created_at", { ascending: true })
       .limit(max);
     if (candidatesErr) throw candidatesErr;
-    const candidateIds = (candidates ?? []).map((c) => c.id);
+    const candidateIds = (candidates ?? []).map((c: { id: string }) => c.id);
     if (candidateIds.length === 0) return result;
 
     // Step 2 — atomic stamp. The .is("notified_at", null) guard
@@ -144,7 +163,6 @@ export async function dispatchBackInStockForProduct(
     // inverse failure mode is spam.
     const nowIso = new Date().toISOString();
     const { data: claimed, error: claimErr } = await supabase
-      .schema("resupply")
       .from("shop_back_in_stock_notifications")
       .update({
         notified_at: nowIso,
@@ -156,7 +174,7 @@ export async function dispatchBackInStockForProduct(
       .select("id, email");
     if (claimErr) throw claimErr;
 
-    const claimedRows = claimed ?? [];
+    const claimedRows = (claimed ?? []) as Array<{ id: string; email: string }>;
     result.pending = claimedRows.length;
     if (claimedRows.length === 0) return result;
 
@@ -169,10 +187,10 @@ export async function dispatchBackInStockForProduct(
         productImageUrl: input.productImageUrl ?? null,
         productUrl: input.productUrl,
         priceLabel: input.priceLabel ?? null,
+        orgId,
       };
       const send = await sendBackInStockEmail(payload);
       const { error: stampErr } = await supabase
-        .schema("resupply")
         .from("shop_back_in_stock_notifications")
         .update({
           delivered: send.delivered,
@@ -188,8 +206,14 @@ export async function dispatchBackInStockForProduct(
           "back-in-stock-record: delivery flag stamp failed",
         );
       }
-      if (send.delivered) result.delivered += 1;
-      else result.failed += 1;
+      if (send.delivered) {
+        result.delivered += 1;
+        recordOutboundMessageUsage({
+          orgId,
+          channel: "email",
+          source: "back_in_stock",
+        });
+      } else result.failed += 1;
     }
     logger.info(
       {
@@ -220,9 +244,12 @@ export async function countPendingBackInStock(
   productId: string,
 ): Promise<number> {
   try {
-    const supabase = getSupabaseServiceRoleClient();
+    // Resolve the tenant for the file-local worker pattern. A missing org
+    // degrades to 0 (the same value the catch below returns).
+    const orgId = await resolveSeedOrgId();
+    if (!orgId) return 0;
+    const supabase = getOrgScopedClient(orgId);
     const { count, error } = await supabase
-      .schema("resupply")
       .from("shop_back_in_stock_notifications")
       .select("*", { count: "exact", head: true })
       .eq("product_id", productId)

@@ -29,7 +29,7 @@
 
 import { Router, type IRouter } from "express";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { therapyNightSourceRank } from "../../lib/therapy-night-source-priority";
@@ -96,12 +96,12 @@ interface TherapySummaryResponse {
  * weaker matching shouldn't have to follow).
  */
 async function resolveSinglePatientByEmail(
+  orgId: string,
   customerEmail: string,
 ): Promise<string | null> {
-  const supabase = getSupabaseServiceRoleClient();
+  const supabase = getOrgScopedClient(orgId);
   const escaped = customerEmail.replace(/[\\%_]/g, (c) => `\\${c}`);
   const { data: rows, error } = await supabase
-    .schema("resupply")
     .from("patients")
     .select("id")
     .ilike("email", escaped)
@@ -124,7 +124,18 @@ router.get("/shop/me/therapy-summary", requireSignedIn, async (req, res) => {
     return;
   }
 
-  const patientId = await resolveSinglePatientByEmail(customerEmail);
+  const orgIdForLookup = req.orgId;
+
+  if (!orgIdForLookup) {
+    res.status(500).json({ error: "tenant_context_missing" });
+
+    return;
+  }
+
+  const patientId = await resolveSinglePatientByEmail(
+    orgIdForLookup,
+    customerEmail,
+  );
   if (!patientId) {
     res.json(emptyResponse({ patientLinked: false }));
     return;
@@ -139,9 +150,13 @@ router.get("/shop/me/therapy-summary", requireSignedIn, async (req, res) => {
   cutoff.setUTCDate(cutoff.getUTCDate() - (WINDOW_NIGHTS + 1));
   const cutoffDate = cutoff.toISOString().slice(0, 10);
 
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const { data: rows, error } = await supabase
-    .schema("resupply")
     .from("patient_therapy_nights")
     .select(
       "night_date, source, usage_minutes, ahi, leak_rate_l_min, pressure_p95_cmh2o",

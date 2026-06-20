@@ -32,6 +32,7 @@ import { Button } from "@/components/admin/Button";
 import { Card } from "@/components/admin/Card";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Input, Label } from "@/components/admin/Input";
+import { HcpcsCodeAutocomplete } from "@/components/admin/HcpcsCodeAutocomplete";
 import { Spinner } from "@/components/admin/Spinner";
 import {
   quickCheckEligibility,
@@ -46,6 +47,7 @@ import {
   type InsuranceCoverage,
 } from "@/lib/admin/clinical-tabs-api";
 import { useDocumentTitle } from "@/hooks/use-document-title";
+import { formatAppDate, formatAppDateTime, todayAppDateIso } from "@/lib/utils";
 
 const HCPCS_RE = /^[A-Z]\d{4}$/;
 
@@ -386,7 +388,7 @@ export function AdminBillingVerifyPage() {
                           Member {c.memberId}
                           {c.planName ? ` · ${c.planName}` : ""}
                           {c.verifiedAt
-                            ? ` · last verified ${new Date(c.verifiedAt).toLocaleDateString()}`
+                            ? ` · last verified ${formatAppDate(c.verifiedAt)}`
                             : " · never verified"}
                         </span>
                       </span>
@@ -402,10 +404,10 @@ export function AdminBillingVerifyPage() {
               <div className="flex flex-wrap items-end gap-3">
                 <div className="max-w-[10rem]">
                   <Label htmlFor="verify-hcpcs">HCPCS (optional)</Label>
-                  <Input
+                  <HcpcsCodeAutocomplete
                     id="verify-hcpcs"
                     value={hcpcs}
-                    onChange={(e) => setHcpcs(e.target.value.toUpperCase())}
+                    onValueChange={(v) => setHcpcs(v.toUpperCase())}
                     placeholder="E0601"
                     maxLength={5}
                     data-testid="verify-hcpcs"
@@ -494,7 +496,7 @@ export function AdminBillingVerifyPage() {
                             className="text-[11px]"
                             style={{ color: "hsl(var(--ink-3))" }}
                           >
-                            {new Date(c.requested_at).toLocaleString()}
+                            {formatAppDateTime(c.requested_at)}
                           </span>
                         </div>
                         {c.is_active != null && (
@@ -588,10 +590,7 @@ function QuickCheckSection() {
     hcpcsValid;
 
   const selectedPayer = electronicPayers.find((p) => p.id === payerProfileId);
-  // Local-time max for the DOB picker — toISOString() is UTC and can be
-  // a day off near midnight.
-  const now = new Date();
-  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const today = todayAppDateIso();
 
   const check = useMutation({
     mutationFn: () =>
@@ -618,7 +617,7 @@ function QuickCheckSection() {
     <>
       <Card
         title="Who are we checking?"
-        subtitle="Checked directly against the payer — the person does not need to be in PennFit, and nothing is saved."
+        subtitle="Checked directly against the payer — the person does not need to be in CareMetric Breathe, and nothing is saved."
       >
         {payers.isPending ? (
           <Spinner label="Loading payers…" />
@@ -722,10 +721,10 @@ function QuickCheckSection() {
             </div>
             <div className="max-w-[10rem]">
               <Label htmlFor="quick-hcpcs">HCPCS (optional)</Label>
-              <Input
+              <HcpcsCodeAutocomplete
                 id="quick-hcpcs"
                 value={hcpcs}
-                onChange={(e) => setHcpcs(e.target.value.toUpperCase())}
+                onValueChange={(v) => setHcpcs(v.toUpperCase())}
                 placeholder="E0601"
                 maxLength={5}
                 data-testid="quick-hcpcs"

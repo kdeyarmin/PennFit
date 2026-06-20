@@ -1,3 +1,4 @@
+import { getOrgScopedClient, resolveSeedOrgId } from "../org-scoped-client";
 import type { ResupplySupabaseClient } from "../supabase-client";
 
 /**
@@ -72,6 +73,16 @@ export interface UpsertPatientLatestMessageInput {
    * `sentAt` (preferred when set) or `createdAt` as a fallback.
    */
   messageAt: Date;
+  /**
+   * Tenant whose projection row this refresh targets. Every read/write
+   * here is scoped to it through `getOrgScopedClient`, so a refresh can
+   * never read one tenant's conversation or stamp another tenant's
+   * patient row. Optional: when omitted, the seed-org bridge resolves
+   * the original operating company so single-tenant / system callers
+   * (inbound webhooks, voice) keep working without threading orgId
+   * through every call site (Phase 0 cutover posture).
+   */
+  orgId?: string;
 }
 
 /**
@@ -110,9 +121,15 @@ export async function upsertPatientLatestMessageSb(
 ): Promise<boolean> {
   const preview = buildPreview(input.body);
 
+  // Tenant isolation chokepoint: route every read/write through the
+  // org-scoped client so the projection can only ever touch the
+  // caller's tenant. The seed-org bridge keeps unscoped/system callers
+  // working until they thread their own orgId (Phase 0).
+  const orgId = input.orgId ?? (await resolveSeedOrgId()) ?? "";
+  const db = getOrgScopedClient(orgId, supabase);
+
   // Always derive patient id from the conversation.
-  const { data: convRow, error: convErr } = await supabase
-    .schema("resupply")
+  const { data: convRow, error: convErr } = await db
     .from("conversations")
     .select("patient_id")
     .eq("id", input.conversationId)
@@ -130,8 +147,7 @@ export async function upsertPatientLatestMessageSb(
   const messageAtIso = input.messageAt.toISOString();
 
   // Step 1: conditional UPDATE. Atomic out-of-order guard.
-  const { data: updated, error: updateErr } = await supabase
-    .schema("resupply")
+  const { data: updated, error: updateErr } = await db
     .from("patient_latest_message")
     .update({
       last_message_at: messageAtIso,
@@ -150,16 +166,13 @@ export async function upsertPatientLatestMessageSb(
   // existing row's timestamp is >= ours. Try INSERT. If we collide
   // on the unique, that's a no-op (existing row is fresher OR
   // a parallel writer beat us).
-  const { error: insertErr } = await supabase
-    .schema("resupply")
-    .from("patient_latest_message")
-    .insert({
-      patient_id: patientId,
-      last_message_at: messageAtIso,
-      last_message_direction: input.direction,
-      last_message_preview: preview,
-      last_message_conversation_id: input.conversationId,
-    });
+  const { error: insertErr } = await db.from("patient_latest_message").insert({
+    patient_id: patientId,
+    last_message_at: messageAtIso,
+    last_message_direction: input.direction,
+    last_message_preview: preview,
+    last_message_conversation_id: input.conversationId,
+  });
   if (insertErr) {
     if ((insertErr as { code?: string }).code === "23505") {
       // A concurrent writer beat us to the INSERT, so the row exists
@@ -168,8 +181,7 @@ export async function upsertPatientLatestMessageSb(
       // overwrite. Without this, two simultaneous writers can leave
       // the older message in the projection (the writer that loses
       // the INSERT race exits before checking timestamps).
-      const { data: retried, error: retryErr } = await supabase
-        .schema("resupply")
+      const { data: retried, error: retryErr } = await db
         .from("patient_latest_message")
         .update({
           last_message_at: messageAtIso,

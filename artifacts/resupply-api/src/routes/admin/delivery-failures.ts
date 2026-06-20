@@ -34,7 +34,7 @@
 
 import { Router, type IRouter } from "express";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { requirePermission } from "../../middlewares/requireAdmin";
 
@@ -69,7 +69,12 @@ router.get(
       : DEFAULT_DAYS_BACK;
     const since = new Date(Date.now() - sinceDays * 86400_000).toISOString();
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // Per-message failures. The original SQL path joined to
     // conversations + patients in one shot; PostgREST has no JOIN, so
@@ -77,7 +82,6 @@ router.get(
     // and (via the conversation's patient_id) the patients in a second
     // round-trip. Latency cost is bounded by MAX_ROWS.
     const { data: messageRows, error: msgErr } = await supabase
-      .schema("resupply")
       .from("messages")
       .select(
         "id, conversation_id, direction, sender_role, delivery_status, delivery_error, sent_at, created_at",
@@ -99,7 +103,6 @@ router.get(
     // reports sent/delivered/undelivered/failed for these, so the
     // failure subset is narrower than the messages list above.
     const { data: recallRows, error: recallErr } = await supabase
-      .schema("resupply")
       .from("recall_notifications")
       .select(
         "id, recall_id, patient_id, channel, delivery_status, delivery_error_code, updated_at",
@@ -111,7 +114,12 @@ router.get(
     if (recallErr) throw recallErr;
 
     const conversationIds = Array.from(
-      new Set((messageRows ?? []).map((r) => r.conversation_id)),
+      new Set(
+        (messageRows ?? []).map(
+          (r: Database["resupply"]["Tables"]["messages"]["Row"]) =>
+            r.conversation_id,
+        ),
+      ),
     );
     const conversationsById = new Map<
       string,
@@ -119,7 +127,6 @@ router.get(
     >();
     if (conversationIds.length > 0) {
       const { data: convs, error: convErr } = await supabase
-        .schema("resupply")
         .from("conversations")
         .select("id, channel, patient_id")
         .in("id", conversationIds);
@@ -137,7 +144,10 @@ router.get(
         ...Array.from(conversationsById.values())
           .map((c) => c.patient_id)
           .filter((v): v is string => v !== null),
-        ...(recallRows ?? []).map((r) => r.patient_id),
+        ...(recallRows ?? []).map(
+          (r: Database["resupply"]["Tables"]["recall_notifications"]["Row"]) =>
+            r.patient_id,
+        ),
       ]),
     );
     const patientsById = new Map<
@@ -146,7 +156,6 @@ router.get(
     >();
     if (patientIds.length > 0) {
       const { data: pts, error: ptErr } = await supabase
-        .schema("resupply")
         .from("patients")
         .select("id, legal_first_name, legal_last_name")
         .in("id", patientIds);
@@ -165,56 +174,60 @@ router.get(
     // consumers don't have to special-case the missing field while a
     // dedicated replacement table is designed.
 
-    const messageEvents = (messageRows ?? []).map((r) => {
-      const conv = conversationsById.get(r.conversation_id);
-      const pt = conv?.patient_id
-        ? patientsById.get(conv.patient_id)
-        : undefined;
-      const fullName = pt
-        ? [pt.legal_first_name, pt.legal_last_name]
-            .filter(Boolean)
-            .join(" ")
-            .trim()
-        : "";
-      return {
-        kind: "message" as const,
-        id: r.id,
-        occurredAt: r.created_at,
-        channel: conv?.channel ?? null,
-        direction: r.direction,
-        senderRole: r.sender_role,
-        deliveryStatus: r.delivery_status,
-        deliveryError: r.delivery_error,
-        conversationId: r.conversation_id,
-        patientId: conv?.patient_id ?? null,
-        patientName: fullName || null,
-      };
-    });
+    const messageEvents = (messageRows ?? []).map(
+      (r: Database["resupply"]["Tables"]["messages"]["Row"]) => {
+        const conv = conversationsById.get(r.conversation_id);
+        const pt = conv?.patient_id
+          ? patientsById.get(conv.patient_id)
+          : undefined;
+        const fullName = pt
+          ? [pt.legal_first_name, pt.legal_last_name]
+              .filter(Boolean)
+              .join(" ")
+              .trim()
+          : "";
+        return {
+          kind: "message" as const,
+          id: r.id,
+          occurredAt: r.created_at,
+          channel: conv?.channel ?? null,
+          direction: r.direction,
+          senderRole: r.sender_role,
+          deliveryStatus: r.delivery_status,
+          deliveryError: r.delivery_error,
+          conversationId: r.conversation_id,
+          patientId: conv?.patient_id ?? null,
+          patientName: fullName || null,
+        };
+      },
+    );
 
     // Recall-SMS delivery failures, shaped like messageEvents so the
     // SPA renders both in the same triage table. `recallId` (instead of
     // `conversationId`) is the drill-down handle — the SPA links to the
     // recall roster rather than a conversation thread.
-    const recallEvents = (recallRows ?? []).map((r) => {
-      const pt = patientsById.get(r.patient_id);
-      const fullName = pt
-        ? [pt.legal_first_name, pt.legal_last_name]
-            .filter(Boolean)
-            .join(" ")
-            .trim()
-        : "";
-      return {
-        kind: "recall" as const,
-        id: r.id,
-        occurredAt: r.updated_at,
-        channel: r.channel ?? "sms",
-        deliveryStatus: r.delivery_status,
-        deliveryError: r.delivery_error_code,
-        recallId: r.recall_id,
-        patientId: r.patient_id,
-        patientName: fullName || null,
-      };
-    });
+    const recallEvents = (recallRows ?? []).map(
+      (r: Database["resupply"]["Tables"]["recall_notifications"]["Row"]) => {
+        const pt = patientsById.get(r.patient_id);
+        const fullName = pt
+          ? [pt.legal_first_name, pt.legal_last_name]
+              .filter(Boolean)
+              .join(" ")
+              .trim()
+          : "";
+        return {
+          kind: "recall" as const,
+          id: r.id,
+          occurredAt: r.updated_at,
+          channel: r.channel ?? "sms",
+          deliveryStatus: r.delivery_status,
+          deliveryError: r.delivery_error_code,
+          recallId: r.recall_id,
+          patientId: r.patient_id,
+          patientName: fullName || null,
+        };
+      },
+    );
 
     // Preserved for response-shape compatibility — see header comment.
     const auditEvents: Array<{

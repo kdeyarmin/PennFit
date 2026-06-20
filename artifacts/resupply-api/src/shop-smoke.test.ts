@@ -5,9 +5,27 @@
 // a 5xx routing crash); the route mount itself is what we care
 // about. Removed after the run.
 
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, vi } from "vitest";
 import request from "supertest";
 import type { Express } from "express";
+
+// After the org-scoped cutover, request paths that touch the DB first
+// call `resolveSeedOrgId()` to resolve their tenant. The REAL resolver
+// makes an un-timed-out Supabase fetch; against the unreachable test
+// `SUPABASE_URL` (port 1) that hangs past the 5 s test budget (e.g. the
+// `POST /shop/checkout` feature-flag gate). Stub the seed resolver to a
+// fixed org so it returns instantly; the actual DB lookups downstream
+// still run through their own bounded-timeout / fail-soft paths and the
+// route resolves quickly (503/4xx — never 404), which is all this smoke
+// suite asserts. `getOrgScopedClient` stays REAL.
+vi.mock("@workspace/resupply-db", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@workspace/resupply-db")>();
+  return {
+    ...actual,
+    resolveSeedOrgId: async () => "00000000-0000-0000-0000-000000000001",
+  };
+});
 
 // Provide the minimum env app.ts validates at import. We don't
 // actually hit a DB — the routes that need Postgres will throw on
@@ -27,16 +45,16 @@ let app: Express;
 
 // Dynamic import (not a top-level `import`) so the env-var defaults
 // above are in place before app.ts runs its boot-time validation.
-// The 30 s budget is generous on purpose — when the rest of the
+// The 60 s budget is generous on purpose — when the rest of the
 // suite is loading in parallel, the worker pool that resolves this
 // import can be CPU-starved for several seconds before it gets a
-// turn. The previous 10 s default tripped intermittently on busy
+// turn. Lower hook budgets have tripped intermittently on busy
 // CI runners; the import itself completes in ~100 ms once it does
 // get the CPU.
 beforeAll(async () => {
   const mod = (await import("./app")) as { default: Express };
   app = mod.default;
-}, 30_000);
+}, 60_000);
 
 describe("shop route tree mount (smoke)", () => {
   it("rejects an unauthenticated GET /shop/me/comm-prefs with 401", async () => {

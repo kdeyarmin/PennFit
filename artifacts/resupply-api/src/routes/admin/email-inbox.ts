@@ -25,7 +25,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
@@ -72,7 +72,13 @@ router.get(
     }
     const { mailbox, limit, offset } = parsed.data;
 
-    const supabase = getSupabaseServiceRoleClient();
+    // Fail closed: never widen to all tenants on a missing orgId.
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const db = getOrgScopedClient(orgId);
 
     // Page of email conversations for the selected mailbox. Newest
     // activity first; brand-new threads (no messages yet) fall back to
@@ -81,8 +87,7 @@ router.get(
       data: rows,
       count,
       error,
-    } = await supabase
-      .schema("resupply")
+    } = await db
       .from("conversations")
       .select(
         "id, patient_id, episode_id, status, last_message_at, created_at",
@@ -95,7 +100,14 @@ router.get(
       .range(offset, offset + limit - 1);
     if (error) throw error;
 
-    const conversationRows = rows ?? [];
+    const conversationRows = (rows ?? []) as Array<{
+      id: string;
+      patient_id: string | null;
+      episode_id: string | null;
+      status: string;
+      last_message_at: string | null;
+      created_at: string;
+    }>;
     const conversationIds = conversationRows.map((r) => r.id);
     const patientIds = Array.from(
       new Set(
@@ -111,15 +123,13 @@ router.get(
     const [patientsRes, messagesRes, needsCountRes, respondedCountRes] =
       await Promise.all([
         patientIds.length > 0
-          ? supabase
-              .schema("resupply")
+          ? db
               .from("patients")
               .select("id, legal_first_name, legal_last_name, email")
               .in("id", patientIds)
           : Promise.resolve({ data: [], error: null } as const),
         conversationIds.length > 0
-          ? supabase
-              .schema("resupply")
+          ? db
               .from("messages")
               .select(
                 "conversation_id, direction, sender_role, body, vendor_metadata, created_at",
@@ -128,14 +138,21 @@ router.get(
               .order("created_at", { ascending: false })
               .limit(MESSAGE_SCAN_LIMIT)
           : Promise.resolve({ data: [], error: null } as const),
-        countEmailConversations(supabase, MAILBOX_STATUSES.needs_response),
-        countEmailConversations(supabase, MAILBOX_STATUSES.responded),
+        countEmailConversations(db, MAILBOX_STATUSES.needs_response),
+        countEmailConversations(db, MAILBOX_STATUSES.responded),
       ]);
     if (patientsRes.error) throw patientsRes.error;
     if (messagesRes.error) throw messagesRes.error;
 
     const patientsById = new Map(
-      (patientsRes.data ?? []).map((p) => [p.id, p] as const),
+      (
+        (patientsRes.data ?? []) as Array<{
+          id: string;
+          legal_first_name: string;
+          legal_last_name: string;
+          email: string | null;
+        }>
+      ).map((p) => [p.id, p] as const),
     );
 
     // Reduce the messages (already newest-first) into per-conversation
@@ -182,7 +199,7 @@ router.get(
 // Helpers
 // ---------------------------------------------------------------------------
 
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+type SupabaseClient = ReturnType<typeof getOrgScopedClient>;
 
 /** Head-only count of email conversations in the given status set. */
 async function countEmailConversations(
@@ -190,7 +207,6 @@ async function countEmailConversations(
   statuses: readonly string[],
 ): Promise<number> {
   const { count, error } = await supabase
-    .schema("resupply")
     .from("conversations")
     .select("id", { count: "exact", head: true })
     .eq("channel", "email")

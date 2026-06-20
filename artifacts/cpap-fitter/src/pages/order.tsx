@@ -5,12 +5,12 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useFitterStore } from "@/hooks/use-fitter-store";
 import { useDocumentTitle } from "@/hooks/use-document-title";
+import { useCompanyContact } from "@/lib/contact";
 import {
   useSubmitOrder,
   ApiError,
 } from "@workspace/api-client-react/storefront";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Card,
   CardContent,
@@ -45,6 +45,9 @@ import {
   isPlausibleDob,
   todayLocalDateString,
 } from "@/lib/dob-validation";
+// Shared with the consent page so the phone field formats identically
+// the moment a digit is typed in either place.
+import { formatUsPhone } from "@/lib/format-phone";
 
 const US_STATES = [
   "AL",
@@ -154,42 +157,9 @@ const formSchema = z.object({
 
 type FormValues = z.infer<typeof formSchema>;
 
-/**
- * Format a US phone string as the user types. Strips non-digits,
- * truncates to 10 digits (US local), and reformats as
- *   ""               → ""
- *   "5"              → "(5"
- *   "555"            → "(555)"
- *   "5551"           → "(555) 1"
- *   "5551234"        → "(555) 123-4"
- *   "5551234567"     → "(555) 123-4567"
- *
- * The Zod schema accepts any non-empty 7-30 char string, so the
- * formatted output is always within bounds and is the natural
- * shape the contact-center / EHR systems expect downstream. We
- * keep a leading "+1" or "1" un-touched (return the digit string
- * with no parens) so international or unusual formats aren't
- * mangled — only obvious 10-digit US phones get reformatted.
- */
-function formatUsPhone(input: string): string {
-  if (!input) return "";
-  // Skip reformat for international-looking inputs.
-  if (input.trim().startsWith("+")) return input;
-  const digits = input.replace(/\D/g, "");
-  if (digits.length === 0) return "";
-  // Treat 11-digit numbers starting with 1 as US country-code-prefixed.
-  // Drop the leading 1 for display since the rest is local.
-  const local =
-    digits.length === 11 && digits.startsWith("1")
-      ? digits.slice(1)
-      : digits.slice(0, 10);
-  if (local.length < 4) return `(${local}`;
-  if (local.length < 7) return `(${local.slice(0, 3)}) ${local.slice(3)}`;
-  return `(${local.slice(0, 3)}) ${local.slice(3, 6)}-${local.slice(6, 10)}`;
-}
-
 export function Order() {
   useDocumentTitle("Confirm your order");
+  const company = useCompanyContact();
   const [, setLocation] = useLocation();
   // The route-level <ProtectedRoute> in App.tsx already guarantees that
   // `chosenMask` is non-null by the time Order mounts.
@@ -206,7 +176,7 @@ export function Order() {
     handleSubmit,
     setValue,
     watch,
-    formState: { errors, isSubmitted },
+    formState: { errors },
   } = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -217,7 +187,7 @@ export function Order() {
       patient: fitterEmail ? { email: fitterEmail } : undefined,
       prescription: { hasExistingPrescription: false },
       shippingAddress: { state: "" },
-      consentToContact: false,
+      consentToContact: true,
       website: "",
     } as Partial<FormValues> as FormValues,
     mode: "onBlur",
@@ -226,7 +196,6 @@ export function Order() {
   const stateValue = watch("shippingAddress.state");
   const relationshipValue = watch("insurance.policyholderRelationship");
   const hasRxValue = watch("prescription.hasExistingPrescription");
-  const consentValue = watch("consentToContact");
 
   useEffect(() => {
     track("order_started");
@@ -368,7 +337,7 @@ export function Order() {
         <div className="inline-flex items-center justify-center gap-3 mb-1">
           <div className="h-px w-8 bg-gradient-to-r from-transparent to-[hsl(var(--penn-gold))]" />
           <span className="text-xs font-semibold uppercase tracking-[0.32em] text-[hsl(var(--penn-navy))]/75">
-            PennPaps · Checkout
+            {company.name} · Checkout
           </span>
           <div className="h-px w-8 bg-gradient-to-l from-transparent to-[hsl(var(--penn-gold))]" />
         </div>
@@ -377,7 +346,7 @@ export function Order() {
         </h1>
         <p className="text-muted-foreground max-w-xl mx-auto leading-relaxed">
           Tell us where to send your mask and how to bill your insurance. Your
-          order goes directly to Penn Home Medical Supply for fulfillment.
+          order goes directly to {company.legalName} for fulfillment.
         </p>
       </div>
 
@@ -439,7 +408,7 @@ export function Order() {
           <AlertDescription>
             <div>
               {apiError.data?.error ??
-                "Something went wrong while sending your order. Please try again or call Penn Home Medical Supply directly."}
+                `Something went wrong while sending your order. Please try again or call ${company.legalName} directly.`}
             </div>
             {Array.isArray(apiError.data?.details) &&
               apiError.data!.details!.length > 0 && (
@@ -639,8 +608,8 @@ export function Order() {
               Insurance Information
             </CardTitle>
             <CardDescription>
-              Penn Home Medical Supply will bill your insurance directly. Have
-              your card ready.
+              {company.legalName} will bill your insurance directly. Have your
+              card ready.
             </CardDescription>
           </CardHeader>
           <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -782,7 +751,7 @@ export function Order() {
                 </div>
               </RadioGroup>
               <p className="text-xs text-muted-foreground mt-2">
-                If you don't have one yet, Penn Home Medical Supply can help you
+                If you don't have one yet, {company.legalName} can help you
                 obtain one before shipping.
               </p>
             </div>
@@ -866,19 +835,19 @@ export function Order() {
               <ShieldCheck className="w-5 h-5 mt-0.5 shrink-0 text-primary" />
               <div className="flex-1 space-y-2">
                 <p className="text-sm leading-relaxed">
-                  By submitting this order, you authorize Penn Home Medical
-                  Supply to <strong>contact you</strong> by phone, email, and
-                  SMS at the number and email above regarding this order,
-                  insurance verification, shipping updates, and ongoing CPAP
-                  resupply reminders, and to{" "}
+                  By submitting this order, you authorize {company.legalName} to{" "}
+                  <strong>contact you</strong> by phone, email, and SMS at the
+                  number and email above regarding this order, insurance
+                  verification, shipping updates, and ongoing CPAP resupply
+                  reminders, and to{" "}
                   <strong>store the order details above</strong> in their secure
                   system for fulfillment and recordkeeping. The camera / email
                   consent you gave on the previous step also applies.
                 </p>
                 <p className="text-xs text-muted-foreground leading-relaxed">
                   <strong>SMS terms:</strong> By providing your mobile number
-                  you consent to receive transactional text messages from Penn
-                  Home Medical Supply at that number, including via automated
+                  you consent to receive transactional text messages from{" "}
+                  {company.legalName} at that number, including via automated
                   systems. Approximately 1–2 messages per resupply cycle
                   (typically every 30–90 days). No marketing texts.{" "}
                   <strong>Message and data rates may apply.</strong> Reply{" "}
@@ -902,13 +871,13 @@ export function Order() {
             <div className="flex items-start gap-3 text-xs text-muted-foreground">
               <ShieldCheck className="w-4 h-4 mt-0.5 text-primary shrink-0" />
               <p>
-                Your order is sent securely to Penn Home Medical Supply and
-                stored in their secure order-fulfillment database, including the
-                contact, shipping, insurance, and prescription details above
-                plus the numeric facial measurements that were used to recommend
-                your mask. Your camera image and video stream were never
-                uploaded — only the measurement numbers leave your device. By
-                submitting, you agree to our{" "}
+                Your order is sent securely to {company.legalName} and stored in
+                their secure order-fulfillment database, including the contact,
+                shipping, insurance, and prescription details above plus the
+                numeric facial measurements that were used to recommend your
+                mask. Your camera image and video stream were never uploaded —
+                only the measurement numbers leave your device. By submitting,
+                you agree to our{" "}
                 <Link href="/privacy" className="underline hover:text-primary">
                   Privacy Policy
                 </Link>{" "}
@@ -918,44 +887,6 @@ export function Order() {
                 </Link>
                 .
               </p>
-            </div>
-
-            <div className="flex items-start gap-3">
-              <Checkbox
-                id="consent-checkbox"
-                data-testid="checkbox-consent"
-                checked={consentValue === true}
-                aria-invalid={errors.consentToContact ? "true" : "false"}
-                aria-describedby={
-                  isSubmitted && errors.consentToContact
-                    ? "consent-checkbox-error"
-                    : undefined
-                }
-                onCheckedChange={(checked) =>
-                  setValue("consentToContact", checked === true, {
-                    shouldValidate: true,
-                  })
-                }
-              />
-              <div className="flex-1">
-                <Label
-                  htmlFor="consent-checkbox"
-                  className="text-sm font-normal cursor-pointer leading-relaxed"
-                >
-                  I consent to be contacted by Penn Home Medical Supply
-                  regarding this order, and agree to the SMS / contact and
-                  data-storage terms above.
-                </Label>
-                {isSubmitted && errors.consentToContact && (
-                  <p
-                    id="consent-checkbox-error"
-                    role="alert"
-                    className="text-xs text-destructive mt-1"
-                  >
-                    {errors.consentToContact.message}
-                  </p>
-                )}
-              </div>
             </div>
           </CardContent>
         </Card>
@@ -998,10 +929,10 @@ export function Order() {
               No surprise bills.
             </p>
             <p className="text-muted-foreground mt-0.5">
-              Submitting this form does not charge your card. Penn Home Medical
-              Supply will verify your insurance benefit and prescription first,
-              then contact you to confirm before anything ships. You'll know
-              your out-of-pocket — usually
+              Submitting this form does not charge your card.{" "}
+              {company.legalName} will verify your insurance benefit and
+              prescription first, then contact you to confirm before anything
+              ships. You'll know your out-of-pocket — usually
               <span className="font-semibold"> $0 with prescription</span> —
               before they fulfill the order.
             </p>
@@ -1032,7 +963,7 @@ export function Order() {
                 order...
               </>
             ) : (
-              "Send Order to Penn Home Medical Supply"
+              `Send Order to ${company.legalName}`
             )}
           </Button>
         </div>

@@ -46,6 +46,7 @@ import { useBulkSelection } from "@/hooks/use-bulk-selection";
 import { useFilteredList } from "@/hooks/use-filtered-list";
 import { LOCATIONS_QUERY_KEY, listLocations } from "@/lib/admin/locations-api";
 import { fullName, formatDateTime } from "@/lib/admin/format";
+import { todayAppDateIso } from "@/lib/utils";
 
 const PAGE_SIZE = 25;
 
@@ -351,7 +352,7 @@ export function PatientsPage() {
       const blobUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = blobUrl;
-      a.download = `patients-export-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.download = `patients-export-${todayAppDateIso()}.csv`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -531,6 +532,13 @@ export function PatientsPage() {
           </Button>
           <Button intent="secondary" onClick={() => setImporting(true)}>
             Import CSV
+          </Button>
+          <Button
+            intent="secondary"
+            onClick={() => setLocation("/admin/referral-reviews?upload=1")}
+            title="Upload a referral PDF and let the AI pre-fill a new patient for you"
+          >
+            Upload referral
           </Button>
           <Button onClick={() => setCreating(true)}>+ New customer</Button>
         </div>
@@ -1610,12 +1618,24 @@ function ImportCsvModal({
                   <table className="w-full text-xs">
                     <thead style={{ backgroundColor: "#f3f4f6" }}>
                       <tr>
-                        <th className="text-left px-2 py-1">#</th>
-                        <th className="text-left px-2 py-1">Pacware</th>
-                        <th className="text-left px-2 py-1">Name</th>
-                        <th className="text-left px-2 py-1">DOB</th>
-                        <th className="text-left px-2 py-1">Phone</th>
-                        <th className="text-left px-2 py-1">Email</th>
+                        <th scope="col" className="text-left px-2 py-1">
+                          #
+                        </th>
+                        <th scope="col" className="text-left px-2 py-1">
+                          Pacware
+                        </th>
+                        <th scope="col" className="text-left px-2 py-1">
+                          Name
+                        </th>
+                        <th scope="col" className="text-left px-2 py-1">
+                          DOB
+                        </th>
+                        <th scope="col" className="text-left px-2 py-1">
+                          Phone
+                        </th>
+                        <th scope="col" className="text-left px-2 py-1">
+                          Email
+                        </th>
                       </tr>
                     </thead>
                     <tbody>

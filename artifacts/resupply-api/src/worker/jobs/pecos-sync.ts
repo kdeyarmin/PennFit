@@ -29,7 +29,9 @@ import type PgBoss from "pg-boss";
 
 import {
   type Database,
-  getSupabaseServiceRoleClient,
+  type OrgScopedClient,
+  getOrgScopedClient,
+  resolveSeedOrgId,
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
@@ -38,7 +40,7 @@ import {
   VENDOR_SEND_QUEUE_OPTS,
 } from "../lib/queue-options";
 
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+type SupabaseClient = OrgScopedClient;
 type EnrollmentStatus =
   Database["resupply"]["Tables"]["providers_pecos_status"]["Row"]["enrollment_status"];
 
@@ -64,7 +66,11 @@ export interface SyncStats {
 export async function runPecosSync(
   opts: { fetchImpl?: typeof fetch } = {},
 ): Promise<SyncStats> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    return { scanned: 0, fetched: 0, upserted: 0, unknown: 0, errors: 0 };
+  }
+  const supabase = getOrgScopedClient(orgId);
   const fetchImpl = opts.fetchImpl ?? fetch;
   const stats: SyncStats = {
     scanned: 0,
@@ -117,6 +123,7 @@ async function collectActiveNpis(supabase: SupabaseClient): Promise<string[]> {
   const npis = new Set<string>();
   for (let from = 0; npis.size < MAX_NPIS_PER_RUN; from += PAGE_SIZE) {
     const { data, error } = await supabase
+      .raw()
       .schema("resupply")
       .from("providers")
       .select("id, npi")
@@ -168,6 +175,7 @@ async function upsertStatus(
   // avoid relying on the supabase upsert(), which has subtle
   // semantics around returning shapes.
   const { error: insertErr } = await supabase
+    .raw()
     .schema("resupply")
     .from("providers_pecos_status")
     .upsert(

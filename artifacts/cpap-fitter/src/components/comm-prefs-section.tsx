@@ -8,7 +8,9 @@ import {
 import { Button } from "@/components/ui/button";
 import { usePushSubscription } from "@/hooks/use-push-subscription";
 import { useBiometricLockPreference } from "@/hooks/use-biometric-lock-preference";
+import { useUnsavedChangesWarning } from "@/hooks/use-unsaved-changes-warning";
 import { checkBiometricAvailability } from "@/lib/native-runtime";
+import { useCompanyContact } from "@/lib/contact";
 
 /**
  * Communication preferences section on /account. Five email
@@ -19,7 +21,11 @@ import { checkBiometricAvailability } from "@/lib/native-runtime";
  * Transactional (order shipped, refund issued) is not user-toggleable
  * here — those land via the order-detail email flow regardless.
  */
-export function CommPrefsSection() {
+export function CommPrefsSection({
+  onDirtyChange,
+}: {
+  onDirtyChange?: (dirty: boolean) => void;
+}) {
   const [prefs, setPrefs] = useState<CommunicationPreferences | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -166,7 +172,12 @@ export function CommPrefsSection() {
 
       <BiometricLockToggle />
 
-      <DndEditor prefs={prefs} onSave={save} saving={saving} />
+      <DndEditor
+        prefs={prefs}
+        onSave={save}
+        saving={saving}
+        onDirtyChange={onDirtyChange}
+      />
 
       {error && (
         <p className="text-xs text-rose-700" role="alert">
@@ -229,15 +240,23 @@ function DndEditor({
   prefs,
   onSave,
   saving,
+  onDirtyChange,
 }: {
   prefs: CommunicationPreferences;
   onSave: (next: CommunicationPreferences) => void;
   saving: boolean;
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const [start, setStart] = useState<number | null>(prefs.dndStartHour);
   const [end, setEnd] = useState<number | null>(prefs.dndEndHour);
   const [tz, setTz] = useState<string | null>(prefs.timezone);
   const [dirty, setDirty] = useState(false);
+
+  useUnsavedChangesWarning(dirty);
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+    return () => onDirtyChange?.(false);
+  }, [dirty, onDirtyChange]);
 
   // Auto-detect timezone if the user has none set.
   useEffect(() => {
@@ -385,6 +404,7 @@ function formatHour(h: number | null): string {
  */
 function PushNotificationToggle() {
   const { state, busy, error, enable, disable } = usePushSubscription();
+  const c = useCompanyContact();
 
   if (
     state === "checking" ||
@@ -410,7 +430,7 @@ function PushNotificationToggle() {
           </div>
           {state === "denied" && (
             <p className="text-[11px] text-amber-700 mt-1">
-              Your browser is blocking PennPaps notifications. Open site
+              Your browser is blocking {c.name} notifications. Open site
               settings to allow them, then come back.
             </p>
           )}

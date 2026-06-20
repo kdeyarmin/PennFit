@@ -13,6 +13,21 @@
 
 import { describe, it, expect, vi } from "vitest";
 
+// The dispatcher resolves its tenant via `resolveSeedOrgId()` before any
+// DB use (see Impl.db()). With no live database that real resolver
+// returns null and the dispatcher throws "tenant context missing", so we
+// stub the seed resolver to a fixed test org. `getOrgScopedClient` stays
+// REAL so the injected stub client is wrapped by the production facade
+// (the query bodies are identical on both paths).
+vi.mock("@workspace/resupply-db", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@workspace/resupply-db")>();
+  return {
+    ...actual,
+    resolveSeedOrgId: async () => "00000000-0000-0000-0000-000000000001",
+  };
+});
+
 import { createVoiceToolDispatcher } from "./tools-impl";
 
 interface StubRow {
@@ -413,7 +428,17 @@ describe("VoiceToolDispatcher — place_resupply_order result mapping", () => {
       name: "place_resupply_order",
       args: { skus: ["A7030", "A7034"], address_confirmed: true },
     });
-    expect(placeOrder).toHaveBeenCalledWith({ conversationId: "conv-1" });
+    expect(placeOrder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversationId: "conv-1",
+        // The spoken confirmation carries the refill attestation.
+        affirmation: expect.objectContaining({
+          channel: "voice",
+          continuedUse: true,
+          supplyLow: true,
+        }),
+      }),
+    );
     expect(result.result).toEqual({
       ok: true,
       order_id: "ful-123",

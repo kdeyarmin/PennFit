@@ -22,7 +22,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { dispatchDueCheckins } from "../../lib/checkin-dispatcher";
 import { logger } from "../../lib/logger";
@@ -74,9 +74,13 @@ router.get(
     }
     const patientId = idCheck.data;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("patient_onboarding_journeys")
       .select(
         "id, started_at, day1_sent_at, day3_sent_at, day7_sent_at, day30_sent_at, day60_sent_at, day90_sent_at, status, enrolled_by_email, created_at",
@@ -136,19 +140,22 @@ router.post(
       ? bodyParsed.data.startedAt
       : new Date().toISOString();
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // Patient existence + open-journey precheck run in parallel.
     const [existsRes, openRes] = await Promise.all([
       supabase
-        .schema("resupply")
         .from("patients")
         .select("id")
         .eq("id", patientId)
         .limit(1)
         .maybeSingle(),
       supabase
-        .schema("resupply")
         .from("patient_onboarding_journeys")
         .select("id")
         .eq("patient_id", patientId)
@@ -175,7 +182,6 @@ router.post(
     }
 
     const { data: row, error: insertErr } = await supabase
-      .schema("resupply")
       .from("patient_onboarding_journeys")
       .insert({
         patient_id: patientId,
@@ -246,9 +252,13 @@ router.patch(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: row, error: lookupErr } = await supabase
-      .schema("resupply")
       .from("patient_onboarding_journeys")
       .select("id, status")
       .eq("patient_id", patientId)
@@ -265,7 +275,6 @@ router.patch(
     }
 
     const { error: updateErr } = await supabase
-      .schema("resupply")
       .from("patient_onboarding_journeys")
       .update({
         status: bodyParsed.data.status,
@@ -329,9 +338,13 @@ router.get(
       res.status(404).json({ error: "patient_not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: journey, error: jErr } = await supabase
-      .schema("resupply")
       .from("patient_onboarding_journeys")
       .select("id")
       .eq("patient_id", idCheck.data)
@@ -343,7 +356,6 @@ router.get(
       return;
     }
     const { data: rows, error: aErr } = await supabase
-      .schema("resupply")
       .from("patient_checkin_attempts")
       .select(
         "id, day_label, channel, outcome, vendor_ref, error_code, attempted_at",
@@ -353,7 +365,11 @@ router.get(
       .limit(200);
     if (aErr) throw aErr;
     res.json({
-      attempts: (rows ?? []).map((r) => ({
+      attempts: (
+        (rows ?? []) as Array<
+          Database["resupply"]["Tables"]["patient_checkin_attempts"]["Row"]
+        >
+      ).map((r) => ({
         id: r.id,
         dayLabel: r.day_label,
         channel: r.channel,

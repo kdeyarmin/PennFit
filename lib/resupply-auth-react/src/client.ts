@@ -4,9 +4,8 @@
 //   * The auth endpoints don't go through the OpenAPI codegen (they
 //     issue / consume cookies, not bearer tokens).
 //   * They run on different basePaths in different products
-//     (`/api/auth/*` on cpap-fitter, `/resupply-api/auth/*` on
-//     resupply-dashboard) and the consumer wires the path in once
-//     at app startup.
+//     (`/api/auth/*` for storefront flows, `/resupply-api/auth/*` for
+//     admin flows) and the consumer wires the path in once at app startup.
 //   * They need same-origin `credentials: "include"` semantics on
 //     every request — cookies do the auth.
 //

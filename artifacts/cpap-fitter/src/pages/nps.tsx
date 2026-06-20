@@ -21,6 +21,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CheckCircle2, Star } from "lucide-react";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import { csrfHeader } from "@/lib/csrf";
+import { useCompanyContact } from "@/lib/contact";
 
 function readSearchParam(name: string): string | null {
   if (typeof window === "undefined") return null;
@@ -29,7 +30,8 @@ function readSearchParam(name: string): string | null {
 }
 
 export function NpsLanding() {
-  useDocumentTitle("Thanks for your rating — PennPaps");
+  useDocumentTitle("Thanks for your rating");
+  const contact = useCompanyContact();
   const [, setLocation] = useLocation();
   const [token] = useState(() => readSearchParam("t") ?? "");
   const [score] = useState(() => {
@@ -205,7 +207,7 @@ export function NpsLanding() {
               )}
               <div className="pt-2">
                 <Link href="/" className="text-sm text-primary hover:underline">
-                  Back to PennPaps
+                  Back to {contact.name}
                 </Link>
               </div>
             </>

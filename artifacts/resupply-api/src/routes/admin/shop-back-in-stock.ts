@@ -18,7 +18,7 @@
 
 import { Router, type IRouter } from "express";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -29,6 +29,7 @@ import {
 import { projectProduct } from "../../lib/stripe/products-meta";
 import { stripeErrLogFields } from "../../lib/stripe/err-log-fields";
 import { dispatchBackInStockForProduct } from "../../lib/back-in-stock-record";
+import { resolveTenantBaseUrl } from "../../lib/tenant-branding";
 
 const router: IRouter = Router();
 
@@ -50,7 +51,12 @@ router.get(
   // operational inventory data.
   requirePermission("inventory.read"),
   async (req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // Per-product aggregation (pending / notified / delivered counts +
     // oldest-pending + last-notified), top 200 by pending desc then
@@ -60,8 +66,9 @@ router.get(
     // returns ≤200 grouped rows instead of streaming up to 10k
     // notification rows into Node for a JS reduce + sort.
     const { data: aggRows, error: notifErr } = await supabase
+      .raw()
       .schema("resupply")
-      .rpc("shop_back_in_stock_queue");
+      .rpc("shop_back_in_stock_queue", { p_org_id: orgId });
     if (notifErr) throw notifErr;
 
     // PostgREST serializes bigint as string; coerce the counts. The
@@ -237,9 +244,12 @@ router.post(
       return;
     }
 
+    // Point the email link at the tenant's own verified custom domain
+    // when it has one (seed → pennpaps.com via the env fallback).
     const baseUrl =
-      process.env.SHOP_PUBLIC_BASE_URL?.replace(/\/$/, "") ||
-      "https://pennpaps.com";
+      (await resolveTenantBaseUrl(req.orgId)) ??
+      (process.env.SHOP_PUBLIC_BASE_URL?.replace(/\/$/, "") ||
+        "https://cmbreathe.com");
 
     const result = await dispatchBackInStockForProduct({
       productId,
@@ -247,6 +257,7 @@ router.post(
       productImageUrl,
       productUrl: `${baseUrl}/shop/p/${encodeURIComponent(productId)}`,
       priceLabel,
+      orgId: req.orgId,
     });
 
     req.log?.info?.(

@@ -12,11 +12,18 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { runRxRenewalSendDueMock } = vi.hoisted(() => ({
+const { runRxRenewalSendDueMock, listActiveOrgIdsMock } = vi.hoisted(() => ({
   runRxRenewalSendDueMock: vi.fn(),
+  listActiveOrgIdsMock: vi.fn(),
 }));
 vi.mock("../../lib/rx-renewal/dispatcher", () => ({
   runRxRenewalSendDue: runRxRenewalSendDueMock,
+}));
+// The cron now fans out across active tenants via forEachActiveOrg, which
+// calls listActiveOrgIds. Pin it to a single tenant so these orchestration
+// tests still assert the per-tenant channel sequencing.
+vi.mock("@workspace/resupply-db", () => ({
+  listActiveOrgIds: listActiveOrgIdsMock,
 }));
 
 interface FakeBoss {
@@ -47,6 +54,8 @@ import { registerRxRenewalSendJob } from "./rx-renewal-send";
 
 beforeEach(() => {
   runRxRenewalSendDueMock.mockReset();
+  listActiveOrgIdsMock.mockReset();
+  listActiveOrgIdsMock.mockResolvedValue(["org-1"]);
 });
 
 describe("rx-renewal.send-due cron handler", () => {
@@ -74,6 +83,22 @@ describe("rx-renewal.send-due cron handler", () => {
     await expect(fake.handler()).resolves.toBeUndefined();
   });
 
+  it("passes an explicit orgId to each channel", async () => {
+    runRxRenewalSendDueMock.mockResolvedValue({
+      status: "ok",
+      considered: 1,
+      sent: 1,
+      failed: 0,
+    });
+    const fake = makeFakeBoss();
+    await registerRxRenewalSendJob(fake.boss as never);
+    await fake.handler();
+    // Cron path always passes the tenant org as the 3rd arg (never the
+    // seed-org default).
+    expect(runRxRenewalSendDueMock.mock.calls[0]?.[2]).toBe("org-1");
+    expect(runRxRenewalSendDueMock.mock.calls[1]?.[2]).toBe("org-1");
+  });
+
   it("runs the SMS channel even when email throws", async () => {
     runRxRenewalSendDueMock
       .mockRejectedValueOnce(new Error("sendgrid 500"))
@@ -85,19 +110,21 @@ describe("rx-renewal.send-due cron handler", () => {
       });
     const fake = makeFakeBoss();
     await registerRxRenewalSendJob(fake.boss as never);
-    // The handler re-throws an AggregateError when any channel fails,
-    // but the SMS channel must still have been called.
-    await expect(fake.handler()).rejects.toBeInstanceOf(AggregateError);
+    // forEachActiveOrg isolates the per-tenant failure (it logs + tallies
+    // and never rejects), but the SMS channel must still have been called.
+    await expect(fake.handler()).resolves.toBeUndefined();
     expect(runRxRenewalSendDueMock).toHaveBeenCalledTimes(2);
     expect(runRxRenewalSendDueMock.mock.calls[1]?.[0]).toBe("sms");
   });
 
-  it("re-throws an AggregateError when both channels throw", async () => {
+  it("isolates a tenant whose channels both throw without rejecting", async () => {
     runRxRenewalSendDueMock
       .mockRejectedValueOnce(new Error("sg down"))
       .mockRejectedValueOnce(new Error("twilio down"));
     const fake = makeFakeBoss();
     await registerRxRenewalSendJob(fake.boss as never);
-    await expect(fake.handler()).rejects.toBeInstanceOf(AggregateError);
+    // Per-tenant error isolation: the bad tenant is logged + tallied, the
+    // sweep resolves so other tenants (and the scheduler tick) aren't aborted.
+    await expect(fake.handler()).resolves.toBeUndefined();
   });
 });

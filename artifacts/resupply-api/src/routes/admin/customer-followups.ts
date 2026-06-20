@@ -5,6 +5,7 @@
 //   GET    /admin/shop/customers/:userId/followups?include=completed — full history
 //   POST   /admin/shop/customers/:userId/followups          — create
 //   PATCH  /admin/shop/customers/:userId/followups/:id/complete — mark complete
+//   PATCH  /admin/shop/customers/:userId/followups/:id/reopen — undo complete
 //
 // Distinct from shop_customer_notes: notes are passive history;
 // followups are active commitments by a specific CSR to do something
@@ -13,8 +14,9 @@
 //
 // Lifecycle:
 //   open (completed_at IS NULL) → completed (completed_at + by populated).
-// No edit / delete. A CSR who needs to revise just creates a new
-// followup; the previous one stays as the audit trail.
+//   A brief undo path can reopen a completed row by clearing the
+//   completion fields; edit / delete stay intentionally unsupported.
+//   A CSR who needs to revise the task body creates a new followup.
 //
 // PHI / log posture: bodies are plain text. Audit envelopes record
 // customer_id + body_length + due_at — never the body.
@@ -23,7 +25,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -85,10 +87,14 @@ router.get(
     // customer's history the slower it'd be to filter client-side.
     const includeCompleted = req.query.include === "completed";
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     const { data: existsRow, error: existsErr } = await supabase
-      .schema("resupply")
       .from("shop_customers")
       .select("customer_id")
       .eq("customer_id", userId)
@@ -101,7 +107,6 @@ router.get(
     }
 
     let followupsQuery = supabase
-      .schema("resupply")
       .from("shop_customer_followups")
       .select(
         "id, body, due_at, completed_at, completed_by_email, created_by_email, created_at",
@@ -131,15 +136,19 @@ router.get(
     );
 
     res.json({
-      followups: items.map((r) => ({
-        id: r.id,
-        body: r.body,
-        dueAt: r.due_at,
-        completedAt: r.completed_at,
-        completedByEmail: r.completed_by_email,
-        createdByEmail: r.created_by_email,
-        createdAt: r.created_at,
-      })),
+      followups: items.map(
+        (
+          r: Database["resupply"]["Tables"]["shop_customer_followups"]["Row"],
+        ) => ({
+          id: r.id,
+          body: r.body,
+          dueAt: r.due_at,
+          completedAt: r.completed_at,
+          completedByEmail: r.completed_by_email,
+          createdByEmail: r.created_by_email,
+          createdAt: r.created_at,
+        }),
+      ),
     });
   },
 );
@@ -170,10 +179,14 @@ router.post(
     }
     const { body, dueAt } = bodyParsed.data;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     const { data: existsRow, error: existsErr } = await supabase
-      .schema("resupply")
       .from("shop_customers")
       .select("customer_id")
       .eq("customer_id", userId)
@@ -186,7 +199,6 @@ router.post(
     }
 
     const { data: row, error: insertErr } = await supabase
-      .schema("resupply")
       .from("shop_customer_followups")
       .insert({
         customer_id: userId,
@@ -248,10 +260,14 @@ router.patch(
     }
     const followupId = fIdCheck.data;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     const { data: row, error: lookupErr } = await supabase
-      .schema("resupply")
       .from("shop_customer_followups")
       .select("id, customer_id, completed_at, body, due_at")
       .eq("id", followupId)
@@ -283,7 +299,6 @@ router.patch(
     // another CSR raced us the row was already updated and 0 rows
     // come back — return 409 instead of 200.
     const { data: updatedRow, error: updateErr } = await supabase
-      .schema("resupply")
       .from("shop_customer_followups")
       .update({
         completed_at: nowIso,
@@ -322,6 +337,98 @@ router.patch(
         { err },
         "shop_customer.followup.complete audit write failed",
       );
+    });
+
+    res.json({
+      id: updatedRow.id,
+      completedAt: updatedRow.completed_at,
+    });
+  },
+);
+
+router.patch(
+  "/admin/shop/customers/:userId/followups/:id/reopen",
+  requirePermission("conversations.manage"),
+  requireCsrf,
+  adminFollowupMutationLimiter,
+  async (req, res) => {
+    const idCheck = userIdParam.safeParse(req.params.userId);
+    if (!idCheck.success) {
+      res.status(400).json({ error: "invalid_user_id" });
+      return;
+    }
+    const userId = idCheck.data;
+
+    const fIdCheck = followupIdParam.safeParse(req.params.id);
+    if (!fIdCheck.success) {
+      res.status(400).json({ error: "invalid_followup_id" });
+      return;
+    }
+    const followupId = fIdCheck.data;
+
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+
+    const { data: row, error: lookupErr } = await supabase
+      .from("shop_customer_followups")
+      .select("id, customer_id, completed_at, body, due_at")
+      .eq("id", followupId)
+      .limit(1)
+      .maybeSingle();
+    if (lookupErr) throw lookupErr;
+    if (!row || row.customer_id !== userId) {
+      res.status(404).json({ error: "followup_not_found" });
+      return;
+    }
+    if (row.completed_at === null) {
+      res.status(409).json({
+        error: "already_open",
+        message: "This followup is already open.",
+      });
+      return;
+    }
+
+    const { data: updatedRow, error: updateErr } = await supabase
+      .from("shop_customer_followups")
+      .update({
+        completed_at: null,
+        completed_by_email: null,
+        completed_by_user_id: null,
+      })
+      .eq("id", followupId)
+      .eq("customer_id", userId)
+      .not("completed_at", "is", null)
+      .select("id, completed_at")
+      .limit(1)
+      .maybeSingle();
+    if (updateErr) throw updateErr;
+    if (!updatedRow) {
+      res.status(409).json({
+        error: "already_open",
+        message: "This followup is already open.",
+      });
+      return;
+    }
+
+    await logAudit({
+      action: "shop_customer.followup.reopen",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "shop_customer_followups",
+      targetId: followupId,
+      metadata: {
+        customer_id: userId,
+        body_length: row.body.length,
+        due_at: row.due_at,
+      },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn({ err }, "shop_customer.followup.reopen audit write failed");
     });
 
     res.json({

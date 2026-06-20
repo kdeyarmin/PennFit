@@ -3,7 +3,7 @@
 //
 // Closed-loop measurement (roadmap Lever 3): a single view of where order
 // VOLUME and cash REVENUE come from, across the three independent order
-// channels PennFit captures through:
+// channels CareMetric Breathe captures through:
 //   * storefront (cash-pay Stripe)      → resupply.shop_orders (has $)
 //   * resupply fulfillment (insurance)  → resupply.fulfillments (units)
 //   * clinical intake form              → public.orders (count only)
@@ -19,7 +19,7 @@
 import { Router, type IRouter, type Response } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import {
   aggregateRevenueBySource,
@@ -54,34 +54,33 @@ function isoDaysAgo(days: number): string {
   return d.toISOString();
 }
 
-async function loadRevenueBySource(cutoff: string) {
-  const supabase = getSupabaseServiceRoleClient();
+async function loadRevenueBySource(cutoff: string, orgId: string) {
+  const supabase = getOrgScopedClient(orgId);
 
-  const [shopRes, fulRes, clinicalRes] = await Promise.all([
+  // public.orders is the LEGACY clinical-intake form table (migration 0027):
+  // it has NO org_id column and is written only by the seed tenant's intake
+  // flow, so a head-count of it is meaningful only for the seed tenant.
+  // Counting it for any other tenant would surface a CROSS-TENANT number, so
+  // non-seed tenants get 0 here until the intake table is tenant-scoped.
+  const seedOrgId = await resolveSeedOrgId();
+  const includeClinicalIntake = seedOrgId !== null && orgId === seedOrgId;
+
+  const [shopRes, fulRes] = await Promise.all([
     supabase
-      .schema("resupply")
       .from("shop_orders")
       .select("status, amount_total_cents", { count: "exact" })
       .gte("created_at", cutoff)
       .order("created_at", { ascending: false })
       .limit(READ_CAP),
     supabase
-      .schema("resupply")
       .from("fulfillments")
       .select("status, quantity", { count: "exact" })
       .gte("created_at", cutoff)
       .order("created_at", { ascending: false })
       .limit(READ_CAP),
-    // Head-only count — public.orders holds PHI; we never pull its rows.
-    supabase
-      .schema("public")
-      .from("orders")
-      .select("id", { count: "exact", head: true })
-      .gte("created_at", cutoff),
   ]);
   if (shopRes.error) throw shopRes.error;
   if (fulRes.error) throw fulRes.error;
-  if (clinicalRes.error) throw clinicalRes.error;
 
   // Fail fast rather than silently undercount: if either capped read
   // matched more rows than we pulled, the aggregate would be wrong.
@@ -89,10 +88,23 @@ async function loadRevenueBySource(cutoff: string) {
     throw new RevenueWindowTooLargeError(READ_CAP);
   }
 
+  // Head-only count — public.orders holds PHI; we never pull its rows.
+  let clinicalFormOrderCount = 0;
+  if (includeClinicalIntake) {
+    const clinicalRes = await supabase
+      .raw()
+      .schema("public")
+      .from("orders")
+      .select("id", { count: "exact", head: true })
+      .gte("created_at", cutoff);
+    if (clinicalRes.error) throw clinicalRes.error;
+    clinicalFormOrderCount = clinicalRes.count ?? 0;
+  }
+
   return aggregateRevenueBySource({
     shopOrders: (shopRes.data ?? []) as ShopOrderRow[],
     fulfillments: (fulRes.data ?? []) as FulfillmentRow[],
-    clinicalFormOrderCount: clinicalRes.count ?? 0,
+    clinicalFormOrderCount,
   });
 }
 
@@ -119,8 +131,13 @@ router.get(
       return;
     }
     const days = parsed.data.days;
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     try {
-      const result = await loadRevenueBySource(isoDaysAgo(days));
+      const result = await loadRevenueBySource(isoDaysAgo(days), orgId);
       res.json({ windowDays: days, ...result });
     } catch (err) {
       if (handleWindowTooLarge(err, res)) return;
@@ -139,9 +156,14 @@ router.get(
       return;
     }
     const days = parsed.data.days;
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     let result: Awaited<ReturnType<typeof loadRevenueBySource>>;
     try {
-      result = await loadRevenueBySource(isoDaysAgo(days));
+      result = await loadRevenueBySource(isoDaysAgo(days), orgId);
     } catch (err) {
       if (handleWindowTooLarge(err, res)) return;
       throw err;

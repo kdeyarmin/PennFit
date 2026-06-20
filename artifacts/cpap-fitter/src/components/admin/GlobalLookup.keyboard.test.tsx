@@ -92,3 +92,46 @@ describe("GlobalLookup keyboard navigation", () => {
     expect(screen.queryByRole("listbox")).toBeNull();
   });
 });
+
+describe("GlobalLookup focus shortcut", () => {
+  it("⌘K from anywhere focuses the lookup input", () => {
+    render(<GlobalLookup />);
+    const input = screen.getByRole("combobox");
+    expect(document.activeElement).not.toBe(input);
+    fireEvent.keyDown(document.body, { key: "k", metaKey: true });
+    expect(document.activeElement).toBe(input);
+  });
+
+  it("Ctrl+K from anywhere focuses the lookup input", () => {
+    render(<GlobalLookup />);
+    const input = screen.getByRole("combobox");
+    fireEvent.keyDown(document.body, { key: "K", ctrlKey: true });
+    expect(document.activeElement).toBe(input);
+  });
+
+  it("a bare / focuses the lookup when not already typing", () => {
+    render(<GlobalLookup />);
+    const input = screen.getByRole("combobox");
+    fireEvent.keyDown(document.body, { key: "/" });
+    expect(document.activeElement).toBe(input);
+  });
+
+  it("/ does not steal focus while typing in another field", () => {
+    render(<GlobalLookup />);
+    const other = document.createElement("input");
+    document.body.appendChild(other);
+    other.focus();
+    expect(document.activeElement).toBe(other);
+    fireEvent.keyDown(other, { key: "/" });
+    expect(document.activeElement).toBe(other);
+    other.remove();
+  });
+
+  it("shows a keycap hint while empty and hides it once focused", () => {
+    render(<GlobalLookup />);
+    const input = screen.getByRole("combobox");
+    expect(screen.getByText(/K$/)).toBeTruthy();
+    fireEvent.focus(input);
+    expect(screen.queryByText(/K$/)).toBeNull();
+  });
+});

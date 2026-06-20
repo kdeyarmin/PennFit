@@ -34,7 +34,7 @@ import { readCustomerProfile } from "../../lib/customer-profile";
 import type Stripe from "stripe";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import {
   SHOP_UNAVAILABLE_BODY,
@@ -43,6 +43,7 @@ import {
 } from "../../lib/stripe/config";
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { getOrCreateStripeCustomer } from "../../lib/stripe/customer";
+import { stripeAccountRequestOptions } from "../../lib/stripe/connect";
 import { validateCartItems } from "../../lib/stripe/validate-cart";
 import { stripeErrLogFields } from "../../lib/stripe/err-log-fields";
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
@@ -104,7 +105,7 @@ router.post(
     // the gate on POST /shop/checkout so express checkout can't bypass
     // a paused storefront. Existing subscriptions and orders are
     // managed through their own routes and stay available.
-    if (!(await isFeatureEnabled("storefront.checkout"))) {
+    if (!(await isFeatureEnabled("storefront.checkout", req.orgId))) {
       res.status(503).json({
         error: "checkout_disabled",
         message:
@@ -147,6 +148,10 @@ router.post(
     const { email, displayName } = await readCustomerProfile(req);
 
     const stripe = getStripeClient(config);
+    // Stripe Connect (G5): the saved Customer, the historical reorder
+    // Session, and the new Session all live on the tenant's connected
+    // account when set; NULL → {} → platform account.
+    const connectOptions = await stripeAccountRequestOptions(req.orgId);
 
     // Resolve the basket: either passed-in items or pulled from a
     // historical Session. Reorders are always one-time — historical
@@ -171,9 +176,13 @@ router.post(
         return;
       }
 
-      const supabase = getSupabaseServiceRoleClient();
+      const orgId = req.orgId;
+      if (!orgId) {
+        res.status(500).json({ error: "tenant_context_missing" });
+        return;
+      }
+      const supabase = getOrgScopedClient(orgId);
       const { data: owned, error: ownedErr } = await supabase
-        .schema("resupply")
         .from("shop_orders")
         .select("stripe_session_id")
         .eq("stripe_session_id", reorderSessionId!)
@@ -191,6 +200,7 @@ router.post(
         oldSession = await stripe.checkout.sessions.retrieve(
           reorderSessionId!,
           { expand: ["line_items.data.price"] },
+          connectOptions,
         );
       } catch (err) {
         req.log?.warn(
@@ -265,7 +275,14 @@ router.post(
     // This applies to both fresh carts and reorder baskets — a reorder
     // must re-validate because a product could have gone out of stock
     // or been removed from the catalog since the original purchase.
-    const cartValidation = await validateCartItems(stripe, basket);
+    // Validate against the SAME account the session is created on
+    // (connectOptions, resolved above) so a connected tenant's basket is
+    // checked against their own catalog rather than the platform's.
+    const cartValidation = await validateCartItems(
+      stripe,
+      basket,
+      connectOptions,
+    );
     if (!cartValidation.ok) {
       req.log?.warn(
         { errors: cartValidation.errors },
@@ -283,6 +300,7 @@ router.post(
     }
 
     const { stripeCustomerId } = await getOrCreateStripeCustomer(config, {
+      orgId: req.orgId,
       customerId: customerId,
       email,
       displayName,
@@ -393,7 +411,7 @@ router.post(
               },
             },
           },
-          { idempotencyKey },
+          { idempotencyKey, ...connectOptions },
         );
       } else {
         session = await stripe.checkout.sessions.create(
@@ -411,7 +429,7 @@ router.post(
               setup_future_usage: "off_session",
             },
           },
-          { idempotencyKey },
+          { idempotencyKey, ...connectOptions },
         );
       }
     } catch (err) {
@@ -444,20 +462,22 @@ router.post(
     // customer_id is still unset OR already equals this caller —
     // i.e. either we're claiming an unowned row OR we're idempotently
     // re-stamping our own.
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const nowIso = new Date().toISOString();
-    const { error: insertErr } = await supabase
-      .schema("resupply")
-      .from("shop_orders")
-      .upsert(
-        {
-          stripe_session_id: session.id,
-          status: "pending",
-          customer_id: customerId,
-          updated_at: nowIso,
-        },
-        { onConflict: "stripe_session_id", ignoreDuplicates: true },
-      );
+    const { error: insertErr } = await supabase.from("shop_orders").upsert(
+      {
+        stripe_session_id: session.id,
+        status: "pending",
+        customer_id: customerId,
+        updated_at: nowIso,
+      },
+      { onConflict: "stripe_session_id", ignoreDuplicates: true },
+    );
     if (insertErr) {
       req.log?.error(
         { err: insertErr, sessionId: session.id },
@@ -471,7 +491,6 @@ router.post(
     // `customer_id` here is the race guard: a concurrent caller's
     // upsert wins for its own session, ours is a no-op.
     const { error: stampErr } = await supabase
-      .schema("resupply")
       .from("shop_orders")
       .update({ customer_id: customerId, updated_at: nowIso })
       .eq("stripe_session_id", session.id)

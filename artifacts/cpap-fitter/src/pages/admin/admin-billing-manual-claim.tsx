@@ -17,6 +17,7 @@ import { FilePlus2 } from "lucide-react";
 import { Card } from "@/components/admin/Card";
 import { Button } from "@/components/admin/Button";
 import { Input } from "@/components/admin/Input";
+import { PayerNameAutocomplete } from "@/components/admin/PayerNameAutocomplete";
 import {
   createManualClaim,
   type ClaimFrequencyCode,
@@ -98,9 +99,9 @@ export function AdminBillingManualClaimPage() {
             />
           </Field>
           <Field label="Payer name" required>
-            <Input
+            <PayerNameAutocomplete
               value={payerName}
-              onChange={(e) => setPayerName(e.target.value)}
+              onValueChange={setPayerName}
               placeholder="Aetna"
               aria-label="Payer name"
             />

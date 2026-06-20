@@ -22,9 +22,9 @@
 // the typed result. No logging side effects, no PDF rendering (the
 // route layer composes the combined PDF from these rows).
 
-import type { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import type { OrgScopedClient } from "@workspace/resupply-db";
 
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+type SupabaseClient = OrgScopedClient;
 
 // A packet in one of these statuses still needs a signature — it is
 // "outstanding". The terminal states (`signed`, `void`, `expired`) are
@@ -114,7 +114,6 @@ export async function aggregatePacketsNeedingSignature(
   // a non-null join either way, so inner is correct and lets the
   // practice filter reference `providers.practice_name`.
   let query = supabase
-    .schema("resupply")
     .from("prescription_request_packets")
     .select(
       "id, patient_id, provider_id, status, return_fax_e164, sent_at, created_at, " +

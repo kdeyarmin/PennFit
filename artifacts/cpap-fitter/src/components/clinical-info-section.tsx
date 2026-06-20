@@ -18,6 +18,7 @@ import { HeartPulse, Loader2, Pencil, Stethoscope, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ManufacturerAutocomplete } from "@/components/ManufacturerAutocomplete";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -369,11 +370,11 @@ function DeviceForm({
             required
             htmlFor="device-manufacturer"
           >
-            <Input
+            <ManufacturerAutocomplete
               id="device-manufacturer"
               required
               value={manufacturer}
-              onChange={(e) => setManufacturer(e.target.value)}
+              onValueChange={setManufacturer}
               placeholder="ResMed"
               data-testid="device-manufacturer"
             />

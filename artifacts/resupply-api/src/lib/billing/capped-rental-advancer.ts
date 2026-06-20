@@ -16,12 +16,14 @@
 
 import {
   type Database,
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
+  resolveSeedOrgId,
+  type OrgScopedClient,
 } from "@workspace/resupply-db";
 
 import { logger } from "../logger";
 
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+type SupabaseClient = OrgScopedClient;
 
 const SYSTEM_ACTOR = "system:cron:capped-rental-advance";
 
@@ -36,7 +38,6 @@ export interface AdvanceStats {
 const COMPLIANT_KX_HCPCS = new Set(["E0601", "E0470", "E0471"]);
 
 export async function runCappedRentalAdvance(): Promise<AdvanceStats> {
-  const supabase = getSupabaseServiceRoleClient();
   const stats: AdvanceStats = {
     scanned: 0,
     advanced: 0,
@@ -44,8 +45,12 @@ export async function runCappedRentalAdvance(): Promise<AdvanceStats> {
     errored: 0,
     byHcpcs: {},
   };
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    return stats;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const { data: cycles, error: cyclesErr } = await supabase
-    .schema("resupply")
     .from("capped_rental_cycles")
     .select(
       "id, patient_id, hcpcs_code, payer_profile_id, insurance_coverage_id, start_date, current_month, max_months, status",
@@ -121,7 +126,6 @@ async function advanceCycle(
   // Ownership transfer at month max+1.
   if (cycle.current_month >= cycle.max_months) {
     const { error: transferErr } = await supabase
-      .schema("resupply")
       .from("capped_rental_cycles")
       .update({
         status: "transferred",
@@ -152,7 +156,6 @@ async function advanceCycle(
   // failure before the advance left the cycle re-eligible so the next
   // pass duplicated the claim.
   const { data: claimed, error: claimMonthErr } = await supabase
-    .schema("resupply")
     .from("capped_rental_cycles")
     .update({
       current_month: nextMonth,
@@ -174,7 +177,6 @@ async function advanceCycle(
 
     const { data: payer } = cycle.payer_profile_id
       ? await supabase
-          .schema("resupply")
           .from("payer_profiles")
           .select("display_name, payer_legal_name")
           .eq("id", cycle.payer_profile_id)
@@ -191,7 +193,6 @@ async function advanceCycle(
     );
 
     const { data: claimRow, error: claimErr } = await supabase
-      .schema("resupply")
       .from("insurance_claims")
       .insert({
         patient_id: cycle.patient_id,
@@ -208,7 +209,6 @@ async function advanceCycle(
     if (claimErr) throw claimErr;
 
     const { error: lineErr } = await supabase
-      .schema("resupply")
       .from("insurance_claim_line_items")
       .insert({
         claim_id: claimRow.id,
@@ -221,7 +221,6 @@ async function advanceCycle(
     if (lineErr) throw lineErr;
 
     const { error: eventErr } = await supabase
-      .schema("resupply")
       .from("insurance_claim_events")
       .insert({
         claim_id: claimRow.id,
@@ -234,7 +233,6 @@ async function advanceCycle(
     // current_month was already advanced by the claim above; just link
     // the generated claim as the latest.
     const { error: linkErr } = await supabase
-      .schema("resupply")
       .from("capped_rental_cycles")
       .update({
         latest_claim_id: claimRow.id,
@@ -250,7 +248,6 @@ async function advanceCycle(
     // `current_month = nextMonth` guard ensures we never clobber a
     // concurrent further-advance.
     const { error: rollbackErr } = await supabase
-      .schema("resupply")
       .from("capped_rental_cycles")
       .update({
         current_month: cycle.current_month,
@@ -301,7 +298,6 @@ async function isPatientCompliant(
     .toISOString()
     .slice(0, 10);
   const { data: nights, error: nightsErr } = await supabase
-    .schema("resupply")
     .from("patient_therapy_nights")
     .select("usage_minutes")
     .eq("patient_id", patientId)
@@ -312,7 +308,8 @@ async function isPatientCompliant(
   // denial). The caller's per-cycle catch counts it as errored instead.
   if (nightsErr) throw nightsErr;
   const compliant = (nights ?? []).filter(
-    (n) => (n.usage_minutes ?? 0) >= 240,
+    (n: Database["resupply"]["Tables"]["patient_therapy_nights"]["Row"]) =>
+      (n.usage_minutes ?? 0) >= 240,
   ).length;
   return compliant >= 21;
 }
@@ -325,7 +322,6 @@ async function defaultBilledForHcpcs(
 ): Promise<number> {
   if (payerProfileId) {
     const { data: fee, error: feeErr } = await supabase
-      .schema("resupply")
       .from("payer_fee_schedules")
       .select("allowed_cents")
       .eq("payer_profile_id", payerProfileId)
@@ -345,6 +341,7 @@ async function defaultBilledForHcpcs(
     if (fee) return fee.allowed_cents;
   }
   const { data: map, error: mapErr } = await supabase
+    .raw()
     .schema("resupply")
     .from("product_hcpcs_map")
     .select("default_billed_cents")

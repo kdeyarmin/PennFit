@@ -22,7 +22,7 @@
 // can't resolve simply logs + returns. A patient is never messaged
 // unless the whole chain succeeds AND the flag is on.
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { isFeatureEnabled } from "../feature-flags";
 import { dispatchAlert } from "./dispatch";
@@ -96,11 +96,15 @@ export async function dispatchPaymentFailedAlertOrThrow(
   // until an operator turns the flag on.
   if (!(await isFeatureEnabled("alerts.auto_dispatch"))) return;
 
-  const supabase = getSupabaseServiceRoleClient();
+  // Resolve the tenant for the file-local worker pattern. A missing org
+  // degrades the same way the rest of the chain does — return cleanly so
+  // a patient is never messaged without a resolvable tenant context.
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) return;
+  const supabase = getOrgScopedClient(orgId);
 
   // Stripe customer → shop_customers.email_lower.
   const { data: shopCustomer, error: scErr } = await supabase
-    .schema("resupply")
     .from("shop_customers")
     .select("email_lower")
     .eq("stripe_customer_id", stripeCustomerId)
@@ -116,15 +120,24 @@ export async function dispatchPaymentFailedAlertOrThrow(
     return;
   }
 
-  // Email → patients.id (case-insensitive).
-  const { data: patient, error: pErr } = await supabase
-    .schema("resupply")
+  // Email → patients.id (case-insensitive). Require EXACTLY one match:
+  // when two patients share an email, resolving arbitrarily could send
+  // a payment-failed alert to the wrong patient. Skip + log instead.
+  const { data: patients, error: pErr } = await supabase
     .from("patients")
     .select("id")
     .ilike("email", escapeIlike(email))
-    .limit(1)
-    .maybeSingle();
+    .limit(2);
   if (pErr) throw pErr;
+  const patientCount = patients?.length ?? 0;
+  if (patientCount > 1) {
+    log?.info?.(
+      { event: "payment_failed_alert_skipped", reason: "ambiguous_patient" },
+      "alerts: payment_failed trigger - multiple patients match shop_customer email",
+    );
+    return;
+  }
+  const patient = patientCount === 1 ? patients![0] : null;
   if (!patient?.id) {
     log?.info?.(
       { event: "payment_failed_alert_skipped", reason: "no_patient" },

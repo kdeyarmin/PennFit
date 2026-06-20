@@ -18,8 +18,14 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  type Database,
+  getOrgScopedClient,
+  resolveSeedOrgId,
+} from "@workspace/resupply-db";
 
+import { requestHost } from "../../lib/request-host";
+import { resolveOrgIdByHost } from "../../lib/tenant-branding";
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
 
 const router: IRouter = Router();
@@ -49,9 +55,18 @@ router.get("/shop/products/:productId/questions", async (req, res) => {
   }
   const productId = parsed.data;
 
-  const supabase = getSupabaseServiceRoleClient();
+  // Public product Q&A list — no auth middleware populates req.orgId, so
+  // resolve the tenant from the request host (custom domain → that org;
+  // platform host / miss → seed org) so a second tenant's Q&A doesn't read
+  // the seed tenant's data.
+  const orgId =
+    (await resolveOrgIdByHost(requestHost(req))) ?? (await resolveSeedOrgId());
+  if (!orgId) {
+    res.status(503).json({ error: "tenant_unavailable" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const { data: rows, error } = await supabase
-    .schema("resupply")
     .from("shop_product_questions")
     .select(
       "id, asker_display_name, question_body, answer_body, answered_at, created_at",
@@ -63,7 +78,11 @@ router.get("/shop/products/:productId/questions", async (req, res) => {
   if (error) throw error;
 
   res.json({
-    questions: (rows ?? []).map((r) => ({
+    questions: (
+      (rows ?? []) as Array<
+        Database["resupply"]["Tables"]["shop_product_questions"]["Row"]
+      >
+    ).map((r) => ({
       id: r.id,
       askerDisplayName: r.asker_display_name,
       questionBody: r.question_body,
@@ -115,9 +134,13 @@ router.post(
     }
     const askerEmail = resolvedCustomerEmail.toLowerCase();
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("shop_product_questions")
       .insert({
         product_id: productId,

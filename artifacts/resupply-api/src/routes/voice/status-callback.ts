@@ -18,10 +18,11 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 import { requireTwilioSignature } from "@workspace/resupply-telecom";
 
 import { logger } from "../../lib/logger";
+import { recordTenantUsage } from "../../lib/metering/usage";
 import {
   parseCallDuration,
   recordVoiceCallEvent,
@@ -50,8 +51,7 @@ const signatureMiddleware = requireTwilioSignature({
     // Decoupled from full voice config so the URL Twilio signed can
     // be reconstructed even without OPENAI_API_KEY.
     const base = readVoicePublicBaseUrlOrNull() ?? "";
-    const originalUrl =
-      (req as unknown as { originalUrl?: string }).originalUrl ?? "";
+    const originalUrl = req.originalUrl ?? "";
     return `${base}${originalUrl}`;
   },
 });
@@ -103,17 +103,31 @@ router.post("/voice/status-callback", signatureMiddleware, async (req, res) => {
     return;
   }
 
+  // Webhook: no req.orgId. Resolve the seed tenant; on miss, ACK 200 so
+  // Twilio stops retrying (same degrade posture as the per-helper catch
+  // blocks below — a tenant-context gap must not retry-storm Twilio).
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    res.status(200).type("text/xml").send("<Response/>");
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
+
   if (TERMINAL_STATUSES.has(callStatus)) {
     let firstTerminalClose = false;
     try {
-      const supabase = getSupabaseServiceRoleClient();
       // Twilio can re-deliver `completed/failed/busy/...` (retry on
       // 5xx, or duplicate after our 200 took >response timeout to
       // ack). The .eq("status","open") guard + .select("id") tells
       // us whether THIS call flipped the row; only the winner emits
       // the audit row, so the HMAC-chained audit log doesn't grow
       // a duplicate `voice.call.completed` entry on every retry.
+      // Tenant-agnostic webhook: the conversation id is a globally-unique
+      // uuid, so match across tenants via `.raw()` — the org-scoped client
+      // would filter by the seed org_id and never close a non-seed tenant's
+      // call (the rest of this handler already uses `supabase.raw()`).
       const { data: flipped, error } = await supabase
+        .raw()
         .schema("resupply")
         .from("conversations")
         .update({ status: "closed", updated_at: new Date().toISOString() })
@@ -155,6 +169,17 @@ router.post("/voice/status-callback", signatureMiddleware, async (req, res) => {
           "status-callback: audit failed",
         );
       }
+
+      // One completed voice call — metered by whichever path FIRST closes
+      // the conversation (this status-callback or ws-handler's
+      // finalizeConversation). The firstTerminalClose guard makes that
+      // exactly-once across both paths (G12 aiVoiceEvents). Fire-and-forget
+      // + fail-soft.
+      void recordTenantUsage({
+        orgId,
+        metricKey: "aiVoiceEvents",
+        source: "voice.call.completed",
+      });
     }
   }
 
@@ -163,13 +188,16 @@ router.post("/voice/status-callback", signatureMiddleware, async (req, res) => {
   // initiated/answered/ended. Never affects the 200 ack — a telemetry
   // failure must not make Twilio retry the lifecycle.
   try {
-    await recordVoiceCallEvent(getSupabaseServiceRoleClient(), {
+    await recordVoiceCallEvent(supabase.raw(), {
       callSid,
       conversationId,
       callStatus,
       // Direction is structural (inbound vs outbound), not PHI.
       direction: typeof body.Direction === "string" ? body.Direction : null,
       durationSeconds: parseCallDuration(body.CallDuration),
+      // AMD verdict (human / machine_* / fax / unknown) — structural, not PHI.
+      // Lets the escalation distinguish a live answer from voicemail.
+      answeredBy: typeof body.AnsweredBy === "string" ? body.AnsweredBy : null,
       nowIso: new Date().toISOString(),
     });
   } catch (err) {

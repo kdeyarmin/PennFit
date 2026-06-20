@@ -19,8 +19,11 @@
 // through the resupply-{telecom,email} wrappers. All DB access goes
 // through the Supabase client exported from `@workspace/resupply-db`.
 
-export { sendReminderSms } from "./send-sms";
+export { sendReminderSms, smsAsksRefillAttestation } from "./send-sms";
 export type { SendReminderSmsInput } from "./send-sms";
+// Re-export the escalation-step copy variant so worker callers can import it
+// alongside the send helpers without reaching into @workspace/resupply-messaging.
+export type { ReminderVariant } from "@workspace/resupply-messaging";
 export { sendReminderEmail } from "./send-email";
 export type { SendReminderEmailInput } from "./send-email";
 export { replyInConversation } from "./reply";

@@ -22,7 +22,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 import {
   buildLtvCacReport,
   type AcquisitionChannel,
@@ -53,8 +53,13 @@ router.get(
   "/admin/analytics/ltv-cac",
   adminReadRateLimiter,
   requirePermission("cost.read"),
-  async (_req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // Paid-order revenue per customer (the LTV numerator). Refunded
     // orders keep paid_at set, so they must be excluded explicitly —
@@ -63,7 +68,6 @@ router.get(
     // inflated the finance-facing LTV:CAC ratio relative to the rest
     // of the app.
     const { data: orders, error: ordersErr } = await supabase
-      .schema("resupply")
       .from("shop_orders")
       .select("customer_id, amount_total_cents, paid_at, status")
       .not("paid_at", "is", null)
@@ -87,7 +91,6 @@ router.get(
 
     // Attribution rows (channel + acquisition cost) per customer.
     const { data: attribution, error: attrErr } = await supabase
-      .schema("resupply")
       .from("customer_acquisition")
       .select("customer_id, channel, acquisition_cost_cents")
       .limit(20000);
@@ -162,10 +165,14 @@ router.put(
     }
     const d = parsed.data;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const nowIso = new Date().toISOString();
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("customer_acquisition")
       .upsert(
         {

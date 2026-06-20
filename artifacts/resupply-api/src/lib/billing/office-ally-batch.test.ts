@@ -25,16 +25,15 @@ import {
 
 const supabaseMock = installSupabaseMock();
 
-// The eligibility precheck is gated by this flag — force it ON.
+// Feature flags default OFF; individual tests opt into the gate under test.
 vi.mock("../feature-flags", () => ({
-  isFeatureEnabled: vi.fn(
-    async (key: string) => key === "billing.eligibility_precheck",
-  ),
+  isFeatureEnabled: vi.fn(async () => false),
 }));
 
 import { build837P } from "@workspace/resupply-integrations-office-ally";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
+import { MOCK_ORG_ID } from "../../test-helpers/auth-mocks";
 import { isFeatureEnabled } from "../feature-flags";
 import {
   buildOneDetail,
@@ -157,7 +156,53 @@ describe("executeOfficeAllyBatchSubmit — eligibility precheck", () => {
       }>;
       expect(blocked).toHaveLength(1);
       expect(blocked[0]!.claimId).toBe("claim-1");
-      expect(blocked[0]!.reason).toBe("inactive");
+      expect(blocked[0]!.reason).toBe("eligibility_inactive");
+    }
+  });
+
+  it("returns eligibility_blocked when no fresh eligibility check exists", async () => {
+    stageSupabaseResponse("insurance_claims", "select", {
+      data: [
+        {
+          id: "claim-1",
+          payer_profile_id: "pp-1",
+          status: "draft",
+          insurance_coverage_id: "cov-1",
+          patient_id: "pat-1",
+        },
+      ],
+    });
+    stageSupabaseResponse("payer_profiles", "select", {
+      data: {
+        id: "pp-1",
+        payer_legal_name: "Aetna",
+        office_ally_payer_id: "60054",
+        paper_only: false,
+        claim_format: "837p",
+        is_active: true,
+        edi_enrollment_status: "enrolled",
+      },
+    });
+    stageSupabaseResponse("eligibility_checks", "select", {
+      data: null,
+    });
+
+    const result = await executeOfficeAllyBatchSubmit({
+      claimIds: ["claim-1"],
+      adminEmail: "ops@example.com",
+      adminUserId: "u-1",
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.kind).toBe("eligibility_blocked");
+      const blocked = result.detail.blocked as Array<{
+        claimId: string;
+        reason: string;
+      }>;
+      expect(blocked).toHaveLength(1);
+      expect(blocked[0]!.claimId).toBe("claim-1");
+      expect(blocked[0]!.reason).toBe("eligibility_missing_or_stale");
     }
   });
 });
@@ -184,6 +229,9 @@ describe("executeOfficeAllyBatchSubmit — bill hold", () => {
       stageSupabaseResponse("claim_paperwork_requirements", "select", {
         data: [{ claim_id: "claim-held-1" }],
       });
+      stageSupabaseResponse("claim_paperwork_requirements", "select", {
+        data: [{ claim_id: "claim-held-1" }],
+      });
 
       const result = await executeOfficeAllyBatchSubmit({
         claimIds: ["claim-held-1"],
@@ -207,7 +255,7 @@ describe("executeOfficeAllyBatchSubmit — bill hold", () => {
     }
   });
 
-  it("lets a claim through when its paperwork ledger is empty", async () => {
+  it("initializes an empty paperwork ledger before blocking outstanding paperwork", async () => {
     const flag = vi.mocked(isFeatureEnabled);
     const original = flag.getMockImplementation();
     flag.mockImplementation(async (key: string) => key === "billing.bill_hold");
@@ -223,12 +271,47 @@ describe("executeOfficeAllyBatchSubmit — bill hold", () => {
           },
         ],
       });
-      // No outstanding paperwork → gate passes, falls through to the payer
-      // check (which we leave unsatisfied → payer_not_electronic, NOT bill_hold).
       stageSupabaseResponse("claim_paperwork_requirements", "select", {
         data: [],
       });
-      stageSupabaseResponse("payer_profiles", "select", { data: null });
+      stageSupabaseResponse("insurance_claims", "select", {
+        data: { id: "claim-clear-1", patient_id: "pat-1" },
+      });
+      stageSupabaseResponse("claim_paperwork_requirements", "select", {
+        data: [],
+      });
+      stageSupabaseResponse("patient_form_acknowledgements", "select", {
+        data: [],
+      });
+      stageSupabaseResponse("dwo_documents", "select", {
+        data: [],
+      });
+      stageSupabaseResponse("claim_paperwork_requirements", "insert", {
+        data: null,
+      });
+      stageSupabaseResponse("claim_paperwork_requirements", "select", {
+        data: [
+          { status: "outstanding", required: true, label: "Signed Rx" },
+          { status: "outstanding", required: true, label: "POD" },
+          { status: "outstanding", required: true, label: "AOB" },
+        ],
+      });
+      stageSupabaseResponse("insurance_claims", "select", {
+        data: { id: "claim-clear-1", bill_hold: false, status: "draft" },
+      });
+      stageSupabaseResponse("insurance_claims", "update", {
+        data: [{ id: "claim-clear-1" }],
+      });
+      stageSupabaseResponse("insurance_claim_events", "insert", {
+        data: null,
+      });
+      stageSupabaseResponse("claim_paperwork_requirements", "select", {
+        data: [
+          { claim_id: "claim-clear-1" },
+          { claim_id: "claim-clear-1" },
+          { claim_id: "claim-clear-1" },
+        ],
+      });
 
       const result = await executeOfficeAllyBatchSubmit({
         claimIds: ["claim-clear-1"],
@@ -238,8 +321,15 @@ describe("executeOfficeAllyBatchSubmit — bill hold", () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.kind).not.toBe("bill_hold");
-        expect(result.kind).toBe("payer_not_electronic");
+        expect(result.kind).toBe("bill_hold");
+        const held = result.detail.held as Array<{
+          claimId: string;
+          outstandingCount: number;
+        }>;
+        expect(held[0]).toMatchObject({
+          claimId: "claim-clear-1",
+          outstandingCount: 3,
+        });
       }
     } finally {
       if (original) flag.mockImplementation(original);
@@ -248,9 +338,8 @@ describe("executeOfficeAllyBatchSubmit — bill hold", () => {
 });
 
 describe("executeOfficeAllyBatchSubmit — atomic batch claim (double-transmission guard)", () => {
-  // Reach the claim block: 2 draft claims, electronic payer, eligibility
-  // fails open (unstaged eligibility_checks), buildOneDetail satisfied
-  // for both claims.
+  // Reach the claim block: 2 draft claims, electronic payer, fresh active
+  // eligibility, buildOneDetail satisfied for both claims.
   function stageTwoClaimBatch() {
     stageSupabaseResponse("insurance_claims", "select", {
       data: [
@@ -279,7 +368,16 @@ describe("executeOfficeAllyBatchSubmit — atomic batch claim (double-transmissi
         edi_enrollment_status: "enrolled",
       },
     });
-    // buildOneDetail × 2 (FIFO per table).
+    stageSupabaseResponse("eligibility_checks", "select", {
+      data: {
+        id: "eli-1",
+        is_active: true,
+        requires_prior_auth: false,
+        status: "parsed",
+        responded_at: new Date().toISOString(),
+      },
+    });
+    // buildOneDetail x 2 (FIFO per table).
     for (let i = 0; i < 2; i++) {
       stageSupabaseResponse("insurance_coverages", "select", {
         data: { member_id: "MBR-001", policyholder_relationship: "self" },
@@ -365,7 +463,7 @@ describe("buildOneDetail — serviceLines billedCents = billed_cents × quantity
     ]);
 
     const claim = makeClaimRow({ total_billed_cents: 3198 });
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(MOCK_ORG_ID);
     const detail = await buildOneDetail(
       supabase,
       claim as never,
@@ -390,7 +488,7 @@ describe("buildOneDetail — serviceLines billedCents = billed_cents × quantity
     ]);
 
     const claim = makeClaimRow({ total_billed_cents: 24999 });
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(MOCK_ORG_ID);
     const detail = await buildOneDetail(
       supabase,
       claim as never,
@@ -411,7 +509,7 @@ describe("buildOneDetail — serviceLines billedCents = billed_cents × quantity
     ]);
 
     const claim = makeClaimRow({ total_billed_cents: 8000 });
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(MOCK_ORG_ID);
     const detail = await buildOneDetail(
       supabase,
       claim as never,
@@ -435,7 +533,7 @@ describe("buildOneDetail — serviceLines billedCents = billed_cents × quantity
     ]);
 
     const claim = makeClaimRow({ total_billed_cents: 24999 });
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(MOCK_ORG_ID);
     const detail = await buildOneDetail(
       supabase,
       claim as never,
@@ -456,7 +554,7 @@ describe("buildOneDetail — serviceLines billedCents = billed_cents × quantity
     ]);
 
     const claim = makeClaimRow({ date_of_service: "2026-05-15" });
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(MOCK_ORG_ID);
     const detail = await buildOneDetail(
       supabase,
       claim as never,
@@ -506,7 +604,7 @@ describe("buildOneDetail — line-level ordering provider (A2, flag-gated)", () 
       total_billed_cents: 24999,
     });
     const detail = await buildOneDetail(
-      getSupabaseServiceRoleClient(),
+      getOrgScopedClient(MOCK_ORG_ID),
       claim as never,
       "Aetna",
       "60054",
@@ -570,7 +668,7 @@ describe("buildOneDetail — line-level ordering provider (A2, flag-gated)", () 
     // Default mock impl returns false for billing.line_ordering_provider.
     const claim = makeClaimRow({ referring_provider_id: "prov-rx-001" });
     const detail = await buildOneDetail(
-      getSupabaseServiceRoleClient(),
+      getOrgScopedClient(MOCK_ORG_ID),
       claim as never,
       "Aetna",
       "60054",
@@ -631,7 +729,7 @@ describe("buildOneDetail — coordination of benefits", () => {
       cob_primary_paid_cents: 12000,
       secondary_coverage_id: null,
     });
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(MOCK_ORG_ID);
     const detail = await buildOneDetail(
       supabase,
       claim as never,
@@ -691,7 +789,7 @@ describe("buildOneDetail — coordination of benefits", () => {
     });
 
     const claim = makeClaimRow({ secondary_coverage_id: "cov-sec-1" });
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(MOCK_ORG_ID);
     const detail = await buildOneDetail(
       supabase,
       claim as never,
@@ -716,7 +814,7 @@ describe("buildOneDetail — coordination of benefits", () => {
 describe("buildOneDetail — null guard paths", () => {
   it("returns null when insurance_coverage_id is missing from claim", async () => {
     const claim = makeClaimRow({ insurance_coverage_id: null });
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(MOCK_ORG_ID);
     const detail = await buildOneDetail(
       supabase,
       claim as never,
@@ -751,7 +849,7 @@ describe("buildOneDetail — null guard paths", () => {
     });
 
     const claim = makeClaimRow();
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(MOCK_ORG_ID);
     const detail = await buildOneDetail(
       supabase,
       claim as never,
@@ -788,7 +886,7 @@ describe("buildOneDetail — null guard paths", () => {
     });
 
     const claim = makeClaimRow();
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(MOCK_ORG_ID);
     const detail = await buildOneDetail(
       supabase,
       claim as never,
@@ -820,7 +918,7 @@ describe("buildOneDetail — null guard paths", () => {
     });
 
     const claim = makeClaimRow();
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(MOCK_ORG_ID);
     const detail = await buildOneDetail(
       supabase,
       claim as never,
@@ -842,7 +940,7 @@ describe("buildOneDetail — claim-level fields", () => {
     ]);
 
     const claim = makeClaimRow({ total_billed_cents: 99999 });
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(MOCK_ORG_ID);
     const detail = await buildOneDetail(
       supabase,
       claim as never,
@@ -862,7 +960,7 @@ describe("buildOneDetail — claim-level fields", () => {
     const claim = makeClaimRow({
       id: "00000000-0000-4000-8000-000000000001",
     });
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(MOCK_ORG_ID);
     const detail = await buildOneDetail(
       supabase,
       claim as never,
@@ -879,7 +977,7 @@ describe("buildOneDetail — claim-level fields", () => {
     ]);
 
     const claim = makeClaimRow();
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(MOCK_ORG_ID);
     const detail = await buildOneDetail(
       supabase,
       claim as never,
@@ -926,7 +1024,7 @@ describe("buildOneDetail — claim-level fields", () => {
     });
 
     const claim = makeClaimRow();
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(MOCK_ORG_ID);
     const detail = await buildOneDetail(
       supabase,
       claim as never,
@@ -970,7 +1068,7 @@ describe("buildOneDetail — claim-level fields", () => {
     // sleep_studies unstaged → returns null
 
     const claim = makeClaimRow();
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(MOCK_ORG_ID);
     const detail = await buildOneDetail(
       supabase,
       claim as never,

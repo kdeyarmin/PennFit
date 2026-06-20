@@ -48,7 +48,10 @@ import {
   normalizeEmail,
   supabaseAuthRepository,
 } from "@workspace/resupply-auth";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  getSupabaseServiceRoleClient,
+  resolveSeedOrgId,
+} from "@workspace/resupply-db";
 
 interface ParsedArgs {
   email: string;
@@ -137,6 +140,16 @@ async function main(): Promise<void> {
     coarseChanged = true;
   }
 
+  // Every admin_users row must carry a real org_id so requireAdmin can fail
+  // closed on a NULL binding. grant-super-admin targets the seed/platform
+  // admin, so bind to the seed org (preserving an existing non-NULL org_id).
+  const seedOrgId = await resolveSeedOrgId();
+  if (!seedOrgId) {
+    throw new Error(
+      "Cannot resolve the seed organization (run migrations first).",
+    );
+  }
+
   // 3. Ensure the GRANULAR admin_users row → role='admin'
   //    (effective super_admin), active, linked. Find-then-write (rather
   //    than a blind upsert) so we preserve an existing accepted_at and
@@ -144,7 +157,7 @@ async function main(): Promise<void> {
   const { data: existingAdmin, error: findErr } = await supabase
     .schema("resupply")
     .from("admin_users")
-    .select("id, role, status, accepted_at, revoked_at")
+    .select("id, role, status, accepted_at, revoked_at, org_id")
     .eq("email_lower", emailLower)
     .maybeSingle();
   if (findErr) throw findErr;
@@ -163,6 +176,9 @@ async function main(): Promise<void> {
         role: "admin",
         status: "active",
         auth_user_id: user.id,
+        // Fill the tenant binding only when missing — never move an existing
+        // (possibly non-seed) admin to the seed org.
+        org_id: existingAdmin.org_id ?? seedOrgId,
         // Clearing the revoke stamps keeps the row from being internally
         // inconsistent (active + revoked_*); backfilling accepted_at when
         // it's missing mirrors the team-invite reactivation flow in
@@ -184,6 +200,7 @@ async function main(): Promise<void> {
         role: "admin",
         status: "active",
         auth_user_id: user.id,
+        org_id: seedOrgId,
         display_name: user.displayName,
         accepted_at: nowIso,
       });

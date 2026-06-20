@@ -15,6 +15,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { humanizeAction } from "@/components/admin/Badge";
+import { Spinner } from "@/components/admin/Spinner";
+import { ErrorPanel } from "@/components/admin/ErrorPanel";
+import { PageHeader } from "@/components/admin/PageHeader";
 import {
   isHighRiskFlag,
   listFeatureFlagActivity,
@@ -40,20 +43,10 @@ export function AdminControlCenterPage() {
       className="space-y-6 max-w-5xl"
       data-testid="admin-control-center-page"
     >
-      <header className="space-y-1">
-        <h1
-          className="text-2xl font-bold tracking-tight"
-          style={{ color: "hsl(var(--ink-1))" }}
-        >
-          Control Center
-        </h1>
-        <p className="text-sm text-slate-600">
-          On/off switches for major features. Flipping a switch takes effect
-          within a few seconds — no deploy required. Use these during incidents,
-          vendor outages, or when you need to pause a campaign without canceling
-          it.
-        </p>
-      </header>
+      <PageHeader
+        title="Control Center"
+        description="On/off switches for major features. Flipping a switch takes effect within a few seconds — no deploy required. Use these during incidents, vendor outages, or when you need to pause a campaign without canceling it."
+      />
       <SummaryTiles />
       <FlagsList />
       <ActivityPanel />
@@ -222,17 +215,15 @@ function FlagsList() {
   }, [query.data]);
 
   if (query.isPending) {
-    return <div className="text-sm text-slate-500">Loading…</div>;
+    return <Spinner />;
   }
   if (query.isError) {
     return (
-      <div
-        className="rounded border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800"
-        role="alert"
-      >
-        Couldn&apos;t load feature flags:{" "}
-        {query.error instanceof Error ? query.error.message : "unknown"}
-      </div>
+      <ErrorPanel
+        error={query.error}
+        onRetry={() => void query.refetch()}
+        title="Couldn't load feature flags"
+      />
     );
   }
   if (grouped.length === 0) {

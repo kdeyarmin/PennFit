@@ -27,8 +27,9 @@ import type PgBoss from "pg-boss";
 
 import {
   type CommunicationPreferences,
+  type OrgScopedClient,
   DEFAULT_COMMUNICATION_PREFERENCES,
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
 } from "@workspace/resupply-db";
 import {
   type SendActor,
@@ -42,8 +43,11 @@ import {
   shouldSendSms,
 } from "../../lib/comm-prefs.js";
 import { claimDedupKey } from "../../lib/dedup-keys.js";
+import { recordOutboundMessageUsage } from "../../lib/metering/usage.js";
 import { isFeatureEnabled } from "../../lib/feature-flags.js";
 import { logger } from "../../lib/logger.js";
+import { applyTenantSmsFrom } from "../../lib/messaging/tenant-telecom.js";
+import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import {
   createQueueWithDlq,
   CRON_SCAN_QUEUE_OPTS,
@@ -186,19 +190,42 @@ export function planDeadlineOutreach(
 }
 
 export async function runSetupDeadlineOutreach(): Promise<SetupDeadlineOutreachResult> {
-  const supabase = getSupabaseServiceRoleClient();
   const result: SetupDeadlineOutreachResult = {
     inWindow: 0,
     eligible: 0,
     messaged: 0,
   };
+  // Fan out across every active tenant — the adherence RPC, patients, and
+  // shop_customers are all org-scoped, and the auto-outreach / sms.reminders
+  // flags are resolved per tenant, so a tenant only texts its own patients
+  // and only when it has enabled outreach. Per-tenant failure isolation;
+  // results summed. Single-tenant: listActiveOrgIds() returns just the seed
+  // org, so this is exactly the prior one-tenant sweep.
+  await forEachActiveOrg(
+    async (orgId) => {
+      await setupDeadlineOutreachForOrg(orgId, result);
+    },
+    { jobName: SETUP_DEADLINE_OUTREACH_JOB },
+  );
+  return result;
+}
+
+async function setupDeadlineOutreachForOrg(
+  orgId: string,
+  result: SetupDeadlineOutreachResult,
+): Promise<void> {
+  const supabase = getOrgScopedClient(orgId);
 
   const outreachOn =
-    (await isFeatureEnabled("therapy_fleet.auto_outreach")) &&
-    (await isFeatureEnabled("sms.reminders"));
-  const cfg = outreachOn ? readSmsConfig() : null;
+    (await isFeatureEnabled("therapy_fleet.auto_outreach", orgId)) &&
+    (await isFeatureEnabled("sms.reminders", orgId));
+  const baseCfg = outreachOn ? readSmsConfig() : null;
+  // Send under the tenant's own number / Messaging Service when it has
+  // one (G7); falls back to the platform default otherwise.
+  const cfg = baseCfg ? await applyTenantSmsFrom(orgId, baseCfg) : null;
 
   const setups = await supabase
+    .raw()
     .schema("resupply")
     .rpc("therapy_setup_adherence_list", { p_limit: 1000 });
   if (setups.error) throw setups.error;
@@ -209,7 +236,7 @@ export async function runSetupDeadlineOutreach(): Promise<SetupDeadlineOutreachR
     days_remaining?: unknown;
     nights_needed?: unknown;
   }>;
-  result.inWindow = rows.length;
+  result.inWindow += rows.length;
 
   // Compute the message plan for each patient (pure). This also lets the
   // job report `eligible` even when outreach is off (visibility for the
@@ -227,8 +254,9 @@ export async function runSetupDeadlineOutreach(): Promise<SetupDeadlineOutreachR
     );
     if (body) planned.push({ patientId: r.patient_id, body });
   }
-  result.eligible = planned.length;
+  result.eligible += planned.length;
 
+  let messagedThisOrg = 0;
   if (outreachOn && cfg) {
     const seen = new Set<string>();
     for (const p of planned) {
@@ -240,28 +268,34 @@ export async function runSetupDeadlineOutreach(): Promise<SetupDeadlineOutreachR
         p.patientId,
         p.body,
       );
-      if (sent) result.messaged += 1;
+      if (sent) messagedThisOrg += 1;
     }
   }
+  result.messaged += messagedThisOrg;
 
   logger.info(
-    { queue: SETUP_DEADLINE_OUTREACH_JOB, ...result, outreachOn },
-    "therapy setup-deadline outreach complete",
+    {
+      queue: SETUP_DEADLINE_OUTREACH_JOB,
+      orgId,
+      inWindow: rows.length,
+      eligible: planned.length,
+      messaged: messagedThisOrg,
+      outreachOn,
+    },
+    "therapy setup-deadline outreach complete (tenant)",
   );
-  return result;
 }
 
 // Returns true iff a message was actually dispatched. Mirrors
 // alerts-scan's consent → DND → claim-cap ordering exactly, and shares
 // the SAME cap key namespace so the two jobs can't double-text a patient.
 async function maybeSendDeadlineSms(
-  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
+  supabase: OrgScopedClient,
   cfg: SmsSendConfig,
   patientId: string,
   body: string,
 ): Promise<boolean> {
   const patientRes = await supabase
-    .schema("resupply")
     .from("patients")
     .select("email, timezone, address")
     .eq("id", patientId)
@@ -274,7 +308,6 @@ async function maybeSendDeadlineSms(
   const email = patientRow?.email;
   if (!email) return false;
   const prefsRes = await supabase
-    .schema("resupply")
     .from("shop_customers")
     .select("communication_preferences")
     .eq("email_lower", email.toLowerCase())
@@ -308,7 +341,7 @@ async function maybeSendDeadlineSms(
   const expiresAt = new Date(
     Date.now() + OUTREACH_COOLDOWN_DAYS * 24 * 60 * 60 * 1000,
   ).toISOString();
-  const claim = await claimDedupKey(supabase, capKey, expiresAt);
+  const claim = await claimDedupKey(supabase.raw(), capKey, expiresAt);
   if (claim.outcome !== "claimed") {
     if (claim.outcome === "error") {
       logger.warn(
@@ -330,13 +363,20 @@ async function maybeSendDeadlineSms(
   };
   try {
     const outcome = await sendReminderSms({
-      supabase,
+      supabase: supabase.raw(),
       cfg,
       patientId,
       body,
       actor,
     });
-    if (outcome.status === "ok") return true;
+    if (outcome.status === "ok") {
+      recordOutboundMessageUsage({
+        orgId: supabase.orgId,
+        channel: "sms",
+        source: "therapy_setup_deadline.sms",
+      });
+      return true;
+    }
     await releaseCapKey(supabase, capKey);
     return false;
   } catch (err) {
@@ -350,10 +390,11 @@ async function maybeSendDeadlineSms(
 }
 
 async function releaseCapKey(
-  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
+  supabase: OrgScopedClient,
   key: string,
 ): Promise<void> {
   const { error } = await supabase
+    .raw()
     .schema("resupply")
     .from("worker_dedup_keys")
     .delete()

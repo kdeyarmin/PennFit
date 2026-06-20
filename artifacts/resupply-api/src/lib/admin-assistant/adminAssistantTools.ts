@@ -33,18 +33,27 @@ import {
   EmailApiError,
   EmailConfigError,
 } from "@workspace/resupply-email";
-import type { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import type { OrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../logger.js";
+import {
+  applyCompanyIdentityToText,
+  applyPlatformBrandingForOrg,
+  getCompanyInfo,
+} from "../company-info.js";
 
 /** Cap tool rounds per user turn so a runaway model can't recurse. */
 export const MAX_ADMIN_TOOL_ROUNDS = 2;
 
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+type SupabaseClient = OrgScopedClient;
 
 /** Per-request context the route hands to the tool dispatcher. */
 export interface AdminAssistantToolContext {
   supabase: SupabaseClient;
+  /** The tenant whose console the suggestion was filed from. Brands the
+   *  outbound email's PennPilot token with that tenant's admin-assistant
+   *  name. */
+  orgId: string;
   /** Email of the operator filing the suggestion (used as Reply-To). */
   suggestingAdminEmail: string | null;
   /** Coarse role of the operator filing the suggestion. */
@@ -121,7 +130,6 @@ export async function resolveSuperAdminRecipients(
   const out = new Set<string>();
   try {
     const { data, error } = await supabase
-      .schema("resupply")
       .from("admin_users")
       .select("email_lower")
       .eq("role", "admin")
@@ -162,11 +170,12 @@ function escapeHtml(s: string): string {
     .replace(/'/g, "&#39;");
 }
 
-function buildSuggestionEmail(
+async function buildSuggestionEmail(
   args: z.infer<typeof suggestFeatureArgsSchema>,
   fromAdmin: string | null,
   fromRole: string | null,
-): { subject: string; text: string; html: string } {
+  orgId: string,
+): Promise<{ subject: string; text: string; html: string }> {
   const area = args.area ?? "(unspecified)";
   const priority = args.priority ?? "(unset)";
   const submittedBy = fromAdmin
@@ -211,7 +220,23 @@ function buildSuggestionEmail(
     `</div>`,
   ].join("");
 
-  return { subject, text, html };
+  // Normalize platform/assistant brand tokens (PennPilot → the tenant's
+  // admin-assistant name, PennFit → CareMetric Breathe) and the tenant's
+  // own brand (PennPaps → saved company name). Resolve THIS tenant's
+  // identity so a second tenant's suggestion email carries its own
+  // company name, not the seed's. No-ops for the Penn Home Medical
+  // Supply tenant, whose configured names are the originals.
+  const companyInfo = await getCompanyInfo(orgId);
+  const brand = async (s: string): Promise<string> =>
+    applyCompanyIdentityToText(
+      await applyPlatformBrandingForOrg(s, orgId),
+      companyInfo,
+    );
+  return {
+    subject: await brand(subject),
+    text: await brand(text),
+    html: await brand(html),
+  };
 }
 
 /**
@@ -279,10 +304,11 @@ export async function executeAdminAssistantTool(
     throw err;
   }
 
-  const { subject, text, html } = buildSuggestionEmail(
+  const { subject, text, html } = await buildSuggestionEmail(
     args,
     ctx.suggestingAdminEmail,
     ctx.suggestingAdminRole,
+    ctx.orgId,
   );
 
   // Reply-To the submitting admin (when known) so the owner can reply

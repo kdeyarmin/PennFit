@@ -9,7 +9,7 @@ import express from "express";
 import supertest from "supertest";
 import { describe, expect, it } from "vitest";
 
-import { SESSION_COOKIE } from "../cookies";
+import { CSRF_COOKIE, SESSION_COOKIE } from "../cookies";
 import { readAuthEnv } from "../env";
 import { makeMemoryRepo, seedUserWithPassword } from "../test-helpers";
 import { issueToken } from "../token";
@@ -31,6 +31,11 @@ function harness() {
     secureCookies: false,
   };
   return { repo, deps };
+}
+
+function getSetCookie(header: string | string[] | undefined): string[] {
+  if (!header) return [];
+  return Array.isArray(header) ? header : [header];
 }
 
 describe("requireSession", () => {
@@ -140,6 +145,118 @@ describe("requireSession", () => {
     // Sliding expiry advanced.
     const refreshed = repo.__sessions().find((s) => s.id === inserted.id);
     expect(refreshed!.expiresAt.getTime()).toBeGreaterThan(before.getTime());
+    const setCookie = getSetCookie(r.headers["set-cookie"]);
+    expect(
+      setCookie?.some((cookie) => cookie.startsWith(`${SESSION_COOKIE}=`)),
+    ).toBe(true);
+  });
+
+  it("reissues the CSRF companion cookie when a sliding request carries one", async () => {
+    const { repo, deps } = harness();
+    await seedUserWithPassword(repo, {
+      id: "u_csrf",
+      emailLower: "csrf@example.com",
+      password: "p",
+    });
+    const tok = issueToken();
+    await repo.insertSession({
+      tokenHash: tok.hash,
+      userId: "u_csrf",
+      expiresAt: new Date(Date.now() + 60_000),
+      ip: null,
+      userAgentHash: null,
+    });
+
+    const app = express();
+    app.get("/protected", makeRequireSession(deps), (_req, res) => {
+      res.json({ ok: true });
+    });
+    const r = await supertest(app)
+      .get("/protected")
+      .set(
+        "Cookie",
+        `${SESSION_COOKIE}=${tok.raw}; ${CSRF_COOKIE}=csrf-token-123`,
+      );
+
+    expect(r.status).toBe(200);
+    const setCookie = getSetCookie(r.headers["set-cookie"]);
+    expect(
+      setCookie?.some((cookie) => cookie.startsWith(`${SESSION_COOKIE}=`)),
+    ).toBe(true);
+    expect(
+      setCookie?.some((cookie) =>
+        cookie.startsWith(`${CSRF_COOKIE}=csrf-token-123`),
+      ),
+    ).toBe(true);
+  });
+
+  it("re-issues the session + csrf cookies when the expiry slides", async () => {
+    const { repo, deps } = harness();
+    await seedUserWithPassword(repo, {
+      id: "u_c",
+      emailLower: "c@example.com",
+      password: "p",
+    });
+    const tok = issueToken();
+    await repo.insertSession({
+      tokenHash: tok.hash,
+      userId: "u_c",
+      expiresAt: new Date(Date.now() + 60_000), // expires soon → slides
+      ip: null,
+      userAgentHash: null,
+    });
+
+    const app = express();
+    app.get("/protected", makeRequireSession(deps), (_req, res) => {
+      res.json({ ok: true });
+    });
+    const r = await supertest(app)
+      .get("/protected")
+      .set("Cookie", `${SESSION_COOKIE}=${tok.raw}; pf_csrf=csrfval`);
+    expect(r.status).toBe(200);
+
+    // Both cookies re-issued with a Max-Age that matches the slid DB
+    // expiry (≈ ttlDays = 14 days), so the browser keeps them alive
+    // as long as the server-side session — the documented sliding
+    // behavior. Without this the cookie dies at the fixed Max-Age
+    // stamped at sign-in even though the DB row is still valid.
+    const setCookies = (r.headers["set-cookie"] ?? []) as unknown as string[];
+    const sess = setCookies.find((c) => c.startsWith(`${SESSION_COOKIE}=`));
+    const csrf = setCookies.find((c) => c.startsWith("pf_csrf="));
+    expect(sess).toBeDefined();
+    expect(csrf).toBeDefined();
+    const maxAge = Number(/Max-Age=(\d+)/.exec(sess!)?.[1]);
+    expect(maxAge).toBeGreaterThan(13 * 24 * 60 * 60);
+    expect(sess).toContain(tok.raw);
+    expect(csrf).toContain("csrfval");
+  });
+
+  it("does NOT set cookies when the expiry does not move", async () => {
+    const { repo, deps } = harness();
+    await seedUserWithPassword(repo, {
+      id: "u_n",
+      emailLower: "n@example.com",
+      password: "p",
+    });
+    const tok = issueToken();
+    // Already at the full ttl window → slideExpiry is a no-op.
+    await repo.insertSession({
+      tokenHash: tok.hash,
+      userId: "u_n",
+      expiresAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000 + 60_000),
+      ip: null,
+      userAgentHash: null,
+    });
+
+    const app = express();
+    app.get("/protected", makeRequireSession(deps), (_req, res) => {
+      res.json({ ok: true });
+    });
+    const r = await supertest(app)
+      .get("/protected")
+      .set("Cookie", `${SESSION_COOKIE}=${tok.raw}`);
+    expect(r.status).toBe(200);
+    expect(r.headers["set-cookie"]).toBeUndefined();
   });
 
   it("fires the soft UA-mismatch observer but still admits the request", async () => {

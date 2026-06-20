@@ -46,7 +46,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import {
@@ -108,7 +108,12 @@ router.get(
       res.status(400).json({ error: "invalid_query" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { status, ...rest } = parsed.data;
     const result = await listOutstandingSignatures(
       supabase,
@@ -135,7 +140,12 @@ router.get(
       res.status(400).json({ error: "invalid_query" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const row = await lookupTrackingByCode(supabase, parsed.data.code);
     if (!row) {
       res.status(404).json({ error: "not_found" });
@@ -159,7 +169,12 @@ router.post(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const row = await getTrackingById(supabase, params.data.id);
     if (!row) {
       res.status(404).json({ error: "not_found" });
@@ -227,7 +242,12 @@ router.post(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const row = await getTrackingById(supabase, params.data.id);
     if (!row) {
       res.status(404).json({ error: "not_found" });
@@ -286,7 +306,12 @@ router.post(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const row = await getTrackingById(supabase, params.data.id);
     if (!row) {
       res.status(404).json({ error: "not_found" });

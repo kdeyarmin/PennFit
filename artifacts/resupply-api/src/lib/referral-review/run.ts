@@ -8,9 +8,10 @@
 // pg-boss job can retry them while a deterministic model outcome is
 // recorded once and surfaced to the reviewer.
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../logger";
+import { resolveOrgIdForSignedRecord } from "../storefront/signed-link-org";
 import {
   ObjectNotFoundError,
   ObjectStorageService,
@@ -35,9 +36,20 @@ export async function runReviewExtraction(
   reviewId: string,
   opts: { force?: boolean; storage?: ObjectStorageService } = {},
 ): Promise<RunReviewExtractionOutcome> {
-  const supabase = getSupabaseServiceRoleClient();
+  // This runs from a pg-boss job (fax arrival) and the on-demand re-run
+  // route — neither carries a request tenant. Derive the tenant FROM the
+  // review record (its id is globally unique) rather than assuming seed, so a
+  // non-seed tenant's referral review is actually found and extracted (the
+  // seed-scoped read below would otherwise never match it). A miss falls back
+  // to seed → the scoped read returns nothing → the same not_found outcome.
+  const orgId = await resolveOrgIdForSignedRecord("referral_reviews", reviewId);
+  if (!orgId) {
+    // Tenant context missing — treat as "row not resolvable" (the same
+    // non-throwing outcome we return when the review id has no match).
+    return { kind: "not_found" };
+  }
+  const supabase = getOrgScopedClient(orgId);
   const { data: review, error } = await supabase
-    .schema("resupply")
     .from("referral_reviews")
     .select("id, status, media_object_key, media_content_type")
     .eq("id", reviewId)
@@ -79,7 +91,6 @@ export async function runReviewExtraction(
 
   const nowIso = new Date().toISOString();
   const { error: upErr } = await supabase
-    .schema("resupply")
     .from("referral_reviews")
     .update({
       status: result.status,

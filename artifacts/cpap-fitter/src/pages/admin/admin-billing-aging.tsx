@@ -78,9 +78,15 @@ export function AdminBillingAgingPage() {
                   className="text-left text-[11px] uppercase tracking-wider"
                   style={{ color: "hsl(var(--ink-3))" }}
                 >
-                  <th className="py-2">Age (days)</th>
-                  <th className="py-2 text-right">Claim count</th>
-                  <th className="py-2 text-right">Billed</th>
+                  <th scope="col" className="py-2">
+                    Age (days)
+                  </th>
+                  <th scope="col" className="py-2 text-right">
+                    Claim count
+                  </th>
+                  <th scope="col" className="py-2 text-right">
+                    Billed
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -156,13 +162,17 @@ export function AdminBillingAgingPage() {
                       className="text-left text-[11px] uppercase tracking-wider sticky top-0 bg-white"
                       style={{ color: "hsl(var(--ink-3))" }}
                     >
-                      <th className="p-3">Payer</th>
+                      <th scope="col" className="p-3">
+                        Payer
+                      </th>
                       {BUCKETS.map((b) => (
-                        <th key={b.key} className="p-3 text-right">
+                        <th scope="col" key={b.key} className="p-3 text-right">
                           {b.label}
                         </th>
                       ))}
-                      <th className="p-3 text-right">Total</th>
+                      <th scope="col" className="p-3 text-right">
+                        Total
+                      </th>
                     </tr>
                   </thead>
                   <tbody>

@@ -31,13 +31,14 @@
 
 import type PgBoss from "pg-boss";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 import {
   createSendgridClient,
   EmailConfigError,
 } from "@workspace/resupply-email";
 
 import { logger } from "../../lib/logger";
+import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import {
   createQueueWithDlq,
   VENDOR_SEND_QUEUE_OPTS,
@@ -63,22 +64,36 @@ export interface PacwareDigestResult {
   /** `true` when we composed and sent a digest. */
   sent: boolean;
   /** When `sent: false`, the reason for ops triage. */
-  skippedReason?:
-    | "auto_sync_off"
-    | "nothing_ready"
-    | "no_recipient"
-    | "sendgrid_not_configured";
+  skippedReason?: "auto_sync_off" | "nothing_ready" | "sendgrid_not_configured";
 }
 
-function composeDigestEmail(opts: { recipient: string; readyCount: number }): {
+/** Aggregate tally for one fan-out tick across every active tenant. */
+export interface PacwareDigestRunResult {
+  /** Active tenants swept this tick. */
+  total: number;
+  /** Tenants that composed and sent a digest. */
+  sentCount: number;
+  /** Total confirmed episodes across the tenants that were emailed. */
+  readyCount: number;
+  /** Tenant ids whose per-tenant sweep threw (already logged + isolated). */
+  failedOrgIds: string[];
+  /** Set only when the run short-circuited before fanning out. */
+  skippedReason?: "no_recipient";
+}
+
+function composeDigestEmail(opts: {
+  recipient: string;
+  readyCount: number;
+  practiceName: string;
+}): {
   to: string;
   subject: string;
   html: string;
   text: string;
 } {
-  const { recipient, readyCount } = opts;
+  const { recipient, readyCount, practiceName } = opts;
   const noun = readyCount === 1 ? "order is" : "orders are";
-  const subject = `PennPaps: ${readyCount} confirmed resupply ${noun} ready to sync to PacWare`;
+  const subject = `${practiceName}: ${readyCount} confirmed resupply ${noun} ready to sync to PacWare`;
   const body =
     `${readyCount} confirmed resupply ${noun} waiting on a PacWare export. ` +
     `Nothing ships until the CSV is imported into PacWare, so this is the ` +
@@ -97,22 +112,24 @@ function composeDigestEmail(opts: { recipient: string; readyCount: number }): {
 }
 
 /**
- * Runs one digest scan + (optional) send. Side effects: two Supabase
- * reads and the SendGrid send. The result envelope tells the caller
- * what happened for ops logging.
+ * Runs one digest scan + (optional) send for a SINGLE tenant. Side effects:
+ * two org-scoped Supabase reads (this tenant's `pacware.auto_sync` opt-in
+ * and its confirmed-episode count) and the SendGrid send. Extracted so the
+ * cron can fan out across every active tenant — `app_config` and `episodes`
+ * are tenant-scoped, so each tenant's opt-in and "ready to sync" count are
+ * read on its own org-scoped client and one tenant's confirmed episodes can
+ * never be counted into another's digest. Exported for tests.
  */
-export async function runPacwareReadyToSyncDigest(): Promise<PacwareDigestResult> {
-  const recipient = process.env.RESUPPLY_ADMIN_ALERTS_EMAIL?.trim();
-  if (!recipient) {
-    return { readyCount: 0, sent: false, skippedReason: "no_recipient" };
-  }
-
-  const supabase = getSupabaseServiceRoleClient();
+export async function pacwareDigestForOrg(
+  orgId: string,
+  opts: { recipient: string; practiceName: string },
+): Promise<PacwareDigestResult> {
+  const { recipient, practiceName } = opts;
+  const supabase = getOrgScopedClient(orgId);
 
   // Operator opt-in. Fail-soft to "off" on any read error — a config
   // hiccup must not start emailing an operator who never opted in.
   const { data: cfg, error: cfgErr } = await supabase
-    .schema("resupply")
     .from("app_config")
     .select("value")
     .eq("key", AUTO_SYNC_KEY)
@@ -126,7 +143,6 @@ export async function runPacwareReadyToSyncDigest(): Promise<PacwareDigestResult
   // (routes/admin/pacware.ts getPendingCounts): confirmed episodes
   // with a prescription + patient attached.
   const { count, error: countErr } = await supabase
-    .schema("resupply")
     .from("episodes")
     .select("id, prescriptions!inner(id), patients!inner(id)", {
       count: "exact",
@@ -154,7 +170,7 @@ export async function runPacwareReadyToSyncDigest(): Promise<PacwareDigestResult
     throw err;
   }
 
-  const message = composeDigestEmail({ recipient, readyCount });
+  const message = composeDigestEmail({ recipient, readyCount, practiceName });
   await sendgrid.sendEmail({
     to: message.to,
     subject: message.subject,
@@ -164,6 +180,54 @@ export async function runPacwareReadyToSyncDigest(): Promise<PacwareDigestResult
   });
 
   return { readyCount, sent: true };
+}
+
+/**
+ * Runs the "ready to sync" digest for EVERY active tenant. Resolves the ops
+ * recipient + practice name once, then fans out across active tenants with
+ * per-tenant failure isolation (forEachActiveOrg), aggregating the tally.
+ * Each tenant's opt-in and confirmed-episode count are read on its own
+ * org-scoped client, so a tenant that hasn't opted into PacWare auto-sync is
+ * simply skipped and no tenant's counts bleed into another's digest.
+ * Exported for tests; `opts.listOrgIds` is a test seam.
+ */
+export async function runPacwareReadyToSyncDigest(
+  opts: { listOrgIds?: () => Promise<string[]> } = {},
+): Promise<PacwareDigestRunResult> {
+  const recipient = process.env.RESUPPLY_ADMIN_ALERTS_EMAIL?.trim();
+  if (!recipient) {
+    return {
+      total: 0,
+      sentCount: 0,
+      readyCount: 0,
+      failedOrgIds: [],
+      skippedReason: "no_recipient",
+    };
+  }
+  const practiceName = process.env.RESUPPLY_PRACTICE_NAME ?? "PennPaps";
+
+  let sentCount = 0;
+  let readyCount = 0;
+  const fan = await forEachActiveOrg(
+    async (orgId) => {
+      const result = await pacwareDigestForOrg(orgId, {
+        recipient,
+        practiceName,
+      });
+      if (result.sent) {
+        sentCount += 1;
+        readyCount += result.readyCount;
+      }
+    },
+    { jobName: PACWARE_DIGEST_JOB, listOrgIds: opts.listOrgIds },
+  );
+
+  return {
+    total: fan.total,
+    sentCount,
+    readyCount,
+    failedOrgIds: fan.failedOrgIds,
+  };
 }
 
 export async function registerPacwareReadyToSyncDigestJob(

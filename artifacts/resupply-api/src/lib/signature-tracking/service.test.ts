@@ -12,27 +12,32 @@ import {
   normalizeTrackingCode,
   registerSignatureTracking,
 } from "./service";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
+import { MOCK_ORG_ID } from "../../test-helpers/auth-mocks";
 
 const supabaseMock = installSupabaseMock();
 beforeEach(() => supabaseMock.reset());
 
 describe("generateTrackingCode", () => {
-  it("is PFS- + 8 unambiguous chars (no 0/O/1/I/L)", () => {
+  it("is CMB- + 8 unambiguous chars (no 0/O/1/I/L)", () => {
     for (let i = 0; i < 50; i += 1) {
       expect(generateTrackingCode()).toMatch(
-        /^PFS-[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{8}$/,
+        /^CMB-[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{8}$/,
       );
     }
   });
 });
 
 describe("normalizeTrackingCode", () => {
-  it("uppercases, strips spaces/dashes, and re-applies the prefix", () => {
+  it("uppercases, strips spaces/dashes, and preserves the brand prefix", () => {
+    // Legacy PFS- codes (faxes already in the field) are preserved so the
+    // exact-match lookup still resolves their stored row.
     expect(normalizeTrackingCode("pfs-7f3k2q9x")).toBe("PFS-7F3K2Q9X");
     expect(normalizeTrackingCode("PFS 7F3K2Q9X")).toBe("PFS-7F3K2Q9X");
-    // Body only (prefix dropped on the fax) still resolves.
-    expect(normalizeTrackingCode("7f3k2q9x")).toBe("PFS-7F3K2Q9X");
+    // Current CMB- codes round-trip too.
+    expect(normalizeTrackingCode("cmb-7f3k2q9x")).toBe("CMB-7F3K2Q9X");
+    // Body only (prefix dropped on the fax) gets the current prefix.
+    expect(normalizeTrackingCode("7f3k2q9x")).toBe("CMB-7F3K2Q9X");
   });
 });
 
@@ -63,7 +68,7 @@ describe("registerSignatureTracking", () => {
     stageSupabaseResponse("signature_tracking", "select", {
       data: { id: "t1", tracking_code: "PFS-ABCD2345" },
     });
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(MOCK_ORG_ID);
     const result = await registerSignatureTracking(supabase, {
       kind: "prescription_request",
       documentId: "doc-1",
@@ -84,7 +89,7 @@ describe("registerSignatureTracking", () => {
     stageSupabaseResponse("signature_tracking", "insert", {
       data: { id: "t2" },
     });
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(MOCK_ORG_ID);
     const result = await registerSignatureTracking(supabase, {
       kind: "manual_document",
       documentId: "doc-2",
@@ -92,7 +97,7 @@ describe("registerSignatureTracking", () => {
     });
     expect(result.created).toBe(true);
     expect(result.id).toBe("t2");
-    expect(result.trackingCode).toMatch(/^PFS-[A-Z2-9]{8}$/);
+    expect(result.trackingCode).toMatch(/^CMB-[A-Z2-9]{8}$/);
   });
 });
 
@@ -126,7 +131,7 @@ describe("listOutstandingSignatures", () => {
         }),
       ],
     });
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(MOCK_ORG_ID);
     const result = await listOutstandingSignatures(supabase);
 
     expect(result.count).toBe(4);
@@ -140,7 +145,7 @@ describe("listOutstandingSignatures", () => {
 
   it("only counts dispatched documents as outstanding (sent_count > 0)", async () => {
     stageSupabaseResponse("signature_tracking", "select", { data: [] });
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(MOCK_ORG_ID);
     await listOutstandingSignatures(supabase);
 
     // The awaiting queue must exclude drafted-but-never-sent rows: a
@@ -153,7 +158,7 @@ describe("listOutstandingSignatures", () => {
 
   it("lists only never-sent rows when dispatched=false (the unsent view)", async () => {
     stageSupabaseResponse("signature_tracking", "select", { data: [] });
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(MOCK_ORG_ID);
     await listOutstandingSignatures(supabase, { dispatched: false });
 
     const filters = supabaseMock.filterCalls("signature_tracking", "select");
@@ -163,7 +168,7 @@ describe("listOutstandingSignatures", () => {
 
   it("does not apply the dispatch filter to returned/canceled views", async () => {
     stageSupabaseResponse("signature_tracking", "select", { data: [] });
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(MOCK_ORG_ID);
     await listOutstandingSignatures(supabase, { status: "returned_signed" });
 
     expect(

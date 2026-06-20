@@ -11,7 +11,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { respondInvalidBody } from "../../lib/http-validation";
@@ -56,9 +56,36 @@ router.post(
       respondInvalidBody(res, parsed.error);
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
-    const { data, error } = await supabase
-      .schema("resupply")
+    // Multi-tenant Phase 0 enforcement: fail-closed tenant context.
+    // requireAdmin attaches req.orgId; refuse rather than widen to all
+    // tenants if it's somehow absent. Trim-check to match
+    // getOrgScopedClient's contract (it throws on whitespace).
+    const orgId = req.orgId;
+    if (!orgId || !orgId.trim()) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const db = getOrgScopedClient(orgId);
+
+    // Verify the patient belongs to this tenant BEFORE the upsert.
+    // Without this, a UUID for a patient in another org would let the
+    // caller insert a manual night tagged with their own org_id for a
+    // foreign patient — or update an existing foreign row and move its
+    // tenant tag. The org-scoped read returns no row for a cross-tenant
+    // patient, so we 404 exactly as the therapy-link create route does.
+    const { data: patientRow, error: patientErr } = await db
+      .from("patients")
+      .select("id")
+      .eq("id", idParse.data)
+      .limit(1)
+      .maybeSingle();
+    if (patientErr) throw patientErr;
+    if (!patientRow) {
+      res.status(404).json({ error: "patient_not_found" });
+      return;
+    }
+
+    const { data, error } = await db
       .from("patient_therapy_nights")
       .upsert(
         {

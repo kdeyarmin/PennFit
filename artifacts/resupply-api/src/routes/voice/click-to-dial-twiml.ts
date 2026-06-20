@@ -12,7 +12,7 @@
 
 import { Router, type IRouter } from "express";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 import {
   buildDialTwiml,
   buildHangupTwiml,
@@ -20,6 +20,8 @@ import {
 } from "@workspace/resupply-telecom";
 
 import { logger } from "../../lib/logger";
+import { resolveTenantVoiceFrom } from "../../lib/messaging/tenant-telecom";
+import { resolveOrgIdForSignedRecord } from "../../lib/storefront/signed-link-org";
 import {
   readTwilioWebhookAuthTokenOrNull,
   readVoiceConfigOrNull,
@@ -32,8 +34,7 @@ const signatureMiddleware = requireTwilioSignature({
   getAuthToken: () => readTwilioWebhookAuthTokenOrNull() ?? undefined,
   buildPublicUrl: (req) => {
     const base = readVoicePublicBaseUrlOrNull() ?? "";
-    const originalUrl =
-      (req as unknown as { originalUrl?: string }).originalUrl ?? "";
+    const originalUrl = req.originalUrl ?? "";
     return `${base}${originalUrl}`;
   },
 });
@@ -54,11 +55,28 @@ router.post(
     }
 
     const config = readVoiceConfigOrNull();
-    const callerId = config?.twilioPhoneNumber;
 
-    const supabase = getSupabaseServiceRoleClient();
+    // Webhook: no req.orgId. The disposition id rode in the signed TwiML URL
+    // and is globally unique, so resolve the tenant FROM the disposition
+    // record (not the seed org) — otherwise a non-seed tenant's call would
+    // fail to find the disposition AND dial from the seed tenant's voice
+    // caller-id (G7 leak). A miss falls back to seed and degrades to the same
+    // clean Hangup any other miss returns so Twilio doesn't retry-storm.
+    const orgId = await resolveOrgIdForSignedRecord(
+      "call_dispositions",
+      dispositionId,
+    );
+    if (!orgId) {
+      sendHangup("We couldn't connect this call. Please try again.");
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+
+    // Bridge from the tenant's own voice caller-id when it has one (G7),
+    // else the platform default. Fails soft to the default.
+    const callerId =
+      (await resolveTenantVoiceFrom(orgId)) ?? config?.twilioPhoneNumber;
     const dispRes = await supabase
-      .schema("resupply")
       .from("call_dispositions")
       .select("id, patient_id")
       .eq("id", dispositionId)
@@ -78,7 +96,6 @@ router.post(
     }
 
     const patientRes = await supabase
-      .schema("resupply")
       .from("patients")
       .select("phone_e164")
       .eq("id", patientId)

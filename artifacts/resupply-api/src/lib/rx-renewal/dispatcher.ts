@@ -9,11 +9,16 @@
 // 503 on "not_configured" while the cron logs+skips.
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  type Database,
+  getOrgScopedClient,
+  resolveSeedOrgId,
+} from "@workspace/resupply-db";
 import {
   createSendgridClient,
   EmailConfigError,
 } from "@workspace/resupply-email";
+import { createTenantSendgridClient } from "../email/tenant-sender.js";
 import {
   createTwilioSmsClient,
   TwilioConfigError,
@@ -23,6 +28,7 @@ import { renderMessage } from "@workspace/resupply-templates";
 
 import { isOutsideSmsSendWindow } from "../comm-prefs";
 import { logger } from "../logger";
+import { resolveTenantSmsClientOptions } from "../messaging/tenant-telecom";
 import { messageTemplateLookup } from "../message-templates/lookup";
 import { sendPushToCustomerByEmail } from "../web-push";
 import {
@@ -66,8 +72,31 @@ export type RxRenewalOutcome =
 export async function runRxRenewalSendDue(
   channel: "email" | "sms",
   actor: RxRenewalActor,
+  /**
+   * Tenant to sweep. The daily cron fans out across every active tenant
+   * (worker/jobs/rx-renewal-send.ts) and ALWAYS passes an explicit orgId.
+   * Left optional only for the admin "Run now" route, which has no tenant
+   * context and falls back to the seed org for back-compat.
+   */
+  explicitOrgId?: string,
 ): Promise<RxRenewalOutcome> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = explicitOrgId ?? (await resolveSeedOrgId());
+  if (!orgId) {
+    // Tenant context missing — no patients to sweep. Return the same
+    // "ok, did nothing" shape a zero-eligible run produces.
+    return {
+      status: "ok",
+      channel,
+      attempted: 0,
+      sent: 0,
+      failed: 0,
+      skippedNoContact: 0,
+      skippedQuietHours: 0,
+      remaining: 0,
+      windowDays: RENEWAL_WINDOW_DAYS,
+    };
+  }
+  const supabase = getOrgScopedClient(orgId);
   const now = new Date();
   const cutoffIso = new Date(
     now.getTime() + RENEWAL_WINDOW_DAYS * 24 * 60 * 60 * 1000,
@@ -80,7 +109,6 @@ export async function runRxRenewalSendDue(
   // we fetch eligible prescription ids first then bulk-resolve
   // their patients via .in().
   const { data: rxRows, error: rxErr } = await supabase
-    .schema("resupply")
     .from("prescriptions")
     .select("id, patient_id, valid_until")
     .eq("status", "active")
@@ -94,8 +122,11 @@ export async function runRxRenewalSendDue(
   const patientIds = Array.from(
     new Set(
       (rxRows ?? [])
-        .map((r) => r.patient_id)
-        .filter((v): v is string => v !== null),
+        .map(
+          (r: Database["resupply"]["Tables"]["prescriptions"]["Row"]) =>
+            r.patient_id,
+        )
+        .filter((v: string | null): v is string => v !== null),
     ),
   );
   const patientById = new Map<
@@ -116,7 +147,6 @@ export async function runRxRenewalSendDue(
     // out of the map, so their prescriptions are filtered out below
     // without being claimed (they resume when the patient does).
     const { data: patientRows, error: patientsErr } = await supabase
-      .schema("resupply")
       .from("patients")
       .select("id, legal_first_name, email, phone_e164, timezone, address")
       .eq("status", "active")
@@ -136,8 +166,8 @@ export async function runRxRenewalSendDue(
   }
 
   const rows = (rxRows ?? [])
-    .map((r) => {
-      const patient = patientById.get(r.patient_id);
+    .map((r: Database["resupply"]["Tables"]["prescriptions"]["Row"]) => {
+      const patient = r.patient_id ? patientById.get(r.patient_id) : undefined;
       if (!patient) return null;
       return {
         prescriptionId: r.id,
@@ -150,13 +180,15 @@ export async function runRxRenewalSendDue(
         zip: patient.zip,
       };
     })
-    .filter((r): r is NonNullable<typeof r> => r !== null);
+    .filter(<T>(r: T): r is NonNullable<T> => r !== null);
 
   let sg: ReturnType<typeof createSendgridClient> | null = null;
   let sms: ReturnType<typeof createTwilioSmsClient> | null = null;
   if (channel === "email") {
     try {
-      sg = createSendgridClient();
+      // Send under the tenant's own From identity when configured (G6);
+      // falls back to the platform default otherwise.
+      sg = await createTenantSendgridClient(orgId);
     } catch (err) {
       if (err instanceof EmailConfigError) {
         return { status: "not_configured", channel };
@@ -165,7 +197,9 @@ export async function runRxRenewalSendDue(
     }
   } else {
     try {
-      sms = createTwilioSmsClient();
+      // Send under the tenant's own number / Messaging Service when it
+      // has one (G7); falls back to the platform env default otherwise.
+      sms = createTwilioSmsClient(await resolveTenantSmsClientOptions(orgId));
     } catch (err) {
       if (err instanceof TwilioConfigError) {
         return { status: "not_configured", channel };
@@ -227,7 +261,6 @@ export async function runRxRenewalSendDue(
     // can retry.
     const nowIso = now.toISOString();
     const { data: claimed, error: claimErr } = await supabase
-      .schema("resupply")
       .from("prescriptions")
       .update({ renewal_requested_at: nowIso, updated_at: nowIso })
       .eq("id", row.prescriptionId)
@@ -370,7 +403,6 @@ export async function runRxRenewalSendDue(
       // Best-effort: if the undo itself fails the row stays marked and won't
       // be retried, which ops can see in the audit log.
       const { error: undoErr } = await supabase
-        .schema("resupply")
         .from("prescriptions")
         .update({ renewal_requested_at: null, updated_at: nowIso })
         .eq("id", row.prescriptionId);

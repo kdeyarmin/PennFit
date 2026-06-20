@@ -299,6 +299,42 @@ function requireNonEmptyList(
   );
 }
 
+/**
+ * Validate an optional integration credential group that must be all-or-none.
+ *
+ * Runtime adapters intentionally degrade when no credentials are present, but a
+ * partial set is almost always an operator mistake: the adapter reports
+ * unavailable and no data transmits even though the secret store looks
+ * configured. This check makes that state visible before launch.
+ */
+function checkAllOrNoneGroup(
+  name: string,
+  vars: readonly string[],
+  options: {
+    absentDetail: string;
+    completeDetail: string;
+    partialSeverity?: Severity;
+  },
+): void {
+  const rawPresent = vars.filter((n) => process.env[n] !== undefined);
+  if (rawPresent.length === 0) {
+    record(name, "warn", options.absentDetail);
+    return;
+  }
+
+  const missing = vars.filter((n) => getTrimmed(n) === undefined);
+  const present = vars.length - missing.length;
+  if (missing.length > 0) {
+    record(
+      name,
+      options.partialSeverity ?? "fail",
+      `partially configured (${present}/${vars.length} set) — missing: ${missing.join(", ")}`,
+    );
+    return;
+  }
+  record(name, "pass", options.completeDetail);
+}
+
 // Forbids known placeholder values that ship in .env.example. Matching
 // these in production means the operator copied the example file but
 /**
@@ -555,6 +591,58 @@ function runChecks(): void {
     }
   }
 
+  // Dedicated platform-billing Stripe account (optional). When unset,
+  // platform billing shares STRIPE_SECRET_KEY (single-account mode) and
+  // there is nothing to check. When SET, it must be a live key in prod, it
+  // must be paired with its own webhook signing secret, and it must NOT be
+  // the same key as patient checkout (that would defeat the split).
+  const platformKey = getTrimmed("STRIPE_PLATFORM_SECRET_KEY");
+  if (platformKey !== undefined) {
+    if (prodMode && !STRIPE_LIVE_KEY_SHAPE.test(platformKey)) {
+      const reason = platformKey.startsWith("sk_test_")
+        ? "must be a live key (sk_live_…), got a test key (sk_test_…)"
+        : "must be a live key matching sk_live_<alphanum>{20+}";
+      record("STRIPE_PLATFORM_SECRET_KEY", "fail", reason);
+    } else if (
+      STRIPE_LIVE_KEY_SHAPE.test(platformKey) ||
+      STRIPE_TEST_KEY_SHAPE.test(platformKey)
+    ) {
+      record("STRIPE_PLATFORM_SECRET_KEY", "pass", "dedicated billing key");
+    } else {
+      record(
+        "STRIPE_PLATFORM_SECRET_KEY",
+        prodSeverity,
+        "unexpected key shape",
+      );
+    }
+
+    // Distinct-key constraint gets its OWN check name so it can't collide
+    // with a PASS recorded above under "STRIPE_PLATFORM_SECRET_KEY".
+    if (platformKey === getTrimmed("STRIPE_SECRET_KEY")) {
+      record(
+        "STRIPE_PLATFORM_SECRET_KEY_DISTINCT",
+        "fail",
+        "STRIPE_PLATFORM_SECRET_KEY is identical to STRIPE_SECRET_KEY — a dedicated platform-billing " +
+          "account must use its own Stripe key (or leave this unset for " +
+          "single-account mode)",
+      );
+    }
+
+    const platformWebhook = getTrimmed(
+      "STRIPE_PLATFORM_WEBHOOK_SIGNING_SECRET",
+    );
+    if (platformWebhook === undefined) {
+      record(
+        "STRIPE_PLATFORM_WEBHOOK_SIGNING_SECRET",
+        "fail",
+        "unset while STRIPE_PLATFORM_SECRET_KEY is set — the dedicated " +
+          "platform-billing webhook can't verify signatures without it",
+      );
+    } else {
+      requirePrefix("STRIPE_PLATFORM_WEBHOOK_SIGNING_SECRET", "whsec_");
+    }
+  }
+
   // SendGrid — must look like a real SG key, not the example placeholder.
   if (!refusePlaceholder("SENDGRID_API_KEY", "SG.replace_me")) {
     const sg = getTrimmed("SENDGRID_API_KEY");
@@ -571,10 +659,14 @@ function runChecks(): void {
     }
   }
 
-  // CLAUDE.md "One From address" invariant: SENDGRID_FROM_EMAIL must
-  // be info@pennpaps.com in production.
+  // SENDGRID_FROM_EMAIL is the PLATFORM DEFAULT From — the CareMetric
+  // Breathe platform identity, used as the fallback for any tenant without
+  // its own `organizations.from_email`. It should be noreply@cmbreathe.com
+  // in production; per-tenant senders (e.g. the Penn tenant's
+  // info@pennpaps.com, pinned via migration 0377) are stored in org data,
+  // not this env var.
   if (prodMode) {
-    expectExactly("SENDGRID_FROM_EMAIL", "info@pennpaps.com");
+    expectExactly("SENDGRID_FROM_EMAIL", "noreply@cmbreathe.com");
   } else {
     const from = getTrimmed("SENDGRID_FROM_EMAIL");
     if (from === undefined) {
@@ -773,6 +865,89 @@ function runChecks(): void {
       record("ELEVENLABS_API_KEY", "pass", "set");
     }
   }
+
+  // Therapy-cloud pull adapters. All three vendor packages read their
+  // credential sets as all-or-none; partial config makes nightly sync skip
+  // the vendor as "not_configured". Fail partial groups here so launch
+  // operators don't mistake a half-filled secret store for a live feed.
+  checkAllOrNoneGroup(
+    "AIRVIEW",
+    [
+      "AIRVIEW_API_BASE_URL",
+      "AIRVIEW_OAUTH_TOKEN_URL",
+      "AIRVIEW_CLIENT_ID",
+      "AIRVIEW_CLIENT_SECRET",
+      "AIRVIEW_DME_ID",
+    ],
+    {
+      absentDetail:
+        "unset (ResMed AirView therapy-cloud sync disabled; fine if no AirView patients are in scope)",
+      completeDetail: "fully configured for ResMed AirView sync",
+    },
+  );
+  checkAllOrNoneGroup(
+    "CARE_ORCHESTRATOR",
+    [
+      "CARE_ORCHESTRATOR_API_BASE_URL",
+      "CARE_ORCHESTRATOR_OAUTH_TOKEN_URL",
+      "CARE_ORCHESTRATOR_CLIENT_ID",
+      "CARE_ORCHESTRATOR_CLIENT_SECRET",
+      "CARE_ORCHESTRATOR_PARTNER_ID",
+    ],
+    {
+      absentDetail:
+        "unset (Philips Care Orchestrator therapy-cloud sync disabled; fine if no Philips patients are in scope)",
+      completeDetail: "fully configured for Philips Care Orchestrator sync",
+    },
+  );
+  checkAllOrNoneGroup(
+    "REACT_HEALTH",
+    [
+      "REACT_HEALTH_API_BASE_URL",
+      "REACT_HEALTH_OAUTH_TOKEN_URL",
+      "REACT_HEALTH_CLIENT_ID",
+      "REACT_HEALTH_CLIENT_SECRET",
+      "REACT_HEALTH_ACCOUNT_ID",
+    ],
+    {
+      absentDetail:
+        "unset (React Health / 3B therapy-cloud sync disabled; fine if no React Health patients are in scope)",
+      completeDetail: "fully configured for React Health / 3B sync",
+    },
+  );
+
+  // Telnyx fax and Web Push are optional, but their runtime gates also
+  // require complete groups. Partial sets become launch-blocking because
+  // they make an integration look configured while send/webhook paths are
+  // still disabled or fail-closed.
+  checkAllOrNoneGroup(
+    "TELNYX_FAX",
+    [
+      "TELNYX_API_KEY",
+      "TELNYX_FAX_CONNECTION_ID",
+      "TELNYX_FAX_FROM_NUMBER",
+      "TELNYX_PUBLIC_KEY",
+    ],
+    {
+      absentDetail:
+        "unset (Telnyx fax send + inbound fax webhooks disabled; fine if fax is out of scope)",
+      completeDetail:
+        "fully configured for Telnyx outbound fax + webhook verification",
+    },
+  );
+  checkAllOrNoneGroup(
+    "WEB_PUSH_VAPID",
+    [
+      "WEB_PUSH_VAPID_PUBLIC_KEY",
+      "WEB_PUSH_VAPID_PRIVATE_KEY",
+      "WEB_PUSH_VAPID_SUBJECT",
+    ],
+    {
+      absentDetail:
+        "unset (browser push notifications disabled; SPA hides the enable-push toggle)",
+      completeDetail: "fully configured for browser push notifications",
+    },
+  );
 
   // Belt-and-braces: any email-shaped env var landing on @example.com
   // in production is a placeholder leak even if it isn't one of the

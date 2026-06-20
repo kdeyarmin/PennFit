@@ -36,8 +36,9 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import {
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
   type Database,
+  type OrgScopedClient,
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
@@ -107,7 +108,7 @@ interface OverrideView {
 }
 
 const OVERRIDE_COLUMNS =
-  "id, patient_id, alert_key, channel, subject, body_html, body_text, is_active, note, created_by, updated_by, created_at, updated_at";
+  "id, patient_id, alert_key, channel, subject, body_html, body_text, is_active, note, created_by, updated_by, created_at, updated_at, org_id";
 
 function serialize(row: OverrideRow): OverrideView {
   return {
@@ -144,11 +145,10 @@ function disallowedTokens(
 
 /** Fetch the parent alert's allowed_variables (empty if no such alert). */
 async function allowedVariablesForAlert(
-  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
+  supabase: OrgScopedClient,
   alertKey: string,
 ): Promise<{ exists: boolean; allowed: string[] }> {
   const { data, error } = await supabase
-    .schema("resupply")
     .from("alert_definitions")
     .select("allowed_variables")
     .eq("key", alertKey)
@@ -168,9 +168,13 @@ router.post(
       res.status(400).json({ error: "invalid_patient_id" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: rows, error } = await supabase
-      .schema("resupply")
       .from("alert_message_overrides")
       .select(OVERRIDE_COLUMNS)
       .eq("patient_id", parsed.data.patientId)
@@ -178,7 +182,9 @@ router.post(
       .order("channel", { ascending: true })
       .limit(200);
     if (error) throw error;
-    res.json({ overrides: (rows ?? []).map(serialize) });
+    res.json({
+      overrides: ((rows ?? []) as OverrideRow[]).map(serialize),
+    });
   },
 );
 
@@ -203,7 +209,12 @@ router.post(
       });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     const { exists, allowed } = await allowedVariablesForAlert(
       supabase,
@@ -244,7 +255,6 @@ router.post(
 
     const adminId = req.adminUserId ?? null;
     const { data: inserted, error: insertErr } = await supabase
-      .schema("resupply")
       .from("alert_message_overrides")
       .insert({
         patient_id: idCheck.data,
@@ -315,9 +325,13 @@ router.patch(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: existing, error: lookupErr } = await supabase
-      .schema("resupply")
       .from("alert_message_overrides")
       .select(OVERRIDE_COLUMNS)
       .eq("id", idCheck.data)
@@ -388,7 +402,6 @@ router.patch(
     if (parsed.data.note !== undefined) updateValues.note = parsed.data.note;
 
     const { data: updated, error: updateErr } = await supabase
-      .schema("resupply")
       .from("alert_message_overrides")
       .update(updateValues)
       .eq("id", idCheck.data)
@@ -440,9 +453,13 @@ router.delete(
       res.status(400).json({ error: "invalid_id" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: existing, error: lookupErr } = await supabase
-      .schema("resupply")
       .from("alert_message_overrides")
       .select(OVERRIDE_COLUMNS)
       .eq("id", idCheck.data)
@@ -461,7 +478,6 @@ router.delete(
 
     const adminId = req.adminUserId ?? null;
     const { data: updated, error: updateErr } = await supabase
-      .schema("resupply")
       .from("alert_message_overrides")
       .update({
         is_active: false,

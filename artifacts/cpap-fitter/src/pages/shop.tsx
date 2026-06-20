@@ -16,6 +16,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
 import { useDocumentTitle } from "@/hooks/use-document-title";
+import { useCompanyContact } from "@/lib/contact";
 import { openPennBot } from "@/lib/chat-events";
 import {
   ArrowRight,
@@ -154,9 +155,10 @@ const SECTION_ORDER: Category[] = [
  * @returns The shop page element that displays products, filtering and sorting controls, and contextual UI states (loading, error, unavailable, or empty).
  */
 export function Shop() {
+  const company = useCompanyContact();
   useDocumentTitle(
     "Shop CPAP supplies",
-    "Shop fresh CPAP cushions, filters, tubing, headgear, and bundles direct from Penn Home Medical Supply. Cash-pay shipping or use insurance for $0 with prescription.",
+    `Shop fresh CPAP cushions, filters, tubing, headgear, and bundles direct from ${company.legalName}. Cash-pay shipping or use insurance for $0 with prescription.`,
   );
   const [data, setData] = useState<ShopProductsResponse | null>(null);
   const [unavailable, setUnavailable] = useState<string | null>(null);
@@ -240,6 +242,14 @@ export function Shop() {
   // an applySort dependency; a forward reference would be a TDZ error.
   // Populated by the post-products effect further down.
   const [aggregates, setAggregates] = useState<AggregateMap>({});
+
+  // Tracks whether the (decoupled) review-aggregate fetch errored. When
+  // it does, `aggregates` stays empty so "Top rated" sort silently falls
+  // back to the featured order — which would leave the "Top rated" label
+  // lying about the order. We surface a quiet "ratings unavailable" note
+  // in that case so the label stays honest. `false` while loading and on
+  // success.
+  const [aggregatesFailed, setAggregatesFailed] = useState(false);
 
   // Apply the active sort to a list of products. Pure function;
   // returns a new array (never mutates the input). "featured"
@@ -367,18 +377,41 @@ export function Shop() {
     if (!data || data.products.length === 0) return;
     let active = true;
     const ids = data.products.map((p) => p.id);
+    setAggregatesFailed(false);
     fetchReviewAggregates(ids)
       .then((r) => {
         if (!active) return;
         setAggregates(r.aggregates);
       })
       .catch(() => {
-        // Silent: leave aggregates empty so cards just hide stars.
+        // Leave aggregates empty so cards just hide stars; flag the
+        // failure so the "Top rated" sort can admit ratings are
+        // unavailable instead of silently ordering by featured.
+        if (!active) return;
+        setAggregatesFailed(true);
       });
     return () => {
       active = false;
     };
   }, [data]);
+
+  // Honour a #shop-section-<category> deep link (e.g. the Insights
+  // "Shop replacement cushions" CTA lands on /shop#shop-section-cushion).
+  // The catalog loads asynchronously, so the target element usually
+  // doesn't exist at first paint and the browser's native hash scroll
+  // silently no-ops — re-scroll once the sections have rendered.
+  useEffect(() => {
+    if (loading || typeof window === "undefined") return;
+    const hash = window.location.hash.replace(/^#/, "");
+    if (!hash.startsWith("shop-section-")) return;
+    // rAF so the effect runs after the section nodes are committed.
+    const raf = requestAnimationFrame(() => {
+      document
+        .getElementById(hash)
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [loading]);
 
   return (
     <div className="container mx-auto px-4 md:px-6 py-12 md:py-16 max-w-6xl">
@@ -425,6 +458,16 @@ export function Shop() {
             sort={sort}
             onSortChange={setSort}
           />
+          {sort === "top-rated" && aggregatesFailed && (
+            <p
+              className="mt-2 text-xs text-muted-foreground"
+              role="status"
+              data-testid="shop-ratings-unavailable"
+            >
+              Ratings couldn&apos;t load right now, so these are shown in our
+              featured order instead of by rating.
+            </p>
+          )}
           {/* Screen-reader announcement of the visible result count.
               Sighted users see the grid shrink as search / sort /
               machine-filter changes apply; without a live region a
@@ -521,13 +564,14 @@ export function Shop() {
 }
 
 function ShopHero() {
+  const c = useCompanyContact();
   return (
     <div className="text-center max-w-3xl mx-auto mb-2">
       <div className="flex justify-center mb-5">
         <div className="inline-flex items-center gap-3">
           <div className="h-px w-10 bg-gradient-to-r from-transparent to-[hsl(var(--penn-gold))]" />
           <span className="text-xs font-semibold uppercase tracking-[0.32em] text-[hsl(var(--penn-navy))]/75">
-            PennPaps · Shop
+            {c.name} · Shop
           </span>
           <div className="h-px w-10 bg-gradient-to-l from-transparent to-[hsl(var(--penn-gold))]" />
         </div>
@@ -1028,12 +1072,13 @@ function InsuranceFooter() {
  * is more confusing than reassuring. Just the cards.
  */
 function ShopCatalogSkeleton() {
+  const c = useCompanyContact();
   return (
     <div
       className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 mt-10"
       data-testid="shop-loading"
       role="status"
-      aria-label="Loading PennPaps shop"
+      aria-label={`Loading ${c.name} shop`}
     >
       {Array.from({ length: 6 }).map((_, i) => (
         <div
@@ -1051,12 +1096,13 @@ function ShopCatalogSkeleton() {
           </div>
         </div>
       ))}
-      <span className="sr-only">Loading PennPaps shop…</span>
+      <span className="sr-only">Loading {c.name} shop…</span>
     </div>
   );
 }
 
 function PreviewModeBanner() {
+  const c = useCompanyContact();
   return (
     <div
       className="rounded-2xl border border-[hsl(var(--penn-gold))]/40 bg-[hsl(var(--penn-gold))]/10 px-5 py-4 mt-8 flex items-start gap-3"
@@ -1071,7 +1117,7 @@ function PreviewModeBanner() {
           Preview mode — payments not yet enabled
         </p>
         <p className="text-foreground/80 mt-0.5">
-          You&apos;re browsing a demo of the PennPaps storefront. Card checkout
+          You&apos;re browsing a demo of the {c.name} storefront. Card checkout
           will be enabled as soon as Stripe is connected.{" "}
           <Link
             href="/insurance"
@@ -1179,6 +1225,8 @@ function ShopLoadError({
 }
 
 function ShopComingSoon({ message }: { message: string }) {
+  const c = useCompanyContact();
+  const assistantName = c.assistantStorefrontName;
   return (
     <div
       className="glass-card rounded-2xl p-10 md:p-14 text-center mt-12 max-w-2xl mx-auto"
@@ -1190,7 +1238,7 @@ function ShopComingSoon({ message }: { message: string }) {
         </div>
       </div>
       <h2 className="text-2xl font-bold tracking-tight mb-3">
-        The PennPaps shop is opening soon.
+        The {c.name} shop is opening soon.
       </h2>
       <p className="text-muted-foreground leading-relaxed mb-6">{message}</p>
       <div className="flex flex-col sm:flex-row gap-3 justify-center">
@@ -1211,7 +1259,7 @@ function ShopComingSoon({ message }: { message: string }) {
           }
           data-testid="shop-coming-soon-ask-pennbot"
         >
-          <Sparkles className="w-4 h-4 mr-2" /> Ask PennBot
+          <Sparkles className="w-4 h-4 mr-2" /> Ask {assistantName}
         </Button>
       </div>
     </div>

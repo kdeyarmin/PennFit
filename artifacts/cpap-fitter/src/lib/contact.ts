@@ -11,36 +11,64 @@
 
 import { useSyncExternalStore } from "react";
 
-/** Penn Home Medical Supply support phone, E.164-style for tel:
- *  links and dashed for display. */
-export const SUPPORT_PHONE_E164 = "+18144710627";
-export const SUPPORT_PHONE_DISPLAY = "(814) 471-0627";
+// These compile-time fallbacks ship in the tenant-AGNOSTIC SPA bundle, so
+// they must be the neutral PLATFORM identity (CareMetric Breathe), never the
+// seed tenant's (PennPaps) — otherwise every tenant's first paint would flash
+// Penn's brand/phone before /api/company-info resolves the real tenant. The
+// platform has no patient support phone, so the phone fallback is blank until
+// the tenant's own number loads.
+export const SUPPORT_PHONE_E164 = "";
+export const SUPPORT_PHONE_DISPLAY = "";
 
-/** Customer-service mailbox. Distinct from info@pennpaps.com which
- *  is the legal/privacy contact. */
-export const SUPPORT_EMAIL = "support@pennpaps.com";
+/** Platform support mailbox fallback (the live tenant value loads at runtime). */
+export const SUPPORT_EMAIL = "support@cmbreathe.com";
 
 /** Business hours blurb. Plain English, displayed under the phone
  *  in the footer + floating launcher. */
 export const SUPPORT_HOURS = "Mon–Fri 9a–5p ET";
 
+/**
+ * CareMetric platform defaults for the two in-app AI assistants. The
+ * platform is CareMetric Breathe; PennPaps (Penn Home Medical Supply) is
+ * one tenant operating on it. A tenant owner can rename the assistants
+ * from System Configuration; the live values arrive with /api/company-info.
+ */
+export const DEFAULT_STOREFRONT_ASSISTANT_NAME = "CareMetric Assistant";
+export const DEFAULT_ADMIN_ASSISTANT_NAME = "CareMetric Copilot";
+
 export interface CompanyContact {
+  /** Storefront/brand display name (DBA when set, else legal name). */
   name: string;
+  /** Registered legal company name (footer, legal pages "operated by …"). */
+  legalName: string;
   phoneE164: string;
   phoneDisplay: string;
   email: string;
   /** Legal/privacy contact mailbox (the privacy policy + terms pages). */
   generalEmail: string;
+  /** Public website URL (storefront domain), or null when unset. */
+  websiteUrl: string | null;
   hours: string;
+  /** Tenant-configurable name of the storefront chat assistant. */
+  assistantStorefrontName: string;
+  /** Tenant-configurable name of the admin-console assistant. */
+  assistantAdminName: string;
 }
 
+// Neutral PLATFORM identity (CareMetric Breathe). Not the seed tenant — the
+// bundle is shared across every tenant host, and the live tenant values
+// arrive with /api/company-info.
 export const DEFAULT_COMPANY_CONTACT: CompanyContact = {
-  name: "PennPaps",
+  name: "CareMetric Breathe",
+  legalName: "CareMetric Breathe",
   phoneE164: SUPPORT_PHONE_E164,
   phoneDisplay: SUPPORT_PHONE_DISPLAY,
   email: SUPPORT_EMAIL,
-  generalEmail: "info@pennpaps.com",
+  generalEmail: "support@cmbreathe.com",
+  websiteUrl: null,
   hours: SUPPORT_HOURS,
+  assistantStorefrontName: DEFAULT_STOREFRONT_ASSISTANT_NAME,
+  assistantAdminName: DEFAULT_ADMIN_ASSISTANT_NAME,
 };
 
 let current: CompanyContact = DEFAULT_COMPANY_CONTACT;
@@ -63,6 +91,7 @@ function startCompanyContactFetch(): void {
       const d = data as Record<string, unknown>;
       const next: CompanyContact = {
         name: nonEmpty(d.name) ? d.name : current.name,
+        legalName: nonEmpty(d.legalName) ? d.legalName : current.legalName,
         phoneE164: nonEmpty(d.phoneE164) ? d.phoneE164 : current.phoneE164,
         phoneDisplay: nonEmpty(d.phoneDisplay)
           ? d.phoneDisplay
@@ -71,7 +100,14 @@ function startCompanyContactFetch(): void {
         generalEmail: nonEmpty(d.generalEmail)
           ? d.generalEmail
           : current.generalEmail,
+        websiteUrl: nonEmpty(d.websiteUrl) ? d.websiteUrl : current.websiteUrl,
         hours: nonEmpty(d.supportHours) ? d.supportHours : current.hours,
+        assistantStorefrontName: nonEmpty(d.assistantStorefrontName)
+          ? d.assistantStorefrontName
+          : current.assistantStorefrontName,
+        assistantAdminName: nonEmpty(d.assistantAdminName)
+          ? d.assistantAdminName
+          : current.assistantAdminName,
       };
       const changed = (Object.keys(next) as Array<keyof CompanyContact>).some(
         (k) => next[k] !== current[k],

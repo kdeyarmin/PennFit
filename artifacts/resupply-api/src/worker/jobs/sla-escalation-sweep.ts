@@ -32,9 +32,10 @@
 
 import type PgBoss from "pg-boss";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { forEachActiveOrg } from "../lib/for-each-active-org";
 import { createQueueWithDlq, CRON_SCAN_QUEUE_OPTS } from "../lib/queue-options";
 
 const SWEEP_JOB = "conversations.sla-escalation-sweep";
@@ -110,20 +111,21 @@ export function planSlaEscalations(
 }
 
 /** Exported for test injection. One sweep cycle; returns counts. */
-export async function runSlaEscalationSweep(): Promise<SweepStats> {
-  const supabase = getSupabaseServiceRoleClient();
+export async function runSlaEscalationSweepForOrg(
+  orgId: string,
+): Promise<SweepStats> {
   const stats: SweepStats = {
     scanned: 0,
     escalated: 0,
     warning: 0,
     critical: 0,
   };
+  const supabase = getOrgScopedClient(orgId);
   let lastId: string | null = null;
 
   while (stats.escalated < MAX_PER_TICK) {
     const nowIso = new Date().toISOString();
     const pageQuery = supabase
-      .schema("resupply")
       .from("conversations")
       .select(
         "id, patient_id, customer_id, status, priority, sla_due_at, escalated_at",
@@ -144,7 +146,6 @@ export async function runSlaEscalationSweep(): Promise<SweepStats> {
     const plans = planSlaEscalations(rows, Date.now());
     for (const plan of plans) {
       const { data: updated, error: updErr } = await supabase
-        .schema("resupply")
         .from("conversations")
         .update({
           escalated_at: new Date().toISOString(),
@@ -167,6 +168,32 @@ export async function runSlaEscalationSweep(): Promise<SweepStats> {
     if (rows.length < SWEEP_PAGE_SIZE) break;
   }
 
+  return stats;
+}
+
+/**
+ * Run the SLA-escalation sweep for EVERY active tenant. `conversations`
+ * is tenant-scoped, so the sweep fans out via `forEachActiveOrg`
+ * (per-tenant error isolation) and sums the counts. Single-tenant
+ * behavior is byte-identical to the old seed-org sweep.
+ */
+export async function runSlaEscalationSweep(): Promise<SweepStats> {
+  const stats: SweepStats = {
+    scanned: 0,
+    escalated: 0,
+    warning: 0,
+    critical: 0,
+  };
+  await forEachActiveOrg(
+    async (orgId) => {
+      const s = await runSlaEscalationSweepForOrg(orgId);
+      stats.scanned += s.scanned;
+      stats.escalated += s.escalated;
+      stats.warning += s.warning;
+      stats.critical += s.critical;
+    },
+    { jobName: SWEEP_JOB },
+  );
   return stats;
 }
 

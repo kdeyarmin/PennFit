@@ -19,7 +19,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
@@ -104,9 +104,13 @@ router.get(
     const parsed = listQuery.safeParse(req.query);
     const status = parsed.success ? parsed.data.status : undefined;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     let query = supabase
-      .schema("resupply")
       .from("cases")
       .select(CASE_SELECT)
       .order("created_at", { ascending: false })
@@ -142,9 +146,13 @@ router.post(
     }
     const d = parsed.data;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: inserted, error } = await supabase
-      .schema("resupply")
       .from("cases")
       .insert({
         title: d.title,
@@ -194,9 +202,13 @@ router.get(
     }
     const id = idCheck.data;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: caseData } = await supabase
-      .schema("resupply")
       .from("cases")
       .select(CASE_SELECT)
       .eq("id", id)
@@ -208,7 +220,6 @@ router.get(
     }
 
     const { data: linkData } = await supabase
-      .schema("resupply")
       .from("case_links")
       .select("id, link_kind, ref_id, note, created_by_email, created_at")
       .eq("case_id", id)
@@ -266,9 +277,13 @@ router.patch(
       update.assigned_to_user_id = d.assignedToUserId;
     if (d.summary !== undefined) update.summary = d.summary;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: updatedData, error } = await supabase
-      .schema("resupply")
       .from("cases")
       .update(update)
       .eq("id", id)
@@ -326,10 +341,14 @@ router.post(
     }
     const d = parsed.data;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     // Pre-check the case so a missing case is a clean 404 (not an FK error).
     const { data: caseRow } = await supabase
-      .schema("resupply")
       .from("cases")
       .select("id")
       .eq("id", id)
@@ -340,7 +359,6 @@ router.post(
     }
 
     const { error } = await supabase
-      .schema("resupply")
       .from("case_links")
       .upsert(
         {

@@ -43,10 +43,14 @@ import {
   createSendgridClient,
   DEFAULT_SENDGRID_FROM_EMAIL,
 } from "@workspace/resupply-email";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 import { ADMIN_PASSWORD_TTL_MS } from "@workspace/resupply-auth";
 
 import { logger } from "../../lib/logger";
+import {
+  resolveBrandingByOrgId,
+  resolveTenantBaseUrl,
+} from "../../lib/tenant-branding";
 import {
   createQueueWithDlq,
   VENDOR_SEND_QUEUE_OPTS,
@@ -220,7 +224,11 @@ export async function runInvitePasswordExpiryNotifySweep(
     return stats;
   }
 
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    return stats;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const now = Date.now();
   // A credential becomes "reminder due" when its age crosses
   // `TTL - LEAD_MS` (i.e. ~day 5 with the default 7-day TTL +
@@ -236,6 +244,7 @@ export async function runInvitePasswordExpiryNotifySweep(
   //    `set_by_admin_at` vs. `expiry_reminder_sent_at` ordering in
   //    JS to handle re-invites that reused the row).
   const { data: reminderRows, error: reminderErr } = await supabase
+    .raw()
     .schema("resupply_auth")
     .from("password_credentials")
     .select(
@@ -266,6 +275,7 @@ export async function runInvitePasswordExpiryNotifySweep(
   // 2. Expired-notice candidates: TTL elapsed, never notified for
   //    THIS invite.
   const { data: expiredRows, error: expiredErr } = await supabase
+    .raw()
     .schema("resupply_auth")
     .from("password_credentials")
     .select(
@@ -304,6 +314,7 @@ export async function runInvitePasswordExpiryNotifySweep(
     ]),
   );
   const { data: userRows, error: userErr } = await supabase
+    .raw()
     .schema("resupply_auth")
     .from("users")
     .select("id, email_lower, display_name, status")
@@ -323,6 +334,44 @@ export async function runInvitePasswordExpiryNotifySweep(
       display_name: u.display_name ?? null,
     });
   }
+
+  // Map each invited user to its tenant so the email speaks in that
+  // tenant's name and links to its own sign-in URL (seed → "PennPaps" /
+  // platform host, unchanged). The auth users/credentials tables carry no
+  // org_id; `admin_users` (org-scoped) is the user→org map, joined on
+  // `auth_user_id`. The sweep is global, so read across tenants via
+  // `.raw()`. A miss leaves the recipient on the platform default copy.
+  const orgByUserId = new Map<string, string>();
+  const { data: adminRows, error: adminErr } = await supabase
+    .raw()
+    .schema("resupply")
+    .from("admin_users")
+    .select("auth_user_id, org_id")
+    .in("auth_user_id", userIds);
+  if (adminErr) throw adminErr;
+  for (const a of (adminRows ?? []) as Array<{
+    auth_user_id: string | null;
+    org_id: string | null;
+  }>) {
+    if (a.auth_user_id && a.org_id) orgByUserId.set(a.auth_user_id, a.org_id);
+  }
+
+  // Per-recipient brand + sign-in host, falling back to the platform
+  // default copy (cfg) when the user has no resolvable tenant.
+  const tenantCopy = async (
+    userId: string,
+  ): Promise<{ practiceName: string; publicBaseUrl: string }> => {
+    const orgId = orgByUserId.get(userId);
+    if (!orgId) {
+      return {
+        practiceName: cfg.practiceName,
+        publicBaseUrl: cfg.publicBaseUrl,
+      };
+    }
+    const brand = await resolveBrandingByOrgId(orgId);
+    const base = (await resolveTenantBaseUrl(orgId)) ?? cfg.publicBaseUrl;
+    return { practiceName: brand.storefrontName, publicBaseUrl: base };
+  };
 
   const sendgrid = createSendgridClient({
     apiKey: cfg.sendgridApiKey,
@@ -344,6 +393,7 @@ export async function runInvitePasswordExpiryNotifySweep(
     // racing on the same row.
     const nowIso = new Date().toISOString();
     const claim = supabase
+      .raw()
       .schema("resupply_auth")
       .from("password_credentials")
       .update({ expiry_reminder_sent_at: nowIso })
@@ -374,9 +424,10 @@ export async function runInvitePasswordExpiryNotifySweep(
       0,
       (ADMIN_PASSWORD_TTL_MS - ageMs) / 3_600_000,
     );
+    const copy = await tenantCopy(row.user_id);
     const { subject, html, text } = composeReminderEmail({
-      practiceName: cfg.practiceName,
-      publicBaseUrl: cfg.publicBaseUrl,
+      practiceName: copy.practiceName,
+      publicBaseUrl: copy.publicBaseUrl,
       displayName: user.display_name,
       hoursRemaining,
     });
@@ -410,6 +461,7 @@ export async function runInvitePasswordExpiryNotifySweep(
 
     const nowIso = new Date().toISOString();
     const claim = supabase
+      .raw()
       .schema("resupply_auth")
       .from("password_credentials")
       .update({ expired_notice_sent_at: nowIso })
@@ -435,8 +487,9 @@ export async function runInvitePasswordExpiryNotifySweep(
       continue;
     }
 
+    const copy = await tenantCopy(row.user_id);
     const { subject, html, text } = composeExpiredEmail({
-      practiceName: cfg.practiceName,
+      practiceName: copy.practiceName,
       displayName: user.display_name,
     });
     try {

@@ -51,8 +51,7 @@ const signatureMiddleware = requireTwilioSignature({
     const base = readVoicePublicBaseUrlOrNull() ?? "";
     // express request: typed as SignatureRequestLike here, but the real
     // request also carries originalUrl. Cast through unknown to read it.
-    const originalUrl =
-      (req as unknown as { originalUrl?: string }).originalUrl ?? "";
+    const originalUrl = req.originalUrl ?? "";
     return `${base}${originalUrl}`;
   },
 });
@@ -82,7 +81,7 @@ router.post("/voice/twiml-connect", signatureMiddleware, async (req, res) => {
   // Control Center feature gate. When the voice agent is turned off
   // we hang the caller up cleanly rather than route them to the AI
   // bridge. The hangup TwiML returns 200 so Twilio doesn't retry.
-  if (!(await isFeatureEnabled("voice.agent"))) {
+  if (!(await isFeatureEnabled("voice.agent", req.orgId))) {
     logger.info(
       { event: "voice_twiml_disabled_by_feature_flag" },
       "twiml-connect: voice agent disabled via Control Center; hanging up",

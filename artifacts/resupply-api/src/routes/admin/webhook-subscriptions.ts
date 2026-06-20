@@ -12,10 +12,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  type Database,
-  getSupabaseServiceRoleClient,
-} from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { assertSafeOutboundUrlSync } from "../../lib/safe-outbound";
@@ -62,10 +59,14 @@ const idParam = z.object({ id: z.string().uuid() });
 router.get(
   "/admin/webhook-subscriptions",
   requirePermission("admin.tools.manage"),
-  async (_req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data } = await supabase
-      .schema("resupply")
       .from("webhook_subscriptions")
       .select(
         "id, name, target_url, event_types, is_active, max_retries, last_delivery_at, last_delivery_status, notes, created_at, updated_at",
@@ -111,9 +112,13 @@ router.post(
       return;
     }
     const signingSecret = randomBytes(32).toString("base64");
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("webhook_subscriptions")
       .insert({
         name: b.name,
@@ -171,9 +176,13 @@ router.patch(
     if (b.maxRetries !== undefined) update.max_retries = b.maxRetries;
     if (b.isActive !== undefined) update.is_active = b.isActive;
     if (b.notes !== undefined) update.notes = b.notes;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { error } = await supabase
-      .schema("resupply")
       .from("webhook_subscriptions")
       .update(update)
       .eq("id", idParsed.data.id);
@@ -192,7 +201,12 @@ router.delete(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     // Verify the row existed AND check the DELETE error so the
     // response actually reflects what happened. Previously this
     // handler swallowed errors AND ignored "row didn't exist",
@@ -201,7 +215,6 @@ router.delete(
     // still there or had been deleted earlier with no observable
     // signal either way.
     const { data: deleted, error } = await supabase
-      .schema("resupply")
       .from("webhook_subscriptions")
       .delete()
       .eq("id", idParsed.data.id)
@@ -219,9 +232,13 @@ router.get(
   "/admin/webhook-deliveries",
   requirePermission("admin.tools.manage"),
   async (req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     let query = supabase
-      .schema("resupply")
       .from("webhook_deliveries")
       .select(
         "id, subscription_id, event_type, status, attempt_count, last_http_status, last_error, next_attempt_at, delivered_at, created_at",

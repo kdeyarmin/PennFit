@@ -22,7 +22,7 @@
 //   The middleware resolves the session via the in-house pf_session
 //   cookie. A request that doesn't carry one (or carries an
 //   expired / revoked / locked cookie) gets a 401. The
-//   `customerIdResolver` in api-server's auth-deps maps the
+//   `customerIdResolver` in resupply-api's auth-deps maps the
 //   resolved auth.users.id to `shop_customers.customer_id` so
 //   every downstream join keeps working. The resolver also
 //   returns the user's email + display name, which the middleware
@@ -38,6 +38,8 @@ import {
 } from "@workspace/resupply-auth";
 
 import { getAuthDeps } from "../lib/auth-deps";
+import { requestHost } from "../lib/request-host";
+import { resolveOrgIdByHost } from "../lib/tenant-branding";
 
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -77,7 +79,10 @@ interface Resolved {
  * the cookie is invalid (expired / revoked / unknown user /
  * locked / repo error).
  */
-async function resolveCustomer(req: Request): Promise<Resolved | null> {
+async function resolveCustomer(
+  req: Request,
+  orgId: string | undefined,
+): Promise<Resolved | null> {
   const deps = getAuthDeps();
   const raw = readCookie(req, SESSION_COOKIE);
   if (!raw) return null;
@@ -103,6 +108,8 @@ async function resolveCustomer(req: Request): Promise<Resolved | null> {
         authUserId: user.id,
         emailLower: user.emailLower,
         displayName: user.displayName,
+        // Resolve / mint the shop_customers row in the request's tenant.
+        orgId,
       });
       return {
         customerKey: r.customerKey,
@@ -141,7 +148,14 @@ export async function requireSignedIn(
   res: Response,
   next: NextFunction,
 ): Promise<void> {
-  const r = await resolveCustomer(req);
+  // Resolve the tenant BEFORE customer resolution: the
+  // customerIdResolver looks up / mints the shop_customers row, and that
+  // row must live in the tenant that owns THIS host. A verified custom
+  // domain resolves to that tenant; the platform host (and any miss)
+  // resolves to the seed org, so single-tenant behavior is unchanged.
+  const orgId = (await resolveOrgIdByHost(requestHost(req))) ?? undefined;
+  req.orgId = orgId;
+  const r = await resolveCustomer(req, orgId);
   if (!r) {
     res.status(401).json({ error: "sign_in_required" });
     return;
@@ -163,7 +177,15 @@ export async function attachSignedIn(
   _res: Response,
   next: NextFunction,
 ): Promise<void> {
-  const r = await resolveCustomer(req);
+  // Resolve the tenant by host for BOTH guest and signed-in requests:
+  // `POST /shop/checkout` and `GET /shop/me` run guest flows that still
+  // need to read/write the right tenant's catalog and orders, and the
+  // signed-in branch mints the shop_customers row in this tenant. The
+  // seed org is the fallback for the platform host, so this is
+  // single-tenant-correct. Fail-soft.
+  const orgId = (await resolveOrgIdByHost(requestHost(req))) ?? undefined;
+  req.orgId = orgId;
+  const r = await resolveCustomer(req, orgId);
   if (r) {
     attach(req, r);
   }

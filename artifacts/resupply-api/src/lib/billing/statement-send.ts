@@ -17,9 +17,9 @@
 
 import {
   DEFAULT_COMMUNICATION_PREFERENCES,
-  getSupabaseServiceRoleClient,
   type CommunicationPreferences,
   type Json,
+  type OrgScopedClient,
 } from "@workspace/resupply-db";
 import {
   createSendgridClient,
@@ -28,10 +28,13 @@ import {
 import { createTwilioSmsClient } from "@workspace/resupply-telecom";
 
 import { shouldSendEmail, shouldSendSms, type DndOptions } from "../comm-prefs";
-import { getDocumentSupplierNameSync } from "../company-info";
+import {
+  getDocumentSupplierName,
+  getDocumentSupplierNameSync,
+} from "../company-info";
+import { resolveTenantSender } from "../email/tenant-sender.js";
 import { logger } from "../logger";
-
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+import { applyTenantSmsFrom } from "../messaging/tenant-telecom";
 
 export interface StatementMessagingConfig {
   sendgridApiKey: string | null;
@@ -61,6 +64,27 @@ export function readStatementMessagingConfig(
     // storefront display brand.
     practiceName: getDocumentSupplierNameSync(),
   };
+}
+
+/**
+ * Pin a base statement config to a tenant's OWN identity: its billing legal
+ * name (`practiceName`), its email From (G6), and its SMS sender (G7). Each
+ * falls back to the platform default when the tenant has none configured, so
+ * single-tenant behavior is unchanged. Statements are patient-facing billing
+ * mail, so they must carry the tenant's identity, not the seed's.
+ */
+export async function applyTenantStatementIdentity(
+  orgId: string,
+  baseCfg: StatementMessagingConfig,
+): Promise<StatementMessagingConfig> {
+  const sender = await resolveTenantSender(orgId);
+  const withIdentity: StatementMessagingConfig = {
+    ...baseCfg,
+    practiceName: await getDocumentSupplierName(orgId),
+    sendgridFromEmail: sender.fromEmail ?? baseCfg.sendgridFromEmail,
+    sendgridFromName: sender.fromName ?? baseCfg.sendgridFromName,
+  };
+  return applyTenantSmsFrom(orgId, withIdentity);
 }
 
 export function readStatementPrefs(raw: Json | null): CommunicationPreferences {
@@ -237,7 +261,7 @@ export interface StatementSendDeps {
 }
 
 async function persistOutcome(
-  supabase: SupabaseClient,
+  supabase: OrgScopedClient,
   statementId: string,
   outcome: SendOutcome,
 ): Promise<void> {
@@ -255,7 +279,6 @@ async function persistOutcome(
   // and 'pending' (an unclaimed gate-skip — zero balance / no channel).
   // Anything else means another writer got here first; never stomp it.
   const { data: updated, error: persistErr } = await supabase
-    .schema("resupply")
     .from("patient_billing_statements")
     .update({
       delivery_status: status,
@@ -292,11 +315,10 @@ async function persistOutcome(
  * The 'sending' state is admitted by migration 0297.
  */
 async function claimStatementForSend(
-  supabase: SupabaseClient,
+  supabase: OrgScopedClient,
   statementId: string,
 ): Promise<boolean> {
   const { data, error } = await supabase
-    .schema("resupply")
     .from("patient_billing_statements")
     .update({ delivery_status: "sending" })
     .eq("id", statementId)
@@ -312,11 +334,10 @@ async function claimStatementForSend(
  * no email on file (so the bill isn't silently lost).
  */
 async function routeToMail(
-  supabase: SupabaseClient,
+  supabase: OrgScopedClient,
   statementId: string,
 ): Promise<void> {
   const { error: routeErr } = await supabase
-    .schema("resupply")
     .from("patient_billing_statements")
     .update({ delivery_method: "mail" })
     .eq("id", statementId);
@@ -337,12 +358,11 @@ async function routeToMail(
  * count actually marked.
  */
 export async function markStatementsMailed(
-  supabase: SupabaseClient,
+  supabase: OrgScopedClient,
   statementIds: string[],
 ): Promise<number> {
   if (statementIds.length === 0) return 0;
   const { data, error } = await supabase
-    .schema("resupply")
     .from("patient_billing_statements")
     .update({
       delivery_status: "sent",
@@ -370,7 +390,7 @@ interface LoadedStatement {
  * outcome. Shared by the emailed-preference and legacy comm-prefs paths.
  */
 async function deliverOnChannel(
-  supabase: SupabaseClient,
+  supabase: OrgScopedClient,
   stmt: LoadedStatement,
   contact: { email: string | null; phoneE164: string | null },
   channel: StatementChannel,
@@ -391,8 +411,17 @@ async function deliverOnChannel(
     try {
       pdfUrl = await deps.signPdfUrl(stmt.statement_pdf_object_key);
     } catch {
-      pdfUrl = null; // fail-soft — send the balance notice without a link
+      pdfUrl = null;
     }
+  }
+  if (deps.signPdfUrl && !pdfUrl) {
+    const outcome: SendOutcome = {
+      kind: "failed",
+      channel,
+      reason: "statement_pdf_link_unavailable",
+    };
+    await persistOutcome(supabase, stmt.id, outcome);
+    return outcome;
   }
 
   const outcome = await send(
@@ -437,16 +466,22 @@ async function deliverOnChannel(
  * Fail-soft — returns the outcome; never throws for a normal gated send.
  */
 export async function sendOneStatement(
-  supabase: SupabaseClient,
+  supabase: OrgScopedClient,
   statementId: string,
   deps: StatementSendDeps = {},
 ): Promise<SendOutcome> {
-  const cfg = deps.cfg ?? readStatementMessagingConfig();
+  // Tenant-scoped identity (G6/G7 + billing legal name); deps.cfg (tests)
+  // wins. Statements are patient-facing billing mail.
+  const cfg =
+    deps.cfg ??
+    (await applyTenantStatementIdentity(
+      supabase.orgId,
+      readStatementMessagingConfig(),
+    ));
   const send = deps.send ?? sendStatementMessage;
   const now = deps.now ?? new Date();
 
   const { data: stmt, error } = await supabase
-    .schema("resupply")
     .from("patient_billing_statements")
     .select(
       "id, patient_id, total_patient_responsibility_cents, statement_pdf_object_key, delivery_status, delivery_method",
@@ -458,6 +493,14 @@ export async function sendOneStatement(
   if (!stmt) return { kind: "skipped", reason: "statement_not_found" };
   if ((stmt.total_patient_responsibility_cents ?? 0) <= 0) {
     const outcome: SendOutcome = { kind: "skipped", reason: "zero_balance" };
+    await persistOutcome(supabase, statementId, outcome);
+    return outcome;
+  }
+  if (!stmt.statement_pdf_object_key) {
+    const outcome: SendOutcome = {
+      kind: "skipped",
+      reason: "statement_pdf_missing",
+    };
     await persistOutcome(supabase, statementId, outcome);
     return outcome;
   }
@@ -477,7 +520,6 @@ export async function sendOneStatement(
   }
 
   const { data: patient } = await supabase
-    .schema("resupply")
     .from("patients")
     .select("email, phone_e164, address")
     .eq("id", stmt.patient_id)
@@ -515,7 +557,6 @@ export async function sendOneStatement(
   let prefs = DEFAULT_COMMUNICATION_PREFERENCES;
   if (email) {
     const { data: cust } = await supabase
-      .schema("resupply")
       .from("shop_customers")
       .select("communication_preferences")
       .eq("email_lower", email.toLowerCase())
@@ -570,10 +611,10 @@ export interface StatementBatchResult {
  * never repeatedly re-scans them. Fail-soft per statement.
  */
 export async function runStatementBatchSend(
+  supabase: OrgScopedClient,
   opts: StatementBatchOpts = {},
   deps: StatementSendDeps = {},
 ): Promise<StatementBatchResult> {
-  const supabase = getSupabaseServiceRoleClient();
   const cap = opts.cap ?? 50;
   const result: StatementBatchResult = {
     scanned: 0,
@@ -583,12 +624,25 @@ export async function runStatementBatchSend(
     mailQueued: 0,
   };
 
+  // Pin the batch to the tenant's OWN identity ONCE (G6 email From + G7 SMS
+  // sender + billing legal name), falling back to the platform default when
+  // the tenant has none. A caller-supplied deps.cfg (tests) is honored as-is.
+  const tenantDeps: StatementSendDeps = {
+    ...deps,
+    cfg:
+      deps.cfg ??
+      (await applyTenantStatementIdentity(
+        supabase.orgId,
+        readStatementMessagingConfig(),
+      )),
+  };
+
   const { data, error } = await supabase
-    .schema("resupply")
     .from("patient_billing_statements")
     .select("id, total_patient_responsibility_cents")
     .eq("delivery_status", "pending")
     .gt("total_patient_responsibility_cents", 0)
+    .not("statement_pdf_object_key", "is", null)
     // Electronic = everything EXCEPT mail-preference. Excluding only
     // 'mail' keeps null (pre-0257) AND any legacy sms/in_person rows on
     // the electronic path (handled by pickStatementChannel) rather than
@@ -602,7 +656,7 @@ export async function runStatementBatchSend(
 
   for (const row of rows) {
     try {
-      const outcome = await sendOneStatement(supabase, row.id, deps);
+      const outcome = await sendOneStatement(supabase, row.id, tenantDeps);
       if (outcome.kind === "sent") result.sent += 1;
       else if (outcome.kind === "failed") result.failed += 1;
       else if (outcome.kind === "mail") result.mailQueued += 1;

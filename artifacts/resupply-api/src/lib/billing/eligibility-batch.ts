@@ -14,7 +14,7 @@
 //
 // PHI posture: counts + coverage ids only. No member ids, no names.
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../logger";
 import {
@@ -65,6 +65,12 @@ export function selectReverificationBatch(
 }
 
 export interface ReverifyBatchOpts {
+  /**
+   * Tenant to sweep. Callers resolve it: the admin Run-now route from
+   * `req.orgId`, the cron from `resolveSeedOrgId()` (single-tenant
+   * bridge). Every read/write is scoped to it via `getOrgScopedClient`.
+   */
+  orgId: string;
   /** Max 270s to fire this run. Default 50. */
   cap?: number;
   /** Skip coverages attempted within this many hours. Default 168 (7d). */
@@ -103,10 +109,10 @@ export interface ReverifyBatchDeps {
  * window is a no-op. Fail-soft per coverage. Returns a counts summary.
  */
 export async function runEligibilityReverificationBatch(
-  opts: ReverifyBatchOpts = {},
+  opts: ReverifyBatchOpts,
   deps: ReverifyBatchDeps = {},
 ): Promise<ReverifyBatchResult> {
-  const supabase = getSupabaseServiceRoleClient();
+  const supabase = getOrgScopedClient(opts.orgId);
   const verify = deps.verify ?? verifyEligibility;
   const throttleMs = deps.throttleMs ?? 200;
   const cap = opts.cap ?? 50;
@@ -125,7 +131,6 @@ export async function runEligibilityReverificationBatch(
 
   const todayIso = new Date().toISOString().slice(0, 10);
   const { data, error } = await supabase
-    .schema("resupply")
     .from("insurance_coverages")
     .select(
       "id, patient_id, rank, payer_name, member_id, verified_at, termination_date",
@@ -158,7 +163,6 @@ export async function runEligibilityReverificationBatch(
   const candidateIds = candidates.map((i) => i.id);
   const lastAttempt = new Map<string, string>();
   const { data: checks } = await supabase
-    .schema("resupply")
     .from("eligibility_checks")
     .select("insurance_coverage_id, requested_at")
     .in("insurance_coverage_id", candidateIds)

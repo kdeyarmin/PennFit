@@ -88,14 +88,15 @@ describe("Capture — camera retry after a denied permission", () => {
     const video = container.querySelector("video");
     expect(video).not.toBeNull();
     expect((video as HTMLVideoElement).srcObject).toBe(stream);
-    expect(screen.getByText("warming up")).toBeTruthy();
+    expect(screen.getByText("Getting your camera ready…")).toBeTruthy();
 
-    // loadeddata flips videoReady — the "warming up" wedge is gone.
-    // ("ready" itself is ambiguous here: the mocked vision-runtime
-    // status also renders the word.)
+    // loadeddata flips videoReady — the "getting ready" wedge is gone
+    // and (with the mocked vision runtime "ready") the line becomes
+    // "Camera ready".
     await act(async () => {
       fireEvent(video as HTMLVideoElement, new Event("loadeddata"));
     });
-    expect(screen.queryByText("warming up")).toBeNull();
+    expect(screen.queryByText("Getting your camera ready…")).toBeNull();
+    expect(screen.getByText("Camera ready")).toBeTruthy();
   });
 });

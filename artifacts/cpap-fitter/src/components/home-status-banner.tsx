@@ -15,6 +15,7 @@ import {
   type ShopMeDashboardResponse,
 } from "@/lib/account-api";
 import { SignedIn, useShopIdentity } from "@/lib/identity";
+import { formatAppDate } from "@/lib/utils";
 
 /**
  * Personalized banner rendered at the top of /home for signed-in
@@ -158,7 +159,7 @@ function OrderTile({
   const shipped = !!order.shippedAt;
   const dateLabel = (iso: string | null) =>
     iso
-      ? new Date(iso).toLocaleDateString(undefined, {
+      ? formatAppDate(iso, {
           month: "short",
           day: "numeric",
         })
@@ -205,8 +206,7 @@ function ShipmentTile({
 }: {
   shipment: NonNullable<ShopMeDashboardResponse["nextShipment"]>;
 }) {
-  const date = new Date(shipment.date);
-  const dateLabel = date.toLocaleDateString(undefined, {
+  const dateLabel = formatAppDate(shipment.date, {
     month: "short",
     day: "numeric",
   });

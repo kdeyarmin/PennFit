@@ -26,7 +26,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
@@ -131,9 +131,13 @@ router.post(
     }
     const { periodLabel, notes } = parsed.data;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: inserted, error: insErr } = await supabase
-      .schema("resupply")
       .from("inventory_reconciliations")
       .insert({
         period_label: periodLabel,
@@ -180,10 +184,14 @@ router.post(
 router.get(
   "/admin/shop/inventory/reconciliations",
   requirePermission("admin.tools.manage"),
-  async (_req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: rows, error } = await supabase
-      .schema("resupply")
       .from("inventory_reconciliations")
       .select(
         "id, period_label, status, started_by_email, started_at, submitted_at, total_lines, total_variance_units, applied_to_stripe",
@@ -195,17 +203,21 @@ router.get(
       return;
     }
     res.json({
-      reconciliations: (rows ?? []).map((r) => ({
-        id: r.id,
-        periodLabel: r.period_label,
-        status: r.status,
-        startedByEmail: r.started_by_email,
-        startedAt: r.started_at,
-        submittedAt: r.submitted_at,
-        totalLines: r.total_lines,
-        totalVarianceUnits: r.total_variance_units,
-        appliedToStripe: r.applied_to_stripe,
-      })),
+      reconciliations: (rows ?? []).map(
+        (
+          r: Database["resupply"]["Tables"]["inventory_reconciliations"]["Row"],
+        ) => ({
+          id: r.id,
+          periodLabel: r.period_label,
+          status: r.status,
+          startedByEmail: r.started_by_email,
+          startedAt: r.started_at,
+          submittedAt: r.submitted_at,
+          totalLines: r.total_lines,
+          totalVarianceUnits: r.total_variance_units,
+          appliedToStripe: r.applied_to_stripe,
+        }),
+      ),
     });
   },
 );
@@ -227,10 +239,14 @@ router.get(
       return;
     }
     const id = parsed.data;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     const { data: header, error: headerErr } = await supabase
-      .schema("resupply")
       .from("inventory_reconciliations")
       .select(
         "id, period_label, status, started_by_email, started_by_user_id, started_at, submitted_at, notes, total_lines, total_variance_units, applied_to_stripe",
@@ -249,7 +265,6 @@ router.get(
     }
 
     const { data: lines, error: linesErr } = await supabase
-      .schema("resupply")
       .from("inventory_reconciliation_lines")
       .select(
         "id, product_id, product_name, system_count, counted_qty, variance, applied, created_at",
@@ -309,16 +324,20 @@ router.get(
         totalVarianceUnits: header.total_variance_units,
         appliedToStripe: header.applied_to_stripe,
       },
-      lines: (lines ?? []).map((l) => ({
-        id: l.id,
-        productId: l.product_id,
-        productName: l.product_name,
-        systemCount: l.system_count,
-        countedQty: l.counted_qty,
-        variance: l.variance,
-        applied: l.applied,
-        createdAt: l.created_at,
-      })),
+      lines: (lines ?? []).map(
+        (
+          l: Database["resupply"]["Tables"]["inventory_reconciliation_lines"]["Row"],
+        ) => ({
+          id: l.id,
+          productId: l.product_id,
+          productName: l.product_name,
+          systemCount: l.system_count,
+          countedQty: l.counted_qty,
+          variance: l.variance,
+          applied: l.applied,
+          createdAt: l.created_at,
+        }),
+      ),
       currentProducts,
     });
   },
@@ -373,10 +392,14 @@ router.post(
       seen.add(line.productId);
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     const { data: header, error: headerErr } = await supabase
-      .schema("resupply")
       .from("inventory_reconciliations")
       .select("id, status")
       .eq("id", id)
@@ -502,6 +525,7 @@ router.post(
       applied: false,
     }));
     const { data: rpcData, error: rpcErr } = await supabase
+      .raw()
       .schema("resupply")
       .rpc("submit_inventory_reconciliation", {
         p_id: id,
@@ -569,7 +593,6 @@ router.post(
     }
     if (appliedProductIds.size > 0) {
       const { error: applyErr } = await supabase
-        .schema("resupply")
         .from("inventory_reconciliation_lines")
         .update({ applied: true })
         .eq("reconciliation_id", id)

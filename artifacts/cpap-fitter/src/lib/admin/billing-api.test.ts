@@ -15,8 +15,10 @@ import type { Mock } from "vitest";
 import { ApiError } from "@workspace/api-client-react/admin";
 
 import {
+  createClaimFromFulfillment,
   fetchAgingReport,
   fetchAiQueue,
+  fetchBillingDashboard,
   fetchDenialRate,
   fetchDirectorSummary,
   fetchDsoByPayer,
@@ -241,6 +243,56 @@ describe("fetchDirectorSummary", () => {
 });
 
 // ─── fetchAiQueue ────────────────────────────────────────────────────
+
+describe("fetchBillingDashboard", () => {
+  test("requests /resupply-api/admin/billing/dashboard", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        fulfillmentsToBill: [],
+        counts: {
+          draftStale: 0,
+          denied: 0,
+          submittedNoAck: 0,
+          partialEras: 0,
+          fulfillmentsToBill: 0,
+        },
+        generatedAt: "2026-01-01T00:00:00Z",
+      }),
+    });
+
+    await fetchBillingDashboard();
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("/resupply-api/admin/billing/dashboard");
+    expect(init.method).toBeUndefined();
+  });
+});
+
+describe("createClaimFromFulfillment", () => {
+  test("POSTs to the encoded fulfillment claim-creation endpoint", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        id: "claim-1",
+        patientId: "patient-1",
+        lineCount: 1,
+        builderNotes: [],
+      }),
+    });
+
+    await createClaimFromFulfillment("fulfillment/with space");
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(
+      "/resupply-api/admin/fulfillments/fulfillment%2Fwith%20space/create-claim",
+    );
+    expect(init.method).toBe("POST");
+    expect(init.body).toBe("{}");
+  });
+});
 
 describe("fetchAiQueue", () => {
   test("requests /resupply-api/admin/billing/ai-queue", async () => {

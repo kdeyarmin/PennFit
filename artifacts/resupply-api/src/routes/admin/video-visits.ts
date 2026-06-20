@@ -27,22 +27,19 @@ import expressRateLimit from "express-rate-limit";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
-import {
-  createSendgridClient,
-  EmailConfigError,
-} from "@workspace/resupply-email";
+import { getOrgScopedClient } from "@workspace/resupply-db";
+import { EmailConfigError } from "@workspace/resupply-email";
 import {
   createTwilioSmsClient,
   TwilioConfigError,
 } from "@workspace/resupply-telecom";
 
+import { createTenantSendgridClient } from "../../lib/email/tenant-sender.js";
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
-import {
-  readPracticeName,
-  readSmsConfigOrNull,
-} from "../../lib/messaging/messaging-config";
+import { readSmsConfigOrNull } from "../../lib/messaging/messaging-config";
+import { resolveTenantSmsClientOptions } from "../../lib/messaging/tenant-telecom";
+import { resolveBrandingByOrgId } from "../../lib/tenant-branding.js";
 import { resolveIceServers } from "../../lib/video/ice-servers";
 import { signVideoVisitToken } from "../../lib/video/video-visit-token";
 import {
@@ -81,7 +78,7 @@ function publicBaseUrl(): string {
     process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL ??
     (process.env.RAILWAY_PUBLIC_DOMAIN
       ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
-      : "https://pennpaps.com")
+      : "https://cmbreathe.com")
   ).replace(/\/$/, "");
 }
 
@@ -105,18 +102,26 @@ function inviteStatusCallbackUrl(visitId: string): string | undefined {
     : undefined;
 }
 
-function tryCreateSendgrid(): ReturnType<typeof createSendgridClient> | null {
+async function tryCreateSendgrid(
+  orgId: string,
+): Promise<Awaited<ReturnType<typeof createTenantSendgridClient>> | null> {
   try {
-    return createSendgridClient();
+    // Send under the tenant's own From identity when configured (G6);
+    // falls back to the platform default otherwise.
+    return await createTenantSendgridClient(orgId);
   } catch (err) {
     if (err instanceof EmailConfigError) return null;
     throw err;
   }
 }
 
-function tryCreateTwilioSms(): ReturnType<typeof createTwilioSmsClient> | null {
+async function tryCreateTwilioSms(
+  orgId: string,
+): Promise<ReturnType<typeof createTwilioSmsClient> | null> {
   try {
-    return createTwilioSmsClient();
+    // Send under the tenant's own number / Messaging Service when it has
+    // one (G7); falls back to the platform env default otherwise.
+    return createTwilioSmsClient(await resolveTenantSmsClientOptions(orgId));
   } catch (err) {
     if (err instanceof TwilioConfigError) return null;
     throw err;
@@ -205,6 +210,7 @@ function renderInviteEmailText(
 async function deliverInvite(opts: {
   visitId: string;
   channel: "email" | "sms";
+  orgId: string;
   email: string | null;
   phone: string | null;
   firstName: string | null;
@@ -217,7 +223,7 @@ async function deliverInvite(opts: {
   try {
     if (opts.channel === "email") {
       if (!opts.email) return { delivered: false, reason: "no_email" };
-      const sendgrid = tryCreateSendgrid();
+      const sendgrid = await tryCreateSendgrid(opts.orgId);
       if (!sendgrid) return { delivered: false, reason: "no_email_config" };
       await sendgrid.sendEmail({
         to: opts.email,
@@ -239,7 +245,7 @@ async function deliverInvite(opts: {
       return { delivered: true };
     }
     if (!opts.phone) return { delivered: false, reason: "no_phone" };
-    const twilio = tryCreateTwilioSms();
+    const twilio = await tryCreateTwilioSms(opts.orgId);
     if (!twilio) return { delivered: false, reason: "no_sms_config" };
     const statusCallbackUrl = inviteStatusCallbackUrl(opts.visitId);
     const sent = await twilio.sendSms({
@@ -334,10 +340,14 @@ router.get(
   adminReadRateLimiter,
   requireAdmin,
   async (req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const includeClosed = req.query.include === "closed";
     let query = supabase
-      .schema("resupply")
       .from("video_visits")
       .select(VISIT_SELECT)
       .order("created_at", { ascending: false })
@@ -439,9 +449,13 @@ async function createVisitAndRespond(
     return;
   }
 
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const { data: created, error: insertErr } = await supabase
-    .schema("resupply")
     .from("video_visits")
     .insert({
       patient_id: subject.kind === "patient" ? subject.id : null,
@@ -473,17 +487,17 @@ async function createVisitAndRespond(
     const delivery = await deliverInvite({
       visitId: visit.id,
       channel: body.channel,
+      orgId,
       email: recipientEmail,
       phone: recipientPhone,
       firstName: greetingName,
-      practiceName: readPracticeName(),
+      practiceName: (await resolveBrandingByOrgId(orgId)).storefrontName,
       scheduledAt: visit.scheduled_at,
       link: joinUrl,
     });
     delivered = delivery.delivered;
     deliveryError = delivery.delivered ? null : (delivery.reason ?? null);
     await supabase
-      .schema("resupply")
       .from("video_visits")
       .update({
         invite_delivered: delivered,
@@ -537,7 +551,7 @@ router.post(
   inviteLimiter,
   adminRateLimit({ name: "video_visits.create", preset: "mutation" }),
   async (req, res) => {
-    if (!(await isFeatureEnabled("telehealth.video"))) {
+    if (!(await isFeatureEnabled("telehealth.video", req.orgId))) {
       res.status(503).json({ error: "feature_disabled" });
       return;
     }
@@ -557,9 +571,13 @@ router.post(
       });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: patient, error: patientErr } = await supabase
-      .schema("resupply")
       .from("patients")
       .select("id, status, email, phone_e164, legal_first_name")
       .eq("id", idCheck.data)
@@ -622,7 +640,7 @@ router.post(
   inviteLimiter,
   adminRateLimit({ name: "video_visits.create_universal", preset: "mutation" }),
   async (req, res) => {
-    if (!(await isFeatureEnabled("telehealth.video"))) {
+    if (!(await isFeatureEnabled("telehealth.video", req.orgId))) {
       res.status(503).json({ error: "feature_disabled" });
       return;
     }
@@ -639,9 +657,13 @@ router.post(
     }
     const body = parsed.data;
     if (body.patientId) {
-      const supabase = getSupabaseServiceRoleClient();
+      const orgId = req.orgId;
+      if (!orgId) {
+        res.status(500).json({ error: "tenant_context_missing" });
+        return;
+      }
+      const supabase = getOrgScopedClient(orgId);
       const { data: patient, error: patientErr } = await supabase
-        .schema("resupply")
         .from("patients")
         .select("id, status, email, phone_e164, legal_first_name")
         .eq("id", body.patientId)
@@ -684,7 +706,7 @@ router.post(
   inviteLimiter,
   adminRateLimit({ name: "video_visits.invite", preset: "mutation" }),
   async (req, res) => {
-    if (!(await isFeatureEnabled("telehealth.video"))) {
+    if (!(await isFeatureEnabled("telehealth.video", req.orgId))) {
       res.status(503).json({ error: "feature_disabled" });
       return;
     }
@@ -699,9 +721,13 @@ router.post(
       return;
     }
     const body = parsed.data;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("video_visits")
       .select(
         "id, patient_id, purpose, notes, status, scheduled_at, created_by_email, link_version, invite_channel, invite_delivered, invite_delivery_status, invite_delivery_error_code, staff_joined_at, patient_joined_at, started_at, ended_at, created_at, guest_name, guest_email, guest_phone_e164, patients(legal_first_name, legal_last_name, status, email, phone_e164)",
@@ -764,19 +790,19 @@ router.post(
     const delivery = await deliverInvite({
       visitId: visit.id,
       channel: body.channel,
+      orgId,
       email: recipientEmail,
       phone: recipientPhone,
       firstName:
         visit.patients?.legal_first_name ??
         visit.guest_name?.split(/\s+/)[0] ??
         null,
-      practiceName: readPracticeName(),
+      practiceName: (await resolveBrandingByOrgId(orgId)).storefrontName,
       scheduledAt: visit.scheduled_at,
       link: joinUrl,
     });
 
     await supabase
-      .schema("resupply")
       .from("video_visits")
       .update({
         invite_channel: body.channel,
@@ -820,7 +846,7 @@ router.post(
   requireAdmin,
   adminRateLimit({ name: "video_visits.join", preset: "mutation" }),
   async (req, res) => {
-    if (!(await isFeatureEnabled("telehealth.video"))) {
+    if (!(await isFeatureEnabled("telehealth.video", req.orgId))) {
       res.status(503).json({ error: "feature_disabled" });
       return;
     }
@@ -829,9 +855,13 @@ router.post(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("video_visits")
       .select(VISIT_SELECT)
       .eq("id", idCheck.data)
@@ -874,9 +904,13 @@ router.post(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("video_visits")
       .select("id, patient_id, status, link_version")
       .eq("id", idCheck.data)
@@ -893,7 +927,6 @@ router.post(
     // Bumping link_version revokes every outstanding patient link; the
     // signaling handler also re-checks status on connect.
     const { error: updateErr } = await supabase
-      .schema("resupply")
       .from("video_visits")
       .update({
         status: "cancelled",
@@ -932,9 +965,13 @@ router.post(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("video_visits")
       .select("id, patient_id, status")
       .eq("id", idCheck.data)
@@ -949,7 +986,6 @@ router.post(
       return;
     }
     const { error: updateErr } = await supabase
-      .schema("resupply")
       .from("video_visits")
       .update({
         status: "completed",

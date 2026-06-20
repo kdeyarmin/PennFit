@@ -1,5 +1,5 @@
 // /admin/patients/:id/timeline — unified chronological feed across
-// episodes, fulfillments, conversations, address changes, grievances,
+// episodes, fulfillments, conversations, address changes,
 // coaching plans, recall notifications, and onboarding checkpoints.
 //
 // All sources read in parallel, merged on timestamp, capped at the
@@ -11,7 +11,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { requirePermission } from "../../middlewares/requireAdmin";
 
@@ -28,7 +28,6 @@ interface TimelineEvent {
     | "fulfillment_delivered"
     | "conversation_opened"
     | "address_changed"
-    | "grievance_received"
     | "coaching_plan_opened"
     | "recall_notified"
     | "onboarding_day"
@@ -59,61 +58,54 @@ router.get(
       return;
     }
     const patientId = params.data.id;
-    const supabase = getSupabaseServiceRoleClient();
+    // Fail closed: a request that reached an admin handler without a
+    // resolved tenant must never be silently widened to all orgs.
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const db = getOrgScopedClient(orgId);
     const events: TimelineEvent[] = [];
 
     const queries = await Promise.all([
-      supabase
-        .schema("resupply")
+      db
         .from("episodes")
         .select("id, status, created_at")
         .eq("patient_id", patientId)
         .order("created_at", { ascending: false })
         .limit(50),
-      supabase
-        .schema("resupply")
+      db
         .from("fulfillments")
         .select("id, item_sku, status, shipped_at, delivered_at, created_at")
         .eq("patient_id", patientId)
         .order("created_at", { ascending: false })
         .limit(50),
-      supabase
-        .schema("resupply")
+      db
         .from("conversations")
         .select("id, channel, status, created_at")
         .eq("patient_id", patientId)
         .order("created_at", { ascending: false })
         .limit(50),
-      supabase
-        .schema("resupply")
+      db
         .from("patient_address_history")
         .select("id, reason, created_at")
         .eq("patient_id", patientId)
         .order("created_at", { ascending: false })
         .limit(50),
-      supabase
-        .schema("resupply")
-        .from("patient_grievances")
-        .select("id, kind, severity, summary, received_at")
-        .eq("patient_id", patientId)
-        .order("received_at", { ascending: false })
-        .limit(50),
-      supabase
-        .schema("resupply")
+      db
         .from("patient_coaching_plans")
         .select("id, status, target_compliance_pct, opened_at")
         .eq("patient_id", patientId)
         .order("opened_at", { ascending: false })
         .limit(20),
-      supabase
-        .schema("resupply")
+      db
         .from("recall_notifications")
         .select("id, status, channel, notified_at, created_at")
         .eq("patient_id", patientId)
         .order("created_at", { ascending: false })
         .limit(30),
-      supabase
-        .schema("resupply")
+      db
         .from("video_visits")
         .select(
           "id, status, purpose, scheduled_at, started_at, ended_at, created_at",
@@ -127,15 +119,44 @@ router.get(
         .order("created_at", { ascending: false })
         .limit(30),
     ]);
-    for (const q of queries) {
-      if (q.error) throw q.error;
-    }
+    // Degrade per-source instead of failing the whole feed: one broken
+    // source (e.g. a retired/renamed table) must not 500 the entire
+    // timeline — the aggregator's value is everything else still
+    // rendering. Failed sources are logged and reported to the SPA.
+    const SOURCE_NAMES = [
+      "episodes",
+      "fulfillments",
+      "conversations",
+      "patient_address_history",
+      "patient_grievances",
+      "patient_coaching_plans",
+      "recall_notifications",
+      "video_visits",
+    ] as const;
+    const degradedSources: string[] = [];
+    queries.forEach((q, i) => {
+      if (q.error) {
+        degradedSources.push(SOURCE_NAMES[i] ?? `source_${i}`);
+        req.log?.warn?.(
+          {
+            event: "patient_timeline_source_failed",
+            source: SOURCE_NAMES[i] ?? `source_${i}`,
+            pgCode:
+              typeof q.error === "object" &&
+              q.error !== null &&
+              "code" in q.error
+                ? (q.error as { code?: string }).code
+                : null,
+          },
+          "patient timeline: source query failed — continuing without it",
+        );
+      }
+    });
     const [
       episodes,
       fulfillments,
       conversations,
       addressHistory,
-      grievances,
       plans,
       recalls,
       videoVisits,
@@ -206,21 +227,6 @@ router.get(
         detail: a.reason ?? "no reason recorded",
         refId: a.id,
         at: a.created_at,
-      });
-    }
-    for (const g of grievances as Array<{
-      id: string;
-      kind: string;
-      severity: string;
-      summary: string;
-      received_at: string;
-    }>) {
-      events.push({
-        kind: "grievance_received",
-        title: `${g.kind.replace(/_/g, " ")} (${g.severity})`,
-        detail: g.summary,
-        refId: g.id,
-        at: g.received_at,
       });
     }
     for (const p of plans as Array<{
@@ -301,7 +307,7 @@ router.get(
     }
 
     events.sort((a, b) => (a.at < b.at ? 1 : -1));
-    res.json({ events: events.slice(0, 200) });
+    res.json({ events: events.slice(0, 200), degradedSources });
   },
 );
 

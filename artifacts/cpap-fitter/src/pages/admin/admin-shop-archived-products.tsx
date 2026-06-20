@@ -190,16 +190,28 @@ export function AdminShopArchivedProductsPage() {
                   color: "hsl(var(--ink-2))",
                 }}
               >
-                <th style={{ padding: "10px 12px", fontWeight: 600 }}>
+                <th
+                  scope="col"
+                  style={{ padding: "10px 12px", fontWeight: 600 }}
+                >
                   Product
                 </th>
-                <th style={{ padding: "10px 12px", fontWeight: 600 }}>
+                <th
+                  scope="col"
+                  style={{ padding: "10px 12px", fontWeight: 600 }}
+                >
                   Category
                 </th>
-                <th style={{ padding: "10px 12px", fontWeight: 600 }}>
+                <th
+                  scope="col"
+                  style={{ padding: "10px 12px", fontWeight: 600 }}
+                >
                   Archived
                 </th>
-                <th style={{ padding: "10px 12px", fontWeight: 600 }} />
+                <th
+                  scope="col"
+                  style={{ padding: "10px 12px", fontWeight: 600 }}
+                />
               </tr>
             </thead>
             <tbody>

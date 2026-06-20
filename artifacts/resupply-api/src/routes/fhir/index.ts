@@ -32,7 +32,7 @@ import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { requireAdmin } from "../../middlewares/requireAdmin";
@@ -40,7 +40,7 @@ import { requireAdmin } from "../../middlewares/requireAdmin";
 const router: IRouter = Router();
 
 const FHIR_VERSION = "4.0.1";
-const SOFTWARE_NAME = "PennFit DME Platform";
+const SOFTWARE_NAME = "CareMetric Breathe DME Platform";
 
 router.get("/fhir/r4/metadata", (_req, res) => {
   // Public; the CapabilityStatement itself is not PHI.
@@ -97,7 +97,7 @@ const fhirAdminReadLimiter = expressRateLimit({
   standardHeaders: "draft-7",
   legacyHeaders: false,
   keyGenerator: (req: Request) =>
-    (req as unknown as { adminUserId?: string }).adminUserId ??
+    req.adminUserId ??
     // Bucket the IP fallback by subnet via ipKeyGenerator so IPv6 clients
     // can't rotate within a /64 to dodge the limit (ERR_ERL_KEY_GEN_IPV6).
     ipKeyGenerator(req.ip ?? "0.0.0.0"),
@@ -117,9 +117,15 @@ router.get(
       res.status(404).type("application/fhir+json").json(notFound("Patient"));
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    // Resolve the seed org (single-tenant posture) and degrade to the
+    // route's existing 404 when it can't be resolved.
+    const orgId = await resolveSeedOrgId();
+    if (!orgId) {
+      res.status(404).type("application/fhir+json").json(notFound("Patient"));
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: patient } = await supabase
-      .schema("resupply")
       .from("patients")
       .select(
         "id, legal_first_name, legal_last_name, date_of_birth, phone_e164, email, address",
@@ -172,9 +178,15 @@ router.get(
       res.status(404).type("application/fhir+json").json(notFound("Patient"));
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    // Resolve the seed org (single-tenant posture) and degrade to the
+    // route's existing 404 when it can't be resolved.
+    const orgId = await resolveSeedOrgId();
+    if (!orgId) {
+      res.status(404).type("application/fhir+json").json(notFound("Patient"));
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: patient } = await supabase
-      .schema("resupply")
       .from("patients")
       .select(
         "id, legal_first_name, legal_last_name, date_of_birth, phone_e164, email, address",
@@ -193,26 +205,22 @@ router.get(
       { data: equipment },
     ] = await Promise.all([
       supabase
-        .schema("resupply")
         .from("insurance_coverages")
         .select(
           "id, rank, payer_name, plan_name, member_id, effective_date, termination_date, in_network",
         )
         .eq("patient_id", patient.id),
       supabase
-        .schema("resupply")
         .from("sleep_studies")
         .select("id, study_date, diagnosis_icd10, ahi, study_type")
         .eq("patient_id", patient.id),
       supabase
-        .schema("resupply")
         .from("prescriptions")
         .select(
           "id, hcpcs_code, item_sku, valid_from, valid_until, status, provider_id",
         )
         .eq("patient_id", patient.id),
       supabase
-        .schema("resupply")
         .from("equipment_assets")
         .select(
           "id, device_class, serial_number, model, manufacturer, dispensed_at",

@@ -16,7 +16,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -161,9 +161,15 @@ router.get(
       .toISOString()
       .slice(0, 10);
 
-    const supabase = getSupabaseServiceRoleClient();
-    const { data: nights, error } = await supabase
-      .schema("resupply")
+    // Multi-tenant Phase 0 enforcement: fail-closed tenant context
+    // (trim-checked to match getOrgScopedClient's contract).
+    const orgId = req.orgId;
+    if (!orgId || !orgId.trim()) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const db = getOrgScopedClient(orgId);
+    const { data: nights, error } = await db
       .from("patient_therapy_nights")
       .select("night_date, usage_minutes, ahi, leak_rate_l_min")
       .eq("patient_id", idParsed.data)

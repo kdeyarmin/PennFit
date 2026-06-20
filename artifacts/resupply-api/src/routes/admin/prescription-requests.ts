@@ -70,7 +70,8 @@ import { logAudit } from "@workspace/resupply-audit";
 import {
   type Database,
   type Json,
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
+  type OrgScopedClient,
 } from "@workspace/resupply-db";
 import {
   createTelnyxFaxClient,
@@ -84,6 +85,7 @@ import {
   validatePrescriptionRequestInputs,
 } from "../../lib/prescription-request-pdf";
 import { resolvePrescriptionRequestInputs } from "../../lib/prescription-request-resolver";
+import { resolveTenantFaxFrom } from "../../lib/messaging/tenant-telecom";
 import { signPrescriptionRequestToken } from "../../lib/prescription-request-token";
 import {
   type SignatureTarget,
@@ -109,6 +111,15 @@ type PacketUpdate =
   Database["resupply"]["Tables"]["prescription_request_packets"]["Update"];
 
 const router: IRouter = Router();
+
+// signature-tracking writes go through the org-scoped chokepoint. The
+// rest of this route's queries are converted separately; this resolves
+// the request tenant for the tracking calls only and fails closed.
+function reqOrgClient(req: import("express").Request): OrgScopedClient {
+  const orgId = req.orgId;
+  if (!orgId) throw new Error("tenant_context_missing");
+  return getOrgScopedClient(orgId);
+}
 const idParam = z.object({ id: z.string().uuid() });
 const patientParam = z.object({ id: z.string().uuid() });
 const E164 = /^\+[1-9]\d{6,14}$/;
@@ -180,6 +191,11 @@ router.post(
     preset: "mutation",
   }),
   async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const params = patientParam.safeParse(req.params);
     if (!params.success) {
       res.status(404).json({ error: "patient_not_found" });
@@ -196,19 +212,19 @@ router.post(
       });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
 
     // Verify patient + provider exist before insert so the FK
     // failure returns a clear 4xx rather than a 500.
     const [{ data: patient }, { data: provider }] = await Promise.all([
       supabase
-        .schema("resupply")
         .from("patients")
         .select("id, legal_first_name, legal_last_name")
         .eq("id", params.data.id)
         .limit(1)
         .maybeSingle(),
       supabase
+        .raw()
         .schema("resupply")
         .from("providers")
         .select("id, fax_e164, legal_name, practice_name")
@@ -228,7 +244,6 @@ router.post(
     const returnFax = parsed.data.returnFaxE164 ?? provider.fax_e164 ?? null;
 
     const { data: inserted, error: insertErr } = await supabase
-      .schema("resupply")
       .from("prescription_request_packets")
       .insert({
         patient_id: params.data.id,
@@ -264,7 +279,7 @@ router.post(
     // fail the packet create (the PDF just renders without a barcode).
     let trackingCode: string | null = null;
     try {
-      const reg = await registerSignatureTracking(supabase, {
+      const reg = await registerSignatureTracking(reqOrgClient(req), {
         kind: "prescription_request",
         documentId: inserted.id,
         title: "Prescription request",
@@ -309,14 +324,18 @@ router.get(
   "/admin/patients/:id/prescription-requests",
   requirePermission("patients.read"),
   async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const params = patientParam.safeParse(req.params);
     if (!params.success) {
       res.status(404).json({ error: "patient_not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("prescription_request_packets")
       .select(
         "id, provider_id, status, return_fax_e164, sent_to_fax_e164, sent_at, delivered_at, signed_at, failed_at, failure_reason, created_at",
@@ -364,6 +383,11 @@ router.get(
   "/admin/prescription-requests/needs-signature",
   requirePermission("patients.read"),
   async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const parsed = needsSignatureQuery.safeParse(req.query);
     if (!parsed.success) {
       res.status(400).json({
@@ -375,7 +399,7 @@ router.get(
       });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
     const aggregation = await aggregatePacketsNeedingSignature(
       supabase,
       targetFromQuery(parsed.data),
@@ -389,6 +413,11 @@ router.get(
   "/admin/prescription-requests/needs-signature/pdf",
   requirePermission("patients.read"),
   async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const parsed = needsSignatureQuery.safeParse(req.query);
     if (!parsed.success) {
       res.status(400).json({
@@ -401,7 +430,7 @@ router.get(
       return;
     }
     const target = targetFromQuery(parsed.data);
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
     const aggregation = await aggregatePacketsNeedingSignature(
       supabase,
       target,
@@ -504,14 +533,18 @@ router.get(
   "/admin/prescription-requests/:id",
   requirePermission("patients.read"),
   async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const params = idParam.safeParse(req.params);
     if (!params.success) {
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("prescription_request_packets")
       .select("*")
       .eq("id", params.data.id)
@@ -530,12 +563,17 @@ router.get(
   "/admin/prescription-requests/:id/pdf",
   requirePermission("patients.read"),
   async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const params = idParam.safeParse(req.params);
     if (!params.success) {
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
     const resolved = await resolvePrescriptionRequestInputs(
       supabase,
       params.data.id,
@@ -595,7 +633,7 @@ router.get(
  * (re-render the same packet, re-fax to the return number).
  */
 async function dispatchPacketFax(
-  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
+  supabase: OrgScopedClient,
   packet: { id: string; return_fax_e164: string | null },
   req: Request,
   res: Response,
@@ -648,12 +686,15 @@ async function dispatchPacketFax(
   const token = signPrescriptionRequestToken(packet.id);
   const mediaUrl = `${baseUrl}/resupply-api/rx-request/document/${token}`;
   const statusCallbackUrl = `${baseUrl}/resupply-api/fax/webhook`;
+  // Prefer the tenant's own provisioned fax DID (migration 0368); fall back
+  // to the platform default the config check above guaranteed is set.
+  const sendFrom = (await resolveTenantFaxFrom(supabase.orgId)) ?? fromNumber;
   const faxClient = createTelnyxFaxClient();
   const nowIso = new Date().toISOString();
   try {
     const result = await faxClient.sendFax({
       to: packet.return_fax_e164,
-      from: fromNumber,
+      from: sendFrom,
       mediaUrl,
       statusCallbackUrl,
     });
@@ -671,7 +712,6 @@ async function dispatchPacketFax(
       updated_at: nowIso,
     };
     const { error: stampErr } = await supabase
-      .schema("resupply")
       .from("prescription_request_packets")
       .update(update)
       .eq("id", packet.id);
@@ -686,7 +726,7 @@ async function dispatchPacketFax(
       );
     }
     await recordTrackingSent(
-      supabase,
+      reqOrgClient(req),
       "prescription_request",
       packet.id,
       "fax",
@@ -721,7 +761,6 @@ async function dispatchPacketFax(
         ? `Telnyx fax error: ${err.message}`
         : `Fax dispatch error: ${String(err)}`;
     const { error: failStampErr } = await supabase
-      .schema("resupply")
       .from("prescription_request_packets")
       .update({
         status: "failed",
@@ -749,14 +788,18 @@ router.post(
     preset: "mutation",
   }),
   async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const params = idParam.safeParse(req.params);
     if (!params.success) {
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
     const { data: packet } = await supabase
-      .schema("resupply")
       .from("prescription_request_packets")
       .select("id, status, return_fax_e164")
       .eq("id", params.data.id)
@@ -788,14 +831,18 @@ router.post(
     preset: "mutation",
   }),
   async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const params = idParam.safeParse(req.params);
     if (!params.success) {
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
     const { data: packet } = await supabase
-      .schema("resupply")
       .from("prescription_request_packets")
       .select("id, status, return_fax_e164")
       .eq("id", params.data.id)
@@ -831,6 +878,11 @@ router.post(
     preset: "mutation",
   }),
   async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const params = idParam.safeParse(req.params);
     if (!params.success) {
       res.status(404).json({ error: "not_found" });
@@ -852,9 +904,8 @@ router.post(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
     const { data: existing } = await supabase
-      .schema("resupply")
       .from("prescription_request_packets")
       .select("id, status")
       .eq("id", params.data.id)
@@ -885,13 +936,12 @@ router.post(
       update.signed_object_key = body.data.signedObjectKey;
     }
     const { error: updErr } = await supabase
-      .schema("resupply")
       .from("prescription_request_packets")
       .update(update)
       .eq("id", params.data.id);
     if (updErr) throw updErr;
     await markTrackingReturned(
-      supabase,
+      reqOrgClient(req),
       "prescription_request",
       params.data.id,
     ).catch((err) => {
@@ -921,14 +971,18 @@ router.post(
     preset: "mutation",
   }),
   async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const params = idParam.safeParse(req.params);
     if (!params.success) {
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
     const { data: existing } = await supabase
-      .schema("resupply")
       .from("prescription_request_packets")
       .select("id, status")
       .eq("id", params.data.id)
@@ -946,7 +1000,6 @@ router.post(
       return;
     }
     const { error } = await supabase
-      .schema("resupply")
       .from("prescription_request_packets")
       .update({
         status: "void",
@@ -955,7 +1008,7 @@ router.post(
       .eq("id", params.data.id);
     if (error) throw error;
     await markTrackingCanceled(
-      supabase,
+      reqOrgClient(req),
       "prescription_request",
       params.data.id,
     ).catch((err) => {

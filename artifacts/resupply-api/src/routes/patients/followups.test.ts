@@ -224,3 +224,61 @@ describe("PATCH /patients/:id/followups/:fid/complete", () => {
     });
   });
 });
+
+describe("PATCH /patients/:id/followups/:fid/reopen", () => {
+  it("409s when the followup is already open", async () => {
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("patient_followups", "select", {
+      data: {
+        id: FOLLOWUP_ID,
+        patient_id: PATIENT_ID,
+        completed_at: null,
+        body: "x",
+      },
+    });
+    const res = await request(makeApp()).patch(
+      `/patients/${PATIENT_ID}/followups/${FOLLOWUP_ID}/reopen`,
+    );
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("already_open");
+  });
+
+  it("reopens a completed followup + audits", async () => {
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("patient_followups", "select", {
+      data: {
+        id: FOLLOWUP_ID,
+        patient_id: PATIENT_ID,
+        completed_at: new Date("2026-05-05T16:00:00Z").toISOString(),
+        body: "Confirm replacement",
+        due_at: new Date("2026-05-10T16:00:00Z").toISOString(),
+      },
+    });
+    stageSupabaseResponse("patient_followups", "update", {
+      data: {
+        id: FOLLOWUP_ID,
+        completed_at: null,
+      },
+    });
+
+    const res = await request(makeApp()).patch(
+      `/patients/${PATIENT_ID}/followups/${FOLLOWUP_ID}/reopen`,
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ id: FOLLOWUP_ID, completedAt: null });
+
+    expect(logAuditMock).toHaveBeenCalledTimes(1);
+    const audit = logAuditMock.mock.calls[0]?.[0] as {
+      action: string;
+      metadata: Record<string, unknown>;
+    };
+    expect(audit.action).toBe("patient.followup.reopen");
+    expect(audit.metadata).toEqual({
+      patient_id: PATIENT_ID,
+      body_length: "Confirm replacement".length,
+      due_at: "2026-05-10T16:00:00.000Z",
+    });
+    expect(JSON.stringify(audit.metadata)).not.toContain("Confirm replacement");
+  });
+});

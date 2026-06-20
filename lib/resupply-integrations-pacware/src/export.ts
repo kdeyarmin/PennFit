@@ -1,4 +1,4 @@
-// CSV exporters for the PennFit -> PacWare direction.
+// CSV exporters for the CareMetric Breathe -> PacWare direction.
 //
 // Each exporter emits the canonical headers declared in reports.ts (so
 // the patient_roster export round-trips with the importer) and runs every

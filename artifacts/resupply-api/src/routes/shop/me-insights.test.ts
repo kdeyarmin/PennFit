@@ -23,7 +23,9 @@ import {
   installSupabaseMock,
   stageSupabaseResponse,
   getSupabaseWritePayloads,
+  getSupabaseFilterCalls,
 } from "../../test-helpers/supabase-mock";
+import { SMART_TRIGGER_KINDS } from "@workspace/resupply-db";
 
 const supabaseMock = installSupabaseMock();
 
@@ -130,6 +132,17 @@ describe("GET /shop/me/insights", () => {
     expect(leak.headline).toContain("seal");
     expect(leak.cta.url).toBe("/shop#shop-section-cushion");
     expect(leak.detectedAt).toBe("2026-04-30T12:00:00.000Z");
+
+    // The events read must restrict to the patient-facing kinds so the
+    // clinician-owned CLINICAL kinds (pressure_at_max, ahi_elevated, …)
+    // never reach the customer projection (which would 500 on missing
+    // COPY). Assert the `.in("kind", SMART_TRIGGER_KINDS)` filter is set.
+    const inFilter = getSupabaseFilterCalls(
+      "patient_smart_trigger_events",
+      "select",
+    ).find((c) => c.verb === "in" && c.args[0] === "kind");
+    expect(inFilter).toBeDefined();
+    expect(inFilter?.args[1]).toEqual(SMART_TRIGGER_KINDS);
 
     const usage = res.body.insights[1];
     expect(usage.kind).toBe("usage_dropping");

@@ -11,6 +11,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { formatAppDate, todayAppDateIso } from "@/lib/utils";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SRC = readFileSync(
@@ -29,27 +30,14 @@ describe("admin-shop-inventory-reconcile — exports", () => {
 });
 
 describe("admin-shop-inventory-reconcile — defaultPeriodLabel structure", () => {
-  it("derives year from new Date()", () => {
-    expect(SRC).toContain("getFullYear()");
-  });
-
-  it("derives month as 1-based (getMonth() + 1)", () => {
-    expect(SRC).toContain("getMonth() + 1");
-  });
-
-  it("pads month to 2 digits with padStart", () => {
-    expect(SRC).toContain('padStart(2, "0")');
-  });
-
-  it("constructs the label as YYYY-MM template literal", () => {
-    // Template literal with dash separator
-    expect(SRC).toContain("${year}-${month}");
+  it("derives the period label from the New York app date helper", () => {
+    expect(SRC).toContain("todayAppDateIso().slice(0, 7)");
   });
 });
 
 describe("admin-shop-inventory-reconcile — formatDate structure", () => {
-  it("uses new Date(iso).toLocaleDateString", () => {
-    expect(SRC).toContain("toLocaleDateString");
+  it("uses the shared New York date formatter", () => {
+    expect(SRC).toContain("formatAppDate(iso");
   });
 
   it("includes year, month, and day in the format options", () => {
@@ -61,9 +49,8 @@ describe("admin-shop-inventory-reconcile — formatDate structure", () => {
     expect(SRC).toMatch(/"?day"?:\s*"/);
   });
 
-  it("falls back to returning the original string on error (try/catch)", () => {
-    // The catch block returns `iso` unchanged
-    expect(SRC).toContain("return iso");
+  it("uses shared placeholder handling for invalid input", () => {
+    expect(SRC).toContain("formatAppDate");
   });
 });
 
@@ -115,10 +102,7 @@ describe("admin-shop-inventory-reconcile — history table structure", () => {
 // ---------------------------------------------------------------------------
 
 function defaultPeriodLabel(): string {
-  const d = new Date();
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, "0");
-  return `${year}-${month}`;
+  return todayAppDateIso().slice(0, 7);
 }
 
 describe("defaultPeriodLabel — format invariants", () => {
@@ -130,7 +114,7 @@ describe("defaultPeriodLabel — format invariants", () => {
   it("year portion matches the current year", () => {
     const label = defaultPeriodLabel();
     const [yearStr] = label.split("-");
-    expect(Number(yearStr)).toBe(new Date().getFullYear());
+    expect(Number(yearStr)).toBe(Number(todayAppDateIso().slice(0, 4)));
   });
 
   it("month portion is 1-based and padded to 2 digits", () => {
@@ -145,7 +129,7 @@ describe("defaultPeriodLabel — format invariants", () => {
   it("month portion matches the current month", () => {
     const label = defaultPeriodLabel();
     const [, monthStr] = label.split("-");
-    expect(Number(monthStr)).toBe(new Date().getMonth() + 1);
+    expect(Number(monthStr)).toBe(Number(todayAppDateIso().slice(5, 7)));
   });
 
   it("contains a hyphen separator", () => {
@@ -158,15 +142,11 @@ describe("defaultPeriodLabel — format invariants", () => {
 // ---------------------------------------------------------------------------
 
 function formatDate(iso: string): string {
-  try {
-    return new Date(iso).toLocaleDateString(undefined, {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    });
-  } catch {
-    return iso;
-  }
+  return formatAppDate(iso, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
 }
 
 describe("formatDate — valid ISO strings", () => {
@@ -194,10 +174,7 @@ describe("formatDate — valid ISO strings", () => {
 });
 
 describe("formatDate — invalid strings", () => {
-  it("returns the original string when passed a non-date string", () => {
-    // new Date("not-a-date") → Invalid Date, toLocaleDateString may throw or return "Invalid Date"
-    // The function catches and returns iso; behaviour depends on runtime.
-    // We just verify the function doesn't throw and returns a string.
+  it("returns a placeholder string when passed a non-date string", () => {
     expect(() => formatDate("not-a-date")).not.toThrow();
     const result = formatDate("not-a-date");
     expect(typeof result).toBe("string");
@@ -240,10 +217,10 @@ describe("admin-shop-inventory-reconcile — formatDate option key style", () =>
     expect(SRC).toMatch(/"?day"?:\s*["']/);
   });
 
-  it("all three option keys appear within the same toLocaleDateString call", () => {
-    // Find the toLocaleDateString call and verify all three keys are within
+  it("all three option keys appear within the same formatAppDate call", () => {
+    // Find the formatAppDate call and verify all three keys are within
     // a reasonable character window of it.
-    const callIdx = SRC.indexOf("toLocaleDateString");
+    const callIdx = SRC.indexOf("formatAppDate(iso");
     expect(callIdx).toBeGreaterThan(-1);
     // The options object follows the call — look 200 chars ahead.
     const optionsBlock = SRC.slice(callIdx, callIdx + 200);

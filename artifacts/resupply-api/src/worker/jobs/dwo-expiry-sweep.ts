@@ -9,9 +9,10 @@
 
 import type PgBoss from "pg-boss";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { forEachActiveOrg } from "../lib/for-each-active-org";
 import { createQueueWithDlq, CRON_SCAN_QUEUE_OPTS } from "../lib/queue-options";
 
 const JOB = "dwo.expiry-sweep";
@@ -58,13 +59,11 @@ interface SweepStats {
   byWindow: Record<number, number>;
 }
 
-async function runDwoExpirySweep(): Promise<SweepStats> {
-  const supabase = getSupabaseServiceRoleClient();
-  const stats: SweepStats = {
-    scanned: 0,
-    alertsCreated: 0,
-    byWindow: { 60: 0, 30: 0, 7: 0 },
-  };
+async function dwoExpirySweepForOrg(
+  orgId: string,
+  stats: SweepStats,
+): Promise<void> {
+  const supabase = getOrgScopedClient(orgId);
   const today = new Date();
   today.setUTCHours(0, 0, 0, 0);
 
@@ -88,7 +87,6 @@ async function runDwoExpirySweep(): Promise<SweepStats> {
       let cursor = "";
       for (;;) {
         let q = supabase
-          .schema("resupply")
           .from("dwo_documents")
           .select("id, patient_id, hcpcs_family, form_type, expires_on")
           .eq("expires_on", targetIso)
@@ -115,7 +113,6 @@ async function runDwoExpirySweep(): Promise<SweepStats> {
     for (const row of dwos) {
       stats.scanned += 1;
       const { data: existing } = await supabase
-        .schema("resupply")
         .from("csr_compliance_alerts")
         .select("id")
         .eq("patient_id", row.patient_id)
@@ -128,7 +125,6 @@ async function runDwoExpirySweep(): Promise<SweepStats> {
       const severity: "warning" | "critical" =
         window <= 7 ? "critical" : "warning";
       const { error: insertErr } = await supabase
-        .schema("resupply")
         .from("csr_compliance_alerts")
         .insert({
           patient_id: row.patient_id,
@@ -154,5 +150,22 @@ async function runDwoExpirySweep(): Promise<SweepStats> {
       stats.byWindow[window] = (stats.byWindow[window] ?? 0) + 1;
     }
   }
+}
+
+/**
+ * Run the DWO expiry sweep for EVERY active tenant. `dwo_documents` /
+ * `csr_compliance_alerts` are tenant-scoped, so the sweep fans out via
+ * `forEachActiveOrg` and accumulates the counts. Exported for test
+ * injection. Single-tenant behavior unchanged.
+ */
+export async function runDwoExpirySweep(): Promise<SweepStats> {
+  const stats: SweepStats = {
+    scanned: 0,
+    alertsCreated: 0,
+    byWindow: { 60: 0, 30: 0, 7: 0 },
+  };
+  await forEachActiveOrg((orgId) => dwoExpirySweepForOrg(orgId, stats), {
+    jobName: JOB,
+  });
   return stats;
 }

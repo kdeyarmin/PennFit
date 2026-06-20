@@ -20,6 +20,7 @@ import { EmptyState } from "@/components/admin/EmptyState";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Button } from "@/components/admin/Button";
 import { Input, Label } from "@/components/admin/Input";
+import { PayerNameAutocomplete } from "@/components/admin/PayerNameAutocomplete";
 import { formatDateTime } from "@/lib/admin/format";
 import { useAdminRole } from "@/lib/admin/role-context";
 import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
@@ -479,12 +480,12 @@ function ComplianceRuleFormModal({
             </div>
             <div>
               <Label htmlFor="cr-payer">Insurance payer (optional)</Label>
-              <Input
+              <PayerNameAutocomplete
                 id="cr-payer"
                 value={form.matchInsurancePayer}
                 placeholder="blank = any payer"
                 maxLength={120}
-                onChange={(e) => patch("matchInsurancePayer", e.target.value)}
+                onValueChange={(v) => patch("matchInsurancePayer", v)}
                 disabled={isPending}
               />
             </div>

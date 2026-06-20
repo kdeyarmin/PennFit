@@ -1,17 +1,15 @@
 // @vitest-environment jsdom
 //
-// Anti-trap regression test for AdminSettingsPage.
+// Two regressions in one file, both about not trapping the user:
 //
-// The demo on/off toggle lives on the Settings page. If the page crashes
-// when /admin/system-info returns an unexpected shape (the historical
-// behavior: a raw TypeError mid-render bubbling to the global
-// ErrorBoundary), the user is trapped in demo mode — the only toggle to
-// get out is on the page that just crashed.
-//
-// fetchSystemInfo now rejects on a bad shape, so the query lands in its
-// `isError` branch. This test pins that down: on a query error the page
-// must still render, show its own graceful inline error, and keep the demo
-// toggle on screen and operable.
+//  1. PlatformSystemInfoPage (the deployment-metadata view on the
+//     platform console) must render its own graceful inline error — not
+//     crash into the global ErrorBoundary — when /admin/system-info
+//     returns an unexpected shape. fetchSystemInfo rejects on a bad shape,
+//     so the query lands in its `isError` branch.
+//  2. The demo on/off toggle now lives on its OWN slim tenant Settings
+//     page with NO data fetch, so it can never be trapped behind a failed
+//     system-info load. This pins that the toggle stays reachable.
 
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
@@ -39,24 +37,26 @@ vi.mock("@/demo/DemoModeProvider", () => ({
   }),
 }));
 
-import { AdminSettingsPage } from "./admin-settings";
+import { AdminSettingsPage, PlatformSystemInfoPage } from "./admin-settings";
 
 afterEach(() => cleanup());
 
-describe("AdminSettingsPage — query error path", () => {
+describe("PlatformSystemInfoPage — query error path", () => {
   it("renders without crashing into the ErrorBoundary", () => {
-    expect(() => render(<AdminSettingsPage />)).not.toThrow();
-    expect(screen.getByTestId("admin-settings-page")).toBeDefined();
+    expect(() => render(<PlatformSystemInfoPage />)).not.toThrow();
+    expect(screen.getByTestId("platform-system-info-page")).toBeDefined();
   });
 
   it("shows the graceful inline error instead of a blank/crash screen", () => {
-    render(<AdminSettingsPage />);
+    render(<PlatformSystemInfoPage />);
     expect(screen.getByRole("alert").textContent).toMatch(
       /Couldn.t load system info/i,
     );
   });
+});
 
-  it("keeps the demo toggle reachable so the user can exit demo mode", () => {
+describe("AdminSettingsPage — demo toggle is never trapped", () => {
+  it("keeps the demo toggle reachable (no data fetch to fail)", () => {
     render(<AdminSettingsPage />);
     expect(screen.getByLabelText("Toggle demo mode")).toBeDefined();
   });

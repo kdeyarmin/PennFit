@@ -17,6 +17,7 @@ import request from "supertest";
 
 import {
   makeRequireAdminMock,
+  MOCK_ORG_ID,
   type MockAdminCtx,
 } from "../../test-helpers/auth-mocks";
 import {
@@ -194,6 +195,7 @@ describe("POST /admin/outreach-playbooks", () => {
     expect(stepWrites).toHaveLength(1);
     expect(stepWrites[0]).toEqual([
       {
+        org_id: MOCK_ORG_ID,
         playbook_id: PLAYBOOK_ID,
         step_index: 1,
         day_offset: 0,

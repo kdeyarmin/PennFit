@@ -16,19 +16,19 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
 
 const router: IRouter = Router();
 
 async function resolveSinglePatientByEmail(
+  orgId: string,
   customerEmail: string,
 ): Promise<string | null> {
-  const supabase = getSupabaseServiceRoleClient();
+  const supabase = getOrgScopedClient(orgId);
   const escaped = customerEmail.replace(/[\\%_]/g, (c) => `\\${c}`);
   const { data: rows, error } = await supabase
-    .schema("resupply")
     .from("patients")
     .select("id")
     .ilike("email", escaped)
@@ -44,14 +44,23 @@ router.get("/shop/me/equipment", requireSignedIn, async (req, res) => {
     res.json({ assets: [], patientLinked: false });
     return;
   }
-  const patientId = await resolveSinglePatientByEmail(email);
+  const orgIdForLookup = req.orgId;
+  if (!orgIdForLookup) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const patientId = await resolveSinglePatientByEmail(orgIdForLookup, email);
   if (!patientId) {
     res.json({ assets: [], patientLinked: false });
     return;
   }
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const { data, error } = await supabase
-    .schema("resupply")
     .from("equipment_assets")
     .select(
       "id, device_class, manufacturer, model, serial_number, status, dispensed_at, created_at",
@@ -61,7 +70,11 @@ router.get("/shop/me/equipment", requireSignedIn, async (req, res) => {
   if (error) throw error;
   res.json({
     patientLinked: true,
-    assets: (data ?? []).map((r) => ({
+    assets: (
+      (data ?? []) as Array<
+        Database["resupply"]["Tables"]["equipment_assets"]["Row"]
+      >
+    ).map((r) => ({
       id: r.id,
       deviceClass: r.device_class,
       manufacturer: r.manufacturer,
@@ -128,7 +141,12 @@ router.post("/shop/me/equipment", requireSignedIn, async (req, res) => {
     res.status(400).json({ error: "invalid_body" });
     return;
   }
-  const patientId = await resolveSinglePatientByEmail(email);
+  const orgIdForLookup = req.orgId;
+  if (!orgIdForLookup) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const patientId = await resolveSinglePatientByEmail(orgIdForLookup, email);
   if (!patientId) {
     res.status(404).json({
       error: "patient_not_linked",
@@ -137,9 +155,13 @@ router.post("/shop/me/equipment", requireSignedIn, async (req, res) => {
     });
     return;
   }
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const { data, error } = await supabase
-    .schema("resupply")
     .from("equipment_assets")
     .insert({
       patient_id: patientId,

@@ -1,0 +1,3 @@
+# Authenticated Playwright storage state written by admin-auth.setup.ts.
+# Contains a live admin session cookie — never commit it.
+.auth/

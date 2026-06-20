@@ -37,14 +37,15 @@ import type PgBoss from "pg-boss";
 
 import {
   type Database,
+  getOrgScopedClient,
   escapePostgRESTFilterValue,
-  getSupabaseServiceRoleClient,
 } from "@workspace/resupply-db";
 
 type FitterLeadsUpdate =
   Database["resupply"]["Tables"]["fitter_leads"]["Update"];
 
 import { logger } from "../../lib/logger";
+import { forEachActiveOrg } from "../lib/for-each-active-org";
 import { createQueueWithDlq, CRON_SCAN_QUEUE_OPTS } from "../lib/queue-options";
 
 const JOB_NAME = "fitter-lead.attribution";
@@ -70,7 +71,11 @@ export interface AttributionStats {
   errors: number;
 }
 
-export async function runFitterConversionAttribution(): Promise<AttributionStats> {
+/** Run attribution for a SINGLE tenant and return its counts. Exported
+ *  for test injection. */
+export async function runFitterConversionAttributionForOrg(
+  orgId: string,
+): Promise<AttributionStats> {
   const stats: AttributionStats = {
     ordersScanned: 0,
     leadsMatched: 0,
@@ -78,8 +83,7 @@ export async function runFitterConversionAttribution(): Promise<AttributionStats
     skippedTerminal: 0,
     errors: 0,
   };
-
-  const supabase = getSupabaseServiceRoleClient();
+  const supabase = getOrgScopedClient(orgId);
   const sinceIso = new Date(Date.now() - ORDER_LOOKBACK_MS).toISOString();
 
   // Pull recent orders. We only need id + email + created_at; the
@@ -88,6 +92,7 @@ export async function runFitterConversionAttribution(): Promise<AttributionStats
   // a per-row lookup against fitter_leads is fine at the volumes
   // we see (orders/hour is a one- to two-digit number).
   const { data: orders, error: ordErr } = await supabase
+    .raw()
     .schema("public")
     .from("orders")
     .select("id, patient_email, patient_first_name, created_at")
@@ -163,7 +168,6 @@ export async function runFitterConversionAttribution(): Promise<AttributionStats
       .map((e) => `email.ilike.${escapePostgRESTFilterValue(e)}`)
       .join(",");
     const { data: leads, error: leadErr } = await supabase
-      .schema("resupply")
       .from("fitter_leads")
       .select("id, email, journey_stage, first_order_id, created_at")
       .or(orClauses)
@@ -251,7 +255,6 @@ export async function runFitterConversionAttribution(): Promise<AttributionStats
     }
 
     const { error: updateErr } = await supabase
-      .schema("resupply")
       .from("fitter_leads")
       .update(update)
       .eq("id", lead.id)
@@ -269,6 +272,34 @@ export async function runFitterConversionAttribution(): Promise<AttributionStats
     stats.attributed += 1;
   }
 
+  return stats;
+}
+
+/**
+ * Run fitter-conversion attribution for EVERY active tenant. Each tenant
+ * matches recent orders to ITS OWN `fitter_leads`, so the sweep fans out
+ * via `forEachActiveOrg` and sums the counts. Single-tenant behavior
+ * unchanged.
+ */
+export async function runFitterConversionAttribution(): Promise<AttributionStats> {
+  const stats: AttributionStats = {
+    ordersScanned: 0,
+    leadsMatched: 0,
+    attributed: 0,
+    skippedTerminal: 0,
+    errors: 0,
+  };
+  await forEachActiveOrg(
+    async (orgId) => {
+      const s = await runFitterConversionAttributionForOrg(orgId);
+      stats.ordersScanned += s.ordersScanned;
+      stats.leadsMatched += s.leadsMatched;
+      stats.attributed += s.attributed;
+      stats.skippedTerminal += s.skippedTerminal;
+      stats.errors += s.errors;
+    },
+    { jobName: JOB_NAME },
+  );
   return stats;
 }
 

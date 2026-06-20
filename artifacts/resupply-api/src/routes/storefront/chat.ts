@@ -62,13 +62,21 @@
 import { Router, type Response } from "express";
 import { z } from "zod";
 import { isFeatureEnabled } from "../../lib/feature-flags.js";
-import { applyCompanyIdentityToText } from "../../lib/company-info.js";
+import {
+  applyCompanyIdentityToText,
+  applyPlatformBrandingForOrg,
+  getCompanyInfo,
+  type CompanyInfo,
+} from "../../lib/company-info.js";
 import { logger } from "../../lib/logger.js";
 import { withRetry } from "../../lib/with-retry.js";
 import { getLlmBreaker } from "../../lib/llm-circuit-breaker.js";
+import { requestHost } from "../../lib/request-host.js";
+import { resolveOrgIdByHost } from "../../lib/tenant-branding.js";
+import { recordTenantUsage } from "../../lib/metering/usage.js";
 import { rateLimit } from "../../middlewares/rate-limit.js";
 import {
-  buildChatSystemPrompt,
+  buildChatSystemPromptBase,
   MAX_CHAT_TURNS,
   MAX_USER_MESSAGE_CHARS,
   offlineFallbackReply,
@@ -136,11 +144,14 @@ function isTransientNetworkError(err: unknown): boolean {
   return err instanceof Error; // TypeError from fetch, socket reset, DNS, …
 }
 
-// A function (not a constant) so the phone/email reflect the
-// admin-saved company info at reply time.
-function degradedFallbackReply(): string {
+// A function (not a constant) so the phone/email reflect the company
+// info at reply time. Pass the host tenant's `info` (getCompanyInfo
+// (orgId)) so a second tenant sees ITS contact details, not the seed's;
+// omitting it falls back to the warm seed identity.
+function degradedFallbackReply(info?: CompanyInfo): string {
   return applyCompanyIdentityToText(
     "I'm having trouble answering right now. Please try again in a minute, or reach our team at (814) 471-0627 (Mon-Fri 9-5 ET) or support@pennpaps.com — they can answer anything I can't.",
+    info,
   );
 }
 
@@ -155,10 +166,12 @@ const chatBodySchema = z
   })
   .strict();
 
-// Cache the chat system prompt with a TTL so admin-side mask catalog
-// or FAQ edits become visible to the chatbot within minutes instead
-// of "next deploy". The original module-init-only cache meant prompt
-// content drifted for hours/days after a catalog update.
+// Cache the UN-BRANDED system-prompt base with a TTL so admin-side mask
+// catalog or FAQ edits become visible to the chatbot within minutes
+// instead of "next deploy". The original module-init-only cache meant
+// prompt content drifted for hours/days after a catalog update. The
+// per-tenant company-identity rewrite is applied per request on top of
+// this base (so one cache serves every tenant correctly).
 const SYSTEM_PROMPT_TTL_MS = 10 * 60 * 1000;
 let cachedSystemPrompt: string | null = null;
 let cachedSystemPromptAtMs = 0;
@@ -168,7 +181,7 @@ function getSystemPrompt(): string {
     cachedSystemPrompt === null ||
     now - cachedSystemPromptAtMs > SYSTEM_PROMPT_TTL_MS
   ) {
-    cachedSystemPrompt = buildChatSystemPrompt();
+    cachedSystemPrompt = buildChatSystemPromptBase();
     cachedSystemPromptAtMs = now;
   }
   return cachedSystemPrompt;
@@ -265,10 +278,11 @@ function startSseHeaders(res: Response): void {
  */
 function buildInitialMessages(
   userTurns: z.infer<typeof chatBodySchema>["messages"],
+  systemPrompt: string,
 ): { messages: OpenAiMessage[]; redactionCounts: Record<string, number> } {
   const aggregateCounts: Record<string, number> = {};
   const messages: OpenAiMessage[] = [
-    { role: "system", content: getSystemPrompt() },
+    { role: "system", content: systemPrompt },
     ...userTurns.map((m): OpenAiMessage => {
       // Defense-in-depth: scrub user-supplied messages of obvious
       // PII (phone, email, SSN, DOB, long member-id digit runs)
@@ -393,9 +407,25 @@ router.post("/chat", chatRateLimit, async (req, res) => {
   // we surface a single-message "offline" response. The shape
   // matches the existing unconfigured-LLM branch below so the
   // widget doesn't have to special-case anything.
-  if (!(await isFeatureEnabled("storefront.chatbot"))) {
-    const offlineMessage =
-      "The PennPaps chat assistant is currently offline. Please reach us by phone or email — we'll respond as soon as we can.";
+  //
+  // Public route — no auth middleware populates req.orgId, so resolve the
+  // tenant from the request host so a tenant's storefront.chatbot toggle
+  // gates THIS storefront.
+  const orgId =
+    req.orgId ?? (await resolveOrgIdByHost(requestHost(req))) ?? undefined;
+
+  // Resolve THIS host tenant's company identity once so every patient-
+  // facing string below (the feature-off + offline + degraded fallbacks
+  // and the system prompt's contact/brand details) carries the host
+  // tenant's brand, not the seed's. Cached ~30s; fail-soft to seed.
+  const companyInfo = await getCompanyInfo(orgId);
+  const degradedReply = degradedFallbackReply(companyInfo);
+
+  if (!(await isFeatureEnabled("storefront.chatbot", orgId))) {
+    const offlineMessage = applyCompanyIdentityToText(
+      "The PennPaps chat assistant is currently offline. Please reach us by phone or email — we'll respond as soon as we can.",
+      companyInfo,
+    );
     if (streaming) {
       startSseHeaders(res);
       writeSseEvent(res, { type: "chunk", text: offlineMessage });
@@ -418,11 +448,23 @@ router.post("/chat", chatRateLimit, async (req, res) => {
     );
     if (streaming) {
       startSseHeaders(res);
-      writeSseEvent(res, { type: "chunk", text: offlineFallbackReply() });
+      writeSseEvent(res, {
+        type: "chunk",
+        text: await applyPlatformBrandingForOrg(
+          offlineFallbackReply(companyInfo),
+          orgId,
+        ),
+      });
       writeSseEvent(res, { type: "done", offline: true });
       res.end();
     } else {
-      res.json({ reply: offlineFallbackReply(), offline: true });
+      res.json({
+        reply: await applyPlatformBrandingForOrg(
+          offlineFallbackReply(companyInfo),
+          orgId,
+        ),
+        offline: true,
+      });
     }
     return;
   }
@@ -440,16 +482,39 @@ router.post("/chat", chatRateLimit, async (req, res) => {
     );
     if (streaming) {
       startSseHeaders(res);
-      writeSseEvent(res, { type: "chunk", text: degradedFallbackReply() });
+      writeSseEvent(res, { type: "chunk", text: degradedReply });
       writeSseEvent(res, { type: "done", degraded: true });
       res.end();
     } else {
-      res.json({ reply: degradedFallbackReply(), degraded: true });
+      res.json({ reply: degradedReply, degraded: true });
     }
     return;
   }
 
-  const { messages: initial, redactionCounts } = buildInitialMessages(messages);
+  // Brand the cached (un-branded) base prompt for THIS tenant: first
+  // rewrite the historical brand/contact strings to the host tenant's
+  // saved Company-information identity (phone, email, brand name), then
+  // swap the assistant-name tokens (PennBot → the storefront-assistant
+  // name configured for orgId). Both fall back to the seed/default when
+  // the host didn't resolve to a tenant, so single-tenant is unchanged.
+  const systemPrompt = await applyPlatformBrandingForOrg(
+    applyCompanyIdentityToText(getSystemPrompt(), companyInfo),
+    orgId,
+  );
+
+  // Past every offline/feature/budget gate — this turn WILL hit a model,
+  // so meter it as one AI text interaction for the host tenant (G12).
+  // Fire-and-forget + fail-soft: never blocks or fails the chat reply.
+  void recordTenantUsage({
+    orgId,
+    metricKey: "aiTextInteractionsPerMonth",
+    source: "storefront.chat",
+  });
+
+  const { messages: initial, redactionCounts } = buildInitialMessages(
+    messages,
+    systemPrompt,
+  );
   if (Object.keys(redactionCounts).length > 0) {
     logger.info(
       {
@@ -489,25 +554,52 @@ router.post("/chat", chatRateLimit, async (req, res) => {
             client,
             messages.length,
             toolCtx,
+            degradedReply,
           )
-        : handleAnthropicJson(res, initial, client, messages.length, toolCtx);
+        : handleAnthropicJson(
+            res,
+            initial,
+            client,
+            messages.length,
+            toolCtx,
+            degradedReply,
+          );
     }
   }
 
   if (!apiKey || apiKey.trim() === "") {
     if (streaming) {
       startSseHeaders(res);
-      writeSseEvent(res, { type: "chunk", text: offlineFallbackReply() });
+      writeSseEvent(res, {
+        type: "chunk",
+        text: await applyPlatformBrandingForOrg(
+          offlineFallbackReply(companyInfo),
+          orgId,
+        ),
+      });
       writeSseEvent(res, { type: "done", offline: true });
       res.end();
     } else {
-      res.json({ reply: offlineFallbackReply(), offline: true });
+      res.json({
+        reply: await applyPlatformBrandingForOrg(
+          offlineFallbackReply(companyInfo),
+          orgId,
+        ),
+        offline: true,
+      });
     }
     return;
   }
   return streaming
-    ? handleStreaming(res, initial, apiKey, messages.length, toolCtx)
-    : handleJson(res, initial, apiKey, messages.length, toolCtx);
+    ? handleStreaming(
+        res,
+        initial,
+        apiKey,
+        messages.length,
+        toolCtx,
+        degradedReply,
+      )
+    : handleJson(res, initial, apiKey, messages.length, toolCtx, degradedReply);
 });
 
 async function handleJson(
@@ -516,6 +608,7 @@ async function handleJson(
   apiKey: string,
   turns: number,
   toolCtx: ChatToolContext,
+  degradedReply: string,
 ): Promise<void> {
   // Circuit breaker: during a SUSTAINED OpenAI outage, skip the upstream
   // entirely and degrade instantly rather than making every request wait
@@ -528,7 +621,7 @@ async function handleJson(
       { event: "chat_openai_circuit_open" },
       "chat: openai circuit open — returning degraded fallback without calling upstream",
     );
-    res.json({ reply: degradedFallbackReply(), degraded: true });
+    res.json({ reply: degradedReply, degraded: true });
     return;
   }
 
@@ -591,7 +684,7 @@ async function handleJson(
           { event: "chat_openai_http_error", status },
           "chat: openai HTTP error (returning degraded fallback)",
         );
-        res.json({ reply: degradedFallbackReply(), degraded: true });
+        res.json({ reply: degradedReply, degraded: true });
         return;
       }
       // The vendor responded (even a 4xx is "reachable") → reset the breaker.
@@ -606,7 +699,7 @@ async function handleJson(
           },
           "chat: openai HTTP error",
         );
-        res.json({ reply: degradedFallbackReply(), degraded: true });
+        res.json({ reply: degradedReply, degraded: true });
         return;
       }
 
@@ -624,7 +717,7 @@ async function handleJson(
           { event: "chat_empty_reply", round },
           "chat: openai returned empty content",
         );
-        res.json({ reply: degradedFallbackReply(), degraded: true });
+        res.json({ reply: degradedReply, degraded: true });
         return;
       }
 
@@ -657,7 +750,7 @@ async function handleJson(
       { event: "chat_tool_cap_hit" },
       "chat: hit MAX_TOOL_ROUNDS without a final reply",
     );
-    res.json({ reply: degradedFallbackReply(), degraded: true });
+    res.json({ reply: degradedReply, degraded: true });
   } catch (err) {
     logger.warn(
       {
@@ -666,7 +759,7 @@ async function handleJson(
       },
       "chat: exception (returning degraded fallback)",
     );
-    res.json({ reply: degradedFallbackReply(), degraded: true });
+    res.json({ reply: degradedReply, degraded: true });
   } finally {
     clearTimeout(timer);
   }
@@ -828,6 +921,7 @@ async function handleStreaming(
   apiKey: string,
   turns: number,
   toolCtx: ChatToolContext,
+  degradedReply: string,
 ): Promise<void> {
   startSseHeaders(res);
 
@@ -880,7 +974,7 @@ async function handleStreaming(
       );
       if (result.degraded) {
         if (totalChars === 0) {
-          safeEvent({ type: "chunk", text: degradedFallbackReply() });
+          safeEvent({ type: "chunk", text: degradedReply });
         }
         safeEvent({ type: "done", degraded: true });
         safeEnd();
@@ -900,7 +994,7 @@ async function handleStreaming(
           { event: "chat_empty_reply", streaming: true, round },
           "chat: openai stream returned no content",
         );
-        safeEvent({ type: "chunk", text: degradedFallbackReply() });
+        safeEvent({ type: "chunk", text: degradedReply });
         degraded = true;
       }
       logger.info(
@@ -924,7 +1018,7 @@ async function handleStreaming(
       "chat: hit MAX_TOOL_ROUNDS without a final reply",
     );
     if (totalChars === 0) {
-      safeEvent({ type: "chunk", text: degradedFallbackReply() });
+      safeEvent({ type: "chunk", text: degradedReply });
     }
     safeEvent({ type: "done", degraded: true });
     safeEnd();
@@ -938,7 +1032,7 @@ async function handleStreaming(
       "chat: exception during stream (returning degraded fallback)",
     );
     if (totalChars === 0) {
-      safeEvent({ type: "chunk", text: degradedFallbackReply() });
+      safeEvent({ type: "chunk", text: degradedReply });
     }
     safeEvent({ type: "done", degraded: true });
     safeEnd();
@@ -1080,6 +1174,7 @@ async function handleAnthropicJson(
   client: AnthropicClient,
   turns: number,
   toolCtx: ChatToolContext,
+  degradedReply: string,
 ): Promise<void> {
   let messages = initialMessages;
   try {
@@ -1108,7 +1203,7 @@ async function handleAnthropicJson(
           },
           "chat: anthropic call failed",
         );
-        res.json({ reply: degradedFallbackReply(), degraded: true });
+        res.json({ reply: degradedReply, degraded: true });
         return;
       }
       const text = getResponseText(result.response).trim();
@@ -1134,7 +1229,7 @@ async function handleAnthropicJson(
           { event: "chat_empty_reply", vendor: "anthropic", round },
           "chat: anthropic returned empty content",
         );
-        res.json({ reply: degradedFallbackReply(), degraded: true });
+        res.json({ reply: degradedReply, degraded: true });
         return;
       }
       logger.info(
@@ -1157,7 +1252,7 @@ async function handleAnthropicJson(
       { event: "chat_tool_cap_hit", vendor: "anthropic" },
       "chat: hit MAX_TOOL_ROUNDS without a final reply",
     );
-    res.json({ reply: degradedFallbackReply(), degraded: true });
+    res.json({ reply: degradedReply, degraded: true });
   } catch (err) {
     logger.warn(
       {
@@ -1167,7 +1262,7 @@ async function handleAnthropicJson(
       },
       "chat: anthropic exception (returning degraded fallback)",
     );
-    res.json({ reply: degradedFallbackReply(), degraded: true });
+    res.json({ reply: degradedReply, degraded: true });
   }
 }
 
@@ -1177,6 +1272,7 @@ async function handleAnthropicStreaming(
   client: AnthropicClient,
   turns: number,
   toolCtx: ChatToolContext,
+  degradedReply: string,
 ): Promise<void> {
   startSseHeaders(res);
 
@@ -1249,7 +1345,7 @@ async function handleAnthropicStreaming(
           "chat: anthropic stream failed",
         );
         if (totalChars === 0) {
-          safeEvent({ type: "chunk", text: degradedFallbackReply() });
+          safeEvent({ type: "chunk", text: degradedReply });
         }
         safeEvent({ type: "done", degraded: true });
         safeEnd();
@@ -1286,7 +1382,7 @@ async function handleAnthropicStreaming(
           },
           "chat: anthropic stream returned no content",
         );
-        safeEvent({ type: "chunk", text: degradedFallbackReply() });
+        safeEvent({ type: "chunk", text: degradedReply });
         safeEvent({ type: "done", degraded: true });
         safeEnd();
         return;
@@ -1314,7 +1410,7 @@ async function handleAnthropicStreaming(
       "chat: hit MAX_TOOL_ROUNDS without a final reply",
     );
     if (totalChars === 0) {
-      safeEvent({ type: "chunk", text: degradedFallbackReply() });
+      safeEvent({ type: "chunk", text: degradedReply });
     }
     safeEvent({ type: "done", degraded: true });
     safeEnd();
@@ -1329,7 +1425,7 @@ async function handleAnthropicStreaming(
       "chat: anthropic exception during stream (returning degraded fallback)",
     );
     if (totalChars === 0) {
-      safeEvent({ type: "chunk", text: degradedFallbackReply() });
+      safeEvent({ type: "chunk", text: degradedReply });
     }
     safeEvent({ type: "done", degraded: true });
     safeEnd();

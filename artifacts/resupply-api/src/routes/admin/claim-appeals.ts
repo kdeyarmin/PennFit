@@ -11,10 +11,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  type Database,
-  getSupabaseServiceRoleClient,
-} from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import {
   createTelnyxFaxClient,
@@ -26,6 +23,7 @@ import { resolveBillingIdentity } from "../../lib/billing/identity-resolver";
 import { parsePayerAddressLines } from "../../lib/billing/payer-address";
 import { signAppealFaxToken } from "../../lib/fax-document-token";
 import { logger } from "../../lib/logger";
+import { resolveTenantFaxFrom } from "../../lib/messaging/tenant-telecom";
 import { publishEvent } from "../../lib/webhooks/publisher";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -57,9 +55,13 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data } = await supabase
-      .schema("resupply")
       .from("claim_appeal_letters")
       .select("*")
       .eq("claim_id", parsed.data.claimId)
@@ -84,9 +86,13 @@ router.post(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: claim } = await supabase
-      .schema("resupply")
       .from("insurance_claims")
       .select(
         "id, patient_id, payer_name, payer_profile_id, claim_number, date_of_service, denial_reason, insurance_coverage_id",
@@ -102,7 +108,6 @@ router.post(
     const [{ data: patient }, { data: coverage }, { data: payerProfile }] =
       await Promise.all([
         supabase
-          .schema("resupply")
           .from("patients")
           .select("legal_first_name, legal_last_name")
           .eq("id", claim.patient_id)
@@ -110,7 +115,6 @@ router.post(
           .maybeSingle(),
         claim.insurance_coverage_id
           ? supabase
-              .schema("resupply")
               .from("insurance_coverages")
               .select("member_id")
               .eq("id", claim.insurance_coverage_id)
@@ -122,7 +126,6 @@ router.post(
         // of relying on the operator to look it up.
         claim.payer_profile_id
           ? supabase
-              .schema("resupply")
               .from("payer_profiles")
               .select("appeals_mailing_address")
               .eq("id", claim.payer_profile_id)
@@ -134,7 +137,7 @@ router.post(
       res.status(404).json({ error: "patient_not_found" });
       return;
     }
-    const identity = await resolveBillingIdentity({ supabase });
+    const identity = await resolveBillingIdentity({ orgId });
     if (identity.source === "stub") {
       res.status(409).json({ error: "no_dme_organization" });
       return;
@@ -178,7 +181,6 @@ router.post(
         generated_by_email: req.adminEmail ?? "unknown",
       };
     const { data: row, error: insertErr } = await supabase
-      .schema("resupply")
       .from("claim_appeal_letters")
       .insert(insertRow)
       .select("id")
@@ -258,10 +260,14 @@ router.post(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     // The letter must exist AND belong to the claim + patient in the path.
     const { data: letter } = await supabase
-      .schema("resupply")
       .from("claim_appeal_letters")
       .select("id, claim_id")
       .eq("id", params.data.letterId)
@@ -273,7 +279,6 @@ router.post(
     }
 
     const { data: claim } = await supabase
-      .schema("resupply")
       .from("insurance_claims")
       .select("id, patient_id")
       .eq("id", params.data.claimId)
@@ -292,7 +297,10 @@ router.post(
     const token = signAppealFaxToken(letter.id);
     const mediaUrl = `${baseUrl}/resupply-api/fax/document/${token}`;
     const statusCallbackUrl = `${baseUrl}/resupply-api/fax/webhook`;
-    const fromNumber = process.env.TELNYX_FAX_FROM_NUMBER!.trim();
+    // Prefer the tenant's own provisioned fax DID (migration 0368), else
+    // the platform default (isFaxConfigured verified it is set).
+    const tenantFrom = await resolveTenantFaxFrom(orgId);
+    const fromNumber = tenantFrom ?? process.env.TELNYX_FAX_FROM_NUMBER!.trim();
 
     let faxId: string;
     try {
@@ -321,7 +329,6 @@ router.post(
     // the accept timestamp records the hand-off.
     const nowIso = new Date().toISOString();
     const { error: stampErr } = await supabase
-      .schema("resupply")
       .from("claim_appeal_letters")
       .update({ delivery_method: "fax", delivered_at: nowIso })
       .eq("id", letter.id);

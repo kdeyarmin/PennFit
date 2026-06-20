@@ -8,7 +8,7 @@
 //   * Import:  operator runs the Patient List report in PacWare, uploads
 //              the CSV here -> patients are synced (insert/update) on the
 //              PacWare account number (patients.pacware_id).
-//   * Export:  PennFit emits CSV files shaped for PacWare's import
+//   * Export:  CareMetric Breathe emits CSV files shaped for PacWare's import
 //              screens — the patient roster (round-trips with import) and
 //              the resupply-due worklist (PacWare order entry / billing).
 //
@@ -28,8 +28,9 @@ import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
 import {
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
   type Json,
+  type OrgScopedClient,
 } from "@workspace/resupply-db";
 import { timezoneForUsState } from "@workspace/resupply-domain";
 import {
@@ -38,9 +39,12 @@ import {
   listPacwareReportSpecs,
   pacwareAvailability,
   parsePacwarePatientCsv,
+  parsePatientCsvWithMapping,
+  previewPatientCsvHeaders,
   type PacwarePatientExportRecord,
   type PacwarePatientRow,
   type PacwareResupplyDueRecord,
+  type PatientColumnMapping,
 } from "@workspace/resupply-integrations-pacware";
 
 import { logger } from "../../lib/logger";
@@ -102,7 +106,7 @@ router.get(
 // ---------------------------------------------------------------------------
 // POST /admin/pacware/import/patients — upload a PacWare patient report.
 //
-// Sync semantics: rows are matched to PennFit patients on pacware_id.
+// Sync semantics: rows are matched to CareMetric Breathe patients on pacware_id.
 // New patients are inserted; existing patients are FILL-ONLY patched —
 // only their BLANK fields are filled, an existing value is never
 // overwritten and never blanked (buildFillPatch skips blank incoming
@@ -125,6 +129,12 @@ const importBodySchema = z
       .min(1)
       .max(8 * 1024 * 1024),
     mode: z.enum(["preview", "commit"]).default("preview"),
+    // Optional operator-supplied column mapping (canonical field -> the source
+    // file's header label). When present, the file is imported as an arbitrary
+    // CSV with tolerant date/phone coercion; when absent, the legacy
+    // PacWare-format path (header aliases) is used. Either way the SAME schema
+    // and fill-only sync run downstream.
+    columnMapping: z.record(z.string(), z.string()).optional(),
   })
   .strict();
 
@@ -144,6 +154,46 @@ const SCALAR_COLUMN: Record<string, string> = {
 // write (assembleAddress would yield null and blank an existing address).
 const CORE_ADDRESS_FIELDS = ["addressLine1", "city", "state", "postalCode"];
 
+// ---------------------------------------------------------------------------
+// POST /admin/pacware/import/patients/headers — read just the header row of
+// an uploaded CSV and propose a column mapping.
+//
+// Powers the "map your columns" step for importing a roster from ANY system
+// (not just a PacWare export). Returns column LABELS + auto-detected
+// field guesses + the mappable-field catalog — deliberately NO data rows, so
+// it never echoes PHI (and so it carries no Idempotency-Key persistence).
+// ---------------------------------------------------------------------------
+const importHeadersBodySchema = z
+  .object({
+    csv: z
+      .string()
+      .min(1)
+      .max(8 * 1024 * 1024),
+  })
+  .strict();
+
+router.post(
+  "/admin/pacware/import/patients/headers",
+  adminWriteRateLimiter,
+  requirePermission("admin.tools.manage"),
+  (req, res) => {
+    if (!ensurePacwareEnabled(res)) return;
+    const parsed = importHeadersBodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "invalid_body",
+        issues: parsed.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
+      });
+      return;
+    }
+    res.setHeader("Cache-Control", "no-store");
+    res.status(200).json(previewPatientCsvHeaders(parsed.data.csv));
+  },
+);
+
 router.post(
   "/admin/pacware/import/patients",
   adminWriteRateLimiter,
@@ -162,9 +212,12 @@ router.post(
       });
       return;
     }
-    const { csv, mode } = parsed.data;
+    const { csv, mode, columnMapping } = parsed.data;
 
-    const result = parsePacwarePatientCsv(csv);
+    const result =
+      columnMapping && Object.keys(columnMapping).length > 0
+        ? parsePatientCsvWithMapping(csv, columnMapping as PatientColumnMapping)
+        : parsePacwarePatientCsv(csv);
     if (result.totalDataRows > MAX_IMPORT_ROWS) {
       res.status(413).json({
         error: "too_many_rows",
@@ -196,12 +249,17 @@ router.post(
     }
 
     // commit ---------------------------------------------------------------
-    // "Never overwrite": a sync FILLS blank PennFit fields from the report
+    // "Never overwrite": a sync FILLS blank CareMetric Breathe fields from the report
     // but never changes a field that already holds a value. New patients are
     // inserted in full; existing patients only get their currently-empty
     // optional fields filled. Required fields (name, DOB) are NOT NULL on
     // existing rows, so they are never touched.
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const nowIso = new Date().toISOString();
     const present = new Set(result.presentFields);
     const includeAddress = CORE_ADDRESS_FIELDS.some((f) => present.has(f));
@@ -223,7 +281,6 @@ router.post(
       // Read which of these already exist + their current values, so we can
       // fill only the blanks.
       const { data: existingRows, error: lookupErr } = await supabase
-        .schema("resupply")
         .from("patients")
         .select(EXISTING_SELECT)
         .in("pacware_id", ids);
@@ -265,7 +322,6 @@ router.post(
       // Insert all new patients in this chunk in one call.
       if (inserts.length > 0) {
         const { error: insErr } = await supabase
-          .schema("resupply")
           .from("patients")
           .insert(inserts);
         if (insErr) {
@@ -286,7 +342,6 @@ router.post(
       // doesn't abort the rest.
       for (const u of fillUpdates) {
         const { error: updErr } = await supabase
-          .schema("resupply")
           .from("patients")
           .update(u.patch)
           .eq("id", u.id);
@@ -318,6 +373,9 @@ router.post(
         validation_errors: result.errors.length,
         batch_errors: batchErrors.length,
         unmapped_header_count: result.unmappedHeaders.length,
+        column_mapping_used: !!(
+          columnMapping && Object.keys(columnMapping).length > 0
+        ),
       },
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
@@ -369,9 +427,13 @@ router.get(
       res.status(400).json({ error: "invalid_query" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     let query = supabase
-      .schema("resupply")
       .from("patients")
       .select(
         "pacware_id, legal_first_name, legal_last_name, date_of_birth, phone_e164, email, address, insurance_payer",
@@ -467,7 +529,12 @@ router.get(
       return;
     }
     const { status } = parsed.data;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     // Items whose patient has no PacWare account number are WITHHELD
     // from the worklist (the report's pacware_id is required for
     // PacWare order entry — a blank account line can't be keyed) and
@@ -475,7 +542,6 @@ router.get(
     // verify preview so the operator can backfill the id (patient
     // header → "No PacWare ID" → Add) and sync again. Count them first.
     const { count: missingCount, error: missingErr } = await supabase
-      .schema("resupply")
       .from("episodes")
       .select("id, prescriptions!inner(id), patients!inner(id)", {
         count: "exact",
@@ -485,7 +551,6 @@ router.get(
       .is("patients.pacware_id", null);
     if (missingErr) throw missingErr;
     const { data: rows, error } = await supabase
-      .schema("resupply")
       .from("episodes")
       .select(
         "id, status, due_at, prescriptions!inner(item_sku), patients!inner(pacware_id, legal_first_name, legal_last_name, insurance_payer)",
@@ -563,9 +628,13 @@ router.get(
       res.status(400).json({ error: "invalid_query" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     let countQ = supabase
-      .schema("resupply")
       .from("patients")
       .select("id", { count: "exact", head: true });
     if (parsed.data.status) countQ = countQ.eq("status", parsed.data.status);
@@ -573,7 +642,6 @@ router.get(
     if (countErr) throw countErr;
 
     let sampleQ = supabase
-      .schema("resupply")
       .from("patients")
       .select(
         "pacware_id, legal_first_name, legal_last_name, date_of_birth, phone_e164, email, address, insurance_payer",
@@ -605,7 +673,12 @@ router.get(
       return;
     }
     const { status } = parsed.data;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     // `count` is what the downloaded CSV will actually contain (the
     // verify contract): items whose patient has no PacWare account
     // number are withheld from the worklist and reported separately as
@@ -613,7 +686,6 @@ router.get(
     // first. The sample query mirrors the export's filter for the same
     // reason — the preview must never show a row the file won't have.
     const { count, error: countErr } = await supabase
-      .schema("resupply")
       .from("episodes")
       .select("id, prescriptions!inner(id), patients!inner(id)", {
         count: "exact",
@@ -624,7 +696,6 @@ router.get(
     if (countErr) throw countErr;
 
     const { count: missingCount, error: missingErr } = await supabase
-      .schema("resupply")
       .from("episodes")
       .select("id, prescriptions!inner(id), patients!inner(id)", {
         count: "exact",
@@ -635,7 +706,6 @@ router.get(
     if (missingErr) throw missingErr;
 
     const { data: rows, error } = await supabase
-      .schema("resupply")
       .from("episodes")
       .select(
         "id, status, due_at, prescriptions!inner(item_sku), patients!inner(pacware_id, legal_first_name, legal_last_name, insurance_payer)",
@@ -676,9 +746,14 @@ router.get(
   "/admin/pacware/settings",
   adminReadRateLimiter,
   requirePermission("admin.tools.manage"),
-  async (_req, res) => {
+  async (req, res) => {
     if (!ensurePacwareEnabled(res)) return;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const [autoSync, pending] = await Promise.all([
       readPacwareAutoSync(supabase),
       getPendingCounts(supabase),
@@ -699,20 +774,22 @@ router.put(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
-    const { error } = await supabase
-      .schema("resupply")
-      .from("app_config")
-      .upsert(
-        {
-          key: AUTO_SYNC_KEY,
-          value: parsed.data.autoSync ? "true" : "false",
-          updated_by_user_id: req.adminUserId ?? null,
-          updated_by_email: req.adminEmail ?? null,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "key" },
-      );
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+    const { error } = await supabase.from("app_config").upsert(
+      {
+        key: AUTO_SYNC_KEY,
+        value: parsed.data.autoSync ? "true" : "false",
+        updated_by_user_id: req.adminUserId ?? null,
+        updated_by_email: req.adminEmail ?? null,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "key" },
+    );
     if (error) throw error;
 
     await logAudit({
@@ -906,12 +983,11 @@ function toResupplyRecords(list: EpisodeJoinRow[]): PacwareResupplyDueRecord[] {
 // overlay (loadOverridesFromDb filters to catalog keys).
 const AUTO_SYNC_KEY = "pacware.auto_sync";
 
-type SupabaseSr = ReturnType<typeof getSupabaseServiceRoleClient>;
+type SupabaseSr = OrgScopedClient;
 
 /** Read the auto-sync toggle. Fail-soft to false (manual) on any error. */
 async function readPacwareAutoSync(supabase: SupabaseSr): Promise<boolean> {
   const { data, error } = await supabase
-    .schema("resupply")
     .from("app_config")
     .select("value")
     .eq("key", AUTO_SYNC_KEY)
@@ -930,17 +1006,13 @@ async function getPendingCounts(
 ): Promise<{ resupplyDue: number; patients: number }> {
   const [resupply, patients] = await Promise.all([
     supabase
-      .schema("resupply")
       .from("episodes")
       .select("id, prescriptions!inner(id), patients!inner(id)", {
         count: "exact",
         head: true,
       })
       .eq("status", "confirmed"),
-    supabase
-      .schema("resupply")
-      .from("patients")
-      .select("id", { count: "exact", head: true }),
+    supabase.from("patients").select("id", { count: "exact", head: true }),
   ]);
   return {
     resupplyDue: resupply.count ?? 0,

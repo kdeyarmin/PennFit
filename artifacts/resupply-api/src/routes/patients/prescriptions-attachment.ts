@@ -55,7 +55,7 @@ import { Readable } from "node:stream";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import {
@@ -120,6 +120,7 @@ const objectStorage = new ObjectStorageService();
  * patient's UI accidentally enumerate another's documents.
  */
 async function findPrescriptionForPatient(
+  orgId: string,
   patientId: string,
   rxId: string,
 ): Promise<{
@@ -128,9 +129,8 @@ async function findPrescriptionForPatient(
   attachmentFilename: string | null;
   attachmentContentType: string | null;
 } | null> {
-  const supabase = getSupabaseServiceRoleClient();
+  const supabase = getOrgScopedClient(orgId);
   const { data, error } = await supabase
-    .schema("resupply")
     .from("prescriptions")
     .select(
       "id, attachment_object_key, attachment_filename, attachment_content_type",
@@ -183,7 +183,15 @@ router.post(
       return;
     }
 
-    const rx = await findPrescriptionForPatient(ids.data.id, ids.data.rxId);
+    if (!req.orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const rx = await findPrescriptionForPatient(
+      req.orgId,
+      ids.data.id,
+      ids.data.rxId,
+    );
     if (!rx) {
       res.status(404).json({ error: "not_found" });
       return;
@@ -266,7 +274,15 @@ router.post(
       return;
     }
 
-    const rx = await findPrescriptionForPatient(ids.data.id, ids.data.rxId);
+    if (!req.orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const rx = await findPrescriptionForPatient(
+      req.orgId,
+      ids.data.id,
+      ids.data.rxId,
+    );
     if (!rx) {
       res.status(404).json({ error: "not_found" });
       return;
@@ -367,10 +383,14 @@ router.post(
     // because nothing in this handler has mutated the row yet.
     const previousObjectKey = rx.attachmentObjectKey;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const nowIso = new Date().toISOString();
     const { error: updateErr } = await supabase
-      .schema("resupply")
       .from("prescriptions")
       .update({
         attachment_object_key: normalizedPath,
@@ -462,7 +482,15 @@ router.get(
       return;
     }
 
-    const rx = await findPrescriptionForPatient(ids.data.id, ids.data.rxId);
+    if (!req.orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const rx = await findPrescriptionForPatient(
+      req.orgId,
+      ids.data.id,
+      ids.data.rxId,
+    );
     if (!rx || !rx.attachmentObjectKey) {
       res.status(404).json({ error: "not_found" });
       return;
@@ -552,7 +580,15 @@ router.delete(
       return;
     }
 
-    const rx = await findPrescriptionForPatient(ids.data.id, ids.data.rxId);
+    if (!req.orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const rx = await findPrescriptionForPatient(
+      req.orgId,
+      ids.data.id,
+      ids.data.rxId,
+    );
     if (!rx) {
       res.status(404).json({ error: "not_found" });
       return;
@@ -602,10 +638,14 @@ router.delete(
       }
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const nowIso = new Date().toISOString();
     const { error: clearErr } = await supabase
-      .schema("resupply")
       .from("prescriptions")
       .update({
         attachment_object_key: null,

@@ -21,7 +21,7 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 import {
   bufferToHexBytea,
   issueToken,
@@ -62,9 +62,17 @@ router.get(
   "/admin/provider-portal/accounts",
   adminReadRateLimiter,
   requirePermission("provider_portal.manage"),
-  async (_req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+    // provider_portal_accounts is a BLOCKED GLOBAL table (no org_id) —
+    // raw client, no org filter.
     const { data, error } = await supabase
+      .raw()
       .schema("resupply")
       .from("provider_portal_accounts")
       .select(
@@ -110,6 +118,7 @@ const inviteBody = z
  *  or `{ staffConflict: true }` when the email belongs to a staff
  *  (non-customer) auth row — the caller must 409, not invite. */
 async function inviteProviderUser(
+  orgId: string,
   emailLower: string,
   displayName: string | null,
 ): Promise<
@@ -121,7 +130,7 @@ async function inviteProviderUser(
       inviteLink: string;
     }
 > {
-  const supabase = getSupabaseServiceRoleClient();
+  const supabase = getOrgScopedClient(orgId);
   const deps = getAuthDeps();
   const now = new Date();
   const nowIso = now.toISOString();
@@ -129,7 +138,9 @@ async function inviteProviderUser(
   // Resolve / create the auth user. Providers are role 'customer' (the
   // lowest privilege — they can never pass requireAdmin); their
   // portal access comes purely from the provider_portal_accounts link.
+  // resupply_auth tables are cross-schema globals — use .raw().
   const { data: existing, error: readErr } = await supabase
+    .raw()
     .schema("resupply_auth")
     .from("users")
     .select("id, status, role")
@@ -152,6 +163,7 @@ async function inviteProviderUser(
     // Re-activate a revoked CUSTOMER row; never touch the role.
     if (existing.status === "revoked") {
       const { error: reactivateErr } = await supabase
+        .raw()
         .schema("resupply_auth")
         .from("users")
         .update({ status: "invited", updated_at: nowIso })
@@ -161,6 +173,7 @@ async function inviteProviderUser(
     authUserId = existing.id;
   } else {
     const { data: inserted, error: insErr } = await supabase
+      .raw()
       .schema("resupply_auth")
       .from("users")
       .insert({
@@ -179,6 +192,7 @@ async function inviteProviderUser(
   const token = issueToken();
   const expiresAt = new Date(now.getTime() + INVITE_TOKEN_TTL_MS);
   const { error: tokErr } = await supabase
+    .raw()
     .schema("resupply_auth")
     .from("email_tokens")
     .insert({
@@ -251,8 +265,16 @@ router.post(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+    // providers is a tenant table (in the typed union) — facade scopes.
     const { data: provider, error: pErr } = await supabase
+      // providers is a GLOBAL NPI registry (no org_id) — unscoped client.
+      .raw()
       .schema("resupply")
       .from("providers")
       .select("id, legal_name, email")
@@ -277,6 +299,7 @@ router.post(
     }
 
     const invite = await inviteProviderUser(
+      orgId,
       email,
       (provider.legal_name as string | null) ?? null,
     );
@@ -290,8 +313,10 @@ router.post(
     }
     const { authUserId, emailSent, inviteLink } = invite;
 
-    // Link (or refresh) the portal account.
+    // Link (or refresh) the portal account. provider_portal_accounts is
+    // a BLOCKED GLOBAL table (no org_id) — raw client, no org filter.
     const { data: existingAccount } = await supabase
+      .raw()
       .schema("resupply")
       .from("provider_portal_accounts")
       .select("id")
@@ -301,6 +326,7 @@ router.post(
     const nowIso = new Date().toISOString();
     if (existingAccount) {
       const { error: accountUpdateErr } = await supabase
+        .raw()
         .schema("resupply")
         .from("provider_portal_accounts")
         .update({
@@ -315,6 +341,7 @@ router.post(
       if (accountUpdateErr) throw accountUpdateErr;
     } else {
       const { error: accountInsertErr } = await supabase
+        .raw()
         .schema("resupply")
         .from("provider_portal_accounts")
         .insert({
@@ -343,9 +370,16 @@ router.post(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const nowIso = new Date().toISOString();
+    // provider_portal_accounts is a BLOCKED GLOBAL table — raw, no filter.
     const { data, error } = await supabase
+      .raw()
       .schema("resupply")
       .from("provider_portal_accounts")
       .update({
@@ -365,8 +399,9 @@ router.post(
     // Revoke any live sessions so an open provider tab loses access.
     // Security-relevant: a silent failure would leave a disabled
     // provider's sessions usable — surface it as a 500 so the admin
-    // re-runs disable (idempotent).
+    // re-runs disable (idempotent). resupply_auth is cross-schema → raw.
     const { error: revokeErr } = await supabase
+      .raw()
       .schema("resupply_auth")
       .from("sessions")
       .update({ revoked_at: nowIso })
@@ -387,10 +422,17 @@ router.post(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const nowIso = new Date().toISOString();
     // Re-enable to 'active' if MFA already enrolled, else 'invited'.
+    // provider_portal_accounts is a BLOCKED GLOBAL table — raw, no filter.
     const { data: acct } = await supabase
+      .raw()
       .schema("resupply")
       .from("provider_portal_accounts")
       .select("mfa_enrolled_at")
@@ -398,6 +440,7 @@ router.post(
       .maybeSingle();
     const nextStatus = acct?.mfa_enrolled_at ? "active" : "invited";
     const { data, error } = await supabase
+      .raw()
       .schema("resupply")
       .from("provider_portal_accounts")
       .update({
@@ -435,13 +478,22 @@ router.get(
       res.status(400).json({ error: "invalid_query" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+    // provider_signature_requests is a BLOCKED TENANT table — raw client
+    // + MANUAL org_id filter.
     let query = supabase
+      .raw()
       .schema("resupply")
       .from("provider_signature_requests")
       .select(
         "id, provider_id, subject_type, subject_id, title, patient_name_snapshot, status, created_at, signed_at, expires_at, ready_to_print_at, returned_signed_at, attached_to_chart_at, released_at, release_kind, providers(legal_name, npi)",
       )
+      .eq("org_id", orgId)
       .order("created_at", { ascending: false })
       .limit(300);
     const status = parsed.data.status ?? "all";
@@ -515,8 +567,16 @@ router.post(
         .json({ error: "invalid_body", issues: parsed.error.issues });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+    // providers is a tenant table (in the typed union) — facade scopes.
     const { data: provider, error: pErr } = await supabase
+      // providers is a GLOBAL NPI registry (no org_id) — unscoped client.
+      .raw()
       .schema("resupply")
       .from("providers")
       .select("id")
@@ -530,11 +590,10 @@ router.post(
 
     // Snapshot the patient name (so the queue + certificate render
     // without re-joining live PHI). Prefer the explicit value; else
-    // best-effort decode from the patient row.
+    // best-effort decode from the patient row. patients is tenant (union).
     let patientName = parsed.data.patientName ?? null;
     if (!patientName && parsed.data.patientId) {
       const { data: pt } = await supabase
-        .schema("resupply")
         .from("patients")
         .select("legal_first_name, legal_last_name")
         .eq("id", parsed.data.patientId)
@@ -547,18 +606,24 @@ router.post(
     }
 
     // Link an existing portal account for this provider (if any).
+    // provider_portal_accounts is a BLOCKED GLOBAL table — raw, no filter.
     const { data: account } = await supabase
+      .raw()
       .schema("resupply")
       .from("provider_portal_accounts")
       .select("id")
       .eq("provider_id", parsed.data.providerId)
       .maybeSingle();
 
+    // provider_signature_requests is a BLOCKED TENANT table — raw client
+    // + MANUAL org_id on the inserted row.
     const { data: inserted, error: insErr } = await supabase
+      .raw()
       .schema("resupply")
       .from("provider_signature_requests")
       .insert({
         provider_id: parsed.data.providerId,
+        org_id: orgId,
         account_id: account?.id ?? null,
         patient_id: parsed.data.patientId ?? null,
         subject_type: parsed.data.subjectType,
@@ -574,7 +639,7 @@ router.post(
       .single();
     if (insErr) throw insErr;
 
-    await appendSignatureEvent({
+    await appendSignatureEvent(orgId, {
       requestId: inserted.id,
       eventType: "created",
       actorKind: "employee",
@@ -596,16 +661,21 @@ const reqIdParam = z.object({ id: z.string().uuid() });
 
 /** Load the events for a request and report chain integrity. */
 async function loadEvents(
+  orgId: string,
   requestId: string,
 ): Promise<{ events: ChainEvent[]; rows: Array<Record<string, unknown>> }> {
-  const supabase = getSupabaseServiceRoleClient();
+  // provider_signature_events is a BLOCKED TENANT table — raw client +
+  // MANUAL org_id filter.
+  const supabase = getOrgScopedClient(orgId);
   const { data, error } = await supabase
+    .raw()
     .schema("resupply")
     .from("provider_signature_events")
     .select(
       "seq, event_type, actor_kind, actor_email, payload, ip, user_agent, prev_hash, event_hash, occurred_at",
     )
     .eq("request_id", requestId)
+    .eq("org_id", orgId)
     .order("seq", { ascending: true });
   if (error) throw error;
   const rows = data ?? [];
@@ -638,19 +708,28 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+    // provider_signature_requests is a BLOCKED TENANT table — raw client
+    // + MANUAL org_id filter.
     const { data: row, error } = await supabase
+      .raw()
       .schema("resupply")
       .from("provider_signature_requests")
       .select("*, providers(legal_name, npi, practice_name)")
       .eq("id", params.data.id)
+      .eq("org_id", orgId)
       .maybeSingle();
     if (error) throw error;
     if (!row) {
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const { events, rows } = await loadEvents(params.data.id);
+    const { events, rows } = await loadEvents(orgId, params.data.id);
     const chain = verifySignatureChain(events);
     res.json({
       request: row,
@@ -674,7 +753,7 @@ async function stampAction(
   opts: {
     requireStatus?: string;
     update: Record<string, unknown>;
-    eventType: Parameters<typeof appendSignatureEvent>[0]["eventType"];
+    eventType: Parameters<typeof appendSignatureEvent>[1]["eventType"];
     payload?: Record<string, unknown>;
   },
 ): Promise<void> {
@@ -683,12 +762,21 @@ async function stampAction(
     res.status(404).json({ error: "not_found" });
     return;
   }
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
+  // provider_signature_requests is a BLOCKED TENANT table — raw client +
+  // MANUAL org_id filter on every read/write.
   const { data: row, error } = await supabase
+    .raw()
     .schema("resupply")
     .from("provider_signature_requests")
     .select("id, status")
     .eq("id", params.data.id)
+    .eq("org_id", orgId)
     .maybeSingle();
   if (error) throw error;
   if (!row) {
@@ -703,10 +791,12 @@ async function stampAction(
     return;
   }
   const { data: updated, error: updErr } = await supabase
+    .raw()
     .schema("resupply")
     .from("provider_signature_requests")
     .update({ ...opts.update, updated_at: new Date().toISOString() })
     .eq("id", params.data.id)
+    .eq("org_id", orgId)
     .eq("status", opts.requireStatus ?? String(row.status))
     .select("id")
     .limit(1)
@@ -719,7 +809,7 @@ async function stampAction(
     });
     return;
   }
-  await appendSignatureEvent({
+  await appendSignatureEvent(orgId, {
     requestId: params.data.id,
     eventType: opts.eventType,
     actorKind: "employee",
@@ -836,12 +926,21 @@ router.post(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+    // provider_signature_requests is a BLOCKED TENANT table — raw client
+    // + MANUAL org_id filter.
     const { data: row, error } = await supabase
+      .raw()
       .schema("resupply")
       .from("provider_signature_requests")
       .select("id, status, title, account_id, provider_id")
       .eq("id", params.data.id)
+      .eq("org_id", orgId)
       .maybeSingle();
     if (error) throw error;
     if (!row) {
@@ -853,8 +952,10 @@ router.post(
       return;
     }
     // Best-effort reminder email to the linked provider account.
+    // provider_portal_accounts is a BLOCKED GLOBAL table — raw, no filter.
     let emailSent = false;
     const { data: account } = await supabase
+      .raw()
       .schema("resupply")
       .from("provider_portal_accounts")
       .select("email_lower")
@@ -875,7 +976,7 @@ router.post(
         logger.warn({ err }, "provider signature reminder email failed");
       }
     }
-    await appendSignatureEvent({
+    await appendSignatureEvent(orgId, {
       requestId: params.data.id,
       eventType: "reminded",
       actorKind: "employee",
@@ -892,9 +993,10 @@ router.post(
 
 /** Build a SignatureLogItem from a request row + its event chain. */
 async function buildLogItem(
+  orgId: string,
   row: Record<string, unknown>,
 ): Promise<SignatureLogItem> {
-  const { events, rows } = await loadEvents(row.id as string);
+  const { events, rows } = await loadEvents(orgId, row.id as string);
   const chain = verifySignatureChain(events);
   const SUBJECT_LABELS: Record<string, string> = {
     prescription: "Prescription",
@@ -943,12 +1045,21 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+    // provider_signature_requests is a BLOCKED TENANT table — raw client
+    // + MANUAL org_id filter.
     const { data: row, error } = await supabase
+      .raw()
       .schema("resupply")
       .from("provider_signature_requests")
       .select("*, providers(legal_name, npi, practice_name)")
       .eq("id", params.data.id)
+      .eq("org_id", orgId)
       .maybeSingle();
     if (error) throw error;
     if (!row) {
@@ -970,7 +1081,7 @@ router.get(
       },
       generatedOn: new Date(),
       generatedByEmail: req.adminEmail ?? null,
-      items: [await buildLogItem(row)],
+      items: [await buildLogItem(orgId, row)],
     });
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader(
@@ -994,8 +1105,16 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+    // providers is a tenant table (in the typed union) — facade scopes.
     const { data: provider, error: pErr } = await supabase
+      // providers is a GLOBAL NPI registry (no org_id) — unscoped client.
+      .raw()
       .schema("resupply")
       .from("providers")
       .select("legal_name, npi, practice_name")
@@ -1007,18 +1126,22 @@ router.get(
       return;
     }
     // Every SIGNED document for this provider, newest first.
+    // provider_signature_requests is a BLOCKED TENANT table — raw client
+    // + MANUAL org_id filter.
     const { data: rows, error } = await supabase
+      .raw()
       .schema("resupply")
       .from("provider_signature_requests")
       .select("*")
       .eq("provider_id", params.data.providerId)
+      .eq("org_id", orgId)
       .eq("status", "signed")
       .order("signed_at", { ascending: false })
       .limit(200);
     if (error) throw error;
     const items: SignatureLogItem[] = [];
     for (const row of rows ?? []) {
-      items.push(await buildLogItem(row));
+      items.push(await buildLogItem(orgId, row));
     }
     const pdf = await renderSignatureLogPdf({
       scope: "log",

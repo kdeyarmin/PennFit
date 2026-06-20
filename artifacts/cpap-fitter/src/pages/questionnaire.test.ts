@@ -60,3 +60,27 @@ describe("questionnaire — Yes/No tiles unchanged", () => {
     expect(SRC).toContain("data-testid={`button-${currentQ.id}-no`}");
   });
 });
+
+describe("questionnaire — keyboard navigation", () => {
+  it("registers a window keydown listener", () => {
+    expect(SRC).toContain('window.addEventListener("keydown", onKey)');
+    expect(SRC).toContain('window.removeEventListener("keydown", onKey)');
+  });
+
+  it("ArrowLeft / Backspace go to the previous question", () => {
+    expect(SRC).toMatch(/e\.key === "ArrowLeft" \|\| e\.key === "Backspace"/);
+    expect(SRC).toContain("handleBack()");
+  });
+
+  it("boolean questions map number keys to Yes / No / Unsure in order", () => {
+    expect(SRC).toContain("[true, false, null]");
+  });
+
+  it("number keys dispatch the matching option (1-based)", () => {
+    expect(SRC).toContain("handleAnswer(choices[n - 1]!)");
+  });
+
+  it("does not hijack typing in form fields", () => {
+    expect(SRC).toContain("/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)");
+  });
+});

@@ -20,8 +20,9 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import {
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
   type Database,
+  type OrgScopedClient,
 } from "@workspace/resupply-db";
 
 import { resolveBillingIdentity } from "../../lib/billing/identity-resolver";
@@ -33,11 +34,10 @@ const router: IRouter = Router();
 const idParam = z.object({ id: z.string().uuid() });
 
 async function resolvePatientForCustomer(
+  supabase: OrgScopedClient,
   customerId: string,
 ): Promise<{ patientId: string } | null> {
-  const supabase = getSupabaseServiceRoleClient();
   const { data: customer, error: customerErr } = await supabase
-    .schema("resupply")
     .from("shop_customers")
     .select("customer_id, email_lower")
     .eq("customer_id", customerId)
@@ -63,7 +63,6 @@ async function resolvePatientForCustomer(
     (c: string) => `\\${c}`,
   );
   const { data: patients, error: patientErr } = await supabase
-    .schema("resupply")
     .from("patients")
     .select("id")
     .ilike("email", escapedEmail)
@@ -74,15 +73,20 @@ async function resolvePatientForCustomer(
 }
 
 router.get("/me/billing-statements", async (req, res) => {
-  const customerId =
-    (req as unknown as { shopCustomerId?: string }).shopCustomerId ?? null;
+  const customerId = req.shopCustomerId ?? null;
   if (!customerId) {
     res.status(401).json({ error: "sign_in_required" });
     return;
   }
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   let link: { patientId: string } | null;
   try {
-    link = await resolvePatientForCustomer(customerId);
+    link = await resolvePatientForCustomer(supabase, customerId);
   } catch {
     res.status(500).json({ error: "lookup_failed" });
     return;
@@ -91,9 +95,7 @@ router.get("/me/billing-statements", async (req, res) => {
     res.json({ statements: [] });
     return;
   }
-  const supabase = getSupabaseServiceRoleClient();
   const { data, error } = await supabase
-    .schema("resupply")
     .from("patient_billing_statements")
     .select(
       "id, total_patient_responsibility_cents, delivery_method, delivered_at, created_at, line_items_json",
@@ -110,18 +112,22 @@ router.get("/me/billing-statements", async (req, res) => {
     return;
   }
   res.json({
-    statements: (data ?? []).map((s) => ({
-      id: s.id,
-      totalPatientResponsibilityCents: s.total_patient_responsibility_cents,
-      // Patient doesn't care about internal counts beyond the total,
-      // but the line-item count is useful context.
-      lineItemCount: Array.isArray(s.line_items_json)
-        ? s.line_items_json.length
-        : 0,
-      deliveryMethod: s.delivery_method,
-      deliveredAt: s.delivered_at,
-      createdAt: s.created_at,
-    })),
+    statements: (data ?? []).map(
+      (
+        s: Database["resupply"]["Tables"]["patient_billing_statements"]["Row"],
+      ) => ({
+        id: s.id,
+        totalPatientResponsibilityCents: s.total_patient_responsibility_cents,
+        // Patient doesn't care about internal counts beyond the total,
+        // but the line-item count is useful context.
+        lineItemCount: Array.isArray(s.line_items_json)
+          ? s.line_items_json.length
+          : 0,
+        deliveryMethod: s.delivery_method,
+        deliveredAt: s.delivered_at,
+        createdAt: s.created_at,
+      }),
+    ),
   });
 });
 
@@ -132,11 +138,15 @@ interface PersistedLineItem {
   billed_cents: number;
   paid_cents: number;
   patient_responsibility_cents: number;
+  // Optional itemization (migration 0327); absent on statements
+  // snapshotted before the breakdown shipped.
+  deductible_cents?: number;
+  coinsurance_cents?: number;
+  copay_cents?: number;
 }
 
 router.get("/me/billing-statements/:id/pdf", async (req, res) => {
-  const customerId =
-    (req as unknown as { shopCustomerId?: string }).shopCustomerId ?? null;
+  const customerId = req.shopCustomerId ?? null;
   if (!customerId) {
     res.status(401).json({ error: "sign_in_required" });
     return;
@@ -146,9 +156,15 @@ router.get("/me/billing-statements/:id/pdf", async (req, res) => {
     res.status(404).json({ error: "not_found" });
     return;
   }
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   let link: { patientId: string } | null;
   try {
-    link = await resolvePatientForCustomer(customerId);
+    link = await resolvePatientForCustomer(supabase, customerId);
   } catch {
     res.status(500).json({ error: "lookup_failed" });
     return;
@@ -157,9 +173,7 @@ router.get("/me/billing-statements/:id/pdf", async (req, res) => {
     res.status(404).json({ error: "not_found" });
     return;
   }
-  const supabase = getSupabaseServiceRoleClient();
   const { data: statement, error: statementErr } = await supabase
-    .schema("resupply")
     .from("patient_billing_statements")
     .select(
       "id, line_items_json, total_patient_responsibility_cents, created_at",
@@ -188,7 +202,6 @@ router.get("/me/billing-statements/:id/pdf", async (req, res) => {
   // statement should see the current org details rather than a
   // stale snapshot.
   const { data: patient, error: patientErr } = await supabase
-    .schema("resupply")
     .from("patients")
     .select("legal_first_name, legal_last_name, address, email")
     .eq("id", link.patientId)
@@ -206,7 +219,7 @@ router.get("/me/billing-statements/:id/pdf", async (req, res) => {
     res.status(404).json({ error: "not_found" });
     return;
   }
-  const identity = await resolveBillingIdentity({ supabase });
+  const identity = await resolveBillingIdentity({ orgId });
   if (identity.source === "stub") {
     res.status(503).json({ error: "billing_identity_unconfigured" });
     return;
@@ -214,7 +227,7 @@ router.get("/me/billing-statements/:id/pdf", async (req, res) => {
 
   const lineItemsRaw = statement.line_items_json;
   const lineItems = (Array.isArray(lineItemsRaw) ? lineItemsRaw : []).map(
-    (li) => {
+    (li: Record<string, unknown>) => {
       const item = li as unknown as PersistedLineItem;
       return {
         claimId: item.claim_id,
@@ -223,6 +236,9 @@ router.get("/me/billing-statements/:id/pdf", async (req, res) => {
         billedCents: item.billed_cents,
         paidCents: item.paid_cents,
         patientResponsibilityCents: item.patient_responsibility_cents,
+        deductibleCents: item.deductible_cents,
+        coinsuranceCents: item.coinsurance_cents,
+        copayCents: item.copay_cents,
       };
     },
   );
@@ -298,15 +314,20 @@ const prefBody = z
   .strict();
 
 router.get("/me/statement-preferences", async (req, res) => {
-  const customerId =
-    (req as unknown as { shopCustomerId?: string }).shopCustomerId ?? null;
+  const customerId = req.shopCustomerId ?? null;
   if (!customerId) {
     res.status(401).json({ error: "sign_in_required" });
     return;
   }
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   let link: { patientId: string } | null;
   try {
-    link = await resolvePatientForCustomer(customerId);
+    link = await resolvePatientForCustomer(supabase, customerId);
   } catch {
     res.status(500).json({ error: "lookup_failed" });
     return;
@@ -315,9 +336,7 @@ router.get("/me/statement-preferences", async (req, res) => {
     res.json({ statementDeliveryMethod: "mail", email: null, linked: false });
     return;
   }
-  const supabase = getSupabaseServiceRoleClient();
   const { data: patient } = await supabase
-    .schema("resupply")
     .from("patients")
     .select("email, statement_delivery_method")
     .eq("id", link.patientId)
@@ -332,8 +351,7 @@ router.get("/me/statement-preferences", async (req, res) => {
 });
 
 router.put("/me/statement-preferences", async (req, res) => {
-  const customerId =
-    (req as unknown as { shopCustomerId?: string }).shopCustomerId ?? null;
+  const customerId = req.shopCustomerId ?? null;
   if (!customerId) {
     res.status(401).json({ error: "sign_in_required" });
     return;
@@ -343,9 +361,15 @@ router.put("/me/statement-preferences", async (req, res) => {
     res.status(400).json({ error: "invalid_body" });
     return;
   }
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   let link: { patientId: string } | null;
   try {
-    link = await resolvePatientForCustomer(customerId);
+    link = await resolvePatientForCustomer(supabase, customerId);
   } catch {
     res.status(500).json({ error: "lookup_failed" });
     return;
@@ -354,7 +378,6 @@ router.put("/me/statement-preferences", async (req, res) => {
     res.status(409).json({ error: "not_linked" });
     return;
   }
-  const supabase = getSupabaseServiceRoleClient();
   const update: Database["resupply"]["Tables"]["patients"]["Update"] = {
     statement_delivery_method: parsed.data.statementDeliveryMethod,
     updated_at: new Date().toISOString(),
@@ -363,7 +386,6 @@ router.put("/me/statement-preferences", async (req, res) => {
   // the account email so the emailed bill has somewhere to go.
   if (parsed.data.statementDeliveryMethod === "email") {
     const { data: patient } = await supabase
-      .schema("resupply")
       .from("patients")
       .select("email")
       .eq("id", link.patientId)
@@ -371,7 +393,6 @@ router.put("/me/statement-preferences", async (req, res) => {
       .maybeSingle();
     if (!patient?.email) {
       const { data: cust } = await supabase
-        .schema("resupply")
         .from("shop_customers")
         .select("email_lower")
         .eq("customer_id", customerId)
@@ -381,7 +402,6 @@ router.put("/me/statement-preferences", async (req, res) => {
     }
   }
   const { data: row, error } = await supabase
-    .schema("resupply")
     .from("patients")
     .update(update)
     .eq("id", link.patientId)

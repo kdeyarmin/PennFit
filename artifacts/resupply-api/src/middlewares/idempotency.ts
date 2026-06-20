@@ -50,7 +50,8 @@ import type { NextFunction, Request, Response } from "express";
 
 import { bufferToHexBytea, hexByteaToBuffer } from "@workspace/resupply-auth";
 import {
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
+  resolveSeedOrgId,
   type Json,
 } from "@workspace/resupply-db";
 
@@ -133,7 +134,16 @@ export function withIdempotency(endpoint: string) {
     }
 
     const requestHash = hashBody(req.body);
-    const supabase = getSupabaseServiceRoleClient();
+    // idempotency_keys is a GLOBAL (no org_id) infrastructure table, but
+    // route all access through the chokepoint's raw escape hatch. Resolve a
+    // tenant just to construct the scoped client; degrade to "no idempotency"
+    // (proceed) rather than block the request if it can't be resolved.
+    const orgId = req.orgId ?? (await resolveSeedOrgId());
+    if (!orgId) {
+      next();
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId).raw();
 
     // Lookup the existing replay row. Composite PK on
     // (user_id, endpoint, key); the .eq triplet hits the same index.

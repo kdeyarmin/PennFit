@@ -34,6 +34,8 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { SignedIn } from "@/lib/identity";
 import { useDocumentTitle } from "@/hooks/use-document-title";
+import { useCompanyContact } from "@/lib/contact";
+import { BrandName } from "@/components/company-contact";
 import {
   createAutopaySetupSession,
   createPaymentCheckoutSession,
@@ -90,8 +92,9 @@ function paymentTone(status: PatientPayment["status"]): {
 }
 
 export function AccountBillingPage() {
+  const company = useCompanyContact();
   useDocumentTitle(
-    "Billing — PennPaps",
+    `Billing — ${company.name}`,
     "Your open balances, statements, and past payments.",
   );
 
@@ -212,9 +215,9 @@ function AccountBillingInner() {
         </Link>
         <h1 className="text-3xl font-bold tracking-tight">Billing</h1>
         <p className="text-slate-600">
-          Your open balance with PennPaps after insurance, plus past statements
-          and payments. Choose below whether you&apos;d like your bills emailed
-          or mailed; either way, this page is always current.
+          Your open balance with <BrandName /> after insurance, plus past
+          statements and payments. Choose below whether you&apos;d like your
+          bills emailed or mailed; either way, this page is always current.
         </p>
       </header>
 
@@ -374,8 +377,8 @@ function AccountBillingInner() {
           Past statements
         </h2>
         <p className="text-sm text-slate-600 mt-1">
-          PennPaps statements covering your claims with patient responsibility.
-          Click to view the PDF.
+          <BrandName /> statements covering your claims with patient
+          responsibility. Click to view the PDF.
         </p>
 
         {statements.isPending ? (
@@ -445,7 +448,7 @@ function AccountBillingInner() {
           Payment history
         </h2>
         <p className="text-sm text-slate-600 mt-1">
-          Card payments you've made toward your PennPaps balance.
+          Card payments you've made toward your <BrandName /> balance.
         </p>
 
         {payments.isPending ? (
@@ -577,9 +580,10 @@ function PaymentMethodsSection({ cardAdded }: { cardAdded: boolean }) {
         Payment method &amp; autopay
       </h2>
       <p className="text-sm text-slate-600 mt-1">
-        Save a card on file to check out faster — and, if you choose, let
-        PennPaps automatically pay new balances after insurance so you never
-        miss one. Your card is stored by Stripe; it never touches our servers.
+        Save a card on file to check out faster — and, if you choose, let{" "}
+        <BrandName /> automatically pay new balances after insurance so you
+        never miss one. Your card is stored by Stripe; it never touches our
+        servers.
       </p>
 
       {cardAdded && (

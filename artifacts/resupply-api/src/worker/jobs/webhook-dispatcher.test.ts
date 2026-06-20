@@ -87,7 +87,7 @@ describe("runWebhookDispatcher", () => {
     });
   });
 
-  it("POSTs with HMAC-SHA256 signature in X-PennFit-Signature header", async () => {
+  it("POSTs with HMAC-SHA256 signature in X-CareMetric-Signature header", async () => {
     stageDispatchableDelivery();
     const calls: Array<{ url: string; init: RequestInit }> = [];
     const fetchImpl = vi
@@ -118,11 +118,11 @@ describe("runWebhookDispatcher", () => {
     // Headers class lowercases names; the literal-object init keeps
     // the original casing. Look up both shapes.
     const sig =
-      headerEntries["X-PennFit-Signature"] ??
-      headerEntries["x-pennfit-signature"];
+      headerEntries["X-CareMetric-Signature"] ??
+      headerEntries["x-caremetric-signature"];
     const eventType =
-      headerEntries["X-PennFit-Event-Type"] ??
-      headerEntries["x-pennfit-event-type"];
+      headerEntries["X-CareMetric-Event-Type"] ??
+      headerEntries["x-caremetric-event-type"];
     const expected = createHmac("sha256", "test-secret")
       .update(call.init.body as string)
       .digest("base64");

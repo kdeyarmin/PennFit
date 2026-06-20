@@ -46,10 +46,12 @@ import { Router, type IRouter } from "express";
 
 import { normalizeE164 } from "@workspace/resupply-domain";
 import {
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
+  resolveSeedOrgId,
   tryUpsertPatientLatestMessageSb,
+  type Database,
   type Json,
-  type ResupplySupabaseClient,
+  type OrgScopedClient,
 } from "@workspace/resupply-db";
 import {
   parseInboundSmsParams,
@@ -61,7 +63,10 @@ import {
   type Intent,
 } from "@workspace/resupply-messaging";
 
+import { smsAsksRefillAttestation } from "@workspace/resupply-reminders";
+
 import { logger } from "../../lib/logger";
+import { resolveOrgIdByCalledNumber } from "../../lib/messaging/tenant-telecom";
 import { createAiFallbackAdapter } from "../../lib/messaging/ai-fallback-impl";
 import { ingestInboundMmsMedia } from "../../lib/messaging/ingest-mms";
 import { rateLimit } from "../../middlewares/rate-limit";
@@ -148,8 +153,7 @@ const signatureMiddleware = requireTwilioSignature({
   getAuthToken: () => readSmsConfigOrNull()?.twilioAuthToken,
   buildPublicUrl: (req) => {
     const base = readSmsConfigOrNull()?.publicBaseUrl ?? "";
-    const originalUrl =
-      (req as unknown as { originalUrl?: string }).originalUrl ?? "";
+    const originalUrl = req.originalUrl ?? "";
     return `${base}${originalUrl}`;
   },
 });
@@ -266,13 +270,24 @@ router.post(
       res.status(200).type("text/xml").send("<Response/>");
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    // Webhook: no req.orgId. Route by the CALLED number (Twilio `To`) to
+    // the tenant that owns it (G7), falling back to the seed org when the
+    // number isn't registered to any tenant. On miss ACK 200 (empty TwiML)
+    // so Twilio stops retrying. With no per-tenant numbers configured this
+    // always resolves to the seed org, unchanged.
+    const orgId =
+      (await resolveOrgIdByCalledNumber(parsed.To)) ??
+      (await resolveSeedOrgId());
+    if (!orgId) {
+      res.status(200).type("text/xml").send("<Response/>");
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // Direct phone lookup. We pull up to 2 rows so we can detect
     // ambiguous matches — multiple patients sharing one phone (a
     // family plan) can't be safely auto-routed; we audit and bail.
     const { data: lookupRows, error: lookupErr } = await supabase
-      .schema("resupply")
       .from("patients")
       .select("id")
       .eq("phone_e164", normalizedFrom)
@@ -435,7 +450,6 @@ router.post(
     // pre-check lets us return a clean 200 (no error) to Twilio rather
     // than a 500 on a duplicate-key violation.
     const { data: existingSid, error: sidErr } = await supabase
-      .schema("resupply")
       .from("messages")
       .select("id")
       .eq("direction", "inbound")
@@ -468,7 +482,6 @@ router.post(
     // safe.
     let conversationId: string | null;
     const { data: openConv, error: openConvErr } = await supabase
-      .schema("resupply")
       .from("conversations")
       .select("id")
       .eq("patient_id", patientId)
@@ -482,7 +495,6 @@ router.post(
       conversationId = openConv.id;
     } else {
       const { data: recentEp, error: epErr } = await supabase
-        .schema("resupply")
         .from("episodes")
         .select("id")
         .eq("patient_id", patientId)
@@ -520,7 +532,6 @@ router.post(
       }
       const inboundIso = new Date().toISOString();
       const { data: insertedConv, error: insertConvErr } = await supabase
-        .schema("resupply")
         .from("conversations")
         .insert({
           patient_id: patientId,
@@ -545,7 +556,6 @@ router.post(
     const inboundAt = new Date();
     const inboundIso = inboundAt.toISOString();
     const { data: insertedMsg, error: insertMsgErr } = await supabase
-      .schema("resupply")
       .from("messages")
       .insert({
         conversation_id: conversationId,
@@ -564,7 +574,6 @@ router.post(
     if (insertMsgErr) throw insertMsgErr;
     const inboundMessageId = insertedMsg?.id ?? null;
     const { error: stampConvErr } = await supabase
-      .schema("resupply")
       .from("conversations")
       .update({ last_message_at: inboundIso, updated_at: inboundIso })
       .eq("id", conversationId);
@@ -634,7 +643,7 @@ router.post(
 
     // Refresh latest-message projection (best-effort).
     await tryUpsertPatientLatestMessageSb(
-      supabase,
+      supabase.raw(),
       {
         conversationId,
         body: parsed.Body,
@@ -675,7 +684,6 @@ router.post(
       if (adapter) {
         // Pull the last 6 messages as context.
         const { data: recent, error: recentErr } = await supabase
-          .schema("resupply")
           .from("messages")
           .select("direction, sender_role, body, created_at")
           .eq("conversation_id", conversationId)
@@ -685,8 +693,11 @@ router.post(
         const thread = (recent ?? [])
           .slice()
           .reverse()
-          .filter((m) => m.body !== null)
-          .map((m) => ({
+          .filter(
+            (m: Database["resupply"]["Tables"]["messages"]["Row"]) =>
+              m.body !== null,
+          )
+          .map((m: Database["resupply"]["Tables"]["messages"]["Row"]) => ({
             role:
               m.direction === "inbound"
                 ? ("patient" as const)
@@ -804,18 +815,15 @@ router.post(
     // row by hand.
     const replyAt = new Date();
     const replyIso = replyAt.toISOString();
-    const { error: replyInsertErr } = await supabase
-      .schema("resupply")
-      .from("messages")
-      .insert({
-        conversation_id: conversationId,
-        direction: "outbound",
-        sender_role: "agent",
-        body: twimlBody,
-        delivery_status: "queued",
-        vendor_metadata: { twiml_inline: true } as unknown as Json,
-        sent_at: replyIso,
-      });
+    const { error: replyInsertErr } = await supabase.from("messages").insert({
+      conversation_id: conversationId,
+      direction: "outbound",
+      sender_role: "agent",
+      body: twimlBody,
+      delivery_status: "queued",
+      vendor_metadata: { twiml_inline: true } as unknown as Json,
+      sent_at: replyIso,
+    });
     if (replyInsertErr) {
       // Capture PostgREST `code` so ops can discriminate the failure
       // mode without re-running the request. serializeErr alone returns
@@ -844,7 +852,7 @@ router.post(
 
     // Refresh latest-message projection (best-effort).
     await tryUpsertPatientLatestMessageSb(
-      supabase,
+      supabase.raw(),
       {
         conversationId,
         body: twimlBody,
@@ -862,7 +870,7 @@ router.post(
 );
 
 interface DispatchInput {
-  supabase: ResupplySupabaseClient;
+  supabase: OrgScopedClient;
   intent: Intent;
   conversationId: string;
   patientId: string;
@@ -877,12 +885,42 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
   const nowIso = new Date().toISOString();
   switch (input.intent) {
     case "confirm": {
+      // Only record the refill attestation when the LAST outbound prompt
+      // actually asked for it. A YES can land on a custom/admin/playbook
+      // SMS body (sendReminderSms accepts a `body` override) or on older
+      // copy that didn't ask the two questions — recording continued-use
+      // + low-supply as `true` there would manufacture a false attestation.
+      // When the prompt didn't ask, the order still places normally; we
+      // simply omit the affirmation so no (false) proof row is written.
+      const { data: lastOutbound } = await supabase
+        .from("messages")
+        .select("body")
+        .eq("conversation_id", input.conversationId)
+        .eq("direction", "outbound")
+        .order("sent_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const promptAskedAttestation =
+        typeof lastOutbound?.body === "string" &&
+        smsAsksRefillAttestation(lastOutbound.body);
       const result = await placeResupplyOrderForConversation({
         conversationId: input.conversationId,
+        // The patient's YES reply to attestation-bearing copy ("reply YES
+        // if you still use ... and are low on supplies") is the recorded
+        // Medicare/payer refill attestation.
+        affirmation: promptAskedAttestation
+          ? {
+              channel: "sms",
+              continuedUse: true,
+              supplyLow: true,
+              requestedBy: "self",
+              ip: input.ip,
+              userAgent: input.userAgent,
+            }
+          : undefined,
       });
       if (result.status === "ok") {
         const { error: closeErr } = await supabase
-          .schema("resupply")
           .from("conversations")
           .update({ status: "closed", updated_at: nowIso })
           .eq("id", input.conversationId);
@@ -920,7 +958,6 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
         // the conversation to awaiting_admin so it lands in the CSR
         // queue alongside address-edit handoffs.
         const { error: notEligErr } = await supabase
-          .schema("resupply")
           .from("conversations")
           .update({ status: "awaiting_admin", updated_at: nowIso })
           .eq("id", input.conversationId);
@@ -951,7 +988,6 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
         // would be wrong. order-flow already raised a CSR alert; flip
         // the conversation to awaiting_admin so it lands in the queue.
         const { error: covErr } = await supabase
-          .schema("resupply")
           .from("conversations")
           .update({ status: "awaiting_admin", updated_at: nowIso })
           .eq("id", input.conversationId);
@@ -982,7 +1018,6 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
         // already raised a CSR alert; flip the conversation to
         // awaiting_admin so it lands in the queue.
         const { error: usageErr } = await supabase
-          .schema("resupply")
           .from("conversations")
           .update({ status: "awaiting_admin", updated_at: nowIso })
           .eq("id", input.conversationId);
@@ -1007,11 +1042,40 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
         });
         return "Thanks! A team member will check in with you before this ships — we want to make sure your therapy is going well first.";
       }
+      if (result.status === "too_early") {
+        // Refill-window guard held the reship (would ship earlier than the
+        // CMS 10-day-before-depletion window). Do NOT reuse input.aiReply
+        // ("on its way"). order-flow already raised a CSR alert; flip the
+        // conversation to awaiting_admin so it lands in the queue.
+        const { error: earlyErr } = await supabase
+          .from("conversations")
+          .update({ status: "awaiting_admin", updated_at: nowIso })
+          .eq("id", input.conversationId);
+        if (earlyErr) throw earlyErr;
+        await safeAudit({
+          action: "messaging.order.blocked_refill_window",
+          adminEmail: null,
+          adminUserId: null,
+          targetTable: "episodes",
+          targetId: result.episodeId,
+          metadata: {
+            channel: "sms",
+            conversation_id: input.conversationId,
+            patient_id: input.patientId,
+            episode_id: result.episodeId,
+            hcpcs_code: result.refillWindow.hcpcsCode,
+            earliest_ship_on: result.refillWindow.earliestShipOn,
+            days_until_ship: result.refillWindow.daysUntilShip,
+          },
+          ip: input.ip,
+          userAgent: input.userAgent,
+        });
+        return "Thanks! It looks like it's a little early to reship this under your plan, so a team member will review and follow up before anything ships.";
+      }
       return "Thanks — we'll review and follow up shortly.";
     }
     case "decline": {
       const { error: declineErr } = await supabase
-        .schema("resupply")
         .from("conversations")
         .update({ status: "closed", updated_at: nowIso })
         .eq("id", input.conversationId);
@@ -1023,7 +1087,6 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
     }
     case "edit_address": {
       const { error: editErr } = await supabase
-        .schema("resupply")
         .from("conversations")
         .update({ status: "awaiting_admin", updated_at: nowIso })
         .eq("id", input.conversationId);
@@ -1052,7 +1115,6 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
       // Carrier-mandated. No conditions, no exceptions.
       await pausePatient(input.patientId);
       const { error: stopErr } = await supabase
-        .schema("resupply")
         .from("conversations")
         .update({ status: "closed", updated_at: nowIso })
         .eq("id", input.conversationId);
@@ -1081,7 +1143,6 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
       // conversation (a keyword reply, not a dialog turn).
       await reactivatePatient(input.patientId);
       const { error: startErr } = await supabase
-        .schema("resupply")
         .from("conversations")
         .update({ status: "closed", updated_at: nowIso })
         .eq("id", input.conversationId);
@@ -1113,7 +1174,6 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
     }
     case "unknown": {
       const { error: unkErr } = await supabase
-        .schema("resupply")
         .from("conversations")
         .update({ status: "awaiting_admin", updated_at: nowIso })
         .eq("id", input.conversationId);

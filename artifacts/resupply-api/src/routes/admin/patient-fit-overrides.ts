@@ -9,7 +9,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
@@ -29,9 +29,13 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("patient_fit_overrides")
       .select(
         "patient_id, recommended_mask_sku, recommended_mask_size, rationale, created_by_user_id, created_at, updated_at",
@@ -84,23 +88,25 @@ router.put(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     // Upsert by patient_id (PK). On conflict update mask + size +
     // rationale and refresh created_by_user_id to the current actor.
-    const { error } = await supabase
-      .schema("resupply")
-      .from("patient_fit_overrides")
-      .upsert(
-        {
-          patient_id: p.data.id,
-          recommended_mask_sku: parsed.data.recommendedMaskSku,
-          recommended_mask_size: parsed.data.recommendedMaskSize ?? null,
-          rationale: parsed.data.rationale ?? null,
-          created_by_user_id: req.adminUserId ?? null,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "patient_id" },
-      );
+    const { error } = await supabase.from("patient_fit_overrides").upsert(
+      {
+        patient_id: p.data.id,
+        recommended_mask_sku: parsed.data.recommendedMaskSku,
+        recommended_mask_size: parsed.data.recommendedMaskSize ?? null,
+        rationale: parsed.data.rationale ?? null,
+        created_by_user_id: req.adminUserId ?? null,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "patient_id" },
+    );
     if (error) throw error;
     await logAudit({
       action: "patient.fit_override.set",
@@ -133,9 +139,13 @@ router.delete(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: deleted, error } = await supabase
-      .schema("resupply")
       .from("patient_fit_overrides")
       .delete()
       .eq("patient_id", p.data.id)

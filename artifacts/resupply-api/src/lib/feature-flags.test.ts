@@ -134,3 +134,35 @@ describe("isFeatureEnabled", () => {
     expect(await isFeatureEnabled("sms.reminders")).toBe(true);
   });
 });
+
+describe("isFeatureEnabled — org scoping (Phase 1)", () => {
+  it("reads the supplied tenant's row", async () => {
+    stageSupabaseResponse("feature_flags", "select", {
+      data: { enabled: false },
+    });
+    expect(await isFeatureEnabled("sms.reminders", "org-abc")).toBe(false);
+  });
+
+  it("falls back to the seed org's value when the tenant has no row of its own", async () => {
+    // org-abc has no row (first lookup → null), so the reader falls
+    // back to the seed org's row (second lookup → disabled).
+    stageSupabaseResponse("feature_flags", "select", { data: null });
+    stageSupabaseResponse("feature_flags", "select", {
+      data: { enabled: false },
+    });
+    expect(await isFeatureEnabled("voice.agent", "org-abc")).toBe(false);
+  });
+
+  it("caches per (org, key) so different tenants don't collide", async () => {
+    stageSupabaseResponse("feature_flags", "select", {
+      data: { enabled: true },
+    });
+    expect(await isFeatureEnabled("sms.reminders", "org-1")).toBe(true);
+    // A different org with a contradictory response must NOT read org-1's
+    // cached entry.
+    stageSupabaseResponse("feature_flags", "select", {
+      data: { enabled: false },
+    });
+    expect(await isFeatureEnabled("sms.reminders", "org-2")).toBe(false);
+  });
+});

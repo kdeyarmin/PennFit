@@ -21,6 +21,14 @@ describe("admin-billing-hub — billing-api imports", () => {
     expect(SRC).toContain("fetchDirectorSummary");
   });
 
+  it("imports fetchBillingDashboard from billing-api", () => {
+    expect(SRC).toContain("fetchBillingDashboard");
+  });
+
+  it("imports createClaimFromFulfillment from billing-api", () => {
+    expect(SRC).toContain("createClaimFromFulfillment");
+  });
+
   it("imports formatMoneyCents from billing-api", () => {
     expect(SRC).toContain("formatMoneyCents");
   });
@@ -53,6 +61,7 @@ describe("admin-billing-hub — KPI tile labels", () => {
     "Submitted, no 999",
     "Auto-resubmit ready",
     "Partial ERAs",
+    "Ready to bill",
     "Patient $ open",
   ];
 
@@ -101,6 +110,7 @@ describe("admin-billing-hub — section card titles", () => {
     "Top payers by open patient $",
     "Operational health",
     "Quick links",
+    "Fulfillments ready to bill",
     "Billing Hub",
   ];
 
@@ -211,6 +221,21 @@ describe("admin-billing-hub — react-query cache key", () => {
   it("uses 'admin-billing-director-summary' as the queryKey", () => {
     expect(SRC).toContain('"admin-billing-director-summary"');
   });
+
+  it("uses 'admin-billing-dashboard' as the dashboard queryKey", () => {
+    expect(SRC).toContain('"admin-billing-dashboard"');
+  });
+});
+
+describe("admin-billing-hub - ready-to-bill actions", () => {
+  it("renders the create-claim action", () => {
+    expect(SRC).toContain("Create claim");
+  });
+
+  it("links created claims back to the patient claim workbench", () => {
+    expect(SRC).toContain("Open claim workbench");
+    expect(SRC).toContain("/insurance-claims");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -220,6 +245,7 @@ describe("admin-billing-hub — lucide-react icon imports", () => {
   const icons = [
     "AlertTriangle",
     "Bot",
+    "ClipboardCheck",
     "ClipboardList",
     "DollarSign",
     "ListFilter",

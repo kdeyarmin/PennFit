@@ -45,7 +45,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import {
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
   type Database,
   type Json,
   type SavedShippingAddress,
@@ -61,12 +61,15 @@ import {
   getStripeClient,
   readStripeConfigOrNull,
 } from "../../lib/stripe/config";
+import { stripeAccountRequestOptions } from "../../lib/stripe/connect";
 import { stripeErrLogFields } from "../../lib/stripe/err-log-fields";
 import { sendShippingNotificationEmail } from "../../lib/order-emails/send-shipping-notification-email";
 import { sendReadyForPickupEmail } from "../../lib/order-emails/send-ready-for-pickup-email";
 import { getPickupLocationsByIds } from "../../lib/pickup/locations";
 import { sendPushToCustomer } from "../../lib/web-push";
 import { resolveSmsRecipientForShopOrder } from "../../lib/shop-orders-sms-resolver";
+import { resolveTenantSmsClientOptions } from "../../lib/messaging/tenant-telecom";
+import { resolveBrandingByOrgId } from "../../lib/tenant-branding";
 import { autoSendPatientPacketOnDelivery } from "../../lib/patient-packet/auto-send-on-delivery";
 import { evaluatePaperworkGateForCustomer } from "../../lib/paperwork/require-signed-paperwork";
 import {
@@ -225,10 +228,12 @@ function rowToOrderRow(row: {
   };
 }
 
-async function loadOrder(orderId: string): Promise<OrderRow | null> {
-  const supabase = getSupabaseServiceRoleClient();
+async function loadOrder(
+  orgId: string,
+  orderId: string,
+): Promise<OrderRow | null> {
+  const supabase = getOrgScopedClient(orgId);
   const { data, error } = await supabase
-    .schema("resupply")
     .from("shop_orders")
     .select(ORDER_COLUMNS)
     .eq("id", orderId)
@@ -267,7 +272,8 @@ async function loadOrder(orderId: string): Promise<OrderRow | null> {
  * Errors NEVER throw — the admin route already 200'd the UPDATE; we
  * must not fail the response because SendGrid is misconfigured.
  */
-async function sendShippingNotificationIfNew(args: {
+export async function sendShippingNotificationIfNew(args: {
+  orgId: string;
   orderId: string;
   log:
     | {
@@ -278,8 +284,8 @@ async function sendShippingNotificationIfNew(args: {
 }): Promise<
   { skipped: true; reason: string } | { skipped: false; delivered: boolean }
 > {
-  const { orderId, log } = args;
-  const supabase = getSupabaseServiceRoleClient();
+  const { orgId, orderId, log } = args;
+  const supabase = getOrgScopedClient(orgId);
 
   // Atomic claim — wins iff shipping_email_sent_at is currently NULL.
   // The route's prior UPDATE has either left the timestamp non-null
@@ -287,7 +293,6 @@ async function sendShippingNotificationIfNew(args: {
   // (first send OR genuine re-ship → claim succeeds → send).
   const claimIso = new Date().toISOString();
   const { data: claimedRow, error: claimErr } = await supabase
-    .schema("resupply")
     .from("shop_orders")
     .update({
       shipping_email_sent_at: claimIso,
@@ -318,7 +323,6 @@ async function sendShippingNotificationIfNew(args: {
   // transient failure can never permanently lock out the email.
   const releaseClaim = async (): Promise<void> => {
     const { error: releaseErr } = await supabase
-      .schema("resupply")
       .from("shop_orders")
       .update({
         shipping_email_sent_at: null,
@@ -354,7 +358,6 @@ async function sendShippingNotificationIfNew(args: {
     let activeCaregiver: { name: string; email: string } | null = null;
     if (claimedRow.customer_id) {
       const { data: cust, error: custErr } = await supabase
-        .schema("resupply")
         .from("shop_customers")
         .select(
           "email_lower, display_name, caregiver_name, caregiver_email, caregiver_consent_at, caregiver_revoked_at",
@@ -398,6 +401,7 @@ async function sendShippingNotificationIfNew(args: {
       shippingAddress:
         (claimedRow.shipping_address_json as SavedShippingAddress | null) ??
         null,
+      orgId,
     });
 
     if (!result.configured) {
@@ -431,7 +435,7 @@ async function sendShippingNotificationIfNew(args: {
         const counts = await sendPushToCustomer(claimedRow.customer_id, {
           title: "Your PennPaps order shipped",
           body: `${claimedRow.tracking_carrier} · ${claimedRow.tracking_number}`,
-          url: `/account/orders`,
+          url: "/account/orders",
           tag: `shop_order_shipped:${claimedRow.id}`,
         });
         if (counts.delivered + counts.expired + counts.transient > 0) {
@@ -464,10 +468,18 @@ async function sendShippingNotificationIfNew(args: {
         customerEmailFromOrder: claimedRow.customer_email ?? null,
       });
       if (smsRecipient) {
-        const smsClient = createTwilioSmsClient();
+        // Send under the tenant's own number / Messaging Service when it
+        // has one (G7); falls back to the platform env default otherwise.
+        const smsClient = createTwilioSmsClient(
+          await resolveTenantSmsClientOptions(orgId),
+        );
+        // Tenant brand when the patient's first name is unknown — never the
+        // seed tenant's "PennPaps" for another tenant's customer. Resolved
+        // once (cached, fail-soft); the greeting doesn't depend on it.
+        const brand = await resolveBrandingByOrgId(orgId);
         const greeting = smsRecipient.patientFirstName
           ? `Hi ${smsRecipient.patientFirstName}`
-          : "PennPaps";
+          : brand.storefrontName;
         await smsClient.sendSms({
           to: smsRecipient.phoneE164,
           body: `${greeting}: your CPAP supplies just shipped (${claimedRow.tracking_carrier} ${claimedRow.tracking_number}). Reply STOP to opt out.`,
@@ -504,6 +516,7 @@ async function sendShippingNotificationIfNew(args: {
           kind: "shipped",
           carrier: claimedRow.tracking_carrier,
           trackingNumber: claimedRow.tracking_number,
+          orgId,
         });
       } catch (err) {
         log?.warn?.(
@@ -579,6 +592,11 @@ router.post(
       res.status(400).json({ error: "invalid_order_id" });
       return;
     }
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const parsed = trackingBodySchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({
@@ -592,7 +610,7 @@ router.post(
     }
     const { carrier, number } = parsed.data;
 
-    const existing = await loadOrder(orderId);
+    const existing = await loadOrder(orgId, orderId);
     if (!existing) {
       res.status(404).json({ error: "order_not_found" });
       return;
@@ -647,7 +665,7 @@ router.post(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
     // Atomicity note: the original SQL path used a
     //   `CASE WHEN tracking_carrier IS DISTINCT FROM $new
     //         OR tracking_number IS DISTINCT FROM $new
@@ -673,7 +691,6 @@ router.post(
       updatePayload.shipping_email_sent_at = null;
     }
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("shop_orders")
       .update(updatePayload)
       .eq("id", orderId)
@@ -705,6 +722,7 @@ router.post(
     // but the email logic re-evaluates against the same row again.
     try {
       await sendShippingNotificationIfNew({
+        orgId,
         orderId,
         log: req.log,
       });
@@ -739,7 +757,12 @@ router.post(
       res.status(400).json({ error: "invalid_order_id" });
       return;
     }
-    const existing = await loadOrder(orderId);
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const existing = await loadOrder(orgId, orderId);
     if (!existing) {
       res.status(404).json({ error: "order_not_found" });
       return;
@@ -754,10 +777,9 @@ router.post(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
     const nowIso = new Date().toISOString();
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("shop_orders")
       .update({
         delivered_at: nowIso,
@@ -775,7 +797,7 @@ router.post(
     if (!row) {
       // Either deleted or already delivered by a concurrent request.
       // Re-load to distinguish and return the current state.
-      const current = await loadOrder(orderId);
+      const current = await loadOrder(orgId, orderId);
       if (!current) {
         res.status(404).json({ error: "order_not_found" });
         return;
@@ -829,7 +851,12 @@ router.post(
       res.status(400).json({ error: "invalid_order_id" });
       return;
     }
-    const existing = await loadOrder(orderId);
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const existing = await loadOrder(orgId, orderId);
     if (!existing) {
       res.status(404).json({ error: "order_not_found" });
       return;
@@ -876,12 +903,11 @@ router.post(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
     const nowIso = new Date().toISOString();
     // Idempotent stamp: only set ready_for_pickup_at if it's currently
     // NULL, so an accidental double-click doesn't drift the date.
     const { error: stampErr } = await supabase
-      .schema("resupply")
       .from("shop_orders")
       .update({ ready_for_pickup_at: nowIso, updated_at: nowIso })
       .eq("id", orderId)
@@ -896,7 +922,11 @@ router.post(
     // Best-effort "ready for pickup" email. The state transition has
     // already succeeded; a SendGrid hiccup must NOT 500 the route.
     try {
-      await sendReadyForPickupNotificationIfNew({ orderId, log: req.log });
+      await sendReadyForPickupNotificationIfNew({
+        orgId,
+        orderId,
+        log: req.log,
+      });
     } catch (emailErr) {
       req.log?.warn?.(
         {
@@ -907,7 +937,7 @@ router.post(
       );
     }
 
-    const current = await loadOrder(orderId);
+    const current = await loadOrder(orgId, orderId);
     res.json({ order: projectOrder(current ?? existing) });
   },
 );
@@ -927,7 +957,12 @@ router.post(
       res.status(400).json({ error: "invalid_order_id" });
       return;
     }
-    const existing = await loadOrder(orderId);
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const existing = await loadOrder(orgId, orderId);
     if (!existing) {
       res.status(404).json({ error: "order_not_found" });
       return;
@@ -946,10 +981,9 @@ router.post(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
     const nowIso = new Date().toISOString();
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("shop_orders")
       .update({ picked_up_at: nowIso, updated_at: nowIso })
       .eq("id", orderId)
@@ -959,7 +993,7 @@ router.post(
       .maybeSingle();
     if (error) throw error;
     if (!row) {
-      const current = await loadOrder(orderId);
+      const current = await loadOrder(orgId, orderId);
       if (!current) {
         res.status(404).json({ error: "order_not_found" });
         return;
@@ -1001,6 +1035,7 @@ router.post(
  * re-send. Never throws back a hard error that would 500 the route.
  */
 async function sendReadyForPickupNotificationIfNew(args: {
+  orgId: string;
   orderId: string;
   log:
     | {
@@ -1011,12 +1046,11 @@ async function sendReadyForPickupNotificationIfNew(args: {
 }): Promise<
   { skipped: true; reason: string } | { skipped: false; delivered: boolean }
 > {
-  const { orderId, log } = args;
-  const supabase = getSupabaseServiceRoleClient();
+  const { orgId, orderId, log } = args;
+  const supabase = getOrgScopedClient(orgId);
 
   const claimIso = new Date().toISOString();
   const { data: claimedRow, error: claimErr } = await supabase
-    .schema("resupply")
     .from("shop_orders")
     .update({
       ready_for_pickup_email_sent_at: claimIso,
@@ -1036,7 +1070,6 @@ async function sendReadyForPickupNotificationIfNew(args: {
 
   const releaseClaim = async (): Promise<void> => {
     const { error: releaseErr } = await supabase
-      .schema("resupply")
       .from("shop_orders")
       .update({
         ready_for_pickup_email_sent_at: null,
@@ -1068,7 +1101,6 @@ async function sendReadyForPickupNotificationIfNew(args: {
     let toEmail: string | null = null;
     if (claimedRow.customer_id) {
       const { data: cust, error: custErr } = await supabase
-        .schema("resupply")
         .from("shop_customers")
         .select("email_lower")
         .eq("customer_id", claimedRow.customer_id)
@@ -1097,6 +1129,7 @@ async function sendReadyForPickupNotificationIfNew(args: {
         postalCode: location.postalCode,
         phoneE164: location.phoneE164,
       },
+      orgId,
     });
     if (!result.configured) {
       await releaseClaim();
@@ -1117,7 +1150,7 @@ async function sendReadyForPickupNotificationIfNew(args: {
         await sendPushToCustomer(claimedRow.customer_id, {
           title: "Your PennPaps order is ready for pickup",
           body: `Ready to collect at ${location.name}`,
-          url: `/account/orders`,
+          url: "/account/orders",
           tag: `shop_order_ready_for_pickup:${claimedRow.id}`,
         });
       } catch (err) {
@@ -1159,6 +1192,11 @@ router.patch(
       res.status(400).json({ error: "invalid_order_id" });
       return;
     }
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const parsed = addressBodySchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({
@@ -1179,15 +1217,14 @@ router.patch(
       country: "US",
     };
 
-    const existing = await loadOrder(orderId);
+    const existing = await loadOrder(orgId, orderId);
     if (!existing) {
       res.status(404).json({ error: "order_not_found" });
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("shop_orders")
       .update({
         // SavedShippingAddress isn't a Json index-signature shape; cast
@@ -1242,6 +1279,11 @@ router.post(
       res.status(400).json({ error: "invalid_order_id" });
       return;
     }
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const parsed = refundBodySchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({
@@ -1255,7 +1297,7 @@ router.post(
     }
     const { amountCents, reason } = parsed.data;
 
-    const existing = await loadOrder(orderId);
+    const existing = await loadOrder(orgId, orderId);
     if (!existing) {
       res.status(404).json({ error: "order_not_found" });
       return;
@@ -1310,6 +1352,9 @@ router.post(
     // earlier `if (!existing.stripePaymentIntentId)` guard
     // established.
     const paymentIntentId = existing.stripePaymentIntentId;
+    // Refund on the SAME account the PaymentIntent lives on — the tenant's
+    // connected account when it has one (Stripe Connect, G5), else platform.
+    const acct = await stripeAccountRequestOptions(orgId);
     let refund;
     try {
       refund = await withMetrics(
@@ -1339,7 +1384,7 @@ router.post(
             // issuing a second refund.  Amount is included so different partial
             // refund amounts on the same order each create a separate Stripe
             // Refund (intentional).
-            { idempotencyKey },
+            { ...acct, idempotencyKey },
           ),
       );
     } catch (err) {

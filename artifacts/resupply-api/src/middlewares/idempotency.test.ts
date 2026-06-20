@@ -103,13 +103,29 @@ vi.mock("@workspace/resupply-db", async () => {
   const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
     "@workspace/resupply-db",
   );
+  const mockClient = () => ({
+    schema: () => ({
+      from: () => makeBuilder(),
+    }),
+  });
   return {
     ...actual,
-    getSupabaseServiceRoleClient: () => ({
-      schema: () => ({
-        from: () => makeBuilder(),
-      }),
-    }),
+    getSupabaseServiceRoleClient: mockClient,
+    // The middleware reaches the (global) idempotency_keys table via
+    // getOrgScopedClient(orgId).raw(); run the real facade over the mock
+    // client so .raw() returns the mock builder rather than a live client.
+    getOrgScopedClient: (
+      orgId: string,
+      client?: Parameters<typeof actual.getOrgScopedClient>[1],
+    ) =>
+      actual.getOrgScopedClient(
+        orgId,
+        client ??
+          (mockClient() as unknown as Parameters<
+            typeof actual.getOrgScopedClient
+          >[1]),
+      ),
+    resolveSeedOrgId: async () => "00000000-0000-0000-0000-000000000001",
   };
 });
 
@@ -120,6 +136,9 @@ const ENDPOINT = "POST /test";
 function adminInjector(req: Request, _res: Response, next: NextFunction): void {
   req.adminUserId = "user_admin";
   req.adminEmail = "admin@example.com";
+  // requireAdmin attaches the tenant in production; mirror it so the
+  // middleware resolves a tenant context for its org-scoped client.
+  req.orgId = "00000000-0000-0000-0000-000000000001";
   next();
 }
 

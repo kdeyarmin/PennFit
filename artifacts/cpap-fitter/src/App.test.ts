@@ -56,12 +56,29 @@ describe("GuardedOrderSuccess — state machine", () => {
   });
 
   it("renders a loading fallback while in the 'checking' state (no blank screen while fetch is in flight)", () => {
-    expect(GUARDED_SRC).toContain('if (state === "checking") return <RouteFallback />');
+    expect(GUARDED_SRC).toContain(
+      'if (state === "checking") return <RouteFallback />',
+    );
   });
 
   it("redirects to '/' while in the 'deny' state", () => {
     expect(GUARDED_SRC).toContain(
       'if (state === "deny") return <Redirect to="/" />',
+    );
+  });
+});
+
+describe("Account notification deep links", () => {
+  it("registers path-style account aliases so old notification payloads avoid the 404 route", () => {
+    expect(SRC).toContain('path="/account/insights"');
+    expect(SRC).toContain('path="/account/orders"');
+  });
+
+  it("redirects account aliases to the hash tabs the account page understands", () => {
+    expect(SRC).toContain('<AccountHashRedirect hash="insights" />');
+    expect(SRC).toContain('<AccountHashRedirect hash="orders" />');
+    expect(SRC).toContain(
+      "setLocation(`/account${search}#${hash}`, { replace: true })",
     );
   });
 });

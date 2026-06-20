@@ -11,10 +11,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  type Database,
-  getSupabaseServiceRoleClient,
-} from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { adminWriteRateLimiter } from "../../middlewares/admin-rate-limit";
@@ -112,9 +109,14 @@ router.patch(
 
     updates.updated_at = new Date().toISOString();
 
-    const supabase = getSupabaseServiceRoleClient();
-    let updateBuilder = supabase
-      .schema("resupply")
+    // Fail closed: never widen to all tenants on a missing orgId.
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const db = getOrgScopedClient(orgId);
+    let updateBuilder = db
       .from("compliance_rules")
       .update(updates)
       .eq("id", idParsed.data.id);
@@ -142,8 +144,7 @@ router.patch(
 
     if (!result || result.length === 0) {
       if (expectedUpdatedAt) {
-        const { data: stillExists } = await supabase
-          .schema("resupply")
+        const { data: stillExists } = await db
           .from("compliance_rules")
           .select("id")
           .eq("id", idParsed.data.id)

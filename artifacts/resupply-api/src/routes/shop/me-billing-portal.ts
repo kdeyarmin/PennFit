@@ -27,6 +27,7 @@ import {
   getStripeClient,
   readStripeConfigOrNull,
 } from "../../lib/stripe/config";
+import { stripeAccountRequestOptions } from "../../lib/stripe/connect";
 import { getOrCreateStripeCustomer } from "../../lib/stripe/customer";
 import { logger } from "../../lib/logger";
 import { rateLimit } from "../../middlewares/rate-limit";
@@ -58,10 +59,7 @@ router.post(
     windowMs: 5 * 60_000,
     max: 5,
     name: "shop_billing_portal",
-    keyFn: (req) =>
-      (req as unknown as { userCustomerId?: string }).userCustomerId ??
-      req.ip ??
-      "unknown",
+    keyFn: (req) => req.userCustomerId ?? req.ip ?? "unknown",
   }),
   async (req, res) => {
     const parsed = body.safeParse(req.body ?? {});
@@ -89,15 +87,23 @@ router.post(
       // requires one; getOrCreateStripeCustomer is idempotent and
       // safe under concurrent calls.
       const { stripeCustomerId } = await getOrCreateStripeCustomer(config, {
+        orgId: req.orgId,
         customerId,
         email,
         displayName,
       });
       const stripe = getStripeClient(config);
-      const session = await stripe.billingPortal.sessions.create({
-        customer: stripeCustomerId,
-        return_url: `${config.publicBaseUrl}${parsed.data.returnPath}`,
-      });
+      // The customer lives on the tenant's connected account (Stripe
+      // Connect, G5) when it has one — getOrCreateStripeCustomer created it
+      // there — so the portal session must be opened on that SAME account.
+      const acct = await stripeAccountRequestOptions(req.orgId);
+      const session = await stripe.billingPortal.sessions.create(
+        {
+          customer: stripeCustomerId,
+          return_url: `${config.publicBaseUrl}${parsed.data.returnPath}`,
+        },
+        acct,
+      );
       // Audit best-effort. The portal page itself is hosted by Stripe
       // and can change card / address / cancel a subscription, so
       // recording the open is meaningful for CSR look-back even

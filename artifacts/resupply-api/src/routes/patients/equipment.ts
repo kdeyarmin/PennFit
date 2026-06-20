@@ -37,10 +37,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  type Database,
-  getSupabaseServiceRoleClient,
-} from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import {
@@ -149,9 +146,13 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("equipment_assets")
       .select(
         "id, patient_id, prescription_id, device_class, manufacturer, model, serial_number, pressure_setting, humidifier_setting, status, dispensed_at, dispensing_note, recall_id, notes, created_at, updated_at",
@@ -161,7 +162,11 @@ router.get(
     if (error) throw error;
 
     res.json({
-      equipment: (data ?? []).map((r) => ({
+      equipment: (
+        (data ?? []) as Array<
+          Database["resupply"]["Tables"]["equipment_assets"]["Row"]
+        >
+      ).map((r) => ({
         id: r.id,
         patientId: r.patient_id,
         prescriptionId: r.prescription_id,
@@ -206,10 +211,14 @@ router.post(
     }
     const b = parsed.data;
     const patientId = idParsed.data.id;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     const { data: patient } = await supabase
-      .schema("resupply")
       .from("patients")
       .select("id")
       .eq("id", patientId)
@@ -221,7 +230,6 @@ router.post(
     }
 
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("equipment_assets")
       .insert({
         patient_id: patientId,
@@ -249,7 +257,6 @@ router.post(
         // arbitrary serials to enumerate equipment registered to
         // other patients (or harvest their equipment_assets.id).
         const { data: existing } = await supabase
-          .schema("resupply")
           .from("equipment_assets")
           .select("id, patient_id")
           .eq("manufacturer", b.manufacturer)
@@ -323,11 +330,15 @@ router.patch(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     if (fields.status !== undefined) {
       const { data: existing } = await supabase
-        .schema("resupply")
         .from("equipment_assets")
         .select("status")
         .eq("id", idParsed.data.assetId)
@@ -362,7 +373,6 @@ router.patch(
     if (fields.notes !== undefined) updates.notes = fields.notes;
 
     const { data: updated, error } = await supabase
-      .schema("resupply")
       .from("equipment_assets")
       .update(updates)
       .eq("id", idParsed.data.assetId)

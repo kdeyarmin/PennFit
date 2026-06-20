@@ -175,14 +175,30 @@ function ClaimsTable({ claims }: { claims: TimelyFilingClaim[] }) {
       <table className="w-full text-sm min-w-[820px]">
         <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-600">
           <tr>
-            <th className="text-left px-3 py-2">Filing</th>
-            <th className="text-left px-3 py-2">Days</th>
-            <th className="text-left px-3 py-2">Deadline</th>
-            <th className="text-left px-3 py-2">Payer</th>
-            <th className="text-left px-3 py-2">DOS</th>
-            <th className="text-left px-3 py-2">Claim status</th>
-            <th className="text-right px-3 py-2">Billed</th>
-            <th className="text-left px-3 py-2">Patient</th>
+            <th scope="col" className="text-left px-3 py-2">
+              Filing
+            </th>
+            <th scope="col" className="text-left px-3 py-2">
+              Days
+            </th>
+            <th scope="col" className="text-left px-3 py-2">
+              Deadline
+            </th>
+            <th scope="col" className="text-left px-3 py-2">
+              Payer
+            </th>
+            <th scope="col" className="text-left px-3 py-2">
+              DOS
+            </th>
+            <th scope="col" className="text-left px-3 py-2">
+              Claim status
+            </th>
+            <th scope="col" className="text-right px-3 py-2">
+              Billed
+            </th>
+            <th scope="col" className="text-left px-3 py-2">
+              Patient
+            </th>
           </tr>
         </thead>
         <tbody>

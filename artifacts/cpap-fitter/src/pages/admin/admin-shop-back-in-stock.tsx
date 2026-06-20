@@ -110,19 +110,39 @@ export function AdminShopBackInStockPage() {
               <table className="w-full text-sm min-w-[640px]">
                 <thead className="bg-secondary/40 text-left">
                   <tr>
-                    <th className="px-4 py-3 font-medium">Product</th>
-                    <th className="px-4 py-3 font-medium text-right">
+                    <th scope="col" className="px-4 py-3 font-medium">
+                      Product
+                    </th>
+                    <th
+                      scope="col"
+                      className="px-4 py-3 font-medium text-right"
+                    >
                       Pending
                     </th>
-                    <th className="px-4 py-3 font-medium text-right">
+                    <th
+                      scope="col"
+                      className="px-4 py-3 font-medium text-right"
+                    >
                       Notified
                     </th>
-                    <th className="px-4 py-3 font-medium text-right">
+                    <th
+                      scope="col"
+                      className="px-4 py-3 font-medium text-right"
+                    >
                       Delivered
                     </th>
-                    <th className="px-4 py-3 font-medium">Oldest pending</th>
-                    <th className="px-4 py-3 font-medium">Last fanout</th>
-                    <th className="px-4 py-3 font-medium text-right">Action</th>
+                    <th scope="col" className="px-4 py-3 font-medium">
+                      Oldest pending
+                    </th>
+                    <th scope="col" className="px-4 py-3 font-medium">
+                      Last fanout
+                    </th>
+                    <th
+                      scope="col"
+                      className="px-4 py-3 font-medium text-right"
+                    >
+                      Action
+                    </th>
                   </tr>
                 </thead>
                 <tbody>

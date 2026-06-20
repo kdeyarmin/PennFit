@@ -1,4 +1,4 @@
-// Canonical catalog of the PacWare <-> PennFit file exchanges we
+// Canonical catalog of the PacWare <-> CareMetric Breathe file exchanges we
 // support. This is the SINGLE SOURCE OF TRUTH for column layouts: the
 // parser (import), the exporter, the `/admin/pacware/status` endpoint,
 // and the operator manual (docs/runbooks/pacware-import-export.md) all
@@ -9,15 +9,15 @@
 //   (Billing, Inventory, Reporting, Cash Application). It was acquired
 //   by Brightree and has no public/network API to integrate against.
 //   The supported, durable integration is therefore a file exchange:
-//   PennFit ingests CSV reports exported from PacWare, and emits CSV
+//   CareMetric Breathe ingests CSV reports exported from PacWare, and emits CSV
 //   files shaped for PacWare's import screens. See
 //   docs/integrations/pacware.md for the full rationale.
 
 export const PACWARE_REPORT_KINDS = [
-  // Patient demographics + insurance. PacWare report -> PennFit roster.
-  // Also emitted by PennFit so the roster can round-trip.
+  // Patient demographics + insurance. PacWare report -> CareMetric Breathe roster.
+  // Also emitted by CareMetric Breathe so the roster can round-trip.
   "patient_roster",
-  // Resupply episodes that are due / ready to action. PennFit -> PacWare
+  // Resupply episodes that are due / ready to action. CareMetric Breathe -> PacWare
   // order-entry & billing. Export only.
   "resupply_due",
 ] as const;
@@ -29,7 +29,7 @@ export type PacwareDirection = "import" | "export" | "both";
 export interface PacwareColumnSpec {
   /** Canonical camelCase field name used throughout the code path. */
   field: string;
-  /** Canonical CSV header label PennFit emits on export. */
+  /** Canonical CSV header label CareMetric Breathe emits on export. */
   header: string;
   /**
    * Additional header spellings accepted on import. Matched after
@@ -70,7 +70,7 @@ const PATIENT_ROSTER: PacwareReportSpec = {
   label: "Patient roster",
   description:
     "Patient demographics + insurance. In PacWare, run the Patient List / " +
-    "Patient Demographics report. Joins to PennFit patients on the PacWare " +
+    "Patient Demographics report. Joins to CareMetric Breathe patients on the PacWare " +
     "account number (pacware_id).",
   columns: [
     {
@@ -177,9 +177,9 @@ const PATIENT_ROSTER: PacwareReportSpec = {
 // ---------------------------------------------------------------------------
 // resupply_due — episodes ready to bill/fulfil in PacWare (export only).
 //
-// PennFit owns the resupply engine (cadence rules + outreach); PacWare
+// CareMetric Breathe owns the resupply engine (cadence rules + outreach); PacWare
 // owns billing + warehouse. When a resupply episode is approved/ready,
-// PennFit hands it to PacWare as a one-line order via this report so the
+// CareMetric Breathe hands it to PacWare as a one-line order via this report so the
 // DME can pick/ship and bill from its system of record.
 // ---------------------------------------------------------------------------
 const RESUPPLY_DUE: PacwareReportSpec = {
@@ -237,7 +237,7 @@ const RESUPPLY_DUE: PacwareReportSpec = {
       header: "status",
       aliases: [],
       required: true,
-      description: "PennFit episode status at export time.",
+      description: "CareMetric Breathe episode status at export time.",
     },
     {
       field: "insurancePayer",
@@ -252,7 +252,7 @@ const RESUPPLY_DUE: PacwareReportSpec = {
       aliases: [],
       required: true,
       description:
-        "PennFit episode id — reconciliation handle, store in PacWare notes.",
+        "CareMetric Breathe episode id — reconciliation handle, store in PacWare notes.",
     },
   ],
 };

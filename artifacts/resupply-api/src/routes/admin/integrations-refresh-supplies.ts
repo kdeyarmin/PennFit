@@ -21,13 +21,13 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 import {
   type IntegrationSource,
   integrationSnapshotSchema,
 } from "@workspace/resupply-integrations";
 
-import { getIntegrationAdaptersWithDbOverrides } from "../../lib/integrations/registry";
+import { getIntegrationAdaptersForOrg } from "../../lib/integrations/registry";
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -53,9 +53,14 @@ router.post(
       return;
     }
     const patientId = idParse.data;
-    const supabase = getSupabaseServiceRoleClient();
-    const { data: links, error } = await supabase
-      .schema("resupply")
+    // Fail closed: never widen to all tenants on a missing orgId.
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const db = getOrgScopedClient(orgId);
+    const { data: links, error } = await db
       .from("patient_therapy_links")
       .select("source, partner_patient_id")
       .eq("patient_id", patientId)
@@ -65,7 +70,7 @@ router.post(
       res.json({ refreshed: 0, sources: [] });
       return;
     }
-    const adapters = await getIntegrationAdaptersWithDbOverrides();
+    const adapters = await getIntegrationAdaptersForOrg(orgId);
     const refreshedSources: string[] = [];
     let failed = 0;
     for (const link of links) {
@@ -88,8 +93,7 @@ router.post(
       // upsert. Preserves recent nights + settings from the last good
       // pull so we never destructively overwrite working data with a
       // partial fetch.
-      const { data: prior } = await supabase
-        .schema("resupply")
+      const { data: prior } = await db
         .from("patient_integration_snapshots")
         .select("payload")
         .eq("patient_id", patientId)
@@ -105,8 +109,7 @@ router.post(
       const mergedPayload = priorPayload
         ? { ...priorPayload, supplies: parsed.data.supplies }
         : parsed.data;
-      const { error: snapshotErr } = await supabase
-        .schema("resupply")
+      const { error: snapshotErr } = await db
         .from("patient_integration_snapshots")
         .upsert(
           {

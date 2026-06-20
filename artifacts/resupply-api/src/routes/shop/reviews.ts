@@ -34,10 +34,13 @@ import { z } from "zod";
 import sanitizeHtml from "sanitize-html";
 
 import {
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
+  resolveSeedOrgId,
   type Database,
 } from "@workspace/resupply-db";
 
+import { requestHost } from "../../lib/request-host";
+import { resolveOrgIdByHost } from "../../lib/tenant-branding";
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
 import {
   encodeCompositeCursor,
@@ -47,6 +50,11 @@ import {
 
 type ShopReviewInsert =
   Database["resupply"]["Tables"]["shop_reviews"]["Insert"];
+// The org-scoped client's `.select()` is dynamically typed (any), so we
+// annotate the rows iterated in the public read/aggregate handlers.
+type ShopReviewRow = Database["resupply"]["Tables"]["shop_reviews"]["Row"];
+type ShopOrderItemRow =
+  Database["resupply"]["Tables"]["shop_order_items"]["Row"];
 
 const router: IRouter = Router();
 
@@ -250,13 +258,22 @@ router.get("/shop/products/:productId/reviews", async (req, res) => {
     return;
   }
 
-  const supabase = getSupabaseServiceRoleClient();
+  // Public read — no auth middleware populates req.orgId, so resolve the
+  // tenant from the request host (verified custom domain → that org;
+  // platform host / miss → seed org) so a second tenant's reviews don't
+  // read the seed tenant's data.
+  const orgId =
+    (await resolveOrgIdByHost(requestHost(req))) ?? (await resolveSeedOrgId());
+  if (!orgId) {
+    res.status(503).json({ error: "tenant_unavailable" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
 
   // Strict-less composite predicate:
   //   created_at < ts OR (created_at = ts AND id < cursorId)
   // matches the `ORDER BY created_at DESC, id DESC` traversal.
   let itemsQuery = supabase
-    .schema("resupply")
     .from("shop_reviews")
     .select(
       "id, customer_id, rating, title, body, author_display_name, created_at",
@@ -274,7 +291,7 @@ router.get("/shop/products/:productId/reviews", async (req, res) => {
   }
   const { data: items, error: itemsErr } = await itemsQuery;
   if (itemsErr) throw itemsErr;
-  const itemRows = items ?? [];
+  const itemRows: ShopReviewRow[] = items ?? [];
 
   const hasMore = itemRows.length > limit;
   const trimmed = hasMore ? itemRows.slice(0, limit) : itemRows;
@@ -300,13 +317,12 @@ router.get("/shop/products/:productId/reviews", async (req, res) => {
   const verifiedSet = new Set<string>();
   if (reviewerIds.length > 0) {
     const { data: verifiedRows, error: verifiedErr } = await supabase
-      .schema("resupply")
       .from("shop_order_items")
       .select("customer_id")
       .eq("product_id", productId)
       .in("customer_id", reviewerIds);
     if (verifiedErr) throw verifiedErr;
-    for (const row of verifiedRows ?? []) {
+    for (const row of (verifiedRows ?? []) as ShopOrderItemRow[]) {
       if (row.customer_id) verifiedSet.add(row.customer_id);
     }
   }
@@ -317,14 +333,13 @@ router.get("/shop/products/:productId/reviews", async (req, res) => {
   // fetch just the rating column for approved rows and reduce
   // JS-side. Approved reviews per product are a bounded count.
   const { data: ratingRows, error: aggErr } = await supabase
-    .schema("resupply")
     .from("shop_reviews")
     .select("rating")
     .eq("product_id", productId)
     .eq("status", "approved");
   if (aggErr) throw aggErr;
   const aggMap = new Map<number, number>();
-  for (const r of ratingRows ?? []) {
+  for (const r of (ratingRows ?? []) as ShopReviewRow[]) {
     aggMap.set(r.rating, (aggMap.get(r.rating) ?? 0) + 1);
   }
   const aggRows = Array.from(aggMap.entries()).map(([rating, n]) => ({
@@ -370,9 +385,17 @@ router.get("/shop/products/reviews/aggregates", async (req, res) => {
   // PostgREST has no GROUP BY. Fetch the rating column for every
   // approved review in the requested product set and group JS-side.
   // The result set is bounded by `BULK_AGGREGATE_MAX` products.
-  const supabase = getSupabaseServiceRoleClient();
+  // Public aggregate — no auth middleware populates req.orgId, so resolve
+  // the tenant from the request host (custom domain → that org; platform
+  // host / miss → seed org).
+  const orgId =
+    (await resolveOrgIdByHost(requestHost(req))) ?? (await resolveSeedOrgId());
+  if (!orgId) {
+    res.status(503).json({ error: "tenant_unavailable" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const { data: rows, error } = await supabase
-    .schema("resupply")
     .from("shop_reviews")
     .select("product_id, rating")
     .in("product_id", productIds)
@@ -383,7 +406,7 @@ router.get("/shop/products/reviews/aggregates", async (req, res) => {
   // product. Always emit a zero-aggregate for every requested id so
   // the frontend doesn't need a "missing key" branch.
   const byProduct = new Map<string, Map<number, number>>();
-  for (const r of rows ?? []) {
+  for (const r of (rows ?? []) as ShopReviewRow[]) {
     const m = byProduct.get(r.product_id) ?? new Map<number, number>();
     m.set(r.rating, (m.get(r.rating) ?? 0) + 1);
     byProduct.set(r.product_id, m);
@@ -413,15 +436,23 @@ router.get("/shop/products/reviews/aggregates", async (req, res) => {
 // and aggregate JS-side. Returns 0/0 cleanly when no reviews exist
 // (fresh install) so the frontend can hide the strip without a
 // special-case.
-router.get("/shop/reviews/site-aggregate", async (_req, res) => {
-  const supabase = getSupabaseServiceRoleClient();
+router.get("/shop/reviews/site-aggregate", async (req, res) => {
+  // Public site-wide aggregate — no auth middleware populates req.orgId, so
+  // resolve the tenant from the request host (custom domain → that org;
+  // platform host / miss → seed org).
+  const orgId =
+    (await resolveOrgIdByHost(requestHost(req))) ?? (await resolveSeedOrgId());
+  if (!orgId) {
+    res.status(503).json({ error: "tenant_unavailable" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const { data: rows, error } = await supabase
-    .schema("resupply")
     .from("shop_reviews")
     .select("rating")
     .eq("status", "approved");
   if (error) throw error;
-  const ratings = rows ?? [];
+  const ratings = (rows ?? []) as ShopReviewRow[];
   let count = 0;
   let sum = 0;
   for (const r of ratings) {
@@ -500,9 +531,13 @@ router.post(
       status: "pending",
     };
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: inserted, error: insertErr } = await supabase
-      .schema("resupply")
       .from("shop_reviews")
       .insert(insertRow)
       .select("id, status, rating, title, body, created_at")
@@ -558,9 +593,13 @@ router.get("/shop/me/reviews/:productId", requireSignedIn, async (req, res) => {
     res.status(400).json({ error: "invalid_product_id" });
     return;
   }
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const { data: row, error } = await supabase
-    .schema("resupply")
     .from("shop_reviews")
     .select(
       "id, rating, title, body, status, moderation_note, created_at, updated_at",
@@ -622,9 +661,13 @@ router.patch(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("shop_reviews")
       .update({
         rating,
@@ -677,9 +720,13 @@ router.delete(
     // delete count lets the frontend distinguish between "we just
     // deleted yours" and "you didn't have one to begin with" if it
     // ever cares to.
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: deleted, error } = await supabase
-      .schema("resupply")
       .from("shop_reviews")
       .delete()
       .eq("customer_id", customerId)

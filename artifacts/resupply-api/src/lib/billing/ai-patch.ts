@@ -33,7 +33,9 @@ import { z } from "zod";
 
 import {
   type Database,
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
+  resolveSeedOrgId,
+  type OrgScopedClient,
 } from "@workspace/resupply-db";
 
 import { logger } from "../logger";
@@ -134,7 +136,7 @@ export interface PatchApplyOutcome {
   message?: string;
 }
 
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+type SupabaseClient = OrgScopedClient;
 
 /**
  * Parse a raw patch array out of model output. Unknown / malformed
@@ -178,7 +180,16 @@ export async function applyAiPatches(
   claimId: string,
   patches: AiPatch[],
 ): Promise<PatchApplyOutcome[]> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    return patches.map((patch, i) => ({
+      patchIndex: i,
+      kind: patch.kind,
+      status: "errored" as const,
+      message: "tenant context missing",
+    }));
+  }
+  const supabase = getOrgScopedClient(orgId);
   const outcomes: PatchApplyOutcome[] = [];
 
   for (let i = 0; i < patches.length; i++) {
@@ -271,7 +282,6 @@ async function applyClaimFieldPatch(
     update.patient_responsibility_cents = value as number;
 
   const { error } = await supabase
-    .schema("resupply")
     .from("insurance_claims")
     .update(update)
     .eq("id", claimId);
@@ -286,7 +296,6 @@ async function applyLinePatch(
   patch: { modifier?: string | null; billed_cents?: number },
 ): Promise<{ status: PatchApplyOutcome["status"]; message?: string }> {
   const { data: matches } = await supabase
-    .schema("resupply")
     .from("insurance_claim_line_items")
     .select("id, hcpcs_code")
     .eq("claim_id", claimId)
@@ -313,7 +322,6 @@ async function applyLinePatch(
   if (patch.billed_cents !== undefined)
     update.billed_cents = patch.billed_cents;
   const { error } = await supabase
-    .schema("resupply")
     .from("insurance_claim_line_items")
     .update(update)
     .eq("id", matches[0]!.id);
@@ -331,7 +339,6 @@ async function appendDiagnosisNote(
   // to the claim notes with a stable marker so the EDI builder and
   // the CSR UI can opt-in to pulling it.
   const { data: claim } = await supabase
-    .schema("resupply")
     .from("insurance_claims")
     .select("notes")
     .eq("id", claimId)
@@ -343,7 +350,6 @@ async function appendDiagnosisNote(
   }
   const updated = claim?.notes ? `${claim.notes} ${marker}` : marker;
   const { error } = await supabase
-    .schema("resupply")
     .from("insurance_claims")
     .update({ notes: updated, updated_at: new Date().toISOString() })
     .eq("id", claimId);
@@ -363,7 +369,6 @@ async function appendPriorAuthNote(
   // stable marker — the same pattern as appendDiagnosisNote — for the
   // EDI builder and CSR UI to opt into. Idempotent on the marker.
   const { data: claim } = await supabase
-    .schema("resupply")
     .from("insurance_claims")
     .select("notes")
     .eq("id", claimId)
@@ -375,7 +380,6 @@ async function appendPriorAuthNote(
   }
   const updated = claim?.notes ? `${claim.notes} ${marker}` : marker;
   const { error } = await supabase
-    .schema("resupply")
     .from("insurance_claims")
     .update({ notes: updated, updated_at: new Date().toISOString() })
     .eq("id", claimId);
@@ -388,18 +392,15 @@ async function addLineItem(
   claimId: string,
   patch: Extract<AiPatch, { kind: "add_line" }>,
 ): Promise<{ status: PatchApplyOutcome["status"]; message?: string }> {
-  const { error } = await supabase
-    .schema("resupply")
-    .from("insurance_claim_line_items")
-    .insert({
-      claim_id: claimId,
-      hcpcs_code: patch.hcpcsCode,
-      modifier: patch.modifierCsv ?? null,
-      description: patch.description ?? null,
-      quantity: patch.quantity,
-      billed_cents: patch.billedCents,
-      status: "pending",
-    });
+  const { error } = await supabase.from("insurance_claim_line_items").insert({
+    claim_id: claimId,
+    hcpcs_code: patch.hcpcsCode,
+    modifier: patch.modifierCsv ?? null,
+    description: patch.description ?? null,
+    quantity: patch.quantity,
+    billed_cents: patch.billedCents,
+    status: "pending",
+  });
   if (error) return { status: "errored", message: error.message };
   return { status: "applied" };
 }
@@ -410,7 +411,6 @@ async function removeLineByHcpcs(
   hcpcsCode: string,
 ): Promise<{ status: PatchApplyOutcome["status"]; message?: string }> {
   const { data: matches } = await supabase
-    .schema("resupply")
     .from("insurance_claim_line_items")
     .select("id")
     .eq("claim_id", claimId)
@@ -428,7 +428,6 @@ async function removeLineByHcpcs(
     };
   }
   const { error } = await supabase
-    .schema("resupply")
     .from("insurance_claim_line_items")
     .delete()
     .eq("id", matches[0]!.id);
@@ -441,12 +440,14 @@ async function recomputeTotals(
   claimId: string,
 ): Promise<void> {
   const { data: lines } = await supabase
-    .schema("resupply")
     .from("insurance_claim_line_items")
     .select("billed_cents, quantity, allowed_cents, paid_cents")
     .eq("claim_id", claimId);
   const totals = (lines ?? []).reduce(
-    (acc, l) => ({
+    (
+      acc: { billed: number; allowed: number; paid: number },
+      l: Database["resupply"]["Tables"]["insurance_claim_line_items"]["Row"],
+    ) => ({
       // billed_cents is per-unit → extended charge is * quantity.
       // allowed/paid are payer 835 line totals (already extended).
       billed: acc.billed + (l.billed_cents ?? 0) * (l.quantity ?? 1),
@@ -456,7 +457,6 @@ async function recomputeTotals(
     { billed: 0, allowed: 0, paid: 0 },
   );
   const { error: totalsErr } = await supabase
-    .schema("resupply")
     .from("insurance_claims")
     .update({
       total_billed_cents: totals.billed,

@@ -33,7 +33,7 @@ function formatDuration(sec: number | null): string | null {
 }
 
 export function LearnVideos() {
-  useDocumentTitle("Video guides — PennPaps");
+  useDocumentTitle("Video guides");
   const [groups, setGroups] = useState<VideoGroup[] | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
 

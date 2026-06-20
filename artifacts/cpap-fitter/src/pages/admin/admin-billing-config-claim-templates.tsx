@@ -113,11 +113,21 @@ export function AdminBillingConfigClaimTemplatesPage() {
                     className="text-left text-[11px] uppercase tracking-wider"
                     style={{ color: "hsl(var(--ink-3))" }}
                   >
-                    <th className="px-5 py-1.5">HCPCS</th>
-                    <th className="px-3 py-1.5">Modifier</th>
-                    <th className="px-3 py-1.5">Description</th>
-                    <th className="px-3 py-1.5 text-right">Qty</th>
-                    <th className="px-3 py-1.5 text-right">Charge</th>
+                    <th scope="col" className="px-5 py-1.5">
+                      HCPCS
+                    </th>
+                    <th scope="col" className="px-3 py-1.5">
+                      Modifier
+                    </th>
+                    <th scope="col" className="px-3 py-1.5">
+                      Description
+                    </th>
+                    <th scope="col" className="px-3 py-1.5 text-right">
+                      Qty
+                    </th>
+                    <th scope="col" className="px-3 py-1.5 text-right">
+                      Charge
+                    </th>
                   </tr>
                 </thead>
                 <tbody>

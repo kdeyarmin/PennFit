@@ -23,7 +23,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { requirePermission } from "../../middlewares/requireAdmin";
 
@@ -72,7 +72,14 @@ router.get(
       return;
     }
     const patientId = parsed.data;
-    const supabase = getSupabaseServiceRoleClient();
+    // Fail closed: a request that reached an admin handler without a
+    // resolved tenant must never be silently widened to all orgs.
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const db = getOrgScopedClient(orgId);
 
     const now = Date.now();
     const triggerCutoff = new Date(
@@ -92,8 +99,7 @@ router.get(
       { data: triggers, error: triggersErr },
       { data: alerts, error: alertsErr },
     ] = await Promise.all([
-      supabase
-        .schema("resupply")
+      db
         .from("patient_therapy_nights")
         .select(
           "id, night_date, source, usage_minutes, ahi, leak_rate_l_min, pressure_p95_cmh2o",
@@ -101,8 +107,7 @@ router.get(
         .eq("patient_id", patientId)
         .order("night_date", { ascending: false })
         .limit(NIGHTS_WINDOW),
-      supabase
-        .schema("resupply")
+      db
         .from("patient_smart_trigger_events")
         .select(
           "id, kind, detected_at, window_start_date, window_end_date, sent_at, dismissed_at",
@@ -112,8 +117,7 @@ router.get(
         .gte("detected_at", triggerCutoff)
         .order("detected_at", { ascending: false })
         .limit(50),
-      supabase
-        .schema("resupply")
+      db
         .from("csr_compliance_alerts")
         .select(
           "id, alert_type, severity, summary, status, snoozed_until, created_at",
@@ -132,7 +136,17 @@ router.get(
     // downstream. PostgREST hands `numeric(...)` columns back as
     // strings ("3.10") so asNumber coerces; usage_minutes is a
     // proper integer column.
-    const normalisedNights = (nights ?? []).map((n) => ({
+    const normalisedNights = (
+      (nights ?? []) as Array<{
+        id: string;
+        night_date: string | null;
+        source: string;
+        usage_minutes: number | string | null;
+        ahi: number | string | null;
+        leak_rate_l_min: number | string | null;
+        pressure_p95_cmh2o: number | string | null;
+      }>
+    ).map((n) => ({
       id: n.id,
       nightDate: n.night_date,
       source: n.source,
@@ -188,7 +202,16 @@ router.get(
         medianLeakRateLMin: medianLeak,
       },
       nights: normalisedNights,
-      smartTriggers: (triggers ?? []).map((t) => ({
+      smartTriggers: (
+        (triggers ?? []) as Array<{
+          id: string;
+          kind: string;
+          detected_at: string;
+          window_start_date: string | null;
+          window_end_date: string | null;
+          sent_at: string | null;
+        }>
+      ).map((t) => ({
         id: t.id,
         kind: t.kind,
         detectedAt: t.detected_at,
@@ -196,7 +219,17 @@ router.get(
         windowEndDate: t.window_end_date,
         sentAt: t.sent_at,
       })),
-      complianceAlerts: (alerts ?? []).map((a) => ({
+      complianceAlerts: (
+        (alerts ?? []) as Array<{
+          id: string;
+          alert_type: string;
+          severity: string;
+          summary: string;
+          status: string;
+          snoozed_until: string | null;
+          created_at: string;
+        }>
+      ).map((a) => ({
         id: a.id,
         alertType: a.alert_type,
         severity: a.severity,

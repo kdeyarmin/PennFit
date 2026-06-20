@@ -17,7 +17,7 @@ those jobs.
 | Table `pgboss_resupply.archive` | Completed and `failed` jobs after their archive interval.              |
 | Table `pgboss_resupply.version` | The `/readyz` probe checks this exact table to gate traffic.           |
 
-`drizzle.resupply_migrations` is unrelated; it tracks application schema migrations.
+`migrations.resupply_migrations` is unrelated; it tracks application schema migrations.
 
 ## How we surface failures
 

@@ -7,7 +7,10 @@
 
 import { Router, type IRouter } from "express";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  getOrgScopedClient,
+  type OrgScopedClient,
+} from "@workspace/resupply-db";
 
 import {
   resolveBillingIdentity,
@@ -20,21 +23,24 @@ const router: IRouter = Router();
 router.get(
   "/admin/system/integrations-status",
   requirePermission("admin.tools.manage"),
-  async (_req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const env = process.env;
 
     const [identity, clearinghouse, queueDepth, recentWebhookFails] =
       await Promise.all([
-        resolveBillingIdentity({ supabase }),
-        resolveClearinghouse({ supabase }),
+        resolveBillingIdentity({ orgId }),
+        resolveClearinghouse({ orgId }),
         supabase
-          .schema("resupply")
           .from("webhook_deliveries")
           .select("id", { count: "exact", head: true })
           .eq("status", "queued"),
         supabase
-          .schema("resupply")
           .from("webhook_deliveries")
           .select("id", { count: "exact", head: true })
           .eq("status", "exhausted")
@@ -58,7 +64,12 @@ router.get(
       },
       stripe: {
         configured: !!env.STRIPE_SECRET_KEY,
-        webhookSigningConfigured: !!env.STRIPE_WEBHOOK_SECRET,
+        // STRIPE_WEBHOOK_SIGNING_SECRET is the variable the runtime
+        // verifier actually reads (lib/stripe/config.ts). The legacy
+        // STRIPE_WEBHOOK_SECRET name is a known alias-confusion trap —
+        // preflight:prod flags it — so reporting it here showed
+        // "not configured" while webhooks worked (and vice versa).
+        webhookSigningConfigured: !!env.STRIPE_WEBHOOK_SIGNING_SECRET,
       },
       openai: {
         configured: !!env.OPENAI_API_KEY,
@@ -92,11 +103,8 @@ router.get(
   },
 );
 
-async function hasAnyPasPayer(
-  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
-): Promise<boolean> {
+async function hasAnyPasPayer(supabase: OrgScopedClient): Promise<boolean> {
   const { count } = await supabase
-    .schema("resupply")
     .from("payer_profiles")
     .select("id", { count: "exact", head: true })
     .not("davinci_pas_endpoint_url", "is", null);

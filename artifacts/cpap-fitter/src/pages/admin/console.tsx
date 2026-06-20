@@ -54,6 +54,14 @@ import { NotAuthorizedPage } from "@/pages/admin/not-authorized";
 // both are small + load-bearing for error paths.
 import { DashboardPage } from "@/pages/admin/dashboard";
 
+// Onboarding agreements gate (G16). Eager (like DashboardPage / the error
+// pages) so it needs no Suspense boundary of its own — it renders in place
+// of the AppShell + routes whenever /me reports unsigned agreements, before
+// the per-page Suspense exists. Its template text already rides the admin
+// chunk (console.tsx is only ever in that chunk), never the storefront
+// bundle.
+import { AgreementsGate } from "@/pages/admin/agreements-gate";
+
 const PatientsPage = lazyWithRetry(() =>
   import("@/pages/admin/patients").then((m) => ({ default: m.PatientsPage })),
 );
@@ -178,9 +186,19 @@ const AdminEquipmentRecallsPage = lazyWithRetry(() =>
     default: m.AdminEquipmentRecallsPage,
   })),
 );
+const AdminAssetRecoveryPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-asset-recovery").then((m) => ({
+    default: m.AdminAssetRecoveryPage,
+  })),
+);
 const AdminAnalyticsPage = lazyWithRetry(() =>
   import("@/pages/admin/admin-analytics").then((m) => ({
     default: m.AdminAnalyticsPage,
+  })),
+);
+const AdminReorderRemindersPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-reorder-reminders").then((m) => ({
+    default: m.AdminReorderRemindersPage,
   })),
 );
 const AdminAnalyticsMarginPage = lazyWithRetry(() =>
@@ -308,11 +326,6 @@ const AdminOperationsPage = lazyWithRetry(() =>
     default: m.AdminOperationsPage,
   })),
 );
-const AdminAccountSetupPage = lazyWithRetry(() =>
-  import("@/pages/admin/account-setup").then((m) => ({
-    default: m.AdminAccountSetupPage,
-  })),
-);
 const AdminReportsPage = lazyWithRetry(() =>
   import("@/pages/admin/admin-reports").then((m) => ({
     default: m.AdminReportsPage,
@@ -358,14 +371,14 @@ const AdminPacwarePage = lazyWithRetry(() =>
     default: m.AdminPacwarePage,
   })),
 );
+const AdminShippingPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-shipping").then((m) => ({
+    default: m.AdminShippingPage,
+  })),
+);
 const AdminSystemConfigurationPage = lazyWithRetry(() =>
   import("@/pages/admin/admin-system-configuration").then((m) => ({
     default: m.AdminSystemConfigurationPage,
-  })),
-);
-const AdminConnectionTestsPage = lazyWithRetry(() =>
-  import("@/pages/admin/admin-connection-tests").then((m) => ({
-    default: m.AdminConnectionTestsPage,
   })),
 );
 const AdminBotPlaygroundPage = lazyWithRetry(() =>
@@ -488,6 +501,11 @@ const AdminBillingHubPage = lazyWithRetry(() =>
     default: m.AdminBillingHubPage,
   })),
 );
+const AdminBillingPackagePage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-billing-package").then((m) => ({
+    default: m.AdminBillingPackagePage,
+  })),
+);
 const AdminBillingAiQueuePage = lazyWithRetry(() =>
   import("@/pages/admin/admin-billing-ai-queue").then((m) => ({
     default: m.AdminBillingAiQueuePage,
@@ -588,6 +606,31 @@ const AdminBillingConfigOrganizationPage = lazyWithRetry(() =>
     default: m.AdminBillingConfigOrganizationPage,
   })),
 );
+const AdminStorefrontBrandingPage = lazyWithRetry(() =>
+  import("@/pages/admin/storefront-branding").then((m) => ({
+    default: m.AdminStorefrontBrandingPage,
+  })),
+);
+const AdminFaxSettingsPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-fax-settings").then((m) => ({
+    default: m.AdminFaxSettingsPage,
+  })),
+);
+const AdminPhoneSettingsPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-phone-settings").then((m) => ({
+    default: m.AdminPhoneSettingsPage,
+  })),
+);
+const AdminEmailSettingsPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-email-settings").then((m) => ({
+    default: m.AdminEmailSettingsPage,
+  })),
+);
+const AdminSetupChecklistPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-setup-checklist").then((m) => ({
+    default: m.AdminSetupChecklistPage,
+  })),
+);
 const AdminBillingConfigClearinghousePage = lazyWithRetry(() =>
   import("@/pages/admin/admin-billing-config-clearinghouse").then((m) => ({
     default: m.AdminBillingConfigClearinghousePage,
@@ -635,6 +678,11 @@ const AdminOfficeAllySubmissionDetailPage = lazyWithRetry(() =>
 );
 const AdminNpsPage = lazyWithRetry(() =>
   import("@/pages/admin/admin-nps").then((m) => ({ default: m.AdminNpsPage })),
+);
+const AdminSupportPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-support").then((m) => ({
+    default: m.AdminSupportPage,
+  })),
 );
 const AdminCustomerDetailPage = lazyWithRetry(() =>
   import("@/pages/admin/admin-customer-detail").then((m) => ({
@@ -732,6 +780,15 @@ function AdminConsole() {
     );
   }
 
+  // Onboarding agreements gate (G16). A tenant that hasn't signed the
+  // required agreements (BAA + platform terms) at their current version is
+  // blocked from the entire console until they do — the server fails this
+  // closed (an unresolved tenant context reports every agreement pending),
+  // so this also covers the can't-prove-acceptance case.
+  if ((data?.pendingAgreements?.length ?? 0) > 0) {
+    return <AgreementsGate />;
+  }
+
   return (
     <AppShell
       adminEmail={data?.email}
@@ -753,6 +810,10 @@ function AdminConsole() {
               <Redirect to="/admin" replace />
             </Route>
             <Route path="/admin/billing" component={AdminBillingHubPage} />
+            <Route
+              path="/admin/billing/package"
+              component={AdminBillingPackagePage}
+            />
             <Route
               path="/admin/billing/ai-queue"
               component={AdminBillingAiQueuePage}
@@ -837,6 +898,23 @@ function AdminConsole() {
               path="/admin/company-information"
               component={AdminBillingConfigOrganizationPage}
             />
+            <Route
+              path="/admin/storefront-branding"
+              component={AdminStorefrontBrandingPage}
+            />
+            <Route
+              path="/admin/fax-settings"
+              component={AdminFaxSettingsPage}
+            />
+            <Route
+              path="/admin/phone-settings"
+              component={AdminPhoneSettingsPage}
+            />
+            <Route
+              path="/admin/email-settings"
+              component={AdminEmailSettingsPage}
+            />
+            <Route path="/admin/setup" component={AdminSetupChecklistPage} />
             <Route
               path="/admin/billing/config/clearinghouse"
               component={AdminBillingConfigClearinghousePage}
@@ -1007,6 +1085,10 @@ function AdminConsole() {
               component={AdminEquipmentRecallsPage}
             />
             <Route
+              path="/admin/asset-recovery"
+              component={AdminAssetRecoveryPage}
+            />
+            <Route
               path="/admin/analytics/margin"
               component={AdminAnalyticsMarginPage}
             />
@@ -1037,6 +1119,10 @@ function AdminConsole() {
             <Route path="/admin/goals" component={AdminGoalsPage} />
             <Route path="/admin/kpi-alerts" component={AdminKpiAlertsPage} />
             <Route path="/admin/analytics" component={AdminAnalyticsPage} />
+            <Route
+              path="/admin/reorder-reminders"
+              component={AdminReorderRemindersPage}
+            />
             <Route
               path="/admin/therapy-usage-report"
               component={AdminTherapyUsageReportPage}
@@ -1088,16 +1174,13 @@ function AdminConsole() {
             />
             <Route path="/admin/team" component={AdminTeamPage} />
             <Route path="/admin/operations" component={AdminOperationsPage} />
-            <Route
-              path="/admin/account-setup"
-              component={AdminAccountSetupPage}
-            />
             <Route path="/admin/reports" component={AdminReportsPage} />
             <Route
               path="/admin/control-center"
               component={AdminControlCenterPage}
             />
             <Route path="/admin/nps" component={AdminNpsPage} />
+            <Route path="/admin/support" component={AdminSupportPage} />
             <Route
               path="/admin/productivity"
               component={AdminProductivityPage}
@@ -1124,13 +1207,10 @@ function AdminConsole() {
               component={AdminIntegrationsPage}
             />
             <Route path="/admin/pacware" component={AdminPacwarePage} />
+            <Route path="/admin/shipping" component={AdminShippingPage} />
             <Route
               path="/admin/system/configuration"
               component={AdminSystemConfigurationPage}
-            />
-            <Route
-              path="/admin/connection-tests"
-              component={AdminConnectionTestsPage}
             />
             <Route
               path="/admin/bot-playground"
@@ -1194,7 +1274,9 @@ export function ConsoleRoute() {
   const { data, isPending } = authHooks.useSession();
   if (isPending)
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      // admin-root scopes the admin theme tokens (hard rule R7) — even
+      // this transient spinner must not render with storefront tokens.
+      <div className="admin-root min-h-screen flex items-center justify-center">
         <Spinner label="Checking sign-in…" />
       </div>
     );

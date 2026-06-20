@@ -17,7 +17,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { requirePermission } from "../../middlewares/requireAdmin";
 
@@ -42,9 +42,14 @@ router.get(
     // Escape LIKE wildcards so a literal term isn't treated as a pattern.
     const esc = q.replace(/[\\%_]/g, (c) => `\\${c}`);
 
-    const supabase = getSupabaseServiceRoleClient();
-    const { data, error } = await supabase
-      .schema("resupply")
+    // Fail closed: never widen to all tenants on a missing orgId.
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const db = getOrgScopedClient(orgId);
+    const { data, error } = await db
       .from("messages")
       .select("conversation_id, body, direction, created_at")
       .ilike("body", `%${esc}%`)

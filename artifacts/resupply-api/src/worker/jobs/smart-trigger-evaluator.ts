@@ -37,6 +37,7 @@ import type PgBoss from "pg-boss";
 
 import { logger } from "../../lib/logger";
 import { runSmartTriggerEvaluator } from "../../lib/smart-triggers/evaluator";
+import { forEachActiveOrg } from "../lib/for-each-active-org";
 import { createQueueWithDlq, CRON_SCAN_QUEUE_OPTS } from "../lib/queue-options";
 
 const EVALUATE_JOB = "smart-triggers.evaluate";
@@ -53,30 +54,30 @@ export async function registerSmartTriggerEvaluatorJob(
   await createQueueWithDlq(boss, EVALUATE_JOB, CRON_SCAN_QUEUE_OPTS);
 
   await boss.work(EVALUATE_JOB, async () => {
-    try {
-      const counters = await runSmartTriggerEvaluator({
-        adminEmail: SYSTEM_ACTOR_EMAIL,
-        adminUserId: null,
-        ip: null,
-        userAgent: null,
-      });
-      logger.info(
-        { ...counters, source: "cron" },
-        "smart-triggers.evaluate: run complete",
-      );
-    } catch (err) {
-      // Let the failure propagate so pg-boss marks it failed and
-      // SOC sees the gap. Silently swallowing here would hide a
-      // broken evaluator from the only surface that proves the
-      // schedule fired.
-      logger.error(
-        err instanceof Error
-          ? { err }
-          : { err: new Error("Non-Error thrown"), thrownType: typeof err },
-        "smart-triggers.evaluate: run failed",
-      );
-      throw err;
-    }
+    // Fan out across every active tenant. The roster scan is tenant-scoped
+    // (patient_therapy_nights / patient_smart_trigger_events carry org_id),
+    // so each tenant is evaluated on its own org — the evaluator gets an
+    // explicit orgId here (never the seed-org default). forEachActiveOrg
+    // isolates per-tenant failures: one tenant's broken scan is logged and
+    // tallied without aborting the rest of the sweep (and the scheduler tick).
+    await forEachActiveOrg(
+      async (orgId) => {
+        const counters = await runSmartTriggerEvaluator(
+          {
+            adminEmail: SYSTEM_ACTOR_EMAIL,
+            adminUserId: null,
+            ip: null,
+            userAgent: null,
+          },
+          orgId,
+        );
+        logger.info(
+          { ...counters, source: "cron", org_id: orgId },
+          "smart-triggers.evaluate: run complete",
+        );
+      },
+      { jobName: EVALUATE_JOB },
+    );
   });
 
   await boss.schedule(EVALUATE_JOB, EVALUATE_CRON);

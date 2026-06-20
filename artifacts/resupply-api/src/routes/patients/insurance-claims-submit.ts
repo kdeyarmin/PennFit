@@ -32,7 +32,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { executeOfficeAllyBatchSubmit } from "../../lib/billing/office-ally-batch";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -78,9 +78,13 @@ router.post(
     // so without this an admin URL-fuzzing could submit one patient's
     // claim under another patient's path. We also surface
     // `already_submitted` as a friendlier 409 here.
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: claim } = await supabase
-      .schema("resupply")
       .from("insurance_claims")
       .select("id, patient_id, office_ally_submission_id")
       .eq("id", idParsed.data.claimId)

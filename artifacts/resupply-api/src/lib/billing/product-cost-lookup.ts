@@ -12,7 +12,7 @@
 // null — surfaced honestly downstream by computeMargin rather than as a
 // 100%-margin lie.
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 export interface UnitCostSnapshot {
   unitCostCents: number;
@@ -20,14 +20,16 @@ export interface UnitCostSnapshot {
 }
 
 /**
- * Resolve current unit cost for a set of shop SKUs. De-dupes and drops
- * empty/nullish inputs, issues a single `.in("sku", …)` query, and
- * returns a Map keyed by SKU. SKUs with no recorded cost are simply
- * ABSENT from the Map (the caller leaves the snapshot null). Never
- * throws.
+ * Resolve current unit cost for a set of shop SKUs WITHIN a tenant. De-dupes
+ * and drops empty/nullish inputs, issues a single org-scoped `.in("sku", …)`
+ * query (product_costs is per-tenant since migration 0357 — the facade
+ * appends `org_id = orgId`), and returns a Map keyed by SKU. SKUs with no
+ * recorded cost are simply ABSENT from the Map (the caller leaves the
+ * snapshot null). Never throws.
  */
 export async function fetchUnitCostsBySku(
   skus: readonly (string | null | undefined)[],
+  orgId: string,
   log?: { warn?: (...args: unknown[]) => void },
 ): Promise<Map<string, UnitCostSnapshot>> {
   const out = new Map<string, UnitCostSnapshot>();
@@ -36,12 +38,11 @@ export async function fetchUnitCostsBySku(
       skus.filter((s): s is string => typeof s === "string" && s.length > 0),
     ),
   ];
-  if (distinct.length === 0) return out;
+  if (distinct.length === 0 || !orgId) return out;
 
   try {
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("product_costs")
       .select("sku, unit_cost_cents, cost_source")
       .in("sku", distinct);

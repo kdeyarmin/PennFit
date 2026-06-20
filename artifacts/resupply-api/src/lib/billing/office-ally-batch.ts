@@ -15,24 +15,36 @@
 import { logAudit } from "@workspace/resupply-audit";
 import {
   type Database,
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
+  type OrgScopedClient,
+  resolveSeedOrgId,
 } from "@workspace/resupply-db";
 import {
   allocateControlNumbers,
   controlNumbersFromValue,
   type ControlNumbers,
   build837P,
+  createFileTransport,
   createOfficeAllyAdapter,
+  createSftpTransport,
+  resolveOutboxDir,
   type ClaimDetail,
   type OtherSubscriberDetail,
   type ProviderRef,
 } from "@workspace/resupply-integrations-office-ally";
 
-import { countOutstandingByClaim } from "./bill-hold";
+import {
+  countOutstandingByClaim,
+  seedDefaultRequirementsForClaim,
+} from "./bill-hold";
 import {
   gateCoverageEligibility,
   type CoverageBlock,
 } from "./coverage-eligibility";
+import {
+  getCachedEligibility,
+  verifyEligibility,
+} from "./eligibility-verifier";
 import {
   resolveBillingIdentity,
   resolveClearinghouse,
@@ -40,19 +52,26 @@ import {
 import { isFeatureEnabled } from "../feature-flags";
 import { reserveIsa13Value } from "./isa13-counter";
 import { logger } from "../logger";
+import { recordTenantUsage } from "../metering/usage";
 import { publishEvent } from "../webhooks/publisher";
 
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+// Org-scoped chokepoint client. Helpers below auto-scope their reads/
+// writes to the tenant; global tables (providers, control_number_counters)
+// are reached via `.raw()`.
+type SupabaseClient = OrgScopedClient;
 type ClaimRow = Database["resupply"]["Tables"]["insurance_claims"]["Row"];
+type LineItemRow =
+  Database["resupply"]["Tables"]["insurance_claim_line_items"]["Row"];
 
 /**
  * Cap on fresh real-time 270s the eligibility precheck will fire in a
  * single batch (deduped per coverage). Bounds the synchronous request:
  * at ~1-2s per real-time round-trip this keeps the worst case to ~20s,
  * and a large batch is almost always already-verified (cache hits)
- * anyway. Coverages beyond the cap fall back to consult-only / fail-open.
+ * anyway. Coverages beyond the cap are blocked until eligibility is checked.
  */
 const MAX_PRECHECK_REALTIME_REFRESHES = 10;
+const MANUAL_SUBMIT_ELIGIBILITY_FRESH_DAYS = 90;
 
 export interface BatchSubmitInput {
   claimIds: string[];
@@ -64,6 +83,9 @@ export interface BatchSubmitInput {
   adminUserId: string | null;
   ip?: string | null;
   userAgent?: string | null;
+  /** Tenant for the org-scoped reads/writes. Defaults to the seed org
+   *  (single-tenant bridge) for worker / non-request callers. */
+  orgId?: string;
 }
 
 export type BatchSubmitResult =
@@ -106,7 +128,6 @@ async function releaseClaimsToDraft(
   claimIds: string[],
 ): Promise<void> {
   const { error } = await supabase
-    .schema("resupply")
     .from("insurance_claims")
     .update({ status: "draft", updated_at: new Date().toISOString() })
     .in("id", claimIds)
@@ -119,18 +140,156 @@ async function releaseClaimsToDraft(
   }
 }
 
+async function findUninitializedBillHoldClaims(
+  supabase: SupabaseClient,
+  claimIds: string[],
+): Promise<Set<string>> {
+  const uninitialized = new Set(claimIds);
+  if (claimIds.length === 0) return uninitialized;
+  const { data, error } = await supabase
+    .from("claim_paperwork_requirements")
+    .select("claim_id")
+    .in("claim_id", claimIds);
+  if (error) throw error;
+  for (const row of data ?? []) {
+    const claimId = (row as { claim_id: string | null }).claim_id;
+    if (claimId) uninitialized.delete(claimId);
+  }
+  return uninitialized;
+}
+
+async function findEligibilityBlocksForSubmit(input: {
+  supabase: SupabaseClient;
+  orgId: string;
+  claims: ClaimRow[];
+  payerName: string;
+  adminEmail: string | null;
+}): Promise<
+  Array<{
+    claimId: string;
+    reason:
+      | "no_coverage"
+      | "eligibility_missing_or_stale"
+      | "eligibility_inactive"
+      | "prior_auth_required"
+      | "eligibility_lookup_failed";
+    payerName: string;
+    eligibilityCheckId: string | null;
+  }>
+> {
+  const blocks: Array<{
+    claimId: string;
+    reason:
+      | "no_coverage"
+      | "eligibility_missing_or_stale"
+      | "eligibility_inactive"
+      | "prior_auth_required"
+      | "eligibility_lookup_failed";
+    payerName: string;
+    eligibilityCheckId: string | null;
+  }> = [];
+  const coverageToClaims = new Map<string, ClaimRow[]>();
+  for (const claim of input.claims) {
+    if (!claim.insurance_coverage_id) {
+      blocks.push({
+        claimId: claim.id,
+        reason: "no_coverage",
+        payerName: input.payerName,
+        eligibilityCheckId: null,
+      });
+      continue;
+    }
+    const list = coverageToClaims.get(claim.insurance_coverage_id) ?? [];
+    list.push(claim);
+    coverageToClaims.set(claim.insurance_coverage_id, list);
+  }
+
+  const refreshEnabled = await isFeatureEnabled(
+    "billing.eligibility_precheck_refresh",
+    input.orgId,
+  );
+  const clearinghouse = refreshEnabled
+    ? await resolveClearinghouse({ orgId: input.orgId })
+    : null;
+  const realtimeAvailable = !!clearinghouse?.realtimeConfig;
+  let freshChecks = 0;
+  const freshnessMs =
+    MANUAL_SUBMIT_ELIGIBILITY_FRESH_DAYS * 24 * 60 * 60 * 1000;
+
+  for (const [coverageId, claimsForCoverage] of coverageToClaims) {
+    let latest: Awaited<ReturnType<typeof getCachedEligibility>> | null;
+    try {
+      latest = await getCachedEligibility(coverageId, freshnessMs);
+      if (
+        !latest &&
+        realtimeAvailable &&
+        freshChecks < MAX_PRECHECK_REALTIME_REFRESHES
+      ) {
+        await verifyEligibility({
+          insuranceCoverageId: coverageId,
+          patientId: claimsForCoverage[0]!.patient_id,
+          requestedByEmail: input.adminEmail ?? "system:eligibility-precheck",
+        });
+        freshChecks += 1;
+        latest = await getCachedEligibility(coverageId, freshnessMs);
+      }
+    } catch (err) {
+      logger.warn(
+        {
+          event: "billing.eligibility_precheck.failed_closed",
+          coverageId,
+          errName: err instanceof Error ? err.name : "unknown",
+        },
+        "billing: eligibility precheck failed; blocking submit",
+      );
+      for (const claim of claimsForCoverage) {
+        blocks.push({
+          claimId: claim.id,
+          reason: "eligibility_lookup_failed",
+          payerName: input.payerName,
+          eligibilityCheckId: null,
+        });
+      }
+      continue;
+    }
+
+    const reason = !latest
+      ? "eligibility_missing_or_stale"
+      : latest.is_active !== true
+        ? "eligibility_inactive"
+        : latest.requires_prior_auth === true
+          ? "prior_auth_required"
+          : null;
+    if (!reason) continue;
+    for (const claim of claimsForCoverage) {
+      blocks.push({
+        claimId: claim.id,
+        reason,
+        payerName: input.payerName,
+        eligibilityCheckId: latest?.id ?? null,
+      });
+    }
+  }
+
+  return blocks;
+}
+
 export async function executeOfficeAllyBatchSubmit(
   input: BatchSubmitInput,
 ): Promise<BatchSubmitResult> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = input.orgId ?? (await resolveSeedOrgId());
+  if (!orgId) {
+    return { ok: false, kind: "no_claims_matched", detail: {} };
+  }
+  const supabase = getOrgScopedClient(orgId);
 
-  const { data: claims, error } = await supabase
-    .schema("resupply")
+  const { data: claimsData, error } = await supabase
     .from("insurance_claims")
     .select("*")
     .in("id", input.claimIds);
   if (error) throw error;
-  if (!claims || claims.length === 0) {
+  const claims = (claimsData ?? []) as ClaimRow[];
+  if (claims.length === 0) {
     return { ok: false, kind: "no_claims_matched", detail: {} };
   }
   if (claims.length !== input.claimIds.length) {
@@ -170,10 +329,48 @@ export async function executeOfficeAllyBatchSubmit(
   // bill_hold flag) so a drifted cache can't let an under-documented claim
   // out the door. Feature-flagged so it can be turned off whole-cloth, and
   // inert for any claim that has no requirements tracked against it.
-  if (await isFeatureEnabled("billing.bill_hold")) {
+  if (await isFeatureEnabled("billing.bill_hold", orgId)) {
+    // bill-hold reads/writes go through the same org-scoped chokepoint.
+    const billHold = supabase;
+    const uninitialized = await findUninitializedBillHoldClaims(
+      supabase,
+      claims.map((c) => c.id),
+    );
+    const initializationFailures: Array<{
+      claimId: string;
+      reason: string;
+    }> = [];
+    for (const claimId of uninitialized) {
+      try {
+        await seedDefaultRequirementsForClaim(claimId, {
+          supabase: billHold.raw(),
+          createdByEmail: input.adminEmail ?? "system:office-ally-submit",
+        });
+      } catch (err) {
+        logger.warn(
+          {
+            event: "billing.bill_hold.initialize_failed",
+            claimId,
+            errName: err instanceof Error ? err.name : "unknown",
+          },
+          "office-ally-batch: bill-hold initialization failed; blocking submit",
+        );
+        initializationFailures.push({
+          claimId,
+          reason: "paperwork_checklist_uninitialized",
+        });
+      }
+    }
+    if (initializationFailures.length > 0) {
+      return {
+        ok: false,
+        kind: "bill_hold",
+        detail: { held: initializationFailures },
+      };
+    }
     const outstanding = await countOutstandingByClaim(
       claims.map((c) => c.id),
-      supabase,
+      billHold.raw(),
     );
     const heldClaimIds = claims
       .filter((c) => (outstanding.get(c.id) ?? 0) > 0)
@@ -187,7 +384,6 @@ export async function executeOfficeAllyBatchSubmit(
   }
 
   const { data: payer } = await supabase
-    .schema("resupply")
     .from("payer_profiles")
     .select(
       "id, payer_legal_name, office_ally_payer_id, paper_only, claim_format, is_active, edi_enrollment_status",
@@ -213,7 +409,22 @@ export async function executeOfficeAllyBatchSubmit(
     };
   }
 
-  // Eligibility precheck (feature-flagged). Before we transmit, consult
+  const eligibilityBlocks = await findEligibilityBlocksForSubmit({
+    supabase,
+    orgId,
+    claims: claims as ClaimRow[],
+    payerName: payer.payer_legal_name,
+    adminEmail: input.adminEmail,
+  });
+  if (eligibilityBlocks.length > 0) {
+    return {
+      ok: false,
+      kind: "eligibility_blocked",
+      detail: { blocked: eligibilityBlocks },
+    };
+  }
+
+  // Legacy eligibility precheck (feature-flagged). Before we transmit, consult
   // each claim's most recent parsed 270/271. A coverage that is
   // explicitly inactive or flags prior-auth-required would deny, so we
   // hold the whole batch and hand the offending claims back for the CSR
@@ -227,12 +438,13 @@ export async function executeOfficeAllyBatchSubmit(
   // fresh (real-time 270) instead of failing open — deduped per coverage
   // and capped per batch so a large batch can't fan out into a slow
   // synchronous request.
-  if (await isFeatureEnabled("billing.eligibility_precheck")) {
+  if (await isFeatureEnabled("billing.eligibility_precheck", orgId)) {
     const refreshEnabled = await isFeatureEnabled(
       "billing.eligibility_precheck_refresh",
+      orgId,
     );
     const realtimeAvailable = refreshEnabled
-      ? !!(await resolveClearinghouse({ supabase })).realtimeConfig
+      ? !!(await resolveClearinghouse({ orgId })).realtimeConfig
       : false;
 
     // Dedup coverages — verify each at most once even if several claims in
@@ -328,14 +540,15 @@ export async function executeOfficeAllyBatchSubmit(
   const claimedAtIso = new Date().toISOString();
   const batchClaimIds = claims.map((c) => c.id);
   const { data: claimedRows, error: batchClaimErr } = await supabase
-    .schema("resupply")
     .from("insurance_claims")
     .update({ status: "submitting", updated_at: claimedAtIso })
     .in("id", batchClaimIds)
     .eq("status", "draft")
     .select("id");
   if (batchClaimErr) throw batchClaimErr;
-  const claimedIds = (claimedRows ?? []).map((r) => r.id as string);
+  const claimedIds = ((claimedRows ?? []) as Array<{ id: string }>).map(
+    (r) => r.id,
+  );
   if (claimedIds.length !== claims.length) {
     if (claimedIds.length > 0) {
       await releaseClaimsToDraft(supabase, claimedIds);
@@ -354,14 +567,16 @@ export async function executeOfficeAllyBatchSubmit(
   // Atomic reservation first (counter table, migration 0308) — unique
   // by construction across BOTH the claims and eligibility pools and
   // race-free under concurrency. The legacy MAX-read below survives
-  // only as the pre-migration fallback; see lib/billing/isa13-counter.
+  // only as the per-tenant fallback; see lib/billing/isa13-counter.
+  // control_number_counters is per-tenant (mig 0361): each tenant is a
+  // distinct EDI submitter, so the ISA13 sequence is reserved against THIS
+  // tenant's counter via the org-scoped client.
   const reservedIsa = await reserveIsa13Value(supabase);
   let control: ControlNumbers;
   if (reservedIsa !== null) {
     control = controlNumbersFromValue(reservedIsa, Date.now());
   } else {
     const { data: priorHigh, error: priorHighErr } = await supabase
-      .schema("resupply")
       .from("office_ally_submissions")
       .select("isa_control_number")
       .order("isa_control_number", { ascending: false })
@@ -389,11 +604,35 @@ export async function executeOfficeAllyBatchSubmit(
     ReturnType<ReturnType<typeof createOfficeAllyAdapter>["submitClaims"]>
   >;
   try {
-    identity = await resolveBillingIdentity({ supabase });
+    identity = await resolveBillingIdentity({ orgId });
+    const clearinghouse = await resolveClearinghouse({ orgId });
+    // Fail closed for a non-seed tenant that hasn't configured its OWN billing
+    // identity AND clearinghouse transport. Without this guard a second
+    // tenant's 837P would be built under the seed NPI (identity stub/env) and
+    // uploaded over the seed SFTP account (env transport) — wrong-NPI billing.
+    // The seed/single-tenant org keeps its env+stub fallbacks (isSeedOrg in the
+    // resolvers), so this only blocks an under-configured additional tenant.
+    const seedOrgId = await resolveSeedOrgId();
+    if (
+      orgId !== seedOrgId &&
+      (identity.source !== "db" || clearinghouse.source !== "db")
+    ) {
+      throw new Error(
+        "office-ally-batch: tenant billing identity / clearinghouse not configured " +
+          "(refusing to submit under the platform NPI/SFTP)",
+      );
+    }
     const adapter = createOfficeAllyAdapter({
       submitterOverride: identity.submitter,
       billingProviderOverride: identity.billingProvider,
       usageIndicatorOverride: identity.usageIndicator,
+      // Route the upload over the TENANT's own SFTP transport (its
+      // clearinghouse_credentials row); fall back to the local file outbox
+      // only when there's no transport (seed dev/preview/stub).
+      transportFactory: () =>
+        clearinghouse.config
+          ? createSftpTransport(clearinghouse.config)
+          : createFileTransport({ outboxDir: resolveOutboxDir() }),
     });
     submission = await adapter.submitClaims({
       control,
@@ -414,7 +653,6 @@ export async function executeOfficeAllyBatchSubmit(
       : "uploaded"
     : "transport_failed";
   const { data: subRow, error: subErr } = await supabase
-    .schema("resupply")
     .from("office_ally_submissions")
     .insert({
       file_name: fileName,
@@ -459,7 +697,6 @@ export async function executeOfficeAllyBatchSubmit(
     const nowIso = new Date().toISOString();
     for (const claim of claims) {
       const { error: claimUpdateErr } = await supabase
-        .schema("resupply")
         .from("insurance_claims")
         .update({
           status: "submitted",
@@ -480,7 +717,6 @@ export async function executeOfficeAllyBatchSubmit(
         );
       }
       const { error: claimEventErr } = await supabase
-        .schema("resupply")
         .from("insurance_claim_events")
         .insert({
           claim_id: claim.id,
@@ -545,6 +781,19 @@ export async function executeOfficeAllyBatchSubmit(
     logger.warn({ err }, "insurance_claim.batch_submit audit write failed");
   });
 
+  // Meter the transmitted claims as billing transactions (G12) — one per
+  // claim in the 837P, only when the interchange actually uploaded. Covers
+  // the manual batch-submit route AND the auto-submit cron, which both run
+  // through here. Fire-and-forget + fail-soft.
+  if (submission.upload.ok) {
+    void recordTenantUsage({
+      orgId,
+      metricKey: "billingTransactionsPerMonth",
+      quantity: claims.length,
+      source: "claim.batch_submit",
+    });
+  }
+
   return {
     ok: true,
     submissionId: subRow.id,
@@ -571,30 +820,31 @@ export async function executeOfficeAllyBatchSubmit(
 // download is for audit + support tickets, not a new transmission.
 export async function buildEdiPayloadForSubmission(
   submissionId: string,
+  orgIdInput?: string,
 ): Promise<{ payload: string; usageIndicator: "P" | "T" } | null> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = orgIdInput ?? (await resolveSeedOrgId());
+  if (!orgId) return null;
+  const supabase = getOrgScopedClient(orgId);
   const { data: sub } = await supabase
-    .schema("resupply")
     .from("office_ally_submissions")
     .select("id, isa_control_number, gs_control_number, attempted_claim_ids")
     .eq("id", submissionId)
     .limit(1)
     .maybeSingle();
   if (!sub) return null;
-  const claimIds = sub.attempted_claim_ids ?? [];
+  const claimIds = (sub.attempted_claim_ids ?? []) as string[];
   if (claimIds.length === 0) return null;
 
-  const { data: claims } = await supabase
-    .schema("resupply")
+  const { data: claimsData } = await supabase
     .from("insurance_claims")
     .select("*")
     .in("id", claimIds);
-  if (!claims || claims.length === 0) return null;
+  const claims = (claimsData ?? []) as ClaimRow[];
+  if (claims.length === 0) return null;
 
   const payerProfileIds = [...new Set(claims.map((c) => c.payer_profile_id))];
   if (payerProfileIds.length !== 1 || !payerProfileIds[0]) return null;
   const { data: payer } = await supabase
-    .schema("resupply")
     .from("payer_profiles")
     .select("payer_legal_name, office_ally_payer_id")
     .eq("id", payerProfileIds[0])
@@ -614,7 +864,7 @@ export async function buildEdiPayloadForSubmission(
     details.push(d);
   }
 
-  const identity = await resolveBillingIdentity({ supabase });
+  const identity = await resolveBillingIdentity({ orgId });
   const built = build837P({
     submitter: identity.submitter,
     receiver: { interchangeId: "OFFCLY", organizationName: "OFFICE ALLY" },
@@ -629,6 +879,127 @@ export async function buildEdiPayloadForSubmission(
     usageIndicator: identity.usageIndicator,
   });
   return { payload: built.payload, usageIndicator: identity.usageIndicator };
+}
+
+// Build a clearinghouse-NEUTRAL 837P for a set of claims and return it for
+// download — the "export the 837P and upload it to the clearinghouse of your
+// choice" path. Unlike buildEdiPayloadForSubmission this needs no existing
+// Office Ally submission: it allocates fresh control numbers and addresses the
+// interchange to the caller-supplied receiver (the operator's target
+// clearinghouse) instead of hard-coding Office Ally.
+//
+// It is READ-ONLY: no SFTP upload, no office_ally_submissions row, and no
+// claim status change — the operator uploads the file wherever they like and
+// tracks the submission there. The claim CONTENT is the same standard ASC X12
+// 5010 837P the submit path builds.
+//
+// PHI: the returned payload IS claim data. The caller streams it to an authed
+// admin as a file download and never logs it; its audit row carries counts
+// only.
+export type Export837PResult =
+  | {
+      ok: true;
+      payload: string;
+      claimCount: number;
+      usageIndicator: "P" | "T";
+      interchangeControlNumber: string;
+    }
+  | {
+      ok: false;
+      kind:
+        | "no_claims_matched"
+        | "some_claims_not_found"
+        | "batch_payer_mismatch"
+        | "payer_not_configured"
+        | "claim_detail_unavailable";
+      detail?: Record<string, unknown>;
+    };
+
+export async function buildExport837P(input: {
+  orgId: string;
+  claimIds: string[];
+  receiver: { interchangeId: string; organizationName: string };
+}): Promise<Export837PResult> {
+  const supabase = getOrgScopedClient(input.orgId);
+
+  const { data: claimsData, error } = await supabase
+    .from("insurance_claims")
+    .select("*")
+    .in("id", input.claimIds);
+  if (error) throw error;
+  const claims = (claimsData ?? []) as ClaimRow[];
+  if (claims.length === 0) return { ok: false, kind: "no_claims_matched" };
+  if (claims.length !== input.claimIds.length) {
+    const missing = input.claimIds.filter(
+      (id) => !claims.some((c) => c.id === id),
+    );
+    return { ok: false, kind: "some_claims_not_found", detail: { missing } };
+  }
+
+  // One 837P interchange addresses exactly one payer.
+  const payerProfileIds = [...new Set(claims.map((c) => c.payer_profile_id))];
+  if (payerProfileIds.length !== 1 || !payerProfileIds[0]) {
+    return {
+      ok: false,
+      kind: "batch_payer_mismatch",
+      detail: {
+        message: "all claims in one 837P interchange must share one payer",
+      },
+    };
+  }
+  const { data: payer } = await supabase
+    .from("payer_profiles")
+    .select("payer_legal_name, office_ally_payer_id")
+    .eq("id", payerProfileIds[0])
+    .limit(1)
+    .maybeSingle();
+  if (!payer || !payer.office_ally_payer_id) {
+    return { ok: false, kind: "payer_not_configured" };
+  }
+
+  const details: ClaimDetail[] = [];
+  for (const claim of claims) {
+    const d = await buildOneDetail(
+      supabase,
+      claim,
+      payer.payer_legal_name,
+      payer.office_ally_payer_id,
+    );
+    if (!d) {
+      return {
+        ok: false,
+        kind: "claim_detail_unavailable",
+        detail: { claimId: claim.id },
+      };
+    }
+    details.push(d);
+  }
+
+  const identity = await resolveBillingIdentity({ orgId: input.orgId });
+  const control = allocateControlNumbers({
+    submittedAt: Date.now(),
+    sequence: 1,
+  });
+  const built = build837P({
+    submitter: identity.submitter,
+    receiver: input.receiver,
+    billingProvider: identity.billingProvider,
+    claims: details,
+    control: {
+      interchangeControlNumber: control.interchangeControlNumber,
+      groupControlNumber: control.groupControlNumber,
+      transactionSetControlNumber: control.transactionSetControlNumber,
+      builtAt: Date.now(),
+    },
+    usageIndicator: identity.usageIndicator,
+  });
+  return {
+    ok: true,
+    payload: built.payload,
+    claimCount: built.claimCount,
+    usageIndicator: identity.usageIndicator,
+    interchangeControlNumber: control.interchangeControlNumber,
+  };
 }
 
 export async function buildOneDetail(
@@ -648,27 +1019,23 @@ export async function buildOneDetail(
     { data: secondaryCoverage },
   ] = await Promise.all([
     supabase
-      .schema("resupply")
       .from("insurance_coverages")
       .select("member_id, policyholder_relationship")
       .eq("id", claim.insurance_coverage_id)
       .limit(1)
       .maybeSingle(),
     supabase
-      .schema("resupply")
       .from("patients")
       .select("legal_first_name, legal_last_name, date_of_birth, address")
       .eq("id", claim.patient_id)
       .limit(1)
       .maybeSingle(),
     supabase
-      .schema("resupply")
       .from("insurance_claim_line_items")
       .select("hcpcs_code, modifier, billed_cents, quantity, narrative")
       .eq("claim_id", claim.id)
       .order("created_at", { ascending: true }),
     supabase
-      .schema("resupply")
       .from("sleep_studies")
       .select("diagnosis_icd10")
       .eq("patient_id", claim.patient_id)
@@ -678,6 +1045,7 @@ export async function buildOneDetail(
       .maybeSingle(),
     claim.rendering_provider_id
       ? supabase
+          .raw()
           .schema("resupply")
           .from("providers")
           .select("legal_name, npi")
@@ -687,6 +1055,7 @@ export async function buildOneDetail(
       : Promise.resolve({ data: null }),
     claim.referring_provider_id
       ? supabase
+          .raw()
           .schema("resupply")
           .from("providers")
           .select("legal_name, npi, practice_address")
@@ -696,7 +1065,6 @@ export async function buildOneDetail(
       : Promise.resolve({ data: null }),
     claim.secondary_coverage_id
       ? supabase
-          .schema("resupply")
           .from("insurance_coverages")
           .select("member_id, payer_name, policyholder_relationship")
           .eq("id", claim.secondary_coverage_id)
@@ -782,7 +1150,7 @@ export async function buildOneDetail(
   // referring loop, not a replacement.
   const orderingProvider: ProviderRef | null =
     referringProvider &&
-    (await isFeatureEnabled("billing.line_ordering_provider"))
+    (await isFeatureEnabled("billing.line_ordering_provider", supabase.orgId))
       ? {
           npi: referringProvider.npi,
           firstName: splitFirstName(referringProvider.legal_name),
@@ -810,7 +1178,7 @@ export async function buildOneDetail(
       organizationName: payerLegalName,
       payerId,
     },
-    serviceLines: lines.map((l) => ({
+    serviceLines: (lines as LineItemRow[]).map((l) => ({
       hcpcsCode: l.hcpcs_code,
       modifiers: ((l.modifier ?? "") as string)
         .split(",")
@@ -886,7 +1254,6 @@ async function loadPrimaryCobDisclosure(
 ): Promise<OtherSubscriberDetail | null> {
   if (!claim.primary_claim_id) return null;
   const { data: primaryClaim } = await supabase
-    .schema("resupply")
     .from("insurance_claims")
     .select("payer_name, insurance_coverage_id, payer_profile_id")
     .eq("id", claim.primary_claim_id)
@@ -898,7 +1265,6 @@ async function loadPrimaryCobDisclosure(
   let relationship: string | null = null;
   if (primaryClaim.insurance_coverage_id) {
     const { data: cov } = await supabase
-      .schema("resupply")
       .from("insurance_coverages")
       .select("member_id, policyholder_relationship")
       .eq("id", primaryClaim.insurance_coverage_id)
@@ -916,7 +1282,6 @@ async function loadPrimaryCobDisclosure(
   let otherPayerId = "";
   if (primaryClaim.payer_profile_id) {
     const { data: prof } = await supabase
-      .schema("resupply")
       .from("payer_profiles")
       .select("office_ally_payer_id, edi_5010_payer_id")
       .eq("id", primaryClaim.payer_profile_id)

@@ -26,6 +26,7 @@ import request from "supertest";
 import {
   installSupabaseMock,
   stageSupabaseResponse,
+  getSupabaseCallCount,
   getSupabaseFilterCalls,
 } from "../../test-helpers/supabase-mock";
 import {
@@ -61,6 +62,9 @@ const SUB_ROW = {
   created_at: "2026-04-01T00:00:00Z",
   updated_at: "2026-04-01T00:00:00Z",
 };
+const CSRF_TOKEN = "reminders-csrf-token-abc";
+const SESSION_COOKIE = "pf_session=session-token-123";
+const CSRF_COOKIE = `pf_csrf=${CSRF_TOKEN}`;
 
 async function buildApp(): Promise<Express> {
   // Dynamic import — must happen AFTER the vi.mock() calls above so the
@@ -221,6 +225,65 @@ describe("PATCH /api/reminders/manage — session-auth fallback (P5)", () => {
       });
     expect(res.status).toBe(401);
   });
+
+  it("with a session cookie but no CSRF token returns 403 before updating", async () => {
+    mockSession.current = {
+      customerId: "cust-1",
+      email: "pat@example.com",
+      displayName: "Pat Q.",
+    };
+    const app = await buildApp();
+
+    const res = await request(app)
+      .patch("/api/reminders/manage")
+      .set("Cookie", SESSION_COOKIE)
+      .send({
+        items: [
+          {
+            sku: "maskCushion",
+            lastReplacedAt: "2026-05-01",
+            intervalDays: 30,
+          },
+        ],
+      });
+
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ error: "csrf_failed" });
+    expect(getSupabaseCallCount("reminder_subscriptions", "update")).toBe(0);
+  });
+
+  it("with a session cookie and matching CSRF tokens updates normally", async () => {
+    mockSession.current = {
+      customerId: "cust-1",
+      email: "pat@example.com",
+      displayName: "Pat Q.",
+    };
+    stageSupabaseResponse("reminder_subscriptions", "update", {
+      data: SUB_ROW,
+    });
+    const app = await buildApp();
+
+    const res = await request(app)
+      .patch("/api/reminders/manage")
+      .set("Cookie", `${SESSION_COOKIE}; ${CSRF_COOKIE}`)
+      .set("x-pf-csrf", CSRF_TOKEN)
+      .send({
+        items: [
+          {
+            sku: "maskCushion",
+            lastReplacedAt: "2026-05-01",
+            intervalDays: 30,
+          },
+        ],
+      });
+
+    expect(res.status).toBe(200);
+    const filters = getSupabaseFilterCalls("reminder_subscriptions", "update");
+    expect(filters).toContainEqual({
+      verb: "eq",
+      args: ["email", "pat@example.com"],
+    });
+  });
 });
 
 describe("POST /api/reminders/manage/unsubscribe — session-auth fallback (P5)", () => {
@@ -250,6 +313,23 @@ describe("POST /api/reminders/manage/unsubscribe — session-auth fallback (P5)"
     const app = await buildApp();
     const res = await request(app).post("/api/reminders/manage/unsubscribe");
     expect(res.status).toBe(401);
+  });
+
+  it("with a session cookie but no CSRF token returns 403 before unsubscribing", async () => {
+    mockSession.current = {
+      customerId: "cust-1",
+      email: "pat@example.com",
+      displayName: "Pat Q.",
+    };
+    const app = await buildApp();
+
+    const res = await request(app)
+      .post("/api/reminders/manage/unsubscribe")
+      .set("Cookie", SESSION_COOKIE);
+
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ error: "csrf_failed" });
+    expect(getSupabaseCallCount("reminder_subscriptions", "update")).toBe(0);
   });
 });
 
@@ -421,5 +501,86 @@ describe("GET /api/reminders/manage — null session email falls through to 401"
     // A null email must NOT be passed to the eq() filter — it would match
     // every row whose email is NULL. The route must 401 in this case.
     expect(res.status).toBe(401);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// CSRF — session-cookie-authenticated mutations require the double-submit
+// pair. The capability-token path (no pf_session cookie) is untouched: an
+// anonymous request has nothing for an attacker to replay.
+// ---------------------------------------------------------------------------
+
+describe("CSRF on /api/reminders/manage mutations (requireCsrfWhenSession)", () => {
+  const PATCH_BODY = {
+    items: [
+      { sku: "maskCushion", lastReplacedAt: "2026-05-01", intervalDays: 30 },
+    ],
+  };
+
+  it("403s a PATCH that rides a session cookie without the X-PF-CSRF header", async () => {
+    mockSession.current = {
+      customerId: "cust-1",
+      email: "pat@example.com",
+      displayName: "Pat Q.",
+    };
+    const app = await buildApp();
+
+    const res = await request(app)
+      .patch("/api/reminders/manage")
+      .set("Cookie", "pf_session=sess-raw; pf_csrf=csrf-raw")
+      .send(PATCH_BODY);
+
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ error: "csrf_failed" });
+  });
+
+  it("admits a PATCH with a session cookie + matching X-PF-CSRF header", async () => {
+    mockSession.current = {
+      customerId: "cust-1",
+      email: "pat@example.com",
+      displayName: "Pat Q.",
+    };
+    stageSupabaseResponse("reminder_subscriptions", "update", {
+      data: SUB_ROW,
+    });
+    const app = await buildApp();
+
+    const res = await request(app)
+      .patch("/api/reminders/manage")
+      .set("Cookie", "pf_session=sess-raw; pf_csrf=csrf-raw")
+      .set("X-PF-CSRF", "csrf-raw")
+      .send(PATCH_BODY);
+
+    expect(res.status).toBe(200);
+  });
+
+  it("403s an unsubscribe POST that rides a session cookie without the header", async () => {
+    mockSession.current = {
+      customerId: "cust-1",
+      email: "pat@example.com",
+      displayName: "Pat Q.",
+    };
+    const app = await buildApp();
+
+    const res = await request(app)
+      .post("/api/reminders/manage/unsubscribe")
+      .set("Cookie", "pf_session=sess-raw; pf_csrf=csrf-raw");
+
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ error: "csrf_failed" });
+  });
+
+  it("token-only mutations (no session cookie) stay CSRF-exempt", async () => {
+    stageSupabaseResponse("reminder_subscriptions", "update", {
+      data: SUB_ROW,
+    });
+    const app = await buildApp();
+
+    const res = await request(app)
+      .patch("/api/reminders/manage")
+      .query({ token: "abc123abc123abc123" })
+      .send(PATCH_BODY);
+
+    expect(res.status).toBe(200);
   });
 });

@@ -32,7 +32,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -311,9 +311,13 @@ router.post(
     }
     const d = parsed.data;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("clinical_encounters")
       .insert({
         patient_id: idParsed.data,
@@ -369,9 +373,13 @@ router.get(
       Date.now() - parsed.data.windowDays * 24 * 60 * 60 * 1000,
     ).toISOString();
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("clinical_encounters")
       .select(
         "id, patient_id, assessment_category, outcome_status, reason, plan, follow_up_at, author_email, created_at",
@@ -416,9 +424,13 @@ router.patch(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("clinical_encounters")
       .update({
         outcome_status: parsed.data.outcomeStatus,
@@ -476,11 +488,15 @@ router.get(
     }
     const windowDays = parsed.data.windowDays;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // 1) Resolve the intervention → patient + anchor date.
     const { data: enc, error: encErr } = await supabase
-      .schema("resupply")
       .from("clinical_encounters")
       .select("id, patient_id, created_at, assessment_category, outcome_status")
       .eq("id", idParsed.data)
@@ -508,7 +524,6 @@ router.get(
     //    read at 4× the day-span to bound multi-source duplicate dates
     //    (computeOutcomeMeasurement dedups by date).
     const { data: nights, error: nightsErr } = await supabase
-      .schema("resupply")
       .from("patient_therapy_nights")
       .select("night_date, usage_minutes, ahi, leak_rate_l_min")
       .eq("patient_id", encounter.patient_id)

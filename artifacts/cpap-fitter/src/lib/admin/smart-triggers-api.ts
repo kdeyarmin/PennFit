@@ -10,10 +10,17 @@ import { ApiError } from "@workspace/api-client-react/admin";
 import { csrfHeader } from "../csrf";
 
 export type SmartTriggerKind =
+  // Patient-facing nudges (auto-dispatchable):
   | "leak_rising"
   | "usage_dropping"
   | "cushion_wear"
-  | "humidifier_drop";
+  | "humidifier_drop"
+  // Clinical signals — RT-owned, never auto-messaged to the patient:
+  | "ahi_elevated"
+  | "non_adherent_30d"
+  | "pressure_at_max"
+  | "ahi_rising"
+  | "usage_erratic";
 
 export interface SmartTriggerEventRow {
   id: string;
@@ -70,6 +77,36 @@ export async function dismissSmartTrigger(
       credentials: "include",
       headers: { "Content-Type": "application/json", ...csrfHeader() },
       body: JSON.stringify(reason ? { reason } : {}),
+    },
+  );
+  if (!res.ok) {
+    if (res.status === 409) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      if (body.error === "already_dismissed") {
+        throw new AlreadyDismissedError();
+      }
+    }
+    const text = await res.text().catch(() => "");
+    throw new ApiError(res, text || null, { method: "POST", url: res.url });
+  }
+}
+
+/**
+ * Snooze a trigger event for `days` days — it drops out of the active
+ * Clinical Insights queue until the snooze elapses, then re-surfaces.
+ * The lighter-touch sibling of dismiss in the same triage workflow.
+ */
+export async function snoozeSmartTrigger(
+  id: string,
+  days: number,
+): Promise<void> {
+  const res = await fetch(
+    `/resupply-api/admin/smart-triggers/${encodeURIComponent(id)}/snooze`,
+    {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json", ...csrfHeader() },
+      body: JSON.stringify({ days }),
     },
   );
   if (!res.ok) {

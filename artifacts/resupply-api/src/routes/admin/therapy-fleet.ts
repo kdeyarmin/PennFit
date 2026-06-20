@@ -32,9 +32,10 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { safeCsvCell } from "../../lib/safe-csv-cell";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -143,10 +144,19 @@ router.get(
     }
     const windowDays = parsed.data.windowDays;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
+      .raw()
       .schema("resupply")
-      .rpc("therapy_fleet_overview", { p_window_days: windowDays });
+      .rpc("therapy_fleet_overview", {
+        p_org_id: orgId,
+        p_window_days: windowDays,
+      });
     if (error) throw error;
 
     // The RPC returns a single-row table.
@@ -193,6 +203,10 @@ interface DailyMetricRow {
   resupply_items_due: number | string;
   setups_in_window: number | string;
   setups_at_risk: number | string;
+  // Added in migration 0338; null on historical rows captured before it.
+  clinical_signals_open: number | string | null;
+  clinical_signals_high: number | string | null;
+  clinical_signals_medium: number | string | null;
 }
 
 // GET /admin/therapy-fleet/trend — daily fleet-metrics history captured
@@ -212,13 +226,20 @@ router.get(
       .toISOString()
       .slice(0, 10);
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
+      .raw()
       .schema("resupply")
       .from("therapy_fleet_daily_metrics")
       .select(
-        "metric_date, patients_with_data, compliant, at_risk, non_compliant, high_leak, resupply_items_due, setups_in_window, setups_at_risk",
+        "metric_date, patients_with_data, compliant, at_risk, non_compliant, high_leak, resupply_items_due, setups_in_window, setups_at_risk, clinical_signals_open, clinical_signals_high, clinical_signals_medium",
       )
+      .eq("org_id", orgId)
       .gte("metric_date", cutoff)
       .order("metric_date", { ascending: true })
       .limit(366);
@@ -234,6 +255,9 @@ router.get(
       resupplyItemsDue: int(r.resupply_items_due),
       setupsInWindow: int(r.setups_in_window),
       setupsAtRisk: int(r.setups_at_risk),
+      clinicalSignalsOpen: int(r.clinical_signals_open),
+      clinicalSignalsHigh: int(r.clinical_signals_high),
+      clinicalSignalsMedium: int(r.clinical_signals_medium),
     }));
     res.json({ days, count: points.length, points });
   },
@@ -302,17 +326,19 @@ function isHidden(action: WorklistAction | null, todayIso: string): boolean {
 // asked, attach each patient's triage state (hiding handled rows unless
 // includeHandled), then attach display names. Returns the merged list.
 async function buildWorklist(
+  orgId: string,
   windowDays: number,
   limit: number,
   reason: WorklistReason | undefined,
   includeHandled: boolean,
 ): Promise<WorklistEntry[]> {
-  const supabase = getSupabaseServiceRoleClient();
+  const supabase = getOrgScopedClient(orgId);
   // Over-fetch when we'll post-filter (reason membership and/or hiding
   // handled rows) so the trimmed result still fills a page. The RPC
   // can't cheaply apply either predicate itself.
   const needsOverfetch = Boolean(reason) || !includeHandled;
   const { data, error } = await supabase
+    .raw()
     .schema("resupply")
     .rpc("therapy_fleet_worklist", {
       p_window_days: windowDays,
@@ -350,11 +376,13 @@ async function buildWorklist(
   // rows unless the caller asked for them.
   const candidateIds = rows.map((r) => r.patientId);
   const { data: actionRows, error: aErr } = await supabase
+    .raw()
     .schema("resupply")
     .from("patient_worklist_actions")
     .select(
       "patient_id, status, snooze_until, note, updated_by_email, updated_at",
     )
+    .eq("org_id", orgId)
     .in("patient_id", candidateIds);
   if (aErr) throw aErr;
   const actionByPatient = new Map<string, WorklistAction>();
@@ -384,7 +412,6 @@ async function buildWorklist(
   // aggregation stays cheap); resolve names in one batched read.
   const ids = rows.map((r) => r.patientId);
   const { data: patientRows, error: pErr } = await supabase
-    .schema("resupply")
     .from("patients")
     .select("id, legal_first_name, legal_last_name")
     .in("id", ids);
@@ -418,7 +445,13 @@ router.get(
       return;
     }
     const { windowDays, limit, reason, includeHandled } = parsed.data;
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const entries = await buildWorklist(
+      orgId,
       windowDays,
       limit,
       reason,
@@ -428,10 +461,11 @@ router.get(
   },
 );
 
+// Delegate to the shared safe-csv-cell helper so patient-derived
+// fields (patient name) get formula-injection neutralisation, not
+// just RFC 4180 quoting.
 function csvCell(v: string | number | null): string {
-  if (v === null) return "";
-  const s = String(v);
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  return safeCsvCell(v);
 }
 
 router.get(
@@ -444,7 +478,13 @@ router.get(
       return;
     }
     const { windowDays, limit, reason, includeHandled } = parsed.data;
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const entries = await buildWorklist(
+      orgId,
       windowDays,
       limit,
       reason,
@@ -517,10 +557,14 @@ router.post(
     const snoozeUntil =
       action === "snoozed" ? (parsed.data.snoozeUntil ?? null) : null;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     const { data: existsRow, error: existsErr } = await supabase
-      .schema("resupply")
       .from("patients")
       .select("id")
       .eq("id", patientId)
@@ -534,10 +578,12 @@ router.post(
 
     const now = new Date().toISOString();
     const { error: upsertErr } = await supabase
+      .raw()
       .schema("resupply")
       .from("patient_worklist_actions")
       .upsert(
         {
+          org_id: orgId,
           patient_id: patientId,
           status: action,
           snooze_until: snoozeUntil,
@@ -602,14 +648,21 @@ interface AlertRow {
 router.get(
   "/admin/therapy-fleet/alerts",
   requirePermission("patients.read"),
-  async (_req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
+      .raw()
       .schema("resupply")
       .from("therapy_fleet_alerts")
       .select(
         "id, patient_id, alert_type, severity, detail, outreach_sent_at, created_at",
       )
+      .eq("org_id", orgId)
       .eq("status", "open")
       .order("created_at", { ascending: false })
       .limit(500);
@@ -626,7 +679,6 @@ router.get(
     if (rows.length > 0) {
       const ids = Array.from(new Set(rows.map((r) => r.patient_id)));
       const { data: patientRows, error: pErr } = await supabase
-        .schema("resupply")
         .from("patients")
         .select("id, legal_first_name, legal_last_name")
         .in("id", ids);
@@ -671,9 +723,15 @@ router.post(
       return;
     }
     const alertId = idCheck.data;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const now = new Date().toISOString();
     const { data, error } = await supabase
+      .raw()
       .schema("resupply")
       .from("therapy_fleet_alerts")
       .update({
@@ -682,6 +740,7 @@ router.post(
         resolved_by_email: req.adminEmail ?? null,
         updated_at: now,
       })
+      .eq("org_id", orgId)
       .eq("id", alertId)
       .eq("status", "open")
       .select("id")

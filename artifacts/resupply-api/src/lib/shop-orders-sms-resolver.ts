@@ -26,7 +26,8 @@ import {
   DEFAULT_COMMUNICATION_PREFERENCES,
   type CommunicationPreferences,
   type Json,
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
+  resolveSeedOrgId,
 } from "@workspace/resupply-db";
 
 import { shouldSendSms } from "./comm-prefs";
@@ -65,14 +66,19 @@ export interface SmsRecipient {
 export async function resolveSmsRecipientForShopOrder(
   args: ResolveSmsRecipientArgs,
 ): Promise<SmsRecipient | null> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    // Tenant context missing — no recipient resolvable. Same
+    // "no SMS — skip silently" null return this function already uses.
+    return null;
+  }
+  const supabase = getOrgScopedClient(orgId);
 
   // 1. Pull the shop_customer's email + comm-prefs.
   let email: string | null = null;
   let prefs: CommunicationPreferences = DEFAULT_COMMUNICATION_PREFERENCES;
   if (args.customerId) {
     const { data: cust } = await supabase
-      .schema("resupply")
       .from("shop_customers")
       .select("email_lower, communication_preferences")
       .eq("customer_id", args.customerId)
@@ -98,13 +104,16 @@ export async function resolveSmsRecipientForShopOrder(
   // Escape LIKE metacharacters so an email containing `_` or
   // `%` doesn't cross-match other patients' phone numbers.
   const escapedEmail = email.replace(/[\\%_]/g, (c) => `\\${c}`);
-  const { data: patient } = await supabase
-    .schema("resupply")
+  // Require EXACTLY one match. Two patients sharing an email is a data
+  // ambiguity we must not resolve arbitrarily — picking limit(1) could
+  // text the wrong patient's phone. Skip silently (email-only) instead.
+  const { data: patients } = await supabase
     .from("patients")
     .select("phone_e164, legal_first_name, timezone, address")
     .ilike("email", escapedEmail)
-    .limit(1)
-    .maybeSingle();
+    .limit(2);
+  if (!patients || patients.length !== 1) return null;
+  const patient = patients[0]!;
   if (!patient?.phone_e164) return null;
 
   const address = patient.address as { zip?: string } | null;
