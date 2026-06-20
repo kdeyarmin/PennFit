@@ -181,11 +181,11 @@ export async function ingestInboundFax(
   if (insertRes.error) {
     const code = (insertRes.error as { code?: string }).code;
     if (code === "23505") {
-      // Unique violation on provider_fax_id — a duplicate of an
-      // already-recorded fax (Telnyx retry). Look up the existing row id and
-      // exit; we trust the prior attempt's media-download outcome rather
-      // than re-running it. (The legacy twilio_fax_sid column + its index
-      // were dropped in migration 0371, so provider_fax_id is the only key.)
+      // Unique violation — a duplicate of an already-recorded fax (Telnyx retry).
+      // Look up the existing row id and exit; we trust the prior attempt's
+      // media-download outcome rather than re-running it. After CONTRACT deploy
+      // 2b we only match on provider_fax_id (Phase 1 verified it is populated
+      // for all rows); see docs/runbooks/fax-column-rename.md.
       const existing = await supabase
         .from("inbound_faxes")
         .select("id")
