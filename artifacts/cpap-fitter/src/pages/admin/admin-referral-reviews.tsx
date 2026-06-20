@@ -1316,13 +1316,13 @@ function IntakeFormFields({
         </Card>
       )}
 
-      {x && (x.diagnoses.length > 0 || x.recommendedTherapy) && (
+      {x && ((x.diagnoses?.length ?? 0) > 0 || x.recommendedTherapy) && (
         <Card title="Diagnosis & therapy">
           <div className="space-y-2 text-sm">
             {x.recommendedTherapy && (
               <Fact label="Recommended therapy" value={x.recommendedTherapy} />
             )}
-            {x.diagnoses.length > 0 && (
+            {(x.diagnoses?.length ?? 0) > 0 && (
               <div>
                 <p
                   className="text-xs font-semibold uppercase tracking-wide mb-1"
@@ -1331,7 +1331,7 @@ function IntakeFormFields({
                   Diagnosis codes
                 </p>
                 <ul className="space-y-1">
-                  {x.diagnoses.map((d, i) => (
+                  {(x.diagnoses ?? []).map((d, i) => (
                     <li key={i} className="flex gap-2">
                       <span
                         className="font-mono text-xs rounded px-1.5 py-0.5 shrink-0"
@@ -1348,10 +1348,10 @@ function IntakeFormFields({
                 </ul>
               </div>
             )}
-            {x.comorbidities.length > 0 && (
+            {(x.comorbidities?.length ?? 0) > 0 && (
               <Fact
                 label="Documented comorbidities"
-                value={x.comorbidities.join(", ")}
+                value={(x.comorbidities ?? []).join(", ")}
               />
             )}
           </div>

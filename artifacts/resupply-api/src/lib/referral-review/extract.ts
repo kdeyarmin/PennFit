@@ -193,8 +193,9 @@ const SYSTEM_PROMPT =
   "Transcribe ONLY what is actually written in the document into the " +
   "requested JSON. Never guess or invent a value: if a field is not " +
   "present, return null for it (or an empty array). Dates stay exactly " +
-  "as written, EXCEPT the patient date of birth: when a full date of " +
-  "birth is legible, normalise it to YYYY-MM-DD; otherwise null. Phone " +
+  "as written, EXCEPT the patient date of birth and the sleep-study date: " +
+  "when a full date is legible, normalise it to YYYY-MM-DD; otherwise null. " +
+  "Phone " +
   "numbers: digits and leading + only when clearly legible, else as " +
   "written. For diagnoses, transcribe each ICD-10 code and its written " +
   "description exactly (do NOT infer a code from a description, or a " +

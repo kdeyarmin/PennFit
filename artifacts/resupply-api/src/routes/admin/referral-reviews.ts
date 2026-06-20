@@ -252,6 +252,34 @@ function mapStudyTypeToEnum(
   return null;
 }
 
+/**
+ * Normalize a transcribed study date to YYYY-MM-DD. The extraction prompt
+ * normalizes the patient DOB but leaves the study date "as written", so it
+ * commonly arrives US-numeric ("04/12/2026", "4/12/26"). Handles ISO and US
+ * M/D/Y (slash or dash, 2- or 4-digit year), rejecting impossible dates via a
+ * UTC round-trip; anything else returns null (we never guess a clinical date).
+ */
+function normalizeToIsoDate(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const s = raw.trim();
+  if (ISO_DATE.test(s)) return s;
+  const m = s.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2}|\d{4})$/);
+  if (!m) return null;
+  const mm = Number(m[1]);
+  const dd = Number(m[2]);
+  let yyyy = Number(m[3]);
+  if (m[3]!.length === 2) yyyy += yyyy >= 70 ? 1900 : 2000;
+  const d = new Date(Date.UTC(yyyy, mm - 1, dd));
+  if (
+    d.getUTCFullYear() === yyyy &&
+    d.getUTCMonth() === mm - 1 &&
+    d.getUTCDate() === dd
+  ) {
+    return d.toISOString().slice(0, 10);
+  }
+  return null;
+}
+
 function reviewToJson(row: ReferralReviewRow) {
   // When an extraction is on file, surface the qualification verdict +
   // completeness checklist so the UI can show them without re-rendering the
@@ -266,7 +294,12 @@ function reviewToJson(row: ReferralReviewRow) {
     mediaContentType: row.media_content_type,
     mediaSizeBytes: row.media_size_bytes,
     status: row.status,
-    extraction: row.extraction,
+    // Ship the SCHEMA-PARSED extraction (zod defaults backfill fields added
+    // after a row was stored — diagnoses/recommendedTherapy/comorbidities) so
+    // the wire shape matches the typed client and the SPA never reads an
+    // undefined array off a pre-feature row. Falls back to the raw jsonb only
+    // when it can't be parsed at all (the SPA still guards those defensively).
+    extraction: extraction ?? row.extraction,
     extractionModel: row.extraction_model,
     extractedAt: row.extracted_at,
     errorReason: row.error_reason,
@@ -911,8 +944,7 @@ router.post(
     const ss = extraction?.sleepStudy ?? null;
     if (ss) {
       const studyType = mapStudyTypeToEnum(ss.studyType);
-      const studyDate =
-        ss.studyDate && ISO_DATE.test(ss.studyDate) ? ss.studyDate : null;
+      const studyDate = normalizeToIsoDate(ss.studyDate);
       const ahi =
         typeof ss.ahi === "number" && Number.isFinite(ss.ahi) ? ss.ahi : null;
       const rdi =

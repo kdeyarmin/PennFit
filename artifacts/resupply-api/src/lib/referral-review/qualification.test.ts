@@ -65,6 +65,15 @@ describe("assessPapQualification", () => {
     expect(q.metric).toBeNull();
   });
 
+  it("floors the displayed index so it never crosses its own band label", () => {
+    // 14.96 is below 15 → conditional; the shown number must read 14.9, not
+    // a rounded "15" that would contradict the "(5–14)" band.
+    const q = assessPapQualification({ ahi: 14.96 });
+    expect(q.verdict).toBe("conditional");
+    expect(q.summary).toContain("14.9");
+    expect(q.summary).not.toContain("15");
+  });
+
   it("treats the 15 boundary as qualifying and ignores non-finite values", () => {
     expect(assessPapQualification({ ahi: 15 }).verdict).toBe("qualifies");
     expect(

@@ -157,7 +157,10 @@ export function assessPapQualification(
   };
 }
 
-/** Render an index value without a trailing ".0" but keeping one decimal. */
+/** Render an index value to one decimal, FLOORED so the shown number never
+ *  rounds across a band threshold (e.g. 14.96 shows "14.9", not "15", which
+ *  would contradict its "(5–14)" label). Integers render without a decimal. */
 function formatIndex(n: number): string {
-  return Number.isInteger(n) ? String(n) : n.toFixed(1).replace(/\.0$/, "");
+  const floored = Math.floor(n * 10) / 10;
+  return Number.isInteger(floored) ? String(floored) : floored.toFixed(1);
 }

@@ -61,9 +61,11 @@ export interface ReferralExtraction {
   insurance: ReferralExtractionInsurance | null;
   secondaryInsurance: ReferralExtractionInsurance | null;
   order: Array<{ description: string; hcpcs: string | null }>;
-  diagnoses: Array<{ icd10: string | null; description: string | null }>;
-  recommendedTherapy: string | null;
-  comorbidities: string[];
+  // Optional: extractions stored before these fields existed won't carry them
+  // (the API backfills via the schema where possible, but guard regardless).
+  diagnoses?: Array<{ icd10: string | null; description: string | null }>;
+  recommendedTherapy?: string | null;
+  comorbidities?: string[];
   sleepStudy: {
     studyDate: string | null;
     studyType: string | null;
