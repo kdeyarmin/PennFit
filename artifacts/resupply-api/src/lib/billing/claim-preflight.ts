@@ -22,6 +22,7 @@ import {
   resolveSeedOrgId,
   type OrgScopedClient,
 } from "@workspace/resupply-db";
+import { evaluateSameOrSimilar } from "@workspace/resupply-domain";
 
 type ClaimLineRow =
   Database["resupply"]["Tables"]["insurance_claim_line_items"]["Row"];
@@ -77,7 +78,8 @@ export type PreflightFixAction =
   | { kind: "set_referring_provider"; claimId: string }
   | { kind: "add_line_item"; claimId: string }
   | { kind: "edit_line_item"; claimId: string; lineId: string }
-  | { kind: "edit_address"; patientId: string };
+  | { kind: "edit_address"; patientId: string }
+  | { kind: "record_same_or_similar"; patientId: string; hcpcs: string };
 
 export interface PreflightSummary {
   /** True iff no `error`-severity items. */
@@ -625,6 +627,58 @@ export async function preflightClaim(
         .map((l: ClaimLineRow) => `${l.hcpcs_code} × ${l.quantity}`)
         .join(", "),
     });
+
+    // ── Same-or-similar (Medicare 5-yr reasonable useful lifetime) ──
+    // Activates the medicare_same_or_similar_checks cache (previously
+    // stored but never read): when a HETS check on file shows a same/
+    // similar item for one of this claim's HCPCS still inside its RUL,
+    // surface a non-blocking denial-risk warning. The pure domain rule
+    // re-confirms the window so a stale "active" check whose lifetime has
+    // since lapsed does NOT warn. Warning-only — never blocks submit.
+    const hcpcsOnClaim = Array.from(
+      new Set(
+        (lines as ClaimLineRow[])
+          .map((l) => l.hcpcs_code)
+          .filter((c): c is string => !!c),
+      ),
+    );
+    if (hcpcsOnClaim.length > 0) {
+      const { data: sosChecks } = await supabase
+        .from("medicare_same_or_similar_checks")
+        .select("hcpcs_code, status, last_dispense_on, checked_at")
+        .eq("patient_id", claim.patient_id)
+        .in("hcpcs_code", hcpcsOnClaim)
+        .eq("status", "active")
+        .order("checked_at", { ascending: false });
+      type SosCheckRow = {
+        hcpcs_code: string | null;
+        last_dispense_on: string | null;
+      };
+      const sosRows = (sosChecks ?? []) as SosCheckRow[];
+      for (const code of hcpcsOnClaim) {
+        const latest = sosRows.find((c) => c.hcpcs_code === code);
+        if (!latest) continue;
+        const win = evaluateSameOrSimilar({
+          lastDispenseOn: latest.last_dispense_on,
+        });
+        if (win.blocked) {
+          items.push({
+            key: "same_or_similar",
+            severity: "warning",
+            label: `Same-or-similar equipment on file (${code})`,
+            detail: win.clearsOn
+              ? `A same/similar item is within its 5-year reasonable useful lifetime (clears ${win.clearsOn}). Medicare will likely deny — confirm before submitting.`
+              : `A same/similar item is recorded active for ${code}. Medicare will likely deny — confirm before submitting.`,
+            fixAction: {
+              kind: "record_same_or_similar",
+              patientId: claim.patient_id,
+              hcpcs: code,
+            },
+          });
+          break; // one warning is enough to prompt the CSR
+        }
+      }
+    }
 
     // Each line should have a billed amount > 0.
     const zeroBilled = lines.filter(

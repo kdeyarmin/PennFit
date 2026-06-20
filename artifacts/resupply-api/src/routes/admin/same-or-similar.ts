@@ -76,7 +76,7 @@ router.get(
     // Enrich each cached check with the computed RUL window from the pure
     // domain rule, so the SPA can show "clears on <date> (<N> days)" off the
     // recorded last-dispense date instead of just the stored status flag.
-    const checks = (data ?? []).map((row) => ({
+    const checks = ((data ?? []) as Row[]).map((row) => ({
       ...row,
       window: evaluateSameOrSimilar({ lastDispenseOn: row.last_dispense_on }),
     }));
