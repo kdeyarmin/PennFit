@@ -342,6 +342,8 @@ export interface Database {
           description: string | null;
           policy: string;
           active: boolean;
+          // Migration 0415: per-payer override; NULL = national default.
+          payer_profile_id: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -352,6 +354,7 @@ export interface Database {
           description?: string | null;
           policy?: string;
           active?: boolean;
+          payer_profile_id?: string | null;
           created_at?: string;
           updated_at?: string;
         };

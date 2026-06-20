@@ -165,6 +165,7 @@ import billingTimelyFilingRouter from "./admin/billing-timely-filing.js";
 import billingDashboardRouter from "./admin/billing-dashboard.js";
 import productHcpcsMapRouter from "./admin/product-hcpcs-map.js";
 import payerModifierRulesRouter from "./admin/payer-modifier-rules.js";
+import payerCoverageDiagnosesRouter from "./admin/payer-coverage-diagnoses.js";
 import claimTemplatesRouter from "./admin/claim-templates.js";
 import fulfillmentToClaimRouter from "./admin/fulfillment-to-claim.js";
 import aiBillingQueueRouter from "./admin/ai-billing-queue.js";
@@ -199,6 +200,7 @@ import insuranceDiscoveryRouter from "./admin/insurance-discovery.js";
 import priorAuthQueueRouter from "./admin/prior-auth-queue.js";
 import webhookTestSendRouter from "./admin/webhook-test-send.js";
 import payerFeeSchedulesImportRouter from "./admin/payer-fee-schedules-import.js";
+import cmsFeeScheduleImportRouter from "./admin/cms-fee-schedule-import.js";
 import systemIntegrationsStatusRouter from "./admin/system-integrations-status.js";
 import pacwareRouter from "./admin/pacware.js";
 import platformConnectionTestsRouter from "./platform/connection-tests.js";
@@ -550,6 +552,9 @@ router.use(productHcpcsMapRouter);
 // /admin/payer-modifier-rules/* — payer + HCPCS auto-attach modifier
 // rules (KX, KH, KI, RR, NU…) evaluated by the claim builder.
 router.use(payerModifierRulesRouter);
+// /admin/payer-coverage-diagnoses/* — per-payer medical-necessity coverage
+// overrides (migration 0415) read by the claim preflight.
+router.use(payerCoverageDiagnosesRouter);
 // /admin/claim-templates + /admin/patients/:id/insurance-claims/:claimId/apply-template
 // — pre-built line-item shapes the CSR can one-click stamp onto a draft.
 router.use(claimTemplatesRouter);
@@ -663,6 +668,8 @@ router.use(priorAuthQueueRouter);
 router.use(webhookTestSendRouter);
 // /admin/payer-fee-schedules/import-csv — bulk CSV import.
 router.use(payerFeeSchedulesImportRouter);
+// /admin/payer-fee-schedules/import-cms — CMS DMEPOS fee-schedule import.
+router.use(cmsFeeScheduleImportRouter);
 // /admin/system/integrations-status — admin-facing rollup of every
 // integration's configured/configured-partial/unconfigured posture.
 router.use(systemIntegrationsStatusRouter);

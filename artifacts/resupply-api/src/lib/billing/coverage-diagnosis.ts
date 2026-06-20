@@ -14,6 +14,10 @@ export interface CoverageDiagnosisRow {
   hcpcs_code: string;
   icd10_code: string;
   policy?: string | null;
+  /** Tenant payer this row overrides coverage for. NULL/undefined = the
+   *  national (Medicare LCD) default. A payer's own rows, when present for a
+   *  HCPCS, REPLACE the national default for that HCPCS (per migration 0415). */
+  payer_profile_id?: string | null;
 }
 
 export interface CoverageEvaluation {
@@ -47,16 +51,31 @@ export function normalizeIcd10(code: string | null | undefined): string {
  * covered code — `claimDx.startsWith(coveredCode)`. So covered "G4733"
  * matches claim "G4733", and a covered category "G473" matches "G4733" /
  * "G4730", but a covered "G4733" does NOT match a less-specific "G473".
+ *
+ * **Per-payer override:** when `payerProfileId` is given and that payer has
+ * ANY rows for the HCPCS, the payer's set is authoritative and REPLACES the
+ * national default for that HCPCS (commercial/MA plans cover differently than
+ * the Medicare LCD). Otherwise the national rows (`payer_profile_id` null)
+ * apply. Pass `coverage` as the union of national + this-payer rows.
  */
 export function evaluateCoverageDiagnosis(
   hcpcsCode: string,
   diagnosisCodes: readonly (string | null | undefined)[],
   coverage: readonly CoverageDiagnosisRow[],
+  payerProfileId?: string | null,
 ): CoverageEvaluation {
   const hcpcs = (hcpcsCode ?? "").trim().toUpperCase();
-  const rules = coverage.filter(
+  const forHcpcs = coverage.filter(
     (r) => (r.hcpcs_code ?? "").trim().toUpperCase() === hcpcs,
   );
+  // Payer-specific rows win when present; else fall back to national rows.
+  const payerRows = payerProfileId
+    ? forHcpcs.filter((r) => r.payer_profile_id === payerProfileId)
+    : [];
+  const rules =
+    payerRows.length > 0
+      ? payerRows
+      : forHcpcs.filter((r) => r.payer_profile_id == null);
   if (rules.length === 0) {
     return { hasRules: false, covered: false, policies: [] };
   }

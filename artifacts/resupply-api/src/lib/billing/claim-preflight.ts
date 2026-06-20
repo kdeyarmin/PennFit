@@ -760,19 +760,33 @@ export async function preflightClaim(
               .filter((c) => c.length > 0),
           ),
         ];
-        const { data: coverage, error: covErr } = await supabase
+        // Fetch the national rows (payer_profile_id NULL) plus any override
+        // rows for THIS claim's payer; the evaluator prefers the payer's set
+        // per HCPCS (migration 0415).
+        let coverageQuery = supabase
           .raw()
           .schema("resupply")
           .from("hcpcs_coverage_diagnoses")
-          .select("hcpcs_code, icd10_code, policy")
+          .select("hcpcs_code, icd10_code, policy, payer_profile_id")
           .in("hcpcs_code", distinctHcpcs)
           .eq("active", true);
+        coverageQuery = claim.payer_profile_id
+          ? coverageQuery.or(
+              `payer_profile_id.is.null,payer_profile_id.eq.${claim.payer_profile_id}`,
+            )
+          : coverageQuery.is("payer_profile_id", null);
+        const { data: coverage, error: covErr } = await coverageQuery;
         if (covErr) throw covErr;
         const rows = (coverage ?? []) as CoverageDiagnosisRow[];
         const unsupported = distinctHcpcs
           .map((hcpcs) => ({
             hcpcs,
-            evald: evaluateCoverageDiagnosis(hcpcs, diagnosisCodes, rows),
+            evald: evaluateCoverageDiagnosis(
+              hcpcs,
+              diagnosisCodes,
+              rows,
+              claim.payer_profile_id,
+            ),
           }))
           .filter((x) => x.evald.hasRules && !x.evald.covered);
         if (unsupported.length > 0) {

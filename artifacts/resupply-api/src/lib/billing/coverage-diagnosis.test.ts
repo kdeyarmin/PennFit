@@ -122,3 +122,70 @@ describe("evaluateCoverageDiagnosis", () => {
     expect(osa.covered).toBe(false);
   });
 });
+
+describe("evaluateCoverageDiagnosis — per-payer overrides", () => {
+  const PAYER = "11111111-1111-4111-8111-111111111111";
+  const OTHER = "22222222-2222-4222-8222-222222222222";
+  const national: CoverageDiagnosisRow[] = [
+    {
+      hcpcs_code: "E0601",
+      icd10_code: "G4733",
+      policy: "LCD L33718",
+      payer_profile_id: null,
+    },
+  ];
+
+  it("uses the national rows when the payer has no override for the HCPCS", () => {
+    const out = evaluateCoverageDiagnosis("E0601", ["G47.33"], national, PAYER);
+    expect(out.hasRules).toBe(true);
+    expect(out.covered).toBe(true);
+  });
+
+  it("a payer override REPLACES the national set for that HCPCS", () => {
+    const rows: CoverageDiagnosisRow[] = [
+      ...national, // national covers G47.33
+      {
+        hcpcs_code: "E0601",
+        icd10_code: "G4730",
+        policy: "Payer policy",
+        payer_profile_id: PAYER,
+      },
+    ];
+    // For this payer only G47.30 is covered — national G47.33 no longer applies.
+    expect(
+      evaluateCoverageDiagnosis("E0601", ["G47.33"], rows, PAYER).covered,
+    ).toBe(false);
+    expect(
+      evaluateCoverageDiagnosis("E0601", ["G47.30"], rows, PAYER).covered,
+    ).toBe(true);
+    // A different payer (or no payer) still resolves to the national set.
+    expect(evaluateCoverageDiagnosis("E0601", ["G47.33"], rows).covered).toBe(
+      true,
+    );
+    expect(
+      evaluateCoverageDiagnosis("E0601", ["G47.33"], rows, OTHER).covered,
+    ).toBe(true);
+  });
+
+  it("an override on one HCPCS doesn't change another HCPCS (stays national)", () => {
+    const rows: CoverageDiagnosisRow[] = [
+      ...national,
+      {
+        hcpcs_code: "A7032",
+        icd10_code: "G4733",
+        policy: "LCD L33718",
+        payer_profile_id: null,
+      },
+      {
+        hcpcs_code: "E0601",
+        icd10_code: "G4730",
+        policy: "Payer policy",
+        payer_profile_id: PAYER,
+      },
+    ];
+    // A7032 has no payer override → national applies → G47.33 covered.
+    expect(
+      evaluateCoverageDiagnosis("A7032", ["G47.33"], rows, PAYER).covered,
+    ).toBe(true);
+  });
+});
