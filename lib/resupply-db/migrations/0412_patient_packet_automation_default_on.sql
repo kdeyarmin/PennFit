@@ -1,4 +1,4 @@
--- 0410_patient_packet_automation_default_on — turn the patient-packet
+-- 0412_patient_packet_automation_default_on — turn the patient-packet
 -- automation flags ON by default.
 --
 -- Background
