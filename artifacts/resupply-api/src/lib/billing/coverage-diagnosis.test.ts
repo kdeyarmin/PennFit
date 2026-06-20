@@ -88,13 +88,16 @@ describe("evaluateCoverageDiagnosis", () => {
     expect(out.policies).toEqual(["LCD L33718"]);
   });
 
-  it("models RAD (L33800): E0471 covers central apnea / COPD but NOT OSA", () => {
-    // Mirrors the 0409 seed intent: E0471 (BiPAP-ST) is covered for the
-    // RAD categories but never for obstructive sleep apnea (G47.33).
+  it("models RAD (L33800): E0471 covers all four categories but NOT OSA", () => {
+    // Mirrors the 0409 seed intent: E0471 (BiPAP-ST) is covered for every
+    // RAD category — incl. restrictive-thoracic via family-root prefixes —
+    // but never for obstructive sleep apnea (G47.33).
     const rad: CoverageDiagnosisRow[] = [
-      { hcpcs_code: "E0471", icd10_code: "G4731", policy: "LCD L33800" },
-      { hcpcs_code: "E0471", icd10_code: "E662", policy: "LCD L33800" },
-      { hcpcs_code: "E0471", icd10_code: "J44", policy: "LCD L33800" },
+      { hcpcs_code: "E0471", icd10_code: "G4731", policy: "LCD L33800" }, // central apnea
+      { hcpcs_code: "E0471", icd10_code: "E662", policy: "LCD L33800" }, // OHS
+      { hcpcs_code: "E0471", icd10_code: "J44", policy: "LCD L33800" }, // COPD family
+      { hcpcs_code: "E0471", icd10_code: "G12", policy: "LCD L33800" }, // motor neuron / ALS family
+      { hcpcs_code: "E0471", icd10_code: "M41", policy: "LCD L33800" }, // scoliosis family
     ];
     // Primary central sleep apnea → covered.
     expect(evaluateCoverageDiagnosis("E0471", ["G47.31"], rad).covered).toBe(
@@ -102,6 +105,15 @@ describe("evaluateCoverageDiagnosis", () => {
     );
     // Severe COPD J44.9 matches the 'J44' category prefix → covered.
     expect(evaluateCoverageDiagnosis("E0471", ["J44.9"], rad).covered).toBe(
+      true,
+    );
+    // ALS (G12.21) matches the restrictive-thoracic 'G12' family root —
+    // this is the false-positive the partial seed used to warn on.
+    expect(evaluateCoverageDiagnosis("E0471", ["G12.21"], rad).covered).toBe(
+      true,
+    );
+    // Neuromuscular scoliosis (M41.40) matches the 'M41' root → covered.
+    expect(evaluateCoverageDiagnosis("E0471", ["M41.40"], rad).covered).toBe(
       true,
     );
     // Obstructive sleep apnea is NOT a RAD indication for E0471 → warns.
