@@ -6,6 +6,7 @@ import {
   type HelpStep,
 } from "@/components/help/help-article-shell";
 import { Screenshot, AccountShot } from "@/components/help/help-screens";
+import { BrandName } from "@/components/company-contact";
 
 const steps: HelpStep[] = [
   {
@@ -23,10 +24,7 @@ const steps: HelpStep[] = [
       </p>
     ),
     shot: (
-      <Screenshot
-        url="pennpaps.com/account"
-        caption="Auto-ship lives under the Orders & returns tab of your account."
-      >
+      <Screenshot caption="Auto-ship lives under the Orders & returns tab of your account.">
         <AccountShot />
       </Screenshot>
     ),
@@ -90,7 +88,7 @@ export function HelpManageSubscriptions() {
       title="Manage auto-ship subscriptions"
       Icon={Repeat}
       minutes="3 min"
-      metaDescription="How to manage PennPaps auto-ship subscriptions: pause, resume, change delivery cadence, cancel, use travel mode, and fix a past-due payment."
+      metaDescription="How to manage auto-ship subscriptions: pause, resume, change delivery cadence, cancel, use travel mode, and fix a past-due payment."
       intro="Auto-ship keeps cushions, filters, and tubing arriving on schedule. Here's how to pause for a trip, change how often items ship, update payment, or cancel."
       summary={
         <>
@@ -106,7 +104,9 @@ export function HelpManageSubscriptions() {
         </>
       }
       prerequisites={[
-        "A PennPaps account, signed in.",
+        <>
+          A <BrandName /> account, signed in.
+        </>,
         "At least one auto-ship subscription (start one from a product page or at checkout).",
       ]}
       steps={steps}

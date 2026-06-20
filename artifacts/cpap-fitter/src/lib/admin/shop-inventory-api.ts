@@ -3,11 +3,13 @@
 // Mirrors `shop-reviews-api.ts` exactly (same hand-rolled choice
 // rationale): the v1 inventory endpoint is not in the OpenAPI spec
 // yet because the surface is still tiny (one PATCH against Stripe
-// metadata). We list products via the PUBLIC catalog endpoint —
-// there is no admin-only "list shop products" endpoint and there
-// doesn't need to be: the admin sees the same SKUs the storefront
-// does, plus the live `stockCount` projection that already drops
-// out of the public response.
+// metadata). We list products via the SESSION-SCOPED admin endpoint
+// `GET /admin/shop/products` (NOT the public, host-resolved
+// `GET /shop/products`): under Stripe Connect a tenant's catalog lives
+// in their own connected account, so the admin must read the catalog for
+// the signed-in admin's OWN tenant regardless of which host the console
+// is served on. Same projection shape as the public catalog, plus the
+// live `stockCount` the storefront response also carries.
 //
 // Auth: the browser sends the `pf_session` cookie automatically on
 // same-origin requests, so no per-call auth header is needed.
@@ -42,7 +44,7 @@ export interface ListShopInventoryResponse {
 }
 
 export async function listShopInventory(): Promise<ListShopInventoryResponse> {
-  const res = await fetch("/resupply-api/shop/products", {
+  const res = await fetch("/resupply-api/admin/shop/products", {
     headers: { Accept: "application/json" },
   });
   if (!res.ok) {
@@ -430,7 +432,7 @@ export interface ShopProductDetails {
 export async function fetchShopProductDetails(
   productId: string,
 ): Promise<ShopProductDetails | null> {
-  const res = await fetch("/resupply-api/shop/products", {
+  const res = await fetch("/resupply-api/admin/shop/products", {
     headers: { Accept: "application/json" },
   });
   if (!res.ok) {
@@ -734,4 +736,62 @@ export async function createShopProduct(
     product: { id: string; name: string };
   };
   return { id: json.product.id, name: json.product.name };
+}
+
+// Result of POST /admin/shop/catalog/seed — counts the server reports.
+export interface SeedStarterCatalogResult {
+  created: number;
+  updated: number;
+  pricesCreated: number;
+  total: number;
+}
+
+// 409 from the seed endpoint: the tenant hasn't connected Stripe (and isn't
+// the seed tenant), so a starter catalog can't be created in their own
+// account yet. The page renders this as a "connect payments first" prompt.
+export class ConnectStripeFirstError extends Error {
+  constructor() {
+    super("connect_stripe_first");
+    this.name = "ConnectStripeFirstError";
+  }
+}
+
+// POST /admin/shop/catalog/seed — load the generic starter catalog into the
+// tenant's OWN Stripe account. Idempotent on the server (re-running only
+// updates existing SKUs), so the button is safe to click more than once.
+// Pass a stable `idempotencyKey` (one per "load catalog" intent) so a
+// retry/double-submit replays the first response instead of re-seeding.
+export async function seedStarterCatalog(
+  idempotencyKey?: string,
+): Promise<SeedStarterCatalogResult> {
+  const res = await fetch("/resupply-api/admin/shop/catalog/seed", {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
+      ...csrfHeader(),
+    },
+  });
+  if (res.status === 503) {
+    throw new InventoryUnavailableError("stripe_not_configured");
+  }
+  if (res.status === 409) {
+    throw new ConnectStripeFirstError();
+  }
+  if (!res.ok) {
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      // non-JSON error body — status alone is enough
+    }
+    throw new ApiError(res, data, { method: "POST", url: res.url });
+  }
+  const json = (await res.json()) as Partial<SeedStarterCatalogResult>;
+  return {
+    created: json.created ?? 0,
+    updated: json.updated ?? 0,
+    pricesCreated: json.pricesCreated ?? 0,
+    total: json.total ?? 0,
+  };
 }

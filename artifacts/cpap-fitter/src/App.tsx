@@ -513,8 +513,96 @@ const ProviderPortalRoute = lazyWithRetry(() =>
 // center" surface rendered OUTSIDE the patient <Layout> (its own chrome),
 // so it's mounted in TopRouter. Lazy-loaded — its bespoke CSS + page code
 // never weigh on the patient-shop initial bundle.
-const Breathe = lazyWithRetry(() =>
-  import("@/pages/breathe").then((m) => ({ default: m.Breathe })),
+// Split out of one long single-scroll page into nav-aligned routes. All six
+// resolve from the same lazy chunk, so only the first /breathe navigation
+// pays the load; the rest are instant.
+const BreatheHome = lazyWithRetry(() =>
+  import("@/pages/breathe").then((m) => ({ default: m.BreatheHome })),
+);
+const BreatheProduct = lazyWithRetry(() =>
+  import("@/pages/breathe").then((m) => ({ default: m.BreatheProduct })),
+);
+const BreatheCompare = lazyWithRetry(() =>
+  import("@/pages/breathe").then((m) => ({ default: m.BreatheCompare })),
+);
+const BreatheRoi = lazyWithRetry(() =>
+  import("@/pages/breathe").then((m) => ({ default: m.BreatheRoi })),
+);
+const BreathePricing = lazyWithRetry(() =>
+  import("@/pages/breathe").then((m) => ({ default: m.BreathePricing })),
+);
+const BreatheSecurity = lazyWithRetry(() =>
+  import("@/pages/breathe").then((m) => ({ default: m.BreatheSecurity })),
+);
+const BreatheSignup = lazyWithRetry(() =>
+  import("@/pages/breathe").then((m) => ({ default: m.BreatheSignup })),
+);
+
+// Breathe — Case studies. How AI is applied across the DME workflow (sourced
+// industry benchmarks) plus an explicitly illustrative/modeled CareMetric
+// Breathe scenario. Same dark chrome, mounted in TopRouter, lazy-loaded.
+const BreatheCaseStudies = lazyWithRetry(() =>
+  import("@/pages/breathe-case-studies").then((m) => ({
+    default: m.BreatheCaseStudies,
+  })),
+);
+
+// Breathe — "What the software does, by role". A dedicated companion to
+// the Breathe homepage that breaks every feature down by the team seat
+// that uses it and tags each with time saved / cost cut / revenue grown.
+// Same self-contained dark chrome (reuses breathe.css), mounted in
+// TopRouter alongside /breathe, and lazy-loaded.
+const BreatheFeatures = lazyWithRetry(() =>
+  import("@/pages/breathe-features").then((m) => ({
+    default: m.BreatheFeatures,
+  })),
+);
+
+// Breathe — Integrations. The centerpiece marketing page: unifying the CPAP
+// manufacturer device clouds (ResMed AirView, Philips Care Orchestrator, 3B
+// React Health) into one fleet view with AI early-warning monitoring, plus
+// the payer/billing connectors. Same dark chrome, mounted in TopRouter.
+const BreatheIntegrations = lazyWithRetry(() =>
+  import("@/pages/breathe-integrations").then((m) => ({
+    default: m.BreatheIntegrations,
+  })),
+);
+
+// Breathe — DME Platform 101. Category education for prospects who don't yet
+// know this kind of software exists. Same dark chrome, mounted in TopRouter.
+const BreatheLearn = lazyWithRetry(() =>
+  import("@/pages/breathe-learn").then((m) => ({
+    default: m.BreatheLearn,
+  })),
+);
+
+// Breathe — FAQ. Leads with the marquee operator question ("is this compliant
+// with Medicare and the major payers?") and answers everything else about the
+// software. Same dark chrome, mounted in TopRouter, lazy-loaded.
+const BreatheFaq = lazyWithRetry(() =>
+  import("@/pages/breathe-faq").then((m) => ({
+    default: m.BreatheFaq,
+  })),
+);
+
+// Breathe — "Switch from <competitor>" migration landing pages (Brightree,
+// Bonafide, NikoHealth). High-intent pages for operators already shopping to
+// leave a legacy DME suite; each reuses the shared comparison + migration
+// sections. Same dark chrome, mounted in TopRouter, lazy-loaded.
+const BreatheSwitchBrightree = lazyWithRetry(() =>
+  import("@/pages/breathe-switch").then((m) => ({
+    default: m.BreatheSwitchBrightree,
+  })),
+);
+const BreatheSwitchBonafide = lazyWithRetry(() =>
+  import("@/pages/breathe-switch").then((m) => ({
+    default: m.BreatheSwitchBonafide,
+  })),
+);
+const BreatheSwitchNikohealth = lazyWithRetry(() =>
+  import("@/pages/breathe-switch").then((m) => ({
+    default: m.BreatheSwitchNikohealth,
+  })),
 );
 
 const Reminders = lazyWithRetry(() =>
@@ -543,7 +631,7 @@ const VideoVisitPage = lazyWithRetry(() =>
 
 import { FitterProvider, useFitterStore } from "@/hooks/use-fitter-store";
 import { useShopIdentity } from "@/lib/identity";
-import { useStorefrontBranding } from "@/lib/branding";
+import { isPlatformHomeHost } from "@/lib/platform-host";
 import { canStayOnMeasure } from "@/lib/measure-flow";
 import { DemoModeProvider } from "@/demo/DemoModeProvider";
 import { DemoBanner } from "@/demo/DemoBanner";
@@ -1113,24 +1201,6 @@ function PatientRouter() {
  * segment param literally named `rest*`, not as a wildcard — use `*`.)
  */
 function TopRouter() {
-  const { isPlatform } = useStorefrontBranding();
-  const [location] = useLocation();
-
-  // Platform home: on the platform host (cmbreathe.com / the Railway host)
-  // the root path renders the CareMetric Breathe marketing page in its own
-  // chrome — NOT a tenant storefront. Tenant hosts (e.g. pennpaps.com) keep
-  // their storefront <Home> via the catch-all <PatientRouter> below. Scoped
-  // to "/" only so every other path (/admin, /shop, auth) is unaffected, and
-  // handled before the <Switch> so the storefront <Layout> never mounts for
-  // the platform home (Breathe carries its own full-bleed chrome).
-  if (isPlatform && location.split(/[?#]/)[0] === "/") {
-    return (
-      <Suspense fallback={<RouteFallback />}>
-        <Breathe />
-      </Suspense>
-    );
-  }
-
   return (
     /*
       Top-level Suspense for sign-in/sign-up/admin chunks. Patient
@@ -1144,8 +1214,41 @@ function TopRouter() {
           Breathe marketing/showcase page. Mounted here (not in the
           patient <Layout>) so it renders in its own full-bleed dark
           chrome instead of the storefront header/footer.
+
+          On the platform's OWN home host (cmbreathe.com / the Railway
+          fallback) Breathe is ALSO the homepage and the super-admin
+          sign-in entry point — its footer links to /platform. On a
+          tenant storefront host, `/` stays the patient storefront, so
+          the explicit `/` route below falls through to PatientRouter.
+          The canonical /breathe URL keeps working on every host.
         */}
-        <Route path="/breathe" component={Breathe} />
+        <Route path="/breathe" component={BreatheHome} />
+        <Route path="/breathe/features" component={BreatheFeatures} />
+        <Route path="/breathe/integrations" component={BreatheIntegrations} />
+        <Route path="/breathe/why" component={BreatheLearn} />
+        <Route path="/breathe/product" component={BreatheProduct} />
+        <Route path="/breathe/compare" component={BreatheCompare} />
+        <Route path="/breathe/roi" component={BreatheRoi} />
+        <Route path="/breathe/pricing" component={BreathePricing} />
+        <Route path="/breathe/security" component={BreatheSecurity} />
+        <Route path="/breathe/faq" component={BreatheFaq} />
+        <Route path="/breathe/case-studies" component={BreatheCaseStudies} />
+        <Route
+          path="/breathe/switch/brightree"
+          component={BreatheSwitchBrightree}
+        />
+        <Route
+          path="/breathe/switch/bonafide"
+          component={BreatheSwitchBonafide}
+        />
+        <Route
+          path="/breathe/switch/nikohealth"
+          component={BreatheSwitchNikohealth}
+        />
+        <Route path="/breathe/signup" component={BreatheSignup} />
+        <Route path="/">
+          {() => (isPlatformHomeHost() ? <BreatheHome /> : <PatientRouter />)}
+        </Route>
 
         <Route path="/sign-in" component={SignInPage} />
         <Route path="/sign-in/*" component={SignInPage} />

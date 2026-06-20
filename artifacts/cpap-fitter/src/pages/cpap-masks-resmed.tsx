@@ -20,6 +20,7 @@ import {
   Heart,
 } from "lucide-react";
 import { useDocumentTitle } from "@/hooks/use-document-title";
+import { useCompanyContact } from "@/lib/contact";
 import { ShareArticle } from "@/components/share-article";
 import nasalPillowImg from "@/assets/masks/nasal-pillow.webp";
 import nasalImg from "@/assets/masks/nasal.webp";
@@ -110,9 +111,10 @@ const whyResmed = [
 ];
 
 export function CpapMasksResmed() {
+  const c = useCompanyContact();
   useDocumentTitle(
     "ResMed CPAP Masks",
-    "ResMed AirFit and AirTouch CPAP masks at PennPaps — the market-leading line with the deepest sizing matrix. Featured: AirFit F30i, AirFit N30i, AirFit P10.",
+    `ResMed AirFit and AirTouch CPAP masks at ${c.name} — the market-leading line with the deepest sizing matrix. Featured: AirFit F30i, AirFit N30i, AirFit P10.`,
   );
   const [, navigate] = useLocation();
 
@@ -328,12 +330,12 @@ export function CpapMasksResmed() {
           </div>
           <blockquote className="text-display text-xl md:text-2xl font-semibold tracking-tight text-foreground/85 leading-relaxed mb-5">
             &ldquo;The sleep lab put me in an AirFit P10 four years ago and
-            I&apos;ve worn one every night since. PennPaps had it on
+            I&apos;ve worn one every night since. {c.name} had it on
             auto-resupply within an hour of my first order. I haven&apos;t
             thought about cushions since.&rdquo;
           </blockquote>
           <div className="text-sm font-medium text-foreground/70">
-            — Verified PennPaps patient · Drexel Hill, PA
+            — Verified {c.name} patient · Drexel Hill, PA
           </div>
         </div>
       </div>
@@ -353,7 +355,7 @@ export function CpapMasksResmed() {
           <Accordion type="single" collapsible className="w-full">
             {[
               {
-                q: "Does PennPaps stock the AirFit F40 / the newest cushion?",
+                q: "Do you stock the AirFit F40 / the newest cushion?",
                 a: "We stock the AirFit F30i, F30, F40, N30i, N20, P10, P30i, and the AirTouch F20 / N20 memory-foam variants. If you need a specific cushion size or a less-common SKU, call us — most ResMed inventory is one business day away even when it's not on the shelf.",
               },
               {
@@ -394,7 +396,7 @@ export function CpapMasksResmed() {
       <div className="w-full mb-12">
         <ShareArticle
           path="/cpap-masks/resmed"
-          title="ResMed CPAP masks at PennPaps"
+          title={`ResMed CPAP masks at ${c.name}`}
           blurb="The market-leading line with the deepest sizing matrix in CPAP. Full AirFit and AirTouch catalog with same-day shipping and insurance billed for you."
           testIdPrefix="share-resmed"
         />

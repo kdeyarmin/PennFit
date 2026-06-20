@@ -37,9 +37,9 @@ git config user.email "test@example.com"
 git config user.name "Test"
 git commit -q --allow-empty -m "init"
 
-mkdir -p lib/resupply-db/drizzle/meta
-echo "-- baseline" > lib/resupply-db/drizzle/0000_init.sql
-echo "-- existing low-prefix migration" > lib/resupply-db/drizzle/0049_existing.sql
+mkdir -p lib/resupply-db/migrations/meta
+echo "-- baseline" > lib/resupply-db/migrations/0000_init.sql
+echo "-- existing low-prefix migration" > lib/resupply-db/migrations/0049_existing.sql
 git add .
 git commit -q -m "baseline"
 
@@ -61,47 +61,47 @@ fi
 
 # --- B: forbidden prefix 0050 -----------------------------------------------
 echo "[self-test] scenario B: adding 0050_*.sql should fail"
-echo "-- new" > lib/resupply-db/drizzle/0050_forbidden.sql
-git add lib/resupply-db/drizzle/0050_forbidden.sql
+echo "-- new" > lib/resupply-db/migrations/0050_forbidden.sql
+git add lib/resupply-db/migrations/0050_forbidden.sql
 if run_check >/dev/null 2>&1; then
   echo "[self-test] FAIL: B (0050 add should have failed)" >&2
   exit 1
 fi
-git restore --staged lib/resupply-db/drizzle/0050_forbidden.sql >/dev/null 2>&1 || true
-rm -f lib/resupply-db/drizzle/0050_forbidden.sql
+git restore --staged lib/resupply-db/migrations/0050_forbidden.sql >/dev/null 2>&1 || true
+rm -f lib/resupply-db/migrations/0050_forbidden.sql
 
 # --- C: threshold boundary 0066 ---------------------------------------------
 echo "[self-test] scenario C: adding 0066_*.sql should fail (boundary)"
-echo "-- new" > lib/resupply-db/drizzle/0066_boundary.sql
-git add lib/resupply-db/drizzle/0066_boundary.sql
+echo "-- new" > lib/resupply-db/migrations/0066_boundary.sql
+git add lib/resupply-db/migrations/0066_boundary.sql
 if run_check >/dev/null 2>&1; then
   echo "[self-test] FAIL: C (0066 add should have failed)" >&2
   exit 1
 fi
-git restore --staged lib/resupply-db/drizzle/0066_boundary.sql >/dev/null 2>&1 || true
-rm -f lib/resupply-db/drizzle/0066_boundary.sql
+git restore --staged lib/resupply-db/migrations/0066_boundary.sql >/dev/null 2>&1 || true
+rm -f lib/resupply-db/migrations/0066_boundary.sql
 
 # --- D: just above threshold 0067 -------------------------------------------
 echo "[self-test] scenario D: adding 0067_*.sql should pass"
-echo "-- new" > lib/resupply-db/drizzle/0067_ok.sql
-git add lib/resupply-db/drizzle/0067_ok.sql
+echo "-- new" > lib/resupply-db/migrations/0067_ok.sql
+git add lib/resupply-db/migrations/0067_ok.sql
 if ! run_check >/dev/null 2>&1; then
   echo "[self-test] FAIL: D (0067 add should have passed)" >&2
   exit 1
 fi
-git restore --staged lib/resupply-db/drizzle/0067_ok.sql >/dev/null 2>&1 || true
-rm -f lib/resupply-db/drizzle/0067_ok.sql
+git restore --staged lib/resupply-db/migrations/0067_ok.sql >/dev/null 2>&1 || true
+rm -f lib/resupply-db/migrations/0067_ok.sql
 
 # --- E: modify existing low-prefix migration --------------------------------
 echo "[self-test] scenario E: modifying existing low-prefix migration should pass"
-echo "-- edited" >> lib/resupply-db/drizzle/0049_existing.sql
-git add lib/resupply-db/drizzle/0049_existing.sql
+echo "-- edited" >> lib/resupply-db/migrations/0049_existing.sql
+git add lib/resupply-db/migrations/0049_existing.sql
 if ! run_check >/dev/null 2>&1; then
   echo "[self-test] FAIL: E (modify-only should have passed)" >&2
   exit 1
 fi
-git restore --staged lib/resupply-db/drizzle/0049_existing.sql >/dev/null 2>&1 || true
-git checkout -- lib/resupply-db/drizzle/0049_existing.sql
+git restore --staged lib/resupply-db/migrations/0049_existing.sql >/dev/null 2>&1 || true
+git checkout -- lib/resupply-db/migrations/0049_existing.sql
 
 # --- F: unrelated file ------------------------------------------------------
 echo "[self-test] scenario F: unrelated edit should pass"
@@ -117,48 +117,48 @@ rm -rf artifacts
 
 # --- G: duplicate-prefix add (0049 reused) ----------------------------------
 echo "[self-test] scenario G: adding another 0049_*.sql should fail"
-echo "-- duplicate prefix" > lib/resupply-db/drizzle/0049_duplicate.sql
-git add lib/resupply-db/drizzle/0049_duplicate.sql
+echo "-- duplicate prefix" > lib/resupply-db/migrations/0049_duplicate.sql
+git add lib/resupply-db/migrations/0049_duplicate.sql
 if run_check >/dev/null 2>&1; then
   echo "[self-test] FAIL: G (duplicate 0049 add should have failed)" >&2
   exit 1
 fi
-git restore --staged lib/resupply-db/drizzle/0049_duplicate.sql >/dev/null 2>&1 || true
-rm -f lib/resupply-db/drizzle/0049_duplicate.sql
+git restore --staged lib/resupply-db/migrations/0049_duplicate.sql >/dev/null 2>&1 || true
+rm -f lib/resupply-db/migrations/0049_duplicate.sql
 
 # --- H: working-tree mode (DIFF_TARGET="") detects unstaged forbidden add ---
 echo "[self-test] scenario H: DIFF_TARGET= mode should fail on unstaged forbidden add"
-echo "-- unstaged forbidden" > lib/resupply-db/drizzle/0050_unstaged.sql
-git add -N lib/resupply-db/drizzle/0050_unstaged.sql
+echo "-- unstaged forbidden" > lib/resupply-db/migrations/0050_unstaged.sql
+git add -N lib/resupply-db/migrations/0050_unstaged.sql
 if BASE_REF=HEAD DIFF_TARGET= bash scripts/check-resupply-migration-prefix.sh \
    >/dev/null 2>&1; then
   echo "[self-test] FAIL: H (working-tree mode should have detected forbidden add)" >&2
   exit 1
 fi
-git rm -f --cached lib/resupply-db/drizzle/0050_unstaged.sql >/dev/null 2>&1 || true
-rm -f lib/resupply-db/drizzle/0050_unstaged.sql
+git rm -f --cached lib/resupply-db/migrations/0050_unstaged.sql >/dev/null 2>&1 || true
+rm -f lib/resupply-db/migrations/0050_unstaged.sql
 
 # --- I: high prefix far above threshold -------------------------------------
 echo "[self-test] scenario I: adding 0099_*.sql should pass"
-echo "-- new" > lib/resupply-db/drizzle/0099_high.sql
-git add lib/resupply-db/drizzle/0099_high.sql
+echo "-- new" > lib/resupply-db/migrations/0099_high.sql
+git add lib/resupply-db/migrations/0099_high.sql
 if ! run_check >/dev/null 2>&1; then
   echo "[self-test] FAIL: I (0099 add should have passed)" >&2
   exit 1
 fi
-git restore --staged lib/resupply-db/drizzle/0099_high.sql >/dev/null 2>&1 || true
-rm -f lib/resupply-db/drizzle/0099_high.sql
+git restore --staged lib/resupply-db/migrations/0099_high.sql >/dev/null 2>&1 || true
+rm -f lib/resupply-db/migrations/0099_high.sql
 
 # --- J: duplicate high-prefix add in same staged set ------------------------
 echo "[self-test] scenario J: adding 0098_a.sql and 0098_b.sql should fail"
-echo "-- duplicate high prefix a" > lib/resupply-db/drizzle/0098_a.sql
-echo "-- duplicate high prefix b" > lib/resupply-db/drizzle/0098_b.sql
-git add lib/resupply-db/drizzle/0098_a.sql lib/resupply-db/drizzle/0098_b.sql
+echo "-- duplicate high prefix a" > lib/resupply-db/migrations/0098_a.sql
+echo "-- duplicate high prefix b" > lib/resupply-db/migrations/0098_b.sql
+git add lib/resupply-db/migrations/0098_a.sql lib/resupply-db/migrations/0098_b.sql
 if run_check >/dev/null 2>&1; then
   echo "[self-test] FAIL: J (duplicate 0098 adds should have failed)" >&2
   exit 1
 fi
-git restore --staged lib/resupply-db/drizzle/0098_a.sql lib/resupply-db/drizzle/0098_b.sql >/dev/null 2>&1 || true
-rm -f lib/resupply-db/drizzle/0098_a.sql lib/resupply-db/drizzle/0098_b.sql
+git restore --staged lib/resupply-db/migrations/0098_a.sql lib/resupply-db/migrations/0098_b.sql >/dev/null 2>&1 || true
+rm -f lib/resupply-db/migrations/0098_a.sql lib/resupply-db/migrations/0098_b.sql
 
 echo "[self-test] all scenarios passed"

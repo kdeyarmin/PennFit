@@ -275,7 +275,14 @@ router.post(
     // This applies to both fresh carts and reorder baskets — a reorder
     // must re-validate because a product could have gone out of stock
     // or been removed from the catalog since the original purchase.
-    const cartValidation = await validateCartItems(stripe, basket);
+    // Validate against the SAME account the session is created on
+    // (connectOptions, resolved above) so a connected tenant's basket is
+    // checked against their own catalog rather than the platform's.
+    const cartValidation = await validateCartItems(
+      stripe,
+      basket,
+      connectOptions,
+    );
     if (!cartValidation.ok) {
       req.log?.warn(
         { errors: cartValidation.errors },

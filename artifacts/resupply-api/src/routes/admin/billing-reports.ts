@@ -190,7 +190,7 @@ router.get(
     const { data, error } = await supabase
       .raw()
       .schema("resupply")
-      .rpc("billing_denial_rate", { p_cutoff: cutoff });
+      .rpc("billing_denial_rate", { p_org_id: orgId, p_cutoff: cutoff });
     if (error) throw error;
 
     // PostgREST returns bigint columns as strings; coerce defensively.

@@ -86,7 +86,7 @@ const terms: Term[] = [
     acronym: "Durable Medical Equipment",
     category: "billing",
     definition:
-      "The category of equipment your CPAP falls under for insurance purposes. PennPaps is a DME supplier — we run benefits, bill insurance, and ship your supplies.",
+      "The category of equipment your CPAP falls under for insurance purposes. We're a DME supplier — we run benefits, bill insurance, and ship your supplies.",
   },
   {
     term: "EPAP",
@@ -165,7 +165,7 @@ const terms: Term[] = [
     term: "Prior authorization",
     category: "billing",
     definition:
-      "An insurance step where your DME submits clinical documentation before equipment is shipped. PennPaps handles this for you; you don't need to do anything.",
+      "An insurance step where your DME submits clinical documentation before equipment is shipped. We handle this for you; you don't need to do anything.",
   },
   {
     term: "Rainout",
@@ -197,7 +197,7 @@ const terms: Term[] = [
     term: "Resupply",
     category: "billing",
     definition:
-      "The insurance-allowed cadence for shipping replacement parts. PennPaps' resupply program ships cushions, headgear, filters, and tubing on schedule with insurance billing handled for you.",
+      "The insurance-allowed cadence for shipping replacement parts. Our resupply program ships cushions, headgear, filters, and tubing on schedule with insurance billing handled for you.",
   },
   {
     term: "Soft palate",

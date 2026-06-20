@@ -178,7 +178,8 @@ describe("cpap-masks-react-health — CTAs", () => {
 describe("cpap-masks-react-health — social proof", () => {
   it("includes a patient quote referencing the Rio II", () => {
     expect(SRC).toContain("Rio II");
-    // The quote also references PennPaps as the provider.
-    expect(SRC).toContain("PennPaps patient");
+    // The quote references the resolving tenant's brand as the provider
+    // (templated via useCompanyContact, not the hardcoded seed brand).
+    expect(SRC).toContain("{c.name} patient");
   });
 });

@@ -148,6 +148,7 @@ const resolveQuery = z.object({
   compliant: boolish,
   initialDispense: boolish,
   paApproved: boolish,
+  abnOnFile: boolish,
 });
 
 router.get(
@@ -172,6 +173,7 @@ router.get(
       isCompliant: q.compliant ?? false,
       isInitialDispense: q.initialDispense ?? false,
       hasPriorAuth: q.paApproved ?? false,
+      isAbnOnFile: q.abnOnFile ?? false,
     };
     const orgId = req.orgId;
     if (!orgId) {

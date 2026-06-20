@@ -37,21 +37,6 @@ export interface StorefrontBranding {
   logoUrl: string | null;
 }
 
-/**
- * The storefront context for a request host: the resolved branding plus
- * whether the host is the PLATFORM home (no tenant owns it). The SPA uses
- * `isPlatform` to decide whether `/` renders the CareMetric Breathe
- * marketing page (platform) or a tenant storefront. `isPlatform` is true
- * only for a host that resolves to NO tenant — the platform apex
- * (cmbreathe.com / the Railway host), or any host with no verified custom
- * domain and no matching tenant slug subdomain. It is false for every
- * verified custom domain (e.g. pennpaps.com) and tenant slug host.
- */
-export interface StorefrontContext {
-  branding: StorefrontBranding;
-  isPlatform: boolean;
-}
-
 // Platform identity for hosts that are not a verified tenant custom
 // domain. PennPaps is now tenant-specific and resolves via the seed
 // organization's verified `pennpaps.com` custom domain.
@@ -114,23 +99,16 @@ async function withTimeout<T>(p: PromiseLike<T>): Promise<T> {
 // Branding cache, keyed by normalized host ("" = platform/default).
 // ────────────────────────────────────────────────────────────────────
 
-interface HostCacheEntry {
+interface CacheEntry {
   branding: StorefrontBranding;
-  isPlatform: boolean;
   expiresAt: number;
 }
 
-const cache = new Map<string, HostCacheEntry>();
+const cache = new Map<string, CacheEntry>();
 
-// The platform home: a host that resolves to no tenant.
-const PLATFORM_CONTEXT: StorefrontContext = {
-  branding: DEFAULT_BRANDING,
-  isPlatform: true,
-};
-
-async function loadContextForHost(host: string): Promise<StorefrontContext> {
+async function loadBrandingForHost(host: string): Promise<StorefrontBranding> {
   const normalized = normalizeCustomDomain(host);
-  if (!normalized) return PLATFORM_CONTEXT;
+  if (!normalized) return DEFAULT_BRANDING;
 
   const orgId = await resolveSeedOrgId();
   if (!orgId) throw new Error("tenant context missing");
@@ -153,7 +131,7 @@ async function loadContextForHost(host: string): Promise<StorefrontContext> {
       .maybeSingle(),
   );
   if (error) throw error;
-  if (data) return { branding: mapBranding(data), isPlatform: false };
+  if (data) return mapBranding(data);
 
   // 2. Platform subdomain (`<slug>.<base>`, G10) → tenant by slug. The
   // zero-DNS-setup default: an active tenant served at its slug subdomain
@@ -172,49 +150,11 @@ async function loadContextForHost(host: string): Promise<StorefrontContext> {
         .maybeSingle(),
     );
     if (slugErr) throw slugErr;
-    if (bySlug) return { branding: mapBranding(bySlug), isPlatform: false };
+    if (bySlug) return mapBranding(bySlug);
   }
 
   // No tenant on this host → the platform site.
-  return PLATFORM_CONTEXT;
-}
-
-/**
- * The effective storefront context (branding + platform flag) for a request
- * host. Cached ~60s per host; never throws. A DB error on a tenant-candidate
- * host degrades to the default branding but KEEPS `isPlatform: false`, so a
- * transient Supabase blip never swaps a tenant storefront for the platform
- * marketing page — only the platform apex (an empty key) is `isPlatform: true`.
- */
-export async function resolveStorefrontContextByHost(
-  host: string | undefined,
-): Promise<StorefrontContext> {
-  const key = normalizeCustomDomain(host ?? "") ?? "";
-  const now = Date.now();
-  const hit = cache.get(key);
-  if (hit && hit.expiresAt > now)
-    return { branding: hit.branding, isPlatform: hit.isPlatform };
-
-  let context: StorefrontContext;
-  try {
-    context = key ? await loadContextForHost(key) : PLATFORM_CONTEXT;
-  } catch (err) {
-    const normalized =
-      err instanceof Error ? err : new Error(String(err ?? "unknown"));
-    logger.warn(
-      { event: "tenant_branding_load_failed", err: normalized },
-      "tenant branding load failed; falling back to default brand",
-    );
-    // Fail-soft: default branding, but stay on the storefront (not the
-    // platform page) for a real host whose lookup errored.
-    context = { branding: DEFAULT_BRANDING, isPlatform: false };
-  }
-  cache.set(key, {
-    branding: context.branding,
-    isPlatform: context.isPlatform,
-    expiresAt: now + CACHE_TTL_MS,
-  });
-  return context;
+  return DEFAULT_BRANDING;
 }
 
 /**
@@ -224,17 +164,31 @@ export async function resolveStorefrontContextByHost(
 export async function resolveBrandingByHost(
   host: string | undefined,
 ): Promise<StorefrontBranding> {
-  return (await resolveStorefrontContextByHost(host)).branding;
+  const key = normalizeCustomDomain(host ?? "") ?? "";
+  const now = Date.now();
+  const hit = cache.get(key);
+  if (hit && hit.expiresAt > now) return hit.branding;
+
+  let branding: StorefrontBranding;
+  try {
+    branding = key ? await loadBrandingForHost(key) : DEFAULT_BRANDING;
+  } catch (err) {
+    const normalized =
+      err instanceof Error ? err : new Error(String(err ?? "unknown"));
+    logger.warn(
+      { event: "tenant_branding_load_failed", err: normalized },
+      "tenant branding load failed; falling back to default brand",
+    );
+    branding = DEFAULT_BRANDING;
+  }
+  cache.set(key, { branding, expiresAt: now + CACHE_TTL_MS });
+  return branding;
 }
 
 // Branding cache keyed by org_id (separate from the host cache above). Used by
 // callsites that already know their tenant — e.g. order-confirmation emails
 // fired from a Stripe webhook, which have an org_id but no request host.
-interface OrgBrandingCacheEntry {
-  branding: StorefrontBranding;
-  expiresAt: number;
-}
-const orgBrandingCache = new Map<string, OrgBrandingCacheEntry>();
+const orgBrandingCache = new Map<string, CacheEntry>();
 
 async function loadBrandingForOrgId(
   orgId: string,

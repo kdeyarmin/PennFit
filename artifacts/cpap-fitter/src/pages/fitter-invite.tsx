@@ -24,6 +24,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AlertCircle, ScanFace, ShieldCheck } from "lucide-react";
 
 import { useDocumentTitle } from "@/hooks/use-document-title";
+import { BrandName } from "@/components/company-contact";
 import { useFitterStore } from "@/hooks/use-fitter-store";
 import { resolveFitterInvite } from "@/lib/shop-api";
 import { track } from "@/lib/track";
@@ -41,20 +42,18 @@ function getTokenFromUrl(): string | null {
 }
 
 const REASON_COPY: Record<string, string> = {
-  expired:
-    "This invite link has expired. Ask your PennPaps contact to resend it.",
+  expired: "This invite link has expired. Ask your care team to resend it.",
   revoked:
-    "This invite link is no longer active. Ask your PennPaps contact for a new one.",
-  not_found:
-    "We couldn't find this invite. Ask your PennPaps contact to resend it.",
+    "This invite link is no longer active. Ask your care team for a new one.",
+  not_found: "We couldn't find this invite. Ask your care team to resend it.",
   malformed:
     "This link looks incomplete. Try opening it again, or ask for a fresh link.",
   bad_signature:
     "This link looks incomplete. Try opening it again, or ask for a fresh link.",
   unavailable:
-    "This invite isn't available right now. Ask your PennPaps contact for a new one.",
+    "This invite isn't available right now. Ask your care team for a new one.",
   missing:
-    "This page needs an invite link. Ask your PennPaps contact to send you one.",
+    "This page needs an invite link. Ask your care team to send you one.",
   error:
     "Something went wrong opening your invite. Please try again in a moment.",
 };
@@ -148,9 +147,12 @@ export function FitterInvite() {
                 {firstName ? `Welcome, ${firstName}!` : "You're invited"}
               </h1>
               <p className="text-lg text-muted-foreground max-w-xl mx-auto">
-                Your care team at <strong>PennPaps</strong> invited you to find
-                your best-fitting CPAP mask. It takes about two minutes using
-                your phone or computer camera.
+                Your care team at{" "}
+                <strong>
+                  <BrandName />
+                </strong>{" "}
+                invited you to find your best-fitting CPAP mask. It takes about
+                two minutes using your phone or computer camera.
               </p>
               <div className="flex items-start gap-3 text-left rounded-xl glass-panel p-4 max-w-xl mx-auto">
                 <ShieldCheck className="w-5 h-5 shrink-0 mt-0.5 text-primary" />

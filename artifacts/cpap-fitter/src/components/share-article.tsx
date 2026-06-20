@@ -2,6 +2,7 @@ import React from "react";
 import { Button } from "@/components/ui/button";
 import { Link2, Mail, MessageCircle, Sparkles } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useCompanyContact } from "@/lib/contact";
 
 type ShareArticleProps = {
   /** The path of the article — used to build a canonical, query-stripped URL. */
@@ -40,6 +41,7 @@ export function ShareArticle({
   testIdPrefix = "share",
 }: ShareArticleProps) {
   const { toast } = useToast();
+  const { name: brandName } = useCompanyContact();
 
   async function handleShare() {
     if (typeof window === "undefined") return;
@@ -75,7 +77,7 @@ export function ShareArticle({
     const url = buildCanonicalUrl(path);
     const subject = encodeURIComponent(title);
     const body = encodeURIComponent(
-      `${blurb}\n\n${url}\n\n— shared from PennPaps`,
+      `${blurb}\n\n${url}\n\n— shared from ${brandName}`,
     );
     window.location.href = `mailto:?subject=${subject}&body=${body}`;
   }

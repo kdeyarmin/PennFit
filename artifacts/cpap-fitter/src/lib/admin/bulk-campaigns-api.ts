@@ -13,12 +13,42 @@ export type AudienceKind =
   | "all_active_patients"
   | "by_patient_payer"
   | "by_therapy_cohort"
+  | "patient_segment"
   | "manual_list";
 
 /** RT clinical cohorts (C-R1) — patients with an open compliance alert. */
 export type TherapyCohort = "low_adherence" | "no_checkin_response" | "at_risk";
 
 export type Category = "marketing" | "service" | "compliance";
+
+export type Channel = "email" | "sms";
+
+/** equipment_assets.device_class values usable in a patient segment.
+ *  Mirrors SEGMENT_DEVICE_CLASSES on the server. */
+export const SEGMENT_DEVICE_CLASSES = [
+  "cpap",
+  "auto_cpap",
+  "bipap",
+  "asv",
+  "avaps",
+  "humidifier",
+  "oximeter",
+  "other",
+] as const;
+
+export type SegmentDeviceClass = (typeof SEGMENT_DEVICE_CLASSES)[number];
+
+/** Composable patient-segment filter (audienceKind='patient_segment').
+ *  Criteria are ANDed; every field is optional but at least one is
+ *  required by the server. Mirrors PatientSegmentFilter on the API. */
+export interface PatientSegmentFilter {
+  manufacturers?: string[];
+  deviceClasses?: SegmentDeviceClass[];
+  equipmentModelContains?: string;
+  therapyFailing?: boolean;
+  insurancePayer?: string;
+  notContactedInDays?: number;
+}
 
 export type CampaignStatus =
   | "draft"
@@ -40,7 +70,9 @@ export interface BulkCampaignListItem {
   description: string | null;
   audienceKind: AudienceKind;
   audiencePayer: string | null;
-  channel: "email";
+  /** Human summary of the segment filter, when audienceKind='patient_segment'. */
+  audienceFilterSummary?: string | null;
+  channel: Channel;
   category: Category;
   templateKey: string;
   throttlePerMinute: number;
@@ -61,12 +93,14 @@ export interface RecipientPreview {
   recipientKind: "patient" | "shop_customer";
   recipientId: string;
   recipientEmail: string | null;
+  recipientPhone?: string | null;
   status: RecipientStatus;
   suppressionReason: string | null;
 }
 
 export interface BulkCampaignDetail extends BulkCampaignListItem {
   complianceAttestation: string | null;
+  audienceFilter?: PatientSegmentFilter | null;
   recipients: RecipientPreview[];
 }
 
@@ -77,8 +111,12 @@ export interface CreateDraftRequest {
   audiencePayer?: string | null;
   /** Required when audienceKind='by_therapy_cohort'. */
   therapyCohort?: TherapyCohort;
+  /** Required when audienceKind='patient_segment'. */
+  patientSegment?: PatientSegmentFilter;
   manualShopCustomerIds?: string[];
   manualPatientIds?: string[];
+  /** Delivery channel. Defaults to email server-side. */
+  channel?: Channel;
   category: Category;
   complianceAttestation?: string | null;
   templateKey: string;

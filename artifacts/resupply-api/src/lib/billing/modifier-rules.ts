@@ -22,6 +22,10 @@ export interface ModifierRuleContext {
   isCompliant: boolean;
   isInitialDispense: boolean;
   hasPriorAuth: boolean;
+  /** A signed Advance Beneficiary Notice (ABN) is on file for the patient.
+   *  Drives the `if_abn_on_file` condition (e.g. stamp GA on an expected-
+   *  non-coverage line so the patient — not the supplier — is liable). */
+  isAbnOnFile: boolean;
 }
 
 export interface ModifierRuleRow {
@@ -49,9 +53,10 @@ export function ruleApplies(
     case "if_initial_dispense":
       return ctx.isInitialDispense;
     case "if_abn_on_file":
-      // ABN status isn't modelled today — surface as false so the rule
-      // is opt-in once the data is wired.
-      return false;
+      // A signed ABN on file (resolved from patient_form_acknowledgements
+      // by the caller). When false, an `if_abn_on_file → GA` rule simply
+      // doesn't fire, so the line stays as-is.
+      return ctx.isAbnOnFile;
     case "if_pa_approved":
       return ctx.hasPriorAuth;
   }

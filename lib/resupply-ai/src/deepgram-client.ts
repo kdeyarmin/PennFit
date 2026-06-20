@@ -358,6 +358,16 @@ export function createDeepgramClient(
       };
 
       let keepaliveTimer: ReturnType<typeof setInterval> | null = null;
+      // Single clear point for the keepalive interval, guarded against a
+      // double-clear. Without this, an `error` that fires WITHOUT a
+      // subsequent `close` (e.g. the socket faults mid-stream) would leave
+      // the interval running forever — it's only cleared in `close`.
+      const clearKeepalive = (): void => {
+        if (keepaliveTimer !== null) {
+          clearInterval(keepaliveTimer);
+          keepaliveTimer = null;
+        }
+      };
 
       ws.addEventListener("open", () => {
         const interval = live.keepaliveIntervalMs ?? 8_000;
@@ -416,6 +426,9 @@ export function createDeepgramClient(
       });
 
       ws.addEventListener("error", (ev) => {
+        // An `error` may fire without a following `close`; clear the
+        // keepalive here too so the interval can't leak past the fault.
+        clearKeepalive();
         const errOut = { code: "transport", message: ev.message ?? "ws error" };
         if (errorCbs.length === 0) {
           pendingErrors.push(errOut);
@@ -425,10 +438,7 @@ export function createDeepgramClient(
       });
 
       ws.addEventListener("close", (ev) => {
-        if (keepaliveTimer) {
-          clearInterval(keepaliveTimer);
-          keepaliveTimer = null;
-        }
+        clearKeepalive();
         const info = { code: ev.code, reason: ev.reason };
         if (closeCbs.length === 0) {
           pendingCloses.push(info);
@@ -455,6 +465,11 @@ export function createDeepgramClient(
           drain(pendingCloses, closeCbs);
         },
         close(): void {
+          // Clear the keepalive on explicit teardown too — the socket's
+          // own `close` event will also clear it, but stopping it here
+          // guards the window where `close()` is called before that event
+          // fires (and is a no-op double-clear if it already ran).
+          clearKeepalive();
           if (ws.readyState === WS_OPEN) {
             try {
               ws.send(JSON.stringify({ type: "CloseStream" }));

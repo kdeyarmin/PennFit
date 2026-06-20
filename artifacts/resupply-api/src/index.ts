@@ -20,6 +20,7 @@ import { applyCompanyInfoToEnv } from "./lib/company-info";
 import { logger } from "./lib/logger";
 import { getPendingSessions } from "./lib/voice/pending-sessions";
 import {
+  handleBreatheSalesWsConnection,
   handleVoiceDiagnosticWsConnection,
   handleVoiceWsConnection,
 } from "./lib/voice/ws-handler";
@@ -150,11 +151,17 @@ httpServer.on("upgrade", (req: IncomingMessage, socket: Socket, head) => {
   }
 
   wss.handleUpgrade(req, socket, head, (ws: WebSocket) => {
-    // Diagnostic ("connection test") sessions run the isolated, no-patient
-    // bridge so a test affordance never touches the production PHI path.
+    // Route to the right bridge handler:
+    //  - diagnostic ("connection test"): isolated, no-patient bridge so a
+    //    test affordance never touches the production PHI path;
+    //  - breathe_prospect: the CareMetric Breathe B2B platform SALES bridge
+    //    (no patient, no conversations row — its own dispatcher);
+    //  - otherwise: the production patient/shop voice path.
     const handle = pending.diagnostic
       ? handleVoiceDiagnosticWsConnection
-      : handleVoiceWsConnection;
+      : pending.callerKind === "breathe_prospect"
+        ? handleBreatheSalesWsConnection
+        : handleVoiceWsConnection;
     void handle(ws, pending).catch((err) => {
       logger.error(
         {

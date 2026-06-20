@@ -506,6 +506,52 @@ describe("Stripe checks in production mode", () => {
     );
     expect(exitCode).toBe(1);
   });
+
+  // Dedicated platform-billing account (optional). Unset = single-account
+  // mode (no extra check); set = must be its own live key + paired webhook.
+  it("passes when a dedicated platform-billing key is paired with its webhook secret", () => {
+    const { exitCode } = run(
+      withEnv({
+        STRIPE_PLATFORM_SECRET_KEY: "sk_live" + "_platformbilling0987654321",
+        STRIPE_PLATFORM_WEBHOOK_SIGNING_SECRET: "whsec" + "_platform987",
+      }),
+    );
+    expect(exitCode).toBe(0);
+  });
+
+  it("fails when STRIPE_PLATFORM_SECRET_KEY is set without its webhook secret", () => {
+    const { exitCode, stdout } = run(
+      withEnv({
+        STRIPE_PLATFORM_SECRET_KEY: "sk_live" + "_platformbilling0987654321",
+      }),
+    );
+    expect(exitCode).toBe(1);
+    expect(stdout).toContain("STRIPE_PLATFORM_WEBHOOK_SIGNING_SECRET");
+  });
+
+  it("fails when STRIPE_PLATFORM_SECRET_KEY equals STRIPE_SECRET_KEY", () => {
+    const sameKey = "sk_live" + "_abcdefghijklmnop1234567890";
+    const { exitCode, stdout } = run(
+      withEnv({
+        STRIPE_SECRET_KEY: sameKey,
+        STRIPE_PLATFORM_SECRET_KEY: sameKey,
+        STRIPE_PLATFORM_WEBHOOK_SIGNING_SECRET: "whsec" + "_platform987",
+      }),
+    );
+    expect(exitCode).toBe(1);
+    expect(stdout).toContain("STRIPE_PLATFORM_SECRET_KEY");
+  });
+
+  it("fails when STRIPE_PLATFORM_SECRET_KEY is a test key in production", () => {
+    const { exitCode, stdout } = run(
+      withEnv({
+        STRIPE_PLATFORM_SECRET_KEY: "sk_test" + "_platformbilling0987654321",
+        STRIPE_PLATFORM_WEBHOOK_SIGNING_SECRET: "whsec" + "_platform987",
+      }),
+    );
+    expect(exitCode).toBe(1);
+    expect(stdout).toContain("STRIPE_PLATFORM_SECRET_KEY");
+  });
 });
 
 // ---------------------------------------------------------------------------

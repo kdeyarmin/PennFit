@@ -21,6 +21,7 @@ import {
   type PatientDocumentItem,
   type PatientDocumentType,
 } from "@/lib/account-api";
+import { LegalName } from "@/components/company-contact";
 
 const DOCUMENT_ACCEPT =
   "application/pdf,image/png,image/jpeg,image/heic,image/heif,image/webp";
@@ -110,8 +111,8 @@ export function DocumentsSection() {
         <h2 className="font-semibold">My documents</h2>
       </div>
       <p className="text-sm text-muted-foreground">
-        Upload insurance cards, prescriptions, referrals, or other documents for
-        Penn Home Medical Supply. Our team will be able to view these directly.
+        Upload insurance cards, prescriptions, referrals, or other documents for{" "}
+        <LegalName />. Our team will be able to view these directly.
       </p>
 
       {/* Upload controls */}

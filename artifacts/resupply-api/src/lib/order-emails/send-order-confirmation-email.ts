@@ -47,7 +47,7 @@ import {
   resolveTenantBaseUrl,
 } from "../tenant-branding.js";
 
-const DEFAULT_BASE_URL = "https://pennpaps.com";
+const DEFAULT_BASE_URL = "https://cmbreathe.com";
 
 export interface OrderConfirmationLineItem {
   name: string;
@@ -80,7 +80,7 @@ export interface SendOrderConfirmationEmailInput {
   /**
    * Optional override for the public base URL. Defaults to
    * SHOP_PUBLIC_BASE_URL env var, then RESUPPLY_VOICE_PUBLIC_BASE_URL,
-   * then https://pennpaps.com so links emitted from preview/staging
+   * then https://cmbreathe.com so links emitted from preview/staging
    * deploys still resolve to production.
    */
   baseUrlOverride?: string;

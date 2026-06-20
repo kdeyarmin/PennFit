@@ -62,6 +62,7 @@ import {
 import { EmailApiError, EmailConfigError } from "@workspace/resupply-email";
 
 import { logger } from "../../lib/logger";
+import { getCompanyInfo } from "../../lib/company-info";
 import { createTenantSendgridClient } from "../../lib/email/tenant-sender";
 import { claimDedupKey } from "../../lib/dedup-keys";
 import { isFeatureEnabled } from "../../lib/feature-flags";
@@ -200,25 +201,32 @@ router.post("/email/inbound-parse", inboundParseLimiter, async (req, res) => {
     return;
   }
 
-  // Public webhook: there is no req.orgId. Resolve the seed org
-  // (single-tenant posture) and ACK 200 if it can't be resolved so
-  // SendGrid stops retrying (a 5xx would trigger a retry storm).
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) {
+  // Public webhook: there is no req.orgId. Derive the tenant from the SENDER
+  // patient (an inbound reply belongs to whichever tenant the sender is a
+  // patient of), NOT the seed org — otherwise a non-seed tenant's patient
+  // reply would never match the patient lookup and would be dropped as
+  // "unknown_email". Resolve seed only for a `.raw()` client handle and ACK
+  // 200 if even that is unavailable so SendGrid stops retrying.
+  const seedOrgId = await resolveSeedOrgId();
+  if (!seedOrgId) {
     res.status(200).json({ ok: true });
     return;
   }
-  const supabase = getOrgScopedClient(orgId);
 
-  // Case-insensitive email match. Patients' emails aren't normalized
-  // at insert time, so compare via .ilike() with LIKE-metachar
-  // escapes (`_` could legitimately appear in a local part). Pull up
-  // to 2 rows so we can detect ambiguous matches (one address shared
-  // between accounts) and bail rather than mis-routing PHI.
+  // Case-insensitive email match across ALL tenants (`.raw()`). Patients'
+  // emails aren't normalized at insert time, so compare via .ilike() with
+  // LIKE-metachar escapes (`_` could legitimately appear in a local part).
+  // Pull up to 2 rows so we can detect ambiguous matches — now including the
+  // same address shared by patients in DIFFERENT tenants — and bail rather
+  // than mis-routing PHI.
   const escapedEmail = fromEmail.replace(/[\\%_]/g, (c) => `\\${c}`);
-  const { data: lookupRows, error: lookupErr } = await supabase
+  const { data: lookupRows, error: lookupErr } = await getOrgScopedClient(
+    seedOrgId,
+  )
+    .raw()
+    .schema("resupply")
     .from("patients")
-    .select("id")
+    .select("id, org_id")
     .ilike("email", escapedEmail)
     .limit(2);
   if (lookupErr) throw lookupErr;
@@ -258,6 +266,14 @@ router.post("/email/inbound-parse", inboundParseLimiter, async (req, res) => {
     res.status(200).json({ ok: true });
     return;
   }
+
+  // The matched patient's tenant drives every subsequent read/write + the
+  // auto-reply From identity. (org_id is NOT NULL, so a real match always
+  // carries one; fall back to seed defensively.)
+  const orgId =
+    (lookupRows?.[0] as { org_id?: string | null } | undefined)?.org_id ??
+    seedOrgId;
+  const supabase = getOrgScopedClient(orgId);
 
   // 5. Find or create the live email conversation. Reuse any LIVE
   // conversation ('open', 'awaiting_admin', or 'awaiting_patient') for
@@ -452,7 +468,9 @@ router.post("/email/inbound-parse", inboundParseLimiter, async (req, res) => {
   let autoReplied = false;
   if (selectLlmProvider().provider !== "offline") {
     try {
-      if (await isFeatureEnabled("email.auto_reply", req.orgId)) {
+      // Gate on the SENDER patient's tenant (req.orgId is undefined on this
+      // webhook), so the auto-reply flag is honored per the patient's org.
+      if (await isFeatureEnabled("email.auto_reply", orgId)) {
         autoReplied = await attemptEmailAutoReply({
           supabase,
           orgId,
@@ -656,11 +674,19 @@ async function attemptEmailAutoReply(
       body: (m.body as string) ?? "",
     }));
 
-  const drafted = await generateEmailReply({
-    body: inboundBody,
-    subject: inboundSubject,
-    thread,
-  });
+  // Brand the auto-reply for the SENDER's tenant (orgId derived from the
+  // sender patient): the system prompt's knowledge + sign-off and the
+  // reply subject carry this tenant's identity, not the seed's.
+  const companyInfo = await getCompanyInfo(orgId);
+  const drafted = await generateEmailReply(
+    {
+      body: inboundBody,
+      subject: inboundSubject,
+      thread,
+    },
+    process.env,
+    orgId,
+  );
   if (drafted.kind !== "reply") return false;
 
   const cfg = readEmailConfigOrNull();
@@ -685,7 +711,7 @@ async function attemptEmailAutoReply(
     throw err;
   }
 
-  const subjectLine = buildReplySubject(inboundSubject);
+  const subjectLine = buildReplySubject(inboundSubject, companyInfo.name);
   let vendorRef: string;
   try {
     const r = await sg.sendEmail({
@@ -790,12 +816,15 @@ async function attemptEmailAutoReply(
  * CR/LF — the SendGrid client rejects header newlines, but failing here
  * would lose the reply rather than just losing the prefix.
  */
-function buildReplySubject(subject: string | null): string {
+function buildReplySubject(
+  subject: string | null,
+  brandName = "PennPaps",
+): string {
   const base = (subject ?? "")
     .replace(/[\r\n]+/g, " ")
     .trim()
     .slice(0, 200);
-  if (!base) return "Re: Your message to PennPaps";
+  if (!base) return `Re: Your message to ${brandName}`;
   return /^re:/i.test(base) ? base : `Re: ${base}`;
 }
 
