@@ -3773,7 +3773,7 @@ function RoiEmailCapture({
         <Check size={16} />
         {status === "sent"
           ? "Sent — check your inbox for the full breakdown."
-          : "Got it — we have your numbers and will be in touch with the breakdown."}
+          : "Thanks — you're on our list. Your estimate is shown above; we couldn't email a copy just now."}
       </div>
     );
   }
