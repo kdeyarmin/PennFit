@@ -559,6 +559,37 @@ describe("preflightClaim", () => {
     expect(out.items.some((i) => i.key === "medical_necessity_dx")).toBe(false);
     expect(out.readyToSubmit).toBe(true);
   });
+
+  it("queries the coverage catalog with canonical (uppercase) HCPCS codes", async () => {
+    // A non-canonical line code (" e0601 ") must be normalised to the
+    // catalog's "E0601" BEFORE the exact-match `.in()` query, or the lookup
+    // returns no rows and silently skips the warning (false negative).
+    stageHappyPath(
+      {},
+      {
+        diagnosisOverride: "R06.83",
+        linesOverride: [
+          {
+            id: LINE_ID,
+            hcpcs_code: " e0601 ",
+            modifier: "RR,KX",
+            billed_cents: 24999,
+            quantity: 1,
+          },
+        ],
+      },
+    );
+    stageSupabaseResponse("hcpcs_coverage_diagnoses", "select", {
+      data: [
+        { hcpcs_code: "E0601", icd10_code: "G4733", policy: "LCD L33718" },
+      ],
+    });
+    await preflightClaim(CLAIM_ID);
+    const inCall = supabaseMock
+      .filterCalls("hcpcs_coverage_diagnoses", "select")
+      .find((f) => f.verb === "in");
+    expect(inCall?.args[1]).toEqual(["E0601"]);
+  });
 });
 
 describe("isNocHcpcs", () => {

@@ -717,8 +717,18 @@ export async function preflightClaim(
       : [];
     if (diagnosisCodes.length > 0) {
       try {
+        // Normalise to the catalog's canonical (trimmed, uppercase) HCPCS
+        // BEFORE the `.in()` query: the DB filter is an exact match, so a
+        // non-canonical line code (" e0601 ") would otherwise return zero
+        // catalog rows and silently skip the warning (false negative). This
+        // keeps the query aligned with evaluateCoverageDiagnosis's own
+        // normalisation.
         const distinctHcpcs = [
-          ...new Set((lines as ClaimLineRow[]).map((l) => l.hcpcs_code)),
+          ...new Set(
+            (lines as ClaimLineRow[])
+              .map((l) => (l.hcpcs_code ?? "").trim().toUpperCase())
+              .filter((c) => c.length > 0),
+          ),
         ];
         const { data: coverage, error: covErr } = await supabase
           .raw()

@@ -152,8 +152,13 @@ of the recurring DME denial traps.
   table (like `hcpcs_codes`/`denial_codes`, no `org_id`, deny-all RLS) mapping a
   billable HCPCS to the ICD-10 codes that support it, seeded with the Medicare
   PAP baseline (LCD L33718 / Article A52467: obstructive sleep apnea **G47.33**
-  for the PAP devices E0601/E0470/E0471 and the resupply accessories billed
-  against them). Per-payer commercial overrides are a documented follow-on.
+  for the OSA-covered PAP devices E0601 (CPAP) and E0470 (bilevel without
+  backup) and the resupply accessories billed against them). **E0471**
+  (bilevel-ST, with backup rate) is intentionally NOT seeded — OSA does not
+  support it under L33718; it is a RAD device (L33800) for central/complex
+  apnea and hypoventilation, so it yields "no opinion" rather than a false
+  "covered". Per-payer commercial overrides and the RAD (L33800) diagnosis set
+  are documented follow-ons.
 - **`coverage-diagnosis.ts`** — a pure, unit-tested evaluator that normalises
   ICD-10 codes (dotless, uppercase) and matches a claim diagnosis to a covered
   code by **prefix** (a category code covers its children; a covered specific

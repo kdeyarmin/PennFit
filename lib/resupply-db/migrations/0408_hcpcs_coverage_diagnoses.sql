@@ -70,14 +70,21 @@ CREATE INDEX IF NOT EXISTS "hcpcs_coverage_diagnoses_hcpcs_idx"
 -- devices and the resupply accessories billed against them. Stored
 -- dotless: G47.33 -> G4733. Idempotent via ON CONFLICT on the natural
 -- (hcpcs_code, icd10_code) unique index.
+--
+-- Device scope: E0601 (CPAP) and E0470 (bilevel WITHOUT backup rate, the
+-- post-CPAP-failure step-up) are covered for OSA under L33718. E0471
+-- (bilevel WITH backup rate / BiPAP-ST) is intentionally NOT seeded here:
+-- OSA does not support E0471 under L33718 — it is a respiratory assist
+-- device governed by the RAD policy (L33800) for central/complex sleep
+-- apnea and hypoventilation. Leaving it uncatalogued yields "no opinion"
+-- (no false "covered"); modelling E0470/E0471 under L33800 is a follow-on.
 -- ---------------------------------------------------------------
 INSERT INTO "resupply"."hcpcs_coverage_diagnoses"
   (hcpcs_code, icd10_code, description, policy)
 VALUES
-  -- PAP devices
+  -- PAP devices covered for OSA under L33718 (E0471/RAD is excluded — see above).
   ('E0601', 'G4733', 'Obstructive sleep apnea (adult/pediatric)', 'LCD L33718'),
   ('E0470', 'G4733', 'Obstructive sleep apnea (adult/pediatric)', 'LCD L33718'),
-  ('E0471', 'G4733', 'Obstructive sleep apnea (adult/pediatric)', 'LCD L33718'),
   -- Resupply accessories — covered when the PAP device is covered.
   ('A7030', 'G4733', 'Obstructive sleep apnea (adult/pediatric)', 'LCD L33718'),
   ('A7031', 'G4733', 'Obstructive sleep apnea (adult/pediatric)', 'LCD L33718'),
