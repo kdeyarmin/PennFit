@@ -189,7 +189,11 @@ export function AdminBillingConfigCmsImportPage() {
                 className="font-semibold"
                 style={{ color: "hsl(var(--ink-1))" }}
               >
-                Imported {result.accepted} fee row(s).
+                Imported {result.accepted} fee row(s)
+                {typeof result.replaced === "number" && result.replaced > 0
+                  ? `, replacing ${result.replaced} prior row(s)`
+                  : ""}
+                .
               </p>
               {result.warnings.length > 0 && (
                 <ul className="mt-1 space-y-0.5">

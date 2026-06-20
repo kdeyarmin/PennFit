@@ -27,8 +27,6 @@ import { requireAdminOnly } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
-const INSERT_CHUNK = 1000;
-
 const body = z
   .object({
     payerProfileId: z.string().uuid(),
@@ -95,51 +93,42 @@ router.post(
       return;
     }
 
-    // Idempotent replace: drop the prior CMS import for this payer + quarter.
-    const { error: delErr } = await supabase
-      .from("payer_fee_schedules")
-      .delete()
-      .eq("payer_profile_id", payer.id)
-      .eq("source", "cms_published")
-      .eq("effective_from", effectiveFrom);
-    if (delErr) {
-      res
-        .status(500)
-        .json({ error: "replace_failed", message: delErr.message });
-      return;
-    }
-
     const note = `CMS DMEPOS ${state}${rural ? " rural" : ""}`;
-    const toInsert = rows.map((r) => ({
-      payer_profile_id: payer.id,
+    const payload = rows.map((r) => ({
       hcpcs_code: r.hcpcs,
       modifier: r.modifier,
       allowed_cents: r.allowedCents,
-      effective_from: effectiveFrom,
-      source: "cms_published" as const,
       notes: note,
     }));
 
-    let accepted = 0;
-    for (let i = 0; i < toInsert.length; i += INSERT_CHUNK) {
-      const chunk = toInsert.slice(i, i + INSERT_CHUNK);
-      const { error: insErr } = await supabase
-        .from("payer_fee_schedules")
-        .insert(chunk);
-      if (insErr) {
-        logger.warn(
-          { err: insErr.message, inserted: accepted },
-          "cms-fee-schedule.import: chunk insert failed",
-        );
-        res.status(500).json({
-          error: "bulk_insert_failed",
-          message: insErr.message,
-          accepted,
-        });
-        return;
-      }
-      accepted += chunk.length;
+    // Atomic replace: drop the prior CMS import for this payer + quarter and
+    // insert the new rows in ONE transaction (migration 0416). A failed
+    // import leaves the prior COMPLETE schedule untouched — these rows drive
+    // claim pricing, so a partial replace would mis-price claims.
+    const { data: rpcData, error: rpcErr } = await supabase
+      .raw()
+      .schema("resupply")
+      .rpc("replace_cms_fee_schedule", {
+        p_org_id: orgId,
+        p_payer_profile_id: payer.id,
+        p_effective_from: effectiveFrom,
+        p_rows: payload,
+      });
+    if (rpcErr) {
+      // Log the error OBJECT (not `.message`) so the logger's err.* redaction
+      // strips any row values a constraint violation might echo.
+      logger.warn({ err: rpcErr }, "cms-fee-schedule.import: replace failed");
+      res.status(500).json({ error: "import_failed", message: rpcErr.message });
+      return;
     }
+    const summary = (rpcData ?? {}) as {
+      replaced?: number;
+      accepted?: number;
+    };
+    const accepted =
+      typeof summary.accepted === "number" ? summary.accepted : payload.length;
+    const replaced =
+      typeof summary.replaced === "number" ? summary.replaced : 0;
 
     await logAudit({
       action: "payer_fee_schedule.import_cms",
@@ -153,6 +142,7 @@ router.post(
         rural: Boolean(rural),
         effective_from: effectiveFrom,
         accepted,
+        replaced,
         warning_count: warnings.length,
       },
       ip: req.ip ?? null,
@@ -161,7 +151,7 @@ router.post(
       logger.warn({ err }, "payer_fee_schedule.import_cms audit write failed");
     });
 
-    res.status(201).json({ accepted, warnings });
+    res.status(201).json({ accepted, replaced, warnings });
   },
 );
 

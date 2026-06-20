@@ -348,6 +348,8 @@ export function deletePayerCoverageDiagnosis(id: string): Promise<void> {
 
 export interface CmsFeeScheduleImportResult {
   accepted: number;
+  /** Prior cms_published rows swapped out for this payer + effective date. */
+  replaced?: number;
   warnings: string[];
 }
 

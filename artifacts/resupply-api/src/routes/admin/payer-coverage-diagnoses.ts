@@ -20,7 +20,10 @@ import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { normalizeIcd10 } from "../../lib/billing/coverage-diagnosis";
 import { logger } from "../../lib/logger";
-import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
+import {
+  adminRateLimit,
+  adminReadRateLimiter,
+} from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -108,6 +111,10 @@ const createBody = z.object({
 router.post(
   "/admin/payer-coverage-diagnoses",
   requirePermission("admin.tools.manage"),
+  adminRateLimit({
+    name: "payer_coverage_override.create",
+    preset: "mutation",
+  }),
   async (req, res) => {
     const parsed = createBody.safeParse(req.body);
     if (!parsed.success) {
@@ -173,6 +180,7 @@ const idParam = z.string().uuid();
 router.delete(
   "/admin/payer-coverage-diagnoses/:id",
   requirePermission("admin.tools.manage"),
+  adminRateLimit({ name: "payer_coverage_override.delete", preset: "destroy" }),
   async (req, res) => {
     const parsed = idParam.safeParse(req.params.id);
     if (!parsed.success) {

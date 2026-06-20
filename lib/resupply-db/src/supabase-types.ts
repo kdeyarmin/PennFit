@@ -5928,6 +5928,27 @@ export interface Database {
               error: "not_found" | "already_submitted" | "duplicate_line";
             };
       };
+      // Mig 0416 — atomic CMS DMEPOS fee-schedule replace for the
+      // /admin/payer-fee-schedules/import-cms endpoint. Deletes the prior
+      // cms_published rows for (payer, effective_from) and inserts the new
+      // grid in ONE transaction; returns the swap counts.
+      replace_cms_fee_schedule: {
+        Args: {
+          p_org_id: string;
+          p_payer_profile_id: string;
+          p_effective_from: string;
+          p_rows: Array<{
+            hcpcs_code: string;
+            modifier: string | null;
+            allowed_cents: number;
+            notes: string | null;
+          }>;
+        };
+        Returns: {
+          replaced: number;
+          accepted: number;
+        };
+      };
     };
     Enums: { [_ in never]: never };
     CompositeTypes: { [_ in never]: never };
