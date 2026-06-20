@@ -113,13 +113,12 @@ type BillingAddonRow = Pick<
   | "stripe_synced_at"
 >;
 
-interface TenantBillingAddonRow {
-  id: string;
-  quantity: number;
-  custom_recurring_price_cents: number | null;
-  notes: string | null;
+type TenantBillingAddonRow = Pick<
+  Database["resupply"]["Tables"]["tenant_billing_addons"]["Row"],
+  "id" | "quantity" | "custom_recurring_price_cents" | "notes"
+> & {
   billing_addons: BillingAddonRow;
-}
+};
 
 async function rawClient(): Promise<RawClient | null> {
   const seedOrgId = await resolveSeedOrgId();
