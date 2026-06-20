@@ -79,12 +79,3 @@
 # two lines after this PR merges.
 0370_low_stock_alert_state_org_pk.sql
 0370_inbound_fax_twilio_sid_nullable.sql
-
-# 2026-06-20 prefix-collision renumber: 0410_clearinghouse_insurance_discovery.sql
-# and 0410_patient_packet_automation_default_on.sql both took prefix 0410 and merged
-# in the same commit (post-merge tree-wide check). The patient_packet file is renamed
-# to 0412_ with IDENTICAL content — migrate.mjs dedups by content sha256, so the
-# already-applied hash is unchanged and it is NOT re-applied to production. The
-# immutability check sees the old 0410 path as a deletion; allowlist it so this
-# renumber PR passes. Safe to delete this line after this PR merges.
-0410_patient_packet_automation_default_on.sql
