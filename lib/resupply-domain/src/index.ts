@@ -15,6 +15,12 @@ export {
   type AdherenceResult,
 } from "./cms-adherence";
 
+export {
+  scoreAdherenceTarget,
+  type AdherenceLevel,
+  type AdherenceTargetScore,
+} from "./adherence-target";
+
 export { normalizeE164, type NormalizeE164Options } from "./phone";
 
 export { timezoneForUsState } from "./us-timezone";
@@ -195,3 +201,18 @@ export {
   type CustomerRecency,
   type CustomerRecencyThresholds,
 } from "./customer-recency";
+
+export {
+  COMFORT_GUARANTEE_DAYS,
+  isWithinComfortGuarantee,
+  evaluateAutoApprovalRules,
+  formatAutoApprovalNote,
+  AUTO_APPROVE_PRIOR_RETURN_CAP,
+  AUTO_APPROVE_DEFECTIVE_MAX_AGE_DAYS,
+  AUTO_APPROVE_WRONG_ITEM_MAX_AGE_DAYS,
+  AUTO_APPROVE_ORDER_VALUE_CAP_CENTS,
+  type ShopReturnReason,
+  type AutoApprovalRule,
+  type AutoApprovalDecision,
+  type AutoApprovalInput,
+} from "./return-window";

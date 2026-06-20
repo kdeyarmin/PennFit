@@ -36,7 +36,10 @@ import {
   type CsrComplianceAlertType,
   type OrgScopedClient,
 } from "@workspace/resupply-db";
-import { COMPLIANT_MINUTES_PER_NIGHT as MIN_GOOD_NIGHT_MINUTES } from "@workspace/resupply-domain";
+import {
+  COMPLIANT_MINUTES_PER_NIGHT as MIN_GOOD_NIGHT_MINUTES,
+  scoreAdherenceTarget,
+} from "@workspace/resupply-domain";
 
 import { maybeDispatchLowUsageCheckinAlert } from "./alerts/low-usage-checkin-trigger";
 import { logger } from "./logger";
@@ -177,7 +180,7 @@ export async function scanCompliance(
     const denom = Math.max(elapsedDays, 1);
     const adherence = goodNights / denom;
 
-    const verdict = scoreAdherence(elapsedDays, adherence);
+    const verdict = scoreAdherenceTarget(elapsedDays, adherence);
     if (verdict.level === "on_track") {
       onTrack++;
       continue;
@@ -465,42 +468,11 @@ async function detectNoResponse(
   return findings;
 }
 
-/**
- * Pure scoring function — exported for direct unit testing.
- */
-export function scoreAdherence(
-  elapsedDays: number,
-  adherence: number,
-): {
-  level: "on_track" | "warning" | "critical";
-  target: number;
-} {
-  if (elapsedDays < 7) return { level: "on_track", target: 0 };
-  if (elapsedDays < 30) {
-    const target = 0.5;
-    return adherence >= target
-      ? { level: "on_track", target }
-      : { level: "warning", target };
-  }
-  if (elapsedDays < 60) {
-    const target = 0.6;
-    if (adherence >= target) return { level: "on_track", target };
-    if (adherence < 0.4) return { level: "critical", target };
-    return { level: "warning", target };
-  }
-  if (elapsedDays < 90) {
-    const target = 0.65;
-    if (adherence >= target) return { level: "on_track", target };
-    if (adherence < 0.45) return { level: "critical", target };
-    return { level: "warning", target };
-  }
-  // 90+ days: failing here is the irrecoverable case CMS uses to
-  // deny adherence. Tag it critical regardless of the gap size.
-  const target = 0.7;
-  return adherence >= target
-    ? { level: "on_track", target }
-    : { level: "critical", target };
-}
+// The progressive adherence-target scorer now lives in the pure domain
+// layer (anchored to the CMS ratio + 90-day horizon); re-exported as
+// `scoreAdherence` so existing importers (this module's test, callers)
+// keep their name + path.
+export { scoreAdherenceTarget as scoreAdherence };
 
 function renderSummary(args: {
   elapsedDays: number;
