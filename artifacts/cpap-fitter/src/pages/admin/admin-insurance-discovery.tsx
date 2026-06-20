@@ -35,7 +35,11 @@ import {
   type DiscoveredCoverage,
   type InsuranceDiscoveryResult,
 } from "@/lib/admin/billing-api";
-import { createInsuranceCoverage } from "@/lib/admin/clinical-tabs-api";
+import {
+  createInsuranceCoverage,
+  listInsuranceCoverages,
+  type CoverageRank,
+} from "@/lib/admin/clinical-tabs-api";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import { formatAppDate, todayAppDateIso } from "@/lib/utils";
 
@@ -467,12 +471,30 @@ function CoverageRow({
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const save = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       if (!patient) throw new Error("No patient attached.");
+      if (!coverage.memberId) {
+        // Don't write a placeholder member id into a real coverage — it would
+        // flow into 270/271 and claims as the subscriber id.
+        throw new Error("No member ID returned — add this coverage manually.");
+      }
+      // insurance_coverages enforces one coverage per rank, so reusing
+      // "primary" 409s once the patient already has one (or after the first
+      // discovered coverage is added). Take the first rank not yet on file.
+      const { coverages } = await listInsuranceCoverages(patient.id);
+      const taken = new Set(coverages.map((c) => c.rank));
+      const rank = (["primary", "secondary", "tertiary"] as const).find(
+        (r: CoverageRank) => !taken.has(r),
+      );
+      if (!rank) {
+        throw new Error(
+          "All three coverage ranks are in use on this chart — add this coverage manually.",
+        );
+      }
       return createInsuranceCoverage(patient.id, {
-        rank: "primary",
+        rank,
         payerName: coverage.payerName,
-        memberId: coverage.memberId ?? "UNKNOWN",
+        memberId: coverage.memberId,
         planName: coverage.planName,
         effectiveDate: coverage.coverageStart,
         terminationDate: coverage.coverageEnd,
@@ -540,6 +562,14 @@ function CoverageRow({
                 style={{ color: "#15803d" }}
               >
                 Added to chart
+              </span>
+            ) : !coverage.memberId ? (
+              <span
+                className="text-xs"
+                style={{ color: "hsl(var(--ink-3))" }}
+                title="The payer returned no member ID for this coverage."
+              >
+                No member ID — add manually
               </span>
             ) : (
               <Button

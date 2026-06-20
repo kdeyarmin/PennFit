@@ -93,6 +93,7 @@ export {
 
 export {
   isOfficeAllyStubMode,
+  isAllowedOfficeAllyEdiUrl,
   readOfficeAllyConfigOrNull,
   readOfficeAllyRealtimeConfigOrNull,
   readOfficeAllyDiscoveryConfigOrNull,
@@ -121,6 +122,7 @@ export {
   buildDiscoveryRequestBody,
   extractCoverageRows,
   normalizeCoverage,
+  normalizeDate,
   type DiscoveryTransportDeps,
 } from "./transport/discovery";
 export {

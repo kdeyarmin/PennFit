@@ -12,6 +12,7 @@ import {
   createInsuranceDiscoveryTransport,
   extractCoverageRows,
   normalizeCoverage,
+  normalizeDate,
 } from "./discovery";
 import type { FetchLike } from "./realtime";
 
@@ -231,6 +232,37 @@ describe("extractCoverageRows / normalizeCoverage", () => {
     expect(normalizeCoverage({ payerName: "P", status: "1" })?.isActive).toBe(
       true,
     );
+  });
+
+  it("normalizes coverage dates to ISO (D8 → YYYY-MM-DD), dropping junk", () => {
+    // X12 D8 (YYYYMMDD) is converted so the chart's strict ISO date
+    // validation accepts the save.
+    const d8 = normalizeCoverage({
+      payerName: "P",
+      startDate: "20240101",
+      endDate: "20241231",
+    });
+    expect(d8?.coverageStart).toBe("2024-01-01");
+    expect(d8?.coverageEnd).toBe("2024-12-31");
+    // Already-ISO passes through; unparseable becomes null.
+    const iso = normalizeCoverage({
+      payerName: "P",
+      startDate: "2026-06-01",
+      endDate: "not-a-date",
+    });
+    expect(iso?.coverageStart).toBe("2026-06-01");
+    expect(iso?.coverageEnd).toBeNull();
+  });
+});
+
+describe("normalizeDate", () => {
+  it("passes ISO through, converts D8, and nulls anything else", () => {
+    expect(normalizeDate("2026-06-20")).toBe("2026-06-20");
+    expect(normalizeDate("20260620")).toBe("2026-06-20");
+    expect(normalizeDate(" 20260620 ")).toBe("2026-06-20");
+    expect(normalizeDate("June 20")).toBeNull();
+    expect(normalizeDate("")).toBeNull();
+    expect(normalizeDate(null)).toBeNull();
   });
 });
 

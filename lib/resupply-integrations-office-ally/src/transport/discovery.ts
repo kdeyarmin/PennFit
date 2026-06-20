@@ -227,13 +227,29 @@ export function normalizeCoverage(row: unknown): DiscoveredCoverage | null {
     memberId: firstString(r, ["memberId", "subscriberId", "memberID"]),
     planName: firstString(r, ["planName", "plan", "productName"]),
     isActive: coerceActive(r),
-    coverageStart: firstString(r, [
-      "startDate",
-      "coverageStart",
-      "effectiveDate",
-    ]),
-    coverageEnd: firstString(r, ["endDate", "coverageEnd", "terminationDate"]),
+    coverageStart: normalizeDate(
+      firstString(r, ["startDate", "coverageStart", "effectiveDate"]),
+    ),
+    coverageEnd: normalizeDate(
+      firstString(r, ["endDate", "coverageEnd", "terminationDate"]),
+    ),
   };
+}
+
+/** Normalize a payer-supplied date to ISO `YYYY-MM-DD`, or null when it
+ *  isn't a date we can confidently parse. Payers return either ISO or X12
+ *  `D8` (`YYYYMMDD`); anything else is dropped rather than passed through as
+ *  junk — these dates flow into the patient chart (insurance_coverages),
+ *  whose API validates a strict `YYYY-MM-DD`, so an un-normalized value
+ *  would 400 the save and render malformed. Exported for tests. */
+export function normalizeDate(value: string | null): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+  // X12 D8: YYYYMMDD → YYYY-MM-DD.
+  const d8 = /^(\d{4})(\d{2})(\d{2})$/.exec(trimmed);
+  if (d8) return `${d8[1]}-${d8[2]}-${d8[3]}`;
+  return null;
 }
 
 function coerceActive(r: Record<string, unknown>): boolean {

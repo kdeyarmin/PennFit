@@ -38,7 +38,9 @@ const discoveryRateLimiter = rateLimit({
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-function isPlausibleDob(value: string): boolean {
+/** True iff `value` is a real calendar date (no normalized rollover) between
+ *  1900 and today — used for both DOB and the as-of service date. */
+function isPlausibleDate(value: string): boolean {
   const date = new Date(`${value}T00:00:00Z`);
   if (Number.isNaN(date.getTime())) return false;
   // Reject normalized rollovers (e.g. 2000-02-31 → Mar 2).
@@ -55,7 +57,7 @@ const discoveryBody = z
     dateOfBirth: z
       .string()
       .regex(ISO_DATE_RE)
-      .refine(isPlausibleDob, "must be a real date between 1900 and today"),
+      .refine(isPlausibleDate, "must be a real date between 1900 and today"),
     gender: z.enum(["M", "F", "U"]).optional(),
     // SSN optional; 9 digits (dashes stripped client-side or here).
     ssn: z
@@ -70,7 +72,13 @@ const discoveryBody = z
       .trim()
       .regex(/^\d{5}(-?\d{4})?$/, "ZIP must be 5 or 9 digits")
       .optional(),
-    serviceDate: z.string().regex(ISO_DATE_RE).optional(),
+    // As-of date for the search; same plausibility guard as DOB (a real
+    // calendar date, not a format-valid impossible one like 2026-02-31).
+    serviceDate: z
+      .string()
+      .regex(ISO_DATE_RE)
+      .refine(isPlausibleDate, "must be a real date between 1900 and today")
+      .optional(),
   })
   .strict();
 

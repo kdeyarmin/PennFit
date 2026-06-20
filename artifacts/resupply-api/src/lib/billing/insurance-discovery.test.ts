@@ -144,5 +144,8 @@ describe("runInsuranceDiscovery", () => {
     expect(result.status).toBe("failed");
     if (result.status !== "failed") throw new Error("unreachable");
     expect(result.message).toMatch(/failed to connect/);
+    // A transport failure never reached Office Ally's billing layer, so it
+    // must NOT be metered as a billable transaction.
+    expect(vi.mocked(recordTenantUsage)).not.toHaveBeenCalled();
   });
 });

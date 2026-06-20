@@ -108,22 +108,26 @@ export async function runInsuranceDiscovery(
   });
   const latencyMs = Date.now() - startedAt;
 
-  // A real-time clearinghouse round-trip happened (billable whether or not
-  // it matched coverage) — meter one billing transaction. Fire-and-forget.
-  void recordTenantUsage({
-    orgId,
-    metricKey: "billingTransactionsPerMonth",
-    source: "insurance.discovery",
-  });
-
   if (!outcome.ok) {
-    // Operational only — no PHI (timing + transport outcome).
+    // Operational only — no PHI (timing + transport outcome). NOT metered:
+    // a connect/auth/transport failure never reached Office Ally's billing
+    // layer, so charging the tenant a billable transaction for it (and
+    // counting it against their plan allowance) would over-bill on retries.
     logger.warn(
       { event: "insurance.discovery.failed", kind: outcome.kind, latencyMs },
       "runInsuranceDiscovery: search failed",
     );
     return { status: "failed", message: outcome.message };
   }
+
+  // The search actually executed against the payer network (a billable
+  // round-trip, whether or not it matched coverage) — meter one billing
+  // transaction. Fire-and-forget.
+  void recordTenantUsage({
+    orgId,
+    metricKey: "billingTransactionsPerMonth",
+    source: "insurance.discovery",
+  });
 
   if (outcome.coverages.length === 0) {
     logger.info(

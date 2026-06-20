@@ -19,6 +19,7 @@ import {
   resolveSeedOrgId,
 } from "@workspace/resupply-db";
 import {
+  isAllowedOfficeAllyEdiUrl,
   readOfficeAllyRealtimeConfigOrNull,
   readOfficeAllyDiscoveryConfigOrNull,
   type BillingProvider,
@@ -293,6 +294,19 @@ function buildDiscoveryConfig(
   if (env.OFFICE_ALLY_STUB === "1") return null;
   if (row) {
     if (!row.discovery_enabled || !row.discovery_url) return null;
+    // The discovery POST carries PHI (name/DOB/SSN) and the URL is
+    // operator-supplied, so enforce the SAME https + officeally.io allowlist
+    // the env reader applies — a DB row must not be a way around it. A
+    // bad/typo'd/cleartext URL fails closed (discovery unavailable) rather
+    // than exfiltrating PHI + the API key to an attacker-chosen host. The
+    // URL itself is non-PHI and safe to log for the operator to fix.
+    if (!isAllowedOfficeAllyEdiUrl(row.discovery_url)) {
+      logger.warn(
+        { event: "discovery_url_rejected", url: row.discovery_url },
+        "identity-resolver: discovery_url is not an https officeally.io URL; disabling discovery",
+      );
+      return null;
+    }
     // Same API-key precedence as real-time: the row's stored key
     // (realtime_password column) wins, env is the dev/preview fallback.
     const dbApiKey = row.realtime_password;

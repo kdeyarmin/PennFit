@@ -168,7 +168,7 @@ export function readOfficeAllyRealtimeConfigOrNull(
   // an SSRF exfiltration sink. Fail-soft per the reader contract — a URL
   // that doesn't validate returns null (degrade to the SFTP path), never
   // throws at boot.
-  if (!isAllowedRealtimeUrl(url)) return null;
+  if (!isAllowedOfficeAllyEdiUrl(url)) return null;
   return {
     url,
     apiKey,
@@ -184,7 +184,7 @@ export function readOfficeAllyRealtimeConfigOrNull(
  * never leaves over cleartext or to an attacker-chosen host. Pure /
  * never throws.
  */
-function isAllowedRealtimeUrl(raw: string): boolean {
+export function isAllowedOfficeAllyEdiUrl(raw: string): boolean {
   let parsed: URL;
   try {
     parsed = new URL(raw);
@@ -237,7 +237,7 @@ export function readOfficeAllyDiscoveryConfigOrNull(
   // so the same https + Office-Ally-host allowlist the real-time reader
   // applies is mandatory here — it stops a cleartext (http://) endpoint and
   // an SSRF-to-attacker-host typo. Fail-soft: an invalid URL returns null.
-  if (!isAllowedRealtimeUrl(url)) return null;
+  if (!isAllowedOfficeAllyEdiUrl(url)) return null;
   return {
     url,
     apiKey,
