@@ -43,6 +43,11 @@ import {
 } from "./lib/stripe/webhook-handler";
 import faxWebhooksRouter from "./routes/fax/webhooks";
 import { createTrustProxyFn } from "./lib/trusted-proxies";
+import {
+  buildBreatheSitemapXml,
+  buildPlatformRobotsTxt,
+  isPlatformApexHost,
+} from "./lib/platform-sitemap";
 
 // Register the audit lib's request-id bridge once at import time so
 // any logAudit() call from inside an HTTP request automatically
@@ -701,6 +706,27 @@ app.use("/api", storefrontRouter);
 //      `artifacts/resupply-api/dist/index.mjs` AND from src in dev,
 //      two parent dirs up reaches `artifacts/`.
 //
+// Host-aware platform sitemap + robots, for the Breathe marketing site on
+// the platform apex (cmbreathe.com). Registered BEFORE express.static so the
+// apex gets the dynamically-built /breathe sitemap; every other host
+// (tenant custom domains, subdomains, the Railway preview host, localhost)
+// falls through to the static tenant sitemap.xml / robots.txt below. See
+// lib/platform-sitemap.ts.
+app.get("/sitemap.xml", (req, res, next) => {
+  if (!isPlatformApexHost(req.hostname)) return next();
+  res
+    .type("application/xml")
+    .set("Cache-Control", "public, max-age=3600")
+    .send(buildBreatheSitemapXml());
+});
+app.get("/robots.txt", (req, res, next) => {
+  if (!isPlatformApexHost(req.hostname)) return next();
+  res
+    .type("text/plain")
+    .set("Cache-Control", "public, max-age=3600")
+    .send(buildPlatformRobotsTxt());
+});
+
 // We guard on index.html presence so a dev session running only the API
 // (with Vite serving the SPA on a separate port) skips the wiring
 // gracefully — the API still works, the SPA just isn't co-served.
