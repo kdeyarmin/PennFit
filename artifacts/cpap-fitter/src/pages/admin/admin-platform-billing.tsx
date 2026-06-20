@@ -336,7 +336,7 @@ function TenantEditor({
             if (savePlan.isPending || previewingPlan) return;
             // Cost/proration preview before committing the plan change. A
             // custom monthly override skips the preview (it isn't catalog
-            // priced); falls back to a plain confirm if the preview fails.
+            // priced); if the preview can't be fetched, we still save (without a preview).
             if (!monthly.trim()) {
               setPreviewingPlan(true);
               try {
