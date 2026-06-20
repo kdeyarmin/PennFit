@@ -746,3 +746,224 @@ describe("placeResupplyOrderForConversation — continued-use guard", () => {
     expect(supabaseMock.callCount("patient_therapy_nights", "select")).toBe(0);
   });
 });
+
+describe("placeResupplyOrderForConversation — refill-window guard", () => {
+  const CONV_ID = "00000000-0000-4000-8000-0000000000d1";
+  const EPISODE_ID = "00000000-0000-4000-8000-0000000000d2";
+  const RX_ID = "00000000-0000-4000-8000-0000000000d3";
+
+  /** Stage conversation → episode → prescription, then the four
+      feature-flag reads in call order: entitlement OFF, eligibility OFF,
+      usage OFF, refill-window ON. */
+  function stageLookupChain(): void {
+    stageSupabaseResponse("conversations", "select", {
+      data: { id: CONV_ID, patient_id: PATIENT_ID, episode_id: EPISODE_ID },
+      error: null,
+    });
+    stageSupabaseResponse("episodes", "select", {
+      data: {
+        id: EPISODE_ID,
+        patient_id: PATIENT_ID,
+        prescription_id: RX_ID,
+        status: "outreach_pending",
+      },
+      error: null,
+    });
+    stageSupabaseResponse("prescriptions", "select", {
+      data: { id: RX_ID, item_sku: "CUSHION-NASAL-MED" },
+      error: null,
+    });
+    // entitlement OFF, eligibility OFF, usage OFF, refill-window ON.
+    for (const enabled of [false, false, false, true]) {
+      stageSupabaseResponse("feature_flags", "select", {
+        data: { enabled },
+        error: null,
+      });
+    }
+  }
+
+  /** Stage the resolveSkuEntitlement reads: SKU→HCPCS map, the HCPCS
+      rule (30-day supply), and the patient's last dispense `daysAgo`. */
+  function stageEntitlementReads(daysAgo: number): void {
+    stageSupabaseResponse("sku_hcpcs_map", "select", {
+      data: [{ sku_prefix: "CUSHION-NASAL", hcpcs_code: "A7032" }],
+      error: null,
+    });
+    stageSupabaseResponse("hcpcs_codes", "select", {
+      data: {
+        code: "A7032",
+        min_interval_days: 30,
+        max_quantity_per_period: 2,
+        period_days: 30,
+        active: true,
+      },
+      error: null,
+    });
+    const lastDispense = new Date();
+    lastDispense.setUTCDate(lastDispense.getUTCDate() - daysAgo);
+    stageSupabaseResponse("fulfillments", "select", {
+      data: [
+        {
+          quantity: 1,
+          created_at: lastDispense.toISOString(),
+          status: "shipped",
+        },
+      ],
+      error: null,
+    });
+  }
+
+  it("holds the order and raises a refill-window CSR alert when it would ship too early", async () => {
+    stageLookupChain();
+    // Dispensed 5 days ago, 30-day supply → depletion 25 days out, ship
+    // window opens at 25 − 10 = 15 days out → not allowed now.
+    stageEntitlementReads(5);
+    stageSupabaseResponse("csr_compliance_alerts", "select", {
+      data: null,
+      error: null,
+    });
+    stageSupabaseResponse("csr_compliance_alerts", "insert", {
+      data: null,
+      error: null,
+    });
+
+    const result = await placeResupplyOrderForConversation({
+      conversationId: CONV_ID,
+    });
+
+    expect(result.status).toBe("too_early");
+    if (result.status === "too_early") {
+      expect(result.refillWindow.hcpcsCode).toBe("A7032");
+      expect(result.refillWindow.daysUntilShip).toBeGreaterThan(0);
+    }
+    // The episode must NOT be claimed — the order is held.
+    expect(supabaseMock.callCount("episodes", "update")).toBe(0);
+    expect(supabaseMock.callCount("csr_compliance_alerts", "insert")).toBe(1);
+    const [alert] = supabaseMock.writePayloads(
+      "csr_compliance_alerts",
+      "insert",
+    ) as Array<Record<string, unknown>>;
+    expect(alert!.alert_type).toBe("resupply_refill_too_early");
+    expect(alert!.patient_id).toBe(PATIENT_ID);
+  });
+
+  it("proceeds when inside the 10-day ship window", async () => {
+    stageLookupChain();
+    // Dispensed 22 days ago, 30-day supply → depletion 8 days out, which
+    // is inside the 10-day ship window → allowed.
+    stageEntitlementReads(22);
+    stageSupabaseResponse("episodes", "update", {
+      data: [{ id: EPISODE_ID }],
+      error: null,
+    });
+    stageSupabaseResponse("fulfillments", "select", { data: [], error: null });
+    stageSupabaseResponse("fulfillments", "insert", {
+      data: [{ id: "00000000-0000-4000-8000-0000000000f9" }],
+      error: null,
+    });
+
+    const result = await placeResupplyOrderForConversation({
+      conversationId: CONV_ID,
+    });
+
+    expect(result.status).toBe("ok");
+    expect(supabaseMock.callCount("csr_compliance_alerts", "insert")).toBe(0);
+  });
+});
+
+describe("placeResupplyOrderForConversation — refill attestation capture", () => {
+  const CONV_ID = "00000000-0000-4000-8000-0000000000a1";
+  const EPISODE_ID = "00000000-0000-4000-8000-0000000000a2";
+  const RX_ID = "00000000-0000-4000-8000-0000000000a3";
+
+  function stageOkConfirm(): void {
+    stageSupabaseResponse("conversations", "select", {
+      data: { id: CONV_ID, patient_id: PATIENT_ID, episode_id: EPISODE_ID },
+      error: null,
+    });
+    stageSupabaseResponse("episodes", "select", {
+      data: {
+        id: EPISODE_ID,
+        patient_id: PATIENT_ID,
+        prescription_id: RX_ID,
+        status: "outreach_pending",
+      },
+      error: null,
+    });
+    stageSupabaseResponse("prescriptions", "select", {
+      data: { id: RX_ID, item_sku: "CUSHION-NASAL-MED" },
+      error: null,
+    });
+    // All four guard flags OFF (entitlement, eligibility, usage,
+    // refill-window) so the confirm proceeds straight to the claim.
+    for (let i = 0; i < 4; i++) {
+      stageSupabaseResponse("feature_flags", "select", {
+        data: { enabled: false },
+        error: null,
+      });
+    }
+    // Atomic claim + fulfillment insert.
+    stageSupabaseResponse("episodes", "update", {
+      data: [{ id: EPISODE_ID }],
+      error: null,
+    });
+    stageSupabaseResponse("fulfillments", "select", { data: [], error: null });
+    stageSupabaseResponse("fulfillments", "insert", {
+      data: [{ id: "00000000-0000-4000-8000-0000000000fa" }],
+      error: null,
+    });
+  }
+
+  it("records a refill_confirmations row carrying the attestation when capture is ON", async () => {
+    stageOkConfirm();
+    // recordRefillConfirmation: capture flag ON (5th feature_flags read).
+    stageSupabaseResponse("feature_flags", "select", {
+      data: { enabled: true },
+      error: null,
+    });
+    // Best-effort metadata resolve (HCPCS + depletion) — left unmapped so
+    // the row records with null HCPCS but the attestation still persists.
+    stageSupabaseResponse("sku_hcpcs_map", "select", { data: [], error: null });
+    stageSupabaseResponse("refill_confirmations", "upsert", {
+      data: null,
+      error: null,
+    });
+
+    const result = await placeResupplyOrderForConversation({
+      conversationId: CONV_ID,
+      affirmation: {
+        channel: "sms",
+        continuedUse: true,
+        supplyLow: true,
+        requestedBy: "self",
+        ip: null,
+        userAgent: null,
+      },
+    });
+
+    expect(result.status).toBe("ok");
+    expect(supabaseMock.callCount("refill_confirmations", "upsert")).toBe(1);
+    const [row] = supabaseMock.writePayloads(
+      "refill_confirmations",
+      "upsert",
+    ) as Array<Record<string, unknown>>;
+    expect(row!.patient_id).toBe(PATIENT_ID);
+    expect(row!.episode_id).toBe(EPISODE_ID);
+    expect(row!.channel).toBe("sms");
+    expect(row!.affirm_continued_use).toBe(true);
+    expect(row!.affirm_supply_low).toBe(true);
+    expect(typeof row!.attestation_text).toBe("string");
+    expect((row!.attestation_text as string).length).toBeGreaterThan(0);
+  });
+
+  it("does not record a row when no affirmation is supplied", async () => {
+    stageOkConfirm();
+
+    const result = await placeResupplyOrderForConversation({
+      conversationId: CONV_ID,
+    });
+
+    expect(result.status).toBe("ok");
+    expect(supabaseMock.callCount("refill_confirmations", "upsert")).toBe(0);
+  });
+});

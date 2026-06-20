@@ -29,6 +29,7 @@ import {
   KeyRound,
   LineChart,
   Lock,
+  Mail,
   Menu,
   MessageSquare,
   Mic,
@@ -47,6 +48,7 @@ import {
   Stethoscope,
   Store,
   TrendingUp,
+  Users,
   Video,
   Waypoints,
   Workflow,
@@ -54,6 +56,7 @@ import {
   Zap,
 } from "lucide-react";
 import { useDocumentTitle } from "@/hooks/use-document-title";
+import { useNoIndexExceptApex } from "@/hooks/use-noindex-except-apex";
 import { ADDON_DETAILS } from "@/lib/admin/addon-details";
 import "./breathe.css";
 
@@ -91,9 +94,9 @@ const LOGO = "/breathe/caremetric-icon.png";
  * so each page stays short and focused. Every page renders its own slice of
  * sections inside this shell.
  */
-function BreatheShell({ children }: { children: React.ReactNode }) {
+export function BreatheShell({ children }: { children: React.ReactNode }) {
   useRevealOnScroll();
-  useNoIndex();
+  useNoIndexExceptApex();
   useSmoothScroll();
   useInitialHashScroll();
 
@@ -114,7 +117,7 @@ function BreatheShell({ children }: { children: React.ReactNode }) {
  * split-out page has its own title and context instead of opening cold on
  * a content section.
  */
-function PageHead({
+export function PageHead({
   icon: Icon,
   eyebrow,
   title,
@@ -147,11 +150,16 @@ function PageHead({
 const DEMO_ENTRY_URL = "/admin?demo=1";
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-type DemoGateContextValue = { open: (source?: string) => void };
+type DemoGateContextValue = {
+  /** Open the email→self-serve-demo gate (lands the visitor in the console). */
+  open: (source?: string) => void;
+  /** Open the "talk to us" contact gate (a human follows up — no console). */
+  openContact: (source?: string) => void;
+};
 const DemoGateContext = React.createContext<DemoGateContextValue | null>(null);
 
-/** Open the email→demo gate from any CTA. */
-function useDemoGate(): DemoGateContextValue {
+/** Open the demo / contact gates from any CTA. */
+export function useDemoGate(): DemoGateContextValue {
   const ctx = useContext(DemoGateContext);
   if (!ctx) throw new Error("useDemoGate must be used within DemoGateProvider");
   return ctx;
@@ -159,10 +167,19 @@ function useDemoGate(): DemoGateContextValue {
 
 function DemoGateProvider({ children }: { children: React.ReactNode }) {
   const [openSource, setOpenSource] = useState<string | null>(null);
+  const [contactSource, setContactSource] = useState<string | null>(null);
+  // The two gates are mutually exclusive — opening one always closes the
+  // other so there's never a second backdrop / focus-trap / scroll-lock
+  // active at the same time.
   const open = useCallback((source?: string) => {
+    setContactSource(null);
     setOpenSource(source ?? "breathe");
   }, []);
-  const value = useMemo(() => ({ open }), [open]);
+  const openContact = useCallback((source?: string) => {
+    setOpenSource(null);
+    setContactSource(source ?? "breathe-contact");
+  }, []);
+  const value = useMemo(() => ({ open, openContact }), [open, openContact]);
   return (
     <DemoGateContext.Provider value={value}>
       {children}
@@ -170,6 +187,12 @@ function DemoGateProvider({ children }: { children: React.ReactNode }) {
         <DemoGateModal
           source={openSource}
           onClose={() => setOpenSource(null)}
+        />
+      ) : null}
+      {contactSource !== null ? (
+        <ContactGateModal
+          source={contactSource}
+          onClose={() => setContactSource(null)}
         />
       ) : null}
     </DemoGateContext.Provider>
@@ -181,7 +204,7 @@ function DemoGateProvider({ children }: { children: React.ReactNode }) {
  * failure must never block demo entry) and then hard-navigates into the
  * client-side demo sandbox.
  */
-async function enterDemoWithEmail(
+async function captureLead(
   email: string,
   source: string,
   honeypot: string,
@@ -197,8 +220,16 @@ async function enterDemoWithEmail(
       }),
     });
   } catch {
-    /* best-effort: enter the demo regardless of capture success */
+    /* best-effort: never block the visitor on a capture failure */
   }
+}
+
+async function enterDemoWithEmail(
+  email: string,
+  source: string,
+  honeypot: string,
+): Promise<void> {
+  await captureLead(email, source, honeypot);
   window.location.href = DEMO_ENTRY_URL;
 }
 
@@ -287,18 +318,14 @@ function DemoEmailForm({
   );
 }
 
-function DemoGateModal({
-  source,
-  onClose,
-}: {
-  source: string;
-  onClose: () => void;
-}) {
+/**
+ * Modal a11y plumbing shared by every Breathe gate modal: Esc to close,
+ * body scroll-lock, a focus trap (keyboard users can't tab out to the page
+ * behind), and focus restored to the trigger on close. Returns the ref to
+ * spread onto the dialog element.
+ */
+function useModalDismiss(onClose: () => void) {
   const modalRef = useRef<HTMLDivElement>(null);
-
-  // Esc to close, body scroll-lock, a focus trap (keyboard users can't
-  // tab out to the page behind), and focus restored to the trigger on
-  // close.
   useEffect(() => {
     const prevFocused = document.activeElement as HTMLElement | null;
     const onKey = (e: KeyboardEvent) => {
@@ -330,6 +357,17 @@ function DemoGateModal({
       prevFocused?.focus?.();
     };
   }, [onClose]);
+  return modalRef;
+}
+
+function DemoGateModal({
+  source,
+  onClose,
+}: {
+  source: string;
+  onClose: () => void;
+}) {
+  const modalRef = useModalDismiss(onClose);
 
   return (
     <div className="bx-modal-backdrop" role="presentation" onClick={onClose}>
@@ -369,6 +407,201 @@ function DemoGateModal({
             Create your account →
           </Link>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Email-only contact capture for the "talk to us" gate. Mirrors
+ * DemoEmailForm's validation + honeypot, but instead of navigating into
+ * the demo it captures the lead (best-effort) and hands control back to
+ * the modal to show a confirmation — the human follow-up happens off-app.
+ */
+function ContactEmailForm({
+  source,
+  onDone,
+}: {
+  source: string;
+  onDone: () => void;
+}) {
+  const [email, setEmail] = useState("");
+  const [status, setStatus] = useState<"idle" | "submitting" | "error">("idle");
+  const [err, setErr] = useState("");
+  const hpRef = useRef<HTMLInputElement>(null);
+  const emailRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    emailRef.current?.focus();
+  }, []);
+
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const value = email.trim().toLowerCase();
+    if (!EMAIL_RE.test(value)) {
+      setErr("Please enter a valid email address.");
+      setStatus("error");
+      return;
+    }
+    setStatus("submitting");
+    setErr("");
+    await captureLead(value, source, hpRef.current?.value ?? "");
+    onDone();
+  };
+
+  return (
+    <form className="bx-demoform" onSubmit={onSubmit} noValidate>
+      {/* Honeypot: real users never see or fill this. */}
+      <input
+        ref={hpRef}
+        type="text"
+        name="website"
+        tabIndex={-1}
+        autoComplete="off"
+        aria-hidden="true"
+        className="bx-hp"
+      />
+      <div className="bx-demoform-row">
+        <input
+          ref={emailRef}
+          type="email"
+          inputMode="email"
+          autoComplete="email"
+          required
+          value={email}
+          onChange={(e) => {
+            setEmail(e.target.value);
+            if (status === "error") setStatus("idle");
+          }}
+          placeholder="you@yourdme.com"
+          aria-label="Work email"
+          aria-invalid={status === "error"}
+        />
+        <button
+          type="submit"
+          className="bx-btn bx-btn-primary"
+          disabled={status === "submitting"}
+        >
+          {status === "submitting" ? (
+            "Sending…"
+          ) : (
+            <>
+              Send to support <ArrowRight size={16} />
+            </>
+          )}
+        </button>
+      </div>
+      {status === "error" ? (
+        <span className="bx-demoform-err" role="alert">
+          {err}
+        </span>
+      ) : null}
+    </form>
+  );
+}
+
+/**
+ * "Talk to us" gate — the human path that sits beside the self-serve demo.
+ * Captures an email for follow-up (tagged with its own source) and always
+ * surfaces the phone + email so an enterprise buyer who wants a real
+ * conversation has one. On submit it confirms in-place rather than
+ * navigating, then nudges toward the live demo for the impatient.
+ */
+function ContactGateModal({
+  source,
+  onClose,
+}: {
+  source: string;
+  onClose: () => void;
+}) {
+  const modalRef = useModalDismiss(onClose);
+  const { open: openDemoGate } = useDemoGate();
+  const [submitted, setSubmitted] = useState(false);
+
+  return (
+    <div className="bx-modal-backdrop" role="presentation" onClick={onClose}>
+      <div
+        ref={modalRef}
+        className="bx-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="bx-contact-modal-title"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          type="button"
+          className="bx-modal-close"
+          aria-label="Close"
+          onClick={onClose}
+        >
+          <X size={18} />
+        </button>
+        {submitted ? (
+          <>
+            <span className="bx-modal-ic">
+              <Check size={20} />
+            </span>
+            <h3 id="bx-contact-modal-title">
+              Thanks — we&apos;ll be in touch.
+            </h3>
+            <p className="bx-modal-lede">
+              Our support team will get back to you within one business day.
+              Prefer to talk now? We&apos;re here.
+            </p>
+            <div className="bx-modal-contact">
+              <a href="tel:+18775212890">
+                <PhoneCall size={14} aria-hidden="true" /> (877) 521-2890
+              </a>
+              <a href="mailto:info@cmbreathe.com">
+                <Mail size={14} aria-hidden="true" /> info@cmbreathe.com
+              </a>
+            </div>
+            <div className="bx-modal-alt">
+              Don&apos;t want to wait?{" "}
+              <button
+                type="button"
+                className="bx-linkbtn"
+                onClick={() => {
+                  onClose();
+                  openDemoGate("breathe-contact-to-demo");
+                }}
+              >
+                Jump into the live demo →
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <span className="bx-modal-ic">
+              <Headphones size={20} />
+            </span>
+            <h3 id="bx-contact-modal-title">
+              Questions? We&apos;re here to help
+            </h3>
+            <p className="bx-modal-lede">
+              Have a question, a concern, or need technical support? Leave your
+              email and our support team will get back to you — or call us right
+              now. Ready to go? You can start the demo or create your account
+              yourself, no call required.
+            </p>
+            <ContactEmailForm
+              source={source}
+              onDone={() => setSubmitted(true)}
+            />
+            <div className="bx-modal-contact">
+              <a href="tel:+18775212890">
+                <PhoneCall size={14} aria-hidden="true" /> (877) 521-2890
+              </a>
+              <a href="mailto:info@cmbreathe.com">
+                <Mail size={14} aria-hidden="true" /> info@cmbreathe.com
+              </a>
+            </div>
+            <p className="bx-modal-fine">
+              No sales pressure — just real help when you need it. Unsubscribe
+              anytime.
+            </p>
+          </>
+        )}
       </div>
     </div>
   );
@@ -659,14 +892,25 @@ export function BreatheHome() {
   return (
     <BreatheShell>
       <Hero />
+      {/* Show the actual product on the landing page — not just the product
+          tour. The hero sells the outcome; this proves the product is real
+          with REAL captured screens of the live console (competitors all lead
+          with product UI; we used to lead with an abstract graphic). */}
+      <LiveConsole />
       <IntegrationsStrip />
       <Pillars />
+      {/* The home page is deliberately short and focused on WHY Breathe is
+          different: the proprietary resupply engine, the in-house (not
+          bolted-on) architecture, and "one login instead of seven". The
+          deeper detail — the full lifecycle, the capability grid, the unified
+          therapy fleet, and the audience breakdown — lives on the Product,
+          Compare, and Integrations pages so this page stays scannable. */}
       <ResupplyEngine />
-      <Lifecycle />
-      <Capabilities />
+      <BuiltInHouse />
       <Replaces />
       <Outcomes />
       <PricingHome />
+      <FoundingPartner />
       <ClosingCta />
     </BreatheShell>
   );
@@ -693,8 +937,12 @@ export function BreatheProduct() {
       />
       <Lifecycle />
       <DayInLife />
+      <Capabilities />
       <ProductShowcase />
       <Features />
+      <FeatureVideos />
+      <UnifiedFleet />
+      <BuiltInHouse />
       <RevenueCycle />
       <AiBento />
       <Outcomes showClaimsEngine={false} />
@@ -722,10 +970,40 @@ export function BreatheCompare() {
         sub="Legacy DME systems bolt modules onto decades-old cores. See the line-by-line difference — and what it means for each person on your team."
       />
       <Comparison />
+      <SwitchLinks />
       <WhyDifferent />
+      <BuiltInHouse />
       <Roles />
+      <Audiences />
       <ClosingCta />
     </BreatheShell>
+  );
+}
+
+/* Cross-links to the per-competitor "Switch from X" migration pages, shown
+   under the comparison table where switch intent is highest. */
+const SWITCH_LINKS: { href: string; name: string }[] = [
+  { href: "/breathe/switch/brightree", name: "Brightree" },
+  { href: "/breathe/switch/bonafide", name: "Bonafide" },
+  { href: "/breathe/switch/nikohealth", name: "NikoHealth" },
+];
+
+function SwitchLinks() {
+  return (
+    <div className="bx-shell">
+      <div className="bx-switchlinks bx-reveal">
+        <span className="bx-switchlinks-label">
+          <GitBranch size={15} /> Coming from a specific system?
+        </span>
+        <div className="bx-switchlinks-row">
+          {SWITCH_LINKS.map((s) => (
+            <Link className="bx-switchlink" href={s.href} key={s.href}>
+              Switch from {s.name} <ArrowRight size={14} />
+            </Link>
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -748,6 +1026,7 @@ export function BreatheRoi() {
         sub="Estimate what Breathe gives back on your own numbers — staff hours, revenue-cycle recovery, resupply growth, and the seven point tools you stop paying for."
       />
       <Roi />
+      <RoiAssumptions />
       <ClosingCta />
     </BreatheShell>
   );
@@ -773,6 +1052,7 @@ export function BreathePricing() {
       />
       <Pricing />
       <Onboarding />
+      <PricingFaq />
       <ClosingCta />
     </BreatheShell>
   );
@@ -797,6 +1077,7 @@ export function BreatheSecurity() {
         sub="HIPAA-eligible infrastructure, on-device patient imaging, and a least-privilege posture — the questions your compliance team will ask, answered."
       />
       <Security />
+      <SecurityPosture />
       <Manifesto />
       <Faq />
       <ClosingCta />
@@ -806,11 +1087,28 @@ export function BreatheSecurity() {
 
 /* ───────────────────────── Nav ───────────────────────── */
 const NAV_LINKS: { href: string; label: string }[] = [
-  { href: "/breathe/product", label: "Product" },
+  { href: "/breathe/product", label: "Platform" },
+  { href: "/breathe/integrations", label: "Integrations" },
+  { href: "/breathe/why", label: "Why Breathe" },
   { href: "/breathe/compare", label: "Compare" },
+  { href: "/breathe/case-studies", label: "Case studies" },
+  { href: "/breathe/pricing", label: "Pricing" },
+];
+
+// The full set of marketing pages — used by the footer so ROI, Security,
+// and Features stay reachable + crawlable even though they're kept out of
+// the (deliberately short) top nav.
+const FOOTER_LINKS: { href: string; label: string }[] = [
+  { href: "/breathe/product", label: "Platform" },
+  { href: "/breathe/integrations", label: "Integrations" },
+  { href: "/breathe/why", label: "Why Breathe" },
+  { href: "/breathe/compare", label: "Compare" },
+  { href: "/breathe/features", label: "Features" },
   { href: "/breathe/roi", label: "ROI" },
   { href: "/breathe/pricing", label: "Pricing" },
   { href: "/breathe/security", label: "Security" },
+  { href: "/breathe/case-studies", label: "Case studies" },
+  { href: "/breathe/faq", label: "FAQ" },
 ];
 
 function Nav() {
@@ -841,6 +1139,12 @@ function Nav() {
               {l.label}
             </Link>
           ))}
+          <Link
+            className="bx-btn bx-btn-ghost bx-btn-sm"
+            href="/breathe/signup"
+          >
+            Create account
+          </Link>
           <button
             type="button"
             className="bx-btn bx-btn-primary bx-btn-sm"
@@ -885,6 +1189,13 @@ function Nav() {
             >
               Start free demo
             </button>
+            <Link
+              href="/breathe/signup"
+              className="bx-btn bx-btn-ghost bx-nav-mobile-demo"
+              onClick={() => setOpen(false)}
+            >
+              Create account
+            </Link>
           </div>
         </div>
       ) : null}
@@ -894,7 +1205,7 @@ function Nav() {
 
 /* ───────────────────────── Hero ───────────────────────── */
 function Hero() {
-  const { open: openDemoGate } = useDemoGate();
+  const { open: openDemoGate, openContact } = useDemoGate();
   const onMove = (e: React.MouseEvent<HTMLElement>) => {
     if (prefersReducedMotion()) return;
     const r = e.currentTarget.getBoundingClientRect();
@@ -950,6 +1261,16 @@ function Hero() {
               <BadgeCheck size={15} color="#54c8ff" />
               Live demo on sample data · No call · No credit card
             </div>
+            <p className="bx-hero-talk bx-reveal in">
+              Questions, or need a hand getting set up?{" "}
+              <button
+                type="button"
+                className="bx-linkbtn"
+                onClick={() => openContact("breathe-hero")}
+              >
+                Contact support →
+              </button>
+            </p>
           </div>
 
           <div className="bx-orb-wrap bx-reveal in">
@@ -999,16 +1320,26 @@ const STATS: { num: number; suffix: string; prefix?: string; label: string }[] =
 
 function StatBand() {
   return (
-    <div className="bx-stats bx-reveal">
-      {STATS.map((s) => (
-        <div className="bx-stat" key={s.label}>
-          <div className="bx-stat-num">
-            <CountUp to={s.num} prefix={s.prefix} suffix={s.suffix} />
+    <>
+      <div className="bx-stats bx-reveal">
+        {STATS.map((s) => (
+          <div className="bx-stat" key={s.label}>
+            <div className="bx-stat-num">
+              <CountUp to={s.num} prefix={s.prefix} suffix={s.suffix} />
+            </div>
+            <div className="bx-stat-label">{s.label}</div>
           </div>
-          <div className="bx-stat-label">{s.label}</div>
-        </div>
-      ))}
-    </div>
+        ))}
+      </div>
+      {/* Honest framing: these are modeled / benchmark figures, not a
+          claim of measured customer results. Tie them to the calculator
+          that shows the math on the reader's own numbers. */}
+      <p className="bx-stats-note bx-reveal">
+        Modeled on typical DME resupply economics and published industry
+        benchmarks — directional, not a guarantee.{" "}
+        <Link href="/breathe/roi">Size it on your own numbers →</Link>
+      </p>
+    </>
   );
 }
 
@@ -1028,11 +1359,14 @@ const INTEGRATIONS = [
 function IntegrationsStrip() {
   return (
     <section className="bx-integrations bx-reveal" aria-label="Integrations">
-      <div className="bx-shell">
+      <div className="bx-shell bx-integrations-head">
         <p className="bx-integrations-label">
           <Plug size={13} /> Connected to the device clouds, clearinghouses, and
           billing systems you already run
         </p>
+        <Link className="bx-integrations-link" href="/breathe/integrations">
+          See how it connects <ArrowRight size={14} />
+        </Link>
         {/* The marquee duplicates the list for the animation, so it is
             aria-hidden; this visually-hidden list exposes the partner
             names to assistive tech exactly once. */}
@@ -1288,7 +1622,7 @@ function Lifecycle() {
           <p className="bx-lede">
             From the first intake call to the last reconciled claim, every stage
             of the DME lifecycle runs on the same data — no exports, no
-            swivel-chair, no patients lost between systems.
+            re-keying between screens, no patients lost between systems.
           </p>
         </div>
         <div className="bx-pipeline bx-reveal">
@@ -1533,6 +1867,191 @@ function Sparkline() {
       />
       <circle cx={last[0]} cy={last[1]} r="2.6" fill="var(--bx-mint)" />
     </svg>
+  );
+}
+
+/* ───────────────────── Live console (real screenshots) ─────────────────────
+ * Real captured screens from the /admin?demo=1 sandbox (sample data). Unlike
+ * the illustrative ProductShowcase below, these are the actual product — the
+ * strongest "show, don't tell" proof, and what every competitor's site leads
+ * with. Hero screen + a four-up gallery, each captioned with the job it does. */
+const LIVE_SHOTS: { src: string; cap: string; alt: string }[] = [
+  {
+    src: "/breathe/screens/console-resupply.jpg",
+    cap: "Resupply opportunities — who's due, overdue, and ready to refit",
+    alt: "Breathe admin: resupply opportunities worklist with overdue and at-risk flags",
+  },
+  {
+    src: "/breathe/screens/console-fleet.jpg",
+    cap: "Therapy fleet — compliance across ResMed, Philips & 3B",
+    alt: "Breathe admin: therapy fleet compliance dashboard across device clouds",
+  },
+  {
+    src: "/breathe/screens/console-denials.jpg",
+    cap: "Denials ranked by recoverable $ × win-probability",
+    alt: "Breathe admin: denials worklist ranked by recoverable dollars",
+  },
+  {
+    src: "/breathe/screens/console-conversations.jpg",
+    cap: "One inbox — SMS, email, voice & in-app",
+    alt: "Breathe admin: unified conversations inbox across every channel",
+  },
+];
+
+/* ───────────────────── Feature videos (short, per-capability clips) ─────────
+ * Short screen-recorded clips of individual features in motion — the
+ * complement to the LiveConsole stills. Click-to-play with preload="none"
+ * (each clip is <1MB but still only loads on demand), reusing the .bx-shotgrid
+ * card frame. Posters are the matching console screenshots. */
+const FEATURE_VIDEOS: {
+  src: string;
+  poster: string;
+  label: string;
+  cap: string;
+}[] = [
+  {
+    src: "/breathe/screens/feat-resupply.webm",
+    poster: "/breathe/screens/console-resupply.jpg",
+    label: "Resupply engine",
+    cap: "Filter the worklist by item — who's overdue, who's due, who needs a refit.",
+  },
+  {
+    src: "/breathe/screens/feat-copilot.webm",
+    poster: "/breathe/screens/feat-copilot-poster.jpg",
+    label: "AI admin copilot",
+    cap: "Ask how something works — it answers with the exact pages to use.",
+  },
+  {
+    src: "/breathe/screens/feat-denials.webm",
+    poster: "/breathe/screens/console-denials.jpg",
+    label: "AI denials worklist",
+    cap: "Denials ranked by recoverable dollars × win probability.",
+  },
+  {
+    src: "/breathe/screens/feat-fleet.webm",
+    poster: "/breathe/screens/console-fleet.jpg",
+    label: "Therapy monitoring",
+    cap: "Compliance, clinical flags & at-risk alerts across ResMed, Philips & 3B.",
+  },
+];
+
+function FeatureVideos() {
+  return (
+    <section className="bx-section" id="feature-videos">
+      <div className="bx-shell">
+        <div className="bx-section-head center bx-reveal">
+          <span className="bx-eyebrow">
+            <Video size={13} /> See it in action
+          </span>
+          <h2 className="bx-h2">Each piece, in motion</h2>
+          <p className="bx-lede">
+            Short clips from the live demo — the resupply engine, the AI
+            copilot, the denials worklist, and therapy monitoring doing their
+            thing. Click any to play; sample data throughout.
+          </p>
+        </div>
+        <div className="bx-shotgrid">
+          {FEATURE_VIDEOS.map((v) => (
+            <figure className="bx-shotcard bx-reveal" key={v.src}>
+              <div className="bx-shotcard-frame">
+                <span className="bx-shotcard-bar" aria-hidden="true">
+                  <i />
+                  <i />
+                  <i />
+                </span>
+                <video
+                  src={v.src}
+                  poster={v.poster}
+                  controls
+                  loop
+                  muted
+                  playsInline
+                  preload="none"
+                  aria-label={`${v.label} — ${v.cap}`}
+                />
+              </div>
+              <figcaption>
+                <b>{v.label}</b> — {v.cap}
+              </figcaption>
+            </figure>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function LiveConsole() {
+  return (
+    <section className="bx-section" id="console">
+      <div className="bx-shell">
+        <div className="bx-section-head center bx-reveal">
+          <span className="bx-eyebrow">
+            <Cpu size={13} /> The actual product
+          </span>
+          <h2 className="bx-h2">This is the console — not a mockup</h2>
+          <p className="bx-lede">
+            Watch the short tour, or click around the live demo yourself — the
+            same command center your team works in every day, on sample data.
+            Real screens below.
+          </p>
+        </div>
+
+        <div className="bx-app-frame bx-reveal">
+          <div className="bx-app">
+            <div className="bx-app-top">
+              <span className="bx-app-dots">
+                <i />
+                <i />
+                <i />
+              </span>
+              <span className="bx-app-url">
+                <Lock size={11} /> app.cmbreathe.com/admin
+              </span>
+              <span className="bx-app-live">
+                <span className="dot" /> Live
+              </span>
+            </div>
+            {/* Click-to-play product tour. preload="none" so the ~4.5MB clip
+                only loads when a visitor chooses to watch it; the home
+                screenshot stands in as the poster until then. */}
+            <video
+              className="bx-shot-img"
+              src="/breathe/screens/console-tour.webm"
+              poster="/breathe/screens/console-home.jpg"
+              controls
+              loop
+              muted
+              playsInline
+              preload="none"
+              aria-label="Product tour — a walkthrough of the Breathe admin console: resupply, therapy fleet, denials, inbox and orders"
+            />
+          </div>
+          <div className="bx-app-glow" aria-hidden="true" />
+        </div>
+        <p className="bx-app-caption">
+          A 40-second look at Breathe — the command center, resupply, therapy
+          monitoring, revenue cycle, and the AI workforce. Real product screens;
+          sample data.
+        </p>
+
+        <div className="bx-shotgrid">
+          {LIVE_SHOTS.map((s) => (
+            <figure className="bx-shotcard bx-reveal" key={s.src}>
+              <div className="bx-shotcard-frame">
+                <span className="bx-shotcard-bar" aria-hidden="true">
+                  <i />
+                  <i />
+                  <i />
+                </span>
+                <img src={s.src} alt={s.alt} loading="lazy" />
+              </div>
+              <figcaption>{s.cap}</figcaption>
+            </figure>
+          ))}
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -1903,8 +2422,9 @@ function AiBento() {
           </h2>
           <p className="bx-lede">
             Best-in-class models from Anthropic, OpenAI, and ElevenLabs are
-            wired into the product where each is strongest — and every one
-            degrades gracefully when a key is unset.
+            wired into the product where each is strongest — and if a provider
+            is ever unavailable, that feature steps aside quietly instead of
+            breaking your day.
           </p>
         </div>
         <div className="bx-bento">
@@ -2331,7 +2851,7 @@ function RevenueCycle() {
  * Office Ally RCM, therapy-cloud monitoring, the AI workforce, the virtual
  * mask fitter, storefront, telehealth, analytics), not aspiration.
  */
-type Capability = {
+export type Capability = {
   icon: React.ReactNode;
   title: string;
   summary: string;
@@ -2450,8 +2970,8 @@ function Capabilities() {
           <p className="bx-lede">
             Resupply, revenue cycle, clinical monitoring, patient communication,
             a branded storefront, telehealth, and an AI workforce — every
-            workflow on the same patient record. No exports, no swivel-chair, no
-            patients lost between systems.
+            workflow on the same patient record. No exports, no re-keying
+            between screens, no patients lost between systems.
           </p>
         </div>
         <div className="bx-caps">
@@ -2480,6 +3000,172 @@ function Capabilities() {
           <Link className="bx-btn bx-btn-primary" href="/breathe/product">
             Explore the platform <ArrowRight size={16} />
           </Link>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ───────────────── Unified therapy fleet (home teaser) ───────────────── */
+/*
+ * Homepage teaser for the dedicated /breathe/integrations story: the
+ * multi-portal status quo (ResMed AirView, Philips Care Orchestrator, 3B
+ * React Health) → one compiled fleet view → AI that flags risk early.
+ * Reuses the new logo-card grid and the price-cta; the deep version lives
+ * on the Integrations page.
+ */
+const DEVICE_CLOUDS: { mark: string; sub: string; tag: string }[] = [
+  { mark: "ResMed", sub: "AirView", tag: "Therapy cloud" },
+  { mark: "Philips", sub: "Care Orchestrator", tag: "Respironics" },
+  { mark: "3B Medical", sub: "React Health", tag: "Luna G3" },
+];
+
+function UnifiedFleet() {
+  return (
+    <section className="bx-section" id="unified-fleet">
+      <div className="bx-shell">
+        <div className="bx-section-head center bx-reveal">
+          <span className="bx-eyebrow">
+            <Network size={13} /> Connected therapy
+          </span>
+          <h2 className="bx-h2">Three device clouds. One fleet view.</h2>
+          <p className="bx-lede">
+            Your patients are scattered across ResMed AirView, Philips Care
+            Orchestrator, and 3B&apos;s React Health portal — three logins,
+            three exports, the same patient re-keyed three times. Breathe
+            compiles all of them onto one screen, then watches the whole fleet
+            for you and flags who&apos;s slipping <em>before</em> they fall out
+            of compliance.
+          </p>
+        </div>
+        <div className="bx-logogrid bx-reveal">
+          {DEVICE_CLOUDS.map((c) => (
+            <article className="bx-logocard" key={c.mark}>
+              <span className="bx-logocard-tag">{c.tag}</span>
+              <span className="bx-logocard-mark">{c.mark}</span>
+              <span className="bx-logocard-sub">{c.sub}</span>
+            </article>
+          ))}
+          <div className="bx-logogrid-arrow" aria-hidden="true">
+            <ArrowRight size={20} />
+          </div>
+          <article className="bx-logocard bx-logocard-unified">
+            <span className="bx-logocard-tag">Breathe</span>
+            <span className="bx-logocard-mark">One fleet</span>
+            <span className="bx-logocard-sub">every patient, every night</span>
+          </article>
+        </div>
+        <div className="bx-price-cta bx-reveal">
+          <span>
+            See the unified fleet view and the AI early-warning system in depth.
+          </span>
+          <Link className="bx-btn bx-btn-primary" href="/breathe/integrations">
+            Explore integrations <ArrowRight size={16} />
+          </Link>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ───────────────── Built in-house, not bolted on ───────────────── */
+/*
+ * The marquee differentiation band: legacy DME suites are decades-old cores
+ * with third-party add-ons stacked on top; Breathe is one native codebase.
+ * Grounded in real in-house workspace packages (resupply-auth, -telecom,
+ * -ai, RCM, the resupply engine, the voice agent). Used on the homepage and
+ * the product tour.
+ */
+const NATIVE_STACK: { icon: React.ReactNode; label: string; note: string }[] = [
+  {
+    icon: <KeyRound size={17} />,
+    label: "Authentication & MFA",
+    note: "argon2id, TOTP, device sessions",
+  },
+  {
+    icon: <MessageSquare size={17} />,
+    label: "Messaging",
+    note: "SMS, voice, email & fax in one inbox",
+  },
+  {
+    icon: <BrainCircuit size={17} />,
+    label: "AI orchestration",
+    note: "voice agent, chat, scrubbing, coaching",
+  },
+  {
+    icon: <Receipt size={17} />,
+    label: "Billing & revenue cycle",
+    note: "eligibility → claims → ERA posting",
+  },
+  {
+    icon: <RefreshCw size={17} />,
+    label: "Resupply engine",
+    note: "reasoning-driven reorder outreach",
+  },
+  {
+    icon: <Stethoscope size={17} />,
+    label: "Therapy monitoring",
+    note: "device-cloud adherence + early alerts",
+  },
+];
+
+const BOLTED_ON = [
+  "A separate billing / clearinghouse vendor",
+  "A separate telephony provider for calls & texts",
+  "A separate e-signature tool",
+  "An add-on “AI” module, licensed on top",
+  "Glue code, nightly exports & manual re-keying in between",
+];
+
+function BuiltInHouse() {
+  return (
+    <section className="bx-section" id="in-house">
+      <div className="bx-shell">
+        <div className="bx-section-head center bx-reveal">
+          <span className="bx-eyebrow">
+            <Cpu size={13} /> One codebase
+          </span>
+          <h2 className="bx-h2">Built in-house — not bolted on</h2>
+          <p className="bx-lede">
+            Legacy DME suites are decades-old cores with third-party add-ons
+            stacked on top. Breathe is one native platform — every module built
+            ground-up under one roof, on one patient record — so the
+            intelligence ships <em>in</em> the product instead of arriving as
+            the add-on you license separately.
+          </p>
+        </div>
+        <div className="bx-vs bx-reveal">
+          <article className="bx-vs-col bx-vs-legacy">
+            <header>
+              <span className="bx-vs-kicker">Legacy DME software</span>
+              <h3>A core — plus a stack of vendors</h3>
+            </header>
+            <ul className="bx-vs-list">
+              {BOLTED_ON.map((b) => (
+                <li key={b}>{b}</li>
+              ))}
+            </ul>
+          </article>
+          <div className="bx-vs-divider" aria-hidden="true">
+            <span>vs</span>
+          </div>
+          <article className="bx-vs-col bx-vs-native">
+            <header>
+              <span className="bx-vs-kicker">Breathe</span>
+              <h3>One native stack, one record</h3>
+            </header>
+            <ul className="bx-vs-native-list">
+              {NATIVE_STACK.map((n) => (
+                <li key={n.label}>
+                  <span className="bx-vs-ic">{n.icon}</span>
+                  <span className="bx-vs-text">
+                    <b>{n.label}</b>
+                    <i>{n.note}</i>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </article>
         </div>
       </div>
     </section>
@@ -2535,6 +3221,18 @@ const COMPARE_ROWS: CompareRow[] = [
     sub: "ResMed · Philips · 3B",
     breathe: "yes",
     cols: ["partial", "partial", "no"],
+  },
+  {
+    label: "Native telephony",
+    sub: "SMS · voice · fax, built-in",
+    breathe: "yes",
+    cols: ["no", "partial", "no"],
+  },
+  {
+    label: "One codebase, built in-house",
+    sub: "not acquired & bolted-on modules",
+    breathe: "yes",
+    cols: ["no", "no", "partial"],
   },
   {
     label: "Electronic prior authorization",
@@ -2595,7 +3293,7 @@ function CompareMark({ v }: { v: Cell }) {
   );
 }
 
-function Comparison() {
+export function Comparison() {
   return (
     <section className="bx-section" id="compare">
       <div className="bx-shell">
@@ -2693,7 +3391,7 @@ const DIFFERENCES: Capability[] = [
     summary: "Every workflow reads and writes the same data.",
     points: [
       "Intake → resupply → claims → clinical on one timeline",
-      "No exports, no swivel-chair, no patients lost between tools",
+      "No exports, no re-keying between screens, no patients lost between tools",
     ],
   },
   {
@@ -2707,7 +3405,7 @@ const DIFFERENCES: Capability[] = [
   },
 ];
 
-function WhyDifferent() {
+export function WhyDifferent() {
   return (
     <section className="bx-section">
       <div className="bx-shell">
@@ -3002,10 +3700,134 @@ function Roi() {
                 </div>
               ))}
             </div>
+
+            <RoiEmailCapture patients={patients} staff={staff} />
           </div>
         </div>
       </div>
     </section>
+  );
+}
+
+/**
+ * "Email me this estimate" — captures the lead at peak intent. Posts the two
+ * slider inputs (not the computed totals) to /api/roi-estimate, which
+ * recomputes the numbers server-side, saves the address to the marketing
+ * list, and emails the visitor the breakdown. Fail-soft: the backend always
+ * 200s; `emailed:false` (e.g. provider offline) still confirms we captured
+ * the request.
+ */
+function RoiEmailCapture({
+  patients,
+  staff,
+}: {
+  patients: number;
+  staff: number;
+}) {
+  const [email, setEmail] = useState("");
+  const [status, setStatus] = useState<
+    "idle" | "submitting" | "sent" | "captured" | "error"
+  >("idle");
+  const [err, setErr] = useState("");
+  const hpRef = useRef<HTMLInputElement>(null);
+
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const value = email.trim().toLowerCase();
+    if (!EMAIL_RE.test(value)) {
+      setErr("Please enter a valid email address.");
+      setStatus("error");
+      return;
+    }
+    setStatus("submitting");
+    setErr("");
+    try {
+      const resp = await fetch("/api/roi-estimate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: value,
+          patients,
+          staff,
+          website: hpRef.current?.value || undefined,
+        }),
+      });
+      if (!resp.ok) {
+        setErr("Something went wrong. Please try again.");
+        setStatus("error");
+        return;
+      }
+      const data = (await resp.json().catch(() => ({}))) as {
+        emailed?: boolean;
+      };
+      setStatus(data.emailed ? "sent" : "captured");
+    } catch {
+      setErr("Network error. Please try again.");
+      setStatus("error");
+    }
+  };
+
+  if (status === "sent" || status === "captured") {
+    return (
+      <div className="bx-roi-capture-done" role="status">
+        <Check size={16} />
+        {status === "sent"
+          ? "Sent — check your inbox for the full breakdown."
+          : "Thanks — you're on our list. Your estimate is shown above; we couldn't email a copy just now."}
+      </div>
+    );
+  }
+
+  return (
+    <form className="bx-roi-capture" onSubmit={onSubmit} noValidate>
+      <label className="bx-roi-capture-label" htmlFor="bx-roi-email">
+        Email me this estimate
+      </label>
+      <div className="bx-roi-capture-row">
+        {/* Honeypot — real users never see or fill this. */}
+        <input
+          ref={hpRef}
+          type="text"
+          name="website"
+          tabIndex={-1}
+          autoComplete="off"
+          aria-hidden="true"
+          className="bx-hp"
+        />
+        <input
+          id="bx-roi-email"
+          type="email"
+          inputMode="email"
+          autoComplete="email"
+          required
+          value={email}
+          onChange={(e) => {
+            setEmail(e.target.value);
+            if (status === "error") setStatus("idle");
+          }}
+          placeholder="you@yourdme.com"
+          aria-invalid={status === "error"}
+        />
+        <button
+          type="submit"
+          className="bx-btn bx-btn-primary bx-btn-sm"
+          disabled={status === "submitting"}
+        >
+          {status === "submitting" ? (
+            "Sending…"
+          ) : (
+            <>
+              Email it <ArrowRight size={15} />
+            </>
+          )}
+        </button>
+      </div>
+      {status === "error" ? (
+        <span className="bx-demoform-err" role="alert">
+          {err}
+        </span>
+      ) : null}
+    </form>
   );
 }
 
@@ -3019,6 +3841,10 @@ const PLANS: {
   name: string;
   price: string;
   cadence: string;
+  // Monthly list price in cents, used to derive the annual (2-months-free)
+  // option in the billing toggle. null for custom/contact tiers, which never
+  // show a derived annual number.
+  monthlyCents: number | null;
   setup: string;
   blurb: string;
   highlights: string[];
@@ -3028,6 +3854,7 @@ const PLANS: {
     name: "Launch",
     price: "$799",
     cadence: "/mo",
+    monthlyCents: 79900,
     setup: "+ $2,500 one-time onboarding",
     blurb: "Branded storefront and core resupply automation for a small DME.",
     highlights: [
@@ -3041,6 +3868,7 @@ const PLANS: {
     name: "Growth",
     price: "$1,899",
     cadence: "/mo",
+    monthlyCents: 189900,
     setup: "+ $5,000 one-time onboarding",
     blurb:
       "Full resupply operations, outreach, documents, and billing worklists.",
@@ -3056,6 +3884,7 @@ const PLANS: {
     name: "Scale",
     price: "$3,999",
     cadence: "/mo",
+    monthlyCents: 399900,
     setup: "+ $10,000 one-time onboarding",
     blurb:
       "Multi-location automation, analytics, and AI controls at higher volume.",
@@ -3070,6 +3899,7 @@ const PLANS: {
     name: "Enterprise",
     price: "Custom",
     cadence: "",
+    monthlyCents: null,
     setup: "Contracted volume + SLA",
     blurb:
       "For high-volume DME operations needing custom integration and support.",
@@ -3164,6 +3994,7 @@ function liveToPlanCards(plans: PublicPlan[]): PlanCard[] {
         ? "Contact us"
         : dollars(p.monthlyPriceCents),
     cadence: p.isCustom || p.monthlyPriceCents == null ? "" : "/mo",
+    monthlyCents: p.isCustom ? null : p.monthlyPriceCents,
     setup: p.isCustom
       ? "Contracted volume + SLA"
       : p.onboardingFeeCents != null && p.onboardingFeeCents > 0
@@ -3328,48 +4159,122 @@ function liveToAddonGroups(addons: PublicAddon[]): typeof ADDON_GROUPS {
   return order.map((group) => ({ group, items: byLabel.get(group)! }));
 }
 
+type BillingMode = "monthly" | "annual";
+
+// Annual billing = pay for 10 months, get 12 (two months free). Returns the
+// values a plan card shows in annual mode, or null when the tier has no
+// derivable price (Custom / Contact us) and should fall back to its monthly
+// string unchanged.
+function annualView(
+  monthlyCents: number | null,
+): { effMonthly: string; perYear: string; saved: string } | null {
+  if (monthlyCents == null || monthlyCents <= 0) return null;
+  const perYearCents = monthlyCents * 10;
+  return {
+    effMonthly: dollars(Math.round(perYearCents / 12)),
+    perYear: dollars(perYearCents),
+    saved: dollars(monthlyCents * 2),
+  };
+}
+
+/** Monthly ⇄ annual segmented control. Controlled by the parent so the
+ *  landing teaser and the full pricing page each own their own state. */
+function BillingToggle({
+  mode,
+  onChange,
+}: {
+  mode: BillingMode;
+  onChange: (m: BillingMode) => void;
+}) {
+  return (
+    <div
+      className="bx-billtoggle bx-reveal"
+      role="radiogroup"
+      aria-label="Billing period"
+    >
+      <button
+        type="button"
+        role="radio"
+        aria-checked={mode === "monthly"}
+        className={"bx-billtoggle-opt" + (mode === "monthly" ? " on" : "")}
+        onClick={() => onChange("monthly")}
+      >
+        Monthly
+      </button>
+      <button
+        type="button"
+        role="radio"
+        aria-checked={mode === "annual"}
+        className={"bx-billtoggle-opt" + (mode === "annual" ? " on" : "")}
+        onClick={() => onChange("annual")}
+      >
+        Annual
+        <span className="bx-billtoggle-save">2 months free</span>
+      </button>
+    </div>
+  );
+}
+
 /** The four subscription packages. Reused on the landing page + pricing page.
  *  `cards` defaults to the static PLANS but is fed live catalog data by the
- *  Pricing section when the public pricing endpoint responds. */
-function PricingPlans({ cards = PLANS }: { cards?: PlanCard[] }) {
+ *  Pricing section when the public pricing endpoint responds. `billing`
+ *  switches every priced card between its monthly rate and the annual
+ *  (2-months-free) equivalent. */
+function PricingPlans({
+  cards = PLANS,
+  billing = "monthly",
+}: {
+  cards?: PlanCard[];
+  billing?: BillingMode;
+}) {
   return (
     <div className="bx-plan-grid">
-      {cards.map((p) => (
-        <div
-          className={"bx-plan bx-reveal" + (p.featured ? " featured" : "")}
-          key={p.name}
-        >
-          {p.featured ? (
-            <span className="bx-plan-badge">Most popular</span>
-          ) : null}
-          <div className="bx-plan-name">{p.name}</div>
-          <div className="bx-plan-price">
-            <span className="bx-plan-amt">{p.price}</span>
-            {p.cadence ? (
-              <span className="bx-plan-cadence">{p.cadence}</span>
-            ) : null}
-          </div>
-          <div className="bx-plan-setup">{p.setup}</div>
-          <p className="bx-plan-blurb">{p.blurb}</p>
-          <ul className="bx-plan-list">
-            {p.highlights.map((h) => (
-              <li key={h}>
-                <Check size={15} />
-                {h}
-              </li>
-            ))}
-          </ul>
-          <Link
-            className={
-              "bx-btn bx-btn-sm " +
-              (p.featured ? "bx-btn-primary" : "bx-btn-ghost")
-            }
-            href="/breathe/signup"
+      {cards.map((p) => {
+        const annual = billing === "annual" ? annualView(p.monthlyCents) : null;
+        return (
+          <div
+            className={"bx-plan bx-reveal" + (p.featured ? " featured" : "")}
+            key={p.name}
           >
-            Create your account
-          </Link>
-        </div>
-      ))}
+            {p.featured ? (
+              <span className="bx-plan-badge">Most popular</span>
+            ) : null}
+            <div className="bx-plan-name">{p.name}</div>
+            <div className="bx-plan-price">
+              <span className="bx-plan-amt">
+                {annual ? annual.effMonthly : p.price}
+              </span>
+              {p.cadence ? (
+                <span className="bx-plan-cadence">{p.cadence}</span>
+              ) : null}
+            </div>
+            {annual ? (
+              <div className="bx-plan-annual">
+                {annual.perYear}/yr billed annually · <b>save {annual.saved}</b>
+              </div>
+            ) : null}
+            <div className="bx-plan-setup">{p.setup}</div>
+            <p className="bx-plan-blurb">{p.blurb}</p>
+            <ul className="bx-plan-list">
+              {p.highlights.map((h) => (
+                <li key={h}>
+                  <Check size={15} />
+                  {h}
+                </li>
+              ))}
+            </ul>
+            <Link
+              className={
+                "bx-btn bx-btn-sm " +
+                (p.featured ? "bx-btn-primary" : "bx-btn-ghost")
+              }
+              href="/breathe/signup"
+            >
+              Create your account
+            </Link>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -3454,6 +4359,7 @@ function PricingAddons({
 function Pricing() {
   const { open: openDemoGate } = useDemoGate();
   const live = usePublicPricing();
+  const [billing, setBilling] = useState<BillingMode>("monthly");
   const cards = live ? liveToPlanCards(live.plans) : PLANS;
   const groups =
     live && live.addons.length > 0
@@ -3470,14 +4376,15 @@ function Pricing() {
             Pick a package, <em>add only what you need</em>
           </h2>
           <p className="bx-lede">
-            Transparent subscription tiers sized to your patient base —
-            month-to-month, with onboarding and migration included. Upload a CSV
-            of your patients and you&apos;re live on day one, and your data
-            stays yours — always exportable (back out to PacWare too). License
-            premium modules à la carte.
+            Transparent subscription tiers sized to your patient base — monthly
+            or annual (two months free), with onboarding and migration included.
+            Upload a CSV of your patients and you&apos;re live on day one, and
+            your data stays yours — always exportable (back out to PacWare too).
+            License premium modules à la carte.
           </p>
         </div>
-        <PricingPlans cards={cards} />
+        <BillingToggle mode={billing} onChange={setBilling} />
+        <PricingPlans cards={cards} billing={billing} />
         <PricingAddons groups={groups} />
         <div className="bx-price-cta bx-reveal">
           <span>Not sure which package fits?</span>
@@ -3497,6 +4404,7 @@ function Pricing() {
 /* Landing-page pricing — packages up front with an add-ons teaser; the full
    catalog lives on /breathe/pricing. */
 function PricingHome() {
+  const [billing, setBilling] = useState<BillingMode>("monthly");
   return (
     <section className="bx-section">
       <div className="bx-shell">
@@ -3508,13 +4416,14 @@ function PricingHome() {
             One platform, <em>packaged for your size</em>
           </h2>
           <p className="bx-lede">
-            Subscription tiers sized to your patient base — month-to-month, with
-            onboarding and migration included. Upload a CSV of your patients and
-            you&apos;re live on day one. Add premium modules only when you need
-            them.
+            Subscription tiers sized to your patient base — monthly or annual
+            (two months free), with onboarding and migration included. Upload a
+            CSV of your patients and you&apos;re live on day one. Add premium
+            modules only when you need them.
           </p>
         </div>
-        <PricingPlans />
+        <BillingToggle mode={billing} onChange={setBilling} />
+        <PricingPlans billing={billing} />
         <div className="bx-addons-teaser bx-reveal">
           <Plug size={15} />
           <span>
@@ -3593,6 +4502,222 @@ function Security() {
   );
 }
 
+/* ───────────── Shared capability card + deepening sections ───────────── */
+/*
+ * Small reusable card for the .bx-caps grid (Capability shape). The
+ * homepage Capabilities / Compare WhyDifferent bands inline this same
+ * markup; the deepening sections below render through this helper.
+ */
+export function CapCard({ c }: { c: Capability }) {
+  return (
+    <article className={`bx-cap bx-reveal${c.gold ? " gold" : ""}`}>
+      <div className="bx-cap-head">
+        <span className="bx-cap-ic">{c.icon}</span>
+        <div>
+          <h3>{c.title}</h3>
+          <p className="bx-cap-summary">{c.summary}</p>
+        </div>
+      </div>
+      <ul className="bx-cap-list">
+        {c.points.map((p) => (
+          <li key={p}>{p}</li>
+        ))}
+      </ul>
+    </article>
+  );
+}
+
+/* Security page — the concrete control list a compliance review reads. */
+const SECURITY_POSTURE: Capability[] = [
+  {
+    icon: <KeyRound size={20} />,
+    title: "Authentication, in-house",
+    summary: "Identity is ours — no third-party SSO vendor in the loop.",
+    points: [
+      "argon2id password hashing",
+      "TOTP multi-factor with recovery codes",
+      "DB-backed sessions + CSRF protection",
+      "Rate-limited auth endpoints",
+    ],
+  },
+  {
+    icon: <Database size={20} />,
+    title: "Data handling",
+    summary: "PHI minimized by architecture, not policy alone.",
+    points: [
+      "Order payloads & images kept out of logs",
+      "Mask imaging on-device — frames never transmitted",
+      "Per-object storage access control",
+      "Your data exports on demand — no lock-in",
+    ],
+    gold: true,
+  },
+  {
+    icon: <Server size={20} />,
+    title: "Access & isolation",
+    summary: "Least-privilege, multi-tenant by design.",
+    points: [
+      "Permission-gated admin routes, every mutation",
+      "Per-tenant brand, sending domain & data separation",
+      "Strict-CSP, same-origin delivery — no trackers",
+      "HIPAA-eligible vendors end to end",
+    ],
+  },
+];
+
+function SecurityPosture() {
+  return (
+    <section className="bx-section">
+      <div className="bx-shell">
+        <div className="bx-section-head center bx-reveal">
+          <span className="bx-eyebrow">
+            <ShieldCheck size={13} /> The control list
+          </span>
+          <h2 className="bx-h2">
+            The specifics your compliance team will ask for
+          </h2>
+          <p className="bx-lede">
+            Not a trust-us badge — the concrete controls, grouped the way a
+            security review actually reads them.
+          </p>
+        </div>
+        <div className="bx-caps bx-caps-3">
+          {SECURITY_POSTURE.map((c) => (
+            <CapCard c={c} key={c.title} />
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ROI page — what each lever in the calculator actually models. */
+const ROI_LEVERS: Capability[] = [
+  {
+    icon: <Activity size={20} />,
+    title: "Staff time recovered",
+    summary: "≈ 9 hrs / staff / week automated, at a $34 loaded hourly cost.",
+    points: [
+      "Routine resupply & status calls handled by the AI voice agent",
+      "Eligibility, scrubbing, submission & posting run end to end",
+      "Adherence worklists replace manual report-pulling",
+    ],
+  },
+  {
+    icon: <Receipt size={20} />,
+    title: "Revenue-cycle recovery",
+    summary: "≈ $16 / active patient / yr from cleaner claims.",
+    points: [
+      "Higher first-pass acceptance on AI-scrubbed 837Ps",
+      "Denials worked, ranked by recoverable dollars",
+      "Fewer timely-filing write-offs",
+    ],
+    gold: true,
+  },
+  {
+    icon: <RefreshCw size={20} />,
+    title: "Resupply growth",
+    summary: "≈ $21 / active patient / yr in incremental margin.",
+    points: [
+      "Eligibility-aware reorder outreach across SMS, email & voice",
+      "One-tap signed reorders — no portal friction",
+      "Replacement windows that used to slip get captured",
+    ],
+  },
+  {
+    icon: <CircleDollarSign size={20} />,
+    title: "Tools retired",
+    summary: "≈ $1,500 / seat / yr in point-tool licenses you drop.",
+    points: [
+      "Resupply, RCM, CRM, telehealth, e-sign & IVR in one platform",
+      "No per-module upsells or integration glue to maintain",
+      "Your data exports back out on demand",
+    ],
+  },
+];
+
+function RoiAssumptions() {
+  return (
+    <section className="bx-section">
+      <div className="bx-shell">
+        <div className="bx-section-head center bx-reveal">
+          <span className="bx-eyebrow">
+            <Gauge size={13} /> How the model works
+          </span>
+          <h2 className="bx-h2">Every number, traced to a lever</h2>
+          <p className="bx-lede">
+            The estimate is directional, not a quote — but each coefficient is a
+            stated, conservative assumption you can see and challenge.
+          </p>
+        </div>
+        <div className="bx-caps">
+          {ROI_LEVERS.map((c) => (
+            <CapCard c={c} key={c.title} />
+          ))}
+        </div>
+        <div className="bx-price-cta bx-reveal">
+          <span>
+            New to this category? See what an all-in-one DME platform changes.
+          </span>
+          <Link className="bx-btn bx-btn-ghost" href="/breathe/why">
+            DME Platform 101 <ArrowRight size={16} />
+          </Link>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* Pricing page — the cost questions buyers ask before they switch. */
+const PRICING_FAQ: { q: string; a: React.ReactNode }[] = [
+  {
+    q: "Is it really one price, or per-module like legacy suites?",
+    a: "One platform price covers the core — resupply, revenue cycle, patient communications, clinical monitoring, the storefront, and analytics. There are no per-module unlocks to discover later. A short list of à la carte add-ons (the AI voice agent, advanced billing automation, extra seats and locations) is published in the open, not negotiated line by line.",
+  },
+  {
+    q: "Is there a long-term contract?",
+    a: "No multi-year lock-in. Pricing is transparent and month-to-month, and your data is yours — exportable on demand, including back out to PacWare. The goal is to keep earning the relationship, not to trap it.",
+  },
+  {
+    q: "How fast can we be live?",
+    a: "Day one. Upload a CSV of your patients and your team starts the same day; the deeper payer, clearinghouse, and device-cloud connections come online over the following weeks, not quarters. The roster import is a fill-only sync, so there's no risky big-bang cutover.",
+  },
+  {
+    q: "What does it replace?",
+    a: "For most operators, the platform retires a stack of point tools — separate resupply software, an RCM/billing suite, a patient CRM, a telehealth app, a document/e-sign tool, therapy dashboards, and a call-center IVR — into one login. The ROI calculator models that consolidation per seat.",
+  },
+];
+
+function PricingFaq() {
+  return (
+    <section className="bx-section">
+      <div className="bx-shell bx-faq-shell">
+        <div className="bx-section-head bx-reveal">
+          <span className="bx-eyebrow">
+            <CircleDollarSign size={13} /> Pricing questions
+          </span>
+          <h2 className="bx-h2">Straight answers on cost</h2>
+          <p className="bx-lede">
+            How it&apos;s priced, what it replaces, and why there&apos;s no
+            per-module surprise waiting after you sign.
+          </p>
+        </div>
+        <div className="bx-faq bx-reveal">
+          {PRICING_FAQ.map((f) => (
+            <details className="bx-faq-item" key={f.q}>
+              <summary>
+                <span>{f.q}</span>
+                <ChevronDown className="bx-faq-chev" size={18} />
+              </summary>
+              <div className="bx-faq-a">{f.a}</div>
+            </details>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 /* ───────────────────────── Onboarding / migration ───────────────────────── */
 const STEPS: {
   icon: React.ReactNode;
@@ -3610,7 +4735,7 @@ const STEPS: {
     icon: <Plug size={20} />,
     n: "02",
     title: "Configure & connect",
-    body: "Wire up your payers, clearinghouse, brand, From address, and reminder cadences. Turn AI surfaces on one feature flag at a time, at your pace.",
+    body: "Wire up your payers, clearinghouse, branding, sender email address, and reminder schedules. Switch on each AI feature one at a time, at your own pace.",
   },
   {
     icon: <Zap size={20} />,
@@ -3620,7 +4745,7 @@ const STEPS: {
   },
 ];
 
-function Onboarding() {
+export function Onboarding() {
   return (
     <section className="bx-section">
       <div className="bx-shell">
@@ -3739,8 +4864,158 @@ function Faq() {
   );
 }
 
+/* ───────────────────────── Who it's for ─────────────────────────
+ * Business-profile self-qualification ("is this me?"), complementing the
+ * role-based personas on /breathe/why. Reuses the exported CapCard +
+ * .bx-caps grid, so no new markup or CSS. Capability-based, not customer
+ * claims — honest for a pre-launch platform. */
+const AUDIENCES: Capability[] = [
+  {
+    icon: <Store size={20} />,
+    title: "Independent CPAP & DME providers",
+    summary: "Run the whole operation without adding headcount.",
+    points: [
+      "Resupply reminders and the AI voice agent handle the busywork",
+      "Claims scrubbed and submitted without a billing department",
+      "One login instead of the seven point tools you pay for today",
+    ],
+  },
+  {
+    icon: <Network size={20} />,
+    title: "Growing & multi-site DMEs",
+    summary: "Scale the panel, not the payroll.",
+    points: [
+      "One patient record and one workflow across every location",
+      "Live margin, DSO, and growth dashboards across the business",
+      "Stand up a new site in weeks with a CSV import, not a quarter",
+    ],
+  },
+  {
+    icon: <Stethoscope size={20} />,
+    title: "Sleep & CPAP-focused suppliers",
+    summary: "Keep patients on therapy and supplies on schedule.",
+    points: [
+      "ResMed, Philips & 3B adherence pulled nightly into one worklist",
+      "Eligibility-aware resupply on every patient's reorder window",
+      "Browser mask-fitter — images never leave the patient's device",
+    ],
+    gold: true,
+  },
+  {
+    icon: <Receipt size={20} />,
+    title: "Billing-led / RCM operations",
+    summary: "Get paid the first time, faster.",
+    points: [
+      "AI scrubs every 837P clean, then auto-submits or exports it",
+      "Denials ranked by recoverable dollars × win probability",
+      "Eligibility (270/271), prior auth, and ERA posting automated",
+    ],
+  },
+];
+
+function Audiences() {
+  return (
+    <section className="bx-section" id="who-its-for">
+      <div className="bx-shell">
+        <div className="bx-section-head center bx-reveal">
+          <span className="bx-eyebrow">
+            <Users size={13} /> Who it&apos;s for
+          </span>
+          <h2 className="bx-h2">Built for the people who run resupply</h2>
+          <p className="bx-lede">
+            Whether you&apos;re a one-location shop or a multi-site group,
+            Breathe runs the resupply, billing, and therapy monitoring on one
+            record — see where you fit.
+          </p>
+        </div>
+        <div className="bx-caps">
+          {AUDIENCES.map((c) => (
+            <CapCard c={c} key={c.title} />
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ───────────────────────── Founding partner ─────────────────────────
+ * Turns "pre-launch" into the pitch instead of hiding it. CareMetric
+ * Breathe is newly launched, so rather than fake logos or testimonials we
+ * make an honest early-access offer: a small cohort of founding DME
+ * partners who lock in founding pricing, get a direct line to the team,
+ * and help shape the roadmap. Reuses the .bx-pillar grid + .bx-cta button
+ * styles, so it needs only a thin wrapper of new CSS. */
+const FOUNDING_PERKS: { icon: React.ReactNode; title: string; body: string }[] =
+  [
+    {
+      icon: <CircleDollarSign size={20} />,
+      title: "Founding pricing, locked in",
+      body: "Lock today's rate for the life of your account — it never goes up as we add capabilities and the list price does.",
+    },
+    {
+      icon: <GitBranch size={20} />,
+      title: "Shape the roadmap",
+      body: "A direct line to the people building Breathe. The features you need get prioritized because you asked for them.",
+    },
+    {
+      icon: <Headphones size={20} />,
+      title: "White-glove migration",
+      body: "We sit with you through the CSV import, your first resupply run, and your first claim batch — hands-on, not a ticket queue.",
+    },
+  ];
+
+function FoundingPartner() {
+  const { open: openDemoGate } = useDemoGate();
+  return (
+    <section className="bx-section bx-founding-section" id="founding">
+      <div className="bx-shell">
+        <div className="bx-founding bx-reveal">
+          <div className="bx-section-head center">
+            <span className="bx-eyebrow">
+              <Sparkles size={13} /> Early access
+            </span>
+            <h2 className="bx-h2">Become a founding DME partner</h2>
+            <p className="bx-lede">
+              Breathe is newly launched, and we&apos;re onboarding a small group
+              of founding providers by hand. Get in early and you don&apos;t
+              just use the platform — you help shape it, at a price that never
+              moves.
+            </p>
+          </div>
+          <div className="bx-founding-grid">
+            {FOUNDING_PERKS.map((p) => (
+              <article className="bx-founding-perk" key={p.title}>
+                <span className="bx-founding-ic">{p.icon}</span>
+                <h3>{p.title}</h3>
+                <p>{p.body}</p>
+              </article>
+            ))}
+          </div>
+          <div className="bx-founding-cta">
+            <Link className="bx-btn bx-btn-gold" href="/breathe/signup">
+              Claim a founding spot <ArrowRight size={17} />
+            </Link>
+            <button
+              type="button"
+              className="bx-btn bx-btn-ghost"
+              onClick={() => openDemoGate("breathe-founding")}
+            >
+              See it first
+            </button>
+          </div>
+          <p className="bx-founding-fine">
+            No credit card to start · founding terms confirmed in writing before
+            you commit
+          </p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 /* ───────────────────────── Closing CTA ───────────────────────── */
-function ClosingCta() {
+export function ClosingCta() {
+  const { openContact } = useDemoGate();
   return (
     <section className="bx-section" id="demo">
       <div className="bx-shell">
@@ -3762,6 +5037,13 @@ function ClosingCta() {
             <Link className="bx-btn bx-btn-ghost" href="/breathe/product">
               Explore the platform
             </Link>
+            <button
+              type="button"
+              className="bx-btn bx-btn-ghost"
+              onClick={() => openContact("breathe-cta")}
+            >
+              Contact support
+            </button>
           </div>
           <div className="bx-cta-meta">
             <span>
@@ -3798,12 +5080,30 @@ function Footer() {
           infrastructure; patient imagery is processed on-device and never
           transmitted.
         </p>
+        <div className="bx-footer-contact">
+          <span className="bx-footer-contact-label">
+            <Headphones size={13} aria-hidden="true" />
+            Customer &amp; tech support
+          </span>
+          <a className="bx-footer-contact-link" href="tel:+18775212890">
+            <PhoneCall size={13} aria-hidden="true" />
+            (877) 521-2890
+            <span className="bx-footer-contact-toll">toll-free</span>
+          </a>
+          <a
+            className="bx-footer-contact-link"
+            href="mailto:info@cmbreathe.com"
+          >
+            <Mail size={13} aria-hidden="true" />
+            info@cmbreathe.com
+          </a>
+        </div>
         <div className="bx-brand-sub">
           © {new Date().getFullYear()} CareMetric.ai
         </div>
       </div>
       <nav className="bx-shell bx-footer-nav" aria-label="Breathe pages">
-        {NAV_LINKS.map((l) => (
+        {FOOTER_LINKS.map((l) => (
           <Link className="bx-footer-link" href={l.href} key={l.href}>
             {l.label}
           </Link>
@@ -3824,25 +5124,6 @@ function Footer() {
 }
 
 /* ───────────────────────── Helpers ───────────────────────── */
-
-/**
- * Marks this page `noindex` while it is mounted. pennpaps.com is
- * reserved for the first tenant (Penn Home Medical Supply); Breathe is
- * a separate-brand CareMetric.ai marketing surface, so it must not be
- * indexed under the tenant domain. The tag is removed on unmount so it
- * never leaks onto the tenant's own pages during SPA navigation.
- */
-function useNoIndex() {
-  useEffect(() => {
-    const meta = document.createElement("meta");
-    meta.name = "robots";
-    meta.content = "noindex, follow";
-    document.head.appendChild(meta);
-    return () => {
-      meta.remove();
-    };
-  }, []);
-}
 
 /**
  * True when the user has asked the OS to minimize non-essential motion.

@@ -80,6 +80,11 @@ const upsertBody = z
     // `realtimePasswordSet`). On PATCH, a blank/omitted value leaves the
     // existing password unchanged.
     realtimePassword: z.string().max(500).nullable().optional(),
+    // Insurance discovery connection. Reuses the real-time Authorization key
+    // (same Office Ally EDI account); only the endpoint URL + on/off toggle
+    // are configured here.
+    discoveryEnabled: z.boolean().default(false),
+    discoveryUrl: z.string().trim().url().max(500).nullable().optional(),
   })
   .strict();
 const patchBody = upsertBody.partial();
@@ -114,6 +119,8 @@ function rowToApi(r: Row) {
     realtimeTimeoutMs: r.realtime_timeout_ms,
     // Never echo the stored password — only whether one is set.
     realtimePasswordSet: Boolean(r.realtime_password),
+    discoveryEnabled: r.discovery_enabled,
+    discoveryUrl: r.discovery_url,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -220,6 +227,8 @@ router.post(
         realtime_receiver_id: b.realtimeReceiverId ?? null,
         realtime_timeout_ms: b.realtimeTimeoutMs ?? null,
         realtime_password: b.realtimePassword?.trim() || null,
+        discovery_enabled: b.discoveryEnabled,
+        discovery_url: b.discoveryUrl ?? null,
       })
       .select("id")
       .single();
@@ -323,6 +332,9 @@ router.patch(
     // (so a stray "   " can't clobber a real credential).
     if (b.realtimePassword?.trim())
       update.realtime_password = b.realtimePassword.trim();
+    if (b.discoveryEnabled !== undefined)
+      update.discovery_enabled = b.discoveryEnabled;
+    if (b.discoveryUrl !== undefined) update.discovery_url = b.discoveryUrl;
     const orgId = req.orgId;
     if (!orgId) {
       res.status(500).json({ error: "tenant_context_missing" });

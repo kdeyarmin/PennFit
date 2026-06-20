@@ -20,6 +20,13 @@ export interface FormDescriptor {
   version: string;
   title: string;
   body: string;
+  /**
+   * Operator-facing compliance caveat surfaced in the admin form list
+   * (never shown to patients). Set when a form is a convenience/reference
+   * acknowledgement that must NOT be relied on for a regulated purpose —
+   * e.g. the ABN here mirrors the notice but is not the official CMS-R-131.
+   */
+  complianceNote?: string;
 }
 
 export const INTAKE_FORMS: Record<FormKind, FormDescriptor> = {
@@ -50,6 +57,12 @@ export const INTAKE_FORMS: Record<FormKind, FormDescriptor> = {
       "Medicare may not pay for items it determines are not " +
       "reasonable and necessary. You may be responsible for payment " +
       "if Medicare denies the claim.",
+    complianceNote:
+      "Not valid for Medicare liability transfer. This is a plain-language " +
+      "acknowledgement, not the official OMB-approved CMS-R-131 form. To " +
+      "shift financial liability to a Medicare beneficiary you must issue " +
+      "the current official CMS-R-131 (cms.gov, March 2026 revision) BEFORE " +
+      "delivery. Use this only as a reference or for non-Medicare payers.",
   },
   financial_responsibility: {
     kind: "financial_responsibility",

@@ -13,6 +13,7 @@ const {
   hashPassword,
   issueToken,
   renderVerifyEmail,
+  renderPasswordResetEmail,
   writeUserChosenPassword,
   resolveSeedOrgId,
   getOrgScopedClient,
@@ -89,6 +90,11 @@ const {
       html: "<p>verify</p>",
       text: "verify",
     })),
+    renderPasswordResetEmail: vi.fn(() => ({
+      subject: "Set your password",
+      html: "<p>set</p>",
+      text: "set",
+    })),
     writeUserChosenPassword: vi.fn(async () => {}),
     resolveSeedOrgId: vi.fn(async () => "seed-org"),
     getOrgScopedClient: vi.fn((_orgId: string) => ({
@@ -110,6 +116,7 @@ vi.mock("@workspace/resupply-auth", () => ({
   hashPassword,
   issueToken,
   renderVerifyEmail,
+  renderPasswordResetEmail,
   writeUserChosenPassword,
   // Real-ish normalize: trims/lowercases and rejects anything without "@".
   normalizeEmail: (e: string) => {
@@ -225,6 +232,26 @@ describe("createSelfServeTenant", () => {
     expect(audit).toHaveBeenCalledWith(
       expect.objectContaining({ action: "auth.tenant_self_signup" }),
     );
+  });
+
+  it("emails a SET-PASSWORD link (not a verify link) when sendSetPasswordLink is set", async () => {
+    const res = await createSelfServeTenant(
+      baseInput({ sendSetPasswordLink: true }),
+    );
+    expect(res).toMatchObject({ ok: true });
+
+    // Voice signup: the caller never spoke a password, so they get a
+    // password_reset token + set-password email (which also verifies the
+    // address) — NOT the default verify-only email.
+    expect(insertEmailToken).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: "new-user-id",
+        purpose: "password_reset",
+      }),
+    );
+    expect(renderPasswordResetEmail).toHaveBeenCalledTimes(1);
+    expect(renderVerifyEmail).not.toHaveBeenCalled();
+    expect(emailSender).toHaveBeenCalledTimes(1);
   });
 
   it("falls back to the auth-deps base url when no/invalid origin is given", async () => {

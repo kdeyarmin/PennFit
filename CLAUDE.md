@@ -115,7 +115,7 @@ pnpm install                           # regenerates from package.json
 git add pnpm-lock.yaml
 ```
 
-**Do NOT hand-edit `lib/resupply-db/drizzle/meta/_journal.json`.** Despite
+**Do NOT hand-edit `lib/resupply-db/migrations/meta/_journal.json`.** Despite
 the older guidance to "splice" it, that file is **frozen** at 52 entries
 and is no longer appended to (new migrations are not journaled — there are
 180+ `.sql` files but only 52 journal entries). It therefore does not
@@ -523,23 +523,25 @@ Wiring & conventions:
   exported from `@workspace/resupply-db` as
   `getSupabaseServiceRoleClient()`; every route, worker, and helper
   reads/writes through PostgREST via that client. **Supabase is the
-  only data path** — `drizzle-orm`, `drizzle-kit`, `drizzle-zod`,
-  `drizzle.config.ts`, the `src/schema/**` TS schema directory, and
-  the structural `check-drizzle-drift.sh` CI check have all been
-  retired. The SQL files in `lib/resupply-db/drizzle/*.sql` are the
+  only data path** — there is no ORM. Any `drizzle-orm`, `drizzle-kit`,
+  `drizzle-zod`, `drizzle.config.ts`, the `src/schema/**` TS schema
+  directory, and the structural ORM schema-drift CI check have all been
+  retired. The SQL files in `lib/resupply-db/migrations/*.sql` are the
   source of truth for migration history; `lib/resupply-db/scripts/migrate.mjs`
   applies them via raw `pg`. New migrations are hand-written SQL
-  (or generated via Supabase's own tooling). The directory name and
-  the on-DB `drizzle.resupply_migrations` history schema are kept
-  unchanged so production's applied-migration rows continue to gate
-  new deploys cleanly; a rename is tracked as a separate operational
-  change. `getDbPool` is still called by `scripts/migrate.mjs` and a
-  small number of legacy worker paths (e.g.
+  (or generated via Supabase's own tooling). The on-DB history schema
+  is `migrations.resupply_migrations`; databases provisioned before the
+  rename carry the ledger under the legacy `drizzle` schema, which
+  `migrate.mjs` renames in place on first run (metadata-only, preserving
+  every applied-migration row) so production's history continues to gate
+  new deploys cleanly without a replay. `getDbPool` is still called by
+  `scripts/migrate.mjs` and a small number of legacy worker paths (e.g.
   `artifacts/resupply-api/src/worker/jobs/bulk-campaign-tick.ts`).
   The "no direct `pg` outside `lib/resupply-db`" invariant is enforced
   by Rule 7 in `scripts/check-resupply-architecture.sh`; the same
   script also forbids `drizzle-orm` imports in `lib/resupply-domain`
-  (Rule 2). The remaining schema-drift pre-commit guard is
+  (Rule 2) so an ORM cannot drift back in. The remaining schema-drift
+  pre-commit guard is
   `scripts/check-resupply-migration-prefix.sh` (the historical
   co-change pair-check was retired with the TS schema directory).
 - **Auth:** in-house, `argon2id` + DB-backed `pf_session` cookies

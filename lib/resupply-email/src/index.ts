@@ -41,6 +41,17 @@ export {
 } from "./retry";
 
 export {
+  renderBrandedEmail,
+  brandedButton,
+  paragraph,
+  textParagraph,
+  BREATHE_COLORS,
+  PLATFORM_BRAND_NAME,
+  type BrandedEmailOptions,
+  type BrandedEmailButton,
+} from "./layout";
+
+export {
   parseSendgridEventBatch,
   sendgridEventSchema,
   sendgridEventBatchSchema,

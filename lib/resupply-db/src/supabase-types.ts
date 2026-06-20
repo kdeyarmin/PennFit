@@ -100,6 +100,10 @@ export interface Database {
           created_at: string;
           updated_at: string;
           unsubscribed_at: string | null;
+          // Demo-lead nurture drip state (migration 0407). 0 = nothing
+          // sent, 1 = welcome sent, 2 = follow-up 1 sent, 3 = complete.
+          demo_drip_stage: number;
+          demo_drip_last_sent_at: string | null;
         };
         Insert: Partial<
           Database["public"]["Tables"]["newsletter_subscribers"]["Row"]
@@ -328,6 +332,34 @@ export interface Database {
         >;
         Relationships: [];
       };
+      // Migration 0408: LCD medical-necessity edit catalog — which
+      // ICD-10 codes support a billed HCPCS (Medicare PAP baseline).
+      hcpcs_coverage_diagnoses: {
+        Row: {
+          id: string;
+          hcpcs_code: string;
+          icd10_code: string;
+          description: string | null;
+          policy: string;
+          active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          hcpcs_code: string;
+          icd10_code: string;
+          description?: string | null;
+          policy?: string;
+          active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<
+          Database["resupply"]["Tables"]["hcpcs_coverage_diagnoses"]["Insert"]
+        >;
+        Relationships: [];
+      };
       // Migration 0171: SKU-prefix → HCPCS bridge. Maps the
       // uppercase-dashed supply-family prefix the resupply engine
       // matches on (MASK, CUSHION, ...) to a representative HCPCS.
@@ -373,6 +405,34 @@ export interface Database {
       };
       // the per-transaction cost snapshots + every owner-facing margin
       // surface (computeMargin / aggregateMargin in resupply-domain).
+      product_ship_specs: {
+        Row: {
+          org_id: string | null;
+          product_id: string;
+          weight_oz: number;
+          length_in: number | null;
+          width_in: number | null;
+          height_in: number | null;
+          label: string | null;
+          updated_at: string;
+          created_at: string;
+        };
+        Insert: {
+          org_id?: string;
+          product_id: string;
+          weight_oz: number;
+          length_in?: number | null;
+          width_in?: number | null;
+          height_in?: number | null;
+          label?: string | null;
+          updated_at?: string;
+          created_at?: string;
+        };
+        Update: Partial<
+          Database["resupply"]["Tables"]["product_ship_specs"]["Insert"]
+        >;
+        Relationships: [];
+      };
       product_costs: {
         Row: {
           org_id: string | null;
@@ -879,6 +939,16 @@ export interface Database {
           birthday_email_year_sent: number | null;
           sleep_anniversary_year_sent: number | null;
           timezone: string;
+          /** Phone line type (migration 0398). NULL = never classified. */
+          phone_line_type: "mobile" | "landline" | "voip" | "unknown" | null;
+          phone_line_type_source: "lookup" | "manual" | null;
+          phone_line_type_checked_at: string | null;
+          /** SMS marketing consent (migration 0401). false = no consent on file (default, TCPA opt-in). */
+          sms_marketing_consent: boolean;
+          /** When sms_marketing_consent was last changed. NULL when never explicitly set. */
+          sms_marketing_consent_at: string | null;
+          /** Who recorded the consent. NULL when never explicitly set. */
+          sms_marketing_consent_source: "staff" | "portal" | null;
           created_at: string;
           updated_at: string;
         };
@@ -3086,6 +3156,41 @@ export interface Database {
         >;
         Relationships: [];
       };
+      refill_confirmations: {
+        Row: {
+          id: string;
+          org_id: string | null;
+          patient_id: string;
+          episode_id: string;
+          prescription_id: string | null;
+          item_sku: string | null;
+          hcpcs_code: string | null;
+          channel: "sms" | "email" | "voice" | "admin";
+          affirm_continued_use: boolean;
+          affirm_supply_low: boolean;
+          attestation_text: string;
+          requested_by:
+            | "self"
+            | "spouse"
+            | "guardian"
+            | "power_of_attorney"
+            | "caregiver"
+            | "authorized_rep"
+            | "other";
+          expected_depletion_on: string | null;
+          confirmer_ip: string | null;
+          confirmer_user_agent: string | null;
+          confirmed_at: string;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["refill_confirmations"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["refill_confirmations"]["Row"]
+        >;
+        Relationships: [];
+      };
       manual_documents: {
         Row: {
           org_id: string | null;
@@ -3630,6 +3735,8 @@ export interface Database {
           realtime_receiver_id: string | null;
           realtime_timeout_ms: number | null;
           realtime_password: string | null;
+          discovery_enabled: boolean;
+          discovery_url: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -4237,9 +4344,15 @@ export interface Database {
             | "all_active_shop_customers"
             | "all_active_patients"
             | "by_patient_payer"
+            | "by_therapy_cohort"
+            | "patient_segment"
             | "manual_list";
           audience_payer: string | null;
-          channel: "email";
+          /** Composable patient-segment spec; set only when
+           * audience_kind='patient_segment' (migration 0397). Shape owned by
+           * lib/bulk-campaigns/patient-segment.ts. */
+          audience_filter: Json | null;
+          channel: "email" | "sms";
           category: "marketing" | "service" | "compliance";
           compliance_attestation: string | null;
           template_key: string;
@@ -4273,6 +4386,9 @@ export interface Database {
           recipient_kind: "patient" | "shop_customer";
           recipient_id: string;
           recipient_email: string | null;
+          /** E.164 destination snapshot for SMS campaigns (migration 0397);
+           * NULL for email campaigns and no-phone recipients. */
+          recipient_phone: string | null;
           status:
             | "pending"
             | "retry_pending"
@@ -4897,6 +5013,10 @@ export interface Database {
           caregiver_revoked_at: string | null;
           // E.164 phone captured at Stripe Checkout (migration 0247).
           phone_e164: string | null;
+          /** Phone line type (migration 0398). NULL = never classified. */
+          phone_line_type: "mobile" | "landline" | "voip" | "unknown" | null;
+          phone_line_type_source: "lookup" | "manual" | null;
+          phone_line_type_checked_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -5016,6 +5136,13 @@ export interface Database {
           source: string;
           payment_method: string | null;
           counter_csr_email: string | null;
+          // Migration 0405: XPS Ship shipping-label integration.
+          // xps_book_number is the booked shipment lookup key;
+          // xps_label_status tracks 'staged' | 'booked' | 'voided';
+          // shipping_service_code is the chosen carrier service.
+          xps_book_number: string | null;
+          xps_label_status: "staged" | "booked" | "voided" | null;
+          shipping_service_code: string | null;
         };
         Insert: Partial<Database["resupply"]["Tables"]["shop_orders"]["Row"]>;
         Update: Partial<Database["resupply"]["Tables"]["shop_orders"]["Row"]>;

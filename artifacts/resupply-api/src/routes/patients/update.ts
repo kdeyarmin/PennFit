@@ -26,6 +26,10 @@
 //                            422 `invalid_location`. Billing identity is
 //                            unaffected — claims still use the shared org
 //                            NPI/Tax-ID regardless of branch.
+//   - sms_marketing_consent  (boolean) — express written consent for
+//                            marketing SMS (TCPA opt-in). Setting it also
+//                            stamps sms_marketing_consent_at and records
+//                            source='staff'.
 //
 // All non-status fields accept `null` to explicitly clear an override;
 // `status` does not — there is no "no status" state. A missing key in
@@ -86,6 +90,14 @@ const bodySchema = z
       .transform((v) => (v === "" ? null : v)),
     cadenceOverrideDays: z.number().int().min(1).max(365).nullable().optional(),
     channelPreference: z.enum(["sms", "email", "voice"]).nullable().optional(),
+    // Manual override of the phone line type (migration 0397). A concrete
+    // value is authoritative ('manual' source) and the Twilio Lookup
+    // backfill never overwrites it; null clears the override so a future
+    // lookup can re-classify.
+    phoneLineType: z
+      .enum(["mobile", "landline", "voip", "unknown"])
+      .nullable()
+      .optional(),
     status: z.enum(["active", "paused", "closed"]).optional(),
     // Business branch servicing this patient; null clears the
     // assignment. A concrete id is validated against active locations
@@ -102,6 +114,10 @@ const bodySchema = z
       .string()
       .regex(ISO_TIMESTAMP_RE, "must be an ISO-8601 timestamp")
       .optional(),
+    // Express written consent for marketing SMS (TCPA). When set, the
+    // server also stamps sms_marketing_consent_at = now() and records
+    // sms_marketing_consent_source = 'staff'.
+    smsMarketingConsent: z.boolean().optional(),
   })
   .strict();
 
@@ -145,8 +161,26 @@ router.patch(
       updates.cadence_override_days = body.cadenceOverrideDays ?? null;
     if ("channelPreference" in body)
       updates.channel_preference = body.channelPreference ?? null;
+    if ("phoneLineType" in body) {
+      // Concrete value → manual override; null → clear (lets lookup re-run).
+      // Clearing also nulls checked_at so the tri-state stays consistent
+      // (NULL type = unclassified, not "recently checked").
+      updates.phone_line_type = body.phoneLineType ?? null;
+      updates.phone_line_type_source = body.phoneLineType ? "manual" : null;
+      updates.phone_line_type_checked_at = body.phoneLineType
+        ? new Date().toISOString()
+        : null;
+    }
     if ("status" in body && body.status) updates.status = body.status;
     if ("locationId" in body) updates.location_id = body.locationId ?? null;
+    if (
+      "smsMarketingConsent" in body &&
+      body.smsMarketingConsent !== undefined
+    ) {
+      updates.sms_marketing_consent = body.smsMarketingConsent;
+      updates.sms_marketing_consent_at = new Date().toISOString();
+      updates.sms_marketing_consent_source = "staff";
+    }
 
     const orgId = req.orgId;
     if (!orgId) {

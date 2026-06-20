@@ -14,7 +14,7 @@
 //
 // Privacy posture (identical to /admin/system-info): env-var VALUES
 // are NEVER returned — only "is this set?" booleans and small live
-// counts. There is no raw pg / drizzle here; the only data path is the
+// counts. There is no raw pg / ORM here; the only data path is the
 // Supabase service-role client, and every DB probe is individually
 // wrapped so this page still renders when the database isn't set up
 // yet — which is the whole point of a setup checklist.

@@ -538,6 +538,15 @@ const BreatheSignup = lazyWithRetry(() =>
   import("@/pages/breathe").then((m) => ({ default: m.BreatheSignup })),
 );
 
+// Breathe — Case studies. How AI is applied across the DME workflow (sourced
+// industry benchmarks) plus an explicitly illustrative/modeled CareMetric
+// Breathe scenario. Same dark chrome, mounted in TopRouter, lazy-loaded.
+const BreatheCaseStudies = lazyWithRetry(() =>
+  import("@/pages/breathe-case-studies").then((m) => ({
+    default: m.BreatheCaseStudies,
+  })),
+);
+
 // Breathe — "What the software does, by role". A dedicated companion to
 // the Breathe homepage that breaks every feature down by the team seat
 // that uses it and tags each with time saved / cost cut / revenue grown.
@@ -546,6 +555,53 @@ const BreatheSignup = lazyWithRetry(() =>
 const BreatheFeatures = lazyWithRetry(() =>
   import("@/pages/breathe-features").then((m) => ({
     default: m.BreatheFeatures,
+  })),
+);
+
+// Breathe — Integrations. The centerpiece marketing page: unifying the CPAP
+// manufacturer device clouds (ResMed AirView, Philips Care Orchestrator, 3B
+// React Health) into one fleet view with AI early-warning monitoring, plus
+// the payer/billing connectors. Same dark chrome, mounted in TopRouter.
+const BreatheIntegrations = lazyWithRetry(() =>
+  import("@/pages/breathe-integrations").then((m) => ({
+    default: m.BreatheIntegrations,
+  })),
+);
+
+// Breathe — DME Platform 101. Category education for prospects who don't yet
+// know this kind of software exists. Same dark chrome, mounted in TopRouter.
+const BreatheLearn = lazyWithRetry(() =>
+  import("@/pages/breathe-learn").then((m) => ({
+    default: m.BreatheLearn,
+  })),
+);
+
+// Breathe — FAQ. Leads with the marquee operator question ("is this compliant
+// with Medicare and the major payers?") and answers everything else about the
+// software. Same dark chrome, mounted in TopRouter, lazy-loaded.
+const BreatheFaq = lazyWithRetry(() =>
+  import("@/pages/breathe-faq").then((m) => ({
+    default: m.BreatheFaq,
+  })),
+);
+
+// Breathe — "Switch from <competitor>" migration landing pages (Brightree,
+// Bonafide, NikoHealth). High-intent pages for operators already shopping to
+// leave a legacy DME suite; each reuses the shared comparison + migration
+// sections. Same dark chrome, mounted in TopRouter, lazy-loaded.
+const BreatheSwitchBrightree = lazyWithRetry(() =>
+  import("@/pages/breathe-switch").then((m) => ({
+    default: m.BreatheSwitchBrightree,
+  })),
+);
+const BreatheSwitchBonafide = lazyWithRetry(() =>
+  import("@/pages/breathe-switch").then((m) => ({
+    default: m.BreatheSwitchBonafide,
+  })),
+);
+const BreatheSwitchNikohealth = lazyWithRetry(() =>
+  import("@/pages/breathe-switch").then((m) => ({
+    default: m.BreatheSwitchNikohealth,
   })),
 );
 
@@ -1168,11 +1224,27 @@ function TopRouter() {
         */}
         <Route path="/breathe" component={BreatheHome} />
         <Route path="/breathe/features" component={BreatheFeatures} />
+        <Route path="/breathe/integrations" component={BreatheIntegrations} />
+        <Route path="/breathe/why" component={BreatheLearn} />
         <Route path="/breathe/product" component={BreatheProduct} />
         <Route path="/breathe/compare" component={BreatheCompare} />
         <Route path="/breathe/roi" component={BreatheRoi} />
         <Route path="/breathe/pricing" component={BreathePricing} />
         <Route path="/breathe/security" component={BreatheSecurity} />
+        <Route path="/breathe/faq" component={BreatheFaq} />
+        <Route path="/breathe/case-studies" component={BreatheCaseStudies} />
+        <Route
+          path="/breathe/switch/brightree"
+          component={BreatheSwitchBrightree}
+        />
+        <Route
+          path="/breathe/switch/bonafide"
+          component={BreatheSwitchBonafide}
+        />
+        <Route
+          path="/breathe/switch/nikohealth"
+          component={BreatheSwitchNikohealth}
+        />
         <Route path="/breathe/signup" component={BreatheSignup} />
         <Route path="/">
           {() => (isPlatformHomeHost() ? <BreatheHome /> : <PatientRouter />)}

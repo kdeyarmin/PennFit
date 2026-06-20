@@ -4,7 +4,7 @@
 
 import { describe, it, expect } from "vitest";
 
-import { defaultReminderSmsBody } from "./send-sms";
+import { defaultReminderSmsBody, smsAsksRefillAttestation } from "./send-sms";
 
 const NAME = "Sam";
 const PRACTICE = "PennPaps";
@@ -23,9 +23,12 @@ describe("defaultReminderSmsBody", () => {
     expect(new Set(bodies).size).toBe(variants.length);
   });
 
-  it("keeps the historical 'initial' copy byte-for-byte", () => {
+  it("pins the 'initial' copy and its refill attestation framing", () => {
+    // The YES reply is the patient's Medicare/payer refill attestation, so
+    // the copy asks them to confirm continued use AND running low before
+    // replying (see REFILL_AFFIRMATION_STATEMENT).
     expect(defaultReminderSmsBody("initial", NAME, PRACTICE)).toBe(
-      "Hi Sam, it's PennPaps. You're due for a CPAP refill. Reply YES to ship to the address on file, EDIT to change it, or STOP to opt out.",
+      "Hi Sam, it's PennPaps. Time for a CPAP refill. Reply YES if you still use it and are low on supplies, EDIT to change address, STOP to opt out.",
     );
   });
 
@@ -42,6 +45,22 @@ describe("defaultReminderSmsBody", () => {
       expect(body.length).toBeLessThanOrEqual(160);
     });
   }
+
+  it("every default variant is detected as attestation-bearing", () => {
+    for (const v of variants) {
+      expect(
+        smsAsksRefillAttestation(defaultReminderSmsBody(v, NAME, PRACTICE)),
+      ).toBe(true);
+    }
+  });
+
+  it("does not flag custom/legacy bodies that omit the attestation ask", () => {
+    expect(
+      smsAsksRefillAttestation(
+        "You're due for a CPAP refill. Reply YES to ship, STOP to opt out.",
+      ),
+    ).toBe(false);
+  });
 
   it("escalates urgency: followup circles back, final is a last call", () => {
     expect(defaultReminderSmsBody("followup", NAME, PRACTICE)).toContain(

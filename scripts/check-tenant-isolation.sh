@@ -96,6 +96,15 @@ EXCLUDES=(
   --glob '!**/routes/platform/outreach-campaigns.ts'
   --glob '!**/routes/platform/unsubscribe.ts'
   --glob '!**/worker/jobs/platform-email-tick.ts'
+  # The demo-lead nurture drip and its one-click unsubscribe operate on
+  # public.newsletter_subscribers — a single platform-GLOBAL marketing list
+  # keyed by email alone, with NO org_id (migration 0354; see the design
+  # note in routes/storefront/newsletter.ts). It is the platform's list, not
+  # any tenant's, so there is no org to scope to — the same global-table
+  # rationale as the platform-outreach entries above. The drip is a worker
+  # tick (no req.orgId) and the unsubscribe route is public/anonymous.
+  --glob '!**/worker/jobs/demo-drip.ts'
+  --glob '!**/routes/storefront/newsletter-unsubscribe.ts'
 )
 
 # Match a CALL (open paren) so bare `import { getSupabaseServiceRoleClient }`

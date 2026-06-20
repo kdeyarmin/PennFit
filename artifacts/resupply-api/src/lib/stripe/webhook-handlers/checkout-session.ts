@@ -284,12 +284,25 @@ export async function upsertOrderItemsFromSession(
         warn?: (...args: unknown[]) => void;
       }
     | undefined,
+  // The connected account the event originated on (`event.account`), passed
+  // by the dispatcher. Connect (G6): a connected-account checkout's line
+  // items live ON that account. We use the EVENT's account — NOT the
+  // tenant's CURRENT org row — because this is a historical read: a
+  // disconnect/reconnect or a `stripe_charges_enabled` flip between checkout
+  // and a (possibly replayed / async) webhook would make the org-derived
+  // account wrong, sending listLineItems to the platform/new account → 404.
+  // event.account is immutable for the event. undefined → platform account.
+  connectedAccountId?: string | null,
 ): Promise<OrderConfirmationLineItem[]> {
   const stripe = getStripeClient(config);
-  const lineItems = await stripe.checkout.sessions.listLineItems(session.id, {
-    limit: 100,
-    expand: ["data.price.product"],
-  });
+  const accountOptions: Stripe.RequestOptions = connectedAccountId
+    ? { stripeAccount: connectedAccountId }
+    : {};
+  const lineItems = await stripe.checkout.sessions.listLineItems(
+    session.id,
+    { limit: 100, expand: ["data.price.product"] },
+    accountOptions,
+  );
 
   const rows: ShopOrderItemInsert[] = [];
   // SKU per row (aligned 1:1 with `rows`), resolved from the expanded

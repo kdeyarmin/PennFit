@@ -6,12 +6,12 @@
 // On 2026-05-30, admin/customer sign-in 500'd in production because
 // `resupply_auth.password_credentials.set_by_admin_at` (migration 0142) had
 // never been applied to the live database. Root cause: the production project
-// has no `drizzle.resupply_migrations` ledger and had drifted materially
+// has no `migrations.resupply_migrations` ledger and had drifted materially
 // behind the checked-in migrations, with no automated signal. See
 // docs/incident-signin-500-schema-drift-2026-05-30.md.
 //
 // This is the durable detector. It parses every
-// lib/resupply-db/drizzle/*.sql migration for additive DDL targeting the
+// lib/resupply-db/migrations/*.sql migration for additive DDL targeting the
 // `resupply` / `resupply_auth` schemas, accounts for later DROP/RENAME, then
 // asks the live DB (via DATABASE_URL) which expected tables/columns are
 // absent. Exit non-zero when drift is found so it can gate a scheduled job or
@@ -47,14 +47,14 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { getDbPool } from "@workspace/resupply-db";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-// scripts/src -> repo root -> lib/resupply-db/drizzle
+// scripts/src -> repo root -> lib/resupply-db/migrations
 const MIGRATIONS_DIR = path.resolve(
   __dirname,
   "..",
   "..",
   "lib",
   "resupply-db",
-  "drizzle",
+  "migrations",
 );
 const SCHEMAS = ["resupply", "resupply_auth"] as const;
 
@@ -381,7 +381,7 @@ async function run(): Promise<DriftReport> {
 
     // Does the migration ledger exist? Its absence is itself a finding.
     const ledgerRes = await client.query<{ present: boolean }>(
-      `select to_regclass('drizzle.resupply_migrations') is not null as present`,
+      `select to_regclass('migrations.resupply_migrations') is not null as present`,
     );
     const hasLedger = ledgerRes.rows[0]?.present === true;
 
@@ -457,7 +457,7 @@ function main(): void {
           process.stdout.write(
             paint(
               YELLOW,
-              "  ! drizzle.resupply_migrations ledger ABSENT — applied state is untracked on this DB\n",
+              "  ! migrations.resupply_migrations ledger ABSENT — applied state is untracked on this DB\n",
             ),
           );
         }

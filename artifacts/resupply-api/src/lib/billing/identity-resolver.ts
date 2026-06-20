@@ -19,8 +19,11 @@ import {
   resolveSeedOrgId,
 } from "@workspace/resupply-db";
 import {
+  isAllowedOfficeAllyEdiUrl,
   readOfficeAllyRealtimeConfigOrNull,
+  readOfficeAllyDiscoveryConfigOrNull,
   type BillingProvider,
+  type OfficeAllyDiscoveryConfig,
   type OfficeAllyRealtimeConfig,
   type SftpTransportConfig,
   type SubmitterIdentity,
@@ -49,6 +52,10 @@ export interface ResolvedClearinghouse {
    *  OFFICE_ALLY_REALTIME_PASSWORD env secret, falling back to the
    *  fully-env path. Independent of the SFTP `config` above. */
   realtimeConfig: OfficeAllyRealtimeConfig | null;
+  /** Insurance discovery config, or null when not enabled. Reuses the
+   *  real-time API key (same Office Ally EDI account) with its own endpoint
+   *  URL + on/off toggle. Independent of `realtimeConfig`. */
+  discoveryConfig: OfficeAllyDiscoveryConfig | null;
   /** Null when DB row absent. */
   row: ClearinghouseRow | null;
   usageIndicator: "P" | "T";
@@ -163,6 +170,9 @@ export async function resolveClearinghouse(
   // non-seed tenant must supply its own realtime creds in its row, or get no
   // realtime (fail closed) — matching the SFTP/billing-identity gate above.
   const realtimeConfig = buildRealtimeConfig(row, isSeedOrg ? env : {});
+  // Discovery shares the gate logic: a non-seed tenant with no DB row of its
+  // own gets no env fallback (fail closed), exactly like realtime/SFTP above.
+  const discoveryConfig = buildDiscoveryConfig(row, isSeedOrg ? env : {});
   if (row) {
     return {
       source: "db",
@@ -176,6 +186,7 @@ export async function resolveClearinghouse(
         remoteInboxDir: row.remote_inbox_dir,
       },
       realtimeConfig,
+      discoveryConfig,
       usageIndicator: row.usage_indicator,
       submitter: {
         etin: row.etin,
@@ -204,6 +215,7 @@ export async function resolveClearinghouse(
         remoteInboxDir: env.OFFICE_ALLY_REMOTE_INBOX?.trim() || "inbound",
       },
       realtimeConfig,
+      discoveryConfig,
       usageIndicator: env.OFFICE_ALLY_USAGE_INDICATOR === "P" ? "P" : "T",
       submitter: envSubmitter_(env) ?? stubSubmitter(),
     };
@@ -213,6 +225,7 @@ export async function resolveClearinghouse(
     row: null,
     config: null,
     realtimeConfig,
+    discoveryConfig,
     usageIndicator: "T",
     submitter: stubSubmitter(),
   };
@@ -266,6 +279,57 @@ function buildRealtimeConfig(
   return readOfficeAllyRealtimeConfigOrNull(env);
 }
 
+/**
+ * Resolve the insurance-discovery config. Mirrors buildRealtimeConfig: a DB
+ * row is authoritative for the on/off decision (the admin `discovery_enabled`
+ * toggle) and the endpoint URL, while the API key is shared with the
+ * real-time connection (same Office Ally EDI account). The fully-env path
+ * (readOfficeAllyDiscoveryConfigOrNull) applies ONLY when no DB row exists
+ * (dev/preview). Returns null when discovery isn't configured (or stub mode).
+ */
+function buildDiscoveryConfig(
+  row: ClearinghouseRow | null,
+  env: NodeJS.ProcessEnv,
+): OfficeAllyDiscoveryConfig | null {
+  if (env.OFFICE_ALLY_STUB === "1") return null;
+  if (row) {
+    if (!row.discovery_enabled || !row.discovery_url) return null;
+    // The discovery POST carries PHI (name/DOB/SSN) and the URL is
+    // operator-supplied, so enforce the SAME https + officeally.io allowlist
+    // the env reader applies — a DB row must not be a way around it. A
+    // bad/typo'd/cleartext URL fails closed (discovery unavailable) rather
+    // than exfiltrating PHI + the API key to an attacker-chosen host. The
+    // URL itself is non-PHI and safe to log for the operator to fix.
+    if (!isAllowedOfficeAllyEdiUrl(row.discovery_url)) {
+      logger.warn(
+        { event: "discovery_url_rejected", url: row.discovery_url },
+        "identity-resolver: discovery_url is not an https officeally.io URL; disabling discovery",
+      );
+      return null;
+    }
+    // Same API-key precedence as real-time: the row's stored key
+    // (realtime_password column) wins, env is the dev/preview fallback.
+    const dbApiKey = row.realtime_password;
+    const apiKey =
+      dbApiKey && dbApiKey.trim().length > 0
+        ? dbApiKey.trim()
+        : env.OFFICE_ALLY_REALTIME_API_KEY?.trim() ||
+          env.OFFICE_ALLY_REALTIME_PASSWORD?.trim();
+    if (!apiKey) return null;
+    return {
+      url: row.discovery_url,
+      apiKey,
+      timeoutMs:
+        typeof row.realtime_timeout_ms === "number" &&
+        row.realtime_timeout_ms > 0
+          ? row.realtime_timeout_ms
+          : 30_000,
+    };
+  }
+  // No DB row at all → env-only path (dev/preview).
+  return readOfficeAllyDiscoveryConfigOrNull(env);
+}
+
 // ── Loaders ─────────────────────────────────────────────────────────
 
 async function loadOrganization(
@@ -300,7 +364,7 @@ async function loadClearinghouse(
   const { data, error } = await supabase
     .from("clearinghouse_credentials")
     .select(
-      "id, slug, display_name, usage_indicator, sftp_host, sftp_port, sftp_username, private_key_path, known_hosts_path, remote_inbox_dir, remote_outbound_dir, remote_archive_dir, etin, submitter_organization_name, contact_name, contact_phone_e164, is_active, last_polled_at, notes, realtime_enabled, realtime_url, realtime_username, realtime_sender_id, realtime_receiver_id, realtime_timeout_ms, realtime_password, created_at, updated_at, org_id",
+      "id, slug, display_name, usage_indicator, sftp_host, sftp_port, sftp_username, private_key_path, known_hosts_path, remote_inbox_dir, remote_outbound_dir, remote_archive_dir, etin, submitter_organization_name, contact_name, contact_phone_e164, is_active, last_polled_at, notes, realtime_enabled, realtime_url, realtime_username, realtime_sender_id, realtime_receiver_id, realtime_timeout_ms, realtime_password, discovery_enabled, discovery_url, created_at, updated_at, org_id",
     )
     .eq("slug", slug)
     .eq("is_active", true)
