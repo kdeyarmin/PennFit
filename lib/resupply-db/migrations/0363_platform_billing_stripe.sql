@@ -1,4 +1,4 @@
--- 0363_platform_billing_stripe — Stripe linkage for platform tenant billing.
+-- 0358_platform_billing_stripe — Stripe linkage for platform tenant billing.
 --
 -- The platform billing catalog remains editable in CareMetric Breathe, while
 -- Stripe owns actual recurring tenant collection. These columns connect catalog
