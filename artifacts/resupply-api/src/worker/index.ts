@@ -28,6 +28,7 @@
 import PgBoss from "pg-boss";
 import { logger } from "../lib/logger";
 import { registerReminderJobs } from "./jobs/reminders.js";
+import { registerReminderVoiceJob } from "./jobs/reminder-voice.js";
 import { registerReminderEscalationJob } from "./jobs/reminder-escalation.js";
 import { registerPrescriptionAttachmentSweepJob } from "./jobs/prescription-attachment-sweep.js";
 import { registerSmartTriggerEvaluatorJob } from "./jobs/smart-trigger-evaluator.js";
@@ -36,6 +37,7 @@ import { registerRxRenewalSendJob } from "./jobs/rx-renewal-send.js";
 import { registerIdempotencyKeysPruneJob } from "./jobs/idempotency-keys-prune.js";
 import { registerOnboardingCheckinJobs } from "./jobs/onboarding-checkins.js";
 import { registerBulkCampaignTickJob } from "./jobs/bulk-campaign-tick.js";
+import { registerPlatformEmailTickJob } from "./jobs/platform-email-tick.js";
 import { registerPatientDocumentsRetentionSweepJob } from "./jobs/patient-documents-retention-sweep.js";
 import { registerReferralReviewExtractJob } from "./jobs/referral-review-extract.js";
 import { registerRecallNotificationSendJob } from "./jobs/recall-notifications-send.js";
@@ -43,12 +45,15 @@ import { registerMaintenanceNudgeJob } from "./jobs/maintenance-nudges.js";
 import { registerVideoVisitReminderJob } from "./jobs/video-visit-reminders.js";
 import { registerFitterLeadReengageJob } from "./jobs/fitter-lead-reengage.js";
 import { registerFitterLeadFirstDayNudgeJob } from "./jobs/fitter-lead-first-day-nudge.js";
+import { registerDemoDripJob } from "./jobs/demo-drip.js";
 import { registerFitterSupplyCampaignJob } from "./jobs/fitter-supply-campaign.js";
 import { registerFitterConversionAttributionJob } from "./jobs/fitter-conversion-attribution.js";
 import { registerCartAbandonmentJob } from "./jobs/cart-abandonment-scan.js";
 import { registerFailedEmailDigestJob } from "./jobs/failed-order-emails-digest.js";
 import { registerPacwareReadyToSyncDigestJob } from "./jobs/pacware-ready-to-sync-digest.js";
 import { registerTherapyNightlySyncJob } from "./jobs/therapy-integrations-nightly-sync.js";
+import { registerXpsResolveStagedJob } from "./jobs/xps-resolve-staged.js";
+import { registerPhoneLineTypeBackfillJob } from "./jobs/phone-line-type-backfill.js";
 import { registerEligibilityReverifyBatchJob } from "./jobs/eligibility-reverify-batch.js";
 import { registerAutoSubmitBatchJob } from "./jobs/auto-submit-batch.js";
 import { registerBillHoldSweepJob } from "./jobs/bill-hold-sweep.js";
@@ -63,6 +68,7 @@ import { registerDlqMonitorJob } from "./jobs/dlq-monitor.js";
 import { registerOwnerDigestJob } from "./jobs/owner-digest.js";
 import { registerTherapyFleetAlertsJob } from "./jobs/therapy-fleet-alerts-scan.js";
 import { registerSetupDeadlineOutreachJob } from "./jobs/therapy-setup-deadline-outreach.js";
+import { registerResupplyAutoDraftJob } from "./jobs/resupply-auto-draft.js";
 import { registerCoachingProgressJob } from "./jobs/coaching-plan-progress.js";
 import { registerCoachingAutoEnrollJob } from "./jobs/coaching-auto-enroll.js";
 import { registerPayerEstimateStatsJob } from "./jobs/payer-estimate-stats-refresh.js";
@@ -415,9 +421,17 @@ async function doStartWorker(): Promise<void> {
   await safeRegister("registerReminderJobs", registrationFailures, () =>
     registerReminderJobs(boss),
   );
+  // Automated-voice tier of the escalation ladder (reminders.place-call).
+  // Only ever enqueued by the escalation scan below; registered first so
+  // its queue exists before anything sends to it. Handler tolerates an
+  // unconfigured voice path (log + exit-0).
+  await safeRegister("registerReminderVoiceJob", registrationFailures, () =>
+    registerReminderVoiceJob(boss),
+  );
   // Daily multi-channel escalation for unanswered reminders (#7).
   // Additive companion to the hourly scan; feature-flagged
-  // (reminder_escalation.dispatcher) and reuses the SEND_* queues.
+  // (reminder_escalation.dispatcher) and reuses the SEND_* queues, plus the
+  // opt-in voice tier (reminder_escalation.voice).
   await safeRegister(
     "registerReminderEscalationJob",
     registrationFailures,
@@ -559,6 +573,15 @@ async function doStartWorker(): Promise<void> {
   await safeRegister("registerCartAbandonmentJob", registrationFailures, () =>
     registerCartAbandonmentJob(boss),
   );
+  // Demo-lead nurture drip — hourly at :37. Walks each Breathe demo
+  // signup (newsletter_subscribers, source='breathe-demo') through a
+  // branded welcome + two follow-ups, then stops. Platform-branded,
+  // sent under the platform SendGrid sender, every email carrying a
+  // one-click unsubscribe link. Off by default — production sets
+  // RESUPPLY_DEMO_DRIP_ENABLED=1 to turn the cron on.
+  await safeRegister("registerDemoDripJob", registrationFailures, () =>
+    registerDemoDripJob(boss),
+  );
   // Failed-email order digest — daily at 13:00 UTC. Scans
   // public.orders for rows with email_status=failed in the last 24h
   // and sends a single PHI-safe summary email to
@@ -632,6 +655,14 @@ async function doStartWorker(): Promise<void> {
     registerBulkCampaignTickJob(boss),
   );
 
+  // Platform outreach email send worker (super-admin broadcast). Same
+  // on-demand tick model as bulk campaigns: enqueued by the
+  // /platform/email-campaigns/:id/start endpoint, self-re-enqueues until
+  // drained, paused, or cancelled.
+  await safeRegister("registerPlatformEmailTickJob", registrationFailures, () =>
+    registerPlatformEmailTickJob(boss),
+  );
+
   // Nightly bulk refresh of every active therapy-cloud link. Runs at
   // 04:30 UTC; persists snapshot recentNights into the canonical
   // patient_therapy_nights table for downstream consumers.
@@ -639,6 +670,18 @@ async function doStartWorker(): Promise<void> {
     "registerTherapyNightlySyncJob",
     registrationFailures,
     () => registerTherapyNightlySyncJob(boss),
+  );
+  // Auto-resolve XPS orders staged but not yet booked into a shipment.
+  // Queue + worker always register; the recurring cron attaches only when
+  // XPS_RESOLVE_STAGED_CRON_ENABLED=1 (opt-in — it pulls tracking + fires
+  // the patient shipping notification once XPS books the label).
+  await safeRegister("registerXpsResolveStagedJob", registrationFailures, () =>
+    registerXpsResolveStagedJob(boss),
+  );
+  await safeRegister(
+    "registerPhoneLineTypeBackfillJob",
+    registrationFailures,
+    () => registerPhoneLineTypeBackfillJob(boss),
   );
 
   // Eligibility re-verification batch (Biller #31). Queue + worker
@@ -760,6 +803,15 @@ async function doStartWorker(): Promise<void> {
     "registerSetupDeadlineOutreachJob",
     registrationFailures,
     () => registerSetupDeadlineOutreachJob(boss),
+  );
+
+  // Daily resupply auto-draft (05:30 UTC, after the 04:30 nightly therapy
+  // sync). Stages a draft PROPOSAL per device-eligible supply so CSRs get a
+  // ready-to-review queue instead of eyeballing the opportunities list.
+  // Internal only — no patient contact. Gated per-tenant by the
+  // resupply.auto_order_drafts flag (seeded OFF); idempotent.
+  await safeRegister("registerResupplyAutoDraftJob", registrationFailures, () =>
+    registerResupplyAutoDraftJob(boss),
   );
 
   // Daily prior-authorization expiry sweep — flips approved → expired

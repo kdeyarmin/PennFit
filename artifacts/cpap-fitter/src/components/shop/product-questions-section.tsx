@@ -14,6 +14,7 @@ import { HelpCircle, MessageSquare, Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { SignedIn } from "@/lib/identity";
+import { useCompanyContact } from "@/lib/contact";
 import {
   fetchProductQuestions,
   submitProductQuestion,
@@ -102,6 +103,7 @@ export function ProductQuestionsSection({ productId }: Props) {
 }
 
 function QnaItem({ q }: { q: ShopProductQuestion }) {
+  const c = useCompanyContact();
   return (
     <li className="rounded-xl border border-border bg-background/70 p-4">
       <div className="flex items-start gap-3">
@@ -123,7 +125,7 @@ function QnaItem({ q }: { q: ShopProductQuestion }) {
           <MessageSquare className="w-3.5 h-3.5 text-[hsl(var(--penn-gold-deep,_var(--penn-navy)))] mt-1 shrink-0" />
           <div className="flex-1 min-w-0">
             <p className="text-xs font-semibold text-[hsl(var(--penn-navy))] mb-1">
-              PennPaps customer service
+              {c.name} customer service
             </p>
             <p className="text-sm text-foreground whitespace-pre-wrap break-words">
               {q.answerBody}

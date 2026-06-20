@@ -162,10 +162,10 @@ describe("readEmailConfigOrNull", () => {
     ).toBeNull();
   });
 
-  it("defaults the From address (info@pennpaps.com) when SENDGRID_FROM_EMAIL is missing", () => {
+  it("defaults the From address to the platform identity when SENDGRID_FROM_EMAIL is missing", () => {
     // SENDGRID_FROM_EMAIL is no longer a precondition — it defaults in
-    // code to the single canonical From address (ADR 018), so email is
-    // still configured when only the API key + From name + webhook key +
+    // code to the platform From address (noreply@cmbreathe.com), so email
+    // is still configured when only the API key + From name + webhook key +
     // base URL are present.
     const cfg = readEmailConfigOrNull({
       SENDGRID_API_KEY: "SG.x",
@@ -174,7 +174,7 @@ describe("readEmailConfigOrNull", () => {
       RESUPPLY_VOICE_PUBLIC_BASE_URL: "https://example.com",
     });
     expect(cfg).not.toBeNull();
-    expect(cfg?.sendgridFromEmail).toBe("info@pennpaps.com");
+    expect(cfg?.sendgridFromEmail).toBe("noreply@cmbreathe.com");
   });
 
   it("returns null when SENDGRID_FROM_NAME is missing", () => {

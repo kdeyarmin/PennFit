@@ -10,6 +10,7 @@ import { usePushSubscription } from "@/hooks/use-push-subscription";
 import { useBiometricLockPreference } from "@/hooks/use-biometric-lock-preference";
 import { useUnsavedChangesWarning } from "@/hooks/use-unsaved-changes-warning";
 import { checkBiometricAvailability } from "@/lib/native-runtime";
+import { useCompanyContact } from "@/lib/contact";
 
 /**
  * Communication preferences section on /account. Five email
@@ -403,6 +404,7 @@ function formatHour(h: number | null): string {
  */
 function PushNotificationToggle() {
   const { state, busy, error, enable, disable } = usePushSubscription();
+  const c = useCompanyContact();
 
   if (
     state === "checking" ||
@@ -428,7 +430,7 @@ function PushNotificationToggle() {
           </div>
           {state === "denied" && (
             <p className="text-[11px] text-amber-700 mt-1">
-              Your browser is blocking PennPaps notifications. Open site
+              Your browser is blocking {c.name} notifications. Open site
               settings to allow them, then come back.
             </p>
           )}

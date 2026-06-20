@@ -1,5 +1,7 @@
 import React from "react";
 
+import { useCompanyContact } from "@/lib/contact";
+
 /**
  * Help Center "screenshots".
  *
@@ -87,7 +89,7 @@ function PhoneChrome({ children }: { children: React.ReactNode }) {
  */
 export function Screenshot({
   caption,
-  url = "pennpaps.com",
+  url,
   frame = "browser",
   children,
 }: {
@@ -96,12 +98,32 @@ export function Screenshot({
   frame?: "browser" | "phone";
   children: React.ReactNode;
 }) {
+  // Default the address-bar host to the resolving tenant's website host
+  // (falling back to the live host) when no explicit URL is given, so a
+  // non-Penn tenant's mock-ups don't show pennpaps.com.
+  const host = useCompanyContact().websiteUrl;
+  const fallbackHost = (() => {
+    if (host) {
+      try {
+        return new URL(host).host.replace(/^www\./, "");
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  })();
+  const resolvedUrl =
+    url ??
+    fallbackHost ??
+    (typeof window !== "undefined"
+      ? window.location.host.replace(/^www\./, "")
+      : "");
   return (
     <figure className="my-1">
       {frame === "phone" ? (
         <PhoneChrome>{children}</PhoneChrome>
       ) : (
-        <BrowserChrome url={url}>{children}</BrowserChrome>
+        <BrowserChrome url={resolvedUrl}>{children}</BrowserChrome>
       )}
       {caption ? (
         <figcaption className="mt-2.5 flex items-start gap-1.5 text-xs text-muted-foreground leading-relaxed">
@@ -118,8 +140,9 @@ export function Screenshot({
 
 // ── Small SVG primitives shared by the mock-ups ───────────────────────
 
-/** The PennPaps top bar drawn inside a screen mock-up. */
+/** The storefront top bar drawn inside a screen mock-up. */
 function AppHeader({ active }: { active?: string }) {
+  const brandName = useCompanyContact().name;
   const items = ["Fitter", "Masks", "Shop", "Learn", "Help"];
   return (
     <g>
@@ -127,7 +150,7 @@ function AppHeader({ active }: { active?: string }) {
       <rect x="0" y="43.5" width="800" height="1" fill={C.line} />
       <circle cx="26" cy="22" r="9" fill={C.navy} />
       <text x="42" y="26" fontSize="13" fontWeight="700" fill={C.navy}>
-        PennPaps
+        {brandName}
       </text>
       {items.map((label, i) => {
         const x = 470 + i * 62;
@@ -446,6 +469,7 @@ export function FitterResultsShot() {
 
 /** The order form. */
 export function OrderFormShot() {
+  const brandName = useCompanyContact().name;
   return (
     <svg viewBox="0 0 800 470" role="img" {...svgProps}>
       <title>
@@ -513,7 +537,7 @@ export function OrderFormShot() {
       />
       <circle cx={78} cy={301} r="3.5" fill={C.navy} />
       <text x={94} y={305} fontSize="11" fill={C.ink}>
-        Yes — PennPaps has it on file
+        Yes — {brandName} has it on file
       </text>
       <Btn x={60} y={340} w={420} h={34} label="Submit order" variant="gold" />
       {/* right: summary */}

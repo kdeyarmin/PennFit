@@ -170,9 +170,10 @@ describe("app.ts CORS origin callback — rejects with false, never an Error", (
     // check — never branch into an Error.
     expect(CODE).toContain("allowedOrigins.includes(origin)");
     // Verified tenant custom domains join the allowlist at runtime.
-    expect(CODE).toMatch(
-      /cb\(null,\s*isVerifiedCustomDomainOrigin\(origin\)\)/,
-    );
+    expect(CODE).toContain("isVerifiedCustomDomainOrigin(origin)");
+    // Platform subdomains (<slug>.<base>, G10) are admitted as first-party
+    // hosts; the final verdict is still delivered via cb(null, <boolean>).
+    expect(CODE).toMatch(/cb\(null,\s*isPlatformSubdomainOrigin\(origin\)\)/);
   });
 
   it("never passes a new Error to the cors callback", () => {

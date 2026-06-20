@@ -57,6 +57,15 @@ describe("resolveBrandingByHost", () => {
     expect(b.logoUrl).toBe("https://cdn.example/acme-logo.png");
   });
 
+  it("resolves a tenant by slug subdomain when no custom domain matches (G10)", async () => {
+    // First select = custom-domain lookup (miss); second = slug lookup (hit).
+    stageSupabaseResponse("organizations", "select", { data: null });
+    stageSupabaseResponse("organizations", "select", { data: TENANT_ROW });
+    const b = await resolveBrandingByHost("acme.cmbreathe.com");
+    expect(b.storefrontName).toBe("AcmeSleep");
+    expect(b.legalName).toBe("Acme Home Medical");
+  });
+
   it("falls back to the platform brand when no verified tenant owns the host", async () => {
     stageSupabaseResponse("organizations", "select", { data: null });
     const b = await resolveBrandingByHost("unclaimed.example.com");

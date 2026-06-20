@@ -967,6 +967,7 @@ router.post(
                 claimFull.patient_responsibility_cents,
             },
             denialReason: claimFull.denial_reason,
+            orgId,
           });
           if (!result.configured) {
             logger.info(

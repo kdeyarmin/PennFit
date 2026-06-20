@@ -41,9 +41,17 @@ import { maybeDispatchLowUsageCheckinAlert } from "./alerts/low-usage-checkin-tr
 import { logger } from "./logger";
 
 export interface ScanOptions {
-  /** Optional org-scoped Supabase client. Defaults to the seed-org
-   *  scoped client resolved at call time. */
+  /** Optional org-scoped Supabase client. Defaults to the org-scoped
+   *  client for `orgId` (or the seed org) resolved at call time. */
   supabase?: OrgScopedClient;
+  /**
+   * Tenant to scan. The daily cron fans out across every active tenant
+   * (worker/jobs/onboarding-checkins.ts) and ALWAYS passes an explicit
+   * orgId. Left optional only for non-cron callers, which fall back to the
+   * seed org for back-compat. Ignored when an explicit `supabase` client is
+   * supplied (that client is already org-scoped).
+   */
+  orgId?: string;
   /** Defaults to `new Date()`. Tests pass a fixed clock. */
   asOf?: Date;
   /** Per-run cap on alerts processed. Default 200 — well above the
@@ -85,7 +93,7 @@ export async function scanCompliance(
   const cap = opts.cap ?? DEFAULT_CAP;
   let supabase = opts.supabase;
   if (!supabase) {
-    const orgId = await resolveSeedOrgId();
+    const orgId = opts.orgId ?? (await resolveSeedOrgId());
     if (!orgId) {
       // No seed tenant resolvable — nothing to scan. Return the zero
       // summary the caller already handles as "clean run, no alerts".

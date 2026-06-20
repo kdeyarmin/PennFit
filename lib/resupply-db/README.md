@@ -24,17 +24,19 @@ still applies.
   `artifacts/resupply-api/src/worker/jobs/bulk-campaign-tick.ts`. New
   runtime code should prefer the Supabase client.
 
-Drizzle has been fully retired: no `drizzle-orm`, `drizzle-kit`, or
-`drizzle-zod` dependency is declared anywhere, and no runtime code imports
-it. The architecture checker still forbids Drizzle imports in the pure domain
-layer so the boundary does not drift back.
+This package uses no ORM. No `drizzle-orm`, `drizzle-kit`, or `drizzle-zod`
+dependency is declared anywhere, and no runtime code imports one. The
+architecture checker (`scripts/check-resupply-architecture.sh`) still forbids
+`drizzle-orm` imports in the pure domain layer so the boundary cannot drift
+back to an ORM.
 
 ## Migrations
 
-SQL migration files live in `./drizzle/`. The directory name is historical:
-new migrations are hand-written SQL, not Drizzle output. The directory and
-the on-DB `drizzle.resupply_migrations` table keep their Drizzle-era names so
-existing production history stays compatible. See `./drizzle/README.md` and
+SQL migration files live in `./migrations/`. They are hand-written SQL applied
+by raw `pg`. The on-DB history table is `migrations.resupply_migrations`; a
+database provisioned before the rename carries the ledger under the legacy
+`drizzle` schema, which `scripts/migrate.mjs` renames in place on first run so
+existing production history stays compatible. See `./migrations/README.md` and
 the comments at the top of `scripts/migrate.mjs` before touching this area.
 
 ### Apply Path
@@ -45,15 +47,15 @@ during deploys when `RUN_DB_MIGRATIONS=true`.
 
 The migrator:
 
-- reads every `./drizzle/<NNNN>_*.sql` file;
+- reads every `./migrations/<NNNN>_*.sql` file;
 - sorts by numeric prefix, with lexicographic filename order as the tie-break;
 - computes a SHA256 hash of each file's bytes;
 - records applied hashes in
-  `drizzle.resupply_migrations(id, hash, created_at)`;
+  `migrations.resupply_migrations(id, hash, created_at)`;
 - treats a migration as pending when its hash is absent from that table.
 
-`./drizzle/meta/_journal.json` is frozen. The migrator reads it only to
-recover the original Drizzle-era `created_at` timestamp for historical files;
+`./migrations/meta/_journal.json` is frozen. The migrator reads it only to
+recover the original `created_at` timestamp for historical files;
 new migrations are not journaled.
 
 This means existing migration files are load-bearing:
@@ -76,12 +78,12 @@ selectively runs:
 - `scripts/check-resupply-architecture.sh` - when any `lib/resupply-*` or
   `artifacts/resupply-*` file changes.
 - `scripts/check-resupply-migration-prefix.sh` - when a new SQL file is added
-  under `./drizzle/`.
+  under `./migrations/`.
 - `scripts/check-resupply-migration-immutability.sh` - when an existing SQL
   migration changes.
 
-The historical schema/migration co-change rule and
-`check-drizzle-drift.sh` were retired when the Drizzle schema directory was
+The historical schema/migration co-change rule and the structural ORM
+schema-drift CI check were retired when the generated TS schema directory was
 deleted. New migrations are hand-written SQL and reviewed manually.
 
 ## Migration Prefix Moratorium
@@ -89,5 +91,5 @@ deleted. New migrations are hand-written SQL and reviewed manually.
 Any added migration file must use a unique 4-digit prefix > 0066 (enforced by
 `scripts/check-resupply-migration-prefix*.sh`). Prefer using the next free prefix
 (higher than the current max) so fresh-DB replay order doesn't change. Do not reuse
-legacy duplicate prefixes. See `./drizzle/README.md` and
+legacy duplicate prefixes. See `./migrations/README.md` and
 `docs/migration-state-investigation-2026-05-08.md` for the incident history and rewrite procedure.

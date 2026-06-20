@@ -58,6 +58,7 @@ function ctxWith(
 ): AdminAssistantToolContext {
   return {
     supabase: fakeSupabase(result),
+    orgId: "11111111-1111-4111-8111-111111111111",
     suggestingAdminEmail: "alice@pennpaps.com",
     suggestingAdminRole: "admin",
     ...overrides,

@@ -12,6 +12,7 @@
 import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { logger } from "./logger";
+import { recordOutboundMessageUsage } from "./metering/usage";
 import {
   sendBackInStockEmail,
   type BackInStockEmailPayload,
@@ -87,6 +88,13 @@ export interface DispatchBackInStockInput {
   /** Hard cap on how many emails to send per dispatch. Pending rows
    *  beyond this stay pending and will fire on a future stock save. */
   maxFanout?: number;
+  /**
+   * Tenant whose queue to drain. When set, the dispatch is scoped to
+   * (and branded/sent under) that tenant; when omitted it falls back to
+   * the seed org (`resolveSeedOrgId()`), so single-tenant callers are
+   * unchanged.
+   */
+  orgId?: string;
 }
 
 export interface DispatchBackInStockResult {
@@ -122,10 +130,12 @@ export async function dispatchBackInStockForProduct(
     failed: 0,
   };
   try {
-    // Resolve the tenant for the file-local worker pattern. A missing org
-    // degrades to the zeroed result envelope (the same "nothing to do"
-    // shape the no-candidates branch returns). Best-effort — never throws.
-    const orgId = await resolveSeedOrgId();
+    // Scope to the caller's tenant when provided (so a second tenant
+    // drains its own queue), else the seed org for legacy callers. A
+    // missing org degrades to the zeroed result envelope (the same
+    // "nothing to do" shape the no-candidates branch returns).
+    // Best-effort — never throws.
+    const orgId = input.orgId ?? (await resolveSeedOrgId());
     if (!orgId) return result;
     const supabase = getOrgScopedClient(orgId);
     const max = Math.max(1, Math.min(input.maxFanout ?? 200, 500));
@@ -177,6 +187,7 @@ export async function dispatchBackInStockForProduct(
         productImageUrl: input.productImageUrl ?? null,
         productUrl: input.productUrl,
         priceLabel: input.priceLabel ?? null,
+        orgId,
       };
       const send = await sendBackInStockEmail(payload);
       const { error: stampErr } = await supabase
@@ -195,8 +206,14 @@ export async function dispatchBackInStockForProduct(
           "back-in-stock-record: delivery flag stamp failed",
         );
       }
-      if (send.delivered) result.delivered += 1;
-      else result.failed += 1;
+      if (send.delivered) {
+        result.delivered += 1;
+        recordOutboundMessageUsage({
+          orgId,
+          channel: "email",
+          source: "back_in_stock",
+        });
+      } else result.failed += 1;
     }
     logger.info(
       {

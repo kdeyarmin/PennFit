@@ -38,6 +38,8 @@ import {
 
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
+import { resolveOrgIdByCalledNumber } from "../../lib/messaging/tenant-telecom";
+import { resolveBrandingByOrgId } from "../../lib/tenant-branding";
 import { getPendingSessions } from "../../lib/voice/pending-sessions";
 import { resolveCallerByPhone } from "../../lib/voice/resolve-caller";
 import {
@@ -84,6 +86,10 @@ const inboundBody = z.object({
   From: z.string().trim().optional(),
   CallSid: z.string().trim().min(1),
   Caller: z.string().trim().optional(),
+  // The called number (our/tenant number). Twilio sends both `To` and
+  // `Called`; either drives per-tenant routing (G7).
+  To: z.string().trim().optional(),
+  Called: z.string().trim().optional(),
 });
 
 const signatureMiddleware = requireTwilioSignature({
@@ -119,9 +125,14 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
   }
   const { From, CallSid } = parsed.data;
 
-  // Webhook: no req.orgId. Resolve the seed tenant; on miss degrade to a
-  // clean Hangup so a tenant-context gap never retry-storms Twilio.
-  const orgId = await resolveSeedOrgId();
+  // Webhook: no req.orgId. Route by the CALLED number to the tenant that
+  // owns it (G7), falling back to the seed org when unregistered. On miss
+  // degrade to a clean Hangup so a tenant-context gap never retry-storms
+  // Twilio. With no per-tenant numbers configured this resolves to seed.
+  const calledNumber = parsed.data.Called ?? parsed.data.To;
+  const orgId =
+    (await resolveOrgIdByCalledNumber(calledNumber)) ??
+    (await resolveSeedOrgId());
   if (!orgId) {
     res
       .status(200)
@@ -130,6 +141,16 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
     return;
   }
   const supabase = getOrgScopedClient(orgId);
+
+  // Resolve the tenant's storefront brand once. The greeting + human-transfer
+  // copy is brand-literal ("PennPaps"); rewrite it to this tenant's storefront
+  // name so a non-seed tenant's caller never hears the seed brand. Uses the
+  // same resolver as the check-in voice/SMS copy (resolveBrandingByOrgId) so
+  // all patient-facing voice/storefront copy reads ONE brand field. Seed →
+  // "PennPaps" (a no-op for the substitution); fail-soft to the platform brand.
+  const brandName = (await resolveBrandingByOrgId(orgId)).storefrontName;
+  const brand = (text: string): string =>
+    text.split("PennPaps").join(brandName);
 
   // 1. Identify the caller. A DB failure here must NOT be silently treated
   // as "unidentified" — that would mask an outage and mis-route the caller.
@@ -217,7 +238,7 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
         [
           '<?xml version="1.0" encoding="UTF-8"?>',
           "<Response>",
-          "<Say>Hi! Welcome to your PennPaps reorder line. ",
+          `<Say>${escapeXmlText(brand("Hi! Welcome to your PennPaps reorder line. "))}`,
           "Connecting you to our team now.</Say>",
           `<Dial timeout="20">${SUPPORT_DIAL_E164}</Dial>`,
           "</Response>",
@@ -231,7 +252,7 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
   // conversation is bound to the shop customer (customer_id) and the agent
   // runs in "shop_customer" mode. Falls back to a human on any hiccup.
   if (!patientId && shopCustomerId && !ambiguous) {
-    if (!(await isFeatureEnabled("voice.agent", req.orgId))) {
+    if (!(await isFeatureEnabled("voice.agent", orgId))) {
       logger.info(
         { event: "voice.inbound-reorder.agent_disabled", callSid: CallSid },
         "voice.inbound-reorder: voice agent disabled; transferring shop caller",
@@ -272,6 +293,7 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
 
     getPendingSessions().register({
       conversationId: shopConversationId,
+      orgId,
       // Patient/episode are empty for a storefront caller; callerKind +
       // shopCustomerId drive the shop tool set + prompt.
       patientId: "",
@@ -279,7 +301,7 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
       callerKind: "shop_customer",
       shopCustomerId,
       callContext: INBOUND_SHOP_CALL_CONTEXT,
-      greeting: INBOUND_SHOP_GREETING,
+      greeting: brand(INBOUND_SHOP_GREETING),
       // The caller dialed US — the agent must greet first, not wait for
       // the caller to break the silence.
       agentSpeaksFirst: true,
@@ -376,7 +398,7 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
   // the unchanged WS upgrade handler then claims it and runs the bridge.
   // Anything else falls back to a human, which is strictly better than
   // greeting the caller and dropping them.
-  if (!(await isFeatureEnabled("voice.agent", req.orgId))) {
+  if (!(await isFeatureEnabled("voice.agent", orgId))) {
     logger.info(
       { event: "voice.inbound-reorder.agent_disabled", callSid: CallSid },
       "voice.inbound-reorder: voice agent disabled; transferring to human",
@@ -434,6 +456,7 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
   // in that we're calling them.
   getPendingSessions().register({
     conversationId,
+    orgId,
     patientId,
     episodeId,
     callContext: INBOUND_CALL_CONTEXT,
@@ -547,6 +570,14 @@ async function identifyCaller(
     case "none":
       return { patientId: null, shopCustomerId: null, ambiguous: false };
   }
+}
+
+// A tenant's saved brand name is substituted into the transfer <Say> below;
+// escape it so a name containing & < > can't produce malformed TwiML (which
+// Twilio rejects, dropping the human-transfer call). Mirrors the helper in
+// voice/checkin-twiml.ts.
+function escapeXmlText(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 export default router;

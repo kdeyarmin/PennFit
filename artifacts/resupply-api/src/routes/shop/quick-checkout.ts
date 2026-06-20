@@ -43,6 +43,7 @@ import {
 } from "../../lib/stripe/config";
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { getOrCreateStripeCustomer } from "../../lib/stripe/customer";
+import { stripeAccountRequestOptions } from "../../lib/stripe/connect";
 import { validateCartItems } from "../../lib/stripe/validate-cart";
 import { stripeErrLogFields } from "../../lib/stripe/err-log-fields";
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
@@ -147,6 +148,10 @@ router.post(
     const { email, displayName } = await readCustomerProfile(req);
 
     const stripe = getStripeClient(config);
+    // Stripe Connect (G5): the saved Customer, the historical reorder
+    // Session, and the new Session all live on the tenant's connected
+    // account when set; NULL → {} → platform account.
+    const connectOptions = await stripeAccountRequestOptions(req.orgId);
 
     // Resolve the basket: either passed-in items or pulled from a
     // historical Session. Reorders are always one-time — historical
@@ -195,6 +200,7 @@ router.post(
         oldSession = await stripe.checkout.sessions.retrieve(
           reorderSessionId!,
           { expand: ["line_items.data.price"] },
+          connectOptions,
         );
       } catch (err) {
         req.log?.warn(
@@ -269,7 +275,14 @@ router.post(
     // This applies to both fresh carts and reorder baskets — a reorder
     // must re-validate because a product could have gone out of stock
     // or been removed from the catalog since the original purchase.
-    const cartValidation = await validateCartItems(stripe, basket);
+    // Validate against the SAME account the session is created on
+    // (connectOptions, resolved above) so a connected tenant's basket is
+    // checked against their own catalog rather than the platform's.
+    const cartValidation = await validateCartItems(
+      stripe,
+      basket,
+      connectOptions,
+    );
     if (!cartValidation.ok) {
       req.log?.warn(
         { errors: cartValidation.errors },
@@ -398,7 +411,7 @@ router.post(
               },
             },
           },
-          { idempotencyKey },
+          { idempotencyKey, ...connectOptions },
         );
       } else {
         session = await stripe.checkout.sessions.create(
@@ -416,7 +429,7 @@ router.post(
               setup_future_usage: "off_session",
             },
           },
-          { idempotencyKey },
+          { idempotencyKey, ...connectOptions },
         );
       }
     } catch (err) {

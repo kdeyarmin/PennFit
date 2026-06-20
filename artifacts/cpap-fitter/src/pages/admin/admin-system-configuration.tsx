@@ -29,7 +29,6 @@ import {
 import { Button } from "@/components/admin/Button";
 import { Badge } from "@/components/admin/Badge";
 import { Card } from "@/components/admin/Card";
-import { ConnectionTests } from "@/components/admin/ConnectionTests";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Input } from "@/components/admin/Input";
 import { Spinner } from "@/components/admin/Spinner";
@@ -86,19 +85,14 @@ export function AdminSystemConfigurationPage() {
           <SlidersHorizontal className="h-6 w-6" /> System Configuration
         </h1>
         <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
-          Enter and rotate integration credentials and platform secrets.
-          Restricted to super-admins.
+          Your branding and your own integration accounts — your therapy-cloud
+          and clearinghouse logins. Shared platform infrastructure (AI vendors,
+          telephony, email, payments) is managed by the platform super-admin.
+          Restricted to owners.
         </p>
       </header>
 
       <SecurityNotice overlayDisabled={data?.overlayDisabled ?? false} />
-
-      {/* Connection tests lead the page: confirming a credential actually
-          works is the fastest reason to be here. The panel fetches its own
-          status independently of the config list below, so it stays usable
-          even while that list is loading or if its fetch fails. It also has
-          its own dedicated nav entry at /admin/connection-tests. */}
-      <ConnectionTests />
 
       {isPending ? (
         <Spinner label="Loading configuration…" />

@@ -153,7 +153,10 @@ router.get(
     const { data, error } = await supabase
       .raw()
       .schema("resupply")
-      .rpc("therapy_fleet_overview", { p_window_days: windowDays });
+      .rpc("therapy_fleet_overview", {
+        p_org_id: orgId,
+        p_window_days: windowDays,
+      });
     if (error) throw error;
 
     // The RPC returns a single-row table.
@@ -236,6 +239,7 @@ router.get(
       .select(
         "metric_date, patients_with_data, compliant, at_risk, non_compliant, high_leak, resupply_items_due, setups_in_window, setups_at_risk, clinical_signals_open, clinical_signals_high, clinical_signals_medium",
       )
+      .eq("org_id", orgId)
       .gte("metric_date", cutoff)
       .order("metric_date", { ascending: true })
       .limit(366);

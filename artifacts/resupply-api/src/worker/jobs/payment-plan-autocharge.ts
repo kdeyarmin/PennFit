@@ -22,7 +22,6 @@ import type Stripe from "stripe";
 
 import {
   getOrgScopedClient,
-  resolveSeedOrgId,
   type OrgScopedClient,
 } from "@workspace/resupply-db";
 
@@ -31,6 +30,8 @@ import {
   getStripeClient,
   readStripeConfigOrNull,
 } from "../../lib/stripe/config.js";
+import { stripeAccountRequestOptions } from "../../lib/stripe/connect.js";
+import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import {
   chargeInstallment,
   selectChargeableInstallments,
@@ -55,6 +56,13 @@ export const PAYMENT_PLAN_AUTOCHARGE_JOB = "billing.payment-plan-autocharge";
 function buildStripeOffSessionCharger(stripe: Stripe): OffSessionCharger {
   return async (req) => {
     try {
+      // G5 NOTE: stays on the platform account — this job is seed-pinned
+      // (resolveSeedOrgId, below). When fanned out per tenant (G2), thread
+      // the tenant orgId into `req` and pass
+      // `await stripeAccountRequestOptions(orgId)` here, routing it onto the
+      // same connected account as the paired payment-plan `setup` capture
+      // (routes/admin/payment-plans.ts) — a saved PaymentMethod is
+      // account-scoped.
       const pi = await stripe.paymentIntents.create(
         {
           amount: req.amountCents,
@@ -65,7 +73,10 @@ function buildStripeOffSessionCharger(stripe: Stripe): OffSessionCharger {
           confirm: true,
           metadata: req.metadata,
         },
-        { idempotencyKey: req.idempotencyKey },
+        // `accountOptions` carries `{ stripeAccount }` for a tenant on Stripe
+        // Connect, routing the charge to its connected account (where its
+        // customer + PM live). Empty for the platform account (seed tenant).
+        { idempotencyKey: req.idempotencyKey, ...(req.accountOptions ?? {}) },
       );
       if (pi.status === "succeeded") {
         return { outcome: "succeeded", paymentIntentId: pi.id };
@@ -163,11 +174,55 @@ export async function runPaymentPlanAutocharge(): Promise<AutochargeRunStats> {
     );
     return stats;
   }
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) return stats;
-  const supabase = getOrgScopedClient(orgId);
   const charger = buildStripeOffSessionCharger(getStripeClient(config));
+  // Fan out across every active tenant — patient_payment_plans /
+  // _installments are org-scoped, and each tenant's off-session charge is
+  // routed to ITS OWN Stripe account (stripeAccountRequestOptions(orgId)) so
+  // the stored customer + PM resolve on the account they were created on.
+  // Per-tenant failure isolation; results summed. Single-tenant:
+  // listActiveOrgIds() returns just the seed org → platform account, exactly
+  // as before Connect.
+  const fan = await forEachActiveOrg(
+    async (orgId) => {
+      await paymentPlanAutochargeForOrg(orgId, charger, stats);
+    },
+    { jobName: PAYMENT_PLAN_AUTOCHARGE_JOB },
+  );
+  // Money-path retry safety: a throw in the per-tenant body (e.g. sink.markPaid
+  // failing AFTER a successful Stripe charge) is caught + isolated by
+  // forEachActiveOrg, so we re-surface it as a job failure. Otherwise pg-boss
+  // would mark the tick succeeded and the only retry would be the next cron
+  // run — potentially past Stripe's ~24h idempotency window, risking a second
+  // charge. Re-throwing makes pg-boss retry the tick PROMPTLY
+  // (VENDOR_SEND_QUEUE_OPTS); the already-charged installments are idempotent
+  // (per-installment claim + idempotency key) so the retry is safe.
+  if (fan.failedOrgIds.length > 0) {
+    throw new Error(
+      `payment-plan-autocharge: ${fan.failedOrgIds.length} tenant(s) failed this tick — retrying`,
+    );
+  }
+  return stats;
+}
+
+async function paymentPlanAutochargeForOrg(
+  orgId: string,
+  charger: OffSessionCharger,
+  stats: AutochargeRunStats,
+): Promise<void> {
+  // Per-tenant opt-in. The flag is checked HERE, per org, not once for the
+  // whole tick: gating the fan-out on a single (seed) flag read would let the
+  // seed tenant's "on" authorize off-session card charges for EVERY active
+  // tenant. isFeatureEnabled falls back to the seed flag only for orgs with no
+  // row of their own, so single-tenant behavior is unchanged.
+  if (!(await isFeatureEnabled("billing.payment_plan_autocharge", orgId))) {
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const sink = buildSupabaseSink(supabase);
+  // Resolve the tenant's Stripe Connect routing once per tick. Empty for the
+  // platform account (seed / not-yet-onboarded); `{ stripeAccount }` once the
+  // tenant's connected account has charges_enabled.
+  const accountOptions = await stripeAccountRequestOptions(orgId);
   const todayIso = new Date().toISOString().slice(0, 10);
 
   // Keyset-paginate the plan scan. PostgREST silently caps un-limited
@@ -287,7 +342,13 @@ export async function runPaymentPlanAutocharge(): Promise<AutochargeRunStats> {
         continue;
       }
 
-      const res = await chargeInstallment(plan, inst, charger, sink);
+      const res = await chargeInstallment(
+        plan,
+        inst,
+        charger,
+        sink,
+        accountOptions,
+      );
       if (res.outcome === "succeeded") {
         stats.charged += 1;
         // Reflect the success locally so the plan-completion check below
@@ -320,7 +381,6 @@ export async function runPaymentPlanAutocharge(): Promise<AutochargeRunStats> {
       }
     }
   }
-  return stats;
 }
 
 export async function registerPaymentPlanAutochargeJob(
@@ -332,14 +392,9 @@ export async function registerPaymentPlanAutochargeJob(
     VENDOR_SEND_QUEUE_OPTS,
   );
   await boss.work(PAYMENT_PLAN_AUTOCHARGE_JOB, async () => {
-    const enabled = await isFeatureEnabled("billing.payment_plan_autocharge");
-    if (!enabled) {
-      logger.info(
-        { queue: PAYMENT_PLAN_AUTOCHARGE_JOB },
-        "payment-plan-autocharge: feature flag off — nothing charged",
-      );
-      return;
-    }
+    // No global flag gate here — the feature flag is enforced per-tenant in
+    // paymentPlanAutochargeForOrg so one tenant's flag can't authorize charges
+    // for another. Orgs with the flag off are skipped inside the fan-out.
     const stats = await runPaymentPlanAutocharge();
     logger.info(
       { event: "billing.payment-plan-autocharge.completed", ...stats },

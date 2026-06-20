@@ -46,6 +46,8 @@ import {
 
 import { signFaxDocumentToken } from "../../lib/fax-document-token.js";
 import { logger } from "../../lib/logger.js";
+import { resolveTenantFaxFrom } from "../../lib/messaging/tenant-telecom.js";
+import { recordTenantUsage } from "../../lib/metering/usage.js";
 import { rateLimit } from "../../middlewares/rate-limit.js";
 import { requirePermission } from "../../middlewares/requireAdmin.js";
 
@@ -133,6 +135,7 @@ interface DispatchResult {
  */
 async function dispatchFax(
   supabase: OrgScopedClient,
+  orgId: string,
   outreachId: string,
   to: string,
 ): Promise<DispatchResult> {
@@ -147,7 +150,11 @@ async function dispatchFax(
   const token = signFaxDocumentToken(outreachId);
   const mediaUrl = `${baseUrl}/resupply-api/fax/document/${token}`;
   const statusCallbackUrl = `${baseUrl}/resupply-api/fax/webhook`;
-  const fromNumber = process.env.TELNYX_FAX_FROM_NUMBER!.trim();
+  // Prefer the tenant's own provisioned fax DID (migration 0368); fall
+  // back to the platform default when the tenant has none. isFaxConfigured()
+  // already verified TELNYX_FAX_FROM_NUMBER is set.
+  const tenantFrom = await resolveTenantFaxFrom(orgId);
+  const fromNumber = tenantFrom ?? process.env.TELNYX_FAX_FROM_NUMBER!.trim();
 
   // Scope try/catch to the Telnyx API call only. A DB failure after a
   // successful send must NOT fall into the catch path — that would mark
@@ -220,6 +227,15 @@ async function dispatchFax(
       "physician_fax_outreach: fax accepted by Telnyx but DB stamp failed",
     );
   }
+
+  // Telnyx accepted a fax transmission — meter one billable fax event for
+  // the tenant (G12). Fire-and-forget + fail-soft; covers both the initial
+  // dispatch and the retry route, which both run through here.
+  void recordTenantUsage({
+    orgId,
+    metricKey: "faxEvents",
+    source: "physician_fax_outreach.dispatch",
+  });
 
   return { status: "sent", provider: "telnyx", vendorRef: result.id };
 }
@@ -298,7 +314,12 @@ router.post(
       throw new Error("physician_fax_outreach insert returned no rows");
     const id = inserted.id;
 
-    const dispatch = await dispatchFax(supabase, id, data.physicianFaxE164);
+    const dispatch = await dispatchFax(
+      supabase,
+      orgId,
+      id,
+      data.physicianFaxE164,
+    );
 
     await logAudit({
       action: "physician_fax_outreach.created",
@@ -415,6 +436,7 @@ router.post(
 
     const dispatch = await dispatchFax(
       supabase,
+      orgId,
       row.id,
       row.physician_fax_e164,
     );

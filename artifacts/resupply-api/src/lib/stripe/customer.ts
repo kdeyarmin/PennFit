@@ -35,6 +35,7 @@ import {
 } from "@workspace/resupply-db";
 
 import { getStripeClient, type StripeConfig } from "./config";
+import { stripeAccountRequestOptions } from "./connect";
 
 type ShopCustomerRow = Database["resupply"]["Tables"]["shop_customers"]["Row"];
 
@@ -67,6 +68,10 @@ export async function getOrCreateStripeCustomer(
   }
   const supabase = getOrgScopedClient(orgId);
   const stripe = getStripeClient(config);
+  // Stripe Connect (G5): create the Customer ON the tenant's connected
+  // account when it has one (Customers are account-scoped). NULL account
+  // → {} → the platform account, unchanged.
+  const accountOpts = await stripeAccountRequestOptions(orgId);
 
   // Step 1: ensure a local row exists. The PUT /shop/me path also
   // creates this; we re-create on demand so checkout flows that
@@ -96,7 +101,10 @@ export async function getOrCreateStripeCustomer(
         source: "pennpaps-shop",
       },
     },
-    { idempotencyKey: `pennpaps-shop-customer-${args.customerId}` },
+    {
+      idempotencyKey: `pennpaps-shop-customer-${args.customerId}`,
+      ...accountOpts,
+    },
   );
 
   // Step 3: try to write the mapping. If a sibling request beat us
@@ -270,6 +278,9 @@ async function updateEmail(
 export async function readDefaultPaymentMethod(
   config: StripeConfig,
   stripeCustomerId: string,
+  /** Tenant whose connected account the Customer lives on (G5). The sole
+   *  caller is the webhook customer-sync, which passes its resolved org. */
+  orgId?: string,
 ): Promise<{
   id: string;
   brand: string | null;
@@ -278,9 +289,12 @@ export async function readDefaultPaymentMethod(
   expYear: number | null;
 } | null> {
   const stripe = getStripeClient(config);
-  const customer = await stripe.customers.retrieve(stripeCustomerId, {
-    expand: ["invoice_settings.default_payment_method"],
-  });
+  const accountOpts = await stripeAccountRequestOptions(orgId);
+  const customer = await stripe.customers.retrieve(
+    stripeCustomerId,
+    { expand: ["invoice_settings.default_payment_method"] },
+    accountOpts,
+  );
   if (customer.deleted) return null;
   const dpm = (customer as Stripe.Customer).invoice_settings
     ?.default_payment_method;

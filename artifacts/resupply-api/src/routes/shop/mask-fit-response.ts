@@ -17,10 +17,11 @@ import { Router, type IRouter, type Request } from "express";
 import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { z } from "zod";
 
-import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { verifyMaskFitToken } from "../../lib/mask-fit-token";
+import { resolveOrgIdForSignedRecord } from "../../lib/storefront/signed-link-org";
 
 const router: IRouter = Router();
 
@@ -59,7 +60,13 @@ router.post("/shop/orders/mask-fit", maskFitRateLimiter, async (req, res) => {
     return;
   }
 
-  const orgId = await resolveSeedOrgId();
+  // Resolve the tenant FROM the order the token references (the link
+  // carries no host/session), so a tenant-B mask-fit response lands in
+  // tenant B's order — not the seed org's.
+  const orgId = await resolveOrgIdForSignedRecord(
+    "shop_orders",
+    verified.orderId,
+  );
   if (!orgId) {
     res.status(503).json({ error: "tenant_unavailable" });
     return;

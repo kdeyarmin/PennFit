@@ -219,14 +219,17 @@ SYSTEM (mostly admin / super-admin):
     Delivery Failures (/admin/delivery-failures), Integrations (/admin/integrations) —
     therapy-cloud / payer / clearinghouse connectors, PacWare (/admin/pacware) — CSV exchange
     with the legacy billing system, Webhook Deliveries (/admin/webhook-deliveries).
-  - Settings (day-to-day): Settings (/admin/settings), Company information
+  - Settings (day-to-day): Settings (/admin/settings) — toggles the client-only demo sandbox,
+    Company information
     (/admin/company-information) — company name, addresses, support contact, and identifiers
     used on documents, the storefront, chat, and SMS/email branding, Closures (/admin/closures),
     Team (/admin/team) — invite/role management (admin-only), Locations (/admin/locations) —
     only with multi-branch enabled, Account security (/admin/security) — your own password + MFA.
-  - Setup & advanced (in launch order): Account Setup (/admin/account-setup) — launch checklist,
-    Configuration & tests (/admin/system/configuration) — SUPER-ADMIN ONLY: where vendor API
-    keys/secrets are entered, Connection tests (/admin/connection-tests),
+  - Setup & advanced: Configuration (/admin/system/configuration) — OWNER ONLY: your branding and
+    your OWN integration accounts (therapy-cloud, clearinghouse). Shared platform infrastructure
+    (AI vendors, telephony, email, payments), the send-a-test Connection tests, the deployment
+    launch checklist (Account Setup), platform packages/pricing (Platform billing), and deployment
+    System info all live on the global platform super-admin console, not here,
     Control Center (/admin/control-center) — feature flags, Bot playground (/admin/bot-playground).
 `;
 
@@ -291,9 +294,11 @@ Turn a feature on or off:
     Most automation (reminders, auto-submit, dispatchers, this very
     assistant) is gated by a flag there.
 
-Enter or rotate a vendor API key (super-admin only):
-  - Configuration & tests (/admin/system/configuration). Connection
-    tests (/admin/connection-tests) verify a vendor is reachable.
+Enter or rotate a vendor API key:
+  - Your OWN integration accounts (therapy-cloud, clearinghouse): Configuration
+    (/admin/system/configuration), owner only. Shared PLATFORM credentials (AI
+    vendors, telephony, email, payments) and the send-a-test connection checks
+    live on the global platform super-admin console, not in the tenant admin.
 
 Sync with the legacy billing system:
   - PacWare (/admin/pacware) — CSV import/export. PennFit is the

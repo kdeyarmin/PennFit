@@ -22,6 +22,20 @@ vi.mock("@workspace/resupply-email", async () => {
   };
 });
 
+// The shipping email brands itself with the tenant's storefront name (G6).
+// Control it here so the copy assertions are deterministic; defaults to the
+// seed tenant's "PennPaps".
+const brandNameRef = vi.hoisted(() => ({ value: "PennPaps" }));
+vi.mock("../tenant-branding.js", () => ({
+  resolveBrandingByOrgId: vi.fn(async () => ({
+    storefrontName: brandNameRef.value,
+    legalName: brandNameRef.value,
+    tagline: "tagline",
+    logoUrl: null,
+  })),
+  resolveTenantBaseUrl: vi.fn(async () => null),
+}));
+
 import { EmailConfigError } from "@workspace/resupply-email";
 
 import {
@@ -92,6 +106,7 @@ describe("sendShippingNotificationEmail", () => {
     for (const k of ENV_KEYS) originalEnv[k] = process.env[k];
     for (const k of ENV_KEYS) delete process.env[k];
     process.env.SHOP_PUBLIC_BASE_URL = "https://test.example.com";
+    brandNameRef.value = "PennPaps";
     sendEmailMock.mockReset();
     createSendgridClientMock.mockReset();
     createSendgridClientMock.mockImplementation(() => ({
@@ -150,6 +165,28 @@ describe("sendShippingNotificationEmail", () => {
       kind: "shop_shipping_notification_v1",
       stripe_session_id: "cs_ship",
     });
+  });
+
+  it("brands the email with the tenant's storefront name (G6)", async () => {
+    process.env.SENDGRID_API_KEY = "SG.test";
+    process.env.SENDGRID_FROM_EMAIL = "no-reply@penn.example";
+    brandNameRef.value = "Acme CPAP";
+    sendEmailMock.mockResolvedValueOnce({ messageId: "msg_ship_brand" });
+
+    await sendShippingNotificationEmail({
+      toEmail: "buyer@example.com",
+      stripeSessionId: "cs_ship_brand",
+      orgId: "11111111-1111-4111-8111-111111111111",
+      carrier: "UPS",
+      trackingNumber: "1Z999AA10123456784",
+      shippingAddress: ADDR,
+    });
+
+    const arg = sendEmailMock.mock.calls[0]![0];
+    expect(arg.subject).toBe("Your Acme CPAP order has shipped");
+    expect(arg.text).toContain("your Acme CPAP order has shipped");
+    expect(arg.html).toContain("Acme CPAP");
+    expect(arg.subject).not.toContain("PennPaps");
   });
 
   it("falls back to bare tracking number when carrier is unknown", async () => {

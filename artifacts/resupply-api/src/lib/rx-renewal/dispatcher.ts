@@ -18,6 +18,7 @@ import {
   createSendgridClient,
   EmailConfigError,
 } from "@workspace/resupply-email";
+import { createTenantSendgridClient } from "../email/tenant-sender.js";
 import {
   createTwilioSmsClient,
   TwilioConfigError,
@@ -27,6 +28,7 @@ import { renderMessage } from "@workspace/resupply-templates";
 
 import { isOutsideSmsSendWindow } from "../comm-prefs";
 import { logger } from "../logger";
+import { resolveTenantSmsClientOptions } from "../messaging/tenant-telecom";
 import { messageTemplateLookup } from "../message-templates/lookup";
 import { sendPushToCustomerByEmail } from "../web-push";
 import {
@@ -70,8 +72,15 @@ export type RxRenewalOutcome =
 export async function runRxRenewalSendDue(
   channel: "email" | "sms",
   actor: RxRenewalActor,
+  /**
+   * Tenant to sweep. The daily cron fans out across every active tenant
+   * (worker/jobs/rx-renewal-send.ts) and ALWAYS passes an explicit orgId.
+   * Left optional only for the admin "Run now" route, which has no tenant
+   * context and falls back to the seed org for back-compat.
+   */
+  explicitOrgId?: string,
 ): Promise<RxRenewalOutcome> {
-  const orgId = await resolveSeedOrgId();
+  const orgId = explicitOrgId ?? (await resolveSeedOrgId());
   if (!orgId) {
     // Tenant context missing — no patients to sweep. Return the same
     // "ok, did nothing" shape a zero-eligible run produces.
@@ -177,7 +186,9 @@ export async function runRxRenewalSendDue(
   let sms: ReturnType<typeof createTwilioSmsClient> | null = null;
   if (channel === "email") {
     try {
-      sg = createSendgridClient();
+      // Send under the tenant's own From identity when configured (G6);
+      // falls back to the platform default otherwise.
+      sg = await createTenantSendgridClient(orgId);
     } catch (err) {
       if (err instanceof EmailConfigError) {
         return { status: "not_configured", channel };
@@ -186,7 +197,9 @@ export async function runRxRenewalSendDue(
     }
   } else {
     try {
-      sms = createTwilioSmsClient();
+      // Send under the tenant's own number / Messaging Service when it
+      // has one (G7); falls back to the platform env default otherwise.
+      sms = createTwilioSmsClient(await resolveTenantSmsClientOptions(orgId));
     } catch (err) {
       if (err instanceof TwilioConfigError) {
         return { status: "not_configured", channel };

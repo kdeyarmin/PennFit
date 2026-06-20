@@ -151,3 +151,9 @@ overrides:
   # sourceMappingURL comment (GHSA). Pin the eslint-plugin-react-hooks
   # transitive to the patched version.
   "@babel/core@<7.29.6": ^7.29.6
+  # undici 7.23.0–7.27.x is vulnerable to TLS certificate validation bypass
+  # via dropped requestTls in SOCKS5 ProxyAgent (GHSA-vmh5-mc38-953g). This
+  # affects both the resupply-api direct runtime dependency (^7.25.0) and
+  # the vitest/jsdom dev transitive. Pin to the patched version, kept on the
+  # 7.x line so it stays in range for resupply-api's ^7 spec.
+  "undici@>=7.23.0 <7.28.0": ">=7.28.0 <8"

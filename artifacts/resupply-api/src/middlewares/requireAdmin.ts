@@ -40,6 +40,7 @@ import {
 } from "@workspace/resupply-db";
 
 import { getAuthDeps } from "../lib/auth-deps";
+import { hasPendingAgreements } from "../lib/agreements/status";
 import { logger } from "../lib/logger";
 import { enforceCsrfForAuthedMutation } from "./csrf";
 
@@ -162,6 +163,43 @@ async function resolveAdmin(req: Request): Promise<ResolvedAdmin | null> {
     // matching the full-read/write support contract. `impersonatorUserId`
     // makes every downstream action attributable to the real human.
     if (session.impersonatedOrgId) {
+      // Re-verify the impersonator is STILL an active platform admin on
+      // EVERY request. Without this, a live act-as-tenant cookie keeps full
+      // tenant-admin access for up to the session TTL after the human is
+      // removed from `platform_admins` — revoking a compromised/departed
+      // platform admin would not immediately cut their cross-tenant access.
+      // The session's userId IS the platform admin's auth user id (the mint
+      // sets userId === impersonatorUserId === platformAdminUserId). Fail
+      // closed on a lookup error or a non-member. `platform_admins` is a
+      // GLOBAL directory, so read it via the service-role client (no org
+      // filter); this file is allowlisted for that direct call.
+      try {
+        const svc = getSupabaseServiceRoleClient();
+        const { data: pa, error: paErr } = await svc
+          .schema("resupply")
+          .from("platform_admins")
+          .select("auth_user_id")
+          .eq("auth_user_id", user.id)
+          .limit(1)
+          .maybeSingle();
+        if (paErr || !pa) {
+          logger.warn(
+            {
+              event: "resupply_impersonation_platform_admin_revoked",
+              impersonatorUserId: user.id,
+              hadLookupError: Boolean(paErr),
+            },
+            "requireAdmin: impersonator is no longer an active platform admin; rejecting impersonation session",
+          );
+          return null;
+        }
+      } catch (err) {
+        logger.warn(
+          { event: "resupply_impersonation_platform_admin_check_failed", err },
+          "requireAdmin: platform_admins re-check threw; failing closed",
+        );
+        return null;
+      }
       return {
         email: user.emailLower,
         userId: user.id,
@@ -303,6 +341,34 @@ export async function requireAdmin(
       { event: "resupply_admin_org_resolve_failed", adminUserId: admin.userId },
       "requireAdmin: could not resolve tenant org_id (attached none)",
     );
+  }
+
+  // Onboarding agreements gate (G16). A tenant that hasn't signed the
+  // required agreements (BAA + platform terms) is blocked from the admin
+  // API itself — not just the SPA — so the compliance gate can't be
+  // bypassed by calling endpoints directly with a valid session. The
+  // endpoints needed to SEE and COMPLETE signing are allowlisted, and
+  // platform-admin act-as-tenant sessions are exempt (support staff must
+  // reach an unsigned tenant to help them). Fail-closed on a lookup error,
+  // matching the /me `pendingAgreements` posture. Skipped entirely when no
+  // org could be resolved (single-tenant boot before the seed is cached) —
+  // there's nothing to gate on.
+  if (req.orgId && req.impersonation !== true) {
+    const path = req.originalUrl.split("?")[0] ?? "";
+    const isAgreementsEndpoint = path.includes("/admin/agreements");
+    const isIdentityEndpoint = path.endsWith("/me");
+    if (
+      !isAgreementsEndpoint &&
+      !isIdentityEndpoint &&
+      (await hasPendingAgreements(req.orgId))
+    ) {
+      res.status(403).json({
+        error: "agreements_required",
+        message:
+          "Your organization must accept the required agreements before using the console.",
+      });
+      return;
+    }
   }
   next();
 }

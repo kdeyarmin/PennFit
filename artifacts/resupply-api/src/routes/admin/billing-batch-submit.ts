@@ -52,6 +52,13 @@ router.post(
       return;
     }
 
+    // Fail closed: a missing tenant context must NOT fall back to the seed
+    // org's clearinghouse (the cross-tenant bug this PR fixes).
+    const orgId = req.orgId?.trim();
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const result = await executeOfficeAllyBatchSubmit({
       claimIds: parsed.data.claimIds,
       usageIndicator: parsed.data.usageIndicator,
@@ -59,6 +66,7 @@ router.post(
       adminUserId: req.adminUserId ?? null,
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
+      orgId,
     });
 
     if (!result.ok) {

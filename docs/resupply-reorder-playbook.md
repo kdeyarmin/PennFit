@@ -66,7 +66,7 @@ guidance.
 | **Email reminder**              | `lib/resupply-messaging/src/email-templates.ts` → `renderResupplyReminder`                                                           | Benefit + coverage reassurance copy, a single primary "Yes, ship it" CTA that's one tap to the address on file (no login), plus the item cards on the click-landing page (the proven confirmation-rate lever).                                                    |
 | **SMS reminder**                | `lib/resupply-reminders/src/send-sms.ts`                                                                                             | "Reply YES to ship to the address on file" — deliberately kept under the 160-char GSM-7 segment cap so it stays single-segment (cost) while preserving the lowest-friction confirm path.                                                                          |
 | **SMS replies / fence-sitters** | `artifacts/resupply-api/src/lib/messaging/ai-fallback-impl.ts` → `SYSTEM_PROMPT`                                                     | When a reply isn't a clean YES/NO, classifies questions/hesitations as `help` and writes a warm, reassuring reply that addresses the concern and invites a YES — without promising a price or guaranteeing coverage.                                              |
-| **Phone / voice agent**         | `lib/resupply-ai/src/prompts.ts` (patient flow, `PROMPT_VERSION` 2026-06-14.v10)                                                     | After reading back what's due, the agent gently moves toward placing the order, meets the three hesitations with care, and offers to hand off to set up auto-ship. Caring, never salesy.                                                                          |
+| **Phone / voice agent**         | `lib/resupply-ai/src/prompts.ts` (patient flow, `PROMPT_VERSION` 2026-06-19.v13)                                                     | After reading back what's due, the agent gently moves toward placing the order, meets the three hesitations with care, and offers to hand off to set up auto-ship. Caring, never salesy.                                                                          |
 
 ## Hard boundaries (these still hold)
 
@@ -89,6 +89,19 @@ These conversion changes do **not** loosen any safety rule:
 - Editing `lib/resupply-ai/src/prompts.ts` requires bumping
   `PROMPT_VERSION` and recording the new hash in
   `prompts.version-pin.test.ts` (the drift detector explains how).
+- **Voice naturalness knobs (no prompt change needed).** Beyond the prompt,
+  the phone agent's "sounds human" levers are env-tunable and A/B-able via
+  the admin bot-playground test call: the ElevenLabs voice itself
+  (`ELEVENLABS_VOICE_ID` — the biggest lever; the default is the warm
+  "Charlotte"), expressiveness (`ELEVENLABS_STYLE` / `_SIMILARITY_BOOST` /
+  `_USE_SPEAKER_BOOST` / `_STABILITY` / `_SPEED`), caller-audio noise
+  reduction (`OPENAI_REALTIME_NOISE_REDUCTION`, default `far_field` for
+  telephony), and the gpt-realtime-2 brain (now the **default** GA schema;
+  set `OPENAI_REALTIME_SCHEMA=beta` for the legacy rollback per
+  `docs/runbooks/realtime-ga-migration.md`). Domain-term pronunciation
+  (e.g. "CPAP" → "see-pap") is handled automatically at the TTS boundary by
+  `lib/resupply-ai/src/tts-pronunciation.ts` — extend that map (with a test)
+  when a new brand/clinical term comes out wrong on a test call.
 - The public chat prompt has a 110k-char cap and the signed-in prompt a
   40k-char cap (tests enforce both) — keep additions tight.
 - SMS bodies must stay GSM-7 and under 160 chars or Twilio silently

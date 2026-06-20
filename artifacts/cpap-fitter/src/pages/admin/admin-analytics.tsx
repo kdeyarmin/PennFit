@@ -60,7 +60,7 @@ export function AdminAnalyticsPage() {
         <p className="text-sm mt-1" style={{ color: "hsl(var(--ink-3))" }}>
           Resupply throughput, patient adherence, and CSR productivity for the
           clinical side of the business. Storefront analytics (orders, email,
-          mask popularity) live under PennPaps.
+          mask popularity) live under Storefront Analytics.
         </p>
       </header>
 

@@ -52,6 +52,19 @@ vi.mock("@workspace/resupply-email", async () => {
   };
 });
 
+// The order email brands itself with the tenant's storefront name (G6) via
+// resolveBrandingByOrgId. Mock it so the subject assertion is deterministic
+// (seed tenant → "PennPaps") without staging the organizations directory read.
+vi.mock("../tenant-branding.js", () => ({
+  resolveBrandingByOrgId: vi.fn(async () => ({
+    storefrontName: "PennPaps",
+    legalName: "Penn Home Medical Supply",
+    tagline: "tagline",
+    logoUrl: null,
+  })),
+  resolveTenantBaseUrl: vi.fn(async () => null),
+}));
+
 import { sendOrderConfirmationIfFirst } from "./webhook-handler";
 
 const ENV_KEYS = [

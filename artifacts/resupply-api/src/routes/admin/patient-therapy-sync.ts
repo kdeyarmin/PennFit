@@ -43,7 +43,7 @@ import {
   integrationSnapshotSchema,
 } from "@workspace/resupply-integrations";
 
-import { getIntegrationAdaptersWithDbOverrides } from "../../lib/integrations/registry";
+import { getIntegrationAdaptersForOrg } from "../../lib/integrations/registry";
 import { persistTherapyNights } from "../../lib/integrations/persist-nights";
 import { normalizeSnapshotForPersistence } from "../../worker/jobs/therapy-integrations-nightly-sync";
 import { logger } from "../../lib/logger";
@@ -194,7 +194,7 @@ router.post(
       return;
     }
 
-    const adapters = await getIntegrationAdaptersWithDbOverrides();
+    const adapters = await getIntegrationAdaptersForOrg(orgId);
     const adapter = adapters.get(source);
     if (!adapter || adapter.availability().status === "unavailable") {
       res.status(503).json({

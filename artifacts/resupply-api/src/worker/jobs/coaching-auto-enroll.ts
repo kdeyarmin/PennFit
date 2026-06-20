@@ -23,6 +23,7 @@ import type PgBoss from "pg-boss";
 
 import { logger } from "../../lib/logger";
 import { runCoachingAutoEnrollSweep } from "../../lib/clinical/coaching-auto-enroll";
+import { forEachActiveOrg } from "../lib/for-each-active-org";
 import { createQueueWithDlq, CRON_SCAN_QUEUE_OPTS } from "../lib/queue-options";
 
 export const COACHING_AUTO_ENROLL_JOB = "coaching-plan.auto-enroll-sweep";
@@ -55,24 +56,25 @@ export async function registerCoachingAutoEnrollJob(
     CRON_SCAN_QUEUE_OPTS,
   );
   await boss.work(COACHING_AUTO_ENROLL_JOB, async () => {
-    try {
-      const stats = await runCoachingAutoEnrollSweep();
-      logger.info(
-        { event: "coaching-plan.auto-enroll-sweep.completed", ...stats },
-        "coaching-plan.auto-enroll-sweep: completed",
-      );
-    } catch (err) {
-      logger.error(
-        {
-          err:
-            err instanceof Error
-              ? { name: err.name, message: err.message }
-              : err,
-        },
-        "coaching-plan.auto-enroll-sweep: failed",
-      );
-      throw err;
-    }
+    // Fan out across every active tenant. patient_coaching_plans +
+    // patient_therapy_nights are tenant-scoped, so each tenant is scored on
+    // its own org — the sweep gets an explicit orgId here (never the seed-org
+    // default). forEachActiveOrg isolates per-tenant failures so one tenant's
+    // DB error can't abort the rest of the sweep (or the scheduler tick).
+    await forEachActiveOrg(
+      async (orgId) => {
+        const stats = await runCoachingAutoEnrollSweep(orgId);
+        logger.info(
+          {
+            event: "coaching-plan.auto-enroll-sweep.completed",
+            org_id: orgId,
+            ...stats,
+          },
+          "coaching-plan.auto-enroll-sweep: completed",
+        );
+      },
+      { jobName: COACHING_AUTO_ENROLL_JOB },
+    );
   });
   await boss.schedule(COACHING_AUTO_ENROLL_JOB, COACHING_AUTO_ENROLL_CRON);
   logger.info(

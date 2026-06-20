@@ -36,11 +36,14 @@ import {
   generateOrderReference,
 } from "../../lib/storefront/orderEmail.js";
 import { sendFitterOrderConfirmationEmail } from "../../lib/order-emails/send-fitter-order-confirmation-email.js";
+import { resolveBrandingByOrgId } from "../../lib/tenant-branding.js";
 import {
   createTwilioSmsClient,
   TwilioConfigError,
 } from "@workspace/resupply-telecom";
 import { logger } from "../../lib/logger.js";
+import { resolveTenantSmsClientOptions } from "../../lib/messaging/tenant-telecom.js";
+import { recordOutboundMessageUsage } from "../../lib/metering/usage.js";
 import { redactDbErr } from "../../lib/redact-db-err.js";
 import { requireCsrfWhenSession } from "../../middlewares/csrf.js";
 import { attachSignedIn } from "../../middlewares/requireSignedIn.js";
@@ -229,7 +232,10 @@ router.post(
       }
     }
 
-    const result = await sendOrderToPenn(order, { orderReference });
+    const result = await sendOrderToPenn(order, {
+      orderReference,
+      orgId: orgId ?? undefined,
+    });
 
     // Update DB row with delivery status (best-effort; do not surface errors
     // to the patient if this update fails)
@@ -290,11 +296,19 @@ router.post(
       const physicianName = order.prescription?.physicianName;
       if (!phone || !physicianName) return;
       try {
-        const sms = createTwilioSmsClient();
+        // Send under the tenant's own number / Messaging Service when it
+        // has one (G7); falls back to the platform env default otherwise.
+        const sms = createTwilioSmsClient(
+          await resolveTenantSmsClientOptions(orgId ?? undefined),
+        );
         // Keep the body under 160 GSM-7 characters so it ships as a
         // single segment. The order reference doubles as a per-message
         // search anchor if the patient texts back asking about it.
-        const body = `PennPaps: order ${result.orderReference} received. We'll reach out to Dr. ${physicianName.split(" ").pop()} this week to coordinate your prescription. Reply STOP to opt out.`;
+        // Brand to the tenant's storefront name via the shared resolver
+        // (same field the check-in voice/SMS copy uses). Seed → "PennPaps".
+        const brandName = (await resolveBrandingByOrgId(orgId ?? undefined))
+          .storefrontName;
+        const body = `${brandName}: order ${result.orderReference} received. We'll reach out to Dr. ${physicianName.split(" ").pop()} this week to coordinate your prescription. Reply STOP to opt out.`;
         await sms.sendSms({ to: phone, body });
       } catch (err) {
         if (err instanceof TwilioConfigError) {
@@ -330,6 +344,8 @@ router.post(
           orderReference: result.orderReference,
           maskName: order.chosenMask.name,
           maskManufacturer: order.chosenMask.manufacturer ?? null,
+          // Send under the tenant's own From identity when configured (G6).
+          orgId: orgId ?? undefined,
         });
         if (!confirmResult.configured) {
           logger.info(
@@ -345,6 +361,13 @@ router.post(
             },
             "fitter order: confirmation-email send failed (non-fatal)",
           );
+        } else {
+          // Patient-facing email the vendor accepted — meter it.
+          recordOutboundMessageUsage({
+            orgId,
+            channel: "email",
+            source: "fitter_order_confirmation",
+          });
         }
       } catch (err) {
         logger.warn(

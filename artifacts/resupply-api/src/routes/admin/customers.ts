@@ -72,6 +72,7 @@ import {
   getStripeClient,
   readStripeConfigOrNull,
 } from "../../lib/stripe/config";
+import { stripeAccountRequestOptions } from "../../lib/stripe/connect";
 import { stripeErrLogFields } from "../../lib/stripe/err-log-fields";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -996,6 +997,14 @@ router.post(
       // typical interval where a CSR might legitimately re-issue
       // because the original link expired or was lost.
       const idempotencyKey = `admin-reorder-${userId}-${sourceOrderId}`;
+      // Route to the tenant's connected account (Connect, G5) when it has
+      // one. The attached `customer` id below is account-scoped, and
+      // getOrCreateStripeCustomer mints customers ON the connected account —
+      // so a connected-account customer must be used in a connected-account
+      // session (the prior platform-account session 404'd that same id).
+      // Empty options (platform account) for a tenant without a connected
+      // account, so single-tenant behavior is unchanged.
+      const acct = await stripeAccountRequestOptions(orgId);
       session = await stripe.checkout.sessions.create(
         {
           mode: "payment",
@@ -1030,7 +1039,7 @@ router.post(
             initiated_by_admin_user_id: req.adminUserId ?? "unknown",
           },
         },
-        { idempotencyKey },
+        { ...acct, idempotencyKey },
       );
     } catch (err) {
       const status =

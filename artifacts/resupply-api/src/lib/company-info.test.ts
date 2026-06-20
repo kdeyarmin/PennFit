@@ -10,7 +10,7 @@
 //   5. applyCompanyIdentityToText rewrites the historical hardcoded
 //      strings only once the DB row exists.
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 import {
   installSupabaseMock,
@@ -19,14 +19,26 @@ import {
 
 const supabaseMock = installSupabaseMock();
 
+// Mock the per-tenant app_config reader so the org-aware branding helpers
+// can be driven deterministically (the real reader does two concurrent
+// app_config lookups whose mock-queue order isn't guaranteed).
+const getTenantConfigValueMock = vi.hoisted(() =>
+  vi.fn(async (_orgId: string, _key: string): Promise<string | null> => null),
+);
+vi.mock("./app-config/store.js", () => ({
+  getTenantConfigValue: getTenantConfigValueMock,
+}));
+
 import {
   __resetCompanyInfoForTests,
   applyCompanyIdentityToText,
   applyCompanyInfoToEnv,
   applyPlatformBranding,
+  applyPlatformBrandingForOrg,
   formatPhoneForDisplay,
   getCompanyInfo,
   PLATFORM_NAME,
+  resolveAssistantNamesForOrg,
 } from "./company-info";
 
 const ORG_ROW = {
@@ -53,6 +65,8 @@ const ORG_ROW = {
 beforeEach(() => {
   supabaseMock.reset();
   __resetCompanyInfoForTests();
+  getTenantConfigValueMock.mockReset();
+  getTenantConfigValueMock.mockResolvedValue(null);
 });
 
 afterEach(() => {
@@ -104,6 +118,72 @@ describe("assistant names + platform branding", () => {
   });
 });
 
+describe("per-tenant assistant branding (G3)", () => {
+  it("resolveAssistantNamesForOrg defaults to the platform names when the tenant has no rows", async () => {
+    getTenantConfigValueMock.mockResolvedValue(null);
+    const names = await resolveAssistantNamesForOrg("org-acme");
+    expect(names).toEqual({
+      assistantStorefrontName: "CareMetric Assistant",
+      assistantAdminName: "CareMetric Copilot",
+    });
+  });
+
+  it("resolveAssistantNamesForOrg reads the tenant's configured names", async () => {
+    getTenantConfigValueMock.mockImplementation(async (_orgId, key) =>
+      key === "RESUPPLY_ASSISTANT_STOREFRONT_NAME"
+        ? "Acme Assistant"
+        : key === "RESUPPLY_ASSISTANT_ADMIN_NAME"
+          ? "Acme Copilot"
+          : null,
+    );
+    const names = await resolveAssistantNamesForOrg("org-acme");
+    expect(names).toEqual({
+      assistantStorefrontName: "Acme Assistant",
+      assistantAdminName: "Acme Copilot",
+    });
+    // It reads the two tenant-scoped catalog keys for THIS org.
+    expect(getTenantConfigValueMock).toHaveBeenCalledWith(
+      "org-acme",
+      "RESUPPLY_ASSISTANT_STOREFRONT_NAME",
+    );
+    expect(getTenantConfigValueMock).toHaveBeenCalledWith(
+      "org-acme",
+      "RESUPPLY_ASSISTANT_ADMIN_NAME",
+    );
+  });
+
+  it("applyPlatformBrandingForOrg maps the Penn* tokens to the tenant's configured names", async () => {
+    stageSupabaseResponse("dme_organization", "select", { data: null });
+    await getCompanyInfo(); // warm the sync company-info cache
+    getTenantConfigValueMock.mockImplementation(async (_orgId, key) =>
+      key === "RESUPPLY_ASSISTANT_STOREFRONT_NAME"
+        ? "Acme Assistant"
+        : key === "RESUPPLY_ASSISTANT_ADMIN_NAME"
+          ? "Acme Copilot"
+          : null,
+    );
+    const out = await applyPlatformBrandingForOrg(
+      "PennFit ships PennBot on the storefront and PennPilot in the console.",
+      "org-acme",
+    );
+    expect(out).toBe(
+      `${PLATFORM_NAME} ships Acme Assistant on the storefront and Acme Copilot in the console.`,
+    );
+  });
+
+  it("applyPlatformBrandingForOrg degrades to the seed/default branding when orgId is absent", async () => {
+    stageSupabaseResponse("dme_organization", "select", { data: null });
+    await getCompanyInfo();
+    const out = await applyPlatformBrandingForOrg(
+      "Ask PennBot about PennFit.",
+      undefined,
+    );
+    // No orgId → synchronous seed-scoped branding (CareMetric defaults).
+    expect(out).toBe(`Ask CareMetric Assistant about ${PLATFORM_NAME}.`);
+    expect(getTenantConfigValueMock).not.toHaveBeenCalled();
+  });
+});
+
 describe("formatPhoneForDisplay", () => {
   it("formats NANP numbers", () => {
     expect(formatPhoneForDisplay("+18144710627")).toBe("(814) 471-0627");
@@ -134,17 +214,20 @@ describe("getCompanyInfo", () => {
     const info = await getCompanyInfo();
     expect(info.source).toBe("environment");
     expect(info.name).toBe("Env Practice");
-    expect(info.supportEmail).toBe("support@pennpaps.com");
+    // Contact fields fall back to the neutral PLATFORM identity, not the
+    // seed tenant's (PennPaps) — an unconfigured tenant must not inherit it.
+    expect(info.supportEmail).toBe("support@cmbreathe.com");
   });
 
-  it("degrades to the hardcoded defaults on a DB error", async () => {
+  it("degrades to the platform identity on a DB error", async () => {
     stageSupabaseResponse("dme_organization", "select", {
       error: { message: "boom" },
     });
     const info = await getCompanyInfo();
     expect(info.source).toBe("fallback");
-    expect(info.name).toBe("PennPaps");
-    expect(info.supportPhoneDisplay).toBe("(814) 471-0627");
+    // CareMetric Breathe — the platform identity, NOT the seed tenant brand.
+    expect(info.name).toBe("CareMetric Breathe");
+    expect(info.supportPhoneDisplay).toBe("");
   });
 });
 
@@ -188,5 +271,31 @@ describe("applyCompanyIdentityToText", () => {
     expect(out).toContain("hello@acme.example");
     expect(out).not.toContain("PennPaps");
     expect(out).not.toContain("(814) 471-0627");
+  });
+
+  it("rewrites the TTS-spaced brand spelling used in voice/IVR copy", async () => {
+    stageSupabaseResponse("dme_organization", "select", { data: ORG_ROW });
+    await getCompanyInfo(); // warm the sync cache
+    const out = applyCompanyIdentityToText(
+      "Hi, this is an automated check-in from Penn Paps.",
+    );
+    expect(out).toBe("Hi, this is an automated check-in from Acme Sleep.");
+    expect(out).not.toContain("Penn Paps");
+  });
+
+  it("preserves the seed tenant's two-word 'Penn Paps' TTS spelling", async () => {
+    // Seed tenant: DB row resolves to the seed brand "PennPaps". The voice
+    // copy is deliberately spaced for natural TTS pronunciation, so the
+    // spaced-spelling needle must NOT collapse it to camel case.
+    stageSupabaseResponse("dme_organization", "select", {
+      data: {
+        ...ORG_ROW,
+        legal_name: "Penn Home Medical Supply",
+        dba_name: "PennPaps",
+      },
+    });
+    await getCompanyInfo(); // warm the sync cache
+    const text = "Hi, this is an automated check-in from Penn Paps.";
+    expect(applyCompanyIdentityToText(text)).toBe(text);
   });
 });

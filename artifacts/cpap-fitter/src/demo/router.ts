@@ -6,6 +6,7 @@
 
 import type { DemoHandler, DemoRequest, HttpMethod } from "./types";
 import { json } from "./respond";
+import { emptyGetFallbackBody } from "./empty";
 
 import { authHandlers } from "./handlers/auth";
 import { shopHandlers } from "./handlers/shop";
@@ -13,7 +14,9 @@ import { accountHandlers } from "./handlers/account";
 import { fitflowHandlers } from "./handlers/fitflow";
 import { miscHandlers } from "./handlers/misc";
 import { adminHandlers } from "./handlers/admin";
+import { therapyHandlers } from "./handlers/therapy";
 import { billingClaimsHandlers } from "./handlers/billing-claims";
+import { platformHandlers } from "./handlers/platform";
 
 // Order matters only where patterns could overlap; within a surface
 // the more specific routes are declared first in their module.
@@ -24,7 +27,9 @@ const handlers: DemoHandler[] = [
   ...fitflowHandlers,
   ...miscHandlers,
   ...adminHandlers,
+  ...therapyHandlers,
   ...billingClaimsHandlers,
+  ...platformHandlers,
 ];
 
 /** API paths the demo sandbox is responsible for answering. */
@@ -163,13 +168,19 @@ export async function routeDemoRequest(
 
   // Unmatched API path. Keep the sandbox self-contained: never let an
   // API call escape to a real backend in demo mode. Mutations report
-  // success; reads return an empty object so list pages fall back to
-  // their empty states rather than throwing.
-  if (req.method === "GET" || req.method === "HEAD") {
+  // success; reads return an "empty everything" shape so list pages fall
+  // back to their empty states rather than throwing.
+  //
+  // HEAD carries no body per HTTP semantics — return a bodyless 200 so
+  // callers that inspect Content-Length / streaming don't get confused.
+  if (req.method === "HEAD") {
+    return new Response(null, { status: 200 });
+  }
+  if (req.method === "GET") {
     if (import.meta.env.DEV) {
       console.debug("[demo] unmatched GET — empty fallback:", req.pathname);
     }
-    return json({}, 200);
+    return json(emptyGetFallbackBody(), 200);
   }
   if (import.meta.env.DEV) {
     console.debug(

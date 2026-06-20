@@ -27,6 +27,7 @@ import {
 } from "@workspace/resupply-integrations-office-ally";
 
 import { logger } from "../logger";
+import { recordTenantUsage } from "../metering/usage";
 import {
   resolveBillingIdentity,
   resolveClearinghouse,
@@ -195,6 +196,14 @@ export async function quickCheckEligibility(
   const startedAt = Date.now();
   const res = await realtime.requestEligibility({ payload: built.payload });
   const latencyMs = Date.now() - startedAt;
+  // A real-time 270/271 round-trip happened (billable whether or not the
+  // 271 parses) — meter one billing transaction for the tenant (G12).
+  // Fire-and-forget + fail-soft.
+  void recordTenantUsage({
+    orgId,
+    metricKey: "billingTransactionsPerMonth",
+    source: "eligibility.quick_check",
+  });
 
   if (!res.ok) {
     // Operational only — no PHI (timing + transport outcome).

@@ -25,6 +25,9 @@ import {
 
 const supabaseMock = installSupabaseMock();
 
+import { __resetSeedOrgIdForTests } from "@workspace/resupply-db";
+
+import { invalidateOrgIdCache } from "../../lib/tenant-branding";
 import insuranceEstimateRouter, {
   _resetInsuranceEstimateRateBucketForTests,
 } from "./insurance-estimate";
@@ -41,10 +44,17 @@ beforeEach(() => {
   recordMock.mockClear();
   emailMock.mockClear();
   _resetInsuranceEstimateRateBucketForTests();
+  // The route resolves a tenant per request (host → org, seed fallback) and
+  // reads payer_estimate_stats scoped to it (migration 0382). Both
+  // resolvers cache; clear them so each test's staged org resolves freshly.
+  __resetSeedOrgIdForTests();
+  invalidateOrgIdCache();
 });
 
 describe("POST /shop/insurance-estimates — learned range", () => {
   it("surfaces a learned range when the stat is robust", async () => {
+    // Host → org resolution (no x-forwarded-host → seed org).
+    stageSupabaseResponse("organizations", "select", { data: { id: "org-a" } });
     stageSupabaseResponse("payer_estimate_stats", "select", {
       data: { p50_cents: 1850, p90_cents: 6400, sample_size: 42 },
     });
@@ -61,6 +71,7 @@ describe("POST /shop/insurance-estimates — learned range", () => {
   });
 
   it("omits the learned range when the sample is below the display floor", async () => {
+    stageSupabaseResponse("organizations", "select", { data: { id: "org-a" } });
     stageSupabaseResponse("payer_estimate_stats", "select", {
       data: { p50_cents: 1850, p90_cents: 6400, sample_size: 5 },
     });
@@ -72,6 +83,7 @@ describe("POST /shop/insurance-estimates — learned range", () => {
   });
 
   it("falls back to null learned when no stat row exists", async () => {
+    stageSupabaseResponse("organizations", "select", { data: { id: "org-a" } });
     stageSupabaseResponse("payer_estimate_stats", "select", { data: null });
     const res = await request(makeApp())
       .post("/shop/insurance-estimates")
