@@ -300,7 +300,7 @@ review and confirmed still-open here:
 
 ## 8. Files touched
 
-- `lib/resupply-db/migrations/0410_patient_packet_automation_default_on.sql`
+- `lib/resupply-db/migrations/0412_patient_packet_automation_default_on.sql`
 - `artifacts/resupply-api/src/routes/admin/patient-packets.ts` (Outstanding
   filter + reminder/aging fields)
 - `artifacts/resupply-api/src/worker/jobs/patient-packet-reminders.ts`
