@@ -62,6 +62,12 @@ export const ADDON_DETAILS: Record<
     whyItMatters:
       "Billing is the most labor-intensive part of DME. Automating submission and surfacing why claims are denied recovers revenue that otherwise leaks away and cuts manual rework.",
   },
+  insurance_discovery: {
+    whatItDoes:
+      "Searches the payer network from a patient's demographics to find active coverage when you don't know their insurance — or a coverage on file came back inactive.",
+    whyItMatters:
+      "Self-pay and unknown-insurance patients are revenue you may already be entitled to bill. Discovery turns up active coverage you'd otherwise miss, so claims go out instead of being written off — and it catches lapsed or replaced plans before a denial.",
+  },
   fax_automation: {
     whatItDoes: "Automates outbound and inbound fax workflows.",
     whyItMatters:

@@ -62,6 +62,7 @@ export const FEATURE_FLAG_KEYS = [
   "billing.auto_submit_claims",
   "billing.eligibility_precheck",
   "billing.eligibility_precheck_refresh",
+  "insurance.discovery",
   "billing.line_ordering_provider",
   "billing.payment_plan_autocharge",
   "billing.patient_autopay",

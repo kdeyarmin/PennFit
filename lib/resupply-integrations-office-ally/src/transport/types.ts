@@ -78,3 +78,80 @@ export interface EligibilityRealtimeTransport {
     req: EligibilityRequest,
   ): Promise<EligibilityRealtimeOutcome>;
 }
+
+// ── Insurance discovery transport ────────────────────────────────────
+//
+// Insurance discovery answers a DIFFERENT question from eligibility
+// verification. Verification asks "is THIS coverage active?" — you
+// already know the payer and the member id. Discovery asks "does this
+// PERSON have ANY active coverage, and with whom?" — you provide only
+// demographics and Office Ally searches its payer network, returning
+// every coverage it can match. It's the tool for when a patient's
+// insurance is unknown, or a coverage on file came back inactive and you
+// need to find what's actually in force.
+//
+// Like the real-time eligibility transport this is request/response over
+// HTTPS, but the inputs (demographics, no payer/member) and outputs (a
+// LIST of discovered coverages, each with its own payer + member id) are
+// different enough that it gets its own contract rather than overloading
+// requestEligibility.
+
+export interface InsuranceDiscoveryRequest {
+  firstName: string;
+  lastName: string;
+  /** YYYY-MM-DD */
+  dateOfBirth: string;
+  /** X12 administrative sex; defaults to unknown when omitted. */
+  gender?: "M" | "F" | "U";
+  /** Subscriber SSN (digits only). Optional — it lifts the match rate but
+   *  is sensitive PHI, so the transport never logs or persists it. */
+  ssn?: string;
+  /** A member-id hint, when one is on hand (e.g. a stale insurance card). */
+  memberId?: string;
+  /** Postal code; narrows the payer search when supplied. */
+  postalCode?: string;
+  /** As-of date for the coverage search (YYYY-MM-DD). Defaults to today. */
+  serviceDate?: string;
+}
+
+/** One coverage the discovery service matched to the searched person. */
+export interface DiscoveredCoverage {
+  /** Human-readable payer name as returned by the discovery service. */
+  payerName: string;
+  /** Office Ally / CPID payer id, when the service returns one. */
+  payerId: string | null;
+  /** The member/subscriber id the payer has on file. */
+  memberId: string | null;
+  /** Plan / product name, when present. */
+  planName: string | null;
+  /** True when the matched coverage is active as of the service date. */
+  isActive: boolean;
+  /** Coverage start (YYYY-MM-DD), when present. */
+  coverageStart: string | null;
+  /** Coverage end (YYYY-MM-DD), when present. */
+  coverageEnd: string | null;
+}
+
+export interface InsuranceDiscoveryResult {
+  ok: true;
+  /** Every coverage matched. Empty when the search ran but found nothing. */
+  coverages: DiscoveredCoverage[];
+  /** Opaque correlation id, for support. */
+  sessionId: string | null;
+}
+
+export interface InsuranceDiscoveryFailure {
+  ok: false;
+  kind: "auth_failed" | "connect_failed" | "rejected" | "unavailable";
+  /** Caller-safe failure message. Never includes credentials or PHI. */
+  message: string;
+}
+
+export type InsuranceDiscoveryOutcome =
+  | InsuranceDiscoveryResult
+  | InsuranceDiscoveryFailure;
+
+export interface InsuranceDiscoveryTransport {
+  readonly kind: "https" | "noop";
+  discover(req: InsuranceDiscoveryRequest): Promise<InsuranceDiscoveryOutcome>;
+}
