@@ -12,6 +12,8 @@
 // the cpap-fitter shop and the resupply staff dashboard. The
 // product name is passed in by the caller.
 
+import { renderBrandedEmail } from "@workspace/resupply-email/layout";
+
 import { stripTrailingSlashes } from "../string-utils";
 
 export interface AuthEmailContext {
@@ -49,6 +51,37 @@ function escapeHtml(s: string): string {
     .replace(/'/g, "&#39;");
 }
 
+// Muted "if the button doesn't work" fallback line. Keeps the raw link
+// present as selectable text for clients that strip buttons, and for
+// recipients who'd rather copy/paste. `safeLink` must already be escaped.
+function fallbackLinkHtml(safeLink: string): string {
+  return `<p style="margin:20px 0 0;color:#6b7280;font-size:13px;line-height:1.5;">If the button doesn't work, copy and paste this link into your browser:<br><a href="${safeLink}" style="color:#2f6fe6;word-break:break-all;">${safeLink}</a></p>`;
+}
+
+// Wrap auth-email body copy in the shared CareMetric Breathe layout. The
+// header wordmark shows the caller's product name (the TENANT's brand for
+// tenant-facing mail), not the platform name — the design system is
+// shared, the brand stays correct (see CLAUDE.md brand architecture).
+function wrapAuthHtml(
+  ctx: AuthEmailContext,
+  opts: {
+    heading: string;
+    preheader: string;
+    bodyHtml: string;
+    button?: { label: string; url: string };
+  },
+): string {
+  return renderBrandedEmail({
+    brandName: ctx.productName,
+    heading: opts.heading,
+    preheader: opts.preheader,
+    contentHtml: opts.bodyHtml,
+    button: opts.button,
+    footerLines: ctx.signatureName ? [ctx.signatureName] : [],
+    copyrightName: ctx.signatureName || ctx.productName,
+  });
+}
+
 function makeLink(
   base: string,
   prefix: string | undefined,
@@ -65,15 +98,10 @@ function safeSubjectValue(s: string): string {
   return s.replace(/[\r\n]/g, "");
 }
 
-// Shared closing signature so every auth email signs off the same way
-// (matching the "— Penn Home Medical Supply" convention used by the
-// patient-facing reminder/renewal emails in resupply-api).
-function signatureHtml(ctx: AuthEmailContext): string {
-  return ctx.signatureName
-    ? `\n<p style="margin:24px 0 0;color:#6b7280;font-size:12px;">${escapeHtml(ctx.signatureName)}</p>`
-    : "";
-}
-
+// Shared closing signature for the plain-text bodies (matching the
+// "— Penn Home Medical Supply" convention used by the patient-facing
+// reminder/renewal emails in resupply-api). The HTML bodies render the
+// signature in the branded footer instead (see `wrapAuthHtml`).
 function signatureText(ctx: AuthEmailContext): string {
   return ctx.signatureName ? `\n\n— ${ctx.signatureName}` : "";
 }
@@ -126,10 +154,14 @@ export function renderVerifyEmail(
   const expiry = formatTokenExpiry(ttlMs);
   return {
     subject: `Verify your email — ${safeSubjectValue(ctx.productName)}`,
-    html: `<p>Welcome to ${safeName}.</p>
-<p>Click the link below to verify your email address:</p>
-<p><a href="${safeLink}">${safeLink}</a></p>
-<p>This link expires in ${expiry}. If you didn't create this account, you can ignore this email.</p>${signatureHtml(ctx)}`,
+    html: wrapAuthHtml(ctx, {
+      heading: "Confirm your email address",
+      preheader: `Verify your email to finish setting up your ${ctx.productName} account.`,
+      button: { label: "Verify email address", url: link },
+      bodyHtml: `<p style="margin:0 0 16px;color:#334155;font-size:16px;line-height:1.6;">Welcome to <strong>${safeName}</strong>. You're one step away — confirm your email address to activate your account.</p>
+<p style="margin:0 0 16px;color:#334155;font-size:16px;line-height:1.6;">This link expires in ${expiry}. If you didn't create this account, you can safely ignore this email.</p>
+${fallbackLinkHtml(safeLink)}`,
+    }),
     text: `Welcome to ${ctx.productName}.
 
 Verify your email address by visiting:
@@ -187,12 +219,16 @@ ${files.map((f) => `  * ${f}`).join("\n")}
       : "";
   return {
     subject: `Set up your ${safeSubjectValue(ctx.productName)} patient portal`,
-    html: `<p>${greetingHtml}</p>
-<p>Your care team has invited you to set up your <strong>${safeName}</strong> patient portal, where you can manage your CPAP supplies, view your orders, and upload insurance documents.</p>
-<p>Click the link below to create your password and get started:</p>
-<p><a href="${safeLink}">${safeLink}</a></p>
-<p>This link expires in ${expiry}.</p>
-${attachmentsHtml}<p>If you weren't expecting this invitation, you can safely ignore this email.</p>${signatureHtml(ctx)}`,
+    html: wrapAuthHtml(ctx, {
+      heading: "Set up your patient portal",
+      preheader: `Your care team invited you to your ${ctx.productName} patient portal.`,
+      button: { label: "Create your password", url: link },
+      bodyHtml: `<p style="margin:0 0 16px;color:#334155;font-size:16px;line-height:1.6;">${greetingHtml}</p>
+<p style="margin:0 0 16px;color:#334155;font-size:16px;line-height:1.6;">Your care team has invited you to set up your <strong>${safeName}</strong> patient portal, where you can manage your CPAP supplies, view your orders, and upload insurance documents.</p>
+<p style="margin:0 0 16px;color:#334155;font-size:16px;line-height:1.6;">This link expires in ${expiry}.</p>
+${attachmentsHtml}<p style="margin:0 0 16px;color:#334155;font-size:16px;line-height:1.6;">If you weren't expecting this invitation, you can safely ignore this email.</p>
+${fallbackLinkHtml(safeLink)}`,
+    }),
     text: `${greetingText}
 
 Your care team has invited you to set up your ${ctx.productName} patient portal, where you can manage your CPAP supplies, view your orders, and upload insurance documents.
@@ -286,16 +322,20 @@ ${files.map((f) => `  * ${f}`).join("\n")}
 
   return {
     subject: `Welcome to the ${safeSubjectValue(ctx.productName)} team — set up your account`,
-    html: `<p>${greetingHtml}</p>
-<p>You've been invited to join the <strong>${safeName}</strong> team. ${safeName} is where our team manages CPAP resupply day to day — patient records, orders and shipments, supply reminders, and the schedules behind them.</p>
-<p>Your account details:</p>
-<ul>
+    html: wrapAuthHtml(ctx, {
+      heading: "Welcome to the team",
+      preheader: `You've been invited to join the ${ctx.productName} team — set up your account.`,
+      button: { label: "Set your password", url: link },
+      bodyHtml: `<p style="margin:0 0 16px;color:#334155;font-size:16px;line-height:1.6;">${greetingHtml}</p>
+<p style="margin:0 0 16px;color:#334155;font-size:16px;line-height:1.6;">You've been invited to join the <strong>${safeName}</strong> team. ${safeName} is where our team manages CPAP resupply day to day — patient records, orders and shipments, supply reminders, and the schedules behind them.</p>
+<p style="margin:0 0 8px;color:#334155;font-size:16px;line-height:1.6;"><strong>Your account details:</strong></p>
+<ul style="margin:0 0 16px;padding-left:20px;color:#334155;font-size:16px;line-height:1.7;">
 ${detailsHtml}
 </ul>
-<p>To get started, click the link below to set your password and activate your account:</p>
-<p><a href="${safeLink}">${safeLink}</a></p>
-<p>This invitation link expires in ${expiry}. If it expires before you set your password, an administrator can send you a fresh one.</p>
-${attachmentsHtml}<p>If you weren't expecting this invitation, you can safely ignore this email.</p>${signatureHtml(ctx)}`,
+<p style="margin:0 0 16px;color:#334155;font-size:16px;line-height:1.6;">This invitation link expires in ${expiry}. If it expires before you set your password, an administrator can send you a fresh one.</p>
+${attachmentsHtml}<p style="margin:0 0 16px;color:#334155;font-size:16px;line-height:1.6;">If you weren't expecting this invitation, you can safely ignore this email.</p>
+${fallbackLinkHtml(safeLink)}`,
+    }),
     text: `${greetingText}
 
 You've been invited to join the ${ctx.productName} team. ${ctx.productName} is where our team manages CPAP resupply day to day — patient records, orders and shipments, supply reminders, and the schedules behind them.
@@ -387,13 +427,17 @@ ${files.map((f) => `  * ${f}`).join("\n")}
 
   return {
     subject: `You're invited to the ${safeSubjectValue(ctx.productName)}`,
-    html: `<p>${greetingHtml}</p>
-<p>${invitedByHtml} to the <strong>${safeName}</strong>, a secure portal where you can review and electronically sign documents for your patients — prescriptions, orders, and certificates of medical necessity — from any browser.</p>
-<p>Your username is your email address: <strong>${escapeHtml(args.email)}</strong></p>
-<p>Click the link below to set your password and activate your account:</p>
-<p><a href="${safeLink}">${safeLink}</a></p>
-<p>This invitation link expires in ${expiry}. If it expires before you set your password, the practice can send you a fresh one.</p>
-${portalUrl ? `<p>After your password is set, you can sign in any time at <a href="${escapeHtml(portalUrl)}">${escapeHtml(portalUrl)}</a>.</p>\n` : ""}${attachmentsHtml}<p>If you weren't expecting this invitation, you can safely ignore this email.</p>${signatureHtml(ctx)}`,
+    html: wrapAuthHtml(ctx, {
+      heading: "Activate your provider portal",
+      preheader: `${invitedByText} to the ${ctx.productName} — review and e-sign your patients' documents.`,
+      button: { label: "Set your password", url: link },
+      bodyHtml: `<p style="margin:0 0 16px;color:#334155;font-size:16px;line-height:1.6;">${greetingHtml}</p>
+<p style="margin:0 0 16px;color:#334155;font-size:16px;line-height:1.6;">${invitedByHtml} to the <strong>${safeName}</strong>, a secure portal where you can review and electronically sign documents for your patients — prescriptions, orders, and certificates of medical necessity — from any browser.</p>
+<p style="margin:0 0 16px;color:#334155;font-size:16px;line-height:1.6;">Your username is your email address: <strong>${escapeHtml(args.email)}</strong></p>
+<p style="margin:0 0 16px;color:#334155;font-size:16px;line-height:1.6;">This invitation link expires in ${expiry}. If it expires before you set your password, the practice can send you a fresh one.</p>
+${portalUrl ? `<p style="margin:0 0 16px;color:#334155;font-size:16px;line-height:1.6;">After your password is set, you can sign in any time at <a href="${escapeHtml(portalUrl)}" style="color:#2f6fe6;">${escapeHtml(portalUrl)}</a>.</p>\n` : ""}${attachmentsHtml}<p style="margin:0 0 16px;color:#334155;font-size:16px;line-height:1.6;">If you weren't expecting this invitation, you can safely ignore this email.</p>
+${fallbackLinkHtml(safeLink)}`,
+    }),
     text: `${greetingText}
 
 ${invitedByText} to the ${ctx.productName}, a secure portal where you can review and electronically sign documents for your patients — prescriptions, orders, and certificates of medical necessity — from any browser.
@@ -425,10 +469,14 @@ export function renderPasswordResetEmail(
   const expiry = formatTokenExpiry(ttlMs);
   return {
     subject: `Reset your ${safeSubjectValue(ctx.productName)} password`,
-    html: `<p>We received a request to reset your ${safeName} password.</p>
-<p>Click the link below to choose a new one:</p>
-<p><a href="${safeLink}">${safeLink}</a></p>
-<p>This link expires in ${expiry}. If you didn't request a password reset, you can ignore this email — your current password will keep working.</p>${signatureHtml(ctx)}`,
+    html: wrapAuthHtml(ctx, {
+      heading: "Reset your password",
+      preheader: `Choose a new ${ctx.productName} password.`,
+      button: { label: "Choose a new password", url: link },
+      bodyHtml: `<p style="margin:0 0 16px;color:#334155;font-size:16px;line-height:1.6;">We received a request to reset your <strong>${safeName}</strong> password. Click the button below to choose a new one.</p>
+<p style="margin:0 0 16px;color:#334155;font-size:16px;line-height:1.6;">This link expires in ${expiry}. If you didn't request a password reset, you can ignore this email — your current password will keep working.</p>
+${fallbackLinkHtml(safeLink)}`,
+    }),
     text: `We received a request to reset your ${ctx.productName} password.
 
 Choose a new one by visiting:

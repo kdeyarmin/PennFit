@@ -50,6 +50,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useDocumentTitle } from "@/hooks/use-document-title";
+import { useCompanyContact } from "@/lib/contact";
+import { BrandName } from "@/components/company-contact";
 import { toast } from "@/hooks/use-toast";
 import {
   fetchMyOrders,
@@ -65,13 +67,14 @@ import { csrfHeader } from "@/lib/csrf";
 type LoadState = "idle" | "loading" | "ready" | "error";
 
 export function ShopOrders() {
+  const company = useCompanyContact();
   // Set the tab title for everyone (signed-in or out) — running it
   // here in the top-level component is the simplest way to keep the
   // browser tab consistent with the visible heading without an
   // extra wrapper layer.
   useDocumentTitle(
-    "Your orders — PennPaps shop",
-    "Your past PennPaps shop orders.",
+    `Your orders — ${company.name} shop`,
+    `Your past ${company.name} shop orders.`,
   );
   // App.tsx already wraps every route in <Layout>, so this page
   // returns ONLY its content — wrapping in <Layout> here would
@@ -83,7 +86,7 @@ export function ShopOrders() {
           Your orders
         </h1>
         <p className="text-sm text-muted-foreground mt-2">
-          Past purchases from the PennPaps cash-pay shop.
+          Past purchases from the {company.name} cash-pay shop.
         </p>
       </header>
       <SignedIn fallback={<SignedOutPrompt />}>
@@ -110,8 +113,8 @@ function SignedOutPrompt() {
         Sign in to view your orders
       </h2>
       <p className="text-sm text-muted-foreground mt-2 max-w-md mx-auto">
-        Order history is tied to your PennPaps account so we can match it to
-        your prescription on file.
+        Order history is tied to your <BrandName /> account so we can match it
+        to your prescription on file.
       </p>
       <Link href="/sign-in?redirect=/shop/orders" className="inline-block mt-5">
         <Button>Sign in</Button>

@@ -30,13 +30,12 @@ import rateLimit from "express-rate-limit";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 
-import {
-  type Database,
-  getOrgScopedClient,
-  resolveSeedOrgId,
-} from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { requestHost } from "../../lib/request-host";
+import { resolveOrgIdByHost } from "../../lib/tenant-branding";
+import { resolveOrgIdForSignedRecord } from "../../lib/storefront/signed-link-org";
 
 type FitterLeadsUpdate =
   Database["resupply"]["Tables"]["fitter_leads"]["Update"];
@@ -287,7 +286,11 @@ router.post("/shop/fitter-complete", async (req, res) => {
   const data = parse.data;
 
   try {
-    const orgId = await resolveSeedOrgId();
+    // Email-based enrollment from the /results page — no token record id
+    // to derive the tenant from, so resolve it from the request HOST (the
+    // tenant whose storefront the patient is on). Fails soft to the seed
+    // org for the platform host / single-tenant.
+    const orgId = await resolveOrgIdByHost(requestHost(req));
     if (!orgId) {
       // No tenant context — mirror the best-effort posture: never 5xx
       // the /results page, just report "not enrolled".
@@ -604,7 +607,8 @@ router.get("/shop/track/o", openTrackingRateLimiter, async (req, res) => {
   // RPC-style update to keep the latency low (the patient is
   // waiting for the pixel response).
   const recordVerify = verify;
-  resolveSeedOrgId()
+  // Resolve the tenant FROM the lead the open-tracking token references.
+  resolveOrgIdForSignedRecord("fitter_leads", recordVerify.leadId)
     .then((orgId) => {
       if (!orgId) return;
       return recordOpenEvent(
@@ -847,7 +851,7 @@ function publicBaseUrl(): string {
     process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL ??
     (process.env.RAILWAY_PUBLIC_DOMAIN
       ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
-      : "https://pennpaps.com")
+      : "https://cmbreathe.com")
   ).replace(/\/$/, "");
 }
 
@@ -896,7 +900,8 @@ router.get("/shop/track/c", clickTrackRateLimiter, async (req, res) => {
     req.headers["x-forwarded-for"]?.toString().split(",")[0]?.trim() ||
     null;
   const clickVerify = verify;
-  resolveSeedOrgId()
+  // Resolve the tenant FROM the lead the click-tracking token references.
+  resolveOrgIdForSignedRecord("fitter_leads", clickVerify.leadId)
     .then((orgId) => {
       if (!orgId) return;
       return recordClickEvent(
@@ -1098,7 +1103,11 @@ router.get(
     }
 
     try {
-      const orgId = await resolveSeedOrgId();
+      // Resolve the tenant FROM the lead the unsubscribe token references.
+      const orgId = await resolveOrgIdForSignedRecord(
+        "fitter_leads",
+        verify.leadId,
+      );
       if (!orgId) {
         res.status(500).type("text/html").send(unsubscribeHtml("error"));
         return;

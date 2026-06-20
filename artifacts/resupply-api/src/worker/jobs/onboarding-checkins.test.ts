@@ -7,15 +7,22 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { dispatchDueCheckinsMock, scanComplianceMock } = vi.hoisted(() => ({
-  dispatchDueCheckinsMock: vi.fn(),
-  scanComplianceMock: vi.fn(),
-}));
+const { dispatchDueCheckinsMock, scanComplianceMock, listActiveOrgIdsMock } =
+  vi.hoisted(() => ({
+    dispatchDueCheckinsMock: vi.fn(),
+    scanComplianceMock: vi.fn(),
+    listActiveOrgIdsMock: vi.fn(),
+  }));
 vi.mock("../../lib/checkin-dispatcher", () => ({
   dispatchDueCheckins: dispatchDueCheckinsMock,
 }));
 vi.mock("../../lib/compliance-scanner", () => ({
   scanCompliance: scanComplianceMock,
+}));
+// Both handlers now fan out across active tenants via forEachActiveOrg,
+// which calls listActiveOrgIds. Pin it to a single tenant for these tests.
+vi.mock("@workspace/resupply-db", () => ({
+  listActiveOrgIds: listActiveOrgIdsMock,
 }));
 
 vi.mock("../lib/queue-options", () => ({
@@ -54,42 +61,48 @@ import { registerOnboardingCheckinJobs } from "./onboarding-checkins";
 beforeEach(() => {
   dispatchDueCheckinsMock.mockReset();
   scanComplianceMock.mockReset();
+  listActiveOrgIdsMock.mockReset();
+  listActiveOrgIdsMock.mockResolvedValue(["org-1"]);
 });
 
 describe("onboarding-checkins cron jobs", () => {
-  it("dispatch handler calls dispatchDueCheckins with system actor", async () => {
+  it("dispatch handler calls dispatchDueCheckins with system actor + explicit org", async () => {
     dispatchDueCheckinsMock.mockResolvedValueOnce({ dispatched: 3 });
     const fake = makeFakeBoss();
     await registerOnboardingCheckinJobs(fake.boss as never);
     await fake.run("onboarding-checkins.dispatch");
+    // Cron path passes the system actor AND the explicit tenant org (never
+    // the seed-org default).
     expect(dispatchDueCheckinsMock).toHaveBeenCalledWith(
-      expect.objectContaining({ actor: { kind: "system" } }),
+      expect.objectContaining({ actor: { kind: "system" }, orgId: "org-1" }),
     );
   });
 
-  it("scan handler calls scanCompliance", async () => {
+  it("scan handler calls scanCompliance with explicit org", async () => {
     scanComplianceMock.mockResolvedValueOnce({ alertsOpened: 1 });
     const fake = makeFakeBoss();
     await registerOnboardingCheckinJobs(fake.boss as never);
     await fake.run("onboarding-checkins.scan");
-    expect(scanComplianceMock).toHaveBeenCalledTimes(1);
+    expect(scanComplianceMock).toHaveBeenCalledWith(
+      expect.objectContaining({ orgId: "org-1" }),
+    );
   });
 
-  it("propagates errors from dispatchDueCheckins", async () => {
+  it("isolates a tenant failure in the dispatch handler without aborting the sweep", async () => {
+    // forEachActiveOrg logs + tallies the per-tenant failure and never
+    // rejects, so one tenant's vendor error can't crash the scheduler tick.
     dispatchDueCheckinsMock.mockRejectedValueOnce(new Error("vendor down"));
     const fake = makeFakeBoss();
     await registerOnboardingCheckinJobs(fake.boss as never);
-    await expect(fake.run("onboarding-checkins.dispatch")).rejects.toThrow(
-      "vendor down",
-    );
+    await expect(
+      fake.run("onboarding-checkins.dispatch"),
+    ).resolves.toBeUndefined();
   });
 
-  it("propagates errors from scanCompliance", async () => {
+  it("isolates a tenant failure in the scan handler without aborting the sweep", async () => {
     scanComplianceMock.mockRejectedValueOnce(new Error("DB read failed"));
     const fake = makeFakeBoss();
     await registerOnboardingCheckinJobs(fake.boss as never);
-    await expect(fake.run("onboarding-checkins.scan")).rejects.toThrow(
-      "DB read failed",
-    );
+    await expect(fake.run("onboarding-checkins.scan")).resolves.toBeUndefined();
   });
 });

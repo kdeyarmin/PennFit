@@ -34,10 +34,15 @@ export function createFileTransport(
     kind: "file",
     async upload(req: UploadRequest): Promise<UploadOutcome> {
       try {
+        // The 837P payload is PHI (subscriber name/DOB/member id, diagnoses).
+        // Even though this path is dev/stub/DR only, write it owner-only:
+        // the directory 0700 and the file 0600 so the claim file is never
+        // world- or group-readable at rest. Default umask would leave it
+        // 0644 (world-readable).
         const dir = resolve(config.outboxDir);
-        await mkdir(dir, { recursive: true });
+        await mkdir(dir, { recursive: true, mode: 0o700 });
         const target = resolve(dir, sanitizeFileName(req.fileName));
-        await writeFile(target, req.payload, { encoding: "utf8" });
+        await writeFile(target, req.payload, { encoding: "utf8", mode: 0o600 });
         return { ok: true, sessionId: null, remotePath: target };
       } catch (err) {
         return {

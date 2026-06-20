@@ -56,6 +56,17 @@ router.post("/newsletter/subscribe", async (req, res) => {
     return;
   }
 
+  // DELIBERATE DESIGN: newsletter_subscribers is a single GLOBAL (public-
+  // schema) marketing list keyed by email alone (migration 0354) — NOT a
+  // per-tenant list. This is intentionally different from reminder_
+  // subscriptions, which migration 0378 re-keyed to UNIQUE(org_id, email)
+  // because those are tenant-scoped resupply reminders. We resolve orgId
+  // above only to gate access; the upsert conflict target is `email` (not
+  // `org_id,email`) on purpose, so the same address is one platform-wide
+  // marketing record. If product ever wants per-tenant newsletter lists,
+  // that's a schema change (add org_id + (org_id,email) uniqueness, mirroring
+  // 0378) — not a silent edit here. Until then this asymmetry is by design,
+  // not the 0378 cross-tenant bug.
   const supabase = getOrgScopedClient(orgId).raw();
   const { error } = await supabase
     .schema("public")

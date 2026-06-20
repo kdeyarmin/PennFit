@@ -23,6 +23,7 @@ import { resolveBillingIdentity } from "../../lib/billing/identity-resolver";
 import { parsePayerAddressLines } from "../../lib/billing/payer-address";
 import { signAppealFaxToken } from "../../lib/fax-document-token";
 import { logger } from "../../lib/logger";
+import { resolveTenantFaxFrom } from "../../lib/messaging/tenant-telecom";
 import { publishEvent } from "../../lib/webhooks/publisher";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -296,7 +297,10 @@ router.post(
     const token = signAppealFaxToken(letter.id);
     const mediaUrl = `${baseUrl}/resupply-api/fax/document/${token}`;
     const statusCallbackUrl = `${baseUrl}/resupply-api/fax/webhook`;
-    const fromNumber = process.env.TELNYX_FAX_FROM_NUMBER!.trim();
+    // Prefer the tenant's own provisioned fax DID (migration 0368), else
+    // the platform default (isFaxConfigured verified it is set).
+    const tenantFrom = await resolveTenantFaxFrom(orgId);
+    const fromNumber = tenantFrom ?? process.env.TELNYX_FAX_FROM_NUMBER!.trim();
 
     let faxId: string;
     try {

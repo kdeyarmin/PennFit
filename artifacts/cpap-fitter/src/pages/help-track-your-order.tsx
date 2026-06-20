@@ -10,6 +10,7 @@ import {
   TrackOrderShot,
   AccountShot,
 } from "@/components/help/help-screens";
+import { BrandName } from "@/components/company-contact";
 
 const steps: HelpStep[] = [
   {
@@ -47,14 +48,16 @@ const steps: HelpStep[] = [
       </>,
     ],
     shot: (
-      <Screenshot
-        url="pennpaps.com/track-order"
-        caption="Look up any order with its reference number and the email on file."
-      >
+      <Screenshot caption="Look up any order with its reference number and the email on file.">
         <TrackOrderShot />
       </Screenshot>
     ),
-    tip: "Lost your reference number? It's in the order confirmation email — search your inbox for “PennPaps order”.",
+    tip: (
+      <>
+        Lost your reference number? It&apos;s in the order confirmation email —
+        search your inbox for “<BrandName /> order”.
+      </>
+    ),
   },
   {
     title: "Read your status timeline",
@@ -100,10 +103,7 @@ const steps: HelpStep[] = [
       </p>
     ),
     shot: (
-      <Screenshot
-        url="pennpaps.com/account"
-        caption="Signed-in customers see every order, its status, and a one-tap Reorder button."
-      >
+      <Screenshot caption="Signed-in customers see every order, its status, and a one-tap Reorder button.">
         <AccountShot />
       </Screenshot>
     ),
@@ -117,7 +117,7 @@ export function HelpTrackYourOrder() {
       title="Track your order"
       Icon={Truck}
       minutes="2 min"
-      metaDescription="How to track a PennPaps order: look it up by reference number and email, read the delivery status timeline, or view all orders from your account."
+      metaDescription="How to track your order: look it up by reference number and email, read the delivery status timeline, or view all orders from your account."
       intro="Wondering where your order is? You can look up any order in seconds with your reference number and email — or see everything at once from your account."
       summary={
         <>

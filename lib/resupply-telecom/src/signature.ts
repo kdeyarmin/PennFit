@@ -103,11 +103,18 @@ export interface RequireTwilioSignatureOptions {
    */
   getAuthToken: () => string | undefined;
   /**
-   * Build the URL Twilio originally signed. Caller owns this so the
-   * middleware doesn't have to know how the public origin is
-   * configured.
+   * Build the URL(s) Twilio may have signed. Caller owns this so the
+   * middleware doesn't have to know how the public origin is configured.
+   *
+   * Return a single string for the common single-host case, OR an array of
+   * candidate URLs when the same route can be reached on more than one
+   * public host (e.g. a platform host AND a tenant host both fronting the
+   * app). The request is accepted if the signature validates against ANY
+   * candidate. The candidates MUST be a server-controlled allowlist (never
+   * derived from a request header), so trying several stays safe — each
+   * still requires a valid HMAC under the account auth token.
    */
-  buildPublicUrl: (req: SignatureRequestLike) => string;
+  buildPublicUrl: (req: SignatureRequestLike) => string | string[];
   /**
    * Optional rejection-callback hook for tests / metrics. Defaults to
    * a 403 response — matches how Twilio's own examples reject
@@ -142,7 +149,8 @@ export function requireTwilioSignature(
       return;
     }
     const sig = req.header("x-twilio-signature");
-    const url = opts.buildPublicUrl(req);
+    const built = opts.buildPublicUrl(req);
+    const urls = Array.isArray(built) ? built : [built];
     // express.urlencoded gives us a parsed object. Twilio only ever posts
     // flat string params, so EVERY value should be a string. A non-string
     // value means a repeated key (express/qs parses `a=1&a=2` to an array)
@@ -163,14 +171,20 @@ export function requireTwilioSignature(
         params[k] = v;
       }
     }
-    if (
+    // Accept if the signature validates against ANY candidate public URL.
+    // The candidate list is a server-controlled allowlist, so this only
+    // broadens WHICH of our own known hosts a validly-signed request may
+    // have targeted — it never lets a caller choose the host. An empty list
+    // fails closed (no candidate can match).
+    const matched = urls.some((url) =>
       validateTwilioSignature({
         authToken: token,
         url,
         params,
         signatureHeader: sig,
-      })
-    ) {
+      }),
+    );
+    if (matched) {
       next();
       return;
     }

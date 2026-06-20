@@ -156,6 +156,20 @@ vi.mock("../../lib/logger", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
+// G5: route a tenant's charge to its connected account. The real resolver is
+// unit-tested in lib/stripe/connect.test.ts; here we stub it so we can assert
+// the orgId is threaded into the Stripe request options. Undefined orgId →
+// `{}` (platform account), so the pre-existing undefined-orgId tests are
+// unaffected.
+const connectOptionsMock = vi.hoisted(() =>
+  vi.fn(async (orgId?: string) =>
+    orgId ? { stripeAccount: `acct_${orgId}` } : {},
+  ),
+);
+vi.mock("../stripe/connect", () => ({
+  stripeAccountRequestOptions: (orgId?: string) => connectOptionsMock(orgId),
+}));
+
 const PATIENT_STR = "33333333-3333-4333-8333-333333333333";
 const CLAIM_STR = "44444444-4444-4444-8444-444444444444";
 const PAYMENT_STR_ID = "55555555-5555-4555-8555-555555555555";
@@ -294,6 +308,33 @@ describe("createPaymentIntent — stripe_rejected (PR change)", () => {
     expect(stripeIntentCreateMock).toHaveBeenCalledWith(
       expect.objectContaining({ metadata: expect.any(Object) }),
       { idempotencyKey: `pennpaps-patient-payment-${PAYMENT_STR_ID}` },
+    );
+  });
+
+  it("routes the PaymentIntent to the tenant's connected account when orgId is set (G5)", async () => {
+    stageClaimOwned();
+    stagePaymentInsert();
+    stripeIntentCreateMock.mockResolvedValue({
+      id: "pi_test_123",
+      status: "requires_payment_method",
+      client_secret: "pi_test_123_secret",
+    });
+    stagePaymentUpdate();
+
+    await createPaymentIntent({
+      patientId: PATIENT_STR,
+      allocations: [{ claimId: CLAIM_STR, amountAppliedCents: 1000 }],
+      source: "portal",
+      initiatorEmail: "patient@example.com",
+      orgId: "org_acme",
+    });
+
+    expect(stripeIntentCreateMock).toHaveBeenCalledWith(
+      expect.objectContaining({ metadata: expect.any(Object) }),
+      {
+        stripeAccount: "acct_org_acme",
+        idempotencyKey: `pennpaps-patient-payment-${PAYMENT_STR_ID}`,
+      },
     );
   });
 

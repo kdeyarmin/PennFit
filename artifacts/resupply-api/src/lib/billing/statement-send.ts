@@ -28,8 +28,13 @@ import {
 import { createTwilioSmsClient } from "@workspace/resupply-telecom";
 
 import { shouldSendEmail, shouldSendSms, type DndOptions } from "../comm-prefs";
-import { getDocumentSupplierNameSync } from "../company-info";
+import {
+  getDocumentSupplierName,
+  getDocumentSupplierNameSync,
+} from "../company-info";
+import { resolveTenantSender } from "../email/tenant-sender.js";
 import { logger } from "../logger";
+import { applyTenantSmsFrom } from "../messaging/tenant-telecom";
 
 export interface StatementMessagingConfig {
   sendgridApiKey: string | null;
@@ -59,6 +64,27 @@ export function readStatementMessagingConfig(
     // storefront display brand.
     practiceName: getDocumentSupplierNameSync(),
   };
+}
+
+/**
+ * Pin a base statement config to a tenant's OWN identity: its billing legal
+ * name (`practiceName`), its email From (G6), and its SMS sender (G7). Each
+ * falls back to the platform default when the tenant has none configured, so
+ * single-tenant behavior is unchanged. Statements are patient-facing billing
+ * mail, so they must carry the tenant's identity, not the seed's.
+ */
+export async function applyTenantStatementIdentity(
+  orgId: string,
+  baseCfg: StatementMessagingConfig,
+): Promise<StatementMessagingConfig> {
+  const sender = await resolveTenantSender(orgId);
+  const withIdentity: StatementMessagingConfig = {
+    ...baseCfg,
+    practiceName: await getDocumentSupplierName(orgId),
+    sendgridFromEmail: sender.fromEmail ?? baseCfg.sendgridFromEmail,
+    sendgridFromName: sender.fromName ?? baseCfg.sendgridFromName,
+  };
+  return applyTenantSmsFrom(orgId, withIdentity);
 }
 
 export function readStatementPrefs(raw: Json | null): CommunicationPreferences {
@@ -444,7 +470,14 @@ export async function sendOneStatement(
   statementId: string,
   deps: StatementSendDeps = {},
 ): Promise<SendOutcome> {
-  const cfg = deps.cfg ?? readStatementMessagingConfig();
+  // Tenant-scoped identity (G6/G7 + billing legal name); deps.cfg (tests)
+  // wins. Statements are patient-facing billing mail.
+  const cfg =
+    deps.cfg ??
+    (await applyTenantStatementIdentity(
+      supabase.orgId,
+      readStatementMessagingConfig(),
+    ));
   const send = deps.send ?? sendStatementMessage;
   const now = deps.now ?? new Date();
 
@@ -591,6 +624,19 @@ export async function runStatementBatchSend(
     mailQueued: 0,
   };
 
+  // Pin the batch to the tenant's OWN identity ONCE (G6 email From + G7 SMS
+  // sender + billing legal name), falling back to the platform default when
+  // the tenant has none. A caller-supplied deps.cfg (tests) is honored as-is.
+  const tenantDeps: StatementSendDeps = {
+    ...deps,
+    cfg:
+      deps.cfg ??
+      (await applyTenantStatementIdentity(
+        supabase.orgId,
+        readStatementMessagingConfig(),
+      )),
+  };
+
   const { data, error } = await supabase
     .from("patient_billing_statements")
     .select("id, total_patient_responsibility_cents")
@@ -610,7 +656,7 @@ export async function runStatementBatchSend(
 
   for (const row of rows) {
     try {
-      const outcome = await sendOneStatement(supabase, row.id, deps);
+      const outcome = await sendOneStatement(supabase, row.id, tenantDeps);
       if (outcome.kind === "sent") result.sent += 1;
       else if (outcome.kind === "failed") result.failed += 1;
       else if (outcome.kind === "mail") result.mailQueued += 1;

@@ -38,10 +38,7 @@ const steps: HelpStep[] = [
       <>Confirm the phone number and email shown are current.</>,
     ],
     shot: (
-      <Screenshot
-        url="pennpaps.com/reminders"
-        caption="Flip on the channels you prefer; your upcoming replacement dates show on the right."
-      >
+      <Screenshot caption="Flip on the channels you prefer; your upcoming replacement dates show on the right.">
         <RemindersShot />
       </Screenshot>
     ),
@@ -96,7 +93,7 @@ export function HelpResupplyReminders() {
       title="Set up resupply reminders"
       Icon={BellRing}
       minutes="3 min"
-      metaDescription="How to set up PennPaps resupply reminders: choose SMS, email, or phone reminders, review your per-item replacement schedule, and save your preferences."
+      metaDescription="How to set up resupply reminders: choose SMS, email, or phone reminders, review your per-item replacement schedule, and save your preferences."
       intro="Resupply reminders nudge you when cushions, filters, tubing, and headgear are due — and bill insurance on the covered schedule. Here's how to set them up."
       summary={
         <>

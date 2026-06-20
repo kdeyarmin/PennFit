@@ -29,6 +29,15 @@ export {
 } from "./entitlement";
 
 export {
+  resolveRefillWindow,
+  REFILL_CONTACT_LEAD_DAYS,
+  REFILL_SHIP_LEAD_DAYS,
+  REFILL_AFFIRMATION_STATEMENT,
+  type RefillWindowInput,
+  type RefillWindowResult,
+} from "./refill-window";
+
+export {
   computeMargin,
   aggregateMargin,
   type MarginInput,

@@ -215,7 +215,7 @@ export async function buildPaRequestPdf(
   const supplierName =
     identity.source !== "stub"
       ? identity.billingProvider.organizationName
-      : await getDocumentSupplierName();
+      : await getDocumentSupplierName(orgId);
 
   // 5. Requested item line(s) + merged modifiers.
   const requiredModifiers = (payerProfile?.required_claim_modifiers ??

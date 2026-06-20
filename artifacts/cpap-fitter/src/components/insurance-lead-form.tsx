@@ -27,6 +27,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { submitInsuranceLead } from "@/lib/shop-api";
+import { useCompanyContact } from "@/lib/contact";
 
 interface FormState {
   fullName: string;
@@ -61,6 +62,7 @@ type Status =
   | { kind: "error"; message: string };
 
 export function InsuranceLeadForm() {
+  const c = useCompanyContact();
   const [form, setForm] = useState<FormState>(INITIAL);
   const [status, setStatus] = useState<Status>({ kind: "idle" });
 
@@ -108,7 +110,7 @@ export function InsuranceLeadForm() {
           We received your request.
         </h3>
         <p className="text-sm text-muted-foreground leading-relaxed">
-          A member of the PennPaps team will reach out within{" "}
+          A member of the {c.name} team will reach out within{" "}
           <strong>one business day</strong> to confirm your benefits and walk
           you through the next step. We just sent a copy to{" "}
           <strong>{form.email}</strong> — check your inbox (and spam, just in

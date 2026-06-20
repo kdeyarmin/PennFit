@@ -11,7 +11,7 @@ that historically lived only as Railway environment variables.
   (`GET/PUT/DELETE /admin/system/config`, `GET /admin/system/config/activity`).
 - **Catalog:** `artifacts/resupply-api/src/lib/app-config/catalog.ts`.
 - **Resolver:** `artifacts/resupply-api/src/lib/app-config/store.ts`.
-- **Schema:** `lib/resupply-db/drizzle/0211_app_config.sql`
+- **Schema:** `lib/resupply-db/migrations/0211_app_config.sql`
   (`resupply.app_config`, `resupply.app_config_events`).
 
 ## Access

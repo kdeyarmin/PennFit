@@ -11,6 +11,11 @@ const { state } = vi.hoisted(() => ({
   state: {
     responses: [] as Array<{ data: unknown; error: unknown }>,
     calls: [] as Array<{ select: string; column: string; value: string }>,
+    updates: [] as Array<{
+      payload: Record<string, unknown>;
+      column: string;
+      value: string;
+    }>,
   },
 }));
 
@@ -30,6 +35,12 @@ vi.mock("@workspace/resupply-db", () => ({
               }),
             }),
           }),
+          update: (payload: Record<string, unknown>) => ({
+            eq: async (column: string, value: string) => {
+              state.updates.push({ payload, column, value });
+              return { error: null };
+            },
+          }),
         }),
       }),
     }),
@@ -37,6 +48,7 @@ vi.mock("@workspace/resupply-db", () => ({
 }));
 
 import {
+  clearConnectedAccountId,
   getConnectedAccountId,
   invalidateStripeConnectCache,
   resolveOrgIdByConnectedAccount,
@@ -49,12 +61,18 @@ const ACCT = "acct_test123";
 beforeEach(() => {
   state.responses = [];
   state.calls = [];
+  state.updates = [];
   invalidateStripeConnectCache();
 });
 
 describe("getConnectedAccountId", () => {
   it("returns the connected account id when set", async () => {
-    state.responses = [{ data: { stripe_account_id: ACCT }, error: null }];
+    state.responses = [
+      {
+        data: { stripe_account_id: ACCT, stripe_charges_enabled: true },
+        error: null,
+      },
+    ];
     expect(await getConnectedAccountId(ORG)).toBe(ACCT);
     expect(state.calls[0]).toMatchObject({ column: "id", value: ORG });
   });
@@ -64,8 +82,23 @@ describe("getConnectedAccountId", () => {
     expect(await getConnectedAccountId(ORG)).toBeNull();
   });
 
+  it("returns null when the account exists but charges aren't enabled yet (G5 onboarding gate)", async () => {
+    state.responses = [
+      {
+        data: { stripe_account_id: ACCT, stripe_charges_enabled: false },
+        error: null,
+      },
+    ];
+    expect(await getConnectedAccountId(ORG)).toBeNull();
+  });
+
   it("caches the result (no second query within the TTL)", async () => {
-    state.responses = [{ data: { stripe_account_id: ACCT }, error: null }];
+    state.responses = [
+      {
+        data: { stripe_account_id: ACCT, stripe_charges_enabled: true },
+        error: null,
+      },
+    ];
     await getConnectedAccountId(ORG);
     await getConnectedAccountId(ORG);
     expect(state.calls).toHaveLength(1);
@@ -79,7 +112,12 @@ describe("getConnectedAccountId", () => {
 
 describe("stripeAccountRequestOptions", () => {
   it("yields { stripeAccount } for a connected tenant", async () => {
-    state.responses = [{ data: { stripe_account_id: ACCT }, error: null }];
+    state.responses = [
+      {
+        data: { stripe_account_id: ACCT, stripe_charges_enabled: true },
+        error: null,
+      },
+    ];
     expect(await stripeAccountRequestOptions(ORG)).toEqual({
       stripeAccount: ACCT,
     });
@@ -117,11 +155,44 @@ describe("resolveOrgIdByConnectedAccount", () => {
   });
 });
 
+describe("clearConnectedAccountId", () => {
+  it("nulls the account id, resets charges_enabled, and invalidates cache", async () => {
+    // Prime the cache with a live connected account.
+    state.responses = [
+      {
+        data: { stripe_account_id: ACCT, stripe_charges_enabled: true },
+        error: null,
+      },
+      // After clearing, the next resolve sees no account.
+      { data: { stripe_account_id: null }, error: null },
+    ];
+    expect(await getConnectedAccountId(ORG)).toBe(ACCT);
+
+    await clearConnectedAccountId(ORG);
+    expect(state.updates).toHaveLength(1);
+    expect(state.updates[0]).toMatchObject({ column: "id", value: ORG });
+    expect(state.updates[0].payload).toEqual({
+      stripe_account_id: null,
+      stripe_charges_enabled: false,
+    });
+
+    // Cache was invalidated → a fresh query runs and now sees no account.
+    expect(await getConnectedAccountId(ORG)).toBeNull();
+    expect(state.calls).toHaveLength(2);
+  });
+});
+
 describe("invalidateStripeConnectCache", () => {
   it("forces a re-query after invalidation", async () => {
     state.responses = [
-      { data: { stripe_account_id: ACCT }, error: null },
-      { data: { stripe_account_id: ACCT }, error: null },
+      {
+        data: { stripe_account_id: ACCT, stripe_charges_enabled: true },
+        error: null,
+      },
+      {
+        data: { stripe_account_id: ACCT, stripe_charges_enabled: true },
+        error: null,
+      },
     ];
     await getConnectedAccountId(ORG);
     invalidateStripeConnectCache();

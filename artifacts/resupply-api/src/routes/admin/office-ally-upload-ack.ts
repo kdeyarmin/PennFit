@@ -115,7 +115,9 @@ router.post(
     // We need a clearinghouse to attach the file to. Resolve the
     // active OA config; bail if there's nothing configured (the
     // schema requires clearinghouse_id NOT NULL on inbound files).
-    const resolved = await resolveClearinghouse();
+    // Resolve the CALLER's clearinghouse (not the seed org's) so a manual
+    // ack attaches to the right tenant.
+    const resolved = await resolveClearinghouse({ orgId });
     if (!resolved.row) {
       res.status(409).json({
         error: "no_clearinghouse_configured",

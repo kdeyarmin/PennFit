@@ -48,7 +48,7 @@ export function AdminAnalytics() {
           Analytics
         </h1>
         <p className="text-muted-foreground mt-1 text-sm">
-          PennPaps storefront performance: total orders, email delivery health,
+          Storefront performance: total orders, email delivery health,
           most-ordered masks, fitter funnel completion, and a 30-day order
           trend.
         </p>

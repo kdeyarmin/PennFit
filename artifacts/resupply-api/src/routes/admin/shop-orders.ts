@@ -61,12 +61,15 @@ import {
   getStripeClient,
   readStripeConfigOrNull,
 } from "../../lib/stripe/config";
+import { stripeAccountRequestOptions } from "../../lib/stripe/connect";
 import { stripeErrLogFields } from "../../lib/stripe/err-log-fields";
 import { sendShippingNotificationEmail } from "../../lib/order-emails/send-shipping-notification-email";
 import { sendReadyForPickupEmail } from "../../lib/order-emails/send-ready-for-pickup-email";
 import { getPickupLocationsByIds } from "../../lib/pickup/locations";
 import { sendPushToCustomer } from "../../lib/web-push";
 import { resolveSmsRecipientForShopOrder } from "../../lib/shop-orders-sms-resolver";
+import { resolveTenantSmsClientOptions } from "../../lib/messaging/tenant-telecom";
+import { resolveBrandingByOrgId } from "../../lib/tenant-branding";
 import { autoSendPatientPacketOnDelivery } from "../../lib/patient-packet/auto-send-on-delivery";
 import { evaluatePaperworkGateForCustomer } from "../../lib/paperwork/require-signed-paperwork";
 import {
@@ -269,7 +272,7 @@ async function loadOrder(
  * Errors NEVER throw — the admin route already 200'd the UPDATE; we
  * must not fail the response because SendGrid is misconfigured.
  */
-async function sendShippingNotificationIfNew(args: {
+export async function sendShippingNotificationIfNew(args: {
   orgId: string;
   orderId: string;
   log:
@@ -398,6 +401,7 @@ async function sendShippingNotificationIfNew(args: {
       shippingAddress:
         (claimedRow.shipping_address_json as SavedShippingAddress | null) ??
         null,
+      orgId,
     });
 
     if (!result.configured) {
@@ -464,10 +468,18 @@ async function sendShippingNotificationIfNew(args: {
         customerEmailFromOrder: claimedRow.customer_email ?? null,
       });
       if (smsRecipient) {
-        const smsClient = createTwilioSmsClient();
+        // Send under the tenant's own number / Messaging Service when it
+        // has one (G7); falls back to the platform env default otherwise.
+        const smsClient = createTwilioSmsClient(
+          await resolveTenantSmsClientOptions(orgId),
+        );
+        // Tenant brand when the patient's first name is unknown — never the
+        // seed tenant's "PennPaps" for another tenant's customer. Resolved
+        // once (cached, fail-soft); the greeting doesn't depend on it.
+        const brand = await resolveBrandingByOrgId(orgId);
         const greeting = smsRecipient.patientFirstName
           ? `Hi ${smsRecipient.patientFirstName}`
-          : "PennPaps";
+          : brand.storefrontName;
         await smsClient.sendSms({
           to: smsRecipient.phoneE164,
           body: `${greeting}: your CPAP supplies just shipped (${claimedRow.tracking_carrier} ${claimedRow.tracking_number}). Reply STOP to opt out.`,
@@ -504,6 +516,7 @@ async function sendShippingNotificationIfNew(args: {
           kind: "shipped",
           carrier: claimedRow.tracking_carrier,
           trackingNumber: claimedRow.tracking_number,
+          orgId,
         });
       } catch (err) {
         log?.warn?.(
@@ -1116,6 +1129,7 @@ async function sendReadyForPickupNotificationIfNew(args: {
         postalCode: location.postalCode,
         phoneE164: location.phoneE164,
       },
+      orgId,
     });
     if (!result.configured) {
       await releaseClaim();
@@ -1338,6 +1352,9 @@ router.post(
     // earlier `if (!existing.stripePaymentIntentId)` guard
     // established.
     const paymentIntentId = existing.stripePaymentIntentId;
+    // Refund on the SAME account the PaymentIntent lives on — the tenant's
+    // connected account when it has one (Stripe Connect, G5), else platform.
+    const acct = await stripeAccountRequestOptions(orgId);
     let refund;
     try {
       refund = await withMetrics(
@@ -1367,7 +1384,7 @@ router.post(
             // issuing a second refund.  Amount is included so different partial
             // refund amounts on the same order each create a separate Stripe
             // Refund (intentional).
-            { idempotencyKey },
+            { ...acct, idempotencyKey },
           ),
       );
     } catch (err) {

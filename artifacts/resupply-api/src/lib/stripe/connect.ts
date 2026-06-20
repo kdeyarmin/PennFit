@@ -79,14 +79,23 @@ export async function getConnectedAccountId(
       const { data, error } = await raw
         .schema("resupply")
         .from("organizations")
-        .select("stripe_account_id")
+        .select("stripe_account_id, stripe_charges_enabled")
         .eq("id", orgId)
         .limit(1)
         .maybeSingle();
       if (error) throw error;
+      const row = data as {
+        stripe_account_id: string | null;
+        stripe_charges_enabled: boolean | null;
+      } | null;
+      // Only route charges to the connected account once Stripe onboarding
+      // has completed (charges_enabled, flipped by the account.updated
+      // webhook). A created-but-not-yet-onboarded account can't accept
+      // charges, so it stays on the platform account until then.
       value =
-        (data as { stripe_account_id: string | null } | null)
-          ?.stripe_account_id ?? null;
+        row?.stripe_account_id && row.stripe_charges_enabled === true
+          ? row.stripe_account_id
+          : null;
     }
   } catch (err) {
     logger.warn(
@@ -162,4 +171,76 @@ export async function resolveOrgIdByConnectedAccount(
 
   byAccount.set(accountId, { value, expiresAt: now + CACHE_TTL_MS });
   return value;
+}
+
+/**
+ * Bind a tenant to a freshly-created connected account (G5 onboarding).
+ * Stores the `acct_…` id but leaves `stripe_charges_enabled` false until
+ * Stripe's `account.updated` webhook confirms onboarding is complete — so
+ * creating the account never starts routing charges to it. Invalidates the
+ * caches so the next resolve sees the new binding.
+ */
+export async function setConnectedAccountId(
+  orgId: string,
+  accountId: string,
+): Promise<void> {
+  const raw = await rawOrgClient();
+  if (!raw) throw new Error("stripe-connect: tenant directory unavailable");
+  const { error } = await raw
+    .schema("resupply")
+    .from("organizations")
+    .update({ stripe_account_id: accountId })
+    .eq("id", orgId);
+  if (error) throw error;
+  invalidateStripeConnectCache();
+}
+
+/**
+ * Detach a tenant from its connected account (G5 disconnect): clears
+ * `stripe_account_id` AND resets `stripe_charges_enabled` to false, so the
+ * resolver immediately routes the tenant's charges back to the platform
+ * account. Invalidates the caches. NOTE: this only drops PennFit's pointer
+ * — it does NOT delete the Stripe Express account itself (the platform
+ * can't, and shouldn't, silently delete a tenant's account). Re-running
+ * onboarding `start` after a disconnect mints a NEW Express account.
+ */
+export async function clearConnectedAccountId(orgId: string): Promise<void> {
+  const raw = await rawOrgClient();
+  if (!raw) throw new Error("stripe-connect: tenant directory unavailable");
+  const { error } = await raw
+    .schema("resupply")
+    .from("organizations")
+    .update({ stripe_account_id: null, stripe_charges_enabled: false })
+    .eq("id", orgId);
+  if (error) throw error;
+  invalidateStripeConnectCache();
+}
+
+/**
+ * Flip a tenant's `stripe_charges_enabled` to match Stripe's
+ * `account.updated` report (G5). Resolves the org by connected account id;
+ * a no-op when no tenant is bound to it. Invalidates the caches so the
+ * routing resolver sees the change immediately. Fails soft (logs) — a
+ * missed flip is recovered on the next account.updated delivery.
+ */
+export async function setChargesEnabledByAccount(
+  accountId: string,
+  enabled: boolean,
+): Promise<void> {
+  try {
+    const raw = await rawOrgClient();
+    if (!raw) return;
+    const { error } = await raw
+      .schema("resupply")
+      .from("organizations")
+      .update({ stripe_charges_enabled: enabled })
+      .eq("stripe_account_id", accountId);
+    if (error) throw error;
+    invalidateStripeConnectCache();
+  } catch (err) {
+    logger.warn(
+      { event: "stripe_connect_charges_enabled_update_failed", err },
+      "stripe-connect: charges_enabled update failed",
+    );
+  }
 }

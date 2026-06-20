@@ -1,6 +1,37 @@
 import { describe, it, expect } from "vitest";
-import { buildChatSystemPrompt } from "./chatbotKnowledge";
-import { buildCustomerChatSystemPrompt } from "./customerChatKnowledge";
+import {
+  buildChatSystemPrompt,
+  buildChatSystemPromptBase,
+  offlineFallbackReply,
+} from "./chatbotKnowledge";
+import {
+  buildCustomerChatSystemPrompt,
+  customerOfflineFallbackReply,
+} from "./customerChatKnowledge";
+import type { CompanyInfo } from "../company-info";
+
+// A second tenant's saved identity (source "database" so the brand/
+// contact rewrite fires). Distinct from the seed "PennPaps" defaults so
+// a leak is obvious.
+const TENANT_B: CompanyInfo = {
+  name: "Acme Respiratory",
+  legalName: "Acme Respiratory LLC",
+  phoneE164: "+15551230000",
+  phoneDisplay: "(555) 123-0000",
+  supportPhoneE164: "+15551230000",
+  supportPhoneDisplay: "(555) 123-0000",
+  supportEmail: "help@acmeresp.com",
+  generalEmail: "info@acmeresp.com",
+  billingEmail: "billing@acmeresp.com",
+  faxE164: null,
+  websiteUrl: "https://acmeresp.com",
+  supportHours: "Mon–Fri 8a–6p CT",
+  assistantStorefrontName: "PennBot",
+  assistantAdminName: "PennPilot",
+  address: null,
+  organizationalNpi: null,
+  source: "database",
+};
 
 /**
  * Guard tests for the two chatbot system-prompt builders. They build a
@@ -89,5 +120,59 @@ describe("buildCustomerChatSystemPrompt (signed-in PennBot)", () => {
     expect(prompt).toContain("this is what makes you feel human");
     expect(prompt).toMatch(/virtual assistant/);
     expect(prompt).toContain("Example exchanges");
+  });
+});
+
+describe("per-tenant brand/contact threading", () => {
+  it("buildChatSystemPromptBase keeps the literal contact strings (un-branded)", () => {
+    const base = buildChatSystemPromptBase();
+    // The cached base must NOT have seed-specific values pre-substituted,
+    // so the per-request rewrite can target a second tenant.
+    expect(base).toContain("(814) 471-0627");
+    expect(base).toContain("support@pennpaps.com");
+  });
+
+  it("buildChatSystemPrompt rewrites contact strings to a second tenant", () => {
+    const prompt = buildChatSystemPrompt(TENANT_B);
+    expect(prompt).toContain("(555) 123-0000");
+    expect(prompt).toContain("help@acmeresp.com");
+    expect(prompt).toContain("Acme Respiratory");
+    // No seed leak.
+    expect(prompt).not.toContain("(814) 471-0627");
+    expect(prompt).not.toContain("support@pennpaps.com");
+    expect(prompt).not.toContain("PennPaps");
+  });
+
+  it("buildCustomerChatSystemPrompt rewrites contact strings to a second tenant", () => {
+    const prompt = buildCustomerChatSystemPrompt(
+      {
+        displayName: null,
+        memberSince: null,
+        totalPaidOrders: 0,
+        latestOrder: null,
+        activeSubscriptionCount: 0,
+        device: null,
+      },
+      TENANT_B,
+    );
+    expect(prompt).toContain("(555) 123-0000");
+    expect(prompt).toContain("help@acmeresp.com");
+    expect(prompt).not.toContain("(814) 471-0627");
+    expect(prompt).not.toContain("support@pennpaps.com");
+    expect(prompt).not.toContain("PennPaps");
+  });
+
+  it("offline fallbacks carry the second tenant's contact details", () => {
+    const storefront = offlineFallbackReply(TENANT_B);
+    expect(storefront).toContain("(555) 123-0000");
+    expect(storefront).toContain("help@acmeresp.com");
+    expect(storefront).not.toContain("(814) 471-0627");
+    expect(storefront).not.toContain("support@pennpaps.com");
+
+    const customer = customerOfflineFallbackReply(TENANT_B);
+    expect(customer).toContain("(555) 123-0000");
+    expect(customer).toContain("help@acmeresp.com");
+    expect(customer).not.toContain("(814) 471-0627");
+    expect(customer).not.toContain("support@pennpaps.com");
   });
 });

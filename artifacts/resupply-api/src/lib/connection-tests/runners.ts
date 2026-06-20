@@ -137,9 +137,9 @@ function nonEmpty(v: string | undefined | null): v is string {
 }
 
 function emailConfigured(env: NodeJS.ProcessEnv): boolean {
-  // The From address is a fixed platform constant that createSendgridClient
-  // defaults to (info@pennpaps.com), so the API key is the only thing that
-  // actually gates whether we can send.
+  // The From address is a platform constant that createSendgridClient
+  // defaults to (noreply@cmbreathe.com), so the API key is the only thing
+  // that actually gates whether we can send.
   return nonEmpty(env.SENDGRID_API_KEY);
 }
 
@@ -308,13 +308,10 @@ export async function runSmsTest(
   } catch (err) {
     return configErrorResult("sms", err, TwilioConfigError);
   }
+  let messageSid: string;
   try {
     const result = await client.sendSms({ to: input.to, body: TEST_SMS_BODY });
-    return {
-      ok: true,
-      channel: "sms",
-      detail: { messageSid: result.messageSid },
-    };
+    messageSid = result.messageSid;
   } catch (err) {
     if (err instanceof TwilioConfigError) {
       return {
@@ -325,16 +322,103 @@ export async function runSmsTest(
       };
     }
     if (err instanceof TwilioApiError) {
+      // An empty Messaging Service Sender Pool (21704 / 21703) is often
+      // rejected synchronously at create time. Append the actionable hint
+      // so the operator gets the real fix, not a bare code.
+      const hint = twilioSenderPoolHint(err.code);
       return {
         ok: false,
         channel: "sms",
         code: "upstream_error",
-        message: cap(err.message),
+        message: cap(hint ? `${err.message} — ${hint}` : err.message),
         upstream: { status: err.status ?? null, code: err.code ?? null },
       };
     }
     return unknownResult("sms", err);
   }
+
+  // Twilio ACCEPTED the message (we have a SID) — but acceptance is not
+  // delivery. A toll-free / 10DLC number that hasn't completed
+  // verification, a blocked recipient, or carrier filtering all return a
+  // SID first and only fail at the carrier moments later. Reporting "ok"
+  // here is the bug we're fixing: it shows green while every message is
+  // silently dropped. So we briefly poll the Message resource for the
+  // real terminal status before deciding the result.
+  let delivery: Awaited<ReturnType<TwilioSmsClient["confirmDelivery"]>>;
+  try {
+    delivery = await client.confirmDelivery(messageSid);
+  } catch {
+    // confirmDelivery is best-effort and shouldn't throw, but if it does
+    // we fall back to the historical behavior: report acceptance, and be
+    // explicit that delivery wasn't confirmed.
+    return {
+      ok: true,
+      channel: "sms",
+      detail: {
+        messageSid,
+        status: "accepted",
+        note: "Twilio accepted the message; delivery status could not be confirmed.",
+      },
+    };
+  }
+
+  if (delivery.delivered) {
+    return {
+      ok: true,
+      channel: "sms",
+      detail: { messageSid, status: "delivered" },
+    };
+  }
+
+  if (delivery.terminal) {
+    // Reached undelivered / failed — a real, carrier-level failure. Surface
+    // the Twilio error code (e.g. 30032 = toll-free number not verified,
+    // 21704 = Messaging Service Sender Pool is empty) so the operator gets
+    // an actionable reason instead of a false green. The empty-pool family
+    // gets its own hint — the generic toll-free/10DLC default would
+    // actively mislead, since nothing was ever sent for lack of a sender.
+    const codePart =
+      delivery.errorCode != null ? ` (Twilio error ${delivery.errorCode})` : "";
+    const reason = delivery.errorMessage ? `: ${delivery.errorMessage}` : "";
+    const hint =
+      twilioSenderPoolHint(delivery.errorCode) ??
+      "Common cause: the sender number's toll-free/10DLC verification is " +
+        "not yet approved.";
+    return {
+      ok: false,
+      channel: "sms",
+      code: "upstream_error",
+      message: cap(
+        `Twilio accepted the message but the carrier reported it as ` +
+          `"${delivery.status}"${codePart}${reason}. ${hint}`,
+      ),
+      upstream: { status: null, code: delivery.errorCode ?? null },
+    };
+  }
+
+  // Non-terminal: we can't claim delivery, but it's not a confirmed
+  // failure either. Distinguish two cases so the note stays honest:
+  //   * "unknown" — confirmDelivery never managed to read a status (the
+  //     Message-resource fetch kept failing). Don't pretend it's
+  //     in-flight; say we couldn't confirm.
+  //   * any real status (queued / sending / sent) — accepted and still
+  //     working through Twilio.
+  const couldNotConfirm = delivery.status === "unknown";
+  return {
+    ok: true,
+    channel: "sms",
+    detail: {
+      messageSid,
+      status: delivery.status,
+      note: couldNotConfirm
+        ? "Twilio accepted the message, but its delivery status could not " +
+          "be retrieved. Check the Delivery failures inbox or the Twilio " +
+          "Console to confirm it actually arrived."
+        : "Twilio accepted the message and it is still in flight " +
+          `(status "${delivery.status}"). If it never arrives, check the ` +
+          "Delivery failures inbox or the Twilio Console for the final status.",
+    },
+  };
 }
 
 export async function runVoiceTest(
@@ -541,6 +625,37 @@ async function runOpenAiChatTest(
 function cap(s: string, max = 300): string {
   if (s.length <= max) return s;
   return `${s.slice(0, max - 1)}…`;
+}
+
+/**
+ * Actionable operator guidance for the Twilio "Messaging Service has no
+ * usable sender" error family, or null when we have no special advice
+ * (the caller falls back to its generic hint).
+ *
+ *   * 21704 — the Messaging Service's Sender Pool is empty.
+ *   * 21703 — the Messaging Service has no sender eligible for THIS
+ *             message (no phone number / short code / alpha sender it can
+ *             pick for the destination).
+ *
+ * Both present identically to an operator — nothing was ever sent because
+ * Twilio had no `From` to choose — and the fix is the same: add an
+ * SMS-capable number to the service's Sender Pool. This is deliberately
+ * NOT the toll-free/10DLC verification case (e.g. 30032), so the default
+ * "verification not approved" hint would actively mislead here.
+ */
+function twilioSenderPoolHint(
+  code: number | string | null | undefined,
+): string | null {
+  const n = typeof code === "string" ? Number(code) : code;
+  if (n === 21704 || n === 21703) {
+    return (
+      "The Messaging Service has no usable sender in its Sender Pool. Add " +
+      "an SMS-capable phone number to the Messaging Service in the Twilio " +
+      "Console (Messaging → Services → your service → Sender Pool), then " +
+      "retry."
+    );
+  }
+  return null;
 }
 
 /** Pull the human-readable `error.message` out of an OpenAI error body. */

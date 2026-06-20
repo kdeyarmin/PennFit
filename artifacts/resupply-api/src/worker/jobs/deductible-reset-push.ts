@@ -41,12 +41,12 @@ import {
   type CommunicationPreferences,
   type Json,
   getOrgScopedClient,
-  resolveSeedOrgId,
 } from "@workspace/resupply-db";
 
 import { sendDeductibleResetEmail } from "../../lib/order-emails/send-deductible-reset-email";
 import { shouldSendEmail } from "../../lib/comm-prefs";
 import { logger } from "../../lib/logger";
+import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import {
   createQueueWithDlq,
   VENDOR_SEND_QUEUE_OPTS,
@@ -110,9 +110,33 @@ export async function runDeductibleResetPush(
     return stats;
   }
 
+  // Fan out across every active tenant — shop_customers is org-scoped, so
+  // each tenant is swept on its own client and a reset nudge only reaches a
+  // shopper in its own org. The November send window is calendar-based
+  // (checked once above), not per tenant. Per-tenant failure isolation;
+  // results summed. Single-tenant: listActiveOrgIds() returns just the seed
+  // org, so this is exactly the prior one-tenant sweep.
+  await forEachActiveOrg(
+    async (orgId) => {
+      await deductibleResetPushForOrg(orgId, now, stats);
+    },
+    { jobName: JOB_NAME },
+  );
+  return stats;
+}
+
+/**
+ * Run the deductible-reset sweep for a SINGLE tenant, accumulating into the
+ * shared `stats`. The PER_RUN_MAX send budget (and MAX_SCANNED_PER_RUN scan
+ * cap) is tracked per tenant via a local `sentThisOrg` counter so one
+ * tenant's backlog can't starve another's one-November send window.
+ */
+async function deductibleResetPushForOrg(
+  orgId: string,
+  now: Date,
+  stats: DeductibleResetStats,
+): Promise<void> {
   const currentYear = now.getUTCFullYear();
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) return stats;
   const supabase = getOrgScopedClient(orgId);
   const activitySince = isoDaysAgo(now, ACTIVE_LOOKBACK_DAYS);
 
@@ -128,8 +152,11 @@ export async function runDeductibleResetPush(
   const MAX_SCANNED_PER_RUN = PER_RUN_MAX * 50;
   let lastCustomerId: string | null = null;
   let scannedTotal = 0;
+  // Per-tenant send counter — the PER_RUN_MAX budget is each tenant's, not
+  // shared, so one tenant's backlog never starves another's November nudge.
+  let sentThisOrg = 0;
   pages: while (
-    stats.sent < PER_RUN_MAX &&
+    sentThisOrg < PER_RUN_MAX &&
     scannedTotal < MAX_SCANNED_PER_RUN
   ) {
     let pageQuery = supabase
@@ -185,7 +212,7 @@ export async function runDeductibleResetPush(
     }
 
     for (const row of rows) {
-      if (stats.sent >= PER_RUN_MAX) break pages;
+      if (sentThisOrg >= PER_RUN_MAX) break pages;
       stats.candidates += 1;
 
       const prefs = readPrefs(row.communication_preferences);
@@ -245,6 +272,7 @@ export async function runDeductibleResetPush(
         const result = await sendDeductibleResetEmail({
           toEmail: row.email_lower,
           firstName,
+          orgId,
         });
         if (!result.configured) {
           await releaseClaim();
@@ -261,6 +289,7 @@ export async function runDeductibleResetPush(
           continue;
         }
         stats.sent += 1;
+        sentThisOrg += 1;
       } catch (err) {
         try {
           await releaseClaim();
@@ -287,8 +316,6 @@ export async function runDeductibleResetPush(
       }
     }
   }
-
-  return stats;
 }
 
 export async function registerDeductibleResetPushJob(

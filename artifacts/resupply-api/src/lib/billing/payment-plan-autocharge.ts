@@ -83,6 +83,15 @@ export interface OffSessionChargeRequest {
   /** Idempotency key — one per (installment, attempt). */
   idempotencyKey: string;
   metadata: Record<string, string>;
+  /**
+   * Stripe Connect routing for the charging tenant (G5). When the tenant
+   * has an onboarded connected account, this carries `{ stripeAccount }` so
+   * the off-session PaymentIntent is created ON that account (where the
+   * tenant's customers + payment methods live). Omitted / empty → the
+   * charge lands on the platform account, exactly as before Connect. The
+   * charger spreads it into the PaymentIntent request options.
+   */
+  accountOptions?: { stripeAccount?: string };
 }
 
 export type OffSessionChargeResult =
@@ -129,6 +138,7 @@ export async function chargeInstallment(
   installment: AutochargeInstallment,
   charger: OffSessionCharger,
   sink: AutochargeSink,
+  accountOptions?: { stripeAccount?: string },
 ): Promise<ChargeOneResult> {
   if (!plan.stripeCustomerId || !plan.stripePaymentMethodId) {
     // Defensive: selectChargeableInstallments already excludes these.
@@ -146,6 +156,7 @@ export async function chargeInstallment(
       patient_id: plan.patientId,
       source: "autopay",
     },
+    accountOptions,
   });
 
   if (result.outcome === "succeeded") {

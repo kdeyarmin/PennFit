@@ -24,7 +24,10 @@ import {
   controlNumbersFromValue,
   type ControlNumbers,
   build837P,
+  createFileTransport,
   createOfficeAllyAdapter,
+  createSftpTransport,
+  resolveOutboxDir,
   type ClaimDetail,
   type OtherSubscriberDetail,
   type ProviderRef,
@@ -49,6 +52,7 @@ import {
 import { isFeatureEnabled } from "../feature-flags";
 import { reserveIsa13Value } from "./isa13-counter";
 import { logger } from "../logger";
+import { recordTenantUsage } from "../metering/usage";
 import { publishEvent } from "../webhooks/publisher";
 
 // Org-scoped chokepoint client. Helpers below auto-scope their reads/
@@ -601,10 +605,34 @@ export async function executeOfficeAllyBatchSubmit(
   >;
   try {
     identity = await resolveBillingIdentity({ orgId });
+    const clearinghouse = await resolveClearinghouse({ orgId });
+    // Fail closed for a non-seed tenant that hasn't configured its OWN billing
+    // identity AND clearinghouse transport. Without this guard a second
+    // tenant's 837P would be built under the seed NPI (identity stub/env) and
+    // uploaded over the seed SFTP account (env transport) — wrong-NPI billing.
+    // The seed/single-tenant org keeps its env+stub fallbacks (isSeedOrg in the
+    // resolvers), so this only blocks an under-configured additional tenant.
+    const seedOrgId = await resolveSeedOrgId();
+    if (
+      orgId !== seedOrgId &&
+      (identity.source !== "db" || clearinghouse.source !== "db")
+    ) {
+      throw new Error(
+        "office-ally-batch: tenant billing identity / clearinghouse not configured " +
+          "(refusing to submit under the platform NPI/SFTP)",
+      );
+    }
     const adapter = createOfficeAllyAdapter({
       submitterOverride: identity.submitter,
       billingProviderOverride: identity.billingProvider,
       usageIndicatorOverride: identity.usageIndicator,
+      // Route the upload over the TENANT's own SFTP transport (its
+      // clearinghouse_credentials row); fall back to the local file outbox
+      // only when there's no transport (seed dev/preview/stub).
+      transportFactory: () =>
+        clearinghouse.config
+          ? createSftpTransport(clearinghouse.config)
+          : createFileTransport({ outboxDir: resolveOutboxDir() }),
     });
     submission = await adapter.submitClaims({
       control,
@@ -753,6 +781,19 @@ export async function executeOfficeAllyBatchSubmit(
     logger.warn({ err }, "insurance_claim.batch_submit audit write failed");
   });
 
+  // Meter the transmitted claims as billing transactions (G12) — one per
+  // claim in the 837P, only when the interchange actually uploaded. Covers
+  // the manual batch-submit route AND the auto-submit cron, which both run
+  // through here. Fire-and-forget + fail-soft.
+  if (submission.upload.ok) {
+    void recordTenantUsage({
+      orgId,
+      metricKey: "billingTransactionsPerMonth",
+      quantity: claims.length,
+      source: "claim.batch_submit",
+    });
+  }
+
   return {
     ok: true,
     submissionId: subRow.id,
@@ -838,6 +879,127 @@ export async function buildEdiPayloadForSubmission(
     usageIndicator: identity.usageIndicator,
   });
   return { payload: built.payload, usageIndicator: identity.usageIndicator };
+}
+
+// Build a clearinghouse-NEUTRAL 837P for a set of claims and return it for
+// download — the "export the 837P and upload it to the clearinghouse of your
+// choice" path. Unlike buildEdiPayloadForSubmission this needs no existing
+// Office Ally submission: it allocates fresh control numbers and addresses the
+// interchange to the caller-supplied receiver (the operator's target
+// clearinghouse) instead of hard-coding Office Ally.
+//
+// It is READ-ONLY: no SFTP upload, no office_ally_submissions row, and no
+// claim status change — the operator uploads the file wherever they like and
+// tracks the submission there. The claim CONTENT is the same standard ASC X12
+// 5010 837P the submit path builds.
+//
+// PHI: the returned payload IS claim data. The caller streams it to an authed
+// admin as a file download and never logs it; its audit row carries counts
+// only.
+export type Export837PResult =
+  | {
+      ok: true;
+      payload: string;
+      claimCount: number;
+      usageIndicator: "P" | "T";
+      interchangeControlNumber: string;
+    }
+  | {
+      ok: false;
+      kind:
+        | "no_claims_matched"
+        | "some_claims_not_found"
+        | "batch_payer_mismatch"
+        | "payer_not_configured"
+        | "claim_detail_unavailable";
+      detail?: Record<string, unknown>;
+    };
+
+export async function buildExport837P(input: {
+  orgId: string;
+  claimIds: string[];
+  receiver: { interchangeId: string; organizationName: string };
+}): Promise<Export837PResult> {
+  const supabase = getOrgScopedClient(input.orgId);
+
+  const { data: claimsData, error } = await supabase
+    .from("insurance_claims")
+    .select("*")
+    .in("id", input.claimIds);
+  if (error) throw error;
+  const claims = (claimsData ?? []) as ClaimRow[];
+  if (claims.length === 0) return { ok: false, kind: "no_claims_matched" };
+  if (claims.length !== input.claimIds.length) {
+    const missing = input.claimIds.filter(
+      (id) => !claims.some((c) => c.id === id),
+    );
+    return { ok: false, kind: "some_claims_not_found", detail: { missing } };
+  }
+
+  // One 837P interchange addresses exactly one payer.
+  const payerProfileIds = [...new Set(claims.map((c) => c.payer_profile_id))];
+  if (payerProfileIds.length !== 1 || !payerProfileIds[0]) {
+    return {
+      ok: false,
+      kind: "batch_payer_mismatch",
+      detail: {
+        message: "all claims in one 837P interchange must share one payer",
+      },
+    };
+  }
+  const { data: payer } = await supabase
+    .from("payer_profiles")
+    .select("payer_legal_name, office_ally_payer_id")
+    .eq("id", payerProfileIds[0])
+    .limit(1)
+    .maybeSingle();
+  if (!payer || !payer.office_ally_payer_id) {
+    return { ok: false, kind: "payer_not_configured" };
+  }
+
+  const details: ClaimDetail[] = [];
+  for (const claim of claims) {
+    const d = await buildOneDetail(
+      supabase,
+      claim,
+      payer.payer_legal_name,
+      payer.office_ally_payer_id,
+    );
+    if (!d) {
+      return {
+        ok: false,
+        kind: "claim_detail_unavailable",
+        detail: { claimId: claim.id },
+      };
+    }
+    details.push(d);
+  }
+
+  const identity = await resolveBillingIdentity({ orgId: input.orgId });
+  const control = allocateControlNumbers({
+    submittedAt: Date.now(),
+    sequence: 1,
+  });
+  const built = build837P({
+    submitter: identity.submitter,
+    receiver: input.receiver,
+    billingProvider: identity.billingProvider,
+    claims: details,
+    control: {
+      interchangeControlNumber: control.interchangeControlNumber,
+      groupControlNumber: control.groupControlNumber,
+      transactionSetControlNumber: control.transactionSetControlNumber,
+      builtAt: Date.now(),
+    },
+    usageIndicator: identity.usageIndicator,
+  });
+  return {
+    ok: true,
+    payload: built.payload,
+    claimCount: built.claimCount,
+    usageIndicator: identity.usageIndicator,
+    interchangeControlNumber: control.interchangeControlNumber,
+  };
 }
 
 export async function buildOneDetail(

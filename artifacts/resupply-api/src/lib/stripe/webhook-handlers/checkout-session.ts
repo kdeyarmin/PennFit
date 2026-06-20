@@ -24,12 +24,14 @@ import type Stripe from "stripe";
 
 import {
   getOrgScopedClient,
-  resolveSeedOrgId,
   type Database,
   type Json,
 } from "@workspace/resupply-db";
 import { normalizeE164 } from "@workspace/resupply-domain";
 
+import { resolveWebhookOrgId } from "../webhook-org-context";
+
+import { stripeAccountRequestOptions } from "../connect";
 import { getStripeClient, type StripeConfig } from "../config";
 import { readDefaultPaymentMethod } from "../customer";
 import type { OrderConfirmationLineItem } from "../../order-emails/send-order-confirmation-email";
@@ -70,7 +72,22 @@ export async function authorizePaymentPlanAutopay(
       ? session.customer
       : (session.customer?.id ?? null);
 
-  // Resolve the payment method from the SetupIntent.
+  // Resolve the tenant FIRST — the SetupIntent + customer + PM for a
+  // connected-account setup live ON that account, so we must retrieve them
+  // with its `{ stripeAccount }` options (G5). The webhook event already
+  // carries the account context (resolveWebhookOrgId → the event.account
+  // tenant). Empty options for the platform account, unchanged.
+  const orgId = await resolveWebhookOrgId();
+  if (!orgId) {
+    log?.info?.(
+      { planId },
+      "stripe webhook: payment-plan autopay authorize skipped — tenant context missing",
+    );
+    return;
+  }
+  const accountOptions = await stripeAccountRequestOptions(orgId);
+
+  // Resolve the payment method from the SetupIntent (on the tenant's account).
   const stripe = getStripeClient(config);
   const setupIntentId =
     typeof session.setup_intent === "string"
@@ -78,7 +95,11 @@ export async function authorizePaymentPlanAutopay(
       : (session.setup_intent?.id ?? null);
   let paymentMethodId: string | null = null;
   if (setupIntentId) {
-    const si = await stripe.setupIntents.retrieve(setupIntentId);
+    const si = await stripe.setupIntents.retrieve(
+      setupIntentId,
+      undefined,
+      accountOptions,
+    );
     paymentMethodId =
       typeof si.payment_method === "string"
         ? si.payment_method
@@ -96,14 +117,6 @@ export async function authorizePaymentPlanAutopay(
     return;
   }
 
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) {
-    log?.info?.(
-      { planId },
-      "stripe webhook: payment-plan autopay authorize skipped — tenant context missing",
-    );
-    return;
-  }
   const supabase = getOrgScopedClient(orgId);
   const { error } = await supabase
     .from("patient_payment_plans")
@@ -129,7 +142,7 @@ export async function markPaid(
   session: Stripe.Checkout.Session,
   log: { info?: (...args: unknown[]) => void } | undefined,
 ): Promise<PaidOrderRow | null> {
-  const orgId = await resolveSeedOrgId();
+  const orgId = await resolveWebhookOrgId();
   if (!orgId) {
     // Tenant context missing — same non-throwing null outcome the
     // function uses when the upsert returns no row.
@@ -271,12 +284,25 @@ export async function upsertOrderItemsFromSession(
         warn?: (...args: unknown[]) => void;
       }
     | undefined,
+  // The connected account the event originated on (`event.account`), passed
+  // by the dispatcher. Connect (G6): a connected-account checkout's line
+  // items live ON that account. We use the EVENT's account — NOT the
+  // tenant's CURRENT org row — because this is a historical read: a
+  // disconnect/reconnect or a `stripe_charges_enabled` flip between checkout
+  // and a (possibly replayed / async) webhook would make the org-derived
+  // account wrong, sending listLineItems to the platform/new account → 404.
+  // event.account is immutable for the event. undefined → platform account.
+  connectedAccountId?: string | null,
 ): Promise<OrderConfirmationLineItem[]> {
   const stripe = getStripeClient(config);
-  const lineItems = await stripe.checkout.sessions.listLineItems(session.id, {
-    limit: 100,
-    expand: ["data.price.product"],
-  });
+  const accountOptions: Stripe.RequestOptions = connectedAccountId
+    ? { stripeAccount: connectedAccountId }
+    : {};
+  const lineItems = await stripe.checkout.sessions.listLineItems(
+    session.id,
+    { limit: 100, expand: ["data.price.product"] },
+    accountOptions,
+  );
 
   const rows: ShopOrderItemInsert[] = [];
   // SKU per row (aligned 1:1 with `rows`), resolved from the expanded
@@ -357,7 +383,7 @@ export async function upsertOrderItemsFromSession(
 
   // Resolve the tenant first: both the COGS snapshot lookup (product_costs
   // is per-tenant since 0357) and the order-items mirror below scope to it.
-  const orgId = await resolveSeedOrgId();
+  const orgId = await resolveWebhookOrgId();
   if (!orgId) {
     // Tenant context missing — the parent order is already paid; skip
     // the items mirror and return the email items built above (the
@@ -425,7 +451,7 @@ export async function syncCustomerAfterCheckout(
       : (session.customer?.id ?? null);
   if (!customerId || !stripeCustomerId) return;
 
-  const orgId = await resolveSeedOrgId();
+  const orgId = await resolveWebhookOrgId();
   if (!orgId) {
     log?.info?.(
       { customerId },
@@ -435,7 +461,7 @@ export async function syncCustomerAfterCheckout(
   }
   const supabase = getOrgScopedClient(orgId);
 
-  const dpm = await readDefaultPaymentMethod(config, stripeCustomerId);
+  const dpm = await readDefaultPaymentMethod(config, stripeCustomerId, orgId);
   const shippingAddress = extractShippingAddressFromSession(session);
   // Stripe collects the phone at Checkout (phone_number_collection); it
   // arrives on the completed session's customer_details. Persist it so an
@@ -548,7 +574,7 @@ export async function markCartRecovered(
 ): Promise<void> {
   const customerId = readCustomerIdFromMetadata(session.metadata);
   if (!customerId) return;
-  const orgId = await resolveSeedOrgId();
+  const orgId = await resolveWebhookOrgId();
   if (!orgId) {
     log?.info?.(
       { customerId },
@@ -588,7 +614,7 @@ export async function markStatus(
       }
     | undefined,
 ): Promise<void> {
-  const orgId = await resolveSeedOrgId();
+  const orgId = await resolveWebhookOrgId();
   if (!orgId) {
     log?.warn?.(
       { sessionId, attemptedStatus: status },

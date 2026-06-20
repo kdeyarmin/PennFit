@@ -37,6 +37,8 @@ import {
   EmailApiError,
   EmailConfigError,
 } from "@workspace/resupply-email";
+import { applyCompanyIdentityToText, getCompanyInfo } from "../company-info.js";
+import { createTenantSendgridClient } from "../email/tenant-sender.js";
 import {
   createTwilioSmsClient,
   TwilioApiError,
@@ -51,6 +53,8 @@ import {
 import { isInDndWindow, isOutsideSmsSendWindow } from "../comm-prefs";
 import { isFeatureEnabled } from "../feature-flags";
 import { logger } from "../logger";
+import { resolveTenantSmsClientOptions } from "../messaging/tenant-telecom";
+import { recordOutboundMessageUsage } from "../metering/usage";
 import { sendPushToCustomerByEmail } from "../web-push";
 import { withRetry } from "../with-retry";
 import { PATIENT_DISPATCH_KINDS, type TriggerKind } from "./index";
@@ -182,11 +186,20 @@ export async function runSmartTriggerSendDue(
 
   const supabase = getOrgScopedClient(orgId);
 
+  // Brand the rendered body copy to the tenant at the I/O boundary: the
+  // renderers bake the seed tenant's "Penn Home Medical Supply" sign-off and
+  // a pennpaps.com link as placeholders. applyCompanyIdentityToText rewrites
+  // them to a DB-backed tenant's own brand/site (no-op for the seed tenant
+  // and for any unconfigured environment).
+  const companyInfo = await getCompanyInfo(orgId);
+
   let sg: ReturnType<typeof createSendgridClient> | null = null;
   let sms: ReturnType<typeof createTwilioSmsClient> | null = null;
   if (channel === "email") {
     try {
-      sg = createSendgridClient();
+      // Send under the tenant's own From identity when configured (G6);
+      // falls back to the platform default otherwise.
+      sg = await createTenantSendgridClient(orgId);
     } catch (err) {
       if (err instanceof EmailConfigError) {
         return { status: "not_configured", channel };
@@ -195,7 +208,9 @@ export async function runSmartTriggerSendDue(
     }
   } else {
     try {
-      sms = createTwilioSmsClient();
+      // Send under the tenant's own number / Messaging Service when it
+      // has one (G7); falls back to the platform env default otherwise.
+      sms = createTwilioSmsClient(await resolveTenantSmsClientOptions(orgId));
     } catch (err) {
       if (err instanceof TwilioConfigError) {
         return { status: "not_configured", channel };
@@ -434,9 +449,18 @@ export async function runSmartTriggerSendDue(
           () =>
             sg!.sendEmail({
               to: contact,
-              subject: renderers.subjectForKind(row.kind as TriggerKind),
-              text: renderers.textBody(greeting, row.kind as TriggerKind),
-              html: renderers.htmlBody(greeting, row.kind as TriggerKind),
+              subject: applyCompanyIdentityToText(
+                renderers.subjectForKind(row.kind as TriggerKind),
+                companyInfo,
+              ),
+              text: applyCompanyIdentityToText(
+                renderers.textBody(greeting, row.kind as TriggerKind),
+                companyInfo,
+              ),
+              html: applyCompanyIdentityToText(
+                renderers.htmlBody(greeting, row.kind as TriggerKind),
+                companyInfo,
+              ),
               customArgs: {
                 kind: "smart_trigger",
                 trigger_kind: row.kind,
@@ -463,7 +487,10 @@ export async function runSmartTriggerSendDue(
           () =>
             sms!.sendSms({
               to: contact,
-              body: renderers.smsBody(firstName, row.kind as TriggerKind),
+              body: applyCompanyIdentityToText(
+                renderers.smsBody(firstName, row.kind as TriggerKind),
+                companyInfo,
+              ),
             }),
           {
             attempts: 3,
@@ -481,6 +508,12 @@ export async function runSmartTriggerSendDue(
       }
 
       // sent_at was already stamped by the atomic claim — no UPDATE here.
+
+      recordOutboundMessageUsage({
+        orgId,
+        channel: channel === "email" ? "email" : "sms",
+        source: "smart_trigger",
+      });
 
       await logAudit({
         action: "patient.smart_trigger.sent",

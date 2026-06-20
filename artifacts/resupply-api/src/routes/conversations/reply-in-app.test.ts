@@ -100,6 +100,19 @@ vi.mock("../../lib/web-push", () => ({
   isPushConfigured: () => false,
 }));
 
+// The reply-notification helper brands the push/email with the tenant's
+// storefront name + base URL. Pin the seed tenant's brand so the assertions
+// stay on "PennPaps" / pennpaps.com without a live DB.
+vi.mock("../../lib/tenant-branding", () => ({
+  resolveBrandingByOrgId: vi.fn(async () => ({
+    storefrontName: "PennPaps",
+    legalName: "Penn Home Medical Supply",
+    tagline: "",
+    logoUrl: null,
+  })),
+  resolveTenantBaseUrl: vi.fn(async () => null),
+}));
+
 import replyRouter from "./reply";
 
 const CONV_ID = "11111111-1111-4111-8111-111111111111";

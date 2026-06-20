@@ -54,8 +54,15 @@ export interface EvaluatorResult {
 
 export async function runSmartTriggerEvaluator(
   actor: EvaluatorActor,
+  /**
+   * Tenant to scan. The daily cron fans out across every active tenant
+   * (worker/jobs/smart-trigger-evaluator.ts) and ALWAYS passes an explicit
+   * orgId. Left optional only for the admin "Run now" route, which has no
+   * tenant context and falls back to the seed org for back-compat.
+   */
+  explicitOrgId?: string,
 ): Promise<EvaluatorResult> {
-  const orgId = await resolveSeedOrgId();
+  const orgId = explicitOrgId ?? (await resolveSeedOrgId());
   if (!orgId) {
     // Tenant context missing — no roster to scan. Return the same
     // all-zero counters an empty-candidate run produces.

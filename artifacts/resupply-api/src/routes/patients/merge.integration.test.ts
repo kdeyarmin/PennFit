@@ -23,7 +23,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MIGRATION_PATH = resolve(
   __dirname,
-  "../../../../../lib/resupply-db/drizzle/0225_merge_patient_records.sql",
+  "../../../../../lib/resupply-db/migrations/0225_merge_patient_records.sql",
 );
 
 const PRIMARY = "11111111-1111-4111-8111-111111111111";

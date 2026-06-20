@@ -67,20 +67,85 @@ export function readStripeConfigOrNull(
   };
 }
 
-// Memoize the Stripe client so we don't allocate one per request, but
-// still re-construct if the secret rotates between calls (cheap key
-// comparison, no module-load coupling to env).
-let cached: { key: string; client: Stripe } | null = null;
+/**
+ * Where the platform's SaaS-billing money lives. `"dedicated"` means the
+ * operator has provisioned a SEPARATE Stripe account for tenant→platform
+ * subscription billing (STRIPE_PLATFORM_SECRET_KEY set), keeping that
+ * revenue off the account that processes patient/storefront checkout.
+ * `"shared"` means the dedicated key is unset, so platform billing runs on
+ * the SAME account as patient checkout (STRIPE_SECRET_KEY) — the historical
+ * single-account behaviour, preserved so nothing breaks until the second
+ * account is provisioned.
+ */
+export type PlatformBillingStripeMode = "dedicated" | "shared";
+
+export interface PlatformBillingStripeConfig extends StripeConfig {
+  mode: PlatformBillingStripeMode;
+}
+
+/**
+ * Config for PLATFORM SaaS billing (tenants paying the platform), kept
+ * separate from {@link readStripeConfigOrNull} (patient/storefront checkout
+ * + Connect). When `STRIPE_PLATFORM_SECRET_KEY` is set we run platform
+ * billing on that dedicated account and verify its webhooks with
+ * `STRIPE_PLATFORM_WEBHOOK_SIGNING_SECRET`. When it is unset we fall back to
+ * the patient account's key/secret (`mode: "shared"`) so single-account
+ * deployments are unchanged.
+ *
+ * A NULL return means platform billing can't run at all (no secret key
+ * resolvable, or no public base URL) — callers degrade to
+ * `stripeConfigured: false` exactly as before.
+ */
+export function readPlatformBillingStripeConfigOrNull(
+  env: NodeJS.ProcessEnv = process.env,
+): PlatformBillingStripeConfig | null {
+  const dedicatedKey = env.STRIPE_PLATFORM_SECRET_KEY?.trim();
+  const dedicated = !!dedicatedKey;
+
+  const secretKey = dedicated ? dedicatedKey : env.STRIPE_SECRET_KEY;
+  if (!secretKey) return null;
+
+  const publicBaseUrl = readPublicBaseUrl(env);
+  if (!publicBaseUrl) return null;
+
+  // Webhook secrets are account-specific: the dedicated account has its own
+  // signing secret. In shared mode, platform events arrive on the patient
+  // account's webhook, so reuse its secret.
+  const webhookSigningSecret = dedicated
+    ? env.STRIPE_PLATFORM_WEBHOOK_SIGNING_SECRET?.trim() || null
+    : (env.STRIPE_WEBHOOK_SIGNING_SECRET ?? null);
+
+  return {
+    secretKey,
+    // The platform account's publishable key isn't used server-side
+    // (hosted Checkout / Billing Portal only need the secret key).
+    publishableKey: null,
+    webhookSigningSecret,
+    publicBaseUrl,
+    mode: dedicated ? "dedicated" : "shared",
+  };
+}
+
+// Memoize Stripe clients so we don't allocate one per request, keyed by
+// secret key so the patient account and a dedicated platform-billing
+// account can each hold a long-lived client without thrashing a single
+// slot. A rotated key just adds an entry; the map is pruned if it ever
+// grows past a small bound (rotation is rare, and stale clients are
+// cheap but shouldn't accumulate unbounded).
+const clientCache = new Map<string, Stripe>();
+const MAX_CACHED_CLIENTS = 8;
 
 export function getStripeClient(config: StripeConfig): Stripe {
-  if (cached && cached.key === config.secretKey) return cached.client;
+  const existing = clientCache.get(config.secretKey);
+  if (existing) return existing;
+  if (clientCache.size >= MAX_CACHED_CLIENTS) clientCache.clear();
   const client = new Stripe(config.secretKey, {
     // Stripe SDK pins its own apiVersion default; relying on the SDK
     // default keeps us auto-updating with the SDK upgrade rather than
     // pinning to a date string we'd forget to refresh.
     typescript: true,
   });
-  cached = { key: config.secretKey, client };
+  clientCache.set(config.secretKey, client);
   return client;
 }
 

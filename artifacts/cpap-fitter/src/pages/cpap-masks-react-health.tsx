@@ -23,6 +23,7 @@ import {
   Truck,
 } from "lucide-react";
 import { useDocumentTitle } from "@/hooks/use-document-title";
+import { useCompanyContact } from "@/lib/contact";
 import { ShareArticle } from "@/components/share-article";
 import nasalPillowImg from "@/assets/masks/nasal-pillow.webp";
 import nasalImg from "@/assets/masks/nasal.webp";
@@ -113,6 +114,7 @@ const whyReactHealth = [
 ];
 
 export function CpapMasksReactHealth() {
+  const c = useCompanyContact();
   useDocumentTitle(
     "React Health CPAP Masks",
     "React Health is our flagship CPAP mask line — US-engineered, ultra-quiet, and lighter than every comparable ResMed or Fisher & Paykel system. Featured: Rio II, Viva, Numa.",
@@ -142,7 +144,7 @@ export function CpapMasksReactHealth() {
               <div className="flex flex-wrap items-center gap-2 mb-6">
                 <span className="status-pill status-pill-gold status-pill-on-dark">
                   <Award className="w-3 h-3 mr-1.5 inline" />
-                  Best Overall · PennPaps flagship
+                  Best Overall · {c.name} flagship
                 </span>
               </div>
 
@@ -344,7 +346,7 @@ export function CpapMasksReactHealth() {
             genuinely sleep through to morning now.&rdquo;
           </blockquote>
           <div className="text-sm font-medium text-foreground/70">
-            — Verified PennPaps patient · West Chester, PA
+            — Verified {c.name} patient · West Chester, PA
           </div>
         </div>
       </div>

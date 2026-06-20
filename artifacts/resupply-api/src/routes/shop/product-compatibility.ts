@@ -25,6 +25,9 @@ import {
   resolveSeedOrgId,
 } from "@workspace/resupply-db";
 
+import { requestHost } from "../../lib/request-host";
+import { resolveOrgIdByHost } from "../../lib/tenant-branding";
+
 const router: IRouter = Router();
 
 const productIdParam = z
@@ -45,7 +48,11 @@ router.get("/shop/products/:productId/compatibility", async (req, res) => {
   }
   const productId = parsed.data;
 
-  const orgId = await resolveSeedOrgId();
+  // Public catalog read — no auth middleware populates req.orgId, so resolve
+  // the tenant from the request host (custom domain → that org; platform
+  // host / miss → seed org).
+  const orgId =
+    (await resolveOrgIdByHost(requestHost(req))) ?? (await resolveSeedOrgId());
   if (!orgId) {
     res.status(503).json({ error: "tenant_unavailable" });
     return;
@@ -86,7 +93,11 @@ router.get("/shop/products/compatibility", async (req, res) => {
   }
   const model = modelParsed.data ?? null;
 
-  const orgId = await resolveSeedOrgId();
+  // Public catalog read — no auth middleware populates req.orgId, so resolve
+  // the tenant from the request host (custom domain → that org; platform
+  // host / miss → seed org).
+  const orgId =
+    (await resolveOrgIdByHost(requestHost(req))) ?? (await resolveSeedOrgId());
   if (!orgId) {
     res.status(503).json({ error: "tenant_unavailable" });
     return;

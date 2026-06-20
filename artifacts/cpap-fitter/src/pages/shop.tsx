@@ -155,9 +155,10 @@ const SECTION_ORDER: Category[] = [
  * @returns The shop page element that displays products, filtering and sorting controls, and contextual UI states (loading, error, unavailable, or empty).
  */
 export function Shop() {
+  const company = useCompanyContact();
   useDocumentTitle(
     "Shop CPAP supplies",
-    "Shop fresh CPAP cushions, filters, tubing, headgear, and bundles direct from Penn Home Medical Supply. Cash-pay shipping or use insurance for $0 with prescription.",
+    `Shop fresh CPAP cushions, filters, tubing, headgear, and bundles direct from ${company.legalName}. Cash-pay shipping or use insurance for $0 with prescription.`,
   );
   const [data, setData] = useState<ShopProductsResponse | null>(null);
   const [unavailable, setUnavailable] = useState<string | null>(null);
@@ -563,13 +564,14 @@ export function Shop() {
 }
 
 function ShopHero() {
+  const c = useCompanyContact();
   return (
     <div className="text-center max-w-3xl mx-auto mb-2">
       <div className="flex justify-center mb-5">
         <div className="inline-flex items-center gap-3">
           <div className="h-px w-10 bg-gradient-to-r from-transparent to-[hsl(var(--penn-gold))]" />
           <span className="text-xs font-semibold uppercase tracking-[0.32em] text-[hsl(var(--penn-navy))]/75">
-            PennPaps · Shop
+            {c.name} · Shop
           </span>
           <div className="h-px w-10 bg-gradient-to-l from-transparent to-[hsl(var(--penn-gold))]" />
         </div>
@@ -1070,12 +1072,13 @@ function InsuranceFooter() {
  * is more confusing than reassuring. Just the cards.
  */
 function ShopCatalogSkeleton() {
+  const c = useCompanyContact();
   return (
     <div
       className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 mt-10"
       data-testid="shop-loading"
       role="status"
-      aria-label="Loading PennPaps shop"
+      aria-label={`Loading ${c.name} shop`}
     >
       {Array.from({ length: 6 }).map((_, i) => (
         <div
@@ -1093,12 +1096,13 @@ function ShopCatalogSkeleton() {
           </div>
         </div>
       ))}
-      <span className="sr-only">Loading PennPaps shop…</span>
+      <span className="sr-only">Loading {c.name} shop…</span>
     </div>
   );
 }
 
 function PreviewModeBanner() {
+  const c = useCompanyContact();
   return (
     <div
       className="rounded-2xl border border-[hsl(var(--penn-gold))]/40 bg-[hsl(var(--penn-gold))]/10 px-5 py-4 mt-8 flex items-start gap-3"
@@ -1113,7 +1117,7 @@ function PreviewModeBanner() {
           Preview mode — payments not yet enabled
         </p>
         <p className="text-foreground/80 mt-0.5">
-          You&apos;re browsing a demo of the PennPaps storefront. Card checkout
+          You&apos;re browsing a demo of the {c.name} storefront. Card checkout
           will be enabled as soon as Stripe is connected.{" "}
           <Link
             href="/insurance"
@@ -1221,7 +1225,8 @@ function ShopLoadError({
 }
 
 function ShopComingSoon({ message }: { message: string }) {
-  const assistantName = useCompanyContact().assistantStorefrontName;
+  const c = useCompanyContact();
+  const assistantName = c.assistantStorefrontName;
   return (
     <div
       className="glass-card rounded-2xl p-10 md:p-14 text-center mt-12 max-w-2xl mx-auto"
@@ -1233,7 +1238,7 @@ function ShopComingSoon({ message }: { message: string }) {
         </div>
       </div>
       <h2 className="text-2xl font-bold tracking-tight mb-3">
-        The PennPaps shop is opening soon.
+        The {c.name} shop is opening soon.
       </h2>
       <p className="text-muted-foreground leading-relaxed mb-6">{message}</p>
       <div className="flex flex-col sm:flex-row gap-3 justify-center">

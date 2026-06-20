@@ -35,6 +35,7 @@ import {
   type AccountThread,
 } from "@/lib/account-api";
 import { useShopIdentity } from "@/lib/identity";
+import { useCompanyContact } from "@/lib/contact";
 import { formatAppDateTime, formatAppTime, todayAppDateIso } from "@/lib/utils";
 
 /** How often we re-fetch while the tab is visible. */
@@ -44,6 +45,7 @@ const BODY_MAX = 4000;
 
 export function AccountMessagesSection() {
   const { displayName } = useShopIdentity();
+  const c = useCompanyContact();
   const { toast } = useToast();
   const [thread, setThread] = useState<AccountThread | null>(null);
   const [messages, setMessages] = useState<AccountMessage[]>([]);
@@ -201,11 +203,11 @@ export function AccountMessagesSection() {
     <section
       className="glass-card rounded-2xl p-6 space-y-4"
       data-testid="account-messages-section"
-      aria-label="Messages with PennPaps customer service"
+      aria-label={`Messages with ${c.name} customer service`}
     >
       <header className="flex items-center gap-2">
         <MessageSquare className="h-5 w-5 text-muted-foreground" />
-        <h2 className="font-semibold">Messages with PennPaps</h2>
+        <h2 className="font-semibold">Messages with {c.name}</h2>
         {thread && <ThreadStatusPill status={thread.status} />}
       </header>
       <p className="text-sm text-muted-foreground">
@@ -261,7 +263,7 @@ export function AccountMessagesSection() {
           data-testid="account-messages-privacy"
         >
           <ShieldCheck className="w-3 h-3" /> Messages are stored privately on
-          your account and visible only to PennPaps customer service.
+          your account and visible only to {c.name} customer service.
         </p>
       )}
     </section>
@@ -275,12 +277,13 @@ function MessageBubble({
   message: AccountMessage;
   ownerLabel: string;
 }) {
+  const c = useCompanyContact();
   const fromMe = message.direction === "inbound";
   const senderLabel = fromMe
     ? ownerLabel
     : message.senderRole === "system"
-      ? "PennPaps"
-      : "PennPaps customer service";
+      ? c.name
+      : `${c.name} customer service`;
   const stamp = new Date(message.createdAt);
   return (
     <div
@@ -316,6 +319,7 @@ function Composer({
   sending: boolean;
   disabled: boolean;
 }) {
+  const c = useCompanyContact();
   const trimmed = value.trim();
   return (
     <form
@@ -335,7 +339,7 @@ function Composer({
         placeholder={
           disabled
             ? "Send a new message to start a fresh conversation…"
-            : "Write a message to PennPaps customer service…"
+            : `Write a message to ${c.name} customer service…`
         }
         className="flex-1 resize-y"
         data-testid="account-message-composer"

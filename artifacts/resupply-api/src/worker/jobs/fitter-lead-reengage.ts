@@ -45,17 +45,23 @@
 import type PgBoss from "pg-boss";
 
 import {
-  createSendgridClient,
   DEFAULT_SENDGRID_FROM_EMAIL,
+  EmailConfigError,
 } from "@workspace/resupply-email";
 import {
   escapePostgRESTFilterValue,
   getOrgScopedClient,
-  resolveSeedOrgId,
 } from "@workspace/resupply-db";
 
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
+import { createTenantSendgridClient } from "../../lib/email/tenant-sender.js";
+import {
+  resolveBrandingByOrgId,
+  resolveTenantBaseUrl,
+} from "../../lib/tenant-branding.js";
+import { recordOutboundMessageUsage } from "../../lib/metering/usage.js";
+import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import {
   createQueueWithDlq,
   VENDOR_SEND_QUEUE_OPTS,
@@ -170,8 +176,37 @@ export async function runFitterLeadReengageSweep(
     return stats;
   }
 
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) return stats;
+  // Fan out across every active tenant — fitter_leads is org-scoped, so each
+  // tenant is swept on its own client and a re-engage email only reaches a
+  // lead in its own org. The dispatcher flag is resolved per tenant inside
+  // the per-org body. The platform SendGrid config check above is global
+  // (same for all tenants), so it stays in the wrapper. Per-tenant failure
+  // isolation; results summed. Single-tenant: listActiveOrgIds() returns just
+  // the seed org, so this is exactly the prior one-tenant sweep.
+  await forEachActiveOrg(
+    async (orgId) => {
+      await fitterLeadReengageSweepForOrg(orgId, cfg, stats);
+    },
+    { jobName: NUDGE_JOB },
+  );
+  return stats;
+}
+
+async function fitterLeadReengageSweepForOrg(
+  orgId: string,
+  cfg: MessagingConfig,
+  stats: ReengageStats,
+): Promise<void> {
+  // Per-tenant runtime kill switch (admin Control Center): a tenant that
+  // hasn't enabled the dispatcher is skipped without touching its leads.
+  if (!(await isFeatureEnabled("fitter_reengage.dispatcher", orgId))) {
+    return;
+  }
+  // The caller (runFitterLeadReengageSweep) only fans out once messaging
+  // config is complete; re-narrow the nullable fields locally so the types
+  // flow through this function boundary.
+  const { sendgridApiKey, sendgridFromName, publicBaseUrl } = cfg;
+  if (!sendgridApiKey || !sendgridFromName || !publicBaseUrl) return;
   const supabase = getOrgScopedClient(orgId);
   const now = Date.now();
   const youngerThan = new Date(now - MIN_AGE_MS).toISOString();
@@ -206,7 +241,7 @@ export async function runFitterLeadReengageSweep(
     (l): l is { id: string; email: string; created_at: string } =>
       typeof l.email === "string" && l.email.length > 0,
   );
-  if (candidates.length === 0) return stats;
+  if (candidates.length === 0) return;
 
   // Bulk-check conversion: pull every public.orders row whose
   // patient_email case-insensitively matches one of our candidates.
@@ -249,14 +284,30 @@ export async function runFitterLeadReengageSweep(
     }
   }
 
-  const sendgrid = createSendgridClient({
-    apiKey: cfg.sendgridApiKey,
-    fromEmail: cfg.sendgridFromEmail,
-    fromName: cfg.sendgridFromName,
-  });
+  // Send under the tenant's own From identity (G6); the seed tenant resolves
+  // to the platform default, so single-tenant behavior is unchanged. A tenant
+  // whose sender config is incomplete is skipped gracefully.
+  let sendgrid: Awaited<ReturnType<typeof createTenantSendgridClient>>;
+  try {
+    sendgrid = await createTenantSendgridClient(orgId);
+  } catch (err) {
+    if (err instanceof EmailConfigError) {
+      stats.skippedNoConfig += 1;
+      return;
+    }
+    throw err;
+  }
+  // Brand the copy with the tenant's own storefront name (G6); for the seed
+  // tenant this resolves to "PennPaps" so single-tenant copy is unchanged.
+  const brand = await resolveBrandingByOrgId(orgId);
+  // Build the resume link from the tenant's own storefront origin (its verified
+  // custom domain) when it has one; the seed tenant falls through to the
+  // env-derived platform base, so single-tenant is unchanged. Resolved once per
+  // tenant sweep.
+  const tenantBaseUrl = (await resolveTenantBaseUrl(orgId)) ?? publicBaseUrl;
   const { subject, html, text } = composeReengageEmail({
-    practiceName: cfg.practiceName,
-    publicBaseUrl: cfg.publicBaseUrl,
+    practiceName: brand.storefrontName,
+    publicBaseUrl: tenantBaseUrl,
   });
 
   for (const lead of candidates) {
@@ -300,6 +351,11 @@ export async function runFitterLeadReengageSweep(
         text,
       });
       stats.emailed += 1;
+      recordOutboundMessageUsage({
+        orgId,
+        channel: "email",
+        source: "fitter_lead_reengage.email",
+      });
     } catch (err) {
       // Pass the Error object so pino's err.message / err.stack /
       // err.cause.* redact rules engage; logging err.message as a
@@ -315,8 +371,6 @@ export async function runFitterLeadReengageSweep(
       // success.
     }
   }
-
-  return stats;
 }
 
 export async function registerFitterLeadReengageJob(
@@ -349,15 +403,9 @@ export async function registerFitterLeadReengageJob(
   await createQueueWithDlq(boss, NUDGE_JOB, VENDOR_SEND_QUEUE_OPTS);
   await boss.work(NUDGE_JOB, async () => {
     try {
-      // Runtime kill switch (admin Control Center). The env var gates
-      // registration; this flag pauses the sweep without changing env.
-      if (!(await isFeatureEnabled("fitter_reengage.dispatcher"))) {
-        logger.info(
-          { event: "fitter-lead.reengage.flag_off" },
-          "fitter-lead-reengage: feature flag off — skipping",
-        );
-        return;
-      }
+      // The env var gates registration (platform kill switch); the
+      // per-tenant `fitter_reengage.dispatcher` flag is now resolved per org
+      // inside the fan-out, so each tenant pauses independently.
       const stats = await runFitterLeadReengageSweep();
       logger.info(
         { event: "fitter-lead.reengage.completed", ...stats },

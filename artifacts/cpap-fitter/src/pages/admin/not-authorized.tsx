@@ -3,6 +3,7 @@ import { useLocation } from "wouter";
 
 import { useDashboardIdentity } from "@/lib/admin/identity";
 import { clearAllDrafts } from "@/lib/admin/use-draft-autosave";
+import { PLATFORM_NAME, useStorefrontBranding } from "@/lib/branding";
 
 // Friendly "you can't see the admin console" screen.
 //
@@ -43,14 +44,15 @@ export type NotAuthorizedReason =
   | "not-configured"
   | "transient";
 
-// Admin-facing contact address. Override per environment with
-// VITE_RESUPPLY_CONTACT_EMAIL so a production cutover (mailbox
-// rename, distribution list change, etc.) doesn't require shipping
-// a code change. Default is the PennPaps operations inbox, which
-// is also the production value in dev/staging.
+// Software-support contact address. This is the PLATFORM's own support
+// inbox (CareMetric Breathe), not a tenant's — the page is the shared admin
+// console's "you can't get in" screen, so it routes to the software team.
+// Override per environment with VITE_RESUPPLY_CONTACT_EMAIL so a production
+// cutover (mailbox rename, distribution list change) doesn't require a code
+// change.
 const DEFAULT_CONTACT_EMAIL =
-  (import.meta.env.VITE_RESUPPLY_CONTACT_EMAIL as string | undefined) ??
-  "info@pennpaps.com";
+  (import.meta.env.VITE_RESUPPLY_CONTACT_EMAIL as string | undefined)?.trim() ||
+  "info@cmbreathe.com";
 
 export function NotAuthorizedPage({
   reason,
@@ -60,6 +62,10 @@ export function NotAuthorizedPage({
   contactEmail?: string;
 }) {
   const identity = useDashboardIdentity();
+  const { storefrontName, resolved } = useStorefrontBranding();
+  // Tenant-neutral until the host-resolved brand lands, so a non-Penn host
+  // never shows the "PennPaps" bundled fallback in this shared chrome.
+  const tenantLabel = resolved ? storefrontName : "Storefront";
   const { signOut } = identity;
   const email = identity.email ?? "your account";
   const [, setNotAuthLocation] = useLocation();
@@ -102,11 +108,11 @@ export function NotAuthorizedPage({
             style={{ backgroundColor: "#c9a24a", color: "hsl(var(--ink-1))" }}
             aria-hidden="true"
           >
-            P
+            CB
           </div>
           <div className="leading-tight">
             <div className="text-white font-semibold tracking-tight">
-              PennPaps Console
+              {PLATFORM_NAME} Console
             </div>
             <div
               className="text-xs"
@@ -156,7 +162,7 @@ export function NotAuthorizedPage({
                 className="text-sm leading-relaxed mb-2"
                 style={{ color: "hsl(var(--ink-2))" }}
               >
-                Please contact your PennPaps IT administrator so they can finish
+                Please contact your IT administrator so they can finish
                 configuring admin access for this server.
               </p>
             </>
@@ -264,7 +270,7 @@ export function NotAuthorizedPage({
           borderColor: "hsl(var(--line-1))",
         }}
       >
-        PennPaps · Internal tooling · Not for patient use
+        {PLATFORM_NAME} · {tenantLabel} · Internal tooling · Not for patient use
       </footer>
     </div>
   );

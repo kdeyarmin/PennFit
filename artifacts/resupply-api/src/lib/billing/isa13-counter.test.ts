@@ -64,8 +64,43 @@ describe("reserveIsa13Value", () => {
     ).toBe(true);
   });
 
-  it("returns null when the tenant has no counter row", async () => {
+  it("self-provisions the tenant's counter row and reserves 1 when none exists", async () => {
+    // First read: no row → create it → re-read 0 → CAS to 1.
     stageSupabaseResponse("control_number_counters", "select", { data: null });
+    stageSupabaseResponse("control_number_counters", "upsert", { error: null });
+    stageSupabaseResponse("control_number_counters", "select", {
+      data: { value: 0 },
+    });
+    stageSupabaseResponse("control_number_counters", "update", {
+      data: [{ pool: POOL }],
+    });
+
+    const reserved = await reserveIsa13Value(getOrgScopedClient(ORG));
+    expect(reserved).toBe(1);
+
+    // The CAS that followed the self-provision was scoped to the tenant.
+    const updates = getSupabaseFilterCalls("control_number_counters", "update");
+    expect(
+      updates.some(
+        (f) => f.verb === "eq" && f.args[0] === "org_id" && f.args[1] === ORG,
+      ),
+    ).toBe(true);
+  });
+
+  it("falls back (returns null) when the counter row can't be created", async () => {
+    stageSupabaseResponse("control_number_counters", "select", { data: null });
+    stageSupabaseResponse("control_number_counters", "upsert", {
+      error: { message: "boom" },
+    });
+    const reserved = await reserveIsa13Value(getOrgScopedClient(ORG));
+    expect(reserved).toBeNull();
+  });
+
+  it("falls back (returns null) when the created row is still unreadable", async () => {
+    // create "succeeds" but the re-read stays empty → provision-once guard
+    // returns null rather than spinning.
+    stageSupabaseResponse("control_number_counters", "select", { data: null });
+    stageSupabaseResponse("control_number_counters", "upsert", { error: null });
     const reserved = await reserveIsa13Value(getOrgScopedClient(ORG));
     expect(reserved).toBeNull();
   });
