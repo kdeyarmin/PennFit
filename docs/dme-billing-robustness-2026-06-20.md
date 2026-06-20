@@ -119,20 +119,53 @@ and the existing condition enum.
 After this change, the short list of things that are _actually not built_ and
 would further harden DME billing:
 
-| #   | Item                                                                                                                                                                   | Type    | Notes                                                                                                                       |
-| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------- |
-| 1   | **HCPCS↔diagnosis (LCD) medical-necessity edits** — preflight verifies a diagnosis is _present_, not that the ICD-10 _supports_ the billed HCPCS under the payer's LCD | Build   | Deeper coverage-rule engine; meaningful denial reduction but a larger effort. The AI scrubber partially covers it today.    |
-| 2   | **Bilateral `RT`/`LT` two-line convention** — CMS wants bilateral items on two lines (RT, LT, 1 unit each), not `RTLT`/qty 2 on one line                               | Build   | Add as a preflight _warning_ (not a hard block — payer-specific). Natural follow-on to the new validator.                   |
-| 3   | **CMS DMEPOS fee-schedule auto-import/versioning** — fee schedules are uploaded manually per payer                                                                     | Build   | Ingest the quarterly CMS DMEPOS fee-schedule file to keep `payer_fee_schedules` current automatically.                      |
-| 4   | **ABN scoping** — the ABN acknowledgement is patient-level, not per-HCPCS/per-episode                                                                                  | Build   | Today "ABN on file" = any signed ABN for the patient. A per-item ABN record would let `GA` attach only to the covered line. |
-| 5   | **Same-or-Similar automation (HETS)** — currently a manual entry                                                                                                       | Ops     | Needs a CMS HETS connection; the route + manual workflow already exist.                                                     |
-| 6   | **Live therapy-cloud data (ResMed/Philips/3B)** — adapters are production-ready                                                                                        | Bus-dev | Gated on executed partner BAAs/OAuth, not on code.                                                                          |
-| 7   | **Multi-location / multi-tenant billing identity**                                                                                                                     | Build   | Schema is forward-compatible (mig 0132); defer until a concrete second-location/resale trigger.                             |
+| #   | Item                                                                                                                                     | Type    | Notes                                                                                                                       |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------- |
+| 1   | ~~**HCPCS↔diagnosis (LCD) medical-necessity edits**~~ — **DONE** (see _LCD medical-necessity edit_ below)                                | Build   | Shipped: `hcpcs_coverage_diagnoses` catalog (mig 0408) + `coverage-diagnosis.ts` evaluator + preflight warning.             |
+| 2   | **Bilateral `RT`/`LT` two-line convention** — CMS wants bilateral items on two lines (RT, LT, 1 unit each), not `RTLT`/qty 2 on one line | Build   | Add as a preflight _warning_ (not a hard block — payer-specific). Natural follow-on to the new validator.                   |
+| 3   | **CMS DMEPOS fee-schedule auto-import/versioning** — fee schedules are uploaded manually per payer                                       | Build   | Ingest the quarterly CMS DMEPOS fee-schedule file to keep `payer_fee_schedules` current automatically.                      |
+| 4   | **ABN scoping** — the ABN acknowledgement is patient-level, not per-HCPCS/per-episode                                                    | Build   | Today "ABN on file" = any signed ABN for the patient. A per-item ABN record would let `GA` attach only to the covered line. |
+| 5   | **Same-or-Similar automation (HETS)** — currently a manual entry                                                                         | Ops     | Needs a CMS HETS connection; the route + manual workflow already exist.                                                     |
+| 6   | **Live therapy-cloud data (ResMed/Philips/3B)** — adapters are production-ready                                                          | Bus-dev | Gated on executed partner BAAs/OAuth, not on code.                                                                          |
+| 7   | **Multi-location / multi-tenant billing identity**                                                                                       | Build   | Schema is forward-compatible (mig 0132); defer until a concrete second-location/resale trigger.                             |
 
 ### Bottom line
 
 The billing engine was already comprehensive; the highest-leverage remaining
-work is **accuracy hardening at the line level**, and the two most common
-modifier traps (KX/liability contradictions and ABN-driven `GA`) are now closed.
-The rest of the open list is either a larger coverage-rule build (item 1) or
+work is **accuracy hardening at the line level**, and the most common modifier
+traps (KX/liability contradictions and ABN-driven `GA`) plus the LCD
+medical-necessity edit (Part 3) are now closed. The rest of the open list is
+either a smaller follow-on (item 2, ABN scoping item 4) or
 business-development/ops (items 5–6), not a quick code win.
+
+---
+
+## Part 3 — LCD medical-necessity edit (HCPCS ↔ diagnosis)
+
+Closes open item #1 above. The preflight already verified a diagnosis was
+_present_ (the latest sleep study's ICD-10); it now also verifies the diagnosis
+**supports** each billed HCPCS under the payer's coverage policy. A PAP claim
+whose diagnosis isn't a covered indication denies for medical necessity — one
+of the recurring DME denial traps.
+
+- **`hcpcs_coverage_diagnoses` catalog** (migration 0408) — a GLOBAL reference
+  table (like `hcpcs_codes`/`denial_codes`, no `org_id`, deny-all RLS) mapping a
+  billable HCPCS to the ICD-10 codes that support it, seeded with the Medicare
+  PAP baseline (LCD L33718 / Article A52467: obstructive sleep apnea **G47.33**
+  for the PAP devices E0601/E0470/E0471 and the resupply accessories billed
+  against them). Per-payer commercial overrides are a documented follow-on.
+- **`coverage-diagnosis.ts`** — a pure, unit-tested evaluator that normalises
+  ICD-10 codes (dotless, uppercase) and matches a claim diagnosis to a covered
+  code by **prefix** (a category code covers its children; a covered specific
+  code is not satisfied by a vaguer one).
+- **Preflight wiring** — for each billed HCPCS that has catalogued rules, a
+  diagnosis that doesn't support it surfaces a **non-blocking warning**
+  (`medical_necessity_dx`) citing the policy. Deliberately a warning, not a hard
+  error: the catalog is a baseline and the single sleep-study code we read may
+  not be the claim's full diagnosis picture. **Fail-soft:** a HCPCS with no
+  catalogued rules yields no opinion (never a false-positive), and a catalog
+  read error is swallowed (the check is skipped, never 500s the preflight).
+
+Validated by a fresh full migration replay (400 migrations) + idempotent re-run,
+the `coverage-diagnosis` unit tests, and two `preflightClaim` integration tests
+(an unsupported diagnosis warns without blocking; a covered one is silent).

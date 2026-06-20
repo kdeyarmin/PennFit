@@ -40,6 +40,10 @@ import {
 } from "./denial-risk";
 import { getCachedEligibility } from "./eligibility-verifier";
 import { validateModifierCombination } from "./modifier-validation";
+import {
+  evaluateCoverageDiagnosis,
+  type CoverageDiagnosisRow,
+} from "./coverage-diagnosis";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -697,6 +701,71 @@ export async function preflightClaim(
           lineId: first.line.id,
         },
       });
+    }
+
+    // ── Diagnosis supports the billed HCPCS (LCD medical necessity) ─
+    // A diagnosis can be ON FILE yet not SUPPORT the code billed — e.g. a
+    // PAP device (E0601) requires an obstructive-sleep-apnea diagnosis
+    // (G47.33) under LCD L33718; a mismatched ICD-10 denies for medical
+    // necessity. Fail-soft + non-blocking: only HCPCS we've catalogued in
+    // resupply.hcpcs_coverage_diagnoses produce an opinion, and the result
+    // is a WARNING — the catalog is a baseline and the claim's full
+    // diagnosis picture may exceed the single sleep-study code we read.
+    // See lib/billing/coverage-diagnosis.ts.
+    const diagnosisCodes = sleep?.diagnosis_icd10
+      ? [sleep.diagnosis_icd10]
+      : [];
+    if (diagnosisCodes.length > 0) {
+      try {
+        const distinctHcpcs = [
+          ...new Set((lines as ClaimLineRow[]).map((l) => l.hcpcs_code)),
+        ];
+        const { data: coverage, error: covErr } = await supabase
+          .raw()
+          .schema("resupply")
+          .from("hcpcs_coverage_diagnoses")
+          .select("hcpcs_code, icd10_code, policy")
+          .in("hcpcs_code", distinctHcpcs)
+          .eq("active", true);
+        if (covErr) throw covErr;
+        const rows = (coverage ?? []) as CoverageDiagnosisRow[];
+        const unsupported = distinctHcpcs
+          .map((hcpcs) => ({
+            hcpcs,
+            evald: evaluateCoverageDiagnosis(hcpcs, diagnosisCodes, rows),
+          }))
+          .filter((x) => x.evald.hasRules && !x.evald.covered);
+        if (unsupported.length > 0) {
+          const policies = [
+            ...new Set(unsupported.flatMap((x) => x.evald.policies)),
+          ];
+          const policyNote =
+            policies.length > 0 ? ` per ${policies.join(", ")}` : "";
+          items.push({
+            key: "medical_necessity_dx",
+            severity: "warning",
+            label: "Diagnosis may not support the billed HCPCS",
+            detail: `ICD-10 ${sleep!.diagnosis_icd10} is not a covered indication${policyNote} for ${unsupported
+              .map((x) => x.hcpcs)
+              .join(
+                ", ",
+              )} — verify the diagnosis or the code, or the claim may deny for medical necessity.`,
+            fixAction: {
+              kind: "add_sleep_study",
+              patientId: claim.patient_id,
+            },
+          });
+        }
+      } catch (err) {
+        logger.warn(
+          {
+            event: "billing.preflight.medical_necessity_failed",
+            claimId: claim.id,
+            errName: err instanceof Error ? err.name : "unknown",
+          },
+          "preflight: medical-necessity diagnosis check skipped (non-fatal)",
+        );
+      }
     }
   }
 
