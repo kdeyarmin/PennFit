@@ -49,10 +49,10 @@ so the ABN can never be mistaken for a Medicare-valid notice (see §6).
 
 The domain has **two independent e-signature tracks**, each complete:
 
-| Track | Who signs | Surface | Auth | Audit |
-| ----- | --------- | ------- | ---- | ----- |
-| **Patient packets** | the patient (or representative) | public link `/patient-packet-sign?token=…` | HMAC-signed token | `patient_packet_signatures` row + `patient_packet.*` audit |
-| **Provider e-sign** | ordering physician / NP | MFA-gated portal `/provider/*` | in-house auth + mandatory TOTP MFA | hash-chained `provider_signature_events` |
+| Track               | Who signs                       | Surface                                    | Auth                               | Audit                                                      |
+| ------------------- | ------------------------------- | ------------------------------------------ | ---------------------------------- | ---------------------------------------------------------- |
+| **Patient packets** | the patient (or representative) | public link `/patient-packet-sign?token=…` | HMAC-signed token                  | `patient_packet_signatures` row + `patient_packet.*` audit |
+| **Provider e-sign** | ordering physician / NP         | MFA-gated portal `/provider/*`             | in-house auth + mandatory TOTP MFA | hash-chained `provider_signature_events`                   |
 
 Patient packets are the new-patient consent bundle (AOB, NPP, financial
 responsibility, supplier standards, consent to care, proof of delivery,
@@ -73,6 +73,7 @@ seeded OFF.)
 ## 3. Patient-packet workflow, end to end (verified)
 
 ### 3.1 Compose & send
+
 - **Routes:** `POST /admin/patients/:id/packets`, `POST /admin/patient-packets`
   (contact-only), plus auto-send on first delivery
   (`auto-send-on-delivery.ts`, now ON — §6).
@@ -91,6 +92,7 @@ seeded OFF.)
   no-op when a channel is unconfigured (`send.ts:790`).
 
 ### 3.2 The signed link
+
 - HMAC-SHA256 over the base64url payload `{ id, v (link_version), e (expiry) }`,
   verified with `timingSafeEqual`; **no DB lookup needed to reject a
   tampered or expired link** (`patient-packet-token.ts`).
@@ -102,6 +104,7 @@ seeded OFF.)
   (`storefront/patient-packets.ts:116`).
 
 ### 3.3 Patient signs
+
 - Public, rate-limited (`view` 120/15min, `sign` 30/15min per IP).
 - First view stamps `first_viewed_at` and flips `sent → viewed`.
 - Sign requires: **every document acknowledged**, explicit **ESIGN
@@ -114,6 +117,7 @@ seeded OFF.)
   double-submit can't double-complete (`:398`).
 
 ### 3.4 Return & file in the chart
+
 - On completion the signed PDF (documents + signature certificate) is
   **auto-filed to the patient chart** as a `patient_documents` row tagged
   `agreement`, with retention computed as **7 years when the packet
@@ -125,6 +129,7 @@ seeded OFF.)
   `patient_packets.autofile_signed_pdf` (seeded ON).
 
 ### 3.5 Track when not returned, and re-send
+
 - **Automatic:** the daily reminder sweep
   (`patient-packet-reminders.ts`) re-issues a fresh link over email + SMS
   for packets still `sent`/`viewed`, after `REMIND_AFTER_DAYS` (3), at most
@@ -153,7 +158,7 @@ seeded OFF.)
   per-provider **signature log** PDF can be printed for audit with a
   chain-integrity verdict.
 - **Lifecycle:** `pending → signed → ready_to_print → returned_signed →
-  attached_to_chart → released` (release is record-only — it never mutates
+attached_to_chart → released` (release is record-only — it never mutates
   `insurance_claims` state). Batch signing (`sign-batch`, ≤50) signs each
   document individually server-side, so certificates can't drift.
 - **Track when not returned:** `/admin/signature-tracking` is the
@@ -168,15 +173,15 @@ which is exactly the gap §6 closes for patient packets.
 
 ## 5. Assessment against the brief
 
-| Criterion | Verdict | Notes |
-| --------- | ------- | ----- |
-| **Appropriate** (right documents, right content) | ✅ with one known exception | Required documents are enforced and auto-folded; content reviewed in the 06-11 companion. **Exception:** ABN is not the official CMS-R-131 (operator action; now warned in-app — §6). |
-| **Sent appropriately** | ✅ | Tenant-scoped sender, per-channel graceful degradation, PHI-safe, usage-metered, required-doc folding. |
-| **Sent timely** | ✅ after this change-set | Auto-send-on-delivery and auto-remind were OFF; now ON by default (§6). Reminder cadence is configurable. |
-| **Good safeguards** | ✅ | HMAC links + `timingSafeEqual`, link-version revocation, 30-day expiry, rate limits, Zod at every boundary, ESIGN consent gate, representative/POD/choice gates, optimistic CAS on finalize, mandatory provider MFA, hash-chained provider log, fail-closed feature flags, PHI never logged. |
-| **E-sign → returned → filed in chart** | ✅ | Auto-file to chart (idempotent, retention-stamped) for patients; attach-to-chart + barcode auto-file for providers. |
-| **Tracked when not returned** | ✅ after this change-set | Provider queue already existed; patient packets now have an Outstanding worklist + reminder/aging signal (§6), plus the automatic sweep. |
-| **Re-sendable** | ✅ | Manual resend (any open packet) + automatic reminders (capped, TCPA-gated, rollback-safe); provider `remind`. |
+| Criterion                                        | Verdict                     | Notes                                                                                                                                                                                                                                                                                        |
+| ------------------------------------------------ | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Appropriate** (right documents, right content) | ✅ with one known exception | Required documents are enforced and auto-folded; content reviewed in the 06-11 companion. **Exception:** ABN is not the official CMS-R-131 (operator action; now warned in-app — §6).                                                                                                        |
+| **Sent appropriately**                           | ✅                          | Tenant-scoped sender, per-channel graceful degradation, PHI-safe, usage-metered, required-doc folding.                                                                                                                                                                                       |
+| **Sent timely**                                  | ✅ after this change-set    | Auto-send-on-delivery and auto-remind were OFF; now ON by default (§6). Reminder cadence is configurable.                                                                                                                                                                                    |
+| **Good safeguards**                              | ✅                          | HMAC links + `timingSafeEqual`, link-version revocation, 30-day expiry, rate limits, Zod at every boundary, ESIGN consent gate, representative/POD/choice gates, optimistic CAS on finalize, mandatory provider MFA, hash-chained provider log, fail-closed feature flags, PHI never logged. |
+| **E-sign → returned → filed in chart**           | ✅                          | Auto-file to chart (idempotent, retention-stamped) for patients; attach-to-chart + barcode auto-file for providers.                                                                                                                                                                          |
+| **Tracked when not returned**                    | ✅ after this change-set    | Provider queue already existed; patient packets now have an Outstanding worklist + reminder/aging signal (§6), plus the automatic sweep.                                                                                                                                                     |
+| **Re-sendable**                                  | ✅                          | Manual resend (any open packet) + automatic reminders (capped, TCPA-gated, rollback-safe); provider `remind`.                                                                                                                                                                                |
 
 ---
 
