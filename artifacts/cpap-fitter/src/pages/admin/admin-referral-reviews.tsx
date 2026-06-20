@@ -47,6 +47,8 @@ import {
   getReferralUploadUrl,
   listReferralReviews,
   referralReviewMediaUrl,
+  referralReviewReportUrl,
+  requestFromProvider,
   type AcceptReferralRequest,
   type AcceptReferralResponse,
   type ConfidenceLevel,
@@ -541,6 +543,164 @@ export function AdminReferralReviewsPage() {
   );
 }
 
+// ── Analysis: qualification verdict + completeness + actions ────────
+
+const VERDICT_STYLE: Record<
+  string,
+  { bg: string; border: string; fg: string }
+> = {
+  qualifies: { bg: "#ecfdf3", border: "#a6f4c5", fg: "#067647" },
+  qualifies_with_comorbidity: {
+    bg: "#ecfdf3",
+    border: "#a6f4c5",
+    fg: "#067647",
+  },
+  conditional: { bg: "#fffaeb", border: "#fedf89", fg: "#b54708" },
+  not_qualifying: { bg: "#fef3f2", border: "#fecdca", fg: "#b42318" },
+  unknown: { bg: "#f2f4f7", border: "#e4e7ec", fg: "#475467" },
+};
+
+function ReferralAnalysisCard({ review }: { review: ReferralReview }) {
+  const report = review.report;
+  const [requestResult, setRequestResult] = useState<{
+    manualDocumentId: string;
+    requests: string[];
+  } | null>(null);
+  const requestMutation = useMutation({
+    mutationFn: () => requestFromProvider(review.id),
+    onSuccess: (res) => setRequestResult(res),
+  });
+  if (!report) return null;
+  const v =
+    VERDICT_STYLE[report.qualification.verdict] ?? VERDICT_STYLE.unknown;
+  const hasRequests = report.completeness.providerRequests.length > 0;
+
+  return (
+    <Card title="Analysis" subtitle="AI-derived — verify against the packet.">
+      <div className="space-y-4">
+        {/* PAP qualification verdict */}
+        <div
+          className="rounded-md border px-4 py-3"
+          style={{ backgroundColor: v!.bg, borderColor: v!.border }}
+        >
+          <p className="text-sm font-semibold" style={{ color: v!.fg }}>
+            PAP qualification: {report.qualification.summary}
+          </p>
+          {report.qualification.details.length > 0 && (
+            <ul
+              className="mt-1 text-xs list-disc pl-5"
+              style={{ color: "hsl(var(--ink-3))" }}
+            >
+              {report.qualification.details.map((d, i) => (
+                <li key={i}>{d}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        {/* Completeness checklist */}
+        <div>
+          <p
+            className="text-xs font-semibold uppercase tracking-wide mb-1"
+            style={{ color: "hsl(var(--ink-3))" }}
+          >
+            {report.completeness.complete
+              ? "Ready to process"
+              : `${report.completeness.outstandingCount} item(s) need attention`}
+          </p>
+          <ul className="space-y-1">
+            {report.completeness.items.map((item) => {
+              const color =
+                item.status === "present"
+                  ? "#067647"
+                  : item.status === "attention"
+                    ? "#b54708"
+                    : "#b42318";
+              const Icon =
+                item.status === "present" ? CheckCircle2 : AlertTriangle;
+              return (
+                <li key={item.key} className="text-sm flex gap-2">
+                  <Icon
+                    className="h-4 w-4 mt-0.5 shrink-0"
+                    style={{ color }}
+                    aria-hidden="true"
+                  />
+                  <span>
+                    <span
+                      className="font-medium"
+                      style={{ color: "hsl(var(--ink-1))" }}
+                    >
+                      {item.label}
+                    </span>
+                    <span
+                      className="block text-xs"
+                      style={{ color: "hsl(var(--ink-3))" }}
+                    >
+                      {item.detail}
+                    </span>
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+
+        {/* Actions */}
+        <div className="flex flex-wrap items-center gap-2">
+          {review.status !== "pending" && (
+            <a
+              href={referralReviewReportUrl(review.id)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-sm font-semibold"
+              style={{ color: "hsl(var(--penn-navy))" }}
+            >
+              <FileText className="h-4 w-4" /> Download report
+            </a>
+          )}
+          {hasRequests && !requestResult && (
+            <Button
+              size="sm"
+              intent="secondary"
+              isLoading={requestMutation.isPending}
+              onClick={() => requestMutation.mutate()}
+            >
+              <Sparkles className="h-4 w-4" /> Request missing info from
+              provider
+            </Button>
+          )}
+        </div>
+
+        {requestMutation.isError && (
+          <p className="text-sm" style={{ color: "#b42318" }}>
+            Couldn't build the provider request. Please try again.
+          </p>
+        )}
+        {requestResult && (
+          <div
+            className="rounded-md border px-4 py-3 text-sm"
+            style={{
+              backgroundColor: "#ecfdf3",
+              borderColor: "#a6f4c5",
+              color: "#067647",
+            }}
+          >
+            Draft request created with {requestResult.requests.length} item(s).{" "}
+            <a
+              href="/admin/documents"
+              className="font-semibold underline"
+              style={{ color: "#067647" }}
+            >
+              Open it in Documents
+            </a>{" "}
+            to review and fax to the referring provider.
+          </div>
+        )}
+      </div>
+    </Card>
+  );
+}
+
 // ── Detail / intake form ────────────────────────────────────────────
 
 function ReviewDetail({
@@ -771,6 +931,8 @@ function ReviewDetail({
         </Card>
 
         <div className="space-y-4">
+          {review.report && <ReferralAnalysisCard review={review} />}
+
           {form && (
             <IntakeFormFields
               form={form}
@@ -1151,6 +1313,48 @@ function IntakeFormFields({
               </li>
             ))}
           </ul>
+        </Card>
+      )}
+
+      {x && ((x.diagnoses?.length ?? 0) > 0 || x.recommendedTherapy) && (
+        <Card title="Diagnosis & therapy">
+          <div className="space-y-2 text-sm">
+            {x.recommendedTherapy && (
+              <Fact label="Recommended therapy" value={x.recommendedTherapy} />
+            )}
+            {(x.diagnoses?.length ?? 0) > 0 && (
+              <div>
+                <p
+                  className="text-xs font-semibold uppercase tracking-wide mb-1"
+                  style={{ color: "hsl(var(--ink-3))" }}
+                >
+                  Diagnosis codes
+                </p>
+                <ul className="space-y-1">
+                  {(x.diagnoses ?? []).map((d, i) => (
+                    <li key={i} className="flex gap-2">
+                      <span
+                        className="font-mono text-xs rounded px-1.5 py-0.5 shrink-0"
+                        style={{
+                          backgroundColor: "hsl(var(--surface-2))",
+                          color: "hsl(var(--ink-2))",
+                        }}
+                      >
+                        {d.icd10 ?? "—"}
+                      </span>
+                      {d.description && <span>{d.description}</span>}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {(x.comorbidities?.length ?? 0) > 0 && (
+              <Fact
+                label="Documented comorbidities"
+                value={(x.comorbidities ?? []).join(", ")}
+              />
+            )}
+          </div>
         </Card>
       )}
 
