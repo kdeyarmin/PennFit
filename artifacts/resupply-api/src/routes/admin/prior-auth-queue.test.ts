@@ -161,6 +161,40 @@ describe("/admin/billing/prior-auth-queue", () => {
     expect(typeof res.body.expiringSoon[0].daysToExpiry).toBe("number");
   });
 
+  it("classifies an expiring auth with sweep-consistent severity", async () => {
+    stubVerifiedAdmin();
+    // Exactly 7 days out → lands on the 7-day heads-up window (critical),
+    // computed relative to now so the assertion is date-independent.
+    const inSevenDays = new Date(Date.now() + 7 * 24 * 3600 * 1000)
+      .toISOString()
+      .slice(0, 10);
+    // atRisk, missed, awaiting — empty.
+    stageSupabaseResponse("prior_authorizations", "select", { data: [] });
+    stageSupabaseResponse("prior_authorizations", "select", { data: [] });
+    stageSupabaseResponse("prior_authorizations", "select", { data: [] });
+    // expiringSoon — one approved auth lapsing in 7 days.
+    stageSupabaseResponse("prior_authorizations", "select", {
+      data: [
+        paRow({
+          id: "expiring-7d",
+          status: "approved",
+          approved_through: inSevenDays,
+        }),
+      ],
+    });
+    // drafts — empty.
+    stageSupabaseResponse("prior_authorizations", "select", { data: [] });
+
+    const res = await request(makeApp()).get(
+      "/resupply-api/admin/billing/prior-auth-queue",
+    );
+    expect(res.status).toBe(200);
+    const row = res.body.expiringSoon[0];
+    expect(row.expiryState).toBe("expiring");
+    expect(row.expirySeverity).toBe("critical"); // <= 7 days
+    expect(row.expiryWindow).toBe(7); // lands exactly on the 7-day window
+  });
+
   it("400s with field-level issues when expiringWithinDays is out of range", async () => {
     stubVerifiedAdmin();
 
