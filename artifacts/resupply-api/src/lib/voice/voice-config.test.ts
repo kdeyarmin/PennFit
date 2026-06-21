@@ -231,6 +231,29 @@ describe("readVoiceConfigOrNull — optional value parsing", () => {
     ).toBe("beta");
   });
 
+  it("parses OPENAI_REALTIME_MAX_RESPONSE_TOKENS: a positive integer, else undefined", () => {
+    // Unset → undefined (client applies its DEFAULT_MAX_RESPONSE_TOKENS).
+    expect(
+      readVoiceConfigOrNull(fullEnv())?.realtimeMaxResponseTokens,
+    ).toBeUndefined();
+    // A valid positive integer parses through.
+    expect(
+      readVoiceConfigOrNull(
+        fullEnv({ OPENAI_REALTIME_MAX_RESPONSE_TOKENS: "800" }),
+      )?.realtimeMaxResponseTokens,
+    ).toBe(800);
+    // Blank / typo / 0 / negative / non-integer all degrade to undefined so a
+    // bad value never reaches OpenAI — the client default applies instead.
+    for (const bad of ["", "   ", "0", "-5", "12.5", "abc"]) {
+      expect(
+        readVoiceConfigOrNull(
+          fullEnv({ OPENAI_REALTIME_MAX_RESPONSE_TOKENS: bad }),
+        )?.realtimeMaxResponseTokens,
+        `expected "${bad}" → undefined`,
+      ).toBeUndefined();
+    }
+  });
+
   it("accepts a valid reasoning effort and drops a typo to undefined", () => {
     expect(
       readVoiceConfigOrNull(

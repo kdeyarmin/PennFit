@@ -230,6 +230,11 @@ export const SELF_SERVE_PLANS = [
   "scale",
 ] as const;
 
+// Upper bound for the optional active-patient estimate. Shared by the zod
+// schema AND the OpenAI tool descriptor so the model never emits a value the
+// dispatcher would then reject (the two would otherwise drift).
+export const MAX_ESTIMATED_ACTIVE_PATIENTS = 100_000_000;
+
 export const startBreatheSignupArgs = z
   .object({
     org_name: z
@@ -249,7 +254,7 @@ export const startBreatheSignupArgs = z
       .number()
       .int()
       .nonnegative()
-      .max(100_000_000)
+      .max(MAX_ESTIMATED_ACTIVE_PATIENTS)
       .optional(),
   })
   .strict();
@@ -709,13 +714,18 @@ export const OPENAI_TOOL_DESCRIPTORS: readonly OpenAiToolDescriptor[] = [
         },
         plan: {
           type: "string",
-          enum: ["mask_fitter", "launch", "growth", "scale"],
+          // Single source of truth with the zod schema — same plan set the
+          // dispatcher validates, so the model can't pick one we'd reject.
+          enum: [...SELF_SERVE_PLANS],
           description:
             "The plan the caller chose after you walked through pricing: 'mask_fitter' (standalone Virtual Mask Fitter), or the full-platform 'launch', 'growth', or 'scale'. Enterprise is NOT here — hand off for Enterprise.",
         },
         estimated_active_patients: {
           type: "integer",
           minimum: 0,
+          // Mirror the zod bound so the model never emits a value the
+          // dispatcher would reject at runtime.
+          maximum: MAX_ESTIMATED_ACTIVE_PATIENTS,
           description:
             "Roughly how many active patients they have, if they shared it — helps confirm the plan fits. Omit if unknown.",
         },
