@@ -758,8 +758,26 @@ export class RealtimeClient extends EventEmitter {
    * without a code change. The bridge's Twilio µ-law wiring is unchanged —
    * only the session schema differs.
    */
+  /**
+   * GA audio format object. The GA Realtime API expects the codec AND its
+   * sample rate (`{ type, rate }`); the rate is NOT optional for inbound
+   * processing. Twilio telephony is G.711 @ 8kHz (µ-law/A-law); PCM is 24kHz.
+   * Omitting the rate let the server mis-read inbound caller audio so its VAD
+   * never fired — the agent spoke its greeting but never responded to speech.
+   */
+  private gaAudioFormat(): Record<string, unknown> {
+    const type = this.opts.audioFormat;
+    const rate =
+      type === "audio/pcmu" || type === "audio/pcma"
+        ? 8000
+        : type === "audio/pcm"
+          ? 24000
+          : undefined;
+    return rate === undefined ? { type } : { type, rate };
+  }
+
   private buildGaSession(): Record<string, unknown> {
-    const audioFormat = { type: this.opts.audioFormat };
+    const audioFormat = this.gaAudioFormat();
     const audio: Record<string, unknown> = {
       input: {
         format: audioFormat,

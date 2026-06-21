@@ -215,20 +215,20 @@ describe("readVoiceConfigOrNull — optional value parsing", () => {
     ).toBe("ws");
   });
 
-  it("resolves the Realtime schema: defaults to beta, only explicit 'ga' → ga", () => {
-    expect(readVoiceConfigOrNull(fullEnv())?.realtimeSchema).toBe("beta");
+  it("resolves the Realtime schema: defaults to ga, only explicit 'beta' → beta", () => {
+    expect(readVoiceConfigOrNull(fullEnv())?.realtimeSchema).toBe("ga");
+    expect(
+      readVoiceConfigOrNull(fullEnv({ OPENAI_REALTIME_SCHEMA: "BETA" }))
+        ?.realtimeSchema,
+    ).toBe("beta");
     expect(
       readVoiceConfigOrNull(fullEnv({ OPENAI_REALTIME_SCHEMA: "GA" }))
         ?.realtimeSchema,
     ).toBe("ga");
     expect(
-      readVoiceConfigOrNull(fullEnv({ OPENAI_REALTIME_SCHEMA: "beta" }))
-        ?.realtimeSchema,
-    ).toBe("beta");
-    expect(
       readVoiceConfigOrNull(fullEnv({ OPENAI_REALTIME_SCHEMA: "v1" }))
         ?.realtimeSchema,
-    ).toBe("beta");
+    ).toBe("ga");
   });
 
   it("parses OPENAI_REALTIME_MAX_RESPONSE_TOKENS: a positive integer, else undefined", () => {

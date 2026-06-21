@@ -322,20 +322,18 @@ export function readVoiceConfigOrNull(
       env.ELEVENLABS_TTS_TRANSPORT?.trim().toLowerCase() === "http"
         ? "http"
         : "ws",
-    // Realtime defaults to the PROVEN `beta` schema (gpt-realtime +
-    // gpt-4o-mini-transcribe + top-level semantic_vad), a non-reasoning,
-    // low-latency conversational model. The `ga` schema (gpt-realtime-2,
-    // nested session shape) is a GPT-5-class REASONING model and an OPT-IN
-    // spike: its hidden reasoning step adds dead air before each reply, it
-    // shares the output-token budget with the spoken turn, and its GA µ-law
-    // wire details still want preview validation — it regressed inbound
-    // turn-taking in production (the agent spoke its greeting but never
-    // responded to the caller). Validate on a preview with a real call before
-    // relying on it; opt in with OPENAI_REALTIME_SCHEMA=ga. See
-    // docs/runbooks/realtime-ga-migration.md. The ws-handler fills in coherent
-    // GA model/STT defaults when the schema is `ga`.
+    // Realtime defaults to the `ga` schema (gpt-realtime-2 on OpenAI's nested
+    // session shape) — the only working transport. The legacy `beta` schema
+    // (`OpenAI-Beta: realtime=v1` flat shape) is DEPRECATED by OpenAI: the
+    // session no longer opens, so a beta call connects then drops in ~1s. It
+    // is kept only as an explicit, non-default escape hatch
+    // (OPENAI_REALTIME_SCHEMA=beta); do not use it. GA µ-law audio carries the
+    // required sample rate (see realtime-client gaAudioFormat) so inbound VAD
+    // fires on caller speech.
     realtimeSchema:
-      env.OPENAI_REALTIME_SCHEMA?.trim().toLowerCase() === "ga" ? "ga" : "beta",
+      env.OPENAI_REALTIME_SCHEMA?.trim().toLowerCase() === "beta"
+        ? "beta"
+        : "ga",
     realtimeModel: env.OPENAI_REALTIME_MODEL?.trim() || undefined,
     realtimeReasoningEffort: parseReasoningEffort(
       env.OPENAI_REALTIME_REASONING_EFFORT,

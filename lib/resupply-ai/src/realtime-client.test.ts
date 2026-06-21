@@ -214,9 +214,17 @@ describe("RealtimeClient", () => {
     expect(sent.session.type).toBe("realtime");
     expect(sent.session.model).toBe("gpt-realtime-2");
     expect(sent.session.output_modalities).toEqual(["audio"]);
-    // µ-law nested under audio.input/output (default token: audio/pcmu).
-    expect(sent.session.audio.input.format).toEqual({ type: "audio/pcmu" });
-    expect(sent.session.audio.output.format).toEqual({ type: "audio/pcmu" });
+    // µ-law nested under audio.input/output (default token: audio/pcmu) with
+    // the REQUIRED sample rate — without it GA mis-reads inbound audio and the
+    // VAD never fires on caller speech.
+    expect(sent.session.audio.input.format).toEqual({
+      type: "audio/pcmu",
+      rate: 8000,
+    });
+    expect(sent.session.audio.output.format).toEqual({
+      type: "audio/pcmu",
+      rate: 8000,
+    });
     expect(sent.session.audio.output.voice).toBe("cedar");
     expect(sent.session.audio.input.transcription.model).toBe(
       "gpt-realtime-whisper",
@@ -248,7 +256,10 @@ describe("RealtimeClient", () => {
     expect(sent.session.output_modalities).toEqual(["text"]);
     expect(sent.session.audio.output).toBeUndefined();
     // The model still hears the caller (input audio + STT unchanged).
-    expect(sent.session.audio.input.format).toEqual({ type: "audio/pcmu" });
+    expect(sent.session.audio.input.format).toEqual({
+      type: "audio/pcmu",
+      rate: 8000,
+    });
     expect(sent.session.audio.input.turn_detection.type).toBe("semantic_vad");
   });
 
