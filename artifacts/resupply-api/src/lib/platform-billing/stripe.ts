@@ -14,16 +14,16 @@ import {
 const PLATFORM_BILLING_SCOPE = "platform_tenant";
 
 // The standalone Virtual Mask Fitter per-fitting metered add-on (migrations
-// 0418/0419) reports usage via a Stripe Billing Meter whose events carry this
+// 0419/0420) reports usage via a Stripe Billing Meter whose events carry this
 // name; the mask_fitter plan's subscription intrinsically includes this
 // add-on's metered price (it isn't an opt-in add-on).
 export const FITTER_FITTING_METER_EVENT = "fitter_fitting";
 
 /**
  * Whether usage-based OVERAGE billing for the STANDARD plan add-ons (SMS / AI
- * / billing transactions — migration 0420) is enabled. OFF by default: with
+ * / billing transactions — migration 0421) is enabled. OFF by default: with
  * the flag unset those add-ons bill as the existing flat bundles and nothing
- * about existing tenants changes. The fitter add-on (migration 0419) is
+ * about existing tenants changes. The fitter add-on (migration 0420) is
  * intrinsically metered and NOT gated by this — it has no existing tenants.
  */
 export function isMeteredOverageEnabled(): boolean {
@@ -161,13 +161,13 @@ interface CatalogRow {
   stripe_price_id?: string | null;
   stripe_product_id?: string | null;
   stripe_account_ref?: string | null;
-  // Metered (usage-based) add-on fields (migration 0419). A NULL/absent
+  // Metered (usage-based) add-on fields (migration 0420). A NULL/absent
   // `usage_type` means licensed/flat — the default, unchanged behavior.
   usage_type?: string | null;
   included_units?: number | null;
   meter_event_name?: string | null;
   stripe_meter_id?: string | null;
-  // Per-unit overage rate as a decimal string (migration 0420), e.g. "7.5"
+  // Per-unit overage rate as a decimal string (migration 0421), e.g. "7.5"
   // for 7.5¢. Used for `included_units`-NULL (report-overage) metered prices;
   // kept separate from `recurring_price_cents` (the flat-bundle price).
   metered_unit_amount_decimal?: string | null;
@@ -187,7 +187,7 @@ interface EnsurePriceArgs {
 
 /**
  * Ensure a Stripe Billing Meter + a graduated metered Price for a
- * usage-based add-on (migration 0419). The meter is keyed by customer, so
+ * usage-based add-on (migration 0420). The meter is keyed by customer, so
  * reported usage survives the subscription-item delete/recreate the sync
  * does on every change. The price's first tier covers `included_units` at $0
  * (the plan's included allowance), then `amountCents` per unit. Idempotent &
@@ -236,10 +236,10 @@ async function ensureMeteredAddonPrice(
         });
 
   // Two shapes:
-  //   * `included_units` set (fitter, migration 0419) → a graduated tiered
+  //   * `included_units` set (fitter, migration 0420) → a graduated tiered
   //     price with that many free, then `amountCents` each; the app reports
   //     ALL usage and Stripe applies the free tier.
-  //   * `included_units` NULL (standard overage add-ons, migration 0420) → a
+  //   * `included_units` NULL (standard overage add-ons, migration 0421) → a
   //     simple per-unit metered price at `metered_unit_amount_decimal` cents;
   //     the app reports only the OVERAGE beyond the plan's allowance.
   const included = args.row.included_units ?? 0;
@@ -858,7 +858,7 @@ export async function handlePlatformTenantStripeEvent(
 
 /**
  * Report one completed mask fitting to Stripe as a Billing Meter event
- * (migration 0419), so per-fitting overage on the Virtual Mask Fitter plan
+ * (migration 0420), so per-fitting overage on the Virtual Mask Fitter plan
  * is invoiced. Fire-and-forget + fail-soft: it NEVER throws or rejects, and
  * no-ops when platform Stripe billing is unconfigured or the tenant has no
  * Stripe customer yet (e.g. before their first subscription sync). Meter
@@ -930,7 +930,7 @@ interface OverageAddonRow {
 
 /**
  * Report the billable OVERAGE for a standard metered metric (SMS / AI /
- * billing transactions — migration 0420) to Stripe as a Billing Meter event.
+ * billing transactions — migration 0421) to Stripe as a Billing Meter event.
  * Called fire-and-forget from `recordTenantUsage` after the monthly rollup is
  * incremented; NEVER throws. No-ops unless the overage flag is on, the metric
  * has a report-overage metered add-on, the tenant has a synced Stripe

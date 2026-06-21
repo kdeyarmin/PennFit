@@ -1,5 +1,5 @@
 // Tests for the tenant product-scope resolver + the mask_fitter admin
-// allowlist (standalone Virtual Mask Fitter plan, migration 0418).
+// allowlist (standalone Virtual Mask Fitter plan, migration 0419).
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 

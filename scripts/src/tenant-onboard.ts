@@ -24,7 +24,7 @@
 //
 // Billing plan (migration 0362 catalog; optional):
 //   * --plan=mask_fitter   stands the tenant up as a FITTER-ONLY DME — its
-//                          product scope (migration 0418) gates the console
+//                          product scope (migration 0419) gates the console
 //                          down to the AI mask fitter (send link → get size).
 //   * --plan=launch|growth|scale   a full-suite tenant on that plan.
 //   Omit to leave the tenant with no subscription (they pick a plan in-app
@@ -365,7 +365,7 @@ async function provisionFeatureFlags(
 /**
  * Assign the tenant a billing plan by code (migration 0362 catalog). Use
  * `--plan=mask_fitter` to stand a tenant up as a fitter-only DME — its
- * product scope (migration 0418) then gates the console down to the AI mask
+ * product scope (migration 0419) then gates the console down to the AI mask
  * fitter — or `--plan=launch|growth|scale` for a full-suite tenant.
  *
  * Idempotent & safe: a tenant that already has a current

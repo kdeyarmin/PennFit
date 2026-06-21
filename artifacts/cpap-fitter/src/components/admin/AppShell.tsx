@@ -1310,7 +1310,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
   },
 ];
 
-// Standalone "Virtual Mask Fitter" plan (migration 0418). A tenant whose
+// Standalone "Virtual Mask Fitter" plan (migration 0419). A tenant whose
 // /me reports productScope === "mask_fitter" subscribed to JUST the AI mask
 // fitter, so the console collapses to the fitter worklist + the account
 // essentials they need to run it (brand the link, manage their plan, basic
@@ -2167,7 +2167,7 @@ export function AppShell({
     if (adminMe?.multiLocationEnabled) set.add(MULTI_LOCATION_NAV_TOKEN);
     return set;
   }, [adminPermissions, adminMe?.multiLocationEnabled]);
-  // Platform product scope (migration 0418). "mask_fitter" collapses the
+  // Platform product scope (migration 0419). "mask_fitter" collapses the
   // console to the fitter-only nav and guards the routes.
   const productScope = adminMe?.productScope;
   const [location, setLocation] = useLocation();

@@ -1,6 +1,6 @@
 # Standalone "Virtual Mask Fitter" plan + product scoping
 
-_Added migration 0418._
+_Added migration 0419._
 
 CareMetric Breathe's AI mask fitter — text a patient a link, they
 self-measure on their phone camera (images never leave the browser), and the
@@ -12,7 +12,7 @@ the resupply suite. This note explains the plan, its pricing, and the
 ## The plan
 
 Seeded into the platform billing catalog (`resupply.billing_plans`) by
-migration 0418, so it flows everywhere the catalog does with no redeploy:
+migration 0419, so it flows everywhere the catalog does with no redeploy:
 the public marketing pricing page (`GET /api/platform/pricing`), the tenant
 self-service billing UI (`/account/billing`), and the Stripe catalog sync.
 
@@ -33,7 +33,7 @@ fitting does **not** double-count (only the transition into a completed
 state is metered). The billing console reads the rollup in `currentUsage()`
 and compares it against the plan's included amount.
 
-## Stripe metered billing (migration 0419)
+## Stripe metered billing (migration 0420)
 
 The per-fitting overage is invoiced through **Stripe Billing Meters**, so it
 auto-collects rather than relying on manual reconciliation:
@@ -58,7 +58,7 @@ call is best-effort. It is also **strictly additive** — a NULL `usage_type`
 Stripe **test-mode** account before onboarding a real fitter tenant
 ([runbook](runbooks/stripe-metered-billing-validation.md)).
 
-**The same machinery generalizes to standard-plan overage** (migration 0420):
+**The same machinery generalizes to standard-plan overage** (migration 0421):
 the SMS / AI / billing-transaction add-ons can bill per-unit overage beyond
 each plan's allowance, reported from the `recordTenantUsage` chokepoint via
 `reportMeteredOverage`. It is **off by default** behind

@@ -40,7 +40,7 @@ export const USAGE_METRIC_KEYS = [
   "billingTransactionsPerMonth",
   "faxEvents",
   "aiVoiceEvents",
-  // Completed virtual mask fittings (migration 0418). The Virtual Mask
+  // Completed virtual mask fittings (migration 0419). The Virtual Mask
   // Fitter plan includes a monthly amount and bills per-fitting beyond it
   // (fitter_fitting_metered add-on). Incremented once per completed
   // fitting that comes back from a patient's signed link.
@@ -96,7 +96,7 @@ export async function recordTenantUsage(
       });
     if (error) throw error;
     // Report billable OVERAGE to Stripe for standard metered metrics (SMS /
-    // AI / billing transactions — migration 0420). Fire-and-forget + fail-soft
+    // AI / billing transactions — migration 0421). Fire-and-forget + fail-soft
     // + gated: no-ops unless the overage flag is on and the metric has a
     // report-overage metered add-on, so this is a no-op for every metric until
     // an operator enables it. The fitter metric is excluded automatically (its

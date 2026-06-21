@@ -1,11 +1,11 @@
--- 0419_billing_metered_addons — usage-based (metered) billing for catalog
+-- 0420_billing_metered_addons — usage-based (metered) billing for catalog
 -- add-ons, wired to Stripe Billing Meters.
 --
 -- ADDITIVE / idempotent. `usage_type` DEFAULTS to NULL (= licensed/flat),
 -- so every existing add-on, plan, and tenant subscription bills EXACTLY as
 -- before — the metered code path in the Stripe sync only runs for a row
 -- whose `usage_type` is 'metered'. Only the standalone Virtual Mask Fitter
--- per-fitting add-on (migration 0418) is flipped here.
+-- per-fitting add-on (migration 0419) is flipped here.
 --
 -- Billing Meters (not legacy usage records) because the platform
 -- subscription sync deletes + recreates subscription items on every change;

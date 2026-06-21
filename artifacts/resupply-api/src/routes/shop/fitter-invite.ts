@@ -282,7 +282,7 @@ router.post(
     const nowIso = new Date().toISOString();
 
     // A re-submit of an already-completed/attached fitting must not be
-    // double-counted for per-fitting billing (migration 0418). Only the
+    // double-counted for per-fitting billing (migration 0419). Only the
     // transition into a completed state from sent/opened is a new fitting.
     const isNewCompletion =
       invite.status !== "completed" && invite.status !== "attached";
@@ -355,7 +355,7 @@ router.post(
       return;
     }
 
-    // Meter the completed fitting for per-fitting billing (migration 0418).
+    // Meter the completed fitting for per-fitting billing (migration 0419).
     // Fire-and-forget + fail-soft (recordTenantUsage never throws); only on
     // a genuinely new completion so a patient re-submit can't inflate usage.
     if (isNewCompletion) {
@@ -366,7 +366,7 @@ router.post(
         source: "fitter.invite.complete",
       });
       // Also report it to Stripe as a Billing Meter event so per-fitting
-      // overage on the Virtual Mask Fitter plan is invoiced (migration 0419).
+      // overage on the Virtual Mask Fitter plan is invoiced (migration 0420).
       // Fire-and-forget + fail-soft; no-ops unless platform Stripe billing is
       // configured and the tenant has a Stripe customer.
       void reportFitterFittingMeterEvent(orgId);

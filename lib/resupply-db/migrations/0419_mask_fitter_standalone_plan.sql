@@ -1,4 +1,4 @@
--- 0418_mask_fitter_standalone_plan — standalone "Virtual Mask Fitter"
+-- 0419_mask_fitter_standalone_plan — standalone "Virtual Mask Fitter"
 -- platform plan + per-fitting metered add-on, plus a per-plan product
 -- scope marker that lets a DME subscribe to JUST the AI mask fitter:
 -- text a patient a link, they self-measure on their phone camera, and the

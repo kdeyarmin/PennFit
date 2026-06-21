@@ -1,5 +1,5 @@
 // Behavioral test for the metered-add-on path of the platform billing
-// catalog sync (migration 0419): a usage_type='metered' add-on must mint a
+// catalog sync (migration 0420): a usage_type='metered' add-on must mint a
 // Stripe Billing Meter + a graduated metered Price, while a flat plan stays
 // a licensed price. Drives syncPlatformBillingCatalogToStripe() against a
 // mocked Stripe client + catalog and asserts the exact create params.

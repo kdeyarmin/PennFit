@@ -1,6 +1,6 @@
 # Runbook — validate Stripe metered (usage-based) billing in test mode
 
-Metered billing (migrations 0418/0419) invoices usage that accrues during the
+Metered billing (migrations 0419/0420) invoices usage that accrues during the
 month — the Virtual Mask Fitter's per-fitting overage today, and optionally
 SMS/AI/billing overage on the standard plans. Because it moves real money, run
 this **once in Stripe test mode** before a real tenant is billed. The whole
@@ -13,7 +13,7 @@ silent mis-configuration would under/over-bill, which this runbook catches.
   (an `sk_test_…` key) — or shared mode via `STRIPE_SECRET_KEY` if that's how
   the platform bills. Without it, every metered call no-ops (usage still
   records to the DB rollup).
-- Migrations through **0419** applied (`RUN_DB_MIGRATIONS=true` on deploy, or
+- Migrations through **0420** applied (`RUN_DB_MIGRATIONS=true` on deploy, or
   run `migrate.mjs`).
 - A **test tenant** you can throw away (`tenant:onboard --plan=mask_fitter
 --org-slug=metered-test …`).

@@ -1,4 +1,4 @@
-// Tests for standard-plan metered OVERAGE billing (migration 0420): the pure
+// Tests for standard-plan metered OVERAGE billing (migration 0421): the pure
 // overage-delta math, the env-flag gate, and the Stripe meter-event reporter.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";

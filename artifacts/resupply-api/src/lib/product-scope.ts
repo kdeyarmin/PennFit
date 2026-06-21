@@ -1,5 +1,5 @@
 // product-scope.ts — resolves a tenant's platform PRODUCT SCOPE from its
-// active billing plan (migration 0418).
+// active billing plan (migration 0419).
 //
 // A scope of "mask_fitter" means the tenant subscribed to the standalone
 // Virtual Mask Fitter plan: their console + API are gated down to the

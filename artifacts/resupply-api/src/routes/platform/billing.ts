@@ -372,7 +372,7 @@ async function currentUsage(orgId: string) {
       billingTransactionsPerMonth: metered("billingTransactionsPerMonth"),
       faxEvents: metered("faxEvents"),
       aiVoiceEvents: metered("aiVoiceEvents"),
-      // Completed virtual mask fittings this month (migration 0418).
+      // Completed virtual mask fittings this month (migration 0419).
       // Drives the Virtual Mask Fitter plan's included-vs-overage usage.
       fitterFittingsPerMonth: metered("fitterFittingsPerMonth"),
     },
