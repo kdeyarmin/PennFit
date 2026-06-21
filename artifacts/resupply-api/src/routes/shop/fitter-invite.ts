@@ -26,6 +26,7 @@ import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 import { logger } from "../../lib/logger";
 import { verifyFitterInviteToken } from "../../lib/fitter-invite-token";
 import { recordTenantUsage } from "../../lib/metering/usage";
+import { reportFitterFittingMeterEvent } from "../../lib/platform-billing/stripe";
 import { resolveOrgIdForSignedRecord } from "../../lib/storefront/signed-link-org";
 
 type FitterInvitesUpdate =
@@ -364,6 +365,11 @@ router.post(
         quantity: 1,
         source: "fitter.invite.complete",
       });
+      // Also report it to Stripe as a Billing Meter event so per-fitting
+      // overage on the Virtual Mask Fitter plan is invoiced (migration 0419).
+      // Fire-and-forget + fail-soft; no-ops unless platform Stripe billing is
+      // configured and the tenant has a Stripe customer.
+      void reportFitterFittingMeterEvent(orgId);
     }
 
     // Counts/flags only — never the measurements or recipient PHI.

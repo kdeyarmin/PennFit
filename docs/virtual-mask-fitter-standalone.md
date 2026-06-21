@@ -33,6 +33,30 @@ fitting does **not** double-count (only the transition into a completed
 state is metered). The billing console reads the rollup in `currentUsage()`
 and compares it against the plan's included amount.
 
+## Stripe metered billing (migration 0419)
+
+The per-fitting overage is invoiced through **Stripe Billing Meters**, so it
+auto-collects rather than relying on manual reconciliation:
+
+- The `fitter_fitting_metered` add-on is `usage_type='metered'`. On catalog
+  sync (`platform-billing/stripe.ts`) it gets a **Stripe Billing Meter**
+  (`event_name: "fitter_fitting"`, sum aggregation, customer-keyed) and a
+  **graduated metered Price** — first `included_units` (25) free, then $3.00
+  each — tied to that meter.
+- A tenant on the `mask_fitter` plan has this metered price attached to their
+  Stripe subscription **intrinsically** (it's not an opt-in add-on); the
+  metered subscription item carries no quantity.
+- On each completed fitting, `reportFitterFittingMeterEvent(orgId)` reports a
+  meter event keyed by the tenant's Stripe customer. Because meter events are
+  customer-keyed, they bill correctly even though the subscription's items are
+  deleted/recreated on every sync.
+
+The whole path is **fail-soft and gated**: it no-ops unless platform Stripe
+billing is configured and the tenant has a Stripe customer, and every Stripe
+call is best-effort. It is also **strictly additive** — a NULL `usage_type`
+(every other add-on/plan) bills flat exactly as before. Validate against a
+Stripe **test-mode** account before onboarding a real fitter tenant.
+
 ## Product scope (the "just the fitter" gate)
 
 `billing_plans.product_scope` defaults to `'full'`, so **every existing plan

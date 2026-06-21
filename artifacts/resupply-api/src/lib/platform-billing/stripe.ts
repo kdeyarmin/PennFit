@@ -13,6 +13,13 @@ import {
 
 const PLATFORM_BILLING_SCOPE = "platform_tenant";
 
+// The standalone Virtual Mask Fitter per-fitting metered add-on (migrations
+// 0418/0419). Its overage is billed via a Stripe Billing Meter whose events
+// carry this name; the mask_fitter plan's subscription intrinsically
+// includes this add-on's metered price (it isn't an opt-in add-on).
+const FITTER_METERED_ADDON_CODE = "fitter_fitting_metered";
+export const FITTER_FITTING_METER_EVENT = "fitter_fitting";
+
 /**
  * Thrown when a tenant's stored Stripe customer/subscription was created on a
  * DIFFERENT Stripe account than the one platform billing is now using (e.g.
@@ -126,9 +133,15 @@ interface CatalogRow {
   stripe_price_id?: string | null;
   stripe_product_id?: string | null;
   stripe_account_ref?: string | null;
+  // Metered (usage-based) add-on fields (migration 0419). A NULL/absent
+  // `usage_type` means licensed/flat — the default, unchanged behavior.
+  usage_type?: string | null;
+  included_units?: number | null;
+  meter_event_name?: string | null;
+  stripe_meter_id?: string | null;
 }
 
-async function ensureRecurringPrice(args: {
+interface EnsurePriceArgs {
   stripe: Stripe;
   raw: RawClient;
   table: "billing_plans" | "billing_addons";
@@ -137,7 +150,132 @@ async function ensureRecurringPrice(args: {
   amountCents: number | null;
   accountId: string;
   mode: PlatformBillingStripeMode;
+}
+
+/**
+ * Ensure a Stripe Billing Meter + a graduated metered Price for a
+ * usage-based add-on (migration 0419). The meter is keyed by customer, so
+ * reported usage survives the subscription-item delete/recreate the sync
+ * does on every change. The price's first tier covers `included_units` at $0
+ * (the plan's included allowance), then `amountCents` per unit. Idempotent &
+ * account-scoped, mirroring `ensureRecurringPrice`.
+ */
+async function ensureMeteredAddonPrice(
+  args: EnsurePriceArgs,
+): Promise<string | null> {
+  if (!args.amountCents || args.amountCents <= 0)
+    return args.row.stripe_price_id ?? null;
+  const sameAccount = accountRefMatches(
+    args.row.stripe_account_ref,
+    args.accountId,
+    args.mode,
+  );
+  if (args.row.stripe_price_id && sameAccount) return args.row.stripe_price_id;
+
+  // A meter cannot be deleted (only deactivated), so reuse the stored one
+  // when it belongs to the account we're syncing against; otherwise mint one.
+  const eventName = args.row.meter_event_name ?? `addon_${args.row.code}`;
+  let meterId = sameAccount ? (args.row.stripe_meter_id ?? null) : null;
+  if (!meterId) {
+    const meter = await args.stripe.billing.meters.create({
+      display_name: args.row.name,
+      event_name: eventName,
+      default_aggregation: { formula: "sum" },
+      customer_mapping: {
+        type: "by_id",
+        event_payload_key: "stripe_customer_id",
+      },
+      value_settings: { event_payload_key: "value" },
+    });
+    meterId = meter.id;
+  }
+
+  const product =
+    args.row.stripe_product_id && sameAccount
+      ? await args.stripe.products.update(args.row.stripe_product_id, {
+          name: args.row.name,
+          metadata: priceMetadata(args.kind, args.row.code),
+        })
+      : await args.stripe.products.create({
+          name: args.row.name,
+          description: args.row.description ?? undefined,
+          metadata: priceMetadata(args.kind, args.row.code),
+        });
+
+  // Graduated tiers: the first `included_units` each period at $0, then the
+  // per-unit overage. With a tiered scheme the unit price lives in the tiers,
+  // not a top-level `unit_amount`.
+  const included = args.row.included_units ?? 0;
+  const tiers =
+    included > 0
+      ? [
+          { up_to: included, unit_amount: 0 },
+          { up_to: "inf" as const, unit_amount: args.amountCents },
+        ]
+      : [{ up_to: "inf" as const, unit_amount: args.amountCents }];
+
+  const price = await args.stripe.prices.create({
+    product: product.id,
+    currency: "usd",
+    recurring: { interval: "month", usage_type: "metered", meter: meterId },
+    billing_scheme: "tiered",
+    tiers_mode: "graduated",
+    tiers,
+    metadata: priceMetadata(args.kind, args.row.code),
+  });
+
+  await args.raw
+    .schema("resupply")
+    .from(args.table)
+    .update({
+      stripe_product_id: product.id,
+      stripe_price_id: price.id,
+      stripe_meter_id: meterId,
+      stripe_account_ref: args.accountId,
+      stripe_synced_at: new Date().toISOString(),
+    })
+    .eq("id", args.row.id);
+  return price.id;
+}
+
+/**
+ * Resolve (and Stripe-sync) the per-fitting metered price for the standalone
+ * Virtual Mask Fitter plan, so the subscription build can attach it
+ * intrinsically. Fail-soft: returns null if the add-on is missing.
+ */
+async function ensureFitterMeteredPrice(args: {
+  stripe: Stripe;
+  raw: RawClient;
+  accountId: string;
+  mode: PlatformBillingStripeMode;
 }): Promise<string | null> {
+  const { data, error } = await args.raw
+    .schema("resupply")
+    .from("billing_addons")
+    .select("*")
+    .eq("code", FITTER_METERED_ADDON_CODE)
+    .maybeSingle();
+  if (error || !data) return null;
+  const row = data as CatalogRow & { recurring_price_cents?: number | null };
+  return ensureRecurringPrice({
+    stripe: args.stripe,
+    raw: args.raw,
+    table: "billing_addons",
+    kind: "addon",
+    row,
+    amountCents: cents(row.recurring_price_cents),
+    accountId: args.accountId,
+    mode: args.mode,
+  });
+}
+
+async function ensureRecurringPrice(
+  args: EnsurePriceArgs,
+): Promise<string | null> {
+  // Usage-based add-ons take the metered path (Billing Meter + tiered
+  // metered price). Plans and flat add-ons (usage_type NULL) fall through to
+  // the unchanged licensed flow below.
+  if (args.row.usage_type === "metered") return ensureMeteredAddonPrice(args);
   if (!args.amountCents || args.amountCents <= 0)
     return args.row.stripe_price_id ?? null;
   // Catalog objects are account-scoped: reuse the stored product/price ONLY
@@ -337,6 +475,9 @@ type SubscriptionPeriods = {
  *  so the call sites cast through `unknown` to the SDK param type rather
  *  than reach for `any`. */
 type SubscriptionItemInput =
+  // Metered item — a usage_type='metered' price. Stripe REJECTS `quantity`
+  // on a metered item; usage is reported as meter events instead.
+  | { price: string }
   | { price: string; quantity: number }
   | {
       price_data: {
@@ -424,24 +565,42 @@ export async function syncTenantStripeSubscription(args: {
         },
   ];
 
+  // Metered price ids already attached, so the mask_fitter auto-include
+  // below never double-adds the per-fitting overage item.
+  const meteredPriceIds = new Set<string>();
   for (const tenantAddon of addons) {
     const addon = tenantAddon.billing_addons;
+    const isMetered = addon.usage_type === "metered";
     const amount =
       cents(tenantAddon.custom_recurring_price_cents) ??
       cents(addon.recurring_price_cents);
-    if (!amount || amount <= 0 || tenantAddon.quantity <= 0) continue;
-    const priceId = tenantAddon.custom_recurring_price_cents
-      ? null
-      : await ensureRecurringPrice({
-          stripe,
-          raw,
-          table: "billing_addons",
-          kind: "addon",
-          row: addon,
-          amountCents: cents(addon.recurring_price_cents),
-          accountId,
-          mode: config.mode,
-        });
+    if (!amount || amount <= 0) continue;
+    // Metered items bill by reported usage, not quantity — never skip them on
+    // quantity. Per-unit custom price overrides don't apply to metered items
+    // (the meter + tiers define the price), so they take the catalog price.
+    if (!isMetered && tenantAddon.quantity <= 0) continue;
+    const priceId =
+      tenantAddon.custom_recurring_price_cents && !isMetered
+        ? null
+        : await ensureRecurringPrice({
+            stripe,
+            raw,
+            table: "billing_addons",
+            kind: "addon",
+            row: addon,
+            amountCents: cents(addon.recurring_price_cents),
+            accountId,
+            mode: config.mode,
+          });
+    if (isMetered) {
+      // Metered subscription item: NO quantity. Skip if no metered price
+      // synced (e.g. a custom-priced metered addon, which isn't supported).
+      if (priceId) {
+        items.push({ price: priceId });
+        meteredPriceIds.add(priceId);
+      }
+      continue;
+    }
     items.push(
       priceId
         ? { price: priceId, quantity: tenantAddon.quantity }
@@ -458,6 +617,22 @@ export async function syncTenantStripeSubscription(args: {
             quantity: tenantAddon.quantity,
           },
     );
+  }
+
+  // The standalone Virtual Mask Fitter plan intrinsically includes the
+  // per-fitting metered overage item (it is NOT an opt-in add-on), so attach
+  // it whenever the tenant is on a mask_fitter-scoped plan and it isn't
+  // already present from an opt-in row above.
+  if (plan.product_scope === "mask_fitter") {
+    const fitterPriceId = await ensureFitterMeteredPrice({
+      stripe,
+      raw,
+      accountId,
+      mode: config.mode,
+    });
+    if (fitterPriceId && !meteredPriceIds.has(fitterPriceId)) {
+      items.push({ price: fitterPriceId });
+    }
   }
 
   const metadata = {
@@ -622,4 +797,53 @@ export async function handlePlatformTenantStripeEvent(
     "platform billing Stripe invoice synced",
   );
   return true;
+}
+
+/**
+ * Report one completed mask fitting to Stripe as a Billing Meter event
+ * (migration 0419), so per-fitting overage on the Virtual Mask Fitter plan
+ * is invoiced. Fire-and-forget + fail-soft: it NEVER throws or rejects, and
+ * no-ops when platform Stripe billing is unconfigured or the tenant has no
+ * Stripe customer yet (e.g. before their first subscription sync). Meter
+ * events are customer-keyed, so they bill correctly even though the
+ * subscription's items are deleted/recreated on every sync.
+ *
+ * Caller pattern: `void reportFitterFittingMeterEvent(orgId)` on the same
+ * completion that increments the usage rollup — no await, no try/catch.
+ */
+export async function reportFitterFittingMeterEvent(
+  orgId: string | undefined | null,
+): Promise<void> {
+  const id = orgId?.trim();
+  if (!id) return;
+  try {
+    const config = readPlatformBillingStripeConfigOrNull();
+    if (!config) return; // platform Stripe not configured → nothing to meter
+    const raw = await rawClient();
+    if (!raw) return;
+    const { data, error } = await raw
+      .schema("resupply")
+      .from("tenant_billing_subscriptions")
+      .select("stripe_customer_id")
+      .eq("org_id", id)
+      .in("status", ["active", "trialing", "past_due"])
+      .not("stripe_customer_id", "is", null)
+      .limit(1)
+      .maybeSingle();
+    if (error || !data?.stripe_customer_id) return;
+    const stripe = getStripeClient(config);
+    await stripe.billing.meterEvents.create({
+      event_name: FITTER_FITTING_METER_EVENT,
+      payload: { stripe_customer_id: data.stripe_customer_id, value: "1" },
+    });
+  } catch (err) {
+    logger.warn(
+      {
+        event: "fitter_meter_event_report_failed",
+        orgId: id,
+        err: err instanceof Error ? err : new Error(String(err)),
+      },
+      "fitter meter event report failed (ignored)",
+    );
+  }
 }
