@@ -71,16 +71,37 @@ vi.mock("@workspace/resupply-integrations-office-ally", () => ({
   parse835: parse835Mock,
 }));
 
+type MockOutcome = {
+  patientControlNumber: string;
+  matched: boolean;
+  newStatus: string | null;
+};
 const reconcileEraMock = vi.hoisted(() =>
-  vi.fn(async () => ({
-    paidClaims: 3,
-    deniedClaims: 1,
-    unmatchedClaims: 0,
-    linesUpdated: 4,
-  })),
+  vi.fn(
+    async (): Promise<{
+      paidClaims: number;
+      deniedClaims: number;
+      unmatchedClaims: number;
+      linesUpdated: number;
+      outcomes: MockOutcome[];
+    }> => ({
+      paidClaims: 3,
+      deniedClaims: 1,
+      unmatchedClaims: 0,
+      linesUpdated: 4,
+      outcomes: [],
+    }),
+  ),
 );
 vi.mock("../../lib/billing/era-reconciler", () => ({
   reconcileEra: reconcileEraMock,
+}));
+
+// The denial-analysis runner calls the LLM; mock it so the route test
+// asserts "we ran analysis for each denied outcome" without a model call.
+const runDenialAnalysisMock = vi.hoisted(() => vi.fn(async () => undefined));
+vi.mock("../../lib/billing/denial-analysis-runner", () => ({
+  runDenialAnalysis: runDenialAnalysisMock,
 }));
 
 vi.mock("../../lib/webhooks/publisher", () => ({
@@ -129,6 +150,7 @@ beforeEach(() => {
   adminRateLimitSpy.mockClear();
   parse835Mock.mockClear();
   reconcileEraMock.mockClear();
+  runDenialAnalysisMock.mockClear();
 });
 
 // ── POST /admin/billing/era-ingest ───────────────────────────────────────────
@@ -240,11 +262,53 @@ describe("POST /admin/billing/era-ingest — adminRateLimit removed", () => {
       deniedClaims: 0,
       unmatchedClaims: 1, // has unmatched claim
       linesUpdated: 2,
+      outcomes: [],
     });
     const res = await request(makeApp())
       .post("/admin/billing/era-ingest")
       .send(validBody);
     expect(res.status).toBe(201);
     expect(res.body.status).toBe("partial");
+  });
+
+  it("runs AI denial analysis for each matched denied claim (parity with the poller)", async () => {
+    stubAdmin();
+    stageSupabaseResponse("era_files", "select", { data: null });
+    stageSupabaseResponse("era_files", "insert", {
+      data: { id: ERA_FILE_UUID },
+    });
+    stageSupabaseResponse("era_files", "update", { data: null });
+    reconcileEraMock.mockResolvedValueOnce({
+      paidClaims: 1,
+      deniedClaims: 2,
+      unmatchedClaims: 0,
+      linesUpdated: 3,
+      outcomes: [
+        { patientControlNumber: "CLM-A", matched: true, newStatus: "denied" },
+        { patientControlNumber: "CLM-B", matched: true, newStatus: "paid" },
+        // Unmatched denied → no claim to analyze, must be skipped.
+        { patientControlNumber: "CLM-C", matched: false, newStatus: "denied" },
+        { patientControlNumber: "CLM-D", matched: true, newStatus: "denied" },
+      ],
+    });
+
+    const res = await request(makeApp())
+      .post("/admin/billing/era-ingest")
+      .send(validBody);
+
+    expect(res.status).toBe(201);
+    // Only the two matched + denied outcomes get analyzed.
+    expect(runDenialAnalysisMock).toHaveBeenCalledTimes(2);
+    expect(runDenialAnalysisMock).toHaveBeenCalledWith(
+      expect.anything(),
+      "CLM-A",
+      ERA_FILE_UUID,
+    );
+    expect(runDenialAnalysisMock).toHaveBeenCalledWith(
+      expect.anything(),
+      "CLM-D",
+      ERA_FILE_UUID,
+    );
+    expect(res.body.denialAnalysesRun).toBe(2);
   });
 });

@@ -17,6 +17,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 import { parse835 } from "@workspace/resupply-integrations-office-ally";
 
+import { runDenialAnalysis } from "../../lib/billing/denial-analysis-runner";
 import { reconcileEra } from "../../lib/billing/era-reconciler";
 import { resolvePayerProfileForEra } from "../../lib/billing/era-payer-resolver";
 import { logger } from "../../lib/logger";
@@ -193,6 +194,24 @@ router.post(
       .eq("id", eraFileId);
     if (eraUpdateErr) throw eraUpdateErr;
 
+    // Run AI denial analysis for each denied claim — the same step the
+    // inbound poller's dispatch835 path runs, via the shared runner, so a
+    // CSR-uploaded 835's denials are analyzed for the worklist instead of
+    // sitting permanently unanalyzed. Awaited (per the manual-upload
+    // contract) so the response reflects persisted analyses; each run is
+    // individually non-throwing, so one flaky model call never fails the
+    // ingest.
+    let denialAnalysesRun = 0;
+    for (const outcome of summary.outcomes) {
+      if (!outcome.matched || outcome.newStatus !== "denied") continue;
+      await runDenialAnalysis(
+        supabase,
+        outcome.patientControlNumber,
+        eraFileId,
+      );
+      denialAnalysesRun += 1;
+    }
+
     await logAudit({
       action: "era_file.ingest",
       adminEmail: req.adminEmail ?? null,
@@ -232,6 +251,7 @@ router.post(
       eraFileId,
       status: finalStatus,
       summary,
+      denialAnalysesRun,
     });
   },
 );

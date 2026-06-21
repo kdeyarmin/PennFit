@@ -98,11 +98,17 @@ submit/transfer concurrency are genuinely strong. Gaps cluster around
    re-firing 270s endlessly. Now stamped (best-effort) on a successful 271
    parse in **both** resolution paths — the real-time verifier and the async
    SFTP 271 reconciliation in `office-ally-inbound-poll.ts`.
-2. **Manual ERA ingest skips AI denial analysis.** `era-ingest.ts:172` calls
-   `reconcileEra` but, unlike the poller's `dispatch835`
-   (`office-ally-inbound-poll.ts:734-742`), never inserts
-   `claim_denial_analyses`. A denial from a CSR-uploaded 835 sits on the
-   worklist permanently unanalyzed.
+2. **Manual ERA ingest skips AI denial analysis.** ✅ **Fixed in this PR.**
+   `era-ingest.ts` called `reconcileEra` but, unlike the poller's
+   `dispatch835`, never inserted `claim_denial_analyses`, so a denial from a
+   CSR-uploaded 835 sat on the worklist permanently unanalyzed. The poller's
+   `runDenialAnalysisQuietly` was extracted to a shared
+   `lib/billing/denial-analysis-runner.ts` (`runDenialAnalysis`); the poller
+   calls it fire-and-forget (unchanged), and the manual route now runs it
+   (per the owner's decision: **awaited** before responding, returning a
+   `denialAnalysesRun` count) for each matched denied outcome. Both ERA entry
+   points share one implementation so they can't diverge again. New
+   parity test added.
 3. **Partial automated 835s are never re-reconciled.** `era-ingest.ts:89`
    exempts `partial` files from SHA dedupe to allow re-reconcile, but
    `dispatch835` (`office-ally-inbound-poll.ts:650`) `return 0`s for any

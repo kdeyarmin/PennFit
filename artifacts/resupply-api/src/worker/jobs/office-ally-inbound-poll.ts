@@ -70,7 +70,7 @@ import {
   type Parsed999,
 } from "@workspace/resupply-integrations-office-ally";
 
-import { analyzeDenial } from "../../lib/billing/ai-denial-analyzer";
+import { runDenialAnalysis } from "../../lib/billing/denial-analysis-runner";
 import {
   eligibilityCompletedEvent,
   parsed271ToCheckColumns,
@@ -766,69 +766,9 @@ export async function dispatch835(
     // control number which IS the claim id (CLM01 echo).
     const claimId = outcome.patientControlNumber;
     queued += 1;
-    void runDenialAnalysisQuietly(supabase, claimId, eraFileId);
+    void runDenialAnalysis(supabase, claimId, eraFileId);
   }
   return queued;
-}
-
-async function runDenialAnalysisQuietly(
-  supabase: SupabaseClient,
-  claimId: string,
-  eraFileId: string,
-): Promise<void> {
-  try {
-    const output = await analyzeDenial({ claimId, eraFileId });
-    const { data: row, error } = await supabase
-      .from("claim_denial_analyses")
-      .insert({
-        claim_id: claimId,
-        era_file_id: eraFileId,
-        model: "gpt-4o-mini",
-        prompt_version: "denial-1.0",
-        confidence: output.confidence,
-        root_cause_summary: output.rootCauseSummary,
-        recommendation: output.recommendation,
-        analysis_json: {
-          mappedCodes: output.mappedCodes,
-          fixSteps: output.fixSteps,
-          appealLetterSketch: output.appealLetterSketch,
-          droppedPatches: output.droppedPatches,
-        } as unknown as Json,
-        suggested_patches_json: output.suggestedPatches as unknown as Json,
-        can_auto_resubmit: output.canAutoResubmit,
-        review_status: output.errorMessage ? "errored" : "pending",
-        latency_ms: output.latencyMs,
-        prompt_tokens: output.promptTokens,
-        completion_tokens: output.completionTokens,
-        error_message: output.errorMessage,
-      })
-      .select("id")
-      .single();
-    if (error) throw error;
-    if (row) {
-      const { error: analysisLinkErr } = await supabase
-        .from("insurance_claims")
-        .update({
-          latest_denial_analysis_id: row.id,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", claimId);
-      if (analysisLinkErr) {
-        logger.warn(
-          { err: analysisLinkErr.message, claimId, analysisId: row.id },
-          "office-ally.inbound-poll: denial analysis link update failed (non-fatal)",
-        );
-      }
-    }
-  } catch (err) {
-    logger.warn(
-      {
-        err,
-        claimId,
-      },
-      "office-ally.inbound-poll: AI denial analysis failed (non-fatal)",
-    );
-  }
 }
 
 /**
