@@ -72,6 +72,11 @@ const {
       maybeSingle() {
         return Promise.resolve(resolveRoute(cs));
       },
+      rpc(fn: string) {
+        cs.table = `rpc:${fn}`;
+        cs.op = "call";
+        return Promise.resolve(resolveRoute(cs));
+      },
       then(
         onF: (v: { data: unknown; error: unknown }) => unknown,
         onR?: (e: unknown) => unknown,
@@ -232,6 +237,44 @@ describe("createSelfServeTenant", () => {
     expect(audit).toHaveBeenCalledWith(
       expect.objectContaining({ action: "auth.tenant_self_signup" }),
     );
+  });
+
+  it("assigns the chosen self-serve plan as the new tenant's subscription", async () => {
+    routeState.responses["billing_plans:select"] = {
+      data: { id: "plan-mf", is_public: true, is_custom: false },
+    };
+    const res = await createSelfServeTenant(
+      baseInput({ plan: "mask_fitter", sendSetPasswordLink: true }),
+    );
+    expect(res).toMatchObject({ ok: true });
+
+    // Looked up the plan by code, then atomically swapped the tenant onto it.
+    expect(routeState.calls).toContain("billing_plans:select");
+    expect(routeState.calls).toContain("rpc:swap_tenant_subscription:call");
+    // The chosen plan is recorded on the signup audit.
+    expect(audit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "auth.tenant_self_signup",
+        metadata: expect.objectContaining({ plan: "mask_fitter" }),
+      }),
+    );
+  });
+
+  it("does NOT assign a subscription when no plan is chosen", async () => {
+    const res = await createSelfServeTenant(baseInput());
+    expect(res).toMatchObject({ ok: true });
+    expect(routeState.calls).not.toContain("rpc:swap_tenant_subscription:call");
+  });
+
+  it("leaves the tenant unassigned when the chosen plan is not self-selectable", async () => {
+    // A custom / non-public plan must never be self-assigned at signup.
+    routeState.responses["billing_plans:select"] = {
+      data: { id: "plan-ent", is_public: false, is_custom: true },
+    };
+    const res = await createSelfServeTenant(baseInput({ plan: "enterprise" }));
+    expect(res).toMatchObject({ ok: true });
+    expect(routeState.calls).toContain("billing_plans:select");
+    expect(routeState.calls).not.toContain("rpc:swap_tenant_subscription:call");
   });
 
   it("emails a SET-PASSWORD link (not a verify link) when sendSetPasswordLink is set", async () => {

@@ -240,7 +240,11 @@ describe("breathe sales — start_breathe_signup", () => {
       orgName: string;
       slug: string;
       sendSetPasswordLink?: boolean;
+      plan?: string;
     };
+    // The chosen plan is forwarded to provisioning so it can be assigned as
+    // the new tenant's subscription (product scope reflects it at first login).
+    expect(arg.plan).toBe("growth");
     expect(arg.password.length).toBeGreaterThanOrEqual(12);
     expect(arg.password).not.toBe("Acme DME");
     expect(arg.password).not.toContain("owner@acme-dme.example");

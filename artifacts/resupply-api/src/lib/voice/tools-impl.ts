@@ -1153,6 +1153,11 @@ class Impl implements VoiceToolDispatcher {
         // The caller never speaks a password — email them a set-password
         // link (which also verifies the email) instead of a verify-only link.
         sendSetPasswordLink: true,
+        // Assign the plan the caller chose as the new tenant's current
+        // subscription, so product scope (e.g. mask_fitter gating) reflects
+        // their choice from first sign-in. The plan `code` matches our enum
+        // (mask_fitter / launch / growth / scale).
+        plan,
       });
     } catch (err) {
       logger.warn(
