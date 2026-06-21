@@ -4,6 +4,7 @@ import { permissionsForRole } from "@workspace/resupply-auth";
 
 import { getPendingAgreementTypes } from "../lib/agreements/status";
 import { isFeatureEnabled } from "../lib/feature-flags";
+import { resolveTenantProductScope } from "../lib/product-scope";
 import { adminReadRateLimiter } from "../middlewares/admin-rate-limit";
 import { requireAdmin } from "../middlewares/requireAdmin";
 
@@ -74,11 +75,21 @@ router.get("/me", adminReadRateLimiter, requireAdmin, async (req, res) => {
   // Fails closed (all required types pending) when the tenant context or
   // DB lookup is unavailable — an unsigned tenant must never slip through.
   const pendingAgreements = await getPendingAgreementTypes(req.orgId);
+  // Platform product scope from the tenant's active billing plan (migration
+  // 0419). "mask_fitter" = the standalone Virtual Mask Fitter plan; the SPA
+  // reads this to render the fitter-only nav + redirect away from console
+  // pages the backend would 403. "full" for every normal whole-suite
+  // tenant. Impersonation sessions resolve to "full" upstream so support
+  // staff see the entire console of a scoped tenant.
+  const productScope = req.impersonation
+    ? "full"
+    : await resolveTenantProductScope(req.orgId);
   res.json({
     userId: req.adminUserId ?? "",
     email: req.adminEmail ?? "",
     role: req.adminRole ?? "admin",
     permissions: permissionsForRole(role),
+    productScope,
     // Home branch (multi-location #O1). Drives the SPA's soft default
     // branch filter; null = unassigned (treated as org-wide, no
     // restriction). Not an access gate — the server enforces nothing on
