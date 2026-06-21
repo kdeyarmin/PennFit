@@ -1454,6 +1454,12 @@ export async function handleBreatheSalesWsConnection(
       },
       "voice sales: tool invoked",
     );
+    // TEMP DIAGNOSTIC (remove with voice-session-debug): record tool calls
+    // into the session buffer so we can correlate an "extra" response_done
+    // (the post-tool follow-up turn forced by bridge.ts requestFollowUp)
+    // with the bookkeeping tool that triggered it — i.e. confirm whether
+    // the agent's "continuing without waiting" is a silent-tool follow-up.
+    dbg("tool_invoked", { name: invocation.name, status: invocation.status });
   });
   bridge.on("session.closed", (info) =>
     cleanup(info.reason || "session-closed"),
