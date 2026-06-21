@@ -26,12 +26,22 @@ describe("mapTwilioLineType", () => {
 
 describe("createTwilioLookupClient", () => {
   it("throws when credentials are missing", () => {
-    expect(() => createTwilioLookupClient({ authToken: "t" })).toThrow(
-      TwilioConfigError,
-    );
-    expect(() => createTwilioLookupClient({ accountSid: "AC" })).toThrow(
-      TwilioConfigError,
-    );
+    // Hermetic: createTwilioLookupClient falls back to process.env, and
+    // some environments (e.g. CI runners with real secrets injected) carry
+    // live TWILIO_* values. Clear them so this exercises the missing-cred
+    // path regardless of ambient env.
+    vi.stubEnv("TWILIO_ACCOUNT_SID", "");
+    vi.stubEnv("TWILIO_AUTH_TOKEN", "");
+    try {
+      expect(() => createTwilioLookupClient({ authToken: "t" })).toThrow(
+        TwilioConfigError,
+      );
+      expect(() => createTwilioLookupClient({ accountSid: "AC" })).toThrow(
+        TwilioConfigError,
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("classifies a mobile number from a 200 response", async () => {

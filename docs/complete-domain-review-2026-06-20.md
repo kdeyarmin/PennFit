@@ -25,13 +25,14 @@ unchanged):
 | Orphaned/unmounted routes (213 admin routers)                                   | **0** — all imported and mounted                   |
 | Boot-contract invariants (healthz liveness / worker decouple / SIGTERM)         | **Intact**                                         |
 
-**One red test, not a code defect:**
+**One red test, not a code defect — ✅ fixed in this PR:**
 `lib/resupply-telecom/src/lookup.test.ts` → "throws when credentials are
-missing" fails _only in this container_ because the remote environment injects
-real `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN`, so the factory does not throw.
-The production code is correctly fail-closed; the **test** lacks env isolation
-(it should stub/clear `process.env` rather than rely on it being unset). Low
-priority. Fix: wrap with `vi.stubEnv`/`delete process.env.TWILIO_*` in a
+missing" failed _only in this container_ because the remote environment injects
+real `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN`, so the factory did not throw.
+The production code is correctly fail-closed; the **test** lacked env isolation
+(it relied on `process.env` being unset). Now made hermetic with
+`vi.stubEnv("TWILIO_ACCOUNT_SID", "")` + `vi.unstubAllEnvs()`. Original note
+(for reference): wrap with `vi.stubEnv`/`delete process.env.TWILIO_*` in a
 `beforeEach`.
 
 ## 2. Cross-cutting theme — incomplete multi-tenant `orgId` threading
@@ -167,8 +168,13 @@ staging are carefully built. Gaps:
 - **Med** — Escalation `csr_exhausted` alert insert isn't defensively
   idempotent (read-then-insert, no `onConflict`)
   (`reminder-escalation.ts:712`).
-- **Med** — `dispense-readiness` persists hardcoded `ai_model: "gpt-4o-mini"`
-  regardless of the provider that actually ran (`dispense-readiness.ts:131`).
+- ~~**Med** — `dispense-readiness` persists hardcoded `ai_model:
+"gpt-4o-mini"`~~ **Withdrawn — false positive.** On verification,
+  `dispense-readiness-reviewer.ts:synthesizeWithAi` is hardwired to OpenAI
+  (`OPENAI_API_URL`, `DEFAULT_MODEL = "gpt-4o-mini"`); it does **not** use the
+  Claude-first `selectLlmProvider` path (dispense-readiness isn't in the
+  Claude-first surface table), so the persisted `gpt-4o-mini` correctly
+  reflects the only model that runs. No change needed.
 - **Med** — Escalation voice-disposition read can over-count "unanswered" on a
   webhook-timing race, triggering an extra automated call
   (`reminder-escalation.ts:531`).
