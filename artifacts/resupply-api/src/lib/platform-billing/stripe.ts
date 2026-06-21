@@ -49,6 +49,23 @@ function meteredActive(row: {
 }
 
 /**
+ * Should a metered add-on for `metric` be attached to this tenant's
+ * subscription? Pure + exported for testing. True when EITHER the plan
+ * declares an allowance for the metric (overage beyond a plan-included amount
+ * — messages / AI / billing / the fitter) OR the tenant has an active feature
+ * add-on that shares the metric (the usage rides on a flat premium feature
+ * with no plan allowance — fax_automation / ai_voice_agent).
+ */
+export function meteredAddonAttaches(
+  metric: string | null | undefined,
+  planAllowances: Record<string, unknown>,
+  activeAddonMetrics: ReadonlySet<string>,
+): boolean {
+  if (!metric) return false;
+  return metric in planAllowances || activeAddonMetrics.has(metric);
+}
+
+/**
  * Thrown when a tenant's stored Stripe customer/subscription was created on a
  * DIFFERENT Stripe account than the one platform billing is now using (e.g.
  * after switching STRIPE_PLATFORM_SECRET_KEY to a dedicated account). We refuse
@@ -316,6 +333,59 @@ async function meteredOverageAddons(
   return data as MeteredAddonRow[];
 }
 
+interface FounderPlanRow {
+  id: string;
+  code: string;
+  name: string;
+  per_active_patient_cents?: number | null;
+  stripe_per_patient_price_id?: string | null;
+  stripe_account_ref?: string | null;
+}
+
+/**
+ * Ensure the per-active-patient Stripe price for a founder plan (migration
+ * 0426): a simple per-unit monthly price at the plan's
+ * `per_active_patient_cents`, kept on the plan's `stripe_per_patient_price_id`
+ * (separate from the base plan price). The subscription attaches it with
+ * quantity = the tenant's billable active-patient count. Account-scoped +
+ * idempotent, mirroring `ensureRecurringPrice`.
+ */
+async function ensurePerPatientPrice(args: {
+  stripe: Stripe;
+  raw: RawClient;
+  plan: FounderPlanRow;
+  amountCents: number;
+  accountId: string;
+  mode: PlatformBillingStripeMode;
+}): Promise<string | null> {
+  const sameAccount = accountRefMatches(
+    args.plan.stripe_account_ref,
+    args.accountId,
+    args.mode,
+  );
+  if (args.plan.stripe_per_patient_price_id && sameAccount)
+    return args.plan.stripe_per_patient_price_id;
+
+  const code = `${args.plan.code}_active_patients`;
+  const product = await args.stripe.products.create({
+    name: `${args.plan.name} — active patients`,
+    metadata: priceMetadata("plan", code),
+  });
+  const price = await args.stripe.prices.create({
+    product: product.id,
+    unit_amount: args.amountCents,
+    currency: "usd",
+    recurring: { interval: "month" },
+    metadata: priceMetadata("plan", code),
+  });
+  await args.raw
+    .schema("resupply")
+    .from("billing_plans")
+    .update({ stripe_per_patient_price_id: price.id })
+    .eq("id", args.plan.id);
+  return price.id;
+}
+
 async function ensureRecurringPrice(
   args: EnsurePriceArgs,
 ): Promise<string | null> {
@@ -374,9 +444,16 @@ async function ensureRecurringPrice(
       stripe_synced_at: new Date().toISOString(),
       // This price is flat (no meter). Clear any stale meter id on an add-on
       // (a metered→flat flip) so `stripe_meter_id` reliably marks "the stored
-      // price is metered". `billing_plans` has no such column, so only touch
-      // add-ons.
-      ...(args.table === "billing_addons" ? { stripe_meter_id: null } : {}),
+      // price is metered". For a plan, clear the founder per-patient price id:
+      // it lives on a different Stripe object than this base price, so when the
+      // base price is (re)minted — notably on a Stripe account switch, which
+      // also moves `stripe_account_ref` — the stored per-patient price would
+      // otherwise point at the OLD account and ensurePerPatientPrice would
+      // wrongly reuse it ("no such price"). Nulling it forces a re-mint on the
+      // current account.
+      ...(args.table === "billing_addons"
+        ? { stripe_meter_id: null }
+        : { stripe_per_patient_price_id: null }),
     })
     .eq("id", args.row.id);
   return price.id;
@@ -625,6 +702,30 @@ export async function syncTenantStripeSubscription(args: {
         },
   ];
 
+  // Founder plans (migration 0426) add a per-active-patient charge: a per-unit
+  // monthly price whose quantity is the tenant's billable active-patient count
+  // (recomputed monthly into billable_active_patients). Attached only when the
+  // plan carries the rate AND there's a count to bill — a brand-new founder
+  // tenant bills base-only until the monthly job computes the count.
+  const perPatientCents = cents(plan.per_active_patient_cents);
+  const billablePatients = Math.max(
+    0,
+    Math.floor(Number(sub.billable_active_patients ?? 0)) || 0,
+  );
+  if (perPatientCents && perPatientCents > 0 && billablePatients > 0) {
+    const perPatientPriceId = await ensurePerPatientPrice({
+      stripe,
+      raw,
+      plan: plan as FounderPlanRow,
+      amountCents: perPatientCents,
+      accountId,
+      mode: config.mode,
+    });
+    if (perPatientPriceId) {
+      items.push({ price: perPatientPriceId, quantity: billablePatients });
+    }
+  }
+
   // Metered price ids already attached, so the mask_fitter auto-include
   // below never double-adds the per-fitting overage item.
   const meteredPriceIds = new Set<string>();
@@ -681,16 +782,23 @@ export async function syncTenantStripeSubscription(args: {
     );
   }
 
-  // Intrinsic metered overage items. A metered add-on bills usage beyond the
-  // plan's included allowance for its metric, so attach its metered price to
-  // any plan that declares that allowance — it is NOT an opt-in add-on. This
-  // covers the fitter (mask_fitter → fitterFittingsPerMonth) and, behind the
-  // flag, the standard SMS/AI/billing overage on Launch/Growth/Scale. Deduped
-  // against the opt-in loop above.
+  // Intrinsic metered usage items. A metered add-on attaches when the tenant
+  // is on the hook for its metric — either the plan declares an allowance
+  // (overage beyond a plan-included amount: the fitter, and behind the flag
+  // the SMS/AI/billing overage on Launch/Growth/Scale) OR the tenant has an
+  // active feature add-on sharing the metric (per-unit usage riding on a flat
+  // premium feature with no plan allowance: fax_automation / ai_voice_agent).
+  // It is NOT an opt-in add-on; deduped against the opt-in loop above.
   const planAllowances = (plan.allowances ?? {}) as Record<string, unknown>;
+  const activeAddonMetrics = new Set<string>(
+    addons
+      .map((a) => a.billing_addons?.usage_metric)
+      .filter((m): m is string => typeof m === "string" && m.length > 0),
+  );
   for (const addon of await meteredOverageAddons(raw)) {
     const metric = addon.usage_metric;
-    if (!metric || !(metric in planAllowances)) continue;
+    if (!meteredAddonAttaches(metric, planAllowances, activeAddonMetrics))
+      continue;
     if (!meteredActive(addon)) continue;
     const priceId = await ensureRecurringPrice({
       stripe,

@@ -3896,12 +3896,20 @@ const PLANS: {
   blurb: string;
   highlights: string[];
   featured?: boolean;
+  // Founder DME Launch discount (migration 0426): the struck-through regular
+  // price (shown only when it's higher than the founder price), the
+  // per-active-patient line, and the months the founder rate is locked.
+  regularPrice?: string;
+  perPatient?: string;
+  lockMonths?: number;
 }[] = [
   {
     name: "Virtual Mask Fitter",
-    price: "$149",
+    price: "$119",
     cadence: "/mo",
-    monthlyCents: 14900,
+    monthlyCents: 11900,
+    regularPrice: "$149",
+    lockMonths: 12,
     setup: "No setup fee · 25 fittings/mo, then $2 each",
     blurb:
       "Standalone AI mask fitter — text a patient a link, get the perfect mask & size back. No in-office fittings, no wasted sample masks.",
@@ -3915,9 +3923,12 @@ const PLANS: {
   },
   {
     name: "Launch",
-    price: "$799",
+    price: "$499",
     cadence: "/mo",
-    monthlyCents: 79900,
+    monthlyCents: 49900,
+    regularPrice: "$799",
+    perPatient: "+ $1.25 / active patient / mo",
+    lockMonths: 12,
     setup: "+ $2,500 one-time onboarding",
     blurb: "Branded storefront and core resupply automation for a small DME.",
     highlights: [
@@ -3930,9 +3941,12 @@ const PLANS: {
   },
   {
     name: "Growth",
-    price: "$1,899",
+    price: "$1,500",
     cadence: "/mo",
-    monthlyCents: 189900,
+    monthlyCents: 150000,
+    regularPrice: "$1,899",
+    perPatient: "+ $0.95 / active patient / mo",
+    lockMonths: 12,
     setup: "+ $5,000 one-time onboarding",
     blurb:
       "Full resupply operations, outreach, documents, and billing worklists.",
@@ -3947,9 +3961,12 @@ const PLANS: {
   },
   {
     name: "Scale",
-    price: "$3,999",
+    price: "$3,199",
     cadence: "/mo",
-    monthlyCents: 399900,
+    monthlyCents: 319900,
+    regularPrice: "$3,999",
+    perPatient: "+ $0.65 / active patient / mo",
+    lockMonths: 12,
     setup: "+ $10,000 one-time onboarding",
     blurb:
       "Multi-location automation, analytics, and AI controls at higher volume.",
@@ -3993,6 +4010,10 @@ interface PublicPlan {
   isCustom: boolean;
   allowances: Record<string, number>;
   features: string[];
+  // Founder launch pricing (migration 0426).
+  perActivePatientCents?: number | null;
+  regularMonthlyPriceCents?: number | null;
+  founderRateLockedMonths?: number | null;
 }
 interface PublicAddon {
   code: string;
@@ -4069,7 +4090,23 @@ function liveToPlanCards(plans: PublicPlan[]): PlanCard[] {
         : "Onboarding included",
     blurb: p.description ?? "",
     highlights: p.features.slice(0, 6),
-    featured: p.code.toLowerCase() === "growth",
+    featured: p.code.toLowerCase().startsWith("growth"),
+    // Founder launch pricing: the per-patient line, the struck-through regular
+    // price (only when it's actually higher), and the lock duration.
+    perPatient:
+      !p.isCustom &&
+      p.perActivePatientCents != null &&
+      p.perActivePatientCents > 0
+        ? `+ ${dollars(p.perActivePatientCents)} / active patient / mo`
+        : undefined,
+    regularPrice:
+      !p.isCustom &&
+      p.regularMonthlyPriceCents != null &&
+      p.monthlyPriceCents != null &&
+      p.regularMonthlyPriceCents > p.monthlyPriceCents
+        ? dollars(p.regularMonthlyPriceCents)
+        : undefined,
+    lockMonths: p.founderRateLockedMonths ?? undefined,
   }));
 }
 
@@ -4315,6 +4352,20 @@ function PricingPlans({
             ) : null}
             <div className="bx-plan-name">{p.name}</div>
             <div className="bx-plan-price">
+              {!annual && p.regularPrice ? (
+                <span
+                  style={{
+                    textDecoration: "line-through",
+                    opacity: 0.5,
+                    fontWeight: 600,
+                    fontSize: "0.5em",
+                    marginRight: "0.4em",
+                    verticalAlign: "middle",
+                  }}
+                >
+                  {p.regularPrice}
+                </span>
+              ) : null}
               <span className="bx-plan-amt">
                 {annual ? annual.effMonthly : p.price}
               </span>
@@ -4322,9 +4373,39 @@ function PricingPlans({
                 <span className="bx-plan-cadence">{p.cadence}</span>
               ) : null}
             </div>
+            {p.perPatient ? (
+              <div
+                style={{
+                  fontSize: "0.82rem",
+                  fontWeight: 600,
+                  opacity: 0.75,
+                  marginTop: "0.15rem",
+                }}
+              >
+                {p.perPatient}
+              </div>
+            ) : null}
             {annual ? (
               <div className="bx-plan-annual">
                 {annual.perYear}/yr billed annually · <b>save {annual.saved}</b>
+              </div>
+            ) : null}
+            {p.lockMonths ? (
+              <div
+                style={{
+                  display: "inline-block",
+                  marginTop: "0.5rem",
+                  padding: "0.2rem 0.55rem",
+                  borderRadius: "999px",
+                  fontSize: "0.7rem",
+                  fontWeight: 800,
+                  letterSpacing: "0.03em",
+                  textTransform: "uppercase",
+                  background: "rgba(16,185,129,0.14)",
+                  color: "#047857",
+                }}
+              >
+                🚀 Founder Launch · rate locked {p.lockMonths} months
               </div>
             ) : null}
             <div className="bx-plan-setup">{p.setup}</div>

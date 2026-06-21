@@ -163,9 +163,13 @@ const SHOP_PROMPT_HASH =
  * persona / skills / pricing-knowledge / tools clauses. Pinned separately so
  * drift in the sales prompt is caught too. Update the same way: render, take
  * the printed hash, record it here.
+ *
+ * This value reflects the MERGE of two breathe_prospect changes: this branch's
+ * plan-gating sign-up flow (v15) AND main #1194's Founder DME Launch pricing
+ * (discounted plans + per-active-patient billing, in breathe-sales-knowledge).
  */
 const BREATHE_SALES_PROMPT_HASH =
-  "c5dbe1ccefed82585ffc28f5469851fe78e25160afa35cc2f3bf0cd878bfe3ea";
+  "f66ecaa3b00af020ae04108b064962824364feb1d2beb4b76fe1a693b0d3b546";
 
 describe("PROMPT_VERSION drift detector", () => {
   it("has a recorded hash for the currently-shipped PROMPT_VERSION", () => {
