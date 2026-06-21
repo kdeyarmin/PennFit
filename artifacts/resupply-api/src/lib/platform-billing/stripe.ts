@@ -444,9 +444,16 @@ async function ensureRecurringPrice(
       stripe_synced_at: new Date().toISOString(),
       // This price is flat (no meter). Clear any stale meter id on an add-on
       // (a metered→flat flip) so `stripe_meter_id` reliably marks "the stored
-      // price is metered". `billing_plans` has no such column, so only touch
-      // add-ons.
-      ...(args.table === "billing_addons" ? { stripe_meter_id: null } : {}),
+      // price is metered". For a plan, clear the founder per-patient price id:
+      // it lives on a different Stripe object than this base price, so when the
+      // base price is (re)minted — notably on a Stripe account switch, which
+      // also moves `stripe_account_ref` — the stored per-patient price would
+      // otherwise point at the OLD account and ensurePerPatientPrice would
+      // wrongly reuse it ("no such price"). Nulling it forces a re-mint on the
+      // current account.
+      ...(args.table === "billing_addons"
+        ? { stripe_meter_id: null }
+        : { stripe_per_patient_price_id: null }),
     })
     .eq("id", args.row.id);
   return price.id;

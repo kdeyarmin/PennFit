@@ -64,17 +64,30 @@ export async function runFounderActivePatientBilling(): Promise<FounderBillingRe
   const planIds = (plans ?? []).map((p) => p.id as string);
   if (planIds.length === 0) return result;
 
-  const { data: subs, error: subsErr } = await raw
-    .schema("resupply")
-    .from("tenant_billing_subscriptions")
-    .select("org_id")
-    .in("plan_id", planIds)
-    .in("status", ACTIVE_SUB_STATUSES);
-  if (subsErr) throw subsErr;
+  // Page through ALL founder-plan subscriptions — an unbounded select stops at
+  // PostgREST's default row cap, which would leave tenants past the first page
+  // with stale per-patient quantities.
+  const PAGE = 1000;
+  const orgIds: string[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await raw
+      .schema("resupply")
+      .from("tenant_billing_subscriptions")
+      .select("org_id")
+      .in("plan_id", planIds)
+      .in("status", ACTIVE_SUB_STATUSES)
+      .order("org_id", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) throw error;
+    const page = data ?? [];
+    for (const s of page) {
+      const o = (s as { org_id?: string }).org_id;
+      if (o) orgIds.push(o);
+    }
+    if (page.length < PAGE) break;
+  }
 
-  for (const sub of subs ?? []) {
-    const orgId = (sub as { org_id?: string }).org_id;
-    if (!orgId) continue;
+  for (const orgId of orgIds) {
     result.tenants += 1;
     try {
       const count = await countActivePatientsForBilling(orgId);

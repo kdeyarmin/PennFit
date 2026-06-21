@@ -110,7 +110,7 @@ router.get("/platform/pricing", async (_req, res) => {
           regularMonthlyPriceCents: custom
             ? null
             : p.regular_monthly_price_cents,
-          founderRateLockedMonths: p.founder_rate_locked_months,
+          founderRateLockedMonths: custom ? null : p.founder_rate_locked_months,
         };
       }),
       addons: ((addons.data ?? []) as PublicAddonRow[]).map((a) => ({
