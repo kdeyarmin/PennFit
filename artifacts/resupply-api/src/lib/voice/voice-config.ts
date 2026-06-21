@@ -42,6 +42,19 @@ export interface VoiceConfig {
    */
   publicBaseUrl: string;
   /**
+   * Origin used to build the Twilio Media Stream WebSocket (`<Stream url>`)
+   * — converted to wss:// at the call site. Distinct from `publicBaseUrl`
+   * because Twilio Media Streams must reach the ORIGIN DIRECTLY: a CDN/WAF in
+   * front of the public host (Cloudflare on cmbreathe.com / pennpaps.com)
+   * intermittently rejects Twilio's non-browser WebSocket upgrade as a bot,
+   * which Twilio reports as error 31920 (handshake failed) and the call dies
+   * on connect. Resolution: `RESUPPLY_VOICE_STREAM_PUBLIC_BASE_URL` if set,
+   * else the Railway-generated `*.railway.app` host (inherently un-proxied),
+   * else `publicBaseUrl` (unchanged default for dev/preview). The HTTP
+   * webhook + signature path stays on `publicBaseUrl`; only the WS bypasses.
+   */
+  streamBaseUrl: string;
+  /**
    * Optional override for the practice name baked into the system
    * prompt. Defaults inside the route handler so a single env var
    * controls branding for every outbound call.
@@ -227,6 +240,35 @@ export function readVoicePublicBaseUrls(
   return out;
 }
 
+/**
+ * Resolve the origin for the Twilio Media Stream WebSocket. Twilio Media
+ * Streams must reach the ORIGIN DIRECTLY — a CDN/WAF (Cloudflare) in front of
+ * the public host rejects Twilio's non-browser WS upgrade as a bot (Twilio
+ * error 31920), killing the call on connect. Order:
+ *   1. `RESUPPLY_VOICE_STREAM_PUBLIC_BASE_URL` — explicit override (set this
+ *      to the un-proxied origin, e.g. https://<service>.up.railway.app).
+ *   2. the Railway-generated `*.railway.app` host (`RAILWAY_PUBLIC_DOMAIN`),
+ *      which is served by Railway's edge directly — never behind the tenant's
+ *      Cloudflare — so it bypasses the WAF automatically on Railway.
+ *   3. `publicBaseUrl` — unchanged default (dev/preview, or hosts with no
+ *      CDN in front).
+ * Only the `*.railway.app` shape is auto-trusted as direct; a custom domain
+ * in RAILWAY_PUBLIC_DOMAIN falls through to the explicit override or default
+ * so we never silently route the stream through a proxied host.
+ */
+function resolveStreamBaseUrl(
+  env: NodeJS.ProcessEnv,
+  publicBaseUrl: string,
+): string {
+  const explicit = env.RESUPPLY_VOICE_STREAM_PUBLIC_BASE_URL?.trim();
+  if (explicit) return stripTrailingSlash(explicit);
+  const railway = env.RAILWAY_PUBLIC_DOMAIN?.trim();
+  if (railway && /\.railway\.app$/i.test(railway)) {
+    return stripTrailingSlash(`https://${railway}`);
+  }
+  return publicBaseUrl;
+}
+
 export function readVoiceConfigOrNull(
   env: NodeJS.ProcessEnv = process.env,
 ): VoiceConfig | null {
@@ -241,12 +283,15 @@ export function readVoiceConfigOrNull(
   );
   if (!publicBaseUrl) return null;
 
+  const streamBaseUrl = resolveStreamBaseUrl(env, publicBaseUrl);
+
   return {
     openaiApiKey,
     twilioAccountSid,
     twilioAuthToken,
     twilioPhoneNumber: env.TWILIO_PHONE_NUMBER,
     publicBaseUrl,
+    streamBaseUrl,
     practiceName: env.RESUPPLY_PRACTICE_NAME,
     deepgramApiKey: env.DEEPGRAM_API_KEY,
     elevenLabsApiKey: env.ELEVENLABS_API_KEY?.trim() || undefined,

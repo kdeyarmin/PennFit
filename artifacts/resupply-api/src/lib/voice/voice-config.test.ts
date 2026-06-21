@@ -73,6 +73,47 @@ describe("readVoiceConfigOrNull — required-var gate", () => {
   });
 });
 
+describe("readVoiceConfigOrNull — streamBaseUrl (Media Stream WS origin)", () => {
+  it("defaults to publicBaseUrl when no override/railway host is set", () => {
+    const cfg = readVoiceConfigOrNull(fullEnv());
+    expect(cfg?.streamBaseUrl).toBe("https://voice.example.com");
+    expect(cfg?.streamBaseUrl).toBe(cfg?.publicBaseUrl);
+  });
+
+  it("prefers RESUPPLY_VOICE_STREAM_PUBLIC_BASE_URL and strips a trailing slash", () => {
+    const cfg = readVoiceConfigOrNull(
+      fullEnv({
+        RESUPPLY_VOICE_STREAM_PUBLIC_BASE_URL: "https://svc.up.railway.app/",
+        RAILWAY_PUBLIC_DOMAIN: "ignored.up.railway.app",
+      }),
+    );
+    expect(cfg?.streamBaseUrl).toBe("https://svc.up.railway.app");
+    // The HTTP/webhook origin is unchanged — only the WS origin bypasses.
+    expect(cfg?.publicBaseUrl).toBe("https://voice.example.com");
+  });
+
+  it("auto-uses a *.railway.app RAILWAY_PUBLIC_DOMAIN even when the public host is a custom (proxied) domain", () => {
+    const cfg = readVoiceConfigOrNull(
+      fullEnv({
+        RESUPPLY_VOICE_PUBLIC_BASE_URL: "https://pennpaps.com",
+        RAILWAY_PUBLIC_DOMAIN: "pennfit.up.railway.app",
+      }),
+    );
+    expect(cfg?.publicBaseUrl).toBe("https://pennpaps.com");
+    expect(cfg?.streamBaseUrl).toBe("https://pennfit.up.railway.app");
+  });
+
+  it("does NOT auto-trust a non-railway.app RAILWAY_PUBLIC_DOMAIN (custom domain) — falls back to publicBaseUrl", () => {
+    const cfg = readVoiceConfigOrNull(
+      fullEnv({
+        RESUPPLY_VOICE_PUBLIC_BASE_URL: "https://pennpaps.com",
+        RAILWAY_PUBLIC_DOMAIN: "cmbreathe.com",
+      }),
+    );
+    expect(cfg?.streamBaseUrl).toBe("https://pennpaps.com");
+  });
+});
+
 describe("readVoiceConfigOrNull — optional value parsing", () => {
   it("clamps ELEVENLABS_STABILITY into [0,1] and drops unparseable values", () => {
     expect(
