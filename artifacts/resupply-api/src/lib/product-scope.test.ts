@@ -105,8 +105,15 @@ describe("resolveTenantProductScope", () => {
 });
 
 describe("isMaskFitterAllowedPath", () => {
-  it("always allows the identity endpoint", () => {
+  it("allows the top-level identity endpoint", () => {
     expect(isMaskFitterAllowedPath("/resupply-api/me")).toBe(true);
+  });
+
+  it("does NOT treat an admin sub-route ending in /me as the identity endpoint", () => {
+    // Over-match guard: agent-availability ends in /me but is operational.
+    expect(
+      isMaskFitterAllowedPath("/resupply-api/admin/agent-availability/me"),
+    ).toBe(false);
   });
 
   it("allows the fitter + account-essential surfaces", () => {
@@ -114,13 +121,40 @@ describe("isMaskFitterAllowedPath", () => {
       "/resupply-api/admin/fitter-invites",
       "/resupply-api/admin/fitter-invites/abc/attach",
       "/resupply-api/admin/fitter-leads/metrics",
+      // The six self-service SUBSCRIPTION billing endpoints.
+      "/resupply-api/admin/billing/package",
       "/resupply-api/admin/billing/plans",
       "/resupply-api/admin/billing/subscription",
+      "/resupply-api/admin/billing/addons",
+      "/resupply-api/admin/billing/preview",
+      "/resupply-api/admin/billing/usage-events",
       "/resupply-api/admin/storefront-branding",
+      "/resupply-api/admin/storefront-branding/logo",
+      "/resupply-api/admin/mfa/status",
+      "/resupply-api/admin/team",
+      "/resupply-api/admin/team/invite",
       "/resupply-api/admin/agreements",
       "/resupply-api/admin/inbox-counts",
     ]) {
       expect(isMaskFitterAllowedPath(p)).toBe(true);
+    }
+  });
+
+  it("blocks the operational claims/revenue-cycle suite under /admin/billing/", () => {
+    // Regression: the bare "/admin/billing" prefix used to allow ALL of
+    // these (incl. PHI-bearing 837P claim export) for a fitter-only tenant.
+    for (const p of [
+      "/resupply-api/admin/billing/dashboard",
+      "/resupply-api/admin/billing/denials-worklist",
+      "/resupply-api/admin/billing/era-files",
+      "/resupply-api/admin/billing/era-ingest",
+      "/resupply-api/admin/billing/claims/export-837p",
+      "/resupply-api/admin/billing/statements/pending",
+      "/resupply-api/admin/billing/prior-auth-queue",
+      "/resupply-api/admin/billing/eligibility-verification-worklist",
+      "/resupply-api/admin/billing/stripe-connect/status",
+    ]) {
+      expect(isMaskFitterAllowedPath(p)).toBe(false);
     }
   });
 
@@ -132,6 +166,7 @@ describe("isMaskFitterAllowedPath", () => {
       "/resupply-api/admin/bulk-campaigns",
       "/resupply-api/admin/analytics",
       "/resupply-api/admin/cmn-documents",
+      "/resupply-api/admin/assistant/chat",
     ]) {
       expect(isMaskFitterAllowedPath(p)).toBe(false);
     }

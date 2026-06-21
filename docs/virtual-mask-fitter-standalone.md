@@ -42,18 +42,23 @@ is the real boundary, the SPA is the matching UX.
 
 **Server (the boundary).** `resolveTenantProductScope(orgId)`
 (`artifacts/resupply-api/src/lib/product-scope.ts`) reads the tenant's active
-subscription's plan scope (cached ~5s). `requireAdmin` — the chokepoint every
+subscription's plan scope (cached). `requireAdmin` — the chokepoint every
 admin router delegates through — 403s (`product_scope_restricted`) any admin
 request from a `mask_fitter` tenant that falls outside the allowlist in
-`isMaskFitterAllowedPath()` (the fitter routes, the tenant's own
-billing/branding/account settings, and the shell chrome the allowed pages
-need). The resolver **fails open to `full`** on any error, so a DB hiccup can
-never lock a tenant out. Platform-admin act-as-tenant impersonation is exempt.
+`isMaskFitterAllowedPath()`: the fitter routes, the tenant's **self-service
+subscription** billing (the six `/admin/billing/{package,plans,subscription,
+addons,preview,usage-events}` endpoints — **not** the operational claims
+worklists that also live under `/admin/billing/`), branding, MFA, staff
+seats, and the shell chrome the allowed pages need. The resolver **fails open
+to `full`** on any error, so a DB hiccup can never lock a tenant out.
+Platform-admin act-as-tenant impersonation is exempt.
 
 **SPA (the UX).** `/me` returns `productScope`. `AppShell` renders the
 curated `MASK_FITTER_NAV_GROUPS` (Fitter Invites, Fitter Prospects, branding,
-billing, settings) instead of the full console nav, and a route guard
-redirects any out-of-scope `/admin/*` URL back to the fitter worklist.
+**subscription billing at `/admin/billing/package`** — not the patient-facing
+`/account/billing` portal, settings) instead of the full console nav, hides
+the full-console chrome (global patient/order search, the admin assistant),
+and route-guards any out-of-scope `/admin/*` URL back to the fitter worklist.
 
 The customer-facing fitter flow (`/fitter-invite`, `/api/recommend`,
 `/shop/fitter-invite/*`) is public and unaffected — a scoped tenant's

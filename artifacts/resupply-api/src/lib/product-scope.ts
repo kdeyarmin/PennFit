@@ -12,8 +12,10 @@
 // safe failure is to NOT restrict: a DB hiccup, a missing tenant context,
 // or an unknown plan must never lock a paying tenant out of their console.
 // Only an explicit, successfully-read "mask_fitter" plan scopes a tenant
-// down. Cached briefly (like isFeatureEnabled) so the per-request gate in
-// requireAdmin doesn't add a DB round-trip to every admin call.
+// down. Resolved on EVERY admin request (requireAdmin), so it's cached to
+// avoid a per-request DB round-trip. A tenant's plan scope is near-static
+// (it changes only on a deliberate plan switch), so the cache runs longer
+// than the feature-flag cache; a plan switch takes effect within the TTL.
 
 import { getOrgScopedClient } from "@workspace/resupply-db";
 
@@ -21,7 +23,7 @@ import { logger } from "./logger";
 
 export type ProductScope = "full" | "mask_fitter";
 
-const CACHE_TTL_MS = 5_000;
+const CACHE_TTL_MS = 60_000;
 
 interface CacheEntry {
   scope: ProductScope;
@@ -88,36 +90,52 @@ export async function resolveTenantProductScope(
 }
 
 // ── Admin surface allowlist for the mask_fitter scope ──────────────────
-// Path prefixes a fitter-only tenant MAY reach. Everything else under the
-// admin API 403s. Matched against `req.originalUrl` (which carries the
-// app base path, e.g. "/resupply-api/admin/fitter-invites"), so we test
-// with `includes` exactly like the agreements gate in requireAdmin.
+// Substrings a fitter-only tenant's request path MAY contain. Everything
+// else under the admin API 403s. Matched against `req.originalUrl` (which
+// carries the app base path, e.g. "/resupply-api/admin/fitter-invites"),
+// so we test with `includes` exactly like the agreements gate in
+// requireAdmin.
 //
 // Kept deliberately tight: the fitter itself, the fitter funnel, the
-// tenant's own billing/account/settings plumbing, and the shell chrome
-// the allowed pages need — but NONE of the operational modules (patients,
-// orders, shop, conversations, campaigns, claims, analytics, therapy…).
+// tenant's own SUBSCRIPTION billing, account security, branding, staff
+// seats, and the shell chrome the allowed pages need — but NONE of the
+// operational modules (patients, orders, shop, conversations, campaigns,
+// claims, analytics, therapy…).
+//
+// IMPORTANT — billing is enumerated, NOT prefixed. The tenant's
+// self-service subscription endpoints (these six) share the "/admin/billing/"
+// prefix with the ENTIRE operational claims / revenue-cycle suite
+// (denials-worklist, era-ingest, claims/export-837p, statements/*,
+// prior-auth-queue, eligibility-*, …). Allowing the bare "/admin/billing"
+// prefix would expose all of that — including PHI-bearing 837P claim export
+// — to a tenant that only bought the fitter. So we list the exact six.
 const MASK_FITTER_ALLOWED_PREFIXES: readonly string[] = [
   "/admin/agreements", // onboarding accept screen (also exempted upstream)
   "/admin/fitter-invites", // THE product: send links, review results/sizes
   "/admin/fitter-leads", // fitter funnel / prospects
-  "/admin/billing", // self-service plan + add-on management
+  // Tenant self-service subscription billing — the SIX exact endpoints the
+  // /admin/billing/package page calls (platform-billing-api.ts). NOT the
+  // operational claims worklists that also live under /admin/billing/.
+  "/admin/billing/package",
+  "/admin/billing/plans",
+  "/admin/billing/subscription",
+  "/admin/billing/addons",
+  "/admin/billing/preview",
+  "/admin/billing/usage-events",
   "/admin/storefront-branding", // brand the fitting link
-  "/admin/app-config", // tenant settings (assistant names, etc.)
-  "/admin/feature-flags", // tenant feature toggles
-  "/admin/system-info", // footer/version chrome
-  "/admin/inbox-counts", // sidebar badge counts (chrome)
-  "/admin/setup-checklist", // onboarding checklist (chrome)
-  "/admin/account", // profile / password / MFA
+  "/admin/mfa", // account security: the MFA banner runs on every admin page
   "/admin/team", // manage their own staff seats
+  "/admin/inbox-counts", // sidebar badge counts (chrome)
 ];
 
 /**
  * Whether a mask_fitter-scoped tenant may reach `path`. The identity
  * endpoint (`…/me`) is always allowed (the SPA needs it to even learn its
- * own scope). Pass `req.originalUrl` minus the query string.
+ * own scope) — guarded so it matches the top-level `/me` and not an admin
+ * sub-route that merely ends in `/me` (e.g. /admin/agent-availability/me).
+ * Pass `req.originalUrl` minus the query string.
  */
 export function isMaskFitterAllowedPath(path: string): boolean {
-  if (path.endsWith("/me")) return true;
+  if (path.endsWith("/me") && !path.includes("/admin/")) return true;
   return MASK_FITTER_ALLOWED_PREFIXES.some((prefix) => path.includes(prefix));
 }

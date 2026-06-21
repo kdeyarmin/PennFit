@@ -1349,10 +1349,13 @@ const MASK_FITTER_NAV_GROUPS: ReadonlyArray<NavGroup> = [
         hint: "Brand the fitting link — your name, logo, and custom domain",
       },
       {
+        // The tenant SUBSCRIPTION page — NOT /account/billing, which is the
+        // patient-facing storefront billing portal (gated by a shop-customer
+        // session a tenant admin doesn't have).
         label: "Billing",
         icon: Wallet,
-        href: "/account/billing",
-        matchPrefix: "/account/billing",
+        href: "/admin/billing/package",
+        matchPrefix: "/admin/billing/package",
         hint: "Manage your Virtual Mask Fitter subscription and usage",
       },
       {
@@ -1367,13 +1370,18 @@ const MASK_FITTER_NAV_GROUPS: ReadonlyArray<NavGroup> = [
 ];
 
 /** SPA route prefixes a mask_fitter-scoped tenant may visit. Mirrors the
- *  server allowlist in lib/product-scope.ts; the server is the real gate. */
+ *  server allowlist in lib/product-scope.ts; the server is the real gate.
+ *  Only `/admin/*` routes are guarded (the guard early-returns otherwise),
+ *  so account-essential pages reached from Settings (team, MFA) are listed
+ *  here too. The billing entry is the subscription page specifically — the
+ *  operational claims worklists under /admin/billing/ stay blocked. */
 const MASK_FITTER_ALLOWED_ROUTE_PREFIXES: readonly string[] = [
   "/admin/fitter-invites",
   "/admin/fitter-leads",
   "/admin/storefront-branding",
   "/admin/settings",
-  "/account/billing",
+  "/admin/billing/package",
+  "/admin/team",
 ];
 
 /** The nav a tenant sees for its plan scope: the curated fitter-only nav
@@ -2278,7 +2286,9 @@ export function AppShell({
           rightSlot={
             adminEmail ? (
               <div className="flex items-center gap-3">
-                <GlobalLookup />
+                {/* GlobalLookup searches patients/orders — irrelevant to a
+                    fitter-only tenant and its endpoint isn't in their scope. */}
+                {productScope === "mask_fitter" ? null : <GlobalLookup />}
                 <AdminHeaderChip email={adminEmail} role={adminRole} />
               </div>
             ) : undefined
@@ -2402,7 +2412,11 @@ export function AppShell({
         by requireAdmin + the `admin.assistant` feature flag, so a missing
         AI key or a disabled flag degrades it gracefully.
       */}
-        {adminEmail ? <AdminAssistantWidget /> : null}
+        {/* The admin assistant (PennPilot) is a full-console helper; hide it
+            for fitter-only tenants (its chat endpoint isn't in their scope). */}
+        {adminEmail && productScope !== "mask_fitter" ? (
+          <AdminAssistantWidget />
+        ) : null}
       </div>
     </RoleProvider>
   );
