@@ -314,10 +314,14 @@ export function readVoiceConfigOrNull(
       env.ELEVENLABS_TTS_TRANSPORT?.trim().toLowerCase() === "http"
         ? "http"
         : "ws",
-    // Realtime now defaults to the `ga` schema (gpt-realtime-2); set
-    // OPENAI_REALTIME_SCHEMA=beta to fall back to the legacy beta schema.
-    // The ws-handler fills in coherent GA model/STT defaults when the
-    // schema is `ga`.
+    // Realtime defaults to the `ga` schema (gpt-realtime-2 on OpenAI's nested
+    // session shape) — the only working transport. The legacy `beta` schema
+    // (`OpenAI-Beta: realtime=v1` flat shape) is DEPRECATED by OpenAI: the
+    // session no longer opens, so a beta call connects then drops in ~1s. It
+    // is kept only as an explicit, non-default escape hatch
+    // (OPENAI_REALTIME_SCHEMA=beta); do not use it. GA µ-law audio carries the
+    // required sample rate (see realtime-client gaAudioFormat) so inbound VAD
+    // fires on caller speech.
     realtimeSchema:
       env.OPENAI_REALTIME_SCHEMA?.trim().toLowerCase() === "beta"
         ? "beta"
