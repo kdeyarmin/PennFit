@@ -168,6 +168,23 @@ describe("reportMeteredOverage", () => {
     });
   });
 
+  it("uses the atomic newTotal when provided, ignoring the rollup read", async () => {
+    process.env.PLATFORM_METERED_OVERAGE_ENABLED = "true";
+    // The rollup says 500 (within the 1000 allowance → 0 overage), but the
+    // atomic post-increment total is 1010, so overage must be 10 from newTotal.
+    wireHappyPath({ allowance: 1000, monthTotal: 500 });
+    await reportMeteredOverage({
+      orgId: "org-1",
+      metricKey: "outboundMessagesPerMonth",
+      increment: 10,
+      newTotal: 1010,
+    });
+    expect(state.meterEvents).toHaveLength(1);
+    expect(state.meterEvents[0]).toMatchObject({
+      payload: { stripe_customer_id: "cus_1", value: "10" },
+    });
+  });
+
   it("does NOT report when usage is still within the allowance", async () => {
     process.env.PLATFORM_METERED_OVERAGE_ENABLED = "true";
     // total 500 after +10, allowance 1000 → no overage.

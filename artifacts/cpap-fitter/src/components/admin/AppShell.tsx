@@ -1363,7 +1363,16 @@ const MASK_FITTER_NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: Settings,
         href: "/admin/settings",
         matchPrefix: "/admin/settings",
-        hint: "Workspace settings and your account security",
+        hint: "Workspace settings",
+      },
+      {
+        // Account security (MFA enrollment). The MfaEnforcementBanner also
+        // links here, so it must be reachable under the fitter scope.
+        label: "Account security",
+        icon: ShieldCheck,
+        href: "/admin/security",
+        matchPrefix: "/admin/security",
+        hint: "Manage your own MFA / authenticator-app enrollment",
       },
     ],
   },
@@ -1380,6 +1389,7 @@ const MASK_FITTER_ALLOWED_ROUTE_PREFIXES: readonly string[] = [
   "/admin/fitter-leads",
   "/admin/storefront-branding",
   "/admin/settings",
+  "/admin/security",
   "/admin/billing/package",
   "/admin/team",
 ];

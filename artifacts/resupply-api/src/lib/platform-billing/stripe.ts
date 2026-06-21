@@ -203,7 +203,12 @@ async function ensureMeteredAddonPrice(
     args.accountId,
     args.mode,
   );
-  if (args.row.stripe_price_id && sameAccount) return args.row.stripe_price_id;
+  // Reuse the stored price ONLY if it's already a metered price (it has a
+  // meter). A flag-off→on flip leaves a flat licensed `stripe_price_id` with
+  // no `stripe_meter_id`; that price would bill a fixed recurring charge, not
+  // usage, so we must re-mint a metered one instead of reusing it.
+  if (args.row.stripe_price_id && args.row.stripe_meter_id && sameAccount)
+    return args.row.stripe_price_id;
 
   // A meter cannot be deleted (only deactivated), so reuse the stored one
   // when it belongs to the account we're syncing against; otherwise mint one.
@@ -331,7 +336,13 @@ async function ensureRecurringPrice(
     args.accountId,
     args.mode,
   );
-  if (args.row.stripe_price_id && sameAccount) return args.row.stripe_price_id;
+  // Reuse the stored price ONLY if it's a flat (licensed) price — i.e. it has
+  // no meter. A flag-on→off flip leaves a metered `stripe_price_id` (with a
+  // `stripe_meter_id`); reusing that as a flat bundle would mis-bill, so
+  // re-mint a flat price instead. Plans never carry a meter, so this is a
+  // no-op for them.
+  if (args.row.stripe_price_id && !args.row.stripe_meter_id && sameAccount)
+    return args.row.stripe_price_id;
 
   const product =
     args.row.stripe_product_id && sameAccount
@@ -361,6 +372,11 @@ async function ensureRecurringPrice(
       stripe_price_id: price.id,
       stripe_account_ref: args.accountId,
       stripe_synced_at: new Date().toISOString(),
+      // This price is flat (no meter). Clear any stale meter id on an add-on
+      // (a metered→flat flip) so `stripe_meter_id` reliably marks "the stored
+      // price is metered". `billing_plans` has no such column, so only touch
+      // add-ons.
+      ...(args.table === "billing_addons" ? { stripe_meter_id: null } : {}),
     })
     .eq("id", args.row.id);
   return price.id;
@@ -945,6 +961,10 @@ export async function reportMeteredOverage(input: {
   orgId: string | undefined | null;
   metricKey: string;
   increment: number;
+  /** The ATOMIC post-increment total from increment_tenant_usage_rollup
+   *  (migration 0422). When provided, overage is computed from it directly
+   *  rather than a racy re-read of the rollup. */
+  newTotal?: number;
 }): Promise<void> {
   const id = input.orgId?.trim();
   if (!id || input.increment <= 0) return;
@@ -989,25 +1009,32 @@ export async function reportMeteredOverage(input: {
     const allowanceRaw = allowances[input.metricKey];
     const allowance = typeof allowanceRaw === "number" ? allowanceRaw : 0;
 
-    // Post-increment running total for the current month.
-    const monthStart = new Date();
-    monthStart.setUTCDate(1);
-    monthStart.setUTCHours(0, 0, 0, 0);
-    const monthDate = monthStart.toISOString().slice(0, 10);
-    const { data: rollup, error: rollupErr } = await raw
-      .schema("resupply")
-      .from("tenant_usage_monthly_rollups")
-      .select("quantity")
-      .eq("org_id", id)
-      .eq("month", monthDate)
-      .eq("metric_key", input.metricKey)
-      .limit(1)
-      .maybeSingle();
-    if (rollupErr) return;
-    const newTotal =
-      typeof (rollup as { quantity?: number } | null)?.quantity === "number"
-        ? (rollup as { quantity: number }).quantity
-        : input.increment;
+    // Post-increment running total. Prefer the atomic value the increment RPC
+    // returned (migration 0422); fall back to a (racy) read for callers that
+    // don't pass it.
+    let newTotal: number;
+    if (typeof input.newTotal === "number") {
+      newTotal = input.newTotal;
+    } else {
+      const monthStart = new Date();
+      monthStart.setUTCDate(1);
+      monthStart.setUTCHours(0, 0, 0, 0);
+      const monthDate = monthStart.toISOString().slice(0, 10);
+      const { data: rollup, error: rollupErr } = await raw
+        .schema("resupply")
+        .from("tenant_usage_monthly_rollups")
+        .select("quantity")
+        .eq("org_id", id)
+        .eq("month", monthDate)
+        .eq("metric_key", input.metricKey)
+        .limit(1)
+        .maybeSingle();
+      if (rollupErr) return;
+      newTotal =
+        typeof (rollup as { quantity?: number } | null)?.quantity === "number"
+          ? (rollup as { quantity: number }).quantity
+          : input.increment;
+    }
     const priorTotal = newTotal - input.increment;
     const overage = computeMeteredOverageDelta(
       priorTotal,

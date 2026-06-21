@@ -13,9 +13,10 @@
 // or an unknown plan must never lock a paying tenant out of their console.
 // Only an explicit, successfully-read "mask_fitter" plan scopes a tenant
 // down. Resolved on EVERY admin request (requireAdmin), so it's cached to
-// avoid a per-request DB round-trip. A tenant's plan scope is near-static
-// (it changes only on a deliberate plan switch), so the cache runs longer
-// than the feature-flag cache; a plan switch takes effect within the TTL.
+// avoid a per-request DB round-trip. Because this drives an ACCESS
+// restriction, the TTL is kept short (matching the feature-flag cache
+// posture) so a plan switch — upgrade out of the fitter scope, or downgrade
+// into it — takes effect within seconds, not a minute.
 
 import { getOrgScopedClient } from "@workspace/resupply-db";
 
@@ -23,7 +24,7 @@ import { logger } from "./logger";
 
 export type ProductScope = "full" | "mask_fitter";
 
-const CACHE_TTL_MS = 60_000;
+const CACHE_TTL_MS = 5_000;
 
 interface CacheEntry {
   scope: ProductScope;

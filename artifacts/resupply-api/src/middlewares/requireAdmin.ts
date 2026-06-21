@@ -376,7 +376,7 @@ export async function requireAdmin(
   }
 
   // Product-scope gate (standalone Virtual Mask Fitter plan, migration
-  // 0418). A tenant on a scoped-down plan may only reach the fitter +
+  // 0419). A tenant on a scoped-down plan may only reach the fitter +
   // account-essential surfaces; every other admin route 403s. This is a
   // NO-OP for "full" — which is every existing tenant and every tenant
   // with no active subscription — so the only requests it can restrict are

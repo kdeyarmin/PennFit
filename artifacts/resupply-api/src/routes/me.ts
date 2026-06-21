@@ -76,7 +76,7 @@ router.get("/me", adminReadRateLimiter, requireAdmin, async (req, res) => {
   // DB lookup is unavailable — an unsigned tenant must never slip through.
   const pendingAgreements = await getPendingAgreementTypes(req.orgId);
   // Platform product scope from the tenant's active billing plan (migration
-  // 0418). "mask_fitter" = the standalone Virtual Mask Fitter plan; the SPA
+  // 0419). "mask_fitter" = the standalone Virtual Mask Fitter plan; the SPA
   // reads this to render the fitter-only nav + redirect away from console
   // pages the backend would 403. "full" for every normal whole-suite
   // tenant. Impersonation sessions resolve to "full" upstream so support

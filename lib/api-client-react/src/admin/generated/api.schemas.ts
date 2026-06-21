@@ -127,7 +127,7 @@ configured, NODE_ENV=development) returns `admin`.
   pendingAgreements?: ("baa" | "platform_terms")[];
   /**
    * Platform product scope from the tenant's active billing plan (migration
-   * 0418). `"mask_fitter"` = the standalone Virtual Mask Fitter plan, in
+   * 0419). `"mask_fitter"` = the standalone Virtual Mask Fitter plan, in
    * which the console is scoped down to the fitter surfaces + account
    * essentials; `"full"` (default/absent) = the normal whole-suite console.
    * The SPA reads this to render the fitter-only nav and redirect away from

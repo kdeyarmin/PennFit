@@ -23,21 +23,27 @@ ALTER TABLE "resupply"."billing_addons"
 -- Per-unit overage rates derived from the existing bundle prices (price ÷
 -- 1,000-unit bundle): messages $0.05, AI interactions $0.04, billing
 -- transactions $0.075. `usage_metric` already ties each to its plan-allowance
--- key + the monthly usage rollup the app increments.
+-- key + the monthly usage rollup the app increments. `meter_event_name` is
+-- REQUIRED — the Stripe Billing Meter is created with it and
+-- reportMeteredOverage() reports against it; a NULL would silently no-op
+-- usage reporting.
 UPDATE "resupply"."billing_addons"
 SET "usage_type" = 'metered',
     "metered_unit_amount_decimal" = '5',
+    "meter_event_name" = 'message_overage',
     "updated_at" = now()
 WHERE "code" = 'message_bundle';
 
 UPDATE "resupply"."billing_addons"
 SET "usage_type" = 'metered',
     "metered_unit_amount_decimal" = '4',
+    "meter_event_name" = 'ai_text_overage',
     "updated_at" = now()
 WHERE "code" = 'ai_text_bundle';
 
 UPDATE "resupply"."billing_addons"
 SET "usage_type" = 'metered',
     "metered_unit_amount_decimal" = '7.5',
+    "meter_event_name" = 'billing_transaction_overage',
     "updated_at" = now()
 WHERE "code" = 'billing_transaction_bundle';

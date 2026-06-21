@@ -170,4 +170,19 @@ describe("syncPlatformBillingCatalogToStripe — metered add-on", () => {
       (flat?.recurring as { usage_type?: string } | undefined)?.usage_type,
     ).toBeUndefined();
   });
+
+  it("re-mints a metered price when only a stale FLAT price id is stored", async () => {
+    // Flag-off→on flip: the add-on already has a flat licensed price id but no
+    // meter. It must NOT be reused as-is — a meter + metered price get minted.
+    state.addons[0]!.stripe_price_id = "price_flat_legacy";
+    state.addons[0]!.stripe_meter_id = null;
+    await syncPlatformBillingCatalogToStripe();
+    expect(state.calls.meters).toHaveLength(1);
+    const metered = state.calls.prices.find(
+      (p) =>
+        (p.recurring as { usage_type?: string } | undefined)?.usage_type ===
+        "metered",
+    );
+    expect(metered).toBeDefined();
+  });
 });
