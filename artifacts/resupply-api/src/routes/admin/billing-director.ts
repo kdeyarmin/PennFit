@@ -20,6 +20,11 @@ import { Router, type IRouter } from "express";
 
 import { getOrgScopedClient } from "@workspace/resupply-db";
 
+import {
+  DECISIONED_CLAIM_STATUSES,
+  denialRateWindowCutoffIso,
+  isDenialStatus,
+} from "../../lib/billing/denial-rate";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -40,7 +45,7 @@ router.get(
     const t14d = new Date(now - 14 * 24 * 3600 * 1000).toISOString();
     const t30d = new Date(now - 30 * 24 * 3600 * 1000).toISOString();
     const t60d = new Date(now - 60 * 24 * 3600 * 1000).toISOString();
-    const t90d = new Date(now - 90 * 24 * 3600 * 1000).toISOString();
+    const t90d = denialRateWindowCutoffIso(now); // canonical denial-rate window
     const t7d = new Date(now - 7 * 24 * 3600 * 1000).toISOString();
 
     const results = await Promise.all([
@@ -106,7 +111,7 @@ router.get(
         .from("insurance_claims")
         .select("status, decision_at")
         .gte("decision_at", t90d)
-        .in("status", ["paid", "denied", "appealed", "closed"])
+        .in("status", [...DECISIONED_CLAIM_STATUSES])
         .limit(20000),
     ]);
     // Surface query failures instead of rendering an "all clear"
@@ -181,7 +186,7 @@ router.get(
       const bucket =
         ageDays <= 30 ? "d0_30" : ageDays <= 60 ? "d30_60" : "d60_90";
       buckets[bucket].dec += 1;
-      if (c.status === "denied" || c.status === "appealed") {
+      if (isDenialStatus(c.status)) {
         buckets[bucket].den += 1;
       }
     }

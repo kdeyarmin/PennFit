@@ -190,8 +190,18 @@ preflight.ts` now reads the latest cached check per HCPCS for a
   is on file rather than sending a guaranteed-reject request; `quantity` is now
   an optional submit-body override (positive int, default 1). New route tests
   (401 / invalid-quantity 400 / PA-not-found 404 / no-diagnosis 409).
-- Denial-rate denominators disagree across three dashboards
-  (`billing-benchmarks.ts`, `billing-reports.ts`, `billing-director.ts`).
+- ✅ **Fixed in this PR.** Denial-rate across the three dashboards. On
+  inspection the denominator _status set_ already agreed everywhere
+  (decisioned = paid/denied/closed/appealed; denial = denied/appealed); the
+  real divergence was the **window** — reports/director use 90 days but
+  `billing-benchmarks` computed its headline rate over its 180-day
+  distribution population. Per the owner's decision (consolidate + align the
+  benchmark window): extracted the canonical status sets + 90-day window into a
+  shared `lib/billing/denial-rate.ts` (imported by all three; the SQL
+  `billing_denial_rate` RPC keeps its own copy with a sync comment), and
+  `billing-benchmarks` now computes the headline **and** per-payer denial rate
+  over the same 90-day window while keeping the 180-day population for its DSO
+  / paid-ratio distribution percentiles. New unit tests for the shared module.
 - ✅ **Fixed in this PR.** 277CA `pended` was rolled up as `accepted_277ca` at
   the submission level (the per-claim handler already left pended claims
   unchanged, but the submission roll-up only tracked `hasRejection`, so a
