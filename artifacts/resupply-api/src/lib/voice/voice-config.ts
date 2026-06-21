@@ -140,6 +140,14 @@ export interface VoiceConfig {
   realtimeModel?: string;
   /** Realtime reasoning effort, GA only (default "low" in the client). */
   realtimeReasoningEffort?: "minimal" | "low" | "medium" | "high";
+  /**
+   * Per-response output-token cap (runaway backstop; the prompt controls
+   * length). When unset, the client default (1200) applies. Env:
+   * OPENAI_REALTIME_MAX_RESPONSE_TOKENS. Raise it if a long read-back ever
+   * still clips; it must stay generous on GA, where it's shared with
+   * reasoning tokens.
+   */
+  realtimeMaxResponseTokens?: number;
   /** Realtime input-transcription model override. */
   realtimeTranscribeModel?: string;
   /** Realtime wire audio-format token override (GA µ-law correction). */
@@ -328,6 +336,9 @@ export function readVoiceConfigOrNull(
     realtimeReasoningEffort: parseReasoningEffort(
       env.OPENAI_REALTIME_REASONING_EFFORT,
     ),
+    realtimeMaxResponseTokens: parsePositiveIntEnv(
+      env.OPENAI_REALTIME_MAX_RESPONSE_TOKENS,
+    ),
     realtimeTranscribeModel:
       env.OPENAI_REALTIME_TRANSCRIBE_MODEL?.trim() || undefined,
     realtimeAudioFormat: env.OPENAI_REALTIME_AUDIO_FORMAT?.trim() || undefined,
@@ -382,6 +393,20 @@ function parseNoiseReduction(
 ): "far_field" | "near_field" | "off" | undefined {
   const v = raw?.trim().toLowerCase();
   return v === "far_field" || v === "near_field" || v === "off" ? v : undefined;
+}
+
+/**
+ * Parse a positive-integer env var (e.g. a token cap). Returns undefined when
+ * unset, blank, or not a finite integer >= 1, so a typo degrades to the
+ * client default rather than handing OpenAI a nonsense value.
+ */
+function parsePositiveIntEnv(raw: string | undefined): number | undefined {
+  if (raw == null) return undefined;
+  const trimmed = raw.trim();
+  if (trimmed === "") return undefined;
+  const n = Number(trimmed);
+  if (!Number.isInteger(n) || n < 1) return undefined;
+  return n;
 }
 
 /**

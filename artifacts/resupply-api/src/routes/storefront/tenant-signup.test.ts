@@ -38,6 +38,7 @@ const VALID = {
   orgName: "Acme Home Medical",
   email: "owner@acmedme.com",
   password: "a-very-strong-passphrase",
+  plan: "growth",
 };
 
 beforeEach(() => {
@@ -59,14 +60,29 @@ describe("POST /api/tenant-signup", () => {
       .send(VALID);
     expect(res.status).toBe(201);
     expect(res.body).toMatchObject({ ok: true, slug: "acme-home-medical" });
-    // Slug derived from the org name when none supplied.
+    // Slug derived from the org name when none supplied; chosen plan forwarded.
     expect(createMock).toHaveBeenCalledWith(
       expect.objectContaining({
         orgName: "Acme Home Medical",
         slug: "acme-home-medical",
         adminEmail: "owner@acmedme.com",
+        plan: "growth",
       }),
     );
+  });
+
+  it("400s a missing or non-self-serve plan without provisioning", async () => {
+    const { plan: _omit, ...noPlan } = VALID;
+    const missing = await request(buildApp())
+      .post("/api/tenant-signup")
+      .send(noPlan);
+    expect(missing.status).toBe(400);
+    // Enterprise is custom-quoted — not a self-serve plan.
+    const enterprise = await request(buildApp())
+      .post("/api/tenant-signup")
+      .send({ ...VALID, plan: "enterprise" });
+    expect(enterprise.status).toBe(400);
+    expect(createMock).not.toHaveBeenCalled();
   });
 
   it("maps slug_taken / email_taken to 409", async () => {

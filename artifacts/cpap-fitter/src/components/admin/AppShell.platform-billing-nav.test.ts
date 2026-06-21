@@ -18,6 +18,9 @@ describe("AppShell billing navigation", () => {
     // lives on the platform console (/platform/billing), not the
     // per-tenant admin nav.
     expect(SRC).not.toContain('label: "Platform billing"');
-    expect(SRC).not.toContain("/admin/platform-billing");
+    // Target the nav HREF specifically — a bare "/admin/platform-billing"
+    // substring also matches the unrelated `@/lib/admin/platform-billing-api`
+    // import (the tenant's own "Pay now" checkout client), which is fine.
+    expect(SRC).not.toContain('href: "/admin/platform-billing"');
   });
 });

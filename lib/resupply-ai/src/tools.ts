@@ -218,6 +218,23 @@ export const captureSalesLeadArgs = z
 // password field BY DESIGN — a spoken password would land in the call
 // transcript (treated as world-readable). The system provisions the workspace
 // and emails the caller a secure link to verify and set their own password.
+//
+// `plan` is REQUIRED: the agent cannot provision an account before the caller
+// has chosen a subscription plan (the qualifying conversation lands here). The
+// enum is the self-serve plans only — Enterprise is custom-quoted and routes
+// to a human handoff, never a phone self-signup.
+export const SELF_SERVE_PLANS = [
+  "mask_fitter",
+  "launch",
+  "growth",
+  "scale",
+] as const;
+
+// Upper bound for the optional active-patient estimate. Shared by the zod
+// schema AND the OpenAI tool descriptor so the model never emits a value the
+// dispatcher would then reject (the two would otherwise drift).
+export const MAX_ESTIMATED_ACTIVE_PATIENTS = 100_000_000;
+
 export const startBreatheSignupArgs = z
   .object({
     org_name: z
@@ -226,6 +243,19 @@ export const startBreatheSignupArgs = z
       .min(2, "Organization name is required.")
       .max(120),
     admin_email: z.string().trim().email("Expected a valid email address."),
+    // The plan the caller chose AFTER the agent qualified them and walked
+    // through pricing. Required so a plan is always selected before an account
+    // is created.
+    plan: z.enum(SELF_SERVE_PLANS),
+    // Optional answer to the qualifying question ("roughly how many active
+    // patients?") — recorded on the lead so the team can sanity-check the plan
+    // fit. Not required (a caller may not know the number offhand).
+    estimated_active_patients: z
+      .number()
+      .int()
+      .nonnegative()
+      .max(MAX_ESTIMATED_ACTIVE_PATIENTS)
+      .optional(),
   })
   .strict();
 
@@ -669,7 +699,7 @@ export const OPENAI_TOOL_DESCRIPTORS: readonly OpenAiToolDescriptor[] = [
     type: "function",
     name: "start_breathe_signup",
     description:
-      "Start creating a CareMetric Breathe account for the caller's business. You collect ONLY the business name and an admin email — NEVER a password (the system emails them a secure link to verify their address and set their own password). Read the email back and confirm it before calling. On success tell them to watch for that email to finish setting up.",
+      "Start creating a CareMetric Breathe account for the caller's business. Only call this AFTER you've understood their business and walked them through pricing, and they've chosen a specific plan. You collect the business name, an admin email, and the chosen plan — NEVER a password (the system emails them a secure link to verify their address and set their own password). Read the email back and confirm it before calling. Enterprise is custom-quoted: do NOT sign anyone up for Enterprise here — hand off to a person instead. On success tell them to watch for that email to finish setting up.",
     parameters: {
       type: "object",
       properties: {
@@ -682,8 +712,25 @@ export const OPENAI_TOOL_DESCRIPTORS: readonly OpenAiToolDescriptor[] = [
           description:
             "The email for the first admin login (confirm it aloud first).",
         },
+        plan: {
+          type: "string",
+          // Single source of truth with the zod schema — same plan set the
+          // dispatcher validates, so the model can't pick one we'd reject.
+          enum: [...SELF_SERVE_PLANS],
+          description:
+            "The plan the caller chose after you walked through pricing: 'mask_fitter' (standalone Virtual Mask Fitter), or the full-platform 'launch', 'growth', or 'scale'. Enterprise is NOT here — hand off for Enterprise.",
+        },
+        estimated_active_patients: {
+          type: "integer",
+          minimum: 0,
+          // Mirror the zod bound so the model never emits a value the
+          // dispatcher would reject at runtime.
+          maximum: MAX_ESTIMATED_ACTIVE_PATIENTS,
+          description:
+            "Roughly how many active patients they have, if they shared it — helps confirm the plan fits. Omit if unknown.",
+        },
       },
-      required: ["org_name", "admin_email"],
+      required: ["org_name", "admin_email", "plan"],
       additionalProperties: false,
     },
   },
@@ -809,11 +856,16 @@ export function summarizeToolArgsForAudit(
       };
     case "start_breathe_signup":
       // Never echo the org name or admin email — record only that each was
-      // supplied. (No password field exists on this tool by design.)
+      // supplied. (No password field exists on this tool by design.) The
+      // chosen plan is non-PII catalog data, so record it: it's the audit
+      // evidence that a plan was selected before the account was created.
       return {
         name,
         has_org_name: typeof a.org_name === "string",
         has_admin_email: typeof a.admin_email === "string",
+        plan: typeof a.plan === "string" ? a.plan : null,
+        has_estimated_active_patients:
+          typeof a.estimated_active_patients === "number",
       };
     default:
       // The switch is exhaustive over ToolName, but this function is

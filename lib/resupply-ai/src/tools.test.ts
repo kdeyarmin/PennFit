@@ -43,6 +43,7 @@ const EXAMPLES: Record<ToolName, Record<string, unknown>> = {
   start_breathe_signup: {
     org_name: "Acme DME",
     admin_email: "owner@acme-dme.example",
+    plan: "growth",
   },
 };
 

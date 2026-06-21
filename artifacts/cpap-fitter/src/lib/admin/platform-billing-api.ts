@@ -124,6 +124,19 @@ export function selectTenantPlan(planCode: string): Promise<TenantBilling> {
   });
 }
 
+/** Start a hosted Stripe Checkout session for the tenant's CURRENT plan
+ *  ("Pay now" — card charged immediately, payment wall cleared on success).
+ *  Returns the Checkout URL to redirect the browser to. `returnPath` is where
+ *  Stripe sends the user back inside the admin SPA (defaults to billing). */
+export function startTenantCheckout(
+  returnPath?: string,
+): Promise<{ url: string }> {
+  return jsonFetch<{ url: string }>("/admin/billing/checkout", {
+    method: "POST",
+    body: JSON.stringify(returnPath ? { returnPath } : {}),
+  });
+}
+
 /** Active add-ons a tenant owner can add to their plan. Recurring add-ons
  *  are self-selectable (quantity stepper); one-time/project add-ons have a
  *  null recurringPriceCents and are surfaced as a "Contact us" tier. */

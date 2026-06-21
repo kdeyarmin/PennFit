@@ -1135,7 +1135,8 @@ class Impl implements VoiceToolDispatcher {
   private async startBreatheSignup(
     call: DispatchToolCall<"start_breathe_signup">,
   ): Promise<DispatchToolResult<"start_breathe_signup">> {
-    const { org_name, admin_email } = call.args;
+    const { org_name, admin_email, plan, estimated_active_patients } =
+      call.args;
     // NO spoken password: generate a strong throwaway the caller never learns
     // and which is never logged. They set their own via the emailed verify /
     // set-password link — the only secure path on a recorded call.
@@ -1152,6 +1153,11 @@ class Impl implements VoiceToolDispatcher {
         // The caller never speaks a password — email them a set-password
         // link (which also verifies the email) instead of a verify-only link.
         sendSetPasswordLink: true,
+        // Assign the plan the caller chose as the new tenant's current
+        // subscription, so product scope (e.g. mask_fitter gating) reflects
+        // their choice from first sign-in. The plan `code` matches our enum
+        // (mask_fitter / launch / growth / scale).
+        plan,
       });
     } catch (err) {
       logger.warn(
@@ -1167,7 +1173,12 @@ class Impl implements VoiceToolDispatcher {
 
     if (result.ok) {
       // Record a converted lead (best-effort; never block the signup result).
-      void this.recordSignupLead(org_name, admin_email);
+      void this.recordSignupLead(
+        org_name,
+        admin_email,
+        plan,
+        estimated_active_patients,
+      );
     } else {
       logger.info(
         { event: "voice_breathe_sales.signup_rejected", reason: result.reason },
@@ -1181,13 +1192,27 @@ class Impl implements VoiceToolDispatcher {
     };
   }
 
-  /** Stamp a `signed_up` lead row after a successful sign-up. Best-effort. */
+  /** Stamp a `signed_up` lead row after a successful sign-up. Best-effort.
+   *  Records the chosen plan (and the qualifying active-patient estimate when
+   *  the caller shared it) so the team can see what they signed up for. The
+   *  `interest_tier` column only carries the full-platform tiers, so the
+   *  standalone mask-fitter plan rides in the message instead. */
   private async recordSignupLead(
     orgName: string,
     adminEmail: string,
+    plan: ToolArgsByName["start_breathe_signup"]["plan"],
+    estimatedActivePatients: number | undefined,
   ): Promise<void> {
     try {
       const supabase = await this.db();
+      const interestTier =
+        plan === "launch" || plan === "growth" || plan === "scale"
+          ? plan
+          : null;
+      const patientNote =
+        estimatedActivePatients !== undefined
+          ? ` (~${estimatedActivePatients} active patients)`
+          : "";
       const { error } = await supabase
         .raw()
         .schema("resupply")
@@ -1195,7 +1220,10 @@ class Impl implements VoiceToolDispatcher {
         .insert({
           company_name: orgName,
           email: adminEmail,
-          message: "Started a CareMetric Breathe sign-up on a sales call.",
+          interest_tier: interestTier,
+          message:
+            `Started a CareMetric Breathe sign-up on a sales call — ` +
+            `plan: ${plan}${patientNote}.`,
           twilio_call_sid: this.deps.twilioCallSid ?? null,
           source: "voice_sales_agent",
           status: "signed_up",
