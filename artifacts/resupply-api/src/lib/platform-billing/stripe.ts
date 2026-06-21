@@ -49,6 +49,23 @@ function meteredActive(row: {
 }
 
 /**
+ * Should a metered add-on for `metric` be attached to this tenant's
+ * subscription? Pure + exported for testing. True when EITHER the plan
+ * declares an allowance for the metric (overage beyond a plan-included amount
+ * — messages / AI / billing / the fitter) OR the tenant has an active feature
+ * add-on that shares the metric (the usage rides on a flat premium feature
+ * with no plan allowance — fax_automation / ai_voice_agent).
+ */
+export function meteredAddonAttaches(
+  metric: string | null | undefined,
+  planAllowances: Record<string, unknown>,
+  activeAddonMetrics: ReadonlySet<string>,
+): boolean {
+  if (!metric) return false;
+  return metric in planAllowances || activeAddonMetrics.has(metric);
+}
+
+/**
  * Thrown when a tenant's stored Stripe customer/subscription was created on a
  * DIFFERENT Stripe account than the one platform billing is now using (e.g.
  * after switching STRIPE_PLATFORM_SECRET_KEY to a dedicated account). We refuse
@@ -681,16 +698,23 @@ export async function syncTenantStripeSubscription(args: {
     );
   }
 
-  // Intrinsic metered overage items. A metered add-on bills usage beyond the
-  // plan's included allowance for its metric, so attach its metered price to
-  // any plan that declares that allowance — it is NOT an opt-in add-on. This
-  // covers the fitter (mask_fitter → fitterFittingsPerMonth) and, behind the
-  // flag, the standard SMS/AI/billing overage on Launch/Growth/Scale. Deduped
-  // against the opt-in loop above.
+  // Intrinsic metered usage items. A metered add-on attaches when the tenant
+  // is on the hook for its metric — either the plan declares an allowance
+  // (overage beyond a plan-included amount: the fitter, and behind the flag
+  // the SMS/AI/billing overage on Launch/Growth/Scale) OR the tenant has an
+  // active feature add-on sharing the metric (per-unit usage riding on a flat
+  // premium feature with no plan allowance: fax_automation / ai_voice_agent).
+  // It is NOT an opt-in add-on; deduped against the opt-in loop above.
   const planAllowances = (plan.allowances ?? {}) as Record<string, unknown>;
+  const activeAddonMetrics = new Set<string>(
+    addons
+      .map((a) => a.billing_addons?.usage_metric)
+      .filter((m): m is string => typeof m === "string" && m.length > 0),
+  );
   for (const addon of await meteredOverageAddons(raw)) {
     const metric = addon.usage_metric;
-    if (!metric || !(metric in planAllowances)) continue;
+    if (!meteredAddonAttaches(metric, planAllowances, activeAddonMetrics))
+      continue;
     if (!meteredActive(addon)) continue;
     const priceId = await ensureRecurringPrice({
       stripe,

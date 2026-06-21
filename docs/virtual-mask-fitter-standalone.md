@@ -74,8 +74,11 @@ each plan's allowance, reported from the `recordTenantUsage` chokepoint via
 bundles, so existing tenants are unchanged). Two price shapes share one code
 path: the fitter's `included_units` free tier reports ALL usage (Stripe applies
 the tier), while a NULL `included_units` add-on reports only the OVERAGE beyond
-the plan allowance against a simple per-unit metered price. Fax and voice stay
-flat enablement (no per-unit rate) until one is set.
+the plan allowance against a simple per-unit metered price. The **fax and AI-voice**
+premium features bill per-unit usage the same way (migration 0425: `fax_usage`
+$0.10/fax, `voice_usage` $0.50/call) — with no plan allowance every event is
+billable, and the companion metered add-on attaches whenever the tenant has the
+parent flat feature (`fax_automation` / `ai_voice_agent`) active.
 
 ## Product scope (the "just the fitter" gate)
 
