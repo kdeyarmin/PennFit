@@ -150,6 +150,65 @@ describe("POST appeal-letter/:letterId/fax", () => {
     expect(writes[0]).toMatchObject({ delivery_method: "fax" });
   });
 
+  it("transitions a denied claim to appealed + resolves its denial analysis on a successful fax", async () => {
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("claim_appeal_letters", "select", {
+      data: { id: LETTER_ID, claim_id: CLAIM_ID, denial_analysis_id: "da-1" },
+    });
+    stageSupabaseResponse("insurance_claims", "select", {
+      data: { id: CLAIM_ID, patient_id: PID, status: "denied" },
+    });
+    stageSupabaseResponse("claim_appeal_letters", "update", { data: null });
+    // The conditional update returns the transitioned row (so the route emits
+    // the history event + webhook).
+    stageSupabaseResponse("insurance_claims", "update", {
+      data: [{ id: CLAIM_ID }],
+    });
+    stageSupabaseResponse("insurance_claim_events", "insert", {
+      data: { id: "evt-1" },
+    });
+    stageSupabaseResponse("claim_denial_analyses", "update", { data: null });
+
+    const res = await request(makeApp())
+      .post(url)
+      .send({ faxNumber: "+18005551212" });
+
+    expect(res.status).toBe(200);
+    // Claim moved denied -> appealed (drops off the denials worklist).
+    expect(
+      supabaseMock.writePayloads("insurance_claims", "update")[0],
+    ).toMatchObject({ status: "appealed" });
+    // A replayable history event is written for the transition (mirrors the
+    // canonical PATCH side effects).
+    expect(
+      supabaseMock.writePayloads("insurance_claim_events", "insert")[0],
+    ).toMatchObject({ event_type: "appealed", claim_id: CLAIM_ID });
+    // The linked denial analysis is marked resolved.
+    expect(
+      supabaseMock.writePayloads("claim_denial_analyses", "update")[0],
+    ).toMatchObject({ review_status: "accepted_appealed" });
+  });
+
+  it("does NOT transition a claim that is not denied", async () => {
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("claim_appeal_letters", "select", {
+      data: { id: LETTER_ID, claim_id: CLAIM_ID, denial_analysis_id: "da-1" },
+    });
+    stageSupabaseResponse("insurance_claims", "select", {
+      data: { id: CLAIM_ID, patient_id: PID, status: "appealed" },
+    });
+    stageSupabaseResponse("claim_appeal_letters", "update", { data: null });
+
+    const res = await request(makeApp())
+      .post(url)
+      .send({ faxNumber: "+18005551212" });
+
+    expect(res.status).toBe(200);
+    // Already appealed → no further status write, no analysis write.
+    expect(supabaseMock.callCount("insurance_claims", "update")).toBe(0);
+    expect(supabaseMock.callCount("claim_denial_analyses", "update")).toBe(0);
+  });
+
   it("502 when Telnyx dispatch throws", async () => {
     mockAdmin.current = ADMIN;
     sendFax.current = vi.fn(async () => {

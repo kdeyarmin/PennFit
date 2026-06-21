@@ -393,15 +393,15 @@ describe("GET /admin/capped-rental-cycles/:id/preview", () => {
     expect(res.status).toBe(200);
     expect(res.body.action).toBe("noop");
     // Previews the NEXT month to be billed (current_month + 1 = 6), not
-    // the current month — month 6 is still in the 4-13 KI band.
+    // the current month — month 6 is in the KJ continuation band (months 4+).
     expect(res.body.billedMonth).toBe(6);
     expect(res.body.kxGated).toBe(true);
-    // Month 4-13 band: RR + KI, plus KX only when compliant.
-    expect(res.body.modifiersIfCompliant).toEqual(["RR", "KI", "KX"]);
-    expect(res.body.modifiersIfNotCompliant).toEqual(["RR", "KI"]);
+    // Month 4+ band: RR + KJ, plus KX only when compliant.
+    expect(res.body.modifiersIfCompliant).toEqual(["RR", "KJ", "KX"]);
+    expect(res.body.modifiersIfNotCompliant).toEqual(["RR", "KJ"]);
   });
 
-  it("previews the KH→KI band transition (month 3 cycle → month 4 claim)", async () => {
+  it("previews the KI→KJ band transition (month 3 cycle → month 4 claim)", async () => {
     stubAdmin();
     const today = new Date().toISOString().slice(0, 10);
     stageSupabaseResponse("capped_rental_cycles", "select", {
@@ -418,10 +418,10 @@ describe("GET /admin/capped-rental-cycles/:id/preview", () => {
       `/admin/capped-rental-cycles/${CYCLE_ID}/preview`,
     );
     expect(res.status).toBe(200);
-    // The next claim is month 4 (KI band), NOT month 3 (KH band) — the
-    // CSR must see KI, not KH, at this transition.
+    // The next claim is month 4 (KJ continuation band), NOT month 3 (KI band)
+    // — the CSR must see KJ, not KI, at this transition.
     expect(res.body.billedMonth).toBe(4);
-    expect(res.body.modifiersIfCompliant).toEqual(["RR", "KI", "KX"]);
+    expect(res.body.modifiersIfCompliant).toEqual(["RR", "KJ", "KX"]);
   });
 
   it("previews no billed month/modifiers once at the cap (ownership transfer)", async () => {
@@ -464,6 +464,6 @@ describe("GET /admin/capped-rental-cycles/:id/preview", () => {
     );
     expect(res.status).toBe(200);
     expect(res.body.kxGated).toBe(false);
-    expect(res.body.modifiersIfCompliant).toEqual(["RR", "KI"]);
+    expect(res.body.modifiersIfCompliant).toEqual(["RR", "KJ"]);
   });
 });

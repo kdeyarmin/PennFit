@@ -37,8 +37,13 @@ export type CallerResolution =
 export async function resolveCallerByPhone(
   supabase: ResupplySupabaseClient,
   fromE164: string,
+  // The tenant that owns the dialed line (resolved from the called number).
+  // Caller identification is scoped to this org so a caller is never bound
+  // to a patient/customer owned by a different tenant than the line they
+  // dialed — phone numbers are not globally unique across tenants.
+  orgId: string,
 ): Promise<CallerResolution> {
-  if (!fromE164) return { kind: "none" };
+  if (!fromE164 || !orgId) return { kind: "none" };
   // Canonical E.164 normalisation — a bare 10-digit US caller ID maps to
   // +1XXXXXXXXXX so it matches the stored *.phone_e164 columns. null ⇒
   // unparseable ⇒ unidentified (and we don't touch the DB).
@@ -54,6 +59,7 @@ export async function resolveCallerByPhone(
     .from("patients")
     .select("id")
     .eq("phone_e164", normalised)
+    .eq("org_id", orgId)
     .limit(2);
   if (patientErr) throw patientErr;
   const patients = patientRows ?? [];
@@ -68,6 +74,7 @@ export async function resolveCallerByPhone(
     .from("shop_customers")
     .select("customer_id")
     .eq("phone_e164", normalised)
+    .eq("org_id", orgId)
     .limit(2);
   if (shopErr) throw shopErr;
   const shopCustomers = shopRows ?? [];

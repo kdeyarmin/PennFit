@@ -31,6 +31,11 @@ const supabaseMock = installSupabaseMock();
 
 import { runCappedRentalAdvance } from "./capped-rental-advancer";
 
+// The CMS modifier sequence (KH/KI/KJ + KX) now lives in
+// @workspace/resupply-domain's pickCappedRentalModifiers and is unit-tested in
+// lib/resupply-domain/src/capped-rental.test.ts; this file covers the worker's
+// advance/claim-generation behaviour.
+
 beforeEach(() => {
   supabaseMock.reset();
 });

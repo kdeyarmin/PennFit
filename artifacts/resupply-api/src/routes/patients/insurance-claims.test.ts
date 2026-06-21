@@ -552,6 +552,10 @@ describe("PATCH /patients/:id/insurance-claims/:claimId", () => {
       ["draft", "submitted"],
       ["submitted", "accepted"],
       ["submitted", "denied"],
+      // 277CA clearinghouse front-end rejection + its rework edges.
+      ["submitted", "rejected"],
+      ["rejected", "submitted"],
+      ["rejected", "closed"],
       ["accepted", "paid"],
       ["accepted", "denied"],
       ["denied", "appealed"],

@@ -35,11 +35,21 @@ export const CAPPED_RENTAL_CYCLE_DAYS = 30;
 const KX_HCPCS_SET = new Set<string>(CAPPED_RENTAL_KX_HCPCS);
 
 /**
- * The HCPCS modifier codes for a given capped-rental month.
+ * The HCPCS modifier codes for a given capped-rental month, following the CMS
+ * capped-rental modifier sequence:
  *
- * Always includes "RR". Adds "KH" for months 1-3. For months 4-13 it adds
- * "KI", and also "KX" when `isCompliant` is true and `hcpcs` is one of the
- * adherence-gated codes. Months past 13 carry only "RR".
+ *   - "RR" — rental — on EVERY month.
+ *   - "KH" — first rental month (month 1).
+ *   - "KI" — second and third rental month (months 2-3).
+ *   - "KJ" — capped-rental / PEN-pump continuation, months 4 onward (through
+ *     the cycle's full length, so no continuation claim goes out with a bare
+ *     "RR"). "KX" ("medical-policy criteria met") rides on the KJ months when
+ *     `isCompliant` is true and `hcpcs` is one of the adherence-gated codes.
+ *
+ * Previously this emitted KH for months 1-3, KI for months 4-13, and only
+ * "RR" past month 13 — a non-standard mapping that left long (oxygen-length)
+ * cycles sending continuation claims with no rental-month modifier, which
+ * payers deny.
  */
 export function pickCappedRentalModifiers(
   hcpcs: string,
@@ -47,10 +57,12 @@ export function pickCappedRentalModifiers(
   isCompliant: boolean,
 ): string[] {
   const mods: string[] = ["RR"];
-  if (month <= 3) {
+  if (month <= 1) {
     mods.push("KH");
-  } else if (month <= 13) {
+  } else if (month <= 3) {
     mods.push("KI");
+  } else {
+    mods.push("KJ");
     if (isCompliant && KX_HCPCS_SET.has(hcpcs)) mods.push("KX");
   }
   return mods;

@@ -3,9 +3,10 @@
 // Runs as a daily worker. For each active capped_rental_cycles row:
 //   * If today >= start_date + (current_month * 30 days), advance:
 //     - current_month += 1
-//     - Generate a draft insurance_claims for this month with the
-//       right modifier rotation (KH for months 1-3; KI + KX when
-//       compliant for 4-13).
+//     - Generate a draft insurance_claims for this month with the CMS
+//       capped-rental modifier rotation (KH month 1; KI months 2-3;
+//       KJ months 4..max, + KX when compliant). See
+//       pickCappedRentalModifiers in @workspace/resupply-domain.
 //     - Set latest_claim_id.
 //   * When current_month == max_months + 1, mark ownership_transferred_on
 //     and status='transferred'.

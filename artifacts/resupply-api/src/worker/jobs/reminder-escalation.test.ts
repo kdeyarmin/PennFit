@@ -458,4 +458,12 @@ describe("runReminderEscalationScan — patient status + capability read", () =>
     expect(SRC).toContain("rowOrg != null && rowOrg !== orgId");
     expect(SRC).toContain("isVoiceCallConnected(");
   });
+
+  it("treats the open-alert unique violation (23505) as an idempotent no-op", () => {
+    // A concurrent escalation tick can lose the read-then-insert race; the
+    // partial unique index csr_compliance_alerts_open_unique rejects the
+    // duplicate. That 23505 must be a silent no-op, NOT a spurious
+    // alert_failed warning.
+    expect(SRC).toContain('alertInsertErr.code === "23505"');
+  });
 });

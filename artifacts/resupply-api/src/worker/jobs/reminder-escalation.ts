@@ -77,7 +77,11 @@ import { readVoiceConfigOrNull } from "../../lib/voice/voice-config";
 import { forEachActiveOrg } from "../lib/for-each-active-org";
 import { createQueueWithDlq, CRON_SCAN_QUEUE_OPTS } from "../lib/queue-options";
 import { SEND_VOICE_JOB } from "./reminder-voice.js";
-import { SEND_EMAIL_JOB, SEND_SMS_JOB } from "./reminders.js";
+import {
+  IN_PROGRESS_EPISODE_STATUSES,
+  SEND_EMAIL_JOB,
+  SEND_SMS_JOB,
+} from "./reminders.js";
 
 export const ESCALATION_JOB = "reminders.escalation-scan";
 // Daily, mid-day UTC (see quiet-hours note above).
@@ -169,7 +173,10 @@ export const ESCALATION_LADDER_WITH_VOICE = ["sms", "email", "voice"] as const;
  */
 export const MAX_VOICE_ATTEMPTS = 2;
 
-const IN_PROGRESS_STATUSES = ["outreach_pending", "awaiting_response"];
+// Single source of truth lives in reminders.ts (this scan already imports
+// SEND_*_JOB from there) so the two reminder jobs can't drift on which
+// episode statuses are still in the funnel.
+const IN_PROGRESS_STATUSES = [...IN_PROGRESS_EPISODE_STATUSES];
 
 // ── Pure planner ────────────────────────────────────────────────────
 
@@ -740,7 +747,16 @@ async function raiseUnresponsiveAlert(
           channels_tried: triedChannels,
         },
       });
-    if (alertInsertErr) throw alertInsertErr;
+    if (alertInsertErr) {
+      // A concurrent escalation tick may have raised the same open alert
+      // between our SELECT above and this INSERT. The partial unique index
+      // `csr_compliance_alerts_open_unique` (one open alert per
+      // patient+alert_type, migration 0065) rejects the duplicate with a
+      // 23505 — that IS the desired idempotent outcome, so treat it as a
+      // no-op rather than a spurious "alert_failed" warning.
+      if (alertInsertErr.code === "23505") return;
+      throw alertInsertErr;
+    }
   } catch (err) {
     logger.warn(
       {

@@ -241,6 +241,56 @@ describe("sendOneStatement", () => {
     expect(send).not.toHaveBeenCalled();
   });
 
+  it("skips a stale statement whose billed claims have since been fully resolved (balance_paid)", async () => {
+    // Snapshot says $50 owed, but the billed claims now sum to $0 (paid /
+    // resolved since generation) → must not be mailed.
+    stageStatement({
+      line_items_json: [{ claim_id: "clm-1" }, { claim_id: "clm-2" }],
+    });
+    stageSupabaseResponse("insurance_claims", "select", {
+      data: [],
+      error: null,
+    });
+    stageSupabaseResponse("patient_billing_statements", "update", {
+      data: [{ id: "stmt-1" }],
+      error: null,
+    });
+    const send = vi.fn<SendFn>();
+    const outcome = await sendOneStatement(
+      getOrgScopedClient(MOCK_ORG_ID),
+      "stmt-1",
+      { send, cfg: stubCfg() },
+    );
+    expect(outcome).toEqual({ kind: "skipped", reason: "balance_paid" });
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("still sends when the billed claims remain owed", async () => {
+    stageStatement({ line_items_json: [{ claim_id: "clm-1" }] });
+    // The claim still carries a patient balance → not stale.
+    stageSupabaseResponse("insurance_claims", "select", {
+      data: [{ patient_responsibility_cents: 5000 }],
+      error: null,
+    });
+    stagePatient();
+    stageCustomerPrefs({});
+    stageClaim();
+    stageSupabaseResponse("patient_billing_statements", "update", {
+      data: [{ id: "stmt-1" }],
+      error: null,
+    });
+    const send = vi
+      .fn<SendFn>()
+      .mockResolvedValue({ kind: "sent", channel: "email" });
+    const outcome = await sendOneStatement(
+      getOrgScopedClient(MOCK_ORG_ID),
+      "stmt-1",
+      { send, cfg: stubCfg(), now: new Date("2026-06-01T17:00:00Z") },
+    );
+    expect(outcome).toEqual({ kind: "sent", channel: "email" });
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
   it("skips an unrendered statement without sending", async () => {
     stageStatement({ statement_pdf_object_key: null });
     stageSupabaseResponse("patient_billing_statements", "update", {

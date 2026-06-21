@@ -81,6 +81,7 @@ router.post(
     const body = parsed.data;
     try {
       const result = await quickCheckEligibility({
+        orgId: req.orgId,
         payerProfileId: body.payerProfileId,
         subscriber: {
           firstName: body.firstName,

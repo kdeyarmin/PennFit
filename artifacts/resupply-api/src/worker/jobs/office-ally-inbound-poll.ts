@@ -70,7 +70,7 @@ import {
   type Parsed999,
 } from "@workspace/resupply-integrations-office-ally";
 
-import { analyzeDenial } from "../../lib/billing/ai-denial-analyzer";
+import { runDenialAnalysis } from "../../lib/billing/denial-analysis-runner";
 import {
   eligibilityCompletedEvent,
   parsed271ToCheckColumns,
@@ -92,6 +92,16 @@ import {
 const JOB = "office-ally.inbound-poll";
 const CRON = "*/15 * * * *";
 const SYSTEM_ACTOR_EMAIL = "system:cron:office-ally-inbound-poll";
+
+// Claim statuses from which a 277CA outcome may advance the claim. The
+// guard prevents downgrading a claim an ERA round-trip already resolved
+// (paid / denied / appealed / closed) — see the 277CA handler below.
+const ACCEPT_277CA_FROM = new Set<string>(["submitted", "submitting"]);
+const REJECT_277CA_FROM = new Set<string>([
+  "submitted",
+  "submitting",
+  "accepted",
+]);
 
 type SupabaseClient = OrgScopedClient;
 
@@ -539,6 +549,9 @@ export async function dispatch277ca(
   // the submission worklist then showed accepted_277ca while a claim
   // inside it had been rejected.
   const submissionHasRejection = new Map<string, boolean>();
+  // Parallel tracker for pended claims: a submission with a pended claim (and
+  // no rejection) must NOT roll up to accepted_277ca — see the roll-up below.
+  const submissionHasPended = new Map<string, boolean>();
   for (const block of parsed.claims) {
     if (!block.traceNumber) continue;
     const { data: claim, error: claimLookupErr } = await supabase
@@ -559,10 +572,44 @@ export async function dispatch277ca(
         updated_at: new Date().toISOString(),
       };
     if (block.payerClaimRef) update.claim_number = block.payerClaimRef;
-    const { error: claimUpdateErr } = await supabase
+    // Reflect the 277CA outcome on the claim's OWN status (the
+    // per-submission roll-up below is separate). Guarded by the current
+    // status so an ERA round-trip that already advanced the claim
+    // (paid / denied / appealed / closed) is never downgraded:
+    //   - accepted → submitted/submitting → accepted (the 277CA
+    //     "accepted" intermediate the ERA reconciler documents).
+    //   - rejected → submitted/submitting/accepted → rejected (a
+    //     clearinghouse FRONT-END rejection — distinct from a payer
+    //     `denied` adjudication; surfaced for fix-and-resubmit).
+    //   - pended → leave the status unchanged (still in process).
+    let conditionFromStates: readonly string[] | null = null;
+    if (block.outcome === "accepted" && ACCEPT_277CA_FROM.has(claim.status)) {
+      update.status = "accepted";
+      conditionFromStates = [...ACCEPT_277CA_FROM];
+    } else if (
+      block.outcome === "rejected" &&
+      REJECT_277CA_FROM.has(claim.status)
+    ) {
+      update.status = "rejected";
+      conditionFromStates = [...REJECT_277CA_FROM];
+    }
+    // When this write transitions status, gate it on the DB row STILL being in
+    // an allowed from-state. The `claim.status` read above can go stale: a
+    // concurrent ERA/manual remit may post the claim paid/denied between the
+    // read and here, and an unconditional `.update({status})` would clobber
+    // that terminal adjudication. The predicate makes the transition a no-op
+    // in that race (PostgREST simply matches 0 rows). Non-transition writes
+    // (claim_number / pended) stay unconditional.
+    let claimUpdateQuery = supabase
       .from("insurance_claims")
       .update(update)
       .eq("id", claim.id);
+    if (conditionFromStates) {
+      claimUpdateQuery = claimUpdateQuery.in("status", [
+        ...conditionFromStates,
+      ]);
+    }
+    const { error: claimUpdateErr } = await claimUpdateQuery;
     if (claimUpdateErr) {
       logger.warn(
         { err: claimUpdateErr.message, claimId: claim.id },
@@ -590,24 +637,39 @@ export async function dispatch277ca(
     }
     // Accumulate for the per-submission roll-up below.
     if (claim.office_ally_submission_id) {
+      const sid = claim.office_ally_submission_id;
       submissionHasRejection.set(
-        claim.office_ally_submission_id,
-        (submissionHasRejection.get(claim.office_ally_submission_id) ??
-          false) ||
+        sid,
+        (submissionHasRejection.get(sid) ?? false) ||
           block.outcome === "rejected",
+      );
+      submissionHasPended.set(
+        sid,
+        (submissionHasPended.get(sid) ?? false) || block.outcome === "pended",
       );
     }
   }
-  // Roll-up onto the office_ally_submissions row — any rejected claim
-  // marks the whole submission rejected_277ca.
+  // Roll-up onto the office_ally_submissions row — any rejected claim marks
+  // the whole submission rejected_277ca. A submission with a PENDED claim (and
+  // no rejection) is NOT yet accepted: leave its current status so a later
+  // 277CA can resolve it (consistent with the per-claim "pended leaves it
+  // unchanged" rule above) — we still stamp the ack receipt. Only an
+  // all-accepted submission advances to accepted_277ca.
   for (const [submissionId, hasRejection] of submissionHasRejection) {
+    const hasPended = submissionHasPended.get(submissionId) ?? false;
+    const submissionUpdate: {
+      status?: string;
+      ack_277ca_file_name: string;
+      ack_277ca_received_at: string;
+    } = {
+      ack_277ca_file_name: `inbound:${inboundFileId.slice(0, 8)}`,
+      ack_277ca_received_at: new Date().toISOString(),
+    };
+    if (hasRejection) submissionUpdate.status = "rejected_277ca";
+    else if (!hasPended) submissionUpdate.status = "accepted_277ca";
     const { error: sub277Err } = await supabase
       .from("office_ally_submissions")
-      .update({
-        status: hasRejection ? "rejected_277ca" : "accepted_277ca",
-        ack_277ca_file_name: `inbound:${inboundFileId.slice(0, 8)}`,
-        ack_277ca_received_at: new Date().toISOString(),
-      })
+      .update(submissionUpdate)
       .eq("id", submissionId);
     if (sub277Err) {
       logger.warn(
@@ -647,40 +709,54 @@ export async function dispatch835(
     .eq("file_sha256", sha256)
     .limit(1)
     .maybeSingle();
-  if (existingEra) {
-    // This exact 835 content was already ingested. Do NOT re-run
-    // reconcileEra — it would re-apply every monetary delta (a double-post
-    // of paid / allowed / patient-responsibility). Mirrors the HTTP
-    // era-ingest route's 409-on-duplicate. The upstream
-    // clearinghouse_inbound_files SHA dedup normally prevents reaching here;
-    // this is the defense-in-depth guard the prior code relied on but which,
-    // by falling through to reconcileEra, was silently a no-op.
+  // A fully-applied ('processed' or any non-'partial') row is a true
+  // duplicate of this exact 835 content — re-running reconcileEra would be
+  // wasted work. Skip it (mirrors the HTTP era-ingest route's 409). A
+  // 'partial' row, however, means a PREVIOUS run left some claim blocks
+  // unmatched (the claim hadn't been created locally yet); a re-delivery of
+  // the same 835 should re-reconcile so those now-matchable claims finally
+  // post. reconcileEra is per-claim idempotent (the insurance_claim_events
+  // payer_ref marker skips already-applied claims), so the re-run applies
+  // ONLY the newly-matchable blocks — no double-post. The 835 body is never
+  // persisted, so a re-delivery is the only way a partial can be recovered.
+  if (existingEra && existingEra.status !== "partial") {
     logger.info(
       { eraFileId: existingEra.id, status: existingEra.status },
       "dispatch835: duplicate 835 content; skipping re-reconcile",
     );
     return 0;
   }
-  const { data: row, error } = await supabase
-    .from("era_files")
-    .insert({
-      file_name: fileName,
-      file_sha256: sha256,
-      file_size_bytes: Buffer.byteLength(content, "utf8"),
-      payer_check_number: parsed.checkOrEftNumber,
-      payer_paid_date: parsed.paymentDate,
-      total_paid_cents: parsed.totalPaidCents,
-      claims_paid_count: 0,
-      claims_denied_count: 0,
-      lines_processed_count: 0,
-      matched_submission_id: null,
-      status: "partial",
-      ingested_by_email: SYSTEM_ACTOR_EMAIL,
-    })
-    .select("id")
-    .single();
-  if (error) throw error;
-  const eraFileId = row.id;
+  let eraFileId: string;
+  if (existingEra) {
+    // Re-reconcile the existing partial row in place (reuse, don't insert —
+    // the file_sha256 unique index would reject a second insert anyway).
+    eraFileId = existingEra.id;
+    logger.info(
+      { eraFileId },
+      "dispatch835: re-reconciling a partial 835 (idempotent; applies newly-matchable claim blocks)",
+    );
+  } else {
+    const { data: row, error } = await supabase
+      .from("era_files")
+      .insert({
+        file_name: fileName,
+        file_sha256: sha256,
+        file_size_bytes: Buffer.byteLength(content, "utf8"),
+        payer_check_number: parsed.checkOrEftNumber,
+        payer_paid_date: parsed.paymentDate,
+        total_paid_cents: parsed.totalPaidCents,
+        claims_paid_count: 0,
+        claims_denied_count: 0,
+        lines_processed_count: 0,
+        matched_submission_id: null,
+        status: "partial",
+        ingested_by_email: SYSTEM_ACTOR_EMAIL,
+      })
+      .select("id")
+      .single();
+    if (error) throw error;
+    eraFileId = row.id;
+  }
 
   const summary = await reconcileEra(parsed, {
     actorEmail: SYSTEM_ACTOR_EMAIL,
@@ -738,69 +814,9 @@ export async function dispatch835(
     // control number which IS the claim id (CLM01 echo).
     const claimId = outcome.patientControlNumber;
     queued += 1;
-    void runDenialAnalysisQuietly(supabase, claimId, eraFileId);
+    void runDenialAnalysis(supabase, claimId, eraFileId);
   }
   return queued;
-}
-
-async function runDenialAnalysisQuietly(
-  supabase: SupabaseClient,
-  claimId: string,
-  eraFileId: string,
-): Promise<void> {
-  try {
-    const output = await analyzeDenial({ claimId, eraFileId });
-    const { data: row, error } = await supabase
-      .from("claim_denial_analyses")
-      .insert({
-        claim_id: claimId,
-        era_file_id: eraFileId,
-        model: "gpt-4o-mini",
-        prompt_version: "denial-1.0",
-        confidence: output.confidence,
-        root_cause_summary: output.rootCauseSummary,
-        recommendation: output.recommendation,
-        analysis_json: {
-          mappedCodes: output.mappedCodes,
-          fixSteps: output.fixSteps,
-          appealLetterSketch: output.appealLetterSketch,
-          droppedPatches: output.droppedPatches,
-        } as unknown as Json,
-        suggested_patches_json: output.suggestedPatches as unknown as Json,
-        can_auto_resubmit: output.canAutoResubmit,
-        review_status: output.errorMessage ? "errored" : "pending",
-        latency_ms: output.latencyMs,
-        prompt_tokens: output.promptTokens,
-        completion_tokens: output.completionTokens,
-        error_message: output.errorMessage,
-      })
-      .select("id")
-      .single();
-    if (error) throw error;
-    if (row) {
-      const { error: analysisLinkErr } = await supabase
-        .from("insurance_claims")
-        .update({
-          latest_denial_analysis_id: row.id,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", claimId);
-      if (analysisLinkErr) {
-        logger.warn(
-          { err: analysisLinkErr.message, claimId, analysisId: row.id },
-          "office-ally.inbound-poll: denial analysis link update failed (non-fatal)",
-        );
-      }
-    }
-  } catch (err) {
-    logger.warn(
-      {
-        err,
-        claimId,
-      },
-      "office-ally.inbound-poll: AI denial analysis failed (non-fatal)",
-    );
-  }
 }
 
 /**
@@ -851,6 +867,22 @@ export async function dispatch271(
       { err: eligCheckErr.message, checkId: check.id, inboundFileId },
       "office-ally.inbound-poll: eligibility_checks update failed",
     );
+  } else if (check.insurance_coverage_id) {
+    // Stamp the parent coverage as verified now that the 271 landed. The
+    // re-verification worklist + batch bucket by
+    // `insurance_coverages.verified_at`; the async SFTP path resolves here
+    // (not in the real-time verifier), so without this stamp an
+    // SFTP-verified coverage stayed "never verified" forever. Best-effort.
+    const { error: covErr } = await supabase
+      .from("insurance_coverages")
+      .update({ verified_at: new Date().toISOString() })
+      .eq("id", check.insurance_coverage_id);
+    if (covErr) {
+      logger.warn(
+        { err: covErr.message, coverageId: check.insurance_coverage_id },
+        "office-ally.inbound-poll: coverage verified_at stamp failed (non-fatal)",
+      );
+    }
   }
   const { error: eligSummaryErr } = await supabase
     .from("clearinghouse_inbound_files")

@@ -16,6 +16,7 @@ import { Router, type IRouter } from "express";
 
 import { getOrgScopedClient, type Database } from "@workspace/resupply-db";
 
+import { denialRateWindowCutoffIso } from "../../lib/billing/denial-rate";
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
@@ -179,7 +180,10 @@ router.get(
       return;
     }
     const supabase = getOrgScopedClient(orgId);
-    const cutoff = new Date(Date.now() - 90 * 24 * 3600 * 1000).toISOString();
+    // Canonical 90-day denial-rate window (shared with billing-director /
+    // billing-benchmarks via denial-rate.ts so the rate matches across
+    // dashboards).
+    const cutoff = denialRateWindowCutoffIso();
     // Per-payer decision/denial counts are aggregated server-side by the
     // resupply.billing_denial_rate RPC (migration 0164) — Postgres does
     // the GROUP BY + FILTER over the indexed insurance_claims rows and

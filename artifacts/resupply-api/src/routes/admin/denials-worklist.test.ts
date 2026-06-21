@@ -67,6 +67,8 @@ describe("rankDenialWorklist (pure)", () => {
         canAutoResubmit: true,
         denialReason: "CO-16",
         decisionAt: null,
+        denialCategories: [],
+        isTerminal: false,
       },
       // bigger dollars but unanalyzed: 20000 × 0.3 = 6000
       {
@@ -79,6 +81,8 @@ describe("rankDenialWorklist (pure)", () => {
         canAutoResubmit: false,
         denialReason: "CO-97",
         decisionAt: null,
+        denialCategories: [],
+        isTerminal: false,
       },
     ];
     const { items, totals } = rankDenialWorklist(claims);
@@ -109,6 +113,8 @@ describe("rankDenialWorklist (pure)", () => {
         canAutoResubmit: false,
         denialReason: null,
         decisionAt: null,
+        denialCategories: [],
+        isTerminal: false,
       },
     ]);
     expect(items[0]!.recoverableCents).toBe(0);
@@ -184,5 +190,49 @@ describe("GET /admin/billing/denials-worklist", () => {
     expect(res.body.items[0].scoreCents).toBe(8000); // 10000 × 0.8
     expect(res.body.items[0].canAutoResubmit).toBe(true);
     expect(res.body.totals.count).toBe(1);
+  });
+
+  it("enriches each denial with its codes' catalog category + terminal flag", async () => {
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("insurance_claims", "select", {
+      data: [
+        {
+          id: "c_term",
+          patient_id: "p1",
+          payer_name: "Aetna",
+          total_billed_cents: 10000,
+          total_paid_cents: 0,
+          // Enriched reason string from the reconciler carries "CARC <n>".
+          denial_reason: "CARC 16 — Lacks information; CARC 50 — Non-covered",
+          decision_at: "2026-05-20T00:00:00Z",
+        },
+      ],
+    });
+    stageSupabaseResponse("claim_denial_analyses", "select", { data: [] });
+    stageSupabaseResponse("denial_codes", "select", {
+      data: [
+        {
+          code_system: "carc",
+          code: "16",
+          category: "coding",
+          is_terminal: false,
+        },
+        {
+          code_system: "carc",
+          code: "50",
+          category: "coverage",
+          is_terminal: true,
+        },
+      ],
+    });
+
+    const res = await request(makeApp()).get("/admin/billing/denials-worklist");
+    expect(res.status).toBe(200);
+    const item = res.body.items.find(
+      (i: { claimId: string }) => i.claimId === "c_term",
+    );
+    expect(item.denialCategories.sort()).toEqual(["coding", "coverage"]);
+    // CARC 50 is terminal → the whole denial is flagged terminal.
+    expect(item.isTerminal).toBe(true);
   });
 });

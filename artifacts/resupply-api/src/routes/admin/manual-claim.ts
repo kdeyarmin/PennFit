@@ -85,6 +85,23 @@ export function validateManualClaim(
   return { ok: true, entrySource: isAdjustment ? "adjustment" : "manual" };
 }
 
+// A claim line: HCPCS + units + charge (+ optional comma-joined modifiers and
+// a description). Mirrors insurance_claim_line_items (migration 0118) so a
+// manually-keyed claim can carry the lines the 837 builder / preflight need.
+const lineItem = z
+  .object({
+    hcpcsCode: z
+      .string()
+      .trim()
+      .regex(/^[A-Za-z0-9]{4,12}$/, "HCPCS shape")
+      .transform((s) => s.toUpperCase()),
+    modifier: z.string().trim().max(32).nullable().optional(),
+    description: z.string().trim().max(240).nullable().optional(),
+    quantity: z.number().int().min(1).max(9999).default(1),
+    billedCents: z.number().int().min(0).max(100_000_000),
+  })
+  .strict();
+
 const createBody = z
   .object({
     payerName: z.string().trim().min(1).max(120),
@@ -92,10 +109,16 @@ const createBody = z
     claimFrequencyCode: z.enum(["1", "7", "8"]).default("1"),
     originalClaimNumber: z.string().trim().max(64).nullable().optional(),
     insuranceCoverageId: z.string().uuid().nullable().optional(),
+    payerProfileId: z.string().uuid().nullable().optional(),
     claimNumber: z.string().trim().max(64).nullable().optional(),
     notes: z.string().trim().max(2000).nullable().optional(),
+    lines: z.array(lineItem).max(50).optional(),
   })
   .strict();
+
+// A duplicate is blocked only against still-active claims; a claim already
+// resolved (paid / denied / closed) may legitimately be re-keyed (rebill).
+const TERMINAL_CLAIM_STATUSES = "(paid,denied,closed)";
 
 router.post(
   "/admin/patients/:id/manual-claims",
@@ -151,16 +174,52 @@ router.post(
       return;
     }
 
+    // Duplicate guard: reject if a still-active claim already exists for the
+    // same patient + payer + date-of-service + frequency (+ original claim
+    // number for an adjustment). Prevents a biller double-keying the same
+    // claim and double-submitting it to the payer. Resolved claims
+    // (paid/denied/closed) don't block a legitimate rebill.
+    let dupQuery = supabase
+      .from("insurance_claims")
+      .select("id")
+      .eq("patient_id", idCheck.data)
+      .eq("payer_name", b.payerName)
+      .eq("date_of_service", b.dateOfService)
+      .eq("claim_frequency_code", b.claimFrequencyCode)
+      .not("status", "in", TERMINAL_CLAIM_STATUSES);
+    if (check.entrySource === "adjustment" && b.originalClaimNumber) {
+      dupQuery = dupQuery.eq("original_claim_number", b.originalClaimNumber);
+    }
+    const { data: dup, error: dupErr } = await dupQuery.limit(1).maybeSingle();
+    if (dupErr) {
+      res.status(500).json({ error: "query_failed", message: dupErr.message });
+      return;
+    }
+    if (dup) {
+      res.status(409).json({
+        error: "duplicate_claim",
+        message:
+          "an active claim already exists for this patient, payer, date of service and frequency",
+        existingClaimId: (dup as { id: string }).id,
+      });
+      return;
+    }
+
+    const lines = b.lines ?? [];
+    const totalBilledCents = lines.reduce((sum, l) => sum + l.billedCents, 0);
+
     const { data: row, error } = await supabase
       .from("insurance_claims")
       .insert({
         patient_id: idCheck.data,
         insurance_coverage_id: b.insuranceCoverageId ?? null,
+        payer_profile_id: b.payerProfileId ?? null,
         payer_name: b.payerName,
         claim_number: b.claimNumber ?? null,
         date_of_service: b.dateOfService,
         fulfillment_id: null,
         status: "draft",
+        total_billed_cents: totalBilledCents,
         claim_frequency_code: b.claimFrequencyCode,
         original_claim_number: b.originalClaimNumber ?? null,
         entry_source: check.entrySource,
@@ -173,6 +232,31 @@ router.post(
       return;
     }
     const newId = (row as Record<string, unknown>).id as string;
+
+    // Insert the claim lines. There's no cross-statement transaction, so if
+    // the line insert fails we delete the just-created header rather than
+    // leave an unsubmittable line-less draft behind.
+    if (lines.length > 0) {
+      const { error: lineErr } = await supabase
+        .from("insurance_claim_line_items")
+        .insert(
+          lines.map((l) => ({
+            claim_id: newId,
+            hcpcs_code: l.hcpcsCode,
+            modifier: l.modifier ?? null,
+            description: l.description ?? null,
+            quantity: l.quantity,
+            billed_cents: l.billedCents,
+          })),
+        );
+      if (lineErr) {
+        await supabase.from("insurance_claims").delete().eq("id", newId);
+        res
+          .status(500)
+          .json({ error: "line_insert_failed", message: lineErr.message });
+        return;
+      }
+    }
 
     // Seed the default signed-paperwork requirement set (bill hold). Gated
     // by the flag; never fails claim creation.
@@ -215,6 +299,7 @@ router.post(
         patient_id: idCheck.data,
         entry_source: check.entrySource,
         claim_frequency_code: b.claimFrequencyCode,
+        line_count: lines.length,
       },
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
@@ -226,6 +311,8 @@ router.post(
       id: newId,
       entrySource: check.entrySource,
       claimFrequencyCode: b.claimFrequencyCode,
+      lineCount: lines.length,
+      totalBilledCents,
     });
   },
 );
