@@ -70,76 +70,98 @@ const signatureMiddleware = requireTwilioSignature({
   },
 });
 
-router.post("/voice/realtime-diagnostic", signatureMiddleware, (req, res) => {
-  const config = readVoiceConfigOrNull();
-  if (!config) {
-    res
-      .status(503)
-      .type("text/xml")
-      .send(buildHangupTwiml("Voice service unavailable."));
-    return;
-  }
-  // The faucet must be explicitly opened. Off → polite hangup.
-  if (!config.realtimeDiagnosticEnabled) {
+router.post(
+  "/voice/realtime-diagnostic",
+  signatureMiddleware,
+  async (req, res) => {
+    const config = readVoiceConfigOrNull();
+    if (!config) {
+      res
+        .status(503)
+        .type("text/xml")
+        .send(buildHangupTwiml("Voice service unavailable."));
+      return;
+    }
+    // The faucet must be explicitly opened. Off → polite hangup.
+    if (!config.realtimeDiagnosticEnabled) {
+      logger.info(
+        { event: "voice.realtime-diagnostic.disabled" },
+        "voice.realtime-diagnostic: disabled (OPENAI_REALTIME_DIAGNOSTIC_ENABLED not set)",
+      );
+      res
+        .status(200)
+        .type("text/xml")
+        .send(
+          buildHangupTwiml(
+            "The voice diagnostic is not enabled on this environment. Goodbye.",
+          ),
+        );
+      return;
+    }
+    const parsed = diagnosticBody.safeParse(req.body);
+    if (!parsed.success) {
+      res
+        .status(400)
+        .type("text/xml")
+        .send(buildHangupTwiml("Invalid call payload."));
+      return;
+    }
+
+    // No patient, no DB row — a random conversationId is the only handle the
+    // WS upgrade needs. `diagnostic: true` routes it to the isolated bridge.
+    const conversationId = randomUUID();
+    try {
+      await getPendingSessions().register({
+        conversationId,
+        patientId: "",
+        episodeId: "",
+        callContext: DIAGNOSTIC_CALL_CONTEXT,
+        greeting: DIAGNOSTIC_GREETING,
+        diagnostic: true,
+        // The operator dialed in — greet immediately, same as the inbound
+        // production flows (this also makes the diagnostic exercise the
+        // agent-speaks-first path before it ships).
+        agentSpeaksFirst: true,
+      });
+    } catch (err) {
+      // The store is now a DB round-trip and can throw. Degrade to a clean
+      // 200 + Hangup so Twilio doesn't get a 500 (application error + retry).
+      logger.error(
+        { event: "voice.realtime-diagnostic.register_failed", err },
+        "voice.realtime-diagnostic: pending-session register failed; hanging up",
+      );
+      res
+        .status(200)
+        .type("text/xml")
+        .send(
+          buildHangupTwiml(
+            "The voice diagnostic is temporarily unavailable. Goodbye.",
+          ),
+        );
+      return;
+    }
+
+    const wsUrl =
+      `${publicWsOriginFromBaseUrl(config.publicBaseUrl)}` +
+      `/resupply-api/voice/stream?conversationId=${encodeURIComponent(conversationId)}`;
     logger.info(
-      { event: "voice.realtime-diagnostic.disabled" },
-      "voice.realtime-diagnostic: disabled (OPENAI_REALTIME_DIAGNOSTIC_ENABLED not set)",
+      {
+        event: "voice.realtime-diagnostic.connected",
+        callSid: parsed.data.CallSid,
+        schema: config.realtimeSchema,
+      },
+      "voice.realtime-diagnostic: opening diagnostic Realtime bridge",
     );
     res
       .status(200)
       .type("text/xml")
       .send(
-        buildHangupTwiml(
-          "The voice diagnostic is not enabled on this environment. Goodbye.",
-        ),
+        buildConnectStreamTwiml({
+          wsUrl,
+          customParameters: { conversationId },
+        }),
       );
-    return;
-  }
-  const parsed = diagnosticBody.safeParse(req.body);
-  if (!parsed.success) {
-    res
-      .status(400)
-      .type("text/xml")
-      .send(buildHangupTwiml("Invalid call payload."));
-    return;
-  }
-
-  // No patient, no DB row — a random conversationId is the only handle the
-  // WS upgrade needs. `diagnostic: true` routes it to the isolated bridge.
-  const conversationId = randomUUID();
-  getPendingSessions().register({
-    conversationId,
-    patientId: "",
-    episodeId: "",
-    callContext: DIAGNOSTIC_CALL_CONTEXT,
-    greeting: DIAGNOSTIC_GREETING,
-    diagnostic: true,
-    // The operator dialed in — greet immediately, same as the inbound
-    // production flows (this also makes the diagnostic exercise the
-    // agent-speaks-first path before it ships).
-    agentSpeaksFirst: true,
-  });
-
-  const wsUrl =
-    `${publicWsOriginFromBaseUrl(config.publicBaseUrl)}` +
-    `/resupply-api/voice/stream?conversationId=${encodeURIComponent(conversationId)}`;
-  logger.info(
-    {
-      event: "voice.realtime-diagnostic.connected",
-      callSid: parsed.data.CallSid,
-      schema: config.realtimeSchema,
-    },
-    "voice.realtime-diagnostic: opening diagnostic Realtime bridge",
-  );
-  res
-    .status(200)
-    .type("text/xml")
-    .send(
-      buildConnectStreamTwiml({
-        wsUrl,
-        customParameters: { conversationId },
-      }),
-    );
-});
+  },
+);
 
 export default router;

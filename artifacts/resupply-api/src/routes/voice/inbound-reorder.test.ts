@@ -404,7 +404,7 @@ describe("POST /voice/inbound-reorder — identified caller → realtime bridge"
     // A voice conversation was created and a pending session registered
     // with the inbound-flavored context + greeting.
     expect(supabaseMock.callCount("conversations", "insert")).toBe(1);
-    const pending = getPendingSessions().peek(CONVERSATION_ID);
+    const pending = await getPendingSessions().peek(CONVERSATION_ID);
     expect(pending).not.toBeNull();
     expect(pending!.patientId).toBe(PATIENT_ID);
     expect(pending!.episodeId).toBe(EPISODE_ID);
@@ -425,7 +425,7 @@ describe("POST /voice/inbound-reorder — identified caller → realtime bridge"
     expect(res.text).toContain("Connecting you to our team");
     // No bridge: no conversation row, no pending session.
     expect(supabaseMock.callCount("conversations", "insert")).toBe(0);
-    expect(getPendingSessions().peek(CONVERSATION_ID)).toBeNull();
+    expect(await getPendingSessions().peek(CONVERSATION_ID)).toBeNull();
   });
 
   it("transfers to a human when the patient has no actionable episode", async () => {
@@ -446,7 +446,7 @@ describe("POST /voice/inbound-reorder — identified caller → realtime bridge"
     expect(res.status).toBe(200);
     expect(res.text).toContain("<Dial");
     expect(supabaseMock.callCount("conversations", "insert")).toBe(0);
-    expect(getPendingSessions().peek(CONVERSATION_ID)).toBeNull();
+    expect(await getPendingSessions().peek(CONVERSATION_ID)).toBeNull();
   });
 });
 
@@ -521,7 +521,7 @@ describe("POST /voice/inbound-reorder — storefront caller resolution", () => {
     });
 
     // The pending session is registered in shop_customer mode.
-    const pending = getPendingSessions().peek(CONVERSATION_ID);
+    const pending = await getPendingSessions().peek(CONVERSATION_ID);
     expect(pending).not.toBeNull();
     expect(pending!.callerKind).toBe("shop_customer");
     expect(pending!.shopCustomerId).toBe("cust_store_1");

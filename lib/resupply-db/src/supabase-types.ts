@@ -147,6 +147,25 @@ export interface Database {
   };
   resupply: {
     Tables: {
+      // Short-lived voice Media Stream handoff (migration 0418). Shared
+      // across replicas so Twilio's WS upgrade can claim a session that any
+      // replica registered. conversation_id PK; payload is the full
+      // PendingSessionEntry; rows are deleted on claim or swept after TTL.
+      voice_pending_sessions: {
+        Row: {
+          conversation_id: string;
+          payload: Json;
+          created_at: string;
+          expires_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["voice_pending_sessions"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["voice_pending_sessions"]["Row"]
+        >;
+        Relationships: [];
+      };
       // Outreach playbooks (migration 0263; org_id added 0342). uuid ids.
       outreach_playbooks: {
         Row: {

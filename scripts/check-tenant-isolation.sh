@@ -105,6 +105,15 @@ EXCLUDES=(
   # tick (no req.orgId) and the unsubscribe route is public/anonymous.
   --glob '!**/worker/jobs/demo-drip.ts'
   --glob '!**/routes/storefront/newsletter-unsubscribe.ts'
+  # The voice pending-session store (migration 0418) is a platform-GLOBAL,
+  # short-lived cross-replica handoff table keyed by an opaque conversationId
+  # with NO org_id — the orgId, when there is one, rides INSIDE the payload.
+  # It is claimed by the raw HTTP-server WS-upgrade handler (which runs before
+  # any Express middleware, so there is no req.orgId), and the diagnostic and
+  # CareMetric Breathe platform-sales flows have no tenant at all. There is no
+  # org to scope to; the unscoped service-role client is correct here — the
+  # same global-table rationale as the entries above.
+  --glob '!**/lib/voice/pending-sessions.ts'
 )
 
 # Match a CALL (open paren) so bare `import { getSupabaseServiceRoleClient }`
