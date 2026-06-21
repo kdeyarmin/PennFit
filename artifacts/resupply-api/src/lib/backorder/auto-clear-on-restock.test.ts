@@ -11,7 +11,7 @@ import {
 const supabaseMock = installSupabaseMock();
 
 const { logAuditMock } = vi.hoisted(() => ({
-  logAuditMock: vi.fn(async () => undefined),
+  logAuditMock: vi.fn((_input: unknown): Promise<void> => Promise.resolve()),
 }));
 vi.mock("@workspace/resupply-audit", () => ({ logAudit: logAuditMock }));
 

@@ -23,7 +23,10 @@ vi.mock("./claim-builder", async (importOriginal) => {
 });
 
 vi.mock("./bill-hold", () => ({
-  seedDefaultRequirementsForClaim: vi.fn(async () => undefined),
+  seedDefaultRequirementsForClaim: vi.fn(async () => ({
+    created: 0,
+    held: false,
+  })),
 }));
 
 import { buildClaimFromFulfillment, type ProposedClaim } from "./claim-builder";
@@ -73,7 +76,7 @@ beforeEach(() => {
   supabaseMock.reset();
   buildMock.mockReset();
   seedMock.mockReset();
-  seedMock.mockResolvedValue(undefined);
+  seedMock.mockResolvedValue({ created: 0, held: false });
 });
 
 describe("createClaimFromFulfillment", () => {
