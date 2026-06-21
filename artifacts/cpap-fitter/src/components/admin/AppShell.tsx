@@ -9,7 +9,7 @@ import {
   type SVGProps,
 } from "react";
 import { Link, useLocation } from "wouter";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   fetchAdminInboxCounts,
   type AdminInboxCounts,
@@ -98,6 +98,7 @@ import {
   useStopImpersonation,
 } from "@workspace/api-client-react/admin";
 import { getMfaStatus } from "@/lib/admin/mfa-api";
+import { startTenantCheckout } from "@/lib/admin/platform-billing-api";
 
 // Client-side nav-visibility token (NOT a server permission) gating the
 // Locations entry. Injected into the nav permission set when /me reports
@@ -2115,27 +2116,68 @@ export function AdminHeaderChip({
 function PaymentRequiredBanner() {
   const { data: adminMe } = useGetAdminMe();
   const [location] = useLocation();
+  // "Pay now" — start a hosted Stripe Checkout session and redirect. On a
+  // successful payment Stripe's webhook clears the lock and /me reports the
+  // tenant's real scope, so this banner disappears.
+  const [payErr, setPayErr] = useState<string | null>(null);
+  const checkout = useMutation({
+    mutationFn: () => startTenantCheckout(),
+    onSuccess: ({ url }) => {
+      if (url) window.location.assign(url);
+    },
+    onError: () =>
+      setPayErr(
+        "We couldn't start checkout just now. Please try again in a moment.",
+      ),
+  });
   if (adminMe?.productScope !== "locked") return null;
+
+  const payNow = (
+    <button
+      type="button"
+      onClick={() => {
+        setPayErr(null);
+        checkout.mutate();
+      }}
+      disabled={checkout.isPending}
+      className="rounded bg-amber-900 text-white px-3 py-1.5 text-xs font-semibold whitespace-nowrap disabled:opacity-60"
+    >
+      {checkout.isPending ? "Starting checkout…" : "Pay now & unlock"}
+    </button>
+  );
+
   if (location.startsWith("/admin/billing/package")) {
     return (
-      <div className="mb-4 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-        Choose a plan and complete payment below to unlock the rest of your
-        console.
+      <div className="mb-4 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 flex items-start justify-between gap-3">
+        <div>
+          Choose a plan below, or pay for your current plan now to unlock the
+          rest of your console.
+          {payErr ? (
+            <span className="block mt-1 text-rose-700">{payErr}</span>
+          ) : null}
+        </div>
+        {payNow}
       </div>
     );
   }
   return (
     <div className="mb-4 rounded border border-amber-300 bg-amber-50 px-3 py-3 text-sm text-amber-900 flex items-start justify-between gap-3">
       <div>
-        <strong>Your account is pending payment.</strong> Choose a plan and
-        complete payment to unlock the rest of your console.
+        <strong>Your account is pending payment.</strong> Pay now to unlock the
+        rest of your console, or visit billing to change your plan first.
+        {payErr ? (
+          <span className="block mt-1 text-rose-700">{payErr}</span>
+        ) : null}
       </div>
-      <Link
-        href="/admin/billing/package"
-        className="rounded bg-amber-900 text-white px-3 py-1.5 text-xs font-semibold whitespace-nowrap"
-      >
-        Go to billing
-      </Link>
+      <div className="flex items-center gap-2">
+        <Link
+          href="/admin/billing/package"
+          className="rounded border border-amber-900 text-amber-900 px-3 py-1.5 text-xs font-semibold whitespace-nowrap"
+        >
+          Billing
+        </Link>
+        {payNow}
+      </div>
     </div>
   );
 }

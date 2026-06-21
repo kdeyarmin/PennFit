@@ -790,6 +790,92 @@ export async function syncTenantStripeSubscription(args: {
   };
 }
 
+/**
+ * Create a hosted Stripe Checkout session so a tenant can pay their plan
+ * IMMEDIATELY (card charged now) and unlock — the "Pay now" path for the
+ * payment wall, distinct from the default invoiced (net-15) subscription the
+ * super-admin/self-service flow creates. Subscription mode: on completion
+ * Stripe creates a `charge_automatically` subscription and pays the first
+ * invoice at once, so both `checkout.session.completed` and `invoice.paid`
+ * clear the tenant's `billing_required` gate.
+ *
+ * The subscription carries the platform metadata (billing_scope/org_id/
+ * plan_code) so the existing `customer.subscription.*` webhook syncs it onto
+ * the tenant's row exactly like an invoiced sub. Uses inline `price_data`
+ * (no pre-created Price needed) for the tenant's CURRENT plan. Returns
+ * `{ stripeConfigured:false }` when platform Stripe billing is unconfigured.
+ */
+export async function createTenantCheckoutSession(args: {
+  orgId: string;
+  adminEmail?: string | null;
+  successUrl: string;
+  cancelUrl: string;
+}): Promise<{ stripeConfigured: boolean; url?: string | null }> {
+  const config = readPlatformBillingStripeConfigOrNull();
+  if (!config) return { stripeConfigured: false };
+  const raw = await rawClient();
+  if (!raw) throw new Error("tenant_directory_unavailable");
+  const stripe = getStripeClient(config);
+  const [tenant, sub] = await Promise.all([
+    tenantRow(raw, args.orgId),
+    activeSubscription(raw, args.orgId),
+  ]);
+  const plan = sub.billing_plans;
+  const planAmount =
+    cents(sub.custom_monthly_price_cents) ?? cents(plan.monthly_price_cents);
+  if (!planAmount || planAmount <= 0) throw new Error("plan_not_billable");
+
+  // Reuse the tenant's Stripe customer (creates + persists one if absent, and
+  // enforces the account-match guard).
+  const customer = await ensureTenantStripeCustomer({
+    orgId: args.orgId,
+    adminEmail: args.adminEmail ?? null,
+  });
+
+  const subMetadata = {
+    billing_scope: PLATFORM_BILLING_SCOPE,
+    org_id: args.orgId,
+    tenant_slug: tenant.slug,
+    plan_code: plan.code,
+  };
+  const session = await stripe.checkout.sessions.create({
+    mode: "subscription",
+    ...(customer.customerId ? { customer: customer.customerId } : {}),
+    line_items: [
+      {
+        price_data: {
+          currency: "usd",
+          product_data: {
+            name: plan.name,
+            metadata: priceMetadata("plan", plan.code),
+          },
+          unit_amount: planAmount,
+          recurring: { interval: "month" },
+        },
+        quantity: 1,
+      },
+    ],
+    subscription_data: { metadata: subMetadata },
+    client_reference_id: args.orgId,
+    metadata: { billing_scope: PLATFORM_BILLING_SCOPE, org_id: args.orgId },
+    success_url: args.successUrl,
+    cancel_url: args.cancelUrl,
+  });
+
+  await logAudit({
+    action: "platform.billing.checkout.created",
+    adminEmail: args.adminEmail ?? "tenant-admin",
+    adminUserId: null,
+    targetTable: "tenant_billing_subscriptions",
+    targetId: args.orgId,
+    metadata: { checkoutSessionId: session.id, planCode: plan.code },
+    ip: null,
+    userAgent: null,
+  }).catch(() => undefined);
+
+  return { stripeConfigured: true, url: session.url };
+}
+
 export async function handlePlatformTenantStripeEvent(
   event: Stripe.Event,
 ): Promise<boolean> {
@@ -798,12 +884,62 @@ export async function handlePlatformTenantStripeEvent(
     event.type !== "customer.subscription.updated" &&
     event.type !== "customer.subscription.deleted" &&
     event.type !== "invoice.paid" &&
-    event.type !== "invoice.payment_failed"
+    event.type !== "invoice.payment_failed" &&
+    event.type !== "checkout.session.completed"
   ) {
     return false;
   }
   const raw = await rawClient();
   if (!raw) return false;
+
+  // Hosted "Pay now" Checkout completed: tie the new Stripe subscription to the
+  // tenant's row and clear the payment wall deterministically (the parallel
+  // invoice.paid below is the belt-and-suspenders for the invoiced path).
+  if (event.type === "checkout.session.completed") {
+    const session = event.data.object as Stripe.Checkout.Session;
+    if (session.metadata?.billing_scope !== PLATFORM_BILLING_SCOPE)
+      return false;
+    const orgId =
+      session.client_reference_id ?? session.metadata?.org_id ?? null;
+    if (!orgId) return false;
+    const subscriptionId =
+      typeof session.subscription === "string"
+        ? session.subscription
+        : (session.subscription?.id ?? null);
+    if (subscriptionId) {
+      await raw
+        .schema("resupply")
+        .from("tenant_billing_subscriptions")
+        .update({
+          stripe_subscription_id: subscriptionId,
+          stripe_last_synced_at: new Date().toISOString(),
+        })
+        .eq("org_id", orgId)
+        .in("status", ["active", "trialing", "past_due"]);
+    }
+    const { error: clearErr } = await raw
+      .schema("resupply")
+      .from("organizations")
+      .update({ billing_required: false })
+      .eq("id", orgId);
+    if (clearErr) {
+      logger.error(
+        {
+          event: "platform_billing_paywall_clear_failed",
+          err: clearErr,
+          orgId,
+        },
+        "payment wall: failed to clear billing_required after checkout.session.completed",
+      );
+    } else {
+      logger.info(
+        { event: "platform_billing_paywall_cleared", orgId, via: "checkout" },
+        "payment wall: billing_required cleared after checkout",
+      );
+    }
+    return true;
+  }
+
   if (event.type.startsWith("customer.subscription.")) {
     const sub = event.data.object as Stripe.Subscription;
     if (

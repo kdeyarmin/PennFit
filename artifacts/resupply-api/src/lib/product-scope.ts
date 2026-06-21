@@ -200,10 +200,12 @@ const LOCKED_ALLOWED_PREFIXES: readonly string[] = [
   "/admin/agreements", // onboarding accept screen
   // Tenant self-service subscription billing — the page where they pick a
   // plan and complete payment to unlock. The SAME six the mask_fitter gate
-  // allows, never the operational claims worklists under /admin/billing/.
+  // allows, plus the hosted "Pay now" Checkout endpoint, never the operational
+  // claims worklists under /admin/billing/.
   "/admin/billing/package",
   "/admin/billing/plans",
   "/admin/billing/subscription",
+  "/admin/billing/checkout", // hosted Stripe Checkout "Pay now" → unlock
   "/admin/billing/addons",
   "/admin/billing/preview",
   "/admin/billing/usage-events",
