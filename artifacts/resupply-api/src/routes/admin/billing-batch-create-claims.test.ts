@@ -18,7 +18,9 @@ import {
 const { mockAdmin } = vi.hoisted(() => ({
   mockAdmin: { current: null as MockAdminCtx | null },
 }));
-vi.mock("../../middlewares/requireAdmin", () => makeRequireAdminMock(mockAdmin));
+vi.mock("../../middlewares/requireAdmin", () =>
+  makeRequireAdminMock(mockAdmin),
+);
 vi.mock("../../middlewares/admin-rate-limit", () => ({
   adminRateLimit: () => (_req: unknown, _res: unknown, next: () => void) =>
     next(),
@@ -83,9 +85,18 @@ describe("POST /admin/billing/fulfillments/batch-create-claims", () => {
     mockAdmin.current = ADMIN;
     createMock.mockImplementation(async ({ fulfillmentId }) => {
       if (fulfillmentId === A)
-        return { status: "created", claimId: "c-a", lineCount: 2, proposed: {} as never };
+        return {
+          status: "created",
+          claimId: "c-a",
+          lineCount: 2,
+          proposed: {} as never,
+        };
       if (fulfillmentId === B)
-        return { status: "claim_exists", claimId: "c-b", existingStatus: "submitted" };
+        return {
+          status: "claim_exists",
+          claimId: "c-b",
+          existingStatus: "submitted",
+        };
       return { status: "fulfillment_not_found" };
     });
 
@@ -103,9 +114,9 @@ describe("POST /admin/billing/fulfillments/batch-create-claims", () => {
     });
     expect(res.body.results).toHaveLength(3);
     const byId = Object.fromEntries(
-      (res.body.results as Array<{ fulfillmentId: string; status: string }>).map(
-        (r) => [r.fulfillmentId, r.status],
-      ),
+      (
+        res.body.results as Array<{ fulfillmentId: string; status: string }>
+      ).map((r) => [r.fulfillmentId, r.status]),
     );
     expect(byId[A]).toBe("created");
     expect(byId[B]).toBe("claim_exists");
@@ -116,7 +127,12 @@ describe("POST /admin/billing/fulfillments/batch-create-claims", () => {
     mockAdmin.current = ADMIN;
     createMock.mockImplementation(async ({ fulfillmentId }) => {
       if (fulfillmentId === B) throw new Error("boom");
-      return { status: "created", claimId: "c", lineCount: 1, proposed: {} as never };
+      return {
+        status: "created",
+        claimId: "c",
+        lineCount: 1,
+        proposed: {} as never,
+      };
     });
 
     const res = await request(makeApp())
@@ -126,9 +142,9 @@ describe("POST /admin/billing/fulfillments/batch-create-claims", () => {
     expect(res.status).toBe(200);
     expect(res.body.summary.created).toBe(2);
     expect(res.body.summary.errored).toBe(1);
-    const errored = (res.body.results as Array<{ fulfillmentId: string; status: string }>).find(
-      (r) => r.status === "error",
-    );
+    const errored = (
+      res.body.results as Array<{ fulfillmentId: string; status: string }>
+    ).find((r) => r.status === "error");
     expect(errored?.fulfillmentId).toBe(B);
   });
 

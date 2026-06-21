@@ -362,7 +362,9 @@ export function AdminBillingHubPage() {
                     <button
                       type="button"
                       onClick={() => void handleCreateClaim(f.id)}
-                      disabled={creatingFulfillmentId !== null || isBatchCreating}
+                      disabled={
+                        creatingFulfillmentId !== null || isBatchCreating
+                      }
                       className="inline-flex min-h-9 items-center justify-center rounded-md border px-3 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60"
                       style={{
                         borderColor: "hsl(var(--penn-navy))",

@@ -37,7 +37,9 @@ const CLAIM_ID = "22222222-2222-4222-8222-222222222222";
 const buildMock = vi.mocked(buildClaimFromFulfillment);
 const seedMock = vi.mocked(seedDefaultRequirementsForClaim);
 
-function proposedFixture(overrides: Partial<ProposedClaim> = {}): ProposedClaim {
+function proposedFixture(
+  overrides: Partial<ProposedClaim> = {},
+): ProposedClaim {
   return {
     patientId: "p-1",
     payerProfileId: "pp-1",
@@ -81,7 +83,9 @@ describe("createClaimFromFulfillment", () => {
     stageSupabaseResponse("insurance_claims", "insert", {
       data: { id: CLAIM_ID },
     });
-    stageSupabaseResponse("insurance_claim_line_items", "insert", { data: null });
+    stageSupabaseResponse("insurance_claim_line_items", "insert", {
+      data: null,
+    });
     stageSupabaseResponse("insurance_claim_events", "insert", { data: null });
 
     const result = await createClaimFromFulfillment({
@@ -98,9 +102,10 @@ describe("createClaimFromFulfillment", () => {
       expect(result.lineCount).toBe(1);
     }
     // Header carries the summed billed total + draft status.
-    const header = supabaseMock.writePayloads("insurance_claims", "insert")[0] as
-      | Record<string, unknown>
-      | undefined;
+    const header = supabaseMock.writePayloads(
+      "insurance_claims",
+      "insert",
+    )[0] as Record<string, unknown> | undefined;
     expect(header?.status).toBe("draft");
     expect(header?.total_billed_cents).toBe(9900);
     // bill-hold disabled → no seed.
@@ -152,7 +157,9 @@ describe("createClaimFromFulfillment", () => {
     stageSupabaseResponse("insurance_claims", "insert", {
       data: { id: CLAIM_ID },
     });
-    stageSupabaseResponse("insurance_claim_line_items", "insert", { data: null });
+    stageSupabaseResponse("insurance_claim_line_items", "insert", {
+      data: null,
+    });
     stageSupabaseResponse("insurance_claim_events", "insert", { data: null });
 
     const result = await createClaimFromFulfillment({

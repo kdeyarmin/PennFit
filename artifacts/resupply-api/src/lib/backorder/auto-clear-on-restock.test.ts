@@ -10,7 +10,9 @@ import {
 
 const supabaseMock = installSupabaseMock();
 
-const { logAuditMock } = vi.hoisted(() => ({ logAuditMock: vi.fn(async () => undefined) }));
+const { logAuditMock } = vi.hoisted(() => ({
+  logAuditMock: vi.fn(async () => undefined),
+}));
 vi.mock("@workspace/resupply-audit", () => ({ logAudit: logAuditMock }));
 
 import { autoClearBackorderForSku } from "./auto-clear-on-restock";
@@ -36,9 +38,10 @@ describe("autoClearBackorderForSku", () => {
     expect(result.cleared).toBe(1);
     expect(supabaseMock.callCount("shop_backorders", "update")).toBe(1);
     // cleared_at stamped + an auto-clear note appended.
-    const payload = supabaseMock.writePayloads("shop_backorders", "update")[0] as
-      | Record<string, unknown>
-      | undefined;
+    const payload = supabaseMock.writePayloads(
+      "shop_backorders",
+      "update",
+    )[0] as Record<string, unknown> | undefined;
     expect(payload?.cleared_at).toBeTruthy();
     expect(String(payload?.notes)).toContain("auto-cleared: back in stock");
     expect(logAuditMock).toHaveBeenCalledTimes(1);
