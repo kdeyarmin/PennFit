@@ -66,8 +66,10 @@ export async function runDenialAnalysis(
         })
         .eq("id", claimId);
       if (analysisLinkErr) {
+        // Log the error object (not just .message) so the logger's err.*
+        // redaction applies, consistent with the outer catch below.
         logger.warn(
-          { err: analysisLinkErr.message, claimId, analysisId: row.id },
+          { err: analysisLinkErr, claimId, analysisId: row.id },
           "denial-analysis: link update failed (non-fatal)",
         );
       }

@@ -159,7 +159,14 @@ describe("POST appeal-letter/:letterId/fax", () => {
       data: { id: CLAIM_ID, patient_id: PID, status: "denied" },
     });
     stageSupabaseResponse("claim_appeal_letters", "update", { data: null });
-    stageSupabaseResponse("insurance_claims", "update", { data: null });
+    // The conditional update returns the transitioned row (so the route emits
+    // the history event + webhook).
+    stageSupabaseResponse("insurance_claims", "update", {
+      data: [{ id: CLAIM_ID }],
+    });
+    stageSupabaseResponse("insurance_claim_events", "insert", {
+      data: { id: "evt-1" },
+    });
     stageSupabaseResponse("claim_denial_analyses", "update", { data: null });
 
     const res = await request(makeApp())
@@ -171,6 +178,11 @@ describe("POST appeal-letter/:letterId/fax", () => {
     expect(
       supabaseMock.writePayloads("insurance_claims", "update")[0],
     ).toMatchObject({ status: "appealed" });
+    // A replayable history event is written for the transition (mirrors the
+    // canonical PATCH side effects).
+    expect(
+      supabaseMock.writePayloads("insurance_claim_events", "insert")[0],
+    ).toMatchObject({ event_type: "appealed", claim_id: CLAIM_ID });
     // The linked denial analysis is marked resolved.
     expect(
       supabaseMock.writePayloads("claim_denial_analyses", "update")[0],

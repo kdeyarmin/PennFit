@@ -525,14 +525,16 @@ async function composeDenialReason(
       .raw()
       .schema("resupply")
       .from("denial_codes")
-      .select("code, description, code_system")
+      .select("code, description")
+      // Restrict to CARC in the query (codes here are all CARC reason codes)
+      // so a large remit doesn't scan/return unrelated RARC/custom rows.
+      .eq("code_system", "carc")
       .in("code", codes);
     for (const row of (data ?? []) as Array<{
       code: string;
       description: string;
-      code_system: string;
     }>) {
-      if (row.code_system === "carc") descByCode.set(row.code, row.description);
+      descByCode.set(row.code, row.description);
     }
   } catch {
     // Non-fatal — fall through to bare codes.

@@ -498,10 +498,16 @@ describe("scanForDueReminders — episodes read is filtered to in-progress statu
   // Without a status filter the episodes read returned EVERY episode of an
   // active prescription, so a confirmed/resolved/cancelled episode re-entered
   // candidacy once the 48h conversation quiet-window lapsed and got re-pinged.
-  const episodesBlock = SRC.slice(
-    SRC.indexOf('.from("episodes")'),
-    SRC.indexOf('.from("episodes")') + 600,
-  );
+  // Capture the index once and guard the not-found case so a formatting
+  // change surfaces as an explicit failure rather than a misleading slice
+  // starting at -1.
+  const episodesIdx = SRC.indexOf('.from("episodes")');
+  const episodesBlock =
+    episodesIdx >= 0 ? SRC.slice(episodesIdx, episodesIdx + 600) : "";
+
+  it("has an episodes read to assert against", () => {
+    expect(episodesIdx).toBeGreaterThanOrEqual(0);
+  });
 
   it("filters the episodes read by status", () => {
     expect(episodesBlock).toMatch(

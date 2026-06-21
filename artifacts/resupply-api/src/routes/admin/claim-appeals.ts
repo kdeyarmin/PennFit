@@ -352,16 +352,44 @@ router.post(
     // any other status is left untouched. Best-effort — the fax already
     // succeeded, so a stamp failure here is logged, not surfaced as an error.
     if (claim.status === "denied") {
-      const { error: claimErr } = await supabase
+      const { data: transitioned, error: claimErr } = await supabase
         .from("insurance_claims")
         .update({ status: "appealed", updated_at: nowIso })
         .eq("id", claim.id)
-        .eq("status", "denied");
+        .eq("status", "denied")
+        .select("id");
       if (claimErr) {
         logger.warn(
           { event: "appeal_fax_claim_transition_failed", claimId: claim.id },
           "claim_appeal.fax: claim denied->appealed transition failed",
         );
+      }
+      // Mirror the canonical claim-status transition side effects
+      // (routes/patients/insurance-claims.ts): a replayable
+      // insurance_claim_events row AND a claim.appealed webhook, so the claim
+      // history and external subscribers see the transition the same way they
+      // would from the PATCH route — not just the status column flipping.
+      // Only when THIS call actually performed the transition (the `.eq`
+      // guard means a concurrent process may have already moved it on).
+      if (!claimErr && (transitioned?.length ?? 0) > 0) {
+        const { error: eventErr } = await supabase
+          .from("insurance_claim_events")
+          .insert({
+            claim_id: claim.id,
+            event_type: "appealed",
+            note: "Appeal faxed to payer.",
+            actor_email: req.adminEmail ?? "unknown",
+          });
+        if (eventErr) {
+          logger.warn(
+            { event: "appeal_fax_event_insert_failed", claimId: claim.id },
+            "claim_appeal.fax: appealed history event insert failed",
+          );
+        }
+        void publishEvent({
+          eventType: "claim.appealed",
+          payload: { claim_id: claim.id, patient_id: claim.patient_id },
+        });
       }
       // Resolve the denial analysis this appeal answers (the letter's linked
       // analysis, else the claim's latest) so the worklist's

@@ -582,18 +582,34 @@ export async function dispatch277ca(
     //     clearinghouse FRONT-END rejection — distinct from a payer
     //     `denied` adjudication; surfaced for fix-and-resubmit).
     //   - pended → leave the status unchanged (still in process).
+    let conditionFromStates: readonly string[] | null = null;
     if (block.outcome === "accepted" && ACCEPT_277CA_FROM.has(claim.status)) {
       update.status = "accepted";
+      conditionFromStates = [...ACCEPT_277CA_FROM];
     } else if (
       block.outcome === "rejected" &&
       REJECT_277CA_FROM.has(claim.status)
     ) {
       update.status = "rejected";
+      conditionFromStates = [...REJECT_277CA_FROM];
     }
-    const { error: claimUpdateErr } = await supabase
+    // When this write transitions status, gate it on the DB row STILL being in
+    // an allowed from-state. The `claim.status` read above can go stale: a
+    // concurrent ERA/manual remit may post the claim paid/denied between the
+    // read and here, and an unconditional `.update({status})` would clobber
+    // that terminal adjudication. The predicate makes the transition a no-op
+    // in that race (PostgREST simply matches 0 rows). Non-transition writes
+    // (claim_number / pended) stay unconditional.
+    let claimUpdateQuery = supabase
       .from("insurance_claims")
       .update(update)
       .eq("id", claim.id);
+    if (conditionFromStates) {
+      claimUpdateQuery = claimUpdateQuery.in("status", [
+        ...conditionFromStates,
+      ]);
+    }
+    const { error: claimUpdateErr } = await claimUpdateQuery;
     if (claimUpdateErr) {
       logger.warn(
         { err: claimUpdateErr.message, claimId: claim.id },
