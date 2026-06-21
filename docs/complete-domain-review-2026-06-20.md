@@ -121,9 +121,15 @@ submit/transfer concurrency are genuinely strong. Gaps cluster around
    re-delivery (the 835 body isn't persisted, so re-delivery is the only
    recovery path); a `processed` row still short-circuits. New
    re-reconcile test added.
-4. **Same-or-Similar cache is write-only.** `medicare_same_or_similar_checks`
-   is read nowhere outside its own route (`same-or-similar.ts`); the claim
-   builder/preflight the header claims to feed never query it.
+4. **Same-or-Similar cache is write-only.** ✅ **Fixed in this PR.**
+   `medicare_same_or_similar_checks` was read nowhere outside its own route,
+   even though the header claimed it feeds the preflight engine. `claim-
+preflight.ts` now reads the latest cached check per HCPCS for a
+   Medicare-like payer and emits (per the owner's decision) **non-blocking
+   warnings**: `active` (rental-cycle conflict), `unknown`, and a missing or
+   stale (>180-day) check all warn; `clear`/`inactive` and fresh shows an
+   "ok" row. Reuses the existing payer-profile read (no extra query). New
+   tests cover active / missing / stale / clear / non-Medicare.
 5. **Capped-rental modifier rotation has no months 14–36 branch.** ✅
    **Fixed in this PR.** `pickModifiers` only handled `<=3` (KH) and `<=13`
    (KI/KX); a 36-month oxygen cycle emitted 23 claims with no rental-month

@@ -621,6 +621,94 @@ describe("preflightClaim", () => {
       .find((f) => f.verb === "in");
     expect(inCall?.args[1]).toEqual(["E0601"]);
   });
+
+  // ── Medicare Same-or-Similar ───────────────────────────────────────
+  const MEDICARE_PAYER = {
+    paper_only: false,
+    office_ally_payer_id: "54771",
+    requires_prior_auth_dme: false,
+    is_active: true,
+    line_of_business: "medicare_part_b",
+  };
+
+  it("warns (non-blocking) on an active same-or-similar conflict for a Medicare claim", async () => {
+    stageHappyPath({}, { payerOverride: MEDICARE_PAYER });
+    stageSupabaseResponse("medicare_same_or_similar_checks", "select", {
+      data: [
+        {
+          hcpcs_code: "E0601",
+          status: "active",
+          last_dispense_on: "2024-02-01",
+          checked_at: new Date().toISOString(),
+        },
+      ],
+    });
+    const out = await preflightClaim(CLAIM_ID);
+    const item = out.items.find((i) => i.key === "same_or_similar:E0601");
+    expect(item?.severity).toBe("warning");
+    expect(item?.label).toMatch(/conflict/i);
+    // Non-blocking: a same-or-similar warning never flips readyToSubmit.
+    expect(out.readyToSubmit).toBe(true);
+  });
+
+  it("warns when a Medicare claim has NO same-or-similar check on file", async () => {
+    stageHappyPath({}, { payerOverride: MEDICARE_PAYER });
+    stageSupabaseResponse("medicare_same_or_similar_checks", "select", {
+      data: [],
+    });
+    const out = await preflightClaim(CLAIM_ID);
+    const item = out.items.find((i) => i.key === "same_or_similar:E0601");
+    expect(item?.severity).toBe("warning");
+    expect(item?.label).toMatch(/not verified/i);
+  });
+
+  it("warns when the newest same-or-similar check is stale (> 180 days)", async () => {
+    stageHappyPath({}, { payerOverride: MEDICARE_PAYER });
+    const old = new Date(Date.now() - 200 * 24 * 60 * 60 * 1000).toISOString();
+    stageSupabaseResponse("medicare_same_or_similar_checks", "select", {
+      data: [
+        {
+          hcpcs_code: "E0601",
+          status: "clear",
+          last_dispense_on: null,
+          checked_at: old,
+        },
+      ],
+    });
+    const out = await preflightClaim(CLAIM_ID);
+    const item = out.items.find((i) => i.key === "same_or_similar:E0601");
+    expect(item?.severity).toBe("warning");
+    expect(item?.label).toMatch(/stale/i);
+  });
+
+  it("reports OK (no flags) on a fresh clear same-or-similar check", async () => {
+    stageHappyPath({}, { payerOverride: MEDICARE_PAYER });
+    stageSupabaseResponse("medicare_same_or_similar_checks", "select", {
+      data: [
+        {
+          hcpcs_code: "E0601",
+          status: "clear",
+          last_dispense_on: null,
+          checked_at: new Date().toISOString(),
+        },
+      ],
+    });
+    const out = await preflightClaim(CLAIM_ID);
+    expect(
+      out.items.find((i) => i.key === "same_or_similar:E0601"),
+    ).toBeUndefined();
+    const ok = out.items.find((i) => i.key === "same_or_similar");
+    expect(ok?.severity).toBe("ok");
+  });
+
+  it("skips same-or-similar entirely for a non-Medicare payer", async () => {
+    // Default happy path uses a commercial line_of_business.
+    stageHappyPath();
+    const out = await preflightClaim(CLAIM_ID);
+    expect(out.items.some((i) => i.key.startsWith("same_or_similar"))).toBe(
+      false,
+    );
+  });
 });
 
 describe("isNocHcpcs", () => {
@@ -773,11 +861,13 @@ function stagePayerProfile(overrides: {
     | "active"
     | "suspended";
   enrollment_effective_on?: string | null;
+  line_of_business?: string;
 }): void {
   stageSupabaseResponse("payer_profiles", "select", {
     data: {
       id: PAYER_PROFILE_ID,
       display_name: "Highmark BCBS",
+      line_of_business: overrides.line_of_business ?? "commercial",
       is_active: overrides.is_active,
       paper_only: overrides.paper_only,
       office_ally_payer_id: overrides.office_ally_payer_id,
