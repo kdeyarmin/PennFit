@@ -3914,9 +3914,10 @@ const PLANS: {
   },
   {
     name: "Scale",
-    price: "$3,999",
+    price: "$3,199",
     cadence: "/mo",
-    monthlyCents: 399900,
+    monthlyCents: 319900,
+    regularPrice: "$3,999",
     perPatient: "+ $0.65 / active patient / mo",
     lockMonths: 12,
     setup: "+ $10,000 one-time onboarding",
