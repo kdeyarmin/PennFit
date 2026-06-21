@@ -181,8 +181,15 @@ preflight.ts` now reads the latest cached check per HCPCS for a
   triage terminal denials from workable ones. New reconciler-side enrichment
   and worklist-API tests. _Follow-up:_ render the new fields in the SPA
   denials-worklist UI (the API now provides them).
-- Da Vinci PAS Claim is always built with `diagnosis: []` and hardcoded
-  `quantity: 1` (`davinci-pas-submit.ts:246`) → payer rejection.
+- ✅ **Fixed in this PR.** Da Vinci PAS Claim was always built with
+  `diagnosis: []` and hardcoded `quantity: 1` → payer rejection. The bundle
+  builder already supported a diagnosis; the route just passed `null`. Now the
+  route resolves the diagnosis ICD-10 from the patient's latest sleep study
+  (the same source the claim builder / preflight use) and, per the owner's
+  decision, **blocks** submission with a 409 (`no_diagnosis_on_file`) when none
+  is on file rather than sending a guaranteed-reject request; `quantity` is now
+  an optional submit-body override (positive int, default 1). New route tests
+  (401 / invalid-quantity 400 / PA-not-found 404 / no-diagnosis 409).
 - Denial-rate denominators disagree across three dashboards
   (`billing-benchmarks.ts`, `billing-reports.ts`, `billing-director.ts`).
 - ✅ **Fixed in this PR.** 277CA `pended` was rolled up as `accepted_277ca` at
