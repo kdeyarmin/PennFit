@@ -89,6 +89,26 @@ const VOICE_WS_PATH = "/resupply-api/voice/stream";
 // row so cancellation/revocation is honored immediately.
 const VIDEO_WS_PATH = "/resupply-api/video/signal";
 
+// Twilio connects to `${VOICE_WS_PATH}/<conversationId>` — the conversationId
+// rides the URL PATH, not a query string, because Twilio Media Streams DROP
+// query strings on the <Stream> url (their documented behavior). With the id
+// in a query the upgrade handler saw nothing → 400 → Twilio error 31920 →
+// the call died the instant it connected. The path segment is preserved.
+function isVoiceStreamPath(pathname: string): boolean {
+  return pathname === VOICE_WS_PATH || pathname.startsWith(`${VOICE_WS_PATH}/`);
+}
+
+function voiceStreamConversationIdFromPath(pathname: string): string | null {
+  if (!pathname.startsWith(`${VOICE_WS_PATH}/`)) return null;
+  const seg = pathname.slice(VOICE_WS_PATH.length + 1).split("/")[0] ?? "";
+  if (!seg) return null;
+  try {
+    return decodeURIComponent(seg) || null;
+  } catch {
+    return seg;
+  }
+}
+
 httpServer.on("upgrade", (req: IncomingMessage, socket: Socket, head) => {
   const url = safeParseUpgradeUrl(req);
   if (url?.pathname === VIDEO_WS_PATH) {
@@ -120,10 +140,10 @@ httpServer.on("upgrade", (req: IncomingMessage, socket: Socket, head) => {
     });
     return;
   }
-  if (!url || url.pathname !== VOICE_WS_PATH) {
+  if (!url || !isVoiceStreamPath(url.pathname)) {
     // Reject unknown upgrade paths immediately. We use destroy()
     // rather than 404+close because Twilio (the only legitimate
-    // client) will only ever target the exact voice-stream path; any
+    // client) will only ever target the voice-stream path; any
     // other upgrade is by definition unwanted.
     socket.destroy();
     return;
@@ -135,7 +155,11 @@ httpServer.on("upgrade", (req: IncomingMessage, socket: Socket, head) => {
     return;
   }
 
-  const conversationId = url.searchParams.get("conversationId");
+  // Prefer the path segment (how Twilio connects); fall back to the legacy
+  // ?conversationId= query for non-Twilio callers and existing tests.
+  const conversationId =
+    voiceStreamConversationIdFromPath(url.pathname) ??
+    url.searchParams.get("conversationId");
   if (!conversationId) {
     rejectUpgrade(socket, 400, "missing-conversation-id");
     return;

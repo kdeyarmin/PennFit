@@ -5,7 +5,7 @@
 //   1. POST /voice/place-call registers a pending session, dials Twilio.
 //   2. The patient picks up; Twilio POSTs /voice/twiml-connect.
 //   3. The TwiML response tells Twilio to open a Media Stream WS to
-//      /resupply-api/voice/stream?conversationId=<id>.
+//      /resupply-api/voice/stream/<id>.
 //   4. Twilio opens the WS. The HTTP server's `upgrade` handler
 //      validates the path + claims the pending session, then hands the
 //      socket here.
