@@ -42,6 +42,7 @@ import {
   stripeWebhookHandler,
 } from "./lib/stripe/webhook-handler";
 import faxWebhooksRouter from "./routes/fax/webhooks";
+import carrierTrackingWebhookRouter from "./routes/webhooks/carrier-tracking";
 import { createTrustProxyFn } from "./lib/trusted-proxies";
 import {
   buildBreatheSitemapXml,
@@ -291,6 +292,15 @@ app.use(
   "/resupply-api/fax",
   express.raw({ type: "application/json", limit: "256kb" }),
   faxWebhooksRouter,
+);
+
+// Carrier tracking webhook (EasyPost/Shippo) — HMAC-SHA256 over the EXACT raw
+// body, same posture as Stripe/fax above; raw + BEFORE express.json(), scoped
+// to this one path so the global JSON parser still handles everything else.
+app.use(
+  "/resupply-api/webhooks/carrier",
+  express.raw({ type: "application/json", limit: "256kb" }),
+  carrierTrackingWebhookRouter,
 );
 
 // SendGrid Event Webhook + vendor integration webhooks verify an
