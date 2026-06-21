@@ -222,7 +222,7 @@ describe("readVoiceConfigOrNull — optional value parsing", () => {
         ?.realtimeSchema,
     ).toBe("ga");
     expect(
-      readVoiceConfigOrNull(fullEnv({ OPENAI_REALTIME_SCHEMA: "BETA" }))
+      readVoiceConfigOrNull(fullEnv({ OPENAI_REALTIME_SCHEMA: "beta" }))
         ?.realtimeSchema,
     ).toBe("beta");
     expect(
