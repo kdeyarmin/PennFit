@@ -3858,9 +3858,11 @@ const PLANS: {
 }[] = [
   {
     name: "Virtual Mask Fitter",
-    price: "$149",
+    price: "$119",
     cadence: "/mo",
-    monthlyCents: 14900,
+    monthlyCents: 11900,
+    regularPrice: "$149",
+    lockMonths: 12,
     setup: "No setup fee · 25 fittings/mo, then $2 each",
     blurb:
       "Standalone AI mask fitter — text a patient a link, get the perfect mask & size back. No in-office fittings, no wasted sample masks.",

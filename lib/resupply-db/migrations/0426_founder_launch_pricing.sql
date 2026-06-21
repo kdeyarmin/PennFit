@@ -63,11 +63,35 @@ ON CONFLICT ("code") DO UPDATE SET
   "updated_at" = now();
 --> statement-breakpoint
 
--- Hide the standard full-platform plans: the founder twins are the offer now.
--- Existing subscriptions on these plans are unchanged (display-only flag).
+-- Founder twin of the standalone Virtual Mask Fitter plan: a flat $119/mo
+-- (regular $149), no per-active-patient charge, same fitter scope/allowances
+-- (25 fittings/mo + $2 overage), rate locked 12 months.
+INSERT INTO "resupply"."billing_plans"
+  ("code", "name", "description", "monthly_price_cents", "onboarding_fee_cents",
+   "is_public", "is_custom", "sort_order", "allowances", "features",
+   "product_scope", "regular_monthly_price_cents", "founder_rate_locked_months")
+VALUES
+  ('mask_fitter_founder', 'Virtual Mask Fitter',
+   'Standalone AI mask fitter for DMEs. Text or email a patient a link, they self-measure on their phone camera, and the perfect mask type + size comes back to your team — no in-office fittings, no sample masks opened just to be thrown away.',
+   11900, 0, true, false, 5,
+   '{"seats":5,"fitterFittingsPerMonth":25,"activePatients":250,"locations":1,"ordersPerMonth":0,"activeSubscriptions":0,"outboundMessagesPerMonth":500,"aiTextInteractionsPerMonth":0,"billingTransactionsPerMonth":0}'::jsonb,
+   '["AI virtual mask fitter — on-device facial measurement","Text or email a fitting link to any patient or prospect","Perfect mask type + size returned to your fitter worklist","Photos never leave the patient''s phone — only measurements","25 completed fittings/month included, then per-fitting pricing"]'::jsonb,
+   'mask_fitter', 14900, 12)
+ON CONFLICT ("code") DO UPDATE SET
+  "monthly_price_cents" = EXCLUDED."monthly_price_cents",
+  "regular_monthly_price_cents" = EXCLUDED."regular_monthly_price_cents",
+  "founder_rate_locked_months" = EXCLUDED."founder_rate_locked_months",
+  "is_public" = EXCLUDED."is_public",
+  "allowances" = EXCLUDED."allowances",
+  "features" = EXCLUDED."features",
+  "updated_at" = now();
+--> statement-breakpoint
+
+-- Hide the standard plans: the founder twins are the offer now. Existing
+-- subscriptions on these plans are unchanged (display-only flag).
 UPDATE "resupply"."billing_plans"
 SET "is_public" = false, "updated_at" = now()
-WHERE "code" IN ('launch','growth','scale');
+WHERE "code" IN ('launch','growth','scale','mask_fitter');
 --> statement-breakpoint
 
 -- Billing-grade active-patient count: a patient who is active AND has an active

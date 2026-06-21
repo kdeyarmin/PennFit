@@ -159,7 +159,7 @@ const SHOP_PROMPT_HASH =
  * the printed hash, record it here.
  */
 const BREATHE_SALES_PROMPT_HASH =
-  "e00d17a0eae9265122add16d78db237fa248bcb2e12e30d14708599446329885";
+  "20385bf1da28209e65a4ca5b79cbfc86b34212facc2e3c77ee8478369d858db0";
 
 describe("PROMPT_VERSION drift detector", () => {
   it("has a recorded hash for the currently-shipped PROMPT_VERSION", () => {
