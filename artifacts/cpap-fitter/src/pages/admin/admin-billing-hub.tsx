@@ -39,6 +39,7 @@ import { Card, KpiCard } from "@/components/admin/Card";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Spinner } from "@/components/admin/Spinner";
 import {
+  batchCreateClaimsFromFulfillments,
   createClaimFromFulfillment,
   fetchBillingDashboard,
   fetchDirectorSummary,
@@ -65,6 +66,8 @@ export function AdminBillingHubPage() {
     id: string;
     patientId: string;
   } | null>(null);
+  const [isBatchCreating, setIsBatchCreating] = useState(false);
+  const [batchSummary, setBatchSummary] = useState<string | null>(null);
 
   const {
     data,
@@ -107,6 +110,35 @@ export function AdminBillingHubPage() {
       );
     } finally {
       setCreatingFulfillmentId(null);
+    }
+  }
+
+  async function handleCreateAllClaims() {
+    const ids = (dashboard?.fulfillmentsToBill ?? []).map((f) => f.id);
+    if (ids.length === 0) return;
+    setIsBatchCreating(true);
+    setCreateError(null);
+    setCreatedClaim(null);
+    setBatchSummary(null);
+    try {
+      const res = await batchCreateClaimsFromFulfillments(ids);
+      const parts = [`${res.summary.created} created`];
+      if (res.summary.claimExists > 0)
+        parts.push(`${res.summary.claimExists} already billed`);
+      if (res.summary.notFound > 0)
+        parts.push(`${res.summary.notFound} not found`);
+      if (res.summary.errored > 0)
+        parts.push(`${res.summary.errored} need attention`);
+      setBatchSummary(parts.join(" · "));
+      await Promise.all([refetchDirector(), refetchDashboard()]);
+    } catch (err) {
+      setCreateError(
+        err instanceof Error
+          ? err.message
+          : "Batch claim creation failed. Refresh and try again.",
+      );
+    } finally {
+      setIsBatchCreating(false);
     }
   }
 
@@ -222,6 +254,21 @@ export function AdminBillingHubPage() {
       <Card
         title="Fulfillments ready to bill"
         subtitle="Shipped items that do not have an insurance claim yet"
+        action={
+          (dashboard?.fulfillmentsToBill.length ?? 0) > 0 ? (
+            <button
+              type="button"
+              onClick={() => void handleCreateAllClaims()}
+              disabled={isBatchCreating || creatingFulfillmentId !== null}
+              className="inline-flex min-h-9 items-center justify-center rounded-md px-3 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-60"
+              style={{ background: "hsl(var(--penn-navy))" }}
+            >
+              {isBatchCreating
+                ? "Creating claims…"
+                : `Create all claims (${dashboard?.fulfillmentsToBill.length ?? 0})`}
+            </button>
+          ) : undefined
+        }
       >
         {dashboardPending ? (
           <Spinner label="Loading fulfillments…" />
@@ -259,6 +306,18 @@ export function AdminBillingHubPage() {
                 >
                   Open claim workbench
                 </Link>
+              </p>
+            )}
+            {batchSummary && (
+              <p
+                className="rounded border px-3 py-2 text-sm"
+                style={{
+                  borderColor: "#bbf7d0",
+                  color: "#166534",
+                  background: "#f0fdf4",
+                }}
+              >
+                Batch complete — {batchSummary}.
               </p>
             )}
             <ul
@@ -303,7 +362,7 @@ export function AdminBillingHubPage() {
                     <button
                       type="button"
                       onClick={() => void handleCreateClaim(f.id)}
-                      disabled={creatingFulfillmentId !== null}
+                      disabled={creatingFulfillmentId !== null || isBatchCreating}
                       className="inline-flex min-h-9 items-center justify-center rounded-md border px-3 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60"
                       style={{
                         borderColor: "hsl(var(--penn-navy))",

@@ -168,6 +168,7 @@ import payerModifierRulesRouter from "./admin/payer-modifier-rules.js";
 import payerCoverageDiagnosesRouter from "./admin/payer-coverage-diagnoses.js";
 import claimTemplatesRouter from "./admin/claim-templates.js";
 import fulfillmentToClaimRouter from "./admin/fulfillment-to-claim.js";
+import billingBatchCreateClaimsRouter from "./admin/billing-batch-create-claims.js";
 import aiBillingQueueRouter from "./admin/ai-billing-queue.js";
 import dmeOrganizationRouter from "./admin/dme-organization.js";
 import clearinghouseCredentialsRouter from "./admin/clearinghouse-credentials.js";
@@ -563,6 +564,10 @@ router.use(claimTemplatesRouter);
 // (HCPCS map + modifier rules + fee schedule + diagnosis + prescriber)
 // and inserts the populated draft.
 router.use(fulfillmentToClaimRouter);
+// /admin/billing/fulfillments/batch-create-claims — bulk version of the
+// one-click create-claim above; turns the "fulfillments to bill" worklist
+// into a single batched action with per-item isolation.
+router.use(billingBatchCreateClaimsRouter);
 // /admin/billing/ai-queue — AI scrub + denial-analysis worklist
 // surfacing claims blocked / fixable / awaiting analysis / ready
 // for one-click auto-resubmit.
