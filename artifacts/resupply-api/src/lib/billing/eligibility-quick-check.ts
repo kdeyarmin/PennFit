@@ -18,7 +18,7 @@
 // 270 payload and NOWHERE else — never logged, never persisted, never
 // echoed into audit metadata. Log lines carry timing + outcome only.
 
-import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 import {
   allocateControlNumbers,
   build270,
@@ -34,6 +34,13 @@ import {
 } from "./identity-resolver";
 
 export interface QuickEligibilityCheckInput {
+  /** Tenant the check runs under. The caller resolves it — the admin
+   *  route from `req.orgId` (fail-closed) — and every read (payer
+   *  profile, ISA13 pool), the billing identity / clearinghouse, and the
+   *  usage meter are scoped to it. Never defaulted to the seed org here:
+   *  a missing tenant context must surface upstream, not silently bill a
+   *  second tenant's quick check under PennPaps. */
+  orgId: string;
   /** payer_profiles.id — the payer to query. Must accept electronic
    *  270/271 (office_ally_payer_id set, not paper_only). */
   payerProfileId: string;
@@ -117,10 +124,7 @@ function nextQuickCheckSequence(): number {
 export async function quickCheckEligibility(
   input: QuickEligibilityCheckInput,
 ): Promise<QuickEligibilityCheckResult> {
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) {
-    throw new Error("tenant context missing");
-  }
+  const { orgId } = input;
   const supabase = getOrgScopedClient(orgId);
 
   const { data: payerProfile, error: payerErr } = await supabase

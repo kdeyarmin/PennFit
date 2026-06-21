@@ -22,6 +22,7 @@ import request from "supertest";
 
 import {
   makeRequireAdminMock,
+  MOCK_ORG_ID,
   type MockAdminCtx,
 } from "../../test-helpers/auth-mocks";
 
@@ -105,6 +106,22 @@ describe("POST /admin/billing/eligibility-quick-check", () => {
     expect(vi.mocked(quickCheckEligibility)).not.toHaveBeenCalled();
   });
 
+  it("fails closed (500) when the admin has no tenant context", async () => {
+    // Authenticated, but req.orgId never resolved (orgId: null). The
+    // quick check must NOT fall back to the seed org — refuse so a
+    // tenant-less session can't bill a 270 under PennPaps.
+    mockAdmin.current = {
+      userId: "u1",
+      email: "ops@x.com",
+      role: "admin",
+      orgId: null,
+    };
+    const res = await post(makeApp(), VALID_BODY);
+    expect(res.status).toBe(500);
+    expect(res.body.error).toBe("tenant_context_missing");
+    expect(vi.mocked(quickCheckEligibility)).not.toHaveBeenCalled();
+  });
+
   it("400s on a missing member id", async () => {
     mockAdmin.current = { userId: "u1", email: "ops@x.com", role: "admin" };
     const { memberId: _omitted, ...rest } = VALID_BODY;
@@ -149,6 +166,7 @@ describe("POST /admin/billing/eligibility-quick-check", () => {
     expect(res.body.payerName).toBe("Acme Health");
     expect(res.body.benefits.isActive).toBe(true);
     expect(vi.mocked(quickCheckEligibility)).toHaveBeenCalledWith({
+      orgId: MOCK_ORG_ID,
       payerProfileId: PAYER_PROFILE_ID,
       subscriber: {
         firstName: "Alice",
