@@ -1,5 +1,5 @@
 // Persist a Stripe chargeback dispute into resupply.stripe_disputes
-// (migration 0428). Called from the charge.dispute.created/updated/closed
+// (migration 0429). Called from the charge.dispute.created/updated/closed
 // webhook cases so a dispute and its evidence deadline are durable + surfaced
 // on the admin worklist, instead of living only in a WARN log line.
 //

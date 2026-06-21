@@ -657,7 +657,7 @@ export const stripeWebhookHandler: RequestHandler = async (
           "stripe: chargeback dispute opened — CSR action required",
         );
         // Persist so the dispute + its evidence deadline survive the log
-        // (migration 0428). Fail-soft; the WARN above is the immediate alert.
+        // (migration 0429). Fail-soft; the WARN above is the immediate alert.
         await persistStripeDispute(webhookOrgId, dispute, log);
         break;
       }

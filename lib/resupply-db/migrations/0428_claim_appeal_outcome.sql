@@ -1,4 +1,6 @@
--- 0427_claim_appeal_outcome — appeal win-rate + response-aging tracking.
+-- 0428_claim_appeal_outcome — appeal win-rate + response-aging tracking.
+-- (renumbered from 0427 to clear a prefix collision with main's
+--  0427_tenant_billing_paywall.)
 --
 -- claim_appeal_letters (migration 0137) recorded the letter plus its
 -- delivery_method / delivered_at, but nothing captured the PAYER'S RESPONSE,

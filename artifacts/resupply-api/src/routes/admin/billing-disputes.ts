@@ -1,6 +1,6 @@
 // GET /admin/billing/disputes — chargeback dispute worklist.
 //
-// Reads resupply.stripe_disputes (migration 0428), which the Stripe
+// Reads resupply.stripe_disputes (migration 0429), which the Stripe
 // charge.dispute.* webhook now upserts into. Open disputes first, ordered by
 // evidence deadline so the deadline-bearing ones surface — the whole point of
 // persisting disputes instead of only WARN-logging them.

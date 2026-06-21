@@ -1,4 +1,5 @@
--- 0428_stripe_disputes — persist Stripe chargeback disputes.
+-- 0429_stripe_disputes — persist Stripe chargeback disputes.
+-- (renumbered from 0428 to clear a prefix collision with main.)
 --
 -- charge.dispute.* events were only WARN-logged (lib/stripe/webhook-handler.ts),
 -- so a missed alert = a silently lost dispute deadline. This adds a disputes
@@ -13,7 +14,8 @@ CREATE TABLE IF NOT EXISTS "resupply"."stripe_disputes" (
   "org_id" uuid,
   "stripe_dispute_id" text NOT NULL,
   "stripe_charge_id" text,
-  "order_id" uuid
+  -- shop_orders.id is text (migration 0013), so order_id matches that type.
+  "order_id" text
     REFERENCES "resupply"."shop_orders"("id") ON DELETE SET NULL,
   "amount_cents" bigint NOT NULL DEFAULT 0,
   "currency" text,
