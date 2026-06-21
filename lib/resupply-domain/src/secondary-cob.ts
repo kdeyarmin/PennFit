@@ -91,7 +91,9 @@ export function deriveSecondaryCob(p: PrimaryClaimTotals): CobDerivation {
   return {
     eligible: true,
     cob: {
-      primaryPaidCents: p.total_paid_cents,
+      // Clamp like every other cents field: a stray negative paid amount
+      // upstream must not emit a negative COB value.
+      primaryPaidCents: Math.max(0, p.total_paid_cents),
       contractualCents,
       patientRespCents,
       billableToSecondaryCents: patientRespCents,

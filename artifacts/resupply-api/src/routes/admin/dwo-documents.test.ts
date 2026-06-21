@@ -1,7 +1,7 @@
 // Tests for the DWO/CMN PDF generate route added in this PR:
 //   GET /admin/dwo-documents/:id/pdf  (patients.read)
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import express, { type Express } from "express";
 import request from "supertest";
 
@@ -50,6 +50,10 @@ function makeApp(): Express {
 beforeEach(() => {
   mockAdmin.current = null;
   supabaseMock.reset();
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe("GET /admin/dwo-documents/:id/pdf", () => {
@@ -152,8 +156,13 @@ describe("GET /admin/dwo-documents/expiring — expiry classification", () => {
 
   it("tags each row with the sweep-consistent expiry classification", async () => {
     mockAdmin.current = CSR;
-    // 7 days out → lands on the 7-day DWO heads-up window (critical),
-    // computed relative to now so the assertion is date-independent.
+    // Pin the clock (Date only — real timers stay intact for supertest) so
+    // the staged date and the route's independently-computed `today` can't
+    // straddle a UTC-midnight boundary and flip the 7-day window assertion.
+    // useRealTimers is restored in afterEach.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-06-15T12:00:00Z"));
+    // 7 days out → lands on the 7-day DWO heads-up window (critical).
     const inSevenDays = new Date(Date.now() + 7 * 24 * 3600 * 1000)
       .toISOString()
       .slice(0, 10);

@@ -61,7 +61,11 @@ export type CappedRentalAction = "noop" | "advance" | "transfer";
 export interface CappedRentalAdvanceInput {
   /** Cycle start date (YYYY-MM-DD). */
   startDate: string;
-  /** The cycle's current rental month (0-based count of months billed). */
+  /** The cycle's current rental month — the persisted
+   *  `capped_rental_cycles.current_month` value: the number of rental
+   *  months already represented on the cycle (1 after the initial month,
+   *  advanced to 2, 3, …). NOT 0-based. The next claim is for
+   *  `currentMonth + 1`. */
   currentMonth: number;
   /** Cap after which the device converts to patient ownership. */
   maxMonths: number;

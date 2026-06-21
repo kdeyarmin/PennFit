@@ -123,10 +123,16 @@ router.get(
       currentMonth: cycle.current_month,
       maxMonths: cycle.max_months,
     });
-    // The month that would be billed next: the advance target, or the
-    // current month when nothing is due yet / at transfer.
-    const billedMonth =
-      decision.action === "advance" ? decision.nextMonth : cycle.current_month;
+    // The next rental month that will actually be BILLED — i.e. the month
+    // of the claim the worker generates on the next anniversary, which is
+    // `current_month + 1` for BOTH the not-yet-due (noop) and due (advance)
+    // cases (`current_month` is the last month already represented on the
+    // cycle, never the next one). Once `current_month` reaches the cap the
+    // next event is an ownership transfer — the device converts to
+    // patient-owned and there is NO further monthly claim — so there is no
+    // billed month or modifiers to preview.
+    const atCap = cycle.current_month >= cycle.max_months;
+    const billedMonth = atCap ? null : cycle.current_month + 1;
     const kxGated = (CAPPED_RENTAL_KX_HCPCS as readonly string[]).includes(
       cycle.hcpcs_code,
     );
@@ -141,16 +147,14 @@ router.get(
       billedMonth,
       nextDueOn: new Date(decision.nextDueMs).toISOString().slice(0, 10),
       kxGated,
-      modifiersIfCompliant: pickCappedRentalModifiers(
-        cycle.hcpcs_code,
-        billedMonth,
-        true,
-      ),
-      modifiersIfNotCompliant: pickCappedRentalModifiers(
-        cycle.hcpcs_code,
-        billedMonth,
-        false,
-      ),
+      modifiersIfCompliant:
+        billedMonth == null
+          ? []
+          : pickCappedRentalModifiers(cycle.hcpcs_code, billedMonth, true),
+      modifiersIfNotCompliant:
+        billedMonth == null
+          ? []
+          : pickCappedRentalModifiers(cycle.hcpcs_code, billedMonth, false),
     });
   },
 );

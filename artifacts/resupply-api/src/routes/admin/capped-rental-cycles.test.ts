@@ -392,11 +392,58 @@ describe("GET /admin/capped-rental-cycles/:id/preview", () => {
     );
     expect(res.status).toBe(200);
     expect(res.body.action).toBe("noop");
-    expect(res.body.billedMonth).toBe(5);
+    // Previews the NEXT month to be billed (current_month + 1 = 6), not
+    // the current month — month 6 is still in the 4-13 KI band.
+    expect(res.body.billedMonth).toBe(6);
     expect(res.body.kxGated).toBe(true);
     // Month 4-13 band: RR + KI, plus KX only when compliant.
     expect(res.body.modifiersIfCompliant).toEqual(["RR", "KI", "KX"]);
     expect(res.body.modifiersIfNotCompliant).toEqual(["RR", "KI"]);
+  });
+
+  it("previews the KH→KI band transition (month 3 cycle → month 4 claim)", async () => {
+    stubAdmin();
+    const today = new Date().toISOString().slice(0, 10);
+    stageSupabaseResponse("capped_rental_cycles", "select", {
+      data: {
+        id: CYCLE_ID,
+        hcpcs_code: "E0601",
+        start_date: today, // not yet due → noop
+        current_month: 3,
+        max_months: 13,
+        status: "active",
+      },
+    });
+    const res = await request(makeApp()).get(
+      `/admin/capped-rental-cycles/${CYCLE_ID}/preview`,
+    );
+    expect(res.status).toBe(200);
+    // The next claim is month 4 (KI band), NOT month 3 (KH band) — the
+    // CSR must see KI, not KH, at this transition.
+    expect(res.body.billedMonth).toBe(4);
+    expect(res.body.modifiersIfCompliant).toEqual(["RR", "KI", "KX"]);
+  });
+
+  it("previews no billed month/modifiers once at the cap (ownership transfer)", async () => {
+    stubAdmin();
+    const today = new Date().toISOString().slice(0, 10);
+    stageSupabaseResponse("capped_rental_cycles", "select", {
+      data: {
+        id: CYCLE_ID,
+        hcpcs_code: "E0601",
+        start_date: today,
+        current_month: 13,
+        max_months: 13, // at cap → device converts to patient ownership
+        status: "active",
+      },
+    });
+    const res = await request(makeApp()).get(
+      `/admin/capped-rental-cycles/${CYCLE_ID}/preview`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.billedMonth).toBeNull();
+    expect(res.body.modifiersIfCompliant).toEqual([]);
+    expect(res.body.modifiersIfNotCompliant).toEqual([]);
   });
 
   it("does not gate KX for a non-PAP HCPCS", async () => {

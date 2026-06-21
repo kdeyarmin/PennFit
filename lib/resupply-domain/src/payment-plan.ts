@@ -60,7 +60,20 @@ export function generateInstallmentSchedule(input: {
   frequency: PlanFrequency;
   startDate: string;
 }): ScheduledInstallment[] {
-  const { totalAmountCents, installmentCount, frequency, startDate } = input;
+  const { frequency, startDate } = input;
+  // Defensive clamps (matching the rest of the domain layer): a
+  // non-finite or < 1 installment count can't produce a valid schedule
+  // (Math.floor(total / 0) is Infinity), so return an empty schedule
+  // rather than rows with NaN/Infinity amounts. The total is clamped to a
+  // finite, non-negative integer-cents value.
+  const installmentCount = Number.isFinite(input.installmentCount)
+    ? Math.floor(input.installmentCount)
+    : 0;
+  if (installmentCount < 1) return [];
+  const totalAmountCents = Number.isFinite(input.totalAmountCents)
+    ? Math.max(0, Math.trunc(input.totalAmountCents))
+    : 0;
+
   const base = Math.floor(totalAmountCents / installmentCount);
   const remainder = totalAmountCents - base * installmentCount;
   const out: ScheduledInstallment[] = [];

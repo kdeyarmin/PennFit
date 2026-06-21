@@ -163,8 +163,13 @@ describe("/admin/billing/prior-auth-queue", () => {
 
   it("classifies an expiring auth with sweep-consistent severity", async () => {
     stubVerifiedAdmin();
-    // Exactly 7 days out → lands on the 7-day heads-up window (critical),
-    // computed relative to now so the assertion is date-independent.
+    // Pin the clock (Date only — real timers stay intact for supertest) so
+    // the staged date and the route's independently-computed `today` can't
+    // straddle a UTC-midnight boundary and flip the 7-day window assertion.
+    // useRealTimers is restored in afterEach.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-06-15T12:00:00Z"));
+    // Exactly 7 days out → lands on the 7-day heads-up window (critical).
     const inSevenDays = new Date(Date.now() + 7 * 24 * 3600 * 1000)
       .toISOString()
       .slice(0, 10);

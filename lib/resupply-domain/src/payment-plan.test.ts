@@ -36,6 +36,37 @@ describe("generateInstallmentSchedule", () => {
     ]);
   });
 
+  it("returns an empty schedule for a non-positive or non-finite count", () => {
+    const base = {
+      totalAmountCents: 10_000,
+      frequency: "monthly" as const,
+      startDate: "2026-01-15",
+    };
+    expect(
+      generateInstallmentSchedule({ ...base, installmentCount: 0 }),
+    ).toEqual([]);
+    expect(
+      generateInstallmentSchedule({ ...base, installmentCount: -3 }),
+    ).toEqual([]);
+    expect(
+      generateInstallmentSchedule({
+        ...base,
+        installmentCount: Number.NaN,
+      }),
+    ).toEqual([]);
+  });
+
+  it("clamps a non-finite total to 0 (no NaN amounts)", () => {
+    const s = generateInstallmentSchedule({
+      totalAmountCents: Number.POSITIVE_INFINITY,
+      installmentCount: 3,
+      frequency: "monthly",
+      startDate: "2026-01-15",
+    });
+    expect(s.every((i) => Number.isFinite(i.amountCents))).toBe(true);
+    expect(s.reduce((sum, i) => sum + i.amountCents, 0)).toBe(0);
+  });
+
   it("advances weekly and biweekly cadences", () => {
     const weekly = generateInstallmentSchedule({
       totalAmountCents: 300,
