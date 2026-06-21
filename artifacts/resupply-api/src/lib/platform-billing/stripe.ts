@@ -859,7 +859,7 @@ export async function handlePlatformTenantStripeEvent(
       stripe_last_synced_at: new Date().toISOString(),
     })
     .eq("stripe_subscription_id", subscriptionId)
-    .select("id");
+    .select("id, org_id");
   if (error) throw error;
   if (!data || data.length === 0) return false;
   logger.info(
@@ -869,6 +869,37 @@ export async function handlePlatformTenantStripeEvent(
     },
     "platform billing Stripe invoice synced",
   );
+
+  // Payment wall (migration 0425): the first PAID invoice clears the tenant's
+  // `billing_required` flag, unlocking the full console. Idempotent — re-runs
+  // on a replayed invoice.paid event just re-set false. Best-effort: a failure
+  // here leaves the tenant gated (they can retry from the billing page) rather
+  // than failing the webhook, which Stripe would otherwise keep retrying.
+  if (event.type === "invoice.paid") {
+    const orgId = (data[0] as { org_id?: string | null }).org_id ?? null;
+    if (orgId) {
+      const { error: clearErr } = await raw
+        .schema("resupply")
+        .from("organizations")
+        .update({ billing_required: false })
+        .eq("id", orgId);
+      if (clearErr) {
+        logger.error(
+          {
+            event: "platform_billing_paywall_clear_failed",
+            err: clearErr,
+            orgId,
+          },
+          "payment wall: failed to clear billing_required after invoice.paid",
+        );
+      } else {
+        logger.info(
+          { event: "platform_billing_paywall_cleared", orgId },
+          "payment wall: billing_required cleared after invoice.paid",
+        );
+      }
+    }
+  }
   return true;
 }
 

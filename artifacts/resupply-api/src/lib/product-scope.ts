@@ -22,7 +22,7 @@ import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "./logger";
 
-export type ProductScope = "full" | "mask_fitter";
+export type ProductScope = "full" | "mask_fitter" | "locked";
 
 const CACHE_TTL_MS = 5_000;
 
@@ -40,9 +40,30 @@ export function __clearProductScopeCacheForTests(): void {
 }
 
 /**
- * Resolve the tenant's product scope from its active billing subscription's
- * plan. Returns "full" for any plan that isn't the standalone fitter plan,
- * for tenants with no active subscription, and on ANY error (fail open).
+ * Whether the tenant payment wall is enforced. OFF by default — the
+ * `organizations.billing_required` flag (migration 0425) has NO effect until
+ * an operator opts in with BILLING_PAYWALL_ENFORCED, so the column can be
+ * shipped and backfilled safely before the wall goes live. The operator must
+ * have platform Stripe billing configured before enabling it (the
+ * `invoice.paid` webhook is what clears the flag); otherwise a flagged tenant
+ * has no way to unlock.
+ */
+function isPaywallEnforced(): boolean {
+  const v = process.env.BILLING_PAYWALL_ENFORCED?.trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes" || v === "on";
+}
+
+/**
+ * Resolve the tenant's product scope. Order:
+ *   1. "locked" — payment wall (when enforced): a tenant flagged
+ *      `billing_required` that hasn't paid yet, restricted to billing +
+ *      account surfaces until the `invoice.paid` webhook clears the flag. An
+ *      unpaid tenant is locked regardless of which plan they chose.
+ *   2. "mask_fitter" — the standalone Virtual Mask Fitter plan.
+ *   3. "full" — every other plan, no active subscription, or ANY error.
+ *
+ * Fails OPEN to "full" on any error (this drives an ACCESS RESTRICTION, so the
+ * safe failure is to NOT restrict — a DB hiccup must never lock a tenant out).
  */
 export async function resolveTenantProductScope(
   orgId: string | undefined | null,
@@ -55,7 +76,31 @@ export async function resolveTenantProductScope(
 
   let scope: ProductScope = "full";
   try {
-    // Active subscription → plan.product_scope. PostgREST embeds the
+    // 1. Payment wall (opt-in, env-gated). Checked first — an unpaid tenant is
+    // locked regardless of plan. A read error throws into the fail-open catch
+    // below, so a hiccup never locks anyone out.
+    if (isPaywallEnforced()) {
+      const { data: org, error: orgErr } = await getOrgScopedClient(id)
+        .raw()
+        .schema("resupply")
+        .from("organizations")
+        .select("billing_required")
+        .eq("id", id)
+        .maybeSingle();
+      if (orgErr) throw orgErr;
+      if (
+        (org as { billing_required?: boolean } | null)?.billing_required ===
+        true
+      ) {
+        cache.set(id, {
+          scope: "locked",
+          expiresAt: Date.now() + CACHE_TTL_MS,
+        });
+        return "locked";
+      }
+    }
+
+    // 2. Active subscription → plan.product_scope. PostgREST embeds the
     // referenced plan via the plan_id FK. "active"/"trialing"/"past_due"
     // are the live states (a canceled sub leaves the tenant on "full").
     const { data, error } = await getOrgScopedClient(id)
@@ -139,4 +184,39 @@ const MASK_FITTER_ALLOWED_PREFIXES: readonly string[] = [
 export function isMaskFitterAllowedPath(path: string): boolean {
   if (path.endsWith("/me") && !path.includes("/admin/")) return true;
   return MASK_FITTER_ALLOWED_PREFIXES.some((prefix) => path.includes(prefix));
+}
+
+// ── Admin surface allowlist for the "locked" (unpaid) scope ────────────
+// Tighter than the mask_fitter allowlist: an unpaid tenant may ONLY reach the
+// surfaces needed to choose a plan + pay and to secure their account — nothing
+// operational, and not even the fitter, branding, or staff-seat management
+// (those open up once they're paid and on a real scope). Same `includes`
+// match against `req.originalUrl` as the mask_fitter gate.
+//
+// Billing is enumerated, NOT prefixed, for the same reason as the mask_fitter
+// list: "/admin/billing/" also fronts the operational claims/revenue-cycle
+// suite (incl. PHI-bearing 837P export), which must stay blocked here.
+const LOCKED_ALLOWED_PREFIXES: readonly string[] = [
+  "/admin/agreements", // onboarding accept screen
+  // Tenant self-service subscription billing — the page where they pick a
+  // plan and complete payment to unlock. The SAME six the mask_fitter gate
+  // allows, never the operational claims worklists under /admin/billing/.
+  "/admin/billing/package",
+  "/admin/billing/plans",
+  "/admin/billing/subscription",
+  "/admin/billing/addons",
+  "/admin/billing/preview",
+  "/admin/billing/usage-events",
+  "/admin/mfa", // account security (the MFA banner runs on every admin page)
+  "/admin/inbox-counts", // sidebar badge counts (chrome)
+];
+
+/**
+ * Whether a "locked" (unpaid) tenant may reach `path`. The identity endpoint
+ * (`…/me`) is always allowed so the SPA can learn its own scope and render the
+ * payment-required state. Pass `req.originalUrl` minus the query string.
+ */
+export function isLockedAllowedPath(path: string): boolean {
+  if (path.endsWith("/me") && !path.includes("/admin/")) return true;
+  return LOCKED_ALLOWED_PREFIXES.some((prefix) => path.includes(prefix));
 }

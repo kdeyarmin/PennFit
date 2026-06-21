@@ -280,6 +280,11 @@ export async function createSelfServeTenant(
       slug: input.slug,
       name: input.orgName,
       storefront_name: input.orgName,
+      // Payment wall (migration 0425): a brand-new self-serve tenant starts
+      // gated until their first invoice is paid. No effect unless the operator
+      // has turned the wall on (BILLING_PAYWALL_ENFORCED); the `invoice.paid`
+      // webhook clears it. Existing tenants keep the column's `false` default.
+      billing_required: true,
     })
     .select("id, slug")
     .limit(1)

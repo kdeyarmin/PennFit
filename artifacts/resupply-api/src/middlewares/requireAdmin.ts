@@ -43,6 +43,7 @@ import { getAuthDeps } from "../lib/auth-deps";
 import { hasPendingAgreements } from "../lib/agreements/status";
 import { logger } from "../lib/logger";
 import {
+  isLockedAllowedPath,
   isMaskFitterAllowedPath,
   resolveTenantProductScope,
 } from "../lib/product-scope";
@@ -388,7 +389,23 @@ export async function requireAdmin(
   // render the fitter-only chrome.
   if (req.orgId && req.impersonation !== true) {
     const scope = await resolveTenantProductScope(req.orgId);
-    if (scope === "mask_fitter") {
+    if (scope === "locked") {
+      // Payment wall (migration 0425, env-gated): a self-serve tenant that
+      // hasn't paid yet may only reach billing/checkout + account surfaces
+      // until their first invoice is paid (the invoice.paid webhook clears
+      // the flag). Resolver fails OPEN to "full", so this never fires on a
+      // DB hiccup.
+      const path = req.originalUrl.split("?")[0] ?? "";
+      if (!isLockedAllowedPath(path)) {
+        res.status(403).json({
+          error: "product_scope_restricted",
+          message:
+            "Your account is pending payment. Choose a plan and complete payment to unlock your console.",
+          productScope: "locked",
+        });
+        return;
+      }
+    } else if (scope === "mask_fitter") {
       const path = req.originalUrl.split("?")[0] ?? "";
       if (!isMaskFitterAllowedPath(path)) {
         res.status(403).json({
