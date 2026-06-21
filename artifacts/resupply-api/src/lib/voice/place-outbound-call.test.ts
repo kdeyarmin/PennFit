@@ -50,6 +50,7 @@ const CONFIG: VoiceConfig & { twilioPhoneNumber: string } = {
   twilioAuthToken: "test-twilio-token",
   twilioPhoneNumber: "+12158675309",
   publicBaseUrl: "https://test.example.com",
+  streamBaseUrl: "https://test.example.com",
   elevenLabsTransport: "ws",
   realtimeSchema: "beta",
   realtimeDiagnosticEnabled: false,

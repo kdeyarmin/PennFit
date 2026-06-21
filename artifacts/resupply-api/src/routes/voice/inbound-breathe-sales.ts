@@ -187,7 +187,7 @@ router.post(
     }
 
     const wsUrl =
-      `${publicWsOriginFromBaseUrl(config.publicBaseUrl)}` +
+      `${publicWsOriginFromBaseUrl(config.streamBaseUrl)}` +
       `/resupply-api/voice/stream?conversationId=${encodeURIComponent(conversationId)}`;
     logger.info(
       {
