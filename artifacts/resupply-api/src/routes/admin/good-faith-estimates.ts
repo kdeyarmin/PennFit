@@ -16,12 +16,18 @@ import {
   type Json,
   getOrgScopedClient,
 } from "@workspace/resupply-db";
+import { EmailConfigError } from "@workspace/resupply-email";
 
 import {
   DEFAULT_GFE_DISCLAIMER,
+  type GfeInput,
   renderGfePdf,
 } from "../../lib/billing/gfe-pdf";
-import { resolveBillingIdentity } from "../../lib/billing/identity-resolver";
+import {
+  type ResolvedBillingIdentity,
+  resolveBillingIdentity,
+} from "../../lib/billing/identity-resolver";
+import { createTenantSendgridClient } from "../../lib/email/tenant-sender";
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import {
@@ -75,6 +81,69 @@ const body = z
   .strict();
 
 const idParam = z.object({ id: z.string().uuid() });
+
+// Mirrors the good_faith_estimates_delivery_method_enum CHECK constraint
+// (migration 0133) — keep in sync.
+const deliverBody = z
+  .object({
+    deliveryMethod: z.enum(["email", "sms", "in_person", "mail"]),
+  })
+  .strict();
+
+// The GFE issuer block, derived from the resolved (org-scoped) billing
+// identity. Shared by the create and re-send-email paths so the PDF's issuer
+// header never drifts between them.
+function toDmeOrgBlock(
+  identity: ResolvedBillingIdentity,
+): GfeInput["dmeOrganization"] {
+  return {
+    legalName:
+      identity.organization?.legal_name ??
+      identity.billingProvider.organizationName,
+    npi: identity.billingProvider.npi,
+    addressLine1: identity.billingProvider.address.line1,
+    city: identity.billingProvider.address.city,
+    state: identity.billingProvider.address.state,
+    zip: identity.billingProvider.address.zip,
+    phoneE164: identity.organization?.phone_e164 ?? "+10000000000",
+    billingEmail: identity.organization?.billing_email ?? "billing@example.com",
+  };
+}
+
+// Re-render a persisted GFE row to a PDF, faithful to what was generated
+// (stored items + disclaimer version). recipientAddress isn't persisted, so
+// the re-render omits it. Fails closed (returns null) when the tenant has no
+// billing identity, exactly like create.
+async function renderStoredGfe(
+  row: Database["resupply"]["Tables"]["good_faith_estimates"]["Row"],
+  orgId: string,
+): Promise<{ pdf: Buffer; totalCents: number } | { error: "no_identity" }> {
+  const identity = await resolveBillingIdentity({ orgId });
+  if (identity.source === "stub") return { error: "no_identity" };
+  const items = Array.isArray(row.items_json)
+    ? (row.items_json as unknown as Array<{
+        description?: unknown;
+        hcpcsCode?: unknown;
+        quantity?: unknown;
+        unitPriceCents?: unknown;
+      }>)
+    : [];
+  const result = await renderGfePdf({
+    recipientName: row.recipient_name,
+    recipientEmail: row.recipient_email,
+    items: items.map((i) => ({
+      description: typeof i.description === "string" ? i.description : "",
+      hcpcsCode: typeof i.hcpcsCode === "string" ? i.hcpcsCode : null,
+      quantity: typeof i.quantity === "number" ? i.quantity : 1,
+      unitPriceCents:
+        typeof i.unitPriceCents === "number" ? i.unitPriceCents : 0,
+    })),
+    expectedServiceDate: row.expected_service_date ?? null,
+    disclaimerText: row.disclaimer_text ?? DEFAULT_GFE_DISCLAIMER,
+    dmeOrganization: toDmeOrgBlock(identity),
+  });
+  return { pdf: result.pdf, totalCents: result.totalCents };
+}
 
 router.get(
   "/admin/good-faith-estimates",
@@ -184,19 +253,7 @@ router.post(
       })),
       expectedServiceDate: b.expectedServiceDate ?? null,
       disclaimerText: DEFAULT_GFE_DISCLAIMER,
-      dmeOrganization: {
-        legalName:
-          identity.organization?.legal_name ??
-          identity.billingProvider.organizationName,
-        npi: identity.billingProvider.npi,
-        addressLine1: identity.billingProvider.address.line1,
-        city: identity.billingProvider.address.city,
-        state: identity.billingProvider.address.state,
-        zip: identity.billingProvider.address.zip,
-        phoneE164: identity.organization?.phone_e164 ?? "+10000000000",
-        billingEmail:
-          identity.organization?.billing_email ?? "billing@example.com",
-      },
+      dmeOrganization: toDmeOrgBlock(identity),
     });
 
     const insertRow: Database["resupply"]["Tables"]["good_faith_estimates"]["Insert"] =
@@ -243,6 +300,176 @@ router.post(
     res.setHeader("X-GFE-Id", row.id);
     res.setHeader("X-GFE-Total-Cents", String(result.totalCents));
     res.status(201).end(result.pdf);
+  },
+);
+
+// POST .../:id/email — re-render the stored GFE and email the PDF to the
+// recipient, then stamp delivered_at + delivery_method='email'. Re-delivery
+// is allowed (latest send wins) so a corrected GFE can be re-sent. Only
+// stamps on an actual successful send: an unconfigured tenant (no SendGrid)
+// is a 503 and a send failure a 502 — neither marks the GFE delivered.
+router.post(
+  "/admin/good-faith-estimates/:id/email",
+  requireAdminOnly,
+  adminRateLimit({ name: "good_faith_estimates.email", preset: "sensitive" }),
+  async (req, res) => {
+    const idParsed = idParam.safeParse(req.params);
+    if (!idParsed.success) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+    const { data: row } = await supabase
+      .from("good_faith_estimates")
+      .select("*")
+      .eq("id", idParsed.data.id)
+      .limit(1)
+      .maybeSingle();
+    if (!row) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+
+    const rendered = await renderStoredGfe(row, orgId);
+    if ("error" in rendered) {
+      res.status(409).json({
+        error: "no_dme_organization",
+        message:
+          "configure dme_organization first — required for the GFE issuer block",
+      });
+      return;
+    }
+
+    try {
+      const sendgrid = await createTenantSendgridClient(orgId);
+      await sendgrid.sendEmail({
+        to: row.recipient_email,
+        subject: "Your Good Faith Estimate",
+        text:
+          "Attached is your Good Faith Estimate of the expected costs for the " +
+          "items and services discussed. This is an estimate only and not a bill.",
+        html:
+          "<p>Attached is your Good Faith Estimate of the expected costs for " +
+          "the items and services discussed.</p><p>This is an estimate only " +
+          "and not a bill.</p>",
+        attachments: [
+          {
+            content: rendered.pdf,
+            filename: `good-faith-estimate-${row.id.slice(0, 8)}.pdf`,
+            contentType: "application/pdf",
+          },
+        ],
+      });
+    } catch (err) {
+      if (err instanceof EmailConfigError) {
+        res.status(503).json({ error: "email_not_configured" });
+        return;
+      }
+      logger.warn(
+        { event: "gfe_email_send_failed", gfe_id: row.id },
+        "good_faith_estimate.email: send failed",
+      );
+      res.status(502).json({ error: "email_send_failed" });
+      return;
+    }
+
+    const nowIso = new Date().toISOString();
+    const { error: stampErr } = await supabase
+      .from("good_faith_estimates")
+      .update({ delivered_at: nowIso, delivery_method: "email" })
+      .eq("id", row.id);
+    if (stampErr) {
+      logger.warn(
+        { event: "gfe_email_stamp_failed", gfe_id: row.id, err: stampErr },
+        "good_faith_estimate.email: sent but delivered_at stamp failed",
+      );
+    }
+
+    await logAudit({
+      action: "good_faith_estimate.emailed",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "good_faith_estimates",
+      targetId: row.id,
+      metadata: { delivery_method: "email" },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn({ err }, "good_faith_estimate.emailed audit write failed");
+    });
+
+    res.json({ ok: true, deliveredAt: nowIso, deliveryMethod: "email" });
+  },
+);
+
+// POST .../:id/deliver — mark a GFE delivered out-of-band (mail / in-person /
+// portal / a manual email), stamping delivered_at + the channel. Does NOT
+// send anything. Re-delivery is allowed (latest delivery wins).
+router.post(
+  "/admin/good-faith-estimates/:id/deliver",
+  requireAdminOnly,
+  adminRateLimit({ name: "good_faith_estimates.deliver", preset: "sensitive" }),
+  async (req, res) => {
+    const idParsed = idParam.safeParse(req.params);
+    if (!idParsed.success) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const parsed = deliverBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "invalid_body" });
+      return;
+    }
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+    const { data: row } = await supabase
+      .from("good_faith_estimates")
+      .select("id")
+      .eq("id", idParsed.data.id)
+      .limit(1)
+      .maybeSingle();
+    if (!row) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+
+    const nowIso = new Date().toISOString();
+    const { error: stampErr } = await supabase
+      .from("good_faith_estimates")
+      .update({
+        delivered_at: nowIso,
+        delivery_method: parsed.data.deliveryMethod,
+      })
+      .eq("id", row.id);
+    if (stampErr) throw stampErr;
+
+    await logAudit({
+      action: "good_faith_estimate.delivered",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "good_faith_estimates",
+      targetId: row.id,
+      metadata: { delivery_method: parsed.data.deliveryMethod },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn({ err }, "good_faith_estimate.delivered audit write failed");
+    });
+
+    res.json({
+      ok: true,
+      deliveredAt: nowIso,
+      deliveryMethod: parsed.data.deliveryMethod,
+    });
   },
 );
 

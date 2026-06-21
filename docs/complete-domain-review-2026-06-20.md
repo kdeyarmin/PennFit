@@ -197,8 +197,18 @@ preflight.ts` now reads the latest cached check per HCPCS for a
   the claim builder's automatic pricing and the manual
   `GET /payer-fee-schedules/lookup` (now accepts a comma-separated set). New
   unit tests for the matcher.
-- Good-Faith-Estimate `delivered_at` is read but no deliver endpoint writes it
-  — No Surprises Act SLA tracking is dead (`good-faith-estimates.ts:92`).
+- ✅ **Fixed in this PR.** Good-Faith-Estimate `delivered_at` was read but no
+  endpoint ever wrote it, so the No Surprises Act SLA tracking was dead. Per
+  the owner's decision (both actions, re-delivery allowed), two endpoints were
+  added: `POST .../:id/email` re-renders the stored GFE PDF (faithful to the
+  persisted items + disclaimer version) and emails it to the recipient via the
+  tenant SendGrid sender, then stamps `delivered_at` + `delivery_method='email'`
+  — but only on an _actual_ successful send (an unconfigured tenant is 503, a
+  send failure 502, neither marks delivered); and `POST .../:id/deliver` marks
+  a GFE delivered out-of-band (mail / in-person / manual email — validated
+  against the DB CHECK enum) without sending. Both allow re-delivery (latest
+  wins). The DME-issuer block is now shared between create and re-send so the
+  PDF header can't drift. 11 new tests.
 - Statements mail from a generation-time snapshot with no staleness re-check
   (`billing-statement-send.ts:318`).
 - Manual-claim drafts can't be batch-submitted (no payer/lines) and have no
