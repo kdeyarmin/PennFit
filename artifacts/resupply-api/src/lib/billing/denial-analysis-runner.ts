@@ -11,10 +11,7 @@
 // Non-throwing by contract: a flaky model call or a write error degrades to
 // "no analysis row" (logged), it never fails the surrounding ERA ingest.
 
-import {
-  type Json,
-  type OrgScopedClient,
-} from "@workspace/resupply-db";
+import { type Json, type OrgScopedClient } from "@workspace/resupply-db";
 
 import { analyzeDenial } from "./ai-denial-analyzer";
 import { logger } from "../logger";
@@ -76,6 +73,9 @@ export async function runDenialAnalysis(
       }
     }
   } catch (err) {
-    logger.warn({ err, claimId }, "denial-analysis: AI analysis failed (non-fatal)");
+    logger.warn(
+      { err, claimId },
+      "denial-analysis: AI analysis failed (non-fatal)",
+    );
   }
 }
