@@ -236,8 +236,18 @@ preflight.ts` now reads the latest cached check per HCPCS for a
   / query error) falls back to the snapshot rather than wrongly skipping. New
   tests for the skip and the still-owed paths. _Follow-up:_ apply the same
   re-check to the operator print-mail batch builder.
-- Manual-claim drafts can't be batch-submitted (no payer/lines) and have no
-  duplicate guard (`manual-claim.ts:154`).
+- ✅ **Fixed in this PR.** Manual-claim drafts had no duplicate guard and were
+  created with no structured payer or line items, so they could never clear
+  preflight (no `payer_profile_id`, no `insurance_claim_line_items`). Per the
+  owner's decision (guard + submittable): the route now (1) rejects a 409
+  `duplicate_claim` when an active (non-terminal) claim already exists for the
+  same patient + payer + date-of-service + frequency (+ original claim number
+  for adjustments), preventing a double-keyed double-submission; and (2)
+  accepts an optional `payerProfileId` and a `lines[]` array (HCPCS / units /
+  charge / modifiers), inserting `insurance_claim_line_items` and computing
+  `total_billed_cents` — with the header rolled back if the line insert fails
+  (no orphan line-less draft). New tests cover the duplicate 409, the
+  lines+total path (HCPCS upper-cased), and an invalid-HCPCS 400.
 
 ### Low
 
