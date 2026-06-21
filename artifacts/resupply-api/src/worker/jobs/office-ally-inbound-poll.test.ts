@@ -172,3 +172,69 @@ describe("dispatch277ca — reflects the 277CA outcome on the claim status", () 
     expect((payload as { status?: string }).status).toBeUndefined();
   });
 });
+
+describe("dispatch277ca — submission roll-up", () => {
+  beforeEach(() => supabaseMock.reset());
+
+  function stageClaimInSubmission(submissionId: string, status: string): void {
+    stageSupabaseResponse("insurance_claims", "select", {
+      data: { id: "CLM-S", office_ally_submission_id: submissionId, status },
+    });
+    stageSupabaseResponse("insurance_claims", "update", {
+      data: [{ id: "CLM-S" }],
+    });
+    stageSupabaseResponse("insurance_claim_events", "insert", {
+      data: { id: "evt-1" },
+    });
+    stageSupabaseResponse("office_ally_submissions", "update", { data: null });
+    stageSupabaseResponse("clearinghouse_inbound_files", "update", {
+      data: null,
+    });
+  }
+
+  it("does NOT roll a pended (P1) submission up to accepted_277ca — leaves status, still stamps the ack", async () => {
+    stageClaimInSubmission("SUB-PENDED", "submitted");
+    await dispatch277ca(
+      orgClient(),
+      "inbound-pended",
+      build277CA("CLM-S", "P1:20:PR"),
+    );
+    const [sub] = supabaseMock.writePayloads(
+      "office_ally_submissions",
+      "update",
+    );
+    // The bug: pended used to roll up as accepted_277ca. Now the status is
+    // left untouched (no status key) so a later 277CA can resolve it…
+    expect(sub).not.toHaveProperty("status");
+    // …but the ack receipt is still recorded.
+    expect(sub).toHaveProperty("ack_277ca_received_at");
+  });
+
+  it("rolls an all-accepted (A2) submission up to accepted_277ca", async () => {
+    stageClaimInSubmission("SUB-OK", "submitted");
+    await dispatch277ca(
+      orgClient(),
+      "inbound-acc",
+      build277CA("CLM-S", "A2:20:PR"),
+    );
+    const [sub] = supabaseMock.writePayloads(
+      "office_ally_submissions",
+      "update",
+    );
+    expect((sub as { status?: string }).status).toBe("accepted_277ca");
+  });
+
+  it("rolls a rejected (A7) submission up to rejected_277ca", async () => {
+    stageClaimInSubmission("SUB-REJ", "submitted");
+    await dispatch277ca(
+      orgClient(),
+      "inbound-rej",
+      build277CA("CLM-S", "A7:24:PR"),
+    );
+    const [sub] = supabaseMock.writePayloads(
+      "office_ally_submissions",
+      "update",
+    );
+    expect((sub as { status?: string }).status).toBe("rejected_277ca");
+  });
+});

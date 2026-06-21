@@ -185,8 +185,15 @@ preflight.ts` now reads the latest cached check per HCPCS for a
   `quantity: 1` (`davinci-pas-submit.ts:246`) → payer rejection.
 - Denial-rate denominators disagree across three dashboards
   (`billing-benchmarks.ts`, `billing-reports.ts`, `billing-director.ts`).
-- 277CA `pended` is rolled up as `accepted_277ca`
-  (`office-ally-inbound-poll.ts:603`).
+- ✅ **Fixed in this PR.** 277CA `pended` was rolled up as `accepted_277ca` at
+  the submission level (the per-claim handler already left pended claims
+  unchanged, but the submission roll-up only tracked `hasRejection`, so a
+  pended-only submission falsely showed clearinghouse acceptance). Per the
+  owner's decision (leave status until resolved), the roll-up now tracks a
+  parallel `submissionHasPended` and advances to `accepted_277ca` only when
+  every claim is accepted — a pended-but-not-rejected submission keeps its
+  current status (so a later 277CA can resolve it) while still stamping the
+  ack receipt. 3 new roll-up tests (pended / all-accepted / rejected).
 - ✅ **Fixed in this PR.** Fee-schedule lookup couldn't match the comma-joined
   multi-modifier rows the CSV importer accepts (`"KX,KH"`) — it exact-matched a
   single modifier, so those rates were unreachable and the line fell through to

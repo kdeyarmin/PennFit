@@ -549,6 +549,9 @@ export async function dispatch277ca(
   // the submission worklist then showed accepted_277ca while a claim
   // inside it had been rejected.
   const submissionHasRejection = new Map<string, boolean>();
+  // Parallel tracker for pended claims: a submission with a pended claim (and
+  // no rejection) must NOT roll up to accepted_277ca — see the roll-up below.
+  const submissionHasPended = new Map<string, boolean>();
   for (const block of parsed.claims) {
     if (!block.traceNumber) continue;
     const { data: claim, error: claimLookupErr } = await supabase
@@ -618,24 +621,39 @@ export async function dispatch277ca(
     }
     // Accumulate for the per-submission roll-up below.
     if (claim.office_ally_submission_id) {
+      const sid = claim.office_ally_submission_id;
       submissionHasRejection.set(
-        claim.office_ally_submission_id,
-        (submissionHasRejection.get(claim.office_ally_submission_id) ??
-          false) ||
+        sid,
+        (submissionHasRejection.get(sid) ?? false) ||
           block.outcome === "rejected",
+      );
+      submissionHasPended.set(
+        sid,
+        (submissionHasPended.get(sid) ?? false) || block.outcome === "pended",
       );
     }
   }
-  // Roll-up onto the office_ally_submissions row — any rejected claim
-  // marks the whole submission rejected_277ca.
+  // Roll-up onto the office_ally_submissions row — any rejected claim marks
+  // the whole submission rejected_277ca. A submission with a PENDED claim (and
+  // no rejection) is NOT yet accepted: leave its current status so a later
+  // 277CA can resolve it (consistent with the per-claim "pended leaves it
+  // unchanged" rule above) — we still stamp the ack receipt. Only an
+  // all-accepted submission advances to accepted_277ca.
   for (const [submissionId, hasRejection] of submissionHasRejection) {
+    const hasPended = submissionHasPended.get(submissionId) ?? false;
+    const submissionUpdate: {
+      status?: string;
+      ack_277ca_file_name: string;
+      ack_277ca_received_at: string;
+    } = {
+      ack_277ca_file_name: `inbound:${inboundFileId.slice(0, 8)}`,
+      ack_277ca_received_at: new Date().toISOString(),
+    };
+    if (hasRejection) submissionUpdate.status = "rejected_277ca";
+    else if (!hasPended) submissionUpdate.status = "accepted_277ca";
     const { error: sub277Err } = await supabase
       .from("office_ally_submissions")
-      .update({
-        status: hasRejection ? "rejected_277ca" : "accepted_277ca",
-        ack_277ca_file_name: `inbound:${inboundFileId.slice(0, 8)}`,
-        ack_277ca_received_at: new Date().toISOString(),
-      })
+      .update(submissionUpdate)
       .eq("id", submissionId);
     if (sub277Err) {
       logger.warn(
