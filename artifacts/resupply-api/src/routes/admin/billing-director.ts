@@ -97,7 +97,13 @@ router.get(
         .from("insurance_claims")
         .select("payer_name, patient_responsibility_cents")
         .gt("patient_responsibility_cents", 0)
-        .in("status", ["paid", "denied", "appealed", "closed"]),
+        .in("status", [
+          "partially_paid",
+          "paid",
+          "denied",
+          "appealed",
+          "closed",
+        ]),
       supabase
         .from("webhook_deliveries")
         .select("id", { count: "exact", head: true })

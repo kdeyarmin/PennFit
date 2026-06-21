@@ -19,13 +19,21 @@
 //
 // Pure — no I/O. Unit-tested directly.
 
-/** Claim statuses that represent money we're still expecting. */
-export const OUTSTANDING_AR_STATUSES = ["submitted", "accepted"] as const;
+/** Claim statuses that represent money we're still expecting.
+ *  `partially_paid` (migration 0430) carries a remaining balance, so it
+ *  belongs in the forecast — we net out what's already been paid below. */
+export const OUTSTANDING_AR_STATUSES = [
+  "submitted",
+  "accepted",
+  "partially_paid",
+] as const;
 
 export interface OutstandingClaim {
   status: string;
   total_billed_cents: number;
   total_allowed_cents: number;
+  /** Already-collected amount, netted out of the expected remainder. */
+  total_paid_cents: number;
   submitted_at: string | null;
 }
 
@@ -112,8 +120,12 @@ export function projectClaimCollections(
 
     const billed = Math.max(0, c.total_billed_cents ?? 0);
     const allowed = Math.max(0, c.total_allowed_cents ?? 0);
-    const collectible =
+    const paid = Math.max(0, c.total_paid_cents ?? 0);
+    // Net out what's already been collected so a partially-paid claim
+    // contributes only its REMAINING expected balance, never the gross.
+    const base =
       allowed > 0 ? allowed : Math.round(billed * defaultAllowedRatio);
+    const collectible = Math.max(0, base - paid);
     const expected = Math.round(collectible * collectionProbability);
 
     const landsInDays = Math.max(

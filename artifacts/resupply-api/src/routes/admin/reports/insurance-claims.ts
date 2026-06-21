@@ -125,7 +125,11 @@ export function buildQbRowsFromClaims(
   rows: InsuranceClaimRow[],
 ): QuickbooksRowInput[] {
   return rows
-    .filter((r) => r.status === "paid" && r.total_paid_cents > 0)
+    .filter(
+      (r) =>
+        (r.status === "paid" || r.status === "partially_paid") &&
+        r.total_paid_cents > 0,
+    )
     .map((r) => ({
       txnId: `CLM-${r.id.replace(/[^A-Za-z0-9]/g, "").slice(0, 10)}`,
       date: (r.paid_at ?? r.decision_at ?? r.date_of_service).slice(0, 10),

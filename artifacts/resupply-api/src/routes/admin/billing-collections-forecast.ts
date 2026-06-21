@@ -56,7 +56,9 @@ router.get(
     const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
       .from("insurance_claims")
-      .select("status, total_billed_cents, total_allowed_cents, submitted_at")
+      .select(
+        "status, total_billed_cents, total_allowed_cents, total_paid_cents, submitted_at",
+      )
       .in("status", [...OUTSTANDING_AR_STATUSES])
       .limit(5000);
     if (error) {

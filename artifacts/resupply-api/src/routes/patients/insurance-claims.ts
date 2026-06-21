@@ -71,6 +71,7 @@ const STATUS_VALUES = [
   "accepted",
   "denied",
   "rejected",
+  "partially_paid",
   "paid",
   "appealed",
   "closed",
@@ -87,11 +88,14 @@ const STATUS_VALUES = [
 // to `appealed`.
 const VALID_TRANSITIONS: Record<ClaimStatus, readonly ClaimStatus[]> = {
   draft: ["submitted"],
-  submitted: ["accepted", "denied", "rejected"],
-  accepted: ["paid", "denied"],
+  submitted: ["accepted", "denied", "rejected", "partially_paid", "paid"],
+  accepted: ["paid", "denied", "partially_paid"],
   denied: ["appealed", "closed"],
   rejected: ["submitted", "closed"],
-  appealed: ["accepted", "denied"],
+  appealed: ["accepted", "denied", "partially_paid", "paid"],
+  // A partial payment can become a full payment (a later 835 tops it up),
+  // be denied/clawed back, be appealed for the unpaid balance, or be closed.
+  partially_paid: ["paid", "denied", "appealed", "closed"],
   paid: ["closed"],
   closed: [],
 };

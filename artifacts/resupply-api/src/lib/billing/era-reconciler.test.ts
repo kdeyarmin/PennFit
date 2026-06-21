@@ -346,16 +346,19 @@ type ClaimStatus =
   | "accepted"
   | "denied"
   | "appealed"
+  | "partially_paid"
   | "paid"
   | "closed";
 
 function allowedTransition(from: ClaimStatus, to: ClaimStatus): boolean {
   const VALID: Record<ClaimStatus, readonly ClaimStatus[]> = {
     draft: ["submitted"],
-    submitted: ["accepted", "denied", "paid"],
-    accepted: ["paid", "denied"],
+    submitted: ["accepted", "denied", "paid", "partially_paid"],
+    accepted: ["paid", "denied", "partially_paid"],
     denied: ["appealed", "closed"],
-    appealed: ["accepted", "denied"],
+    appealed: ["accepted", "denied", "partially_paid", "paid"],
+    // A partial payment can be topped up to full, clawed back, appealed, or closed.
+    partially_paid: ["paid", "denied", "appealed", "closed"],
     paid: ["closed"],
     closed: [],
   };
@@ -387,5 +390,12 @@ describe("era-reconciler — allowedTransition state machine (replicated)", () =
 
   it("blocks paid → denied (paid is near-terminal)", () => {
     expect(allowedTransition("paid", "denied")).toBe(false);
+  });
+
+  it("allows a partial payment edge and a later top-up to full (migration 0430)", () => {
+    expect(allowedTransition("accepted", "partially_paid")).toBe(true);
+    expect(allowedTransition("submitted", "partially_paid")).toBe(true);
+    expect(allowedTransition("partially_paid", "paid")).toBe(true);
+    expect(allowedTransition("partially_paid", "appealed")).toBe(true);
   });
 });

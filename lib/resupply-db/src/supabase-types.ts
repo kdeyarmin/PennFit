@@ -1984,6 +1984,7 @@ export interface Database {
             | "accepted"
             | "denied"
             | "rejected"
+            | "partially_paid"
             | "paid"
             | "appealed"
             | "closed";

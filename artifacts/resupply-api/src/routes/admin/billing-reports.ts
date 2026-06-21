@@ -42,16 +42,18 @@ router.get(
       return;
     }
     const supabase = getOrgScopedClient(orgId);
-    // Pull every open claim (status not in paid/closed). The query is
-    // bounded by status; for a DME book of N=10k patients we expect at
-    // most a few thousand rows in flight — well under PostgREST's row
-    // cap. If we outgrow that we paginate in a future change.
+    // Pull genuinely-collectible open AR: claims submitted and awaiting
+    // payment (incl. partially_paid, migration 0430). Deliberately EXCLUDES
+    // denied / appealed / rejected / draft / paid / closed — a denied or
+    // appealed claim isn't collectible AR, and counting it (on gross billed)
+    // overstated the aging report. Bounded by status; a few thousand rows in
+    // flight for a 10k-patient book — under PostgREST's cap.
     const { data, error } = await supabase
       .from("insurance_claims")
       .select(
         "id, payer_name, status, total_billed_cents, submitted_at, date_of_service",
       )
-      .not("status", "in", "(paid,closed)")
+      .in("status", ["submitted", "accepted", "partially_paid"])
       .limit(5000);
     if (error) throw error;
     const now = Date.now();

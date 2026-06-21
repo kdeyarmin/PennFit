@@ -287,11 +287,17 @@ async function applyClaim(
     : null;
   if (eraClaim.isDenied && allowedTransition(claim.status, "denied")) {
     newStatus = "denied";
-  } else if (
-    eraClaim.paidCents > 0 &&
-    allowedTransition(claim.status, "paid")
-  ) {
-    newStatus = "paid";
+  } else if (eraClaim.paidCents > 0) {
+    // Distinguish a FULL payment from a PARTIAL one: 'paid' only when the
+    // cumulative paid meets/exceeds the allowed amount (migration 0430).
+    // A partial payment (paid below allowed, or allowed not yet known)
+    // becomes 'partially_paid' so its remaining balance stays in the AR
+    // forecast and the patient is still statemented for their share.
+    const fullyPaid = newTotalAllowed > 0 && newTotalPaid >= newTotalAllowed;
+    const target = fullyPaid ? "paid" : "partially_paid";
+    if (allowedTransition(claim.status, target)) {
+      newStatus = target;
+    }
   }
 
   const nowIso = new Date().toISOString();
@@ -312,7 +318,10 @@ async function applyClaim(
       // decision-window report (denial rate, aging, DSO). `undefined`
       // leaves an already-stamped value untouched.
       decision_at:
-        !claim.decision_at && (newStatus === "paid" || newStatus === "denied")
+        !claim.decision_at &&
+        (newStatus === "paid" ||
+          newStatus === "denied" ||
+          newStatus === "partially_paid")
           ? nowIso
           : undefined,
       paid_at: newStatus === "paid" ? nowIso : undefined,
@@ -529,14 +538,17 @@ function allowedTransition(
   // a claim before we observe the 277CA "accepted" intermediate.
   const VALID: Record<ClaimRow["status"], readonly ClaimRow["status"][]> = {
     draft: ["submitted"],
-    submitted: ["accepted", "denied", "paid", "rejected"],
-    accepted: ["paid", "denied"],
+    submitted: ["accepted", "denied", "paid", "partially_paid", "rejected"],
+    accepted: ["paid", "denied", "partially_paid"],
     denied: ["appealed", "closed"],
     // 277CA clearinghouse rejection — re-worked back to submitted or
     // abandoned. An ERA won't normally land on a rejected claim (it never
     // reached adjudication), but the edge keeps the map total + consistent.
     rejected: ["submitted", "closed"],
-    appealed: ["accepted", "denied"],
+    appealed: ["accepted", "denied", "partially_paid", "paid"],
+    // A partial payment can be topped up to full (later 835), clawed back,
+    // appealed for the balance, or closed.
+    partially_paid: ["paid", "denied", "appealed", "closed"],
     paid: ["closed"],
     closed: [],
   };
