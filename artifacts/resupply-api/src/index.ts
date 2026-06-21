@@ -141,42 +141,65 @@ httpServer.on("upgrade", (req: IncomingMessage, socket: Socket, head) => {
     return;
   }
 
-  const pending = getPendingSessions().claim(conversationId);
-  if (!pending) {
-    // No matching pending session, or it expired. Could be a leaked
-    // URL, a TTL'd entry, or Twilio retrying after a successful
-    // upgrade — all three resolve identically: refuse the upgrade.
-    rejectUpgrade(socket, 401, "no-pending-session");
-    return;
-  }
-
-  wss.handleUpgrade(req, socket, head, (ws: WebSocket) => {
-    // Route to the right bridge handler:
-    //  - diagnostic ("connection test"): isolated, no-patient bridge so a
-    //    test affordance never touches the production PHI path;
-    //  - breathe_prospect: the CareMetric Breathe B2B platform SALES bridge
-    //    (no patient, no conversations row — its own dispatcher);
-    //  - otherwise: the production patient/shop voice path.
-    const handle = pending.diagnostic
-      ? handleVoiceDiagnosticWsConnection
-      : pending.callerKind === "breathe_prospect"
-        ? handleBreatheSalesWsConnection
-        : handleVoiceWsConnection;
-    void handle(ws, pending).catch((err) => {
-      logger.error(
-        {
-          err: serializeErr(err),
-          conversationId: pending.conversationId,
-        },
-        "voice ws handler crashed",
-      );
-      try {
-        ws.close(1011, "internal-error");
-      } catch {
-        /* already closed */
-      }
-    });
+  // The pending-session lookup below is now async (a shared DB round-trip),
+  // so there's a brief window before handleUpgrade adopts the socket. Guard
+  // against a mid-handshake socket error (e.g. the caller hangs up) emitting
+  // an unhandled 'error' that would crash the process via the global trap.
+  socket.on("error", () => {
+    /* best-effort; rejectUpgrade/handleUpgrade handle teardown */
   });
+
+  // claim() is a shared (DB-backed) lookup so the session survives across
+  // replicas — the webhook that registered it may have run on a different
+  // instance than the one now serving this WS upgrade. Resolve it before
+  // completing the handshake; the socket stays paused during the brief
+  // round-trip.
+  void getPendingSessions()
+    .claim(conversationId)
+    .then((pending) => {
+      if (!pending) {
+        // No matching pending session, or it expired. Could be a leaked
+        // URL, a TTL'd entry, or Twilio retrying after a successful
+        // upgrade — all three resolve identically: refuse the upgrade.
+        rejectUpgrade(socket, 401, "no-pending-session");
+        return;
+      }
+
+      wss.handleUpgrade(req, socket, head, (ws: WebSocket) => {
+        // Route to the right bridge handler:
+        //  - diagnostic ("connection test"): isolated, no-patient bridge so a
+        //    test affordance never touches the production PHI path;
+        //  - breathe_prospect: the CareMetric Breathe B2B platform SALES
+        //    bridge (no patient, no conversations row — its own dispatcher);
+        //  - otherwise: the production patient/shop voice path.
+        const handle = pending.diagnostic
+          ? handleVoiceDiagnosticWsConnection
+          : pending.callerKind === "breathe_prospect"
+            ? handleBreatheSalesWsConnection
+            : handleVoiceWsConnection;
+        void handle(ws, pending).catch((err) => {
+          logger.error(
+            {
+              err: serializeErr(err),
+              conversationId: pending.conversationId,
+            },
+            "voice ws handler crashed",
+          );
+          try {
+            ws.close(1011, "internal-error");
+          } catch {
+            /* already closed */
+          }
+        });
+      });
+    })
+    .catch((err) => {
+      logger.error(
+        { err: serializeErr(err), conversationId },
+        "voice ws pending-session claim failed",
+      );
+      rejectUpgrade(socket, 503, "pending-session-unavailable");
+    });
 });
 
 function safeParseUpgradeUrl(req: IncomingMessage): URL | null {

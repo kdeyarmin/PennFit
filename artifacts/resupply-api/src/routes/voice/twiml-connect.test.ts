@@ -103,7 +103,7 @@ describe("POST /voice/twiml-connect", () => {
 
   it("returns Connect/Stream TwiML with wss URL + customParameter on success", async () => {
     setVoiceEnv();
-    getPendingSessions().register({
+    await getPendingSessions().register({
       conversationId: "conv-1",
       patientId: "pat-1",
       episodeId: "ep-1",
@@ -123,6 +123,6 @@ describe("POST /voice/twiml-connect", () => {
 
     // PEEK semantics — entry must STILL be present after the webhook
     // so the WS upgrade can claim it next.
-    expect(getPendingSessions().peek("conv-1")).not.toBeNull();
+    expect(await getPendingSessions().peek("conv-1")).not.toBeNull();
   });
 });

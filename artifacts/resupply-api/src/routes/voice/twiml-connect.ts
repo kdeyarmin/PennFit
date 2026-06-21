@@ -112,7 +112,7 @@ router.post("/voice/twiml-connect", signatureMiddleware, async (req, res) => {
   }
 
   // Peek (NOT claim) — see file header.
-  const pending = getPendingSessions().peek(conversationId);
+  const pending = await getPendingSessions().peek(conversationId);
   if (!pending) {
     logger.warn(
       {

@@ -291,7 +291,7 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
       return;
     }
 
-    getPendingSessions().register({
+    await getPendingSessions().register({
       conversationId: shopConversationId,
       orgId,
       // Patient/episode are empty for a storefront caller; callerKind +
@@ -454,7 +454,7 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
   // upgrade (which races the TwiML response) finds it. Inbound-flavored
   // callContext + greeting so the agent doesn't tell a caller who dialed
   // in that we're calling them.
-  getPendingSessions().register({
+  await getPendingSessions().register({
     conversationId,
     orgId,
     patientId,

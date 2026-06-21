@@ -149,7 +149,7 @@ router.post(
     // episode/customer, NO conversations row — the registry key is a fresh
     // UUID the WS upgrade claims. The sales WS handler runs the agent.
     const conversationId = randomUUID();
-    getPendingSessions().register({
+    await getPendingSessions().register({
       conversationId,
       patientId: "",
       episodeId: "",

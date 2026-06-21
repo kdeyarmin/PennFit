@@ -235,7 +235,7 @@ describe("POST /voice/place-call", () => {
     );
 
     // Pending-session entry is registered AND stamped with the CallSid.
-    const entry = getPendingSessions().peek(CONVERSATION_ID);
+    const entry = await getPendingSessions().peek(CONVERSATION_ID);
     expect(entry?.patientId).toBe(PATIENT_ID);
     expect(entry?.episodeId).toBe(EPISODE_ID);
     expect(entry?.twilioCallSid).toBe("CA_TEST_123");
