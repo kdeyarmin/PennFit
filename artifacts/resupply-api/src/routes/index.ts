@@ -87,6 +87,7 @@ import carrierLabelsRouter from "./admin/carrier-labels.js";
 import formAcknowledgementsRouter from "./admin/form-acknowledgements.js";
 import patientFitOverridesRouter from "./admin/patient-fit-overrides.js";
 import referralsAttributeRouter from "./admin/referrals-attribute.js";
+import referralSourcesRouter from "./admin/referral-sources.js";
 import patientMaintenanceLogRouter from "./admin/patient-maintenance-log.js";
 import resupplyFunnelRouter from "./admin/resupply-funnel.js";
 import acquisitionFunnelRouter from "./admin/acquisition-funnel.js";
@@ -979,6 +980,10 @@ router.use(patientFitOverridesRouter);
 // pending patient_referrals rows as converted when a matching email
 // has placed a paid order.
 router.use(referralsAttributeRouter);
+// /admin/referrals/scorecard + /admin/providers/:id/referral-activity —
+// the referral-source CRM: per referring-provider volume/revenue scorecard
+// plus a rep-touch (visit/call) activity log.
+router.use(referralSourcesRouter);
 // /admin/patients/:id/maintenance-log — CSR view of the patient's
 // hygiene checklist completion history.
 router.use(patientMaintenanceLogRouter);

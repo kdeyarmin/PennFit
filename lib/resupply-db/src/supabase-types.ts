@@ -1851,6 +1851,37 @@ export interface Database {
         Update: Partial<Database["resupply"]["Tables"]["providers"]["Row"]>;
         Relationships: [];
       };
+      // Mig 0431 — org-scoped rep-touch log keyed to a referring provider
+      // (soft FK to the shared providers registry). Powers the referral-source
+      // CRM relationship-management surface.
+      referral_source_activity: {
+        Row: {
+          id: string;
+          org_id: string | null;
+          provider_id: string;
+          activity_type:
+            | "visit"
+            | "call"
+            | "email"
+            | "lunch"
+            | "mailer"
+            | "other";
+          occurred_on: string;
+          summary: string;
+          next_action: string | null;
+          created_by_email: string | null;
+          created_by_user_id: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["referral_source_activity"]["Row"]
+        > & { provider_id: string; summary: string };
+        Update: Partial<
+          Database["resupply"]["Tables"]["referral_source_activity"]["Row"]
+        >;
+        Relationships: [];
+      };
       sleep_studies: {
         Row: {
           org_id: string | null;
@@ -5912,6 +5943,23 @@ export interface Database {
           patient_count: number | string;
           active_patient_count: number | string;
           staff_count: number | string;
+        }>;
+      };
+      // Mig 0431 — per referring-provider referral-source scorecard for the
+      // /admin/referrals/scorecard endpoint. One row per referring physician
+      // over this tenant's claims. bigint counts serialize as string.
+      referral_source_scorecard: {
+        Args: { p_org_id: string; p_since: string };
+        Returns: Array<{
+          provider_id: string;
+          provider_name: string | null;
+          practice_name: string | null;
+          npi: string | null;
+          claim_count: number | string;
+          patient_count: number | string;
+          claims_since: number | string;
+          paid_cents: number | string;
+          last_activity_on: string | null;
         }>;
       };
       // Mig 0164 — server-side per-payer denial-rate aggregation for
