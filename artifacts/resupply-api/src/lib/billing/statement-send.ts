@@ -465,6 +465,43 @@ async function deliverOnChannel(
  *
  * Fail-soft — returns the outcome; never throws for a normal gated send.
  */
+// Claim statuses that carry a billable patient balance. MUST match
+// statement-generation's query so the send-time re-check is consistent with
+// how the snapshot was computed.
+const STATEMENT_CLAIM_STATUSES = ["paid", "denied", "appealed", "closed"];
+
+// Re-derive a statement's CURRENT patient-responsibility balance from the
+// claims it bills (the same query statement generation uses). Returns the
+// live sum, or `null` when it can't be verified (no identifiable claim ids,
+// or a query error) — in which case the caller must fall back to the snapshot
+// rather than wrongly skipping. A `0` means every billed claim has since been
+// resolved → the statement is stale and should not be mailed.
+async function currentStatementBalanceCents(
+  supabase: OrgScopedClient,
+  lineItemsJson: Json | null,
+): Promise<number | null> {
+  const claimIds = (Array.isArray(lineItemsJson) ? lineItemsJson : [])
+    .map((li) => (li as { claim_id?: unknown }).claim_id)
+    .filter((id): id is string => typeof id === "string" && id.length > 0);
+  if (claimIds.length === 0) return null;
+  const { data, error } = await supabase
+    .from("insurance_claims")
+    .select("patient_responsibility_cents")
+    .in("id", claimIds)
+    .in("status", STATEMENT_CLAIM_STATUSES)
+    .gt("patient_responsibility_cents", 0);
+  if (error) return null;
+  let sum = 0;
+  for (const c of data ?? []) {
+    const cents =
+      typeof c.patient_responsibility_cents === "number"
+        ? c.patient_responsibility_cents
+        : 0;
+    sum += cents;
+  }
+  return sum;
+}
+
 export async function sendOneStatement(
   supabase: OrgScopedClient,
   statementId: string,
@@ -484,7 +521,7 @@ export async function sendOneStatement(
   const { data: stmt, error } = await supabase
     .from("patient_billing_statements")
     .select(
-      "id, patient_id, total_patient_responsibility_cents, statement_pdf_object_key, delivery_status, delivery_method",
+      "id, patient_id, total_patient_responsibility_cents, statement_pdf_object_key, delivery_status, delivery_method, line_items_json",
     )
     .eq("id", statementId)
     .limit(1)
@@ -493,6 +530,20 @@ export async function sendOneStatement(
   if (!stmt) return { kind: "skipped", reason: "statement_not_found" };
   if ((stmt.total_patient_responsibility_cents ?? 0) <= 0) {
     const outcome: SendOutcome = { kind: "skipped", reason: "zero_balance" };
+    await persistOutcome(supabase, statementId, outcome);
+    return outcome;
+  }
+  // Staleness guard: the snapshot total above is captured at generation. Re-
+  // derive the CURRENT balance from the billed claims and skip if it has been
+  // fully resolved since — a patient who has paid must not be mailed a stale
+  // bill. A null result (no identifiable claims / query failure) leaves the
+  // snapshot in force rather than second-guessing it.
+  const liveBalance = await currentStatementBalanceCents(
+    supabase,
+    stmt.line_items_json,
+  );
+  if (liveBalance !== null && liveBalance <= 0) {
+    const outcome: SendOutcome = { kind: "skipped", reason: "balance_paid" };
     await persistOutcome(supabase, statementId, outcome);
     return outcome;
   }

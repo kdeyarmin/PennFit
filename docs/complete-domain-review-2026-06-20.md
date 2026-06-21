@@ -223,8 +223,19 @@ preflight.ts` now reads the latest cached check per HCPCS for a
   against the DB CHECK enum) without sending. Both allow re-delivery (latest
   wins). The DME-issuer block is now shared between create and re-send so the
   PDF header can't drift. 11 new tests.
-- Statements mail from a generation-time snapshot with no staleness re-check
-  (`billing-statement-send.ts:318`).
+- ✅ **Fixed in this PR.** Statements were mailed from a generation-time
+  snapshot (`total_patient_responsibility_cents`) with no re-check, so a
+  patient who paid between generation and send was mailed a stale balance. Per
+  the owner's decision (skip only if now fully paid), `sendOneStatement` now
+  re-derives the CURRENT balance from the billed claims (the same
+  terminal-status / `patient_responsibility_cents > 0` query generation uses)
+  and skips with `delivery_status='skipped'` (reason `balance_paid`) when it
+  has dropped to 0 — covering both the single-send route and the electronic
+  batch (`runStatementBatchSend`, which fans out through `sendOneStatement`).
+  A non-zero balance still sends as-is; an unverifiable snapshot (no claim ids
+  / query error) falls back to the snapshot rather than wrongly skipping. New
+  tests for the skip and the still-owed paths. _Follow-up:_ apply the same
+  re-check to the operator print-mail batch builder.
 - Manual-claim drafts can't be batch-submitted (no payer/lines) and have no
   duplicate guard (`manual-claim.ts:154`).
 
