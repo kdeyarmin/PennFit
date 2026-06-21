@@ -518,9 +518,13 @@ function allowedTransition(
   // a claim before we observe the 277CA "accepted" intermediate.
   const VALID: Record<ClaimRow["status"], readonly ClaimRow["status"][]> = {
     draft: ["submitted"],
-    submitted: ["accepted", "denied", "paid"],
+    submitted: ["accepted", "denied", "paid", "rejected"],
     accepted: ["paid", "denied"],
     denied: ["appealed", "closed"],
+    // 277CA clearinghouse rejection — re-worked back to submitted or
+    // abandoned. An ERA won't normally land on a rejected claim (it never
+    // reached adjudication), but the edge keeps the map total + consistent.
+    rejected: ["submitted", "closed"],
     appealed: ["accepted", "denied"],
     paid: ["closed"],
     closed: [],

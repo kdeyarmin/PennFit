@@ -93,6 +93,16 @@ const JOB = "office-ally.inbound-poll";
 const CRON = "*/15 * * * *";
 const SYSTEM_ACTOR_EMAIL = "system:cron:office-ally-inbound-poll";
 
+// Claim statuses from which a 277CA outcome may advance the claim. The
+// guard prevents downgrading a claim an ERA round-trip already resolved
+// (paid / denied / appealed / closed) — see the 277CA handler below.
+const ACCEPT_277CA_FROM = new Set<string>(["submitted", "submitting"]);
+const REJECT_277CA_FROM = new Set<string>([
+  "submitted",
+  "submitting",
+  "accepted",
+]);
+
 type SupabaseClient = OrgScopedClient;
 
 export interface PollStats {
@@ -559,6 +569,24 @@ export async function dispatch277ca(
         updated_at: new Date().toISOString(),
       };
     if (block.payerClaimRef) update.claim_number = block.payerClaimRef;
+    // Reflect the 277CA outcome on the claim's OWN status (the
+    // per-submission roll-up below is separate). Guarded by the current
+    // status so an ERA round-trip that already advanced the claim
+    // (paid / denied / appealed / closed) is never downgraded:
+    //   - accepted → submitted/submitting → accepted (the 277CA
+    //     "accepted" intermediate the ERA reconciler documents).
+    //   - rejected → submitted/submitting/accepted → rejected (a
+    //     clearinghouse FRONT-END rejection — distinct from a payer
+    //     `denied` adjudication; surfaced for fix-and-resubmit).
+    //   - pended → leave the status unchanged (still in process).
+    if (block.outcome === "accepted" && ACCEPT_277CA_FROM.has(claim.status)) {
+      update.status = "accepted";
+    } else if (
+      block.outcome === "rejected" &&
+      REJECT_277CA_FROM.has(claim.status)
+    ) {
+      update.status = "rejected";
+    }
     const { error: claimUpdateErr } = await supabase
       .from("insurance_claims")
       .update(update)

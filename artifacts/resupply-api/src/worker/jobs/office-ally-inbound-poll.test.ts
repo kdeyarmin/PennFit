@@ -27,7 +27,34 @@ const TEST_ORG_ID = "00000000-0000-0000-0000-000000000001";
 const orgClient = () =>
   getOrgScopedClient(TEST_ORG_ID, getSupabaseServiceRoleClient());
 
-import { dispatch835 } from "./office-ally-inbound-poll";
+import { dispatch277ca, dispatch835 } from "./office-ally-inbound-poll";
+
+// Minimal single-claim 277CA: TRN02 carries the insurance_claims.id, the
+// STC category drives the outcome (A2 = accepted, A7 = rejected). One
+// claim block with a null submission id keeps the per-submission roll-up
+// out of the way so the test asserts only the claim-status transition.
+function build277CA(trace: string, stc: string): string {
+  return [
+    "ISA*00*          *00*          *ZZ*OFFCLY         *ZZ*PENNPAPS01     *260519*1437*^*00501*000000200*0*P*:~",
+    "GS*HN*OFFCLY*PENNPAPS01*20260519*1437*200*X*005010X214~",
+    "ST*277*0001~",
+    "BHT*0085*08*PF-CLAIMS-1*20260519*1437*TH~",
+    "HL*1**20*1~",
+    "NM1*PR*2*OFFICE ALLY*****46*OFFCLY~",
+    "HL*2*1*21*1~",
+    "NM1*41*2*PENNPAPS INC*****46*PENNPAPS01~",
+    "HL*3*2*19*1~",
+    "NM1*85*2*PENNPAPS INC*****XX*1234567893~",
+    "HL*4*3*PT~",
+    "NM1*QC*1*DOE*JANE****MI*M123456789~",
+    `TRN*2*${trace}~`,
+    `STC*${stc}*20260519*WQ*249.99~`,
+    "REF*1K*PAYER-CLAIM-9988~",
+    "SE*14*0001~",
+    "GE*1*200~",
+    "IEA*1*000000200~",
+  ].join("");
+}
 
 // A minimal but well-formed 835 envelope — enough for parse835() not to
 // throw. The duplicate path returns before the parsed body is otherwise used.
@@ -65,5 +92,55 @@ describe("dispatch835 — duplicate 835 idempotency guard", () => {
     expect(getSupabaseCallCount("era_files", "insert")).toBe(0);
     expect(getSupabaseCallCount("insurance_claims", "select")).toBe(0);
     expect(getSupabaseCallCount("insurance_claims", "update")).toBe(0);
+  });
+});
+
+describe("dispatch277ca — reflects the 277CA outcome on the claim status", () => {
+  beforeEach(() => supabaseMock.reset());
+
+  function stageClaim(status: string): void {
+    stageSupabaseResponse("insurance_claims", "select", {
+      data: { id: "CLM-X", office_ally_submission_id: null, status },
+    });
+    stageSupabaseResponse("insurance_claims", "update", {
+      data: [{ id: "CLM-X" }],
+    });
+    stageSupabaseResponse("insurance_claim_events", "insert", {
+      data: { id: "evt-1" },
+    });
+  }
+
+  it("advances a submitted claim to accepted on a 277CA accepted (A2) ack", async () => {
+    stageClaim("submitted");
+    await dispatch277ca(
+      orgClient(),
+      "inbound-1",
+      build277CA("CLM-X", "A2:20:PR"),
+    );
+    const [payload] = supabaseMock.writePayloads("insurance_claims", "update");
+    expect((payload as { status?: string }).status).toBe("accepted");
+  });
+
+  it("moves a submitted claim to rejected on a 277CA rejected (A7) ack", async () => {
+    stageClaim("submitted");
+    await dispatch277ca(
+      orgClient(),
+      "inbound-2",
+      build277CA("CLM-X", "A7:24:PR"),
+    );
+    const [payload] = supabaseMock.writePayloads("insurance_claims", "update");
+    expect((payload as { status?: string }).status).toBe("rejected");
+  });
+
+  it("never downgrades a claim an ERA already resolved (paid stays paid)", async () => {
+    stageClaim("paid");
+    await dispatch277ca(
+      orgClient(),
+      "inbound-3",
+      build277CA("CLM-X", "A7:24:PR"),
+    );
+    const [payload] = supabaseMock.writePayloads("insurance_claims", "update");
+    // The payer ref may still be captured, but the status must NOT change.
+    expect((payload as { status?: string }).status).toBeUndefined();
   });
 });

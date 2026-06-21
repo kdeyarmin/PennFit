@@ -32,12 +32,16 @@ import { requirePermission } from "../../middlewares/requireAdmin";
 const router: IRouter = Router();
 
 // Claim statuses that still carry filing pressure. `paid` and `closed`
-// are terminal — no deadline left to chase.
+// are terminal — no deadline left to chase. `rejected` is a 277CA
+// clearinghouse front-end rejection: the claim never reached the payer,
+// so the filing clock is still running and it must be fixed + resubmitted
+// before the deadline — exactly the work this surface is meant to drive.
 const OPEN_STATUSES = [
   "draft",
   "submitted",
   "accepted",
   "denied",
+  "rejected",
   "appealed",
 ] as const;
 

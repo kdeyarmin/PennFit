@@ -119,9 +119,19 @@ submit/transfer concurrency are genuinely strong. Gaps cluster around
    added on the KJ months for a compliant CPAP/BiPAP patient. This also
    corrects the previously non-standard 1–3=KH / 4–13=KI ranges. Covered by
    a new `pickModifiers` unit test.
-6. **277CA rejection never updates `insurance_claims.status`.**
-   `office-ally-inbound-poll.ts:557` writes an event row but no claim status;
-   the claim-level worklist shows a clearinghouse-rejected claim as in-flight.
+6. **277CA rejection never updates `insurance_claims.status`.** ✅ **Fixed in
+   this PR.** The 277CA handler wrote an event row but no claim status, so a
+   clearinghouse-rejected claim sat at `submitted` (looked in-flight) and
+   resubmission logic never fired. Per the owner's decision, added a distinct
+   **`rejected`** claim status (migration `0418`, types, and the canonical
+   state machine: `submitted → rejected`, `rejected → {submitted, closed}`).
+   The 277CA handler now sets status — **accepted** ack → `submitted → accepted`
+   (the documented 277CA intermediate) and **rejected** ack → `rejected` —
+   guarded so an ERA round-trip that already resolved the claim
+   (paid/denied/closed) is never downgraded; **pended** leaves it unchanged.
+   Rejected claims surface for fix-and-resubmit in the **timely-filing**
+   worklist (the filing clock is still running). Covered by new
+   `dispatch277ca` + state-machine tests.
 7. **Collections forecast / AR aging compute from disagreeing status
    literals** (no `partially_paid` state; `paid` set on any `paidCents>0`),
    systematically understating expected cash and aging denied/appealed claims
