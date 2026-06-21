@@ -179,11 +179,12 @@ const SHOP_PROMPT_HASH =
  *
  * v16 made the email confirmation a hard gate (read back + WAIT for the
  * caller to confirm before send_info_email / start_breathe_signup). v17
- * deepens the sales conversation (consultative discovery + name/DME capture +
- * a richer knowledge base + honest-on-unknowns), changing it again.
+ * deepens the sales conversation (consultative discovery + a playbook +
+ * name/DME capture + a much richer knowledge base with use cases and an FAQ +
+ * honest-on-unknowns), changing it again.
  */
 const BREATHE_SALES_PROMPT_HASH =
-  "1d25d9f6eeaf671b77d4220ec41889e9d53ed6cb6f580d1abce73a8fe6a02162";
+  "02af6091220efb98e4cff8140c5d7d0e791543bbc42ae723373e77b5251bf61c";
 
 describe("PROMPT_VERSION drift detector", () => {
   it("has a recorded hash for the currently-shipped PROMPT_VERSION", () => {

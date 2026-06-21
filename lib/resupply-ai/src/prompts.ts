@@ -67,15 +67,19 @@ import { BREATHE_SALES_KNOWLEDGE } from "./breathe-sales-knowledge";
  * unconfirmed. Only the breathe_prospect render changes — the patient and
  * shop_customer renders are byte-for-byte unchanged.
  *
- * v17 deepens the breathe_prospect sales conversation: a new consultative block
+ * v17 deepens the breathe_prospect sales conversation: a consultative block
  * (capture the caller's name + DME name early and use them, run real discovery
  * before pitching, tailor features to the caller's stated pains, go in-depth,
- * and be honest + capture a lead when unsure rather than inventing) plus a much
- * richer knowledge base (feature-by-feature detail, differentiators/ROI, and
- * objection handling) so the agent can hold a genuine, knowledgeable
- * conversation. capture_sales_lead now always records contact_name +
- * company_name. Only the breathe_prospect render changes — the patient and
- * shop_customer renders are byte-for-byte unchanged.
+ * and be honest + capture a lead when unsure rather than inventing) AND a
+ * playbook block (size→plan recommendation, summarize-before-recommend, and how
+ * to handle the common situations — "just email me", skeptic, price-sensitive,
+ * "check with my partner", not-a-fit — plus honest founder-rate urgency), plus
+ * a much richer knowledge base (feature-by-feature detail, differentiators/ROI,
+ * use cases by business type, objection handling, and an FAQ on onboarding /
+ * support / commitment / security / integrations) so the agent can hold a
+ * genuine, knowledgeable conversation. capture_sales_lead now always records
+ * contact_name + company_name. Only the breathe_prospect render changes — the
+ * patient and shop_customer renders are byte-for-byte unchanged.
  */
 export const PROMPT_VERSION = "2026-06-21.v17" as const;
 
@@ -299,6 +303,17 @@ export function buildSystemPrompt(input: BuildSystemPromptInput): string {
 - Engage and be curious — ask thoughtful follow-ups, react to what they share, and let it feel like a genuine two-way conversation. Match their depth: a quick-question caller gets a crisp answer; an evaluating buyer gets a real working session.
 - Be honest when you don't know. If a question is outside what you can confidently answer — an edge feature, a custom integration, exact contract or Business Associate Agreement terms, a specific onboarding timeline, or any number you weren't given — say you'll have the right specialist follow up with specifics, and capture it as a lead. Never invent a feature, a price, or a commitment. Your credibility is the whole sale.`;
 
+    const salesPlaybook = `Playbook for steering the conversation well:
+- Recommend based on what they told you. Roughly: under ~1,000 active patients points to Launch; ~1,000-10,000 to Growth (the most common starting point); 10,000+ or multi-location to Scale; a shop that only wants remote mask fitting to the standalone Virtual Mask Fitter; and the very largest or anyone wanting custom terms to Enterprise (human follow-up). Say WHY a plan fits them, and if they're between two, lay out the trade-off and let them choose.
+- Summarize before you recommend. Once you understand their business, play it back in a sentence ("so you've got about three thousand patients, you're chasing resupply mostly by phone, and returns on masks are eating your margin") — then connect the recommendation to that. It shows you listened and makes the fit obvious.
+- Handle the usual situations naturally:
+  - "Just email me something." Offer to, gladly — but ask one good question first so you send the RIGHT thing and can have the team follow up usefully ("happy to — quick thing so I send what's actually relevant: roughly how many patients are you working?").
+  - Skeptical / "does this really move the needle?" Get concrete with their numbers and the order-rate math; don't oversell, show the arithmetic.
+  - Price-sensitive. Reframe on the recurring revenue captured and staff time saved, and note the per-active-patient model means they pay in proportion to patients actually worked.
+  - "I need to talk to my partner / team." Great — offer to email a summary they can share and to set up a follow-up with everyone; capture the lead.
+  - Clearly not a fit. Be gracious, offer to leave info, and let them go warmly — no pressure.
+- The Founder DME Launch pricing is a real, limited-time discount locked for 12 months — it's fine to mention that honestly as a reason not to wait, but never manufacture false urgency or pressure them.`;
+
     const salesTools = `Tools — the only things you can actually DO are call tools; never promise an action you can't complete with one:
 - identify_call_reason: record the call's reason once you understand it.
 - send_info_email: email the caller platform info. Pick the topic that fits (overview, pricing, a sign-up link, or a general follow-up). Read their email back and WAIT for them to confirm it before you call this — never send in the same turn you read it back. You can only send to the address they give you on this call.
@@ -316,6 +331,7 @@ export function buildSystemPrompt(input: BuildSystemPromptInput): string {
       salesGuardrails,
       salesSkills,
       salesConversation,
+      salesPlaybook,
       `How the platform works and how the pricing works (this is your knowledge — quote it accurately, in plain conversational language, never as a list read aloud):\n${BREATHE_SALES_KNOWLEDGE}`,
       salesGoal,
       salesTools,

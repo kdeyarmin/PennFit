@@ -171,6 +171,66 @@ export const BREATHE_OBJECTIONS = [
   "  capability, a price, or a commitment.",
 ].join("\n");
 
+/** Concrete use cases by business type + before/after scenarios, so the agent
+ *  can make it real for the specific caller instead of staying abstract. */
+export const BREATHE_USE_CASES = [
+  "Who it helps and how (pick the one that matches the caller):",
+  "- A DME/HME running a CPAP resupply program: the order-rate lift and the",
+  "  automated, multi-channel outreach are the core win — more recurring",
+  "  resupply revenue from the patients they already have, with less manual",
+  "  chasing. The mask fitter also cuts returns and in-office fitting time.",
+  "- A DME that's NOT really running resupply yet (or doing it by hand): this",
+  "  stands the whole program up — storefront, scheduling, outreach, and",
+  "  ordering — so they can launch a real resupply line without hiring a team",
+  "  to run it.",
+  "- A sleep lab or a shop focused on setups/fittings: the standalone Virtual",
+  "  Mask Fitter is a natural entry point — fit patients remotely, cut sample-",
+  "  mask waste — and they can grow into the full platform later.",
+  "- A multi-location operation: the higher tiers add multi-location workflows,",
+  "  automation rules, and roll-up analytics so a regional operator can run it",
+  "  all from one console.",
+  "",
+  "A way to make it concrete: for a provider with, say, ~4,000 active patients",
+  "converting around 30%, moving toward the 45-50% benchmark is roughly several",
+  "hundred additional resupply orders a quarter from the SAME patient base —",
+  "recurring. If they give you their real numbers, walk it through with theirs.",
+].join("\n");
+
+/** Frequently-asked specifics. Honest and bounded — where an exact answer is a
+ *  contract/legal/timeline commitment, the agent routes it to a human. */
+export const BREATHE_FAQ = [
+  "Frequently-asked specifics (answer what's here; route exact",
+  "contract/legal/timeline commitments to a human follow-up):",
+  "- Onboarding / getting started: the one-time setup fee covers standing them",
+  "  up — configuring their branded storefront, importing their patient and",
+  "  therapy data, connecting their integrations, and training the team. A",
+  "  non-Enterprise plan can be started right on this call; the system emails a",
+  "  secure link to verify and set a password. For an exact go-live timeline,",
+  "  have a specialist confirm.",
+  "- Support & training: onboarding includes getting the team trained and set",
+  "  up. For specific support tiers or SLAs, route to a human.",
+  "- Commitment: the Founder DME Launch rate is locked for 12 months for those",
+  "  who sign up during the launch. For specific contract length, cancellation,",
+  "  or terms, have the team confirm — don't state terms you weren't given.",
+  "- Security & privacy: built to handle PHI carefully — mask-fitting images",
+  "  never leave the patient's phone, patient data is isolated per business, and",
+  "  the AI runs on healthcare-eligible providers. For a Business Associate",
+  "  Agreement or security documentation, capture the lead and route it.",
+  "- How the AI is used: a patient-facing storefront chatbot, a staff copilot",
+  "  in the admin console, a clinical sleep coach for patients, automated",
+  "  patient phone and text outreach, and even AI replies to patient emails —",
+  "  all included, all tunable, and the business can rename the assistants to",
+  "  its own brand.",
+  "- How integrations connect: therapy data syncs from ResMed AirView, Philips",
+  "  Care Orchestrator, and 3B/React Health; claims go out through the Office",
+  "  Ally clearinghouse; prior auth supports the electronic (Da Vinci) pathway;",
+  "  patient payments run through Stripe; and patient/resupply data exchanges",
+  "  with PacWare by file import/export. If they use a system not listed, take",
+  "  the details and have the team confirm what's possible.",
+  "- Does it replace my billing system? No — it runs the resupply engine on top",
+  "  and exchanges data with the billing system of record (e.g. PacWare).",
+].join("\n");
+
 /** The subscription / pricing model — tiers, the per-active-patient meter,
  *  and the common add-ons. These are the ONLY numbers the agent may quote. */
 export const BREATHE_PRICING = [
@@ -237,7 +297,11 @@ export const BREATHE_SALES_KNOWLEDGE = [
   "",
   BREATHE_VALUE_AND_DIFFERENTIATORS,
   "",
+  BREATHE_USE_CASES,
+  "",
   BREATHE_OBJECTIONS,
+  "",
+  BREATHE_FAQ,
   "",
   BREATHE_PRICING,
 ].join("\n");
