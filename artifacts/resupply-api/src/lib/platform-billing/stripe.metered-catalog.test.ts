@@ -104,7 +104,7 @@ beforeEach(() => {
       code: "fitter_fitting_metered",
       name: "Additional mask fittings",
       description: "Per-fitting overage",
-      recurring_price_cents: 300,
+      recurring_price_cents: 200,
       usage_type: "metered",
       included_units: 25,
       meter_event_name: "fitter_fitting",
@@ -131,7 +131,7 @@ describe("syncPlatformBillingCatalogToStripe — metered add-on", () => {
     });
   });
 
-  it("creates a graduated metered price (25 free, then $3) tied to the meter", async () => {
+  it("creates a graduated metered price (25 free, then $2) tied to the meter", async () => {
     await syncPlatformBillingCatalogToStripe();
     const metered = state.calls.prices.find(
       (p) =>
@@ -150,7 +150,7 @@ describe("syncPlatformBillingCatalogToStripe — metered add-on", () => {
       },
       tiers: [
         { up_to: 25, unit_amount: 0 },
-        { up_to: "inf", unit_amount: 300 },
+        { up_to: "inf", unit_amount: 200 },
       ],
     });
     // A tiered price must NOT carry a top-level unit_amount.

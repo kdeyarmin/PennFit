@@ -45,8 +45,15 @@ import { BREATHE_SALES_KNOWLEDGE } from "./breathe-sales-knowledge";
  * just openers), react before answering, don't parrot, and let occasional
  * discourse markers through. The block is shared, so ALL THREE renders
  * (patient, shop_customer, breathe_prospect) change with this bump.
+ *
+ * v14 updates the breathe_prospect sales pricing knowledge: the virtual mask
+ * fitter is now included in every full-platform plan (25 fittings/mo, then
+ * $2 each) and the per-fitting overage drops from $3 to $2. Only the
+ * breathe_prospect render changes — the patient and shop_customer renders are
+ * byte-for-byte unchanged — but the version bumps so historical voice calls
+ * stay audit-stamped with the exact pricing the agent was told to quote.
  */
-export const PROMPT_VERSION = "2026-06-19.v13" as const;
+export const PROMPT_VERSION = "2026-06-21.v14" as const;
 
 /**
  * Caller-facing greeting phrase. Exposed so callers can A/B without

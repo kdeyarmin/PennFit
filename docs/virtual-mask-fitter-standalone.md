@@ -9,6 +9,14 @@ perfect mask **type + size** comes back to the fitter worklist — is also sold
 the resupply suite. This note explains the plan, its pricing, and the
 **product-scope** gate that limits a subscriber's console to just the fitter.
 
+> **The fitter is also included in every full-platform plan** (migration
+> 0423). Launch/Growth/Scale/Enterprise each carry the same
+> `fitterFittingsPerMonth: 25` allowance and bill the same **$2.00**
+> per-fitting overage through the shared `fitter_fitting_metered` add-on, so
+> the single graduated metered price stays correct across all plans. The
+> standalone `mask_fitter` plan below remains the entry tier for a DME that
+> wants the fitter and nothing else.
+
 ## The plan
 
 Seeded into the platform billing catalog (`resupply.billing_plans`) by
@@ -21,7 +29,7 @@ self-service billing UI (`/account/billing`), and the Stripe catalog sync.
 | `code`          | `mask_fitter`                                                     |
 | Price           | **$149/month**, **no onboarding fee**                             |
 | Included usage  | **25 completed fittings/month** (`fitterFittingsPerMonth`)        |
-| Overage         | **$3.00 per completed fitting** (add-on `fitter_fitting_metered`) |
+| Overage         | **$2.00 per completed fitting** (add-on `fitter_fitting_metered`) |
 | `product_scope` | `mask_fitter` (every other plan is `full`)                        |
 | `sort_order`    | `5` — listed before Launch as the entry tier                      |
 
@@ -41,7 +49,7 @@ auto-collects rather than relying on manual reconciliation:
 - The `fitter_fitting_metered` add-on is `usage_type='metered'`. On catalog
   sync (`platform-billing/stripe.ts`) it gets a **Stripe Billing Meter**
   (`event_name: "fitter_fitting"`, sum aggregation, customer-keyed) and a
-  **graduated metered Price** — first `included_units` (25) free, then $3.00
+  **graduated metered Price** — first `included_units` (25) free, then $2.00
   each — tied to that meter.
 - A tenant on the `mask_fitter` plan has this metered price attached to their
   Stripe subscription **intrinsically** (it's not an opt-in add-on); the
