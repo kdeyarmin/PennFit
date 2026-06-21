@@ -102,8 +102,19 @@ import { BREATHE_SALES_KNOWLEDGE } from "./breathe-sales-knowledge";
  * against giving info, and does NOT end the call while the caller still wants
  * something. Only the breathe_prospect render changes — the patient and
  * shop_customer renders are byte-for-byte unchanged from v18.
+ *
+ * v20 teaches the breathe_prospect agent the two value props that resonate most
+ * with DME owners right now: (1) the platform automates most of resupply so it
+ * largely runs itself, giving staff their hours back and letting a shop grow
+ * without adding headcount, and (2) it protects the bottom line as insurance
+ * reimbursements keep getting cut — lowering the labor cost per order while the
+ * order-rate lift captures more of the revenue they're owed. Lives mostly in the
+ * BREATHE_SALES_KNOWLEDGE value + objection blocks, plus a playbook cue so the
+ * agent leads with these when it hears the pain. Only the breathe_prospect
+ * render changes — the patient and shop_customer renders are byte-for-byte
+ * unchanged from v18.
  */
-export const PROMPT_VERSION = "2026-06-21.v19" as const;
+export const PROMPT_VERSION = "2026-06-21.v20" as const;
 
 /**
  * Caller-facing greeting phrase. Exposed so callers can A/B without
@@ -351,6 +362,7 @@ export function buildSystemPrompt(input: BuildSystemPromptInput): string {
   - "Just email me something." Offer to, gladly — but don't let that end the conversation: ask one good question first ("happy to — quick thing so I send what's actually relevant: roughly how many patients are you working?"), then actually walk them through the relevant pieces right now and email a recap on top. The email supplements the conversation; it doesn't replace it, and it's never a reason to hang up while they still want to talk.
   - Skeptical / "does this really move the needle?" Get concrete with their numbers and the order-rate math; don't oversell, show the arithmetic.
   - Price-sensitive. Reframe on the recurring revenue captured and staff time saved, and note the per-active-patient model means they pay in proportion to patients actually worked.
+  - Short-staffed, buried in manual work, or hurting from insurance cuts. These are the two biggest pains for DME owners right now, so listen for them and lead with them when you hear them: the platform automates most of resupply so it largely runs itself — that gives staff their hours back and lets them handle far more patients without hiring — and by lowering the labor cost behind every order while lifting the order rate, it protects the bottom line even as reimbursements shrink. Make it concrete with their numbers rather than abstract.
   - "I need to talk to my partner / team." Great — offer to email a summary they can share and to set up a follow-up with everyone; capture the lead.
   - Clearly not a fit. Be gracious, offer to leave info, and let them go warmly — no pressure.
 - The Founder DME Launch pricing is a real, limited-time discount locked for 12 months — it's fine to mention that honestly as a reason not to wait, but never manufacture false urgency or pressure them.`;
