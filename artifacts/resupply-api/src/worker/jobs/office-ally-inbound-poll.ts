@@ -675,40 +675,54 @@ export async function dispatch835(
     .eq("file_sha256", sha256)
     .limit(1)
     .maybeSingle();
-  if (existingEra) {
-    // This exact 835 content was already ingested. Do NOT re-run
-    // reconcileEra — it would re-apply every monetary delta (a double-post
-    // of paid / allowed / patient-responsibility). Mirrors the HTTP
-    // era-ingest route's 409-on-duplicate. The upstream
-    // clearinghouse_inbound_files SHA dedup normally prevents reaching here;
-    // this is the defense-in-depth guard the prior code relied on but which,
-    // by falling through to reconcileEra, was silently a no-op.
+  // A fully-applied ('processed' or any non-'partial') row is a true
+  // duplicate of this exact 835 content — re-running reconcileEra would be
+  // wasted work. Skip it (mirrors the HTTP era-ingest route's 409). A
+  // 'partial' row, however, means a PREVIOUS run left some claim blocks
+  // unmatched (the claim hadn't been created locally yet); a re-delivery of
+  // the same 835 should re-reconcile so those now-matchable claims finally
+  // post. reconcileEra is per-claim idempotent (the insurance_claim_events
+  // payer_ref marker skips already-applied claims), so the re-run applies
+  // ONLY the newly-matchable blocks — no double-post. The 835 body is never
+  // persisted, so a re-delivery is the only way a partial can be recovered.
+  if (existingEra && existingEra.status !== "partial") {
     logger.info(
       { eraFileId: existingEra.id, status: existingEra.status },
       "dispatch835: duplicate 835 content; skipping re-reconcile",
     );
     return 0;
   }
-  const { data: row, error } = await supabase
-    .from("era_files")
-    .insert({
-      file_name: fileName,
-      file_sha256: sha256,
-      file_size_bytes: Buffer.byteLength(content, "utf8"),
-      payer_check_number: parsed.checkOrEftNumber,
-      payer_paid_date: parsed.paymentDate,
-      total_paid_cents: parsed.totalPaidCents,
-      claims_paid_count: 0,
-      claims_denied_count: 0,
-      lines_processed_count: 0,
-      matched_submission_id: null,
-      status: "partial",
-      ingested_by_email: SYSTEM_ACTOR_EMAIL,
-    })
-    .select("id")
-    .single();
-  if (error) throw error;
-  const eraFileId = row.id;
+  let eraFileId: string;
+  if (existingEra) {
+    // Re-reconcile the existing partial row in place (reuse, don't insert —
+    // the file_sha256 unique index would reject a second insert anyway).
+    eraFileId = existingEra.id;
+    logger.info(
+      { eraFileId },
+      "dispatch835: re-reconciling a partial 835 (idempotent; applies newly-matchable claim blocks)",
+    );
+  } else {
+    const { data: row, error } = await supabase
+      .from("era_files")
+      .insert({
+        file_name: fileName,
+        file_sha256: sha256,
+        file_size_bytes: Buffer.byteLength(content, "utf8"),
+        payer_check_number: parsed.checkOrEftNumber,
+        payer_paid_date: parsed.paymentDate,
+        total_paid_cents: parsed.totalPaidCents,
+        claims_paid_count: 0,
+        claims_denied_count: 0,
+        lines_processed_count: 0,
+        matched_submission_id: null,
+        status: "partial",
+        ingested_by_email: SYSTEM_ACTOR_EMAIL,
+      })
+      .select("id")
+      .single();
+    if (error) throw error;
+    eraFileId = row.id;
+  }
 
   const summary = await reconcileEra(parsed, {
     actorEmail: SYSTEM_ACTOR_EMAIL,

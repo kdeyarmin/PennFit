@@ -93,6 +93,34 @@ describe("dispatch835 — duplicate 835 idempotency guard", () => {
     expect(getSupabaseCallCount("insurance_claims", "select")).toBe(0);
     expect(getSupabaseCallCount("insurance_claims", "update")).toBe(0);
   });
+
+  it("re-reconciles (does not skip) when the existing era_files row is 'partial'", async () => {
+    // A prior run of this exact 835 left some claim blocks unmatched, so
+    // its era_files row is 'partial'. A re-delivery must re-reconcile (the
+    // reconciler is per-claim idempotent) instead of short-circuiting —
+    // otherwise the now-matchable claims' payments stay stranded.
+    stageSupabaseResponse("era_files", "select", {
+      data: { id: "era-partial-1", status: "partial" },
+    });
+    stageSupabaseResponse("era_files", "update", { data: null });
+    stageSupabaseResponse("clearinghouse_inbound_files", "update", {
+      data: null,
+    });
+
+    const queued = await dispatch835(
+      orgClient(),
+      "inbound-partial",
+      "PAYMENT.835",
+      SAMPLE_835,
+    );
+
+    // Reused the existing partial row (no new insert) AND proceeded past
+    // the early-return into reconcile + the status-promotion update.
+    expect(getSupabaseCallCount("era_files", "insert")).toBe(0);
+    expect(getSupabaseCallCount("era_files", "update")).toBe(1);
+    // The minimal 835 carries no claim blocks → no denied claims queued.
+    expect(queued).toBe(0);
+  });
 });
 
 describe("dispatch277ca — reflects the 277CA outcome on the claim status", () => {

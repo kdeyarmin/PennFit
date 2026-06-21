@@ -109,10 +109,18 @@ submit/transfer concurrency are genuinely strong. Gaps cluster around
    `denialAnalysesRun` count) for each matched denied outcome. Both ERA entry
    points share one implementation so they can't diverge again. New
    parity test added.
-3. **Partial automated 835s are never re-reconciled.** `era-ingest.ts:89`
-   exempts `partial` files from SHA dedupe to allow re-reconcile, but
-   `dispatch835` (`office-ally-inbound-poll.ts:650`) `return 0`s for any
-   existing `era_files` row including `partial` — payments stranded.
+3. **Partial automated 835s are never re-reconciled.** ✅ **Fixed in this
+   PR.** The HTTP `era-ingest` route exempts `partial` files from SHA dedupe
+   so they can be re-reconciled, but `dispatch835` `return 0`'d for **any**
+   existing `era_files` row including `partial`, stranding payments when a
+   claim was created locally after the 835 first landed. Verified
+   `reconcileEra` is per-claim idempotent (the `insurance_claim_events`
+   `payer_ref` marker skips already-applied claims), so re-running only
+   applies newly-matchable blocks — no double-post. `dispatch835` now mirrors
+   the HTTP route: a `partial` row is **reused and re-reconciled** on
+   re-delivery (the 835 body isn't persisted, so re-delivery is the only
+   recovery path); a `processed` row still short-circuits. New
+   re-reconcile test added.
 4. **Same-or-Similar cache is write-only.** `medicare_same_or_similar_checks`
    is read nowhere outside its own route (`same-or-similar.ts`); the claim
    builder/preflight the header claims to feed never query it.
@@ -129,7 +137,7 @@ submit/transfer concurrency are genuinely strong. Gaps cluster around
    this PR.** The 277CA handler wrote an event row but no claim status, so a
    clearinghouse-rejected claim sat at `submitted` (looked in-flight) and
    resubmission logic never fired. Per the owner's decision, added a distinct
-   **`rejected`** claim status (migration `0418`, types, and the canonical
+   **`rejected`** claim status (migration `0419`, types, and the canonical
    state machine: `submitted → rejected`, `rejected → {submitted, closed}`).
    The 277CA handler now sets status — **accepted** ack → `submitted → accepted`
    (the documented 277CA intermediate) and **rejected** ack → `rejected` —
