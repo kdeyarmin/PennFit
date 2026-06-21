@@ -28,7 +28,7 @@ dashboard:
    name `fitter_fitting`, aggregation **sum**, customer mapping
    `stripe_customer_id`.
 2. **Products → the fitter add-on → Price**: a **metered**, **recurring
-   monthly** price whose graduated tiers read **first 25 at $0.00, then $3.00
+   monthly** price whose graduated tiers read **first 25 at $0.00, then $2.00
    each** — and **no** top-level unit amount.
 
 If the meter/price is missing, the catalog row's `stripe_meter_id` /
@@ -63,7 +63,7 @@ already-completed fitting must **not** add an event (no double-count).
 
 Advance the test clock (Stripe **test clocks**) to the period end, or read the
 upcoming invoice (`GET /v1/invoices/upcoming?customer=cus_…`). The metered line
-should bill **max(0, fittings − 25) × $3.00**, e.g. 30 fittings → $15.00, on
+should bill **max(0, fittings − 25) × $2.00**, e.g. 30 fittings → $10.00, on
 top of the $149 flat plan. 25 or fewer → $0 metered.
 
 ## 5. Tear down
