@@ -106,15 +106,20 @@ describe("POST /admin/billing/eligibility-quick-check", () => {
     expect(vi.mocked(quickCheckEligibility)).not.toHaveBeenCalled();
   });
 
-  it("fails closed (500) when the admin has no tenant context", async () => {
-    // Authenticated, but req.orgId never resolved (orgId: null). The
-    // quick check must NOT fall back to the seed org — refuse so a
-    // tenant-less session can't bill a 270 under PennPaps.
+  // Both the unresolved (orgId absent) and the blank/whitespace cases must
+  // fail closed at the route with 500 tenant_context_missing — NOT fall
+  // through to the lib (which would throw inside getOrgScopedClient and get
+  // surfaced as a generic 409 echoing an internal error). The whitespace
+  // case is the one the old `if (!orgId)` guard would have let slip.
+  it.each<{ label: string; orgId: string | null }>([
+    { label: "no tenant context (orgId absent)", orgId: null },
+    { label: "blank/whitespace tenant context", orgId: "   " },
+  ])("fails closed (500) on $label", async ({ orgId }) => {
     mockAdmin.current = {
       userId: "u1",
       email: "ops@x.com",
       role: "admin",
-      orgId: null,
+      orgId,
     };
     const res = await post(makeApp(), VALID_BODY);
     expect(res.status).toBe(500);
