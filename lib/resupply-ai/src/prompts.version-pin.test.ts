@@ -149,6 +149,13 @@ const PROMPT_VERSION_HASHES: Readonly<Record<string, string>> = {
   // below. The breathe_prospect render is unchanged from v17.
   "2026-06-21.v18":
     "8d7fb4c7ff77bb8e7b7aa65a2b2db91973b2de48b3096a2c2b243170b225cff0",
+  // v19 rewrites only the breathe_prospect sales blocks (own-the-close framing,
+  // human follow-up as the last resort, deliver pricing on the call, don't hang
+  // up while the caller still wants something). The PATIENT render is
+  // byte-for-byte unchanged from v18, so this hash matches v18's. The sales
+  // variant is pinned separately in BREATHE_SALES_PROMPT_HASH below.
+  "2026-06-21.v19":
+    "8d7fb4c7ff77bb8e7b7aa65a2b2db91973b2de48b3096a2c2b243170b225cff0",
 };
 
 function renderCanonicalPrompt(): string {
@@ -188,9 +195,13 @@ const SHOP_PROMPT_HASH =
  * deepens the sales conversation (consultative discovery + a playbook +
  * name/DME capture + a much richer knowledge base with use cases and an FAQ +
  * honest-on-unknowns) AND adds a service-standard block, changing it again.
+ * v19 makes the agent own the close and treats human follow-up as the last
+ * resort (rewritten SALES skill, "just email me" playbook, goal, and hand-off
+ * blocks; deliver pricing on the call; don't hang up while the caller still
+ * wants something), changing it again.
  */
 const BREATHE_SALES_PROMPT_HASH =
-  "40358f98676318ad89ad2363d0c76534be82b696e618eee662fbca2496ab17a1";
+  "89f85d8b32558dc38a09f2b1580d360eee75c01c5065983e305ec8ace8a78657";
 
 describe("PROMPT_VERSION drift detector", () => {
   it("has a recorded hash for the currently-shipped PROMPT_VERSION", () => {
