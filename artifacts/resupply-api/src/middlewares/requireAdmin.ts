@@ -390,7 +390,7 @@ export async function requireAdmin(
   if (req.orgId && req.impersonation !== true) {
     const scope = await resolveTenantProductScope(req.orgId);
     if (scope === "locked") {
-      // Payment wall (migration 0426, env-gated): a self-serve tenant that
+      // Payment wall (migration 0427, env-gated): a self-serve tenant that
       // hasn't paid yet may only reach billing/checkout + account surfaces
       // until their first invoice is paid (the invoice.paid webhook clears
       // the flag). Resolver fails OPEN to "full", so this never fires on a

@@ -41,7 +41,7 @@ export function __clearProductScopeCacheForTests(): void {
 
 /**
  * Whether the tenant payment wall is enforced. OFF by default — the
- * `organizations.billing_required` flag (migration 0426) has NO effect until
+ * `organizations.billing_required` flag (migration 0427) has NO effect until
  * an operator opts in with BILLING_PAYWALL_ENFORCED, so the column can be
  * shipped and backfilled safely before the wall goes live. The operator must
  * have platform Stripe billing configured before enabling it (the
