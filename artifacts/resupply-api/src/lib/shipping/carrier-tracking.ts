@@ -20,7 +20,7 @@
 
 import { createHmac, timingSafeEqual } from "node:crypto";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { autoSendPatientPacketOnDelivery } from "../patient-packet/auto-send-on-delivery";
 import { logger } from "../logger";
@@ -108,13 +108,27 @@ export async function applyCarrierTrackingEvent(
   log: { warn?: (obj: unknown, msg?: string) => void } = logger,
 ): Promise<ApplyTrackingResult> {
   if (event.status === "other") return { matched: false, updated: false };
+  // The carrier push carries NO tenant context, and tracking numbers are
+  // globally unique, so this is a genuinely unscoped lookup. Application code
+  // must still reach the DB through the org-scoped chokepoint and drop to its
+  // `.raw()` escape hatch — check-tenant-isolation.sh forbids calling the raw
+  // service-role client directly outside lib/resupply-db. The seed org is
+  // resolved only to construct that client; its scoping is unused because
+  // every query below runs on `.raw()`.
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    // Not silent: surface that the tenant directory was unavailable so an
+    // operator can tell "no order matched" apart from "couldn't look it up"
+    // (e.g. a fresh / mis-seeded DB) rather than swallowing the event.
+    log.warn?.(
+      { event: "carrier_tracking_tenant_directory_unavailable" },
+      "carrier-tracking: tenant directory unavailable; skipping event",
+    );
+    return { matched: false, updated: false };
+  }
   try {
-    // Tracking numbers are globally unique → unscoped lookup (no tenant
-    // context on a carrier push); update is by row id. Use the unscoped
-    // service-role client directly: the webhook has no tenant context, and
-    // gating on a seed-org lookup would silently no-op the whole webhook on
-    // a fresh / mis-seeded DB even though shop_orders is present.
-    const supabase = getSupabaseServiceRoleClient();
+    // Tracking numbers are globally unique → unscoped lookup; update by row id.
+    const supabase = getOrgScopedClient(orgId).raw();
     const { data: order, error } = await supabase
       .schema("resupply")
       .from("shop_orders")
