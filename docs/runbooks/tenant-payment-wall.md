@@ -11,7 +11,7 @@ paying tenant out or let an unpaid one in, which this runbook catches.
 
 - A new self-serve sign-up — web form **or** voice agent — must choose a plan,
   and the org is created with `organizations.billing_required = true`
-  (migration **0426**).
+  (migration **0427**).
 - When enforced, `resolveTenantProductScope` returns the **`locked`** scope for
   such a tenant: `requireAdmin` 403s every admin route except billing/checkout
   and account security, and the SPA shows a "pending payment" state with a
@@ -36,7 +36,7 @@ paying tenant out or let an unpaid one in, which this runbook catches.
 - The Stripe **webhook** endpoint is receiving events (`checkout.session.completed`,
   `invoice.paid`, `customer.subscription.*`) — same endpoint platform billing
   already uses (`handlePlatformTenantStripeEvent`).
-- Migrations through **0426** applied (`RUN_DB_MIGRATIONS=true` on deploy, or
+- Migrations through **0427** applied (`RUN_DB_MIGRATIONS=true` on deploy, or
   run `migrate.mjs`).
 - A **throwaway test tenant** you can create via the public sign-up (you do NOT
   need `tenant:onboard` — the point is to exercise the self-serve path that
@@ -133,5 +133,5 @@ needed; the column is inert when unenforced.
 - Enforcement gate + scope resolution: `artifacts/resupply-api/src/lib/product-scope.ts`.
 - Checkout session + webhook unlock: `artifacts/resupply-api/src/lib/platform-billing/stripe.ts`.
 - Signup sets the flag: `artifacts/resupply-api/src/lib/tenant-signup-service.ts`.
-- Migration: `lib/resupply-db/migrations/0426_tenant_billing_paywall.sql`.
+- Migration: `lib/resupply-db/migrations/0427_tenant_billing_paywall.sql`.
 - Env reference: `.env.example` (`BILLING_PAYWALL_ENFORCED`).

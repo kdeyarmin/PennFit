@@ -1395,7 +1395,7 @@ const MASK_FITTER_ALLOWED_ROUTE_PREFIXES: readonly string[] = [
   "/admin/team",
 ];
 
-// Payment wall (migration 0426). A tenant whose /me reports
+// Payment wall (migration 0427). A tenant whose /me reports
 // productScope === "locked" signed up but hasn't paid their first invoice yet,
 // so the console collapses to JUST the billing page (where they pick a plan +
 // pay) and account security. Everything else is hidden — and the backend
@@ -2105,7 +2105,7 @@ export function AdminHeaderChip({
  * the path to compliance.
  */
 /**
- * Payment wall banner (migration 0426). Shown across the admin console when a
+ * Payment wall banner (migration 0427). Shown across the admin console when a
  * tenant's /me reports productScope === "locked" — they signed up but haven't
  * paid their first invoice. On the billing page it's a calmer inline notice
  * (they're already where they need to be); elsewhere it's a prominent strip

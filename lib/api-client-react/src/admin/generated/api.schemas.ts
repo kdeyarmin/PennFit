@@ -127,7 +127,7 @@ configured, NODE_ENV=development) returns `admin`.
   pendingAgreements?: ("baa" | "platform_terms")[];
   /**
    * Platform product scope from the tenant's active billing plan (migration
-   * 0419) and payment state (migration 0426). `"mask_fitter"` = the standalone
+   * 0419) and payment state (migration 0427). `"mask_fitter"` = the standalone
    * Virtual Mask Fitter plan, in which the console is scoped down to the fitter
    * surfaces + account essentials; `"locked"` = a self-serve tenant that hasn't
    * paid their first invoice yet (payment wall), scoped down to billing +
