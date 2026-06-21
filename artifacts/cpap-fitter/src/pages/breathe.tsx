@@ -611,7 +611,7 @@ function ContactGateModal({
 export function BreatheSignup() {
   useDocumentTitle(
     "Create your account — Breathe by CareMetric.ai",
-    "Spin up your own Breathe workspace and admin login in minutes. No credit card — choose a plan in-app whenever you're ready.",
+    "Spin up your own Breathe workspace and admin login in minutes. Pick the plan that fits and confirm payment as you finish setting up.",
   );
   return (
     <BreatheShell>
@@ -684,12 +684,28 @@ function useTurnstile() {
   return { ref, token, enabled: Boolean(TURNSTILE_SITE_KEY) };
 }
 
+// Self-serve plans a new tenant can pick at sign-up. Codes match
+// resupply.billing_plans (is_public + non-custom); Enterprise is custom-quoted
+// and routes to contact-sales, never a self-signup. Prices mirror the PLANS
+// catalog above for at-a-glance context in the dropdown.
+const SIGNUP_PLAN_CHOICES: ReadonlyArray<{
+  code: string;
+  label: string;
+  price: string;
+}> = [
+  { code: "mask_fitter", label: "Virtual Mask Fitter", price: "$149/mo" },
+  { code: "launch", label: "Launch", price: "$799/mo + setup" },
+  { code: "growth", label: "Growth", price: "$1,899/mo + setup" },
+  { code: "scale", label: "Scale", price: "$3,999/mo + setup" },
+];
+
 function SignupSection() {
   const { open: openDemoGate } = useDemoGate();
   const turnstile = useTurnstile();
   const [org, setOrg] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [plan, setPlan] = useState("");
   const [status, setStatus] = useState<
     "idle" | "submitting" | "done" | "error"
   >("idle");
@@ -718,6 +734,11 @@ function SignupSection() {
       setStatus("error");
       return;
     }
+    if (!SIGNUP_PLAN_CHOICES.some((p) => p.code === plan)) {
+      setErr("Please choose a plan to continue.");
+      setStatus("error");
+      return;
+    }
     if (turnstile.enabled && !turnstile.token) {
       setErr("Please complete the verification below.");
       setStatus("error");
@@ -733,6 +754,7 @@ function SignupSection() {
           orgName: org.trim(),
           email: email.trim(),
           password,
+          plan,
           captchaToken: turnstile.token || undefined,
           website: hpRef.current?.value || undefined,
         }),
@@ -787,8 +809,8 @@ function SignupSection() {
             Your own Breathe, in <span className="grad-em">minutes.</span>
           </h1>
           <p className="bx-pagehead-sub">
-            Spin up your workspace and your admin login. No credit card — pick a
-            plan in-app whenever you&apos;re ready.
+            Spin up your workspace and your admin login — just pick the plan
+            that fits. You&apos;ll confirm payment as you finish setting up.
           </p>
           <form className="bx-signup-form" onSubmit={onSubmit} noValidate>
             <input
@@ -844,6 +866,31 @@ function SignupSection() {
                 required
               />
             </label>
+            <label className="bx-field-label">
+              Plan
+              <select
+                value={plan}
+                onChange={(e) => {
+                  setPlan(e.target.value);
+                  clearError();
+                }}
+                required
+              >
+                <option value="" disabled>
+                  Choose a plan…
+                </option>
+                {SIGNUP_PLAN_CHOICES.map((p) => (
+                  <option key={p.code} value={p.code}>
+                    {p.label} — {p.price}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p className="bx-field-hint">
+              Bigger operation or need custom pricing?{" "}
+              <a href="#pricing">See all plans</a> — Enterprise is set up with
+              our team.
+            </p>
             {turnstile.enabled ? (
               <div ref={turnstile.ref} className="bx-turnstile" />
             ) : null}

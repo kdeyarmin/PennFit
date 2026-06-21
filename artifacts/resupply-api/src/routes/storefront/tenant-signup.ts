@@ -12,6 +12,7 @@
 
 import { Router, type IRouter } from "express";
 import { z } from "zod";
+import { SELF_SERVE_PLANS } from "@workspace/resupply-ai";
 
 import {
   createSelfServeTenant,
@@ -28,6 +29,11 @@ const signupBody = z.object({
   // Password policy: length beats complexity (>= 12, <= 1024) — matches
   // the auth lib. The service re-checks as a defensive backstop.
   password: z.string().min(12).max(1024),
+  // A plan MUST be chosen at sign-up (parity with the voice flow). The set is
+  // the self-serve plans (Enterprise is custom-quoted → contact sales, never
+  // a self-signup); the provisioning service re-validates it's public +
+  // non-custom against the live catalog as the authoritative guard.
+  plan: z.enum(SELF_SERVE_PLANS),
   slug: z
     .string()
     .trim()
@@ -56,6 +62,7 @@ router.post("/tenant-signup", async (req, res) => {
     orgName,
     email,
     password,
+    plan,
     slug: providedSlug,
     captchaToken,
   } = parsed.data;
@@ -89,6 +96,9 @@ router.post("/tenant-signup", async (req, res) => {
       adminEmail: email,
       password,
       baseUrl,
+      // Assign the chosen plan as the new tenant's subscription (same as the
+      // voice flow) so product scope reflects it from first sign-in.
+      plan,
     });
     if (result.ok) {
       res.status(201).json({
