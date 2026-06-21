@@ -82,28 +82,17 @@ function isOpenFulfillmentUniqueViolation(err: unknown): boolean {
 export async function createClaimFromFulfillment(
   input: CreateClaimFromFulfillmentInput,
 ): Promise<CreateClaimResult> {
-  let proposed: ProposedClaim;
-  try {
-    proposed = await buildClaimFromFulfillment({
-      fulfillmentId: input.fulfillmentId,
-      dateOfServiceOverride: input.dateOfServiceOverride ?? null,
-      payerProfileIdOverride: input.payerProfileIdOverride ?? null,
-    });
-  } catch (err) {
-    if (err instanceof Error && /not found/i.test(err.message)) {
-      return { status: "fulfillment_not_found" };
-    }
-    throw err;
-  }
-
   const supabase = getOrgScopedClient(input.orgId);
 
-  // Duplicate guard: refuse when this fulfillment already has an open
+  // Duplicate guard FIRST: refuse when this fulfillment already has an open
   // (non-denied/closed) claim. A double-click — or two CSRs working the
   // same "fulfillments to bill" row, or the same id passed twice in a
   // batch — otherwise creates two draft claims with identical lines for
   // ONE shipment. Denied/closed claims don't block (a re-bill after a
-  // denial is legitimate).
+  // denial is legitimate). Running this BEFORE the builder short-circuits
+  // its heavy read walk (coverages, payer profiles, sleep studies,
+  // prescriptions, fee schedules) for an already-claimed fulfillment — the
+  // batch path in particular skips that wasted work on every duplicate id.
   const { data: existingClaim, error: existingClaimErr } = await supabase
     .from("insurance_claims")
     .select("id, status")
@@ -118,6 +107,24 @@ export async function createClaimFromFulfillment(
       claimId: existingClaim.id,
       existingStatus: existingClaim.status,
     };
+  }
+
+  // Build the proposed claim from the fulfillment. The builder reads THIS
+  // tenant's fulfillment / patient / coverage / payer data through its
+  // org-scoped client, so it must carry the caller's orgId.
+  let proposed: ProposedClaim;
+  try {
+    proposed = await buildClaimFromFulfillment({
+      orgId: input.orgId,
+      fulfillmentId: input.fulfillmentId,
+      dateOfServiceOverride: input.dateOfServiceOverride ?? null,
+      payerProfileIdOverride: input.payerProfileIdOverride ?? null,
+    });
+  } catch (err) {
+    if (err instanceof Error && /not found/i.test(err.message)) {
+      return { status: "fulfillment_not_found" };
+    }
+    throw err;
   }
 
   // Insert the claim header.

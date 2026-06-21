@@ -1857,7 +1857,7 @@ export interface Database {
       referral_source_activity: {
         Row: {
           id: string;
-          org_id: string | null;
+          org_id: string;
           provider_id: string;
           activity_type:
             | "visit"

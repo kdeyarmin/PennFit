@@ -20,7 +20,7 @@
 
 import { createHmac, timingSafeEqual } from "node:crypto";
 
-import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { autoSendPatientPacketOnDelivery } from "../patient-packet/auto-send-on-delivery";
 import { logger } from "../logger";
@@ -108,12 +108,13 @@ export async function applyCarrierTrackingEvent(
   log: { warn?: (obj: unknown, msg?: string) => void } = logger,
 ): Promise<ApplyTrackingResult> {
   if (event.status === "other") return { matched: false, updated: false };
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) return { matched: false, updated: false };
   try {
     // Tracking numbers are globally unique → unscoped lookup (no tenant
-    // context on a carrier push); update is by row id.
-    const supabase = getOrgScopedClient(orgId).raw();
+    // context on a carrier push); update is by row id. Use the unscoped
+    // service-role client directly: the webhook has no tenant context, and
+    // gating on a seed-org lookup would silently no-op the whole webhook on
+    // a fresh / mis-seeded DB even though shop_orders is present.
+    const supabase = getSupabaseServiceRoleClient();
     const { data: order, error } = await supabase
       .schema("resupply")
       .from("shop_orders")
