@@ -34,6 +34,7 @@ import { resolveWebhookOrgId } from "../webhook-org-context";
 import { stripeAccountRequestOptions } from "../connect";
 import { getStripeClient, type StripeConfig } from "../config";
 import { readDefaultPaymentMethod } from "../customer";
+import { parseStockCount } from "../products-meta";
 import type { OrderConfirmationLineItem } from "../../order-emails/send-order-confirmation-email";
 import {
   fetchUnitCostsBySku,
@@ -315,6 +316,10 @@ export async function upsertOrderItemsFromSession(
   // shop_order_items (see schema comment), so the email path picks
   // them up here from the live Stripe catalog rendering.
   const emailItems: OrderConfirmationLineItem[] = [];
+  // Live stock_count per stock-TRACKED product (numeric metadata). Untracked
+  // products (null stock_count) are omitted so they're never decremented. Used
+  // to debit stock for the freshly-purchased units below.
+  const stockByProduct = new Map<string, number>();
   const paidAtIso = order.paidAt.toISOString();
   for (const li of lineItems.data) {
     const price = li.price ?? null;
@@ -354,6 +359,9 @@ export async function upsertOrderItemsFromSession(
     if (product && typeof product === "object" && !product.deleted) {
       const raw = product.metadata.shop_sku;
       if (typeof raw === "string" && raw.trim().length > 0) sku = raw.trim();
+      // Capture live stock for stock-tracked SKUs so we can debit it below.
+      const tracked = parseStockCount(product.metadata.stock_count);
+      if (tracked !== null) stockByProduct.set(productId, tracked);
     }
     rowSkus.push(sku);
 
@@ -406,18 +414,91 @@ export async function upsertOrderItemsFromSession(
   const supabase = getOrgScopedClient(orgId);
   // ON CONFLICT DO NOTHING for the (stripe_session_id, product_id,
   // price_id) UNIQUE — supabase-js exposes this as upsert with
-  // ignoreDuplicates: true.
-  const { error } = await supabase.from("shop_order_items").upsert(rows, {
-    onConflict: "stripe_session_id,product_id,price_id",
-    ignoreDuplicates: true,
-  });
+  // ignoreDuplicates: true. The trailing .select() returns ONLY the rows
+  // that were actually inserted (PostgREST surfaces RETURNING, which omits
+  // the DO-NOTHING conflicts) — so it's the exact once-only signal we debit
+  // stock against: a re-delivery or the completed/async_payment_succeeded
+  // twin firing for the same session inserts zero rows → debits nothing.
+  const { data: insertedItems, error } = await supabase
+    .from("shop_order_items")
+    .upsert(rows, {
+      onConflict: "stripe_session_id,product_id,price_id",
+      ignoreDuplicates: true,
+    })
+    .select("product_id, quantity");
   if (error) throw error;
 
   log?.info?.(
     { sessionId: session.id, count: rows.length },
     "shop_order_items upserted",
   );
+
+  // Debit live stock (Stripe metadata = the documented source of truth) for
+  // the freshly-purchased units. Best-effort: never throws into the webhook —
+  // the order is already recognised, and any drift is corrected by the monthly
+  // inventory reconciliation. This closes the oversell hole where stock_count
+  // was checked at cart time but never moved on a sale.
+  await decrementStockForPurchase(
+    stripe,
+    accountOptions,
+    insertedItems ?? [],
+    stockByProduct,
+    log,
+  );
+
   return emailItems;
+}
+
+/**
+ * Debit Stripe `stock_count` for the freshly-purchased units of each
+ * stock-tracked product. Quantities are aggregated per product (a product can
+ * appear on more than one price line) and the new count is clamped at 0 so a
+ * race can never drive it negative. Untracked products (absent from
+ * `stockByProduct`) are skipped. Fail-soft per product: a failed Stripe write
+ * is logged, never thrown — stock drift is reconciled by the monthly count.
+ */
+export async function decrementStockForPurchase(
+  stripe: ReturnType<typeof getStripeClient>,
+  accountOptions: Stripe.RequestOptions,
+  insertedItems: Array<{ product_id: string; quantity: number | null }>,
+  stockByProduct: Map<string, number>,
+  log:
+    | {
+        info?: (...args: unknown[]) => void;
+        warn?: (...args: unknown[]) => void;
+      }
+    | undefined,
+): Promise<void> {
+  if (insertedItems.length === 0 || stockByProduct.size === 0) return;
+  const qtyByProduct = new Map<string, number>();
+  for (const it of insertedItems) {
+    if (!stockByProduct.has(it.product_id)) continue; // untracked SKU
+    qtyByProduct.set(
+      it.product_id,
+      (qtyByProduct.get(it.product_id) ?? 0) + (it.quantity ?? 1),
+    );
+  }
+  for (const [productId, qty] of qtyByProduct) {
+    const current = stockByProduct.get(productId)!;
+    const next = Math.max(0, current - qty);
+    if (next === current) continue; // already 0 — nothing to write
+    try {
+      await stripe.products.update(
+        productId,
+        { metadata: { stock_count: String(next) } },
+        accountOptions,
+      );
+      log?.info?.(
+        { productId, from: current, to: next },
+        "stock_count debited for purchase",
+      );
+    } catch (err) {
+      log?.warn?.(
+        { productId, err },
+        "stock_count debit failed (non-fatal — reconciled by monthly count)",
+      );
+    }
+  }
 }
 
 /**
