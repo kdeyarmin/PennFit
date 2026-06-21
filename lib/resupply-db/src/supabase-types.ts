@@ -2871,6 +2871,33 @@ export interface Database {
         >;
         Relationships: [];
       };
+      stripe_disputes: {
+        Row: {
+          id: string;
+          org_id: string | null;
+          stripe_dispute_id: string;
+          stripe_charge_id: string | null;
+          order_id: string | null;
+          amount_cents: number;
+          currency: string | null;
+          reason: string | null;
+          status: string | null;
+          evidence_due_by: string | null;
+          is_charge_refundable: boolean | null;
+          opened_at: string | null;
+          closed_at: string | null;
+          outcome: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["stripe_disputes"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["stripe_disputes"]["Row"]
+        >;
+        Relationships: [];
+      };
       dispense_readiness_reviews: {
         Row: {
           org_id: string | null;

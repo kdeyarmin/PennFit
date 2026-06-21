@@ -169,6 +169,7 @@ import payerCoverageDiagnosesRouter from "./admin/payer-coverage-diagnoses.js";
 import claimTemplatesRouter from "./admin/claim-templates.js";
 import fulfillmentToClaimRouter from "./admin/fulfillment-to-claim.js";
 import billingBatchCreateClaimsRouter from "./admin/billing-batch-create-claims.js";
+import billingDisputesRouter from "./admin/billing-disputes.js";
 import aiBillingQueueRouter from "./admin/ai-billing-queue.js";
 import dmeOrganizationRouter from "./admin/dme-organization.js";
 import clearinghouseCredentialsRouter from "./admin/clearinghouse-credentials.js";
@@ -568,6 +569,9 @@ router.use(fulfillmentToClaimRouter);
 // one-click create-claim above; turns the "fulfillments to bill" worklist
 // into a single batched action with per-item isolation.
 router.use(billingBatchCreateClaimsRouter);
+// /admin/billing/disputes — chargeback dispute worklist (persisted from the
+// Stripe charge.dispute.* webhook, migration 0428).
+router.use(billingDisputesRouter);
 // /admin/billing/ai-queue — AI scrub + denial-analysis worklist
 // surfacing claims blocked / fixable / awaiting analysis / ready
 // for one-click auto-resubmit.
