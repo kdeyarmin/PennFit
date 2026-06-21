@@ -160,9 +160,17 @@ preflight.ts` now reads the latest cached check per HCPCS for a
 
 ### Medium (selected)
 
-- Appeal generation never transitions claim → `appealed` nor denial-analysis →
-  `accepted_appealed`, so appealed claims keep reappearing as actionable
-  (`claim-appeals.ts:183`).
+- ✅ **Fixed in this PR.** Appeal generation never transitioned claim →
+  `appealed` nor denial-analysis → `accepted_appealed`, so appealed claims kept
+  reappearing on the denials worklist as actionable. Per the owner's decision
+  (transition **only when the appeal is actually sent**), the appeal-fax route
+  now — on a successful Telnyx hand-off — moves a `denied` claim →
+  `appealed` (guarded to the valid edge) and marks the linked (or latest)
+  denial analysis `accepted_appealed`, dropping it from the worklist. New
+  tests cover the denied→appealed transition and the no-op on a non-denied
+  claim. _Follow-up:_ the **mail/manual** delivery channel has no system "sent"
+  event, so those appeals still need a small "mark mailed" action to transition
+  (intentionally out of scope under the "only when sent" choice).
 - `denial_codes` CARC/RARC catalog is never joined by the reconciler — the
   worklist shows bare `"CARC 16"` strings (`era-reconciler.ts:493`).
 - Da Vinci PAS Claim is always built with `diagnosis: []` and hardcoded

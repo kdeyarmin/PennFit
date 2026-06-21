@@ -269,7 +269,7 @@ router.post(
     // The letter must exist AND belong to the claim + patient in the path.
     const { data: letter } = await supabase
       .from("claim_appeal_letters")
-      .select("id, claim_id")
+      .select("id, claim_id, denial_analysis_id")
       .eq("id", params.data.letterId)
       .limit(1)
       .maybeSingle();
@@ -280,7 +280,7 @@ router.post(
 
     const { data: claim } = await supabase
       .from("insurance_claims")
-      .select("id, patient_id")
+      .select("id, patient_id, status")
       .eq("id", params.data.claimId)
       .limit(1)
       .maybeSingle();
@@ -342,6 +342,53 @@ router.post(
         },
         "claim_appeal.fax: fax accepted by Telnyx but DB stamp failed",
       );
+    }
+
+    // The appeal has now actually left for the payer (Telnyx accepted the
+    // fax) — transition the claim denied -> appealed and resolve its denial
+    // analysis (review_status='accepted_appealed') so it drops off the
+    // denials worklist instead of re-surfacing as still-actionable. Guarded:
+    // only a currently-'denied' claim transitions (the valid state edge);
+    // any other status is left untouched. Best-effort — the fax already
+    // succeeded, so a stamp failure here is logged, not surfaced as an error.
+    if (claim.status === "denied") {
+      const { error: claimErr } = await supabase
+        .from("insurance_claims")
+        .update({ status: "appealed", updated_at: nowIso })
+        .eq("id", claim.id)
+        .eq("status", "denied");
+      if (claimErr) {
+        logger.warn(
+          { event: "appeal_fax_claim_transition_failed", claimId: claim.id },
+          "claim_appeal.fax: claim denied->appealed transition failed",
+        );
+      }
+      // Resolve the denial analysis this appeal answers (the letter's linked
+      // analysis, else the claim's latest) so the worklist's
+      // RESOLVED_REVIEW_STATES filter drops it.
+      let analysisId = letter.denial_analysis_id;
+      if (!analysisId) {
+        const { data: latest } = await supabase
+          .from("claim_denial_analyses")
+          .select("id")
+          .eq("claim_id", claim.id)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        analysisId = latest?.id ?? null;
+      }
+      if (analysisId) {
+        const { error: analysisErr } = await supabase
+          .from("claim_denial_analyses")
+          .update({ review_status: "accepted_appealed" })
+          .eq("id", analysisId);
+        if (analysisErr) {
+          logger.warn(
+            { event: "appeal_fax_analysis_resolve_failed", analysisId },
+            "claim_appeal.fax: denial analysis accepted_appealed update failed",
+          );
+        }
+      }
     }
 
     await logAudit({
