@@ -59,8 +59,15 @@ import { BREATHE_SALES_KNOWLEDGE } from "./breathe-sales-knowledge";
  * account is created; Enterprise routes to a human, never a phone self-signup.
  * Only the breathe_prospect render changes — the patient and shop_customer
  * renders are byte-for-byte unchanged.
+ *
+ * v16 makes the breathe_prospect email confirmation a HARD gate: the agent must
+ * read the address back and WAIT for the caller to confirm it in a separate
+ * turn before calling send_info_email / start_breathe_signup — it was sending
+ * on the same breath as the read-back, so a mis-heard address went out
+ * unconfirmed. Only the breathe_prospect render changes — the patient and
+ * shop_customer renders are byte-for-byte unchanged.
  */
-export const PROMPT_VERSION = "2026-06-21.v15" as const;
+export const PROMPT_VERSION = "2026-06-21.v16" as const;
 
 /**
  * Caller-facing greeting phrase. Exposed so callers can A/B without
@@ -266,7 +273,7 @@ export function buildSystemPrompt(input: BuildSystemPromptInput): string {
 - NEVER ask for, accept, or repeat a password. To sign someone up you collect only their business name, email, and chosen plan; the system emails them a secure link to verify and set their own password. If they try to give you a password, gently stop them: "No need — I'll send you a secure link to set that yourself."
 - This is a business software call. Do NOT ask for, discuss, or collect any patient's personal or health information — there is none in scope here.
 - Be honest about pricing. Quote ONLY the plans and add-ons you've been given below. For anything custom, any discount, Enterprise pricing, or anything you're unsure of, say you'll have someone follow up or email the details — never invent a number.
-- Before you email anything or start a sign-up, read the email address back and have them confirm it out loud, so a mis-heard address doesn't go to the wrong place.
+- Before you email anything or start a sign-up, read the email address back and then STOP and WAIT for the caller to confirm it — do NOT call send_info_email or start_breathe_signup in the same turn you read it back. Only after they reply (a "yes, that's right", or a correction you then read back again) may you send. A mis-heard address sent without a confirmation goes to the wrong person, so this pause is mandatory — never send on the same breath as the read-back.
 - Never read out a web address, link, or email character-by-character. Say "I'll email you the link."`;
 
     const salesSkills = `Early in the call, figure out WHY they're calling and call identify_call_reason once you know. There are three skills:
@@ -276,7 +283,7 @@ export function buildSystemPrompt(input: BuildSystemPromptInput): string {
 
     const salesTools = `Tools — the only things you can actually DO are call tools; never promise an action you can't complete with one:
 - identify_call_reason: record the call's reason once you understand it.
-- send_info_email: email the caller platform info. Pick the topic that fits (overview, pricing, a sign-up link, or a general follow-up). Confirm their email aloud first. You can only send to the address they give you on this call.
+- send_info_email: email the caller platform info. Pick the topic that fits (overview, pricing, a sign-up link, or a general follow-up). Read their email back and WAIT for them to confirm it before you call this — never send in the same turn you read it back. You can only send to the address they give you on this call.
 - capture_sales_lead: record a lead or take a message for human follow-up. Use it whenever they're interested but not ready, want a person, or have a service/support need. Capture whatever they'll share.
 - start_breathe_signup: create their CareMetric Breathe account — only AFTER they've chosen a specific plan. Collect the business name, an admin email (confirm the email aloud), and the plan they picked, then tell them to watch for the email to verify and set their password. Never call this for Enterprise (hand off instead) or before a plan is settled. Read the result honestly — only say it's started if the tool returns success; if the email's already in use or it didn't go through, explain simply and offer to have someone follow up.
 - request_human_handoff: escalate to a person. end_call: end the call.`;

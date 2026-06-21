@@ -130,6 +130,13 @@ const PROMPT_VERSION_HASHES: Readonly<Record<string, string>> = {
   // sales variant is pinned separately in BREATHE_SALES_PROMPT_HASH below.
   "2026-06-21.v15":
     "137d96d03a342a03d084da0851638bf77e406259f5d2764c5a6236f55b073402",
+  // v16 makes the breathe_prospect email confirmation a hard gate (read back +
+  // WAIT for confirmation before send_info_email / start_breathe_signup). The
+  // PATIENT render is byte-for-byte unchanged from v13–v15, so this hash
+  // matches theirs. The sales variant is pinned separately in
+  // BREATHE_SALES_PROMPT_HASH below.
+  "2026-06-21.v16":
+    "137d96d03a342a03d084da0851638bf77e406259f5d2764c5a6236f55b073402",
 };
 
 function renderCanonicalPrompt(): string {
@@ -164,12 +171,12 @@ const SHOP_PROMPT_HASH =
  * drift in the sales prompt is caught too. Update the same way: render, take
  * the printed hash, record it here.
  *
- * This value reflects the MERGE of two breathe_prospect changes: this branch's
- * plan-gating sign-up flow (v15) AND main #1194's Founder DME Launch pricing
- * (discounted plans + per-active-patient billing, in breathe-sales-knowledge).
+ * v16 makes the email confirmation a hard gate (read back + WAIT for the
+ * caller to confirm before send_info_email / start_breathe_signup), changing
+ * the breathe_prospect render again.
  */
 const BREATHE_SALES_PROMPT_HASH =
-  "f66ecaa3b00af020ae04108b064962824364feb1d2beb4b76fe1a693b0d3b546";
+  "15f5cc5743ce362b96978dee133e18db7bd450bd91d22b1a2331dd1092d67728";
 
 describe("PROMPT_VERSION drift detector", () => {
   it("has a recorded hash for the currently-shipped PROMPT_VERSION", () => {
