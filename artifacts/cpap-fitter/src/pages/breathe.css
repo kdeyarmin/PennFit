@@ -4015,7 +4015,8 @@
   font-weight: 600;
   color: var(--bx-text-dim);
 }
-.bx-field-label input {
+.bx-field-label input,
+.bx-field-label select {
   padding: 12px 14px;
   border-radius: 11px;
   border: 1px solid var(--bx-line-strong);
@@ -4028,10 +4029,17 @@
 .bx-field-label input::placeholder {
   color: var(--bx-text-faint);
 }
-.bx-field-label input:focus {
+.bx-field-label input:focus,
+.bx-field-label select:focus {
   outline: none;
   border-color: var(--bx-cyan);
   box-shadow: 0 0 0 3px rgba(84, 200, 255, 0.18);
+}
+.bx-field-hint {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--bx-text-faint);
+  margin: -4px 0 0;
 }
 .bx-signup-form .bx-btn {
   justify-content: center;

@@ -20,6 +20,7 @@ import {
 } from "../../lib/fleet-billing";
 import { logger } from "../../lib/logger";
 import {
+  createTenantCheckoutSession,
   ensureTenantStripeCustomer,
   PlatformBillingAccountChangedError,
   syncPlatformBillingCatalogToStripe,
@@ -935,6 +936,78 @@ router.post(
       );
     }
     await tenantBilling(req.orgId, res);
+  },
+);
+
+// ── POST /admin/billing/checkout ────────────────────────────────────
+// Hosted Stripe Checkout "Pay now": charge the tenant's CURRENT plan
+// immediately (card on file) and unlock the payment wall, rather than the
+// default invoiced (net-15) subscription. Returns the Checkout URL for the
+// SPA to redirect to. Enumerated in the locked-scope allowlist
+// (lib/product-scope.ts) so an unpaid tenant can reach it. Returns 503 when
+// platform Stripe billing is unconfigured (dev/preview) so the SPA degrades.
+const checkoutBody = z.object({
+  // Optional admin-SPA return path; defaults to the billing page. Constrained
+  // to an /admin/ path so it can't be turned into an open redirect.
+  returnPath: z
+    .string()
+    .regex(/^\/admin\/[A-Za-z0-9/_-]*$/)
+    .max(200)
+    .optional(),
+});
+
+router.post(
+  "/admin/billing/checkout",
+  adminWriteRateLimiter,
+  requirePermission("system.config.manage"),
+  async (req, res): Promise<void> => {
+    if (!req.orgId) {
+      res.status(400).json({ error: "tenant_not_resolved" });
+      return;
+    }
+    const body = checkoutBody.safeParse(req.body ?? {});
+    if (!body.success) {
+      res.status(400).json({ error: "invalid_checkout" });
+      return;
+    }
+    const host = req.get("host");
+    const origin = host
+      ? `${req.protocol}://${host}`
+      : process.env.RAILWAY_PUBLIC_DOMAIN
+        ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
+        : "";
+    if (!origin) {
+      res.status(500).json({ error: "origin_unresolved" });
+      return;
+    }
+    const returnPath = body.data.returnPath ?? "/admin/billing/package";
+    try {
+      const result = await createTenantCheckoutSession({
+        orgId: req.orgId,
+        adminEmail: req.adminEmail ?? null,
+        successUrl: `${origin}${returnPath}?checkout=success`,
+        cancelUrl: `${origin}${returnPath}?checkout=cancel`,
+      });
+      if (!result.stripeConfigured) {
+        res.status(503).json({ error: "billing_unconfigured" });
+        return;
+      }
+      if (!result.url) {
+        res.status(502).json({ error: "checkout_unavailable" });
+        return;
+      }
+      res.json({ url: result.url });
+    } catch (err) {
+      logger.error(
+        {
+          event: "tenant_billing_checkout_failed",
+          accountChanged: err instanceof PlatformBillingAccountChangedError,
+          err,
+        },
+        "tenant checkout session create failed",
+      );
+      res.status(500).json({ error: "checkout_failed" });
+    }
   },
 );
 

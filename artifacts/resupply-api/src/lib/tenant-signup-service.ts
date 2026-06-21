@@ -67,6 +67,18 @@ export type SelfServeSignupInput = {
    * form and only needs to verify).
    */
   sendSetPasswordLink?: boolean;
+  /**
+   * Optional self-serve plan `code` (e.g. "mask_fitter" / "launch" /
+   * "growth" / "scale") the caller chose during sign-up. When present, the
+   * matching plan is assigned as the new tenant's current billing
+   * subscription so the platform's product scope reflects their choice
+   * immediately (a "mask_fitter" tenant is scoped to the fitter surfaces).
+   * The voice/phone signup passes this; the web form leaves it unset and the
+   * tenant picks a plan on the billing page after onboarding. Assignment is
+   * best-effort + DB-only: only a public, non-custom plan is honored, and
+   * Stripe billing is synced later when the tenant completes billing setup.
+   */
+  plan?: string;
 };
 
 export type SelfServeSignupFailure =
@@ -132,6 +144,62 @@ async function provisionFeatureFlags(
     .upsert(rows, { onConflict: "org_id,key", ignoreDuplicates: true });
   if (insErr) throw insErr;
   return rows.length;
+}
+
+/**
+ * Assign the chosen self-serve plan as the new tenant's current billing
+ * subscription, so the platform's product scope (e.g. the mask_fitter gating)
+ * reflects their choice from the first sign-in. DB-only: it records the
+ * subscription via the atomic `swap_tenant_subscription` RPC (the same RPC the
+ * tenant self-service billing route uses) but does NOT touch Stripe — Stripe is
+ * synced when the tenant completes billing onboarding.
+ *
+ * Best-effort, never throws: only a PUBLIC, NON-CUSTOM plan is honored (custom /
+ * Enterprise require platform-admin assignment — mirrors the
+ * /admin/billing/subscription guard), and any failure leaves the tenant on the
+ * default "full" scope (the account is already created), exactly as if no plan
+ * had been chosen.
+ */
+async function assignSelfServePlan(
+  raw: RawClient,
+  orgId: string,
+  planCode: string,
+  updatedByEmail: string,
+): Promise<void> {
+  try {
+    const { data: plan, error } = await raw
+      .schema("resupply")
+      .from("billing_plans")
+      .select("id, is_public, is_custom")
+      .eq("code", planCode)
+      .maybeSingle();
+    if (error) throw error;
+    const planRow = plan as {
+      id: string;
+      is_public: boolean;
+      is_custom: boolean;
+    } | null;
+    if (!planRow || !planRow.is_public || planRow.is_custom) {
+      logger.warn(
+        { event: "tenant_signup_plan_not_selectable", orgId, planCode },
+        "tenant signup: chosen plan not found or not self-selectable; left on default scope",
+      );
+      return;
+    }
+    const { error: swapErr } = await raw
+      .schema("resupply")
+      .rpc("swap_tenant_subscription", {
+        p_org_id: orgId,
+        p_plan_id: planRow.id,
+        p_updated_by_email: updatedByEmail,
+      });
+    if (swapErr) throw swapErr;
+  } catch (err) {
+    logger.warn(
+      { event: "tenant_signup_plan_assign_failed", orgId, planCode, err },
+      "tenant signup: plan assignment failed; tenant left on default scope",
+    );
+  }
 }
 
 export async function createSelfServeTenant(
@@ -212,6 +280,11 @@ export async function createSelfServeTenant(
       slug: input.slug,
       name: input.orgName,
       storefront_name: input.orgName,
+      // Payment wall (migration 0427): a brand-new self-serve tenant starts
+      // gated until their first invoice is paid. No effect unless the operator
+      // has turned the wall on (BILLING_PAYWALL_ENFORCED); the `invoice.paid`
+      // webhook clears it. Existing tenants keep the column's `false` default.
+      billing_required: true,
     })
     .select("id, slug")
     .limit(1)
@@ -379,12 +452,23 @@ export async function createSelfServeTenant(
     };
   }
 
+  // 7. Optional plan assignment. The voice/phone signup passes the plan the
+  //    caller chose; the web form leaves it unset (plan picked later on the
+  //    billing page). Best-effort — a failure leaves the tenant on "full".
+  if (input.plan) {
+    await assignSelfServePlan(raw, orgId, input.plan, emailLower);
+  }
+
   deps.audit({
     action: "auth.tenant_self_signup",
     adminEmail: emailLower,
     adminUserId: userId,
     ip: null,
-    metadata: { slug: input.slug, orgId },
+    metadata: {
+      slug: input.slug,
+      orgId,
+      ...(input.plan ? { plan: input.plan } : {}),
+    },
   });
 
   return {

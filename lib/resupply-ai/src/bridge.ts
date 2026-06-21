@@ -38,6 +38,25 @@ import {
 } from "./tools";
 
 /**
+ * "Silent" bookkeeping tools whose result the agent does NOT need to speak.
+ *
+ * Every tool except `end_call` normally triggers a follow-up response so the
+ * agent voices the outcome (a data read-back, an email confirmation, a sign-up
+ * result). But a pure classification/routing tool like `identify_call_reason`
+ * records something internal — there is nothing to say about it. When the model
+ * fires one of these IN THE SAME response it already spoke in, the forced
+ * follow-up makes the agent produce a SECOND, unprompted turn — it "keeps
+ * talking" without waiting for the caller. For these tools we suppress that
+ * follow-up, but ONLY when the response already produced speech (see
+ * {@link VoiceBridge}). If the model called the tool WITHOUT speaking
+ * (tool-only response), we still request the follow-up so the line never goes
+ * silent.
+ */
+const SILENT_BOOKKEEPING_TOOLS: ReadonlySet<ToolName> = new Set<ToolName>([
+  "identify_call_reason",
+]);
+
+/**
  * The Twilio-facing audio sink. The bridge writes base64 µ-law frames
  * to it; it is up to the implementation to wrap those into the
  * `media` envelope Twilio's Media Streams protocol expects.
@@ -324,6 +343,14 @@ export class VoiceBridge extends EventEmitter {
   private readonly inputBuf = new Map<string, string>();
   private readonly outputBuf = new Map<string, string>();
 
+  // Response ids that produced at least one output (spoken/text) delta. Used
+  // to decide whether a silent bookkeeping tool's forced follow-up is
+  // redundant: if the response the tool call rode in on already spoke, the
+  // follow-up would be a second unprompted turn. Bounded (insertion-ordered;
+  // oldest evicted past the cap) since the bridge has no response.done hook to
+  // prune it precisely — it only needs the handful of in-flight ids.
+  private readonly responsesWithOutput = new Set<string>();
+
   // External-TTS synthesis queue (only used when `this.tts` is set).
   // Utterances are synthesised one at a time so their µ-law frames reach
   // the sink in order; `ttsAbort` cancels the in-flight synthesis on a
@@ -463,6 +490,9 @@ export class VoiceBridge extends EventEmitter {
         // real reply is now landing.
         this.lastOutputAt = Date.now();
         this.cancelFiller();
+        // Remember this response spoke, so a silent bookkeeping tool riding
+        // the same response doesn't tack on a redundant follow-up turn.
+        this.rememberResponseSpoke(delta.responseId);
       }
       const buf = delta.source === "input" ? this.inputBuf : this.outputBuf;
       const key = delta.itemId ?? `__${delta.source}__`;
@@ -512,19 +542,28 @@ export class VoiceBridge extends EventEmitter {
       // Cover the dead air while the tool runs + the model composes its
       // reply. No-op unless a filler is configured on an external-TTS path.
       this.scheduleFiller(call.name);
-      this.handleToolCall(call.callId, call.name, call.argumentsJson).catch(
-        (err) => {
-          // Outer try-catch in handleToolCall covers the dispatch path.
-          // This catches any unexpected throw from the pre-dispatch validation
-          // path (e.g. summarizeToolArgsForAudit), preventing an unhandled
-          // rejection that would crash the process in Node ≥ 15.
-          this.emit("session.error", {
-            source: "tool",
-            code: "handle_tool_call_error",
-            message: err instanceof Error ? err.message : String(err),
-          });
-        },
+      // Snapshot — synchronously, before the async dispatch — whether the
+      // response this tool call rode in on already produced speech. Drives the
+      // silent-tool follow-up suppression below.
+      const responseSpoke = !!(
+        call.responseId && this.responsesWithOutput.has(call.responseId)
       );
+      this.handleToolCall(
+        call.callId,
+        call.name,
+        call.argumentsJson,
+        responseSpoke,
+      ).catch((err) => {
+        // Outer try-catch in handleToolCall covers the dispatch path.
+        // This catches any unexpected throw from the pre-dispatch validation
+        // path (e.g. summarizeToolArgsForAudit), preventing an unhandled
+        // rejection that would crash the process in Node ≥ 15.
+        this.emit("session.error", {
+          source: "tool",
+          code: "handle_tool_call_error",
+          message: err instanceof Error ? err.message : String(err),
+        });
+      });
     });
 
     this.client.on("error", (err) => {
@@ -625,10 +664,28 @@ export class VoiceBridge extends EventEmitter {
     }
   }
 
+  /**
+   * Note that a response produced output (spoken/text) so a silent
+   * bookkeeping tool riding the same response can suppress its redundant
+   * follow-up turn. Insertion-ordered and capped — the bridge only needs the
+   * few in-flight ids, and there's no response.done hook to prune precisely.
+   */
+  private rememberResponseSpoke(responseId: string | undefined): void {
+    if (!responseId) return;
+    this.responsesWithOutput.add(responseId);
+    const MAX_TRACKED_RESPONSES = 64;
+    while (this.responsesWithOutput.size > MAX_TRACKED_RESPONSES) {
+      const oldest = this.responsesWithOutput.values().next().value;
+      if (oldest === undefined) break;
+      this.responsesWithOutput.delete(oldest);
+    }
+  }
+
   private async handleToolCall(
     callId: string,
     name: string,
     argsJson: string,
+    responseSpoke: boolean,
   ): Promise<void> {
     if (!isKnownTool(name)) {
       const summary = { name, reason: "unknown" };
@@ -703,11 +760,20 @@ export class VoiceBridge extends EventEmitter {
         status: "ok",
         result: result.result,
       });
-      // For end_call we do NOT request a follow-up response: the agent
-      // has already spoken its goodbye, and a stray extra turn would
-      // race the hangup.
+      // Decide whether the agent should speak a follow-up turn after this
+      // tool. Two cases suppress it:
+      //   - end_call: the agent already said goodbye; an extra turn would
+      //     race the hangup.
+      //   - a SILENT bookkeeping tool (e.g. identify_call_reason) whose
+      //     response ALREADY spoke: the follow-up would be a second,
+      //     unprompted turn — the agent "continuing without waiting" for the
+      //     caller. (If that response did NOT speak, we keep the follow-up so
+      //     a tool-only response never leaves dead air.)
+      const requestFollowUp =
+        name !== "end_call" &&
+        !(SILENT_BOOKKEEPING_TOOLS.has(name) && responseSpoke);
       this.client.submitToolResult(callId, result.result, {
-        requestFollowUp: name !== "end_call",
+        requestFollowUp,
       });
 
       // `end_call` is the canonical hangup signal — the model has

@@ -60,6 +60,20 @@ export const DEFAULT_REALTIME_GA_TRANSCRIBE_MODEL = "gpt-realtime-whisper";
 export const DEFAULT_REALTIME_VOICE = "cedar";
 
 /**
+ * Per-response output-token cap. This is a runaway BACKSTOP, not the primary
+ * length control — the prompt's "keep replies short" block does that. The
+ * previous value (200) was tight enough that a normal reply (a pricing
+ * read-back, an address confirmation) could hit it and be CUT OFF mid-word,
+ * and on the GA reasoning model (gpt-realtime-2) this cap is shared with the
+ * model's hidden reasoning tokens — so 200 left almost nothing for the spoken
+ * turn, producing clipped, rushed audio followed by silence. 1200 gives ample
+ * headroom for any legitimate single phone turn (plus GA reasoning) while
+ * still stopping a true runaway. Override per call via `maxResponseTokens`
+ * (env: OPENAI_REALTIME_MAX_RESPONSE_TOKENS).
+ */
+export const DEFAULT_MAX_RESPONSE_TOKENS = 1200;
+
+/**
  * Caller-audio noise reduction applied by the Realtime server before its
  * VAD + STT see the stream. `"far_field"` suits telephony (handset/
  * speakerphone, room noise, background TV) — it's the right default for a
@@ -164,6 +178,13 @@ export interface RealtimeClientOptions {
    * a live phone agent snappy; higher values add latency + token spend.
    */
   reasoningEffort?: "minimal" | "low" | "medium" | "high";
+  /**
+   * Per-response output-token cap (see {@link DEFAULT_MAX_RESPONSE_TOKENS}).
+   * A runaway backstop; the prompt is the primary length control. Defaults to
+   * 1200 — generous enough that a normal turn (and GA reasoning tokens) never
+   * truncates mid-word.
+   */
+  maxResponseTokens?: number;
   /**
    * Input STT model for the conversational session. Defaults to
    * gpt-4o-mini-transcribe (beta); pass gpt-realtime-whisper on GA.
@@ -292,6 +313,7 @@ export class RealtimeClient extends EventEmitter {
       allowedToolNames: opts.allowedToolNames,
       sessionSchema,
       reasoningEffort: opts.reasoningEffort ?? "low",
+      maxResponseTokens: opts.maxResponseTokens ?? DEFAULT_MAX_RESPONSE_TOKENS,
       transcriptionModel:
         opts.transcriptionModel ??
         (isGa
@@ -721,8 +743,9 @@ export class RealtimeClient extends EventEmitter {
       // A small temperature bump lets the model vary phrasing turn-to-turn
       // so repeat callers don't hear the exact same sentence each time.
       temperature: 0.8,
-      // Cap response length so the agent doesn't drift into monologues.
-      max_response_output_tokens: 200,
+      // Runaway backstop only (the prompt keeps turns short). Generous enough
+      // that a normal reply never truncates mid-word — see the constant.
+      max_response_output_tokens: this.opts.maxResponseTokens,
       tools: this.enabledTools(),
       tool_choice: "auto",
     };
@@ -735,26 +758,11 @@ export class RealtimeClient extends EventEmitter {
    * without a code change. The bridge's Twilio µ-law wiring is unchanged —
    * only the session schema differs.
    */
-  /**
-   * GA audio format object. The GA Realtime API expects the codec AND its
-   * sample rate (`{ type, rate }`); the rate is NOT optional for inbound
-   * processing. Twilio telephony is G.711 @ 8kHz (µ-law/A-law); PCM is 24kHz.
-   * Omitting the rate let the server mis-read inbound caller audio so its VAD
-   * never fired — the agent spoke its greeting but never responded to speech.
-   */
-  private gaAudioFormat(): Record<string, unknown> {
-    const type = this.opts.audioFormat;
-    const rate =
-      type === "audio/pcmu" || type === "audio/pcma"
-        ? 8000
-        : type === "audio/pcm"
-          ? 24000
-          : undefined;
-    return rate === undefined ? { type } : { type, rate };
-  }
-
   private buildGaSession(): Record<string, unknown> {
-    const audioFormat = this.gaAudioFormat();
+    // µ-law (G.711) is inherently 8kHz — the GA server emits/accepts it at 8k
+    // without a `rate` field. Adding `rate` to the µ-law format object
+    // re-frames the OUTPUT into static, so we send only the codec token here.
+    const audioFormat = { type: this.opts.audioFormat };
     const audio: Record<string, unknown> = {
       input: {
         format: audioFormat,
@@ -776,7 +784,9 @@ export class RealtimeClient extends EventEmitter {
       // not `temperature` (temperature is not accepted). "low" keeps a live
       // phone agent snappy.
       reasoning: { effort: this.opts.reasoningEffort },
-      max_output_tokens: 200,
+      // On GA this budget is SHARED with the model's reasoning tokens, so it
+      // must be generous or the spoken turn gets starved and clipped.
+      max_output_tokens: this.opts.maxResponseTokens,
       tools: this.enabledTools(),
       tool_choice: "auto",
     };

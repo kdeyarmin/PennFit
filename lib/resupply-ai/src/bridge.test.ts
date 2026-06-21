@@ -298,6 +298,69 @@ describe("VoiceBridge", () => {
     );
   });
 
+  it("suppresses the follow-up for a silent bookkeeping tool when the same response already spoke", async () => {
+    const dispatch = vi.fn(
+      async (call: DispatchToolCall) =>
+        ({
+          callId: call.callId,
+          name: call.name,
+          result: { ok: true },
+        }) as DispatchToolResult,
+    );
+    const dispatcher = { dispatch } as unknown as ToolDispatcher;
+    const { bridge: _bridge, fake } = buildBridge(dispatcher);
+    // The agent spoke in response r1 (an output transcript delta carrying the
+    // response id), THEN fired identify_call_reason on that same response.
+    fake.emit("transcript.delta", {
+      source: "output",
+      text: "Sure, let me note that.",
+      done: false,
+      itemId: "i1",
+      responseId: "r1",
+    });
+    fake.emit("tool.call", {
+      callId: "c7",
+      name: "identify_call_reason",
+      argumentsJson: '{"reason":"sales"}',
+      responseId: "r1",
+    });
+    await new Promise((r) => setImmediate(r));
+    // No second, unprompted turn — the agent already spoke on r1.
+    expect(fake.submitToolResult).toHaveBeenCalledWith(
+      "c7",
+      { ok: true },
+      { requestFollowUp: false },
+    );
+  });
+
+  it("KEEPS the follow-up for a silent bookkeeping tool on a tool-only response (no dead air)", async () => {
+    const dispatch = vi.fn(
+      async (call: DispatchToolCall) =>
+        ({
+          callId: call.callId,
+          name: call.name,
+          result: { ok: true },
+        }) as DispatchToolResult,
+    );
+    const dispatcher = { dispatch } as unknown as ToolDispatcher;
+    const { bridge: _bridge, fake } = buildBridge(dispatcher);
+    // identify_call_reason fired on response r2 with NO prior speech for r2 —
+    // the model classified without saying anything, so we MUST follow up or
+    // the line goes silent.
+    fake.emit("tool.call", {
+      callId: "c8",
+      name: "identify_call_reason",
+      argumentsJson: '{"reason":"sales"}',
+      responseId: "r2",
+    });
+    await new Promise((r) => setImmediate(r));
+    expect(fake.submitToolResult).toHaveBeenCalledWith(
+      "c8",
+      { ok: true },
+      { requestFollowUp: true },
+    );
+  });
+
   it("end_call waits for the sink's playback drain before closing (goodbye not clipped)", async () => {
     const dispatch = vi.fn(
       async (call: DispatchToolCall) =>

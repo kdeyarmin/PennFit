@@ -9,7 +9,7 @@ import {
   type SVGProps,
 } from "react";
 import { Link, useLocation } from "wouter";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   fetchAdminInboxCounts,
   type AdminInboxCounts,
@@ -98,6 +98,7 @@ import {
   useStopImpersonation,
 } from "@workspace/api-client-react/admin";
 import { getMfaStatus } from "@/lib/admin/mfa-api";
+import { startTenantCheckout } from "@/lib/admin/platform-billing-api";
 
 // Client-side nav-visibility token (NOT a server permission) gating the
 // Locations entry. Injected into the nav permission set when /me reports
@@ -1401,11 +1402,50 @@ const MASK_FITTER_ALLOWED_ROUTE_PREFIXES: readonly string[] = [
   "/admin/team",
 ];
 
-/** The nav a tenant sees for its plan scope: the curated fitter-only nav
- *  for the standalone Virtual Mask Fitter plan, else the full console nav. */
+// Payment wall (migration 0427). A tenant whose /me reports
+// productScope === "locked" signed up but hasn't paid their first invoice yet,
+// so the console collapses to JUST the billing page (where they pick a plan +
+// pay) and account security. Everything else is hidden — and the backend
+// independently 403s it. The route guard bounces any other URL to the billing
+// page; the Stripe invoice.paid webhook clears the lock.
+const LOCKED_NAV_GROUPS: ReadonlyArray<NavGroup> = [
+  {
+    label: "Get started",
+    items: [
+      {
+        label: "Billing & payment",
+        icon: Wallet,
+        href: "/admin/billing/package",
+        matchPrefix: "/admin/billing/package",
+        hint: "Choose your plan and complete payment to unlock your console",
+      },
+      {
+        label: "Account security",
+        icon: ShieldCheck,
+        href: "/admin/security",
+        matchPrefix: "/admin/security",
+        hint: "Manage your own MFA / authenticator-app enrollment",
+      },
+    ],
+  },
+];
+
+/** SPA route prefixes a locked (unpaid) tenant may visit. Mirrors the server
+ *  allowlist in lib/product-scope.ts (isLockedAllowedPath); the server is the
+ *  real gate. Tighter than the fitter list — billing + account only. */
+const LOCKED_ALLOWED_ROUTE_PREFIXES: readonly string[] = [
+  "/admin/billing/package",
+  "/admin/security",
+  "/admin/agreements",
+];
+
+/** The nav a tenant sees for its plan scope: the pay-to-unlock nav for an
+ *  unpaid tenant, the curated fitter-only nav for the standalone Virtual Mask
+ *  Fitter plan, else the full console nav. */
 function navGroupsForScope(
   productScope: string | undefined,
 ): ReadonlyArray<NavGroup> {
+  if (productScope === "locked") return LOCKED_NAV_GROUPS;
   return productScope === "mask_fitter" ? MASK_FITTER_NAV_GROUPS : NAV_GROUPS;
 }
 
@@ -2071,6 +2111,84 @@ export function AdminHeaderChip({
  * Surveyors looking at the live admin UI see the enforcement and
  * the path to compliance.
  */
+/**
+ * Payment wall banner (migration 0427). Shown across the admin console when a
+ * tenant's /me reports productScope === "locked" — they signed up but haven't
+ * paid their first invoice. On the billing page it's a calmer inline notice
+ * (they're already where they need to be); elsewhere it's a prominent strip
+ * with a "Go to billing" control. The route guard also bounces them to billing,
+ * so this is mostly the explanation. The Stripe invoice.paid webhook clears the
+ * lock, after which /me reports their real scope and this disappears.
+ */
+function PaymentRequiredBanner() {
+  const { data: adminMe } = useGetAdminMe();
+  const [location] = useLocation();
+  // "Pay now" — start a hosted Stripe Checkout session and redirect. On a
+  // successful payment Stripe's webhook clears the lock and /me reports the
+  // tenant's real scope, so this banner disappears.
+  const [payErr, setPayErr] = useState<string | null>(null);
+  const checkout = useMutation({
+    mutationFn: () => startTenantCheckout(),
+    onSuccess: ({ url }) => {
+      if (url) window.location.assign(url);
+    },
+    onError: () =>
+      setPayErr(
+        "We couldn't start checkout just now. Please try again in a moment.",
+      ),
+  });
+  if (adminMe?.productScope !== "locked") return null;
+
+  const payNow = (
+    <button
+      type="button"
+      onClick={() => {
+        setPayErr(null);
+        checkout.mutate();
+      }}
+      disabled={checkout.isPending}
+      className="rounded bg-amber-900 text-white px-3 py-1.5 text-xs font-semibold whitespace-nowrap disabled:opacity-60"
+    >
+      {checkout.isPending ? "Starting checkout…" : "Pay now & unlock"}
+    </button>
+  );
+
+  if (location.startsWith("/admin/billing/package")) {
+    return (
+      <div className="mb-4 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 flex items-start justify-between gap-3">
+        <div>
+          Choose a plan below, or pay for your current plan now to unlock the
+          rest of your console.
+          {payErr ? (
+            <span className="block mt-1 text-rose-700">{payErr}</span>
+          ) : null}
+        </div>
+        {payNow}
+      </div>
+    );
+  }
+  return (
+    <div className="mb-4 rounded border border-amber-300 bg-amber-50 px-3 py-3 text-sm text-amber-900 flex items-start justify-between gap-3">
+      <div>
+        <strong>Your account is pending payment.</strong> Pay now to unlock the
+        rest of your console, or visit billing to change your plan first.
+        {payErr ? (
+          <span className="block mt-1 text-rose-700">{payErr}</span>
+        ) : null}
+      </div>
+      <div className="flex items-center gap-2">
+        <Link
+          href="/admin/billing/package"
+          className="rounded border border-amber-900 text-amber-900 px-3 py-1.5 text-xs font-semibold whitespace-nowrap"
+        >
+          Billing
+        </Link>
+        {payNow}
+      </div>
+    </div>
+  );
+}
+
 function MfaEnforcementBanner() {
   const [location] = useLocation();
   const { data } = useQuery({
@@ -2190,19 +2308,29 @@ export function AppShell({
   const [location, setLocation] = useLocation();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
-  // Route guard for the standalone Virtual Mask Fitter plan: a scoped tenant
-  // that lands on (or deep-links to) a console route outside its allowlist is
-  // bounced to the fitter worklist. The server independently 403s those
-  // routes — this just keeps the SPA from rendering a page that would only
-  // show errors. No-op for "full" scope (every normal tenant). `/account/*`
-  // (e.g. billing) is a separate top-level router, so it's never guarded here.
+  // Route guard for scoped-down tenants: a tenant that lands on (or deep-links
+  // to) a console route outside its allowlist is bounced to its home page. The
+  // server independently 403s those routes — this just keeps the SPA from
+  // rendering a page that would only show errors. No-op for "full" scope
+  // (every normal tenant). `/account/*` (e.g. billing) is a separate top-level
+  // router, so it's never guarded here.
   useEffect(() => {
-    if (productScope !== "mask_fitter") return;
     if (!location.startsWith("/admin")) return;
-    const allowed = MASK_FITTER_ALLOWED_ROUTE_PREFIXES.some((prefix) =>
-      location.startsWith(prefix),
-    );
-    if (!allowed) setLocation("/admin/fitter-invites", { replace: true });
+    // Payment wall: an unpaid tenant can only reach billing + account security
+    // until they pay; everything else bounces to the billing page.
+    if (productScope === "locked") {
+      const allowed = LOCKED_ALLOWED_ROUTE_PREFIXES.some((prefix) =>
+        location.startsWith(prefix),
+      );
+      if (!allowed) setLocation("/admin/billing/package", { replace: true });
+      return;
+    }
+    if (productScope === "mask_fitter") {
+      const allowed = MASK_FITTER_ALLOWED_ROUTE_PREFIXES.some((prefix) =>
+        location.startsWith(prefix),
+      );
+      if (!allowed) setLocation("/admin/fitter-invites", { replace: true });
+    }
   }, [productScope, location, setLocation]);
 
   // ── Shared sidebar nav state ──────────────────────────────────────────────
@@ -2304,8 +2432,12 @@ export function AppShell({
             adminEmail ? (
               <div className="flex items-center gap-3">
                 {/* GlobalLookup searches patients/orders — irrelevant to a
-                    fitter-only tenant and its endpoint isn't in their scope. */}
-                {productScope === "mask_fitter" ? null : <GlobalLookup />}
+                    fitter-only or unpaid tenant, and its endpoint isn't in
+                    their scope. */}
+                {productScope === "mask_fitter" ||
+                productScope === "locked" ? null : (
+                  <GlobalLookup />
+                )}
                 <AdminHeaderChip email={adminEmail} role={adminRole} />
               </div>
             ) : undefined
@@ -2402,6 +2534,7 @@ export function AppShell({
             </nav>
           </aside>
           <main className="flex-1 p-4 sm:p-6 overflow-x-hidden min-w-0">
+            <PaymentRequiredBanner />
             <MfaEnforcementBanner />
             {/*
             Contextual sub-nav tab bar for the active section (e.g. the
@@ -2430,8 +2563,11 @@ export function AppShell({
         AI key or a disabled flag degrades it gracefully.
       */}
         {/* The admin assistant (PennPilot) is a full-console helper; hide it
-            for fitter-only tenants (its chat endpoint isn't in their scope). */}
-        {adminEmail && productScope !== "mask_fitter" ? (
+            for fitter-only and unpaid tenants (its chat endpoint isn't in
+            their scope). */}
+        {adminEmail &&
+        productScope !== "mask_fitter" &&
+        productScope !== "locked" ? (
           <AdminAssistantWidget />
         ) : null}
       </div>

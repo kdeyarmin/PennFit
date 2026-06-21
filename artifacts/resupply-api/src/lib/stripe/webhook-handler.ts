@@ -306,6 +306,12 @@ export const stripeWebhookHandler: RequestHandler = async (
     switch (event.type) {
       case "checkout.session.completed":
       case "checkout.session.async_payment_succeeded": {
+        // Platform SaaS billing first: a tenant's hosted "Pay now" Checkout
+        // (metadata.billing_scope = platform_tenant) clears the payment wall.
+        // handlePlatformTenantStripeEvent returns false for anything else
+        // (patient storefront sessions, setup-mode autopay), which falls
+        // through to the patient handling below unchanged.
+        if (await handlePlatformTenantStripeEvent(event)) break;
         const session = event.data.object as Stripe.Checkout.Session;
         // Payment-plan autopay authorization (mode=setup). Capture the
         // mandated payment method and flip the plan to 'authorized'.
