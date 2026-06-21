@@ -747,7 +747,16 @@ async function raiseUnresponsiveAlert(
           channels_tried: triedChannels,
         },
       });
-    if (alertInsertErr) throw alertInsertErr;
+    if (alertInsertErr) {
+      // A concurrent escalation tick may have raised the same open alert
+      // between our SELECT above and this INSERT. The partial unique index
+      // `csr_compliance_alerts_open_unique` (one open alert per
+      // patient+alert_type, migration 0065) rejects the duplicate with a
+      // 23505 — that IS the desired idempotent outcome, so treat it as a
+      // no-op rather than a spurious "alert_failed" warning.
+      if (alertInsertErr.code === "23505") return;
+      throw alertInsertErr;
+    }
   } catch (err) {
     logger.warn(
       {

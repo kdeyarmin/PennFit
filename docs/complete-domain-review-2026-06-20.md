@@ -286,9 +286,15 @@ staging are carefully built. Gaps:
   carries the status filter and the constant holds only the funnel statuses.
 - **Med** — Refill attestation proof is lost on the SMS path precisely because
   of the seed-org no-op (`inbound.ts:887`).
-- **Med** — Escalation `csr_exhausted` alert insert isn't defensively
-  idempotent (read-then-insert, no `onConflict`)
-  (`reminder-escalation.ts:712`).
+- ✅ **Fixed in this PR** (narrower than first stated). Escalation
+  `no_response` alert insert was a read-then-insert. Duplicates were already
+  prevented at the DB level — the partial unique index
+  `csr_compliance_alerts_open_unique` (one open alert per patient+alert_type,
+  migration 0065) was overlooked in the original finding — but on a concurrent
+  race the losing insert's `23505` was re-thrown and logged as a misleading
+  `alert_failed` warning. The insert now treats `23505` as the idempotent
+  no-op it is (early return, no warning), so a race is silent. No migration
+  needed; structural test added.
 - ~~**Med** — `dispense-readiness` persists hardcoded `ai_model:
 "gpt-4o-mini"`~~ **Withdrawn — false positive.** On verification,
   `dispense-readiness-reviewer.ts:synthesizeWithAi` is hardwired to OpenAI
