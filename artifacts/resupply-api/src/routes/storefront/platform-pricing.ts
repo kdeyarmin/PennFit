@@ -30,6 +30,10 @@ interface PublicPlanRow {
   features: string[] | null;
   product_scope: string | null;
   sort_order: number | null;
+  // Founder launch pricing (migration 0426).
+  per_active_patient_cents: number | null;
+  regular_monthly_price_cents: number | null;
+  founder_rate_locked_months: number | null;
 }
 
 interface PublicAddonRow {
@@ -99,6 +103,14 @@ router.get("/platform/pricing", async (_req, res) => {
           allowances: p.allowances ?? {},
           features: p.features ?? [],
           productScope: p.product_scope ?? "full",
+          // Founder launch pricing: the per-active-patient charge, the
+          // pre-discount "regular" monthly price (shown struck-through), and
+          // the months the founder rate is locked. Null on non-founder plans.
+          perActivePatientCents: custom ? null : p.per_active_patient_cents,
+          regularMonthlyPriceCents: custom
+            ? null
+            : p.regular_monthly_price_cents,
+          founderRateLockedMonths: custom ? null : p.founder_rate_locked_months,
         };
       }),
       addons: ((addons.data ?? []) as PublicAddonRow[]).map((a) => ({
