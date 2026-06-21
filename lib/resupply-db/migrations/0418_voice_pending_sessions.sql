@@ -4,20 +4,22 @@
 --   The pending-session handoff between a voice webhook (inbound reorder /
 --   inbound sales / outbound check-in / diagnostic) and Twilio's Media
 --   Stream WebSocket upgrade was an in-memory Map inside the resupply-api
---   process (lib/voice/pending-sessions.ts). That only holds under a SINGLE
---   instance: the webhook registers the session in one replica's memory,
---   but Twilio's follow-up WebSocket is load-balanced to a (possibly)
---   different replica, which has no record of the conversationId and rejects
---   the upgrade with HTTP 401 "no-pending-session". Twilio surfaces that as
---   error 31920 (Stream WebSocket handshake error) and the call dies the
---   instant it connects (duration 0). Once production scaled past one
---   replica, every voice flow — including the CareMetric Breathe platform
---   sales line — became intermittently unreachable (the caller's carrier
---   reports the line as busy).
+--   process (lib/voice/pending-sessions.ts). In-memory state does NOT survive
+--   the process being replaced or restarted: when a deploy rolls the (single)
+--   replica — or the process restarts/crashes — in the ~1s gap between the
+--   webhook POST and Twilio's follow-up WebSocket, the fresh process has an
+--   empty map, so the WS upgrade is rejected with HTTP 401
+--   "no-pending-session". Twilio surfaces that as error 31920 (Stream
+--   WebSocket handshake error) and the call dies the instant it connects
+--   (duration 0) — surfacing to callers as a carrier "line is busy". The
+--   failures cluster around deploys (verified: the handoff works fine in
+--   steady state). The same in-memory state also would not survive horizontal
+--   scaling to more than one replica.
 --
 -- Fix:
---   Move the handoff to this table so ANY replica can claim a session that
---   ANY replica registered. Rows are short-lived (default 5-minute TTL):
+--   Move the handoff to this table so it survives a process restart/redeploy
+--   (and any future multi-replica scaling) — any process can claim a session
+--   any process registered. Rows are short-lived (default 5-minute TTL):
 --     register → upsert
 --     peek     → select where not expired (outbound twiml-connect)
 --     claim    → delete ... returning where not expired (atomic single
@@ -50,3 +52,11 @@ CREATE TABLE IF NOT EXISTS "resupply"."voice_pending_sessions" (
 -- small.
 CREATE INDEX IF NOT EXISTS "voice_pending_sessions_expires_at_idx"
   ON "resupply"."voice_pending_sessions" ("expires_at");
+--> statement-breakpoint
+
+-- Deny-all by default (service-role bypasses; resupply-schema posture,
+-- migration 0170). The schema is exposed via PostgREST and the payload can
+-- carry patient/episode/org ids for in-flight calls, so keep the baseline
+-- RLS lock-down every other resupply table has — no tenant predicate needed
+-- (only the service role touches this ephemeral handoff table).
+ALTER TABLE "resupply"."voice_pending_sessions" ENABLE ROW LEVEL SECURITY;

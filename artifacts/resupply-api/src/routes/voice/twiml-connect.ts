@@ -24,7 +24,10 @@ import {
 
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
-import { getPendingSessions } from "../../lib/voice/pending-sessions";
+import {
+  getPendingSessions,
+  type PendingSessionEntry,
+} from "../../lib/voice/pending-sessions";
 import {
   publicWsOriginFromBaseUrl,
   readTwilioWebhookAuthTokenOrNull,
@@ -111,8 +114,27 @@ router.post("/voice/twiml-connect", signatureMiddleware, async (req, res) => {
     return;
   }
 
-  // Peek (NOT claim) — see file header.
-  const pending = await getPendingSessions().peek(conversationId);
+  // Peek (NOT claim) — see file header. The store is now a DB round-trip and
+  // can throw (network/DB blip); degrade to a clean 200 + Hangup so Twilio
+  // gets valid TwiML instead of a 500 it would retry into a storm.
+  let pending: PendingSessionEntry | null;
+  try {
+    pending = await getPendingSessions().peek(conversationId);
+  } catch (err) {
+    logger.error(
+      { event: "voice_twiml_peek_failed", conversationId, err },
+      "twiml-connect: pending-session peek failed; hanging up",
+    );
+    res
+      .status(200)
+      .type("text/xml")
+      .send(
+        buildHangupTwiml(
+          "Sorry, this call could not be connected. Please try again later.",
+        ),
+      );
+    return;
+  }
   if (!pending) {
     logger.warn(
       {

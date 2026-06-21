@@ -4,16 +4,18 @@
 // inbound Twilio Media Stream WebSocket upgrade.
 //
 // Why this is DB-backed (migration 0418) and NOT an in-memory Map:
-//   The handoff spans TWO separate connections from Twilio that can land on
-//   DIFFERENT replicas: the webhook POST registers the session, then —
-//   moments later — Twilio opens the Media Stream WebSocket, which the load
-//   balancer may route to a different instance. An in-memory Map only the
-//   registering replica can see means the WS upgrade can't find the session,
-//   rejects the upgrade with HTTP 401, and Twilio reports error 31920
-//   (WebSocket handshake error) — the call dies on connect. That is exactly
-//   what broke every voice flow (including the CareMetric Breathe sales
-//   line) once production scaled past a single replica. A shared table lets
-//   ANY replica claim a session ANY replica registered.
+//   The handoff spans TWO separate connections from Twilio: the webhook POST
+//   registers the session, then — moments later — Twilio opens the Media
+//   Stream WebSocket. In-memory state does NOT survive the serving process
+//   being replaced or restarted in that ~1s gap: a deploy rolling the
+//   (single) replica, or a process restart/crash, leaves the fresh process
+//   with an empty map, so the WS upgrade can't find the session, rejects it
+//   with HTTP 401, and Twilio reports error 31920 (WebSocket handshake
+//   error) — the call dies on connect (carrier "line is busy"). That is what
+//   intermittently broke every voice flow (including the CareMetric Breathe
+//   sales line) around deploys. A shared table makes the handoff durable
+//   across restarts/redeploys — and any future multi-replica scaling — since
+//   ANY process can claim a session ANY process registered.
 //
 // Why a table and not the `conversations` row:
 //   The diagnostic and platform-sales flows have NO `conversations` row
@@ -230,8 +232,10 @@ export class SupabasePendingSessionStore implements PendingSessionStore {
       .then(
         () => undefined,
         (err: unknown) => {
+          // Pass the error under `err` so the logger's err.* redaction
+          // applies (a stringified error could carry row/URL fragments).
           logger.warn(
-            { event: "voice_pending_session_sweep_failed", err: String(err) },
+            { event: "voice_pending_session_sweep_failed", err },
             "voice: pending-session sweep failed (non-fatal)",
           );
         },
@@ -289,16 +293,29 @@ export class SupabasePendingSessionStore implements PendingSessionStore {
     callSid: string,
     nowMs: number,
   ): Promise<boolean> {
-    const existing = await this.peek(conversationId, nowMs);
-    if (!existing) return false;
+    // Read-modify-write the payload's twilioCallSid. Re-check expires_at on
+    // the UPDATE and use RETURNING so we report success ONLY when a still-live
+    // row was actually stamped — the row may have been claimed or expired
+    // between the read and the write. Best-effort: a DB hiccup returns false
+    // rather than throwing (this is a post-dial stamp the call path tolerates).
+    const nowIso = new Date(nowMs).toISOString();
+    const { data: existing, error: readErr } = await this.table()
+      .select("payload")
+      .eq("conversation_id", conversationId)
+      .gt("expires_at", nowIso)
+      .maybeSingle();
+    if (readErr || !existing) return false;
     const updated: PendingSessionEntry = {
-      ...existing,
+      ...(existing.payload as unknown as PendingSessionEntry),
       twilioCallSid: callSid,
     };
-    const { error } = await this.table()
+    const { data: written, error: writeErr } = await this.table()
       .update({ payload: updated as unknown as Json })
-      .eq("conversation_id", conversationId);
-    return !error;
+      .eq("conversation_id", conversationId)
+      .gt("expires_at", nowIso)
+      .select("conversation_id")
+      .maybeSingle();
+    return !writeErr && Boolean(written);
   }
 }
 
