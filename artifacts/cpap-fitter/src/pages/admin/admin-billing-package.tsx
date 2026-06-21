@@ -31,6 +31,7 @@ const LABELS: Record<string, string> = {
   billingTransactionsPerMonth: "Billing transactions",
   faxEvents: "Fax events",
   aiVoiceEvents: "AI voice events",
+  fitterFittingsPerMonth: "Completed mask fittings",
 };
 
 /** Tenant self-service plan picker. Lists the public plans; the active

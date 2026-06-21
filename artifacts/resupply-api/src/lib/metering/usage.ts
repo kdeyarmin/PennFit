@@ -28,6 +28,7 @@
 import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../logger";
+import { reportMeteredOverage } from "../platform-billing/stripe";
 
 // The event-based billable metrics the platform billing console reads
 // (routes/platform/billing.ts → currentUsage). The live-counted metrics
@@ -39,6 +40,11 @@ export const USAGE_METRIC_KEYS = [
   "billingTransactionsPerMonth",
   "faxEvents",
   "aiVoiceEvents",
+  // Completed virtual mask fittings (migration 0419). The Virtual Mask
+  // Fitter plan includes a monthly amount and bills per-fitting beyond it
+  // (fitter_fitting_metered add-on). Incremented once per completed
+  // fitting that comes back from a patient's signed link.
+  "fitterFittingsPerMonth",
 ] as const;
 
 export type UsageMetricKey = (typeof USAGE_METRIC_KEYS)[number];
@@ -80,7 +86,7 @@ export async function recordTenantUsage(
   const quantity = normalizeQuantity(input.quantity);
   if (quantity === 0) return; // a zero-quantity event carries no signal
   try {
-    const { error } = await getOrgScopedClient(orgId)
+    const { data, error } = await getOrgScopedClient(orgId)
       .raw()
       .schema("resupply")
       .rpc("increment_tenant_usage_rollup", {
@@ -89,6 +95,22 @@ export async function recordTenantUsage(
         p_quantity: quantity,
       });
     if (error) throw error;
+    // The RPC returns the post-increment running total (migration 0422) — the
+    // ATOMIC value for this increment, so overage is computed without racing
+    // concurrent increments.
+    const newTotal = typeof data === "number" ? data : undefined;
+    // Report billable OVERAGE to Stripe for standard metered metrics (SMS /
+    // AI / billing transactions — migration 0421). Fire-and-forget + fail-soft
+    // + gated: no-ops unless the overage flag is on and the metric has a
+    // report-overage metered add-on, so this is a no-op for every metric until
+    // an operator enables it. The fitter metric is excluded automatically (its
+    // add-on reports all usage via a separate path, not overage).
+    void reportMeteredOverage({
+      orgId,
+      metricKey: input.metricKey,
+      increment: quantity,
+      newTotal,
+    });
   } catch (err) {
     logger.warn(
       {

@@ -42,6 +42,10 @@ import {
 import { getAuthDeps } from "../lib/auth-deps";
 import { hasPendingAgreements } from "../lib/agreements/status";
 import { logger } from "../lib/logger";
+import {
+  isMaskFitterAllowedPath,
+  resolveTenantProductScope,
+} from "../lib/product-scope";
 import { enforceCsrfForAuthedMutation } from "./csrf";
 
 declare global {
@@ -370,6 +374,34 @@ export async function requireAdmin(
       return;
     }
   }
+
+  // Product-scope gate (standalone Virtual Mask Fitter plan, migration
+  // 0419). A tenant on a scoped-down plan may only reach the fitter +
+  // account-essential surfaces; every other admin route 403s. This is a
+  // NO-OP for "full" — which is every existing tenant and every tenant
+  // with no active subscription — so the only requests it can restrict are
+  // those of a DME deliberately placed on the mask_fitter plan. The
+  // resolver fails OPEN to "full", so a DB hiccup never locks anyone out.
+  // Platform-admin act-as-tenant sessions are exempt: support staff must
+  // reach the whole console to help a scoped tenant. The `/me` identity
+  // endpoint is always allowed so the SPA can learn its own scope and
+  // render the fitter-only chrome.
+  if (req.orgId && req.impersonation !== true) {
+    const scope = await resolveTenantProductScope(req.orgId);
+    if (scope === "mask_fitter") {
+      const path = req.originalUrl.split("?")[0] ?? "";
+      if (!isMaskFitterAllowedPath(path)) {
+        res.status(403).json({
+          error: "product_scope_restricted",
+          message:
+            "Your plan includes the Virtual Mask Fitter only. Upgrade to unlock the full console.",
+          productScope: "mask_fitter",
+        });
+        return;
+      }
+    }
+  }
+
   next();
 }
 

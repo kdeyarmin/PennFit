@@ -28,6 +28,7 @@ interface PublicPlanRow {
   is_custom: boolean | null;
   allowances: Record<string, unknown> | null;
   features: string[] | null;
+  product_scope: string | null;
   sort_order: number | null;
 }
 
@@ -97,6 +98,7 @@ router.get("/platform/pricing", async (_req, res) => {
           isCustom: custom,
           allowances: p.allowances ?? {},
           features: p.features ?? [],
+          productScope: p.product_scope ?? "full",
         };
       }),
       addons: ((addons.data ?? []) as PublicAddonRow[]).map((a) => ({
