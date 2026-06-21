@@ -282,7 +282,9 @@ async function applyClaim(
   const newCopay = claim.copay_cents + respDelta.copayCents;
 
   let newStatus: ClaimRow["status"] = claim.status;
-  const denialReason = eraClaim.isDenied ? composeDenialReason(eraClaim) : null;
+  const denialReason = eraClaim.isDenied
+    ? await composeDenialReason(eraClaim, supabase)
+    : null;
   if (eraClaim.isDenied && allowedTransition(claim.status, "denied")) {
     newStatus = "denied";
   } else if (
@@ -462,22 +464,59 @@ function hasDenial(adjustments: Adjustment[]): boolean {
   return adjustments.some((a) => a.groupCode === "CO");
 }
 
-function composeDenialReason(eraClaim: Parsed835Claim): string {
-  const codes = new Set<string>();
-  for (const adj of eraClaim.adjustments) {
-    if (adj.groupCode === "CO" || adj.groupCode === "PI") {
-      codes.add(`CARC ${adj.reasonCode}`);
+async function composeDenialReason(
+  eraClaim: Parsed835Claim,
+  supabase: SupabaseClient,
+): Promise<string> {
+  // Distinct CARC reason codes (CO / PI adjustments) at claim + line level,
+  // preserving first-seen order.
+  const codes: string[] = [];
+  const seen = new Set<string>();
+  const add = (reasonCode: string): void => {
+    if (!seen.has(reasonCode)) {
+      seen.add(reasonCode);
+      codes.push(reasonCode);
     }
+  };
+  for (const adj of eraClaim.adjustments) {
+    if (adj.groupCode === "CO" || adj.groupCode === "PI") add(adj.reasonCode);
   }
   for (const line of eraClaim.serviceLines) {
     for (const adj of line.adjustments) {
-      if (adj.groupCode === "CO" || adj.groupCode === "PI") {
-        codes.add(`CARC ${adj.reasonCode}`);
-      }
+      if (adj.groupCode === "CO" || adj.groupCode === "PI") add(adj.reasonCode);
     }
   }
-  if (codes.size === 0) return "Denied per remit (no CARC supplied)";
-  return [...codes].join("; ");
+  if (codes.length === 0) return "Denied per remit (no CARC supplied)";
+  // Enrich each CARC with its human-readable description from the global
+  // denial_codes catalog (read via the unscoped client like
+  // ai-denial-analyzer; code_system is stored lower-case). A catalog miss or
+  // read failure degrades to the bare "CARC <n>" — never blocks reconcile.
+  const descByCode = new Map<string, string>();
+  try {
+    const { data } = await supabase
+      .raw()
+      .schema("resupply")
+      .from("denial_codes")
+      .select("code, description")
+      // Restrict to CARC in the query (codes here are all CARC reason codes)
+      // so a large remit doesn't scan/return unrelated RARC/custom rows.
+      .eq("code_system", "carc")
+      .in("code", codes);
+    for (const row of (data ?? []) as Array<{
+      code: string;
+      description: string;
+    }>) {
+      descByCode.set(row.code, row.description);
+    }
+  } catch {
+    // Non-fatal — fall through to bare codes.
+  }
+  return codes
+    .map((c) => {
+      const desc = descByCode.get(c);
+      return desc ? `CARC ${c} — ${desc}` : `CARC ${c}`;
+    })
+    .join("; ");
 }
 
 function allowedTransition(
@@ -490,9 +529,13 @@ function allowedTransition(
   // a claim before we observe the 277CA "accepted" intermediate.
   const VALID: Record<ClaimRow["status"], readonly ClaimRow["status"][]> = {
     draft: ["submitted"],
-    submitted: ["accepted", "denied", "paid"],
+    submitted: ["accepted", "denied", "paid", "rejected"],
     accepted: ["paid", "denied"],
     denied: ["appealed", "closed"],
+    // 277CA clearinghouse rejection — re-worked back to submitted or
+    // abandoned. An ERA won't normally land on a rejected claim (it never
+    // reached adjudication), but the edge keeps the map total + consistent.
+    rejected: ["submitted", "closed"],
     appealed: ["accepted", "denied"],
     paid: ["closed"],
     closed: [],

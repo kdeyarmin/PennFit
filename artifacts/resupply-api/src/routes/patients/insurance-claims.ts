@@ -70,6 +70,7 @@ const STATUS_VALUES = [
   "submitted",
   "accepted",
   "denied",
+  "rejected",
   "paid",
   "appealed",
   "closed",
@@ -78,11 +79,18 @@ const STATUS_VALUES = [
 // Allowed forward transitions. Backward moves (e.g. accepted -> draft)
 // are rejected so the history is monotonic. A mistake gets a 'note'
 // event documenting the correction and a new claim if needed.
+//
+// `rejected` is a clearinghouse FRONT-END rejection (277CA) — the claim
+// bounced before payer adjudication. It is reached from `submitted` and
+// can be re-worked back to `submitted` (fix data + resubmit) or abandoned
+// to `closed`. It is NOT a payer `denied` adjudication, so it does not go
+// to `appealed`.
 const VALID_TRANSITIONS: Record<ClaimStatus, readonly ClaimStatus[]> = {
   draft: ["submitted"],
-  submitted: ["accepted", "denied"],
+  submitted: ["accepted", "denied", "rejected"],
   accepted: ["paid", "denied"],
   denied: ["appealed", "closed"],
+  rejected: ["submitted", "closed"],
   appealed: ["accepted", "denied"],
   paid: ["closed"],
   closed: [],

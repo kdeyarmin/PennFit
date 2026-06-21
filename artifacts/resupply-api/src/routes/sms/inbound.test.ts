@@ -361,7 +361,12 @@ describe("POST /sms/inbound", () => {
     // SMS-only opt-out: the reply scopes to texts (not "messages"), since
     // marketing email keeps its own separate opt-out.
     expect(res.text).toContain("texts");
-    expect(pausePatientMock).toHaveBeenCalledWith(PATIENT_ID);
+    // orgId is now threaded from the called-number's tenant so STOP
+    // opts the patient out in the right tenant (not always the seed org).
+    expect(pausePatientMock).toHaveBeenCalledWith(
+      PATIENT_ID,
+      expect.any(String),
+    );
     const handoffAudit = logAuditMock.mock.calls
       .map((c) => c[0])
       .find(
@@ -389,7 +394,10 @@ describe("POST /sms/inbound", () => {
       });
     expect(res.status).toBe(200);
     expect(res.text).toContain("resubscribed");
-    expect(reactivatePatientMock).toHaveBeenCalledWith(PATIENT_ID);
+    expect(reactivatePatientMock).toHaveBeenCalledWith(
+      PATIENT_ID,
+      expect.any(String),
+    );
     expect(pausePatientMock).not.toHaveBeenCalled();
     const startAudit = logAuditMock.mock.calls
       .map((c) => c[0])

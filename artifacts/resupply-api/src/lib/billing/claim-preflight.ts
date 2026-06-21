@@ -226,7 +226,7 @@ export async function preflightClaim(
     const { data: payer } = await supabase
       .from("payer_profiles")
       .select(
-        "id, display_name, is_active, paper_only, office_ally_payer_id, claim_format, requires_prior_auth_dme, edi_enrollment_status, timely_filing_days, required_modifiers_dme, requires_referring_provider_npi, enrollment_status, enrollment_effective_on",
+        "id, display_name, is_active, paper_only, office_ally_payer_id, claim_format, requires_prior_auth_dme, edi_enrollment_status, timely_filing_days, required_modifiers_dme, requires_referring_provider_npi, enrollment_status, enrollment_effective_on, line_of_business",
       )
       .eq("id", claim.payer_profile_id)
       .limit(1)

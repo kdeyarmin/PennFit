@@ -811,11 +811,13 @@ function stagePayerProfile(overrides: {
     | "active"
     | "suspended";
   enrollment_effective_on?: string | null;
+  line_of_business?: string;
 }): void {
   stageSupabaseResponse("payer_profiles", "select", {
     data: {
       id: PAYER_PROFILE_ID,
       display_name: "Highmark BCBS",
+      line_of_business: overrides.line_of_business ?? "commercial",
       is_active: overrides.is_active,
       paper_only: overrides.paper_only,
       office_ally_payer_id: overrides.office_ally_payer_id,

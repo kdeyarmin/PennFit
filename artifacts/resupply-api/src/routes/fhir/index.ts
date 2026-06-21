@@ -32,7 +32,7 @@ import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { requireAdmin } from "../../middlewares/requireAdmin";
@@ -117,9 +117,10 @@ router.get(
       res.status(404).type("application/fhir+json").json(notFound("Patient"));
       return;
     }
-    // Resolve the seed org (single-tenant posture) and degrade to the
-    // route's existing 404 when it can't be resolved.
-    const orgId = await resolveSeedOrgId();
+    // Tenant-scope the read to the calling admin's org so a non-seed
+    // tenant sees its own patients; degrade to the route's existing 404
+    // when the org context is missing.
+    const orgId = req.orgId;
     if (!orgId) {
       res.status(404).type("application/fhir+json").json(notFound("Patient"));
       return;
@@ -178,9 +179,10 @@ router.get(
       res.status(404).type("application/fhir+json").json(notFound("Patient"));
       return;
     }
-    // Resolve the seed org (single-tenant posture) and degrade to the
-    // route's existing 404 when it can't be resolved.
-    const orgId = await resolveSeedOrgId();
+    // Tenant-scope the read to the calling admin's org so a non-seed
+    // tenant sees its own patients; degrade to the route's existing 404
+    // when the org context is missing.
+    const orgId = req.orgId;
     if (!orgId) {
       res.status(404).type("application/fhir+json").json(notFound("Patient"));
       return;

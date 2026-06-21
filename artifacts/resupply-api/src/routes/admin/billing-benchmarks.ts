@@ -15,6 +15,11 @@ import { Router, type IRouter } from "express";
 
 import { getOrgScopedClient } from "@workspace/resupply-db";
 
+import {
+  DECISIONED_CLAIM_STATUSES,
+  denialRateWindowCutoffIso,
+  isDenialStatus,
+} from "../../lib/billing/denial-rate";
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
@@ -43,7 +48,7 @@ router.get(
         "id, payer_name, status, total_billed_cents, total_paid_cents, submitted_at, decision_at, paid_at, predicted_denial_probability",
       )
       .gte("decision_at", cutoff)
-      .in("status", ["paid", "denied", "closed", "appealed"])
+      .in("status", [...DECISIONED_CLAIM_STATUSES])
       .limit(20000);
     // Throw — a swallowed error rendered the benchmarks as all-zero
     // (same swallowed-`error` class as billing-dashboard).
@@ -73,9 +78,16 @@ router.get(
       .filter((d): d is number => d !== null && d >= 0);
 
     // ── First-pass denial rate. ───────────────────────────────────
-    const decisions = claimList.length;
-    const denials = claimList.filter(
-      (c) => c.status === "denied" || c.status === "appealed",
+    // Computed over the canonical 90-day window (NOT the 180-day distribution
+    // population) so the headline rate matches the reports/director
+    // dashboards. The distribution percentiles above keep the longer history.
+    const denialCutoff = denialRateWindowCutoffIso();
+    const denialPopulation = claimList.filter(
+      (c) => c.decision_at !== null && c.decision_at >= denialCutoff,
+    );
+    const decisions = denialPopulation.length;
+    const denials = denialPopulation.filter((c) =>
+      isDenialStatus(c.status),
     ).length;
     const denialRate = decisions > 0 ? denials / decisions : null;
 
@@ -103,12 +115,13 @@ router.get(
     const overHalfDenialRate =
       overHalfCount > 0 ? overHalfDenied / overHalfCount : null;
 
-    // Per-payer denial rate (top-10 by claim volume).
+    // Per-payer denial rate (top-10 by claim volume), over the same 90-day
+    // window as the headline rate above.
     const perPayer = new Map<string, { decisions: number; denials: number }>();
-    for (const c of claimList) {
+    for (const c of denialPopulation) {
       const cur = perPayer.get(c.payer_name) ?? { decisions: 0, denials: 0 };
       cur.decisions++;
-      if (c.status === "denied" || c.status === "appealed") cur.denials++;
+      if (isDenialStatus(c.status)) cur.denials++;
       perPayer.set(c.payer_name, cur);
     }
     const perPayerRows = [...perPayer.entries()]

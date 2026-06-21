@@ -18,6 +18,7 @@ import { resolveCallerByPhone } from "./resolve-caller";
 const PATIENT_ID = "11111111-1111-4111-8111-111111111111";
 const OTHER_PATIENT_ID = "99999999-9999-4999-8999-999999999999";
 const SHOP_CUSTOMER_ID = "cust_abc123";
+const ORG_ID = "00000000-0000-4000-8000-000000000000";
 
 function sb(): ReturnType<typeof getSupabaseServiceRoleClient> {
   return getSupabaseServiceRoleClient();
@@ -31,7 +32,7 @@ describe("resolveCallerByPhone", () => {
   it("resolves a single patient match and never consults storefront (patients win)", async () => {
     stageSupabaseResponse("patients", "select", { data: [{ id: PATIENT_ID }] });
 
-    const res = await resolveCallerByPhone(sb(), "+12155550001");
+    const res = await resolveCallerByPhone(sb(), "+12155550001", ORG_ID);
 
     expect(res).toEqual({ kind: "patient", patientId: PATIENT_ID });
     expect(supabaseMock.callCount("shop_customers", "select")).toBe(0);
@@ -42,7 +43,7 @@ describe("resolveCallerByPhone", () => {
       data: [{ id: PATIENT_ID }, { id: OTHER_PATIENT_ID }],
     });
 
-    const res = await resolveCallerByPhone(sb(), "+12155550001");
+    const res = await resolveCallerByPhone(sb(), "+12155550001", ORG_ID);
 
     expect(res).toEqual({ kind: "ambiguous" });
     expect(supabaseMock.callCount("shop_customers", "select")).toBe(0);
@@ -54,7 +55,7 @@ describe("resolveCallerByPhone", () => {
       data: [{ customer_id: SHOP_CUSTOMER_ID }],
     });
 
-    const res = await resolveCallerByPhone(sb(), "+12155550002");
+    const res = await resolveCallerByPhone(sb(), "+12155550002", ORG_ID);
 
     expect(res).toEqual({
       kind: "shop_customer",
@@ -68,7 +69,7 @@ describe("resolveCallerByPhone", () => {
       data: [{ customer_id: "cust_a" }, { customer_id: "cust_b" }],
     });
 
-    const res = await resolveCallerByPhone(sb(), "+12155550002");
+    const res = await resolveCallerByPhone(sb(), "+12155550002", ORG_ID);
 
     expect(res).toEqual({ kind: "ambiguous" });
   });
@@ -77,7 +78,7 @@ describe("resolveCallerByPhone", () => {
     stageSupabaseResponse("patients", "select", { data: [] });
     stageSupabaseResponse("shop_customers", "select", { data: [] });
 
-    const res = await resolveCallerByPhone(sb(), "+12155550003");
+    const res = await resolveCallerByPhone(sb(), "+12155550003", ORG_ID);
 
     expect(res).toEqual({ kind: "none" });
   });
@@ -85,7 +86,7 @@ describe("resolveCallerByPhone", () => {
   it("normalizes a bare 10-digit NANP number to +1XXXXXXXXXX before querying", async () => {
     stageSupabaseResponse("patients", "select", { data: [{ id: PATIENT_ID }] });
 
-    await resolveCallerByPhone(sb(), "2155550001");
+    await resolveCallerByPhone(sb(), "2155550001", ORG_ID);
 
     const phoneFilter = supabaseMock
       .filterCalls("patients", "select")
@@ -93,8 +94,29 @@ describe("resolveCallerByPhone", () => {
     expect(phoneFilter?.args[1]).toBe("+12155550001");
   });
 
+  it("scopes both lookups to the dialed line's tenant (org_id filter)", async () => {
+    stageSupabaseResponse("patients", "select", { data: [] });
+    stageSupabaseResponse("shop_customers", "select", { data: [] });
+
+    await resolveCallerByPhone(sb(), "+12155550001", ORG_ID);
+
+    for (const table of ["patients", "shop_customers"] as const) {
+      const orgFilter = supabaseMock
+        .filterCalls(table, "select")
+        .find((c) => c.verb === "eq" && c.args[0] === "org_id");
+      expect(orgFilter?.args[1]).toBe(ORG_ID);
+    }
+  });
+
+  it("returns none when no orgId is supplied without touching the DB", async () => {
+    const res = await resolveCallerByPhone(sb(), "+12155550001", "");
+
+    expect(res).toEqual({ kind: "none" });
+    expect(supabaseMock.callCount("patients", "select")).toBe(0);
+  });
+
   it("returns none for an unparseable number without touching the DB", async () => {
-    const res = await resolveCallerByPhone(sb(), "1234");
+    const res = await resolveCallerByPhone(sb(), "1234", ORG_ID);
 
     expect(res).toEqual({ kind: "none" });
     expect(supabaseMock.callCount("patients", "select")).toBe(0);
@@ -102,7 +124,7 @@ describe("resolveCallerByPhone", () => {
   });
 
   it("returns none for an empty string without touching the DB", async () => {
-    const res = await resolveCallerByPhone(sb(), "");
+    const res = await resolveCallerByPhone(sb(), "", ORG_ID);
 
     expect(res).toEqual({ kind: "none" });
     expect(supabaseMock.callCount("patients", "select")).toBe(0);
@@ -113,7 +135,9 @@ describe("resolveCallerByPhone", () => {
       error: { message: "db down" },
     });
 
-    await expect(resolveCallerByPhone(sb(), "+12155550001")).rejects.toEqual({
+    await expect(
+      resolveCallerByPhone(sb(), "+12155550001", ORG_ID),
+    ).rejects.toEqual({
       message: "db down",
     });
   });
@@ -124,7 +148,9 @@ describe("resolveCallerByPhone", () => {
       error: { message: "db down" },
     });
 
-    await expect(resolveCallerByPhone(sb(), "+12155550002")).rejects.toEqual({
+    await expect(
+      resolveCallerByPhone(sb(), "+12155550002", ORG_ID),
+    ).rejects.toEqual({
       message: "db down",
     });
   });

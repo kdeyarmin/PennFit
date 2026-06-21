@@ -96,6 +96,30 @@ vi.mock("../../lib/billing/identity-resolver", () => ({
   resolveBillingIdentity: resolveBillingIdentityMock,
 }));
 
+// ── Tenant SendGrid mock ─────────────────────────────────────────────────────
+type SentEmail = {
+  to: string;
+  subject: string;
+  html: string;
+  text: string;
+  attachments?: Array<{
+    content: Buffer;
+    filename: string;
+    contentType: string;
+  }>;
+};
+const sendEmailMock = vi.hoisted(() =>
+  vi.fn(async (_input: SentEmail) => ({ messageId: "msg-1" })),
+);
+const createTenantSendgridClientMock = vi.hoisted(() =>
+  vi.fn(async () => ({ sendEmail: sendEmailMock })),
+);
+vi.mock("../../lib/email/tenant-sender", () => ({
+  createTenantSendgridClient: createTenantSendgridClientMock,
+}));
+
+import { EmailConfigError } from "@workspace/resupply-email";
+
 import goodFaithEstimatesRouter from "./good-faith-estimates";
 
 const GFE_UUID = "22222222-bbbb-4ccc-8000-000000000001";
@@ -142,7 +166,29 @@ beforeEach(() => {
   adminRateLimitSpy.mockClear();
   renderGfePdfMock.mockClear();
   resolveBillingIdentityMock.mockClear();
+  sendEmailMock.mockClear();
+  sendEmailMock.mockResolvedValue({ messageId: "msg-1" });
+  createTenantSendgridClientMock.mockClear();
 });
+
+const STORED_ROW = {
+  id: GFE_UUID,
+  recipient_name: "John Patient",
+  recipient_email: "john@example.com",
+  items_json: [
+    {
+      description: "CPAP Machine",
+      hcpcsCode: "E0601",
+      quantity: 1,
+      unitPriceCents: 25000,
+    },
+  ],
+  total_cents: 25000,
+  expected_service_date: null,
+  disclaimer_text: "No Surprises Act disclaimer.",
+  delivery_method: null,
+  delivered_at: null,
+};
 
 // ── POST /admin/good-faith-estimates ─────────────────────────────────────────
 
@@ -258,5 +304,144 @@ describe("POST /admin/good-faith-estimates — adminRateLimit removed", () => {
       .send({ ...validCreateBody, unknownField: "oops" });
     expect(res.status).toBe(400);
     expect(res.body.error).toBe("invalid_body");
+  });
+});
+
+// ── POST /admin/good-faith-estimates/:id/email ───────────────────────────────
+
+describe("POST /admin/good-faith-estimates/:id/email", () => {
+  const url = `/admin/good-faith-estimates/${GFE_UUID}/email`;
+
+  it("401 unauthenticated", async () => {
+    expect((await request(makeApp()).post(url).send({})).status).toBe(401);
+  });
+
+  it("403 for a non-admin agent", async () => {
+    stubAgent();
+    expect((await request(makeApp()).post(url).send({})).status).toBe(403);
+  });
+
+  it("emails the rendered PDF and stamps delivered_at + delivery_method=email", async () => {
+    stubAdmin();
+    stageSupabaseResponse("good_faith_estimates", "select", {
+      data: STORED_ROW,
+    });
+    stageSupabaseResponse("good_faith_estimates", "update", { data: null });
+
+    const res = await request(makeApp()).post(url).send({});
+    expect(res.status).toBe(200);
+    expect(res.body.deliveryMethod).toBe("email");
+    expect(res.body.deliveredAt).toBeTruthy();
+    // The PDF rode along as an attachment.
+    expect(sendEmailMock).toHaveBeenCalledOnce();
+    const sent = sendEmailMock.mock.calls[0]![0];
+    expect(sent.to).toBe("john@example.com");
+    expect(sent.attachments?.[0]?.contentType).toBe("application/pdf");
+    // delivered_at + method were stamped.
+    const writes = supabaseMock.writePayloads("good_faith_estimates", "update");
+    expect(writes[0]).toMatchObject({ delivery_method: "email" });
+    expect(writes[0]).toHaveProperty("delivered_at");
+  });
+
+  it("404 when the GFE does not exist", async () => {
+    stubAdmin();
+    stageSupabaseResponse("good_faith_estimates", "select", { data: null });
+    const res = await request(makeApp()).post(url).send({});
+    expect(res.status).toBe(404);
+  });
+
+  it("409 when no DME organization is configured", async () => {
+    stubAdmin();
+    stageSupabaseResponse("good_faith_estimates", "select", {
+      data: STORED_ROW,
+    });
+    resolveBillingIdentityMock.mockResolvedValueOnce({
+      source: "stub" as const,
+      organization: null,
+      billingProvider: {
+        organizationName: "Stub",
+        npi: "0000000000",
+        address: { line1: "", city: "", state: "", zip: "" },
+      },
+    });
+    const res = await request(makeApp()).post(url).send({});
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("no_dme_organization");
+  });
+
+  it("503 when SendGrid is not configured (no stamp)", async () => {
+    stubAdmin();
+    stageSupabaseResponse("good_faith_estimates", "select", {
+      data: STORED_ROW,
+    });
+    sendEmailMock.mockRejectedValueOnce(new EmailConfigError("no key"));
+    const res = await request(makeApp()).post(url).send({});
+    expect(res.status).toBe(503);
+    expect(res.body.error).toBe("email_not_configured");
+    // Nothing was sent → no delivered_at stamp.
+    expect(
+      supabaseMock.writePayloads("good_faith_estimates", "update"),
+    ).toHaveLength(0);
+  });
+
+  it("502 on a transient send failure (no stamp)", async () => {
+    stubAdmin();
+    stageSupabaseResponse("good_faith_estimates", "select", {
+      data: STORED_ROW,
+    });
+    sendEmailMock.mockRejectedValueOnce(new Error("sendgrid 503"));
+    const res = await request(makeApp()).post(url).send({});
+    expect(res.status).toBe(502);
+    expect(
+      supabaseMock.writePayloads("good_faith_estimates", "update"),
+    ).toHaveLength(0);
+  });
+});
+
+// ── POST /admin/good-faith-estimates/:id/deliver ─────────────────────────────
+
+describe("POST /admin/good-faith-estimates/:id/deliver", () => {
+  const url = `/admin/good-faith-estimates/${GFE_UUID}/deliver`;
+
+  it("401 unauthenticated", async () => {
+    expect(
+      (await request(makeApp()).post(url).send({ deliveryMethod: "mail" }))
+        .status,
+    ).toBe(401);
+  });
+
+  it("400 for an invalid delivery method (CHECK-constraint enum)", async () => {
+    stubAdmin();
+    const res = await request(makeApp())
+      .post(url)
+      .send({ deliveryMethod: "carrier_pigeon" });
+    expect(res.status).toBe(400);
+  });
+
+  it("marks delivered out-of-band: stamps delivered_at + the channel", async () => {
+    stubAdmin();
+    stageSupabaseResponse("good_faith_estimates", "select", {
+      data: { id: GFE_UUID },
+    });
+    stageSupabaseResponse("good_faith_estimates", "update", { data: null });
+    const res = await request(makeApp())
+      .post(url)
+      .send({ deliveryMethod: "mail" });
+    expect(res.status).toBe(200);
+    expect(res.body.deliveryMethod).toBe("mail");
+    const writes = supabaseMock.writePayloads("good_faith_estimates", "update");
+    expect(writes[0]).toMatchObject({ delivery_method: "mail" });
+    expect(writes[0]).toHaveProperty("delivered_at");
+    // Mark-delivered never sends email.
+    expect(sendEmailMock).not.toHaveBeenCalled();
+  });
+
+  it("404 when the GFE does not exist", async () => {
+    stubAdmin();
+    stageSupabaseResponse("good_faith_estimates", "select", { data: null });
+    const res = await request(makeApp())
+      .post(url)
+      .send({ deliveryMethod: "mail" });
+    expect(res.status).toBe(404);
   });
 });

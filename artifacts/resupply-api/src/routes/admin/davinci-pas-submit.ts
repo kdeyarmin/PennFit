@@ -49,6 +49,14 @@ const params = z.object({
   paId: z.string().uuid(),
 });
 
+// Optional submit body. `quantity` overrides the default of 1 (e.g. supplies
+// requested in multiple units); equipment PAs can omit it.
+const submitBody = z
+  .object({
+    quantity: z.number().int().min(1).max(9999).optional(),
+  })
+  .strict();
+
 router.post(
   "/admin/patients/:id/prior-authorizations/:paId/submit-davinci-pas",
   requirePermission("patients.update"),
@@ -57,6 +65,11 @@ router.post(
     const idParsed = params.safeParse(req.params);
     if (!idParsed.success) {
       res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const bodyParsed = submitBody.safeParse(req.body ?? {});
+    if (!bodyParsed.success) {
+      res.status(400).json({ error: "invalid_body" });
       return;
     }
     const orgId = req.orgId;
@@ -85,6 +98,28 @@ router.post(
         error: "missing_coverage",
         message:
           "PA must reference an insurance_coverage row before PAS submission",
+      });
+      return;
+    }
+
+    // Resolve the diagnosis ICD-10 from the patient's latest sleep study —
+    // the same source the claim builder and preflight use. A PAS request with
+    // no diagnosis is rejected by every payer, so block here rather than
+    // submit a guaranteed-reject request.
+    const { data: sleep } = await supabase
+      .from("sleep_studies")
+      .select("diagnosis_icd10")
+      .eq("patient_id", pa.patient_id)
+      .not("diagnosis_icd10", "is", null)
+      .order("study_date", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const diagnosisIcd10 = sleep?.diagnosis_icd10 ?? null;
+    if (!diagnosisIcd10) {
+      res.status(409).json({
+        error: "no_diagnosis_on_file",
+        message:
+          "no sleep study with a diagnosis_icd10 is on file for this patient — required for PAS submission",
       });
       return;
     }
@@ -245,9 +280,9 @@ router.post(
       },
       serviceRequest: {
         hcpcsCode: pa.hcpcs_code,
-        quantity: 1,
+        quantity: bodyParsed.data.quantity ?? 1,
         dateOfService: new Date().toISOString().slice(0, 10),
-        diagnosisIcd10: null,
+        diagnosisIcd10,
       },
     });
 

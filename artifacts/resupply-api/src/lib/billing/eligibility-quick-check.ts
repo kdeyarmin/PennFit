@@ -34,13 +34,11 @@ import {
 } from "./identity-resolver";
 
 export interface QuickEligibilityCheckInput {
-  /** Tenant the check runs under. The caller resolves it — the admin
-   *  route from `req.orgId` (fail-closed) — and every read (payer
-   *  profile, ISA13 pool), the billing identity / clearinghouse, and the
-   *  usage meter are scoped to it. Never defaulted to the seed org here:
-   *  a missing tenant context must surface upstream, not silently bill a
-   *  second tenant's quick check under PennPaps. */
-  orgId: string;
+  /** Calling admin's tenant (req.orgId). Scopes the payer-profile lookup,
+   *  billing identity, and clearinghouse ISA to the right tenant. Fails
+   *  closed when absent — never falls back to the seed org, which would
+   *  query the wrong tenant's payer profiles and billing identity. */
+  orgId: string | undefined;
   /** payer_profiles.id — the payer to query. Must accept electronic
    *  270/271 (office_ally_payer_id set, not paper_only). */
   payerProfileId: string;
@@ -124,7 +122,10 @@ function nextQuickCheckSequence(): number {
 export async function quickCheckEligibility(
   input: QuickEligibilityCheckInput,
 ): Promise<QuickEligibilityCheckResult> {
-  const { orgId } = input;
+  const orgId = input.orgId;
+  if (!orgId) {
+    throw new Error("tenant context missing");
+  }
   const supabase = getOrgScopedClient(orgId);
 
   const { data: payerProfile, error: payerErr } = await supabase

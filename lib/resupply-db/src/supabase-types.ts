@@ -1983,6 +1983,7 @@ export interface Database {
             | "submitted"
             | "accepted"
             | "denied"
+            | "rejected"
             | "paid"
             | "appealed"
             | "closed";

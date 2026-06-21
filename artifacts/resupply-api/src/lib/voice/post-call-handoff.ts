@@ -64,6 +64,13 @@ const HANDOFF_REASON_PREFIX = "voice_post_call_handoff";
 export interface RouteVoiceHandoffInput {
   conversationId: string;
   /**
+   * The call's tenant (pending.orgId). The escalation read/update is
+   * org-scoped, so without the real tenant a non-seed call's handoff
+   * matched no conversation and was silently dropped. Undefined →
+   * seed fallback (legacy single-tenant posture).
+   */
+  orgId: string | undefined;
+  /**
    * Post-call summary outcome string. Appears after the reason
    * prefix so a supervisor scanning the queue sees a one-line "why".
    * Sanitised by the summarizer's PHI rules — but we truncate
@@ -106,7 +113,7 @@ function buildEscalationReason(input: RouteVoiceHandoffInput): string {
 export async function routeVoiceHandoffToCsrQueue(
   input: RouteVoiceHandoffInput,
 ): Promise<void> {
-  const orgId = await resolveSeedOrgId();
+  const orgId = input.orgId ?? (await resolveSeedOrgId());
   if (!orgId) {
     // Best-effort sweep — degrade like every other failure path here:
     // log a WARN and resolve cleanly (the call cleanup is unaffected).
