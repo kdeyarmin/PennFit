@@ -133,5 +133,5 @@ needed; the column is inert when unenforced.
 - Enforcement gate + scope resolution: `artifacts/resupply-api/src/lib/product-scope.ts`.
 - Checkout session + webhook unlock: `artifacts/resupply-api/src/lib/platform-billing/stripe.ts`.
 - Signup sets the flag: `artifacts/resupply-api/src/lib/tenant-signup-service.ts`.
-- Migration: `lib/resupply-db/migrations/0426_tenant_billing_paywall.sql`.
+- Migration: `lib/resupply-db/migrations/0427_tenant_billing_paywall.sql`.
 - Env reference: `.env.example` (`BILLING_PAYWALL_ENFORCED`).
