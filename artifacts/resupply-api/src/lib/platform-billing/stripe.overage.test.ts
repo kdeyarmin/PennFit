@@ -61,6 +61,7 @@ vi.mock("../logger", () => ({
 import {
   computeMeteredOverageDelta,
   isMeteredOverageEnabled,
+  meteredAddonAttaches,
   reportMeteredOverage,
 } from "./stripe";
 
@@ -94,6 +95,35 @@ describe("computeMeteredOverageDelta", () => {
 
   it("treats a zero allowance as bill-from-unit-1", () => {
     expect(computeMeteredOverageDelta(0, 3, 0)).toBe(3);
+  });
+});
+
+describe("meteredAddonAttaches", () => {
+  const empty = new Set<string>();
+  it("attaches when the plan declares the metric's allowance", () => {
+    expect(
+      meteredAddonAttaches(
+        "outboundMessagesPerMonth",
+        { outboundMessagesPerMonth: 1000 },
+        empty,
+      ),
+    ).toBe(true);
+  });
+  it("attaches when an active feature add-on shares the metric (fax/voice)", () => {
+    // No plan allowance, but the tenant has fax_automation active (faxEvents).
+    expect(meteredAddonAttaches("faxEvents", {}, new Set(["faxEvents"]))).toBe(
+      true,
+    );
+  });
+  it("does not attach without a plan allowance or a sibling feature", () => {
+    expect(
+      meteredAddonAttaches("aiVoiceEvents", {}, new Set(["faxEvents"])),
+    ).toBe(false);
+  });
+  it("does not attach for a null/empty metric", () => {
+    expect(
+      meteredAddonAttaches(null, { faxEvents: 0 }, new Set(["faxEvents"])),
+    ).toBe(false);
   });
 });
 
@@ -182,6 +212,30 @@ describe("reportMeteredOverage", () => {
     expect(state.meterEvents).toHaveLength(1);
     expect(state.meterEvents[0]).toMatchObject({
       payload: { stripe_customer_id: "cus_1", value: "10" },
+    });
+  });
+
+  it("bills ALL usage for a no-allowance metric (fax/voice), from unit 1", async () => {
+    process.env.PLATFORM_METERED_OVERAGE_ENABLED = "true";
+    state.config = { mode: "shared" };
+    state.results.billing_addons = {
+      data: { meter_event_name: "fax_usage" },
+      error: null,
+    };
+    state.results.tenant_billing_subscriptions = {
+      data: { stripe_customer_id: "cus_1", billing_plans: { allowances: {} } },
+      error: null,
+    };
+    await reportMeteredOverage({
+      orgId: "org-1",
+      metricKey: "faxEvents",
+      increment: 3,
+      newTotal: 3,
+    });
+    expect(state.meterEvents).toHaveLength(1);
+    expect(state.meterEvents[0]).toMatchObject({
+      event_name: "fax_usage",
+      payload: { stripe_customer_id: "cus_1", value: "3" },
     });
   });
 
