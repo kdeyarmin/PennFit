@@ -62,14 +62,22 @@ Status legend: **OPEN** (not built) · **PARTIAL** (built, loop not closed) ·
 **DORMANT** (built, off by flag/cron — an activation decision) · **DONE** (for
 contrast / "don't rebuild").
 
+> **Reading note:** the status cells below describe the landscape **as first
+> surveyed**. Several OPEN/PARTIAL items in lenses A–D were **closed in this
+> PR** — appeals lifecycle, dispute persistence, `partially_paid` accuracy,
+> carrier-tracking ingest, the stock-decrement oversell guard, membership
+> reconciliation, and the referral-source CRM. See **"Shipped in this PR"** for
+> the authoritative current state. The `Resupply-due → draft order` and
+> `Membership` rows are corrected inline.
+
 ### Lens A — Recurring resupply revenue
 
-| Capability                                         | Status              | Evidence                                                                                                                                                                                                                                                                                       | Owner impact                                                                                                                                                                                  |
-| -------------------------------------------------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Resupply-due → order/draft action**              | **OPEN — #1 lever** | `routes/admin/therapy-resupply.ts` lists due/overdue device-driven items (summary / opportunities / CSV) with **no "create order" action**                                                                                                                                                     | The "who's due" worklist is read-only; every order is a manual hand-off. Converting it to one-click (entitlement-gated, queued for CSR review) is the single biggest recurring-revenue lever. |
-| **Built-but-gated lifecycle / enforcement levers** | **DORMANT (mix)**   | See the **Activation state** table below — auto-reminder enrollment, the cart-abandonment dispatcher, email auto-reply, and claim auto-submit are already **ON** (migrations 0325 / 0149); the three enforcement flags + autopay + the voice tier + the cart/review recurring crons remain off | Highest-ROI remaining work is a **consent/staffing decision**, not engineering.                                                                                                               |
-| **Membership / subscription tier (cash-pay)**      | **PARTIAL**         | `routes/admin/shop-membership.ts` — CSR-set only; Stripe subscription webhooks never reconcile `membership_tier`; no storefront join flow                                                                                                                                                      | Recurring cash-pay revenue + retention left on the table; a lapsed sub keeps its tier forever.                                                                                                |
-| **Voice escalation tier (AI check-in call)**       | **DORMANT**         | built + flag-gated `reminder_escalation.voice` (migration 0395), seeded **OFF**; flips ON to make the reminder ladder SMS → email → **voice** → CSR, inside the patient's 9am–8pm local window                                                                                                 | Multi-channel cadence is how vendors lift connection ~15% → ~45%.                                                                                                                             |
+| Capability                                         | Status                                 | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Owner impact                                                                                                                                                                                                                     |
+| -------------------------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Resupply-due → order/draft action**              | **DONE / DORMANT-FLAG** ⟵ _corrected_  | The draft flow **already ships end-to-end**: `routes/admin/resupply-order-drafts.ts` (stage → review → dismiss → **approve into the CSR sign-&-pay order**), the daily `resupply.auto-draft` worker (`worker/jobs/resupply-auto-draft.ts`, 05:30 UTC), and the SPA (`admin-therapy-resupply.tsx`). Gated per-tenant by `resupply.auto_order_drafts` (seeded **OFF**, migration 0391). The read-only opportunities surface (`therapy-resupply.ts`) is the _companion_, not the whole story. | **Re-classified from "OPEN" after code verification** — this was the over-statement trap the headline warns about. The remaining lever is the **activation decision** (flip the flag / staff the review queue), not engineering. |
+| **Built-but-gated lifecycle / enforcement levers** | **DORMANT (mix)**                      | See the **Activation state** table below — auto-reminder enrollment, the cart-abandonment dispatcher, email auto-reply, and claim auto-submit are already **ON** (migrations 0325 / 0149); the three enforcement flags + autopay + the voice tier + the cart/review recurring crons remain off                                                                                                                                                                                             | Highest-ROI remaining work is a **consent/staffing decision**, not engineering.                                                                                                                                                  |
+| **Membership / subscription tier (cash-pay)**      | **PARTIAL → reconcile DONE (this PR)** | `routes/admin/shop-membership.ts` is still CSR-set with no storefront join flow, BUT the webhook **now reconciles** `membership_tier`: `lib/stripe/webhook-handlers/membership-reconcile.ts` downgrades a canceled/lapsed membership to `payg` and refreshes the renewal date (wired into `handleSubscriptionEvent`).                                                                                                                                                                      | The "a lapsed sub keeps its tier forever" revenue leak is **closed**; the residual gap is the storefront self-serve join flow.                                                                                                   |
+| **Voice escalation tier (AI check-in call)**       | **DORMANT**                            | built + flag-gated `reminder_escalation.voice` (migration 0395), seeded **OFF**; flips ON to make the reminder ladder SMS → email → **voice** → CSR, inside the patient's 9am–8pm local window                                                                                                                                                                                                                                                                                             | Multi-channel cadence is how vendors lift connection ~15% → ~45%.                                                                                                                                                                |
 
 ### Lens B — Denials & faster cash
 
@@ -421,25 +429,66 @@ multi-branch owner truly needs first**.
 
 ---
 
-## Shipped in this PR (the two top quick-wins)
+## Shipped in this PR
 
-Both are additive, fail-soft, fully tested, and require **no migration**.
+Scope grew from "two quick-wins" to **all of Wave 1 plus the first strategic
+build**, after the owner chose "everything incl. strategic builds." Every item
+is additive, fail-soft, and tested; each is its own commit. Items that touch
+the schema were validated by a local Postgres migrate replay (apply +
+idempotent re-run) before push.
+
+**Lens B — denials & faster cash**
 
 - **Batch claim creation from fulfillments** —
-  `POST /admin/billing/fulfillments/batch-create-claims`
-  (`routes/admin/billing-batch-create-claims.ts`). Reuses the SAME core as the
-  single-click route via the extracted `lib/billing/create-claim-from-fulfillment.ts`
-  helper (so the two paths can't diverge), with per-item isolation + duplicate
-  guard + bill-hold seeding. SPA: a "Create all claims" action on the Billing
-  Hub "Fulfillments ready to bill" card. **Lever:** throughput / faster cash —
-  clean claims stop aging in the queue.
-- **Backorder auto-clear on restock** —
-  `lib/backorder/auto-clear-on-restock.ts`, hooked into the admin
-  shop-inventory save (`routes/admin/shop-products.ts`) at the same 0→positive
-  stock transition that fires the back-in-stock notify queue. Clears any open
-  `shop_backorders` row for the product's `metadata.shop_sku`, idempotent +
-  audited + fail-soft. **Lever:** fulfillment ops + reorder capture — the
-  resupply order-flow stops substituting a SKU that's back in stock.
+  `POST /admin/billing/fulfillments/batch-create-claims`. Reuses the SAME core
+  as the single-click route via the extracted
+  `lib/billing/create-claim-from-fulfillment.ts` helper (paths can't diverge),
+  per-item isolation + duplicate guard + bill-hold seeding. SPA "Create all
+  claims" on the Billing Hub. _No migration._
+- **Appeals lifecycle** (migration 0428) — adds `responded_at` / `outcome`
+  (CHECK enum) + an awaiting-response index to `claim_appeal_letters`; a shared
+  `markAppealSent` transition plus `mark-delivered` / `outcome` routes. Now
+  measurable appeal **win-rate** + aging across all delivery methods.
+- **Chargeback / dispute persistence** (migration 0429) — a `stripe_disputes`
+  table + `persistStripeDispute`, wired into the `charge.dispute.*` webhook
+  (was WARN-log only), surfaced at `/admin/billing/disputes`. Stops silently
+  missed dispute deadlines.
+- **`partially_paid` claim status** (migration 0430) — a true partial-payment
+  state through the claim state machine + ERA reconciler; collections-forecast
+  / AR aging now treat a partly-paid claim's **collectible remainder**
+  correctly (was overstating the owner cash view).
+
+**Lens C — fulfillment & inventory ops**
+
+- **Backorder auto-clear on restock** — `lib/backorder/auto-clear-on-restock.ts`,
+  hooked into the shop-inventory save at the 0→positive transition; clears the
+  open `shop_backorders` row for the SKU, idempotent + audited. _No migration._
+- **Carrier tracking webhook ingest** —
+  `POST /resupply-api/webhooks/carrier` (HMAC-signed EasyPost/Shippo trackers)
+  advances `shipped_at` / `delivered_at` and fires the same patient-packet
+  auto-send the admin "mark delivered" runs. Rate-limited (CodeQL). _No
+  migration._
+- **Stock-decrement oversell guard** — a paid checkout now debits
+  `stock_count` (the documented Stripe-metadata source of truth) for the
+  freshly-purchased units, once-only (keyed off the `ignoreDuplicates` upsert's
+  RETURNING) and clamped at 0. Closes "sell the same N units forever." _No
+  migration._
+
+**Lens A — recurring revenue**
+
+- **Membership ↔ Stripe reconciliation** —
+  `lib/stripe/webhook-handlers/membership-reconcile.ts` downgrades a
+  canceled/lapsed membership to `payg` and refreshes the renewal date. Closes
+  the "lapsed sub keeps its tier forever" leak. _No migration._
+
+**Lens D — growth & referral sources (first strategic build)**
+
+- **Referral-source CRM** (migration 0431) — `GET /admin/referrals/scorecard`
+  (per referring-provider volume / patients / paid revenue, via the
+  `referral_source_scorecard` RPC) + `GET/POST
+/admin/providers/:id/referral-activity` (an org-scoped rep-touch log). The
+  scorecard is built on the real data model (`insurance_claims.referring_provider_id
+→ providers`); backend-first (SPA to follow).
 
 ---
 
