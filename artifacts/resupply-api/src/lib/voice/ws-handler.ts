@@ -974,7 +974,14 @@ function resolveRealtimeClientOptions(config: VoiceConfig): {
     transcriptionModel:
       config.realtimeTranscribeModel ??
       (isGa ? DEFAULT_REALTIME_GA_TRANSCRIBE_MODEL : undefined),
-    reasoningEffort: config.realtimeReasoningEffort,
+    // Default every voice line (sales AND every tenant's patient/storefront
+    // agent) to "medium" GA reasoning effort for a more thoughtful, capable
+    // conversation — overridable per deployment via
+    // OPENAI_REALTIME_REASONING_EFFORT. (Effort only applies to the GA schema;
+    // it's ignored on beta.) Trade-off: medium adds a little time-to-first-word
+    // versus "low"; flip the env var to "low" if a deployment prefers snappier
+    // turns over depth.
+    reasoningEffort: config.realtimeReasoningEffort ?? "medium",
     // undefined → RealtimeClient applies its DEFAULT_MAX_RESPONSE_TOKENS.
     maxResponseTokens: config.realtimeMaxResponseTokens,
     audioFormat: config.realtimeAudioFormat,
@@ -1342,15 +1349,9 @@ export async function handleBreatheSalesWsConnection(
     client = new RealtimeClient({
       apiKey: config.openaiApiKey,
       ...realtime,
-      // Deeper reasoning for the consultative sales conversation: default the
-      // platform sales line to "medium" effort (GA model only) so it can hold a
-      // genuinely intelligent, in-depth conversation, unless an operator pinned
-      // an effort via OPENAI_REALTIME_REASONING_EFFORT. Patient resupply calls
-      // keep the snappier "low" default — they're simpler flows where
-      // time-to-first-word matters more than depth.
-      reasoningEffort: realtime.reasoningEffort ?? "medium",
       // cedar voice (model produces audio). The sales line is platform-
-      // branded; practiceName is the platform name.
+      // branded; practiceName is the platform name. Reasoning effort now
+      // defaults to "medium" for every voice line in resolveRealtimeClientOptions.
       generateAudio: true,
       instructions: buildPromptOrFallback(
         {
