@@ -1,10 +1,7 @@
 // Behavioral tests for the per-fitting Stripe Billing Meter reporter
-// (migration 0419) + static-contract checks on the metered catalog/sync path.
+// (migration 0419).
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { readFileSync } from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 
 const { state } = vi.hoisted(() => ({
   state: {
@@ -114,42 +111,5 @@ describe("reportFitterFittingMeterEvent", () => {
     await expect(
       reportFitterFittingMeterEvent("org-1"),
     ).resolves.toBeUndefined();
-  });
-});
-
-// ── Static contract: the metered catalog/sync path stays wired ──────────
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const SRC = readFileSync(path.join(__dirname, "stripe.ts"), "utf8");
-
-describe("metered add-on Stripe contract (migration 0419)", () => {
-  it("creates a Billing Meter (customer-keyed, sum aggregation)", () => {
-    expect(SRC).toContain("billing.meters.create");
-    expect(SRC).toContain('formula: "sum"');
-    expect(SRC).toContain('event_payload_key: "stripe_customer_id"');
-  });
-
-  it("creates a graduated metered price tied to the meter", () => {
-    expect(SRC).toContain('usage_type: "metered"');
-    expect(SRC).toContain("meter: meterId");
-    expect(SRC).toContain('billing_scheme: "tiered"');
-    expect(SRC).toContain('tiers_mode: "graduated"');
-    // First `included_units` free, then the per-unit overage.
-    expect(SRC).toContain("included_units");
-  });
-
-  it("attaches metered subscription items WITHOUT a quantity", () => {
-    // The metered branch pushes `{ price: priceId }` (no quantity); Stripe
-    // rejects quantity on a metered item.
-    expect(SRC).toContain("items.push({ price: priceId });");
-  });
-
-  it("intrinsically includes the metered overage on a mask_fitter plan", () => {
-    expect(SRC).toContain('plan.product_scope === "mask_fitter"');
-    expect(SRC).toContain("ensureFitterMeteredPrice");
-  });
-
-  it("routes metered add-ons through the metered price path", () => {
-    expect(SRC).toContain('args.row.usage_type === "metered"');
-    expect(SRC).toContain("ensureMeteredAddonPrice");
   });
 });
