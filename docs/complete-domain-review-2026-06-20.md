@@ -187,8 +187,16 @@ preflight.ts` now reads the latest cached check per HCPCS for a
   (`billing-benchmarks.ts`, `billing-reports.ts`, `billing-director.ts`).
 - 277CA `pended` is rolled up as `accepted_277ca`
   (`office-ally-inbound-poll.ts:603`).
-- Fee-schedule lookup can't match the comma-joined multi-modifier rows the CSV
-  importer accepts (`payer-fee-schedules.ts:179`).
+- ✅ **Fixed in this PR.** Fee-schedule lookup couldn't match the comma-joined
+  multi-modifier rows the CSV importer accepts (`"KX,KH"`) — it exact-matched a
+  single modifier, so those rates were unreachable and the line fell through to
+  the wildcard. Per the owner's decision (subset + most-specific, both
+  callers): a new shared `pickFeeScheduleRowByModifiers` selects the
+  most-specific row whose modifier **set** is a subset of the line's modifiers
+  (ties → newest `effective_from`), then wildcard, then first. Wired into both
+  the claim builder's automatic pricing and the manual
+  `GET /payer-fee-schedules/lookup` (now accepts a comma-separated set). New
+  unit tests for the matcher.
 - Good-Faith-Estimate `delivered_at` is read but no deliver endpoint writes it
   — No Surprises Act SLA tracking is dead (`good-faith-estimates.ts:92`).
 - Statements mail from a generation-time snapshot with no staleness re-check

@@ -12,6 +12,7 @@ import { z } from "zod";
 import { logAudit } from "@workspace/resupply-audit";
 import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
+import { pickFeeScheduleRowByModifiers } from "../../lib/billing/fee-schedule-match";
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import {
@@ -142,10 +143,18 @@ router.get(
       res.status(400).json({ error: "invalid_hcpcs" });
       return;
     }
-    const modifier =
+    // Accept a comma-separated modifier SET (e.g. "RR,KH,KX") so a
+    // multi-modifier fee-schedule row can be reached; a single value still
+    // works. Matching is subset + most-specific (shared with the claim
+    // builder's automatic pricing).
+    const modifierList =
       typeof req.query.modifier === "string"
-        ? req.query.modifier.toUpperCase()
-        : null;
+        ? req.query.modifier
+            .toUpperCase()
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean)
+        : [];
     const onDate =
       typeof req.query.onDate === "string" && ISO_DATE_RE.test(req.query.onDate)
         ? req.query.onDate
@@ -175,11 +184,7 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const exactMod = modifier
-      ? candidates.find((r) => (r.modifier ?? "").toUpperCase() === modifier)
-      : undefined;
-    const wildcard = candidates.find((r) => r.modifier === null);
-    const pick = exactMod ?? wildcard ?? candidates[0];
+    const pick = pickFeeScheduleRowByModifiers(candidates, modifierList);
     res.json({ feeSchedule: pick ? rowToApi(pick) : null });
   },
 );

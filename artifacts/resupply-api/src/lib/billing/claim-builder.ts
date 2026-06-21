@@ -34,6 +34,7 @@ import {
   resolveModifiersFromRules,
 } from "./modifier-rules";
 import { fetchUnitCostsBySku } from "./product-cost-lookup";
+import { pickFeeScheduleRowByModifiers } from "./fee-schedule-match";
 
 type SupabaseClient = OrgScopedClient;
 
@@ -580,20 +581,10 @@ async function lookupFeeSchedule(
   if (error) return null;
   const candidates = data ?? [];
   if (candidates.length === 0) return null;
-  // Prefer modifier-specific match in order; then fall back to NULL
-  // (wildcard) row; then the first match.
-  for (const m of modifiers) {
-    const match = candidates.find(
-      (r: Database["resupply"]["Tables"]["payer_fee_schedules"]["Row"]) =>
-        (r.modifier ?? "").toUpperCase() === m,
-    );
-    if (match) return match;
-  }
-  const wildcard = candidates.find(
-    (r: Database["resupply"]["Tables"]["payer_fee_schedules"]["Row"]) =>
-      r.modifier === null,
-  );
-  return wildcard ?? candidates[0] ?? null;
+  // Most-specific applicable row by modifier SET (handles comma-joined
+  // rows like "KX,KH"); then the NULL wildcard; then the first. candidates
+  // are already ordered effective_from desc so ties pick the newest.
+  return pickFeeScheduleRowByModifiers(candidates, modifiers);
 }
 
 /**
