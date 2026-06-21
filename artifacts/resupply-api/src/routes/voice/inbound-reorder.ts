@@ -549,9 +549,15 @@ async function identifyCaller(
   // customers (patients win on a tie). The shared-number / ambiguity
   // rules live in resolveCallerByPhone; we map its discriminated result
   // back onto the IdentifyResult shape the rest of this route expects.
-  // resolveCallerByPhone is a shared helper still typed for the unscoped
-  // service-role client (cut over in a later wave), so pass `.raw()`.
-  const resolution = await resolveCallerByPhone(supabase.raw(), fromE164);
+  // resolveCallerByPhone is typed for the unscoped service-role client
+  // (it uses `.schema("resupply")`), so pass `.raw()` — but scope the
+  // lookup to the dialed line's tenant via the explicit orgId argument so
+  // a caller is never bound to another tenant's patient/customer.
+  const resolution = await resolveCallerByPhone(
+    supabase.raw(),
+    fromE164,
+    supabase.orgId,
+  );
   switch (resolution.kind) {
     case "patient":
       return {

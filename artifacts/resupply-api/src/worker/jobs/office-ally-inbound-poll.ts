@@ -851,6 +851,22 @@ export async function dispatch271(
       { err: eligCheckErr.message, checkId: check.id, inboundFileId },
       "office-ally.inbound-poll: eligibility_checks update failed",
     );
+  } else if (check.insurance_coverage_id) {
+    // Stamp the parent coverage as verified now that the 271 landed. The
+    // re-verification worklist + batch bucket by
+    // `insurance_coverages.verified_at`; the async SFTP path resolves here
+    // (not in the real-time verifier), so without this stamp an
+    // SFTP-verified coverage stayed "never verified" forever. Best-effort.
+    const { error: covErr } = await supabase
+      .from("insurance_coverages")
+      .update({ verified_at: new Date().toISOString() })
+      .eq("id", check.insurance_coverage_id);
+    if (covErr) {
+      logger.warn(
+        { err: covErr.message, coverageId: check.insurance_coverage_id },
+        "office-ally.inbound-poll: coverage verified_at stamp failed (non-fatal)",
+      );
+    }
   }
   const { error: eligSummaryErr } = await supabase
     .from("clearinghouse_inbound_files")

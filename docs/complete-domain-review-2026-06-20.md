@@ -74,9 +74,12 @@ path, the FHIR `Patient`/`$everything` reads (now scoped to the calling
 admin's `req.orgId`), the three voice post-call helpers (CSR handoff, summary
 message, Deepgram transcript — falling back to seed only when the session
 carries no org), and the eligibility quick-check (fail-closed on `req.orgId`,
-matching the sibling verify route). The Med inbound-voice caller-ID
-(`resolveCallerByPhone`) and Low davinci-PAS token rows remain open for a
-follow-up. Full `resupply-api` suite (6,263 tests) stays green.
+matching the sibling verify route). The **Med inbound-voice caller-ID** is now
+**fixed** too — `resolveCallerByPhone` takes the dialed line's `orgId` and
+filters both the `patients` and `shop_customers` lookups by `org_id`, so a
+caller can no longer be bound to another tenant's account. Only the Low
+davinci-PAS token-namespace row remains open. Full `resupply-api` suite stays
+green.
 
 ## 3. Billing / revenue-cycle domain
 
@@ -86,11 +89,14 @@ submit/transfer concurrency are genuinely strong. Gaps cluster around
 
 ### High
 
-1. **Eligibility re-verify surface is dead.** The success path inserts an
-   `eligibility_checks` row but never stamps `insurance_coverages.verified_at`
-   (`lib/billing/eligibility-verifier.ts:241-321`). The worklist and batch rank
-   by `verified_at`, so a just-verified coverage stays "never verified"
-   forever, re-surfacing the same patients and re-firing 270s endlessly.
+1. **Eligibility re-verify surface is dead.** ✅ **Fixed in this PR.** The
+   success path inserted an `eligibility_checks` row but never stamped
+   `insurance_coverages.verified_at` (`lib/billing/eligibility-verifier.ts`).
+   The worklist and batch rank by `verified_at`, so a just-verified coverage
+   stayed "never verified" forever, re-surfacing the same patients and
+   re-firing 270s endlessly. Now stamped (best-effort) on a successful 271
+   parse in **both** resolution paths — the real-time verifier and the async
+   SFTP 271 reconciliation in `office-ally-inbound-poll.ts`.
 2. **Manual ERA ingest skips AI denial analysis.** `era-ingest.ts:172` calls
    `reconcileEra` but, unlike the poller's `dispatch835`
    (`office-ally-inbound-poll.ts:734-742`), never inserts

@@ -258,6 +258,24 @@ export async function verifyEligibility(
         .select("id")
         .single();
       if (rtErr) throw rtErr;
+      // Stamp the parent coverage as verified. The re-verification
+      // worklist + batch bucket coverages by `insurance_coverages.verified_at`
+      // (never_verified / stale / ok); without this stamp a just-verified
+      // coverage stayed "never verified" forever and re-surfaced on every
+      // run. Best-effort — the eligibility check already persisted, so a
+      // failed stamp degrades the worklist signal, it doesn't fail the check.
+      {
+        const { error: covErr } = await supabase
+          .from("insurance_coverages")
+          .update({ verified_at: realtimeRow.responded_at })
+          .eq("id", coverage.id);
+        if (covErr) {
+          logger.warn(
+            { err: covErr.message, coverageId: coverage.id },
+            "verifyEligibility: coverage verified_at stamp failed (non-fatal)",
+          );
+        }
+      }
       void publishEvent(
         eligibilityCompletedEvent(
           {
