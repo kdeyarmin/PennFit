@@ -314,14 +314,15 @@ export function readVoiceConfigOrNull(
       env.ELEVENLABS_TTS_TRANSPORT?.trim().toLowerCase() === "http"
         ? "http"
         : "ws",
-    // Realtime now defaults to the `ga` schema (gpt-realtime-2); set
-    // OPENAI_REALTIME_SCHEMA=beta to fall back to the legacy beta schema.
-    // The ws-handler fills in coherent GA model/STT defaults when the
-    // schema is `ga`.
+    // Realtime defaults to the PROVEN `beta` schema (gpt-realtime +
+    // gpt-4o-mini-transcribe + top-level semantic_vad). The `ga` schema
+    // (gpt-realtime-2, nested session shape) is an OPT-IN spike — it
+    // regressed inbound turn-taking in production (the agent spoke its
+    // greeting but never responded to the caller), so it must be validated
+    // on a preview with a real call before being made the default. Opt in
+    // with OPENAI_REALTIME_SCHEMA=ga. See docs/runbooks/realtime-ga-migration.md.
     realtimeSchema:
-      env.OPENAI_REALTIME_SCHEMA?.trim().toLowerCase() === "beta"
-        ? "beta"
-        : "ga",
+      env.OPENAI_REALTIME_SCHEMA?.trim().toLowerCase() === "ga" ? "ga" : "beta",
     realtimeModel: env.OPENAI_REALTIME_MODEL?.trim() || undefined,
     realtimeReasoningEffort: parseReasoningEffort(
       env.OPENAI_REALTIME_REASONING_EFFORT,
