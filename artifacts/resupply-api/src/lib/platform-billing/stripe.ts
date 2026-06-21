@@ -316,6 +316,59 @@ async function meteredOverageAddons(
   return data as MeteredAddonRow[];
 }
 
+interface FounderPlanRow {
+  id: string;
+  code: string;
+  name: string;
+  per_active_patient_cents?: number | null;
+  stripe_per_patient_price_id?: string | null;
+  stripe_account_ref?: string | null;
+}
+
+/**
+ * Ensure the per-active-patient Stripe price for a founder plan (migration
+ * 0426): a simple per-unit monthly price at the plan's
+ * `per_active_patient_cents`, kept on the plan's `stripe_per_patient_price_id`
+ * (separate from the base plan price). The subscription attaches it with
+ * quantity = the tenant's billable active-patient count. Account-scoped +
+ * idempotent, mirroring `ensureRecurringPrice`.
+ */
+async function ensurePerPatientPrice(args: {
+  stripe: Stripe;
+  raw: RawClient;
+  plan: FounderPlanRow;
+  amountCents: number;
+  accountId: string;
+  mode: PlatformBillingStripeMode;
+}): Promise<string | null> {
+  const sameAccount = accountRefMatches(
+    args.plan.stripe_account_ref,
+    args.accountId,
+    args.mode,
+  );
+  if (args.plan.stripe_per_patient_price_id && sameAccount)
+    return args.plan.stripe_per_patient_price_id;
+
+  const code = `${args.plan.code}_active_patients`;
+  const product = await args.stripe.products.create({
+    name: `${args.plan.name} — active patients`,
+    metadata: priceMetadata("plan", code),
+  });
+  const price = await args.stripe.prices.create({
+    product: product.id,
+    unit_amount: args.amountCents,
+    currency: "usd",
+    recurring: { interval: "month" },
+    metadata: priceMetadata("plan", code),
+  });
+  await args.raw
+    .schema("resupply")
+    .from("billing_plans")
+    .update({ stripe_per_patient_price_id: price.id })
+    .eq("id", args.plan.id);
+  return price.id;
+}
+
 async function ensureRecurringPrice(
   args: EnsurePriceArgs,
 ): Promise<string | null> {
@@ -624,6 +677,30 @@ export async function syncTenantStripeSubscription(args: {
           quantity: 1,
         },
   ];
+
+  // Founder plans (migration 0426) add a per-active-patient charge: a per-unit
+  // monthly price whose quantity is the tenant's billable active-patient count
+  // (recomputed monthly into billable_active_patients). Attached only when the
+  // plan carries the rate AND there's a count to bill — a brand-new founder
+  // tenant bills base-only until the monthly job computes the count.
+  const perPatientCents = cents(plan.per_active_patient_cents);
+  const billablePatients = Math.max(
+    0,
+    Math.floor(Number(sub.billable_active_patients ?? 0)) || 0,
+  );
+  if (perPatientCents && perPatientCents > 0 && billablePatients > 0) {
+    const perPatientPriceId = await ensurePerPatientPrice({
+      stripe,
+      raw,
+      plan: plan as FounderPlanRow,
+      amountCents: perPatientCents,
+      accountId,
+      mode: config.mode,
+    });
+    if (perPatientPriceId) {
+      items.push({ price: perPatientPriceId, quantity: billablePatients });
+    }
+  }
 
   // Metered price ids already attached, so the mask_fitter auto-include
   // below never double-adds the per-fitting overage item.

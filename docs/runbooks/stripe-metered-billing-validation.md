@@ -101,3 +101,33 @@ about existing tenants changes. To validate before enabling:
 > Metering them per-fax / per-minute needs an explicit rate decision first;
 > set `metered_unit_amount_decimal` + `usage_type='metered'` on those add-ons
 > (and re-validate with this runbook) to enable it.
+
+---
+
+## Founder DME Launch pricing — per-active-patient billing (migration 0426)
+
+The founder full-platform plans (`launch_founder` / `growth_founder` /
+`scale_founder`) bill a lower monthly base **plus** a per-active-patient
+monthly charge ($1.25 / $0.95 / $0.65), with the rate locked 12 months. The
+per-patient charge is **quantity-based**: a per-unit price whose Stripe
+subscription-item quantity is the tenant's billable active-patient count,
+recomputed monthly by the `founder.active-patient-billing` job into
+`tenant_billing_subscriptions.billable_active_patients`.
+
+Additive + safe: no tenant is on a founder plan yet, so nothing bills until a
+DME is onboarded onto one. Validate in **Stripe test mode** first:
+
+1. Sync the catalog, then onboard a test tenant onto `launch_founder`
+   (`tenant:onboard --plan=launch_founder …`) and sync its subscription.
+2. In Stripe, confirm the subscription has the **$499/mo base** item and a
+   **per-unit "active patients" price** ($1.25/unit). With a fresh tenant the
+   per-patient item has quantity 0 (omitted) until the monthly job runs.
+3. Seed/qualify a few active patients (active status + active prescription +
+   an outbound touch or fulfillment in the last 90 days), run the
+   `founder.active-patient-billing` job (or call
+   `count_active_patients_for_billing`), and confirm
+   `billable_active_patients` updates and the per-patient item quantity
+   matches on the next sync.
+4. Read the upcoming invoice: base + `count × per-patient rate`. Confirm the
+   regular price ($799 / $1,899) shows struck-through on the marketing page
+   and the "rate locked 12 months" framing appears in the sales/voice copy.
