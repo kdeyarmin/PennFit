@@ -155,7 +155,9 @@ describe("GET /admin/business-targets", () => {
         {
           id: "t2",
           metric_key: "orders_paid_count",
-          period: "2026-Q2",
+          // A half-year label is not a supported period grain (month,
+          // year, and quarter are) → pace is honestly null, not guessed.
+          period: "2026-H1",
           target_value: 100,
           unit: "count",
           notes: null,

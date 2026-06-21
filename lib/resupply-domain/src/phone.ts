@@ -28,13 +28,32 @@
  * after the `+`. We enforce that range; sub-8 is too short to be a
  * real number, super-15 is over-spec.
  *
+ * International numbers: a value that already carries a `+` is accepted
+ * for ANY country (only the 8–15-digit range is enforced). A value with
+ * NO `+` is treated as North American (NANP) by default — 10 digits → +1,
+ * 11 digits w/ leading 1 → +<digits> — and rejected otherwise, UNLESS the
+ * caller passes `options.defaultCountryCode` (e.g. "44"), in which case a
+ * bare NATIONAL number is prefixed with that country code and validated
+ * for E.164 length. The default-country path assumes the input has NO
+ * country code of its own (it does not strip a duplicate leading CC).
+ *
  * NOTE: We intentionally do NOT validate that the country code is
  * assigned, or that the subscriber number is dialable — that's a
  * carrier-network concern, not a normalization concern. A bogus
  * number will normalize cleanly here, then fail downstream when
  * Twilio refuses to route it.
  */
-export function normalizeE164(raw: string | null | undefined): string | null {
+export interface NormalizeE164Options {
+  /** Country code (digits, e.g. "1", "44") prefixed onto a bare,
+   *  CC-less national number when the input has no `+` and is not a
+   *  NANP 10/11-digit number. Omit for NANP-only behavior. */
+  defaultCountryCode?: string;
+}
+
+export function normalizeE164(
+  raw: string | null | undefined,
+  options?: NormalizeE164Options,
+): string | null {
   if (raw == null) return null;
   let trimmed = String(raw).trim();
   if (!trimmed) return null;
@@ -98,6 +117,15 @@ export function normalizeE164(raw: string | null | undefined): string | null {
   // NANP shortcuts: 10 digits → assume +1; 11 digits with leading 1 → +<digits>.
   if (digits.length === 10) return "+1" + digits;
   if (digits.length === 11 && digits.startsWith("1")) return "+" + digits;
+
+  // Non-NANP fallback: with an explicit default country code, treat the
+  // input as a bare national number and prefix the CC, then enforce the
+  // E.164 8–15-digit range. Without a default CC we stay NANP-only.
+  const cc = options?.defaultCountryCode?.replace(/\D/g, "");
+  if (cc && digits.length > 0) {
+    const candidate = cc + digits;
+    if (candidate.length >= 8 && candidate.length <= 15) return "+" + candidate;
+  }
 
   return null;
 }

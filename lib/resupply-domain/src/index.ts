@@ -3,7 +3,25 @@
 
 export { RENEWAL_WINDOW_DAYS } from "./dispatcher-constants";
 
-export { normalizeE164 } from "./phone";
+export {
+  COMPLIANT_MINUTES_PER_NIGHT,
+  COMPLIANCE_NIGHT_RATIO,
+  WINDOW_DAYS,
+  ATTESTATION_HORIZON_DAYS,
+  CMS_COMPLIANT_NIGHTS,
+  findBestAdherenceWindow,
+  type AdherenceNight,
+  type AdherenceWindow,
+  type AdherenceResult,
+} from "./cms-adherence";
+
+export {
+  scoreAdherenceTarget,
+  type AdherenceLevel,
+  type AdherenceTargetScore,
+} from "./adherence-target";
+
+export { normalizeE164, type NormalizeE164Options } from "./phone";
 
 export { timezoneForUsState } from "./us-timezone";
 
@@ -47,6 +65,7 @@ export {
 
 export {
   evaluateThreshold,
+  breachPersists,
   THRESHOLD_COMPARISONS,
   THRESHOLD_MODES,
   type ThresholdComparison,
@@ -66,6 +85,7 @@ export {
   parsePeriodRange,
   computeGoalPace,
   type GoalPaceStatus,
+  type GoalPaceProjectionConfidence,
   type PeriodRange,
   type GoalPaceInput,
   type GoalPaceResult,
@@ -78,3 +98,121 @@ export {
   type ChannelEconomics,
   type LtvCacReport,
 } from "./ltv-cac";
+
+export {
+  generateInstallmentSchedule,
+  computePlanSummary,
+  derivePlanStatus,
+  type PlanFrequency,
+  type ScheduledInstallment,
+  type InstallmentStatus,
+  type InstallmentRow,
+  type PlanSummary,
+} from "./payment-plan";
+
+export {
+  evaluateSameOrSimilar,
+  SAME_OR_SIMILAR_STATUSES,
+  SAME_OR_SIMILAR_WINDOW_MONTHS,
+  type SameOrSimilarStatus,
+  type SameOrSimilarInput,
+  type SameOrSimilarResult,
+} from "./same-or-similar";
+
+export { prorateCents, type ProrationInput } from "./proration";
+
+export {
+  patientRespBreakdown,
+  PR_DEDUCTIBLE_CARC,
+  PR_COINSURANCE_CARC,
+  PR_COPAY_CARC,
+  type EraAdjustment,
+  type EraClaimAdjustments,
+  type PatientRespBreakdown,
+} from "./era-patient-responsibility";
+
+export {
+  validateSwoCompleteness,
+  isSwoComplete,
+  type SwoInputs,
+  type SwoValidationError,
+} from "./written-order";
+
+export {
+  buildVerificationWorklist,
+  classifyEligibilityRecency,
+  DEFAULT_ELIGIBILITY_STALE_DAYS,
+  DEFAULT_ELIGIBILITY_TERMINATION_LOOKAHEAD_DAYS,
+  type CoverageInput,
+  type VerificationStatus,
+  type VerificationWorkItem,
+  type VerificationWorklist,
+} from "./eligibility-recheck";
+
+export {
+  deriveSecondaryCob,
+  filterSecondaryEligible,
+  type CobDerivation,
+  type CobIneligibleReason,
+  type EligibleCandidate,
+  type EligibleItem,
+  type PrimaryClaimTotals,
+  type SecondaryCob,
+} from "./secondary-cob";
+
+export {
+  pickCappedRentalModifiers,
+  decideCappedRentalAdvance,
+  CAPPED_RENTAL_KX_HCPCS,
+  CAPPED_RENTAL_CYCLE_DAYS,
+  type CappedRentalAction,
+  type CappedRentalAdvanceInput,
+  type CappedRentalAdvanceDecision,
+} from "./capped-rental";
+
+export {
+  ruleApplies,
+  resolveModifiersFromRules,
+  buildAbnScope,
+  abnCoversHcpcs,
+  MODIFIER_CONDITIONS,
+  type PayerModifierCondition,
+  type ModifierRuleContext,
+  type ModifierRuleRow,
+  type AbnScope,
+} from "./payer-modifiers";
+
+export {
+  classifyExpiry,
+  headsUpSeverity,
+  PRIOR_AUTH_HEADS_UP_DAYS,
+  DWO_HEADS_UP_DAYS,
+  HEADS_UP_CRITICAL_DAYS,
+  type HeadsUpSeverity,
+  type ExpiryState,
+  type ExpiryClassification,
+} from "./authorization-expiry";
+
+export {
+  classifyCustomerRecency,
+  CUSTOMER_LAPSED_DAYS,
+  WINBACK_COOLDOWN_DAYS,
+  CUSTOMER_ACTIVE_LOOKBACK_DAYS,
+  type CustomerRecency,
+  type CustomerRecencyThresholds,
+} from "./customer-recency";
+
+export {
+  COMFORT_GUARANTEE_DAYS,
+  isWithinComfortGuarantee,
+  evaluateAutoApprovalRules,
+  formatAutoApprovalNote,
+  AUTO_APPROVE_PRIOR_RETURN_CAP,
+  AUTO_APPROVE_DEFECTIVE_MAX_AGE_DAYS,
+  AUTO_APPROVE_WRONG_ITEM_MAX_AGE_DAYS,
+  AUTO_APPROVE_ORDER_VALUE_CAP_CENTS,
+  type ShopReturnReason,
+  type AutoApprovalRule,
+  type AutoApprovalDecision,
+  type AutoApprovalInput,
+} from "./return-window";

@@ -138,4 +138,102 @@ describe("resolveResupplyEntitlement", () => {
     });
     expect(r.eligible).toBe(true);
   });
+
+  describe("bad reference data must not silently authorize a dispense", () => {
+    it("does not mark a just-dispensed patient eligible on a NaN interval", () => {
+      // Un-clamped, NaN would make eligibleOn an Invalid Date → tooSoon
+      // false → silently eligible. Clamped to 0 it is deterministic and
+      // explainable (no interval gate), never an Invalid-Date artifact.
+      const r = resolveResupplyEntitlement(
+        baseInput({
+          lastFulfilledAt: daysBefore(NOW, 1),
+          minIntervalDays: Number.NaN,
+        }),
+      );
+      expect(Number.isNaN(r.eligibleOn.getTime())).toBe(false);
+      expect(r.daysUntilEligible).toBe(0);
+    });
+
+    it("clamps a negative interval to 0 rather than the past", () => {
+      const r = resolveResupplyEntitlement(
+        baseInput({
+          lastFulfilledAt: daysBefore(NOW, 1),
+          minIntervalDays: -30,
+        }),
+      );
+      expect(r.eligibleOn.getTime()).toBe(daysBefore(NOW, 1).getTime());
+    });
+
+    it("clamps an Infinity quantity cap to 0 (no quantity allowed)", () => {
+      const r = resolveResupplyEntitlement(
+        baseInput({
+          maxQuantityPerPeriod: Number.POSITIVE_INFINITY,
+          requestedQuantity: 1,
+        }),
+      );
+      expect(r.status).toBe("quantity_exceeded");
+      expect(r.maxQuantityNow).toBe(0);
+    });
+  });
+
+  describe("graceDays aligns the interval gate with the ship window", () => {
+    it("opens the interval gate graceDays early", () => {
+      // Dispensed 12 days ago, 15-day interval → normally 3 days to go,
+      // but a 5-day grace clears it now.
+      const r = resolveResupplyEntitlement(
+        baseInput({ lastFulfilledAt: daysBefore(NOW, 12), graceDays: 5 }),
+      );
+      expect(r.eligible).toBe(true);
+      expect(r.daysUntilEligible).toBe(0);
+    });
+
+    it("never pushes the effective interval below zero", () => {
+      const r = resolveResupplyEntitlement(
+        baseInput({ lastFulfilledAt: daysBefore(NOW, 1), graceDays: 999 }),
+      );
+      expect(r.eligibleOn.getTime()).toBe(daysBefore(NOW, 1).getTime());
+    });
+  });
+
+  describe("quantityEligibleOn dates the quantity gate when possible", () => {
+    it("returns the date the earliest in-period dispense rolls off", () => {
+      const earliest = daysBefore(NOW, 10);
+      const r = resolveResupplyEntitlement(
+        baseInput({
+          lastFulfilledAt: daysBefore(NOW, 20), // interval already open
+          quantityInPeriod: 2, // cap reached
+          requestedQuantity: 1,
+          earliestDispenseInPeriodAt: earliest,
+        }),
+      );
+      expect(r.status).toBe("quantity_exceeded");
+      expect(r.quantityEligibleOn?.getTime()).toBe(
+        new Date(earliest.getTime() + 30 * 24 * 60 * 60 * 1000).getTime(),
+      );
+      expect(r.reason).toContain("frees up on");
+    });
+
+    it("is null when the earliest dispense wasn't supplied", () => {
+      const r = resolveResupplyEntitlement(
+        baseInput({
+          lastFulfilledAt: daysBefore(NOW, 20),
+          quantityInPeriod: 2,
+        }),
+      );
+      expect(r.status).toBe("quantity_exceeded");
+      expect(r.quantityEligibleOn).toBeNull();
+    });
+
+    it("is null when quantity is not the binding constraint", () => {
+      const r = resolveResupplyEntitlement(
+        baseInput({
+          lastFulfilledAt: daysBefore(NOW, 5), // too soon dominates
+          quantityInPeriod: 2,
+          earliestDispenseInPeriodAt: daysBefore(NOW, 5),
+        }),
+      );
+      expect(r.status).toBe("too_soon");
+      expect(r.quantityEligibleOn).toBeNull();
+    });
+  });
 });

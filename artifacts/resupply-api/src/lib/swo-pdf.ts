@@ -41,6 +41,18 @@
 
 import type PDFKit from "pdfkit";
 
+import {
+  validateSwoCompleteness,
+  type SwoValidationError,
+} from "@workspace/resupply-domain";
+
+// Re-export the pure completeness rule + its error type from the shared
+// domain module so existing importers (the route, tests) keep their
+// `./swo-pdf` import path. The validation RULE lives in
+// @workspace/resupply-domain (ADR 008) so the SPA can pre-flight the same
+// fields; all pdfkit rendering stays here.
+export { validateSwoCompleteness, type SwoValidationError };
+
 // Layout constants — same as fax/document.ts so the visual style
 // matches across our outbound clinical documents.
 const MARGIN = 72;
@@ -101,11 +113,6 @@ export interface SwoInputs {
   supplierName: string;
 }
 
-export interface SwoValidationError {
-  field: string;
-  message: string;
-}
-
 /**
  * Validate that the inputs carry the fields CMS requires on the
  * standardized SWO. Returns an array of missing-field errors;
@@ -114,42 +121,14 @@ export interface SwoValidationError {
  * The route turns a non-empty result into a 422 with the issue list,
  * so the CSR sees "fill in HCPCS code and link a provider" instead of
  * a confusing 500 from the PDF library.
+ *
+ * Thin wrapper over the pure {@link validateSwoCompleteness} rule in
+ * @workspace/resupply-domain — kept under this name + import path so the
+ * route and tests are unaffected. The full {@link SwoInputs} is wider than
+ * the domain rule needs and is structurally accepted as-is.
  */
 export function validateSwoInputs(inputs: SwoInputs): SwoValidationError[] {
-  const errors: SwoValidationError[] = [];
-  if (!inputs.patient.legalFirstName || !inputs.patient.legalLastName) {
-    errors.push({
-      field: "patient",
-      message: "Patient legal name is required.",
-    });
-  }
-  if (!inputs.patient.dateOfBirth) {
-    errors.push({
-      field: "patient.dateOfBirth",
-      message: "Patient date of birth is required.",
-    });
-  }
-  if (!inputs.prescription.hcpcsCode) {
-    errors.push({
-      field: "prescription.hcpcsCode",
-      message:
-        "HCPCS code is required on the prescription before an SWO can be generated.",
-    });
-  }
-  if (!inputs.provider.npi || !/^\d{10}$/.test(inputs.provider.npi)) {
-    errors.push({
-      field: "provider.npi",
-      message:
-        "A provider with a 10-digit NPI must be linked to the prescription.",
-    });
-  }
-  if (!inputs.provider.legalName) {
-    errors.push({
-      field: "provider.legalName",
-      message: "Provider legal name is required.",
-    });
-  }
-  return errors;
+  return validateSwoCompleteness(inputs);
 }
 
 /**

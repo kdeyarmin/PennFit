@@ -32,6 +32,7 @@ import {
   sendWithRetry,
 } from "@workspace/resupply-ai";
 import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
+import { COMPLIANT_MINUTES_PER_NIGHT } from "@workspace/resupply-domain";
 
 import {
   DEFAULT_ANTHROPIC_MODEL_CHAT,
@@ -583,7 +584,7 @@ async function assembleContext(
     .filter((v) => Number.isFinite(v));
   const maxLeak = leakVals.length ? Math.round(Math.max(...leakVals)) : null;
   const compliantNights = withData.filter(
-    (n) => (n.usage_minutes ?? 0) >= 240,
+    (n) => (n.usage_minutes ?? 0) >= COMPLIANT_MINUTES_PER_NIGHT,
   ).length;
   return {
     patient: {

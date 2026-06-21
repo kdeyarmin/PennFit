@@ -24,6 +24,12 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { getOrgScopedClient } from "@workspace/resupply-db";
+import {
+  classifyExpiry,
+  type ExpiryState,
+  type HeadsUpSeverity,
+  PRIOR_AUTH_HEADS_UP_DAYS,
+} from "@workspace/resupply-domain";
 
 import { requirePermission } from "../../middlewares/requireAdmin";
 
@@ -68,6 +74,14 @@ interface BucketRow {
   mcoSlaTargetDate: string | null;
   daysToTarget: number | null;
   daysToExpiry: number | null;
+  /** Sweep-consistent expiry classification of `approvedThrough` against
+   *  the prior-auth heads-up windows (the same rule the expiry sweep
+   *  alerts on), so the queue badge and the alert agree. */
+  expiryState: ExpiryState;
+  /** Severity when expiring/expired; null when ok. */
+  expirySeverity: HeadsUpSeverity | null;
+  /** The exact heads-up window (days) the end date lands on, or null. */
+  expiryWindow: number | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -170,23 +184,33 @@ router.get(
     if (draftsErr) throw draftsErr;
 
     function shape(rows: PaRow[] | null): BucketRow[] {
-      return (rows ?? []).map((r) => ({
-        id: r.id,
-        patientId: r.patient_id,
-        payerName: r.payer_name,
-        hcpcsCode: r.hcpcs_code,
-        status: r.status,
-        authNumber: r.auth_number,
-        submittedAt: r.submitted_at,
-        decisionAt: r.decision_at,
-        approvedThrough: r.approved_through,
-        mcoSlaStatus: r.mco_sla_status,
-        mcoSlaTargetDate: r.mco_sla_target_date,
-        daysToTarget: daysBetween(r.mco_sla_target_date, now),
-        daysToExpiry: daysBetween(r.approved_through, now),
-        createdAt: r.created_at,
-        updatedAt: r.updated_at,
-      }));
+      return (rows ?? []).map((r) => {
+        const expiry = classifyExpiry(
+          r.approved_through,
+          todayIso,
+          PRIOR_AUTH_HEADS_UP_DAYS,
+        );
+        return {
+          id: r.id,
+          patientId: r.patient_id,
+          payerName: r.payer_name,
+          hcpcsCode: r.hcpcs_code,
+          status: r.status,
+          authNumber: r.auth_number,
+          submittedAt: r.submitted_at,
+          decisionAt: r.decision_at,
+          approvedThrough: r.approved_through,
+          mcoSlaStatus: r.mco_sla_status,
+          mcoSlaTargetDate: r.mco_sla_target_date,
+          daysToTarget: daysBetween(r.mco_sla_target_date, now),
+          daysToExpiry: daysBetween(r.approved_through, now),
+          expiryState: expiry.state,
+          expirySeverity: expiry.severity,
+          expiryWindow: expiry.matchedWindow,
+          createdAt: r.created_at,
+          updatedAt: r.updated_at,
+        };
+      });
     }
 
     const atRiskRows = shape(atRisk);

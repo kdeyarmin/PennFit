@@ -18,123 +18,37 @@
 // money + ids only — never patient detail.
 
 import type { OrgScopedClient } from "@workspace/resupply-db";
+import {
+  deriveSecondaryCob,
+  filterSecondaryEligible,
+  type CobDerivation,
+  type CobIneligibleReason,
+  type EligibleCandidate,
+  type EligibleItem,
+  type PrimaryClaimTotals,
+  type SecondaryCob,
+} from "@workspace/resupply-domain";
+
+// The pure COB math (`deriveSecondaryCob` / `filterSecondaryEligible`) +
+// its value types now live in @workspace/resupply-domain (ADR 008). Re-export
+// the locally-imported bindings so existing importers — including
+// routes/admin/secondary-claims.ts, which re-exports them in turn — keep
+// their `./secondary-claim-generator` import path unchanged. The
+// DB-touching claim-row builder below imports `deriveSecondaryCob` directly.
+// Values and types are split into separate clauses (a `type` modifier inside
+// a value `export {}` can make some transpilers elide the whole clause as
+// type-only, dropping the runtime binding).
+export { deriveSecondaryCob, filterSecondaryEligible };
+export type {
+  CobDerivation,
+  CobIneligibleReason,
+  EligibleCandidate,
+  EligibleItem,
+  PrimaryClaimTotals,
+  SecondaryCob,
+};
 
 type SupabaseClient = OrgScopedClient;
-
-export interface PrimaryClaimTotals {
-  status: string;
-  payer_sequence?: string | null;
-  total_billed_cents: number;
-  total_allowed_cents: number;
-  total_paid_cents: number;
-  patient_responsibility_cents: number;
-  secondary_coverage_id: string | null;
-}
-
-export interface SecondaryCob {
-  primaryPaidCents: number;
-  contractualCents: number;
-  patientRespCents: number;
-  /** What the primary left for the secondary to consider. */
-  billableToSecondaryCents: number;
-}
-
-export type CobIneligibleReason =
-  | "not_primary"
-  | "no_secondary_coverage"
-  | "primary_not_paid"
-  | "no_balance";
-
-export type CobDerivation =
-  | { eligible: true; cob: SecondaryCob }
-  | { eligible: false; reason: CobIneligibleReason };
-
-/**
- * Pure: derive the COB amounts a secondary claim needs from the primary's
- * adjudicated totals. Slice 1 handles the canonical case — the primary
- * PAID part of the claim and left a patient-responsibility balance the
- * secondary may cover. Denied-primary COB (full balance forwarded) is a
- * follow-up. No I/O — unit-tested directly.
- */
-export function deriveSecondaryCob(p: PrimaryClaimTotals): CobDerivation {
-  if ((p.payer_sequence ?? "primary") !== "primary") {
-    return { eligible: false, reason: "not_primary" };
-  }
-  if (!p.secondary_coverage_id) {
-    return { eligible: false, reason: "no_secondary_coverage" };
-  }
-  if (p.status !== "paid") {
-    return { eligible: false, reason: "primary_not_paid" };
-  }
-  const contractualCents = Math.max(
-    0,
-    p.total_billed_cents - p.total_allowed_cents,
-  );
-  const patientRespCents = Math.max(0, p.patient_responsibility_cents);
-  if (patientRespCents <= 0) {
-    return { eligible: false, reason: "no_balance" };
-  }
-  return {
-    eligible: true,
-    cob: {
-      primaryPaidCents: p.total_paid_cents,
-      contractualCents,
-      patientRespCents,
-      billableToSecondaryCents: patientRespCents,
-    },
-  };
-}
-
-export interface EligibleCandidate {
-  id: string;
-  patient_id: string;
-  payer_name: string;
-  total_billed_cents: number;
-  total_paid_cents: number;
-  patient_responsibility_cents: number;
-  status: string;
-  payer_sequence?: string | null;
-  secondary_coverage_id: string | null;
-  total_allowed_cents: number;
-}
-
-export interface EligibleItem {
-  claimId: string;
-  patientId: string;
-  primaryPayerName: string;
-  billedCents: number;
-  primaryPaidCents: number;
-  patientResponsibilityCents: number;
-}
-
-/**
- * Pure: filter the candidate primaries to those eligible for a secondary
- * claim AND not already having one. `existingSecondaryPrimaryIds` is the
- * set of primary-claim ids that already spawned a secondary.
- */
-export function filterSecondaryEligible(
-  candidates: EligibleCandidate[],
-  existingSecondaryPrimaryIds: ReadonlySet<string>,
-): EligibleItem[] {
-  const out: EligibleItem[] = [];
-  for (const c of candidates) {
-    if (existingSecondaryPrimaryIds.has(c.id)) continue;
-    const d = deriveSecondaryCob(c);
-    if (!d.eligible) continue;
-    out.push({
-      claimId: c.id,
-      patientId: c.patient_id,
-      primaryPayerName: c.payer_name,
-      billedCents: c.total_billed_cents,
-      primaryPaidCents: d.cob.primaryPaidCents,
-      patientResponsibilityCents: d.cob.patientRespCents,
-    });
-  }
-  // Biggest outstanding balance first — most recoverable.
-  return out.sort(
-    (a, b) => b.patientResponsibilityCents - a.patientResponsibilityCents,
-  );
-}
 
 export const SECONDARY_CLAIM_SELECT =
   "id, patient_id, payer_name, status, payer_sequence, secondary_coverage_id, " +

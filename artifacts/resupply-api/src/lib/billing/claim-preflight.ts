@@ -22,6 +22,12 @@ import {
   resolveSeedOrgId,
   type OrgScopedClient,
 } from "@workspace/resupply-db";
+import {
+  CMS_COMPLIANT_NIGHTS,
+  COMPLIANT_MINUTES_PER_NIGHT,
+  evaluateSameOrSimilar,
+  timelyFilingStatus,
+} from "@workspace/resupply-domain";
 
 type ClaimLineRow =
   Database["resupply"]["Tables"]["insurance_claim_line_items"]["Row"];
@@ -77,7 +83,8 @@ export type PreflightFixAction =
   | { kind: "set_referring_provider"; claimId: string }
   | { kind: "add_line_item"; claimId: string }
   | { kind: "edit_line_item"; claimId: string; lineId: string }
-  | { kind: "edit_address"; patientId: string };
+  | { kind: "edit_address"; patientId: string }
+  | { kind: "record_same_or_similar"; patientId: string; hcpcs: string };
 
 export interface PreflightSummary {
   /** True iff no `error`-severity items. */
@@ -325,19 +332,40 @@ export async function preflightClaim(
       }
 
       // ── Timely filing window (Phase 12) ───────────────────────
-      if (payer.timely_filing_days != null && claim.date_of_service) {
-        const dos = toUtcDateEpochMs(new Date(claim.date_of_service));
-        const today = toUtcDateEpochMs(new Date());
-        const ageDays = Math.floor((today - dos) / MS_PER_DAY);
-        const remaining = payer.timely_filing_days - ageDays;
-        if (remaining < 0) {
+      // Countdown comes from the shared domain rule (timelyFilingStatus),
+      // the same one the /admin/billing/timely-filing surface and the
+      // auto-submit engine use, so the preflight badge can't drift from
+      // them. We keep the two "can't compute" sub-cases distinct (no
+      // window configured vs no date of service) for an actionable detail.
+      if (payer.timely_filing_days == null) {
+        items.push({
+          key: "timely_filing",
+          severity: "warning",
+          label: "Timely-filing window not configured",
+          detail: `${payer.display_name} is missing timely_filing_days in the payer profile.`,
+        });
+      } else if (!claim.date_of_service) {
+        items.push({
+          key: "timely_filing",
+          severity: "warning",
+          label: "Date of service missing",
+          detail:
+            "Claim is missing date_of_service, so timely filing cannot be calculated.",
+        });
+      } else {
+        const tf = timelyFilingStatus({
+          dateOfService: claim.date_of_service,
+          filingWindowDays: payer.timely_filing_days,
+        });
+        const remaining = tf.daysRemaining ?? 0;
+        if (tf.status === "overdue") {
           items.push({
             key: "timely_filing",
             severity: "error",
             label: "Past the timely-filing deadline",
             detail: `${payer.display_name} requires submission within ${payer.timely_filing_days} days of DOS; this claim is ${-remaining} day(s) past.`,
           });
-        } else if (remaining <= 14) {
+        } else if (tf.status === "due_soon") {
           items.push({
             key: "timely_filing",
             severity: "warning",
@@ -352,21 +380,6 @@ export async function preflightClaim(
             detail: `${payer.display_name} timely-filing window: ${payer.timely_filing_days} days from DOS.`,
           });
         }
-      } else if (payer.timely_filing_days == null) {
-        items.push({
-          key: "timely_filing",
-          severity: "warning",
-          label: "Timely-filing window not configured",
-          detail: `${payer.display_name} is missing timely_filing_days in the payer profile.`,
-        });
-      } else {
-        items.push({
-          key: "timely_filing",
-          severity: "warning",
-          label: "Date of service missing",
-          detail:
-            "Claim is missing date_of_service, so timely filing cannot be calculated.",
-        });
       }
 
       // ── Required modifiers (Phase 12) ─────────────────────────
@@ -625,6 +638,58 @@ export async function preflightClaim(
         .map((l: ClaimLineRow) => `${l.hcpcs_code} × ${l.quantity}`)
         .join(", "),
     });
+
+    // ── Same-or-similar (Medicare 5-yr reasonable useful lifetime) ──
+    // Activates the medicare_same_or_similar_checks cache (previously
+    // stored but never read): when a HETS check on file shows a same/
+    // similar item for one of this claim's HCPCS still inside its RUL,
+    // surface a non-blocking denial-risk warning. The pure domain rule
+    // re-confirms the window so a stale "active" check whose lifetime has
+    // since lapsed does NOT warn. Warning-only — never blocks submit.
+    const hcpcsOnClaim = Array.from(
+      new Set(
+        (lines as ClaimLineRow[])
+          .map((l) => l.hcpcs_code)
+          .filter((c): c is string => !!c),
+      ),
+    );
+    if (hcpcsOnClaim.length > 0) {
+      const { data: sosChecks } = await supabase
+        .from("medicare_same_or_similar_checks")
+        .select("hcpcs_code, status, last_dispense_on, checked_at")
+        .eq("patient_id", claim.patient_id)
+        .in("hcpcs_code", hcpcsOnClaim)
+        .eq("status", "active")
+        .order("checked_at", { ascending: false });
+      type SosCheckRow = {
+        hcpcs_code: string | null;
+        last_dispense_on: string | null;
+      };
+      const sosRows = (sosChecks ?? []) as SosCheckRow[];
+      for (const code of hcpcsOnClaim) {
+        const latest = sosRows.find((c) => c.hcpcs_code === code);
+        if (!latest) continue;
+        const win = evaluateSameOrSimilar({
+          lastDispenseOn: latest.last_dispense_on,
+        });
+        if (win.blocked) {
+          items.push({
+            key: "same_or_similar",
+            severity: "warning",
+            label: `Same-or-similar equipment on file (${code})`,
+            detail: win.clearsOn
+              ? `A same/similar item is within its 5-year reasonable useful lifetime (clears ${win.clearsOn}). Medicare will likely deny — confirm before submitting.`
+              : `A same/similar item is recorded active for ${code}. Medicare will likely deny — confirm before submitting.`,
+            fixAction: {
+              kind: "record_same_or_similar",
+              patientId: claim.patient_id,
+              hcpcs: code,
+            },
+          });
+          break; // one warning is enough to prompt the CSR
+        }
+      }
+    }
 
     // Each line should have a billed amount > 0.
     const zeroBilled = lines.filter(
@@ -1086,14 +1151,6 @@ function formatCents(cents: number): string {
   return `${sign}$${d}.${c.toString().padStart(2, "0")}`;
 }
 
-function toUtcDateEpochMs(value: Date): number {
-  return Date.UTC(
-    value.getUTCFullYear(),
-    value.getUTCMonth(),
-    value.getUTCDate(),
-  );
-}
-
 async function isPatientCompliant(
   supabase: OrgScopedClient,
   patientId: string,
@@ -1109,7 +1166,7 @@ async function isPatientCompliant(
     .limit(60);
   const compliant = (nights ?? []).filter(
     (n: Database["resupply"]["Tables"]["patient_therapy_nights"]["Row"]) =>
-      (n.usage_minutes ?? 0) >= 240,
+      (n.usage_minutes ?? 0) >= COMPLIANT_MINUTES_PER_NIGHT,
   ).length;
-  return compliant >= 21;
+  return compliant >= CMS_COMPLIANT_NIGHTS;
 }

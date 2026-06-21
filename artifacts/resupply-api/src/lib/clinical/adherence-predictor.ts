@@ -10,6 +10,11 @@
 // is stable so the swap is a one-place change.
 
 import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
+import {
+  COMPLIANT_MINUTES_PER_NIGHT as COMPLIANT_MINUTES,
+  CMS_COMPLIANT_NIGHTS,
+  WINDOW_DAYS as CMS_WINDOW_DAYS,
+} from "@workspace/resupply-domain";
 
 import { logger } from "../logger";
 import {
@@ -74,10 +79,6 @@ export function buildMlAdherenceScore(
     modelVersion: ADHERENCE_ML_MODEL_VERSION,
   };
 }
-
-const COMPLIANT_MINUTES = 240;
-const CMS_COMPLIANT_NIGHTS = 21;
-const CMS_WINDOW_DAYS = 30;
 
 // Heuristic weights. Each factor moves P(compliant) in one direction;
 // the floor + ceiling keep the score off the rails for edge cases.

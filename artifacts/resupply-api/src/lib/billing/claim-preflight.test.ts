@@ -173,6 +173,44 @@ describe("preflightClaim", () => {
     expect(out.items.some((i) => i.key.startsWith("denial_risk:"))).toBe(false);
   });
 
+  it("warns (non-blocking) when a same-or-similar item is still in its RUL", async () => {
+    stageHappyPath();
+    const recent = new Date(Date.now() - 30 * MS_PER_DAY)
+      .toISOString()
+      .slice(0, 10);
+    stageSupabaseResponse("medicare_same_or_similar_checks", "select", {
+      data: [
+        {
+          hcpcs_code: "E0601",
+          status: "active",
+          last_dispense_on: recent,
+          checked_at: "2026-06-01T00:00:00Z",
+        },
+      ],
+    });
+    const out = await preflightClaim(CLAIM_ID);
+    const item = out.items.find((i) => i.key === "same_or_similar");
+    expect(item?.severity).toBe("warning");
+    expect(item?.detail).toContain("reasonable useful lifetime");
+    expect(out.readyToSubmit).toBe(true); // warning never blocks submit
+  });
+
+  it("does not warn when the recorded active check's RUL has since lapsed", async () => {
+    stageHappyPath();
+    stageSupabaseResponse("medicare_same_or_similar_checks", "select", {
+      data: [
+        {
+          hcpcs_code: "E0601",
+          status: "active",
+          last_dispense_on: "2018-01-01", // > 5 years ago — RUL cleared
+          checked_at: "2018-02-01T00:00:00Z",
+        },
+      ],
+    });
+    const out = await preflightClaim(CLAIM_ID);
+    expect(out.items.find((i) => i.key === "same_or_similar")).toBeUndefined();
+  });
+
   it("flags missing referring provider as an error", async () => {
     stageHappyPath(
       { referring_provider_id: null },

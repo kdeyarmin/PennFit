@@ -98,15 +98,26 @@ export async function resolveSkuEntitlement(
       : null;
 
   const periodStart = now.getTime() - hcpcs.period_days * DAY_MS;
-  const quantityInPeriod = rows
-    .filter(
-      (r) =>
-        r.created_at != null && new Date(r.created_at).getTime() >= periodStart,
-    )
-    .reduce(
-      (sum, r) => sum + (typeof r.quantity === "number" ? r.quantity : 1),
-      0,
-    );
+  const inPeriodRows = rows.filter(
+    (r) =>
+      r.created_at != null && new Date(r.created_at).getTime() >= periodStart,
+  );
+  const quantityInPeriod = inPeriodRows.reduce(
+    (sum, r) => sum + (typeof r.quantity === "number" ? r.quantity : 1),
+    0,
+  );
+  // Earliest dispense still inside the rolling period — lets the domain
+  // engine date when the quantity cap next frees a unit (quantityEligibleOn).
+  const earliestDispenseInPeriodAt =
+    inPeriodRows.length > 0
+      ? new Date(
+          Math.min(
+            ...inPeriodRows.map((r) =>
+              new Date(r.created_at as string).getTime(),
+            ),
+          ),
+        )
+      : null;
 
   const result = resolveResupplyEntitlement({
     lastFulfilledAt,
@@ -115,6 +126,7 @@ export async function resolveSkuEntitlement(
     periodDays: hcpcs.period_days,
     quantityInPeriod,
     requestedQuantity,
+    earliestDispenseInPeriodAt,
     now,
   });
 

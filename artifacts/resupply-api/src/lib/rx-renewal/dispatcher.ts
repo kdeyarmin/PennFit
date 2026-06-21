@@ -25,6 +25,7 @@ import {
 } from "@workspace/resupply-telecom";
 
 import { renderMessage } from "@workspace/resupply-templates";
+import { RENEWAL_WINDOW_DAYS } from "@workspace/resupply-domain";
 
 import { isOutsideSmsSendWindow } from "../comm-prefs";
 import { logger } from "../logger";
@@ -39,10 +40,11 @@ import {
   rxRenewalText,
 } from "./renderers";
 
-/** How far before expiry the renewal nudge fires. Industry default
- *  is 30 days — long enough for a physician callback, short enough
- *  that the patient feels the urgency. */
-export const RENEWAL_WINDOW_DAYS = 30;
+/** How far before expiry the renewal nudge fires. The canonical value
+ *  lives in `@workspace/resupply-domain` so this dispatcher and the
+ *  `ops-status` "Eligible now" badge stay in lockstep; re-exported here
+ *  for back-compat with existing importers of this path. */
+export { RENEWAL_WINDOW_DAYS };
 /** Per-run cap to keep the dispatcher response time bounded. */
 export const PER_RUN_CAP = 50;
 
