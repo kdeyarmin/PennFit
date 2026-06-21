@@ -64,12 +64,12 @@ contrast / "don't rebuild").
 
 ### Lens A — Recurring resupply revenue
 
-| Capability                                    | Status              | Evidence                                                                                                                                                                                                                           | Owner impact                                                                                                                                                                                  |
-| --------------------------------------------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Resupply-due → order/draft action**         | **OPEN — #1 lever** | `routes/admin/therapy-resupply.ts` lists due/overdue device-driven items (summary / opportunities / CSV) with **no "create order" action**                                                                                         | The "who's due" worklist is read-only; every order is a manual hand-off. Converting it to one-click (entitlement-gated, queued for CSR review) is the single biggest recurring-revenue lever. |
-| **Dormant lifecycle programs**                | **DORMANT**         | review-request cron absent (`routes/admin/shop-review-requests.ts`); abandoned-cart cron `RESUPPLY_CART_ABANDONMENT_CRON_ENABLED` OFF; auto-reminder enrollment seeded off (`migrations/0174…`, verify in `/admin/control-center`) | Highest ROI is a one-time **consent/CAN-SPAM + staffing decision**, then flip. No engineering for the first wave.                                                                             |
-| **Membership / subscription tier (cash-pay)** | **PARTIAL**         | `routes/admin/shop-membership.ts` — CSR-set only; Stripe subscription webhooks never reconcile `membership_tier`; no storefront join flow                                                                                          | Recurring cash-pay revenue + retention left on the table; a lapsed sub keeps its tier forever.                                                                                                |
-| **Multi-channel voice escalation**            | **PARTIAL**         | reminder/escalation workers downgrade a configured `voice` first-touch to SMS/email; bulk voice is not cron-scheduled                                                                                                              | Multi-channel cadence (SMS→email→voice) is how vendors lift connection 15%→45%.                                                                                                               |
+| Capability                                         | Status              | Evidence                                                                                                                                                                                                                                                                                       | Owner impact                                                                                                                                                                                  |
+| -------------------------------------------------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Resupply-due → order/draft action**              | **OPEN — #1 lever** | `routes/admin/therapy-resupply.ts` lists due/overdue device-driven items (summary / opportunities / CSV) with **no "create order" action**                                                                                                                                                     | The "who's due" worklist is read-only; every order is a manual hand-off. Converting it to one-click (entitlement-gated, queued for CSR review) is the single biggest recurring-revenue lever. |
+| **Built-but-gated lifecycle / enforcement levers** | **DORMANT (mix)**   | See the **Activation state** table below — auto-reminder enrollment, the cart-abandonment dispatcher, email auto-reply, and claim auto-submit are already **ON** (migrations 0325 / 0149); the three enforcement flags + autopay + the voice tier + the cart/review recurring crons remain off | Highest-ROI remaining work is a **consent/staffing decision**, not engineering.                                                                                                               |
+| **Membership / subscription tier (cash-pay)**      | **PARTIAL**         | `routes/admin/shop-membership.ts` — CSR-set only; Stripe subscription webhooks never reconcile `membership_tier`; no storefront join flow                                                                                                                                                      | Recurring cash-pay revenue + retention left on the table; a lapsed sub keeps its tier forever.                                                                                                |
+| **Voice escalation tier (AI check-in call)**       | **DORMANT**         | built + flag-gated `reminder_escalation.voice` (migration 0395), seeded **OFF**; flips ON to make the reminder ladder SMS → email → **voice** → CSR, inside the patient's 9am–8pm local window                                                                                                 | Multi-channel cadence is how vendors lift connection ~15% → ~45%.                                                                                                                             |
 
 ### Lens B — Denials & faster cash
 
@@ -112,12 +112,111 @@ contrast / "don't rebuild").
 
 ---
 
+## Activation state — verified seeded flag/cron states (this session)
+
+The "activation, not engineering" headline rests on the **seeded** flag state in
+the migration ledger. `feature_flags` became **per-tenant** at migration 0350
+(PK re-keyed to `(org_id, key)`), and any flag can be toggled at runtime from
+`/admin/control-center` — so production may differ from the seed; confirm there.
+Verified against the migrations this session:
+
+| Lever                                               | Flag key                              | Seeded                         | Extra gate                                                             | Net today                                  |
+| --------------------------------------------------- | ------------------------------------- | ------------------------------ | ---------------------------------------------------------------------- | ------------------------------------------ |
+| Auto-reminder enrollment (cash-pay buyers)          | `storefront.auto_reminder_enrollment` | **ON** (0325, was OFF in 0174) | —                                                                      | **Active**                                 |
+| Inbound email auto-reply                            | `email.auto_reply`                    | **ON** (0325, was OFF in 0250) | —                                                                      | **Active**                                 |
+| Claim auto-submit                                   | `billing.auto_submit_claims`          | **ON** (0325, was OFF in 0215) | recurring schedule `CLAIMS_AUTOSUBMIT_CRON` (env, opt-in)              | Flag on; recurring schedule env-gated      |
+| Cart-abandonment recovery                           | `cart_abandonment.dispatcher`         | **ON** (0149)                  | recurring cron `RESUPPLY_CART_ABANDONMENT_CRON_ENABLED` (env, **OFF**) | Dispatcher on; recurring cron off          |
+| Entitlement enforcement (too-soon / over-cap block) | `resupply.entitlement_enforcement`    | **OFF** (0172)                 | fail-open                                                              | **Dormant** — denial prevention            |
+| Eligibility enforcement (dead-coverage block)       | `resupply.eligibility_enforcement`    | **OFF** (0185)                 | fail-open                                                              | **Dormant** — denial prevention            |
+| Continued-use (adherence) check                     | `resupply.usage_compliance_check`     | **OFF** (0300)                 | fail-open                                                              | **Dormant** — audit-risk denial prevention |
+| Patient autopay                                     | `billing.patient_autopay`             | **OFF** (0260)                 | + per-patient Stripe auth + `BILLING_PATIENT_AUTOPAY_CRON`             | **Dormant** — collections                  |
+| Payment-plan autocharge                             | `billing.payment_plan_autocharge`     | **OFF** (0255)                 | + `BILLING_PAYMENT_PLAN_AUTOCHARGE_CRON`                               | **Dormant** — collections                  |
+| Voice escalation tier (AI check-in call)            | `reminder_escalation.voice`           | **OFF** (0395)                 | voice path configured; 9am–8pm local window                            | **Dormant** — connection rate              |
+| Review-request emails                               | _(no flag)_                           | n/a                            | **no pg-boss cron** — dispatcher + admin button only (06-20 §5)        | Needs a cron to automate                   |
+
+**Read:** the revenue / CSR-cost levers (auto-reminder, cart-abandonment
+dispatcher, email auto-reply, claim auto-submit) are **already ON**. The
+remaining activation decisions are the three **enforcement** flags (denial
+prevention — the biggest unflipped lever; each is fail-open, so the downside of
+enabling is only an added CSR review step, never a stranded order),
+**autopay / payment-plan autocharge** (collections), and the **voice escalation
+tier** — plus wiring the cart-abandonment and review-request recurring
+schedules. None of these is an engineering project.
+
+---
+
+## Sizing & sequencing (engineering work only)
+
+Excludes the activation decisions above (hours, no engineering). Effort is rough
+dev-days for one engineer; impact is the owner metric moved.
+
+| Item                                               | Lens | Effort    | Impact                                                | Risk                                                                           |
+| -------------------------------------------------- | ---- | --------- | ----------------------------------------------------- | ------------------------------------------------------------------------------ |
+| Resupply-due → draft order action                  | A    | M (3–5d)  | Recurring-revenue capture (#1 lever)                  | Med — creates orders; mitigate with draft-only + entitlement gate + CSR review |
+| Carrier tracking webhook ingest                    | C    | M (3–5d)  | Auto fulfillment-state + auto-POD/follow-up; CSR time | Low — additive, fail-soft                                                      |
+| Collections-forecast `partially_paid` accuracy     | B    | S (1–2d)  | Correct owner cash view                               | Low — read-path only                                                           |
+| Secondary/COB auto-draft on 835 post               | B    | S (1–2d)  | Captures adjudicated-ready secondary balances         | Low — draft only; submit stays manual                                          |
+| Chargeback / dispute persistence                   | B    | S (1–2d)  | Stops missed dispute deadlines                        | Low — additive table + alert                                                   |
+| Appeals response / outcome / aging columns         | B    | S (1–2d)  | Appeal win-rate + aging visibility                    | Low — additive columns                                                         |
+| Inventory reservation / oversell guard             | C    | M (3–5d)  | Prevents cash-pay oversell                            | Med — touches checkout                                                         |
+| Membership tier ↔ Stripe webhook + join flow       | A    | M (3–5d)  | Recurring cash-pay + retention                        | Med — billing surface                                                          |
+| Multi-location / multi-tenant completion           | D    | L (weeks) | Growth ceiling (2nd branch / resale)                  | High — cross-cutting                                                           |
+| Referral-source CRM + adherence-to-referrer report | D    | L (weeks) | Referral growth + stickiness                          | Med — new domain                                                               |
+| Provider RTM dashboard                             | D    | L (weeks) | Referral stickiness + clinical value                  | Med — new surface                                                              |
+
+Suggested order: the four **S** RCM-accuracy items first (fast, low-risk, protect
+cash) → **resupply-due → draft order** (the revenue lever) → **carrier webhooks**
+→ then the strategic **L** builds once multi-tenant lands.
+
+---
+
+## Implementation sketches (top two follow-ups)
+
+### Resupply-due → draft order (Lens A, #1 lever)
+
+- **Reuse — the read side already exists:** `routes/admin/therapy-resupply.ts`
+  `buildOpportunities()` + the `therapy_resupply_*` RPCs (migration 0180) return
+  due items with `nextEligibleDate`; the entitlement engine
+  (`lib/resupply-domain/entitlement.ts`, `refill-window.ts`) and the SKU→HCPCS
+  map (`product_hcpcs_map`) already exist.
+- **Build:** `POST /admin/therapy-resupply/draft-orders` taking
+  `{ patientId, sku }[]` (or "all due ≤ N days") that, per item, runs the
+  **entitlement + refill-window** check and creates a **draft** episode /
+  fulfillment in the CSR review state — never an unattended shipment — mirroring
+  the per-item-isolation + roll-up summary shape shipped in this PR's batch-claim
+  route. Hold a too-soon/over-cap item behind `resupply.entitlement_enforcement`
+  (or a new `resupply.draft_orders` flag) rather than shipping it.
+- **Surface:** a "Create draft orders" bulk action on the Resupply
+  Opportunities page returning `{ created, heldTooSoon, skipped }`.
+- **Why this is low-risk:** draft-only + entitlement-gated + queued = no
+  unattended shipment; the CSR confirms through the existing fulfillment path.
+
+### Carrier tracking webhook ingest (Lens C)
+
+- **Reuse:** fulfillments already carry `shipped_at`/`delivered_at` and a carrier
+  label action (`routes/admin/xps-shipping.ts`); POD auto-send on delivery
+  (`lib/patient-packet/auto-send-on-delivery.ts`) and the delivery-follow-up jobs
+  already key off `delivered_at`.
+- **Build:** a signature-verified, fail-closed webhook
+  (`POST /resupply-api/webhooks/carrier`) that maps a tracking event → the
+  fulfillment (by tracking number) and stamps `shipped_at`/`delivered_at`,
+  advancing state and letting the existing POD/follow-up jobs fire on their own.
+  Start with one vendor (EasyPost or Shippo) behind a `read…ConfigOrNull()`
+  helper so it degrades when unconfigured — same fail-soft posture as the
+  integration adapters.
+- **Audit:** counts / status only — never tracking PII in logs (hard rule).
+
+---
+
 ## Prioritized recommendation
 
-1. **Run a dormant-lever activation pass** (Lens A) — the owner makes the
-   consent/staffing call, then flips auto-reminder enrollment, cart-abandonment,
-   review-requests, and (with CSR sign-off) the eligibility/entitlement
-   enforcement flags in `/admin/control-center`. **Highest ROI, ~0 engineering.**
+1. **Run a dormant-lever activation pass** (Lens A — see **Activation state**).
+   The revenue/CSR-cost levers are already ON; the remaining decisions are the
+   three **enforcement** flags (denial prevention, fail-open — biggest unflipped
+   lever) and **autopay / payment-plan autocharge** (collections), plus the
+   **voice escalation tier** and wiring the cart-abandonment / review-request
+   recurring schedules. Owner makes the consent/staffing call, then toggles in
+   `/admin/control-center`. **Highest ROI, ~0 engineering.**
 2. **Shipped in this PR** (Lens B/C): batch claim creation + backorder
    auto-clear (below).
 3. **Resupply-due → draft/batch order** (Lens A #1) — add a "create draft
