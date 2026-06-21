@@ -14,11 +14,39 @@ import {
 const PLATFORM_BILLING_SCOPE = "platform_tenant";
 
 // The standalone Virtual Mask Fitter per-fitting metered add-on (migrations
-// 0418/0419). Its overage is billed via a Stripe Billing Meter whose events
-// carry this name; the mask_fitter plan's subscription intrinsically
-// includes this add-on's metered price (it isn't an opt-in add-on).
-const FITTER_METERED_ADDON_CODE = "fitter_fitting_metered";
+// 0418/0419) reports usage via a Stripe Billing Meter whose events carry this
+// name; the mask_fitter plan's subscription intrinsically includes this
+// add-on's metered price (it isn't an opt-in add-on).
 export const FITTER_FITTING_METER_EVENT = "fitter_fitting";
+
+/**
+ * Whether usage-based OVERAGE billing for the STANDARD plan add-ons (SMS / AI
+ * / billing transactions — migration 0420) is enabled. OFF by default: with
+ * the flag unset those add-ons bill as the existing flat bundles and nothing
+ * about existing tenants changes. The fitter add-on (migration 0419) is
+ * intrinsically metered and NOT gated by this — it has no existing tenants.
+ */
+export function isMeteredOverageEnabled(): boolean {
+  return /^(1|true|yes|on)$/i.test(
+    process.env.PLATFORM_METERED_OVERAGE_ENABLED?.trim() ?? "",
+  );
+}
+
+/**
+ * Is this catalog row billed as metered RIGHT NOW? A row is metered-capable
+ * when `usage_type === 'metered'`. The fitter add-on (in-price free tier,
+ * `included_units` set) is always active; the standard overage add-ons
+ * (`included_units` NULL) are active only behind the flag, so the flat-bundle
+ * path stays the default.
+ */
+function meteredActive(row: {
+  usage_type?: string | null;
+  included_units?: number | null;
+}): boolean {
+  if (row.usage_type !== "metered") return false;
+  if (row.included_units != null) return true; // fitter-style (report-all)
+  return isMeteredOverageEnabled(); // overage-style (report-overage), gated
+}
 
 /**
  * Thrown when a tenant's stored Stripe customer/subscription was created on a
@@ -139,6 +167,11 @@ interface CatalogRow {
   included_units?: number | null;
   meter_event_name?: string | null;
   stripe_meter_id?: string | null;
+  // Per-unit overage rate as a decimal string (migration 0420), e.g. "7.5"
+  // for 7.5¢. Used for `included_units`-NULL (report-overage) metered prices;
+  // kept separate from `recurring_price_cents` (the flat-bundle price).
+  metered_unit_amount_decimal?: string | null;
+  usage_metric?: string | null;
 }
 
 interface EnsurePriceArgs {
@@ -202,27 +235,48 @@ async function ensureMeteredAddonPrice(
           metadata: priceMetadata(args.kind, args.row.code),
         });
 
-  // Graduated tiers: the first `included_units` each period at $0, then the
-  // per-unit overage. With a tiered scheme the unit price lives in the tiers,
-  // not a top-level `unit_amount`.
+  // Two shapes:
+  //   * `included_units` set (fitter, migration 0419) → a graduated tiered
+  //     price with that many free, then `amountCents` each; the app reports
+  //     ALL usage and Stripe applies the free tier.
+  //   * `included_units` NULL (standard overage add-ons, migration 0420) → a
+  //     simple per-unit metered price at `metered_unit_amount_decimal` cents;
+  //     the app reports only the OVERAGE beyond the plan's allowance.
   const included = args.row.included_units ?? 0;
-  const tiers =
+  const price =
     included > 0
-      ? [
-          { up_to: included, unit_amount: 0 },
-          { up_to: "inf" as const, unit_amount: args.amountCents },
-        ]
-      : [{ up_to: "inf" as const, unit_amount: args.amountCents }];
-
-  const price = await args.stripe.prices.create({
-    product: product.id,
-    currency: "usd",
-    recurring: { interval: "month", usage_type: "metered", meter: meterId },
-    billing_scheme: "tiered",
-    tiers_mode: "graduated",
-    tiers,
-    metadata: priceMetadata(args.kind, args.row.code),
-  });
+      ? await args.stripe.prices.create({
+          product: product.id,
+          currency: "usd",
+          recurring: {
+            interval: "month",
+            usage_type: "metered",
+            meter: meterId,
+          },
+          billing_scheme: "tiered",
+          tiers_mode: "graduated",
+          tiers: [
+            { up_to: included, unit_amount: 0 },
+            { up_to: "inf" as const, unit_amount: args.amountCents },
+          ],
+          metadata: priceMetadata(args.kind, args.row.code),
+        })
+      : await args.stripe.prices.create({
+          product: product.id,
+          currency: "usd",
+          recurring: {
+            interval: "month",
+            usage_type: "metered",
+            meter: meterId,
+          },
+          // Sub-cent rates (e.g. 7.5¢) need the decimal field; fall back to the
+          // whole-cent overage price when no decimal rate is stored. The SDK
+          // types this as a decimal.js `Decimal`, but the REST API takes a
+          // string (e.g. "7.5") — cast at the boundary.
+          unit_amount_decimal: (args.row.metered_unit_amount_decimal ??
+            String(args.amountCents)) as unknown as Stripe.Decimal,
+          metadata: priceMetadata(args.kind, args.row.code),
+        });
 
   await args.raw
     .schema("resupply")
@@ -238,44 +292,34 @@ async function ensureMeteredAddonPrice(
   return price.id;
 }
 
+type MeteredAddonRow = CatalogRow & { recurring_price_cents?: number | null };
+
 /**
- * Resolve (and Stripe-sync) the per-fitting metered price for the standalone
- * Virtual Mask Fitter plan, so the subscription build can attach it
- * intrinsically. Fail-soft: returns null if the add-on is missing.
+ * All metered catalog add-ons (`usage_type='metered'`), so the subscription
+ * build can attach each plan's intrinsic metered overage items. Fail-soft:
+ * returns [] on error.
  */
-async function ensureFitterMeteredPrice(args: {
-  stripe: Stripe;
-  raw: RawClient;
-  accountId: string;
-  mode: PlatformBillingStripeMode;
-}): Promise<string | null> {
-  const { data, error } = await args.raw
+async function meteredOverageAddons(
+  raw: RawClient,
+): Promise<MeteredAddonRow[]> {
+  const { data, error } = await raw
     .schema("resupply")
     .from("billing_addons")
     .select("*")
-    .eq("code", FITTER_METERED_ADDON_CODE)
-    .maybeSingle();
-  if (error || !data) return null;
-  const row = data as CatalogRow & { recurring_price_cents?: number | null };
-  return ensureRecurringPrice({
-    stripe: args.stripe,
-    raw: args.raw,
-    table: "billing_addons",
-    kind: "addon",
-    row,
-    amountCents: cents(row.recurring_price_cents),
-    accountId: args.accountId,
-    mode: args.mode,
-  });
+    .eq("usage_type", "metered");
+  if (error || !data) return [];
+  return data as MeteredAddonRow[];
 }
 
 async function ensureRecurringPrice(
   args: EnsurePriceArgs,
 ): Promise<string | null> {
-  // Usage-based add-ons take the metered path (Billing Meter + tiered
-  // metered price). Plans and flat add-ons (usage_type NULL) fall through to
-  // the unchanged licensed flow below.
-  if (args.row.usage_type === "metered") return ensureMeteredAddonPrice(args);
+  // Usage-based add-ons take the metered path (Billing Meter + metered
+  // price) ONLY when metered billing is active for the row (the fitter
+  // always; the standard overage add-ons behind the flag). Otherwise — plans,
+  // flat add-ons, and standard add-ons with the flag off — fall through to the
+  // unchanged licensed flow below, so flat-bundle billing stays the default.
+  if (meteredActive(args.row)) return ensureMeteredAddonPrice(args);
   if (!args.amountCents || args.amountCents <= 0)
     return args.row.stripe_price_id ?? null;
   // Catalog objects are account-scoped: reuse the stored product/price ONLY
@@ -570,7 +614,9 @@ export async function syncTenantStripeSubscription(args: {
   const meteredPriceIds = new Set<string>();
   for (const tenantAddon of addons) {
     const addon = tenantAddon.billing_addons;
-    const isMetered = addon.usage_type === "metered";
+    // A flag-off standard overage add-on is NOT metered-active → it takes the
+    // flat-bundle (quantity) path below, unchanged.
+    const isMetered = meteredActive(addon);
     const amount =
       cents(tenantAddon.custom_recurring_price_cents) ??
       cents(addon.recurring_price_cents);
@@ -619,19 +665,30 @@ export async function syncTenantStripeSubscription(args: {
     );
   }
 
-  // The standalone Virtual Mask Fitter plan intrinsically includes the
-  // per-fitting metered overage item (it is NOT an opt-in add-on), so attach
-  // it whenever the tenant is on a mask_fitter-scoped plan and it isn't
-  // already present from an opt-in row above.
-  if (plan.product_scope === "mask_fitter") {
-    const fitterPriceId = await ensureFitterMeteredPrice({
+  // Intrinsic metered overage items. A metered add-on bills usage beyond the
+  // plan's included allowance for its metric, so attach its metered price to
+  // any plan that declares that allowance — it is NOT an opt-in add-on. This
+  // covers the fitter (mask_fitter → fitterFittingsPerMonth) and, behind the
+  // flag, the standard SMS/AI/billing overage on Launch/Growth/Scale. Deduped
+  // against the opt-in loop above.
+  const planAllowances = (plan.allowances ?? {}) as Record<string, unknown>;
+  for (const addon of await meteredOverageAddons(raw)) {
+    const metric = addon.usage_metric;
+    if (!metric || !(metric in planAllowances)) continue;
+    if (!meteredActive(addon)) continue;
+    const priceId = await ensureRecurringPrice({
       stripe,
       raw,
+      table: "billing_addons",
+      kind: "addon",
+      row: addon,
+      amountCents: cents(addon.recurring_price_cents),
       accountId,
       mode: config.mode,
     });
-    if (fitterPriceId && !meteredPriceIds.has(fitterPriceId)) {
-      items.push({ price: fitterPriceId });
+    if (priceId && !meteredPriceIds.has(priceId)) {
+      items.push({ price: priceId });
+      meteredPriceIds.add(priceId);
     }
   }
 
@@ -844,6 +901,135 @@ export async function reportFitterFittingMeterEvent(
         err: err instanceof Error ? err : new Error(String(err)),
       },
       "fitter meter event report failed (ignored)",
+    );
+  }
+}
+
+/**
+ * Overage units to report for one usage increment, given the running total
+ * BEFORE the increment and the plan's included allowance. Pure + exported for
+ * testing. Only usage beyond the allowance is billable, so an increment that
+ * stays within the allowance reports 0, one that straddles the boundary
+ * reports only the part above it, and one fully above reports in full.
+ */
+export function computeMeteredOverageDelta(
+  priorTotal: number,
+  increment: number,
+  allowance: number,
+): number {
+  const newTotal = priorTotal + increment;
+  const after = Math.max(0, newTotal - allowance);
+  const before = Math.max(0, priorTotal - allowance);
+  return Math.max(0, after - before);
+}
+
+interface OverageAddonRow {
+  meter_event_name: string | null;
+  billing_plans?: never;
+}
+
+/**
+ * Report the billable OVERAGE for a standard metered metric (SMS / AI /
+ * billing transactions — migration 0420) to Stripe as a Billing Meter event.
+ * Called fire-and-forget from `recordTenantUsage` after the monthly rollup is
+ * incremented; NEVER throws. No-ops unless the overage flag is on, the metric
+ * has a report-overage metered add-on, the tenant has a synced Stripe
+ * customer, and usage actually crossed the plan's allowance.
+ *
+ * NOTE: it reads the post-increment rollup and derives the prior total from
+ * `increment`; under heavy concurrency the boundary math can be slightly off
+ * for an individual event, which is acceptable for a fire-and-forget billing
+ * signal. Reports only when overage > 0.
+ */
+export async function reportMeteredOverage(input: {
+  orgId: string | undefined | null;
+  metricKey: string;
+  increment: number;
+}): Promise<void> {
+  const id = input.orgId?.trim();
+  if (!id || input.increment <= 0) return;
+  if (!isMeteredOverageEnabled()) return;
+  try {
+    const config = readPlatformBillingStripeConfigOrNull();
+    if (!config) return;
+    const raw = await rawClient();
+    if (!raw) return;
+
+    // The report-overage metered add-on for this metric (included_units NULL
+    // distinguishes it from the fitter's report-all add-on).
+    const { data: addon, error: addonErr } = await raw
+      .schema("resupply")
+      .from("billing_addons")
+      .select("meter_event_name")
+      .eq("usage_metric", input.metricKey)
+      .eq("usage_type", "metered")
+      .is("included_units", null)
+      .limit(1)
+      .maybeSingle();
+    if (addonErr || !addon) return;
+    const eventName = (addon as OverageAddonRow).meter_event_name;
+    if (!eventName) return;
+
+    // The tenant's Stripe customer + the plan allowance for this metric.
+    const { data: sub, error: subErr } = await raw
+      .schema("resupply")
+      .from("tenant_billing_subscriptions")
+      .select("stripe_customer_id, billing_plans(allowances)")
+      .eq("org_id", id)
+      .in("status", ["active", "trialing", "past_due"])
+      .not("stripe_customer_id", "is", null)
+      .limit(1)
+      .maybeSingle();
+    if (subErr || !sub) return;
+    const customerId = (sub as { stripe_customer_id?: string | null })
+      .stripe_customer_id;
+    if (!customerId) return;
+    const allowances = ((sub as { billing_plans?: { allowances?: unknown } })
+      .billing_plans?.allowances ?? {}) as Record<string, unknown>;
+    const allowanceRaw = allowances[input.metricKey];
+    const allowance = typeof allowanceRaw === "number" ? allowanceRaw : 0;
+
+    // Post-increment running total for the current month.
+    const monthStart = new Date();
+    monthStart.setUTCDate(1);
+    monthStart.setUTCHours(0, 0, 0, 0);
+    const monthDate = monthStart.toISOString().slice(0, 10);
+    const { data: rollup, error: rollupErr } = await raw
+      .schema("resupply")
+      .from("tenant_usage_monthly_rollups")
+      .select("quantity")
+      .eq("org_id", id)
+      .eq("month", monthDate)
+      .eq("metric_key", input.metricKey)
+      .limit(1)
+      .maybeSingle();
+    if (rollupErr) return;
+    const newTotal =
+      typeof (rollup as { quantity?: number } | null)?.quantity === "number"
+        ? (rollup as { quantity: number }).quantity
+        : input.increment;
+    const priorTotal = newTotal - input.increment;
+    const overage = computeMeteredOverageDelta(
+      priorTotal,
+      input.increment,
+      allowance,
+    );
+    if (overage <= 0) return;
+
+    const stripe = getStripeClient(config);
+    await stripe.billing.meterEvents.create({
+      event_name: eventName,
+      payload: { stripe_customer_id: customerId, value: String(overage) },
+    });
+  } catch (err) {
+    logger.warn(
+      {
+        event: "metered_overage_report_failed",
+        orgId: id,
+        metricKey: input.metricKey,
+        err: err instanceof Error ? err : new Error(String(err)),
+      },
+      "metered overage report failed (ignored)",
     );
   }
 }

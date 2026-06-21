@@ -28,6 +28,7 @@
 import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../logger";
+import { reportMeteredOverage } from "../platform-billing/stripe";
 
 // The event-based billable metrics the platform billing console reads
 // (routes/platform/billing.ts → currentUsage). The live-counted metrics
@@ -94,6 +95,17 @@ export async function recordTenantUsage(
         p_quantity: quantity,
       });
     if (error) throw error;
+    // Report billable OVERAGE to Stripe for standard metered metrics (SMS /
+    // AI / billing transactions — migration 0420). Fire-and-forget + fail-soft
+    // + gated: no-ops unless the overage flag is on and the metric has a
+    // report-overage metered add-on, so this is a no-op for every metric until
+    // an operator enables it. The fitter metric is excluded automatically (its
+    // add-on reports all usage via a separate path, not overage).
+    void reportMeteredOverage({
+      orgId,
+      metricKey: input.metricKey,
+      increment: quantity,
+    });
   } catch (err) {
     logger.warn(
       {

@@ -55,7 +55,19 @@ The whole path is **fail-soft and gated**: it no-ops unless platform Stripe
 billing is configured and the tenant has a Stripe customer, and every Stripe
 call is best-effort. It is also **strictly additive** — a NULL `usage_type`
 (every other add-on/plan) bills flat exactly as before. Validate against a
-Stripe **test-mode** account before onboarding a real fitter tenant.
+Stripe **test-mode** account before onboarding a real fitter tenant
+([runbook](runbooks/stripe-metered-billing-validation.md)).
+
+**The same machinery generalizes to standard-plan overage** (migration 0420):
+the SMS / AI / billing-transaction add-ons can bill per-unit overage beyond
+each plan's allowance, reported from the `recordTenantUsage` chokepoint via
+`reportMeteredOverage`. It is **off by default** behind
+`PLATFORM_METERED_OVERAGE_ENABLED` (unset → those add-ons keep billing as flat
+bundles, so existing tenants are unchanged). Two price shapes share one code
+path: the fitter's `included_units` free tier reports ALL usage (Stripe applies
+the tier), while a NULL `included_units` add-on reports only the OVERAGE beyond
+the plan allowance against a simple per-unit metered price. Fax and voice stay
+flat enablement (no per-unit rate) until one is set.
 
 ## Product scope (the "just the fitter" gate)
 
