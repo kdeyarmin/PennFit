@@ -97,8 +97,19 @@ vi.mock("../../lib/billing/identity-resolver", () => ({
 }));
 
 // ── Tenant SendGrid mock ─────────────────────────────────────────────────────
+type SentEmail = {
+  to: string;
+  subject: string;
+  html: string;
+  text: string;
+  attachments?: Array<{
+    content: Buffer;
+    filename: string;
+    contentType: string;
+  }>;
+};
 const sendEmailMock = vi.hoisted(() =>
-  vi.fn(async () => ({ messageId: "msg-1" })),
+  vi.fn(async (_input: SentEmail) => ({ messageId: "msg-1" })),
 );
 const createTenantSendgridClientMock = vi.hoisted(() =>
   vi.fn(async () => ({ sendEmail: sendEmailMock })),
@@ -323,12 +334,9 @@ describe("POST /admin/good-faith-estimates/:id/email", () => {
     expect(res.body.deliveredAt).toBeTruthy();
     // The PDF rode along as an attachment.
     expect(sendEmailMock).toHaveBeenCalledOnce();
-    const sent = sendEmailMock.mock.calls[0]![0] as {
-      to: string;
-      attachments: Array<{ contentType: string }>;
-    };
+    const sent = sendEmailMock.mock.calls[0]![0];
     expect(sent.to).toBe("john@example.com");
-    expect(sent.attachments[0]!.contentType).toBe("application/pdf");
+    expect(sent.attachments?.[0]?.contentType).toBe("application/pdf");
     // delivered_at + method were stamped.
     const writes = supabaseMock.writePayloads("good_faith_estimates", "update");
     expect(writes[0]).toMatchObject({ delivery_method: "email" });

@@ -143,7 +143,7 @@ preflight.ts` now reads the latest cached check per HCPCS for a
    this PR.** The 277CA handler wrote an event row but no claim status, so a
    clearinghouse-rejected claim sat at `submitted` (looked in-flight) and
    resubmission logic never fired. Per the owner's decision, added a distinct
-   **`rejected`** claim status (migration `0419`, types, and the canonical
+   **`rejected`** claim status (migration `0423`, types, and the canonical
    state machine: `submitted → rejected`, `rejected → {submitted, closed}`).
    The 277CA handler now sets status — **accepted** ack → `submitted → accepted`
    (the documented 277CA intermediate) and **rejected** ack → `rejected` —

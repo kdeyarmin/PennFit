@@ -1,4 +1,4 @@
--- 0418: add a 'rejected' value to insurance_claims.status.
+-- 0423: add a 'rejected' value to insurance_claims.status.
 --
 -- A 277CA clearinghouse rejection is a FRONT-END rejection (the claim
 -- bounced before payer adjudication, e.g. bad data) — semantically
