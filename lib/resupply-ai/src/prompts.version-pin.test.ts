@@ -143,6 +143,12 @@ const PROMPT_VERSION_HASHES: Readonly<Record<string, string>> = {
   // theirs. The sales variant is pinned separately in BREATHE_SALES_PROMPT_HASH.
   "2026-06-21.v17":
     "137d96d03a342a03d084da0851638bf77e406259f5d2764c5a6236f55b073402",
+  // v18 adds the shared serviceExcellence block to the PATIENT and
+  // shop_customer renders (the first change to the patient render since v13),
+  // so the patient hash changes here and the shop hash moves in SHOP_PROMPT_HASH
+  // below. The breathe_prospect render is unchanged from v17.
+  "2026-06-21.v18":
+    "8d7fb4c7ff77bb8e7b7aa65a2b2db91973b2de48b3096a2c2b243170b225cff0",
 };
 
 function renderCanonicalPrompt(): string {
@@ -169,7 +175,7 @@ function hashStrippingVersionLine(prompt: string, version: string): string {
  * Update the same way: render, take the printed hash, record it here.
  */
 const SHOP_PROMPT_HASH =
-  "c8bfc44a35b78e5ef4f98b905415fb8037fa267683ebc8ae0949e44b7a8222b2";
+  "ee8f0f4cd032fa72596ef8582602e4e240a4e89db1aaffb3a85a46b9ff6e59bc";
 
 /**
  * The CareMetric Breathe sales (breathe_prospect) variant renders its own
