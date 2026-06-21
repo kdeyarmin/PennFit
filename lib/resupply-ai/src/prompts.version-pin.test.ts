@@ -137,6 +137,12 @@ const PROMPT_VERSION_HASHES: Readonly<Record<string, string>> = {
   // BREATHE_SALES_PROMPT_HASH below.
   "2026-06-21.v16":
     "137d96d03a342a03d084da0851638bf77e406259f5d2764c5a6236f55b073402",
+  // v17 deepens the breathe_prospect sales conversation (consultative discovery
+  // + name/DME capture + richer knowledge base + honest-on-unknowns). The
+  // PATIENT render is byte-for-byte unchanged from v13–v16, so this hash matches
+  // theirs. The sales variant is pinned separately in BREATHE_SALES_PROMPT_HASH.
+  "2026-06-21.v17":
+    "137d96d03a342a03d084da0851638bf77e406259f5d2764c5a6236f55b073402",
 };
 
 function renderCanonicalPrompt(): string {
@@ -171,12 +177,13 @@ const SHOP_PROMPT_HASH =
  * drift in the sales prompt is caught too. Update the same way: render, take
  * the printed hash, record it here.
  *
- * v16 makes the email confirmation a hard gate (read back + WAIT for the
- * caller to confirm before send_info_email / start_breathe_signup), changing
- * the breathe_prospect render again.
+ * v16 made the email confirmation a hard gate (read back + WAIT for the
+ * caller to confirm before send_info_email / start_breathe_signup). v17
+ * deepens the sales conversation (consultative discovery + name/DME capture +
+ * a richer knowledge base + honest-on-unknowns), changing it again.
  */
 const BREATHE_SALES_PROMPT_HASH =
-  "15f5cc5743ce362b96978dee133e18db7bd450bd91d22b1a2331dd1092d67728";
+  "1d25d9f6eeaf671b77d4220ec41889e9d53ed6cb6f580d1abce73a8fe6a02162";
 
 describe("PROMPT_VERSION drift detector", () => {
   it("has a recorded hash for the currently-shipped PROMPT_VERSION", () => {

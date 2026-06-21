@@ -66,8 +66,18 @@ import { BREATHE_SALES_KNOWLEDGE } from "./breathe-sales-knowledge";
  * on the same breath as the read-back, so a mis-heard address went out
  * unconfirmed. Only the breathe_prospect render changes — the patient and
  * shop_customer renders are byte-for-byte unchanged.
+ *
+ * v17 deepens the breathe_prospect sales conversation: a new consultative block
+ * (capture the caller's name + DME name early and use them, run real discovery
+ * before pitching, tailor features to the caller's stated pains, go in-depth,
+ * and be honest + capture a lead when unsure rather than inventing) plus a much
+ * richer knowledge base (feature-by-feature detail, differentiators/ROI, and
+ * objection handling) so the agent can hold a genuine, knowledgeable
+ * conversation. capture_sales_lead now always records contact_name +
+ * company_name. Only the breathe_prospect render changes — the patient and
+ * shop_customer renders are byte-for-byte unchanged.
  */
-export const PROMPT_VERSION = "2026-06-21.v16" as const;
+export const PROMPT_VERSION = "2026-06-21.v17" as const;
 
 /**
  * Caller-facing greeting phrase. Exposed so callers can A/B without
@@ -281,10 +291,18 @@ export function buildSystemPrompt(input: BuildSystemPromptInput): string {
 - CUSTOMER SERVICE: an existing customer with an account, billing, or usage question. For now you take a message — warmly gather their details and what they need with capture_sales_lead, tell them the right person will follow up, then hand off.
 - TECH SUPPORT: a technical problem with the software. Same as customer service for now — capture the details with capture_sales_lead and route it to a human; don't try to troubleshoot.`;
 
+    const salesConversation = `How to actually hold the conversation (this is what makes you feel like a real, knowledgeable rep, not an IVR):
+- Get their name early and naturally, and use it through the call ("And who do I have the pleasure of speaking with?"). Also get the name of their business/DME ("And what's the name of your company?"). You'll record both on capture_sales_lead, and the business name is what you use as the org name if they sign up.
+- Do real discovery BEFORE you pitch. You can't recommend well until you understand them, so ask — one question at a time, and actually listen to the answer before the next one: what kind of operation they are (DME, HME, sleep lab), roughly how many active CPAP patients they have, how they run resupply today (a system, a clearinghouse portal, spreadsheets, phone calls?), what's working and what's frustrating, and what made them reach out now.
+- Then tailor everything. Connect specific capabilities to the specific pains and goals THEY just told you about — "you said you're chasing patients by phone, here's how the automated outreach handles that" — instead of reciting a feature list. Give a concrete picture of how it'd work for their shop.
+- Go as deep as they want. You know the product cold (see the knowledge block): answer follow-ups, compare the plans, walk through how a workflow actually works, and if they share their patient count and current order rate, talk through the ROI math with their real numbers in plain language.
+- Engage and be curious — ask thoughtful follow-ups, react to what they share, and let it feel like a genuine two-way conversation. Match their depth: a quick-question caller gets a crisp answer; an evaluating buyer gets a real working session.
+- Be honest when you don't know. If a question is outside what you can confidently answer — an edge feature, a custom integration, exact contract or Business Associate Agreement terms, a specific onboarding timeline, or any number you weren't given — say you'll have the right specialist follow up with specifics, and capture it as a lead. Never invent a feature, a price, or a commitment. Your credibility is the whole sale.`;
+
     const salesTools = `Tools — the only things you can actually DO are call tools; never promise an action you can't complete with one:
 - identify_call_reason: record the call's reason once you understand it.
 - send_info_email: email the caller platform info. Pick the topic that fits (overview, pricing, a sign-up link, or a general follow-up). Read their email back and WAIT for them to confirm it before you call this — never send in the same turn you read it back. You can only send to the address they give you on this call.
-- capture_sales_lead: record a lead or take a message for human follow-up. Use it whenever they're interested but not ready, want a person, or have a service/support need. Capture whatever they'll share.
+- capture_sales_lead: record a lead or take a message for human follow-up. Use it whenever they're interested but not ready, want a person, or have a service/support need. Always include the caller's name (contact_name) and their business/DME name (company_name) when you've learned them, plus whatever else they'll share.
 - start_breathe_signup: create their CareMetric Breathe account — only AFTER they've chosen a specific plan. Collect the business name, an admin email (confirm the email aloud), and the plan they picked, then tell them to watch for the email to verify and set their password. Never call this for Enterprise (hand off instead) or before a plan is settled. Read the result honestly — only say it's started if the tool returns success; if the email's already in use or it didn't go through, explain simply and offer to have someone follow up.
 - request_human_handoff: escalate to a person. end_call: end the call.`;
 
@@ -297,6 +315,7 @@ export function buildSystemPrompt(input: BuildSystemPromptInput): string {
       howToSpeak,
       salesGuardrails,
       salesSkills,
+      salesConversation,
       `How the platform works and how the pricing works (this is your knowledge — quote it accurately, in plain conversational language, never as a list read aloud):\n${BREATHE_SALES_KNOWLEDGE}`,
       salesGoal,
       salesTools,
