@@ -93,11 +93,11 @@ contrast / "don't rebuild").
 
 ### Lens D — Growth & referral sources (the strategic builds)
 
-| Capability                                                                  | Status                  | Evidence                                                                                                                                                                                                                                                                                         | Owner impact                                                                                                          |
-| --------------------------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
-| **Multi-location / multi-tenant completion**                                | **PARTIAL — strategic** | org threading mid-migration (06-20 §2, mostly fixed for the authenticated surface; a few seed-org leaks remain); `dme_organization` singleton surfaces                                                                                                                                           | Hard ceiling on a second branch / acquired DME / SaaS resale.                                                         |
-| **Referral-source / physician CRM + adherence reporting back to referrers** | **OPEN — strategic**    | physician/NP registry + referral intake (Parachute / e-prescribe / fax / AI referral reviewer) exist; **no B2B referral-relationship management** (rep visit logs, referral volume by source/scorecards) and **no automated adherence/outcome report back to the referring physician/sleep lab** | DMEs grow on referral relationships; reporting adherence back is the stickiest retention lever for a referral source. |
-| **Provider-facing RTM dashboard**                                           | **OPEN — strategic**    | provider portal is login + e-sign only (`routes/provider/portal.ts`); therapy device data is ingested but not surfaced to referring providers                                                                                                                                                    | Referral stickiness + a clinical-value differentiator vs. a fulfillment bureau.                                       |
+| Capability                                                                  | Status                  | Evidence                                                                                                                                                                                                                                                                                         | Owner impact                                                                                                                                                              |
+| --------------------------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Multi-location / multi-tenant completion**                                | **PARTIAL — strategic** | org threading mid-migration (06-20 §2, mostly fixed for the authenticated surface; a few seed-org leaks remain); `dme_organization` singleton surfaces                                                                                                                                           | Hard ceiling on a second branch / acquired DME / SaaS resale.                                                                                                             |
+| **Referral-source / physician CRM + adherence reporting back to referrers** | **OPEN — strategic**    | physician/NP registry + referral intake (Parachute / e-prescribe / fax / AI referral reviewer) exist; **no B2B referral-relationship management** (rep visit logs, referral volume by source/scorecards) and **no automated adherence/outcome report back to the referring physician/sleep lab** | DMEs grow on referral relationships; reporting adherence back is the stickiest retention lever for a referral source. **See the Referral-source CRM build sketch below.** |
+| **Provider-facing RTM dashboard**                                           | **OPEN — strategic**    | provider portal is login + e-sign only (`routes/provider/portal.ts`); therapy device data is ingested but not surfaced to referring providers                                                                                                                                                    | Referral stickiness + a clinical-value differentiator vs. a fulfillment bureau.                                                                                           |
 
 ### Lens E — Clinical / adherence (supporting)
 
@@ -205,6 +205,82 @@ cash) → **resupply-due → draft order** (the revenue lever) → **carrier web
   helper so it degrades when unconfigured — same fail-soft posture as the
   integration adapters.
 - **Audit:** counts / status only — never tracking PII in logs (hard rule).
+
+---
+
+## Strategic build sketch — Referral-source CRM + adherence-to-referrer (Lens D)
+
+**Why it matters to a DME owner.** A DME's growth _is_ its referral network —
+sleep labs, pulmonology / ENT / PCP offices, hospital sleep programs. The
+platform today can identify the prescriber on a claim but cannot **manage the
+source relationship**: which accounts send patients, who owns each
+relationship, what each is worth, and whether an office is growing or slipping.
+This is the single biggest unbuilt **growth** lever, and the one capability a
+fulfillment bureau (e.g. VGM Total Sleep Services) structurally can't hand back.
+
+**What already exists (reuse, don't rebuild):**
+
+- **Clinical prescriber registry** — `resupply.providers` (migration 0071):
+  NPI-unique, NPPES-backed lookup (`routes/admin/providers.ts` +
+  `providers.nppes-lookup`), with `practice_name` / `practice_address`. It is a
+  **prescriber** record, not a **referral-source account** — no source type,
+  status/pipeline, rep owner, territory, activity log, or volume/revenue rollup.
+- **Referral intake** — inbound referrals (Parachute webhook, SMART-on-FHIR
+  e-prescribe, inbound fax) get one AI extraction pass and land in the referral-
+  review queue (`routes/admin/referral-reviews.ts`); accepting creates the
+  patient and resolves a `referring_provider_id` onto the prescription/claim
+  (`lib/billing/claim-builder.ts`).
+- **Attribution + revenue plumbing** — the patient-level acquisition funnel
+  (`routes/admin/acquisition-funnel.ts`) + payer-profitability + LTV/CAC RPCs
+  already aggregate new-patients and net revenue over a window; a **source
+  scorecard is the same query shape keyed on a source id**.
+- **Adherence data + a renderable summary** — `patient_therapy_nights` +
+  `cms-adherence` + the compliance-attestation PDF
+  (`routes/admin/compliance-attestation.ts`) already produce a 30/90-day
+  adherence document, and the tenant fax/email senders already exist.
+
+**The gap (verified: no `referral_sources` table exists anywhere).** Build the
+referral SOURCE as a first-class managed entity, plus rep activity, source
+scorecards, a prospecting pipeline, and the adherence-report-back loop.
+Phaseable:
+
+- **Phase 1 — Source entity + linkage + scorecard (the 80/20).**
+  - New `resupply.referral_sources` (org-scoped): `name`, `type`
+    (`physician_office | sleep_lab | hospital | dme_partner | other`),
+    `group_npi`, `address jsonb`, `status` (`prospect | active | inactive`),
+    `owner_user_id` (the rep), `territory`, `notes`. Link a prescriber to its
+    source via a nullable `providers.referral_source_id` FK, and stamp
+    `referral_source_id` on the prescription/referral at intake (resolved from
+    the referring provider, or chosen by the CSR in the referral-review accept
+    step).
+  - A **source scorecard** RPC mirroring the acquisition-funnel /
+    payer-profitability RPCs: referrals, new patients, active patients, resupply
+    conversion, and net revenue per source over a window, with a
+    period-over-period trend so a slipping office surfaces.
+  - Routes `/admin/referral-sources` (CRUD) + `/admin/referral-sources/:id/scorecard`,
+    behind a new `referrals.read` / `referrals.manage` permission (so
+    `check-admin-route-gates.sh` stays green).
+- **Phase 2 — Rep activity + pipeline.** `referral_source_activities`
+  (visit / call / email / lunch-and-learn log: actor, type, `occurred_at`,
+  notes) + a simple pipeline (`prospect → contacted → active → at_risk`) and a
+  rep worklist ("sources you own that are slipping or overdue for a touch").
+  Reuses the alert/worklist patterns already in the admin console.
+- **Phase 3 — Adherence-to-referrer (the stickiness lever).** A flag- +
+  consent-gated job that, at the 30/90-day mark, renders the existing adherence
+  summary for a referred patient and faxes/emails it to the **referring**
+  provider via the tenant sender (a permitted treatment / care-coordination
+  disclosure). This is what referral sources actually want back, and it's the
+  retention differentiator a fulfillment bureau cannot offer.
+
+**Conventions to respect:** Supabase-only data path + org-scoped client; Zod at
+the HTTP boundary; `requirePermission` on every mutation; PHI rules (the
+scorecard is counts / revenue — no patient identifiers; the adherence report is
+a permitted disclosure to the treating provider and is never logged).
+
+**Effort:** L overall, but **Phase 1 is M (3–5d)** — the scorecard reuses the
+existing funnel/profitability RPC shape and the provider registry already
+exists. Phase 1 alone answers the owner's core question, _"who sends me
+patients and what are they worth?"_
 
 ---
 
