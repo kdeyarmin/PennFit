@@ -64,6 +64,23 @@ The customer-facing fitter flow (`/fitter-invite`, `/api/recommend`,
 `/shop/fitter-invite/*`) is public and unaffected — a scoped tenant's
 patients complete fittings exactly as before.
 
+## Provisioning a fitter-only tenant
+
+Stand a DME up directly on the plan in one command:
+
+```bash
+pnpm --filter @workspace/scripts tenant:onboard \
+  --org-slug=acme-sleep --org-name="Acme Sleep" \
+  --admin-email=owner@acme.example --plan=mask_fitter
+```
+
+`--plan=mask_fitter` writes the tenant's `tenant_billing_subscriptions` row
+so their console is fitter-scoped from first sign-in. Omitting `--plan`
+leaves the tenant with no subscription (they pick one in-app). Existing
+tenants self-subscribe from the billing console — `mask_fitter` is a public,
+self-selectable plan. The assignment is idempotent: a tenant that already has
+a current plan is never silently switched.
+
 ## Upgrading
 
 Switching a tenant from `mask_fitter` to any `full` plan (Launch/Growth/…)

@@ -19,7 +19,17 @@
 //   pnpm --filter @workspace/scripts tenant:onboard \
 //     --org-slug=acme-dme --org-name="ACME DME Inc." \
 //     --admin-email=alice@acme.example [--storefront-name="AcmeSleep"] \
+//     [--plan=mask_fitter] \
 //     [--provision-fax [--fax-area-code=215]] | [--fax-number=+12155551212]
+//
+// Billing plan (migration 0362 catalog; optional):
+//   * --plan=mask_fitter   stands the tenant up as a FITTER-ONLY DME — its
+//                          product scope (migration 0418) gates the console
+//                          down to the AI mask fitter (send link → get size).
+//   * --plan=launch|growth|scale   a full-suite tenant on that plan.
+//   Omit to leave the tenant with no subscription (they pick a plan in-app
+//   from the billing console). Idempotent: an existing current plan is never
+//   silently switched.
 //
 // Fax number (migration 0368 — per-tenant fax identity):
 //   * --provision-fax        auto-orders a fax-capable DID from Telnyx
@@ -73,6 +83,10 @@ interface ParsedArgs {
   orgName: string;
   adminEmail: string;
   storefrontName: string | null;
+  /** Optional billing-plan code to assign at onboarding (e.g. "mask_fitter"
+   *  to stand the tenant up as a fitter-only DME, or "launch"/"growth"/…).
+   *  Null leaves the tenant with no subscription (they pick one in-app). */
+  plan: string | null;
   status: "active" | "suspended" | "archived";
   force: boolean;
   sendEmail: boolean;
@@ -134,6 +148,14 @@ function parseArgs(argv: string[]): ParsedArgs {
 
   const storefrontName = (args.get("storefront-name") ?? "").trim() || null;
 
+  const plan = (args.get("plan") ?? "").trim().toLowerCase() || null;
+  if (plan && !/^[a-z0-9_]+$/.test(plan)) {
+    fail(
+      `--plan must be a billing-plan code (lowercase a-z, 0-9, underscore), ` +
+        `e.g. 'mask_fitter' or 'launch'. Got: '${plan}'.`,
+    );
+  }
+
   const faxNumber = (args.get("fax-number") ?? "").trim() || null;
   if (faxNumber && !E164_RE.test(faxNumber)) {
     fail(
@@ -170,6 +192,7 @@ function parseArgs(argv: string[]): ParsedArgs {
     orgName,
     adminEmail,
     storefrontName,
+    plan,
     status: statusRaw,
     force: flags.has("force"),
     sendEmail: !flags.has("no-email"),
@@ -339,6 +362,76 @@ async function provisionFeatureFlags(
   return { provisioned: rows.length, skipped: false };
 }
 
+/**
+ * Assign the tenant a billing plan by code (migration 0362 catalog). Use
+ * `--plan=mask_fitter` to stand a tenant up as a fitter-only DME — its
+ * product scope (migration 0418) then gates the console down to the AI mask
+ * fitter — or `--plan=launch|growth|scale` for a full-suite tenant.
+ *
+ * Idempotent & safe: a tenant that already has a current
+ * (active/trialing/past_due) subscription is LEFT UNTOUCHED — onboarding
+ * never silently switches a tenant's plan (that's a deliberate billing
+ * action, done from the billing console). Returns a human-readable summary;
+ * a bad plan code is reported but does NOT fail the rest of onboarding.
+ */
+async function provisionBillingPlan(
+  supabase: OnboardClient,
+  orgId: string,
+  planCode: string | null,
+): Promise<string> {
+  if (!planCode) return "skipped (no --plan; tenant selects one in-app)";
+
+  const { data: plan, error: planErr } = await supabase
+    .schema("resupply")
+    .from("billing_plans")
+    .select("id, name")
+    .eq("code", planCode)
+    .maybeSingle();
+  if (planErr) throw planErr;
+  if (!plan) {
+    const { data: codes } = await supabase
+      .schema("resupply")
+      .from("billing_plans")
+      .select("code")
+      .order("sort_order");
+    const available = (codes ?? []).map((c) => c.code).join(", ");
+    return `FAILED — no billing plan with code '${planCode}' (available: ${
+      available || "none"
+    })`;
+  }
+
+  const { data: existing, error: existErr } = await supabase
+    .schema("resupply")
+    .from("tenant_billing_subscriptions")
+    .select("id, billing_plans(code)")
+    .eq("org_id", orgId)
+    .in("status", ["active", "trialing", "past_due"])
+    .limit(1)
+    .maybeSingle();
+  if (existErr) throw existErr;
+  if (existing) {
+    const existingCode =
+      (existing as { billing_plans?: { code?: string } | null }).billing_plans
+        ?.code ?? "unknown";
+    return existingCode === planCode
+      ? `existing (${plan.name}) — left unchanged`
+      : `existing plan '${existingCode}' — left unchanged (switch it from the billing console)`;
+  }
+
+  const { error: insErr } = await supabase
+    .schema("resupply")
+    .from("tenant_billing_subscriptions")
+    .insert({
+      org_id: orgId,
+      plan_id: plan.id,
+      status: "active",
+      notes: "Seeded by tenant:onboard",
+      updated_by_email: "tenant:onboard",
+    });
+  if (insErr) throw insErr;
+  return `${plan.name} (assigned)`;
+}
+
 async function main(): Promise<void> {
   const a = parseArgs(process.argv);
 
@@ -390,6 +483,9 @@ async function main(): Promise<void> {
 
   // ── 1b. Provision the tenant's feature flags (Phase 1, org-scoped). ─
   const flagsResult = await provisionFeatureFlags(supabase, orgId);
+
+  // ── 1c. Optionally assign a billing plan (e.g. mask_fitter). ────────
+  const planResult = await provisionBillingPlan(supabase, orgId, a.plan);
 
   // ── 2. Auth user: create (with set-password link) or reuse. ────────
   const existingUser = await repo.findUserByEmail(emailLower);
@@ -551,6 +647,7 @@ async function main(): Promise<void> {
           ? "skipped (seed tenant / no seed org)"
           : `${flagsResult.provisioned} provisioned from seed catalog`
       }\n` +
+      `  billing plan      = ${planResult}\n` +
       `  admin auth user   = ${emailLower} (${userAction}) role=admin\n` +
       `  admin_users row   = role=admin status=active org_id=${orgId} [${adminAction}]\n` +
       `  fax number        = ${faxResult}\n`,
