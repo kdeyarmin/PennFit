@@ -97,7 +97,7 @@ contrast / "don't rebuild").
 | --------------------------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Multi-location / multi-tenant completion**                                | **PARTIAL — strategic** | org threading mid-migration (06-20 §2, mostly fixed for the authenticated surface; a few seed-org leaks remain); `dme_organization` singleton surfaces                                                                                                                                           | Hard ceiling on a second branch / acquired DME / SaaS resale.                                                                                                             |
 | **Referral-source / physician CRM + adherence reporting back to referrers** | **OPEN — strategic**    | physician/NP registry + referral intake (Parachute / e-prescribe / fax / AI referral reviewer) exist; **no B2B referral-relationship management** (rep visit logs, referral volume by source/scorecards) and **no automated adherence/outcome report back to the referring physician/sleep lab** | DMEs grow on referral relationships; reporting adherence back is the stickiest retention lever for a referral source. **See the Referral-source CRM build sketch below.** |
-| **Provider-facing RTM dashboard**                                           | **OPEN — strategic**    | provider portal is login + e-sign only (`routes/provider/portal.ts`); therapy device data is ingested but not surfaced to referring providers                                                                                                                                                    | Referral stickiness + a clinical-value differentiator vs. a fulfillment bureau.                                                                                           |
+| **Provider-facing RTM dashboard**                                           | **OPEN — strategic**    | provider portal is login + e-sign only (`routes/provider/portal.ts`); therapy device data is ingested but not surfaced to referring providers                                                                                                                                                    | Referral stickiness + a clinical-value differentiator vs. a fulfillment bureau. **See the Provider-facing RTM build sketch below.**                                       |
 
 ### Lens E — Clinical / adherence (supporting)
 
@@ -281,6 +281,58 @@ a permitted disclosure to the treating provider and is never logged).
 existing funnel/profitability RPC shape and the provider registry already
 exists. Phase 1 alone answers the owner's core question, _"who sends me
 patients and what are they worth?"_
+
+---
+
+## Strategic build sketch — Provider-facing RTM dashboard (Lens D)
+
+**Why it matters.** The provider portal already exists but is **e-sign only**
+(`routes/provider/portal.ts` is `requireProvider` + MFA-gated and serves a
+signature-request queue scoped by `provider_id`). A referring physician /
+sleep-lab can sign orders but **cannot see how their referred patients are
+doing on therapy** — the exact "myAir for the referrer" view that keeps a
+referral source loyal. It is the natural companion to the Referral-source CRM
+above (and shares its Phase 3 push).
+
+**What already exists (reuse, don't rebuild):**
+
+- **Authenticated, MFA-gated provider portal** with strict per-provider
+  scoping — every PHI route already filters `.eq("provider_id", account.providerId)`
+  and adds `requireProviderMfaEnrolled` (`routes/provider/portal.ts`,
+  `middlewares/requireProvider.ts`). The isolation primitive is in place.
+- **Per-patient therapy reads + adherence math** — `routes/admin/patient-therapy-snapshot.ts`
+  (usage / AHI / leak rollup), `cms-adherence` (30-day compliant-nights / CMS
+  flag), and the renderable compliance-attestation PDF
+  (`routes/admin/compliance-attestation.ts`).
+- **Provider → patient linkage** — the ordering/referring provider is already on
+  the chart (`prescriptions.provider_id` / claims' `referring_provider_id`,
+  resolved in `lib/billing/claim-builder.ts`), so "this provider's patients" is
+  a join, not new data.
+
+**The gap / build (phaseable):**
+
+- **Phase 1 — "My patients" roster + adherence summary.** A provider-scoped read
+  (patients whose `prescriptions.provider_id` = `account.providerId`), reusing
+  the admin therapy-snapshot logic but **provider-scoped + MFA-gated**: patient
+  (name snapshot), setup date, last-night usage, 30-day compliant nights / CMS
+  adherence flag, and trend. Mirrors the e-sign queue's existing `.eq("provider_id", …)`
+  isolation so a provider sees **only** their own patients.
+- **Phase 2 — Per-patient therapy detail + attestation download.** A read-only
+  usage/AHI/leak trend (reuse `patient-therapy-snapshot.ts`) and a one-click
+  "download adherence attestation PDF" (reuse `compliance-attestation.ts`) — the
+  documentation a referrer needs for the Medicare 90-day window.
+- **Phase 3 — Proactive push** (shared with the Referral-CRM sketch): the
+  flag-/consent-gated 30/90-day adherence summary faxed/emailed to the referrer.
+
+**Conventions / caveats:** every read MUST filter by `account.providerId` (the
+isolation the portal already enforces); MFA-gate every PHI route
+(`requireProviderMfaEnrolled`); PHI-safe logging. **Note the 06-20 finding** that
+the provider portal currently resolves the **seed org** rather than threading
+`req.orgId` — fix/thread `orgId` as part of this build so a non-seed tenant's
+provider sees the right patients.
+
+**Effort:** M — the auth/MFA/portal shell and the therapy-snapshot read both
+exist; the new work is the provider-scoped roster join + a read-only UI.
 
 ---
 
