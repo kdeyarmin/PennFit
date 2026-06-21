@@ -319,9 +319,7 @@ export function readVoiceConfigOrNull(
     // (`OpenAI-Beta: realtime=v1` flat shape) is DEPRECATED by OpenAI: the
     // session no longer opens, so a beta call connects then drops in ~1s. It
     // is kept only as an explicit, non-default escape hatch
-    // (OPENAI_REALTIME_SCHEMA=beta); do not use it. GA µ-law audio carries the
-    // required sample rate (see realtime-client gaAudioFormat) so inbound VAD
-    // fires on caller speech.
+    // (OPENAI_REALTIME_SCHEMA=beta); do not use it.
     realtimeSchema:
       env.OPENAI_REALTIME_SCHEMA?.trim().toLowerCase() === "beta"
         ? "beta"
