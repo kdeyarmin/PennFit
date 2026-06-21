@@ -1006,7 +1006,7 @@ export async function handlePlatformTenantStripeEvent(
     "platform billing Stripe invoice synced",
   );
 
-  // Payment wall (migration 0425): the first PAID invoice clears the tenant's
+  // Payment wall (migration 0426): the first PAID invoice clears the tenant's
   // `billing_required` flag, unlocking the full console. Idempotent — re-runs
   // on a replayed invoice.paid event just re-set false. Best-effort: a failure
   // here leaves the tenant gated (they can retry from the billing page) rather

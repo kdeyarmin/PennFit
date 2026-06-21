@@ -1,4 +1,4 @@
--- 0425: tenant payment wall — gate a new self-serve tenant out of the full
+-- 0426: tenant payment wall — gate a new self-serve tenant out of the full
 -- console until they have paid.
 --
 -- Adds `organizations.billing_required`. A new self-serve sign-up (web form OR
