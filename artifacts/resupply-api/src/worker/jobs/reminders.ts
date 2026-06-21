@@ -100,6 +100,15 @@ export const SCAN_JOB = "reminders.scan";
 export const SEND_SMS_JOB = "reminders.send-sms";
 export const SEND_EMAIL_JOB = "reminders.send-email";
 
+// Episode statuses that are still in the reminder funnel — awaiting the first
+// outreach or a patient response. An episode that has left this set
+// (confirmed / fulfilled / cancelled / completed / resolved / …) must NOT be
+// re-pinged. Single source of truth, shared with the escalation scan.
+export const IN_PROGRESS_EPISODE_STATUSES = [
+  "outreach_pending",
+  "awaiting_response",
+] as const;
+
 /**
  * Pre-vendor idempotency guard. Returns true if this is the first
  * attempt to send a reminder for the (patient, episode, channel)
@@ -543,6 +552,10 @@ export async function scanForDueReminders(
         .from("episodes")
         .select("id, prescription_id, due_at")
         .in("prescription_id", idChunk)
+        // Only episodes still in the reminder funnel — without this, a
+        // confirmed/resolved/cancelled episode re-entered candidacy and got
+        // re-pinged once the 48h conversation quiet-window lapsed.
+        .in("status", [...IN_PROGRESS_EPISODE_STATUSES])
         .order("id", { ascending: true })
         .range(from, from + PAGE_SIZE - 1);
       if (error) throw error;

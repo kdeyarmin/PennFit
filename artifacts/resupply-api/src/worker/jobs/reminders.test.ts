@@ -494,6 +494,30 @@ describe("scanForDueReminders — timezone field included in patient SELECT (PR 
 // recently-contacted patients slip past the quiet filter and get re-pinged).
 // ---------------------------------------------------------------------------
 
+describe("scanForDueReminders — episodes read is filtered to in-progress statuses (PR change)", () => {
+  // Without a status filter the episodes read returned EVERY episode of an
+  // active prescription, so a confirmed/resolved/cancelled episode re-entered
+  // candidacy once the 48h conversation quiet-window lapsed and got re-pinged.
+  const episodesBlock = SRC.slice(
+    SRC.indexOf('.from("episodes")'),
+    SRC.indexOf('.from("episodes")') + 600,
+  );
+
+  it("filters the episodes read by status", () => {
+    expect(episodesBlock).toMatch(
+      /\.in\(\s*\[?\s*\.\.\.?\s*IN_PROGRESS_EPISODE_STATUSES|\.in\(\s*"status"/,
+    );
+  });
+
+  it("uses the shared in-progress episode status set (single source of truth)", () => {
+    expect(episodesBlock).toContain("IN_PROGRESS_EPISODE_STATUSES");
+    // The set itself is the funnel statuses, nothing terminal.
+    expect(SRC).toMatch(
+      /IN_PROGRESS_EPISODE_STATUSES\s*=\s*\[\s*"outreach_pending",\s*"awaiting_response",?\s*\]/,
+    );
+  });
+});
+
 describe("scanForDueReminders — quiet-period conversations read is paged + chunked", () => {
   // The conversations slice must be scoped to candidate episodes (chunked
   // `.in("episode_id", …)`) AND paginated with `.range(...)` inside each

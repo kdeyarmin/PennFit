@@ -274,9 +274,16 @@ Reminder idempotency, keyset pagination, signed-link GET/POST split, and draft
 staging are carefully built. Gaps:
 
 - **High** — Inbound SMS confirm/stop/start seed-org bug (see §2).
-- **High** — `reminders.scan` fetches episodes with **no status filter**
-  (`worker/jobs/reminders.ts:543`); a resolved episode older than the 48h
-  conversation quiet-window can re-enter candidacy and be re-pinged.
+- ✅ **Fixed in this PR.** `reminders.scan` fetched episodes with **no status
+  filter** (`worker/jobs/reminders.ts:543`), so a resolved/confirmed/cancelled
+  episode re-entered candidacy and got re-pinged once the 48h conversation
+  quiet-window lapsed. The episodes read is now filtered to the in-progress
+  funnel statuses (`outreach_pending` / `awaiting_response`). Per the owner's
+  decision (match the escalation scan), this set is now a single exported
+  constant (`IN_PROGRESS_EPISODE_STATUSES` in `reminders.ts`) that the
+  escalation scan imports too — so the two reminder jobs can't drift on which
+  episodes are still eligible. Structural tests assert the episodes read
+  carries the status filter and the constant holds only the funnel statuses.
 - **Med** — Refill attestation proof is lost on the SMS path precisely because
   of the seed-org no-op (`inbound.ts:887`).
 - **Med** — Escalation `csr_exhausted` alert insert isn't defensively
