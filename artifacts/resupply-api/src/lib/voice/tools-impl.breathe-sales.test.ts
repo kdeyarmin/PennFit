@@ -218,7 +218,12 @@ describe("breathe sales — start_breathe_signup", () => {
     const r = await dispatcher.dispatch({
       callId: "c1",
       name: "start_breathe_signup",
-      args: { org_name: "Acme DME", admin_email: "owner@acme-dme.example" },
+      args: {
+        org_name: "Acme DME",
+        admin_email: "owner@acme-dme.example",
+        plan: "growth",
+        estimated_active_patients: 3000,
+      },
     });
 
     expect(r.result).toEqual({
@@ -247,7 +252,16 @@ describe("breathe sales — start_breathe_signup", () => {
 
     await flush();
     const inserts = supabaseMock.writePayloads("sales_leads", "insert");
-    expect(inserts[0]).toMatchObject({ status: "signed_up" });
+    // The converted lead records the chosen plan: the full-platform tier
+    // lands in interest_tier and the plan + qualifying patient count ride in
+    // the message so the team can see what they signed up for.
+    expect(inserts[0]).toMatchObject({
+      status: "signed_up",
+      interest_tier: "growth",
+    });
+    expect(String((inserts[0] as { message?: string }).message)).toContain(
+      "growth",
+    );
   });
 
   it("maps email_taken / slug_taken / invalid_email to the status enum", async () => {
@@ -270,7 +284,7 @@ describe("breathe sales — start_breathe_signup", () => {
       const r = await dispatcher.dispatch({
         callId: "c1",
         name: "start_breathe_signup",
-        args: { org_name: "X Co", admin_email: "x@y.example" },
+        args: { org_name: "X Co", admin_email: "x@y.example", plan: "launch" },
       });
       expect(r.result).toEqual({ ok: false, status: expected });
     }
@@ -287,7 +301,7 @@ describe("breathe sales — start_breathe_signup", () => {
     const r = await dispatcher.dispatch({
       callId: "c1",
       name: "start_breathe_signup",
-      args: { org_name: "X Co", admin_email: "x@y.example" },
+      args: { org_name: "X Co", admin_email: "x@y.example", plan: "scale" },
     });
     expect(r.result).toEqual({ ok: false, status: "unavailable" });
   });

@@ -1,11 +1,16 @@
 # Runbook: gpt-realtime-2 GA schema (voice agent brain)
 
-Status: **GA is now the default** (unset → `ga`). The voice agent runs
-OpenAI's GA Realtime schema on `gpt-realtime-2`; set
-`OPENAI_REALTIME_SCHEMA=beta` for the instant rollback to the legacy beta
-schema on `gpt-realtime`. This runbook is the validation + rollback
-procedure — run the preview test call below before relying on GA in
-production, and keep the beta rollback handy.
+Status: **GA is OPT-IN** (default is `beta`). The voice agent runs OpenAI's
+proven beta Realtime schema on `gpt-realtime` by default; set
+`OPENAI_REALTIME_SCHEMA=ga` to opt into the GA schema on `gpt-realtime-2`.
+GA was briefly the default but reverted: as a reasoning model it adds a
+hidden think-step (dead air before each reply) and shares its output-token
+budget with the spoken turn, which — together with the GA µ-law wire details
+still wanting validation — produced clipped/rushed audio followed by long
+silences on real calls. This runbook is the validation procedure — run the
+preview test call below and confirm naturalness/latency before turning GA on
+in production. `OPENAI_REALTIME_SCHEMA=beta` (or unset) is the instant
+rollback.
 
 ## What this is
 
@@ -27,7 +32,7 @@ outbound `session.update` and the connection header differ. The Twilio
 
 ## Why validate on a preview first
 
-GA is the default, but it still rewrites the live, PHI‑touching voice
+GA is opt‑in, and turning it on rewrites the live, PHI‑touching voice
 session, so confirm it on a preview before trusting it in production:
 
 - It cannot be integration‑tested from CI — only against a real OpenAI key
@@ -35,18 +40,19 @@ session, so confirm it on a preview before trusting it in production:
 - A few GA wire details were **not fully documented** at build time and
   should be confirmed on a preview (below). They're all env‑overridable so
   validation needs **no code change** — just env edits + a test call.
-- The beta schema on `gpt-realtime` remains a one‑env‑var rollback
-  (`OPENAI_REALTIME_SCHEMA=beta`) if GA misbehaves.
+- The beta schema on `gpt-realtime` is the **default**, so unsetting
+  `OPENAI_REALTIME_SCHEMA` (or setting `=beta`) is the one‑env‑var rollback
+  if GA misbehaves.
 
 ## How to validate on a preview
 
-GA is already the default, so a fresh Railway preview runs it without any
-env change. (To pin it explicitly during validation, or to A/B against
-beta, set `OPENAI_REALTIME_SCHEMA=ga` or `=beta`.) The GA default switches
-the model to `gpt-realtime-2`, the input STT to `gpt-realtime-whisper`, the
+Set `OPENAI_REALTIME_SCHEMA=ga` on a Railway preview to turn GA on (default
+is `beta`; to A/B, flip between `ga` and `beta`). The GA schema switches the
+model to `gpt-realtime-2`, the input STT to `gpt-realtime-whisper`, the
 session to the GA nested schema, µ‑law to `audio/pcmu`, and reasoning
-effort to `low`. Place a test call and work the checklist. Overrides for
-correcting wire values during validation:
+effort to `low`. Place a test call and work the checklist — pay attention
+to time‑to‑first‑word (reasoning latency) and whether replies ever clip.
+Overrides for correcting wire values during validation:
 
 | Env var                            | Purpose                         | Default when `…SCHEMA=ga` |
 | ---------------------------------- | ------------------------------- | ------------------------- |
@@ -55,15 +61,16 @@ correcting wire values during validation:
 | `OPENAI_REALTIME_AUDIO_FORMAT`     | µ‑law wire token                | `audio/pcmu`              |
 | `OPENAI_REALTIME_REASONING_EFFORT` | `minimal`/`low`/`medium`/`high` | `low`                     |
 
-**GA is now the default** (unset → `ga`). **Rollback is instant:** set
-`OPENAI_REALTIME_SCHEMA=beta` → back to beta/`gpt-realtime`. No deploy
-needed beyond the env change.
+**Beta is the default** (unset → `beta`). **Opt into GA** with
+`OPENAI_REALTIME_SCHEMA=ga`; **rollback is instant** — unset it (or set
+`=beta`) → back to beta/`gpt-realtime`. No deploy needed beyond the env
+change.
 
 ## Placing the test call — the no‑patient diagnostic line
 
 You don't need a patient record. Set **`OPENAI_REALTIME_DIAGNOSTIC_ENABLED=1`**
-(GA is already the default; add `OPENAI_REALTIME_SCHEMA=ga` only to pin it
-explicitly), then point a **spare** Twilio
+(and **`OPENAI_REALTIME_SCHEMA=ga`** to exercise GA, since beta is the
+default), then point a **spare** Twilio
 number's "A call comes in" voice webhook (POST) at:
 
 ```
@@ -73,8 +80,8 @@ https://<preview-host>/resupply-api/voice/realtime-diagnostic
 Dial that number from any phone. The AI agent answers in a **tools‑off
 sandbox** (no patient lookup, no DB writes, no identity questions) and just
 chats to confirm two‑way audio — so it exercises the exact Realtime config
-(gpt‑realtime‑2 under the default GA schema) end to end. Hang up when done; put
-the number's webhook back.
+(gpt‑realtime‑2 under the GA schema, when you've set `…SCHEMA=ga`) end to
+end. Hang up when done; put the number's webhook back.
 
 Notes:
 

@@ -126,6 +126,16 @@ describe("buildSystemPrompt — breathe_prospect (B2B platform sales)", () => {
     expect(prompt).toContain("start_breathe_signup");
   });
 
+  it("requires a chosen plan before creating an account, and routes Enterprise to a human", () => {
+    const prompt = buildSystemPrompt(salesInput);
+    // The agent must not provision an account before a plan is selected.
+    expect(prompt).toMatch(
+      /NEVER create an account before the caller has chosen a specific plan/i,
+    );
+    // Enterprise is custom-quoted — never a phone self-signup.
+    expect(prompt).toMatch(/never sign anyone up for Enterprise/i);
+  });
+
   it("carries no patient PHI clauses (no DOB verification, no medical-advice scope)", () => {
     const prompt = buildSystemPrompt(salesInput);
     expect(prompt).not.toContain("verify_patient_identity");

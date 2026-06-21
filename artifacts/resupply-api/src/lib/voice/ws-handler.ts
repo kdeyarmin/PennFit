@@ -959,6 +959,7 @@ function resolveRealtimeClientOptions(config: VoiceConfig): {
   model: string | undefined;
   transcriptionModel: string | undefined;
   reasoningEffort: "minimal" | "low" | "medium" | "high" | undefined;
+  maxResponseTokens: number | undefined;
   audioFormat: string | undefined;
   noiseReduction: RealtimeNoiseReduction | undefined;
 } {
@@ -971,6 +972,8 @@ function resolveRealtimeClientOptions(config: VoiceConfig): {
       config.realtimeTranscribeModel ??
       (isGa ? DEFAULT_REALTIME_GA_TRANSCRIBE_MODEL : undefined),
     reasoningEffort: config.realtimeReasoningEffort,
+    // undefined → RealtimeClient applies its DEFAULT_MAX_RESPONSE_TOKENS.
+    maxResponseTokens: config.realtimeMaxResponseTokens,
     audioFormat: config.realtimeAudioFormat,
     // undefined → RealtimeClient applies its telephony default (far_field).
     noiseReduction: config.realtimeNoiseReduction,

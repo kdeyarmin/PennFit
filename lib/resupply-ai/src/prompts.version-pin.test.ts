@@ -124,6 +124,12 @@ const PROMPT_VERSION_HASHES: Readonly<Record<string, string>> = {
   // BREATHE_SALES_PROMPT_HASH below.
   "2026-06-21.v14":
     "137d96d03a342a03d084da0851638bf77e406259f5d2764c5a6236f55b073402",
+  // v15 tightens only the breathe_prospect sign-up flow (qualify + pick a plan
+  // before creating an account; Enterprise → human). The PATIENT render is
+  // byte-for-byte unchanged from v13/v14, so this hash matches theirs. The
+  // sales variant is pinned separately in BREATHE_SALES_PROMPT_HASH below.
+  "2026-06-21.v15":
+    "137d96d03a342a03d084da0851638bf77e406259f5d2764c5a6236f55b073402",
 };
 
 function renderCanonicalPrompt(): string {
@@ -159,7 +165,7 @@ const SHOP_PROMPT_HASH =
  * the printed hash, record it here.
  */
 const BREATHE_SALES_PROMPT_HASH =
-  "535d9d1962f62b3c42e85c2f44e65e7389e2687e519d557ad00f00e1447f879f";
+  "c5dbe1ccefed82585ffc28f5469851fe78e25160afa35cc2f3bf0cd878bfe3ea";
 
 describe("PROMPT_VERSION drift detector", () => {
   it("has a recorded hash for the currently-shipped PROMPT_VERSION", () => {

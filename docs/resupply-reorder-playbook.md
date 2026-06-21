@@ -96,8 +96,9 @@ These conversion changes do **not** loosen any safety rule:
   "Charlotte"), expressiveness (`ELEVENLABS_STYLE` / `_SIMILARITY_BOOST` /
   `_USE_SPEAKER_BOOST` / `_STABILITY` / `_SPEED`), caller-audio noise
   reduction (`OPENAI_REALTIME_NOISE_REDUCTION`, default `far_field` for
-  telephony), and the gpt-realtime-2 brain (now the **default** GA schema;
-  set `OPENAI_REALTIME_SCHEMA=beta` for the legacy rollback per
+  telephony), and the model brain (default is the proven **beta**
+  `gpt-realtime`; opt into the `gpt-realtime-2` GA reasoning model with
+  `OPENAI_REALTIME_SCHEMA=ga` after a preview test call, per
   `docs/runbooks/realtime-ga-migration.md`). Domain-term pronunciation
   (e.g. "CPAP" → "see-pap") is handled automatically at the TTS boundary by
   `lib/resupply-ai/src/tts-pronunciation.ts` — extend that map (with a test)
