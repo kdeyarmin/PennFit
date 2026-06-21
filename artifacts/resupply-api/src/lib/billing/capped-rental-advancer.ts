@@ -3,9 +3,9 @@
 // Runs as a daily worker. For each active capped_rental_cycles row:
 //   * If today >= start_date + (current_month * 30 days), advance:
 //     - current_month += 1
-//     - Generate a draft insurance_claims for this month with the
-//       right modifier rotation (KH for months 1-3; KI + KX when
-//       compliant for 4-13).
+//     - Generate a draft insurance_claims for this month with the CMS
+//       capped-rental modifier rotation (KH month 1; KI months 2-3;
+//       KJ months 4..max, + KX when compliant). See pickModifiers.
 //     - Set latest_claim_id.
 //   * When current_month == max_months + 1, mark ownership_transferred_on
 //     and status='transferred'.
@@ -266,25 +266,40 @@ async function advanceCycle(
 }
 
 /**
- * Selects the HCPCS modifier codes applicable for a given capped-rental month.
+ * Selects the HCPCS rental-month modifier codes for a capped-rental month,
+ * following the CMS capped-rental modifier sequence:
  *
- * Always includes `"RR"`. Adds `"KH"` for months 1–3. For months 4–13 it adds `"KI"`,
- * and also adds `"KX"` when `isCompliant` is true and the `hcpcs` code is in the compliant set.
+ *   - `KH` — first month rental (month 1).
+ *   - `KI` — second and third month rental (months 2–3).
+ *   - `KJ` — capped-rental / PEN-pump months four onward ("months four to
+ *     fifteen" for the standard 13/15-month caps, extended uniformly through
+ *     the cycle's `max_months` for longer rental caps so no continuation
+ *     claim goes out with a bare `RR`).
+ *
+ * `RR` (rental) is always present. `KX` (medical-policy criteria met) rides
+ * on the `KJ` months for a compliant CPAP/BiPAP patient, matching the prior
+ * behaviour. Previously months 1–3 emitted `KH` and 4–13 emitted `KI` (a
+ * non-standard mapping) and months 14+ emitted only `RR` — a 36-month
+ * (oxygen-length) cycle therefore sent 23 continuation claims with no
+ * rental-month modifier, which payers deny.
  *
  * @param hcpcs - The HCPCS code for the product or service
  * @param month - The rental month number (1-based)
  * @param isCompliant - Whether the patient meets the KX compliance criteria
  * @returns An array of modifier codes to apply to the claim line item
  */
-function pickModifiers(
+export function pickModifiers(
   hcpcs: string,
   month: number,
   isCompliant: boolean,
 ): string[] {
   const mods: string[] = ["RR"];
-  if (month <= 3) mods.push("KH");
-  else if (month <= 13) {
+  if (month <= 1) {
+    mods.push("KH");
+  } else if (month <= 3) {
     mods.push("KI");
+  } else {
+    mods.push("KJ");
     if (isCompliant && COMPLIANT_KX_HCPCS.has(hcpcs)) mods.push("KX");
   }
   return mods;

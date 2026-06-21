@@ -29,7 +29,39 @@ import {
 
 const supabaseMock = installSupabaseMock();
 
-import { runCappedRentalAdvance } from "./capped-rental-advancer";
+import {
+  pickModifiers,
+  runCappedRentalAdvance,
+} from "./capped-rental-advancer";
+
+describe("pickModifiers — CMS capped-rental modifier sequence", () => {
+  // E0601 (CPAP) is in the KX-compliant set; E1390 (oxygen concentrator)
+  // is not, so it never picks up KX even when compliant.
+  it("emits KH for month 1, KI for months 2-3, KJ for months 4 onward", () => {
+    expect(pickModifiers("E0601", 1, false)).toEqual(["RR", "KH"]);
+    expect(pickModifiers("E0601", 2, false)).toEqual(["RR", "KI"]);
+    expect(pickModifiers("E0601", 3, false)).toEqual(["RR", "KI"]);
+    expect(pickModifiers("E0601", 4, false)).toEqual(["RR", "KJ"]);
+    expect(pickModifiers("E0601", 13, false)).toEqual(["RR", "KJ"]);
+  });
+
+  it("keeps KJ through the longer rental caps (no bare-RR continuation claims)", () => {
+    // Months 14-36 previously emitted only ["RR"] — the gap this fixes.
+    expect(pickModifiers("E1390", 14, false)).toEqual(["RR", "KJ"]);
+    expect(pickModifiers("E1390", 15, false)).toEqual(["RR", "KJ"]);
+    expect(pickModifiers("E1390", 36, false)).toEqual(["RR", "KJ"]);
+  });
+
+  it("adds KX on the KJ months for a compliant CPAP/BiPAP patient only", () => {
+    expect(pickModifiers("E0601", 4, true)).toEqual(["RR", "KJ", "KX"]);
+    expect(pickModifiers("E0470", 20, true)).toEqual(["RR", "KJ", "KX"]);
+    // Not in the compliant HCPCS set → no KX even when compliant.
+    expect(pickModifiers("E1390", 4, true)).toEqual(["RR", "KJ"]);
+    // KX never rides on the KH/KI (month 1-3) claims.
+    expect(pickModifiers("E0601", 1, true)).toEqual(["RR", "KH"]);
+    expect(pickModifiers("E0601", 2, true)).toEqual(["RR", "KI"]);
+  });
+});
 
 beforeEach(() => {
   supabaseMock.reset();

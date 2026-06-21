@@ -110,10 +110,15 @@ submit/transfer concurrency are genuinely strong. Gaps cluster around
 4. **Same-or-Similar cache is write-only.** `medicare_same_or_similar_checks`
    is read nowhere outside its own route (`same-or-similar.ts`); the claim
    builder/preflight the header claims to feed never query it.
-5. **Capped-rental modifier rotation has no months 14–36 branch.**
-   `capped-rental-advancer.ts:279` (`pickModifiers`) only handles `<=3` (KH)
-   and `<=13` (KI/KX); a 36-month oxygen cycle emits 23 claims with no
-   rental-month modifier → denials.
+5. **Capped-rental modifier rotation has no months 14–36 branch.** ✅
+   **Fixed in this PR.** `pickModifiers` only handled `<=3` (KH) and `<=13`
+   (KI/KX); a 36-month oxygen cycle emitted 23 claims with no rental-month
+   modifier → denials. Reworked to the CMS capped-rental sequence (confirmed
+   with the owner): **KH** month 1, **KI** months 2–3, **KJ** months 4 →
+   `max_months` (so 4–13 / 4–15 / 4–36 are all covered), with **KX** still
+   added on the KJ months for a compliant CPAP/BiPAP patient. This also
+   corrects the previously non-standard 1–3=KH / 4–13=KI ranges. Covered by
+   a new `pickModifiers` unit test.
 6. **277CA rejection never updates `insurance_claims.status`.**
    `office-ally-inbound-poll.ts:557` writes an event row but no claim status;
    the claim-level worklist shows a clearinghouse-rejected claim as in-flight.
