@@ -19,13 +19,17 @@
 -- Editing the price invalidates the immutable synced Stripe price, so clear
 -- the stored id + synced marker; the next catalog sync mints a fresh metered
 -- price at $2.00 (the Billing Meter itself is reused — meters can't be
--- deleted, only deactivated). `included_units` (25) is unchanged.
+-- deleted, only deactivated). `included_units` (25) is unchanged. The
+-- `IS DISTINCT FROM 200` guard makes a re-run (e.g. a replay onto an already
+-- $2.00 DB) a true no-op — without it we'd needlessly null the freshly-synced
+-- Stripe price id and force another re-mint + tenant re-sync.
 UPDATE "resupply"."billing_addons"
 SET "recurring_price_cents" = 200,
     "stripe_price_id" = NULL,
     "stripe_synced_at" = NULL,
     "updated_at" = now()
-WHERE "code" = 'fitter_fitting_metered';
+WHERE "code" = 'fitter_fitting_metered'
+  AND "recurring_price_cents" IS DISTINCT FROM 200;
 --> statement-breakpoint
 
 -- ── Bundle the fitter allowance into every full-platform plan ──────────
@@ -38,7 +42,11 @@ WHERE "code" = 'fitter_fitting_metered';
 UPDATE "resupply"."billing_plans"
 SET "allowances" = "allowances" || '{"fitterFittingsPerMonth":25}'::jsonb,
     "updated_at" = now()
-WHERE "code" IN ('launch', 'growth', 'scale', 'enterprise');
+WHERE "code" IN ('launch', 'growth', 'scale', 'enterprise')
+  -- Skip plans already at 25 so a re-run is a true no-op (no row churn / no
+  -- updated_at bump). NULL (key absent) is DISTINCT FROM '25', so first-run
+  -- still applies.
+  AND ("allowances" ->> 'fitterFittingsPerMonth') IS DISTINCT FROM '25';
 --> statement-breakpoint
 
 -- ── Surface the inclusion on the marketing/pricing catalog ────────────
