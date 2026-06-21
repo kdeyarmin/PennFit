@@ -27,6 +27,12 @@ const { flagState } = vi.hoisted(() => ({ flagState: { enabled: false } }));
 vi.mock("../lib/feature-flags", () => ({
   isFeatureEnabled: async () => flagState.enabled,
 }));
+const { scopeState } = vi.hoisted(() => ({
+  scopeState: { scope: "full" as "full" | "mask_fitter" },
+}));
+vi.mock("../lib/product-scope", () => ({
+  resolveTenantProductScope: async () => scopeState.scope,
+}));
 
 import meRouter from "./me";
 
@@ -42,6 +48,7 @@ function makeApp(): Express {
 beforeEach(() => {
   mockAdmin.current = null;
   flagState.enabled = false;
+  scopeState.scope = "full";
 });
 
 describe("GET /me — location", () => {
@@ -85,5 +92,19 @@ describe("GET /me — location", () => {
     flagState.enabled = true;
     const on = await request(makeApp()).get("/me");
     expect(on.body.multiLocationEnabled).toBe(true);
+  });
+
+  it("surfaces the tenant's product scope (defaults to full)", async () => {
+    mockAdmin.current = {
+      userId: "u_4",
+      email: "admin@penn.example.com",
+      role: "admin",
+    };
+    const full = await request(makeApp()).get("/me");
+    expect(full.body.productScope).toBe("full");
+
+    scopeState.scope = "mask_fitter";
+    const fitter = await request(makeApp()).get("/me");
+    expect(fitter.body.productScope).toBe("mask_fitter");
   });
 });

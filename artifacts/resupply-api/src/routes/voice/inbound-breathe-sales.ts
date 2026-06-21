@@ -149,18 +149,42 @@ router.post(
     // episode/customer, NO conversations row — the registry key is a fresh
     // UUID the WS upgrade claims. The sales WS handler runs the agent.
     const conversationId = randomUUID();
-    getPendingSessions().register({
-      conversationId,
-      patientId: "",
-      episodeId: "",
-      twilioCallSid: CallSid,
-      callerKind: "breathe_prospect",
-      callContext: BREATHE_SALES_CALL_CONTEXT,
-      greeting: BREATHE_SALES_GREETING,
-      // The caller dialed US — the agent greets first rather than waiting for
-      // the caller to break the silence.
-      agentSpeaksFirst: true,
-    });
+    try {
+      await getPendingSessions().register({
+        conversationId,
+        patientId: "",
+        episodeId: "",
+        twilioCallSid: CallSid,
+        callerKind: "breathe_prospect",
+        callContext: BREATHE_SALES_CALL_CONTEXT,
+        greeting: BREATHE_SALES_GREETING,
+        // The caller dialed US — the agent greets first rather than waiting
+        // for the caller to break the silence.
+        agentSpeaksFirst: true,
+      });
+    } catch (err) {
+      // The store is now a DB round-trip and can throw. Degrade to a clean
+      // 200 + Hangup so the caller hears a graceful message instead of a
+      // Twilio application error (which would also trigger retries).
+      logger.error(
+        {
+          event: "voice.inbound-breathe-sales.register_failed",
+          callSid: CallSid,
+          err,
+        },
+        "voice.inbound-breathe-sales: pending-session register failed; hanging up",
+      );
+      res
+        .status(200)
+        .type("text/xml")
+        .send(
+          buildHangupTwiml(
+            "Thanks for calling CareMetric Breathe. We're having a brief " +
+              "technical issue — please try again in a few minutes.",
+          ),
+        );
+      return;
+    }
 
     const wsUrl =
       `${publicWsOriginFromBaseUrl(config.publicBaseUrl)}` +

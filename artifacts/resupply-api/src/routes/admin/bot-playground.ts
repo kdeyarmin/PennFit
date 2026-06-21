@@ -313,7 +313,7 @@ router.post(
     // upgrade can race the API response. diagnostic:true routes the
     // upgrade to the no-patient bridge (real persona, no tools, no DB).
     const conversationId = randomUUID();
-    getPendingSessions().register({
+    await getPendingSessions().register({
       conversationId,
       patientId: "",
       episodeId: "",
@@ -372,7 +372,7 @@ router.post(
       throw err;
     }
 
-    getPendingSessions().attachCallSid(conversationId, callSid);
+    await getPendingSessions().attachCallSid(conversationId, callSid);
 
     // Audit the admin action. PHI/secret-safe: the destination phone is
     // NOT recorded (admin's own test target — same posture as place-call /

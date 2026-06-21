@@ -104,7 +104,7 @@ describe("placeOutboundReorderCall (system actor)", () => {
     );
 
     // Pending session registered + stamped with the CallSid.
-    const entry = getPendingSessions().peek(CONVERSATION_ID);
+    const entry = await getPendingSessions().peek(CONVERSATION_ID);
     expect(entry?.patientId).toBe(PATIENT_ID);
     expect(entry?.episodeId).toBe(EPISODE_ID);
     expect(entry?.orgId).toBe(ORG_ID);

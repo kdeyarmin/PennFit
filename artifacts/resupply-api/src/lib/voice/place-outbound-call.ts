@@ -150,7 +150,7 @@ export async function placeOutboundReorderCall(
   // Register pending session BEFORE Twilio dials so the WS upgrade — which
   // can race the API response — sees the entry the moment Twilio connects
   // its socket back.
-  getPendingSessions().register({
+  await getPendingSessions().register({
     conversationId,
     patientId,
     episodeId,
@@ -224,7 +224,7 @@ export async function placeOutboundReorderCall(
     throw err;
   }
 
-  getPendingSessions().attachCallSid(conversationId, callSid);
+  await getPendingSessions().attachCallSid(conversationId, callSid);
   const { error: updateErr } = await supabase
     .from("conversations")
     .update({

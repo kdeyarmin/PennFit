@@ -291,21 +291,36 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
       return;
     }
 
-    getPendingSessions().register({
-      conversationId: shopConversationId,
-      orgId,
-      // Patient/episode are empty for a storefront caller; callerKind +
-      // shopCustomerId drive the shop tool set + prompt.
-      patientId: "",
-      episodeId: "",
-      callerKind: "shop_customer",
-      shopCustomerId,
-      callContext: INBOUND_SHOP_CALL_CONTEXT,
-      greeting: brand(INBOUND_SHOP_GREETING),
-      // The caller dialed US — the agent must greet first, not wait for
-      // the caller to break the silence.
-      agentSpeaksFirst: true,
-    });
+    try {
+      await getPendingSessions().register({
+        conversationId: shopConversationId,
+        orgId,
+        // Patient/episode are empty for a storefront caller; callerKind +
+        // shopCustomerId drive the shop tool set + prompt.
+        patientId: "",
+        episodeId: "",
+        callerKind: "shop_customer",
+        shopCustomerId,
+        callContext: INBOUND_SHOP_CALL_CONTEXT,
+        greeting: brand(INBOUND_SHOP_GREETING),
+        // The caller dialed US — the agent must greet first, not wait for
+        // the caller to break the silence.
+        agentSpeaksFirst: true,
+      });
+    } catch (err) {
+      // DB-backed store can throw — fail soft to a human transfer rather
+      // than 500'ing the storefront caller into a Twilio app error.
+      logger.error(
+        {
+          event: "voice.inbound-reorder.shop_register_failed",
+          err,
+          callSid: CallSid,
+        },
+        "voice.inbound-reorder: shop pending-session register failed; transferring",
+      );
+      await transferToHuman("shop_pending_session_register_failed");
+      return;
+    }
 
     // Best-effort metadata stamp — the TwiML response (and the call) must go
     // out regardless, so log a warning on failure rather than throwing.
@@ -454,17 +469,29 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
   // upgrade (which races the TwiML response) finds it. Inbound-flavored
   // callContext + greeting so the agent doesn't tell a caller who dialed
   // in that we're calling them.
-  getPendingSessions().register({
-    conversationId,
-    orgId,
-    patientId,
-    episodeId,
-    callContext: INBOUND_CALL_CONTEXT,
-    greeting: INBOUND_GREETING,
-    // The caller dialed US — the agent must greet first, not wait for
-    // the caller to break the silence.
-    agentSpeaksFirst: true,
-  });
+  try {
+    await getPendingSessions().register({
+      conversationId,
+      orgId,
+      patientId,
+      episodeId,
+      callContext: INBOUND_CALL_CONTEXT,
+      greeting: INBOUND_GREETING,
+      // The caller dialed US — the agent must greet first, not wait for
+      // the caller to break the silence.
+      agentSpeaksFirst: true,
+    });
+  } catch (err) {
+    // The store is now a DB round-trip and can throw. Fail soft to a human
+    // transfer — the route's posture on any hiccup — rather than 500'ing
+    // (which would give the caller a Twilio app error + retries).
+    logger.error(
+      { event: "voice.inbound-reorder.register_failed", err, callSid: CallSid },
+      "voice.inbound-reorder: pending-session register failed; transferring to human",
+    );
+    await transferToHuman("pending_session_register_failed");
+    return;
+  }
 
   // Best-effort metadata stamp — the TwiML response must go out regardless.
   const { error: patientStampErr } = await supabase
