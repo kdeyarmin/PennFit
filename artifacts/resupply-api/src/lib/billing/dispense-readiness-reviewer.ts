@@ -33,6 +33,11 @@ import {
   type OrgScopedClient,
   resolveSeedOrgId,
 } from "@workspace/resupply-db";
+import {
+  CMS_COMPLIANT_NIGHTS,
+  COMPLIANT_MINUTES_PER_NIGHT,
+  evaluateSameOrSimilar,
+} from "@workspace/resupply-domain";
 
 import { logger } from "../logger";
 
@@ -52,6 +57,7 @@ export type FindingCategory =
   | "provider"
   | "prior_authorization"
   | "capped_rental"
+  | "same_or_similar"
   | "compliance_attestation"
   | "patient_acknowledgment"
   | "swo_dwo"
@@ -737,6 +743,43 @@ async function runDeterministicChecks(
     }
   }
 
+  // ── Same-or-similar (Medicare 5-yr reasonable useful lifetime) ──
+  // A pre-dispense gate alongside the claim preflight: if a HETS check on
+  // file shows a same/similar item still inside its RUL, dispensing risks
+  // a denial. The pure domain rule re-confirms the window so a stale
+  // "active" whose lifetime has lapsed does not warn. Warning-only.
+  {
+    const { data: sosChecks } = await supabase
+      .from("medicare_same_or_similar_checks")
+      .select("status, last_dispense_on, checked_at")
+      .eq("patient_id", input.patientId)
+      .eq("hcpcs_code", input.hcpcsCode)
+      .eq("status", "active")
+      .order("checked_at", { ascending: false })
+      .limit(1);
+    const latest = (sosChecks ?? [])[0] as
+      | { last_dispense_on: string | null }
+      | undefined;
+    if (latest) {
+      const win = evaluateSameOrSimilar({
+        lastDispenseOn: latest.last_dispense_on,
+      });
+      if (win.blocked) {
+        findings.push(
+          warning(
+            "same_or_similar",
+            "same_or_similar",
+            `Same-or-similar equipment on file for ${input.hcpcsCode}`,
+            win.clearsOn
+              ? `A same/similar item is within its 5-year reasonable useful lifetime (clears ${win.clearsOn}). Medicare will likely deny a new claim.`
+              : `A same/similar item is recorded active for ${input.hcpcsCode}; Medicare will likely deny a new claim.`,
+            "Confirm via a HETS same-or-similar check; if truly clear, re-record it, otherwise hold the dispense.",
+          ),
+        );
+      }
+    }
+  }
+
   // ── Compliance attestation (for capped rental continuation) ──
   if (CAPPED_RENTAL_HCPCS.has(input.hcpcsCode)) {
     const since = new Date(Date.now() - 30 * 24 * 3600 * 1000)
@@ -749,14 +792,15 @@ async function runDeterministicChecks(
       .gte("night_date", since)
       .limit(60);
     const compliant = (nights ?? []).filter(
-      (n: { usage_minutes: number | null }) => (n.usage_minutes ?? 0) >= 240,
+      (n: { usage_minutes: number | null }) =>
+        (n.usage_minutes ?? 0) >= COMPLIANT_MINUTES_PER_NIGHT,
     ).length;
-    if (compliant >= 21) {
+    if (compliant >= CMS_COMPLIANT_NIGHTS) {
       findings.push(
         ok(
           "compliance_attestation",
           "compliance_attestation",
-          `Patient compliant (${compliant}/21 nights in last 30 days)`,
+          `Patient compliant (${compliant}/${CMS_COMPLIANT_NIGHTS} nights in last 30 days)`,
         ),
       );
     } else {
@@ -764,7 +808,7 @@ async function runDeterministicChecks(
         warning(
           "compliance_attestation",
           "compliance_attestation",
-          `Patient not yet 90-day compliant (${compliant}/21 nights >=4h)`,
+          `Patient not yet 90-day compliant (${compliant}/${CMS_COMPLIANT_NIGHTS} nights >=4h)`,
           "Required for capped-rental continuation past month 3; surfaces the KX modifier on the claim.",
           "Continue outreach via the existing onboarding-check-ins cron; escalate to coaching_plans if usage remains low.",
         ),

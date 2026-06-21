@@ -52,9 +52,26 @@ export function timelyFilingStatus(
   // and "now" to their UTC date, so the deadline DAY itself reads as
   // 0 days remaining (due_soon), not −1 (overdue), regardless of the
   // time of day.
+  //
+  // UTC-date-truncation caveat (one-day-near-midnight): "now" is truncated
+  // by serializing `asOf` to its UTC ISO string and slicing the YYYY-MM-DD
+  // (`new Date(asOfMs).toISOString().slice(0, 10)`). Because the boundary is
+  // the UTC day, an `asOf` taken in a behind-UTC local zone shortly before
+  // local midnight has ALREADY rolled to the next UTC date — so the
+  // countdown drops by one a few hours early (and an ahead-of-UTC zone keeps
+  // "today's" count a few hours late). On a regulatory filing deadline this
+  // can shift the displayed days-remaining by exactly one day right around
+  // midnight UTC. This is intentional and deterministic (UTC is the single
+  // reference frame for every payer), not a local-time bug — but operators
+  // reading the worklist near 00:00 UTC should know the count can tick a day
+  // sooner/later than wall-clock intuition. The deadline date itself is
+  // pure UTC-calendar arithmetic and is unaffected.
   const dosDateMs = Date.parse(input.dateOfService.slice(0, 10));
   if (Number.isNaN(dosDateMs)) return unknown;
 
+  // `asOf` omitted → now. An UNPARSEABLE `asOf` (Date.parse → NaN) ALSO
+  // falls back to now rather than poisoning the countdown with NaN — an
+  // unreadable clock must never fabricate an "overdue".
   const asOfParsed = input.asOf ? Date.parse(input.asOf) : Date.now();
   const asOfMs = Number.isNaN(asOfParsed) ? Date.now() : asOfParsed;
   const asOfDateMs = Date.parse(new Date(asOfMs).toISOString().slice(0, 10));

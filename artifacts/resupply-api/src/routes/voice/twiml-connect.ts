@@ -154,7 +154,7 @@ router.post("/voice/twiml-connect", signatureMiddleware, async (req, res) => {
     return;
   }
 
-  const wsOrigin = publicWsOriginFromBaseUrl(config.publicBaseUrl);
+  const wsOrigin = publicWsOriginFromBaseUrl(config.streamBaseUrl);
   const wsUrl = `${wsOrigin}/resupply-api/voice/stream?conversationId=${encodeURIComponent(
     conversationId,
   )}`;

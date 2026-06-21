@@ -56,6 +56,10 @@ import type PgBoss from "pg-boss";
 
 import { logAuditBestEffort } from "@workspace/resupply-audit";
 import { getOrgScopedClient } from "@workspace/resupply-db";
+import {
+  PRIOR_AUTH_HEADS_UP_DAYS,
+  headsUpSeverity,
+} from "@workspace/resupply-domain";
 
 import { logger } from "../../lib/logger";
 import { forEachActiveOrg } from "../lib/for-each-active-org";
@@ -65,8 +69,9 @@ const SWEEP_JOB = "prior-auth.expiry-sweep";
 const SWEEP_CRON = "47 3 * * *";
 const SYSTEM_ACTOR_EMAIL = "system:cron:prior-auth-expiry-sweep";
 
-/** Heads-up windows, in days before approved_through. */
-const HEADS_UP_WINDOWS = [30, 14, 7] as const;
+/** Heads-up windows, in days before approved_through (shared with the
+ *  DWO sweep + UI via @workspace/resupply-domain). */
+const HEADS_UP_WINDOWS = PRIOR_AUTH_HEADS_UP_DAYS;
 // PostgREST caps a single response at ~1000 rows. Both the expire scan
 // and each heads-up window keyset-paginate at this size so a portfolio
 // larger than the cap is processed in full rather than silently
@@ -322,8 +327,7 @@ export async function runPriorAuthExpirySweepForOrg(
       if (existing && existing.length > 0) continue;
 
       // Severity escalates the closer we are to expiry.
-      const severity: "warning" | "critical" =
-        win <= 7 ? "critical" : "warning";
+      const severity = headsUpSeverity(win);
 
       const { error: headsUpErr } = await supabase
         .from("csr_compliance_alerts")

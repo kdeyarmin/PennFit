@@ -166,6 +166,48 @@ describe("reviewDispenseReadiness", () => {
     expect(categories.has("dme_organization")).toBe(true);
   });
 
+  it("warns (non-blocking) when a same-or-similar item is still in its RUL", async () => {
+    stageHappyPath();
+    const recent = new Date(Date.now() - 30 * 24 * 3600 * 1000)
+      .toISOString()
+      .slice(0, 10);
+    stageSupabaseResponse("medicare_same_or_similar_checks", "select", {
+      data: [
+        {
+          status: "active",
+          last_dispense_on: recent,
+          checked_at: "2026-06-01T00:00:00Z",
+        },
+      ],
+    });
+    const r = await reviewDispenseReadiness({
+      patientId: PATIENT,
+      hcpcsCode: "E0601",
+    });
+    const f = r.findings.find((x) => x.key === "same_or_similar");
+    expect(f?.severity).toBe("warning");
+    expect(f?.category).toBe("same_or_similar");
+    expect(r.readyToDispense).toBe(true); // warning never blocks dispense
+  });
+
+  it("does not flag same-or-similar when the recorded RUL has lapsed", async () => {
+    stageHappyPath();
+    stageSupabaseResponse("medicare_same_or_similar_checks", "select", {
+      data: [
+        {
+          status: "active",
+          last_dispense_on: "2018-01-01", // > 5 years ago — cleared
+          checked_at: "2018-02-01T00:00:00Z",
+        },
+      ],
+    });
+    const r = await reviewDispenseReadiness({
+      patientId: PATIENT,
+      hcpcsCode: "E0601",
+    });
+    expect(r.findings.find((x) => x.key === "same_or_similar")).toBeUndefined();
+  });
+
   it("flags incomplete patient address as a blocking error", async () => {
     stageHappyPath({
       address: { line1: "100 Main", city: "", state: "PA", zip: "16801" },

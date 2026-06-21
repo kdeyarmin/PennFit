@@ -10,6 +10,7 @@
 import type PgBoss from "pg-boss";
 
 import { getOrgScopedClient } from "@workspace/resupply-db";
+import { DWO_HEADS_UP_DAYS, headsUpSeverity } from "@workspace/resupply-domain";
 
 import { logger } from "../../lib/logger";
 import { forEachActiveOrg } from "../lib/for-each-active-org";
@@ -25,7 +26,7 @@ const JOB = "dwo.expiry-sweep";
 // prevents the same heads-up firing twice.
 const CRON = "37 4 * * *"; // Daily 04:37 UTC
 
-const HEADS_UP_DAYS = [60, 30, 7];
+const HEADS_UP_DAYS = DWO_HEADS_UP_DAYS;
 
 export async function registerDwoExpirySweepJob(boss: PgBoss): Promise<void> {
   await createQueueWithDlq(boss, JOB, CRON_SCAN_QUEUE_OPTS);
@@ -122,8 +123,7 @@ async function dwoExpirySweepForOrg(
         .filter("metric_snapshot->>daysOut", "eq", String(window))
         .limit(1);
       if (existing && existing.length > 0) continue;
-      const severity: "warning" | "critical" =
-        window <= 7 ? "critical" : "warning";
+      const severity = headsUpSeverity(window);
       const { error: insertErr } = await supabase
         .from("csr_compliance_alerts")
         .insert({

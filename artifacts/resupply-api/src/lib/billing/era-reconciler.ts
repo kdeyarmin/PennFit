@@ -50,6 +50,12 @@ import type {
   Parsed835Claim,
   Parsed835ServiceLine,
 } from "@workspace/resupply-integrations-office-ally";
+// The pure PR-group CARC breakdown now lives in the domain layer; re-export
+// it (and its type) below so existing importers keep their path.
+import {
+  patientRespBreakdown,
+  type PatientRespBreakdown,
+} from "@workspace/resupply-domain";
 
 import { logger } from "../logger";
 
@@ -445,44 +451,10 @@ function sumPositive(adjustments: Adjustment[], ...groups: string[]): number {
     .reduce((s, a) => s + Math.max(0, a.amountCents), 0);
 }
 
-/** Itemized patient-responsibility components, in cents. */
-export interface PatientRespBreakdown {
-  deductibleCents: number;
-  coinsuranceCents: number;
-  copayCents: number;
-}
-
-// CARC reason codes inside the PR (patient-responsibility) adjustment
-// group that map to a named cost-share bucket.
-const PR_DEDUCTIBLE_CARC = "1";
-const PR_COINSURANCE_CARC = "2";
-const PR_COPAY_CARC = "3";
-
-/**
- * Sum the 835 PR-group CAS adjustments into deductible / coinsurance /
- * copay, across BOTH the claim-level CAS and every service line's CAS
- * (the payer can itemize at either level). Only the named CARCs
- * (1/2/3) are bucketed; any other PR reason code stays folded into the
- * authoritative `patientResponsibilityCents` total and is intentionally
- * not double-counted here.
- */
-export function patientRespBreakdown(
-  eraClaim: Pick<Parsed835Claim, "adjustments" | "serviceLines">,
-): PatientRespBreakdown {
-  const all: Adjustment[] = [
-    ...eraClaim.adjustments,
-    ...eraClaim.serviceLines.flatMap((l) => l.adjustments),
-  ];
-  const sumByReason = (reason: string) =>
-    all
-      .filter((a) => a.groupCode === "PR" && a.reasonCode === reason)
-      .reduce((s, a) => s + Math.max(0, a.amountCents), 0);
-  return {
-    deductibleCents: sumByReason(PR_DEDUCTIBLE_CARC),
-    coinsuranceCents: sumByReason(PR_COINSURANCE_CARC),
-    copayCents: sumByReason(PR_COPAY_CARC),
-  };
-}
+// `patientRespBreakdown` + `PatientRespBreakdown` moved to
+// @workspace/resupply-domain (era-patient-responsibility); re-exported via
+// the import above so existing importers of this module are unaffected.
+export { patientRespBreakdown, type PatientRespBreakdown };
 
 function hasDenial(adjustments: Adjustment[]): boolean {
   // A line with a CO adjustment >= billed amount and zero paid is a

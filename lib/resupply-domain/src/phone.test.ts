@@ -36,4 +36,32 @@ describe("normalizeE164", () => {
     // not stripped to "800".
     expect(normalizeE164("800x5551212")).toBe("+18005551212");
   });
+
+  describe("international", () => {
+    it("passes a +-prefixed non-NANP number through unchanged", () => {
+      expect(normalizeE164("+44 20 7183 8750")).toBe("+442071838750");
+    });
+
+    it("rejects a bare non-NANP number without a default country code", () => {
+      // 9-digit national number — neither a 10-digit nor 11-leading-1 NANP.
+      expect(normalizeE164("2 9374 4000")).toBeNull();
+    });
+
+    it("prefixes a bare national number with the default country code", () => {
+      expect(normalizeE164("2 9374 4000", { defaultCountryCode: "61" })).toBe(
+        "+61293744000",
+      );
+    });
+
+    it("still prefers the NANP shortcut over the default country code", () => {
+      // 10 digits → +1, regardless of a supplied default CC.
+      expect(normalizeE164("2155551212", { defaultCountryCode: "44" })).toBe(
+        "+12155551212",
+      );
+    });
+
+    it("rejects when the prefixed result is out of E.164 range", () => {
+      expect(normalizeE164("1", { defaultCountryCode: "44" })).toBeNull();
+    });
+  });
 });

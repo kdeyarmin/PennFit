@@ -18,6 +18,7 @@ import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
 import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
+import { evaluateSameOrSimilar } from "@workspace/resupply-domain";
 
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
@@ -72,7 +73,14 @@ router.get(
       .eq("patient_id", parsed.data.id)
       .order("checked_at", { ascending: false })
       .limit(50);
-    res.json({ checks: data ?? [] });
+    // Enrich each cached check with the computed RUL window from the pure
+    // domain rule, so the SPA can show "clears on <date> (<N> days)" off the
+    // recorded last-dispense date instead of just the stored status flag.
+    const checks = ((data ?? []) as Row[]).map((row) => ({
+      ...row,
+      window: evaluateSameOrSimilar({ lastDispenseOn: row.last_dispense_on }),
+    }));
+    res.json({ checks });
   },
 );
 

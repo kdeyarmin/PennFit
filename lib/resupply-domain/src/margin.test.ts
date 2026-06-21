@@ -108,5 +108,62 @@ describe("aggregateMargin", () => {
     expect(agg.lineCount).toBe(0);
     expect(agg.revenueCents).toBe(0);
     expect(agg.marginRatio).toBeNull();
+    expect(agg.lossLineCount).toBe(0);
+    expect(agg.negativeMarginRevenueCents).toBe(0);
+  });
+
+  it("counts loss lines and the revenue sold below cost", () => {
+    // Two profitable lines + one sold below cost. The loss line drags the
+    // headline margin negative (5000 + (-2000) = 3000 margin on 17000?
+    // no — see below), and is surfaced as a distinct "below cost" figure.
+    const agg = aggregateMargin([
+      { revenueCents: 10000, unitCostCents: 4000 }, // +6000 margin
+      { revenueCents: 5000, unitCostCents: 2000 }, // +3000 margin
+      { revenueCents: 1000, unitCostCents: 1500 }, // −500 loss line
+    ]);
+    expect(agg.lossLineCount).toBe(1);
+    expect(agg.negativeMarginRevenueCents).toBe(1000);
+    // Profitable here overall; loss line is still surfaced separately.
+    expect(agg.costedRevenueCents).toBe(16000);
+    expect(agg.costCents).toBe(7500);
+    expect(agg.marginCents).toBe(8500);
+    expect(agg.marginRatio).toBeCloseTo(8500 / 16000, 10);
+  });
+
+  it("lets the aggregate marginRatio go NEGATIVE when losses dominate", () => {
+    // One small win, one big loss → total margin is negative, and the
+    // ratio (over costed revenue) is below zero.
+    const agg = aggregateMargin([
+      { revenueCents: 1000, unitCostCents: 500 }, // +500
+      { revenueCents: 2000, unitCostCents: 6000 }, // −4000 loss line
+    ]);
+    expect(agg.lossLineCount).toBe(1);
+    expect(agg.negativeMarginRevenueCents).toBe(2000);
+    expect(agg.costedRevenueCents).toBe(3000);
+    expect(agg.costCents).toBe(6500);
+    expect(agg.marginCents).toBe(-3500);
+    expect(agg.marginRatio).toBeCloseTo(-3500 / 3000, 10);
+    expect(agg.marginRatio).toBeLessThan(0);
+  });
+
+  it("never counts an UNCOSTED line as a loss line", () => {
+    // An uncosted line's margin is unknown, not negative — it must not be
+    // tallied into lossLineCount / negativeMarginRevenueCents.
+    const agg = aggregateMargin([
+      { revenueCents: 8000 }, // uncosted
+      { revenueCents: 1000, unitCostCents: 1500 }, // costed loss
+    ]);
+    expect(agg.lossLineCount).toBe(1);
+    expect(agg.negativeMarginRevenueCents).toBe(1000);
+    expect(agg.uncostedRevenueCents).toBe(8000);
+  });
+
+  it("does not count a KNOWN break-even (zero margin) as a loss", () => {
+    // marginCents === 0 is not < 0, so a break-even line is not a loss.
+    const agg = aggregateMargin([
+      { revenueCents: 5000, unitCostCents: 5000 }, // exactly break-even
+    ]);
+    expect(agg.lossLineCount).toBe(0);
+    expect(agg.negativeMarginRevenueCents).toBe(0);
   });
 });

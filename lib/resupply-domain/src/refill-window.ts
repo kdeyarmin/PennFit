@@ -43,12 +43,28 @@ export interface RefillWindowInput {
   /** When this supply family was last dispensed. `null` → first fill,
    *  both windows open. */
   lastFulfilledAt: Date | null;
+  /** Last-dispense dates of RELATED ("same-or-similar") items that share
+   *  this refill window — CMS treats a same-or-similar item dispensed
+   *  recently as resetting the clock. The EFFECTIVE last-dispense used for
+   *  the window is the MAX (latest) of `lastFulfilledAt` and every finite
+   *  entry here, so a recently-dispensed similar item correctly blocks the
+   *  window. Omitting it (or passing an empty array) keeps single-family
+   *  behavior identical. `null`/Invalid-Date entries are ignored. */
+  relatedLastFulfilledAt?: (Date | null)[];
   /** Expected usable life of the current supply, in days (the HCPCS
    *  replacement interval). Clamped to >= 1 defensively. */
   supplyDurationDays: number;
   /** Current moment. Pass `new Date()` in production; tests pass a fixed
    *  instant for determinism. */
   now: Date;
+  /** Earliest-contact lead, in days before expected depletion. Defaults to
+   *  `REFILL_CONTACT_LEAD_DAYS` (14); payers differ, so it is overridable
+   *  per call. Clamped non-negative and to a whole day defensively. */
+  contactLeadDays?: number;
+  /** Earliest-ship lead, in days before expected depletion. Defaults to
+   *  `REFILL_SHIP_LEAD_DAYS` (10); payers differ, so it is overridable per
+   *  call. Clamped non-negative and to a whole day defensively. */
+  shipLeadDays?: number;
 }
 
 export interface RefillWindowResult {
@@ -84,8 +100,41 @@ export function resolveRefillWindow(
     ? Math.max(1, Math.floor(input.supplyDurationDays))
     : 1;
 
-  // First fill — no current supply, both windows open.
-  if (lastFulfilledAt === null) {
+  // Lead days are overridable per call (payers differ) but must stay
+  // non-negative whole days — a non-finite or negative override would
+  // otherwise produce Invalid Dates / a window that opens AFTER depletion.
+  // Guard the same way as supplyDurationDays.
+  const contactLeadDays = Number.isFinite(input.contactLeadDays)
+    ? Math.max(0, Math.floor(input.contactLeadDays as number))
+    : REFILL_CONTACT_LEAD_DAYS;
+  const shipLeadDays = Number.isFinite(input.shipLeadDays)
+    ? Math.max(0, Math.floor(input.shipLeadDays as number))
+    : REFILL_SHIP_LEAD_DAYS;
+
+  // Effective last-dispense = MAX of this family's last dispense and every
+  // FINITE related ("same-or-similar") last dispense. A recently-dispensed
+  // similar item pushes the depletion (and therefore both windows) later,
+  // correctly blocking an early refill. We collect candidate timestamps,
+  // dropping nulls and Invalid Dates (getTime() → NaN) so a bad entry can
+  // never poison the MAX with NaN. With no related dates the single value
+  // is used unchanged — identical single-family behavior.
+  const candidateMs: number[] = [];
+  if (lastFulfilledAt !== null) {
+    const t = lastFulfilledAt.getTime();
+    if (Number.isFinite(t)) candidateMs.push(t);
+  }
+  for (const related of input.relatedLastFulfilledAt ?? []) {
+    if (related === null) continue;
+    const t = related.getTime();
+    if (Number.isFinite(t)) candidateMs.push(t);
+  }
+
+  // First fill — no usable last-dispense at all (null family date AND no
+  // finite related dates). No current supply to deplete, both windows open.
+  // This also covers an Invalid-Date `lastFulfilledAt` with no rescuing
+  // related date: fail safe to the open, never-blocked first-fill posture
+  // rather than computing an Invalid-Date depletion.
+  if (candidateMs.length === 0) {
     return {
       expectedDepletionOn: null,
       earliestContactOn: null,
@@ -97,14 +146,34 @@ export function resolveRefillWindow(
     };
   }
 
-  const depletionMs = lastFulfilledAt.getTime() + supplyDurationDays * DAY_MS;
-  const expectedDepletionOn = new Date(depletionMs);
-  const earliestContactOn = new Date(
-    depletionMs - REFILL_CONTACT_LEAD_DAYS * DAY_MS,
-  );
-  const earliestShipOn = new Date(depletionMs - REFILL_SHIP_LEAD_DAYS * DAY_MS);
+  const effectiveLastFulfilledMs = Math.max(...candidateMs);
 
+  const depletionMs = effectiveLastFulfilledMs + supplyDurationDays * DAY_MS;
+  const expectedDepletionOn = new Date(depletionMs);
+  const earliestContactOn = new Date(depletionMs - contactLeadDays * DAY_MS);
+  const earliestShipOn = new Date(depletionMs - shipLeadDays * DAY_MS);
+
+  // Guard a non-finite `now` (Invalid Date) explicitly rather than letting
+  // NaN comparisons silently decide the windows: `nowMs >= x` is always
+  // false when nowMs is NaN, which would BLOCK every window AND leak NaN
+  // into the daysUntil* countdowns — non-deterministic and uninspectable.
+  // Fail safe and deterministic: with no usable clock we cannot prove a
+  // window is open, so block both, and report the FULL remaining lead
+  // (depletion minus the earliest date is exactly the lead) as a finite,
+  // worst-case countdown rather than NaN.
   const nowMs = now.getTime();
+  if (!Number.isFinite(nowMs)) {
+    return {
+      expectedDepletionOn,
+      earliestContactOn,
+      earliestShipOn,
+      contactAllowed: false,
+      shipAllowed: false,
+      daysUntilContact: contactLeadDays,
+      daysUntilShip: shipLeadDays,
+    };
+  }
+
   const contactAllowed = nowMs >= earliestContactOn.getTime();
   const shipAllowed = nowMs >= earliestShipOn.getTime();
   const daysUntilContact = contactAllowed

@@ -276,3 +276,37 @@ describe("resolveOutreachPlan — combined scenarios", () => {
     });
   });
 });
+
+describe("resolveOutreachPlan — free-text match normalization", () => {
+  it("matches a payer rule despite case/whitespace drift", () => {
+    const plan = resolveOutreachPlan({
+      patient: basePatient({ insurancePayer: "  aetna " }),
+      prescription: basePrescription(),
+      rules: [
+        rule({
+          id: "aetna-rule",
+          matchInsurancePayer: "Aetna",
+          cadenceDays: 45,
+        }),
+      ],
+      now: NOW,
+    });
+    expect(plan.cadenceSource).toBe("rule");
+    expect(plan.cadenceDays).toBe(45);
+    expect(plan.matchedRuleId).toBe("aetna-rule");
+  });
+
+  it("matches a SKU-prefix rule case-insensitively", () => {
+    const plan = resolveOutreachPlan({
+      patient: basePatient(),
+      prescription: basePrescription({ itemSku: "mask-nasal-med" }),
+      rules: [
+        rule({ id: "mask-rule", matchItemSkuPrefix: "MASK-", cadenceDays: 30 }),
+      ],
+      now: NOW,
+    });
+    expect(plan.cadenceSource).toBe("rule");
+    expect(plan.cadenceDays).toBe(30);
+    expect(plan.matchedRuleId).toBe("mask-rule");
+  });
+});

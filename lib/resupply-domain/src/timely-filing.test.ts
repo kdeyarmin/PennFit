@@ -79,4 +79,69 @@ describe("timelyFilingStatus", () => {
       timelyFilingStatus({ ...base, dueSoonThresholdDays: 30 }).status,
     ).toBe("due_soon");
   });
+
+  it("defaults asOf to now when omitted", () => {
+    // DOS today + a tiny 1-day window → deadline is yesterday/today, so the
+    // count cannot be a large positive number. With a far-future DOS and a
+    // huge window it must be comfortably "ok". We assert against the real
+    // clock without pinning an exact day (avoids a midnight-UTC flake).
+    const farFuture = new Date(Date.now() + 200 * 86_400_000)
+      .toISOString()
+      .slice(0, 10);
+    const r = timelyFilingStatus({
+      dateOfService: farFuture,
+      filingWindowDays: 365,
+    });
+    expect(r.status).toBe("ok");
+    expect(r.daysRemaining).toBeGreaterThan(0);
+    expect(Number.isNaN(r.daysRemaining ?? NaN)).toBe(false);
+  });
+
+  it("falls back to now for an unparseable asOf (never fabricates overdue)", () => {
+    // Same far-future DOS; a garbage asOf must NOT poison the countdown with
+    // NaN — it falls back to now, yielding the same comfortable "ok".
+    const farFuture = new Date(Date.now() + 200 * 86_400_000)
+      .toISOString()
+      .slice(0, 10);
+    const r = timelyFilingStatus({
+      dateOfService: farFuture,
+      filingWindowDays: 365,
+      asOf: "not-a-real-date",
+    });
+    expect(r.status).toBe("ok");
+    expect(Number.isNaN(r.daysRemaining ?? NaN)).toBe(false);
+  });
+
+  it("is due_soon at exactly the threshold and ok just past it", () => {
+    // asOf date = 2026-05-31. Tune the window so the deadline lands exactly
+    // 14 then 15 days out, straddling the default due-soon threshold (14).
+    const at14 = timelyFilingStatus({
+      dateOfService: "2026-05-01", // +44d → 2026-06-14 == asOf + 14d
+      filingWindowDays: 44,
+      asOf: ASOF,
+    });
+    expect(at14.daysRemaining).toBe(14);
+    expect(at14.status).toBe("due_soon"); // <= 14 is due_soon
+
+    const at15 = timelyFilingStatus({
+      dateOfService: "2026-05-01", // +45d → 2026-06-15 == asOf + 15d
+      filingWindowDays: 45,
+      asOf: ASOF,
+    });
+    expect(at15.daysRemaining).toBe(15);
+    expect(at15.status).toBe("ok"); // 15 > 14 → ok
+  });
+
+  it("truncates a fractional filingWindowDays toward zero (Math.trunc)", () => {
+    // 60.9 days must behave exactly like 60 (NOT round up to 61): DOS
+    // 2026-04-01 + trunc(60.9)=60 → deadline 2026-05-31 == asOf → 0 remaining.
+    const r = timelyFilingStatus({
+      dateOfService: "2026-04-01",
+      filingWindowDays: 60.9,
+      asOf: ASOF,
+    });
+    expect(r.deadline).toBe("2026-05-31");
+    expect(r.daysRemaining).toBe(0);
+    expect(r.status).toBe("due_soon");
+  });
 });

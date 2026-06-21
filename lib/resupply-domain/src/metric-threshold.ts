@@ -72,6 +72,18 @@ export function evaluateThreshold(
   let comparedValue: number;
 
   if (rule.mode === "absolute") {
+    // Guard a non-finite current value (NaN / ±Infinity). A NaN compared
+    // against any threshold is always false, so without this guard a
+    // broken metric reads back as "not breached" — silently hiding the
+    // exact breakage an alerting system exists to surface. Make it
+    // explicit instead of letting it be swallowed.
+    if (!Number.isFinite(currentValue)) {
+      return {
+        breached: false,
+        comparedValue: null,
+        reason: "current value is not finite",
+      };
+    }
     comparedValue = currentValue;
   } else if (baselineValue == null || !Number.isFinite(baselineValue)) {
     return {
@@ -82,7 +94,7 @@ export function evaluateThreshold(
   } else if (rule.mode === "delta_7d") {
     comparedValue = currentValue - baselineValue;
   } else {
-    // delta_pct_7d — percent change relative to the baseline magnitude.
+    // delta_pct_7d — percent change relative to the baseline MAGNITUDE.
     if (baselineValue === 0) {
       return {
         breached: false,
@@ -90,6 +102,16 @@ export function evaluateThreshold(
         reason: "baseline is zero; percent change is undefined",
       };
     }
+    // Sign convention for a NEGATIVE baseline: we divide by
+    // `Math.abs(baselineValue)` so the SIGN of the percent change tracks
+    // the SIGN of the raw movement (currentValue − baselineValue), not the
+    // sign of the baseline. Example: baseline −100 → current −80 is a raw
+    // +20 move; dividing by |−100| = 100 yields +20% ("up 20%"), which is
+    // what an operator expects ("the number got less negative"). Dividing
+    // by the signed −100 would flip that to −20% and invert every
+    // gt/lt comparison for negative-baseline metrics. Keeping the
+    // denominator a magnitude makes "X% up / down" mean the intuitive
+    // thing regardless of which side of zero the baseline sits on.
     comparedValue =
       ((currentValue - baselineValue) / Math.abs(baselineValue)) * 100;
   }
@@ -100,4 +122,38 @@ export function evaluateThreshold(
     : `${rule.mode} value ${comparedValue} within threshold ${rule.thresholdValue}`;
 
   return { breached, comparedValue, reason };
+}
+
+/**
+ * Hysteresis helper for noise suppression. Given the chronological history
+ * of per-evaluation breach flags (oldest → newest), returns true only when
+ * the most recent `minConsecutive` entries are ALL true — i.e. the metric
+ * has breached on every one of the last N evaluations, not just spiked for
+ * a single noisy day. The worker uses this to decide whether a breach is
+ * persistent enough to alert on.
+ *
+ * Pure + total: never throws, never reads a clock. Defensive on inputs:
+ *   * `minConsecutive` is clamped to a positive integer (a value of 0,
+ *     negative, or non-finite is treated as 1 — "at least one breach").
+ *   * If the history is SHORTER than `minConsecutive` there cannot yet be
+ *     enough consecutive breaches, so it returns false (we don't treat a
+ *     short, brand-new history as a satisfied streak).
+ */
+export function breachPersists(
+  history: readonly boolean[],
+  minConsecutive: number,
+): boolean {
+  const need =
+    Number.isFinite(minConsecutive) && minConsecutive > 0
+      ? Math.trunc(minConsecutive)
+      : 1;
+
+  // Not enough data points to form a streak of the required length.
+  if (history.length < need) return false;
+
+  // Inspect only the most recent `need` entries; every one must be true.
+  for (let i = history.length - need; i < history.length; i += 1) {
+    if (!history[i]) return false;
+  }
+  return true;
 }

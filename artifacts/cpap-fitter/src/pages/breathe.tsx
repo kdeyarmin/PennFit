@@ -3855,7 +3855,7 @@ const PLANS: {
     price: "$149",
     cadence: "/mo",
     monthlyCents: 14900,
-    setup: "No setup fee · 25 fittings/mo, then $3 each",
+    setup: "No setup fee · 25 fittings/mo, then $2 each",
     blurb:
       "Standalone AI mask fitter — text a patient a link, get the perfect mask & size back. No in-office fittings, no wasted sample masks.",
     highlights: [
@@ -3863,7 +3863,7 @@ const PLANS: {
       "Text or email a fitting link to any patient or prospect",
       "Perfect mask type + size back in your fitter worklist",
       "Photos never leave the patient's phone — only measurements",
-      "25 completed fittings/month, then per-fitting pricing",
+      "25 completed fittings/month, then $2 each",
     ],
   },
   {
@@ -3876,6 +3876,7 @@ const PLANS: {
     highlights: [
       "5 staff seats · 500 active patients · 1 location",
       "Branded CPAP storefront + mask fitter",
+      "Virtual mask fitter — 25 fittings/mo, then $2 each",
       "Shop, cart, checkout, and order tracking",
       "Resupply reminders + subscription tracking",
     ],
@@ -3891,6 +3892,7 @@ const PLANS: {
     highlights: [
       "15 seats · 3,000 patients · 3 locations",
       "Everything in Launch",
+      "Virtual mask fitter — 25 fittings/mo, then $2 each",
       "Bulk campaigns, patient packets + e-signature",
       "Eligibility, prior auth, CMN/DIF, and A/R worklists",
     ],
@@ -3907,6 +3909,7 @@ const PLANS: {
     highlights: [
       "40 seats · 10,000 patients · 10 locations",
       "Everything in Growth",
+      "Virtual mask fitter — 25 fittings/mo, then $2 each",
       "Advanced financial, funnel, and LTV/CAC analytics",
       "Automation rules, Control Center, bot playground",
     ],
@@ -3921,6 +3924,7 @@ const PLANS: {
       "For high-volume DME operations needing custom integration and support.",
     highlights: [
       "Everything in Scale",
+      "Virtual mask fitter — 25 fittings/mo, then $2 each",
       "Custom integration + migration plan",
       "Advanced security and account controls",
       "Dedicated success manager + priority SLA",
@@ -4144,8 +4148,15 @@ const ADDON_CATEGORY_LABELS: Record<string, string> = {
 };
 
 function addonPrice(a: PublicAddon): string {
-  if (a.recurringPriceCents != null)
-    return `${dollars(a.recurringPriceCents)}/mo`;
+  if (a.recurringPriceCents != null) {
+    // Per-unit usage add-ons (e.g. the per-fitting metered price) carry a
+    // "per …" unit label — render the rate against it rather than "/mo", so
+    // the Virtual Mask Fitter overage reads "$2.00 per completed fitting".
+    const label = a.unitLabel ?? "";
+    return /^per\s/i.test(label)
+      ? `${dollars(a.recurringPriceCents)} ${label}`
+      : `${dollars(a.recurringPriceCents)}/mo`;
+  }
   if (
     a.oneTimeMinCents != null &&
     a.oneTimeMaxCents != null &&

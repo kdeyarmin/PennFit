@@ -5,7 +5,8 @@
 //     - current_month += 1
 //     - Generate a draft insurance_claims for this month with the CMS
 //       capped-rental modifier rotation (KH month 1; KI months 2-3;
-//       KJ months 4..max, + KX when compliant). See pickModifiers.
+//       KJ months 4..max, + KX when compliant). See
+//       pickCappedRentalModifiers in @workspace/resupply-domain.
 //     - Set latest_claim_id.
 //   * When current_month == max_months + 1, mark ownership_transferred_on
 //     and status='transferred'.
@@ -20,6 +21,12 @@ import {
   resolveSeedOrgId,
   type OrgScopedClient,
 } from "@workspace/resupply-db";
+import {
+  CMS_COMPLIANT_NIGHTS,
+  COMPLIANT_MINUTES_PER_NIGHT,
+  decideCappedRentalAdvance,
+  pickCappedRentalModifiers,
+} from "@workspace/resupply-domain";
 
 import { logger } from "../logger";
 
@@ -34,8 +41,6 @@ export interface AdvanceStats {
   errored: number;
   byHcpcs: Record<string, number>;
 }
-
-const COMPLIANT_KX_HCPCS = new Set(["E0601", "E0470", "E0471"]);
 
 export async function runCappedRentalAdvance(): Promise<AdvanceStats> {
   const stats: AdvanceStats = {
@@ -117,14 +122,19 @@ async function advanceCycle(
   supabase: SupabaseClient,
   cycle: Cycle,
 ): Promise<"advanced" | "transferred" | "noop"> {
-  // Is the next month due? Anniversary = start + (current_month * 30 days).
-  const start = new Date(`${cycle.start_date}T00:00:00Z`);
-  const nextDueMs =
-    start.getTime() + cycle.current_month * 30 * 24 * 3600 * 1000;
-  if (Date.now() < nextDueMs) return "noop";
+  // Anniversary / transfer decision (pure, shared with the CSR override
+  // route + claim-preview UI).
+  const decision = decideCappedRentalAdvance({
+    startDate: cycle.start_date,
+    currentMonth: cycle.current_month,
+    maxMonths: cycle.max_months,
+    asOf: new Date(),
+  });
+  const nextDueMs = decision.nextDueMs;
+  if (decision.action === "noop") return "noop";
 
   // Ownership transfer at month max+1.
-  if (cycle.current_month >= cycle.max_months) {
+  if (decision.action === "transfer") {
     const { error: transferErr } = await supabase
       .from("capped_rental_cycles")
       .update({
@@ -143,7 +153,7 @@ async function advanceCycle(
     return "transferred";
   }
 
-  const nextMonth = cycle.current_month + 1;
+  const nextMonth = decision.nextMonth;
 
   // Atomically CLAIM this month BEFORE generating anything. The guarded
   // update only succeeds for the worker that flips current_month from
@@ -173,7 +183,11 @@ async function advanceCycle(
   try {
     // Resolve compliance for KX gate.
     const isCompliant = await isPatientCompliant(supabase, cycle.patient_id);
-    const modifiers = pickModifiers(cycle.hcpcs_code, nextMonth, isCompliant);
+    const modifiers = pickCappedRentalModifiers(
+      cycle.hcpcs_code,
+      nextMonth,
+      isCompliant,
+    );
 
     const { data: payer } = cycle.payer_profile_id
       ? await supabase
@@ -265,46 +279,6 @@ async function advanceCycle(
   }
 }
 
-/**
- * Selects the HCPCS rental-month modifier codes for a capped-rental month,
- * following the CMS capped-rental modifier sequence:
- *
- *   - `KH` — first month rental (month 1).
- *   - `KI` — second and third month rental (months 2–3).
- *   - `KJ` — capped-rental / PEN-pump months four onward ("months four to
- *     fifteen" for the standard 13/15-month caps, extended uniformly through
- *     the cycle's `max_months` for longer rental caps so no continuation
- *     claim goes out with a bare `RR`).
- *
- * `RR` (rental) is always present. `KX` (medical-policy criteria met) rides
- * on the `KJ` months for a compliant CPAP/BiPAP patient, matching the prior
- * behaviour. Previously months 1–3 emitted `KH` and 4–13 emitted `KI` (a
- * non-standard mapping) and months 14+ emitted only `RR` — a 36-month
- * (oxygen-length) cycle therefore sent 23 continuation claims with no
- * rental-month modifier, which payers deny.
- *
- * @param hcpcs - The HCPCS code for the product or service
- * @param month - The rental month number (1-based)
- * @param isCompliant - Whether the patient meets the KX compliance criteria
- * @returns An array of modifier codes to apply to the claim line item
- */
-export function pickModifiers(
-  hcpcs: string,
-  month: number,
-  isCompliant: boolean,
-): string[] {
-  const mods: string[] = ["RR"];
-  if (month <= 1) {
-    mods.push("KH");
-  } else if (month <= 3) {
-    mods.push("KI");
-  } else {
-    mods.push("KJ");
-    if (isCompliant && COMPLIANT_KX_HCPCS.has(hcpcs)) mods.push("KX");
-  }
-  return mods;
-}
-
 async function isPatientCompliant(
   supabase: SupabaseClient,
   patientId: string,
@@ -324,9 +298,9 @@ async function isPatientCompliant(
   if (nightsErr) throw nightsErr;
   const compliant = (nights ?? []).filter(
     (n: Database["resupply"]["Tables"]["patient_therapy_nights"]["Row"]) =>
-      (n.usage_minutes ?? 0) >= 240,
+      (n.usage_minutes ?? 0) >= COMPLIANT_MINUTES_PER_NIGHT,
   ).length;
-  return compliant >= 21;
+  return compliant >= CMS_COMPLIANT_NIGHTS;
 }
 
 async function defaultBilledForHcpcs(

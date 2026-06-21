@@ -22,6 +22,12 @@ import {
   resolveSeedOrgId,
   type OrgScopedClient,
 } from "@workspace/resupply-db";
+import {
+  CMS_COMPLIANT_NIGHTS,
+  COMPLIANT_MINUTES_PER_NIGHT,
+  evaluateSameOrSimilar,
+  timelyFilingStatus,
+} from "@workspace/resupply-domain";
 
 type ClaimLineRow =
   Database["resupply"]["Tables"]["insurance_claim_line_items"]["Row"];
@@ -55,14 +61,6 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
  *  gates use). */
 const ELIGIBILITY_FRESHNESS_MS = 45 * MS_PER_DAY;
 
-/** Payer lines-of-business for which Medicare Same-or-Similar applies.
- *  Mirrors the set in heuristic-denial-scorer / dispense-readiness. */
-const MEDICARE_LIKE_LOBS = new Set(["medicare_part_b", "medicare_advantage"]);
-
-/** A cached Same-or-Similar check older than this is treated as stale and
- *  re-surfaced as a (non-blocking) "re-check" warning. */
-const SAME_OR_SIMILAR_FRESHNESS_MS = 180 * MS_PER_DAY;
-
 export type PreflightSeverity = "ok" | "warning" | "error";
 
 export interface PreflightItem {
@@ -85,7 +83,8 @@ export type PreflightFixAction =
   | { kind: "set_referring_provider"; claimId: string }
   | { kind: "add_line_item"; claimId: string }
   | { kind: "edit_line_item"; claimId: string; lineId: string }
-  | { kind: "edit_address"; patientId: string };
+  | { kind: "edit_address"; patientId: string }
+  | { kind: "record_same_or_similar"; patientId: string; hcpcs: string };
 
 export interface PreflightSummary {
   /** True iff no `error`-severity items. */
@@ -122,9 +121,6 @@ export async function preflightClaim(
   const supabase = getOrgScopedClient(orgId);
   const items: PreflightItem[] = [];
   let payerRequiresReferringProviderNpi = true;
-  // Captured from the payer-profile read below; drives the Medicare
-  // Same-or-Similar section (which runs after the line-items load).
-  let payerLineOfBusiness: string | null = null;
 
   const { data: claim, error: cErr } = await supabase
     .from("insurance_claims")
@@ -235,7 +231,6 @@ export async function preflightClaim(
       .eq("id", claim.payer_profile_id)
       .limit(1)
       .maybeSingle();
-    if (payer) payerLineOfBusiness = payer.line_of_business;
     if (!payer) {
       items.push(missingPayer(claim.id, "Payer profile row missing."));
     } else if (!payer.is_active) {
@@ -337,19 +332,40 @@ export async function preflightClaim(
       }
 
       // ── Timely filing window (Phase 12) ───────────────────────
-      if (payer.timely_filing_days != null && claim.date_of_service) {
-        const dos = toUtcDateEpochMs(new Date(claim.date_of_service));
-        const today = toUtcDateEpochMs(new Date());
-        const ageDays = Math.floor((today - dos) / MS_PER_DAY);
-        const remaining = payer.timely_filing_days - ageDays;
-        if (remaining < 0) {
+      // Countdown comes from the shared domain rule (timelyFilingStatus),
+      // the same one the /admin/billing/timely-filing surface and the
+      // auto-submit engine use, so the preflight badge can't drift from
+      // them. We keep the two "can't compute" sub-cases distinct (no
+      // window configured vs no date of service) for an actionable detail.
+      if (payer.timely_filing_days == null) {
+        items.push({
+          key: "timely_filing",
+          severity: "warning",
+          label: "Timely-filing window not configured",
+          detail: `${payer.display_name} is missing timely_filing_days in the payer profile.`,
+        });
+      } else if (!claim.date_of_service) {
+        items.push({
+          key: "timely_filing",
+          severity: "warning",
+          label: "Date of service missing",
+          detail:
+            "Claim is missing date_of_service, so timely filing cannot be calculated.",
+        });
+      } else {
+        const tf = timelyFilingStatus({
+          dateOfService: claim.date_of_service,
+          filingWindowDays: payer.timely_filing_days,
+        });
+        const remaining = tf.daysRemaining ?? 0;
+        if (tf.status === "overdue") {
           items.push({
             key: "timely_filing",
             severity: "error",
             label: "Past the timely-filing deadline",
             detail: `${payer.display_name} requires submission within ${payer.timely_filing_days} days of DOS; this claim is ${-remaining} day(s) past.`,
           });
-        } else if (remaining <= 14) {
+        } else if (tf.status === "due_soon") {
           items.push({
             key: "timely_filing",
             severity: "warning",
@@ -364,21 +380,6 @@ export async function preflightClaim(
             detail: `${payer.display_name} timely-filing window: ${payer.timely_filing_days} days from DOS.`,
           });
         }
-      } else if (payer.timely_filing_days == null) {
-        items.push({
-          key: "timely_filing",
-          severity: "warning",
-          label: "Timely-filing window not configured",
-          detail: `${payer.display_name} is missing timely_filing_days in the payer profile.`,
-        });
-      } else {
-        items.push({
-          key: "timely_filing",
-          severity: "warning",
-          label: "Date of service missing",
-          detail:
-            "Claim is missing date_of_service, so timely filing cannot be calculated.",
-        });
       }
 
       // ── Required modifiers (Phase 12) ─────────────────────────
@@ -638,6 +639,58 @@ export async function preflightClaim(
         .join(", "),
     });
 
+    // ── Same-or-similar (Medicare 5-yr reasonable useful lifetime) ──
+    // Activates the medicare_same_or_similar_checks cache (previously
+    // stored but never read): when a HETS check on file shows a same/
+    // similar item for one of this claim's HCPCS still inside its RUL,
+    // surface a non-blocking denial-risk warning. The pure domain rule
+    // re-confirms the window so a stale "active" check whose lifetime has
+    // since lapsed does NOT warn. Warning-only — never blocks submit.
+    const hcpcsOnClaim = Array.from(
+      new Set(
+        (lines as ClaimLineRow[])
+          .map((l) => l.hcpcs_code)
+          .filter((c): c is string => !!c),
+      ),
+    );
+    if (hcpcsOnClaim.length > 0) {
+      const { data: sosChecks } = await supabase
+        .from("medicare_same_or_similar_checks")
+        .select("hcpcs_code, status, last_dispense_on, checked_at")
+        .eq("patient_id", claim.patient_id)
+        .in("hcpcs_code", hcpcsOnClaim)
+        .eq("status", "active")
+        .order("checked_at", { ascending: false });
+      type SosCheckRow = {
+        hcpcs_code: string | null;
+        last_dispense_on: string | null;
+      };
+      const sosRows = (sosChecks ?? []) as SosCheckRow[];
+      for (const code of hcpcsOnClaim) {
+        const latest = sosRows.find((c) => c.hcpcs_code === code);
+        if (!latest) continue;
+        const win = evaluateSameOrSimilar({
+          lastDispenseOn: latest.last_dispense_on,
+        });
+        if (win.blocked) {
+          items.push({
+            key: "same_or_similar",
+            severity: "warning",
+            label: `Same-or-similar equipment on file (${code})`,
+            detail: win.clearsOn
+              ? `A same/similar item is within its 5-year reasonable useful lifetime (clears ${win.clearsOn}). Medicare will likely deny — confirm before submitting.`
+              : `A same/similar item is recorded active for ${code}. Medicare will likely deny — confirm before submitting.`,
+            fixAction: {
+              kind: "record_same_or_similar",
+              patientId: claim.patient_id,
+              hcpcs: code,
+            },
+          });
+          break; // one warning is enough to prompt the CSR
+        }
+      }
+    }
+
     // Each line should have a billed amount > 0.
     const zeroBilled = lines.filter(
       (l: ClaimLineRow) => (l.billed_cents ?? 0) === 0,
@@ -743,106 +796,6 @@ export async function preflightClaim(
           lineId: first.line.id,
         },
       });
-    }
-
-    // ── Medicare Same-or-Similar (non-blocking) ────────────────────
-    // For a Medicare-like payer, surface the cached HETS Same-or-Similar
-    // result per HCPCS so the biller sees a likely rental-cycle conflict
-    // (status='active'), an inconclusive/missing/stale check BEFORE
-    // submitting. All WARNINGS — never blocks: a same-or-similar hit is
-    // usually-but-not-always a denial and the biller may have the
-    // documentation to proceed. The cache is populated by
-    // /admin/patients/:id/same-or-similar (manual today; the HETS adapter
-    // becomes the network trigger later). Previously the cache was
-    // write-only — nothing read it back into the claim flow. The payer's
-    // line_of_business was captured from the payer-profile read above.
-    if (
-      payerLineOfBusiness !== null &&
-      MEDICARE_LIKE_LOBS.has(payerLineOfBusiness)
-    ) {
-      const hcpcsCodes = Array.from(
-        new Set(
-          (lines as ClaimLineRow[])
-            .map((l) => l.hcpcs_code)
-            .filter((c): c is string => typeof c === "string" && c.length > 0),
-        ),
-      );
-      if (hcpcsCodes.length > 0) {
-        type SosRow = {
-          hcpcs_code: string;
-          status: string;
-          last_dispense_on: string | null;
-          checked_at: string;
-        };
-        const { data: checks } = await supabase
-          .from("medicare_same_or_similar_checks")
-          .select("hcpcs_code, status, last_dispense_on, checked_at")
-          .eq("patient_id", claim.patient_id)
-          .in("hcpcs_code", hcpcsCodes)
-          .order("checked_at", { ascending: false });
-        // Latest check per HCPCS (rows are newest-first → first seen wins).
-        const latestByHcpcs = new Map<string, SosRow>();
-        for (const c of (checks ?? []) as SosRow[]) {
-          if (!latestByHcpcs.has(c.hcpcs_code))
-            latestByHcpcs.set(c.hcpcs_code, c);
-        }
-        const now = Date.now();
-        let anyFlagged = false;
-        for (const hcpcs of hcpcsCodes) {
-          const check = latestByHcpcs.get(hcpcs);
-          if (!check) {
-            anyFlagged = true;
-            items.push({
-              key: `same_or_similar:${hcpcs}`,
-              severity: "warning",
-              label: `Same-or-Similar not verified (${hcpcs})`,
-              detail: `No Medicare Same-or-Similar check on file for ${hcpcs}. Run a HETS check to confirm no other supplier is in the 5-year rental window before billing.`,
-              fixAction: { kind: "open_patient", patientId: claim.patient_id },
-            });
-            continue;
-          }
-          const ageMs = now - new Date(check.checked_at).getTime();
-          const stale = ageMs > SAME_OR_SIMILAR_FRESHNESS_MS;
-          if (check.status === "active") {
-            anyFlagged = true;
-            items.push({
-              key: `same_or_similar:${hcpcs}`,
-              severity: "warning",
-              label: `Same-or-Similar conflict (${hcpcs})`,
-              detail: `HETS reports another supplier is in the rental cycle for ${hcpcs}${
-                check.last_dispense_on
-                  ? ` (last dispense ${check.last_dispense_on})`
-                  : ""
-              }. Medicare will likely deny — verify before submitting.`,
-              fixAction: { kind: "open_patient", patientId: claim.patient_id },
-            });
-          } else if (check.status === "unknown" || stale) {
-            anyFlagged = true;
-            items.push({
-              key: `same_or_similar:${hcpcs}`,
-              severity: "warning",
-              label: stale
-                ? `Same-or-Similar check is stale (${hcpcs})`
-                : `Same-or-Similar inconclusive (${hcpcs})`,
-              detail: stale
-                ? `The last Same-or-Similar check for ${hcpcs} was ${Math.floor(
-                    ageMs / MS_PER_DAY,
-                  )} days ago. Re-run it to confirm the 5-year window is still clear.`
-                : `The last Same-or-Similar check for ${hcpcs} was inconclusive (status "unknown"). Re-run it before billing.`,
-              fixAction: { kind: "open_patient", patientId: claim.patient_id },
-            });
-          }
-          // 'clear' / 'inactive' and fresh → nothing to flag.
-        }
-        if (!anyFlagged) {
-          items.push({
-            key: "same_or_similar",
-            severity: "ok",
-            label: "Same-or-Similar clear",
-            detail: `No other supplier in the 5-year window for the billed HCPCS (${hcpcsCodes.join(", ")}).`,
-          });
-        }
-      }
     }
 
     // ── Diagnosis supports the billed HCPCS (LCD medical necessity) ─
@@ -1198,14 +1151,6 @@ function formatCents(cents: number): string {
   return `${sign}$${d}.${c.toString().padStart(2, "0")}`;
 }
 
-function toUtcDateEpochMs(value: Date): number {
-  return Date.UTC(
-    value.getUTCFullYear(),
-    value.getUTCMonth(),
-    value.getUTCDate(),
-  );
-}
-
 async function isPatientCompliant(
   supabase: OrgScopedClient,
   patientId: string,
@@ -1221,7 +1166,7 @@ async function isPatientCompliant(
     .limit(60);
   const compliant = (nights ?? []).filter(
     (n: Database["resupply"]["Tables"]["patient_therapy_nights"]["Row"]) =>
-      (n.usage_minutes ?? 0) >= 240,
+      (n.usage_minutes ?? 0) >= COMPLIANT_MINUTES_PER_NIGHT,
   ).length;
-  return compliant >= 21;
+  return compliant >= CMS_COMPLIANT_NIGHTS;
 }

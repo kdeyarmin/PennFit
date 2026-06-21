@@ -8,6 +8,11 @@ import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
 import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
+import {
+  CAPPED_RENTAL_KX_HCPCS,
+  decideCappedRentalAdvance,
+  pickCappedRentalModifiers,
+} from "@workspace/resupply-domain";
 
 import { runCappedRentalAdvance } from "../../lib/billing/capped-rental-advancer";
 import { logger } from "../../lib/logger";
@@ -79,6 +84,78 @@ router.get(
     }
     const { data } = await query;
     res.json({ cycles: data ?? [] });
+  },
+);
+
+// Read-only modifier + advance preview for one cycle, so a CSR can see
+// what WILL be billed next month before the worker advances it — the most
+// common avoidable capped-rental denial is a wrong month-band modifier.
+// Pure: computed from the cycle row via the domain rules, no DB writes.
+// KX is adherence-gated, so we return both variants (compliant vs not)
+// rather than reading therapy nights here; the UI shows the dependency.
+router.get(
+  "/admin/capped-rental-cycles/:id/preview",
+  requirePermission("patients.read"),
+  async (req, res) => {
+    const parsed = idParam.safeParse(req.params);
+    if (!parsed.success) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+    const { data: cycle } = await supabase
+      .from("capped_rental_cycles")
+      .select("id, hcpcs_code, start_date, current_month, max_months, status")
+      .eq("id", parsed.data.id)
+      .maybeSingle();
+    if (!cycle) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+
+    const decision = decideCappedRentalAdvance({
+      startDate: cycle.start_date,
+      currentMonth: cycle.current_month,
+      maxMonths: cycle.max_months,
+    });
+    // The next rental month that will actually be BILLED — i.e. the month
+    // of the claim the worker generates on the next anniversary, which is
+    // `current_month + 1` for BOTH the not-yet-due (noop) and due (advance)
+    // cases (`current_month` is the last month already represented on the
+    // cycle, never the next one). Once `current_month` reaches the cap the
+    // next event is an ownership transfer — the device converts to
+    // patient-owned and there is NO further monthly claim — so there is no
+    // billed month or modifiers to preview.
+    const atCap = cycle.current_month >= cycle.max_months;
+    const billedMonth = atCap ? null : cycle.current_month + 1;
+    const kxGated = (CAPPED_RENTAL_KX_HCPCS as readonly string[]).includes(
+      cycle.hcpcs_code,
+    );
+
+    res.json({
+      cycleId: cycle.id,
+      hcpcsCode: cycle.hcpcs_code,
+      status: cycle.status,
+      currentMonth: cycle.current_month,
+      maxMonths: cycle.max_months,
+      action: decision.action,
+      billedMonth,
+      nextDueOn: new Date(decision.nextDueMs).toISOString().slice(0, 10),
+      kxGated,
+      modifiersIfCompliant:
+        billedMonth == null
+          ? []
+          : pickCappedRentalModifiers(cycle.hcpcs_code, billedMonth, true),
+      modifiersIfNotCompliant:
+        billedMonth == null
+          ? []
+          : pickCappedRentalModifiers(cycle.hcpcs_code, billedMonth, false),
+    });
   },
 );
 

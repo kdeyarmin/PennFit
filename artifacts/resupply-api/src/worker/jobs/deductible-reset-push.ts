@@ -42,6 +42,7 @@ import {
   type Json,
   getOrgScopedClient,
 } from "@workspace/resupply-db";
+import { CUSTOMER_ACTIVE_LOOKBACK_DAYS as ACTIVE_LOOKBACK_DAYS } from "@workspace/resupply-domain";
 
 import { sendDeductibleResetEmail } from "../../lib/order-emails/send-deductible-reset-email";
 import { shouldSendEmail } from "../../lib/comm-prefs";
@@ -57,8 +58,9 @@ const JOB_CRON = "53 14 * * *"; // Daily 14:53 UTC.
 
 /** Month-of-year (1-12) we run during. November = 11. */
 const SEND_MONTH = 11;
-/** Look-back window for "is this still an active customer?". */
-const ACTIVE_LOOKBACK_DAYS = 730;
+// ACTIVE_LOOKBACK_DAYS (the 730-day "active customer" window) is shared
+// with the win-back job via @workspace/resupply-domain so the two can't
+// drift apart.
 /** Soft per-run cap so a fresh November doesn't burst the email vendor. */
 const PER_RUN_MAX = 500;
 

@@ -354,3 +354,116 @@ describe("PATCH /admin/capped-rental-cycles/:id — auth gate", () => {
     expect(adminRateLimitSpy.mock.results.length).toBe(callsBefore);
   });
 });
+
+describe("GET /admin/capped-rental-cycles/:id/preview", () => {
+  it("401s without an admin session", async () => {
+    const res = await request(makeApp()).get(
+      `/admin/capped-rental-cycles/${CYCLE_ID}/preview`,
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it("404s when the cycle is missing", async () => {
+    stubAdmin();
+    stageSupabaseResponse("capped_rental_cycles", "select", { data: null });
+    const res = await request(makeApp()).get(
+      `/admin/capped-rental-cycles/${CYCLE_ID}/preview`,
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("previews the month-band modifiers with KX gated on compliance", async () => {
+    stubAdmin();
+    // start_date = today → next anniversary is ~150 days out → not due,
+    // so action is noop and the billed month is the current month (5).
+    const today = new Date().toISOString().slice(0, 10);
+    stageSupabaseResponse("capped_rental_cycles", "select", {
+      data: {
+        id: CYCLE_ID,
+        hcpcs_code: "E0601",
+        start_date: today,
+        current_month: 5,
+        max_months: 13,
+        status: "active",
+      },
+    });
+    const res = await request(makeApp()).get(
+      `/admin/capped-rental-cycles/${CYCLE_ID}/preview`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.action).toBe("noop");
+    // Previews the NEXT month to be billed (current_month + 1 = 6), not
+    // the current month — month 6 is in the KJ continuation band (months 4+).
+    expect(res.body.billedMonth).toBe(6);
+    expect(res.body.kxGated).toBe(true);
+    // Month 4+ band: RR + KJ, plus KX only when compliant.
+    expect(res.body.modifiersIfCompliant).toEqual(["RR", "KJ", "KX"]);
+    expect(res.body.modifiersIfNotCompliant).toEqual(["RR", "KJ"]);
+  });
+
+  it("previews the KI→KJ band transition (month 3 cycle → month 4 claim)", async () => {
+    stubAdmin();
+    const today = new Date().toISOString().slice(0, 10);
+    stageSupabaseResponse("capped_rental_cycles", "select", {
+      data: {
+        id: CYCLE_ID,
+        hcpcs_code: "E0601",
+        start_date: today, // not yet due → noop
+        current_month: 3,
+        max_months: 13,
+        status: "active",
+      },
+    });
+    const res = await request(makeApp()).get(
+      `/admin/capped-rental-cycles/${CYCLE_ID}/preview`,
+    );
+    expect(res.status).toBe(200);
+    // The next claim is month 4 (KJ continuation band), NOT month 3 (KI band)
+    // — the CSR must see KJ, not KI, at this transition.
+    expect(res.body.billedMonth).toBe(4);
+    expect(res.body.modifiersIfCompliant).toEqual(["RR", "KJ", "KX"]);
+  });
+
+  it("previews no billed month/modifiers once at the cap (ownership transfer)", async () => {
+    stubAdmin();
+    const today = new Date().toISOString().slice(0, 10);
+    stageSupabaseResponse("capped_rental_cycles", "select", {
+      data: {
+        id: CYCLE_ID,
+        hcpcs_code: "E0601",
+        start_date: today,
+        current_month: 13,
+        max_months: 13, // at cap → device converts to patient ownership
+        status: "active",
+      },
+    });
+    const res = await request(makeApp()).get(
+      `/admin/capped-rental-cycles/${CYCLE_ID}/preview`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.billedMonth).toBeNull();
+    expect(res.body.modifiersIfCompliant).toEqual([]);
+    expect(res.body.modifiersIfNotCompliant).toEqual([]);
+  });
+
+  it("does not gate KX for a non-PAP HCPCS", async () => {
+    stubAdmin();
+    const today = new Date().toISOString().slice(0, 10);
+    stageSupabaseResponse("capped_rental_cycles", "select", {
+      data: {
+        id: CYCLE_ID,
+        hcpcs_code: "E0260", // hospital bed — not KX-adherence-gated
+        start_date: today,
+        current_month: 5,
+        max_months: 13,
+        status: "active",
+      },
+    });
+    const res = await request(makeApp()).get(
+      `/admin/capped-rental-cycles/${CYCLE_ID}/preview`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.kxGated).toBe(false);
+    expect(res.body.modifiersIfCompliant).toEqual(["RR", "KJ"]);
+  });
+});

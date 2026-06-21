@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
 import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
+import { classifyExpiry, DWO_HEADS_UP_DAYS } from "@workspace/resupply-domain";
 
 import {
   renderDwoPdf,
@@ -19,6 +20,24 @@ import { requirePermission } from "../../middlewares/requireAdmin";
 const router: IRouter = Router();
 
 type Row = Database["resupply"]["Tables"]["dwo_documents"]["Row"];
+
+// Enrich each DWO row with the sweep-consistent expiry classification (the
+// same DWO_HEADS_UP_DAYS rule the dwo-expiry sweep alerts on), so a list
+// badge and the alert can't drift. Additive — the raw row is untouched.
+function withExpiry(rows: Row[] | null, today: string) {
+  return (rows ?? []).map((d) => {
+    const e = classifyExpiry(d.expires_on, today, DWO_HEADS_UP_DAYS);
+    return {
+      ...d,
+      expiry: {
+        state: e.state,
+        severity: e.severity,
+        daysOut: e.daysOut,
+        window: e.matchedWindow,
+      },
+    };
+  });
+}
 
 const FAMILY_VALUES = [
   "pap",
@@ -76,7 +95,8 @@ router.get(
       .eq("patient_id", parsed.data.patientId)
       .order("expires_on", { ascending: false })
       .limit(500);
-    res.json({ documents: data ?? [] });
+    const today = new Date().toISOString().slice(0, 10);
+    res.json({ documents: withExpiry(data as Row[] | null, today) });
   },
 );
 
@@ -107,7 +127,7 @@ router.get(
       .lte("expires_on", horizon)
       .order("expires_on", { ascending: true })
       .limit(200);
-    res.json({ documents: data ?? [] });
+    res.json({ documents: withExpiry(data as Row[] | null, today) });
   },
 );
 

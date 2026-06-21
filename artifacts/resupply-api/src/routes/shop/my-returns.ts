@@ -40,13 +40,13 @@ import {
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
 import {
   AUTO_APPROVE_PRIOR_RETURN_CAP,
+  COMFORT_GUARANTEE_DAYS,
   evaluateAutoApprovalRules,
   formatAutoApprovalNote,
 } from "../../lib/shop-returns/auto-approval-rules";
 
 const router: IRouter = Router();
 
-const COMFORT_GUARANTEE_DAYS = 60;
 const MAX_REASON_NOTE_LEN = 1000;
 
 const REASON_VALUES: ShopReturnReason[] = [

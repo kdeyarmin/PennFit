@@ -96,6 +96,19 @@ export interface MarginAggregate {
   marginRatio: number | null;
   linesWithKnownCost: number;
   linesWithUnknownCost: number;
+  /**
+   * Count of COSTED lines that sold at a loss (marginCents < 0). Only
+   * costed lines can be a known loss — an uncosted line's margin is
+   * unknown, not negative, so it is never counted here. Completes the
+   * dashboard's "blind spot" story: "N lines sold below cost".
+   */
+  lossLineCount: number;
+  /**
+   * Sum of revenueCents over the loss lines counted in lossLineCount —
+   * "$Z of revenue was booked below cost". Revenue (not the negative
+   * margin) so the figure reads as a dollar volume sold at a loss.
+   */
+  negativeMarginRevenueCents: number;
 }
 
 /**
@@ -117,6 +130,8 @@ export function aggregateMargin(
     marginRatio: null,
     linesWithKnownCost: 0,
     linesWithUnknownCost: 0,
+    lossLineCount: 0,
+    negativeMarginRevenueCents: 0,
   };
 
   for (const line of lines) {
@@ -127,6 +142,12 @@ export function aggregateMargin(
       agg.costedRevenueCents += r.revenueCents;
       agg.costCents += r.costCents;
       agg.linesWithKnownCost += 1;
+      // A loss is only knowable on a costed line. marginCents is
+      // non-null here (cost is known), so a strict `< 0` is exact.
+      if (r.marginCents != null && r.marginCents < 0) {
+        agg.lossLineCount += 1;
+        agg.negativeMarginRevenueCents += r.revenueCents;
+      }
     } else {
       agg.uncostedRevenueCents += r.revenueCents;
       agg.linesWithUnknownCost += 1;
