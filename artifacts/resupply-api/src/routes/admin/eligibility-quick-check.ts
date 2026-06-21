@@ -79,9 +79,21 @@ router.post(
       return;
     }
     const body = parsed.data;
+    // Fail closed on tenant context: the quick check builds a 270 under
+    // the org's billing identity, reads ITS payer profiles, and meters
+    // the round-trip against it. Without an org we'd silently fall back
+    // to the seed tenant (PennPaps) — a cross-tenant leak — so refuse
+    // rather than guess. Mirror getOrgScopedClient's own missing-org
+    // check (empty OR whitespace) so a blank orgId surfaces here as a
+    // clean 500, not downstream as a generic 409 with an internal error.
+    const orgId = req.orgId;
+    if (!orgId || !orgId.trim()) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     try {
       const result = await quickCheckEligibility({
-        orgId: req.orgId,
+        orgId,
         payerProfileId: body.payerProfileId,
         subscriber: {
           firstName: body.firstName,

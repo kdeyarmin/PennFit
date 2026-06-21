@@ -22,6 +22,7 @@ import request from "supertest";
 
 import {
   makeRequireAdminMock,
+  MOCK_ORG_ID,
   type MockAdminCtx,
 } from "../../test-helpers/auth-mocks";
 
@@ -105,6 +106,27 @@ describe("POST /admin/billing/eligibility-quick-check", () => {
     expect(vi.mocked(quickCheckEligibility)).not.toHaveBeenCalled();
   });
 
+  // Both the unresolved (orgId absent) and the blank/whitespace cases must
+  // fail closed at the route with 500 tenant_context_missing — NOT fall
+  // through to the lib (which would throw inside getOrgScopedClient and get
+  // surfaced as a generic 409 echoing an internal error). The whitespace
+  // case is the one the old `if (!orgId)` guard would have let slip.
+  it.each<{ label: string; orgId: string | null }>([
+    { label: "no tenant context (orgId absent)", orgId: null },
+    { label: "blank/whitespace tenant context", orgId: "   " },
+  ])("fails closed (500) on $label", async ({ orgId }) => {
+    mockAdmin.current = {
+      userId: "u1",
+      email: "ops@x.com",
+      role: "admin",
+      orgId,
+    };
+    const res = await post(makeApp(), VALID_BODY);
+    expect(res.status).toBe(500);
+    expect(res.body.error).toBe("tenant_context_missing");
+    expect(vi.mocked(quickCheckEligibility)).not.toHaveBeenCalled();
+  });
+
   it("400s on a missing member id", async () => {
     mockAdmin.current = { userId: "u1", email: "ops@x.com", role: "admin" };
     const { memberId: _omitted, ...rest } = VALID_BODY;
@@ -149,10 +171,7 @@ describe("POST /admin/billing/eligibility-quick-check", () => {
     expect(res.body.payerName).toBe("Acme Health");
     expect(res.body.benefits.isActive).toBe(true);
     expect(vi.mocked(quickCheckEligibility)).toHaveBeenCalledWith({
-      // The caller's tenant (req.orgId) is now threaded through so the
-      // payer-profile lookup + billing identity scope to the right tenant
-      // instead of always resolving the seed org.
-      orgId: expect.any(String),
+      orgId: MOCK_ORG_ID,
       payerProfileId: PAYER_PROFILE_ID,
       subscriber: {
         firstName: "Alice",
