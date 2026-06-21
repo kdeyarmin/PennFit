@@ -96,8 +96,25 @@ about existing tenants changes. To validate before enabling:
 4. Only then set the flag in production. Leaving it unset keeps flat-bundle
    billing.
 
-> **Fax and voice** (`fax_automation`, `ai_voice_agent`) are flat monthly
-> enablement features with **no per-unit rate**, so they are NOT metered.
-> Metering them per-fax / per-minute needs an explicit rate decision first;
-> set `metered_unit_amount_decimal` + `usage_type='metered'` on those add-ons
-> (and re-validate with this runbook) to enable it.
+### Fax / AI-voice per-unit usage (migration 0425)
+
+The fax and AI-voice premium features bill **per-unit usage on top of** their
+flat enablement fee: companion metered add-ons `fax_usage` ($0.10 / outbound
+fax) and `voice_usage` ($0.50 / completed call). They have **no plan
+allowance**, so every event is billable (no free tier), and the **same**
+`PLATFORM_METERED_OVERAGE_ENABLED` flag gates them — off by default they are
+inert.
+
+Validate them with the same flag on:
+
+1. Confirm a meter + per-unit metered price exists for each (`fax_usage` event
+   `fax_usage` @ $0.10; `voice_usage` event `voice_call_usage` @ $0.50).
+2. The companion item attaches to a tenant's subscription only when that
+   tenant has the **parent feature** active (`fax_automation` /
+   `ai_voice_agent`) — it rides on the feature, sharing its `usage_metric`.
+3. Drive a fax / a completed call; confirm one meter event per event and that
+   the upcoming invoice bills `events × rate` on top of the flat feature fee.
+
+> Voice bills **per completed call** (the `aiVoiceEvents` metric counts calls,
+> not minutes). Switching to per-minute would require capturing call duration
+> into the usage rollup first.
