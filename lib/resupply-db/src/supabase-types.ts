@@ -2852,6 +2852,14 @@ export interface Database {
           appeal_pdf_object_key: string | null;
           delivery_method: "fax" | "mail" | "portal_upload" | "email" | null;
           delivered_at: string | null;
+          responded_at: string | null;
+          outcome:
+            | "pending"
+            | "overturned"
+            | "upheld"
+            | "partial"
+            | "withdrawn"
+            | null;
           generated_by_email: string;
           created_at: string;
         };

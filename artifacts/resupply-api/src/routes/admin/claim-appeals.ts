@@ -18,6 +18,7 @@ import {
   TelnyxApiError,
 } from "@workspace/resupply-telecom";
 
+import { markAppealSent } from "../../lib/billing/appeal-transition";
 import { renderAppealPdf } from "../../lib/billing/appeal-pdf";
 import { resolveBillingIdentity } from "../../lib/billing/identity-resolver";
 import { parsePayerAddressLines } from "../../lib/billing/payer-address";
@@ -345,79 +346,18 @@ router.post(
     }
 
     // The appeal has now actually left for the payer (Telnyx accepted the
-    // fax) — transition the claim denied -> appealed and resolve its denial
-    // analysis (review_status='accepted_appealed') so it drops off the
-    // denials worklist instead of re-surfacing as still-actionable. Guarded:
-    // only a currently-'denied' claim transitions (the valid state edge);
-    // any other status is left untouched. Best-effort — the fax already
-    // succeeded, so a stamp failure here is logged, not surfaced as an error.
-    if (claim.status === "denied") {
-      const { data: transitioned, error: claimErr } = await supabase
-        .from("insurance_claims")
-        .update({ status: "appealed", updated_at: nowIso })
-        .eq("id", claim.id)
-        .eq("status", "denied")
-        .select("id");
-      if (claimErr) {
-        logger.warn(
-          { event: "appeal_fax_claim_transition_failed", claimId: claim.id },
-          "claim_appeal.fax: claim denied->appealed transition failed",
-        );
-      }
-      // Mirror the canonical claim-status transition side effects
-      // (routes/patients/insurance-claims.ts): a replayable
-      // insurance_claim_events row AND a claim.appealed webhook, so the claim
-      // history and external subscribers see the transition the same way they
-      // would from the PATCH route — not just the status column flipping.
-      // Only when THIS call actually performed the transition (the `.eq`
-      // guard means a concurrent process may have already moved it on).
-      if (!claimErr && (transitioned?.length ?? 0) > 0) {
-        const { error: eventErr } = await supabase
-          .from("insurance_claim_events")
-          .insert({
-            claim_id: claim.id,
-            event_type: "appealed",
-            note: "Appeal faxed to payer.",
-            actor_email: req.adminEmail ?? "unknown",
-          });
-        if (eventErr) {
-          logger.warn(
-            { event: "appeal_fax_event_insert_failed", claimId: claim.id },
-            "claim_appeal.fax: appealed history event insert failed",
-          );
-        }
-        void publishEvent({
-          eventType: "claim.appealed",
-          payload: { claim_id: claim.id, patient_id: claim.patient_id },
-        });
-      }
-      // Resolve the denial analysis this appeal answers (the letter's linked
-      // analysis, else the claim's latest) so the worklist's
-      // RESOLVED_REVIEW_STATES filter drops it.
-      let analysisId = letter.denial_analysis_id;
-      if (!analysisId) {
-        const { data: latest } = await supabase
-          .from("claim_denial_analyses")
-          .select("id")
-          .eq("claim_id", claim.id)
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        analysisId = latest?.id ?? null;
-      }
-      if (analysisId) {
-        const { error: analysisErr } = await supabase
-          .from("claim_denial_analyses")
-          .update({ review_status: "accepted_appealed" })
-          .eq("id", analysisId);
-        if (analysisErr) {
-          logger.warn(
-            { event: "appeal_fax_analysis_resolve_failed", analysisId },
-            "claim_appeal.fax: denial analysis accepted_appealed update failed",
-          );
-        }
-      }
-    }
+    // fax) — run the shared "appeal sent" transition: a currently-`denied`
+    // claim moves to `appealed`, with the replayable event row + webhook + the
+    // answering denial analysis resolved so it drops off the denials worklist.
+    // Best-effort (the fax already succeeded).
+    await markAppealSent({
+      supabase,
+      claim,
+      letterDenialAnalysisId: letter.denial_analysis_id,
+      actorEmail: req.adminEmail ?? null,
+      note: "Appeal faxed to payer.",
+      nowIso,
+    });
 
     await logAudit({
       action: "claim_appeal.faxed",
@@ -437,6 +377,187 @@ router.post(
     });
 
     res.json({ ok: true, vendorRef: faxId });
+  },
+);
+
+// POST .../appeal-letter/:letterId/mark-delivered — record an out-of-band
+// appeal delivery (mail / email / portal upload) that didn't go through the
+// fax path. Stamps delivery_method + delivered_at and runs the SAME shared
+// "appeal sent" transition as the fax route (denied -> appealed + resolve the
+// denial analysis), closing the gap where mail/email appeals never transitioned
+// and silently stayed "denied".
+const markDeliveredBody = z
+  .object({
+    deliveryMethod: z.enum(["mail", "email", "portal_upload"]),
+  })
+  .strict();
+
+router.post(
+  "/admin/patients/:id/insurance-claims/:claimId/appeal-letter/:letterId/mark-delivered",
+  requirePermission("patients.update"),
+  adminRateLimit({ name: "claim_appeals.mark_delivered", preset: "mutation" }),
+  async (req, res) => {
+    const params = faxParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const parsed = markDeliveredBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "invalid_body" });
+      return;
+    }
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+    const { data: letter } = await supabase
+      .from("claim_appeal_letters")
+      .select("id, claim_id, denial_analysis_id, delivered_at")
+      .eq("id", params.data.letterId)
+      .limit(1)
+      .maybeSingle();
+    if (!letter || letter.claim_id !== params.data.claimId) {
+      res.status(404).json({ error: "appeal_letter_not_found" });
+      return;
+    }
+    const { data: claim } = await supabase
+      .from("insurance_claims")
+      .select("id, patient_id, status")
+      .eq("id", params.data.claimId)
+      .limit(1)
+      .maybeSingle();
+    if (!claim || claim.patient_id !== params.data.id) {
+      res.status(404).json({ error: "claim_not_found" });
+      return;
+    }
+
+    const nowIso = new Date().toISOString();
+    // Idempotent: don't overwrite an earlier delivery timestamp on a re-click.
+    const { error: stampErr } = await supabase
+      .from("claim_appeal_letters")
+      .update({
+        delivery_method: parsed.data.deliveryMethod,
+        delivered_at: letter.delivered_at ?? nowIso,
+      })
+      .eq("id", letter.id);
+    if (stampErr) throw stampErr;
+
+    await markAppealSent({
+      supabase,
+      claim,
+      letterDenialAnalysisId: letter.denial_analysis_id,
+      actorEmail: req.adminEmail ?? null,
+      note: `Appeal ${parsed.data.deliveryMethod === "mail" ? "mailed" : "sent"} to payer.`,
+      nowIso,
+    });
+
+    await logAudit({
+      action: "claim_appeal.marked_delivered",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "claim_appeal_letters",
+      targetId: letter.id,
+      metadata: {
+        claim_id: params.data.claimId,
+        delivery_method: parsed.data.deliveryMethod,
+      },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn({ err }, "claim_appeal.marked_delivered audit write failed");
+    });
+
+    res.json({ ok: true });
+  },
+);
+
+// POST .../appeal-letter/:letterId/outcome — record the payer's response to an
+// appeal so win-rate + response aging can be measured. Records outcome +
+// responded_at on the letter; it deliberately does NOT change the claim status
+// (an overturned appeal is reprocessed by the payer and posts via the next 835;
+// an upheld/withdrawn appeal is closed by the biller through the normal path).
+const outcomeBody = z
+  .object({
+    outcome: z.enum(["overturned", "upheld", "partial", "withdrawn"]),
+    respondedAt: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}/)
+      .optional(),
+  })
+  .strict();
+
+router.post(
+  "/admin/patients/:id/insurance-claims/:claimId/appeal-letter/:letterId/outcome",
+  requirePermission("patients.update"),
+  adminRateLimit({ name: "claim_appeals.outcome", preset: "mutation" }),
+  async (req, res) => {
+    const params = faxParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const parsed = outcomeBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "invalid_body" });
+      return;
+    }
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+    // The letter must exist AND belong to the claim + patient in the path.
+    const { data: letter } = await supabase
+      .from("claim_appeal_letters")
+      .select("id, claim_id")
+      .eq("id", params.data.letterId)
+      .limit(1)
+      .maybeSingle();
+    if (!letter || letter.claim_id !== params.data.claimId) {
+      res.status(404).json({ error: "appeal_letter_not_found" });
+      return;
+    }
+    const { data: claim } = await supabase
+      .from("insurance_claims")
+      .select("id, patient_id")
+      .eq("id", params.data.claimId)
+      .limit(1)
+      .maybeSingle();
+    if (!claim || claim.patient_id !== params.data.id) {
+      res.status(404).json({ error: "claim_not_found" });
+      return;
+    }
+
+    const respondedAt = parsed.data.respondedAt
+      ? new Date(parsed.data.respondedAt).toISOString()
+      : new Date().toISOString();
+    const { error: updErr } = await supabase
+      .from("claim_appeal_letters")
+      .update({ outcome: parsed.data.outcome, responded_at: respondedAt })
+      .eq("id", letter.id);
+    if (updErr) throw updErr;
+
+    await logAudit({
+      action: "claim_appeal.outcome_recorded",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "claim_appeal_letters",
+      targetId: letter.id,
+      metadata: {
+        claim_id: params.data.claimId,
+        outcome: parsed.data.outcome,
+      },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn({ err }, "claim_appeal.outcome_recorded audit write failed");
+    });
+
+    res.json({ ok: true, outcome: parsed.data.outcome, respondedAt });
   },
 );
 
