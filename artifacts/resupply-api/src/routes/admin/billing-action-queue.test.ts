@@ -49,6 +49,8 @@ function workItem(over: Partial<DenialWorkItem>): DenialWorkItem {
     canAutoResubmit: false,
     denialReason: null,
     decisionAt: null,
+    denialCategories: [],
+    isTerminal: false,
     winProbability: 0.8,
     scoreCents: 8000,
     hasAnalysis: true,

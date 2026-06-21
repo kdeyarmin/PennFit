@@ -171,8 +171,16 @@ preflight.ts` now reads the latest cached check per HCPCS for a
   claim. _Follow-up:_ the **mail/manual** delivery channel has no system "sent"
   event, so those appeals still need a small "mark mailed" action to transition
   (intentionally out of scope under the "only when sent" choice).
-- `denial_codes` CARC/RARC catalog is never joined by the reconciler — the
-  worklist shows bare `"CARC 16"` strings (`era-reconciler.ts:493`).
+- ✅ **Fixed in this PR.** `denial_codes` CARC/RARC catalog was never joined —
+  the reconciler emitted bare `"CARC 16"` strings. Per the owner's decision
+  (string **+** structured worklist fields): `composeDenialReason` now joins
+  the global catalog and renders `"CARC 16 — Claim/service lacks information;
+…"` (unknown codes fall back to bare; catalog read is fail-soft), and the
+  denials worklist now surfaces structured `denialCategories` + `isTerminal`
+  per item (parsed from the codes and joined to the catalog) so a biller can
+  triage terminal denials from workable ones. New reconciler-side enrichment
+  and worklist-API tests. _Follow-up:_ render the new fields in the SPA
+  denials-worklist UI (the API now provides them).
 - Da Vinci PAS Claim is always built with `diagnosis: []` and hardcoded
   `quantity: 1` (`davinci-pas-submit.ts:246`) → payer rejection.
 - Denial-rate denominators disagree across three dashboards

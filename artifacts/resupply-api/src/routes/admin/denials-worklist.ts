@@ -50,6 +50,13 @@ export interface DenialClaimInput {
   canAutoResubmit: boolean;
   denialReason: string | null;
   decisionAt: string | null;
+  /** Distinct categories for this denial's CARC/RARC codes, from the
+   *  denial_codes catalog (e.g. ["coverage", "coding"]). Empty on no match. */
+  denialCategories: string[];
+  /** True when ANY of the denial's codes is `is_terminal` in the catalog —
+   *  i.e. not worth appealing (write off / bill the patient). Lets the biller
+   *  triage terminal denials apart from workable ones. */
+  isTerminal: boolean;
 }
 
 export interface DenialWorkItem extends DenialClaimInput {
@@ -205,8 +212,65 @@ export async function loadDenialInputs(
       denialReason:
         typeof c.denial_reason === "string" ? c.denial_reason : null,
       decisionAt: typeof c.decision_at === "string" ? c.decision_at : null,
+      denialCategories: [],
+      isTerminal: false,
     });
   }
+
+  // Enrich each denial with its codes' catalog category + terminal flag.
+  // The CARC/RARC codes live in the denial_reason string (e.g. "CARC 16 — …;
+  // RARC N130 — …"); parse them out and join the GLOBAL denial_codes catalog
+  // (read via the unscoped client, keyed by code_system + code). A catalog
+  // miss leaves the defaults ([] / false) — never blocks the worklist.
+  const codeRe = /(CARC|RARC)\s+([A-Z]?\d+)/gi;
+  const codesByClaim = new Map<string, Set<string>>(); // claimId → "system:CODE"
+  const allKeys = new Set<string>();
+  for (const inp of inputs) {
+    if (!inp.denialReason) continue;
+    const keys = new Set<string>();
+    for (const m of inp.denialReason.matchAll(codeRe)) {
+      const key = `${m[1]!.toLowerCase()}:${m[2]!.toUpperCase()}`;
+      keys.add(key);
+      allKeys.add(key);
+    }
+    if (keys.size > 0) codesByClaim.set(inp.claimId, keys);
+  }
+  if (allKeys.size > 0) {
+    const codeValues = [...allKeys].map((k) => k.split(":")[1]!);
+    const { data: catalog } = await supabase
+      .raw()
+      .schema("resupply")
+      .from("denial_codes")
+      .select("code_system, code, category, is_terminal")
+      .in("code", codeValues);
+    const byKey = new Map<string, { category: string; is_terminal: boolean }>();
+    for (const row of (catalog ?? []) as Array<{
+      code_system: string;
+      code: string;
+      category: string;
+      is_terminal: boolean;
+    }>) {
+      byKey.set(`${row.code_system.toLowerCase()}:${row.code.toUpperCase()}`, {
+        category: row.category,
+        is_terminal: row.is_terminal === true,
+      });
+    }
+    for (const inp of inputs) {
+      const keys = codesByClaim.get(inp.claimId);
+      if (!keys) continue;
+      const categories = new Set<string>();
+      let terminal = false;
+      for (const key of keys) {
+        const hit = byKey.get(key);
+        if (!hit) continue;
+        categories.add(hit.category);
+        if (hit.is_terminal) terminal = true;
+      }
+      inp.denialCategories = [...categories];
+      inp.isTerminal = terminal;
+    }
+  }
+
   return { ok: true, inputs };
 }
 
