@@ -143,7 +143,7 @@ router.post(
 
     const wsUrl =
       `${publicWsOriginFromBaseUrl(config.streamBaseUrl)}` +
-      `/resupply-api/voice/stream?conversationId=${encodeURIComponent(conversationId)}`;
+      `/resupply-api/voice/stream/${encodeURIComponent(conversationId)}`;
     logger.info(
       {
         event: "voice.realtime-diagnostic.connected",

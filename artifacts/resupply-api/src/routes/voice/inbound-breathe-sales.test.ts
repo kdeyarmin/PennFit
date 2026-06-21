@@ -153,7 +153,7 @@ describe("POST /voice/inbound-breathe-sales", () => {
     // patient/episode/orgId and the agent speaking first.
     expect(await getPendingSessions().size()).toBe(1);
     const conversationId = res.text.match(
-      /conversationId=([0-9a-fA-F-]{36})/,
+      /voice\/stream\/([0-9a-fA-F-]{36})/,
     )?.[1];
     expect(conversationId).toBeTruthy();
     const pending = await getPendingSessions().peek(conversationId!);

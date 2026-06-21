@@ -116,7 +116,7 @@ describe("POST /voice/twiml-connect", () => {
     expect(res.headers["content-type"]).toContain("text/xml");
     expect(res.text).toContain("<Connect>");
     expect(res.text).toContain(
-      'url="wss://test.example.com/resupply-api/voice/stream?conversationId=conv-1"',
+      'url="wss://test.example.com/resupply-api/voice/stream/conv-1"',
     );
     expect(res.text).toContain('name="conversationId"');
     expect(res.text).toContain('value="conv-1"');

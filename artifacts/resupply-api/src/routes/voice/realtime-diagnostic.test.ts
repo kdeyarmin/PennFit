@@ -132,9 +132,7 @@ describe("POST /voice/realtime-diagnostic", () => {
     expect(entry!.patientId).toBe("");
     expect(entry!.episodeId).toBe("");
     // The WS URL routes back to the in-process voice-stream upgrade.
-    expect(capture.connect?.wsUrl).toContain(
-      "/resupply-api/voice/stream?conversationId=",
-    );
+    expect(capture.connect?.wsUrl).toContain("/resupply-api/voice/stream/");
   });
 
   it("the registered diagnostic context builds a valid system prompt (and the agent speaks first)", async () => {

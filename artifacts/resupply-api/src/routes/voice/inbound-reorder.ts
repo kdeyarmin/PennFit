@@ -347,7 +347,7 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
 
     const shopWsUrl =
       `${publicWsOriginFromBaseUrl(config.streamBaseUrl)}` +
-      `/resupply-api/voice/stream?conversationId=${encodeURIComponent(shopConversationId)}`;
+      `/resupply-api/voice/stream/${encodeURIComponent(shopConversationId)}`;
     logger.info(
       {
         event: "voice.inbound-reorder.connected",
@@ -513,7 +513,7 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
 
   const wsUrl =
     `${publicWsOriginFromBaseUrl(config.streamBaseUrl)}` +
-    `/resupply-api/voice/stream?conversationId=${encodeURIComponent(conversationId)}`;
+    `/resupply-api/voice/stream/${encodeURIComponent(conversationId)}`;
   logger.info(
     {
       event: "voice.inbound-reorder.connected",
