@@ -95,7 +95,7 @@ contrast / "don't rebuild").
 
 | Capability                                                                  | Status                  | Evidence                                                                                                                                                                                                                                                                                         | Owner impact                                                                                                                                                              |
 | --------------------------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Multi-location / multi-tenant completion**                                | **PARTIAL — strategic** | org threading mid-migration (06-20 §2, mostly fixed for the authenticated surface; a few seed-org leaks remain); `dme_organization` singleton surfaces                                                                                                                                           | Hard ceiling on a second branch / acquired DME / SaaS resale.                                                                                                             |
+| **Multi-location / multi-tenant completion**                                | **PARTIAL — strategic** | org threading mid-migration (06-20 §2, mostly fixed for the authenticated surface; a few seed-org leaks remain); `dme_organization` singleton surfaces                                                                                                                                           | Hard ceiling on a second branch / acquired DME / SaaS resale. **See the Multi-location & multi-tenant build sketch below.**                                               |
 | **Referral-source / physician CRM + adherence reporting back to referrers** | **OPEN — strategic**    | physician/NP registry + referral intake (Parachute / e-prescribe / fax / AI referral reviewer) exist; **no B2B referral-relationship management** (rep visit logs, referral volume by source/scorecards) and **no automated adherence/outcome report back to the referring physician/sleep lab** | DMEs grow on referral relationships; reporting adherence back is the stickiest retention lever for a referral source. **See the Referral-source CRM build sketch below.** |
 | **Provider-facing RTM dashboard**                                           | **OPEN — strategic**    | provider portal is login + e-sign only (`routes/provider/portal.ts`); therapy device data is ingested but not surfaced to referring providers                                                                                                                                                    | Referral stickiness + a clinical-value differentiator vs. a fulfillment bureau. **See the Provider-facing RTM build sketch below.**                                       |
 
@@ -333,6 +333,67 @@ provider sees the right patients.
 
 **Effort:** M — the auth/MFA/portal shell and the therapy-snapshot read both
 exist; the new work is the provider-scoped roster join + a read-only UI.
+
+---
+
+## Strategic build sketch — Multi-location & multi-tenant completion (Lens D)
+
+Two distinct tracks share this heading; they are at very different stages.
+
+### Track 1 — Multi-tenant (platform / `organizations`): ~complete, finish the tail
+
+**State (verified).** The tenant cutover has largely happened — `organizations`
+(migration 0331) + the `org_id` threading (0341 / 0342), with **341 route files
+on `getOrgScopedClient`** and the 06-20 review confirming the authenticated
+admin surface fails closed without `req.orgId`. Per-tenant Stripe Connect (0375)
+and platform billing packages (0362) exist, and `scripts/src/tenant-onboard.ts`
+provisions a new tenant. The CLAUDE.md "no application route imports the
+org-scoped client yet" note is **stale**.
+
+**Remaining (small).** The narrow seed-org callsites in 06-20 §2 — mostly fixed
+in that PR; the open tail is the **davinci-pas Bearer-token namespace** (per-payer
+PAS creds shared across tenants via process env) and the **object-storage
+helpers** (resolve seed org rather than a caller org — no reachable cross-tenant
+read today, but track for true storage isolation), plus the **provider portal**
+org threading (shared with the RTM sketch). This is finish-the-tail, **not** a
+new build. **Effort: S–M.**
+
+### Track 2 — Multi-location (branches within one tenant): groundwork only — the real build
+
+**State (verified).** `resupply.locations` (migration 0235) exists — business
+**branches** (name / code / address / phone / `npi` / `is_primary`), with
+**nullable** `patients.location_id` / `admin_users.location_id` anchors that
+deliberately re-scope nothing. The `multi_location.enabled` flag (0257) is seeded
+**OFF**, and when on only surfaces the Locations page + branch pickers + a
+patients-list filter + per-branch counts. **Billing identity is shared at the org
+level in both modes — the flag never touches claims** (per the migration's own
+note). So today this is a UI / grouping shell, not an operational multi-branch
+system.
+
+**The build (phaseable):**
+
+- **Phase 1 — Per-location billing identity (the hard requirement).** A real
+  multi-branch DME bills each branch under its **own NPI / PTAN**.
+  `locations.npi` already exists as the anchor; extend the billing identity
+  resolver (`lib/billing/identity-resolver.ts`) to prefer a **location-level**
+  identity when the servicing patient carries a `location_id`, falling back to
+  the org-level identity. Without this, every branch's 837P goes out under one
+  NPI — so this is the piece that makes multi-branch real for claims.
+- **Phase 2 — RBAC / worklist scoping by branch.** `admin_users.location_id`
+  already exists; add an **optional** location filter to the worklists and a soft
+  "default to my branch," behind the existing flag (the UI scaffolding is the
+  part already shipped).
+- **Phase 3 — Per-branch analytics.** Add a `location_id` group-by dimension to
+  the existing analytics RPCs (acquisition funnel, margin, AR aging) — same RPC
+  shape reused (and the same pattern as the referral-source scorecard above).
+
+**Out of scope by design:** locations are **not** warehouses — per-branch
+**stock** is explicitly excluded (architecture Rule 14; PacWare is the inventory
+system of record). Don't build per-location inventory here.
+
+**Effort:** L overall (Phase 1 touches the claim path). But Track 1 is the
+near-term "completion" item, and Track 2's **Phase 1 is the only piece a
+multi-branch owner truly needs first**.
 
 ---
 
