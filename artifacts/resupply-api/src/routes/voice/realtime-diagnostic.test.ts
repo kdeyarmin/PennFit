@@ -98,7 +98,7 @@ describe("POST /voice/realtime-diagnostic", () => {
       .post("/voice/realtime-diagnostic")
       .send("CallSid=CA123");
     expect(res.status).toBe(503);
-    expect(getPendingSessions().size()).toBe(0);
+    expect(await getPendingSessions().size()).toBe(0);
   });
 
   it("is OFF by default — hangs up and registers NO session when the flag is unset", async () => {
@@ -110,7 +110,7 @@ describe("POST /voice/realtime-diagnostic", () => {
     expect(res.status).toBe(200);
     expect(res.text).toContain("not enabled");
     expect(res.text).toContain("<Hangup/>");
-    expect(getPendingSessions().size()).toBe(0);
+    expect(await getPendingSessions().size()).toBe(0);
   });
 
   it("when ENABLED: registers a no-patient diagnostic pending session and returns Connect/Stream TwiML", async () => {
@@ -123,10 +123,10 @@ describe("POST /voice/realtime-diagnostic", () => {
     expect(res.text).toContain("<Connect><Stream");
 
     // Exactly one pending session, flagged diagnostic, with no patient.
-    expect(getPendingSessions().size()).toBe(1);
+    expect(await getPendingSessions().size()).toBe(1);
     const conversationId = capture.connect?.customParameters?.conversationId;
     expect(conversationId).toBeTruthy();
-    const entry = getPendingSessions().peek(conversationId!);
+    const entry = await getPendingSessions().peek(conversationId!);
     expect(entry).not.toBeNull();
     expect(entry!.diagnostic).toBe(true);
     expect(entry!.patientId).toBe("");
@@ -149,7 +149,7 @@ describe("POST /voice/realtime-diagnostic", () => {
       .post("/voice/realtime-diagnostic")
       .send("CallSid=CA789");
     const conversationId = capture.connect?.customParameters?.conversationId;
-    const entry = getPendingSessions().peek(conversationId!);
+    const entry = await getPendingSessions().peek(conversationId!);
     expect(entry).not.toBeNull();
     expect(entry!.callContext).toBeTruthy();
     expect(entry!.callContext!.length).toBeLessThanOrEqual(250);
@@ -172,6 +172,6 @@ describe("POST /voice/realtime-diagnostic", () => {
       .post("/voice/realtime-diagnostic")
       .send("From=%2B15551234567");
     expect(res.status).toBe(400);
-    expect(getPendingSessions().size()).toBe(0);
+    expect(await getPendingSessions().size()).toBe(0);
   });
 });

@@ -115,7 +115,7 @@ describe("POST /voice/inbound-breathe-sales", () => {
     const res = await post(BASE_BODY);
     expect(res.status).toBe(503);
     expect(res.text).toContain("Hangup");
-    expect(getPendingSessions().size()).toBe(0);
+    expect(await getPendingSessions().size()).toBe(0);
   });
 
   it("hangs up when the called number is not the sales line", async () => {
@@ -124,7 +124,7 @@ describe("POST /voice/inbound-breathe-sales", () => {
     expect(res.status).toBe(200);
     expect(res.text).toContain("Hangup");
     expect(res.text).not.toContain("Stream");
-    expect(getPendingSessions().size()).toBe(0);
+    expect(await getPendingSessions().size()).toBe(0);
   });
 
   it("hangs up when the voice.breathe_sales flag is disabled", async () => {
@@ -136,7 +136,7 @@ describe("POST /voice/inbound-breathe-sales", () => {
     expect(res.status).toBe(200);
     expect(res.text).toContain("Hangup");
     expect(res.text).not.toContain("Stream");
-    expect(getPendingSessions().size()).toBe(0);
+    expect(await getPendingSessions().size()).toBe(0);
   });
 
   it("connects to the sales bridge and registers a breathe_prospect session", async () => {
@@ -151,12 +151,12 @@ describe("POST /voice/inbound-breathe-sales", () => {
 
     // Exactly one pending session, bound to the sales persona with no
     // patient/episode/orgId and the agent speaking first.
-    expect(getPendingSessions().size()).toBe(1);
+    expect(await getPendingSessions().size()).toBe(1);
     const conversationId = res.text.match(
       /conversationId=([0-9a-fA-F-]{36})/,
     )?.[1];
     expect(conversationId).toBeTruthy();
-    const pending = getPendingSessions().peek(conversationId!);
+    const pending = await getPendingSessions().peek(conversationId!);
     expect(pending).toBeTruthy();
     expect(pending?.callerKind).toBe("breathe_prospect");
     expect(pending?.orgId).toBeUndefined();
