@@ -15,6 +15,7 @@ import type { Mock } from "vitest";
 import { ApiError } from "@workspace/api-client-react/admin";
 
 import {
+  batchCreateClaimsFromFulfillments,
   createClaimFromFulfillment,
   fetchAgingReport,
   fetchAiQueue,
@@ -291,6 +292,36 @@ describe("createClaimFromFulfillment", () => {
     );
     expect(init.method).toBe("POST");
     expect(init.body).toBe("{}");
+  });
+});
+
+describe("batchCreateClaimsFromFulfillments", () => {
+  test("POSTs the id list to the batch endpoint", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        summary: {
+          requested: 2,
+          created: 2,
+          claimExists: 0,
+          notFound: 0,
+          errored: 0,
+        },
+        results: [],
+      }),
+    });
+
+    await batchCreateClaimsFromFulfillments(["f-1", "f-2"]);
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(
+      "/resupply-api/admin/billing/fulfillments/batch-create-claims",
+    );
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body as string)).toEqual({
+      fulfillmentIds: ["f-1", "f-2"],
+    });
   });
 });
 

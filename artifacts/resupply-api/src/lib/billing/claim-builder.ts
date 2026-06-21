@@ -20,7 +20,6 @@
 import {
   type Database,
   getOrgScopedClient,
-  resolveSeedOrgId,
   type OrgScopedClient,
 } from "@workspace/resupply-db";
 
@@ -79,6 +78,12 @@ export interface ProposedClaim {
 }
 
 export interface BuildFromFulfillmentInput {
+  /** Tenant whose org-scoped client owns every read in the build walk.
+   *  MUST be the caller's org: the builder reads the fulfillment, coverages,
+   *  payer profiles, prescriptions, sleep studies, etc. through this org's
+   *  scoped client, so passing the wrong org reads another tenant's data
+   *  (or 404s a valid fulfillment). */
+  orgId: string;
   fulfillmentId: string;
   /** Override the date_of_service; defaults to the fulfillment's
    *  shipped_at or today. */
@@ -101,10 +106,7 @@ const COMPLIANCE_MIN_MINUTES = 240;
 export async function buildClaimFromFulfillment(
   input: BuildFromFulfillmentInput,
 ): Promise<ProposedClaim> {
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) {
-    throw new Error("buildClaimFromFulfillment: tenant context missing");
-  }
+  const { orgId } = input;
   const supabase = getOrgScopedClient(orgId);
 
   // 1. Fulfillment + patient.

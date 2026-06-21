@@ -216,7 +216,7 @@ router.get("/me/billing-balance", async (req, res) => {
     .select("id, payer_name, date_of_service, patient_responsibility_cents")
     .eq("patient_id", link.patientId)
     .gt("patient_responsibility_cents", 0)
-    .in("status", ["paid", "denied", "appealed", "closed"]);
+    .in("status", ["partially_paid", "paid", "denied", "appealed", "closed"]);
   if (balanceErr) throw balanceErr;
   const claimList = data ?? [];
   const totalOpenCents = claimList.reduce(

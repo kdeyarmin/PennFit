@@ -54,6 +54,7 @@ import {
 import { getPreviewCatalog } from "../../lib/stripe/preview-catalog";
 import { stripeErrLogFields } from "../../lib/stripe/err-log-fields";
 import { dispatchBackInStockForProduct } from "../../lib/back-in-stock-record";
+import { autoClearBackorderForSku } from "../../lib/backorder/auto-clear-on-restock";
 import { resolveTenantBaseUrl } from "../../lib/tenant-branding";
 import { invalidateShopProductsCache } from "../shop/products";
 
@@ -297,6 +298,29 @@ router.patch(
           "shop/admin/products: back-in-stock dispatch threw",
         );
       });
+
+      // Close the resupply backorder loop: the same 0→positive transition
+      // also clears any open `shop_backorders` row for this product's
+      // resupply SKU (`metadata.shop_sku`), so the order-flow stops
+      // substituting it away. Fire-and-forget + fail-soft (the helper never
+      // throws); a product with no `shop_sku` metadata is a no-op.
+      const restockedSku =
+        typeof updated.metadata?.shop_sku === "string"
+          ? updated.metadata.shop_sku
+          : null;
+      if (restockedSku && req.orgId) {
+        void autoClearBackorderForSku({
+          orgId: req.orgId,
+          sku: restockedSku,
+          actorEmail: req.adminEmail ?? null,
+          actorUserId: req.adminUserId ?? null,
+        }).catch((err) => {
+          req.log?.warn?.(
+            { productId, err },
+            "shop/admin/products: backorder auto-clear threw",
+          );
+        });
+      }
     }
 
     res.json({ product: projected });

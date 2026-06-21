@@ -284,7 +284,7 @@ async function runStatementPass(
   const { data: candidates } = await supabase
     .from("insurance_claims")
     .select("patient_id, patient_responsibility_cents")
-    .in("status", ["paid", "closed"])
+    .in("status", ["partially_paid", "paid", "closed"])
     .gt("patient_responsibility_cents", 0)
     .order("decision_at", { ascending: false })
     .limit(2000);
@@ -386,7 +386,7 @@ export async function runSecondaryClaimPass(
     .from("insurance_claims")
     .select(SECONDARY_CLAIM_SELECT)
     .eq("payer_sequence", "primary")
-    .eq("status", "paid")
+    .in("status", ["paid", "partially_paid"])
     .not("secondary_coverage_id", "is", null)
     .order("patient_responsibility_cents", { ascending: false })
     .limit(MAX_PER_PASS);

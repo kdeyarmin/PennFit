@@ -438,6 +438,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             matchPrefix: "/admin/referral-reviews",
             hint: "AI-extracted intake from faxed or uploaded referral packets — review, verify insurance, and accept into a new patient record",
           },
+          {
+            href: "/admin/referral-sources",
+            label: "Referral sources",
+            icon: HeartHandshake,
+            matchPrefix: "/admin/referral-sources",
+            hint: "Referral-source scorecard — claim volume, patients, and paid revenue by referring physician — plus a rep-visit/call activity log",
+          },
         ],
       },
       {

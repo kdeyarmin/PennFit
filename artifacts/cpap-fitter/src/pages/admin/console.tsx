@@ -396,6 +396,11 @@ const AdminTherapyResupplyPage = lazyWithRetry(() =>
     default: m.AdminTherapyResupplyPage,
   })),
 );
+const AdminReferralSourcesPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-referral-sources").then((m) => ({
+    default: m.AdminReferralSourcesPage,
+  })),
+);
 const AdminTherapyCompliancePage = lazyWithRetry(() =>
   import("@/pages/admin/admin-therapy-compliance").then((m) => ({
     default: m.AdminTherapyCompliancePage,
@@ -1250,6 +1255,10 @@ function AdminConsole() {
             <Route
               path="/admin/therapy-resupply"
               component={AdminTherapyResupplyPage}
+            />
+            <Route
+              path="/admin/referral-sources"
+              component={AdminReferralSourcesPage}
             />
             <Route
               path="/admin/therapy-compliance"

@@ -87,6 +87,7 @@ import carrierLabelsRouter from "./admin/carrier-labels.js";
 import formAcknowledgementsRouter from "./admin/form-acknowledgements.js";
 import patientFitOverridesRouter from "./admin/patient-fit-overrides.js";
 import referralsAttributeRouter from "./admin/referrals-attribute.js";
+import referralSourcesRouter from "./admin/referral-sources.js";
 import patientMaintenanceLogRouter from "./admin/patient-maintenance-log.js";
 import resupplyFunnelRouter from "./admin/resupply-funnel.js";
 import acquisitionFunnelRouter from "./admin/acquisition-funnel.js";
@@ -168,6 +169,8 @@ import payerModifierRulesRouter from "./admin/payer-modifier-rules.js";
 import payerCoverageDiagnosesRouter from "./admin/payer-coverage-diagnoses.js";
 import claimTemplatesRouter from "./admin/claim-templates.js";
 import fulfillmentToClaimRouter from "./admin/fulfillment-to-claim.js";
+import billingBatchCreateClaimsRouter from "./admin/billing-batch-create-claims.js";
+import billingDisputesRouter from "./admin/billing-disputes.js";
 import aiBillingQueueRouter from "./admin/ai-billing-queue.js";
 import dmeOrganizationRouter from "./admin/dme-organization.js";
 import clearinghouseCredentialsRouter from "./admin/clearinghouse-credentials.js";
@@ -563,6 +566,13 @@ router.use(claimTemplatesRouter);
 // (HCPCS map + modifier rules + fee schedule + diagnosis + prescriber)
 // and inserts the populated draft.
 router.use(fulfillmentToClaimRouter);
+// /admin/billing/fulfillments/batch-create-claims — bulk version of the
+// one-click create-claim above; turns the "fulfillments to bill" worklist
+// into a single batched action with per-item isolation.
+router.use(billingBatchCreateClaimsRouter);
+// /admin/billing/disputes — chargeback dispute worklist (persisted from the
+// Stripe charge.dispute.* webhook, migration 0429).
+router.use(billingDisputesRouter);
 // /admin/billing/ai-queue — AI scrub + denial-analysis worklist
 // surfacing claims blocked / fixable / awaiting analysis / ready
 // for one-click auto-resubmit.
@@ -970,6 +980,10 @@ router.use(patientFitOverridesRouter);
 // pending patient_referrals rows as converted when a matching email
 // has placed a paid order.
 router.use(referralsAttributeRouter);
+// /admin/referrals/scorecard + /admin/providers/:id/referral-activity —
+// the referral-source CRM: per referring-provider volume/revenue scorecard
+// plus a rep-touch (visit/call) activity log.
+router.use(referralSourcesRouter);
 // /admin/patients/:id/maintenance-log — CSR view of the patient's
 // hygiene checklist completion history.
 router.use(patientMaintenanceLogRouter);

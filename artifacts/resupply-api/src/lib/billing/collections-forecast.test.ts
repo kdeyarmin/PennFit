@@ -19,6 +19,7 @@ describe("projectClaimCollections", () => {
         status: "accepted",
         total_billed_cents: 20000,
         total_allowed_cents: 10000,
+        total_paid_cents: 0,
         submitted_at: day(40),
       },
       // allowed unknown → billed 20000 × 0.5 × 0.95 = 9500
@@ -26,6 +27,7 @@ describe("projectClaimCollections", () => {
         status: "submitted",
         total_billed_cents: 20000,
         total_allowed_cents: 0,
+        total_paid_cents: 0,
         submitted_at: day(40),
       },
     ];
@@ -40,23 +42,57 @@ describe("projectClaimCollections", () => {
         status: "paid",
         total_billed_cents: 10000,
         total_allowed_cents: 8000,
+        total_paid_cents: 8000,
         submitted_at: day(10),
       },
       {
         status: "draft",
         total_billed_cents: 10000,
         total_allowed_cents: 0,
+        total_paid_cents: 0,
         submitted_at: null,
       },
       {
         status: "denied",
         total_billed_cents: 10000,
         total_allowed_cents: 0,
+        total_paid_cents: 0,
         submitted_at: day(10),
       },
     ];
     const f = projectClaimCollections(claims, { asOf: ASOF });
     expect(f.outstandingClaimCount).toBe(0);
+    expect(f.totalExpectedCents).toBe(0);
+  });
+
+  it("includes partially_paid claims and forecasts only the REMAINING balance", () => {
+    const claims: OutstandingClaim[] = [
+      // allowed 10000, already paid 4000 → remaining 6000 × 0.95 = 5700
+      {
+        status: "partially_paid",
+        total_billed_cents: 20000,
+        total_allowed_cents: 10000,
+        total_paid_cents: 4000,
+        submitted_at: day(40),
+      },
+    ];
+    const f = projectClaimCollections(claims, { asOf: ASOF });
+    expect(f.outstandingClaimCount).toBe(1);
+    expect(f.totalExpectedCents).toBe(5700);
+  });
+
+  it("a partially_paid claim already collected in full contributes nothing", () => {
+    const claims: OutstandingClaim[] = [
+      {
+        status: "partially_paid",
+        total_billed_cents: 20000,
+        total_allowed_cents: 10000,
+        total_paid_cents: 10000, // remaining 0
+        submitted_at: day(10),
+      },
+    ];
+    const f = projectClaimCollections(claims, { asOf: ASOF });
+    // Counted as outstanding (status matches) but its expected cash is 0.
     expect(f.totalExpectedCents).toBe(0);
   });
 
@@ -67,6 +103,7 @@ describe("projectClaimCollections", () => {
         status: "accepted",
         total_billed_cents: 0,
         total_allowed_cents: 1000,
+        total_paid_cents: 0,
         submitted_at: day(40),
       },
       // age 0, lands in 45 → 31–60 bucket
@@ -74,6 +111,7 @@ describe("projectClaimCollections", () => {
         status: "accepted",
         total_billed_cents: 0,
         total_allowed_cents: 1000,
+        total_paid_cents: 0,
         submitted_at: day(0),
       },
     ];
@@ -95,6 +133,7 @@ describe("projectClaimCollections", () => {
         status: "submitted",
         total_billed_cents: 0,
         total_allowed_cents: 5000,
+        total_paid_cents: 0,
         submitted_at: day(120), // age ≫ expectedDaysToPay → lands in 0 days
       },
     ];

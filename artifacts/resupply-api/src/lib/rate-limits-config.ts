@@ -191,6 +191,18 @@ export const RATE_LIMITS = {
   },
 
   /**
+   * Carrier tracking push webhook (EasyPost / Shippo). HMAC verification
+   * is the primary authorization gate; this is purely a pre-verification
+   * DoS shield so a flood of forged requests can't burn CPU on signature
+   * math. 300/min/IP is well above the burstiest carrier push volume.
+   */
+  carrier_inbound_webhook: {
+    windowMs: 60 * 1000,
+    limit: 300,
+    doc: "POST /resupply-api/webhooks/carrier — pre-verification DoS shield, HMAC still gates body",
+  },
+
+  /**
    * Provider portal (the prescriber-facing surface). Login-gated
    * but the public-facing prescriber discovery pages can flood
    * before auth; per-IP cap absorbs that.

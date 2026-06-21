@@ -134,6 +134,46 @@ export function createClaimFromFulfillment(
   );
 }
 
+export type BatchCreateClaimStatus =
+  | "created"
+  | "claim_exists"
+  | "fulfillment_not_found"
+  | "error";
+
+export interface BatchCreateClaimItem {
+  fulfillmentId: string;
+  status: BatchCreateClaimStatus;
+  claimId?: string | null;
+  existingStatus?: string | null;
+  lineCount?: number;
+}
+
+export interface BatchCreateClaimsResponse {
+  summary: {
+    requested: number;
+    created: number;
+    claimExists: number;
+    notFound: number;
+    errored: number;
+  };
+  results: BatchCreateClaimItem[];
+}
+
+/**
+ * Bulk version of {@link createClaimFromFulfillment}: create one draft claim
+ * per fulfillment in a single round-trip. Per-item isolation server-side, so
+ * the promise resolves 200 with a per-id outcome list even when some items
+ * are already-billed or fail.
+ */
+export function batchCreateClaimsFromFulfillments(
+  fulfillmentIds: string[],
+): Promise<BatchCreateClaimsResponse> {
+  return postJSON<BatchCreateClaimsResponse>(
+    "/admin/billing/fulfillments/batch-create-claims",
+    { fulfillmentIds },
+  );
+}
+
 // ─── AI work queue ──────────────────────────────────────────────────
 
 export interface ClaimQueueItem {

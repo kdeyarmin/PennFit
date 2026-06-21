@@ -18,6 +18,7 @@ import {
 
 import { formatIntervalLabel } from "../products-meta";
 import { resolveWebhookOrgId } from "../webhook-org-context";
+import { reconcileMembershipFromSubscription } from "./membership-reconcile";
 import { readCustomerIdFromMetadata } from "./shared";
 
 type ShopSubscriptionUpdate =
@@ -40,6 +41,24 @@ export async function handleSubscriptionEvent(
   const subscription = event.data.object as Stripe.Subscription;
   const eventCreatedAt = new Date(event.created * 1000);
   await upsertSubscription(subscription, eventCreatedAt, log);
+  // Independently reconcile a cash-pay membership backed by this subscription
+  // (downgrade-on-cancel / refresh renewal). Best-effort — a membership
+  // reconcile failure must NOT fail the shop_subscriptions mirror above or the
+  // webhook ACK. Membership subscriptions may carry no metadata, so this keys
+  // off the subscription id on shop_customers, not the dropped-on-missing
+  // metadata path the mirror uses.
+  try {
+    await reconcileMembershipFromSubscription(
+      subscription,
+      event.type === "customer.subscription.deleted",
+      log,
+    );
+  } catch (err) {
+    log?.warn?.(
+      { err, subscriptionId: subscription.id },
+      "membership reconcile failed (non-fatal)",
+    );
+  }
 }
 
 /**

@@ -92,6 +92,7 @@ export {
   markCartRecovered,
   syncCustomerAfterCheckout,
 } from "./webhook-handlers/checkout-session";
+import { persistStripeDispute } from "./dispute-persist";
 
 /**
  * Try to record this event in stripe_webhook_events. Resolves to one
@@ -661,6 +662,16 @@ export const stripeWebhookHandler: RequestHandler = async (
           },
           "stripe: chargeback dispute opened — CSR action required",
         );
+        // Persist so the dispute + its evidence deadline survive the log
+        // (migration 0429). Fail-soft; the WARN above is the immediate alert.
+        await persistStripeDispute(webhookOrgId, dispute, log);
+        break;
+      }
+      case "charge.dispute.updated": {
+        // Evidence submitted / status moved (e.g. needs_response →
+        // under_review). Keep the persisted row in step.
+        const dispute = event.data.object as Stripe.Dispute;
+        await persistStripeDispute(webhookOrgId, dispute, log);
         break;
       }
       case "charge.dispute.closed": {
@@ -685,6 +696,7 @@ export const stripeWebhookHandler: RequestHandler = async (
           },
           "stripe: chargeback dispute closed",
         );
+        await persistStripeDispute(webhookOrgId, dispute, log);
         break;
       }
       default: {

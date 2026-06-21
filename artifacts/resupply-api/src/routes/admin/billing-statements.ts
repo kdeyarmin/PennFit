@@ -124,7 +124,13 @@ router.post(
         )
         .eq("patient_id", idParsed.data.id)
         .gt("patient_responsibility_cents", 0)
-        .in("status", ["paid", "denied", "appealed", "closed"])
+        .in("status", [
+          "partially_paid",
+          "paid",
+          "denied",
+          "appealed",
+          "closed",
+        ])
         .order("date_of_service", { ascending: false })
         .order("id", { ascending: true })
         .range(page * CLAIM_PAGE, page * CLAIM_PAGE + CLAIM_PAGE - 1);
