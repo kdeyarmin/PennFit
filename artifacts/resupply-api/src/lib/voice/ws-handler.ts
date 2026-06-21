@@ -1342,6 +1342,13 @@ export async function handleBreatheSalesWsConnection(
     client = new RealtimeClient({
       apiKey: config.openaiApiKey,
       ...realtime,
+      // Deeper reasoning for the consultative sales conversation: default the
+      // platform sales line to "medium" effort (GA model only) so it can hold a
+      // genuinely intelligent, in-depth conversation, unless an operator pinned
+      // an effort via OPENAI_REALTIME_REASONING_EFFORT. Patient resupply calls
+      // keep the snappier "low" default — they're simpler flows where
+      // time-to-first-word matters more than depth.
+      reasoningEffort: realtime.reasoningEffort ?? "medium",
       // cedar voice (model produces audio). The sales line is platform-
       // branded; practiceName is the platform name.
       generateAudio: true,

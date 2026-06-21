@@ -181,10 +181,10 @@ const SHOP_PROMPT_HASH =
  * caller to confirm before send_info_email / start_breathe_signup). v17
  * deepens the sales conversation (consultative discovery + a playbook +
  * name/DME capture + a much richer knowledge base with use cases and an FAQ +
- * honest-on-unknowns), changing it again.
+ * honest-on-unknowns) AND adds a service-standard block, changing it again.
  */
 const BREATHE_SALES_PROMPT_HASH =
-  "02af6091220efb98e4cff8140c5d7d0e791543bbc42ae723373e77b5251bf61c";
+  "40358f98676318ad89ad2363d0c76534be82b696e618eee662fbca2496ab17a1";
 
 describe("PROMPT_VERSION drift detector", () => {
   it("has a recorded hash for the currently-shipped PROMPT_VERSION", () => {
