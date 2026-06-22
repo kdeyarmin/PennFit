@@ -14,8 +14,11 @@ export const fitflowHandlers: DemoHandler[] = [
   // /consent → capture the lead (best-effort on the real server too).
   route("POST", "/resupply-api/shop/fitter-leads", () => json({ ok: true })),
 
-  // /results → mask recommendation + full catalog.
-  route("POST", "/api/recommendations", () => json(demoRecommendation())),
+  // /results → mask recommendation + full catalog. The real endpoint
+  // is /api/recommend (invitation-gated on the server); intercepting it
+  // here keeps the demo sandbox walkthrough working without a real
+  // invite token.
+  route("POST", "/api/recommend", () => json(demoRecommendation())),
   route("GET", "/api/masks", () => json(demoMaskCatalog())),
 
   // /results → enroll the completed lead in the supply campaign.

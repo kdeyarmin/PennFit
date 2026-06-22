@@ -633,6 +633,7 @@ import { FitterProvider, useFitterStore } from "@/hooks/use-fitter-store";
 import { useShopIdentity } from "@/lib/identity";
 import { isPlatformHomeHost } from "@/lib/platform-host";
 import { canStayOnMeasure } from "@/lib/measure-flow";
+import { isDemoActive } from "@/demo/state";
 import { DemoModeProvider } from "@/demo/DemoModeProvider";
 import { DemoBanner } from "@/demo/DemoBanner";
 
@@ -704,15 +705,46 @@ function useFitterEmailGate(): boolean {
   return Boolean(email);
 }
 
+/**
+ * Invite gate that fronts the ENTIRE virtual mask fitter. The fitter
+ * is invitation-only: a patient reaches it through a signed link a
+ * Breathe customer (their local DME company) sends by SMS or email
+ * (`/fitter-invite?t=…`), which stashes the invite token in the
+ * fitter store. Every fitter step — starting at /consent — refuses to
+ * render without that token and bounces to /fitter-invite, which
+ * explains that the patient needs a code/link from their DME company.
+ *
+ * The server-side `/api/recommend` endpoint independently requires a
+ * valid signed invite token, so this client gate can't be bypassed by
+ * deep-linking or seeding sessionStorage.
+ *
+ * Demo mode (`?demo=1`) bypasses the gate so the sandbox walkthrough
+ * can still showcase the fitter without a real invite.
+ */
+function useFitterInviteGate(): boolean {
+  const { inviteToken } = useFitterStore();
+  return Boolean(inviteToken) || isDemoActive();
+}
+
+function GuardedConsent() {
+  const invited = useFitterInviteGate();
+  if (!invited) return <Redirect to="/fitter-invite" />;
+  return <Consent />;
+}
+
 function GuardedCapture() {
+  const invited = useFitterInviteGate();
   const consented = useFitterEmailGate();
+  if (!invited) return <Redirect to="/fitter-invite" />;
   if (!consented) return <Redirect to="/consent" />;
   return <Capture />;
 }
 
 function GuardedMeasure() {
   const { capturedImage, measurements } = useFitterStore();
+  const invited = useFitterInviteGate();
   const consented = useFitterEmailGate();
+  if (!invited) return <Redirect to="/fitter-invite" />;
   if (!consented) return <Redirect to="/consent" />;
   // See canStayOnMeasure for the invariant. The non-obvious case is the
   // brief post-extraction window where capturedImage has been cleared
@@ -727,14 +759,18 @@ function GuardedMeasure() {
 }
 function GuardedQuestionnaire() {
   const { measurements } = useFitterStore();
+  const invited = useFitterInviteGate();
   const consented = useFitterEmailGate();
+  if (!invited) return <Redirect to="/fitter-invite" />;
   if (!consented) return <Redirect to="/consent" />;
   if (!measurements) return <Redirect to="/capture" replace />;
   return <Questionnaire />;
 }
 function GuardedResults() {
   const { measurements } = useFitterStore();
+  const invited = useFitterInviteGate();
   const consented = useFitterEmailGate();
+  if (!invited) return <Redirect to="/fitter-invite" />;
   if (!consented) return <Redirect to="/consent" />;
   if (!measurements) return <Redirect to="/" />;
   return <Results />;
@@ -772,7 +808,9 @@ function AccountHashRedirect({ hash }: { hash: "insights" | "orders" }) {
 
 function GuardedOrder() {
   const { chosenMask, measurements } = useFitterStore();
+  const invited = useFitterInviteGate();
   const consented = useFitterEmailGate();
+  if (!invited) return <Redirect to="/fitter-invite" />;
   if (!consented) return <Redirect to="/consent" />;
   // An order without sizing data is a fulfillment problem for the DME
   // team — require measurements alongside the chosen mask. Both are
@@ -953,7 +991,7 @@ function PatientRouter() {
         <Suspense fallback={<RouteFallback />}>
           <Switch>
             <Route path="/" component={Home} />
-            <Route path="/consent" component={Consent} />
+            <Route path="/consent" component={GuardedConsent} />
             <Route path="/fitter-invite" component={FitterInvite} />
             <Route path="/capture" component={GuardedCapture} />
             <Route path="/masks" component={Masks} />
