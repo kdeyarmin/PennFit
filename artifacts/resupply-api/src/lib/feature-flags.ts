@@ -97,6 +97,7 @@ export const FEATURE_FLAG_KEYS = [
   "multi_location.enabled",
   "billing.bill_hold",
   "billing.bill_hold_auto_remind",
+  "billing.adr_queue",
   "fax.auto_file_signed",
   "fax.referral_review",
   "frontdesk.counter_orders",

@@ -194,6 +194,29 @@ export {
 } from "./authorization-expiry";
 
 export {
+  classifyAdrSla,
+  ADR_HEADS_UP_DAYS,
+  ADR_AT_RISK_DAYS,
+  type AdrSlaStatus,
+  type AdrSlaClassification,
+  type ClassifyAdrSlaOptions,
+} from "./claim-adr";
+
+export {
+  AUDIT_PACKET_CATALOG,
+  AUDIT_PACKET_ITEM_KEYS,
+  getAuditPacketItem,
+  isAuditPacketItemKey,
+  defaultSelection,
+  normalizeSelection,
+  type AuditItemSource,
+  type AuditScope,
+  type AuditItemGroup,
+  type AuditPacketItem,
+  type NormalizedSelection,
+} from "./audit-packet-catalog";
+
+export {
   classifyCustomerRecency,
   CUSTOMER_LAPSED_DAYS,
   WINBACK_COOLDOWN_DAYS,
