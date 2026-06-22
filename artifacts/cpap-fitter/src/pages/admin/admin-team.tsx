@@ -393,6 +393,9 @@ function MemberRow({
           {member.status === "active" && (
             <input
               type="text"
+              // Uncontrolled (commit on blur), but remount when the saved value
+              // changes so a successful save is reflected after refetch.
+              key={member.slackUserId ?? ""}
               defaultValue={member.slackUserId ?? ""}
               onBlur={(e) => {
                 const raw = e.target.value.trim();

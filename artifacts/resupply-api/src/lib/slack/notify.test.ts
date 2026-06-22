@@ -144,6 +144,25 @@ describe("notifyConversationNeedsHuman", () => {
     expect(JSON.stringify(input)).not.toContain("escalate_conversation");
   });
 
+  it("renders buttons for an OAuth tenant via the platform signing secret", async () => {
+    // Tenant config has only a bot token + channel (OAuth install); the signing
+    // secret lives at the platform level (getEffectiveEnv).
+    getEffectiveEnvForOrgMock.mockResolvedValue({
+      SLACK_BOT_TOKEN: "xoxb-test",
+      SLACK_ALERTS_CHANNEL: "C1",
+    } as NodeJS.ProcessEnv);
+    getEffectiveEnvMock.mockResolvedValue({
+      SLACK_SIGNING_SECRET: "platform-shh",
+    } as NodeJS.ProcessEnv);
+    await notifyConversationNeedsHuman({
+      orgId: "org-1",
+      conversationId: "conv-9",
+      channel: "sms",
+    });
+    const [, input] = postSlackMessageMock.mock.calls[0]!;
+    expect(JSON.stringify(input)).toContain("claim_conversation");
+  });
+
   it("@-mentions the assigned rep when they've linked their Slack id", async () => {
     dbState.assignedAdminId = "admin-1";
     dbState.adminSlackId = "U7ABC";
@@ -207,7 +226,6 @@ describe("notifyVoiceHandoff", () => {
       orgId: "org-1",
       conversationId: "conv-1",
       sentiment: "distressed",
-      outcome: "wants a callback",
     });
     const [, input] = postSlackMessageMock.mock.calls[0]!;
     expect(JSON.stringify(input)).toContain("🔴");
@@ -218,13 +236,25 @@ describe("notifyVoiceHandoff", () => {
       orgId: "org-1",
       conversationId: "conv-1",
       sentiment: "neutral",
-      outcome: "ok",
     });
     const [, input] = postSlackMessageMock.mock.calls[0]!;
     const serialized = JSON.stringify(input);
     expect(serialized).toContain("claim_conversation");
     expect(serialized).not.toContain("escalate_conversation");
     expect(serialized).not.toContain("snooze_conversation");
+  });
+
+  it("never sends the free-text call outcome to Slack (PHI)", async () => {
+    await notifyVoiceHandoff({
+      orgId: "org-1",
+      conversationId: "conv-1",
+      sentiment: "concerned",
+    });
+    const [, input] = postSlackMessageMock.mock.calls[0]!;
+    const serialized = JSON.stringify(input);
+    // Only sentiment + reference + "review in admin" — no outcome line.
+    expect(serialized).not.toContain("Outcome");
+    expect(serialized).toContain("admin console");
   });
 });
 

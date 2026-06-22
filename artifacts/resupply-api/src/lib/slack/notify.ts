@@ -19,6 +19,7 @@ import {
   buildFallbackText,
   postSlackMessage,
   readSlackConfigOrNull,
+  readSlackSigningSecretOrNull,
   severityEmoji,
   slackAuthTest,
   type SlackAction,
@@ -247,19 +248,33 @@ async function sendCsAlert(input: CsAlertInput): Promise<void> {
 }
 
 /**
+ * True when inbound interactivity can verify a callback — either the tenant
+ * saved its own signing secret (BYO app) OR the platform app's signing secret
+ * is set (OAuth single-app installs, where the tenant config has only a bot
+ * token). Mirrors the inbound route's signing-secret fallback so buttons
+ * aren't suppressed for OAuth-installed tenants.
+ */
+async function isInteractivityReady(
+  config: SlackConfig | null,
+): Promise<boolean> {
+  if (config?.signingSecret) return true;
+  return Boolean(readSlackSigningSecretOrNull(await getEffectiveEnv()));
+}
+
+/**
  * Build the "Open in admin" link plus whichever interactive buttons this alert
  * should offer. Buttons only render when inbound interactivity can service them
- * (signing secret present); the endpoint re-checks the flag + signature.
+ * (`interactivityReady`); the endpoint re-checks the flag + signature.
  */
 function conversationActions(
-  config: SlackConfig | null,
+  interactivityReady: boolean,
   link: string | undefined,
   conversationId: string,
   buttons: { claim?: boolean; escalate?: boolean; snooze?: boolean } = {},
 ): SlackAction[] {
   const actions: SlackAction[] = [];
   if (link) actions.push({ kind: "link", text: "Open in admin", url: link });
-  if (config?.signingSecret) {
+  if (interactivityReady) {
     if (buttons.claim) {
       actions.push({
         kind: "button",
@@ -320,11 +335,12 @@ export async function notifyConversationNeedsHuman(input: {
     severity: "warning",
     title: `${severityEmoji("warning")} Patient reply needs a human`,
     lines,
-    actions: conversationActions(config, link, input.conversationId, {
-      claim: true,
-      escalate: true,
-      snooze: true,
-    }),
+    actions: conversationActions(
+      await isInteractivityReady(config),
+      link,
+      input.conversationId,
+      { claim: true, escalate: true, snooze: true },
+    ),
   });
 }
 
@@ -332,13 +348,15 @@ export async function notifyConversationNeedsHuman(input: {
  * The voice post-call summarizer flagged a call for human follow-up. The
  * conversation is already escalated (post-call-handoff), so no Escalate
  * button — just visibility + a link. `sentiment` drives the severity.
+ *
+ * PHI: the summarizer's free-text outcome is deliberately NOT sent to Slack
+ * (it can carry clinical detail / identity-verification notes) — it stays on
+ * the conversation in the admin console. Slack gets sentiment + ref + link.
  */
 export async function notifyVoiceHandoff(input: {
   orgId: string | undefined;
   conversationId: string;
   sentiment: "positive" | "neutral" | "concerned" | "distressed";
-  /** Short non-PHI outcome summary from the summarizer. */
-  outcome: string;
 }): Promise<void> {
   const config = readSlackConfigOrNull(await resolveSlackEnv(input.orgId));
   const link = await conversationDeepLink(input.orgId, input.conversationId);
@@ -351,11 +369,14 @@ export async function notifyVoiceHandoff(input: {
     lines: [
       `*Sentiment:* ${input.sentiment}`,
       `*Conversation:* \`${input.conversationId}\``,
-      `*Outcome:* ${input.outcome}`,
+      "Review the call summary in the admin console.",
     ],
-    actions: conversationActions(config, link, input.conversationId, {
-      claim: true,
-    }),
+    actions: conversationActions(
+      await isInteractivityReady(config),
+      link,
+      input.conversationId,
+      { claim: true },
+    ),
   });
 }
 
@@ -406,9 +427,12 @@ export async function notifySlaBreach(input: {
       `*Overdue:* ${input.minutesOverdue} min`,
       `*Conversation:* \`${input.conversationId}\``,
     ],
-    actions: conversationActions(config, link, input.conversationId, {
-      claim: true,
-    }),
+    actions: conversationActions(
+      await isInteractivityReady(config),
+      link,
+      input.conversationId,
+      { claim: true },
+    ),
   });
 }
 

@@ -100,9 +100,17 @@ type AuthResult =
 async function authenticate(req: Request): Promise<AuthResult> {
   const raw = rawBodyString(req.body);
   const teamId = extractTeamId(raw);
-  const orgId =
-    (teamId ? await resolveOrgIdBySlackTeamId(teamId) : null) ??
-    (await resolveSeedOrgId());
+  // When a team_id is present it MUST map to a tenant. Falling back to the seed
+  // org for an unknown team_id would let an interaction mutate the wrong tenant
+  // (the platform signing secret is shared across OAuth installs). Only
+  // seed-fallback when team_id is genuinely absent (single-tenant / dev).
+  let orgId: string | null;
+  if (teamId) {
+    orgId = await resolveOrgIdBySlackTeamId(teamId);
+    if (!orgId) return { status: "unconfigured" };
+  } else {
+    orgId = await resolveSeedOrgId();
+  }
   if (!orgId) return { status: "unconfigured" };
 
   // Same resolution as the outbound notifier: tenant overlay over process.env,

@@ -225,7 +225,6 @@ export async function routeVoiceHandoffToCsrQueue(
       orgId,
       conversationId: input.conversationId,
       sentiment: input.sentiment,
-      outcome: input.outcome,
     });
   } catch (err) {
     logger.warn(

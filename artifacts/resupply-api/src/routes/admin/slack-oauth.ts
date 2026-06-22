@@ -31,6 +31,7 @@ import {
   signSlackOAuthState,
   verifySlackOAuthState,
 } from "../../lib/slack/oauth-state";
+import { resolveTenantBaseUrl } from "../../lib/tenant-branding";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
@@ -120,11 +121,21 @@ router.get("/slack/oauth/callback", async (req: Request, res) => {
   }
   const orgId = verified.orgId;
 
+  // Land the admin back on a host where their session cookie is valid. The
+  // Slack redirect_uri is fixed to the platform host, but the admin may have
+  // started from a tenant custom domain (pf_session is host-only), so finish
+  // the round-trip on the tenant's own base URL. Derived from the resolved
+  // tenant (not user input) → no open-redirect.
+  const returnBase =
+    (await resolveTenantBaseUrl(orgId)) ?? platformBaseUrl() ?? "";
+  const returnTo = (status: string): string =>
+    `${returnBase}${CONFIG_PAGE}?slack=${status}`;
+
   const env = await getEffectiveEnv();
   const app = readOAuthApp(env);
   const base = platformBaseUrl();
   if (!app || !base) {
-    res.redirect(`${CONFIG_PAGE}?slack=oauth_unavailable`);
+    res.redirect(returnTo("oauth_unavailable"));
     return;
   }
 
@@ -143,7 +154,7 @@ router.get("/slack/oauth/callback", async (req: Request, res) => {
       },
       "slack oauth: code exchange failed",
     );
-    res.redirect(`${CONFIG_PAGE}?slack=error`);
+    res.redirect(returnTo("error"));
     return;
   }
 
@@ -189,11 +200,11 @@ router.get("/slack/oauth/callback", async (req: Request, res) => {
       },
       "slack oauth: failed to store install",
     );
-    res.redirect(`${CONFIG_PAGE}?slack=error`);
+    res.redirect(returnTo("error"));
     return;
   }
 
-  res.redirect(`${CONFIG_PAGE}?slack=connected`);
+  res.redirect(returnTo("connected"));
 });
 
 export default router;

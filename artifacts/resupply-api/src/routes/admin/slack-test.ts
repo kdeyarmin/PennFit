@@ -35,7 +35,9 @@ async function autoSaveTeamId(
 ): Promise<void> {
   try {
     const supabase = getOrgScopedClient(orgId);
-    await supabase.from("app_config").upsert(
+    // Supabase doesn't throw on a write failure — check { error } explicitly,
+    // and only invalidate caches when the row actually persisted.
+    const { error } = await supabase.from("app_config").upsert(
       {
         key: "SLACK_TEAM_ID",
         value: teamId,
@@ -45,6 +47,7 @@ async function autoSaveTeamId(
       },
       { onConflict: "org_id,key" },
     );
+    if (error) throw error;
     invalidateAppConfigCache();
     invalidateTenantConfigCache();
   } catch (err) {
