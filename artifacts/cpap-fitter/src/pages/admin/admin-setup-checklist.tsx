@@ -103,6 +103,31 @@ function Body({ data }: { data: TenantSetupResponse }) {
         </div>
       </section>
 
+      <section
+        className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-xs text-slate-700 space-y-1.5"
+        data-testid="setup-reassurance"
+      >
+        <p>
+          <span className="font-semibold text-slate-900">
+            You can start working right now.
+          </span>{" "}
+          Your workspace already runs on the platform subdomain — explore the
+          console, send a fitting link, or take an order today. The steps below
+          switch things over to your own brand, numbers, and payouts; do them in
+          any order and leave the optional ones until you need them.
+        </p>
+        <p>
+          Tip: match your feature switches to your plan in one click from{" "}
+          <Link
+            href="/admin/control-center"
+            className="font-semibold text-blue-700 hover:underline"
+          >
+            Control Center → Apply recommended preset
+          </Link>
+          .
+        </p>
+      </section>
+
       <div className="space-y-6">
         {groupItems(data.items).map(({ group, items }) => (
           <section key={group}>

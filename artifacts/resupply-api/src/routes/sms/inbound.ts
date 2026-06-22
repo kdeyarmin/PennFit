@@ -66,7 +66,10 @@ import {
 import { smsAsksRefillAttestation } from "@workspace/resupply-reminders";
 
 import { logger } from "../../lib/logger";
-import { resolveOrgIdByCalledNumber } from "../../lib/messaging/tenant-telecom";
+import {
+  resolveOrgIdByCalledNumber,
+  resolveOrgIdByPatientPhone,
+} from "../../lib/messaging/tenant-telecom";
 import { createAiFallbackAdapter } from "../../lib/messaging/ai-fallback-impl";
 import { ingestInboundMmsMedia } from "../../lib/messaging/ingest-mms";
 import { rateLimit } from "../../middlewares/rate-limit";
@@ -271,23 +274,31 @@ router.post(
       res.status(200).type("text/xml").send("<Response/>");
       return;
     }
-    // Webhook: no req.orgId. Route by the CALLED number (Twilio `To`) to
-    // the tenant that owns it (G7), falling back to the seed org when the
-    // number isn't registered to any tenant. On miss ACK 200 (empty TwiML)
-    // so Twilio stops retrying. With no per-tenant numbers configured this
-    // always resolves to the seed org, unchanged.
-    const orgId =
-      (await resolveOrgIdByCalledNumber(parsed.To)) ??
-      (await resolveSeedOrgId());
+    // Webhook: no req.orgId. Resolve the owning tenant:
+    //   * If the CALLED number (Twilio `To`) is owned by a tenant
+    //     (per-tenant-number case, G7), that tenant is authoritative.
+    //   * Otherwise it's the SHARED platform number, which no single tenant
+    //     owns, so route by the PATIENT: the tenant that has this phone (and,
+    //     when the phone exists in more than one tenant — INCLUDING the seed
+    //     org — the one with the most recent conversation). This must run even
+    //     when the seed org has the patient, or a phone duplicated across the
+    //     seed org and another tenant would always misroute to seed.
+    //   * Fall back to the seed org only when the phone is unknown everywhere,
+    //     so STOP/HELP and unknown-number handling still work.
+    const calledOrgId = await resolveOrgIdByCalledNumber(parsed.To);
+    const orgId = calledOrgId
+      ? calledOrgId
+      : ((await resolveOrgIdByPatientPhone(normalizedFrom)) ??
+        (await resolveSeedOrgId()));
     if (!orgId) {
       res.status(200).type("text/xml").send("<Response/>");
       return;
     }
     const supabase = getOrgScopedClient(orgId);
 
-    // Direct phone lookup. We pull up to 2 rows so we can detect
-    // ambiguous matches — multiple patients sharing one phone (a
-    // family plan) can't be safely auto-routed; we audit and bail.
+    // Direct phone lookup, scoped to the resolved tenant. We pull up to 2 rows
+    // so we can detect ambiguous matches — multiple patients sharing one phone
+    // (a family plan) can't be safely auto-routed; we audit and bail.
     const { data: lookupRows, error: lookupErr } = await supabase
       .from("patients")
       .select("id")

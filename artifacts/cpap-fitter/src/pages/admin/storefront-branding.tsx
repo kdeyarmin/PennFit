@@ -12,7 +12,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Globe, ImageUp, Store } from "lucide-react";
+import { Globe, ImageUp, Sparkles, Store } from "lucide-react";
 
 import { Card } from "@/components/admin/Card";
 import { Spinner } from "@/components/admin/Spinner";
@@ -30,6 +30,11 @@ import {
   uploadStorefrontLogo,
   verifyCustomDomain,
 } from "@/lib/admin/storefront-branding-api";
+import {
+  colorForName,
+  deriveInitials,
+  renderMonogramLogo,
+} from "@/lib/admin/monogram-logo";
 
 const INPUT_STYLE = { borderColor: "hsl(var(--line))" } as const;
 const QUERY_KEY = ["admin", "storefront-branding"] as const;
@@ -182,6 +187,21 @@ export function AdminStorefrontBrandingPage() {
     });
   }
 
+  // Generate a monogram tile from the storefront name and upload it through
+  // the same logo endpoint — no external calls, works before a tenant has any
+  // artwork. Falls back to a clear message if the browser can't render it.
+  async function onUseStarterLogo(brandName: string): Promise<void> {
+    setLogoError(null);
+    try {
+      const file = await renderMonogramLogo(brandName);
+      logoUpload.mutate(file);
+    } catch {
+      setLogoError(
+        "Couldn't generate a starter logo in this browser — try uploading an image instead.",
+      );
+    }
+  }
+
   if (isPending) {
     return (
       <div className="admin-root p-6">
@@ -198,6 +218,15 @@ export function AdminStorefrontBrandingPage() {
   }
 
   const domain = data.domain;
+  // The starter logo reads from the live (possibly unsaved) name field so the
+  // preview tile matches what they're typing, falling back to saved values.
+  const starterName =
+    storefrontName.trim() ||
+    data.storefrontName ||
+    data.legalName ||
+    "Your Store";
+  const starterInitials = deriveInitials(starterName);
+  const starterColor = colorForName(starterName);
 
   return (
     <div className="admin-root p-6 space-y-6 max-w-4xl">
@@ -328,6 +357,46 @@ export function AdminStorefrontBrandingPage() {
             )}
           </div>
         </div>
+
+        {!data.logoUrl && (
+          <div
+            className="mt-4 flex flex-col gap-3 rounded-md border p-3 sm:flex-row sm:items-center"
+            style={INPUT_STYLE}
+          >
+            <div
+              className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl text-lg font-bold text-white"
+              style={{ background: starterColor }}
+              aria-hidden="true"
+            >
+              {starterInitials}
+            </div>
+            <div className="flex-1">
+              <p
+                className="text-sm font-medium"
+                style={{ color: "hsl(var(--ink-2))" }}
+              >
+                No logo yet? Start with a monogram.
+              </p>
+              <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+                We&rsquo;ll make a clean logo from your storefront name so your
+                shop looks finished. You can replace it anytime.
+              </p>
+            </div>
+            <button
+              type="button"
+              className="inline-flex shrink-0 items-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold disabled:opacity-50"
+              style={{
+                borderColor: "hsl(var(--line))",
+                color: "hsl(var(--ink-1))",
+              }}
+              disabled={logoUpload.isPending}
+              onClick={() => void onUseStarterLogo(starterName)}
+            >
+              <Sparkles className="h-4 w-4" />
+              {logoUpload.isPending ? "Adding…" : "Use this starter logo"}
+            </button>
+          </div>
+        )}
       </Card>
 
       {/* ── Custom domain ───────────────────────────────────────── */}

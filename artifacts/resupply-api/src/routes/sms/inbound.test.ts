@@ -56,7 +56,9 @@ vi.mock("../../lib/messaging/ingest-mms", () => ({
 }));
 
 import inboundRouter, { __setAiFallbackAdapterForTests } from "./inbound";
+import { invalidateTenantTelecomCache } from "../../lib/messaging/tenant-telecom";
 
+const SEED_ORG = "00000000-0000-4000-8000-000000000000"; // matches the mock's resolveSeedOrgId
 const PATIENT_ID = "11111111-1111-4111-8111-111111111111";
 const EPISODE_ID = "22222222-2222-4222-8222-222222222222";
 const CONVERSATION_ID = "33333333-3333-4333-8333-333333333333";
@@ -108,6 +110,10 @@ const FROM_PHONE = "+12155551212";
 // AI thread fetch) is unstaged so the mock returns the default
 // { data: null, error: null } envelope, which the route tolerates.
 function stageKnownPatientFlow(): void {
+  // The shared To number isn't tenant-owned, so the handler first runs the
+  // cross-org patient-phone resolver. Returning no cross-org rows makes it
+  // fall back to the seed org, where the main lookup below finds the patient.
+  stageSupabaseResponse("patients", "select", { data: [] });
   stageSupabaseResponse("patients", "select", { data: [{ id: PATIENT_ID }] });
   stageSupabaseResponse("messages", "select", { data: null });
   stageSupabaseResponse("conversations", "select", {
@@ -123,6 +129,9 @@ describe("POST /sms/inbound", () => {
     for (const k of ENV_KEYS) originalEnv[k] = process.env[k];
     for (const k of ENV_KEYS) delete process.env[k];
     supabaseMock.reset();
+    // The tenant-telecom resolvers cache by phone number at module scope;
+    // clear it so a prior test's routing result doesn't leak into the next.
+    invalidateTenantTelecomCache();
     logAuditMock.mockReset().mockResolvedValue(undefined);
     placeOrderMock.mockReset();
     pausePatientMock.mockReset().mockResolvedValue(undefined);
@@ -182,6 +191,9 @@ describe("POST /sms/inbound", () => {
 
   it("audits ambiguous_phone and replies with router-guard boilerplate when two patients share a phone", async () => {
     setMessagingEnv();
+    // Cross-org resolver finds nothing → seed; the seed lookup then returns
+    // two patients on one phone → ambiguous.
+    stageSupabaseResponse("patients", "select", { data: [] });
     stageSupabaseResponse("patients", "select", {
       data: [
         { id: PATIENT_ID },
@@ -207,6 +219,66 @@ describe("POST /sms/inbound", () => {
     expect(audit.metadata.outcome).toBe("ambiguous_phone");
     expect(audit.metadata.match_count).toBe(2);
     expect(JSON.stringify(audit.metadata)).not.toContain(FROM_PHONE);
+  });
+
+  it("shared number: routes a reply to the tenant that owns the patient (even when the seed org also has that phone)", async () => {
+    // The reply lands on the SHARED platform number (To not owned by any
+    // tenant). The phone exists in BOTH the seed org and ORG_B, so the
+    // cross-org resolver — which is authoritative for shared numbers — picks
+    // ORG_B (most recent conversation) and the message is processed THERE,
+    // NOT in the seed org. This is the duplicate-phone case that a seed-first
+    // lookup would have misrouted.
+    const ORG_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    setMessagingEnv();
+    // Resolver: phone in seed + ORG_B → tie-break via conversations → ORG_B.
+    stageSupabaseResponse("patients", "select", {
+      data: [
+        { id: "seed-patient", org_id: SEED_ORG },
+        { id: PATIENT_ID, org_id: ORG_B },
+      ],
+    });
+    stageSupabaseResponse("conversations", "select", {
+      data: { org_id: ORG_B, last_message_at: "2026-06-20T00:00:00.000Z" },
+    });
+    // Main lookup, now scoped to ORG_B, then the known-patient dispatch flow.
+    stageSupabaseResponse("patients", "select", { data: [{ id: PATIENT_ID }] });
+    stageSupabaseResponse("messages", "select", { data: null });
+    stageSupabaseResponse("conversations", "select", {
+      data: { id: CONVERSATION_ID },
+    });
+    stageSupabaseResponse("messages", "insert", {
+      data: { id: "44444444-4444-4444-8444-444444444444" },
+    });
+    stageSupabaseResponse("messages", "select", {
+      data: { body: "Reply YES to confirm your refill." },
+    });
+    placeOrderMock.mockResolvedValue({
+      status: "ok",
+      episodeId: EPISODE_ID,
+      patientId: PATIENT_ID,
+      fulfillmentIds: ["f1"],
+    });
+
+    const res = await request(makeApp())
+      .post("/resupply-api/sms/inbound")
+      .type("form")
+      .send({
+        From: FROM_PHONE,
+        To: "+12158675309", // the shared platform number
+        Body: "YES",
+        MessageSid: "SM_shared",
+        NumMedia: "0",
+      });
+
+    expect(res.status).toBe(200);
+    // The inbound message was recorded under ORG_B (the org-scoped client
+    // stamps org_id onto the insert), proving it routed to the right tenant
+    // and not the seed org despite the seed org having the same phone.
+    const insert = supabaseMock.writePayloads("messages", "insert")[0] as {
+      org_id?: string;
+    };
+    expect(insert.org_id).toBe(ORG_B);
+    expect(placeOrderMock).toHaveBeenCalled();
   });
 
   it("dispatches confirm intent → places order, closes, audits ok", async () => {

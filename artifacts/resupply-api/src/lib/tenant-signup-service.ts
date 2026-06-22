@@ -25,6 +25,7 @@
 //     logged; failures log only a shape.
 
 import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
+import { resolvePlanFlagPreset } from "@workspace/resupply-domain";
 import {
   hashPassword,
   issueToken,
@@ -118,11 +119,23 @@ export function slugifyOrgName(name: string): string {
 
 type RawClient = ReturnType<ReturnType<typeof getOrgScopedClient>["raw"]>;
 
-/** Copy the seed tenant's feature-flag catalog onto the new org. */
+/**
+ * Provision the new org's feature-flag catalog from the seed tenant's rows.
+ *
+ * When `planCode` resolves to a known preset bundle
+ * (lib/resupply-domain/feature-flag-presets.ts, mirroring the marketed
+ * tiers), only that bundle's flags default ON — so a self-serve signup that
+ * already chose a plan lands on the same streamlined defaults as the
+ * `tenant:onboard --plan` path, instead of inheriting everything ON. Without
+ * a plan (the web form picks one later on the billing page), the seed
+ * tenant's enabled state is copied verbatim and the tenant can apply the
+ * recommended preset from Control Center once they pick a plan.
+ */
 async function provisionFeatureFlags(
   raw: RawClient,
   seedOrgId: string,
   newOrgId: string,
+  planCode?: string | null,
 ): Promise<number> {
   const { data: seedFlags, error } = await raw
     .schema("resupply")
@@ -130,13 +143,17 @@ async function provisionFeatureFlags(
     .select("key, enabled, description, category")
     .eq("org_id", seedOrgId);
   if (error) throw error;
-  const rows = (seedFlags ?? []).map((f) => ({
-    org_id: newOrgId,
-    key: (f as { key: string }).key,
-    enabled: (f as { enabled: boolean }).enabled,
-    description: (f as { description: string | null }).description,
-    category: (f as { category: string | null }).category,
-  }));
+  const preset = resolvePlanFlagPreset(planCode);
+  const rows = (seedFlags ?? []).map((f) => {
+    const key = (f as { key: string }).key;
+    return {
+      org_id: newOrgId,
+      key,
+      enabled: preset ? preset.has(key) : (f as { enabled: boolean }).enabled,
+      description: (f as { description: string | null }).description,
+      category: (f as { category: string | null }).category,
+    };
+  });
   if (rows.length === 0) return 0;
   const { error: insErr } = await raw
     .schema("resupply")
@@ -319,9 +336,11 @@ export async function createSelfServeTenant(
   }
   const orgId = (created as { id: string }).id;
 
-  // 3. Feature flags — best-effort (the operator can re-provision).
+  // 3. Feature flags — best-effort (the operator can re-provision). When the
+  //    signup already carries a plan, apply that plan's preset bundle so the
+  //    tenant starts on streamlined defaults rather than everything ON.
   try {
-    await provisionFeatureFlags(raw, seedOrgId, orgId);
+    await provisionFeatureFlags(raw, seedOrgId, orgId, input.plan);
   } catch (err) {
     logger.warn(
       { event: "tenant_signup_flag_provision_failed", orgId, err },

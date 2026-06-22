@@ -19,10 +19,12 @@ import { Spinner } from "@/components/admin/Spinner";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { PageHeader } from "@/components/admin/PageHeader";
 import {
+  applyFeatureFlagPreset,
   isHighRiskFlag,
   listFeatureFlagActivity,
   listFeatureFlags,
   toggleFeatureFlag,
+  type ApplyPresetResult,
   type FeatureFlag,
   type FeatureFlagActivity,
 } from "@/lib/admin/feature-flags-api";
@@ -48,8 +50,306 @@ export function AdminControlCenterPage() {
         description="On/off switches for major features. Flipping a switch takes effect within a few seconds — no deploy required. Use these during incidents, vendor outages, or when you need to pause a campaign without canceling it."
       />
       <SummaryTiles />
+      <PresetCard />
       <FlagsList />
       <ActivityPanel />
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Recommended-preset card — one-click "set my flags to the bundle for
+// my plan". New tenants already land on the preset at onboarding; this
+// lets an EXISTING tenant adopt (or re-baseline to) the recommended set
+// after picking or switching a plan, instead of toggling dozens of
+// switches by hand.
+//
+// Flow: click → dry-run POST returns the exact diff → confirm modal
+// shows what will change → confirm → apply POST writes it. The shared
+// QUERY_KEY/ACTIVITY_QUERY_KEY invalidation refreshes the table, tiles,
+// and activity feed. A tenant with no active plan gets a 409 the card
+// surfaces as a "pick a plan first" note rather than an error panel.
+// ─────────────────────────────────────────────────────────────────
+
+function PresetCard() {
+  const queryClient = useQueryClient();
+  const [preview, setPreview] = useState<ApplyPresetResult | null>(null);
+  // A short-lived success summary after an apply, e.g. "Applied the growth
+  // bundle — 4 changes." Cleared when the operator interacts again.
+  const [lastSummary, setLastSummary] = useState<string | null>(null);
+
+  const applyMutation = useMutation({
+    mutationFn: () => applyFeatureFlagPreset(false),
+    onSuccess: (result) => {
+      setPreview(null);
+      setLastSummary(
+        result.changes.length === 0
+          ? `Flags already match the recommended ${result.planCode} bundle.`
+          : `Applied the ${result.planCode} bundle — ${result.changes.length} ${
+              result.changes.length === 1 ? "flag" : "flags"
+            } changed.`,
+      );
+      void queryClient.invalidateQueries({ queryKey: QUERY_KEY });
+      void queryClient.invalidateQueries({ queryKey: ACTIVITY_QUERY_KEY });
+    },
+  });
+
+  const previewMutation = useMutation({
+    mutationFn: () => applyFeatureFlagPreset(true),
+    onSuccess: (result) => {
+      setLastSummary(null);
+      // Clear any error left over from a previous failed apply so the fresh
+      // preview modal doesn't open showing a stale message.
+      applyMutation.reset();
+      setPreview(result);
+    },
+  });
+
+  // A 409 means the tenant has no active plan to derive a preset from —
+  // surface that as guidance, not a generic failure. Anything else is a
+  // real error we show verbatim. Checked structurally (ApiError carries a
+  // numeric `status`) rather than via `instanceof` so it doesn't depend on
+  // the error class's identity surviving the bundle boundary.
+  const previewErr = previewMutation.error;
+  const noPlan =
+    typeof previewErr === "object" &&
+    previewErr !== null &&
+    "status" in previewErr &&
+    (previewErr as { status?: unknown }).status === 409;
+
+  return (
+    <section
+      aria-label="Recommended preset"
+      className="rounded-lg border border-slate-200 bg-white p-4 space-y-2"
+      data-testid="control-center-preset"
+    >
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <h2 className="text-sm font-semibold text-slate-900">
+            Recommended setup for your plan
+          </h2>
+          <p className="mt-1 text-sm text-slate-700">
+            Set every switch below to the bundle we recommend for your current
+            billing plan. You can still fine-tune any individual flag afterward
+            — this just gives you a sensible starting point in one click.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => previewMutation.mutate()}
+          disabled={previewMutation.isPending || applyMutation.isPending}
+          className={[
+            "shrink-0 rounded px-3 py-1.5 text-sm font-semibold text-white",
+            previewMutation.isPending || applyMutation.isPending
+              ? "bg-blue-300 cursor-wait"
+              : "bg-blue-600 hover:bg-blue-700",
+          ].join(" ")}
+          data-testid="control-center-preset-button"
+        >
+          {previewMutation.isPending ? "Checking…" : "Apply recommended preset"}
+        </button>
+      </div>
+
+      {noPlan && (
+        <p
+          className="text-xs text-amber-700"
+          data-testid="control-center-preset-no-plan"
+        >
+          Pick a billing plan first (Settings → Billing) — the recommended set
+          of features is based on your plan.
+        </p>
+      )}
+      {previewMutation.isError && !noPlan && (
+        <p
+          className="text-xs text-rose-700"
+          role="alert"
+          data-testid="control-center-preset-error"
+        >
+          Couldn&apos;t load the recommended preset:{" "}
+          {previewErr instanceof Error ? previewErr.message : "unknown"}
+        </p>
+      )}
+      {lastSummary && (
+        <p
+          className="text-xs text-emerald-700"
+          data-testid="control-center-preset-summary"
+        >
+          {lastSummary}
+        </p>
+      )}
+
+      {preview && (
+        <ApplyPresetModal
+          preview={preview}
+          applying={applyMutation.isPending}
+          error={applyMutation.error}
+          onCancel={() => {
+            setPreview(null);
+            // Drop any failed-apply error so reopening the modal starts clean.
+            applyMutation.reset();
+          }}
+          onConfirm={() => applyMutation.mutate()}
+        />
+      )}
+    </section>
+  );
+}
+
+// Confirmation modal for applying a plan preset. Shows the exact diff
+// (what turns on, what turns off) before writing, and calls out any
+// high-risk flag that would be disabled. Styling mirrors
+// ConfirmDisableModal so the two confirmation surfaces feel consistent.
+function ApplyPresetModal({
+  preview,
+  applying,
+  error,
+  onConfirm,
+  onCancel,
+}: {
+  preview: ApplyPresetResult;
+  applying: boolean;
+  error: unknown;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onCancel();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onCancel]);
+
+  const toEnable = preview.changes.filter((c) => c.to);
+  const toDisable = preview.changes.filter((c) => !c.to);
+  const riskyDisables = toDisable.filter((c) => isHighRiskFlag(c.key));
+  const nothingToDo = preview.changes.length === 0;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="apply-preset-title"
+      onClick={onCancel}
+      data-testid="apply-preset-modal"
+    >
+      <div
+        className="w-full max-w-md rounded-lg bg-white shadow-xl border border-slate-200 p-5 space-y-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="space-y-1">
+          <h3
+            id="apply-preset-title"
+            className="text-base font-bold text-slate-900"
+          >
+            Apply the recommended {preview.planCode} bundle?
+          </h3>
+          <p className="text-sm text-slate-700">
+            {nothingToDo
+              ? "Your flags already match the recommended set — nothing to change."
+              : `This will change ${preview.changes.length} ${
+                  preview.changes.length === 1 ? "flag" : "flags"
+                } to match the recommended set for your ${preview.planCode} plan. It takes effect within seconds.`}
+          </p>
+        </div>
+
+        {riskyDisables.length > 0 && (
+          <div className="rounded border border-rose-200 bg-rose-50 p-3 text-sm text-rose-900 space-y-1">
+            <p className="font-semibold">Heads up — this turns off:</p>
+            <ul className="list-disc pl-5">
+              {riskyDisables.map((c) => (
+                <li key={c.key}>
+                  {humanizeAction(c.key)} (immediate revenue / clinical impact)
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {!nothingToDo && (
+          <div className="max-h-56 overflow-auto rounded border border-slate-200 divide-y divide-slate-100 text-sm">
+            {toEnable.length > 0 && (
+              <ChangeGroup
+                label={`Turn on (${toEnable.length})`}
+                tone="on"
+                changes={toEnable}
+              />
+            )}
+            {toDisable.length > 0 && (
+              <ChangeGroup
+                label={`Turn off (${toDisable.length})`}
+                tone="off"
+                changes={toDisable}
+              />
+            )}
+          </div>
+        )}
+
+        {error != null && (
+          <p className="text-xs text-rose-700" role="alert">
+            Couldn&apos;t apply:{" "}
+            {error instanceof Error ? error.message : "unknown"}
+          </p>
+        )}
+
+        <div className="flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+            data-testid="apply-preset-cancel"
+          >
+            {nothingToDo ? "Close" : "Cancel"}
+          </button>
+          {!nothingToDo && (
+            <button
+              type="button"
+              onClick={onConfirm}
+              disabled={applying}
+              className={[
+                "rounded px-3 py-1.5 text-sm font-semibold text-white",
+                applying
+                  ? "bg-blue-300 cursor-wait"
+                  : "bg-blue-600 hover:bg-blue-700",
+              ].join(" ")}
+              data-testid="apply-preset-confirm"
+            >
+              {applying ? "Applying…" : "Apply preset"}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ChangeGroup({
+  label,
+  tone,
+  changes,
+}: {
+  label: string;
+  tone: "on" | "off";
+  changes: { key: string }[];
+}) {
+  return (
+    <div className="px-3 py-2">
+      <div
+        className={[
+          "text-xs font-semibold uppercase tracking-wider mb-1",
+          tone === "on" ? "text-emerald-700" : "text-amber-700",
+        ].join(" ")}
+      >
+        {label}
+      </div>
+      <ul className="space-y-0.5">
+        {changes.map((c) => (
+          <li key={c.key} className="text-slate-800">
+            {humanizeAction(c.key)}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

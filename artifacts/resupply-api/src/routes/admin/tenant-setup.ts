@@ -67,6 +67,9 @@ export interface TenantSetupSnapshot {
    */
   catalogProductCount: number | null;
   activeAdminCount: number;
+  /** Count of patients in the tenant's workspace (drives the "add/import
+   *  patients" item). 0 for a brand-new tenant. */
+  patientCount: number;
 }
 
 /**
@@ -119,17 +122,17 @@ export function buildTenantSetupItems(
     {
       id: "sms-number",
       group: "Phone, SMS & fax",
-      title: "Get an SMS number",
+      title: "Get your own SMS number",
       description:
-        "Your own number for resupply texts and inbound replies, so messages come from you — not a shared platform number.",
+        "Optional for now: texts already send on the shared platform number. Add your own number when you're ready for messages to come from you — typically as your volume grows.",
       status: smsReady ? "complete" : "incomplete",
       detail: smsReady
         ? set(s.smsFromNumber)
           ? `SMS number: ${s.smsFromNumber}.`
           : "Using a Twilio Messaging Service."
-        : "Not set — texts fall back to the shared platform number.",
+        : "Using the shared platform number — works today; add your own when you're ready to brand it.",
       href: "/admin/phone-settings",
-      required: true,
+      required: false,
     },
     {
       id: "voice-number",
@@ -171,6 +174,22 @@ export function buildTenantSetupItems(
         : "Not set — email sends from the platform default address.",
       href: "/admin/email-settings",
       required: true,
+    },
+
+    // ── Your patients ────────────────────────────────────────────────
+    {
+      id: "patients",
+      group: "Your patients",
+      title: "Add or import your patients",
+      description:
+        "Bring your patient roster in. Migrating from another system? Import a CSV — your PacWare Patient List, or any CSV with column mapping. It's a fill-only sync that never overwrites existing data. Starting fresh? Patients populate automatically as orders and fittings come in.",
+      status: s.patientCount > 0 ? "complete" : "action",
+      detail:
+        s.patientCount > 0
+          ? `${s.patientCount}${s.patientCount >= 1000 ? "+" : ""} patient${s.patientCount === 1 ? "" : "s"} in your workspace.`
+          : "No patients yet — import your existing list from PacWare, or they'll populate as you take orders.",
+      href: "/admin/pacware",
+      required: false,
     },
 
     // ── Payments ─────────────────────────────────────────────────────
@@ -242,6 +261,7 @@ async function loadSnapshot(orgId: string): Promise<TenantSetupSnapshot> {
     stripeChargesEnabled: false,
     catalogProductCount: null,
     activeAdminCount: 0,
+    patientCount: 0,
   };
 
   try {
@@ -288,6 +308,21 @@ async function loadSnapshot(orgId: string): Promise<TenantSetupSnapshot> {
     logger.warn(
       { event: "tenant_setup_admin_count_failed", err },
       "tenant-setup: admin count probe failed",
+    );
+  }
+
+  // Patient count (fail-soft): drives the "add or import your patients" item.
+  // org-scoped client filters by org_id; head:true makes it a COUNT-only query.
+  try {
+    const { count, error } = await getOrgScopedClient(orgId)
+      .from("patients")
+      .select("*", { count: "exact", head: true });
+    if (error) throw error;
+    base.patientCount = count ?? 0;
+  } catch (err) {
+    logger.warn(
+      { event: "tenant_setup_patient_count_failed", err },
+      "tenant-setup: patient count probe failed",
     );
   }
 

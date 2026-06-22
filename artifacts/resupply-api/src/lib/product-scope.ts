@@ -135,6 +135,51 @@ export async function resolveTenantProductScope(
   return scope;
 }
 
+/**
+ * Resolve the tenant's CURRENT billing plan CODE (e.g. "launch", "growth")
+ * from its active subscription — the companion to `resolveTenantProductScope`
+ * above, which only needs the coarse `product_scope`. Used by the Control
+ * Center "apply recommended preset" action to pick the right feature-flag
+ * bundle for the tenant's plan.
+ *
+ * Returns `null` when the tenant has no active subscription (or on any read
+ * error) — the caller treats "no plan" as "no preset to apply" rather than
+ * failing. Not cached: this backs an infrequent, explicit admin action, not a
+ * per-request hot path.
+ */
+export async function resolveTenantPlanCode(
+  orgId: string | undefined | null,
+): Promise<string | null> {
+  const id = orgId?.trim();
+  if (!id) return null;
+  try {
+    const { data, error } = await getOrgScopedClient(id)
+      .raw()
+      .schema("resupply")
+      .from("tenant_billing_subscriptions")
+      .select("billing_plans(code)")
+      .eq("org_id", id)
+      .in("status", ["active", "trialing", "past_due"])
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    const code = (
+      data as { billing_plans?: { code?: string | null } | null } | null
+    )?.billing_plans?.code;
+    return code ?? null;
+  } catch (err) {
+    logger.warn(
+      {
+        event: "tenant_plan_code_resolve_failed",
+        orgId: id,
+        err: err instanceof Error ? err : new Error(String(err)),
+      },
+      "tenant plan code resolve failed; treating as no plan",
+    );
+    return null;
+  }
+}
+
 // ── Admin surface allowlist for the mask_fitter scope ──────────────────
 // Substrings a fitter-only tenant's request path MAY contain. Everything
 // else under the admin API 403s. Matched against `req.originalUrl` (which
