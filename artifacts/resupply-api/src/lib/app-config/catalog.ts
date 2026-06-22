@@ -94,6 +94,7 @@ export const CATEGORY_REACT_HEALTH =
 export const CATEGORY_OFFICE_ALLY = "Clearinghouse (Office Ally)";
 export const CATEGORY_XPS_SHIP = "Shipping labels (XPS Ship)";
 export const CATEGORY_REMINDERS = "Resupply reminders";
+export const CATEGORY_SLACK = "Team notifications (Slack)";
 
 export const APP_CONFIG_CATALOG: readonly AppConfigSetting[] = [
   // ── Branding & assistants ─────────────────────────────────────────
@@ -715,6 +716,45 @@ export const APP_CONFIG_CATALOG: readonly AppConfigSetting[] = [
     description:
       "Stop escalating an unanswered episode once its first reminder is older than this many days. Default 21. Clamped to (days-between-steps)–120.",
     placeholder: "21",
+  },
+
+  // ── Team notifications (Slack) ────────────────────────────────────
+  // Internal operator/CS channel — NOT a patient-facing surface, so these
+  // are PLATFORM credentials (one Slack app/workspace for the operator),
+  // like the platform Twilio/SendGrid keys. Read at call time via
+  // getEffectiveEnv()/readSlackConfigOrNull(); unset → notifications are a
+  // complete no-op. Real-time CS alerts (reply-needs-human, voice handoff,
+  // SLA breach) post here when the `slack.notifications` flag is on; inbound
+  // buttons/slash commands are verified with the signing secret and gated by
+  // the `slack.interactivity` flag.
+  {
+    key: "SLACK_BOT_TOKEN",
+    label: "Bot token",
+    category: CATEGORY_SLACK,
+    secret: true,
+    applyMode: "live",
+    description:
+      "Slack bot user OAuth token (xoxb-…) with the chat:write scope. Required to post CS alerts into Slack.",
+    placeholder: "xoxb-…",
+  },
+  {
+    key: "SLACK_ALERTS_CHANNEL",
+    label: "Alerts channel id",
+    category: CATEGORY_SLACK,
+    secret: false,
+    applyMode: "live",
+    description:
+      "Channel id (e.g. C0123ABCD, not the #name) the CS reps watch — real-time handoff/SLA alerts post here. Invite the bot to the channel first.",
+    placeholder: "C0123ABCD",
+  },
+  {
+    key: "SLACK_SIGNING_SECRET",
+    label: "Signing secret",
+    category: CATEGORY_SLACK,
+    secret: true,
+    applyMode: "live",
+    description:
+      "App signing secret from the Slack app's Basic Information. Required only for inbound interactivity (Escalate buttons / the /pennfit slash command). Leave blank for outbound-only alerts.",
   },
 ];
 

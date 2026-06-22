@@ -73,6 +73,7 @@ import type { ReminderVariant } from "@workspace/resupply-reminders";
 import { getTenantConfigValue } from "../../lib/app-config/store";
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
+import { notifyReminderEscalation } from "../../lib/slack/notify";
 import { readVoiceConfigOrNull } from "../../lib/voice/voice-config";
 import { forEachActiveOrg } from "../lib/for-each-active-org";
 import { createQueueWithDlq, CRON_SCAN_QUEUE_OPTS } from "../lib/queue-options";
@@ -670,6 +671,7 @@ async function escalationScanForOrg(
       }
     } else {
       await raiseUnresponsiveAlert(
+        orgId,
         supabase,
         action.patientId,
         action.episodeId,
@@ -717,6 +719,7 @@ function describeChannelsTried(channels: string[]): string {
 }
 
 async function raiseUnresponsiveAlert(
+  orgId: string,
   supabase: OrgScopedClient,
   patientId: string,
   episodeId: string,
@@ -757,6 +760,14 @@ async function raiseUnresponsiveAlert(
       if (alertInsertErr.code === "23505") return;
       throw alertInsertErr;
     }
+
+    // A NEW alert was raised — ping the CS reps in Slack (best-effort,
+    // non-PHI: patient id + channels tried + a deep link). Never throws.
+    void notifyReminderEscalation({
+      orgId,
+      patientId,
+      channelsTried: describeChannelsTried(triedChannels),
+    });
   } catch (err) {
     logger.warn(
       {

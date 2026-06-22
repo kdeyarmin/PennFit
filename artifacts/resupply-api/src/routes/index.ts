@@ -100,6 +100,7 @@ import shopOrderPodUploadRouter from "./admin/shop-order-pod-upload.js";
 import integrationsStatusRouter from "./admin/integrations-status.js";
 import integrationsNightlySyncRouter from "./admin/integrations-nightly-sync.js";
 import integrationsWebhooksRouter from "./integrations-webhooks.js";
+import slackRouter from "./slack/index.js";
 import integrationsErrorsRouter from "./admin/integrations-errors.js";
 import therapyFleetRouter from "./admin/therapy-fleet.js";
 import therapyClinicalInsightsRouter from "./admin/therapy-clinical-insights.js";
@@ -1030,6 +1031,10 @@ router.use(integrationsNightlySyncRouter);
 // and Care Orchestrator). HMAC-verified. Public mount because
 // vendors don't carry admin sessions.
 router.use(integrationsWebhooksRouter);
+// /slack/interactivity + /slack/commands — Slack button callbacks and the
+// /pennfit slash command. Signature-verified (not admin-cookie); public mount
+// because Slack doesn't carry admin sessions.
+router.use(slackRouter);
 // /admin/integrations/errors — sync-failure triage queue + retry.
 router.use(integrationsErrorsRouter);
 // /admin/therapy-fleet/* — population-level therapy-cloud analytics:

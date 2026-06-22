@@ -42,6 +42,7 @@
 import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { logger } from "../logger";
+import { notifyVoiceHandoff } from "../slack/notify";
 
 type ConversationPriority = "low" | "normal" | "high" | "urgent";
 
@@ -215,6 +216,17 @@ export async function routeVoiceHandoffToCsrQueue(
       },
       "voice handoff: conversation escalated for CSR follow-up",
     );
+
+    // Surface the handoff to the CS reps in Slack (best-effort, non-PHI:
+    // sentiment + conversation id + outcome summary + a deep link). A flaky
+    // Slack call must not affect the call-cleanup path — notifyVoiceHandoff
+    // never throws.
+    void notifyVoiceHandoff({
+      orgId,
+      conversationId: input.conversationId,
+      sentiment: input.sentiment,
+      outcome: input.outcome,
+    });
   } catch (err) {
     logger.warn(
       {
