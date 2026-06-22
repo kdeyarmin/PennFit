@@ -74,11 +74,16 @@ import {
   type PlatformAnalyticsTenantRow,
 } from "@/lib/admin/platform-analytics-api";
 import {
+  buildPreviewConfirm,
   fetchFleetBillingSummary,
   fetchPlatformBillingActivity,
+  fetchPlatformBillingCatalog,
   fetchPlatformTenantBilling,
   formatMoney,
+  previewTenantBillingChange,
   syncTenantStripeSubscription,
+  updateTenantPlan,
+  type BillingPlan,
 } from "@/lib/admin/platform-billing-api";
 import {
   getPlatformSupportTicket,
@@ -2211,6 +2216,128 @@ function billingStatusVariant(
 // price, renewal, last invoice, add-on count. Reads the same per-tenant
 // billing the platform Billing console renders (shared query key, so it's
 // cached/deduped). Deep edits stay on /platform/billing.
+// Inline plan switcher for the tenant detail page: pick a plan → preview
+// the cost/proration → confirm → apply. Reuses previewTenantBillingChange
+// + updateTenantPlan (the same endpoints the full Billing console uses);
+// the confirm body is the shared buildPreviewConfirm text. Custom/
+// Enterprise tiers are managed on /platform/billing, so only non-custom
+// plans are selectable here.
+function TenantPlanChanger({
+  tenantId,
+  currentPlanCode,
+  currentStatus,
+  plans,
+}: {
+  tenantId: string;
+  currentPlanCode: string;
+  currentStatus: string;
+  plans: BillingPlan[];
+}) {
+  const queryClient = useQueryClient();
+  const [selected, setSelected] = useState(currentPlanCode);
+  const [confirmPreview, setConfirmPreview] = useState<string | null>(null);
+
+  const selectable = useMemo(() => plans.filter((p) => !p.isCustom), [plans]);
+  const dirty = selected !== currentPlanCode;
+
+  const preview = useMutation({
+    mutationFn: () =>
+      previewTenantBillingChange(tenantId, {
+        kind: "plan",
+        planCode: selected,
+      }),
+    onSuccess: (p) => setConfirmPreview(buildPreviewConfirm(p)),
+  });
+  const apply = useMutation({
+    mutationFn: () =>
+      updateTenantPlan(tenantId, {
+        planCode: selected,
+        status: currentStatus,
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: ["platform-billing", "tenants"],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["platform-billing", "activity"],
+      });
+      setConfirmPreview(null);
+    },
+  });
+
+  // Keep the dropdown in sync if the current plan changes under us (e.g.
+  // after a successful apply re-reads the snapshot).
+  useEffect(() => {
+    setSelected(currentPlanCode);
+  }, [currentPlanCode]);
+
+  return (
+    <div
+      className="border-t pt-3"
+      style={{ borderColor: "hsl(var(--line-1))" }}
+    >
+      <div
+        className="text-[11px] font-medium mb-2"
+        style={{ color: "hsl(var(--ink-2))" }}
+      >
+        Change plan
+      </div>
+      <div className="flex items-center gap-2 flex-wrap">
+        <select
+          value={selected}
+          onChange={(e) => setSelected(e.target.value)}
+          aria-label="Select a plan"
+          className="rounded-md border px-2 py-1.5 text-xs outline-none focus:ring-2"
+          style={{
+            borderColor: "hsl(var(--line-1))",
+            backgroundColor: "hsl(var(--surface-1))",
+            color: "hsl(var(--ink-1))",
+          }}
+        >
+          {/* The current plan is always selectable even if it's custom and
+              thus not in `selectable`, so the dropdown can show it. */}
+          {!selectable.some((p) => p.code === currentPlanCode) && (
+            <option value={currentPlanCode}>{currentPlanCode} (current)</option>
+          )}
+          {selectable.map((p) => (
+            <option key={p.code} value={p.code}>
+              {p.name}
+              {p.monthlyPriceCents != null
+                ? ` — ${formatMoney(p.monthlyPriceCents)}/mo`
+                : ""}
+            </option>
+          ))}
+        </select>
+        <Button
+          intent="secondary"
+          size="sm"
+          disabled={!dirty || preview.isPending}
+          isLoading={preview.isPending}
+          onClick={() => preview.mutate()}
+        >
+          Review change
+        </Button>
+      </div>
+      {preview.isError && (
+        <p className="text-xs mt-1" style={{ color: "hsl(354 75% 38%)" }}>
+          Couldn&rsquo;t price that change. Try again.
+        </p>
+      )}
+      {confirmPreview && (
+        <ConfirmDialog
+          title="Change plan?"
+          confirmLabel="Apply change"
+          isPending={apply.isPending}
+          error={apply.isError ? "Couldn't apply the change." : null}
+          body={<span className="whitespace-pre-line">{confirmPreview}</span>}
+          onConfirm={() => apply.mutate()}
+          onClose={() => setConfirmPreview(null)}
+        />
+      )}
+    </div>
+  );
+}
+
 function TenantBillingCard({ tenantId }: { tenantId: string }) {
   const queryClient = useQueryClient();
   const { data, isPending, isError, refetch } = useQuery({
@@ -2225,19 +2352,45 @@ function TenantBillingCard({ tenantId }: { tenantId: string }) {
       });
     },
   });
+  const catalog = useQuery({
+    queryKey: ["platform-billing", "catalog"],
+    queryFn: fetchPlatformBillingCatalog,
+  });
   const row = data?.tenants.find((t) => t.id === tenantId);
   const sub = row?.billing.subscription ?? null;
   const monthly = sub
     ? (sub.customMonthlyPriceCents ?? sub.plan.monthlyPriceCents)
     : null;
   const displayStatus = sub ? (sub.stripeStatus ?? sub.status) : "";
-  // Effective allowances = plan defaults overlaid by any per-tenant custom
-  // overrides; usage is what's been metered this billing month.
-  const allowances: Record<string, number> = sub
-    ? { ...sub.plan.allowances, ...sub.customAllowances }
-    : {};
-  const usageMetrics = row?.billing.usage.metrics ?? {};
-  const allowanceEntries = Object.entries(allowances);
+
+  // A COMPLETE metering view: the union of every metered item for this
+  // tenant — plan/custom allowances (capped) plus any metric that's been
+  // used or is attached to a metered add-on (pay-as-you-go, no cap).
+  const meterRows = useMemo(() => {
+    if (!sub) return [];
+    const allowances: Record<string, number> = {
+      ...sub.plan.allowances,
+      ...sub.customAllowances,
+    };
+    const usageMetrics = row?.billing.usage.metrics ?? {};
+    const unitByMetric = new Map<string, string | null>();
+    for (const a of row?.billing.addons ?? []) {
+      if (a.addon.usageMetric) {
+        unitByMetric.set(a.addon.usageMetric, a.addon.unitLabel);
+      }
+    }
+    const keys = new Set<string>([
+      ...Object.keys(allowances),
+      ...Object.keys(usageMetrics),
+      ...unitByMetric.keys(),
+    ]);
+    return [...keys].sort().map((key) => ({
+      key,
+      used: usageMetrics[key] ?? 0,
+      allowance: key in allowances ? allowances[key] : null,
+      unit: unitByMetric.get(key) ?? null,
+    }));
+  }, [sub, row]);
 
   return (
     <Card
@@ -2316,7 +2469,7 @@ function TenantBillingCard({ tenantId }: { tenantId: string }) {
               {row?.billing.addons.length ?? 0}
             </MetaItem>
           </div>
-          {allowanceEntries.length > 0 && (
+          {meterRows.length > 0 && (
             <div
               className="border-t pt-3"
               style={{ borderColor: "hsl(var(--line-1))" }}
@@ -2325,32 +2478,50 @@ function TenantBillingCard({ tenantId }: { tenantId: string }) {
                 className="text-[11px] font-medium mb-2"
                 style={{ color: "hsl(var(--ink-2))" }}
               >
-                Usage this month
+                Metering &amp; usage
                 {row?.billing.usage.month
                   ? ` · ${row.billing.usage.month}`
                   : ""}
               </div>
               <div className="space-y-1">
-                {allowanceEntries.map(([key, allowance]) => {
-                  const used = usageMetrics[key] ?? 0;
-                  const over = allowance > 0 && used > allowance;
+                {meterRows.map(({ key, used, allowance, unit }) => {
+                  const capped = allowance !== null;
+                  const over = capped && allowance > 0 && used > allowance;
                   return (
                     <div
                       key={key}
-                      className="flex items-center justify-between text-xs"
+                      className="flex items-center justify-between gap-3 text-xs"
                     >
                       <span style={{ color: "hsl(var(--ink-2))" }}>
                         {key.replace(/_/g, " ")}
+                        {unit ? (
+                          <span style={{ color: "hsl(var(--ink-3))" }}>
+                            {" "}
+                            · {unit}
+                          </span>
+                        ) : null}
                       </span>
                       <span
-                        className="tabular-nums font-medium"
+                        className="tabular-nums font-medium whitespace-nowrap"
                         style={{
                           color: over
                             ? "hsl(354 70% 42%)"
                             : "hsl(var(--ink-1))",
                         }}
                       >
-                        {used.toLocaleString()} / {allowance.toLocaleString()}
+                        {capped ? (
+                          `${used.toLocaleString()} / ${allowance.toLocaleString()}`
+                        ) : (
+                          <>
+                            {used.toLocaleString()}{" "}
+                            <span
+                              className="font-normal"
+                              style={{ color: "hsl(var(--ink-3))" }}
+                            >
+                              metered
+                            </span>
+                          </>
+                        )}
                       </span>
                     </div>
                   );
@@ -2358,6 +2529,12 @@ function TenantBillingCard({ tenantId }: { tenantId: string }) {
               </div>
             </div>
           )}
+          <TenantPlanChanger
+            tenantId={tenantId}
+            currentPlanCode={sub.plan.code}
+            currentStatus={sub.status}
+            plans={catalog.data?.plans ?? []}
+          />
         </div>
       )}
     </Card>

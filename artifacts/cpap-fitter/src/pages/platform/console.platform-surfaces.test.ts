@@ -111,4 +111,15 @@ describe("platform console tenant detail + sidebar", () => {
     expect(SRC).toContain("syncTenantStripeSubscription");
     expect(SRC).toContain("<BillingActivityCard tenantId={tenant.id} />");
   });
+
+  it("adds inline plan change + a full metered-items view", () => {
+    // Inline plan switch: preview the cost, then apply.
+    expect(SRC).toContain("function TenantPlanChanger");
+    expect(SRC).toContain("previewTenantBillingChange");
+    expect(SRC).toContain("updateTenantPlan");
+    expect(SRC).toContain("<TenantPlanChanger");
+    // The metering view unions allowances + used + metered add-on metrics.
+    expect(SRC).toContain("const meterRows");
+    expect(SRC).toContain("Metering &amp; usage");
+  });
 });
