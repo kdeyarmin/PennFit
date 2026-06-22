@@ -124,10 +124,13 @@ export async function cancelSignatureTracking(
 export async function resendSignatureDocument(
   item: Pick<SignatureTrackingItem, "documentKind" | "documentId">,
 ): Promise<{ ok?: boolean; status?: string; vendorRef?: string }> {
+  // adminJsonFetch prepends the `/resupply-api` mount, so these paths
+  // omit it (matching BASE above). Leaving it in would double-prefix to
+  // `/resupply-api/resupply-api/admin/...` and 404 the resend.
   const path =
     item.documentKind === "prescription_request"
-      ? `/resupply-api/admin/prescription-requests/${encodeURIComponent(item.documentId)}/send-fax`
-      : `/resupply-api/admin/manual-documents/${encodeURIComponent(item.documentId)}/send-fax`;
+      ? `/admin/prescription-requests/${encodeURIComponent(item.documentId)}/send-fax`
+      : `/admin/manual-documents/${encodeURIComponent(item.documentId)}/send-fax`;
   return jsonFetch(path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

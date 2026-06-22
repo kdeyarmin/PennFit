@@ -103,6 +103,15 @@ describe("adminJsonFetch — override precedence", () => {
     expect(headers["Content-Type"]).toBe("text/csv");
     expect(headers["Accept"]).toBe("text/csv");
   });
+
+  it("does not let a caller override credentials: include", async () => {
+    fetchMock.mockResolvedValue(okJson({}));
+    await adminJsonFetch("/admin/alerts", {
+      credentials: "omit",
+    } as RequestInit);
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(init.credentials).toBe("include");
+  });
 });
 
 describe("adminJsonFetch — responses", () => {

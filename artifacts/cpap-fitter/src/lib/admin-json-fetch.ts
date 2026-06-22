@@ -47,8 +47,11 @@ export async function adminJsonFetch<T>(
   const method = (init.method ?? "GET").toUpperCase();
   const url = `${ADMIN_API_PREFIX}${path}`;
   const res = await fetch(url, {
-    credentials: "include",
     ...rest,
+    // After `...rest` so a caller's `init` cannot override it — the
+    // `pf_session` cookie must always ride along (this was one of the
+    // accidental drifts the wrapper exists to eliminate).
+    credentials: "include",
     headers: {
       Accept: "application/json",
       "Content-Type": "application/json",

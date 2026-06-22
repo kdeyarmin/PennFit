@@ -120,6 +120,18 @@ export async function mockCameraAndMediaPipe(
 
 /** /consent → fill the email + opt-in gate → land on /capture. */
 export async function consentToCapture(page: Page): Promise<void> {
+  // The fitter funnel is invitation-only: every step (starting at
+  // /consent) bounces to /fitter-invite unless an invite token is in
+  // sessionStorage (see GuardedConsent / useFitterInviteGate in App.tsx).
+  // Seed one before navigating, exactly as results-page-resilience.spec.ts
+  // does, so the guarded flow renders instead of redirecting.
+  await page.addInitScript(() => {
+    try {
+      sessionStorage.setItem("fitter_invite_token", "e2e-invite-token");
+    } catch {
+      /* sessionStorage blocked — the gate will redirect, test will surface it */
+    }
+  });
   await page.goto("/consent");
   await page.getByLabel(/email/i).first().fill("a11y@example.com");
   await page
