@@ -211,6 +211,43 @@ export interface BuildPacketResult {
   missing: string[];
 }
 
+export interface AuditPacketRecord {
+  id: string;
+  scope: AdrScope;
+  item_count: number;
+  page_count: number | null;
+  size_bytes: number | null;
+  object_key: string | null;
+  adr_id: string | null;
+  claim_id: string | null;
+  generated_by_email: string | null;
+  generated_at: string;
+}
+
+export async function getAuditPacketHistory(
+  patientId: string,
+): Promise<{ packets: AuditPacketRecord[] }> {
+  const url = `/resupply-api/admin/patients/${encodeURIComponent(patientId)}/audit-packets`;
+  const res = await fetch(url, {
+    credentials: "include",
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) throw await err(res, "GET", url);
+  return (await res.json()) as { packets: AuditPacketRecord[] };
+}
+
+export async function downloadHistoricalPacket(
+  packetId: string,
+): Promise<Blob> {
+  const url = `/resupply-api/admin/audit-packets/${encodeURIComponent(packetId)}/pdf`;
+  const res = await fetch(url, {
+    credentials: "include",
+    headers: { Accept: "application/pdf" },
+  });
+  if (!res.ok) throw await err(res, "GET", url);
+  return await res.blob();
+}
+
 /** Build + download an audit packet PDF for a patient. Returns the blob plus
  *  the per-build summary read from response headers. */
 export async function buildAuditPacket(

@@ -8,7 +8,7 @@
 // items had nothing on file so gaps are visible before sending.
 
 import { useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { FileText } from "lucide-react";
 
 import { Card } from "@/components/admin/Card";
@@ -19,7 +19,9 @@ import {
   type AdrScope,
   type AuditCatalogItem,
   buildAuditPacket,
+  downloadHistoricalPacket,
   getAuditPacketCatalog,
+  getAuditPacketHistory,
   getAuditReadiness,
 } from "@/lib/admin/adr-api";
 
@@ -77,6 +79,14 @@ export function AdminAuditPacketPage() {
     staleTime: 60_000,
   });
 
+  const qc = useQueryClient();
+  const historyQuery = useQuery({
+    queryKey: ["admin", "audit-packets", params.patientId] as const,
+    queryFn: () => getAuditPacketHistory(params.patientId),
+    enabled: !!params.patientId,
+    staleTime: 30_000,
+  });
+
   // Initialise / reset the selection to the scope's defaults when the catalog
   // loads or the scope changes.
   useEffect(() => {
@@ -116,6 +126,9 @@ export function AdminAuditPacketPage() {
       a.remove();
       URL.revokeObjectURL(url);
       setResult({ pages: res.pages, missing: res.missing });
+      void qc.invalidateQueries({
+        queryKey: ["admin", "audit-packets", params.patientId],
+      });
     } catch {
       setBuildError(true);
     } finally {
@@ -271,10 +284,58 @@ export function AdminAuditPacketPage() {
               )}
             </Card>
           ) : null}
+
+          {historyQuery.data && historyQuery.data.packets.length > 0 ? (
+            <Card title="Recent packets">
+              <div className="space-y-1.5">
+                {historyQuery.data.packets.map((p) => (
+                  <div
+                    key={p.id}
+                    className="flex items-center justify-between gap-3 text-sm"
+                  >
+                    <span style={{ color: "hsl(var(--ink-3))" }}>
+                      {new Date(p.generated_at).toLocaleString()} · {p.scope} ·{" "}
+                      {p.item_count} items
+                      {p.page_count ? ` · ${p.page_count}p` : ""}
+                    </span>
+                    {p.object_key ? (
+                      <button
+                        type="button"
+                        className="underline"
+                        style={{ color: "hsl(var(--penn-navy))" }}
+                        onClick={() => void redownload(p.id)}
+                      >
+                        Download
+                      </button>
+                    ) : (
+                      <span
+                        className="text-xs"
+                        style={{ color: "hsl(var(--ink-3))" }}
+                      >
+                        not stored
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </Card>
+          ) : null}
         </>
       )}
     </div>
   );
+
+  async function redownload(packetId: string): Promise<void> {
+    const blob = await downloadHistoricalPacket(packetId);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `audit-packet-${packetId.slice(0, 8)}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
 }
 
 function ReadinessBanner({

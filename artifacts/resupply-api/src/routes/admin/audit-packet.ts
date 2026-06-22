@@ -159,6 +159,107 @@ async function fetchObjectBytes(
   }
 }
 
+/** Upload a generated packet PDF to the private bucket; returns the stored
+ *  object key, or null on any failure (best-effort persistence). */
+async function persistPacketPdf(
+  patientId: string,
+  pdf: Buffer,
+): Promise<string | null> {
+  try {
+    const uploadUrl = await objectStorage.getObjectEntityUploadURL();
+    const put = await fetch(uploadUrl, {
+      method: "PUT",
+      headers: { "Content-Type": "application/pdf" },
+      body: pdf,
+    });
+    if (!put.ok) return null;
+    return await objectStorage.trySetObjectEntityAclPolicy(uploadUrl, {
+      owner: patientId,
+      visibility: "private",
+    });
+  } catch (err) {
+    logger.warn({ err }, "audit_packet.persist_failed");
+    return null;
+  }
+}
+
+// GET history — past audit packets for a patient (newest first).
+router.get(
+  "/admin/patients/:id/audit-packets",
+  requirePermission("patients.read"),
+  async (req, res) => {
+    const idParsed = buildParams.safeParse(req.params);
+    if (!idParsed.success) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    if (!(await isFeatureEnabled("billing.adr_queue", orgId))) {
+      res.status(404).json({ error: "feature_disabled" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+    const { data } = await supabase
+      .from("audit_packets")
+      .select(
+        "id, scope, item_count, page_count, size_bytes, object_key, adr_id, claim_id, generated_by_email, generated_at",
+      )
+      .eq("patient_id", idParsed.data.id)
+      .order("generated_at", { ascending: false })
+      .limit(50);
+    res.json({ packets: data ?? [] });
+  },
+);
+
+// GET download — stream a persisted packet PDF from history.
+router.get(
+  "/admin/audit-packets/:id/pdf",
+  requirePermission("patients.read"),
+  async (req, res) => {
+    const idParsed = buildParams.safeParse(req.params);
+    if (!idParsed.success) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    if (!(await isFeatureEnabled("billing.adr_queue", orgId))) {
+      res.status(404).json({ error: "feature_disabled" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+    const { data: row } = await supabase
+      .from("audit_packets")
+      .select("id, object_key")
+      .eq("id", idParsed.data.id)
+      .limit(1)
+      .maybeSingle();
+    if (!row || !row.object_key) {
+      res.status(404).json({ error: "packet_not_found" });
+      return;
+    }
+    const bytes = await fetchObjectBytes(row.object_key);
+    if (!bytes) {
+      res.status(404).json({ error: "packet_unavailable" });
+      return;
+    }
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="audit-packet-${row.id.slice(0, 8)}.pdf"`,
+    );
+    res.setHeader("Cache-Control", "private, no-store");
+    res.status(200).end(bytes.bytes);
+  },
+);
+
 router.post(
   "/admin/patients/:id/audit-packet",
   requirePermission("patients.read"),
@@ -408,6 +509,11 @@ router.post(
       generatedOn: new Date(),
     });
 
+    // Persist the packet PDF to private object storage so it can be
+    // re-downloaded from history. Best-effort — a storage hiccup must not fail
+    // the build (the operator still gets the streamed PDF).
+    const objectKey = await persistPacketPdf(patientId, result.pdf);
+
     // Record the build for traceability (counts only — no PHI).
     const missing = result.items
       .filter((i) => i.status === "missing")
@@ -422,6 +528,7 @@ router.post(
         item_count: result.items.filter((i) => i.status !== "missing").length,
         page_count: result.pageCount,
         size_bytes: result.pdf.length,
+        object_key: objectKey,
         generated_by_email: req.adminEmail ?? null,
       };
     const { data: packetRow } = await supabase
