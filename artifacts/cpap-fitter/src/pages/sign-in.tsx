@@ -119,10 +119,10 @@ export function SignInPage() {
         onSubmit={onSubmit}
         className="relative w-full max-w-md overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_2px_hsl(var(--penn-navy-deep)/0.06),0_18px_40px_hsl(var(--penn-navy-deep)/0.10)]"
       >
-        {/* High-tech accent rail — navy → cyan → navy gradient. */}
+        {/* Accent rail — navy → aurum → navy gradient (brand tokens). */}
         <div
           aria-hidden="true"
-          className="h-1 w-full bg-[linear-gradient(90deg,hsl(var(--penn-navy-deep)),hsl(var(--penn-cyan)),hsl(var(--penn-navy-soft)))]"
+          className="h-1 w-full bg-[linear-gradient(90deg,hsl(var(--penn-navy-deep)),hsl(var(--penn-gold)),hsl(var(--penn-navy-soft)))]"
         />
 
         <div className="space-y-5 p-7">
@@ -131,7 +131,7 @@ export function SignInPage() {
             <div className="relative mb-3">
               <span
                 aria-hidden="true"
-                className="absolute inset-0 -m-1 rounded-2xl bg-[hsl(var(--penn-cyan)/0.25)] blur-md"
+                className="absolute inset-0 -m-1 rounded-2xl bg-[hsl(var(--penn-gold)/0.30)] blur-md"
               />
               <span className="relative inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-[linear-gradient(150deg,hsl(var(--penn-navy-soft)),hsl(var(--penn-navy))_55%,hsl(var(--penn-navy-deep)))] shadow-inner ring-1 ring-white/15">
                 <ShieldCheck
