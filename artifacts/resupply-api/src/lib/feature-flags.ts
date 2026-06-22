@@ -60,6 +60,7 @@ export const FEATURE_FLAG_KEYS = [
   "cart_abandonment.dispatcher",
   "ai_billing.suggestions",
   "billing.auto_submit_claims",
+  "billing.auto_submit_prior_auths",
   "billing.eligibility_precheck",
   "billing.eligibility_precheck_refresh",
   "insurance.discovery",
