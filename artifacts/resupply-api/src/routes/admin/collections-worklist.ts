@@ -15,6 +15,7 @@ import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
 import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
+import { nextDunningStep } from "@workspace/resupply-domain";
 
 import { resolveBillingIdentity } from "../../lib/billing/identity-resolver";
 import { renderDunningLettersBatchPdf } from "../../lib/billing/dunning-letter-pdf";
@@ -246,7 +247,7 @@ router.get(
     const supabase = getOrgScopedClient(orgId);
     const { data: runRows } = await supabase
       .from("patient_dunning_runs")
-      .select("id, patient_id, opened_balance_cents")
+      .select("id, patient_id, opened_balance_cents, opened_on")
       .eq("status", "active")
       .eq("current_step", "final_notice")
       .order("opened_balance_cents", { ascending: false })
@@ -255,6 +256,7 @@ router.get(
       id: string;
       patient_id: string;
       opened_balance_cents: number;
+      opened_on: string;
     }>;
     if (runs.length === 0) {
       res.status(404).json({ error: "no_letters_due" });
@@ -288,27 +290,34 @@ router.get(
     const identity = await resolveBillingIdentity({ orgId });
     const bp = identity.billingProvider;
 
-    const letters = runs
-      .map((run) => {
-        const p = patients.get(run.patient_id);
-        if (!p) return null;
-        const a = p.address ?? {};
-        const addressLines = [
-          a.line1,
-          a.line2,
-          [a.city, a.state, a.zip].filter(Boolean).join(", "),
-        ].filter((l): l is string => !!l && l.trim().length > 0);
-        return {
-          patientName: `${p.legal_first_name} ${p.legal_last_name}`,
-          addressLines,
-          balanceCents: run.opened_balance_cents,
-        };
-      })
-      .filter((l): l is NonNullable<typeof l> => l !== null);
-    if (letters.length === 0) {
+    // Keep each rendered letter paired with the run it came from, so the
+    // events + ladder advancement below touch ONLY the runs we actually
+    // printed (a run whose patient row is missing is skipped entirely).
+    const printed = runs.flatMap((run) => {
+      const p = patients.get(run.patient_id);
+      if (!p) return [];
+      const a = p.address ?? {};
+      const addressLines = [
+        a.line1,
+        a.line2,
+        [a.city, a.state, a.zip].filter(Boolean).join(", "),
+      ].filter((l): l is string => !!l && l.trim().length > 0);
+      return [
+        {
+          run,
+          letter: {
+            patientName: `${p.legal_first_name} ${p.legal_last_name}`,
+            addressLines,
+            balanceCents: run.opened_balance_cents,
+          },
+        },
+      ];
+    });
+    if (printed.length === 0) {
       res.status(404).json({ error: "no_letters_due" });
       return;
     }
+    const letters = printed.map((x) => x.letter);
 
     const { pdf, letterCount } = await renderDunningLettersBatchPdf({
       company: {
@@ -323,11 +332,10 @@ router.get(
       generatedOn: new Date(),
     });
 
-    // Record a letter touch on each run so the ladder advances + the audit
-    // trail reflects the mailing.
+    // Record a letter touch on each printed run for the audit trail.
     const nowIso = new Date().toISOString();
     await supabase.from("patient_dunning_events").insert(
-      runs.slice(0, letters.length).map((run) => ({
+      printed.map(({ run }) => ({
         run_id: run.id,
         step: "final_notice",
         channel: "letter" as const,
@@ -337,6 +345,26 @@ router.get(
         actor_email: req.adminEmail ?? null,
         occurred_at: nowIso,
       })),
+    );
+
+    // Advance each printed run off `final_notice` so the ladder doesn't
+    // re-print or let the next tick send another final notice before the
+    // agency-handoff date. final_notice → agency (dayOffset 60 from open).
+    await Promise.all(
+      printed.map(({ run }) => {
+        const next = nextDunningStep("final_notice", run.opened_on);
+        if (!next) return Promise.resolve();
+        return supabase
+          .from("patient_dunning_runs")
+          .update({
+            current_step: next.step,
+            next_action_at: `${next.nextActionAt}T00:00:00Z`,
+            last_step_at: nowIso,
+            updated_at: nowIso,
+          })
+          .eq("id", run.id)
+          .then(() => undefined);
+      }),
     );
 
     await logAudit({

@@ -53,7 +53,24 @@ const MAX_TICK = 500;
 
 type Supabase = ReturnType<typeof getOrgScopedClient>;
 
-/** Open patient AR = unpaid claim responsibility − succeeded payments. */
+// Claim statuses that are billable to the patient — same set the statement
+// path uses (statement-generation.ts). Draft/submitted/accepted carry only
+// PROVISIONAL patient responsibility and must not enter the dunning ladder.
+const BILLABLE_CLAIM_STATUSES = [
+  "partially_paid",
+  "paid",
+  "denied",
+  "appealed",
+  "closed",
+] as const;
+
+/**
+ * Open patient AR = the sum of live `patient_responsibility_cents` on billable
+ * claims. That column is ALREADY net of applied payments — the
+ * `apply_patient_payment` RPC (migration 0214) decrements it on every
+ * succeeded payment — so we must NOT subtract patient_payments again (that
+ * would double-count and zero out partially-paid patients prematurely).
+ */
 async function computeBalanceCents(
   supabase: Supabase,
   patientId: string,
@@ -62,20 +79,11 @@ async function computeBalanceCents(
     .from("insurance_claims")
     .select("patient_responsibility_cents")
     .eq("patient_id", patientId)
-    .gt("patient_responsibility_cents", 0);
-  const owed = (
+    .gt("patient_responsibility_cents", 0)
+    .in("status", [...BILLABLE_CLAIM_STATUSES]);
+  return (
     (claims ?? []) as Array<{ patient_responsibility_cents: number }>
   ).reduce((s, c) => s + (c.patient_responsibility_cents ?? 0), 0);
-  const { data: pays } = await supabase
-    .from("patient_payments")
-    .select("amount_cents")
-    .eq("patient_id", patientId)
-    .eq("status", "succeeded");
-  const paid = ((pays ?? []) as Array<{ amount_cents: number }>).reduce(
-    (s, p) => s + (p.amount_cents ?? 0),
-    0,
-  );
-  return owed - paid;
 }
 
 async function patientGuards(

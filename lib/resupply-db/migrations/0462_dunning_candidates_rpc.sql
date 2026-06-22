@@ -11,8 +11,12 @@
 -- run, AND not on a payment plan / autopay. The open-scan then just opens a run
 -- per returned row.
 --
--- Net open AR = SUM(insurance_claims.patient_responsibility_cents > 0)
---             − SUM(patient_payments.amount_cents WHERE status='succeeded').
+-- Open AR = SUM(insurance_claims.patient_responsibility_cents) on BILLABLE
+-- (adjudicated) claims. That column is already net of applied payments — the
+-- apply_patient_payment RPC (migration 0214) decrements it on every succeeded
+-- payment — so we do NOT subtract patient_payments again (double-count), and
+-- we restrict to the same billable statuses the statement path uses so
+-- provisional draft/submitted/accepted responsibility never opens a run.
 --
 -- Tenant-scoped by the p_org_id argument (the function is reached through the
 -- org-scoped client's .raw().schema("resupply").rpc(...), which does not add
@@ -33,21 +37,16 @@ AS $$
     FROM resupply.insurance_claims c
     WHERE c.org_id = p_org_id
       AND c.patient_responsibility_cents > 0
+      AND c.status IN (
+        'partially_paid', 'paid', 'denied', 'appealed', 'closed'
+      )
     GROUP BY c.patient_id
-  ),
-  paid AS (
-    SELECT p.patient_id, SUM(p.amount_cents) AS paid_cents
-    FROM resupply.patient_payments p
-    WHERE p.org_id = p_org_id
-      AND p.status = 'succeeded'
-    GROUP BY p.patient_id
   )
   SELECT
     o.patient_id,
-    (o.owed_cents - COALESCE(pd.paid_cents, 0))::bigint AS balance_cents
+    o.owed_cents::bigint AS balance_cents
   FROM owed o
-  LEFT JOIN paid pd ON pd.patient_id = o.patient_id
-  WHERE (o.owed_cents - COALESCE(pd.paid_cents, 0)) >= p_min_cents
+  WHERE o.owed_cents >= p_min_cents
     -- No non-terminal dunning run already.
     AND NOT EXISTS (
       SELECT 1 FROM resupply.patient_dunning_runs r
