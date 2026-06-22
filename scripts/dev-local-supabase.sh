@@ -94,9 +94,11 @@ pnpm --filter @workspace/scripts auth:bootstrap-admin --email="$ADMIN_EMAIL" --r
 ADMIN_PASSWORD="$ADMIN_PASSWORD" pnpm --filter @workspace/scripts auth:set-admin-password --email="$ADMIN_EMAIL"
 # Inline the email via shell expansion: psql `-v` + `:'var'` interpolation does
 # not substitute inside `-c` strings on this psql build (it errors with a
-# "syntax error at or near :"). The dev email is trusted/static.
+# "syntax error at or near :"). Escape single quotes (SQL-standard doubling)
+# so a custom DEV_ADMIN_EMAIL containing a quote doesn't break the statement.
+ADMIN_EMAIL_SQL="${ADMIN_EMAIL//\'/\'\'}"
 docker exec -i "$DB_CONTAINER" psql -U supabase_admin -d postgres \
-  -c "UPDATE resupply_auth.users SET email_verified_at = now() WHERE email_lower = lower('$ADMIN_EMAIL') AND email_verified_at IS NULL;" >/dev/null
+  -c "UPDATE resupply_auth.users SET email_verified_at = now() WHERE email_lower = lower('$ADMIN_EMAIL_SQL') AND email_verified_at IS NULL;" >/dev/null
 
 echo "[dev-db] done. Admin: $ADMIN_EMAIL / $ADMIN_PASSWORD"
 echo "[dev-db] SUPABASE_SERVICE_ROLE_KEY is available via: supabase status -o env"
