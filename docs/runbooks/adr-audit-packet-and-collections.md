@@ -118,6 +118,6 @@ without cancelling runs — turning it back on resumes where it left off.
 | Dunning       | `collections.dunning`                                 | `COLLECTIONS_DUNNING_SCAN_CRON`, `COLLECTIONS_DUNNING_TICK_CRON` | Billing → Collections                   |
 | Agency export | `collections.agency_export` (+ `collections.dunning`) | —                                                                | Billing → Collections                   |
 
-All flags seed OFF (migrations 0457 / 0458). Pure decision logic lives in
+All flags seed OFF (migrations 0460 / 0461). Pure decision logic lives in
 `@workspace/resupply-domain` (`claim-adr`, `audit-packet-catalog`, `dunning`)
 and is unit-tested.

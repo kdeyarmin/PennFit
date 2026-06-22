@@ -1,4 +1,4 @@
-// Patient AR collections worklist (migration 0458).
+// Patient AR collections worklist (migration 0461).
 //
 //   GET   /admin/billing/collections-worklist   — active/paused dunning runs
 //   POST  /admin/billing/collections/:id/pause   — manual hold (dispute, etc.)

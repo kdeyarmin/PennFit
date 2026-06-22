@@ -3541,7 +3541,7 @@ export interface Database {
         >;
         Relationships: [];
       };
-      // Migration 0457: Medicare ADR / audit-response queue.
+      // Migration 0460: Medicare ADR / audit-response queue.
       claim_adr_requests: {
         Row: {
           org_id: string | null;
@@ -3593,7 +3593,7 @@ export interface Database {
         >;
         Relationships: [];
       };
-      // Migration 0457: ADR response checklist (keyed to AUDIT_PACKET_CATALOG).
+      // Migration 0460: ADR response checklist (keyed to AUDIT_PACKET_CATALOG).
       claim_adr_documents: {
         Row: {
           org_id: string | null;
@@ -3625,7 +3625,7 @@ export interface Database {
         >;
         Relationships: [];
       };
-      // Migration 0457: a record of each assembled audit-packet PDF.
+      // Migration 0460: a record of each assembled audit-packet PDF.
       audit_packets: {
         Row: {
           org_id: string | null;
@@ -3647,7 +3647,7 @@ export interface Database {
         Update: Partial<Database["resupply"]["Tables"]["audit_packets"]["Row"]>;
         Relationships: [];
       };
-      // Migration 0458: patient AR dunning / collections engine.
+      // Migration 0461: patient AR dunning / collections engine.
       patient_dunning_runs: {
         Row: {
           org_id: string | null;
