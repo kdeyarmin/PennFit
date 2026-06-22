@@ -22,6 +22,7 @@ import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 import {
   AUDIT_PACKET_CATALOG,
   type AuditScope,
+  assessAuditReadiness,
   defaultSelection,
   getAuditPacketItem,
 } from "@workspace/resupply-domain";
@@ -61,6 +62,67 @@ router.get(
         supplies: defaultSelection("supplies"),
         both: defaultSelection("both"),
       },
+    });
+  },
+);
+
+// GET audit-readiness — proactive gap check: which audit-critical chart
+// documents the patient is missing, before an ADR ever arrives.
+const readinessParams = z.object({ id: z.string().uuid() });
+const readinessQuery = z.object({ scope: z.enum(SCOPES).default("device") });
+
+router.get(
+  "/admin/patients/:id/audit-readiness",
+  requirePermission("patients.read"),
+  async (req, res) => {
+    const idParsed = readinessParams.safeParse(req.params);
+    const qParsed = readinessQuery.safeParse(req.query);
+    if (!idParsed.success || !qParsed.success) {
+      res.status(400).json({ error: "invalid_request" });
+      return;
+    }
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    if (!(await isFeatureEnabled("billing.adr_queue", orgId))) {
+      res.status(404).json({ error: "feature_disabled" });
+      return;
+    }
+    const scope = qParsed.data.scope as AuditScope;
+    const supabase = getOrgScopedClient(orgId);
+    const { data: docRowsRaw } = await supabase
+      .from("patient_documents")
+      .select("document_type")
+      .eq("patient_id", idParsed.data.id);
+    const docTypes = new Set(
+      ((docRowsRaw ?? []) as Array<{ document_type: string }>).map(
+        (d) => d.document_type,
+      ),
+    );
+
+    // An item is "covered" when the system can produce it (generated) or a
+    // matching chart document is on file.
+    const coveredKeys: string[] = [];
+    for (const item of AUDIT_PACKET_CATALOG) {
+      if (item.source === "generated") {
+        coveredKeys.push(item.key);
+        continue;
+      }
+      if (item.documentTypes.some((t) => docTypes.has(t))) {
+        coveredKeys.push(item.key);
+      }
+    }
+
+    const readiness = assessAuditReadiness(scope, coveredKeys);
+    res.json({
+      readiness,
+      items: readiness.required.map((key) => ({
+        key,
+        label: getAuditPacketItem(key)?.label ?? key,
+        present: readiness.present.includes(key),
+      })),
     });
   },
 );

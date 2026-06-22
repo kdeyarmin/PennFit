@@ -308,6 +308,74 @@ export function defaultSelection(scope: AuditScope): string[] {
   }).map((i) => i.key);
 }
 
+// ── Audit readiness ────────────────────────────────────────────────────
+//
+// The audit-critical chart documents whose ABSENCE drives a denial. These are
+// the on-file / hybrid items an auditor will not accept a generated summary in
+// place of — a signed order, the qualifying study, the face-to-face notes, the
+// proof of delivery, the compliance printout, the refill request. Generated
+// summaries (cover, equipment, claim, continued-use, replacement) are produced
+// by the system and so are never "missing" in the readiness sense.
+
+/** Required chart-document item keys per audit scope. `both` is the union. */
+export const REQUIRED_AUDIT_ITEMS: Record<AuditScope, readonly string[]> = {
+  device: [
+    "swo",
+    "face_to_face_initial",
+    "sleep_study",
+    "reeval_31_91",
+    "proof_of_delivery",
+    "compliance_report",
+  ],
+  supplies: ["swo", "proof_of_delivery", "refill_request"],
+  both: [
+    "swo",
+    "face_to_face_initial",
+    "sleep_study",
+    "reeval_31_91",
+    "proof_of_delivery",
+    "compliance_report",
+    "refill_request",
+  ],
+};
+
+export interface AuditReadiness {
+  scope: AuditScope;
+  /** Required item keys for the scope. */
+  required: string[];
+  /** Required keys that are covered (a chart document is on file). */
+  present: string[];
+  /** Required keys with no document on file — the audit gaps. */
+  missing: string[];
+  /** present / required, 0..1 (1 when nothing is required). */
+  score: number;
+  /** True when no required document is missing. */
+  ready: boolean;
+}
+
+/**
+ * Assess audit readiness for a scope given the set of item keys that are
+ * "covered" — i.e. have a stored chart document on file. Pure. A required item
+ * not in `coveredKeys` is a gap an auditor would deny on.
+ */
+export function assessAuditReadiness(
+  scope: AuditScope,
+  coveredKeys: readonly string[],
+): AuditReadiness {
+  const covered = new Set(coveredKeys);
+  const required = [...REQUIRED_AUDIT_ITEMS[scope]];
+  const present = required.filter((k) => covered.has(k));
+  const missing = required.filter((k) => !covered.has(k));
+  return {
+    scope,
+    required,
+    present,
+    missing,
+    score: required.length === 0 ? 1 : present.length / required.length,
+    ready: missing.length === 0,
+  };
+}
+
 export interface NormalizedSelection {
   /** Requested keys that exist in the catalog, in catalog (print) order. */
   items: AuditPacketItem[];

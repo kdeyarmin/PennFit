@@ -209,11 +209,14 @@ export {
   isAuditPacketItemKey,
   defaultSelection,
   normalizeSelection,
+  REQUIRED_AUDIT_ITEMS,
+  assessAuditReadiness,
   type AuditItemSource,
   type AuditScope,
   type AuditItemGroup,
   type AuditPacketItem,
   type NormalizedSelection,
+  type AuditReadiness,
 } from "./audit-packet-catalog";
 
 export {

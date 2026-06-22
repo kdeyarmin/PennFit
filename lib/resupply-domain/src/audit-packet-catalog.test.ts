@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   AUDIT_PACKET_CATALOG,
   AUDIT_PACKET_ITEM_KEYS,
+  REQUIRED_AUDIT_ITEMS,
+  assessAuditReadiness,
   defaultSelection,
   getAuditPacketItem,
   isAuditPacketItemKey,
@@ -79,6 +81,50 @@ describe("audit packet catalog", () => {
         expect(item.documentTypes.length).toBeGreaterThan(0);
       }
     }
+  });
+});
+
+describe("assessAuditReadiness", () => {
+  it("every required key is a real catalog item", () => {
+    for (const scope of ["device", "supplies", "both"] as const) {
+      for (const key of REQUIRED_AUDIT_ITEMS[scope]) {
+        expect(getAuditPacketItem(key)).toBeDefined();
+      }
+    }
+  });
+
+  it("is ready only when every required document is on file", () => {
+    const all = REQUIRED_AUDIT_ITEMS.device;
+    const full = assessAuditReadiness("device", all);
+    expect(full.ready).toBe(true);
+    expect(full.score).toBe(1);
+    expect(full.missing).toEqual([]);
+  });
+
+  it("reports the specific missing required documents", () => {
+    const covered = ["swo", "sleep_study"];
+    const r = assessAuditReadiness("device", covered);
+    expect(r.ready).toBe(false);
+    expect(r.present).toEqual(["swo", "sleep_study"]);
+    expect(r.missing).toEqual(
+      expect.arrayContaining([
+        "face_to_face_initial",
+        "reeval_31_91",
+        "proof_of_delivery",
+        "compliance_report",
+      ]),
+    );
+    expect(r.score).toBeCloseTo(2 / 6);
+  });
+
+  it("ignores non-required covered keys", () => {
+    const r = assessAuditReadiness("supplies", [
+      "swo",
+      "proof_of_delivery",
+      "refill_request",
+      "claim_detail", // not required — shouldn't change readiness
+    ]);
+    expect(r.ready).toBe(true);
   });
 });
 

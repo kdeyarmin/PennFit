@@ -167,6 +167,31 @@ export async function updateAdr(
   if (!res.ok) throw await err(res, "PATCH", url);
 }
 
+export interface AuditReadiness {
+  readiness: {
+    scope: AdrScope;
+    required: string[];
+    present: string[];
+    missing: string[];
+    score: number;
+    ready: boolean;
+  };
+  items: { key: string; label: string; present: boolean }[];
+}
+
+export async function getAuditReadiness(
+  patientId: string,
+  scope: AdrScope,
+): Promise<AuditReadiness> {
+  const url = `/resupply-api/admin/patients/${encodeURIComponent(patientId)}/audit-readiness?scope=${scope}`;
+  const res = await fetch(url, {
+    credentials: "include",
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) throw await err(res, "GET", url);
+  return (await res.json()) as AuditReadiness;
+}
+
 export async function getAuditPacketCatalog(): Promise<AuditCatalog> {
   const url = "/resupply-api/admin/audit-packet/catalog";
   const res = await fetch(url, {

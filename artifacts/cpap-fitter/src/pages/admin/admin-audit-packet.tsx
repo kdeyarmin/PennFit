@@ -20,6 +20,7 @@ import {
   type AuditCatalogItem,
   buildAuditPacket,
   getAuditPacketCatalog,
+  getAuditReadiness,
 } from "@/lib/admin/adr-api";
 
 const SCOPES: AdrScope[] = ["device", "supplies", "both"];
@@ -65,6 +66,15 @@ export function AdminAuditPacketPage() {
     queryKey: ["admin", "audit-packet-catalog"] as const,
     queryFn: getAuditPacketCatalog,
     staleTime: 5 * 60_000,
+  });
+
+  // Proactive audit-readiness for this patient + scope: which audit-critical
+  // documents are on file vs missing.
+  const readinessQuery = useQuery({
+    queryKey: ["admin", "audit-readiness", params.patientId, scope] as const,
+    queryFn: () => getAuditReadiness(params.patientId, scope),
+    enabled: !!params.patientId,
+    staleTime: 60_000,
   });
 
   // Initialise / reset the selection to the scope's defaults when the catalog
@@ -168,6 +178,10 @@ export function AdminAuditPacketPage() {
         ))}
       </div>
 
+      {readinessQuery.data ? (
+        <ReadinessBanner data={readinessQuery.data} />
+      ) : null}
+
       {catalogQuery.isPending ? (
         <Spinner label="Loading audit checklist…" />
       ) : catalogQuery.isError ? (
@@ -259,6 +273,48 @@ export function AdminAuditPacketPage() {
           ) : null}
         </>
       )}
+    </div>
+  );
+}
+
+function ReadinessBanner({
+  data,
+}: {
+  data: import("@/lib/admin/adr-api").AuditReadiness;
+}) {
+  const { readiness } = data;
+  const pct = Math.round(readiness.score * 100);
+  const tone = readiness.ready
+    ? { fg: "hsl(152 70% 24%)", bg: "hsl(152 60% 38% / 0.10)" }
+    : { fg: "hsl(38 80% 28%)", bg: "hsl(38 95% 48% / 0.10)" };
+  const missingLabels = data.items
+    .filter((i) => !i.present)
+    .map((i) => i.label);
+  return (
+    <div
+      className="rounded border p-3"
+      style={{ borderColor: "hsl(var(--line-1))", background: tone.bg }}
+      data-testid="audit-readiness"
+    >
+      <p className="text-sm font-medium" style={{ color: tone.fg }}>
+        {readiness.ready
+          ? `Audit ready — all ${readiness.required.length} required documents on file (${pct}%).`
+          : `Audit readiness ${pct}% — ${readiness.present.length} of ${readiness.required.length} required documents on file.`}
+      </p>
+      {missingLabels.length > 0 ? (
+        <div className="mt-1.5">
+          <span className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+            Missing required:
+          </span>
+          <div className="flex flex-wrap gap-1.5 mt-1">
+            {missingLabels.map((label) => (
+              <Badge key={label} variant="warning">
+                {label}
+              </Badge>
+            ))}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
