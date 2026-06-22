@@ -835,6 +835,14 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             hint: "Payer/contractor documentation requests by deadline; build the audit-response packet",
           },
           {
+            href: "/admin/billing/audit-readiness",
+            label: "Audit readiness",
+            icon: ShieldAlert,
+            matchPrefix: "/admin/billing/audit-readiness",
+            requiredPermission: "reports.read",
+            hint: "Billed-claim patients missing audit-critical documents — chase paperwork before an audit",
+          },
+          {
             href: "/admin/billing/collections",
             label: "Collections",
             icon: CircleDollarSign,

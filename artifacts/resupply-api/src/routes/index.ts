@@ -196,6 +196,7 @@ import billingStatementsRouter from "./admin/billing-statements.js";
 import claimAppealsRouter from "./admin/claim-appeals.js";
 import claimAdrRouter from "./admin/claim-adr.js";
 import auditPacketRouter from "./admin/audit-packet.js";
+import auditReadinessWorklistRouter from "./admin/audit-readiness-worklist.js";
 import collectionsWorklistRouter from "./admin/collections-worklist.js";
 import webhookSubscriptionsRouter from "./admin/webhook-subscriptions.js";
 import webhookEventCatalogRouter from "./admin/webhook-event-catalog.js";
@@ -663,6 +664,8 @@ router.use(claimAppealsRouter);
 router.use(claimAdrRouter);
 // /admin/audit-packet/catalog + /admin/patients/:id/audit-packet — audit-packet builder.
 router.use(auditPacketRouter);
+// /admin/billing/audit-readiness-worklist — proactive audit-gap report.
+router.use(auditReadinessWorklistRouter);
 // /admin/billing/collections* — patient AR dunning / collections worklist.
 router.use(collectionsWorklistRouter);
 // /admin/webhook-subscriptions + /admin/webhook-deliveries — outbound
