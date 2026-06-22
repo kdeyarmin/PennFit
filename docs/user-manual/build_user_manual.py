@@ -804,6 +804,21 @@ DETAIL = {
         ]),
     ],
     "csr": [
+        ("How the resupply engine works, end to end", "Resupply is the heart of the business, and it largely runs itself. Here's the machinery behind the reorder cycle.", [
+            ("When reminders go out", "An automated job scans hourly for prescriptions that are due and sends a reminder on each patient's cadence — typically the 90- and 30-day reorder windows. The cadence is resolved per patient: an explicit per-patient override wins, then frequency rules matched by product, payer, and how long the patient has been on service, then the prescription's own interval. Device-reported supply schedules from the therapy-cloud sync feed the next-eligible dates, so reminders track real wear, not just the calendar."),
+            ("One tap for the patient", "Reminders go by SMS and email (the AI voice agent can call, too). Email carries signed one-tap <b>confirm</b>, <b>edit</b>, and <b>stop</b> links — no login, no account, no phone tree; SMS simply accepts a reply to confirm or decline. A quiet-period guard skips anyone you've already been talking to in the last 48 hours, and one reminder goes out per patient per cycle even if several items are due."),
+            ("Why it lifts reorders", "Because outreach fires automatically on the payer-allowed cadence across every channel, eligible patients are reliably reminded instead of forgotten — and a confirmation takes one tap, so more of them say yes. A confirmed reorder flows straight through the funnel — <b>due → reminded → confirmed → shipped</b> — into fulfillment and billing with no re-keying, and you can watch the conversion at each step, per channel, on the Reorder Reminders board."),
+            ("Effortless for the customer", "No app to download, no portal to remember: tap to confirm, change, or stop right from the text or email. Patients who'd rather not think about it subscribe once and let auto-ship keep supplies arriving on the cadence their insurance allows."),
+        ]),
+        ("Paperless paperwork — e-signature, nothing printed", "Everything a patient or provider needs to sign is signed on a screen. No printing, no scanning, no faxing, no lost forms, no delays.", [
+            ("Sign on a phone, file automatically", "Staff stage a document or a packet; the patient gets a link and e-signs on their own device with a typed name and explicit ESIGN consent — image-free and ESIGN-Act compliant. The signed PDF files itself to the chart the moment it's done, and any related <b>bill hold</b> lifts automatically so the claim can go out. Nothing is printed, nothing gets lost, and nothing waits on the mail."),
+            ("Included document templates", "Ready-to-send templates ship with the system:<br/>• Standard Written Order (SWO) — PAP device &amp; supplies<br/>• PAP Certificate of Medical Necessity (CMN)<br/>• Structured CMN forms — CMS-484 (oxygen), CMS-846 (compression), CMS-848 (TENS)<br/>• DWO / CMN renewal forms by HCPCS family (PAP, RAD, oxygen, …)<br/>• ABN (CMS-R-131) with Options 1–3<br/>• Assignment of Benefits &amp; financial responsibility<br/>• DMEPOS Supplier Standards notice<br/>• Proof of Delivery<br/>• Refill Confirmation<br/>• New-patient setup packet (ABN + Supplier Standards + AOB, sent as one)<br/>Plus free-form manual documents (prescription, agreement, delivery ticket, cover letter) and documentation packets (prior-auth support, appeal support, accreditation audit, medical-records request)."),
+        ]),
+        ("The provider portal — providers e-sign and see their patients", "A secure portal that ends the fax-and-chase cycle with referring physicians.", [
+            ("Providers e-sign — no more faxing", "Invite a referring provider (by NPI, verified against NPPES) into a secure, MFA-protected portal. Stage their CMNs, DWOs, prescription packets, and claims for signature, and the provider signs on their own device — instead of receiving a fax, printing it, signing, and faxing it back (and you chasing what never comes). Every signature is captured in a tamper-evident, hash-chained audit trail with a printable, ESIGN-compliant certificate you can hand a payer."),
+            ("Providers see their patients", "In the same portal a provider can view their patients' active orders and prescriptions and read their therapy data and reports (read-only) — so they can confirm adherence and close the loop without a phone call to your office."),
+            ("Lifecycle & security", "Each document moves pending → signed → ready-to-print / returned-signed / attached-to-chart / released, so staff always know where it stands. Multi-factor authentication is mandatory for every provider, and the portal is off by default — an Owner enables it per tenant in the Control Center."),
+        ]),
         ("Your daily workspace", "Where a CSR lives all day — the inbox, the front desk, and the work queues.", [
             ("Home", "The shared worklist and live counters. As a CSR you'll watch conversations awaiting reply, overdue follow-ups, and returns to action."),
             ("Front Desk", "Capture a walk-in customer and ring up a counter order in real time — cash or bill-to-insurance — without going through the public storefront checkout."),
@@ -837,6 +852,16 @@ DETAIL = {
         ]),
     ],
     "rt": [
+        ("Therapy data from every cloud, one login", "Manage every patient from one screen no matter whose machine they sleep on — no juggling three vendor portals.", [
+            ("Three manufacturers, one screen", "A nightly sync pulls device data from <b>ResMed AirView</b>, <b>Philips Respironics Care Orchestrator</b>, and <b>3B Medical React Health</b> (Luna / iCode). Whatever brand a patient uses, their therapy lands in the same boards and the same patient chart — so an RT works one worklist, not three logins."),
+            ("What it pulls", "For each linked patient the sync brings back device settings (model, serial, therapy mode, pressure min/max, ramp, humidifier, mask type); a compliance summary (days with data, days ≥ 4 hours, average usage and AHI, and the CMS 90/30 flag); recent nights (usage minutes, AHI, leak rate, P95 pressure); and supply items with last-replaced and next-eligible dates that drive resupply timing."),
+            ("How the sync works", "An automated nightly job walks every active therapy link (least-recently-synced first, rate-limited so it's gentle on the vendor APIs), normalizes each vendor's quirks into one common shape, and stores a snapshot. The RT boards read that cache instantly; you can also force a manual refresh for one patient or one source from the patient chart."),
+        ]),
+        ("Alerts, and how compliance is ensured", "The platform watches therapy for you and surfaces the patients who need a human.", [
+            ("Clinical alerts to the RT", "The Therapy Fleet worklist ranks patients by reason so you work the highest risk first: <b>setup-adherence risk</b>, <b>no recent data</b>, <b>high AHI</b>, <b>high leak</b>, and <b>usage decline</b>. Mask-fit feedback and open interventions feed the same queue, and clinical outreach is frequency-capped (a minimum gap between touches) so patients aren't over-contacted."),
+            ("Ensuring CMS 90-day compliance", "Setup Adherence tracks every new PAP patient's first 90 days against the Medicare standard — ≥ 4 hours on ≥ 21 nights within any rolling 30-day window — and classifies each as qualified, on-track, or at-risk, with the best rolling count, nights still needed, and days remaining. At-risk patients surface early so you can coach them before the window closes and the rental fails to convert."),
+            ("Alerts and messages to the customer", "The Alert Library sends curated one-off email, SMS, or voice alerts to a patient (with safe variable substitution), and resupply reminders nudge them on cadence. Optional enforcement can hold a too-soon or coverage-blocked reorder and route it to a CSR as an alert instead of letting it ship."),
+        ]),
         ("Therapy monitoring", "Population boards that surface who needs attention, fed by the therapy-cloud integrations.", [
             ("RT Overview", "The at-a-glance therapy board: per-patient alerts with AHI, mask leak, and usage metrics, so you can spot a struggling patient fast."),
             ("Therapy Fleet", "Population compliance cohorts and the clinical outreach worklist — slice the patient base by how they're doing and act on the cohort that needs you."),
@@ -939,6 +964,20 @@ JOB_AIDES = {
           "Export the patient roster or resupply-due worklist with the verify step (preview the count + sample first).",
           "Nothing is ever pushed automatically; the opt-in “ready to sync” notice tells staff when an export is worth running."],
          None),
+        ("Run and export a report for the books",
+         "Pull the numbers your accountant needs in a couple of clicks.",
+         ["Open <b>Analytics &amp; Reports → Reports</b>.",
+          "Pick the report — revenue summary, patient payments, insurance claims, refunds journal, or the all-financial bundle.",
+          "Set the date range (up to 90 days).",
+          "Export as CSV, PDF, or QuickBooks (Desktop .iif or Online .qbo.csv)."],
+         "Patient payments and insurance claims are kept separate so cash isn't double-counted across the two."),
+        ("Invite a provider to the e-sign portal",
+         "End the fax-and-chase cycle with a referring physician.",
+         ["Confirm the provider exists under <b>Patients &amp; Clinical → Providers &amp; Recalls → Providers</b> (add them by NPI; NPPES verifies).",
+          "Make sure the provider portal is enabled in the Control Center.",
+          "Invite the provider from the E-signature Portal — they get a set-password link and must enroll MFA.",
+          "Stage their documents for signature; they sign on their device and you track each through to released/attached."],
+         "Providers can also view their patients' therapy and reports in the portal — read-only, no PHI leaves your control."),
     ],
     "biller": [
         ("Verify a patient's insurance (270/271)",
@@ -1471,6 +1510,98 @@ COMPARE_MATRIX = [
 ]
 
 
+# ── Owner's playbook: managing the software ──────────────────────────
+OWNER_PLAYBOOK_INTRO = (
+    "Running the practice from CareMetric Breathe is mostly a matter of "
+    "knowing where to look and how often. Everything below is on one "
+    "platform, so you monitor the whole business — front desk to clinic to "
+    "revenue cycle — without logging into anything else. Set your targets "
+    "once, let the alerts find the exceptions, and work from the queues."
+)
+OWNER_WATCH = [
+    ("Every day (5 minutes)", [
+        "<b>Home dashboard</b> — conversations awaiting reply, overdue follow-ups, returns to action, fulfillments this week.",
+        "<b>Operations</b> — the background worker and nightly sync ran clean; nothing stuck.",
+        "<b>Delivery Failures / Outbound Messages</b> — clear any bounced texts/emails or shipping exceptions.",
+        "<b>KPI Alerts</b> — anything that crossed a threshold overnight (revenue dip, denial spike, churn).",
+        "<b>Live Staffing</b> — open-conversation load per agent so nobody is buried.",
+    ]),
+    ("Every week (20 minutes)", [
+        "<b>Billing Hub + Denials &amp; DSO</b> — money in flight, denial rate, and days-to-pay trend per payer.",
+        "<b>A/R Aging + Filing Deadlines</b> — work the oldest buckets and anything near timely-filing.",
+        "<b>Therapy Fleet + Setup Adherence</b> — who is at risk of failing their CMS 90-day window.",
+        "<b>Team Throughput</b> — per-agent close/approve/resolve counts.",
+        "<b>Reorder Reminders funnel</b> — due → reminded → confirmed → shipped conversion.",
+    ]),
+    ("Every month (45 minutes)", [
+        "<b>Financial analytics</b> — Margin &amp; COGS, Payer Profitability, Revenue by Source, LTV:CAC, Inventory Turnover.",
+        "<b>Reports</b> — export the revenue summary, patient payments, and insurance-claims reports (CSV / PDF / QuickBooks) for the books.",
+        "<b>Goals &amp; Targets</b> — review pace-to-goal and reset targets for the next period.",
+        "<b>Customer NPS</b> — post-delivery satisfaction and the comment tail.",
+        "<b>Package &amp; Usage</b> — your plan, add-ons, and usage for the month.",
+    ]),
+]
+MONITOR_AREAS = [
+    ("Patients & service", "Home, Conversations, Cases, Follow-ups, Live Staffing — every patient touch in one inbox with assignment and SLA visibility."),
+    ("Revenue cycle", "Billing Hub, Denials & DSO, A/R Aging, Collections Forecast, Payer Profitability — the whole money picture, claim to cash."),
+    ("Clinical & therapy", "RT Overview, Therapy Fleet, Setup Adherence — adherence and clinical risk across every device cloud."),
+    ("Storefront & growth", "Storefront Analytics, Acquisition Funnel, Reorder Reminders, Fitter Prospects — where patients come from and convert."),
+    ("Operations & delivery", "Operations, Integrations, Outbound Messages, Delivery Failures, Webhook Deliveries — the plumbing, at a glance."),
+    ("Goals & exceptions", "Goals & Targets and KPI Alerts — set the number you want; the platform flags the moment you drift from it."),
+]
+REPORTS_CATALOG = [
+    ("Revenue summary", "Per-day revenue, refunds, and net rollup."),
+    ("Orders", "Storefront checkout sessions in the date range."),
+    ("Patient payments", "Patient-responsibility cash collected (card + mail-in checks), kept separate from insurance to avoid double-counting."),
+    ("Insurance claims", "Billing-side claims and payer receipts."),
+    ("Refunds journal", "A chronological refund ledger."),
+    ("Returns", "Comfort-guarantee returns and RMAs."),
+    ("Customer activity", "Aggregated storefront activity per day — signups, returning orders, active count (count-only, no PHI)."),
+    ("All-financial", "One-click bundle: orders + refunds + payer receipts + patient payments, unioned chronologically."),
+]
+REPORTS_NOTE = (
+    "Every report exports as CSV, printable PDF, or QuickBooks (Desktop "
+    ".iif and Online .qbo.csv). Date range defaults to the last 30 days "
+    "(up to 90). PHI is minimized — storefront reports hash customer IDs "
+    "and the customer-activity report is counts only."
+)
+BENCHMARKS_INTRO = (
+    "CareMetric Breathe tracks the metrics a DME operation is judged on and "
+    "lets you set a target for each, so you always know how you stack up. "
+    "The “typical target” column lists commonly-cited industry rules of "
+    "thumb — directional, not a guarantee — and the right column is how the "
+    "platform helps you beat them."
+)
+BENCHMARKS = [
+    ("Clean-claim / first-pass rate", "≥ 95%", "AI scrubbing + the pre-submit eligibility gate stop avoidable rejections before the 837P leaves."),
+    ("Denial rate", "< 5–10%", "Denials & DSO benchmarking by payer plus the AI denial analyzer surface and fix the root cause fast."),
+    ("Days sales outstanding (DSO)", "< 30–40 days", "Auto-submit, ERA auto-posting, and the recoverable-dollars denials worklist shorten claim-to-cash."),
+    ("Resupply reorder rate", "~30–40% of eligible", "Automated reminders with one-tap confirm + the AI voice agent lift confirmations without staff dialing."),
+    ("CMS 90-day adherence (new setups)", "≥ 70% of nights ≥ 4 hrs", "Setup Adherence tracks every new patient's rolling 30-day window and flags at-risk early for coaching."),
+    ("Patient satisfaction (NPS)", "Higher is better", "Post-delivery NPS, fast omnichannel response, and the self-service portal keep scores up."),
+]
+BENCHMARKS_FOOTNOTE = (
+    "Target ranges are widely-cited DME/RCM rules of thumb for orientation "
+    "only; they are not commitments and vary by payer mix and specialty. "
+    "What the platform guarantees is the visibility and automation to "
+    "measure and improve each one."
+)
+
+# Included e-sign document templates (what ships).
+DOC_TEMPLATES = [
+    ("Standard Written Order (SWO)", "The PAP device & supplies order with Medicare's 42 CFR 410.38 required elements."),
+    ("PAP CMN", "Certificate of Medical Necessity templated to the NCD 240.4 / LCD coverage criteria."),
+    ("Structured CMN forms", "CMS-484 (oxygen), CMS-846 (pneumatic compression), CMS-848 (TENS) for payers that still require them."),
+    ("DWO / renewal", "Device-With-Options and CMN renewal forms by HCPCS family (PAP, RAD, oxygen, and more)."),
+    ("ABN (CMS-R-131)", "Advance Beneficiary Notice with Options 1–3 for expected non-coverage."),
+    ("Assignment of Benefits", "AOB + financial-responsibility agreement."),
+    ("DMEPOS Supplier Standards", "The abbreviated 42 CFR 424.57(c) standards notice."),
+    ("Proof of Delivery", "Medicare direct-delivery POD elements."),
+    ("Refill Confirmation", "The current CMS refill-documentation standard."),
+    ("New-patient setup packet", "A bundle that sends the ABN + Supplier Standards + AOB together as one e-sign packet."),
+]
+
+
 # =====================================================================
 # DOC TEMPLATE (page-numbered TOC + running header/footer)
 # =====================================================================
@@ -1728,6 +1859,41 @@ def make_story(toc_entries):
     story.append(Paragraph(
         '<font size="8">%s</font>' % SAVINGS_FOOTNOTE,
         ParagraphStyle("fn", parent=S_TIP, fontName="Helvetica")))
+    story.append(PageBreak())
+
+    # ---- Running the business (owner's playbook) ----
+    story += h1("Running the Business — the Owner's Playbook")
+    story.append(Paragraph(OWNER_PLAYBOOK_INTRO, S_LEAD))
+    story.append(h2("What to watch, and when"))
+    for cadence, items in OWNER_WATCH:
+        story.append(Paragraph(cadence, S_GROUP))
+        story.append(bullets(items))
+        story.append(Spacer(1, 3))
+
+    story.append(h2("Monitor every corner from one screen"))
+    story.append(Paragraph(
+        "Because it is one platform, you watch the whole business without "
+        "leaving it. Where to look, by area:", S_BODY))
+    story.append(feature_table([(a, w) for a, w in MONITOR_AREAS]))
+
+    story.append(h2("Reports you can run"))
+    story.append(Paragraph(
+        "From <b>Analytics &amp; Reports → Reports</b>, run any of these over "
+        "a date range and export them:", S_BODY))
+    story.append(feature_table(REPORTS_CATALOG))
+    story.append(Spacer(1, 4))
+    story.append(tip(REPORTS_NOTE))
+
+    story.append(h2("Benchmarks — and staying ahead"))
+    story.append(Paragraph(BENCHMARKS_INTRO, S_BODY))
+    story.append(three_col_table(
+        ["Metric", "Typical target", "How CareMetric Breathe keeps you ahead"],
+        BENCHMARKS,
+        [1.85 * inch, 1.05 * inch, CONTENT_W - 1.85 * inch - 1.05 * inch]))
+    story.append(Spacer(1, 4))
+    story.append(Paragraph('<font size="8">%s</font>' % BENCHMARKS_FOOTNOTE,
+                           ParagraphStyle("bfn", parent=S_TIP,
+                                          fontName="Helvetica")))
     story.append(PageBreak())
 
     # ---- Setup Guide ----
