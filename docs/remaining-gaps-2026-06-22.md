@@ -50,16 +50,16 @@ fail-open, and seeded OFF**; flipping each is a consent/staffing decision the
 **owner** makes in `/admin/control-center`, not an engineering task. (Confirm
 live state there — production may already differ from the seeded default.)
 
-| Lever | Flag | Why it's off | Impact |
-| --- | --- | --- | --- |
-| Entitlement enforcement (too-soon / over-cap block) | `resupply.entitlement_enforcement` (seed OFF, 0172) | adds a CSR review step | **Denial prevention — biggest unflipped lever** |
-| Eligibility enforcement (dead-coverage block) | `resupply.eligibility_enforcement` (seed OFF, 0185) | adds a CSR review step | Denial prevention |
-| Continued-use (adherence) check | `resupply.usage_compliance_check` (seed OFF, 0300) | adds a CSR review step | Audit-exposed denial prevention |
-| Patient autopay | `billing.patient_autopay` (seed OFF, 0260) + cron | consent / saved-card | Collections |
-| Payment-plan autocharge | `billing.payment_plan_autocharge` (seed OFF, 0255) + cron | consent | Collections |
-| Voice escalation tier (AI check-in call) | `reminder_escalation.voice` (seed OFF, 0395) | patient contact | Connection rate |
-| Cart-abandonment recurring cron | `RESUPPLY_CART_ABANDONMENT_CRON_ENABLED` (env, off) | consent | Cash-pay recovery |
-| Review-request automation | _(no cron yet — dispatcher + button only)_ | needs a cron | Reviews / SEO |
+| Lever                                               | Flag                                                      | Why it's off           | Impact                                          |
+| --------------------------------------------------- | --------------------------------------------------------- | ---------------------- | ----------------------------------------------- |
+| Entitlement enforcement (too-soon / over-cap block) | `resupply.entitlement_enforcement` (seed OFF, 0172)       | adds a CSR review step | **Denial prevention — biggest unflipped lever** |
+| Eligibility enforcement (dead-coverage block)       | `resupply.eligibility_enforcement` (seed OFF, 0185)       | adds a CSR review step | Denial prevention                               |
+| Continued-use (adherence) check                     | `resupply.usage_compliance_check` (seed OFF, 0300)        | adds a CSR review step | Audit-exposed denial prevention                 |
+| Patient autopay                                     | `billing.patient_autopay` (seed OFF, 0260) + cron         | consent / saved-card   | Collections                                     |
+| Payment-plan autocharge                             | `billing.payment_plan_autocharge` (seed OFF, 0255) + cron | consent                | Collections                                     |
+| Voice escalation tier (AI check-in call)            | `reminder_escalation.voice` (seed OFF, 0395)              | patient contact        | Connection rate                                 |
+| Cart-abandonment recurring cron                     | `RESUPPLY_CART_ABANDONMENT_CRON_ENABLED` (env, off)       | consent                | Cash-pay recovery                               |
+| Review-request automation                           | _(no cron yet — dispatcher + button only)_                | needs a cron           | Reviews / SEO                                   |
 
 > The revenue / CSR-cost levers (auto-reminder enrollment, cart-abandonment
 > dispatcher, email auto-reply, claim auto-submit) are **already ON** per the
@@ -127,7 +127,7 @@ operators can't see or act on it yet:
   token substitution + multi-channel delivery).
 - No tests on `routes/admin/provider-esign.ts` (~1.1k LOC, e-signature).
 - No tests on `routes/patients/insurance-claims-ai.ts` (~969 LOC, Claude spend
-  + error paths).
+  - error paths).
 - No checkout / fitter→order e2e happy-path.
 - 4 soft-gated CI jobs (`integration` / `a11y` / `e2e-dev` / `e2e-admin`) are
   `continue-on-error: true` — promote to required once green.
