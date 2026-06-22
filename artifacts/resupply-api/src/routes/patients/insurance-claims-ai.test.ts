@@ -672,7 +672,7 @@ describe("auto-fix-and-resubmit", () => {
     expect(res.status).toBe(500);
     expect(res.body.error).toBe("clone_failed");
     expect(submitClaimsMock).not.toHaveBeenCalled();
-    // The cheap scorer is never used on this route.
+    // The clone aborts before any insert, so no new insurance_claims row is created.
     expect(getSupabaseCallCount("insurance_claims", "insert")).toBe(0);
   });
 });
