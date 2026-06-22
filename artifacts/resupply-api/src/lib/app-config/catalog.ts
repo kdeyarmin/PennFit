@@ -782,6 +782,32 @@ export const APP_CONFIG_CATALOG: readonly AppConfigSetting[] = [
       "Optional separate channel id for operator digests (weekly KPIs, metric alerts, stuck jobs, low stock) — e.g. an #ops channel. Leave blank to post digests into the alerts channel. Gated by the slack.digests flag.",
     placeholder: "C0123OPS",
   },
+  // PLATFORM-scoped OAuth app credentials. The platform operator registers ONE
+  // Slack app (distributed) and sets these on /platform/config; each tenant
+  // then clicks "Add to Slack" to install it into their workspace (the OAuth
+  // callback stores the per-tenant bot token + team id + channel). With these
+  // set, a tenant never has to paste a bot token by hand.
+  {
+    key: "SLACK_CLIENT_ID",
+    label: "OAuth client id",
+    category: CATEGORY_SLACK,
+    secret: false,
+    applyMode: "live",
+    scope: "platform",
+    description:
+      "Client id of the platform Slack app (Basic Information → App Credentials). Enables one-click “Add to Slack” for every tenant.",
+    placeholder: "1234567890.1234567890",
+  },
+  {
+    key: "SLACK_CLIENT_SECRET",
+    label: "OAuth client secret",
+    category: CATEGORY_SLACK,
+    secret: true,
+    applyMode: "live",
+    scope: "platform",
+    description:
+      "Client secret of the platform Slack app, used to exchange the OAuth code on install. Register the redirect URL <base>/resupply-api/slack/oauth/callback in the app's OAuth settings.",
+  },
 ];
 
 /** Fast membership set of every writable key. */

@@ -11,7 +11,91 @@ import type { SlackConfig } from "./config";
 
 const CHAT_POST_MESSAGE_URL = "https://slack.com/api/chat.postMessage";
 const AUTH_TEST_URL = "https://slack.com/api/auth.test";
+const OAUTH_ACCESS_URL = "https://slack.com/api/oauth.v2.access";
 const DEFAULT_TIMEOUT_MS = 5_000;
+
+/** OAuth scopes the platform Slack app requests on install. */
+export const SLACK_OAUTH_SCOPES = "chat:write,commands,incoming-webhook";
+
+export interface OAuthExchangeInput {
+  clientId: string;
+  clientSecret: string;
+  /** The temporary code Slack returned on the OAuth redirect. */
+  code: string;
+  /** Must byte-match the redirect_uri used to start the flow. */
+  redirectUri: string;
+}
+
+export interface OAuthExchangeResult {
+  ok: boolean;
+  /** Bot user OAuth token (xoxb-…) for the installing workspace. */
+  botToken?: string;
+  teamId?: string;
+  teamName?: string;
+  /** Channel id the operator picked during the incoming-webhook consent. */
+  channelId?: string;
+  scope?: string;
+  error?: string;
+}
+
+/**
+ * Exchange an OAuth authorization code for a workspace install (oauth.v2.access)
+ * — the back half of the "Add to Slack" flow. Returns the per-workspace bot
+ * token + team + chosen channel. Never throws.
+ */
+export async function exchangeSlackOAuthCode(
+  input: OAuthExchangeInput,
+  options: PostMessageOptions = {},
+): Promise<OAuthExchangeResult> {
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const body = new URLSearchParams({
+      client_id: input.clientId,
+      client_secret: input.clientSecret,
+      code: input.code,
+      redirect_uri: input.redirectUri,
+    });
+    const res = await fetchImpl(OAUTH_ACCESS_URL, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: body.toString(),
+      signal: controller.signal,
+    });
+    if (!res.ok) return { ok: false, error: `http_${res.status}` };
+    const json = (await res.json()) as {
+      ok?: boolean;
+      access_token?: string;
+      scope?: string;
+      team?: { id?: string; name?: string };
+      incoming_webhook?: { channel_id?: string };
+      error?: string;
+    };
+    if (!json.ok || !json.access_token) {
+      return { ok: false, error: json.error ?? "unknown_slack_error" };
+    }
+    return {
+      ok: true,
+      botToken: json.access_token,
+      teamId: json.team?.id,
+      teamName: json.team?.name,
+      channelId: json.incoming_webhook?.channel_id,
+      scope: json.scope,
+    };
+  } catch (err) {
+    const error =
+      err instanceof Error
+        ? err.name === "AbortError"
+          ? "timeout"
+          : err.message
+        : "unknown_error";
+    return { ok: false, error };
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 export interface AuthTestResult {
   ok: boolean;

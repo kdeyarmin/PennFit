@@ -21,9 +21,13 @@ export {
   type SlackConfig,
 } from "./config";
 export {
+  exchangeSlackOAuthCode,
   postSlackMessage,
   slackAuthTest,
+  SLACK_OAUTH_SCOPES,
   type AuthTestResult,
+  type OAuthExchangeInput,
+  type OAuthExchangeResult,
   type PostMessageInput,
   type PostMessageOptions,
   type PostMessageResult,

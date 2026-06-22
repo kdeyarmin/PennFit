@@ -35,7 +35,10 @@ import {
   verifySlackSignature,
 } from "@workspace/resupply-integrations-slack";
 
-import { getEffectiveEnvForOrg } from "../../lib/app-config/store";
+import {
+  getEffectiveEnv,
+  getEffectiveEnvForOrg,
+} from "../../lib/app-config/store";
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
 import { safeAudit } from "../../lib/messaging/safe-audit";
@@ -104,8 +107,14 @@ async function authenticate(req: Request): Promise<AuthResult> {
 
   // Same resolution as the outbound notifier: tenant overlay over process.env,
   // so both UI-entered (app_config) and env-var config are honored.
-  const env = await getEffectiveEnvForOrg(orgId);
-  const signingSecret = readSlackSigningSecretOrNull(env);
+  let signingSecret = readSlackSigningSecretOrNull(
+    await getEffectiveEnvForOrg(orgId),
+  );
+  // OAuth (single platform app) installs share ONE signing secret, provided at
+  // the platform level — fall back to it when the tenant has none of its own.
+  if (!signingSecret) {
+    signingSecret = readSlackSigningSecretOrNull(await getEffectiveEnv());
+  }
   if (!signingSecret) return { status: "unconfigured" };
 
   const ok = verifySlackSignature({
