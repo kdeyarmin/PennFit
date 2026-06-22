@@ -40,6 +40,7 @@ import {
   renderSignatureLogPdf,
   type SignatureLogItem,
 } from "../../lib/provider-portal/signature-log-pdf";
+import { resolveTenantBaseUrl } from "../../lib/tenant-branding";
 import { requirePermission } from "../../middlewares/requireAdmin";
 import {
   adminReadRateLimiter,
@@ -203,7 +204,15 @@ async function inviteProviderUser(
     });
   if (tokErr) throw tokErr;
 
-  const baseUrl = deps.publicBaseUrl.replace(/\/$/, "");
+  // Build the set-password link from the INVITING tenant's own base URL so
+  // a non-seed tenant's provider lands on that tenant's host (where the
+  // host-scoped portal queue resolves to their org) — not the platform
+  // host (which resolves to the seed org → empty queue / 404). Falls back
+  // to the platform base URL when the tenant has no verified custom
+  // domain, so single-tenant / seed-tenant deployments are unchanged.
+  const baseUrl = (
+    (await resolveTenantBaseUrl(orgId)) ?? deps.publicBaseUrl
+  ).replace(/\/$/, "");
   const inviteLink = `${baseUrl}/reset-password?token=${encodeURIComponent(token.raw)}`;
 
   // Attach the provider portal getting-started guide. Best-effort —
@@ -963,7 +972,13 @@ router.post(
       .maybeSingle();
     if (account?.email_lower) {
       const deps = getAuthDeps();
-      const baseUrl = deps.publicBaseUrl.replace(/\/$/, "");
+      // Sign-in link on the tenant's own host so the provider lands where
+      // the host-scoped portal queue resolves to their org. Falls back to
+      // the platform base URL when the tenant has no verified custom
+      // domain (single-tenant / seed-tenant unchanged).
+      const baseUrl = (
+        (await resolveTenantBaseUrl(orgId)) ?? deps.publicBaseUrl
+      ).replace(/\/$/, "");
       try {
         await deps.email({
           to: account.email_lower,
