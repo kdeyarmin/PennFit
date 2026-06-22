@@ -136,6 +136,28 @@ describe("buildSystemPrompt — breathe_prospect (B2B platform sales)", () => {
     expect(prompt).toMatch(/never sign anyone up for Enterprise/i);
   });
 
+  it("always asks for a callback phone number to record on the lead", () => {
+    const prompt = buildSystemPrompt(salesInput);
+    expect(prompt).toMatch(/callback phone number/i);
+    expect(prompt).toMatch(/Ask for the phone number on every call/i);
+  });
+
+  it("spells the email back letter by letter before sending", () => {
+    const prompt = buildSystemPrompt(salesInput);
+    expect(prompt).toMatch(/SPELL the email address back letter by letter/i);
+    // The char-by-char prohibition is narrowed to web links, with the
+    // caller's own email as the spelled-back exception.
+    expect(prompt).toMatch(
+      /Never read out a web address or link character-by-character/i,
+    );
+  });
+
+  it("records a real call summary on the lead, not just contact info", () => {
+    const prompt = buildSystemPrompt(salesInput);
+    expect(prompt).toMatch(/SUMMARY OF THE CALL/i);
+    expect(prompt).toMatch(/never just "wants pricing\."/i);
+  });
+
   it("carries no patient PHI clauses (no DOB verification, no medical-advice scope)", () => {
     const prompt = buildSystemPrompt(salesInput);
     expect(prompt).not.toContain("verify_patient_identity");

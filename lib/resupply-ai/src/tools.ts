@@ -641,13 +641,14 @@ export const OPENAI_TOOL_DESCRIPTORS: readonly OpenAiToolDescriptor[] = [
     type: "function",
     name: "send_info_email",
     description:
-      "Email the caller information about CareMetric Breathe. ALWAYS read the email address back and confirm it out loud before calling. The body is a fixed template chosen by 'topic' — you do not write it; 'overview' explains the platform, 'pricing' sends the plans, 'signup_link' sends a link to create an account, 'custom' is a general follow-up. Only send to the address the caller gave you on this call.",
+      "Email the caller information about CareMetric Breathe. ALWAYS spell the email address back letter by letter and wait for the caller to confirm it before calling — never call this in the same turn you spell it back; pause for their reply first. The body is a fixed template chosen by 'topic' — you do not write it; 'overview' explains the platform, 'pricing' sends the plans, 'signup_link' sends a link to create an account, 'custom' is a general follow-up. Only send to the address the caller gave you on this call.",
     parameters: {
       type: "object",
       properties: {
         email: {
           type: "string",
-          description: "The caller's email address (confirm it aloud first).",
+          description:
+            "The caller's email address (spell it back letter by letter and confirm it first).",
         },
         topic: {
           type: "string",
@@ -677,7 +678,11 @@ export const OPENAI_TOOL_DESCRIPTORS: readonly OpenAiToolDescriptor[] = [
           type: "string",
           description: "Their business / DME company name.",
         },
-        phone: { type: "string", description: "Best callback number." },
+        phone: {
+          type: "string",
+          description:
+            "The caller's best callback number — always ask for this so the team can follow up.",
+        },
         email: { type: "string", description: "Their email address." },
         interest_tier: {
           type: "string",
@@ -688,7 +693,7 @@ export const OPENAI_TOOL_DESCRIPTORS: readonly OpenAiToolDescriptor[] = [
           type: "string",
           maxLength: 2000,
           description:
-            "A short summary of what they want / their question, in your words.",
+            "A genuine summary of the CALL — written so whoever follows up can pick up the phone or email already knowing the context, not just a contact card. In a few sentences capture: who they are and what kind of operation (DME / HME / sleep lab), roughly how many active patients, how they run resupply today and what's frustrating them, what they're looking for or interested in (which plan, if any came up), and the agreed next step. Plain prose in your own words — never just 'wants pricing'.",
         },
       },
       required: ["message"],
@@ -699,7 +704,7 @@ export const OPENAI_TOOL_DESCRIPTORS: readonly OpenAiToolDescriptor[] = [
     type: "function",
     name: "start_breathe_signup",
     description:
-      "Start creating a CareMetric Breathe account for the caller's business. Only call this AFTER you've understood their business and walked them through pricing, and they've chosen a specific plan. You collect the business name, an admin email, and the chosen plan — NEVER a password (the system emails them a secure link to verify their address and set their own password). Read the email back and confirm it before calling. Enterprise is custom-quoted: do NOT sign anyone up for Enterprise here — hand off to a person instead. On success tell them to watch for that email to finish setting up.",
+      "Start creating a CareMetric Breathe account for the caller's business. Only call this AFTER you've understood their business and walked them through pricing, and they've chosen a specific plan. You collect the business name, an admin email, and the chosen plan — NEVER a password (the system emails them a secure link to verify their address and set their own password). Spell the email back letter by letter and confirm it before calling — never call this in the same turn you spell it back; pause for their reply first. Enterprise is custom-quoted: do NOT sign anyone up for Enterprise here — hand off to a person instead. On success tell them to watch for that email to finish setting up.",
     parameters: {
       type: "object",
       properties: {
@@ -710,7 +715,7 @@ export const OPENAI_TOOL_DESCRIPTORS: readonly OpenAiToolDescriptor[] = [
         admin_email: {
           type: "string",
           description:
-            "The email for the first admin login (confirm it aloud first).",
+            "The email for the first admin login (spell it back letter by letter and confirm it first).",
         },
         plan: {
           type: "string",
