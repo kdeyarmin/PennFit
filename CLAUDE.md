@@ -26,6 +26,17 @@ Practical rules:
   use **CareMetric Breathe**, not "PennFit" or "PennPaps".
 - Tenant-specific copy (the PennPaps storefront, contact addresses) stays
   tenant-branded — don't globally rename "PennPaps" to "CareMetric".
+- **The storefront's compile-time default is the platform, not a tenant.**
+  `DEFAULT_BRANDING` in `artifacts/cpap-fitter/src/lib/branding.ts` is the
+  **CareMetric** identity (and the logo fallback is `PLATFORM_LOGO_URL`
+  → `/breathe/caremetric-logo.png`), so a brand-new / unconfigured tenant —
+  and the pre-fetch first paint / fetch-failure state — never flashes the
+  Penn brand. Do NOT set it back to "PennPaps". The Penn tenant still
+  renders PennPaps via the host-resolved `GET /api/storefront-branding`
+  (`resolveBrandingByHost`, pennpaps.com → verified custom domain), and its
+  logo is **tenant data**: `organizations.logo_url` points at the served
+  asset `/penn/pennpaps-logo.jpeg` (migration 0458), so Penn no longer
+  depends on a bundled client default.
 - **The two in-app AI assistants are tenant-configurable.** Platform
   defaults are **"CareMetric Assistant"** (storefront chatbot) and
   **"CareMetric Copilot"** (admin assistant). The Penn Home Medical Supply

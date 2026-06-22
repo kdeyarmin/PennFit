@@ -2,12 +2,14 @@
 //
 // Centralized so the header, hero, and footer all render the SAME tenant
 // identity. The constants below are compile-time fallbacks that ship with
-// the static SPA bundle, so the first paint never waits on the network and
-// the canonical PennPaps site looks identical to before. At runtime the
-// module fetches GET /api/storefront-branding once (host-resolved on the
-// server: a verified custom domain returns that tenant's brand) and
-// components using `useStorefrontBranding()` re-render with the live
-// values. A fetch failure just leaves the fallbacks in place.
+// the static SPA bundle, so the first paint never waits on the network. The
+// fallback is the **platform** identity (CareMetric Breathe) — NOT any one
+// tenant — so a brand-new or unconfigured tenant never flashes another
+// tenant's brand. At runtime the module fetches GET /api/storefront-branding
+// once (host-resolved on the server: a verified custom domain returns that
+// tenant's brand — e.g. pennpaps.com → PennPaps) and components using
+// `useStorefrontBranding()` re-render with the live values. A fetch failure
+// just leaves the platform fallback in place.
 //
 // Mirrors the pattern in lib/contact.ts (company contact details).
 
@@ -24,6 +26,16 @@ import { useSyncExternalStore } from "react";
  */
 export const PLATFORM_NAME = "CareMetric Breathe";
 
+/**
+ * The platform's own logo, served as a static public asset (so it works
+ * root-relative on every tenant host). Used as the logo fallback wherever a
+ * tenant has not supplied its own `logoUrl` — the storefront header/footer
+ * and the auth pages. A tenant with its own brand sets `organizations.logo_url`
+ * (the Penn tenant points at its bundled `/penn/…` asset), which the
+ * host-resolved branding returns and which takes precedence over this.
+ */
+export const PLATFORM_LOGO_URL = "/breathe/caremetric-logo.png";
+
 export interface StorefrontBranding {
   /** Short customer-facing brand shown in the header/hero. */
   storefrontName: string;
@@ -36,17 +48,22 @@ export interface StorefrontBranding {
   /**
    * Whether these values are the host-resolved tenant brand (true) or the
    * bundled compile-time fallback (false, before the fetch lands / if it
-   * fails). The storefront ignores this — its bundled default IS the Penn
-   * tenant's brand. The SHARED admin chrome uses it to avoid showing one
-   * tenant's name (the "PennPaps" fallback) on another tenant's host until
-   * branding resolves: it renders a tenant-neutral label while `false`.
+   * fails). The bundled default is the **platform** identity (CareMetric
+   * Breathe), so it is safe on any tenant's host. The SHARED admin chrome
+   * still uses this flag to show a tenant-neutral label until the
+   * host-resolved tenant name arrives.
    */
   resolved: boolean;
 }
 
+// Platform default — NOT a tenant. A host that resolves to a real tenant
+// (e.g. pennpaps.com → PennPaps) overrides every field at runtime via the
+// host-resolved fetch; an unconfigured/new tenant keeps this CareMetric
+// identity. `logoUrl: null` falls back to PLATFORM_LOGO_URL at the render
+// site (storefront header/footer + auth pages).
 export const DEFAULT_BRANDING: StorefrontBranding = {
-  storefrontName: "PennPaps",
-  legalName: "Penn Home Medical Supply",
+  storefrontName: "CareMetric Breathe",
+  legalName: "CareMetric",
   tagline: "Your CPAP, made simple. Fit. Shop. Resupply.",
   logoUrl: null,
   resolved: false,
