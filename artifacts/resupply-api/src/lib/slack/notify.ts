@@ -67,6 +67,14 @@ async function patientDeepLink(
   return base ? `${base}/admin/patients/${patientId}` : undefined;
 }
 
+async function adminPathDeepLink(
+  orgId: string | undefined,
+  path: string,
+): Promise<string | undefined> {
+  const base = await resolveAdminBaseUrl(orgId);
+  return base ? `${base}${path}` : undefined;
+}
+
 interface CsAlertInput {
   orgId: string | undefined;
   title: string;
@@ -256,6 +264,34 @@ export async function notifySlaBreach(input: {
       `*Conversation:* \`${input.conversationId}\``,
     ],
     actions: conversationActions(config, link, input.conversationId, false),
+  });
+}
+
+/**
+ * A patient submitted a low NPS score (a "detractor", 0–6) after delivery.
+ * Real-time CS signal. The free-text comment is NOT sent (patient PHI) — only
+ * the score, order reference, and whether a comment exists, plus a link to the
+ * NPS triage page where a CSR can read it in-app.
+ */
+export async function notifyNpsDetractor(input: {
+  orgId: string | undefined;
+  orderId: string;
+  score: number;
+  hasComment: boolean;
+}): Promise<void> {
+  const link = await adminPathDeepLink(input.orgId, "/admin/nps/recent");
+  const severity: SlackSeverity = input.score <= 3 ? "critical" : "warning";
+  await sendCsAlert({
+    orgId: input.orgId,
+    severity,
+    title: `${severityEmoji(severity)} NPS detractor — scored ${input.score}/10`,
+    lines: [
+      `*Order:* \`${input.orderId}\``,
+      `*Comment:* ${input.hasComment ? "left a comment (read in admin)" : "none"}`,
+    ],
+    actions: link
+      ? [{ kind: "link", text: "Open NPS triage", url: link }]
+      : undefined,
   });
 }
 

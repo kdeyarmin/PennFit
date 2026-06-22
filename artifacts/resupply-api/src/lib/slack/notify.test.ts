@@ -27,6 +27,7 @@ import { isFeatureEnabled } from "../feature-flags";
 import { resolveTenantBaseUrl } from "../tenant-branding";
 import {
   notifyConversationNeedsHuman,
+  notifyNpsDetractor,
   notifyOpsDigest,
   notifyReminderEscalation,
   notifySlaBreach,
@@ -159,6 +160,34 @@ describe("notifySlaBreach", () => {
     });
     const [, input] = postSlackMessageMock.mock.calls[0]!;
     expect(JSON.stringify(input)).toContain("42");
+  });
+});
+
+describe("notifyNpsDetractor", () => {
+  it("posts score + order ref + comment flag, never the comment text", async () => {
+    await notifyNpsDetractor({
+      orgId: "org-1",
+      orderId: "ord-5",
+      score: 2,
+      hasComment: true,
+    });
+    const [, input] = postSlackMessageMock.mock.calls[0]!;
+    const serialized = JSON.stringify(input);
+    expect(serialized).toContain("ord-5");
+    expect(serialized).toContain("2/10");
+    expect(serialized).toContain("read in admin");
+    expect(serialized).toContain("https://tenant.example/admin/nps/recent");
+  });
+
+  it("uses critical severity for very low scores", async () => {
+    await notifyNpsDetractor({
+      orgId: "org-1",
+      orderId: "ord-5",
+      score: 1,
+      hasComment: false,
+    });
+    const [, input] = postSlackMessageMock.mock.calls[0]!;
+    expect(JSON.stringify(input)).toContain("🔴");
   });
 });
 
