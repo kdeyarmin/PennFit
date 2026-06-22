@@ -45,6 +45,11 @@ import { isFeatureEnabled } from "../../lib/feature-flags";
 import { getOrCreateStripeCustomer } from "../../lib/stripe/customer";
 import { stripeAccountRequestOptions } from "../../lib/stripe/connect";
 import { validateCartItems } from "../../lib/stripe/validate-cart";
+import {
+  reserveCartInventory,
+  attachSessionToReservations,
+  releaseReservationIds,
+} from "../../lib/inventory/reservations";
 import { stripeErrLogFields } from "../../lib/stripe/err-log-fields";
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
 import { rateLimit } from "../../middlewares/rate-limit";
@@ -299,6 +304,36 @@ router.post(
       return;
     }
 
+    // Inventory reservation / oversell guard — same rationale as
+    // /shop/checkout: hold the requested units between validation and payment
+    // so concurrent buyers can't all pass the stock check and oversell.
+    // FAIL-OPEN: a reservation-system error returns ok:true with no ids and
+    // checkout proceeds unguarded; only a clean "oversold" verdict blocks.
+    const reservationOrgId = req.orgId ?? null;
+    let reservationIds: string[] = [];
+    if (reservationOrgId) {
+      const reservation = await reserveCartInventory({
+        orgId: reservationOrgId,
+        stripe,
+        requestOptions: connectOptions,
+        items: basket,
+        log: req.log,
+      });
+      if (!reservation.ok) {
+        req.log?.warn(
+          { productId: reservation.oversoldProductId },
+          "quick-checkout: inventory reservation refused (oversold)",
+        );
+        res.status(409).json({
+          error: "out_of_stock",
+          message:
+            "Sorry — one or more items just sold out while you were checking out. Please adjust your cart and try again.",
+        });
+        return;
+      }
+      reservationIds = reservation.reservationIds;
+    }
+
     const { stripeCustomerId } = await getOrCreateStripeCustomer(config, {
       orgId: req.orgId,
       customerId: customerId,
@@ -437,6 +472,11 @@ router.post(
         { ...stripeErrLogFields(err) },
         "stripe quick-checkout sessions.create failed",
       );
+      // No session was created — release the holds so the reserved stock
+      // frees immediately rather than leaking until TTL. Best-effort.
+      if (reservationOrgId && reservationIds.length > 0) {
+        await releaseReservationIds(reservationOrgId, reservationIds, req.log);
+      }
       res.status(502).json({
         error: "stripe_create_failed",
         message:
@@ -450,8 +490,22 @@ router.post(
         { sessionId: session.id },
         "quick-checkout session has no url",
       );
+      if (reservationOrgId && reservationIds.length > 0) {
+        await releaseReservationIds(reservationOrgId, reservationIds, req.log);
+      }
       res.status(502).json({ error: "stripe_create_failed" });
       return;
+    }
+
+    // Stamp the session id onto the holds so the webhook can consume/release
+    // them. Best-effort — a failure just leaves the holds to expire via TTL.
+    if (reservationOrgId && reservationIds.length > 0) {
+      await attachSessionToReservations(
+        reservationOrgId,
+        reservationIds,
+        session.id,
+        req.log,
+      );
     }
 
     // Mirror to shop_orders. We split the upsert into INSERT-or-

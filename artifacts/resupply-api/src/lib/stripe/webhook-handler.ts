@@ -84,6 +84,10 @@ import {
 import { handlePaymentIntentEvent } from "./webhook-handlers/payment-intent";
 import { handlePaymentMethodDetached } from "./webhook-handlers/payment-method";
 import { handleSubscriptionEvent } from "./webhook-handlers/subscription";
+import {
+  consumeReservationsForSession,
+  releaseReservationsForSession,
+} from "../inventory/reservations";
 
 // Re-exports so existing importers (app.ts, the per-helper test
 // suites) keep working unchanged after the module split.
@@ -465,16 +469,53 @@ export const stripeWebhookHandler: RequestHandler = async (
             }
           }
         }
+        // Best-effort: consume the inventory holds this session reserved at
+        // checkout time (active → consumed). The helper is internally
+        // guarded and never throws; the order is already paid, and a missed
+        // consume just leaves the hold to expire harmlessly via TTL.
+        {
+          const reservationOrgId = await resolveWebhookOrgId();
+          if (reservationOrgId) {
+            await consumeReservationsForSession(
+              reservationOrgId,
+              session.id,
+              log,
+            );
+          }
+        }
         break;
       }
       case "checkout.session.expired": {
         const session = event.data.object as Stripe.Checkout.Session;
         await markStatus(session.id, "expired", log);
+        // Best-effort: release the holds this abandoned session reserved so
+        // the stock frees immediately rather than waiting out the TTL.
+        {
+          const reservationOrgId = await resolveWebhookOrgId();
+          if (reservationOrgId) {
+            await releaseReservationsForSession(
+              reservationOrgId,
+              session.id,
+              log,
+            );
+          }
+        }
         break;
       }
       case "checkout.session.async_payment_failed": {
         const session = event.data.object as Stripe.Checkout.Session;
         await markStatus(session.id, "failed", log);
+        // Best-effort: release the holds on a failed async payment.
+        {
+          const reservationOrgId = await resolveWebhookOrgId();
+          if (reservationOrgId) {
+            await releaseReservationsForSession(
+              reservationOrgId,
+              session.id,
+              log,
+            );
+          }
+        }
         break;
       }
       case "customer.subscription.created":

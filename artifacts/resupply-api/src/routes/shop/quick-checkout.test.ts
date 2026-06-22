@@ -75,6 +75,21 @@ vi.mock("../../lib/stripe/validate-cart", () => ({
   validateCartItems: (...args: unknown[]) => validateCartItemsMock(...args),
 }));
 
+// ── Inventory reservation mock ────────────────────────────────────────────────
+// requireSignedIn attaches a default req.orgId, so the route runs the
+// reservation guard. Mock it so tests never touch Stripe/DB for reservations.
+const reserveCartInventoryMock = vi.fn();
+const attachSessionToReservationsMock = vi.fn();
+const releaseReservationIdsMock = vi.fn();
+vi.mock("../../lib/inventory/reservations", () => ({
+  reserveCartInventory: (...args: unknown[]) =>
+    reserveCartInventoryMock(...args),
+  attachSessionToReservations: (...args: unknown[]) =>
+    attachSessionToReservationsMock(...args),
+  releaseReservationIds: (...args: unknown[]) =>
+    releaseReservationIdsMock(...args),
+}));
+
 // ── Logger mock ───────────────────────────────────────────────────────────────
 const { loggerMock } = vi.hoisted(() => ({
   loggerMock: { error: vi.fn(), warn: vi.fn(), info: vi.fn() },
@@ -149,6 +164,12 @@ beforeEach(() => {
   getOrCreateStripeCustomerMock.mockReset();
   getStripeClientMock.mockReset();
   validateCartItemsMock.mockReset();
+  reserveCartInventoryMock.mockReset();
+  attachSessionToReservationsMock.mockReset();
+  releaseReservationIdsMock.mockReset();
+  reserveCartInventoryMock.mockResolvedValue({ ok: true, reservationIds: [] });
+  attachSessionToReservationsMock.mockResolvedValue(undefined);
+  releaseReservationIdsMock.mockResolvedValue(undefined);
   loggerMock.error.mockReset();
   loggerMock.warn.mockReset();
   loggerMock.info.mockReset();
@@ -407,6 +428,24 @@ describe("POST /shop/me/quick-checkout — cart validation", () => {
       priceId: "price_abc123xyzabc",
       reason: "archived",
     });
+  });
+
+  it("returns 409 out_of_stock when the reservation guard reports oversold", async () => {
+    stubSignedIn();
+    stubStripeConfigured();
+    stubCartValid();
+    // Cart-time stock was fine, but a concurrent buyer reserved the last unit.
+    reserveCartInventoryMock.mockResolvedValue({
+      ok: false,
+      oversoldProductId: "prod_xyz",
+    });
+
+    const res = await request(makeApp())
+      .post("/shop/me/quick-checkout")
+      .send({ items: ONE_ITEM });
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("out_of_stock");
+    expect(sessionCreateMock).not.toHaveBeenCalled();
   });
 });
 

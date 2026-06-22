@@ -80,6 +80,22 @@ vi.mock("../../lib/stripe/validate-cart", () => ({
   validateCartItems: (...args: unknown[]) => validateCartItemsMock(...args),
 }));
 
+// ── Inventory reservation mock ────────────────────────────────────────────────
+// The route calls reserveCartInventory after validateCart passes. We mock the
+// whole helper so tests never hit Stripe/DB for reservations; the default is a
+// no-op success (ok:true, no ids), and individual tests override it.
+const reserveCartInventoryMock = vi.fn();
+const attachSessionToReservationsMock = vi.fn();
+const releaseReservationIdsMock = vi.fn();
+vi.mock("../../lib/inventory/reservations", () => ({
+  reserveCartInventory: (...args: unknown[]) =>
+    reserveCartInventoryMock(...args),
+  attachSessionToReservations: (...args: unknown[]) =>
+    attachSessionToReservationsMock(...args),
+  releaseReservationIds: (...args: unknown[]) =>
+    releaseReservationIdsMock(...args),
+}));
+
 // ── Customer profile mock (read only when signed in) ──────────────────────────
 const readCustomerProfileMock = vi.fn();
 vi.mock("../../lib/customer-profile", () => ({
@@ -164,6 +180,14 @@ beforeEach(() => {
   getOrCreateStripeCustomerMock.mockReset();
   validateCartItemsMock.mockReset();
   readCustomerProfileMock.mockReset();
+  reserveCartInventoryMock.mockReset();
+  attachSessionToReservationsMock.mockReset();
+  releaseReservationIdsMock.mockReset();
+  // Default: reservation succeeds with no holds (the common path; tests that
+  // exercise the oversell branch override this).
+  reserveCartInventoryMock.mockResolvedValue({ ok: true, reservationIds: [] });
+  attachSessionToReservationsMock.mockResolvedValue(undefined);
+  releaseReservationIdsMock.mockResolvedValue(undefined);
   reqLog.info.mockReset();
   reqLog.warn.mockReset();
   reqLog.error.mockReset();
@@ -279,6 +303,48 @@ describe("POST /shop/checkout — failure modes", () => {
     expect(res.status).toBe(400);
     expect(res.body.error).toBe("cart_invalid");
     expect(sessionCreateMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 409 out_of_stock when the reservation guard reports oversold", async () => {
+    stubStripeConfigured();
+    stubCartValid();
+    // validateCart passed (cart-time stock was fine), but a concurrent buyer
+    // already reserved the last unit — the reservation RPC refuses.
+    reserveCartInventoryMock.mockResolvedValue({
+      ok: false,
+      oversoldProductId: "prod_xyz",
+    });
+
+    const res = await request(makeApp())
+      .post("/shop/checkout")
+      .send({ items: ONE_ITEM });
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("out_of_stock");
+    // No Stripe session is created and no order is mirrored on an oversell.
+    expect(sessionCreateMock).not.toHaveBeenCalled();
+    expect(getSupabaseCallCount("shop_orders", "upsert")).toBe(0);
+  });
+
+  it("releases held reservations when stripe.checkout.sessions.create throws", async () => {
+    stubStripeConfigured();
+    stubCartValid();
+    // The reservation succeeded and produced holds; the session creation then
+    // fails, so the holds must be released so the stock doesn't leak.
+    reserveCartInventoryMock.mockResolvedValue({
+      ok: true,
+      reservationIds: ["res_1", "res_2"],
+    });
+    sessionCreateMock.mockRejectedValue(new Error("stripe down"));
+
+    const res = await request(makeApp())
+      .post("/shop/checkout")
+      .send({ items: ONE_ITEM });
+    expect(res.status).toBe(502);
+    expect(res.body.error).toBe("stripe_create_failed");
+    // The held reservations were released by id (no session id existed yet).
+    expect(releaseReservationIdsMock).toHaveBeenCalledTimes(1);
+    const [, ids] = releaseReservationIdsMock.mock.calls[0]!;
+    expect(ids).toEqual(["res_1", "res_2"]);
   });
 
   it("returns 502 when stripe.checkout.sessions.create throws", async () => {

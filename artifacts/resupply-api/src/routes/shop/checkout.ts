@@ -40,6 +40,11 @@ import { getActivePickupLocationById } from "../../lib/pickup/locations";
 import { getOrCreateStripeCustomer } from "../../lib/stripe/customer";
 import { stripeAccountRequestOptions } from "../../lib/stripe/connect";
 import { validateCartItems } from "../../lib/stripe/validate-cart";
+import {
+  reserveCartInventory,
+  attachSessionToReservations,
+  releaseReservationIds,
+} from "../../lib/inventory/reservations";
 import { stripeErrLogFields } from "../../lib/stripe/err-log-fields";
 import { readCustomerProfile } from "../../lib/customer-profile";
 import { rateLimit } from "../../middlewares/rate-limit";
@@ -280,6 +285,39 @@ router.post(
       return;
     }
 
+    // Inventory reservation / oversell guard. validateCart compared the cart
+    // against the live stock_count, but between here and payment completion
+    // concurrent buyers could each pass that same check and all complete →
+    // oversell. Reserve the requested units now so a second concurrent buyer
+    // is refused. FAIL-OPEN: a reservation-system error returns ok:true with
+    // no ids and checkout proceeds unguarded (the pre-existing behaviour) —
+    // only a clean "oversold" verdict blocks the sale. We resolve the org the
+    // same way the shop_orders mirror below does (guest → seed tenant).
+    const reservationOrgId = req.orgId ?? (await resolveSeedOrgId());
+    let reservationIds: string[] = [];
+    if (reservationOrgId) {
+      const reservation = await reserveCartInventory({
+        orgId: reservationOrgId,
+        stripe,
+        requestOptions: connectOptions,
+        items,
+        log: req.log,
+      });
+      if (!reservation.ok) {
+        req.log?.warn(
+          { productId: reservation.oversoldProductId },
+          "shop checkout: inventory reservation refused (oversold)",
+        );
+        res.status(409).json({
+          error: "out_of_stock",
+          message:
+            "Sorry — one or more items just sold out while you were checking out. Please adjust your cart and try again.",
+        });
+        return;
+      }
+      reservationIds = reservation.reservationIds;
+    }
+
     // If the user is signed in, attach (or create) their Stripe Customer
     // so the saved card + address pre-fill on the Stripe page AND so the
     // card from this checkout becomes saved-on-file for next time. We
@@ -426,6 +464,12 @@ router.post(
         { ...stripeErrLogFields(err) },
         "stripe checkout.sessions.create failed",
       );
+      // No Stripe session was created, so there's nothing to attach the
+      // holds to and they'd otherwise leak until TTL. Release them now so
+      // the reserved stock frees immediately. Best-effort (never throws).
+      if (reservationOrgId && reservationIds.length > 0) {
+        await releaseReservationIds(reservationOrgId, reservationIds, req.log);
+      }
       res.status(502).json({
         error: "stripe_create_failed",
         message:
@@ -439,8 +483,24 @@ router.post(
       // mode, but TypeScript can't prove it. Treat a missing URL as a
       // bug we want to catch loudly rather than silently.
       req.log?.error({ sessionId: session.id }, "stripe session has no url");
+      if (reservationOrgId && reservationIds.length > 0) {
+        await releaseReservationIds(reservationOrgId, reservationIds, req.log);
+      }
       res.status(502).json({ error: "stripe_create_failed" });
       return;
+    }
+
+    // Stamp the new session id onto the holds so the webhook can later
+    // consume (paid) or release (expired/failed) them. Best-effort — a
+    // failure here just means the holds expire via TTL instead of being
+    // resolved precisely; never blocks the checkout response.
+    if (reservationOrgId && reservationIds.length > 0) {
+      await attachSessionToReservations(
+        reservationOrgId,
+        reservationIds,
+        session.id,
+        req.log,
+      );
     }
 
     // Mirror the session into shop_orders as a fresh `pending` row.
