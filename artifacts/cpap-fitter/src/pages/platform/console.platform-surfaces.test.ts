@@ -129,6 +129,12 @@ describe("platform console tenant detail + sidebar", () => {
     expect(SRC).toContain("<PlatformHealthCard />");
   });
 
+  it("shows the tenant's team & access on the detail page", () => {
+    expect(SRC).toContain("function TenantAdminsCard");
+    expect(SRC).toContain("useTenantAdmins");
+    expect(SRC).toContain("<TenantAdminsCard tenantId={tenant.id} />");
+  });
+
   it("adds add-on management, usage recording, and a catalog re-sync", () => {
     expect(SRC).toContain("function TenantAddonManager");
     expect(SRC).toContain("updateTenantAddon");

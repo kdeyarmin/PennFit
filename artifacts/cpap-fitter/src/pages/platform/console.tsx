@@ -52,6 +52,7 @@ import {
   useImpersonateTenant,
   useTenantUsage,
   useTenantActivitySeries,
+  useTenantAdmins,
   useTenantFeatureFlags,
   useTenantFeatureFlagActivity,
   useToggleTenantFeatureFlag,
@@ -3165,6 +3166,96 @@ function TenantActivityCard({ tenantId }: { tenantId: string }) {
   );
 }
 
+function adminStatusVariant(
+  s: string,
+): "success" | "info" | "neutral" | "muted" | "danger" {
+  switch (s) {
+    case "active":
+      return "success";
+    case "invited":
+      return "info";
+    case "revoked":
+      return "muted";
+    case "locked":
+      return "danger";
+    default:
+      return "neutral";
+  }
+}
+
+// The tenant's staff accounts — who can sign into its admin console, their
+// role, status, and last sign-in. The support/security answer to "who do
+// I contact?" and "is there a stale admin?".
+function TenantAdminsCard({ tenantId }: { tenantId: string }) {
+  const { data, isPending, isError, refetch } = useTenantAdmins(tenantId);
+  const admins = data?.admins ?? [];
+
+  return (
+    <Card
+      title="Team & access"
+      subtitle="Staff who can sign into this tenant's admin console."
+    >
+      {isPending ? (
+        <Spinner label="Loading team…" />
+      ) : isError ? (
+        <EmptyState
+          title="Couldn't load the team."
+          hint="A transient error — try again."
+          action={
+            <Button intent="secondary" size="sm" onClick={() => void refetch()}>
+              Retry
+            </Button>
+          }
+        />
+      ) : admins.length === 0 ? (
+        <EmptyState
+          title="No staff accounts yet."
+          hint="This tenant hasn't invited any admins."
+        />
+      ) : (
+        <ul className="space-y-0">
+          {admins.map((a) => (
+            <li
+              key={a.id}
+              className="py-2.5 border-t first:border-t-0 flex items-start justify-between gap-4"
+              style={{ borderColor: "hsl(var(--line-1))" }}
+            >
+              <div className="min-w-0">
+                <div
+                  className="text-sm font-medium truncate"
+                  style={{ color: "hsl(var(--ink-1))" }}
+                >
+                  {a.displayName ?? a.email ?? "Unknown"}
+                </div>
+                <div
+                  className="text-[11px] truncate"
+                  style={{ color: "hsl(var(--ink-3))" }}
+                >
+                  {[a.displayName ? a.email : null, a.role]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <Badge variant={adminStatusVariant(a.status)}>{a.status}</Badge>
+                <span
+                  className="text-[11px] tabular-nums whitespace-nowrap"
+                  style={{ color: "hsl(var(--ink-3))" }}
+                  title="Last sign-in"
+                >
+                  {a.lastLoginAt
+                    ? new Date(a.lastLoginAt).toLocaleDateString()
+                    : "never"}
+                </span>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
 function TenantDetailPage() {
   const [, params] = useRoute("/platform/tenants/:id");
   const id = params?.id ?? "";
@@ -3420,6 +3511,8 @@ function TenantDetailPage() {
               hint="all-time"
             />
           </div>
+
+          <TenantAdminsCard tenantId={tenant.id} />
 
           <TenantActivityCard tenantId={tenant.id} />
 

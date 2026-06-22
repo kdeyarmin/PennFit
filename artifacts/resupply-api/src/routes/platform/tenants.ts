@@ -727,6 +727,91 @@ router.get(
   },
 );
 
+// ── GET /platform/tenants/:id/admins ────────────────────────────────
+// The tenant's staff accounts (who can sign into its admin console) —
+// the support/security answer to "who do I contact?" and "is there a
+// stale admin?". Reads `admin_users` for the TARGET org via the scoped
+// facade. admin_users carries the email/role/status directly, so no
+// cross-schema join is needed. Staff emails are operator metadata (a
+// platform admin can already impersonate the tenant) — no patient PHI.
+interface AdminUserRow {
+  id: string;
+  email_lower: string | null;
+  role: string;
+  status: string;
+  display_name: string | null;
+  last_login_at: string | null;
+  invited_at: string | null;
+}
+
+router.get(
+  "/platform/tenants/:id/admins",
+  adminReadRateLimiter,
+  requirePlatformAdmin,
+  async (req, res): Promise<void> => {
+    const parsed = tenantIdParam.safeParse(req.params);
+    if (!parsed.success) {
+      res.status(400).json({ error: "invalid_tenant_id" });
+      return;
+    }
+    const id = parsed.data.id;
+
+    const seedOrgId = await resolveSeedOrgId();
+    if (!seedOrgId) {
+      res.status(503).json({ error: "tenant_directory_unavailable" });
+      return;
+    }
+    // Confirm the tenant exists (404 a bad id) via the global directory.
+    const { data: org, error: orgErr } = await getOrgScopedClient(seedOrgId)
+      .raw()
+      .schema("resupply")
+      .from("organizations")
+      .select("id")
+      .eq("id", id)
+      .limit(1)
+      .maybeSingle();
+    if (orgErr) {
+      logger.error(
+        { event: "platform_tenant_admins_org_read_failed", err: orgErr },
+        "platform: tenant admins org read failed",
+      );
+      res.status(500).json({ error: "tenant_read_failed" });
+      return;
+    }
+    if (!org) {
+      res.status(404).json({ error: "tenant_not_found" });
+      return;
+    }
+
+    // Per-tenant staff via the scoped facade for the TARGET org.
+    const { data, error } = await getOrgScopedClient(id)
+      .from("admin_users")
+      .select(
+        "id, email_lower, role, status, display_name, last_login_at, invited_at",
+      )
+      .order("invited_at", { ascending: false });
+    if (error) {
+      logger.error(
+        { event: "platform_tenant_admins_failed", err: error },
+        "platform: tenant admins query failed",
+      );
+      res.status(500).json({ error: "admins_query_failed" });
+      return;
+    }
+
+    const admins = ((data ?? []) as AdminUserRow[]).map((a) => ({
+      id: a.id,
+      email: a.email_lower,
+      role: a.role,
+      status: a.status,
+      displayName: a.display_name,
+      lastLoginAt: a.last_login_at,
+      invitedAt: a.invited_at,
+    }));
+    res.json({ tenantId: id, admins });
+  },
+);
+
 /**
  * Create a new tenant SHELL: the `organizations` row + its feature-flag
  * provisioning. The first ADMIN is intentionally NOT created here — that

@@ -507,6 +507,69 @@ describe("GET /platform/tenants/:id/feature-flag-activity", () => {
   });
 });
 
+describe("GET /platform/tenants/:id/admins", () => {
+  it("401s for a non-platform-admin", async () => {
+    const res = await request(makeApp()).get(
+      `/platform/tenants/${TENANT_ID}/admins`,
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it("404s when the tenant does not exist", async () => {
+    mockPlatformAdmin.current = { userId: "u_p", email: "ops@cm" };
+    stageSupabaseResponse("organizations", "select", { data: null });
+    const res = await request(makeApp()).get(
+      `/platform/tenants/${TENANT_ID}/admins`,
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("lists the tenant's staff accounts", async () => {
+    mockPlatformAdmin.current = { userId: "u_p", email: "ops@cm" };
+    stageSupabaseResponse("organizations", "select", {
+      data: { id: TENANT_ID },
+    });
+    stageSupabaseResponse("admin_users", "select", {
+      data: [
+        {
+          id: "au-1",
+          email_lower: "owner@acme.example",
+          role: "admin",
+          status: "active",
+          display_name: "Acme Owner",
+          last_login_at: "2026-06-20T00:00:00Z",
+          invited_at: "2026-01-01T00:00:00Z",
+        },
+        {
+          id: "au-2",
+          email_lower: "csr@acme.example",
+          role: "csr",
+          status: "invited",
+          display_name: null,
+          last_login_at: null,
+          invited_at: "2026-02-01T00:00:00Z",
+        },
+      ],
+    });
+    const res = await request(makeApp()).get(
+      `/platform/tenants/${TENANT_ID}/admins`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.admins).toHaveLength(2);
+    expect(res.body.admins[0]).toMatchObject({
+      email: "owner@acme.example",
+      role: "admin",
+      status: "active",
+      displayName: "Acme Owner",
+    });
+    expect(res.body.admins[1]).toMatchObject({
+      email: "csr@acme.example",
+      status: "invited",
+      lastLoginAt: null,
+    });
+  });
+});
+
 describe("POST /platform/tenants (create)", () => {
   it("401s when the caller is not a platform admin", async () => {
     const res = await request(makeApp())

@@ -419,6 +419,43 @@ export function useTenantActivitySeries(
   });
 }
 
+// ── Per-tenant admins (staff who can sign in) ──────────────────────
+
+export interface TenantAdmin {
+  id: string;
+  email: string | null;
+  role: string;
+  status: string;
+  displayName: string | null;
+  lastLoginAt: string | null;
+  invitedAt: string | null;
+}
+
+export interface TenantAdminsResponse {
+  tenantId: string;
+  admins: TenantAdmin[];
+}
+
+export const getTenantAdminsQueryKey = (id: string) =>
+  [`${TENANTS_URL}/${id}/admins`] as const;
+
+export function useTenantAdmins(
+  id: string,
+  options?: {
+    query?: Partial<UseQueryOptions<TenantAdminsResponse, PlatformError>>;
+  },
+) {
+  return useQuery<TenantAdminsResponse, PlatformError>({
+    queryKey: getTenantAdminsQueryKey(id),
+    queryFn: ({ signal }) =>
+      customFetch<TenantAdminsResponse>(
+        `${TENANTS_URL}/${encodeURIComponent(id)}/admins`,
+        { method: "GET", signal },
+      ),
+    ...options?.query,
+  });
+}
+
 // ── Impersonation ──────────────────────────────────────────────────
 
 export interface ImpersonateResponse {
