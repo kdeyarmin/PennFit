@@ -33,12 +33,14 @@ import {
   Rocket,
   Search,
   ServerCog,
+  ShieldCheck,
   X,
   type LucideIcon,
 } from "lucide-react";
 
 import {
   ApiError,
+  getListOperatorsQueryKey,
   getListTenantsQueryKey,
   getTenantFeatureFlagsQueryKey,
   getTenantQueryKey,
@@ -50,12 +52,16 @@ import {
   useSuspendTenant,
   useReactivateTenant,
   useImpersonateTenant,
+  useListOperators,
+  useGrantOperator,
+  useRevokeOperator,
   useTenantUsage,
   useTenantActivitySeries,
   useTenantAdmins,
   useTenantFeatureFlags,
   useTenantFeatureFlagActivity,
   useToggleTenantFeatureFlag,
+  type PlatformOperator,
   type PlatformTenant,
   type TenantFeatureFlag,
 } from "@workspace/api-client-react/admin";
@@ -3602,6 +3608,7 @@ const PLATFORM_NAV_GROUPS: ReadonlyArray<{
     label: "Operations",
     items: [
       { href: "/platform/support", label: "Support", icon: LifeBuoy },
+      { href: "/platform/operators", label: "Operators", icon: ShieldCheck },
       {
         href: "/platform/integrations",
         label: "Global integrations",
@@ -4033,6 +4040,210 @@ function PlatformShell({
   );
 }
 
+// ── Operators (platform admin roster) ──────────────────────────────
+// Grant/revoke platform-god access from the UI instead of editing the
+// platform_admins table by hand. Grant elevates an EXISTING user; revoke
+// is guarded server-side (no self, no last operator) and confirmed here.
+function PlatformOperatorsPage() {
+  const me = useGetPlatformMe();
+  const queryClient = useQueryClient();
+  const { data, isPending, isError, refetch } = useListOperators();
+  const grant = useGrantOperator();
+  const revoke = useRevokeOperator();
+  const [email, setEmail] = useState("");
+  const [notice, setNotice] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [confirmRevoke, setConfirmRevoke] = useState<PlatformOperator | null>(
+    null,
+  );
+
+  function invalidate() {
+    void queryClient.invalidateQueries({
+      queryKey: getListOperatorsQueryKey(),
+    });
+  }
+
+  function onGrant(e: React.FormEvent) {
+    e.preventDefault();
+    const trimmed = email.trim();
+    if (!trimmed) return;
+    setError(null);
+    setNotice(null);
+    grant.mutate(trimmed, {
+      onSuccess: (res) => {
+        setEmail("");
+        setNotice(
+          `Granted platform access to ${res.operator.email ?? "the user"}.`,
+        );
+        invalidate();
+      },
+      onError: (err) => {
+        setError(
+          err instanceof ApiError && err.status === 404
+            ? "No account with that email. The person must already be a user."
+            : "Couldn't grant access.",
+        );
+      },
+    });
+  }
+
+  function onRevoke(op: PlatformOperator) {
+    setError(null);
+    revoke.mutate(op.authUserId, {
+      onSuccess: () => {
+        invalidate();
+        setConfirmRevoke(null);
+      },
+      onError: (err) => {
+        setError(
+          err instanceof ApiError && err.status === 400
+            ? "Can't remove the last operator."
+            : "Couldn't revoke access.",
+        );
+        setConfirmRevoke(null);
+      },
+    });
+  }
+
+  const operators = data?.operators ?? [];
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title="Operators"
+        description="Who has platform super-admin access. Granting elevates an existing user account to operate the whole platform — the highest privilege there is."
+      />
+
+      <Card
+        title="Grant access"
+        subtitle="The person must already have a user account; this only elevates them."
+      >
+        <form onSubmit={onGrant} className="flex items-end gap-2 flex-wrap">
+          <div className="flex-1 min-w-[14rem]">
+            <Label htmlFor="operator-email">Email</Label>
+            <Input
+              id="operator-email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="person@company.com"
+              autoComplete="off"
+            />
+          </div>
+          <Button
+            type="submit"
+            disabled={email.trim().length === 0 || grant.isPending}
+            isLoading={grant.isPending}
+          >
+            Grant
+          </Button>
+        </form>
+        {notice && (
+          <p className="text-xs mt-2" style={{ color: "hsl(152 70% 24%)" }}>
+            {notice}
+          </p>
+        )}
+        {error && (
+          <p className="text-xs mt-2" style={{ color: "hsl(354 75% 38%)" }}>
+            {error}
+          </p>
+        )}
+      </Card>
+
+      <Card title="Platform operators">
+        {isPending ? (
+          <Spinner label="Loading operators…" />
+        ) : isError ? (
+          <EmptyState
+            title="Couldn't load operators."
+            hint="A transient error — try again."
+            action={
+              <Button
+                intent="secondary"
+                size="sm"
+                onClick={() => void refetch()}
+              >
+                Retry
+              </Button>
+            }
+          />
+        ) : (
+          <ul className="space-y-0">
+            {operators.map((op) => {
+              const isSelf = op.authUserId === me.data?.userId;
+              return (
+                <li
+                  key={op.authUserId}
+                  className="py-2.5 border-t first:border-t-0 flex items-center justify-between gap-4"
+                  style={{ borderColor: "hsl(var(--line-1))" }}
+                >
+                  <div className="min-w-0">
+                    <div
+                      className="text-sm font-medium truncate"
+                      style={{ color: "hsl(var(--ink-1))" }}
+                    >
+                      {op.email ?? op.displayName ?? op.authUserId}
+                      {isSelf ? (
+                        <span style={{ color: "hsl(var(--ink-3))" }}>
+                          {" "}
+                          (you)
+                        </span>
+                      ) : null}
+                    </div>
+                    <div
+                      className="text-[11px]"
+                      style={{ color: "hsl(var(--ink-3))" }}
+                    >
+                      granted by {op.grantedByEmail ?? "—"} ·{" "}
+                      {new Date(op.createdAt).toLocaleDateString()}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {op.status && (
+                      <Badge variant={adminStatusVariant(op.status)}>
+                        {op.status}
+                      </Badge>
+                    )}
+                    {!isSelf && (
+                      <Button
+                        intent="ghost"
+                        size="sm"
+                        onClick={() => setConfirmRevoke(op)}
+                      >
+                        Revoke
+                      </Button>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </Card>
+
+      {confirmRevoke && (
+        <ConfirmDialog
+          title="Revoke platform access?"
+          confirmLabel="Revoke"
+          intent="secondary"
+          isPending={revoke.isPending}
+          body={
+            <>
+              <strong style={{ color: "hsl(var(--ink-1))" }}>
+                {confirmRevoke.email ?? confirmRevoke.authUserId}
+              </strong>{" "}
+              will lose platform super-admin access. Their tenant account (if
+              any) is untouched. You can grant it again later.
+            </>
+          }
+          onConfirm={() => onRevoke(confirmRevoke)}
+          onClose={() => setConfirmRevoke(null)}
+        />
+      )}
+    </div>
+  );
+}
+
 function PlatformConnectionTests() {
   return (
     <div className="space-y-6">
@@ -4088,6 +4299,7 @@ function PlatformConsole() {
         <Route path="/platform/outreach" component={PlatformOutreachPage} />
         <Route path="/platform/billing" component={AdminPlatformBillingPage} />
         <Route path="/platform/support" component={PlatformSupport} />
+        <Route path="/platform/operators" component={PlatformOperatorsPage} />
         {/* Legacy "Fleet overview" URL — folded into the Dashboard. */}
         <Route path="/platform/overview">
           <Redirect to="/platform" replace />

@@ -98,6 +98,74 @@ export function useGetPlatformHealth(options?: {
   });
 }
 
+// ── Platform operator roster ───────────────────────────────────────
+
+export interface PlatformOperator {
+  authUserId: string;
+  email: string | null;
+  displayName: string | null;
+  status: string | null;
+  grantedByEmail: string | null;
+  createdAt: string;
+}
+
+export interface ListOperatorsResponse {
+  operators: PlatformOperator[];
+}
+
+const OPERATORS_URL = "/resupply-api/platform/admins";
+
+export const getListOperatorsQueryKey = () => [OPERATORS_URL] as const;
+
+export function useListOperators(options?: {
+  query?: Partial<UseQueryOptions<ListOperatorsResponse, PlatformError>>;
+}) {
+  return useQuery<ListOperatorsResponse, PlatformError>({
+    queryKey: getListOperatorsQueryKey(),
+    queryFn: ({ signal }) =>
+      customFetch<ListOperatorsResponse>(OPERATORS_URL, {
+        method: "GET",
+        signal,
+      }),
+    ...options?.query,
+  });
+}
+
+export interface GrantOperatorResponse {
+  operator: PlatformOperator;
+}
+
+export function useGrantOperator(options?: {
+  mutation?: UseMutationOptions<GrantOperatorResponse, PlatformError, string>;
+}) {
+  return useMutation<GrantOperatorResponse, PlatformError, string>({
+    mutationFn: (email) =>
+      customFetch<GrantOperatorResponse>(OPERATORS_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      }),
+    ...options?.mutation,
+  });
+}
+
+export function useRevokeOperator(options?: {
+  mutation?: UseMutationOptions<
+    { ok: boolean; removed: string },
+    PlatformError,
+    string
+  >;
+}) {
+  return useMutation<{ ok: boolean; removed: string }, PlatformError, string>({
+    mutationFn: (authUserId) =>
+      customFetch<{ ok: boolean; removed: string }>(
+        `${OPERATORS_URL}/${encodeURIComponent(authUserId)}`,
+        { method: "DELETE" },
+      ),
+    ...options?.mutation,
+  });
+}
+
 // ── Tenant directory ───────────────────────────────────────────────
 
 export interface PlatformTenant {

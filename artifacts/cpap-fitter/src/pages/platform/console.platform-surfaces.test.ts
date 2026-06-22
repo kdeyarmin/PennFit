@@ -135,6 +135,17 @@ describe("platform console tenant detail + sidebar", () => {
     expect(SRC).toContain("<TenantAdminsCard tenantId={tenant.id} />");
   });
 
+  it("mounts the platform operator roster", () => {
+    expect(SRC).toContain("function PlatformOperatorsPage");
+    expect(SRC).toContain("useListOperators");
+    expect(SRC).toContain("useGrantOperator");
+    expect(SRC).toContain("useRevokeOperator");
+    expect(SRC).toContain(
+      '<Route path="/platform/operators" component={PlatformOperatorsPage} />',
+    );
+    expect(SRC).toContain('href: "/platform/operators", label: "Operators"');
+  });
+
   it("adds add-on management, usage recording, and a catalog re-sync", () => {
     expect(SRC).toContain("function TenantAddonManager");
     expect(SRC).toContain("updateTenantAddon");
