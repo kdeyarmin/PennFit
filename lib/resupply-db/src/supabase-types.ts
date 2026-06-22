@@ -2392,6 +2392,17 @@ export interface Database {
           npi: string | null;
           is_primary: boolean;
           is_active: boolean;
+          // Per-branch billing identity (migration 0450). All nullable;
+          // a NULL billing_npi means "no location-level identity" and the
+          // billing identity resolver falls back to the org-level identity.
+          billing_legal_name: string | null;
+          billing_tax_id: string | null;
+          billing_ptan: string | null;
+          billing_address_line1: string | null;
+          billing_address_line2: string | null;
+          billing_city: string | null;
+          billing_state: string | null;
+          billing_zip: string | null;
           created_at: string;
           updated_at: string;
         };

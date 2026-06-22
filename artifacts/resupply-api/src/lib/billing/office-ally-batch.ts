@@ -111,7 +111,14 @@ export type BatchSubmitResult =
         | "claim_missing_required_data"
         | "eligibility_blocked"
         | "bill_hold"
-        | "concurrent_submission";
+        | "concurrent_submission"
+        // Multi-location Phase 1: with multi_location.enabled ON, every
+        // claim in one 837P interchange must resolve to the SAME billing
+        // identity (a file carries ONE billing provider). A batch whose
+        // claims span branches with DIFFERENT billing NPIs is refused
+        // (fail closed) rather than silently billing them all under one
+        // branch's NPI. The operator splits the batch by branch.
+        | "location_billing_mismatch";
       detail: Record<string, unknown>;
     };
 
@@ -272,6 +279,98 @@ async function findEligibilityBlocksForSubmit(input: {
   }
 
   return blocks;
+}
+
+/**
+ * Multi-location Phase 1: determine the single billing identity (branch or
+ * org) for an 837P interchange, or refuse a batch that spans branches with
+ * different billing identities.
+ *
+ * Fail-safe and OFF by default:
+ *  - When `multi_location.enabled` is OFF for the tenant (the seeded default
+ *    and the entire single-location path), this returns
+ *    `{ ok: true, locationId: undefined }` WITHOUT reading anything. The
+ *    caller then resolves the org identity exactly as it always has.
+ *  - When ON, it reads the servicing branch (`patients.location_id`) for each
+ *    claim's patient and resolves the billing identity per DISTINCT branch
+ *    via the SAME `resolveBillingIdentity` (so a branch with no billing NPI
+ *    collapses to the org NPI — no spurious mismatch). If every claim
+ *    resolves to one NPI, that single `locationId` (the branch when the
+ *    identity is branch-scoped, else undefined) is returned. If the claims
+ *    resolve to MORE THAN ONE distinct NPI, the batch is refused — a single
+ *    837P file can carry only one billing provider, and silently picking one
+ *    branch would mis-bill the others.
+ */
+async function resolveBatchBillingLocation(args: {
+  supabase: SupabaseClient;
+  orgId: string;
+  claims: ClaimRow[];
+}): Promise<
+  | { ok: true; locationId: string | undefined }
+  | { ok: false; distinctNpis: string[] }
+> {
+  const { supabase, orgId, claims } = args;
+  if (!(await isFeatureEnabled("multi_location.enabled", orgId))) {
+    return { ok: true, locationId: undefined };
+  }
+
+  // Map each claim's patient → its servicing branch. Patients with no
+  // location_id contribute the org identity (locationId undefined).
+  const patientIds = [...new Set(claims.map((c) => c.patient_id))].filter(
+    (id): id is string => !!id,
+  );
+  const patientLocation = new Map<string, string | null>();
+  if (patientIds.length > 0) {
+    const { data, error } = await supabase
+      .from("patients")
+      .select("id, location_id")
+      .in("id", patientIds);
+    if (error) throw error;
+    for (const row of (data ?? []) as Array<{
+      id: string;
+      location_id: string | null;
+    }>) {
+      patientLocation.set(row.id, row.location_id);
+    }
+  }
+
+  // Distinct candidate locations across the batch (including the "no branch"
+  // sentinel, represented as undefined).
+  const candidateLocationIds = new Set<string | undefined>();
+  for (const claim of claims) {
+    const loc = claim.patient_id
+      ? (patientLocation.get(claim.patient_id) ?? null)
+      : null;
+    candidateLocationIds.add(loc ?? undefined);
+  }
+
+  // Resolve the billing identity once per distinct candidate and group by
+  // the resulting NPI. A branch without its own billing NPI resolves to the
+  // org NPI, so two such branches do NOT count as a mismatch.
+  const npiToLocationId = new Map<string, string | undefined>();
+  for (const candidate of candidateLocationIds) {
+    const resolved = await resolveBillingIdentity({
+      orgId,
+      locationId: candidate,
+    });
+    const npi = resolved.billingProvider.npi;
+    if (!npiToLocationId.has(npi)) {
+      // Prefer the branch-scoped locationId for this NPI when present.
+      npiToLocationId.set(
+        npi,
+        resolved.billingProviderScope === "location"
+          ? (resolved.locationId ?? undefined)
+          : undefined,
+      );
+    }
+  }
+
+  if (npiToLocationId.size > 1) {
+    return { ok: false, distinctNpis: [...npiToLocationId.keys()] };
+  }
+  // Exactly one billing identity across the batch.
+  const [onlyLocationId] = npiToLocationId.values();
+  return { ok: true, locationId: onlyLocationId };
 }
 
 export async function executeOfficeAllyBatchSubmit(
@@ -526,6 +625,34 @@ export async function executeOfficeAllyBatchSubmit(
     detailEntries.push(detail);
   }
 
+  // Multi-location Phase 1: resolve the SINGLE billing identity for this
+  // interchange. A pre-flight check (BEFORE the atomic claim below, so a
+  // mismatch never strands claims in 'submitting'): with
+  // multi_location.enabled ON, every claim's servicing branch must resolve
+  // to the SAME billing identity (an 837P file carries exactly one billing
+  // provider). When the flag is OFF — the seeded default and the
+  // single-location path — this is a complete no-op: it returns
+  // `locationId: undefined` without reading anything, so the identity is
+  // resolved org-level exactly as before, byte for byte.
+  const batchLocation = await resolveBatchBillingLocation({
+    supabase,
+    orgId,
+    claims,
+  });
+  if (!batchLocation.ok) {
+    return {
+      ok: false,
+      kind: "location_billing_mismatch",
+      detail: {
+        message:
+          "claims in this batch span branches with different billing identities; " +
+          "split the batch so each 837P bills one branch",
+        npis: batchLocation.distinctNpis,
+      },
+    };
+  }
+  const batchLocationId = batchLocation.locationId;
+
   // Atomically claim the batch BEFORE any transport work: flip every
   // claim draft → 'submitting' in one conditional UPDATE. The earlier
   // "all claims are draft" read is only advisory — the SFTP upload below
@@ -604,7 +731,13 @@ export async function executeOfficeAllyBatchSubmit(
     ReturnType<ReturnType<typeof createOfficeAllyAdapter>["submitClaims"]>
   >;
   try {
-    identity = await resolveBillingIdentity({ orgId });
+    // batchLocationId is undefined unless multi_location.enabled is ON AND
+    // the batch resolves to a single branch billing identity — so a
+    // single-location deployment resolves the org identity unchanged.
+    identity = await resolveBillingIdentity({
+      orgId,
+      locationId: batchLocationId,
+    });
     const clearinghouse = await resolveClearinghouse({ orgId });
     // Fail closed for a non-seed tenant that hasn't configured its OWN billing
     // identity AND clearinghouse transport. Without this guard a second
@@ -864,7 +997,21 @@ export async function buildEdiPayloadForSubmission(
     details.push(d);
   }
 
-  const identity = await resolveBillingIdentity({ orgId });
+  // Multi-location Phase 1: rebuild under the SAME billing identity the
+  // original submission used, so a resubmission matches. Flag OFF (the
+  // single-location default) → undefined locationId → org identity, exactly
+  // as before. A mismatched batch can't reach here (it never submitted), so
+  // treat a mismatch defensively as "no resolvable identity" → null.
+  const rebuildLocation = await resolveBatchBillingLocation({
+    supabase,
+    orgId,
+    claims,
+  });
+  if (!rebuildLocation.ok) return null;
+  const identity = await resolveBillingIdentity({
+    orgId,
+    locationId: rebuildLocation.locationId,
+  });
   const built = build837P({
     submitter: identity.submitter,
     receiver: { interchangeId: "OFFCLY", organizationName: "OFFICE ALLY" },

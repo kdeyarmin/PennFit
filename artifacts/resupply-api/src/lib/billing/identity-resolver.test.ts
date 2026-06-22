@@ -89,6 +89,9 @@ describe("resolveBillingIdentity", () => {
     expect(result.billingProvider.npi).toBe("9999999999");
     expect(result.submitter.etin).toBe("DBETIN");
     expect(result.usageIndicator).toBe("P");
+    // No location passed → org scope, unchanged from before this feature.
+    expect(result.billingProviderScope).toBe("org");
+    expect(result.locationId).toBeNull();
   });
 
   it("returns source='env' when DB rows are absent but env is complete", async () => {
@@ -142,6 +145,223 @@ describe("resolveBillingIdentity", () => {
     });
     expect(result.source).toBe("stub");
     expect(result.billingProvider.npi).toBe("0000000000");
+  });
+});
+
+describe("resolveBillingIdentity — multi-location Phase 1 overlay", () => {
+  const LOCATION_ID = "00000000-0000-4000-8000-0000000000c3";
+
+  // A complete org-level DB identity (NPI 9999999999) shared by these tests
+  // as the BASE the overlay either keeps or replaces.
+  const ORG_ROW = {
+    id: "org_1",
+    singleton: true,
+    legal_name: "PennPaps Inc",
+    organizational_npi: "9999999999",
+    tax_id: "999999999",
+    physical_address_line1: "1 Penn Plaza",
+    physical_city: "Philadelphia",
+    physical_state: "PA",
+    physical_zip: "19103",
+    phone_e164: "+18001234567",
+  } as const;
+  const CH_ROW = {
+    id: "ch_1",
+    slug: "office_ally",
+    etin: "DBETIN",
+    usage_indicator: "P",
+    submitter_organization_name: "PennPaps Inc Submitter",
+    contact_name: "Billing",
+    contact_phone_e164: "+18005550100",
+    sftp_host: "h",
+    sftp_port: 22,
+    sftp_username: "u",
+    private_key_path: "/k",
+    known_hosts_path: "/kh",
+    remote_inbox_dir: "in",
+  } as const;
+
+  function stageOrgIdentity() {
+    stageSupabaseResponse("dme_organization", "select", {
+      data: { ...ORG_ROW },
+    });
+    stageSupabaseResponse("clearinghouse_credentials", "select", {
+      data: { ...CH_ROW },
+    });
+  }
+
+  // Each test that exercises the flag uses a UNIQUE orgId so the per-(org,key)
+  // feature-flag cache never leaks a value across tests.
+  function freshOrgId(suffix: string): string {
+    return `00000000-0000-4000-8000-0000000000${suffix}`;
+  }
+
+  it("(a) flag OFF → returns the org identity unchanged (no overlay)", async () => {
+    const orgId = freshOrgId("d0");
+    stageSupabaseResponse("organizations", "select", { data: { id: orgId } });
+    stageOrgIdentity();
+    // multi_location.enabled OFF for this tenant.
+    stageSupabaseResponse("feature_flags", "select", {
+      data: { enabled: false },
+    });
+    const result = await resolveBillingIdentity({
+      orgId,
+      locationId: LOCATION_ID,
+      env: {},
+    });
+    expect(result.billingProviderScope).toBe("org");
+    expect(result.locationId).toBeNull();
+    // Org NPI, NOT the branch NPI.
+    expect(result.billingProvider.npi).toBe("9999999999");
+  });
+
+  it("(b) no locationId passed → org identity even with flag ON", async () => {
+    const orgId = freshOrgId("d1");
+    stageSupabaseResponse("organizations", "select", { data: { id: orgId } });
+    stageOrgIdentity();
+    // Flag could be ON, but no location is supplied → no branch read happens.
+    const result = await resolveBillingIdentity({ orgId, env: {} });
+    expect(result.billingProviderScope).toBe("org");
+    expect(result.locationId).toBeNull();
+    expect(result.billingProvider.npi).toBe("9999999999");
+  });
+
+  it("(c) flag ON + location with its own NPI → location identity", async () => {
+    const orgId = freshOrgId("d2");
+    stageSupabaseResponse("organizations", "select", { data: { id: orgId } });
+    stageOrgIdentity();
+    stageSupabaseResponse("feature_flags", "select", {
+      data: { enabled: true },
+    });
+    stageSupabaseResponse("locations", "select", {
+      data: {
+        id: LOCATION_ID,
+        name: "West Branch",
+        npi: "1212121212",
+        is_active: true,
+        billing_legal_name: "PennPaps West LLC",
+        billing_tax_id: "222222222",
+        billing_address_line1: "9 West Ave",
+        billing_city: "Pittsburgh",
+        billing_state: "PA",
+        billing_zip: "15201",
+      },
+    });
+    const result = await resolveBillingIdentity({
+      orgId,
+      locationId: LOCATION_ID,
+      env: {},
+    });
+    expect(result.billingProviderScope).toBe("location");
+    expect(result.locationId).toBe(LOCATION_ID);
+    // Branch NPI/name/taxId/address overlaid.
+    expect(result.billingProvider.npi).toBe("1212121212");
+    expect(result.billingProvider.organizationName).toBe("PennPaps West LLC");
+    expect(result.billingProvider.taxId).toBe("222222222");
+    expect(result.billingProvider.address.line1).toBe("9 West Ave");
+    expect(result.billingProvider.address.zip).toBe("15201");
+    // The submitter (EDI account) + usageIndicator + source stay org-level.
+    expect(result.submitter.etin).toBe("DBETIN");
+    expect(result.usageIndicator).toBe("P");
+    expect(result.source).toBe("db");
+  });
+
+  it("(d) flag ON + location WITHOUT a billing NPI → org fallback", async () => {
+    const orgId = freshOrgId("d3");
+    stageSupabaseResponse("organizations", "select", { data: { id: orgId } });
+    stageOrgIdentity();
+    stageSupabaseResponse("feature_flags", "select", {
+      data: { enabled: true },
+    });
+    // Branch row exists but carries no NPI → not a billing identity.
+    stageSupabaseResponse("locations", "select", {
+      data: {
+        id: LOCATION_ID,
+        name: "Annex (no billing identity)",
+        npi: null,
+        is_active: true,
+        billing_legal_name: null,
+      },
+    });
+    const result = await resolveBillingIdentity({
+      orgId,
+      locationId: LOCATION_ID,
+      env: {},
+    });
+    expect(result.billingProviderScope).toBe("org");
+    expect(result.locationId).toBeNull();
+    expect(result.billingProvider.npi).toBe("9999999999");
+  });
+
+  it("flag ON + missing location row → org fallback", async () => {
+    const orgId = freshOrgId("d4");
+    stageSupabaseResponse("organizations", "select", { data: { id: orgId } });
+    stageOrgIdentity();
+    stageSupabaseResponse("feature_flags", "select", {
+      data: { enabled: true },
+    });
+    stageSupabaseResponse("locations", "select", { data: null });
+    const result = await resolveBillingIdentity({
+      orgId,
+      locationId: LOCATION_ID,
+      env: {},
+    });
+    expect(result.billingProviderScope).toBe("org");
+    expect(result.billingProvider.npi).toBe("9999999999");
+  });
+
+  it("never overlays onto a STUB org identity (fail closed)", async () => {
+    const orgId = freshOrgId("d5");
+    stageSupabaseResponse("organizations", "select", { data: { id: orgId } });
+    // No org/clearinghouse → base is a stub. A branch cannot bill if the org
+    // is unconfigured: the overlay must not run (it short-circuits on stub).
+    stageSupabaseResponse("dme_organization", "select", { data: null });
+    stageSupabaseResponse("clearinghouse_credentials", "select", {
+      data: null,
+    });
+    const result = await resolveBillingIdentity({
+      orgId,
+      locationId: LOCATION_ID,
+      env: {},
+    });
+    expect(result.source).toBe("stub");
+    expect(result.billingProviderScope).toBe("org");
+    expect(result.billingProvider.npi).toBe("0000000000");
+  });
+
+  it("partially-configured branch (NPI only) fills missing fields from org", async () => {
+    const orgId = freshOrgId("d6");
+    stageSupabaseResponse("organizations", "select", { data: { id: orgId } });
+    stageOrgIdentity();
+    stageSupabaseResponse("feature_flags", "select", {
+      data: { enabled: true },
+    });
+    // Branch has an NPI but no billing legal name / tax id / address.
+    stageSupabaseResponse("locations", "select", {
+      data: {
+        id: LOCATION_ID,
+        name: "East Branch",
+        npi: "3434343434",
+        is_active: true,
+        billing_legal_name: null,
+        billing_tax_id: null,
+        billing_address_line1: null,
+        address_line1: null,
+      },
+    });
+    const result = await resolveBillingIdentity({
+      orgId,
+      locationId: LOCATION_ID,
+      env: {},
+    });
+    expect(result.billingProviderScope).toBe("location");
+    expect(result.billingProvider.npi).toBe("3434343434");
+    // Falls back to the branch name, then org legal/tax/address per field.
+    expect(result.billingProvider.organizationName).toBe("East Branch");
+    expect(result.billingProvider.taxId).toBe("999999999");
+    // No branch address line1 at all → keep the org address wholesale.
+    expect(result.billingProvider.address.line1).toBe("1 Penn Plaza");
+    expect(result.billingProvider.address.zip).toBe("19103");
   });
 });
 
