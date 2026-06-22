@@ -719,22 +719,24 @@ export const APP_CONFIG_CATALOG: readonly AppConfigSetting[] = [
   },
 
   // ── Team notifications (Slack) ────────────────────────────────────
-  // Internal operator/CS channel — NOT a patient-facing surface, so these
-  // are PLATFORM credentials (one Slack app/workspace for the operator),
-  // like the platform Twilio/SendGrid keys. Read at call time via
-  // getEffectiveEnv()/readSlackConfigOrNull(); unset → notifications are a
-  // complete no-op. Real-time CS alerts (reply-needs-human, voice handoff,
-  // SLA breach) post here when the `slack.notifications` flag is on; inbound
-  // buttons/slash commands are verified with the signing secret and gated by
-  // the `slack.interactivity` flag.
+  // PER-TENANT: each tenant connects its OWN Slack workspace/app, so these
+  // are tenant-scoped — a tenant's own bot token / channels / signing secret /
+  // team id, resolved by orgId. Read at call time via
+  // getEffectiveEnvForOrg(orgId)/getTenantConfigValue(orgId, …); unset for a
+  // tenant → notifications are a complete no-op for that tenant. Real-time CS
+  // alerts (reply-needs-human, voice handoff, SLA breach, …) post when the
+  // `slack.notifications` flag is on; inbound buttons/slash commands are
+  // routed to the owning tenant by Slack team id, verified with that tenant's
+  // signing secret, and gated by the `slack.interactivity` flag.
   {
     key: "SLACK_BOT_TOKEN",
     label: "Bot token",
     category: CATEGORY_SLACK,
     secret: true,
     applyMode: "live",
+    scope: "tenant",
     description:
-      "Slack bot user OAuth token (xoxb-…) with the chat:write scope. Required to post CS alerts into Slack.",
+      "Slack bot user OAuth token (xoxb-…) with the chat:write scope. Required to post CS alerts into your Slack workspace.",
     placeholder: "xoxb-…",
   },
   {
@@ -743,6 +745,7 @@ export const APP_CONFIG_CATALOG: readonly AppConfigSetting[] = [
     category: CATEGORY_SLACK,
     secret: false,
     applyMode: "live",
+    scope: "tenant",
     description:
       "Channel id (e.g. C0123ABCD, not the #name) the CS reps watch — real-time handoff/SLA alerts post here. Invite the bot to the channel first.",
     placeholder: "C0123ABCD",
@@ -753,8 +756,20 @@ export const APP_CONFIG_CATALOG: readonly AppConfigSetting[] = [
     category: CATEGORY_SLACK,
     secret: true,
     applyMode: "live",
+    scope: "tenant",
     description:
-      "App signing secret from the Slack app's Basic Information. Required only for inbound interactivity (Escalate buttons / the /pennfit slash command). Leave blank for outbound-only alerts.",
+      "App signing secret from your Slack app's Basic Information. Required only for inbound interactivity (Escalate/Claim buttons / the /pennfit slash command). Leave blank for outbound-only alerts.",
+  },
+  {
+    key: "SLACK_TEAM_ID",
+    label: "Workspace (team) id",
+    category: CATEGORY_SLACK,
+    secret: false,
+    applyMode: "live",
+    scope: "tenant",
+    description:
+      "Your Slack workspace id (T0123ABCD). Routes inbound button clicks / slash commands to your tenant. Required for inbound interactivity in a multi-tenant deployment.",
+    placeholder: "T0123ABCD",
   },
   {
     key: "SLACK_DIGESTS_CHANNEL",
@@ -762,6 +777,7 @@ export const APP_CONFIG_CATALOG: readonly AppConfigSetting[] = [
     category: CATEGORY_SLACK,
     secret: false,
     applyMode: "live",
+    scope: "tenant",
     description:
       "Optional separate channel id for operator digests (weekly KPIs, metric alerts, stuck jobs, low stock) — e.g. an #ops channel. Leave blank to post digests into the alerts channel. Gated by the slack.digests flag.",
     placeholder: "C0123OPS",

@@ -25,11 +25,25 @@ import {
   type SlackSeverity,
 } from "@workspace/resupply-integrations-slack";
 
-import { getEffectiveEnv } from "../app-config/store";
+import { getEffectiveEnv, getEffectiveEnvForOrg } from "../app-config/store";
 import { isFeatureEnabled, type FeatureFlagKey } from "../feature-flags";
 import { logger } from "../logger";
 import { resolveTenantBaseUrl } from "../tenant-branding";
 
+/**
+ * Resolve the env (Slack config lives here) for a tenant. Slack config is
+ * tenant-scoped, so a known orgId reads THAT tenant's own workspace/token;
+ * an undefined orgId (worker/system paths) falls back to the platform/seed
+ * overlay.
+ */
+function resolveSlackEnv(
+  orgId: string | undefined,
+): Promise<NodeJS.ProcessEnv> {
+  return orgId ? getEffectiveEnvForOrg(orgId) : getEffectiveEnv();
+}
+
+/** Action id the inbound interactivity endpoint routes "Claim" clicks to. */
+export const CLAIM_ACTION_ID = "claim_conversation";
 /** Action id the inbound interactivity endpoint routes "Escalate" clicks to. */
 export const ESCALATE_ACTION_ID = "escalate_conversation";
 /** Action id the inbound interactivity endpoint routes "Snooze" clicks to. */
@@ -95,7 +109,7 @@ async function sendCsAlert(input: CsAlertInput): Promise<void> {
   try {
     const flagKey = input.flagKey ?? "slack.notifications";
     if (!(await isFeatureEnabled(flagKey, input.orgId))) return;
-    const config = readSlackConfigOrNull(await getEffectiveEnv());
+    const config = readSlackConfigOrNull(await resolveSlackEnv(input.orgId));
     if (!config) return; // not configured — silent no-op
 
     const blocks = buildAlertBlocks({
@@ -144,6 +158,13 @@ function conversationActions(
   if (includeEscalate && config?.signingSecret) {
     actions.push({
       kind: "button",
+      text: "Claim",
+      actionId: CLAIM_ACTION_ID,
+      value: conversationId,
+      style: "primary",
+    });
+    actions.push({
+      kind: "button",
       text: "Escalate",
       actionId: ESCALATE_ACTION_ID,
       value: conversationId,
@@ -171,7 +192,7 @@ export async function notifyConversationNeedsHuman(input: {
   /** Short non-PHI reason, e.g. "unrecognized reply" or "address change". */
   reason?: string;
 }): Promise<void> {
-  const config = readSlackConfigOrNull(await getEffectiveEnv());
+  const config = readSlackConfigOrNull(await resolveSlackEnv(input.orgId));
   const link = await conversationDeepLink(input.orgId, input.conversationId);
   const lines = [
     `*Channel:* ${input.channel.toUpperCase()}`,
@@ -199,7 +220,7 @@ export async function notifyVoiceHandoff(input: {
   /** Short non-PHI outcome summary from the summarizer. */
   outcome: string;
 }): Promise<void> {
-  const config = readSlackConfigOrNull(await getEffectiveEnv());
+  const config = readSlackConfigOrNull(await resolveSlackEnv(input.orgId));
   const link = await conversationDeepLink(input.orgId, input.conversationId);
   const severity: SlackSeverity =
     input.sentiment === "distressed" ? "critical" : "warning";
@@ -253,7 +274,7 @@ export async function notifySlaBreach(input: {
   minutesOverdue: number;
   severity: "warning" | "critical";
 }): Promise<void> {
-  const config = readSlackConfigOrNull(await getEffectiveEnv());
+  const config = readSlackConfigOrNull(await resolveSlackEnv(input.orgId));
   const link = await conversationDeepLink(input.orgId, input.conversationId);
   await sendCsAlert({
     orgId: input.orgId,
@@ -332,7 +353,9 @@ export async function notifyOpsDigest(input: {
   severity: SlackSeverity;
   lines: string[];
 }): Promise<void> {
-  const channel = (await getEffectiveEnv()).SLACK_DIGESTS_CHANNEL?.trim();
+  const channel = (
+    await resolveSlackEnv(input.orgId)
+  ).SLACK_DIGESTS_CHANNEL?.trim();
   await sendCsAlert({
     orgId: input.orgId,
     severity: input.severity,

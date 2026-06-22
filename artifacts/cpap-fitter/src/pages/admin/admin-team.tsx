@@ -275,6 +275,14 @@ function MemberRow({
       patchMember(member.id, { locationId: locId }),
     onSuccess: invalidate,
   });
+  // Slack user id linking — powers the Slack "Claim" button (a rep clicking
+  // Claim in Slack assigns the conversation to the admin row carrying their
+  // Slack id). Committed on blur when the value changes.
+  const changeSlackUserId = useMutation({
+    mutationFn: (val: string | null) =>
+      patchMember(member.id, { slackUserId: val }),
+    onSuccess: invalidate,
+  });
   const branchOptions = (locationsQuery.data?.locations ?? []).filter(
     (l) => l.isActive || l.id === member.locationId,
   );
@@ -294,7 +302,9 @@ function MemberRow({
                 ? changeRole.error.message
                 : changeLocation.error instanceof Error
                   ? changeLocation.error.message
-                  : null;
+                  : changeSlackUserId.error instanceof Error
+                    ? changeSlackUserId.error.message
+                    : null;
 
   return (
     <li
@@ -379,6 +389,24 @@ function MemberRow({
                 </option>
               ))}
             </select>
+          )}
+          {member.status === "active" && (
+            <input
+              type="text"
+              defaultValue={member.slackUserId ?? ""}
+              onBlur={(e) => {
+                const raw = e.target.value.trim();
+                const next = raw === "" ? null : raw;
+                if (next === (member.slackUserId ?? null)) return;
+                changeSlackUserId.mutate(next);
+              }}
+              disabled={changeSlackUserId.isPending}
+              placeholder="Slack ID (U…)"
+              aria-label="Slack user ID"
+              title="Link this member's Slack user ID so the Slack Claim button assigns to them"
+              className="w-32 rounded border border-slate-300 px-2 py-1.5 text-xs text-slate-700 disabled:opacity-60"
+              data-testid={`team-member-${member.id}-slack-id`}
+            />
           )}
           {member.status === "active" && member.role !== "admin" && (
             <>

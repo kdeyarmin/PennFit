@@ -9,17 +9,24 @@
 // the global express.json() (Slack posts application/x-www-form-urlencoded,
 // so a parsed body could never be re-serialized for verification).
 //
+// PER-TENANT: each tenant connects its OWN Slack app. The inbound request
+// carries a workspace `team_id` (untrusted) which we map → orgId via the
+// tenant's stored SLACK_TEAM_ID, then verify the request with THAT tenant's
+// signing secret and act in THAT tenant's scope. A forged team_id just selects
+// a secret the signature won't match. No team_id match → seed org
+// (single-tenant back-compat).
+//
 // Posture:
-//   * Signing secret unset            → 503 (inbound not configured).
-//   * slack.interactivity flag off    → 200 ack with an ephemeral notice.
-//   * Bad/stale/missing signature     → 401.
-//   * Action performed best-effort; an ephemeral confirmation is posted back
-//     via Slack's response_url (fire-and-forget).
+//   * No tenant / signing secret unset → 503 (inbound not configured).
+//   * slack.interactivity flag off     → 200 ack with an ephemeral notice.
+//   * Bad/stale/missing signature      → 401.
+//   * Action best-effort; an ephemeral confirmation is posted back via Slack's
+//     response_url (fire-and-forget).
 //
 // PHI: request/response text stays non-PHI (ids + counts), same rule as the
 // outbound notifier.
 
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request } from "express";
 import { z } from "zod";
 
 import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
@@ -28,11 +35,16 @@ import {
   verifySlackSignature,
 } from "@workspace/resupply-integrations-slack";
 
-import { getEffectiveEnv } from "../../lib/app-config/store";
+import { getEffectiveEnvForOrg } from "../../lib/app-config/store";
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
 import { safeAudit } from "../../lib/messaging/safe-audit";
-import { ESCALATE_ACTION_ID, SNOOZE_ACTION_ID } from "../../lib/slack/notify";
+import {
+  CLAIM_ACTION_ID,
+  ESCALATE_ACTION_ID,
+  SNOOZE_ACTION_ID,
+} from "../../lib/slack/notify";
+import { resolveOrgIdBySlackTeamId } from "../../lib/slack/team-resolver";
 
 const router: IRouter = Router();
 
@@ -52,21 +64,73 @@ function rawBodyString(body: unknown): string {
 }
 
 /**
- * Verify the Slack signature over the raw body. Returns the config status so
- * the handler can map it to 503 (unconfigured) / 401 (bad signature) / ok.
+ * Extract the Slack workspace team_id from an UNVERIFIED raw body — slash
+ * commands carry it as a form field, interactivity inside the `payload` JSON.
+ * Untrusted: it only selects which tenant's signing secret to verify against.
  */
-async function verify(
-  req: Parameters<Parameters<IRouter["post"]>[1]>[0],
-): Promise<"ok" | "unconfigured" | "bad_signature"> {
-  const signingSecret = readSlackSigningSecretOrNull(await getEffectiveEnv());
-  if (!signingSecret) return "unconfigured";
+function extractTeamId(rawBody: string): string | null {
+  const params = new URLSearchParams(rawBody);
+  const direct = params.get("team_id");
+  if (direct) return direct;
+  const payload = params.get("payload");
+  if (payload) {
+    try {
+      const p = JSON.parse(payload) as { team?: { id?: string } };
+      return p.team?.id ?? null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+type AuthResult =
+  | { status: "ok"; orgId: string }
+  | { status: "unconfigured" }
+  | { status: "bad_signature" };
+
+/**
+ * Resolve the owning tenant by team_id, then verify the request with THAT
+ * tenant's signing secret. Returns the orgId on success so handlers act in the
+ * right tenant's scope.
+ */
+async function authenticate(req: Request): Promise<AuthResult> {
+  const raw = rawBodyString(req.body);
+  const teamId = extractTeamId(raw);
+  const orgId =
+    (teamId ? await resolveOrgIdBySlackTeamId(teamId) : null) ??
+    (await resolveSeedOrgId());
+  if (!orgId) return { status: "unconfigured" };
+
+  // Same resolution as the outbound notifier: tenant overlay over process.env,
+  // so both UI-entered (app_config) and env-var config are honored.
+  const env = await getEffectiveEnvForOrg(orgId);
+  const signingSecret = readSlackSigningSecretOrNull(env);
+  if (!signingSecret) return { status: "unconfigured" };
+
   const ok = verifySlackSignature({
     signingSecret,
     signatureHeader: req.header("x-slack-signature"),
     timestampHeader: req.header("x-slack-request-timestamp"),
-    rawBody: rawBodyString(req.body),
+    rawBody: raw,
   });
-  return ok ? "ok" : "bad_signature";
+  return ok ? { status: "ok", orgId } : { status: "bad_signature" };
+}
+
+/** Map an auth failure to its HTTP response. Returns true if handled. */
+function rejectIfNotOk(
+  auth: AuthResult,
+  res: Parameters<Parameters<IRouter["post"]>[1]>[1],
+): auth is { status: "unconfigured" } | { status: "bad_signature" } {
+  if (auth.status === "unconfigured") {
+    res.status(503).json({ error: "slack_not_configured" });
+    return true;
+  }
+  if (auth.status === "bad_signature") {
+    res.status(401).json({ error: "bad_signature" });
+    return true;
+  }
+  return false;
 }
 
 /** Best-effort ephemeral reply via Slack's response_url. Never throws. */
@@ -107,17 +171,11 @@ const blockActionsSchema = z.object({
 });
 
 router.post("/slack/interactivity", async (req, res) => {
-  const status = await verify(req);
-  if (status === "unconfigured") {
-    res.status(503).json({ error: "slack_not_configured" });
-    return;
-  }
-  if (status === "bad_signature") {
-    res.status(401).json({ error: "bad_signature" });
-    return;
-  }
+  const auth = await authenticate(req);
+  if (rejectIfNotOk(auth, res)) return;
+  const { orgId } = auth;
 
-  if (!(await isFeatureEnabled("slack.interactivity"))) {
+  if (!(await isFeatureEnabled("slack.interactivity", orgId))) {
     res.status(200).json({
       response_type: "ephemeral",
       text: "Slack actions are disabled.",
@@ -145,28 +203,135 @@ router.post("/slack/interactivity", async (req, res) => {
   // ACK immediately; do the work after. Slack requires a fast 200.
   res.status(200).end();
 
-  if (action?.action_id === ESCALATE_ACTION_ID && action.value) {
-    await handleEscalate(action.value, payload.response_url ?? null);
+  if (action?.action_id === CLAIM_ACTION_ID && action.value) {
+    await handleClaim(
+      orgId,
+      action.value,
+      payload.user?.id ?? null,
+      payload.response_url ?? null,
+    );
+  } else if (action?.action_id === ESCALATE_ACTION_ID && action.value) {
+    await handleEscalate(orgId, action.value, payload.response_url ?? null);
   } else if (action?.action_id === SNOOZE_ACTION_ID && action.value) {
-    await handleSnooze(action.value, payload.response_url ?? null);
+    await handleSnooze(orgId, action.value, payload.response_url ?? null);
   }
 });
 
 /**
- * Escalate a conversation from a Slack button. No Slack-user→admin identity
- * mapping yet, so this is an UNATTRIBUTED escalation (escalation_reason
- * "slack_action") — it surfaces the thread in the inbox's escalated view
- * without claiming it for a specific rep. Idempotent: a thread already
- * escalated is left as-is. Platform-scoped (seed org), matching the rest of
- * the Slack integration.
+ * Claim a conversation from a Slack button — assign it to the rep who clicked.
+ * The clicking Slack user is mapped to an admin_users row by `slack_user_id`
+ * (set on the Team settings page) WITHIN this tenant. Unlinked Slack users get
+ * a prompt to link their account; an already-claimed thread is left as-is.
+ */
+async function handleClaim(
+  orgId: string,
+  conversationId: string,
+  slackUserId: string | null,
+  responseUrl: string | null,
+): Promise<void> {
+  try {
+    if (!slackUserId) return;
+    const supabase = getOrgScopedClient(orgId);
+
+    const { data: admin, error: adminErr } = await supabase
+      .from("admin_users")
+      .select("id, status")
+      .eq("slack_user_id", slackUserId)
+      .eq("status", "active")
+      .limit(1)
+      .maybeSingle();
+    if (adminErr) throw adminErr;
+    if (!admin) {
+      if (responseUrl)
+        await respondViaUrl(
+          responseUrl,
+          "Your Slack account isn't linked yet — ask an admin to add your Slack user id on the Team settings page.",
+        );
+      return;
+    }
+
+    const { data: row, error: readErr } = await supabase
+      .from("conversations")
+      .select("id, assigned_admin_user_id")
+      .eq("id", conversationId)
+      .limit(1)
+      .maybeSingle();
+    if (readErr) throw readErr;
+    if (!row) {
+      if (responseUrl)
+        await respondViaUrl(responseUrl, "That conversation was not found.");
+      return;
+    }
+    if (row.assigned_admin_user_id && row.assigned_admin_user_id !== admin.id) {
+      if (responseUrl)
+        await respondViaUrl(
+          responseUrl,
+          "Someone else already claimed that one.",
+        );
+      return;
+    }
+    if (row.assigned_admin_user_id === admin.id) {
+      if (responseUrl)
+        await respondViaUrl(responseUrl, "You've already got that one. ✅");
+      return;
+    }
+
+    const nowIso = new Date().toISOString();
+    const { data: updated, error: updErr } = await supabase
+      .from("conversations")
+      .update({
+        assigned_admin_user_id: admin.id,
+        assigned_at: nowIso,
+        updated_at: nowIso,
+      })
+      .eq("id", conversationId)
+      .is("assigned_admin_user_id", null) // guard a concurrent claim
+      .select("id");
+    if (updErr) throw updErr;
+    if (!updated || updated.length === 0) {
+      if (responseUrl)
+        await respondViaUrl(responseUrl, "Someone else just claimed that one.");
+      return;
+    }
+
+    await safeAudit({
+      action: "messaging.conversation.assigned",
+      adminEmail: null,
+      adminUserId: admin.id,
+      targetTable: "conversations",
+      targetId: conversationId,
+      metadata: { conversation_id: conversationId, source: "slack_action" },
+      ip: null,
+      userAgent: null,
+    });
+
+    logger.info(
+      { event: "slack_claim_ok", conversationId },
+      "slack: conversation claimed via interactivity",
+    );
+    if (responseUrl)
+      await respondViaUrl(responseUrl, "Claimed — it's yours. ✅");
+  } catch (err) {
+    logger.warn(
+      { event: "slack_claim_failed", conversationId, err: errInfo(err) },
+      "slack: claim action failed",
+    );
+    if (responseUrl)
+      await respondViaUrl(responseUrl, "Sorry — that didn't go through.");
+  }
+}
+
+/**
+ * Escalate a conversation from a Slack button. Unattributed (escalation_reason
+ * "slack_action") — it surfaces the thread in the inbox's escalated view.
+ * Idempotent: a thread already escalated is left as-is.
  */
 async function handleEscalate(
+  orgId: string,
   conversationId: string,
   responseUrl: string | null,
 ): Promise<void> {
   try {
-    const orgId = await resolveSeedOrgId();
-    if (!orgId) return;
     const supabase = getOrgScopedClient(orgId);
 
     const { data: row, error: readErr } = await supabase
@@ -250,16 +415,15 @@ const SNOOZE_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Snooze a conversation from a Slack button: stamp `snoozed_until` so it
- * drops out of the default inbox views until the window passes. No identity
- * mapping needed. A closed thread is left alone. Platform-scoped (seed org).
+ * drops out of the default inbox views until the window passes. A closed
+ * thread is left alone.
  */
 async function handleSnooze(
+  orgId: string,
   conversationId: string,
   responseUrl: string | null,
 ): Promise<void> {
   try {
-    const orgId = await resolveSeedOrgId();
-    if (!orgId) return;
     const supabase = getOrgScopedClient(orgId);
 
     const { data: row, error: readErr } = await supabase
@@ -321,16 +485,11 @@ async function handleSnooze(
 
 // ── Slash command: /pennfit [queue] ──────────────────────────────────
 router.post("/slack/commands", async (req, res) => {
-  const status = await verify(req);
-  if (status === "unconfigured") {
-    res.status(503).json({ error: "slack_not_configured" });
-    return;
-  }
-  if (status === "bad_signature") {
-    res.status(401).json({ error: "bad_signature" });
-    return;
-  }
-  if (!(await isFeatureEnabled("slack.interactivity"))) {
+  const auth = await authenticate(req);
+  if (rejectIfNotOk(auth, res)) return;
+  const { orgId } = auth;
+
+  if (!(await isFeatureEnabled("slack.interactivity", orgId))) {
     res.status(200).json({
       response_type: "ephemeral",
       text: "Slack commands are disabled.",
@@ -349,15 +508,13 @@ router.post("/slack/commands", async (req, res) => {
     return;
   }
 
-  const summary = await queueSummary();
+  const summary = await queueSummary(orgId);
   res.status(200).json({ response_type: "ephemeral", text: summary });
 });
 
 /** Non-PHI queue snapshot for the slash command. Best-effort. */
-async function queueSummary(): Promise<string> {
+async function queueSummary(orgId: string): Promise<string> {
   try {
-    const orgId = await resolveSeedOrgId();
-    if (!orgId) return "Queue unavailable right now.";
     const supabase = getOrgScopedClient(orgId);
 
     const unassigned = await supabase

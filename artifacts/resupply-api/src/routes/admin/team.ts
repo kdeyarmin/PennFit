@@ -186,6 +186,15 @@ const patchBody = z
     // Home branch (location); uuid assigns (validated against active
     // locations -> 422 invalid_location), null clears it.
     locationId: z.string().uuid().nullable().optional(),
+    // Slack user id (Uxxxxxxxx) linking this member for the Slack "Claim"
+    // button; null clears it. Loosely validated — Slack ids are short tokens.
+    slackUserId: z
+      .string()
+      .trim()
+      .max(64)
+      .regex(/^[A-Za-z0-9]+$/, "invalid_slack_user_id")
+      .nullable()
+      .optional(),
   })
   .strict();
 
@@ -251,7 +260,7 @@ router.get("/admin/team", requireAdminOnly, async (req, res) => {
   const { data: rows, error } = await supabase
     .from("admin_users")
     .select(
-      "id, email_lower, auth_user_id, role, status, display_name, notes, invited_by, invited_at, accepted_at, revoked_at, revoked_by, last_login_at, location_id",
+      "id, email_lower, auth_user_id, role, status, display_name, notes, invited_by, invited_at, accepted_at, revoked_at, revoked_by, last_login_at, location_id, slack_user_id",
     )
     .order("invited_at", { ascending: false });
   if (error) throw error;
@@ -314,7 +323,7 @@ router.post(
     const { data: prior, error: priorErr } = await supabase
       .from("admin_users")
       .select(
-        "id, email_lower, auth_user_id, role, status, display_name, notes, invited_by, invited_at, accepted_at, revoked_at, revoked_by, last_login_at, location_id",
+        "id, email_lower, auth_user_id, role, status, display_name, notes, invited_by, invited_at, accepted_at, revoked_at, revoked_by, last_login_at, location_id, slack_user_id",
       )
       .eq("email_lower", email)
       .limit(1)
@@ -393,7 +402,7 @@ router.post(
         })
         .eq("id", prior.id)
         .select(
-          "id, email_lower, auth_user_id, role, status, display_name, notes, invited_by, invited_at, accepted_at, revoked_at, revoked_by, last_login_at, location_id",
+          "id, email_lower, auth_user_id, role, status, display_name, notes, invited_by, invited_at, accepted_at, revoked_at, revoked_by, last_login_at, location_id, slack_user_id",
         )
         .limit(1)
         .maybeSingle();
@@ -424,7 +433,7 @@ router.post(
         updated_at: nowIso,
       })
       .select(
-        "id, email_lower, auth_user_id, role, status, display_name, notes, invited_by, invited_at, accepted_at, revoked_at, revoked_by, last_login_at, location_id",
+        "id, email_lower, auth_user_id, role, status, display_name, notes, invited_by, invited_at, accepted_at, revoked_at, revoked_by, last_login_at, location_id, slack_user_id",
       )
       .limit(1)
       .maybeSingle();
@@ -458,7 +467,7 @@ router.post(
     const { data: row, error: lookupErr } = await supabase
       .from("admin_users")
       .select(
-        "id, email_lower, auth_user_id, role, status, display_name, notes, invited_by, invited_at, accepted_at, revoked_at, revoked_by, last_login_at, location_id",
+        "id, email_lower, auth_user_id, role, status, display_name, notes, invited_by, invited_at, accepted_at, revoked_at, revoked_by, last_login_at, location_id, slack_user_id",
       )
       .eq("id", id)
       .limit(1)
@@ -500,7 +509,7 @@ router.post(
       })
       .eq("id", id)
       .select(
-        "id, email_lower, auth_user_id, role, status, display_name, notes, invited_by, invited_at, accepted_at, revoked_at, revoked_by, last_login_at, location_id",
+        "id, email_lower, auth_user_id, role, status, display_name, notes, invited_by, invited_at, accepted_at, revoked_at, revoked_by, last_login_at, location_id, slack_user_id",
       )
       .limit(1)
       .maybeSingle();
@@ -533,7 +542,7 @@ router.post(
     const { data: row, error: lookupErr } = await supabase
       .from("admin_users")
       .select(
-        "id, email_lower, auth_user_id, role, status, display_name, notes, invited_by, invited_at, accepted_at, revoked_at, revoked_by, last_login_at, location_id",
+        "id, email_lower, auth_user_id, role, status, display_name, notes, invited_by, invited_at, accepted_at, revoked_at, revoked_by, last_login_at, location_id, slack_user_id",
       )
       .eq("id", id)
       .limit(1)
@@ -600,7 +609,7 @@ router.post(
       .eq("id", id)
       .neq("status", "revoked")
       .select(
-        "id, email_lower, auth_user_id, role, status, display_name, notes, invited_by, invited_at, accepted_at, revoked_at, revoked_by, last_login_at, location_id",
+        "id, email_lower, auth_user_id, role, status, display_name, notes, invited_by, invited_at, accepted_at, revoked_at, revoked_by, last_login_at, location_id, slack_user_id",
       )
       .limit(1)
       .maybeSingle();
@@ -630,7 +639,7 @@ router.delete(
     const { data: row, error: lookupErr } = await supabase
       .from("admin_users")
       .select(
-        "id, email_lower, auth_user_id, role, status, display_name, notes, invited_by, invited_at, accepted_at, revoked_at, revoked_by, last_login_at, location_id",
+        "id, email_lower, auth_user_id, role, status, display_name, notes, invited_by, invited_at, accepted_at, revoked_at, revoked_by, last_login_at, location_id, slack_user_id",
       )
       .eq("id", id)
       .limit(1)
@@ -794,12 +803,14 @@ router.patch(
     if (parsed.data.notes !== undefined) updateValues.notes = parsed.data.notes;
     if ("locationId" in parsed.data)
       updateValues.location_id = parsed.data.locationId ?? null;
+    if ("slackUserId" in parsed.data)
+      updateValues.slack_user_id = parsed.data.slackUserId ?? null;
     const { data: updated, error: updateErr } = await supabase
       .from("admin_users")
       .update(updateValues)
       .eq("id", id)
       .select(
-        "id, email_lower, auth_user_id, role, status, display_name, notes, invited_by, invited_at, accepted_at, revoked_at, revoked_by, last_login_at, location_id",
+        "id, email_lower, auth_user_id, role, status, display_name, notes, invited_by, invited_at, accepted_at, revoked_at, revoked_by, last_login_at, location_id, slack_user_id",
       )
       .limit(1)
       .maybeSingle();
@@ -839,6 +850,7 @@ type AdminListRow = Pick<
   | "revoked_by"
   | "last_login_at"
   | "location_id"
+  | "slack_user_id"
 >;
 
 interface InviteCredentialStamps {
@@ -887,6 +899,7 @@ function serialize(
     revokedBy: row.revoked_by,
     lastLoginAt: row.last_login_at,
     locationId: row.location_id,
+    slackUserId: row.slack_user_id,
     expiryReminderSentAt: freshStamp(fresh?.expiryReminderSentAt ?? null),
     expiredNoticeSentAt: freshStamp(fresh?.expiredNoticeSentAt ?? null),
   };

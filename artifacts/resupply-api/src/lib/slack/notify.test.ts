@@ -10,7 +10,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("../feature-flags", () => ({ isFeatureEnabled: vi.fn() }));
-vi.mock("../app-config/store", () => ({ getEffectiveEnv: vi.fn() }));
+vi.mock("../app-config/store", () => ({
+  getEffectiveEnv: vi.fn(),
+  getEffectiveEnvForOrg: vi.fn(),
+}));
 vi.mock("../tenant-branding", () => ({ resolveTenantBaseUrl: vi.fn() }));
 vi.mock("@workspace/resupply-integrations-slack", async (importOriginal) => {
   const actual =
@@ -22,7 +25,7 @@ vi.mock("@workspace/resupply-integrations-slack", async (importOriginal) => {
 
 import { postSlackMessage } from "@workspace/resupply-integrations-slack";
 
-import { getEffectiveEnv } from "../app-config/store";
+import { getEffectiveEnv, getEffectiveEnvForOrg } from "../app-config/store";
 import { isFeatureEnabled } from "../feature-flags";
 import { resolveTenantBaseUrl } from "../tenant-branding";
 import {
@@ -37,6 +40,7 @@ import {
 
 const isFeatureEnabledMock = vi.mocked(isFeatureEnabled);
 const getEffectiveEnvMock = vi.mocked(getEffectiveEnv);
+const getEffectiveEnvForOrgMock = vi.mocked(getEffectiveEnvForOrg);
 const resolveTenantBaseUrlMock = vi.mocked(resolveTenantBaseUrl);
 const postSlackMessageMock = vi.mocked(postSlackMessage);
 
@@ -46,10 +50,18 @@ const CONFIGURED = {
   SLACK_SIGNING_SECRET: "shh",
 } as NodeJS.ProcessEnv;
 
+/** Slack config is tenant-scoped: a known orgId reads getEffectiveEnvForOrg,
+ *  an undefined orgId reads getEffectiveEnv. Set both so a test doesn't care
+ *  which path runs. */
+function setSlackEnv(env: NodeJS.ProcessEnv): void {
+  getEffectiveEnvMock.mockResolvedValue(env);
+  getEffectiveEnvForOrgMock.mockResolvedValue(env);
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   isFeatureEnabledMock.mockResolvedValue(true);
-  getEffectiveEnvMock.mockResolvedValue(CONFIGURED);
+  setSlackEnv(CONFIGURED);
   resolveTenantBaseUrlMock.mockResolvedValue("https://tenant.example");
   postSlackMessageMock.mockResolvedValue({ ok: true, ts: "1" });
 });
@@ -70,6 +82,7 @@ describe("notifyConversationNeedsHuman", () => {
     expect(serialized).toContain(
       "https://tenant.example/admin/conversations/conv-9",
     );
+    expect(serialized).toContain("claim_conversation");
     expect(serialized).toContain("escalate_conversation");
     expect(serialized).toContain("snooze_conversation");
     // Non-PHI: the reason/channel we passed are present, nothing else leaks.
@@ -77,7 +90,7 @@ describe("notifyConversationNeedsHuman", () => {
   });
 
   it("omits the Escalate button when no signing secret is configured", async () => {
-    getEffectiveEnvMock.mockResolvedValue({
+    setSlackEnv({
       SLACK_BOT_TOKEN: "xoxb-test",
       SLACK_ALERTS_CHANNEL: "C1",
     } as NodeJS.ProcessEnv);
@@ -103,7 +116,7 @@ describe("notifyConversationNeedsHuman", () => {
   });
 
   it("no-ops when Slack is unconfigured", async () => {
-    getEffectiveEnvMock.mockResolvedValue({} as NodeJS.ProcessEnv);
+    setSlackEnv({} as NodeJS.ProcessEnv);
     await notifyConversationNeedsHuman({
       orgId: "org-1",
       conversationId: "conv-9",
@@ -212,7 +225,7 @@ describe("notifyNpsDetractor", () => {
 
 describe("notifyOpsDigest", () => {
   it("posts under the slack.digests flag to the digests channel when set", async () => {
-    getEffectiveEnvMock.mockResolvedValue({
+    setSlackEnv({
       ...CONFIGURED,
       SLACK_DIGESTS_CHANNEL: "C-OPS",
     } as NodeJS.ProcessEnv);
