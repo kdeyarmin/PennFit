@@ -217,6 +217,52 @@ export function useGetPlatformMargin(
   });
 }
 
+// ── Vendor cost-rate card ──────────────────────────────────────────
+
+export interface CostRates {
+  aiInputPer1mCents: number;
+  aiOutputPer1mCents: number;
+  outboundMessageCents: number;
+  aiVoiceEventCents: number;
+  faxEventCents: number;
+}
+
+const COST_RATES_URL = "/resupply-api/platform/cost-rates";
+
+export const getCostRatesQueryKey = () => [COST_RATES_URL] as const;
+
+export function useGetCostRates(options?: {
+  query?: Partial<UseQueryOptions<{ rates: CostRates }, PlatformError>>;
+}) {
+  return useQuery<{ rates: CostRates }, PlatformError>({
+    queryKey: getCostRatesQueryKey(),
+    queryFn: ({ signal }) =>
+      customFetch<{ rates: CostRates }>(COST_RATES_URL, {
+        method: "GET",
+        signal,
+      }),
+    ...options?.query,
+  });
+}
+
+export function useUpdateCostRates(options?: {
+  mutation?: UseMutationOptions<
+    { rates: CostRates },
+    PlatformError,
+    Partial<CostRates>
+  >;
+}) {
+  return useMutation<{ rates: CostRates }, PlatformError, Partial<CostRates>>({
+    mutationFn: (rates) =>
+      customFetch<{ rates: CostRates }>(COST_RATES_URL, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(rates),
+      }),
+    ...options?.mutation,
+  });
+}
+
 // ── Tenant directory ───────────────────────────────────────────────
 
 export interface PlatformTenant {

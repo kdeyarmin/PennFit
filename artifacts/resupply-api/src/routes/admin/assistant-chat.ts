@@ -34,7 +34,10 @@ import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger.js";
-import { recordTenantUsage } from "../../lib/metering/usage.js";
+import {
+  recordAiTokenUsage,
+  recordTenantUsage,
+} from "../../lib/metering/usage.js";
 import { applyPlatformBrandingForOrg } from "../../lib/company-info.js";
 import { isFeatureEnabled } from "../../lib/feature-flags.js";
 import {
@@ -855,6 +858,14 @@ async function handleAnthropicJson(
         res.json({ reply: DEGRADED_FALLBACK_REPLY, degraded: true });
         return;
       }
+      // Meter this model call's token throughput for vendor COGS (G12).
+      // Per tool-loop round, since each round is a real model call.
+      recordAiTokenUsage({
+        orgId: toolCtx.orgId,
+        inputTokens: result.response.usage.input_tokens,
+        outputTokens: result.response.usage.output_tokens,
+        source: "admin.assistant",
+      });
       const text = getResponseText(result.response).trim();
       const toolCalls = getResponseToolCalls(result.response);
       if (toolCalls.length > 0 && round < MAX_ADMIN_TOOL_ROUNDS) {
@@ -976,6 +987,13 @@ async function handleAnthropicStreaming(
         safeEnd();
         return;
       }
+      // Meter this stream's token throughput for vendor COGS (G12).
+      recordAiTokenUsage({
+        orgId: toolCtx.orgId,
+        inputTokens: result.response.usage.input_tokens,
+        outputTokens: result.response.usage.output_tokens,
+        source: "admin.assistant",
+      });
       const toolCalls = getResponseToolCalls(result.response);
       if (clientClosed) {
         safeEnd();

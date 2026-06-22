@@ -23,6 +23,7 @@ import { Link, Redirect, Route, Switch, useLocation, useRoute } from "wouter";
 import {
   Activity,
   Building2,
+  Coins,
   CreditCard,
   ExternalLink,
   LayoutDashboard,
@@ -40,10 +41,13 @@ import {
 
 import {
   ApiError,
+  getCostRatesQueryKey,
   getListOperatorsQueryKey,
   getListTenantsQueryKey,
   getTenantFeatureFlagsQueryKey,
   getTenantQueryKey,
+  useGetCostRates,
+  useUpdateCostRates,
   useGetPlatformHealth,
   useGetPlatformMargin,
   useGetPlatformMe,
@@ -62,6 +66,7 @@ import {
   useTenantFeatureFlags,
   useTenantFeatureFlagActivity,
   useToggleTenantFeatureFlag,
+  type CostRates,
   type PlatformOperator,
   type PlatformTenant,
   type TenantFeatureFlag,
@@ -3725,6 +3730,7 @@ const PLATFORM_NAV_GROUPS: ReadonlyArray<{
     items: [
       { href: "/platform/outreach", label: "Outreach", icon: Megaphone },
       { href: "/platform/billing", label: "Billing", icon: CreditCard },
+      { href: "/platform/costs", label: "Vendor costs", icon: Coins },
     ],
   },
   {
@@ -4163,6 +4169,235 @@ function PlatformShell({
   );
 }
 
+// ── Vendor costs (rate card + per-tenant COGS) ─────────────────────
+// The operator sets a cost-per-unit rate card; the page multiplies it by
+// each tenant's metered usage (the monthly rollup the billing console
+// already exposes) to show month-to-date vendor COGS. Token capture is
+// wired at the storefront chatbot + admin assistant; other surfaces accrue
+// as they're instrumented.
+const RATE_INPUTS: ReadonlyArray<{
+  field: keyof CostRates;
+  label: string;
+  hint: string;
+}> = [
+  {
+    field: "aiInputPer1mCents",
+    label: "AI input tokens",
+    hint: "cents per 1M input tokens",
+  },
+  {
+    field: "aiOutputPer1mCents",
+    label: "AI output tokens",
+    hint: "cents per 1M output tokens",
+  },
+  {
+    field: "outboundMessageCents",
+    label: "Outbound message",
+    hint: "cents per SMS/email",
+  },
+  {
+    field: "aiVoiceEventCents",
+    label: "AI voice event",
+    hint: "cents per voice interaction",
+  },
+  { field: "faxEventCents", label: "Fax event", hint: "cents per fax" },
+];
+
+function tenantVendorCogsCents(
+  metrics: Record<string, number>,
+  rates: CostRates,
+): number {
+  const v = (k: string) => metrics[k] ?? 0;
+  return Math.round(
+    (v("aiInputTokensPerMonth") * rates.aiInputPer1mCents) / 1_000_000 +
+      (v("aiOutputTokensPerMonth") * rates.aiOutputPer1mCents) / 1_000_000 +
+      v("outboundMessagesPerMonth") * rates.outboundMessageCents +
+      v("aiVoiceEvents") * rates.aiVoiceEventCents +
+      v("faxEvents") * rates.faxEventCents,
+  );
+}
+
+function CostRateEditor() {
+  const queryClient = useQueryClient();
+  const { data, isPending, isError, refetch } = useGetCostRates();
+  const update = useUpdateCostRates({
+    mutation: {
+      onSuccess: () => {
+        setNotice("Saved.");
+        void queryClient.invalidateQueries({
+          queryKey: getCostRatesQueryKey(),
+        });
+      },
+      onError: () => setNotice(null),
+    },
+  });
+  const [draft, setDraft] = useState<CostRates | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const rates = draft ?? data?.rates ?? null;
+
+  function setField(field: keyof CostRates, value: number) {
+    if (!rates) return;
+    setNotice(null);
+    setDraft({ ...rates, [field]: value });
+  }
+
+  return (
+    <Card
+      title="Cost rate card"
+      subtitle="What each metered unit costs you. Multiplied by tenant usage to derive vendor COGS. Defaults to 0 — no cost is assumed until you set a rate."
+    >
+      {isPending ? (
+        <Spinner label="Loading rates…" />
+      ) : isError || !rates ? (
+        <EmptyState
+          title="Couldn't load rates."
+          hint="A transient error — try again."
+          action={
+            <Button intent="secondary" size="sm" onClick={() => void refetch()}>
+              Retry
+            </Button>
+          }
+        />
+      ) : (
+        <div className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {RATE_INPUTS.map((r) => (
+              <div key={r.field}>
+                <Label htmlFor={`rate-${r.field}`}>{r.label}</Label>
+                <Input
+                  id={`rate-${r.field}`}
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={String(rates[r.field])}
+                  onChange={(e) =>
+                    setField(
+                      r.field,
+                      Math.max(0, Number.parseFloat(e.target.value) || 0),
+                    )
+                  }
+                />
+                <p
+                  className="text-[11px] mt-1"
+                  style={{ color: "hsl(var(--ink-3))" }}
+                >
+                  {r.hint}
+                </p>
+              </div>
+            ))}
+          </div>
+          <div className="flex items-center gap-3">
+            <Button
+              disabled={!draft || update.isPending}
+              isLoading={update.isPending}
+              onClick={() => draft && update.mutate(draft)}
+            >
+              Save rates
+            </Button>
+            {notice && (
+              <span className="text-xs" style={{ color: "hsl(152 70% 24%)" }}>
+                {notice}
+              </span>
+            )}
+            {update.isError && (
+              <span className="text-xs" style={{ color: "hsl(354 75% 38%)" }}>
+                Couldn&rsquo;t save. Try again.
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function PlatformCostsPage() {
+  const rates = useGetCostRates();
+  const billing = useQuery({
+    queryKey: ["platform-billing", "tenants"],
+    queryFn: fetchPlatformTenantBilling,
+  });
+
+  const rows = useMemo(() => {
+    if (!rates.data || !billing.data) return [];
+    return billing.data.tenants
+      .map((t) => ({
+        id: t.id,
+        name: t.name ?? t.slug,
+        slug: t.slug,
+        month: t.billing.usage.month,
+        cogsCents: tenantVendorCogsCents(
+          t.billing.usage.metrics ?? {},
+          rates.data.rates,
+        ),
+      }))
+      .filter((r) => r.cogsCents > 0)
+      .sort((a, b) => b.cogsCents - a.cogsCents);
+  }, [rates.data, billing.data]);
+
+  const fleetCents = rows.reduce((s, r) => s + r.cogsCents, 0);
+  const loading = rates.isPending || billing.isPending;
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title="Vendor costs"
+        description="Month-to-date vendor COGS — your metered usage (AI tokens, messages, voice, fax) priced by the rate card below. Token capture is wired at the storefront chatbot and admin assistant; other surfaces accrue as they're instrumented."
+      />
+
+      <CostRateEditor />
+
+      <Card
+        title="Vendor COGS · month to date"
+        subtitle="Per tenant, usage × the rate card. Tenants with no priced usage are hidden."
+      >
+        {loading ? (
+          <Spinner label="Loading usage…" />
+        ) : rows.length === 0 ? (
+          <EmptyState
+            title="No vendor COGS yet."
+            hint="Set rates above and let metered usage accrue — token usage records as tenants use the AI surfaces."
+          />
+        ) : (
+          <div className="space-y-3">
+            <RevenueStat
+              label="Fleet vendor COGS"
+              value={`${formatMoney(fleetCents)}/mo`}
+              hint="month to date, across all tenants"
+            />
+            <div
+              className="border-t pt-3 space-y-1"
+              style={{ borderColor: "hsl(var(--line-1))" }}
+            >
+              {rows.map((r) => (
+                <div
+                  key={r.id}
+                  className="flex items-center justify-between gap-3 text-xs"
+                >
+                  <Link
+                    href={`/platform/tenants/${r.id}`}
+                    className="min-w-0 truncate hover:underline"
+                    style={{ color: "hsl(var(--penn-navy))" }}
+                  >
+                    {r.name}
+                  </Link>
+                  <span
+                    className="tabular-nums font-medium shrink-0"
+                    style={{ color: "hsl(var(--ink-1))" }}
+                  >
+                    {formatMoney(r.cogsCents)}/mo
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
 // ── Operators (platform admin roster) ──────────────────────────────
 // Grant/revoke platform-god access from the UI instead of editing the
 // platform_admins table by hand. Grant elevates an EXISTING user; revoke
@@ -4421,6 +4656,7 @@ function PlatformConsole() {
         <Route path="/platform/tenants/:id" component={TenantDetailPage} />
         <Route path="/platform/outreach" component={PlatformOutreachPage} />
         <Route path="/platform/billing" component={AdminPlatformBillingPage} />
+        <Route path="/platform/costs" component={PlatformCostsPage} />
         <Route path="/platform/support" component={PlatformSupport} />
         <Route path="/platform/operators" component={PlatformOperatorsPage} />
         {/* Legacy "Fleet overview" URL — folded into the Dashboard. */}

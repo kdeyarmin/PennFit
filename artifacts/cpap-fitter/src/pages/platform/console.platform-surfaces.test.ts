@@ -129,6 +129,18 @@ describe("platform console tenant detail + sidebar", () => {
     expect(SRC).toContain("<PlatformHealthCard />");
   });
 
+  it("mounts the vendor-costs (rate card + COGS) surface", () => {
+    expect(SRC).toContain("function PlatformCostsPage");
+    expect(SRC).toContain("function CostRateEditor");
+    expect(SRC).toContain("useGetCostRates");
+    expect(SRC).toContain("useUpdateCostRates");
+    expect(SRC).toContain("tenantVendorCogsCents");
+    expect(SRC).toContain(
+      '<Route path="/platform/costs" component={PlatformCostsPage} />',
+    );
+    expect(SRC).toContain('href: "/platform/costs", label: "Vendor costs"');
+  });
+
   it("surfaces a fleet gross-margin card and self-serve onboarding copy", () => {
     expect(SRC).toContain("function FleetMarginCard");
     expect(SRC).toContain("useGetPlatformMargin");

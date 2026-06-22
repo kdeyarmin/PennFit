@@ -73,7 +73,10 @@ import { withRetry } from "../../lib/with-retry.js";
 import { getLlmBreaker } from "../../lib/llm-circuit-breaker.js";
 import { requestHost } from "../../lib/request-host.js";
 import { resolveOrgIdByHost } from "../../lib/tenant-branding.js";
-import { recordTenantUsage } from "../../lib/metering/usage.js";
+import {
+  recordAiTokenUsage,
+  recordTenantUsage,
+} from "../../lib/metering/usage.js";
 import { rateLimit } from "../../middlewares/rate-limit.js";
 import {
   buildChatSystemPromptBase,
@@ -555,6 +558,7 @@ router.post("/chat", chatRateLimit, async (req, res) => {
             messages.length,
             toolCtx,
             degradedReply,
+            orgId,
           )
         : handleAnthropicJson(
             res,
@@ -563,6 +567,7 @@ router.post("/chat", chatRateLimit, async (req, res) => {
             messages.length,
             toolCtx,
             degradedReply,
+            orgId,
           );
     }
   }
@@ -1175,6 +1180,7 @@ async function handleAnthropicJson(
   turns: number,
   toolCtx: ChatToolContext,
   degradedReply: string,
+  orgId: string | undefined,
 ): Promise<void> {
   let messages = initialMessages;
   try {
@@ -1206,6 +1212,13 @@ async function handleAnthropicJson(
         res.json({ reply: degradedReply, degraded: true });
         return;
       }
+      // Meter this model call's token throughput for vendor COGS (G12).
+      recordAiTokenUsage({
+        orgId,
+        inputTokens: result.response.usage.input_tokens,
+        outputTokens: result.response.usage.output_tokens,
+        source: "storefront.chat",
+      });
       const text = getResponseText(result.response).trim();
       const toolCalls = getResponseToolCalls(result.response);
       if (toolCalls.length > 0 && round < MAX_TOOL_ROUNDS) {
@@ -1273,6 +1286,7 @@ async function handleAnthropicStreaming(
   turns: number,
   toolCtx: ChatToolContext,
   degradedReply: string,
+  orgId: string | undefined,
 ): Promise<void> {
   startSseHeaders(res);
 
@@ -1351,6 +1365,13 @@ async function handleAnthropicStreaming(
         safeEnd();
         return;
       }
+      // Meter this stream's token throughput for vendor COGS (G12).
+      recordAiTokenUsage({
+        orgId,
+        inputTokens: result.response.usage.input_tokens,
+        outputTokens: result.response.usage.output_tokens,
+        source: "storefront.chat",
+      });
       const text = getResponseText(result.response);
       const toolCalls = getResponseToolCalls(result.response);
       // If the tab closed mid-round, stop chaining more rounds —
