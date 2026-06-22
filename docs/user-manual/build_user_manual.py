@@ -30,9 +30,12 @@ Usage:
 """
 
 import colorsys
+import io
 import json
 import os
 from datetime import date
+
+from reportlab.pdfgen import canvas as _pdfcanvas
 
 from reportlab.lib.colors import Color, white
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
@@ -1683,6 +1686,73 @@ DOC_TEMPLATES = [
 ]
 
 
+# ── FAQ (by domain) ──────────────────────────────────────────────────
+FAQ = [
+    ("Customer care", [
+        ("Where do patient messages go?", "SMS, MMS, and email — plus AI call summaries — all land in one unified Conversations inbox. CSRs triage, claim a thread, reply (with canned replies), tag, snooze, and escalate to a Case, so nothing is scattered across separate tools."),
+        ("What can the chatbot handle without a person?", "The CareMetric Assistant answers therapy, mask, resupply, and insurance questions 24/7, and for signed-in patients it covers order status, tracking, subscriptions, device info, and returns — handing off to a CSR for anything order-specific, clinical, or actionable."),
+        ("How do we make sure a promise to a patient isn't forgotten?", "Use Episodes for dated service promises and Follow-ups for the callback queue; overdue items surface on the Home dashboard."),
+        ("Can we run telehealth visits?", "Yes — Video Visits generate a secure join link sent by SMS or email for setups and mask troubleshooting."),
+        ("How do we message many patients at once?", "Bulk Campaigns — build an audience with filters, sanity-check the recipient count, and send a batch SMS or email. The Alert Library handles curated one-off alerts."),
+    ]),
+    ("Billing & revenue cycle", [
+        ("Is insurance checked before we bill?", "Yes. Eligibility runs by real-time 270/271 on a schedule and again in the seconds before a claim transmits; inactive or prior-auth-required coverage is held back so claims don't bounce."),
+        ("How are only clean claims submitted?", "Every claim is scrubbed — structurally and by AI — before submission (modifiers for the rental month, quantity vs. LCD limits, HCPCS/diagnosis match, fee-schedule drift). Problems are flagged or fixed first, lifting your first-pass acceptance rate."),
+        ("What happens when a claim is denied?", "The AI denial analyzer reads the CARC/RARC codes, finds the root cause, populates the corrective patch, and — when it's safe and high-confidence — resubmits in one click. The worklist is ranked by recoverable dollars."),
+        ("How do payer payments get posted?", "Upload the 835 ERA file and the system auto-posts allowed, paid, and patient-responsibility amounts at the claim and line level, flags denials for follow-up, and is idempotent if a file is re-posted."),
+        ("Does it handle capped rentals and secondary claims?", "Yes — capped-rental cycles auto-advance each month with the correct KH/KI/KX modifier rotation, and a secondary / COB claim auto-drafts after the primary pays (you review before submitting)."),
+        ("What if a patient's insurance is unknown?", "Insurance Discovery searches the payer network from the patient's demographics to find active coverage (a paid clearinghouse add-on)."),
+    ]),
+    ("Reporting & analytics", [
+        ("What reports can I run?", "Revenue summary, orders, patient payments, insurance claims, refunds journal, returns, customer activity, and an all-financial bundle — over any date range up to 90 days."),
+        ("Can I export to QuickBooks?", "Yes — CSV and printable PDF, plus QuickBooks Desktop (.iif) and QuickBooks Online (.qbo.csv)."),
+        ("How do I know if I'm hitting my numbers?", "Set a target per KPI in Goals & Targets and let KPI Alerts flag any metric that crosses a threshold. Financial analytics (margin & COGS, payer profitability, LTV:CAC) show where money is made and lost."),
+        ("Is patient PHI in the reports?", "PHI is minimized — storefront reports hash customer IDs and the customer-activity report is counts only."),
+    ]),
+    ("Integrations (device clouds)", [
+        ("Which manufacturer clouds connect?", "ResMed AirView, Philips Respironics Care Orchestrator, and 3B Medical React Health (Luna / iCode)."),
+        ("Do I have to log into each vendor portal?", "No — a nightly sync pulls all three into one view, so you manage every patient from a single login regardless of device brand."),
+        ("What data comes back?", "Device settings, a compliance summary (days ≥ 4 hours, average usage and AHI, the CMS 90/30 flag), recent nights (usage, AHI, leak, pressure), and supply eligibility dates that drive resupply timing."),
+        ("How current is the data?", "A nightly job refreshes every active link (rate-limited so it's gentle on the vendor APIs); you can also force a manual refresh per patient or per source."),
+    ]),
+    ("Re-supply", [
+        ("How and when do reorder reminders go out?", "An hourly job finds prescriptions due on their cadence — typically the 90- and 30-day windows, tuned per patient and by frequency rules — and sends SMS or email. The AI voice agent can call, too."),
+        ("How does the patient confirm a reorder?", "One tap. Email carries signed confirm / edit / stop links (no login needed) and SMS accepts a reply. A confirmed reorder flows straight to fulfillment and billing."),
+        ("Does it avoid pestering patients?", "Yes — a quiet-period guard skips anyone you've talked to in the last 48 hours, and only one reminder goes out per patient per cycle even if several items are due."),
+        ("Can patients set it and forget it?", "Yes — they subscribe once and auto-ship keeps supplies arriving on the cadence their insurance allows."),
+    ]),
+    ("In-person / counter orders", [
+        ("How do I ring up a walk-in?", "Front Desk — look up or create the customer, add products, choose cash or bill-to-insurance, and complete the sale without going through the public storefront checkout."),
+        ("Can I print a receipt and a shipping label?", "Yes — print a receipt and, if you're shipping it, a label with the patient's address merged in and tracking auto-filled back onto the order."),
+        ("Who is allowed to take counter orders?", "Anyone with the orders.create permission — front-line CSRs and up."),
+    ]),
+    ("Respiratory therapy (RT)", [
+        ("How do I find at-risk patients?", "RT Overview and Therapy Fleet rank patients by reason — setup-adherence risk, no recent data, high AHI, high leak, usage decline — so you work the highest risk first."),
+        ("How is CMS 90-day compliance tracked?", "Setup Adherence measures each new PAP patient against ≥ 4 hours on ≥ 21 nights in any rolling 30-day window and flags at-risk patients early so you can coach them before the window closes."),
+        ("Where do I document care?", "Clinical Encounters — capture reason, assessment, intervention, and plan (or a free-text note); it builds the patient's clinical timeline and backs the medical necessity behind claims."),
+        ("Can I reach a whole at-risk group at once?", "Yes — launch consent- and do-not-disturb-aware Clinical Outreach to a Therapy Fleet cohort."),
+        ("Can I give a referring provider a report?", "Generate a print-quality Therapy Report by provider, patient, or device manufacturer."),
+    ]),
+    ("Documents, e-signature & provider portal", [
+        ("Do patients have to print and mail forms?", "No — they e-sign on their own device (typed name + explicit ESIGN consent) and the signed PDF auto-files to the chart. It's ESIGN-Act compliant — nothing printed, nothing lost, no delay."),
+        ("Which document templates are included?", "SWO, PAP CMN, CMS-484/846/848, DWO / renewal forms, ABN (CMS-R-131), Assignment of Benefits, DMEPOS Supplier Standards, Proof of Delivery, Refill Confirmation, and a new-patient setup packet — plus free-form manual documents and documentation packets."),
+        ("Can providers sign instead of faxing?", "Yes — the provider portal lets a referring provider e-sign CMNs, DWOs, prescriptions, and claims on their device, captured in a tamper-evident audit trail. No more fax-and-chase."),
+        ("Can providers see their patients' therapy?", "Yes — read-only therapy data and reports for their own patients, in the same MFA-protected portal."),
+    ]),
+    ("Roles, access & setup", [
+        ("What staff roles are there?", "Owner, Admin, Customer Service Rep, Biller, and Respiratory Therapist — assigned on the Team page. A page above your role simply doesn't appear in your navigation."),
+        ("How do I turn a feature on or off?", "The Control Center has an immediate on/off toggle for every major feature (voice agent, campaigns, auto-submit, AI billing, the chatbots, multi-location, and more)."),
+        ("How do I add a teammate?", "Invite them by email on the Team page and pick a role; they set their own password from the link, and admins enroll multi-factor authentication."),
+        ("What has to be set up before go-live?", "Brand and domain, phone/SMS/fax numbers, an authenticated email sender, payments, and — for billing — clearinghouse credentials and payer/fee-schedule config. The Setup Guide walks through it."),
+    ]),
+    ("The AI assistants", [
+        ("What's the difference between the Assistant and the Copilot?", "CareMetric Assistant is the customer-facing storefront chatbot; CareMetric Copilot is the staff-facing helper inside the admin console. (The Penn tenant calls them PennBot and PennPilot.)"),
+        ("Will the Copilot change my data?", "No — it explains the app and, only after you confirm, forwards a feature idea to the owners. It never changes data and never shows patient PHI."),
+        ("What happens if the AI vendor is down?", "Both assistants degrade gracefully — Claude first, then OpenAI, then a safe offline reply — so the app never breaks because a key is missing."),
+    ]),
+]
+
+
 # =====================================================================
 # DOC TEMPLATE (page-numbered TOC + running header/footer)
 # =====================================================================
@@ -2165,6 +2235,22 @@ def make_story(toc_entries):
                     story.append(fl)
         story.append(PageBreak())
 
+    # ---- FAQ ----
+    story += h1("Frequently Asked Questions")
+    story.append(Paragraph(
+        "Quick answers, grouped by area. For step-by-step instructions see "
+        "the job aides in Part 3; for the full detail see Part 2.", S_LEAD))
+    q_style = ParagraphStyle(
+        "faqQ", fontName="Helvetica-Bold", fontSize=9.8, leading=13,
+        textColor=NAVY_DEEP, spaceBefore=7, spaceAfter=1)
+    for domain, qas in FAQ:
+        story.append(h2(domain))
+        for q, a in qas:
+            block = [Paragraph("Q&nbsp;&nbsp;" + q, q_style),
+                     Paragraph(a, S_BODY)]
+            story.append(KeepTogether(block))
+    story.append(PageBreak())
+
     # ---- Appendix ----
     story += h1("Appendix")
     story.append(h2("Role & permission matrix"))
@@ -2236,23 +2322,47 @@ def make_story(toc_entries):
     return story
 
 
+def _count_toc_pages(entries):
+    """How many pages the rendered Table of Contents occupies, using
+    reportlab's real layout (so a multi-page TOC is handled exactly)."""
+    cv = _pdfcanvas.Canvas(io.BytesIO(), pagesize=letter)
+    avail_h = PAGE_H - MARGIN_TOP - MARGIN_BOTTOM
+    flow = [Paragraph("Table of Contents", S_H1_PLAIN), HBar(), Spacer(1, 10)]
+    flow += [TocLine(lvl, text, page) for (lvl, text, page) in entries]
+    pages = 1
+    fr = Frame(MARGIN_X, MARGIN_BOTTOM, CONTENT_W, avail_h)
+    for f in flow:
+        if not fr.add(f, cv):
+            pages += 1
+            fr = Frame(MARGIN_X, MARGIN_BOTTOM, CONTENT_W, avail_h)
+            fr.add(f, cv)
+    return pages
+
+
 def build():
-    # Pass 1 — capture each heading's final page. The TOC region is a
-    # one-page placeholder so the body lands on the same pages as pass 2.
+    # Pass 1 — capture each heading's final page against a one-page TOC
+    # placeholder (so the body paginates identically to pass 2).
     cap_path = os.path.join(HERE, ".manual-capture.pdf")
     cap = _make_doc(CaptureDoc, cap_path)
     cap.build(make_story(None))
 
-    # Pass 2 — render the real TOC from the captured entries so the page
-    # numbers are exact (no multiBuild convergence guesswork).
+    # The real TOC may run to more than one page; the placeholder was one
+    # page, so every captured body page shifts by (toc_pages - 1). Offset
+    # the captured numbers so the rendered TOC is exact.
+    toc_pages = _count_toc_pages(cap.captured)
+    offset = toc_pages - 1
+    entries = [(lvl, text, page + offset) for (lvl, text, page) in cap.captured]
+
+    # Pass 2 — render the real (possibly multi-page) TOC from the
+    # offset-corrected entries.
     doc = _make_doc(ManualDoc, OUT_PATH)
-    doc.build(make_story(cap.captured))
+    doc.build(make_story(entries))
 
     try:
         os.remove(cap_path)
     except OSError:
         pass
-    print("wrote " + OUT_PATH)
+    print("wrote %s (%d-page TOC)" % (OUT_PATH, toc_pages))
 
 
 if __name__ == "__main__":

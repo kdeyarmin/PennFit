@@ -33,7 +33,10 @@ and is regenerable.
    manufacturer integrations + alerts/compliance (RT).
 10. **Part 3 — Job Aides by Role** — curated step-by-step walkthroughs for the
     highest-value tasks.
-11. **Appendix** — role/permission matrix, competitive comparison, glossary.
+11. **Frequently Asked Questions** — quick answers grouped by domain
+    (customer care, billing, reporting, integrations, re-supply, in-person
+    orders, RT, documents/e-sign, roles/setup, AI assistants).
+12. **Appendix** — role/permission matrix, competitive comparison, glossary.
 
 > This is distinct from `manual.html` / `render.mjs` in this same folder,
 > which build the shorter **PennPaps Customer Service Manual** PDF that staff
