@@ -3,12 +3,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import express, {
-  type Express,
-  type NextFunction,
-  type Request,
-  type Response,
-} from "express";
+import express, { type Express, type Request } from "express";
 import compression from "compression";
 import cors from "cors";
 import pinoHttp from "pino-http";
@@ -21,8 +16,8 @@ import storefrontRouter from "./routes/storefront";
 import providerPortalRouter from "./routes/provider";
 import { getAuthDeps } from "./lib/auth-deps";
 import { isDeployedRuntime } from "./lib/deployed-runtime";
-import { isFeatureEnabled } from "./lib/feature-flags";
 import { logger } from "./lib/logger";
+import { providerPortalFeatureGate } from "./lib/provider-portal-feature-gate";
 import { RATE_LIMITS } from "./lib/rate-limits-config";
 import { getRequestId, requestContextMiddleware } from "./lib/request-context";
 import {
@@ -448,29 +443,10 @@ logger.info(
 //
 // Runtime gate: fail closed when the feature flag is OFF. Auth routes
 // remain mounted so providers can still sign in during staged rollout,
-// but the queue/sign/decline data surface stays dark.
-const providerPortalFeatureGate = async (
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) => {
-  if (!req.path.startsWith("/api/provider")) {
-    next();
-    return;
-  }
-  if (
-    req.path === "/api/provider/auth" ||
-    req.path.startsWith("/api/provider/auth/")
-  ) {
-    next();
-    return;
-  }
-  if (!(await isFeatureEnabled("provider.portal_enabled"))) {
-    res.status(404).json({ error: "Not found" });
-    return;
-  }
-  next();
-};
+// but the queue/sign/decline data surface stays dark. The gate resolves
+// the rollout flag against the SAME tenant the data routes scope to (the
+// request host's org), so a non-seed tenant isn't mis-gated — see
+// providerPortalFeatureGate.
 app.use(providerPortalFeatureGate, providerPortalRouter);
 logger.info(
   { event: "provider_portal_mounted" },

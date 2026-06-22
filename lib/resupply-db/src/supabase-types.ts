@@ -3317,6 +3317,27 @@ export interface Database {
         >;
         Relationships: [];
       };
+      referral_adherence_reports: {
+        Row: {
+          id: string;
+          org_id: string;
+          patient_id: string;
+          provider_id: string | null;
+          window_days: number;
+          channel: "fax" | "email";
+          status: "sent" | "failed";
+          vendor_ref: string | null;
+          sent_at: string | null;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["referral_adherence_reports"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["referral_adherence_reports"]["Row"]
+        >;
+        Relationships: [];
+      };
       manual_documents: {
         Row: {
           org_id: string | null;

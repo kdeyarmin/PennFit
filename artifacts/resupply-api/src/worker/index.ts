@@ -81,6 +81,7 @@ import { registerPatientPacketReminderJob } from "./jobs/patient-packet-reminder
 import { registerTherapyMilestonesJob } from "./jobs/therapy-milestones.js";
 import { registerLapsedCustomerWinbackJob } from "./jobs/lapsed-customer-winback.js";
 import { registerAssetRecoveryAutoPopulateJob } from "./jobs/asset-recovery-auto-populate.js";
+import { registerReferralAdherenceReportJob } from "./jobs/referral-adherence-report.js";
 import { registerDeductibleResetPushJob } from "./jobs/deductible-reset-push.js";
 import { registerQuarterlyTherapySummaryJob } from "./jobs/quarterly-therapy-summary.js";
 import { registerLifecycleTouchpointsJob } from "./jobs/lifecycle-touchpoints.js";
@@ -916,6 +917,18 @@ async function doStartWorker(): Promise<void> {
     "registerAssetRecoveryAutoPopulateJob",
     registrationFailures,
     () => registerAssetRecoveryAutoPopulateJob(boss),
+  );
+
+  // Referral CRM Phase 3: send a patient's 90-day adherence attestation to
+  // their referring provider once the 90-day horizon completes. This is a
+  // PHI disclosure — gated by BOTH the REFERRAL_ADHERENCE_REPORT_CRON env
+  // var (schedule attaches only when set) AND the referrals.adherence_report
+  // flag (seeded OFF, migration 0451), checked per tenant. No-op until an
+  // owner opts in.
+  await safeRegister(
+    "registerReferralAdherenceReportJob",
+    registrationFailures,
+    () => registerReferralAdherenceReportJob(boss),
   );
 
   // Daily deductible-reset push — short-circuits unless current month

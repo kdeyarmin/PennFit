@@ -11,13 +11,15 @@
 // who hasn't set up two-factor is bounced to enrollment first. /me is
 // reachable without MFA so the SPA can decide where to route.
 
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request } from "express";
 import { z } from "zod";
 
 import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { appendSignatureEvent } from "../../lib/provider-portal/signature-events";
+import { requestHost } from "../../lib/request-host";
+import { resolveOrgIdByHost } from "../../lib/tenant-branding";
 import {
   requireProvider,
   requireProviderMfaEnrolled,
@@ -25,6 +27,35 @@ import {
 import { providerPortalRateLimiter } from "./shared";
 
 const router: IRouter = Router();
+
+/**
+ * Resolve the tenant for a provider-portal request from its host.
+ *
+ * The provider e-signature surface reads/writes the org-scoped
+ * `provider_signature_requests` / `provider_signature_events` tables, so
+ * a provider arriving on a verified custom-domain tenant must see THAT
+ * tenant's signature queue — not the seed org's. We prefer the
+ * host-resolved tenant (the same primitive the storefront uses) and fall
+ * back to the seed org so platform-host / single-tenant deployments are
+ * unaffected: `resolveOrgIdByHost` already fails SOFT to the seed org for
+ * any host that doesn't resolve to a tenant (platform host, unverified,
+ * miss, error), so on those hosts it returns the seed org id — and the
+ * `?? resolveSeedOrgId()` below only matters in the narrow case where it
+ * returns null (DB down such that even the seed org can't be resolved).
+ * Either way single-tenant behavior is byte-for-byte identical to the
+ * historical seed-org behavior.
+ *
+ * NOTE: the provider account / MFA tables are GLOBAL (no `org_id`) and
+ * are read via the raw client off the org-scoped chokepoint, which
+ * ignores the orgId entirely — so threading the host org through here
+ * changes ONLY the org-scoped signature tables, never the global account
+ * lookups.
+ */
+async function resolveTenantOrgId(
+  req: Pick<Request, "headers">,
+): Promise<string | null> {
+  return (await resolveOrgIdByHost(requestHost(req))) ?? resolveSeedOrgId();
+}
 
 const SUBJECT_LABELS: Record<string, string> = {
   prescription: "Prescription",
@@ -54,7 +85,7 @@ router.get(
   ...requireProvider,
   async (req, res) => {
     const account = req.providerAccount!;
-    const orgId = await resolveSeedOrgId();
+    const orgId = await resolveTenantOrgId(req);
     if (!orgId) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;
@@ -131,7 +162,7 @@ router.get(
       .enum(["pending", "signed", "declined", "all"])
       .catch("pending")
       .parse(req.query.status);
-    const orgId = await resolveSeedOrgId();
+    const orgId = await resolveTenantOrgId(req);
     if (!orgId) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;
@@ -208,7 +239,7 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const orgId = await resolveSeedOrgId();
+    const orgId = await resolveTenantOrgId(req);
     if (!orgId) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;
@@ -392,7 +423,7 @@ router.post(
       });
       return;
     }
-    const orgId = await resolveSeedOrgId();
+    const orgId = await resolveTenantOrgId(req);
     if (!orgId) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;
@@ -479,7 +510,7 @@ router.post(
     }
     const ids = [...new Set(parsed.data.ids)];
 
-    const orgId = await resolveSeedOrgId();
+    const orgId = await resolveTenantOrgId(req);
     if (!orgId) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;
@@ -571,7 +602,7 @@ router.post(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
-    const orgId = await resolveSeedOrgId();
+    const orgId = await resolveTenantOrgId(req);
     if (!orgId) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;
