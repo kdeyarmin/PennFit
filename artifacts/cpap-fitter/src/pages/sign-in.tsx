@@ -292,7 +292,7 @@ export function SignInPage() {
           </p>
 
           {/* Trust signal — quiet, high-tech reassurance. */}
-          <div className="flex items-center justify-center gap-1.5 border-t border-slate-100 pt-4 text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400">
+          <div className="flex items-center justify-center gap-1.5 border-t border-slate-100 pt-4 text-[11px] font-medium uppercase tracking-[0.14em] text-slate-500">
             <Lock className="h-3 w-3" aria-hidden="true" />
             Protected by a secure, encrypted connection
           </div>
