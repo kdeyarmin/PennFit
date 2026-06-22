@@ -6,6 +6,7 @@
 // a payment plan started stops the ladder on the next tick. reports.read to
 // view; patients.update to manage.
 
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { CircleDollarSign } from "lucide-react";
@@ -16,6 +17,7 @@ import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Spinner } from "@/components/admin/Spinner";
 import {
   type CollectionsRun,
+  downloadDunningLetters,
   getCollectionsWorklist,
   transitionRun,
 } from "@/lib/admin/collections-api";
@@ -57,21 +59,74 @@ export function AdminBillingCollectionsPage() {
       }),
   });
 
+  const [letterState, setLetterState] = useState<
+    "idle" | "loading" | "empty" | "error"
+  >("idle");
+
+  async function printLetters(): Promise<void> {
+    setLetterState("loading");
+    try {
+      const res = await downloadDunningLetters();
+      if ("empty" in res) {
+        setLetterState("empty");
+        return;
+      }
+      const url = URL.createObjectURL(res.blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "dunning-final-notice-letters.pdf";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setLetterState("idle");
+      void qc.invalidateQueries({
+        queryKey: ["admin", "collections-worklist"],
+      });
+    } catch {
+      setLetterState("error");
+    }
+  }
+
   return (
     <div
       className="admin-root p-6 space-y-6 max-w-5xl"
       data-testid="admin-collections-page"
     >
-      <header>
-        <h1 className="text-2xl font-semibold flex items-center gap-2">
-          <CircleDollarSign className="h-6 w-6" />
-          Collections
-        </h1>
-        <p className="text-sm mt-1" style={{ color: "hsl(var(--ink-3))" }}>
-          Patient balances on the dunning ladder. Runs escalate on a cadence and
-          stop automatically when a balance is paid or the patient goes on a
-          plan — pause, resolve, or cancel a run here when you need to.
-        </p>
+      <header className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-semibold flex items-center gap-2">
+            <CircleDollarSign className="h-6 w-6" />
+            Collections
+          </h1>
+          <p className="text-sm mt-1" style={{ color: "hsl(var(--ink-3))" }}>
+            Patient balances on the dunning ladder. Runs escalate on a cadence
+            and stop automatically when a balance is paid or the patient goes on
+            a plan — pause, resolve, or cancel a run here when you need to.
+          </p>
+        </div>
+        <div className="flex flex-col items-end gap-1">
+          <button
+            type="button"
+            className="text-sm rounded border px-3 py-1.5 disabled:opacity-50"
+            style={{ borderColor: "hsl(var(--line-1))" }}
+            disabled={letterState === "loading"}
+            onClick={() => void printLetters()}
+          >
+            {letterState === "loading"
+              ? "Preparing…"
+              : "Print final-notice letters"}
+          </button>
+          {letterState === "empty" ? (
+            <span className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+              No runs at the final-notice step.
+            </span>
+          ) : letterState === "error" ? (
+            <span className="text-xs" style={{ color: "hsl(354 75% 38%)" }}>
+              Couldn't prepare letters.
+            </span>
+          ) : null}
+        </div>
       </header>
 
       {query.isPending ? (

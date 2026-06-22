@@ -22,9 +22,9 @@ import type PgBoss from "pg-boss";
 import { getOrgScopedClient } from "@workspace/resupply-db";
 import {
   type DunningStep,
+  DUNNING_MIN_BALANCE_CENTS,
   decideDunningAction,
   nextDunningStep,
-  shouldOpenDunningRun,
 } from "@workspace/resupply-domain";
 
 import {
@@ -116,40 +116,26 @@ export async function runDunningOpenScanForOrg(
   const supabase = getOrgScopedClient(orgId);
   const todayIso = today.toISOString().slice(0, 10);
 
-  // Distinct patients with positive claim responsibility.
-  const { data: rows } = await supabase
-    .from("insurance_claims")
-    .select("patient_id")
-    .gt("patient_responsibility_cents", 0)
-    .limit(5000);
-  const patientIds = Array.from(
-    new Set(
-      ((rows ?? []) as Array<{ patient_id: string }>).map((r) => r.patient_id),
-    ),
+  // One set-based query (migration 0462) returns every patient over the floor
+  // with no active run / plan / autopay — net balance already computed. Far
+  // cheaper than the old per-patient round-trips.
+  const { data, error: rpcError } = await supabase
+    .raw()
+    .schema("resupply")
+    .rpc("dunning_candidates", {
+      p_org_id: orgId,
+      p_min_cents: DUNNING_MIN_BALANCE_CENTS,
+    });
+  if (rpcError) throw rpcError;
+  const candidates = (
+    (data ?? []) as Array<{ patient_id: string; balance_cents: number }>
   ).slice(0, MAX_CANDIDATES);
 
-  for (const patientId of patientIds) {
+  for (const c of candidates) {
     stats.candidates += 1;
-    // Skip patients that already have a non-terminal run (partial-unique index
-    // also enforces this, but checking avoids a guaranteed conflict insert).
-    const { data: existing } = await supabase
-      .from("patient_dunning_runs")
-      .select("id")
-      .eq("patient_id", patientId)
-      .in("status", ["active", "paused"])
-      .limit(1);
-    if ((existing ?? []).length > 0) continue;
-
-    const balance = await computeBalanceCents(supabase, patientId);
-    const guards = await patientGuards(supabase, patientId);
-    if (
-      !shouldOpenDunningRun(balance, guards.hasActivePlan, guards.hasAutopay)
-    ) {
-      continue;
-    }
     const { error } = await supabase.from("patient_dunning_runs").insert({
-      patient_id: patientId,
-      opened_balance_cents: balance,
+      patient_id: c.patient_id,
+      opened_balance_cents: c.balance_cents,
       opened_on: todayIso,
       current_step: "statement",
       next_action_at: today.toISOString(),

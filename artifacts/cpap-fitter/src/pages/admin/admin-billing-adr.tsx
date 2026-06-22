@@ -5,7 +5,7 @@
 // are still outstanding. Log a new ADR from the form; open "Build packet" to
 // assemble the response. reports.read to view; patients.update to create.
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { ShieldAlert } from "lucide-react";
@@ -56,7 +56,13 @@ export function AdminBillingAdrPage() {
     queryFn: getAdrAnalytics,
     staleTime: 5 * 60_000,
   });
-  const [showForm, setShowForm] = useState(false);
+  // Deep-link from the inbound-fax page: ?faxId=&patientId= opens the create
+  // form pre-seeded, so the operator can "Suggest from fax" immediately.
+  const initial = useMemo(() => {
+    const p = new URLSearchParams(window.location.search);
+    return { faxId: p.get("faxId"), patientId: p.get("patientId") };
+  }, []);
+  const [showForm, setShowForm] = useState(!!initial.faxId);
 
   return (
     <div
@@ -87,6 +93,8 @@ export function AdminBillingAdrPage() {
 
       {showForm ? (
         <AdrCreateForm
+          initialFaxId={initial.faxId}
+          initialPatientId={initial.patientId}
           onCreated={() => {
             setShowForm(false);
             void qc.invalidateQueries({ queryKey: ["admin", "adr-worklist"] });
@@ -258,8 +266,16 @@ function buildPacketHref(
   return `/admin/audit-packet?${params.toString()}`;
 }
 
-function AdrCreateForm({ onCreated }: { onCreated: () => void }) {
-  const [patientId, setPatientId] = useState("");
+function AdrCreateForm({
+  onCreated,
+  initialFaxId,
+  initialPatientId,
+}: {
+  onCreated: () => void;
+  initialFaxId?: string | null;
+  initialPatientId?: string | null;
+}) {
+  const [patientId, setPatientId] = useState(initialPatientId ?? "");
   const [claimId, setClaimId] = useState("");
   const [source, setSource] = useState<AdrSource>("tpe");
   const [scope, setScope] = useState<AdrScope>("device");
@@ -268,7 +284,7 @@ function AdrCreateForm({ onCreated }: { onCreated: () => void }) {
   const [adrReference, setAdrReference] = useState("");
   const [receivedAt, setReceivedAt] = useState("");
   const [responseDue, setResponseDue] = useState("");
-  const [faxId, setFaxId] = useState("");
+  const [faxId, setFaxId] = useState(initialFaxId ?? "");
   const [suggestState, setSuggestState] = useState<
     "idle" | "loading" | "done" | "offline" | "error"
   >("idle");

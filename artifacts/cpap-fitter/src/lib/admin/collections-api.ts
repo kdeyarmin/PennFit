@@ -53,6 +53,24 @@ export async function getCollectionsWorklist(): Promise<CollectionsWorklist> {
   return (await res.json()) as CollectionsWorklist;
 }
 
+/** Download the final-notice letter print batch. Returns {empty:true} when no
+ *  runs are at the final-notice step. */
+export async function downloadDunningLetters(): Promise<
+  { blob: Blob; count: number } | { empty: true }
+> {
+  const url = "/resupply-api/admin/billing/collections/letter-batch";
+  const res = await fetch(url, {
+    credentials: "include",
+    headers: { Accept: "application/pdf" },
+  });
+  if (res.status === 404) return { empty: true };
+  if (!res.ok) throw await err(res, "GET", url);
+  return {
+    blob: await res.blob(),
+    count: Number(res.headers.get("X-Dunning-Letter-Count") ?? 0),
+  };
+}
+
 export async function transitionRun(
   id: string,
   action: "pause" | "resolve" | "cancel",

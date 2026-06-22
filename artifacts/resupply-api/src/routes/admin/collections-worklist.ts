@@ -16,6 +16,8 @@ import { z } from "zod";
 import { logAudit } from "@workspace/resupply-audit";
 import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
+import { resolveBillingIdentity } from "../../lib/billing/identity-resolver";
+import { renderDunningLettersBatchPdf } from "../../lib/billing/dunning-letter-pdf";
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
@@ -222,6 +224,142 @@ router.get(
     );
     res.setHeader("Cache-Control", "private, no-store");
     res.status(200).send(lines.join("\r\n"));
+  },
+);
+
+// GET letter-batch — a print batch of final-notice letters for runs at the
+// `final_notice` step. The dunning ladder's letter channel isn't sent
+// electronically; this produces the PDF to fold and mail.
+router.get(
+  "/admin/billing/collections/letter-batch",
+  requirePermission("patients.update"),
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    if (!(await isFeatureEnabled("collections.dunning", orgId))) {
+      res.status(404).json({ error: "feature_disabled" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+    const { data: runRows } = await supabase
+      .from("patient_dunning_runs")
+      .select("id, patient_id, opened_balance_cents")
+      .eq("status", "active")
+      .eq("current_step", "final_notice")
+      .order("opened_balance_cents", { ascending: false })
+      .limit(500);
+    const runs = (runRows ?? []) as Array<{
+      id: string;
+      patient_id: string;
+      opened_balance_cents: number;
+    }>;
+    if (runs.length === 0) {
+      res.status(404).json({ error: "no_letters_due" });
+      return;
+    }
+
+    const { data: patientRows } = await supabase
+      .from("patients")
+      .select("id, legal_first_name, legal_last_name, address")
+      .in(
+        "id",
+        runs.map((r) => r.patient_id),
+      );
+    const patients = new Map(
+      (
+        (patientRows ?? []) as Array<{
+          id: string;
+          legal_first_name: string;
+          legal_last_name: string;
+          address: {
+            line1?: string;
+            line2?: string;
+            city?: string;
+            state?: string;
+            zip?: string;
+          } | null;
+        }>
+      ).map((p) => [p.id, p]),
+    );
+
+    const identity = await resolveBillingIdentity({ orgId });
+    const bp = identity.billingProvider;
+
+    const letters = runs
+      .map((run) => {
+        const p = patients.get(run.patient_id);
+        if (!p) return null;
+        const a = p.address ?? {};
+        const addressLines = [
+          a.line1,
+          a.line2,
+          [a.city, a.state, a.zip].filter(Boolean).join(", "),
+        ].filter((l): l is string => !!l && l.trim().length > 0);
+        return {
+          patientName: `${p.legal_first_name} ${p.legal_last_name}`,
+          addressLines,
+          balanceCents: run.opened_balance_cents,
+        };
+      })
+      .filter((l): l is NonNullable<typeof l> => l !== null);
+    if (letters.length === 0) {
+      res.status(404).json({ error: "no_letters_due" });
+      return;
+    }
+
+    const { pdf, letterCount } = await renderDunningLettersBatchPdf({
+      company: {
+        legalName: identity.organization?.legal_name ?? bp.organizationName,
+        addressLines: [
+          bp.address.line1,
+          `${bp.address.city}, ${bp.address.state} ${bp.address.zip}`,
+        ].filter(Boolean),
+        phone: identity.organization?.phone_e164 ?? null,
+      },
+      letters,
+      generatedOn: new Date(),
+    });
+
+    // Record a letter touch on each run so the ladder advances + the audit
+    // trail reflects the mailing.
+    const nowIso = new Date().toISOString();
+    await supabase.from("patient_dunning_events").insert(
+      runs.slice(0, letters.length).map((run) => ({
+        run_id: run.id,
+        step: "final_notice",
+        channel: "letter" as const,
+        outcome: "sent" as const,
+        detail: "print_batch",
+        amount_at_touch_cents: run.opened_balance_cents,
+        actor_email: req.adminEmail ?? null,
+        occurred_at: nowIso,
+      })),
+    );
+
+    await logAudit({
+      action: "dunning.letter_batch",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "patient_dunning_runs",
+      targetId: null,
+      metadata: { letter_count: letterCount },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) =>
+      logger.warn({ err }, "dunning.letter_batch audit write failed"),
+    );
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="dunning-letters-${nowIso.slice(0, 10)}.pdf"`,
+    );
+    res.setHeader("Cache-Control", "private, no-store");
+    res.setHeader("X-Dunning-Letter-Count", String(letterCount));
+    res.status(200).end(pdf);
   },
 );
 
