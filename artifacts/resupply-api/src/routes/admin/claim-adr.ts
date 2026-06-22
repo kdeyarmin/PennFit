@@ -400,9 +400,170 @@ router.get(
       .select("*")
       .eq("adr_id", adr.id)
       .order("created_at", { ascending: true });
+    // The patient's stored chart documents, so the detail UI can offer them
+    // when attaching a checklist item.
+    const { data: patientDocs } = await supabase
+      .from("patient_documents")
+      .select("id, document_type, filename, created_at")
+      .eq("patient_id", adr.patient_id)
+      .order("created_at", { ascending: false })
+      .limit(200);
     res.json({
       adr: { ...adr, slaStatus: slaFor(adr) },
       documents: documents ?? [],
+      patientDocuments: patientDocs ?? [],
+    });
+  },
+);
+
+// ── PATCH a checklist document (attach / waive / mark generated) ─────
+const docPatchParams = z.object({
+  id: z.string().uuid(),
+  docId: z.string().uuid(),
+});
+const docPatchBody = z
+  .object({
+    status: z.enum(["outstanding", "attached", "generated", "waived", "na"]),
+    documentId: z.string().uuid().nullable().optional(),
+    waivedReason: z.string().trim().max(500).nullable().optional(),
+  })
+  .strict();
+
+router.patch(
+  "/admin/billing/adr/:id/documents/:docId",
+  requirePermission("patients.update"),
+  adminRateLimit({ name: "adr.doc_update", preset: "mutation" }),
+  async (req, res) => {
+    const p = docPatchParams.safeParse(req.params);
+    const b = docPatchBody.safeParse(req.body);
+    if (!p.success || !b.success) {
+      res.status(400).json({ error: "invalid_request" });
+      return;
+    }
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    if (!(await isFeatureEnabled("billing.adr_queue", orgId))) {
+      res.status(404).json({ error: "feature_disabled" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+    // The checklist row must belong to the ADR in the path.
+    const { data: row } = await supabase
+      .from("claim_adr_documents")
+      .select("id, adr_id")
+      .eq("id", p.data.docId)
+      .limit(1)
+      .maybeSingle();
+    if (!row || row.adr_id !== p.data.id) {
+      res.status(404).json({ error: "document_not_found" });
+      return;
+    }
+    const update: Database["resupply"]["Tables"]["claim_adr_documents"]["Update"] =
+      {
+        status: b.data.status,
+        updated_at: new Date().toISOString(),
+      };
+    if (b.data.status === "attached") {
+      update.document_id = b.data.documentId ?? null;
+      update.attached_at = new Date().toISOString();
+      update.attached_via = "upload";
+      update.attached_by_email = req.adminEmail ?? null;
+    } else if (b.data.status === "waived") {
+      update.waived_reason = b.data.waivedReason ?? null;
+    }
+    const { error } = await supabase
+      .from("claim_adr_documents")
+      .update(update)
+      .eq("id", p.data.docId);
+    if (error) throw error;
+    res.json({ ok: true });
+  },
+);
+
+// ── GET outcome analytics ───────────────────────────────────────────
+// Overturn/win rate + counts by contractor source over a window, from closed
+// ADRs. A feedback loop on which audits are worth fighting.
+router.get(
+  "/admin/billing/adr-analytics",
+  requirePermission("reports.read"),
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    if (!(await isFeatureEnabled("billing.adr_queue", orgId))) {
+      res.status(404).json({ error: "feature_disabled" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+    const { data } = await supabase
+      .from("claim_adr_requests")
+      .select("source, outcome, status")
+      .in("status", ["submitted", "closed"])
+      .limit(2000);
+    const rows = (data ?? []) as Array<{
+      source: string;
+      outcome: string;
+      status: string;
+    }>;
+
+    type Bucket = {
+      source: string;
+      total: number;
+      favorable: number;
+      partial: number;
+      unfavorable: number;
+      pending: number;
+    };
+    const bySource = new Map<string, Bucket>();
+    let favorable = 0;
+    let partial = 0;
+    let unfavorable = 0;
+    let decided = 0;
+    for (const r of rows) {
+      const b =
+        bySource.get(r.source) ??
+        ({
+          source: r.source,
+          total: 0,
+          favorable: 0,
+          partial: 0,
+          unfavorable: 0,
+          pending: 0,
+        } as Bucket);
+      b.total += 1;
+      if (r.outcome === "favorable") {
+        b.favorable += 1;
+        favorable += 1;
+        decided += 1;
+      } else if (r.outcome === "partial") {
+        b.partial += 1;
+        partial += 1;
+        decided += 1;
+      } else if (r.outcome === "unfavorable") {
+        b.unfavorable += 1;
+        unfavorable += 1;
+        decided += 1;
+      } else {
+        b.pending += 1;
+      }
+      bySource.set(r.source, b);
+    }
+    res.json({
+      totals: {
+        responded: rows.length,
+        decided,
+        favorable,
+        partial,
+        unfavorable,
+        // Win rate = (favorable + partial) / decided.
+        winRate: decided > 0 ? (favorable + partial) / decided : null,
+      },
+      bySource: Array.from(bySource.values()).sort((a, b) => b.total - a.total),
     });
   },
 );

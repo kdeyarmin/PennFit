@@ -566,6 +566,11 @@ const AdminBillingAdrPage = lazyWithRetry(() =>
     default: m.AdminBillingAdrPage,
   })),
 );
+const AdminBillingAdrDetailPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-billing-adr-detail").then((m) => ({
+    default: m.AdminBillingAdrDetailPage,
+  })),
+);
 const AdminAuditPacketPage = lazyWithRetry(() =>
   import("@/pages/admin/admin-audit-packet").then((m) => ({
     default: m.AdminAuditPacketPage,
@@ -892,6 +897,9 @@ function AdminConsole() {
               component={AdminBillingBillHoldPage}
             />
             <Route path="/admin/billing/adr" component={AdminBillingAdrPage} />
+            <Route path="/admin/billing/adr/:id">
+              {(params) => <AdminBillingAdrDetailPage id={params.id} />}
+            </Route>
             <Route
               path="/admin/audit-packet"
               component={AdminAuditPacketPage}

@@ -59,9 +59,65 @@ export interface AdrDocument {
   created_at: string;
 }
 
+export interface AdrPatientDocument {
+  id: string;
+  document_type: string;
+  filename: string | null;
+  created_at: string;
+}
+
 export interface AdrDetail {
   adr: AdrWorklistItem & { notes: string | null; submitted_at: string | null };
   documents: AdrDocument[];
+  patientDocuments: AdrPatientDocument[];
+}
+
+export async function updateAdrDocument(
+  adrId: string,
+  docId: string,
+  body: {
+    status: "outstanding" | "attached" | "generated" | "waived" | "na";
+    documentId?: string | null;
+    waivedReason?: string | null;
+  },
+): Promise<void> {
+  const url = `/resupply-api/admin/billing/adr/${encodeURIComponent(adrId)}/documents/${encodeURIComponent(docId)}`;
+  const res = await fetch(url, {
+    method: "PATCH",
+    credentials: "include",
+    headers: jsonHeaders(),
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw await err(res, "PATCH", url);
+}
+
+export interface AdrAnalytics {
+  totals: {
+    responded: number;
+    decided: number;
+    favorable: number;
+    partial: number;
+    unfavorable: number;
+    winRate: number | null;
+  };
+  bySource: {
+    source: string;
+    total: number;
+    favorable: number;
+    partial: number;
+    unfavorable: number;
+    pending: number;
+  }[];
+}
+
+export async function getAdrAnalytics(): Promise<AdrAnalytics> {
+  const url = "/resupply-api/admin/billing/adr-analytics";
+  const res = await fetch(url, {
+    credentials: "include",
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) throw await err(res, "GET", url);
+  return (await res.json()) as AdrAnalytics;
 }
 
 export interface AuditCatalogItem {

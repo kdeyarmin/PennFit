@@ -19,6 +19,7 @@ import {
   type AdrSource,
   type AdrScope,
   createAdr,
+  getAdrAnalytics,
   getAdrWorklist,
   suggestAdrFromFax,
 } from "@/lib/admin/adr-api";
@@ -49,6 +50,11 @@ export function AdminBillingAdrPage() {
     queryKey: ["admin", "adr-worklist"] as const,
     queryFn: getAdrWorklist,
     staleTime: 30_000,
+  });
+  const analytics = useQuery({
+    queryKey: ["admin", "adr-analytics"] as const,
+    queryFn: getAdrAnalytics,
+    staleTime: 5 * 60_000,
   });
   const [showForm, setShowForm] = useState(false);
 
@@ -103,6 +109,43 @@ export function AdminBillingAdrPage() {
             />
             <KpiCard label="Overdue" value={query.data.counts.overdue} />
           </div>
+
+          {analytics.data && analytics.data.totals.decided > 0 ? (
+            <Card title="Outcomes">
+              <div className="flex items-center gap-4 flex-wrap text-sm">
+                <span style={{ color: "hsl(var(--ink-1))" }}>
+                  Win rate{" "}
+                  <span className="font-semibold">
+                    {analytics.data.totals.winRate != null
+                      ? `${Math.round(analytics.data.totals.winRate * 100)}%`
+                      : "—"}
+                  </span>{" "}
+                  <span style={{ color: "hsl(var(--ink-3))" }}>
+                    ({analytics.data.totals.decided} decided)
+                  </span>
+                </span>
+                <span style={{ color: "hsl(152 70% 24%)" }}>
+                  {analytics.data.totals.favorable} favorable
+                </span>
+                <span style={{ color: "hsl(38 80% 28%)" }}>
+                  {analytics.data.totals.partial} partial
+                </span>
+                <span style={{ color: "hsl(354 75% 38%)" }}>
+                  {analytics.data.totals.unfavorable} unfavorable
+                </span>
+              </div>
+              {analytics.data.bySource.length > 0 ? (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {analytics.data.bySource.map((s) => (
+                    <Badge key={s.source} variant="neutral">
+                      {s.source.toUpperCase()}: {s.favorable + s.partial}/
+                      {s.total} won
+                    </Badge>
+                  ))}
+                </div>
+              ) : null}
+            </Card>
+          ) : null}
 
           {query.data.items.length === 0 ? (
             <Card>
@@ -173,6 +216,13 @@ export function AdminBillingAdrPage() {
                             Ref {item.adr_reference}
                           </span>
                         ) : null}
+                        <Link
+                          href={`/admin/billing/adr/${item.id}`}
+                          className="underline"
+                          style={{ color: "hsl(var(--penn-navy))" }}
+                        >
+                          Open
+                        </Link>
                         <Link
                           href={buildPacketHref(item.patient_id, {
                             adrId: item.id,
