@@ -41,6 +41,7 @@ import {
   applyPlatformBrandingForOrg,
   getCompanyInfo,
 } from "../company-info.js";
+import { notifyFeatureSuggestion } from "../slack/notify.js";
 
 /** Cap tool rounds per user turn so a runaway model can't recurse. */
 export const MAX_ADMIN_TOOL_ROUNDS = 2;
@@ -358,6 +359,14 @@ export async function executeAdminAssistantTool(
     },
     "admin assistant: feature suggestion emailed to owner(s)",
   );
+
+  // Also drop it into Slack (best-effort, non-PHI: title + area + priority).
+  void notifyFeatureSuggestion({
+    orgId: ctx.orgId,
+    title: args.title,
+    area: args.area ?? null,
+    priority: args.priority ?? null,
+  });
 
   return {
     ok: true,

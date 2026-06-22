@@ -329,6 +329,17 @@ app.use(
   express.raw({ type: "application/json", limit: "1mb" }),
 );
 
+// Slack inbound (interactivity + slash commands) is HMAC-signed over the EXACT
+// raw body, same posture as the webhooks above — but Slack posts
+// application/x-www-form-urlencoded, so capture EVERY content-type as a Buffer
+// (type: () => true) BEFORE the global express.json()/urlencoded() parsers.
+// The handlers verify the signature, then parse the urlencoded body
+// themselves. Scoped to this one path so everything else is unaffected.
+app.use(
+  "/resupply-api/slack",
+  express.raw({ type: () => true, limit: "256kb" }),
+);
+
 // The patient-packet signing endpoint can carry a drawn-signature PNG
 // data URL, which exceeds the default 100 KB body cap. Parse it with a
 // larger limit BEFORE the global parser; once parsed, express.json

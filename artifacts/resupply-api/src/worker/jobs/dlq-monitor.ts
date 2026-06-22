@@ -28,6 +28,7 @@ import {
 } from "@workspace/resupply-email";
 
 import { logger } from "../../lib/logger";
+import { notifyOpsDigest } from "../../lib/slack/notify";
 import { createQueueWithDlq, CRON_SCAN_QUEUE_OPTS } from "../lib/queue-options";
 
 import { parseRecipientList } from "./metric-alerts-notify";
@@ -150,6 +151,18 @@ export async function runDlqMonitor(
     emailSent: false,
   };
   if (depths.length === 0) return stats;
+
+  // Slack ops digest (best-effort, non-PHI: queue names + counts). Fires
+  // whenever there are dead-lettered jobs, independent of email config.
+  void notifyOpsDigest({
+    orgId: undefined,
+    severity: "critical",
+    title: `🔴 Stuck jobs — ${stats.totalDead} dead-lettered`,
+    lines: [
+      `*Total:* ${stats.totalDead} across ${depths.length} queue(s)`,
+      ...depths.slice(0, 10).map((d) => `• \`${d.queue}\`: ${d.count}`),
+    ],
+  });
 
   const recipients = parseRecipientList(process.env.RESUPPLY_ADMIN_EMAILS);
   stats.recipients = recipients.length;

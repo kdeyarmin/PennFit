@@ -737,6 +737,8 @@ export interface Database {
           phone_e164: string | null;
           /** Multi-location groundwork (mig 0235) — staff home branch, nullable. */
           location_id: string | null;
+          /** Slack user id (mig 0459) for Slack "Claim" attribution, nullable. */
+          slack_user_id: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -767,6 +769,8 @@ export interface Database {
           phone_e164?: string | null;
           /** Multi-location groundwork (mig 0235) — staff home branch, nullable. */
           location_id?: string | null;
+          /** Slack user id (mig 0459) for Slack "Claim" attribution, nullable. */
+          slack_user_id?: string | null;
           created_at?: string;
           updated_at?: string;
         };

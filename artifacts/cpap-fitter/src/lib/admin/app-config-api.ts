@@ -142,3 +142,10 @@ export const clearConfigValue = (key: string) =>
     `/admin/system/config/${encodeURIComponent(key)}`,
     { method: "DELETE" },
   );
+
+/** Post a verification message to the tenant's configured Slack channel. */
+export const sendSlackTest = () =>
+  jsonFetch<{ success: boolean; message: string }>(`/admin/slack/test`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+  });

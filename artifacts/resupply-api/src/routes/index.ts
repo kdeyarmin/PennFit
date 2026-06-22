@@ -100,6 +100,7 @@ import shopOrderPodUploadRouter from "./admin/shop-order-pod-upload.js";
 import integrationsStatusRouter from "./admin/integrations-status.js";
 import integrationsNightlySyncRouter from "./admin/integrations-nightly-sync.js";
 import integrationsWebhooksRouter from "./integrations-webhooks.js";
+import slackRouter from "./slack/index.js";
 import integrationsErrorsRouter from "./admin/integrations-errors.js";
 import therapyFleetRouter from "./admin/therapy-fleet.js";
 import therapyClinicalInsightsRouter from "./admin/therapy-clinical-insights.js";
@@ -116,6 +117,8 @@ import glAccountMappingsRouter from "./admin/gl-account-mappings.js";
 import reportPresetsRouter from "./admin/report-presets.js";
 import featureFlagsRouter from "./admin/feature-flags.js";
 import appConfigRouter from "./admin/app-config.js";
+import slackTestRouter from "./admin/slack-test.js";
+import slackOAuthRouter from "./admin/slack-oauth.js";
 import agreementsRouter from "./admin/agreements.js";
 import npsSummaryRouter from "./admin/nps-summary.js";
 import deliveryFailuresRouter from "./admin/delivery-failures.js";
@@ -1030,6 +1033,10 @@ router.use(integrationsNightlySyncRouter);
 // and Care Orchestrator). HMAC-verified. Public mount because
 // vendors don't carry admin sessions.
 router.use(integrationsWebhooksRouter);
+// /slack/interactivity + /slack/commands — Slack button callbacks and the
+// /pennfit slash command. Signature-verified (not admin-cookie); public mount
+// because Slack doesn't carry admin sessions.
+router.use(slackRouter);
 // /admin/integrations/errors — sync-failure triage queue + retry.
 router.use(integrationsErrorsRouter);
 // /admin/therapy-fleet/* — population-level therapy-cloud analytics:
@@ -1094,6 +1101,10 @@ router.use(featureFlagsRouter);
 // enter/rotate integration credentials + platform secrets (migration
 // 0211). super_admin-only (system.config.manage).
 router.use(appConfigRouter);
+// /admin/slack/test — "Send test message" button in System Configuration.
+router.use(slackTestRouter);
+// /admin/slack/oauth/start + /slack/oauth/callback — one-click "Add to Slack".
+router.use(slackOAuthRouter);
 router.use(agreementsRouter);
 // /admin/nps/recent — last-N-days NPS rollup for the post-delivery
 // follow-up. Surfaces band counts + canonical NPS score + a comment

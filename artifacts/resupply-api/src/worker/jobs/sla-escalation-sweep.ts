@@ -35,6 +35,7 @@ import type PgBoss from "pg-boss";
 import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { notifySlaBreach } from "../../lib/slack/notify";
 import { forEachActiveOrg } from "../lib/for-each-active-org";
 import { createQueueWithDlq, CRON_SCAN_QUEUE_OPTS } from "../lib/queue-options";
 
@@ -162,6 +163,15 @@ export async function runSlaEscalationSweepForOrg(
       stats.escalated += 1;
       if (plan.severity === "critical") stats.critical += 1;
       else stats.warning += 1;
+
+      // Notify the CS reps in Slack (best-effort, non-PHI: conversation id +
+      // overdue minutes + severity + a deep link). Never throws.
+      void notifySlaBreach({
+        orgId,
+        conversationId: plan.conversationId,
+        minutesOverdue: plan.minutesOverdue,
+        severity: plan.severity,
+      });
       if (stats.escalated >= MAX_PER_TICK) break;
     }
 

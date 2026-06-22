@@ -74,6 +74,7 @@ import {
 } from "../../lib/messaging/ingest-mms";
 import { readEmailConfigOrNull } from "../../lib/messaging/messaging-config";
 import { safeAudit } from "../../lib/messaging/safe-audit";
+import { notifyConversationNeedsHuman } from "../../lib/slack/notify";
 
 const router: IRouter = Router();
 
@@ -512,6 +513,17 @@ router.post("/email/inbound-parse", inboundParseLimiter, async (req, res) => {
     .update({ status: nextStatus, updated_at: inboundIso })
     .eq("id", conversationId);
   if (statusErr) throw statusErr;
+
+  // Ping the CS reps in Slack only when a human is actually needed (the bot
+  // didn't answer). Best-effort, non-PHI, never throws.
+  if (nextStatus === "awaiting_admin") {
+    void notifyConversationNeedsHuman({
+      orgId,
+      conversationId,
+      channel: "email",
+      reason: "email reply",
+    });
+  }
 
   await safeAudit({
     action: "messaging.inbound.received",

@@ -81,6 +81,7 @@ import {
 } from "../../lib/messaging/order-flow";
 import { findActiveClosure } from "../../lib/office-closure/active";
 import { safeAudit } from "../../lib/messaging/safe-audit";
+import { notifyConversationNeedsHuman } from "../../lib/slack/notify";
 
 const router: IRouter = Router();
 
@@ -1115,6 +1116,13 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
         ip: input.ip,
         userAgent: input.userAgent,
       });
+      // Best-effort Slack ping for the CS reps (non-PHI, never throws).
+      void notifyConversationNeedsHuman({
+        orgId: input.orgId,
+        conversationId: input.conversationId,
+        channel: "sms",
+        reason: "address change",
+      });
       return (
         input.aiReply ??
         "Thanks — a team member will follow up about your address change."
@@ -1201,6 +1209,13 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
         },
         ip: input.ip,
         userAgent: input.userAgent,
+      });
+      // Best-effort Slack ping for the CS reps (non-PHI, never throws).
+      void notifyConversationNeedsHuman({
+        orgId: input.orgId,
+        conversationId: input.conversationId,
+        channel: "sms",
+        reason: "unrecognized reply",
       });
       return (
         input.aiReply ??

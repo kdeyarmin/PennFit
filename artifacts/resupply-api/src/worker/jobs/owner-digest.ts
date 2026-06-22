@@ -23,6 +23,7 @@ import {
 
 import { PLATFORM_NAME } from "../../lib/company-info";
 import { logger } from "../../lib/logger";
+import { notifyOpsDigest } from "../../lib/slack/notify";
 import {
   createQueueWithDlq,
   VENDOR_SEND_QUEUE_OPTS,
@@ -283,6 +284,34 @@ export async function runOwnerDigest(
       message: String(a.message ?? ""),
     })),
   );
+
+  // Slack ops digest (best-effort, non-PHI: KPI labels + weekly totals).
+  // Fires when there's something to report, independent of email config.
+  if (digest.hasData) {
+    void notifyOpsDigest({
+      orgId: undefined,
+      severity: digest.topAlert ? "warning" : "info",
+      title: `📊 ${PLATFORM_NAME} weekly digest — week of ${digest.windowStart}`,
+      lines: [
+        ...digest.metrics
+          .filter((m) => m.thisWeek !== 0 || m.priorWeek !== 0)
+          .map(
+            (m) =>
+              `• ${m.label}: ${fmtValue(m.thisWeek, m.unit)}` +
+              (m.deltaPct !== null
+                ? ` (${m.deltaPct >= 0 ? "+" : ""}${Math.round(
+                    m.deltaPct * 100,
+                  )}% WoW)`
+                : ""),
+          ),
+        ...(digest.topAlert
+          ? [
+              `*Top alert (${digest.topAlert.severity}):* ${digest.topAlert.message}`,
+            ]
+          : []),
+      ],
+    });
+  }
 
   const recipients = parseRecipientList(process.env.RESUPPLY_ADMIN_EMAILS);
   if (recipients.length === 0) {

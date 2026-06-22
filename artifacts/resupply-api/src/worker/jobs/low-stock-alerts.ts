@@ -37,6 +37,7 @@ import {
 
 import { resolveSuperAdminRecipients } from "../../lib/admin-assistant/adminAssistantTools";
 import { logger } from "../../lib/logger";
+import { notifyOpsDigest } from "../../lib/slack/notify";
 import { stripeAccountRequestOptions } from "../../lib/stripe/connect";
 import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import {
@@ -343,6 +344,18 @@ async function lowStockAlertsForOrg(
     );
     return;
   }
+
+  // Slack ops digest (best-effort, non-PHI: SKU names + stock vs threshold).
+  // Fires for the tenant whenever there are alertable SKUs, independent of
+  // email config.
+  void notifyOpsDigest({
+    orgId,
+    severity: "warning",
+    title: `🟠 Low stock — ${alertable.length} SKU(s)`,
+    lines: alertable
+      .slice(0, 10)
+      .map((s) => `• ${s.name}: ${s.stockCount}/${s.threshold}`),
+  });
 
   // Per-tenant recipients: the org's own active super-admins, falling back to
   // the platform RESUPPLY_ADMIN_EMAILS allowlist when the tenant has none.

@@ -714,6 +714,11 @@ const AdminSupportPage = lazyWithRetry(() =>
     default: m.AdminSupportPage,
   })),
 );
+const AdminResourcesPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-resources").then((m) => ({
+    default: m.AdminResourcesPage,
+  })),
+);
 const AdminCustomerDetailPage = lazyWithRetry(() =>
   import("@/pages/admin/admin-customer-detail").then((m) => ({
     default: m.AdminCustomerDetailPage,
@@ -1231,6 +1236,7 @@ function AdminConsole() {
             />
             <Route path="/admin/nps" component={AdminNpsPage} />
             <Route path="/admin/support" component={AdminSupportPage} />
+            <Route path="/admin/resources" component={AdminResourcesPage} />
             <Route
               path="/admin/productivity"
               component={AdminProductivityPage}
