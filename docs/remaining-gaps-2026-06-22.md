@@ -80,37 +80,41 @@ operators can't see or act on it yet:
 - ✅ **Stripe disputes admin surface — DONE (this branch).** Built
   `/admin/billing/disputes` (`admin-billing-disputes.tsx` +
   `billing-disputes-api.ts`); see "Shipped" above.
-- **Appeals outcome / mark-delivered have no UI — bigger than first scoped.**
-  Re-verified this branch: there is **no appeal-letter UI in the SPA at all**
-  (the only `appeal-letter` reference in `artifacts/cpap-fitter/src` is a code
-  comment). The whole appeal flow — generate letter, list letters, fax,
-  mark-delivered, record outcome — is backend-only (`routes/admin/claim-appeals.ts`).
-  So this is not "wire a control into an existing list"; it's **building the
-  appeal-letter workbench section** (likely on the patient claim/ClinicalTabs
-  surface). _Effort: **M (3–5d)**, not S._ Backend endpoints already exist:
-  `POST .../appeal-letter`, `…/:letterId/fax`, `…/:letterId/mark-delivered`,
-  `…/:letterId/outcome`.
+- ✅ **Appeal-letter workbench — DONE (this branch).** There had been no
+  appeal-letter UI in the SPA at all (the whole flow was backend-only in
+  `routes/admin/claim-appeals.ts`). Built `components/admin/ClaimAppealsSection.tsx`
+  - `lib/admin/claim-appeals-api.ts`, rendered in the claim drawer
+    (`admin-insurance-claims.tsx`) for denied/appealed claims: generate the letter
+    PDF, fax to the payer (auto-transitions denied → appealed), record an
+    out-of-band mail/email/portal delivery, and record the payer outcome
+    (overturned/partial/upheld/withdrawn) so win-rate + response aging are
+    measurable.
 
 ---
 
 ## 3. Partial engineering items (loop not closed)
 
-- **Prior-auth automation is manual-only.** Da Vinci PAS submit is a manual
-  click (`routes/admin/davinci-pas-submit.ts`); **no worker or auto-engine
-  invokes `submitPasBundle`** (grep-confirmed none under `worker/`). PA-required
-  items wait on a human. **Prerequisite (verified this branch):** the submit
-  logic is a **large inline route handler** (builds the FHIR bundle from many
-  joined rows, SSRF-guarded outbound, parses + persists the ClaimResponse) — it
-  must be **extracted into a shared `submitPriorAuth({ orgId, paId })` helper**
-  before a worker can reuse it without duplicating the bundle-build. Then add an
-  opt-in flag-gated worker pass (mirroring the auto-submit posture). Also note
-  the per-payer token still lives in process env (`DAVINCI_PAS_TOKEN_<PAYER_SLUG>`),
-  not `clearinghouse_credentials` — a multi-tenant tail. _Effort: M (3–5d),
-  extraction-first._
-- **Inventory reservation / oversell under concurrency.** PR #1200 added a
-  stock-**decrement** guard, but there is still **no `inventory_reservations`
-  table** (no such migration) — stock remains `shop_products.metadata.stock_count`
-  (Stripe, point-in-time), so concurrent cash-pay checkouts can still race.
+- ✅ **Prior-auth automation — DONE (this branch).** Extracted the inline PAS
+  submit handler into `lib/billing/submit-prior-auth.ts` (`submitPriorAuth()`,
+  behaviour byte-for-byte preserved incl. the SSRF guard + DNS-pin + payer
+  identifier-binding); the route is now a thin wrapper. Added the flag-gated
+  worker `worker/jobs/prior-auth-auto-submit.ts` (two off switches:
+  `PRIOR_AUTH_AUTOSUBMIT_CRON` env + `billing.auto_submit_prior_auths` flag,
+  seeded OFF in migration 0433). **Note:** CodeQL's `js/request-forgery`
+  heuristic flags the relocated PAS-endpoint fetch as a "new" alert; the
+  mitigation is fully intact (it mirrors the original route, which carried the
+  same already-dismissed FP), so it is dismissed in Security → Code scanning per
+  the repo's documented default-setup convention. The per-payer token still
+  lives in process env (`DAVINCI_PAS_TOKEN_<PAYER_SLUG>`), not
+  `clearinghouse_credentials` — a multi-tenant tail left open.
+- **Inventory reservation / oversell under concurrency — own PR.** PR #1200
+  added a stock-**decrement** guard, but there is still **no
+  `inventory_reservations` table** (no such migration) — stock remains
+  `shop_products.metadata.stock_count` (Stripe, point-in-time), so concurrent
+  cash-pay checkouts can still race. This is the one **checkout-path,
+  concurrency-sensitive** build, so it is being done as its **own focused PR**
+  (atomic advisory-lock reserve RPC + fail-open checkout wiring + consume/release
+  on the Stripe webhook + an expiry sweep job + the checkout-test updates).
   _Effort: M (3–5d)._
 - **Secondary / COB** — effectively end-to-end with both `billing.auto_secondary_claims`
   and `billing.auto_submit_claims` ON; residual gap is a secondary needing
