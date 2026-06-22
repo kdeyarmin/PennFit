@@ -30,7 +30,15 @@ vi.mock("../logger", () => ({
   logger: { warn: vi.fn(), info: vi.fn(), error: vi.fn() },
 }));
 
-import { recordTenantUsage, recordOutboundMessageUsage } from "./usage";
+import {
+  recordTenantUsage,
+  recordOutboundMessageUsage,
+  recordAiTokenUsage,
+} from "./usage";
+
+// recordAiTokenUsage is fire-and-forget (void recordTenantUsage), so let
+// the spawned RPC microtasks settle before asserting.
+const flush = () => new Promise((r) => setTimeout(r, 0));
 
 beforeEach(() => {
   state.inserted = [];
@@ -163,5 +171,33 @@ describe("recordOutboundMessageUsage", () => {
     await Promise.resolve();
     await Promise.resolve();
     expect(state.inserted[0]).toMatchObject({ p_quantity: 7 });
+  });
+});
+
+describe("recordAiTokenUsage", () => {
+  it("records input and output tokens as separate rollup metrics", async () => {
+    recordAiTokenUsage({
+      orgId: "org-1",
+      inputTokens: 1200,
+      outputTokens: 340,
+      source: "storefront.chat",
+    });
+    await flush();
+    const byKey = new Map(
+      state.inserted.map((r) => [r.p_metric_key, r.p_quantity]),
+    );
+    expect(byKey.get("aiInputTokensPerMonth")).toBe(1200);
+    expect(byKey.get("aiOutputTokensPerMonth")).toBe(340);
+  });
+
+  it("skips a zero or missing token count", async () => {
+    recordAiTokenUsage({
+      orgId: "org-1",
+      inputTokens: 0,
+      outputTokens: null,
+      source: "x",
+    });
+    await flush();
+    expect(state.inserted).toHaveLength(0);
   });
 });

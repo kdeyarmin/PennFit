@@ -37,6 +37,13 @@ import { reportMeteredOverage } from "../platform-billing/stripe";
 export const USAGE_METRIC_KEYS = [
   "outboundMessagesPerMonth",
   "aiTextInteractionsPerMonth",
+  // AI token throughput (input + output), summed per month. These are
+  // COST signals (folded through the platform cost-rate card into vendor
+  // COGS), NOT billing allowances — no plan caps them, and they have no
+  // metered add-on, so `reportMeteredOverage` no-ops for them. Recorded
+  // fire-and-forget by `recordAiTokenUsage` at each LLM call site.
+  "aiInputTokensPerMonth",
+  "aiOutputTokensPerMonth",
   "billingTransactionsPerMonth",
   "faxEvents",
   "aiVoiceEvents",
@@ -152,4 +159,40 @@ export function recordOutboundMessageUsage(input: {
     source: input.source,
     metadata: { channel: input.channel },
   });
+}
+
+/**
+ * Shared chokepoint for AI token throughput: call this from every text-LLM
+ * call site right after a model response with its token usage. Records
+ * input and output tokens into their monthly rollups so the platform
+ * cost-rate card can fold them into vendor COGS. Fire-and-forget +
+ * fail-soft (no awaiting, never throws). A zero/absent token count is a
+ * silent no-op (recordTenantUsage drops zero-quantity events), so an
+ * offline/degraded turn with no usage records nothing.
+ */
+export function recordAiTokenUsage(input: {
+  orgId: string | undefined | null;
+  inputTokens: number | undefined | null;
+  outputTokens: number | undefined | null;
+  /** Short origin tag, e.g. "storefront.chat" or "admin.assistant". */
+  source: string;
+}): void {
+  const inTok = input.inputTokens ?? 0;
+  const outTok = input.outputTokens ?? 0;
+  if (inTok > 0) {
+    void recordTenantUsage({
+      orgId: input.orgId,
+      metricKey: "aiInputTokensPerMonth",
+      quantity: inTok,
+      source: input.source,
+    });
+  }
+  if (outTok > 0) {
+    void recordTenantUsage({
+      orgId: input.orgId,
+      metricKey: "aiOutputTokensPerMonth",
+      quantity: outTok,
+      source: input.source,
+    });
+  }
 }

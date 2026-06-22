@@ -117,6 +117,7 @@ router.post("/me/sleep-coach", sleepCoachLimiter, async (req, res) => {
     patientId: patient.id,
     question: parsed.data.question,
     thread: parsed.data.thread,
+    orgId,
   });
   if (!result.reply) {
     logger.warn({ err: result.errorMessage }, "sleep-coach: empty reply");

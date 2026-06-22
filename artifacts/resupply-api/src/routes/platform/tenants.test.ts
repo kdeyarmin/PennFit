@@ -242,6 +242,334 @@ describe("GET /platform/tenants/:id/usage", () => {
   });
 });
 
+describe("GET /platform/tenants/:id", () => {
+  it("401s when the caller is not a platform admin", async () => {
+    const res = await request(makeApp()).get(`/platform/tenants/${TENANT_ID}`);
+    expect(res.status).toBe(401);
+  });
+
+  it("400s on a non-uuid id", async () => {
+    mockPlatformAdmin.current = { userId: "u_p", email: "ops@cm" };
+    const res = await request(makeApp()).get("/platform/tenants/not-a-uuid");
+    expect(res.status).toBe(400);
+  });
+
+  it("404s when the tenant does not exist", async () => {
+    mockPlatformAdmin.current = { userId: "u_p", email: "ops@cm" };
+    stageSupabaseResponse("organizations", "select", { data: null });
+    const res = await request(makeApp()).get(`/platform/tenants/${TENANT_ID}`);
+    expect(res.status).toBe(404);
+  });
+
+  it("returns the tenant detail view (with sender + updated_at)", async () => {
+    mockPlatformAdmin.current = { userId: "u_p", email: "ops@cm" };
+    stageSupabaseResponse("organizations", "select", {
+      data: {
+        id: TENANT_ID,
+        slug: "acme-dme",
+        name: "Acme DME",
+        storefront_name: "AcmeSleep",
+        status: "active",
+        custom_domain: "acme.example",
+        custom_domain_status: "verified",
+        created_at: "2026-02-01T00:00:00Z",
+        from_email: "info@acme.example",
+        from_name: "Acme DME",
+        updated_at: "2026-06-01T00:00:00Z",
+      },
+    });
+    const res = await request(makeApp()).get(`/platform/tenants/${TENANT_ID}`);
+    expect(res.status).toBe(200);
+    expect(res.body.tenant).toMatchObject({
+      id: TENANT_ID,
+      slug: "acme-dme",
+      fromEmail: "info@acme.example",
+      fromName: "Acme DME",
+      updatedAt: "2026-06-01T00:00:00Z",
+    });
+  });
+});
+
+describe("GET /platform/tenants/:id/feature-flags", () => {
+  it("401s for a non-platform-admin", async () => {
+    const res = await request(makeApp()).get(
+      `/platform/tenants/${TENANT_ID}/feature-flags`,
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it("404s when the tenant does not exist", async () => {
+    mockPlatformAdmin.current = { userId: "u_p", email: "ops@cm" };
+    stageSupabaseResponse("organizations", "select", { data: null });
+    const res = await request(makeApp()).get(
+      `/platform/tenants/${TENANT_ID}/feature-flags`,
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("lists the tenant's flags and marks unknown keys non-manageable", async () => {
+    mockPlatformAdmin.current = { userId: "u_p", email: "ops@cm" };
+    stageSupabaseResponse("organizations", "select", {
+      data: { id: TENANT_ID },
+    });
+    stageSupabaseResponse("feature_flags", "select", {
+      data: [
+        {
+          key: "admin.assistant",
+          enabled: true,
+          description: "Admin helper",
+          category: "Assistants",
+          updated_by_email: "ops@cm",
+          updated_at: "2026-06-01T00:00:00Z",
+        },
+        {
+          key: "totally.unknown_future_flag",
+          enabled: false,
+          description: null,
+          category: null,
+          updated_by_email: null,
+          updated_at: "2026-06-01T00:00:00Z",
+        },
+      ],
+    });
+    const res = await request(makeApp()).get(
+      `/platform/tenants/${TENANT_ID}/feature-flags`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.flags).toHaveLength(2);
+    expect(res.body.flags[0]).toMatchObject({
+      key: "admin.assistant",
+      enabled: true,
+      manageable: true,
+    });
+    // A key this build doesn't know still lists, but can't be toggled, and
+    // a null category falls back to "General".
+    expect(res.body.flags[1]).toMatchObject({
+      key: "totally.unknown_future_flag",
+      manageable: false,
+      category: "General",
+    });
+  });
+});
+
+describe("PATCH /platform/tenants/:id/feature-flags/:key", () => {
+  it("401s for a non-platform-admin", async () => {
+    const res = await request(makeApp())
+      .patch(`/platform/tenants/${TENANT_ID}/feature-flags/admin.assistant`)
+      .send({ enabled: false });
+    expect(res.status).toBe(401);
+  });
+
+  it("404s on a flag key this build doesn't know", async () => {
+    mockPlatformAdmin.current = { userId: "u_p", email: "ops@cm" };
+    const res = await request(makeApp())
+      .patch(`/platform/tenants/${TENANT_ID}/feature-flags/not.a.real.flag`)
+      .send({ enabled: false });
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe("unknown_flag");
+  });
+
+  it("400s on a non-uuid tenant id", async () => {
+    mockPlatformAdmin.current = { userId: "u_p", email: "ops@cm" };
+    const res = await request(makeApp())
+      .patch("/platform/tenants/not-a-uuid/feature-flags/admin.assistant")
+      .send({ enabled: false });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("invalid_tenant_id");
+  });
+
+  it("400s on an invalid body", async () => {
+    mockPlatformAdmin.current = { userId: "u_p", email: "ops@cm" };
+    const res = await request(makeApp())
+      .patch(`/platform/tenants/${TENANT_ID}/feature-flags/admin.assistant`)
+      .send({ enabled: "yes" });
+    expect(res.status).toBe(400);
+  });
+
+  it("404s when the flag isn't seeded for the tenant", async () => {
+    mockPlatformAdmin.current = { userId: "u_p", email: "ops@cm" };
+    stageSupabaseResponse("feature_flags", "select", { data: null });
+    const res = await request(makeApp())
+      .patch(`/platform/tenants/${TENANT_ID}/feature-flags/admin.assistant`)
+      .send({ enabled: false });
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe("flag_not_seeded");
+  });
+
+  it("toggles the flag, writing to the target org + a durable event", async () => {
+    mockPlatformAdmin.current = { userId: "u_p", email: "ops@cm" };
+    stageSupabaseResponse("feature_flags", "select", {
+      data: {
+        key: "admin.assistant",
+        enabled: true,
+        description: "Admin helper",
+        category: "Assistants",
+        updated_by_email: null,
+        updated_at: "2026-06-01T00:00:00Z",
+      },
+    });
+    stageSupabaseResponse("feature_flags", "update", {
+      data: {
+        key: "admin.assistant",
+        enabled: false,
+        description: "Admin helper",
+        category: "Assistants",
+        updated_by_email: "ops@cm",
+        updated_at: "2026-06-02T00:00:00Z",
+      },
+    });
+    stageSupabaseResponse("feature_flag_events", "insert", { error: null });
+
+    const res = await request(makeApp())
+      .patch(`/platform/tenants/${TENANT_ID}/feature-flags/admin.assistant`)
+      .send({ enabled: false });
+
+    expect(res.status).toBe(200);
+    expect(res.body.flag).toMatchObject({
+      key: "admin.assistant",
+      enabled: false,
+    });
+    const updates = supabaseMock.writePayloads("feature_flags", "update");
+    expect((updates[0] as { enabled: boolean }).enabled).toBe(false);
+    // The durable toggle record lands on feature_flag_events for the
+    // TARGET org (the same table the tenant's own activity panel reads).
+    const events = supabaseMock.writePayloads("feature_flag_events", "insert");
+    expect((events[0] as { org_id: string }).org_id).toBe(TENANT_ID);
+    expect((events[0] as { next_enabled: boolean }).next_enabled).toBe(false);
+  });
+
+  it("no-ops when the flag is already in the requested state", async () => {
+    mockPlatformAdmin.current = { userId: "u_p", email: "ops@cm" };
+    stageSupabaseResponse("feature_flags", "select", {
+      data: {
+        key: "admin.assistant",
+        enabled: true,
+        description: "Admin helper",
+        category: "Assistants",
+        updated_by_email: null,
+        updated_at: "2026-06-01T00:00:00Z",
+      },
+    });
+    const res = await request(makeApp())
+      .patch(`/platform/tenants/${TENANT_ID}/feature-flags/admin.assistant`)
+      .send({ enabled: true });
+    expect(res.status).toBe(200);
+    expect(res.body.flag.enabled).toBe(true);
+    expect(supabaseMock.callCount("feature_flags", "update")).toBe(0);
+  });
+});
+
+describe("GET /platform/tenants/:id/feature-flag-activity", () => {
+  it("401s for a non-platform-admin", async () => {
+    const res = await request(makeApp()).get(
+      `/platform/tenants/${TENANT_ID}/feature-flag-activity`,
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it("404s when the tenant does not exist", async () => {
+    mockPlatformAdmin.current = { userId: "u_p", email: "ops@cm" };
+    stageSupabaseResponse("organizations", "select", { data: null });
+    const res = await request(makeApp()).get(
+      `/platform/tenants/${TENANT_ID}/feature-flag-activity`,
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("returns recent toggle events for the tenant", async () => {
+    mockPlatformAdmin.current = { userId: "u_p", email: "ops@cm" };
+    stageSupabaseResponse("organizations", "select", {
+      data: { id: TENANT_ID },
+    });
+    stageSupabaseResponse("feature_flag_events", "select", {
+      data: [
+        {
+          occurred_at: "2026-06-02T00:00:00Z",
+          operator_email: "ops@cm",
+          key: "admin.assistant",
+          previous_enabled: true,
+          next_enabled: false,
+        },
+      ],
+    });
+    const res = await request(makeApp()).get(
+      `/platform/tenants/${TENANT_ID}/feature-flag-activity`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.tenantId).toBe(TENANT_ID);
+    expect(res.body.activity).toHaveLength(1);
+    expect(res.body.activity[0]).toMatchObject({
+      key: "admin.assistant",
+      operatorEmail: "ops@cm",
+      from: true,
+      to: false,
+    });
+  });
+});
+
+describe("GET /platform/tenants/:id/admins", () => {
+  it("401s for a non-platform-admin", async () => {
+    const res = await request(makeApp()).get(
+      `/platform/tenants/${TENANT_ID}/admins`,
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it("404s when the tenant does not exist", async () => {
+    mockPlatformAdmin.current = { userId: "u_p", email: "ops@cm" };
+    stageSupabaseResponse("organizations", "select", { data: null });
+    const res = await request(makeApp()).get(
+      `/platform/tenants/${TENANT_ID}/admins`,
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("lists the tenant's staff accounts", async () => {
+    mockPlatformAdmin.current = { userId: "u_p", email: "ops@cm" };
+    stageSupabaseResponse("organizations", "select", {
+      data: { id: TENANT_ID },
+    });
+    stageSupabaseResponse("admin_users", "select", {
+      data: [
+        {
+          id: "au-1",
+          email_lower: "owner@acme.example",
+          role: "admin",
+          status: "active",
+          display_name: "Acme Owner",
+          last_login_at: "2026-06-20T00:00:00Z",
+          invited_at: "2026-01-01T00:00:00Z",
+        },
+        {
+          id: "au-2",
+          email_lower: "csr@acme.example",
+          role: "csr",
+          status: "invited",
+          display_name: null,
+          last_login_at: null,
+          invited_at: "2026-02-01T00:00:00Z",
+        },
+      ],
+    });
+    const res = await request(makeApp()).get(
+      `/platform/tenants/${TENANT_ID}/admins`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.admins).toHaveLength(2);
+    expect(res.body.admins[0]).toMatchObject({
+      email: "owner@acme.example",
+      role: "admin",
+      status: "active",
+      displayName: "Acme Owner",
+    });
+    expect(res.body.admins[1]).toMatchObject({
+      email: "csr@acme.example",
+      status: "invited",
+      lastLoginAt: null,
+    });
+  });
+});
+
 describe("POST /platform/tenants (create)", () => {
   it("401s when the caller is not a platform admin", async () => {
     const res = await request(makeApp())

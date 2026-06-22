@@ -104,6 +104,18 @@ describe("platform billing route wiring", () => {
     expect(SRC).toContain("billing_summary_failed");
   });
 
+  it("surfaces AI token rollups in the usage metrics so the costs page can price them", () => {
+    // The vendor-COGS view multiplies aiInputTokensPerMonth /
+    // aiOutputTokensPerMonth by the rate card; both the per-tenant detail
+    // (currentUsage) and the fleet list must emit these keys, or token
+    // COGS silently reads as $0.
+    expect(SRC).toContain("aiInputTokensPerMonth");
+    expect(SRC).toContain("aiOutputTokensPerMonth");
+    // The fleet list folds them in from the monthly-rollup table (they are
+    // not columns on the snapshot RPC).
+    expect(SRC).toContain("tenant_usage_monthly_rollups");
+  });
+
   it("hardens the platform-admin add-on route with the same idempotent-race fallback", () => {
     // Both the tenant self-service PUT and the platform-admin PUT must treat a
     // 23505 on the read-then-insert path as idempotent (the partial unique

@@ -370,6 +370,11 @@ async function currentUsage(orgId: string) {
       activeSubscriptions,
       outboundMessagesPerMonth: metered("outboundMessagesPerMonth"),
       aiTextInteractionsPerMonth: metered("aiTextInteractionsPerMonth"),
+      // AI token throughput — priced by the cost-rate card into vendor
+      // COGS. The rollup rows are written by recordAiTokenUsage; surface
+      // them here so the costs page can multiply by the per-1M rate.
+      aiInputTokensPerMonth: metered("aiInputTokensPerMonth"),
+      aiOutputTokensPerMonth: metered("aiOutputTokensPerMonth"),
       billingTransactionsPerMonth: metered("billingTransactionsPerMonth"),
       faxEvents: metered("faxEvents"),
       aiVoiceEvents: metered("aiVoiceEvents"),
@@ -1727,7 +1732,8 @@ router.get(
     monthStart.setUTCDate(1);
     monthStart.setUTCHours(0, 0, 0, 0);
     const usageMonth = monthStart.toISOString().slice(0, 7);
-    const [subs, addons, usage] = await Promise.all([
+    const monthDate = monthStart.toISOString().slice(0, 10); // 'YYYY-MM-01'
+    const [subs, addons, usage, tokenRollups] = await Promise.all([
       raw
         .schema("resupply")
         .from("tenant_billing_subscriptions")
@@ -1746,17 +1752,43 @@ router.get(
           p_month_start: monthStart.toISOString(),
         } as never,
       ),
+      // AI token rollups aren't columns on the snapshot RPC, so read them
+      // straight from the monthly-rollup table (one row per org+metric for
+      // the month) and fold them in below. Without this, the costs page
+      // prices token usage at zero. At most 2 rows/org, so no page-cap risk.
+      raw
+        .schema("resupply")
+        .from("tenant_usage_monthly_rollups")
+        .select("org_id, metric_key, quantity")
+        .in("org_id", orgIds)
+        .eq("month", monthDate)
+        .in("metric_key", ["aiInputTokensPerMonth", "aiOutputTokensPerMonth"]),
     ]);
-    if (subs.error || addons.error || usage.error) {
+    if (subs.error || addons.error || usage.error || tokenRollups.error) {
       logger.error(
         {
           event: "tenant_billing_list_read_failed",
-          err: subs.error ?? addons.error ?? usage.error,
+          err: subs.error ?? addons.error ?? usage.error ?? tokenRollups.error,
         },
         "tenant billing list read failed",
       );
       res.status(500).json({ error: "tenant_billing_failed" });
       return;
+    }
+    // org_id → { input, output } token totals for the month.
+    const tokensByOrg = new Map<string, { input: number; output: number }>();
+    for (const row of (tokenRollups.data ?? []) as Array<{
+      org_id: string;
+      metric_key: string;
+      quantity: number | null;
+    }>) {
+      const entry = tokensByOrg.get(row.org_id) ?? { input: 0, output: 0 };
+      if (row.metric_key === "aiInputTokensPerMonth") {
+        entry.input = row.quantity ?? 0;
+      } else if (row.metric_key === "aiOutputTokensPerMonth") {
+        entry.output = row.quantity ?? 0;
+      }
+      tokensByOrg.set(row.org_id, entry);
     }
     const subscriptionByOrg = new Map<string, TenantSubscriptionRow>();
     for (const s of (subs.data ?? []) as TenantSubscriptionRow[]) {
@@ -1776,6 +1808,7 @@ router.get(
       const sub = subscriptionByOrg.get(o.id);
       const addonRows = addonsByOrg.get(o.id) ?? [];
       const usageRow = usageByOrg.get(o.id);
+      const tokens = tokensByOrg.get(o.id) ?? { input: 0, output: 0 };
       return {
         id: o.id,
         slug: o.slug,
@@ -1825,6 +1858,10 @@ router.get(
                 usageRow?.outbound_messages_per_month ?? 0,
               aiTextInteractionsPerMonth:
                 usageRow?.ai_text_interactions_per_month ?? 0,
+              // Token throughput folded in from the rollup table above —
+              // priced by the cost-rate card into vendor COGS.
+              aiInputTokensPerMonth: tokens.input,
+              aiOutputTokensPerMonth: tokens.output,
               billingTransactionsPerMonth:
                 usageRow?.billing_transactions_per_month ?? 0,
               faxEvents: usageRow?.fax_events ?? 0,

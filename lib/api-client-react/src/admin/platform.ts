@@ -52,6 +52,217 @@ export function useGetPlatformMe(options?: {
   });
 }
 
+// ── Platform health ────────────────────────────────────────────────
+
+export interface PlatformHealth {
+  generatedAt: string;
+  readiness: {
+    status: "ready" | "not_ready";
+    checks: { db: "ok" | "failed"; queue: "ok" | "failed" };
+    errors: Record<string, string> | null;
+    latencyMs: number;
+  };
+  vendors: {
+    ai: {
+      anthropic: boolean;
+      openai: boolean;
+      elevenlabs: boolean;
+      deepgram: boolean;
+    };
+    comms: {
+      sendgrid: boolean;
+      twilioVoice: boolean;
+      twilioSms: boolean;
+      telnyxFax: boolean;
+    };
+    payments: { stripe: boolean; platformBilling: boolean };
+    storage: boolean;
+  };
+}
+
+const PLATFORM_HEALTH_URL = "/resupply-api/platform/health";
+
+export const getPlatformHealthQueryKey = () => [PLATFORM_HEALTH_URL] as const;
+
+export function useGetPlatformHealth(options?: {
+  query?: Partial<UseQueryOptions<PlatformHealth, PlatformError>>;
+}) {
+  return useQuery<PlatformHealth, PlatformError>({
+    queryKey: getPlatformHealthQueryKey(),
+    queryFn: ({ signal }) =>
+      customFetch<PlatformHealth>(PLATFORM_HEALTH_URL, {
+        method: "GET",
+        signal,
+      }),
+    ...options?.query,
+  });
+}
+
+// ── Platform operator roster ───────────────────────────────────────
+
+export interface PlatformOperator {
+  authUserId: string;
+  email: string | null;
+  displayName: string | null;
+  status: string | null;
+  grantedByEmail: string | null;
+  createdAt: string;
+}
+
+export interface ListOperatorsResponse {
+  operators: PlatformOperator[];
+}
+
+const OPERATORS_URL = "/resupply-api/platform/admins";
+
+export const getListOperatorsQueryKey = () => [OPERATORS_URL] as const;
+
+export function useListOperators(options?: {
+  query?: Partial<UseQueryOptions<ListOperatorsResponse, PlatformError>>;
+}) {
+  return useQuery<ListOperatorsResponse, PlatformError>({
+    queryKey: getListOperatorsQueryKey(),
+    queryFn: ({ signal }) =>
+      customFetch<ListOperatorsResponse>(OPERATORS_URL, {
+        method: "GET",
+        signal,
+      }),
+    ...options?.query,
+  });
+}
+
+export interface GrantOperatorResponse {
+  operator: PlatformOperator;
+}
+
+export function useGrantOperator(options?: {
+  mutation?: UseMutationOptions<GrantOperatorResponse, PlatformError, string>;
+}) {
+  return useMutation<GrantOperatorResponse, PlatformError, string>({
+    mutationFn: (email) =>
+      customFetch<GrantOperatorResponse>(OPERATORS_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      }),
+    ...options?.mutation,
+  });
+}
+
+export function useRevokeOperator(options?: {
+  mutation?: UseMutationOptions<
+    { ok: boolean; removed: string },
+    PlatformError,
+    string
+  >;
+}) {
+  return useMutation<{ ok: boolean; removed: string }, PlatformError, string>({
+    mutationFn: (authUserId) =>
+      customFetch<{ ok: boolean; removed: string }>(
+        `${OPERATORS_URL}/${encodeURIComponent(authUserId)}`,
+        { method: "DELETE" },
+      ),
+    ...options?.mutation,
+  });
+}
+
+// ── Fleet gross margin (product COGS) ──────────────────────────────
+
+export interface MarginAggregateView {
+  lineCount: number;
+  revenueCents: number;
+  costedRevenueCents: number;
+  uncostedRevenueCents: number;
+  costCents: number;
+  marginCents: number;
+  marginRatio: number | null;
+  linesWithKnownCost: number;
+  linesWithUnknownCost: number;
+  lossLineCount: number;
+  negativeMarginRevenueCents: number;
+}
+
+export interface PlatformMarginTenant extends MarginAggregateView {
+  id: string;
+  slug: string;
+  name: string | null;
+  status: string;
+}
+
+export interface PlatformMargin {
+  windowDays: number;
+  generatedAt: string;
+  fleet: MarginAggregateView;
+  tenants: PlatformMarginTenant[];
+}
+
+export const getPlatformMarginQueryKey = (days?: number) =>
+  ["/resupply-api/platform/margin", { days }] as const;
+
+export function useGetPlatformMargin(
+  days?: number,
+  options?: {
+    query?: Partial<UseQueryOptions<PlatformMargin, PlatformError>>;
+  },
+) {
+  const qs = days ? `?days=${encodeURIComponent(String(days))}` : "";
+  return useQuery<PlatformMargin, PlatformError>({
+    queryKey: getPlatformMarginQueryKey(days),
+    queryFn: ({ signal }) =>
+      customFetch<PlatformMargin>(`/resupply-api/platform/margin${qs}`, {
+        method: "GET",
+        signal,
+      }),
+    ...options?.query,
+  });
+}
+
+// ── Vendor cost-rate card ──────────────────────────────────────────
+
+export interface CostRates {
+  aiInputPer1mCents: number;
+  aiOutputPer1mCents: number;
+  outboundMessageCents: number;
+  aiVoiceEventCents: number;
+  faxEventCents: number;
+}
+
+const COST_RATES_URL = "/resupply-api/platform/cost-rates";
+
+export const getCostRatesQueryKey = () => [COST_RATES_URL] as const;
+
+export function useGetCostRates(options?: {
+  query?: Partial<UseQueryOptions<{ rates: CostRates }, PlatformError>>;
+}) {
+  return useQuery<{ rates: CostRates }, PlatformError>({
+    queryKey: getCostRatesQueryKey(),
+    queryFn: ({ signal }) =>
+      customFetch<{ rates: CostRates }>(COST_RATES_URL, {
+        method: "GET",
+        signal,
+      }),
+    ...options?.query,
+  });
+}
+
+export function useUpdateCostRates(options?: {
+  mutation?: UseMutationOptions<
+    { rates: CostRates },
+    PlatformError,
+    Partial<CostRates>
+  >;
+}) {
+  return useMutation<{ rates: CostRates }, PlatformError, Partial<CostRates>>({
+    mutationFn: (rates) =>
+      customFetch<{ rates: CostRates }>(COST_RATES_URL, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(rates),
+      }),
+    ...options?.mutation,
+  });
+}
+
 // ── Tenant directory ───────────────────────────────────────────────
 
 export interface PlatformTenant {
@@ -171,6 +382,239 @@ export function useTenantUsage(
     queryFn: ({ signal }) =>
       customFetch<TenantUsageResponse>(
         `${TENANTS_URL}/${encodeURIComponent(id)}/usage`,
+        { method: "GET", signal },
+      ),
+    ...options?.query,
+  });
+}
+
+// ── Single-tenant detail ───────────────────────────────────────────
+
+export interface PlatformTenantDetail extends PlatformTenant {
+  fromEmail: string | null;
+  fromName: string | null;
+  updatedAt: string | null;
+}
+
+export interface GetTenantResponse {
+  tenant: PlatformTenantDetail;
+}
+
+export const getTenantQueryKey = (id: string) =>
+  [`${TENANTS_URL}/${id}`] as const;
+
+export function useGetTenant(
+  id: string,
+  options?: {
+    query?: Partial<UseQueryOptions<GetTenantResponse, PlatformError>>;
+  },
+) {
+  return useQuery<GetTenantResponse, PlatformError>({
+    queryKey: getTenantQueryKey(id),
+    queryFn: ({ signal }) =>
+      customFetch<GetTenantResponse>(
+        `${TENANTS_URL}/${encodeURIComponent(id)}`,
+        { method: "GET", signal },
+      ),
+    ...options?.query,
+  });
+}
+
+// ── Per-tenant feature flags ───────────────────────────────────────
+
+export interface TenantFeatureFlag {
+  key: string;
+  enabled: boolean;
+  description: string;
+  category: string;
+  /** False when this build can't toggle the key (deploy-drift). */
+  manageable: boolean;
+  updatedByEmail: string | null;
+  updatedAt: string;
+}
+
+export interface TenantFeatureFlagsResponse {
+  tenantId: string;
+  flags: TenantFeatureFlag[];
+}
+
+export const getTenantFeatureFlagsQueryKey = (id: string) =>
+  [`${TENANTS_URL}/${id}/feature-flags`] as const;
+
+export function useTenantFeatureFlags(
+  id: string,
+  options?: {
+    query?: Partial<UseQueryOptions<TenantFeatureFlagsResponse, PlatformError>>;
+  },
+) {
+  return useQuery<TenantFeatureFlagsResponse, PlatformError>({
+    queryKey: getTenantFeatureFlagsQueryKey(id),
+    queryFn: ({ signal }) =>
+      customFetch<TenantFeatureFlagsResponse>(
+        `${TENANTS_URL}/${encodeURIComponent(id)}/feature-flags`,
+        { method: "GET", signal },
+      ),
+    ...options?.query,
+  });
+}
+
+export interface ToggleTenantFeatureFlagVariables {
+  key: string;
+  enabled: boolean;
+}
+
+export interface ToggleTenantFeatureFlagResponse {
+  tenantId: string;
+  flag: TenantFeatureFlag;
+}
+
+export function useToggleTenantFeatureFlag(
+  id: string,
+  options?: {
+    mutation?: UseMutationOptions<
+      ToggleTenantFeatureFlagResponse,
+      PlatformError,
+      ToggleTenantFeatureFlagVariables
+    >;
+  },
+) {
+  return useMutation<
+    ToggleTenantFeatureFlagResponse,
+    PlatformError,
+    ToggleTenantFeatureFlagVariables
+  >({
+    mutationFn: ({ key, enabled }) =>
+      customFetch<ToggleTenantFeatureFlagResponse>(
+        `${TENANTS_URL}/${encodeURIComponent(id)}/feature-flags/${encodeURIComponent(key)}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ enabled }),
+        },
+      ),
+    ...options?.mutation,
+  });
+}
+
+// ── Per-tenant feature-flag activity ───────────────────────────────
+
+export interface TenantFlagActivity {
+  occurredAt: string;
+  operatorEmail: string | null;
+  key: string;
+  from: boolean;
+  to: boolean;
+}
+
+export interface TenantFlagActivityResponse {
+  tenantId: string;
+  activity: TenantFlagActivity[];
+}
+
+export const getTenantFlagActivityQueryKey = (id: string, limit?: number) =>
+  [`${TENANTS_URL}/${id}/feature-flag-activity`, { limit }] as const;
+
+export function useTenantFeatureFlagActivity(
+  id: string,
+  limit?: number,
+  options?: {
+    query?: Partial<UseQueryOptions<TenantFlagActivityResponse, PlatformError>>;
+  },
+) {
+  const qs = limit ? `?limit=${encodeURIComponent(String(limit))}` : "";
+  return useQuery<TenantFlagActivityResponse, PlatformError>({
+    queryKey: getTenantFlagActivityQueryKey(id, limit),
+    queryFn: ({ signal }) =>
+      customFetch<TenantFlagActivityResponse>(
+        `${TENANTS_URL}/${encodeURIComponent(id)}/feature-flag-activity${qs}`,
+        { method: "GET", signal },
+      ),
+    ...options?.query,
+  });
+}
+
+// ── Per-tenant activity series (sparklines) ────────────────────────
+
+export interface TenantActivitySeries {
+  tenantId: string;
+  days: number;
+  dayKeys: string[];
+  window: {
+    newTenants: number;
+    newPatients: number;
+    newOrders: number;
+    newConversations: number;
+    gmvCents: number;
+    delta: {
+      newPatients: number | null;
+      newOrders: number | null;
+      newConversations: number | null;
+      gmvCents: number | null;
+    };
+  };
+  series: {
+    newTenants: number[];
+    newPatients: number[];
+    newOrders: number[];
+    newConversations: number[];
+    gmvCents: number[];
+  };
+  generatedAt: string;
+}
+
+export const getTenantActivitySeriesQueryKey = (id: string, days?: number) =>
+  [`${TENANTS_URL}/${id}/activity-series`, { days }] as const;
+
+export function useTenantActivitySeries(
+  id: string,
+  days?: number,
+  options?: {
+    query?: Partial<UseQueryOptions<TenantActivitySeries, PlatformError>>;
+  },
+) {
+  const qs = days ? `?days=${encodeURIComponent(String(days))}` : "";
+  return useQuery<TenantActivitySeries, PlatformError>({
+    queryKey: getTenantActivitySeriesQueryKey(id, days),
+    queryFn: ({ signal }) =>
+      customFetch<TenantActivitySeries>(
+        `${TENANTS_URL}/${encodeURIComponent(id)}/activity-series${qs}`,
+        { method: "GET", signal },
+      ),
+    ...options?.query,
+  });
+}
+
+// ── Per-tenant admins (staff who can sign in) ──────────────────────
+
+export interface TenantAdmin {
+  id: string;
+  email: string | null;
+  role: string;
+  status: string;
+  displayName: string | null;
+  lastLoginAt: string | null;
+  invitedAt: string | null;
+}
+
+export interface TenantAdminsResponse {
+  tenantId: string;
+  admins: TenantAdmin[];
+}
+
+export const getTenantAdminsQueryKey = (id: string) =>
+  [`${TENANTS_URL}/${id}/admins`] as const;
+
+export function useTenantAdmins(
+  id: string,
+  options?: {
+    query?: Partial<UseQueryOptions<TenantAdminsResponse, PlatformError>>;
+  },
+) {
+  return useQuery<TenantAdminsResponse, PlatformError>({
+    queryKey: getTenantAdminsQueryKey(id),
+    queryFn: ({ signal }) =>
+      customFetch<TenantAdminsResponse>(
+        `${TENANTS_URL}/${encodeURIComponent(id)}/admins`,
         { method: "GET", signal },
       ),
     ...options?.query,

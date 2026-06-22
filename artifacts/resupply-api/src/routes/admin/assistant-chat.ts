@@ -34,7 +34,10 @@ import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger.js";
-import { recordTenantUsage } from "../../lib/metering/usage.js";
+import {
+  recordAiTokenUsage,
+  recordTenantUsage,
+} from "../../lib/metering/usage.js";
 import { applyPlatformBrandingForOrg } from "../../lib/company-info.js";
 import { isFeatureEnabled } from "../../lib/feature-flags.js";
 import {
@@ -125,6 +128,7 @@ interface OpenAiChatResponse {
     message?: { content?: string | null; tool_calls?: OpenAiToolCall[] };
     finish_reason?: string;
   }>;
+  usage?: { prompt_tokens?: number; completion_tokens?: number };
 }
 
 interface OpenAiStreamDelta {
@@ -140,6 +144,7 @@ interface OpenAiStreamDelta {
     };
     finish_reason?: string | null;
   }>;
+  usage?: { prompt_tokens?: number; completion_tokens?: number };
 }
 
 let fetchImplOverride: typeof fetch | undefined;
@@ -451,6 +456,15 @@ async function handleJson(
       }
 
       const json = (await upstream.json()) as OpenAiChatResponse;
+      // Fold every round's tokens into the tenant's AI COGS rollup — each
+      // tool round is a separately-billed completion. Mirrors the
+      // Anthropic branch; absent orgId is a silent no-op.
+      recordAiTokenUsage({
+        orgId: toolCtx.orgId,
+        inputTokens: json.usage?.prompt_tokens ?? 0,
+        outputTokens: json.usage?.completion_tokens ?? 0,
+        source: "admin.assistant",
+      });
       const message = json.choices?.[0]?.message;
       const toolCalls = message?.tool_calls;
       if (toolCalls && toolCalls.length > 0 && round < MAX_ADMIN_TOOL_ROUNDS) {
@@ -504,6 +518,8 @@ interface StreamRoundResult {
   toolCalls: OpenAiToolCall[];
   finishReason: string | null;
   degraded: boolean;
+  inputTokens: number;
+  outputTokens: number;
 }
 
 async function runStreamingRound(
@@ -526,6 +542,9 @@ async function runStreamingRound(
       temperature: 0.3,
       max_tokens: 700,
       stream: true,
+      // Ask OpenAI to emit a final usage-only chunk (choices: []) so the
+      // streaming path can attribute token COGS, same as handleJson.
+      stream_options: { include_usage: true },
       tools: ADMIN_ASSISTANT_TOOLS,
       tool_choice: "auto",
       messages,
@@ -543,7 +562,14 @@ async function runStreamingRound(
       },
       "admin assistant: openai HTTP error during stream open",
     );
-    return { content: "", toolCalls: [], finishReason: null, degraded: true };
+    return {
+      content: "",
+      toolCalls: [],
+      finishReason: null,
+      degraded: true,
+      inputTokens: 0,
+      outputTokens: 0,
+    };
   }
 
   const reader = upstream.body.getReader();
@@ -551,6 +577,8 @@ async function runStreamingRound(
   let buffer = "";
   let content = "";
   let finishReason: string | null = null;
+  let inputTokens = 0;
+  let outputTokens = 0;
   const toolAccumulator = new Map<
     number,
     { id: string; name: string; argumentsJson: string }
@@ -576,6 +604,12 @@ async function runStreamingRound(
           parsed = JSON.parse(payload);
         } catch {
           continue;
+        }
+        // The include_usage final chunk carries usage with an empty
+        // choices array — capture it before the choice guard below.
+        if (parsed.usage) {
+          inputTokens = parsed.usage.prompt_tokens ?? 0;
+          outputTokens = parsed.usage.completion_tokens ?? 0;
         }
         const choice = parsed.choices?.[0];
         if (!choice) continue;
@@ -621,7 +655,14 @@ async function runStreamingRound(
     });
   }
 
-  return { content, toolCalls, finishReason, degraded: false };
+  return {
+    content,
+    toolCalls,
+    finishReason,
+    degraded: false,
+    inputTokens,
+    outputTokens,
+  };
 }
 
 async function handleStreaming(
@@ -669,6 +710,14 @@ async function handleStreaming(
         ctrl.signal,
         writeChunk,
       );
+      // Fold every round's tokens into the tenant's AI COGS rollup — each
+      // round is a separately-billed completion. Absent orgId is a no-op.
+      recordAiTokenUsage({
+        orgId: toolCtx.orgId,
+        inputTokens: result.inputTokens,
+        outputTokens: result.outputTokens,
+        source: "admin.assistant",
+      });
       if (result.degraded) {
         if (totalChars === 0) {
           safeEvent({ type: "chunk", text: DEGRADED_FALLBACK_REPLY });
@@ -855,6 +904,14 @@ async function handleAnthropicJson(
         res.json({ reply: DEGRADED_FALLBACK_REPLY, degraded: true });
         return;
       }
+      // Meter this model call's token throughput for vendor COGS (G12).
+      // Per tool-loop round, since each round is a real model call.
+      recordAiTokenUsage({
+        orgId: toolCtx.orgId,
+        inputTokens: result.response.usage.input_tokens,
+        outputTokens: result.response.usage.output_tokens,
+        source: "admin.assistant",
+      });
       const text = getResponseText(result.response).trim();
       const toolCalls = getResponseToolCalls(result.response);
       if (toolCalls.length > 0 && round < MAX_ADMIN_TOOL_ROUNDS) {
@@ -976,6 +1033,13 @@ async function handleAnthropicStreaming(
         safeEnd();
         return;
       }
+      // Meter this stream's token throughput for vendor COGS (G12).
+      recordAiTokenUsage({
+        orgId: toolCtx.orgId,
+        inputTokens: result.response.usage.input_tokens,
+        outputTokens: result.response.usage.output_tokens,
+        source: "admin.assistant",
+      });
       const toolCalls = getResponseToolCalls(result.response);
       if (clientClosed) {
         safeEnd();

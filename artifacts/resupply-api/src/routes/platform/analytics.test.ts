@@ -121,3 +121,78 @@ describe("GET /platform/analytics", () => {
     expect(res.status).toBe(500);
   });
 });
+
+const SERIES_TENANT_ID = "11111111-1111-4111-8111-111111111111";
+
+describe("GET /platform/tenants/:id/activity-series", () => {
+  it("401s when the caller is not a platform admin", async () => {
+    const res = await request(makeApp()).get(
+      `/platform/tenants/${SERIES_TENANT_ID}/activity-series`,
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it("400s on a non-uuid id", async () => {
+    mockPlatformAdmin.current = { userId: "u_p", email: "ops@cm" };
+    const res = await request(makeApp()).get(
+      "/platform/tenants/not-a-uuid/activity-series",
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("404s when the tenant does not exist", async () => {
+    mockPlatformAdmin.current = { userId: "u_p", email: "ops@cm" };
+    stageSupabaseResponse("organizations", "select", { data: null });
+    const res = await request(makeApp()).get(
+      `/platform/tenants/${SERIES_TENANT_ID}/activity-series`,
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("returns the tenant's daily series and window totals", async () => {
+    mockPlatformAdmin.current = { userId: "u_p", email: "ops@cm" };
+    // Tenant existence (maybeSingle), then the per-tenant fan-out: 3 HEAD
+    // counts followed by 3 windowed selects (same shape the fleet route
+    // uses, but scoped to this one tenant).
+    stageSupabaseResponse("organizations", "select", {
+      data: {
+        id: SERIES_TENANT_ID,
+        slug: "acme",
+        name: "Acme DME",
+        status: "active",
+        created_at: "2026-01-01T00:00:00Z",
+      },
+    });
+    stageSupabaseResponse("patients", "select", { count: 10, data: null });
+    stageSupabaseResponse("shop_orders", "select", { count: 4, data: null });
+    stageSupabaseResponse("conversations", "select", { count: 2, data: null });
+    stageSupabaseResponse("patients", "select", {
+      data: [{ created_at: recentIso(3) }],
+    });
+    stageSupabaseResponse("shop_orders", "select", {
+      data: [
+        {
+          created_at: recentIso(2),
+          paid_at: recentIso(2),
+          amount_total_cents: 5000,
+          amount_refunded_cents: 0,
+        },
+      ],
+    });
+    stageSupabaseResponse("conversations", "select", {
+      data: [{ created_at: recentIso(1) }],
+    });
+
+    const res = await request(makeApp()).get(
+      `/platform/tenants/${SERIES_TENANT_ID}/activity-series?days=30`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.tenantId).toBe(SERIES_TENANT_ID);
+    expect(res.body.days).toBe(30);
+    expect(res.body.dayKeys).toHaveLength(30);
+    expect(res.body.series.gmvCents).toHaveLength(30);
+    expect(res.body.window.newPatients).toBe(1);
+    expect(res.body.window.newOrders).toBe(1);
+    expect(res.body.window.gmvCents).toBe(5000);
+  });
+});
