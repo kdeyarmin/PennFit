@@ -18,7 +18,7 @@
 // admin.css and wraps everything in `.admin-root` (hard rule R7 — admin
 // tokens must stay scoped under that class).
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, Redirect, Route, Switch, useLocation, useRoute } from "wouter";
 import {
   Activity,
@@ -943,11 +943,35 @@ function NeedsAttentionCard({
 }: {
   tenants: PlatformAnalyticsTenantRow[];
 }) {
+  const queryClient = useQueryClient();
+  const reactivate = useReactivateTenant();
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const suspended = useMemo(
     () => tenants.filter((t) => t.status === "suspended"),
     [tenants],
   );
   if (suspended.length === 0) return null;
+
+  function onReactivate(id: string) {
+    setError(null);
+    setBusyId(id);
+    reactivate.mutate(id, {
+      onSuccess: () => {
+        // Refresh both the dashboard analytics (this list) and the
+        // directory so the tenant drops out of "needs attention".
+        void queryClient.invalidateQueries({
+          queryKey: ["platform-analytics"],
+        });
+        void queryClient.invalidateQueries({
+          queryKey: getListTenantsQueryKey(),
+        });
+      },
+      onError: () => setError("Couldn't reactivate that tenant."),
+      onSettled: () => setBusyId(null),
+    });
+  }
+
   return (
     <Card
       title="Needs attention"
@@ -955,30 +979,40 @@ function NeedsAttentionCard({
         suspended.length === 1 ? "" : "s"
       } — offline until reactivated.`}
     >
+      {error && (
+        <p className="text-xs mb-2" style={{ color: "hsl(354 75% 38%)" }}>
+          {error}
+        </p>
+      )}
       <ul className="space-y-1">
         {suspended.map((t) => (
-          <li key={t.id}>
-            <Link
-              href={`/platform/tenants/${t.id}`}
-              className="flex items-center justify-between gap-3 rounded-md px-3 py-2 border hover:bg-[hsl(var(--surface-3))]"
-              style={{ borderColor: "hsl(var(--line-1))" }}
-            >
-              <span className="min-w-0">
-                <span
-                  className="text-sm font-medium block truncate"
-                  style={{ color: "hsl(var(--ink-1))" }}
-                >
-                  {t.name ?? t.slug}
-                </span>
-                <span
-                  className="text-xs"
-                  style={{ color: "hsl(var(--ink-3))" }}
-                >
-                  {t.slug}
-                </span>
+          <li
+            key={t.id}
+            className="flex items-center justify-between gap-3 rounded-md px-3 py-2 border"
+            style={{ borderColor: "hsl(var(--line-1))" }}
+          >
+            <Link href={`/platform/tenants/${t.id}`} className="min-w-0 group">
+              <span
+                className="text-sm font-medium block truncate group-hover:underline"
+                style={{ color: "hsl(var(--ink-1))" }}
+              >
+                {t.name ?? t.slug}
               </span>
-              <Badge variant="danger">suspended</Badge>
+              <span className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+                {t.slug}
+              </span>
             </Link>
+            <div className="flex items-center gap-2 shrink-0">
+              <Badge variant="danger">suspended</Badge>
+              <Button
+                intent="ghost"
+                size="sm"
+                isLoading={busyId === t.id && reactivate.isPending}
+                onClick={() => onReactivate(t.id)}
+              >
+                Reactivate
+              </Button>
+            </div>
           </li>
         ))}
       </ul>
@@ -2531,6 +2565,26 @@ function TenantQuickSwitcher({ onNavigate }: { onNavigate: () => void }) {
   const { data } = useListTenants();
   const [query, setQuery] = useState("");
   const [activeIdx, setActiveIdx] = useState(0);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // ⌘K / Ctrl+K focuses the switcher from anywhere. This component renders
+  // twice (desktop sidebar + mobile drawer), but only the VISIBLE instance
+  // should grab focus — a `display:none` element has a null offsetParent,
+  // so the hidden copy quietly no-ops.
+  useEffect(() => {
+    function onShortcut(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        const el = inputRef.current;
+        if (el && el.offsetParent !== null) {
+          e.preventDefault();
+          el.focus();
+          el.select();
+        }
+      }
+    }
+    window.addEventListener("keydown", onShortcut);
+    return () => window.removeEventListener("keydown", onShortcut);
+  }, []);
 
   const matches = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -2580,6 +2634,7 @@ function TenantQuickSwitcher({ onNavigate }: { onNavigate: () => void }) {
           aria-hidden="true"
         />
         <input
+          ref={inputRef}
           type="text"
           value={query}
           onChange={(e) => {
@@ -2589,15 +2644,27 @@ function TenantQuickSwitcher({ onNavigate }: { onNavigate: () => void }) {
           onKeyDown={onKeyDown}
           placeholder="Jump to tenant…"
           aria-label="Jump to tenant"
+          title="Jump to tenant (⌘K / Ctrl+K)"
           autoComplete="off"
           spellCheck={false}
-          className="w-full rounded-md border pl-8 pr-2 py-1.5 text-xs outline-none focus:ring-2"
+          className="w-full rounded-md border pl-8 pr-9 py-1.5 text-xs outline-none focus:ring-2"
           style={{
             borderColor: "hsl(var(--line-1))",
             backgroundColor: "hsl(var(--surface-1))",
             color: "hsl(var(--ink-1))",
           }}
         />
+        <kbd
+          className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-mono px-1 py-0.5 rounded border pointer-events-none"
+          style={{
+            borderColor: "hsl(var(--line-1))",
+            color: "hsl(var(--ink-3))",
+            backgroundColor: "hsl(var(--surface-2))",
+          }}
+          aria-hidden="true"
+        >
+          ⌘K
+        </kbd>
       </div>
       {matches.length > 0 && (
         <ul

@@ -94,4 +94,10 @@ describe("platform console tenant detail + sidebar", () => {
     expect(SRC).toContain("fetchPlatformTenantBilling");
     expect(SRC).toContain("<TenantBillingCard tenantId={tenant.id} />");
   });
+
+  it("adds a ⌘K switcher shortcut and inline reactivate on attention", () => {
+    expect(SRC).toContain('e.key.toLowerCase() === "k"');
+    // The Needs-attention panel reactivates inline, not just links out.
+    expect(SRC).toContain("onReactivate(t.id)");
+  });
 });
