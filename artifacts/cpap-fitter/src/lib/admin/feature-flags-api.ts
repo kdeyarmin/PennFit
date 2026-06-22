@@ -76,3 +76,34 @@ export const toggleFeatureFlag = (key: string, enabled: boolean) =>
       body: JSON.stringify({ enabled }),
     },
   );
+
+// One change a preset would make (or made) to a flag's enabled state.
+export interface PresetChange {
+  key: string;
+  from: boolean;
+  to: boolean;
+}
+
+export interface ApplyPresetResult {
+  // The billing plan whose recommended bundle was applied / previewed.
+  planCode: string;
+  dryRun: boolean;
+  // Manageable flags considered, and how many the preset would enable.
+  total: number;
+  enabledCount: number;
+  // The flags whose state differs from the recommended bundle.
+  changes: PresetChange[];
+}
+
+/**
+ * Apply (or, with `dryRun`, preview) the recommended feature-flag bundle for
+ * the tenant's current billing plan. The dry run returns the exact diff so
+ * the UI can confirm before writing. A tenant with no active plan gets a 409
+ * `no_plan_preset` (surfaced by the caller as "pick a plan first").
+ */
+export const applyFeatureFlagPreset = (dryRun: boolean) =>
+  jsonFetch<ApplyPresetResult>("/admin/feature-flags/apply-preset", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ dryRun }),
+  });

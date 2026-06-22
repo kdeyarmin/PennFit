@@ -21,12 +21,15 @@ import { z } from "zod";
 import { logAudit } from "@workspace/resupply-audit";
 import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
+import { resolvePlanFlagPreset } from "@workspace/resupply-domain";
+
 import {
   FEATURE_FLAG_KEYS,
   type FeatureFlagKey,
   invalidateFeatureFlagCache,
 } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
+import { resolveTenantPlanCode } from "../../lib/product-scope";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
@@ -245,6 +248,156 @@ router.patch(
       flag: rowToApi(updated as Row),
     });
     res.json(response);
+  },
+);
+
+// ─────────────────────────────────────────────────────────────────
+// POST /admin/feature-flags/apply-preset — re-baseline this tenant's
+// flags to the recommended bundle for its current billing plan.
+//
+// The plan presets (lib/resupply-domain/feature-flag-presets.ts) mirror
+// the marketed tiers; new tenants already land on them at onboarding. This
+// lets an EXISTING tenant adopt the recommended set after picking/switching
+// a plan — one click instead of toggling dozens of switches. Pass
+// `{ dryRun: true }` to get the exact diff WITHOUT writing, so the UI can
+// confirm the change first.
+//
+// Only flags THIS build knows (FEATURE_FLAG_KEYS) and that exist as rows
+// for the tenant are touched; the per-key cache invalidation, the
+// feature_flag_events history rows, and the updated_by/updated_at stamps all
+// match the single-flag PATCH path. Gated `admin.tools.manage` like PATCH.
+// 409 `no_plan_preset` when the tenant has no active plan to derive from.
+// ─────────────────────────────────────────────────────────────────
+
+const applyPresetBody = z.object({ dryRun: z.boolean().optional() }).strict();
+
+router.post(
+  "/admin/feature-flags/apply-preset",
+  requirePermission("admin.tools.manage"),
+  adminRateLimit({ name: "feature_flags.apply_preset", preset: "mutation" }),
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const bodyParsed = applyPresetBody.safeParse(req.body ?? {});
+    if (!bodyParsed.success) {
+      res.status(400).json({
+        error: "invalid_body",
+        issues: bodyParsed.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
+      });
+      return;
+    }
+    const dryRun = bodyParsed.data.dryRun ?? false;
+
+    const planCode = await resolveTenantPlanCode(orgId);
+    const preset = resolvePlanFlagPreset(planCode);
+    if (!planCode || !preset) {
+      // No active plan (or a plan with no preset) → nothing to derive from.
+      res.status(409).json({ error: "no_plan_preset", planCode: planCode });
+      return;
+    }
+
+    const supabase = getOrgScopedClient(orgId).raw();
+    const { data, error } = await supabase
+      .schema("resupply")
+      .from("feature_flags")
+      .select("key, enabled")
+      .eq("org_id", orgId);
+    if (error) throw error;
+
+    // Only manageable (in-catalog) flags that actually have a row.
+    const current = new Map<string, boolean>();
+    for (const r of data ?? []) {
+      const row = r as { key: string; enabled: boolean };
+      if (MANAGEABLE_KEYS.has(row.key)) current.set(row.key, row.enabled);
+    }
+
+    const changes: { key: string; from: boolean; to: boolean }[] = [];
+    for (const [key, was] of current) {
+      const want = preset.has(key);
+      if (want !== was) changes.push({ key, from: was, to: want });
+    }
+    const enabledCount = [...current.keys()].filter((k) =>
+      preset.has(k),
+    ).length;
+
+    if (dryRun) {
+      res.json({
+        planCode,
+        dryRun: true,
+        total: current.size,
+        enabledCount,
+        changes,
+      });
+      return;
+    }
+
+    // Apply each change row-by-row (catalog is ~66 rows; changes are
+    // bounded) so the stamps + per-key cache busting match PATCH exactly.
+    const nowIso = new Date().toISOString();
+    for (const ch of changes) {
+      const { error: upErr } = await supabase
+        .schema("resupply")
+        .from("feature_flags")
+        .update({
+          enabled: ch.to,
+          updated_by_user_id: req.adminUserId ?? null,
+          updated_by_email: req.adminEmail ?? null,
+          updated_at: nowIso,
+        })
+        .eq("org_id", orgId)
+        .eq("key", ch.key);
+      if (upErr) throw upErr;
+      invalidateFeatureFlagCache(ch.key as FeatureFlagKey);
+    }
+
+    if (changes.length > 0) {
+      // History rows (one per change) + a single audit row, both
+      // best-effort — a successful re-baseline must not 5xx on a log write.
+      const { error: evErr } = await supabase
+        .schema("resupply")
+        .from("feature_flag_events")
+        .insert(
+          changes.map((ch) => ({
+            org_id: orgId,
+            key: ch.key,
+            previous_enabled: ch.from,
+            next_enabled: ch.to,
+            operator_email: req.adminEmail ?? null,
+          })),
+        );
+      if (evErr) {
+        logger.warn(
+          { err: evErr, planCode },
+          "apply-preset feature_flag_events insert failed (activity panel will miss these)",
+        );
+      }
+      await logAudit({
+        action: "feature_flag.apply_preset",
+        adminEmail: req.adminEmail ?? null,
+        adminUserId: req.adminUserId ?? null,
+        targetTable: "feature_flags",
+        targetId: planCode,
+        metadata: { planCode, changed: changes.length },
+        ip: req.ip ?? null,
+        userAgent: req.get("user-agent") ?? null,
+      }).catch((err) => {
+        logger.warn({ err }, "feature_flag.apply_preset audit write failed");
+      });
+    }
+
+    res.json({
+      planCode,
+      dryRun: false,
+      total: current.size,
+      enabledCount,
+      changes,
+    });
   },
 );
 

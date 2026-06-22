@@ -182,9 +182,21 @@ operator turns them on deliberately: `email.auto_reply` (seeded OFF by
 design) and `voice.breathe_sales` (the platform's own sales agent, not a
 tenant feature).
 
+- **Same on self-serve signup.** The public `/breathe/signup` path applies
+  the same preset when the signup already carries a plan (e.g. the voice/phone
+  flow). The web form, which picks a plan later on the billing page, copies the
+  seed catalog verbatim and the tenant adopts the preset from Control Center
+  (next bullet) once they choose a plan.
+- **One-click adopt / re-baseline (existing tenants).** The admin **Control
+  Center** has an **"Apply recommended preset"** button
+  (`POST /admin/feature-flags/apply-preset`, `admin.tools.manage`). It previews
+  the exact diff — what turns on, what turns off, with a heads-up for any
+  high-risk flag — then writes the tenant's flags to the recommended bundle for
+  their **current** plan. Useful right after a tenant picks a plan, or after a
+  plan switch. 409 `no_plan_preset` when the tenant has no active plan.
 - **Defaults, not a gate.** Every flag remains individually toggleable in
-  the admin **Control Center** after signup — the preset just sets a sensible
-  starting point so there's nothing to review in the common case.
+  the Control Center — the preset just sets a sensible starting point so
+  there's nothing to review in the common case.
 - **Source of truth.** The bundles live in
   [`lib/resupply-domain/src/feature-flag-presets.ts`](../../lib/resupply-domain/src/feature-flag-presets.ts).
   To move a flag between tiers, edit that file (the cross-package drift test

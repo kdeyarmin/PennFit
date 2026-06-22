@@ -280,6 +280,130 @@ describe("PATCH /admin/feature-flags/:key", () => {
   });
 });
 
+describe("POST /admin/feature-flags/apply-preset", () => {
+  // Helper: stage the tenant's plan code (resolveTenantPlanCode reads
+  // billing_plans.code embedded on the active subscription).
+  function stagePlan(code: string | null) {
+    stageSupabaseResponse("tenant_billing_subscriptions", "select", {
+      data: code ? { billing_plans: { code } } : null,
+    });
+  }
+
+  it("returns 403 for a CSR-bucket actor (admin.tools.manage required)", async () => {
+    mockAdmin.current = {
+      userId: "u_csr_1",
+      email: "csr@example.com",
+      role: "agent",
+      granularRole: "csr",
+    };
+    const res = await request(makeApp())
+      .post("/admin/feature-flags/apply-preset")
+      .send({ dryRun: true });
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({
+      requiredPermission: "admin.tools.manage",
+    });
+  });
+
+  it("returns 409 no_plan_preset when the tenant has no active plan", async () => {
+    stubAdmin();
+    stagePlan(null);
+    const res = await request(makeApp())
+      .post("/admin/feature-flags/apply-preset")
+      .send({ dryRun: true });
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("no_plan_preset");
+  });
+
+  it("dry run returns the diff without writing", async () => {
+    stubAdmin();
+    stagePlan("launch");
+    stageSupabaseResponse("feature_flags", "select", {
+      data: [
+        { key: "sms.reminders", enabled: false }, // launch wants ON  → change
+        { key: "voice.agent", enabled: true }, //    launch wants OFF → change
+        { key: "admin.assistant", enabled: true }, // launch wants ON  → no-op
+      ],
+    });
+
+    const res = await request(makeApp())
+      .post("/admin/feature-flags/apply-preset")
+      .send({ dryRun: true });
+
+    expect(res.status).toBe(200);
+    expect(res.body.planCode).toBe("launch");
+    expect(res.body.dryRun).toBe(true);
+    expect(res.body.total).toBe(3);
+    expect(res.body.enabledCount).toBe(2); // sms.reminders + admin.assistant
+    expect(res.body.changes).toEqual(
+      expect.arrayContaining([
+        { key: "sms.reminders", from: false, to: true },
+        { key: "voice.agent", from: true, to: false },
+      ]),
+    );
+    expect(res.body.changes).toHaveLength(2);
+    // A dry run never writes or busts the cache.
+    expect(supabaseMock.callCount("feature_flags", "update")).toBe(0);
+    expect(invalidateCacheMock).not.toHaveBeenCalled();
+  });
+
+  it("applies the changed flags, busts the cache per key, and audits", async () => {
+    stubAdmin();
+    stagePlan("launch");
+    stageSupabaseResponse("feature_flags", "select", {
+      data: [
+        { key: "sms.reminders", enabled: false },
+        { key: "voice.agent", enabled: true },
+        { key: "admin.assistant", enabled: true },
+      ],
+    });
+
+    const res = await request(makeApp())
+      .post("/admin/feature-flags/apply-preset")
+      .send({ dryRun: false });
+
+    expect(res.status).toBe(200);
+    expect(res.body.dryRun).toBe(false);
+    expect(res.body.changes).toHaveLength(2);
+    // One update per changed flag (the unchanged admin.assistant is skipped).
+    expect(supabaseMock.callCount("feature_flags", "update")).toBe(2);
+    expect(invalidateCacheMock).toHaveBeenCalledWith("sms.reminders");
+    expect(invalidateCacheMock).toHaveBeenCalledWith("voice.agent");
+    expect(invalidateCacheMock).not.toHaveBeenCalledWith("admin.assistant");
+    // History event rows + a single apply_preset audit row.
+    expect(supabaseMock.callCount("feature_flag_events", "insert")).toBe(1);
+    expect(logAuditMock).toHaveBeenCalledTimes(1);
+    const audit = logAuditMock.mock.calls[0]?.[0] as {
+      action: string;
+      metadata: { planCode: string; changed: number };
+    };
+    expect(audit.action).toBe("feature_flag.apply_preset");
+    expect(audit.metadata).toEqual({ planCode: "launch", changed: 2 });
+  });
+
+  it("is a no-op (no writes, no audit) when flags already match the preset", async () => {
+    stubAdmin();
+    stagePlan("launch");
+    stageSupabaseResponse("feature_flags", "select", {
+      data: [
+        { key: "sms.reminders", enabled: true },
+        { key: "admin.assistant", enabled: true },
+        { key: "voice.agent", enabled: false },
+      ],
+    });
+
+    const res = await request(makeApp())
+      .post("/admin/feature-flags/apply-preset")
+      .send({ dryRun: false });
+
+    expect(res.status).toBe(200);
+    expect(res.body.changes).toHaveLength(0);
+    expect(supabaseMock.callCount("feature_flags", "update")).toBe(0);
+    expect(invalidateCacheMock).not.toHaveBeenCalled();
+    expect(logAuditMock).not.toHaveBeenCalled();
+  });
+});
+
 // ─── GET /admin/feature-flags/activity ──────────────────────────────────
 //
 // Source moved from `resupply.audit_log` → `resupply.feature_flag_events`
