@@ -211,6 +211,11 @@ const AdminAnalyticsOutreachAttributionPage = lazyWithRetry(() =>
     default: m.AdminAnalyticsOutreachAttributionPage,
   })),
 );
+const AdminAuditTrailPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-audit-trail").then((m) => ({
+    default: m.AdminAuditTrailPage,
+  })),
+);
 const AdminAnalyticsAcquisitionFunnelPage = lazyWithRetry(() =>
   import("@/pages/admin/admin-analytics-acquisition-funnel").then((m) => ({
     default: m.AdminAnalyticsAcquisitionFunnelPage,
@@ -1156,6 +1161,10 @@ function AdminConsole() {
             <Route
               path="/admin/analytics/inventory-turnover"
               component={AdminInventoryTurnoverPage}
+            />
+            <Route
+              path="/admin/analytics/audit-trail"
+              component={AdminAuditTrailPage}
             />
             <Route path="/admin/goals" component={AdminGoalsPage} />
             <Route path="/admin/kpi-alerts" component={AdminKpiAlertsPage} />

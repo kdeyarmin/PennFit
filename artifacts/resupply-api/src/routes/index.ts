@@ -244,11 +244,21 @@ import signatureTrackingRouter from "./admin/signature-tracking.js";
 import voiceRouter from "./voice/index.js";
 import videoVisitsAdminRouter from "./admin/video-visits.js";
 import videoVisitSessionRouter from "./video-visit-session.js";
+import patientAccessLogRouter from "./admin/patient-access-log.js";
+import { recordPatientAccess } from "../lib/access-log/record-patient-access.js";
 
 const router: IRouter = Router();
 
+// Audit Trail recorder. Attaches a res-finish hook to every request so
+// it adds no latency; on finish it records staff access to patient data
+// (only when requireAdmin populated an admin identity earlier in the
+// chain). Mounted FIRST so the hook wraps every downstream router.
+router.use(recordPatientAccess);
+
 router.use(healthRouter);
 router.use(meRouter);
+// Admin Audit Trail report (admins only — requireAdminOnly on the route).
+router.use(patientAccessLogRouter);
 // Platform super-admin (G4): cross-tenant operator surface, gated by
 // requirePlatformAdmin (the tier above a tenant admin).
 router.use(platformMeRouter);

@@ -811,6 +811,51 @@ export interface Database {
         Update: Partial<Database["resupply"]["Tables"]["audit_log"]["Insert"]>;
         Relationships: [];
       };
+      // Patient access log (migration 0456) — backs the admin Audit
+      // Trail report. A plain access trail (no HMAC chain); distinct
+      // from the retired `audit_log` above. Tenant-scoped via org_id.
+      patient_access_log: {
+        Row: {
+          id: string;
+          org_id: string | null;
+          admin_user_id: string;
+          admin_email: string;
+          admin_role: string | null;
+          action: string;
+          method: string | null;
+          path: string | null;
+          target_table: string | null;
+          target_id: string | null;
+          patient_id: string | null;
+          status_code: number | null;
+          ip: string | null;
+          user_agent: string | null;
+          impersonator_user_id: string | null;
+          occurred_at: string;
+        };
+        Insert: {
+          id?: string;
+          org_id?: string | null;
+          admin_user_id: string;
+          admin_email: string;
+          admin_role?: string | null;
+          action: string;
+          method?: string | null;
+          path?: string | null;
+          target_table?: string | null;
+          target_id?: string | null;
+          patient_id?: string | null;
+          status_code?: number | null;
+          ip?: string | null;
+          user_agent?: string | null;
+          impersonator_user_id?: string | null;
+          occurred_at?: string;
+        };
+        Update: Partial<
+          Database["resupply"]["Tables"]["patient_access_log"]["Insert"]
+        >;
+        Relationships: [];
+      };
       call_dispositions: {
         Row: {
           org_id: string | null;

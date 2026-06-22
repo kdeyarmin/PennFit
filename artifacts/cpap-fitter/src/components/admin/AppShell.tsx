@@ -956,6 +956,17 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         hint: "CSV, PDF, and QuickBooks (IIF / QBO) exports for ops and finance",
       },
       {
+        label: "Audit Trail",
+        icon: ShieldCheck,
+        href: "/admin/analytics/audit-trail",
+        matchPrefix: "/admin/analytics/audit-trail",
+        // audit.read keeps it out of the CSR/clinician sidebar; the page
+        // itself enforces full-admin only (matching the server's
+        // requireAdminOnly gate).
+        requiredPermission: "audit.read",
+        hint: "Who accessed which patient's info, when — filter by employee, patient, and time frame (admins only)",
+      },
+      {
         // Was the catch-all "Business" section; split into Financial vs
         // Performance & goals so cost economics and team/KPI tracking
         // stop sharing one grab-bag list.
