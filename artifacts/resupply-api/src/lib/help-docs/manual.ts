@@ -30,23 +30,38 @@ import { logger } from "../logger";
 
 export const CUSTOMER_SERVICE_MANUAL_FILENAME =
   "PennPaps-Customer-Service-Manual.pdf";
-const MANUAL_RELATIVE_PATH = path.join(
-  "artifacts",
-  "resupply-api",
-  "assets",
-  "user-manual",
+/** The comprehensive, role-organised operator manual (authored in
+ *  docs/user-manual/, pre-rendered, and committed under assets/ for the
+ *  same deploy-context reason as the customer-service manual above). It is
+ *  downloadable from the admin Support page. */
+export const USER_MANUAL_FILENAME = "CareMetric-Breathe-User-Manual.pdf";
+
+function assetRelativePath(filename: string): string {
+  return path.join(
+    "artifacts",
+    "resupply-api",
+    "assets",
+    "user-manual",
+    filename,
+  );
+}
+const MANUAL_RELATIVE_PATH = assetRelativePath(
   CUSTOMER_SERVICE_MANUAL_FILENAME,
 );
 
 // undefined = not probed yet; null = probed and absent (negative
 // result is cached too so a pruned deploy logs once, not per invite).
 let cached: EmailAttachment | null | undefined;
+let userManualCached: Buffer | null | undefined;
 
-/** Walk from `start` toward the fs root looking for the manual. */
-async function findManual(start: string): Promise<string | null> {
+/** Walk from `start` toward the fs root looking for `relativePath`. */
+async function findUnder(
+  relativePath: string,
+  start: string,
+): Promise<string | null> {
   let dir = start;
   for (;;) {
-    const candidate = path.join(dir, MANUAL_RELATIVE_PATH);
+    const candidate = path.join(dir, relativePath);
     try {
       await fs.access(candidate);
       return candidate;
@@ -57,6 +72,10 @@ async function findManual(start: string): Promise<string | null> {
     if (parent === dir) return null;
     dir = parent;
   }
+}
+
+async function findManual(start: string): Promise<string | null> {
+  return findUnder(MANUAL_RELATIVE_PATH, start);
 }
 
 /**
@@ -85,7 +104,31 @@ export async function loadCustomerServiceManual(): Promise<EmailAttachment | nul
   return cached;
 }
 
+/**
+ * Load the comprehensive User Manual PDF bytes, or null when the file
+ * isn't on disk. Cached for the process lifetime (it changes only with a
+ * deploy). Served by the admin Support page's download route.
+ */
+export async function loadUserManualPdf(): Promise<Buffer | null> {
+  if (userManualCached !== undefined) return userManualCached;
+  const rel = assetRelativePath(USER_MANUAL_FILENAME);
+  const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+  const found =
+    (await findUnder(rel, moduleDir)) ?? (await findUnder(rel, process.cwd()));
+  if (!found) {
+    logger.warn(
+      { event: "user_manual_missing", file: rel },
+      "user manual PDF not found; the Support download will 404",
+    );
+    userManualCached = null;
+    return userManualCached;
+  }
+  userManualCached = await fs.readFile(found);
+  return userManualCached;
+}
+
 /** Test seam — clear the cached manual between specs. */
 export function __clearManualCache(): void {
   cached = undefined;
+  userManualCached = undefined;
 }

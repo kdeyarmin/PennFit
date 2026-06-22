@@ -122,6 +122,13 @@ S_FEATURE_DESC = ParagraphStyle(
     "featureDesc", fontName="Helvetica", fontSize=9.5, leading=12.5,
     textColor=BODY_GRAY,
 )
+# White header text for tables drawn on the navy header band. A
+# Paragraph's own colour overrides a Table's TEXTCOLOR, so header cells
+# must carry a light colour themselves or they render dark-on-navy.
+S_TH = ParagraphStyle(
+    "th", fontName="Helvetica-Bold", fontSize=9.5, leading=12.5,
+    textColor=white,
+)
 S_STEP = ParagraphStyle(
     "step", fontName="Helvetica", fontSize=9.7, leading=13.5,
     textColor=BODY_GRAY,
@@ -342,12 +349,17 @@ def steps(items):
 
 
 def bullets(items):
+    # Mirror steps()' working geometry (ListFlowable leftIndent=8, ListItem
+    # leftIndent=18) so the bullet sits in the gutter and never overlaps the
+    # text. (The previous leftIndent=6/16 + square start drew the marker on
+    # top of the words.)
     return ListFlowable(
-        [ListItem(Paragraph(s, S_STEP), leftIndent=16) for s in items],
+        [ListItem(Paragraph(s, S_STEP), leftIndent=18) for s in items],
         bulletType="bullet",
+        bulletFontName="Helvetica",
+        bulletFontSize=7,
         bulletColor=GOLD_DEEP,
-        start="square",
-        leftIndent=6,
+        leftIndent=8,
     )
 
 
@@ -446,7 +458,7 @@ def flag_table(flags):
 def three_col_table(headers, rows, widths):
     """Header + body table with alternating tints (used by the savings
     tables and the competitive matrix)."""
-    hd = [Paragraph("<b>%s</b>" % h, S_FEATURE_DESC) for h in headers]
+    hd = [Paragraph(h, S_TH) for h in headers]
     body = [hd]
     for r in rows:
         body.append([Paragraph(c, S_FEATURE_DESC) if isinstance(c, str) else c
@@ -470,14 +482,17 @@ def three_col_table(headers, rows, widths):
 
 def savings_stat_row(stats):
     """Three big-number stat tiles for the ROI roll-up."""
+    big_style = ParagraphStyle(
+        "bigstat", fontName="Helvetica-Bold", fontSize=20, leading=24,
+        alignment=TA_CENTER, textColor=GOLD)
+    label_style = ParagraphStyle(
+        "biglabel", fontName="Helvetica", fontSize=9, leading=12,
+        alignment=TA_CENTER, textColor=white)
     cells = []
     for big, label in stats:
         cells.append([
-            Paragraph('<font color="%s" size="20"><b>%s</b></font>'
-                      % (hexc(GOLD_DEEP), big),
-                      ParagraphStyle("big", alignment=TA_CENTER, leading=24)),
-            Paragraph(label, ParagraphStyle(
-                "biglabel", parent=S_FEATURE_DESC, alignment=TA_CENTER)),
+            Paragraph(big, big_style),
+            Paragraph(label, label_style),
         ])
     w = (CONTENT_W - 0.4 * inch) / 3.0
     t = Table([cells], colWidths=[w, w, w], hAlign="CENTER")
@@ -2258,7 +2273,7 @@ def make_story(toc_entries):
     story.append(marker_legend())
     story.append(Spacer(1, 5))
     header = ["Area", "Admin", "Biller", "CSR", "RT"]
-    rows = [[Paragraph("<b>%s</b>" % h, S_FEATURE_DESC) for h in header]]
+    rows = [[Paragraph(h, S_TH) for h in header]]
     for area in MATRIX_AREAS:
         vals = MATRIX[area]
         row = [Paragraph(area, S_FEATURE_DESC)]

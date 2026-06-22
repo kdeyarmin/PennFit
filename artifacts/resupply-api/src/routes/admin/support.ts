@@ -27,6 +27,10 @@ import { z } from "zod";
 import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { isFeatureEnabled } from "../../lib/feature-flags";
+import {
+  USER_MANUAL_FILENAME,
+  loadUserManualPdf,
+} from "../../lib/help-docs/manual";
 import { logger } from "../../lib/logger";
 import { answerSupportTicket } from "../../lib/support-bot/support-bot";
 import {
@@ -118,6 +122,29 @@ async function ensureEnabled(
   }
   return true;
 }
+
+// The comprehensive User Manual, downloadable by any signed-in staff
+// member. Not behind the support.tickets flag — it's always-available
+// help. Served inline so it opens in a browser tab; staff can save it.
+router.get(
+  "/admin/support/manual",
+  adminReadRateLimiter,
+  requireAdmin,
+  async (_req, res): Promise<void> => {
+    const pdf = await loadUserManualPdf();
+    if (!pdf) {
+      res.status(404).json({ error: "manual_unavailable" });
+      return;
+    }
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `inline; filename="${USER_MANUAL_FILENAME}"`,
+    );
+    res.setHeader("Cache-Control", "private, max-age=300");
+    res.send(pdf);
+  },
+);
 
 router.post(
   "/admin/support/tickets",
