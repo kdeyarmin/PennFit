@@ -75,8 +75,10 @@ import {
 } from "@/lib/admin/platform-analytics-api";
 import {
   fetchFleetBillingSummary,
+  fetchPlatformBillingActivity,
   fetchPlatformTenantBilling,
   formatMoney,
+  syncTenantStripeSubscription,
 } from "@/lib/admin/platform-billing-api";
 import {
   getPlatformSupportTicket,
@@ -1020,6 +1022,162 @@ function NeedsAttentionCard({
   );
 }
 
+// Tenants whose platform subscription is past due / unpaid — revenue at
+// risk that wants a nudge. Reads the shared per-tenant billing query (same
+// key the Billing console + tenant-detail card use, so it's cached).
+// Renders nothing while loading, on error, or on a healthy fleet.
+function BillingRiskCard() {
+  const { data } = useQuery({
+    queryKey: ["platform-billing", "tenants"],
+    queryFn: fetchPlatformTenantBilling,
+  });
+  const atRisk = useMemo(() => {
+    return (data?.tenants ?? [])
+      .map((t) => {
+        const s = t.billing.subscription;
+        if (!s) return null;
+        const status = s.stripeStatus ?? s.status;
+        if (status !== "past_due" && status !== "unpaid") return null;
+        return {
+          id: t.id,
+          name: t.name ?? t.slug,
+          slug: t.slug,
+          status,
+          mrrCents: s.customMonthlyPriceCents ?? s.plan.monthlyPriceCents ?? 0,
+        };
+      })
+      .filter((x): x is NonNullable<typeof x> => x !== null);
+  }, [data]);
+
+  if (atRisk.length === 0) return null;
+  const atRiskCents = atRisk.reduce((sum, t) => sum + t.mrrCents, 0);
+
+  return (
+    <Card
+      title="Billing at risk"
+      subtitle={`${atRisk.length} tenant${atRisk.length === 1 ? "" : "s"} past due — ${formatMoney(atRiskCents)}/mo at risk.`}
+      action={
+        <Link href="/platform/billing">
+          <Button intent="ghost" size="sm">
+            Billing
+          </Button>
+        </Link>
+      }
+    >
+      <ul className="space-y-1">
+        {atRisk.map((t) => (
+          <li
+            key={t.id}
+            className="flex items-center justify-between gap-3 rounded-md px-3 py-2 border"
+            style={{ borderColor: "hsl(var(--line-1))" }}
+          >
+            <Link href={`/platform/tenants/${t.id}`} className="min-w-0 group">
+              <span
+                className="text-sm font-medium block truncate group-hover:underline"
+                style={{ color: "hsl(var(--ink-1))" }}
+              >
+                {t.name}
+              </span>
+              <span className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+                {t.slug} · {formatMoney(t.mrrCents)}/mo
+              </span>
+            </Link>
+            <Badge variant="danger">{t.status.replace(/_/g, " ")}</Badge>
+          </li>
+        ))}
+      </ul>
+    </Card>
+  );
+}
+
+// Fleet-wide billing activity feed — plan changes, invoices, and add-on
+// edits across every tenant. The platform operator's "what just happened
+// to revenue" stream. Scoped per-tenant on the detail page (same hook).
+function BillingActivityCard({ tenantId }: { tenantId?: string }) {
+  const { data, isPending, isError, refetch } = useQuery({
+    queryKey: ["platform-billing", "activity", tenantId ?? "fleet"],
+    queryFn: () => fetchPlatformBillingActivity(tenantId ? 10 : 15, tenantId),
+  });
+  const activity = data?.activity ?? [];
+
+  return (
+    <Card
+      title={tenantId ? "Billing history" : "Recent billing activity"}
+      subtitle={
+        tenantId
+          ? "Plan changes, invoices, and add-on edits for this tenant."
+          : "Plan changes, invoices, and add-on edits across the fleet."
+      }
+    >
+      {isPending ? (
+        <Spinner label="Loading activity…" />
+      ) : isError ? (
+        <EmptyState
+          title="Couldn't load billing activity."
+          hint="A transient error — try again."
+          action={
+            <Button intent="secondary" size="sm" onClick={() => void refetch()}>
+              Retry
+            </Button>
+          }
+        />
+      ) : activity.length === 0 ? (
+        <EmptyState
+          title="No billing activity yet."
+          hint="Plan changes and invoices will show up here."
+        />
+      ) : (
+        <ul className="space-y-0">
+          {activity.map((e) => (
+            <li
+              key={e.id}
+              className="py-2.5 border-t first:border-t-0 flex items-start justify-between gap-4"
+              style={{ borderColor: "hsl(var(--line-1))" }}
+            >
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span
+                    className="text-sm font-medium"
+                    style={{ color: "hsl(var(--ink-1))" }}
+                  >
+                    {e.summary ?? e.action.replace(/[_.]/g, " ")}
+                  </span>
+                  <Badge variant={e.actor === "tenant" ? "neutral" : "info"}>
+                    {e.actor}
+                  </Badge>
+                </div>
+                <div
+                  className="text-[11px] mt-0.5"
+                  style={{ color: "hsl(var(--ink-3))" }}
+                >
+                  {!tenantId && (
+                    <Link
+                      href={`/platform/tenants/${e.tenantId}`}
+                      className="hover:underline"
+                      style={{ color: "hsl(var(--penn-navy))" }}
+                    >
+                      {e.tenantName}
+                    </Link>
+                  )}
+                  {!tenantId && " · "}
+                  {e.operatorEmail ?? "system"}
+                </div>
+              </div>
+              <span
+                className="text-[11px] tabular-nums whitespace-nowrap"
+                style={{ color: "hsl(var(--ink-3))" }}
+                title={new Date(e.occurredAt).toLocaleString()}
+              >
+                {new Date(e.occurredAt).toLocaleDateString()}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
 function PlatformDashboard() {
   const [days, setDays] = useState<number>(30);
   const { data, isPending, isError, refetch, isFetching } =
@@ -1213,6 +1371,8 @@ function PlatformDashboard() {
 
           {data && <NeedsAttentionCard tenants={data.tenants} />}
 
+          <BillingRiskCard />
+
           <FleetRevenueCard />
 
           {isPending || !data ? (
@@ -1282,6 +1442,8 @@ function PlatformDashboard() {
               </p>
             </>
           )}
+
+          <BillingActivityCard />
         </>
       )}
     </div>
@@ -2050,9 +2212,18 @@ function billingStatusVariant(
 // billing the platform Billing console renders (shared query key, so it's
 // cached/deduped). Deep edits stay on /platform/billing.
 function TenantBillingCard({ tenantId }: { tenantId: string }) {
+  const queryClient = useQueryClient();
   const { data, isPending, isError, refetch } = useQuery({
     queryKey: ["platform-billing", "tenants"],
     queryFn: fetchPlatformTenantBilling,
+  });
+  const sync = useMutation({
+    mutationFn: () => syncTenantStripeSubscription(tenantId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: ["platform-billing", "tenants"],
+      });
+    },
   });
   const row = data?.tenants.find((t) => t.id === tenantId);
   const sub = row?.billing.subscription ?? null;
@@ -2060,17 +2231,36 @@ function TenantBillingCard({ tenantId }: { tenantId: string }) {
     ? (sub.customMonthlyPriceCents ?? sub.plan.monthlyPriceCents)
     : null;
   const displayStatus = sub ? (sub.stripeStatus ?? sub.status) : "";
+  // Effective allowances = plan defaults overlaid by any per-tenant custom
+  // overrides; usage is what's been metered this billing month.
+  const allowances: Record<string, number> = sub
+    ? { ...sub.plan.allowances, ...sub.customAllowances }
+    : {};
+  const usageMetrics = row?.billing.usage.metrics ?? {};
+  const allowanceEntries = Object.entries(allowances);
 
   return (
     <Card
       title="Plan & billing"
       subtitle="What this tenant pays to run on the platform."
       action={
-        <Link href="/platform/billing">
-          <Button intent="ghost" size="sm">
-            Manage
-          </Button>
-        </Link>
+        <div className="flex items-center gap-2">
+          {sub && (
+            <Button
+              intent="secondary"
+              size="sm"
+              isLoading={sync.isPending}
+              onClick={() => sync.mutate()}
+            >
+              Sync Stripe
+            </Button>
+          )}
+          <Link href="/platform/billing">
+            <Button intent="ghost" size="sm">
+              Manage
+            </Button>
+          </Link>
+        </div>
       }
     >
       {isPending ? (
@@ -2092,6 +2282,11 @@ function TenantBillingCard({ tenantId }: { tenantId: string }) {
         />
       ) : (
         <div className="space-y-4">
+          {sync.isError && (
+            <p className="text-xs" style={{ color: "hsl(354 75% 38%)" }}>
+              Couldn&rsquo;t sync with Stripe. Try again.
+            </p>
+          )}
           <div className="flex items-center gap-3 flex-wrap">
             <span
               className="text-base font-semibold"
@@ -2121,6 +2316,48 @@ function TenantBillingCard({ tenantId }: { tenantId: string }) {
               {row?.billing.addons.length ?? 0}
             </MetaItem>
           </div>
+          {allowanceEntries.length > 0 && (
+            <div
+              className="border-t pt-3"
+              style={{ borderColor: "hsl(var(--line-1))" }}
+            >
+              <div
+                className="text-[11px] font-medium mb-2"
+                style={{ color: "hsl(var(--ink-2))" }}
+              >
+                Usage this month
+                {row?.billing.usage.month
+                  ? ` · ${row.billing.usage.month}`
+                  : ""}
+              </div>
+              <div className="space-y-1">
+                {allowanceEntries.map(([key, allowance]) => {
+                  const used = usageMetrics[key] ?? 0;
+                  const over = allowance > 0 && used > allowance;
+                  return (
+                    <div
+                      key={key}
+                      className="flex items-center justify-between text-xs"
+                    >
+                      <span style={{ color: "hsl(var(--ink-2))" }}>
+                        {key.replace(/_/g, " ")}
+                      </span>
+                      <span
+                        className="tabular-nums font-medium"
+                        style={{
+                          color: over
+                            ? "hsl(354 70% 42%)"
+                            : "hsl(var(--ink-1))",
+                        }}
+                      >
+                        {used.toLocaleString()} / {allowance.toLocaleString()}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </Card>
@@ -2443,6 +2680,8 @@ function TenantDetailPage() {
           <TenantActivityCard tenantId={tenant.id} />
 
           <TenantBillingCard tenantId={tenant.id} />
+
+          <BillingActivityCard tenantId={tenant.id} />
 
           <TenantFeatureFlagsCard tenantId={tenant.id} />
 

@@ -100,4 +100,15 @@ describe("platform console tenant detail + sidebar", () => {
     // The Needs-attention panel reactivates inline, not just links out.
     expect(SRC).toContain("onReactivate(t.id)");
   });
+
+  it("deepens platform billing: risk, activity feed, and tenant actions", () => {
+    // Dashboard: at-risk (past-due) tenants + a fleet billing activity feed.
+    expect(SRC).toContain("function BillingRiskCard");
+    expect(SRC).toContain("<BillingRiskCard />");
+    expect(SRC).toContain("function BillingActivityCard");
+    expect(SRC).toContain("fetchPlatformBillingActivity");
+    // Tenant detail: a Sync-Stripe action and a per-tenant billing history.
+    expect(SRC).toContain("syncTenantStripeSubscription");
+    expect(SRC).toContain("<BillingActivityCard tenantId={tenant.id} />");
+  });
 });
