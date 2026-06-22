@@ -17,7 +17,8 @@ export type TeamRole =
   | "fitter"
   | "fulfillment"
   | "compliance_officer"
-  | "agent";
+  | "agent"
+  | "biller";
 export type TeamStatus = "pending" | "active" | "revoked";
 
 export interface TeamMember {

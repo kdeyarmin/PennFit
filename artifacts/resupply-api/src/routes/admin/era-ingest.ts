@@ -23,7 +23,7 @@ import { resolvePayerProfileForEra } from "../../lib/billing/era-payer-resolver"
 import { logger } from "../../lib/logger";
 import { publishEvent } from "../../lib/webhooks/publisher";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
-import { requireAdminOnly } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
@@ -45,7 +45,7 @@ const body = z
 
 router.post(
   "/admin/billing/era-ingest",
-  requireAdminOnly,
+  requirePermission("billing.manage"),
   adminRateLimit({ name: "billing.era_ingest", preset: "sensitive" }),
   async (req, res) => {
     const parsed = body.safeParse(req.body);
@@ -257,42 +257,46 @@ router.post(
 );
 
 // ── LIST ────────────────────────────────────────────────────────────
-router.get("/admin/billing/era-files", requireAdminOnly, async (req, res) => {
-  const orgId = req.orgId;
-  if (!orgId) {
-    res.status(500).json({ error: "tenant_context_missing" });
-    return;
-  }
-  const supabase = getOrgScopedClient(orgId);
-  const { data, error } = await supabase
-    .from("era_files")
-    .select(
-      "id, file_name, file_sha256, file_size_bytes, payer_check_number, payer_paid_date, total_paid_cents, claims_paid_count, claims_denied_count, lines_processed_count, matched_submission_id, payer_profile_id, status, rejection_reason, ingested_by_email, ingested_at",
-    )
-    .order("ingested_at", { ascending: false })
-    .limit(200);
-  if (error) throw error;
-  type EraFileRow = Database["resupply"]["Tables"]["era_files"]["Row"];
-  res.json({
-    eraFiles: ((data ?? []) as EraFileRow[]).map((r) => ({
-      id: r.id,
-      fileName: r.file_name,
-      fileSha256: r.file_sha256,
-      fileSizeBytes: r.file_size_bytes,
-      payerCheckNumber: r.payer_check_number,
-      payerPaidDate: r.payer_paid_date,
-      totalPaidCents: r.total_paid_cents,
-      claimsPaidCount: r.claims_paid_count,
-      claimsDeniedCount: r.claims_denied_count,
-      linesProcessedCount: r.lines_processed_count,
-      matchedSubmissionId: r.matched_submission_id,
-      payerProfileId: r.payer_profile_id,
-      status: r.status,
-      rejectionReason: r.rejection_reason,
-      ingestedByEmail: r.ingested_by_email,
-      ingestedAt: r.ingested_at,
-    })),
-  });
-});
+router.get(
+  "/admin/billing/era-files",
+  requirePermission("billing.manage"),
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+    const { data, error } = await supabase
+      .from("era_files")
+      .select(
+        "id, file_name, file_sha256, file_size_bytes, payer_check_number, payer_paid_date, total_paid_cents, claims_paid_count, claims_denied_count, lines_processed_count, matched_submission_id, payer_profile_id, status, rejection_reason, ingested_by_email, ingested_at",
+      )
+      .order("ingested_at", { ascending: false })
+      .limit(200);
+    if (error) throw error;
+    type EraFileRow = Database["resupply"]["Tables"]["era_files"]["Row"];
+    res.json({
+      eraFiles: ((data ?? []) as EraFileRow[]).map((r) => ({
+        id: r.id,
+        fileName: r.file_name,
+        fileSha256: r.file_sha256,
+        fileSizeBytes: r.file_size_bytes,
+        payerCheckNumber: r.payer_check_number,
+        payerPaidDate: r.payer_paid_date,
+        totalPaidCents: r.total_paid_cents,
+        claimsPaidCount: r.claims_paid_count,
+        claimsDeniedCount: r.claims_denied_count,
+        linesProcessedCount: r.lines_processed_count,
+        matchedSubmissionId: r.matched_submission_id,
+        payerProfileId: r.payer_profile_id,
+        status: r.status,
+        rejectionReason: r.rejection_reason,
+        ingestedByEmail: r.ingested_by_email,
+        ingestedAt: r.ingested_at,
+      })),
+    });
+  },
+);
 
 export default router;

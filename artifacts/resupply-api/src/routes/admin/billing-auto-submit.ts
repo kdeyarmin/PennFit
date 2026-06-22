@@ -49,7 +49,7 @@ const readyQuery = z
 router.get(
   "/admin/billing/auto-submit/ready",
   adminReadRateLimiter,
-  requirePermission("admin.tools.manage"),
+  requirePermission("billing.manage"),
   async (req, res) => {
     const orgId = req.orgId?.trim();
     if (!orgId) {
@@ -69,7 +69,7 @@ router.get(
 router.get(
   "/admin/billing/auto-submit/status",
   adminReadRateLimiter,
-  requirePermission("admin.tools.manage"),
+  requirePermission("billing.manage"),
   async (req, res) => {
     const flagEnabled = await isFeatureEnabled(
       "billing.auto_submit_claims",
@@ -109,7 +109,7 @@ const runBody = z
 router.post(
   "/admin/billing/auto-submit/run",
   adminWriteRateLimiter,
-  requirePermission("admin.tools.manage"),
+  requirePermission("billing.manage"),
   async (req, res) => {
     const parsed = runBody.safeParse(req.body ?? {});
     if (!parsed.success) {

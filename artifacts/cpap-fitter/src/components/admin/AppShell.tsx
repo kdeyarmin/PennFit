@@ -831,7 +831,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             label: "Auto-submit",
             icon: Send,
             matchPrefix: "/admin/billing/auto-submit",
-            requiredPermission: "admin.tools.manage",
+            requiredPermission: "billing.manage",
             hint: "Claims ready to transmit — preflight-clean + active eligibility. Approve a batch or let the cron send them.",
           },
           {
@@ -916,7 +916,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             label: "Office Ally",
             icon: Send,
             matchPrefix: "/admin/billing/office-ally",
-            requiredPermission: "admin.tools.manage",
+            requiredPermission: "billing.manage",
             hint: "Office Ally clearinghouse — 837P submissions, acknowledgements, and transmission status",
           },
           {

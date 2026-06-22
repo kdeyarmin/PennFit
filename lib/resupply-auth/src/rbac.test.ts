@@ -11,6 +11,7 @@ import {
   ALL_PERMISSIONS,
   permissionsForRole,
   roleHasPermission,
+  toEffectiveRole,
   type Permission,
 } from "./rbac";
 
@@ -219,6 +220,7 @@ describe("permissionsForRole", () => {
       "compliance_officer",
       "agent",
       "rt",
+      "biller",
     ] as const) {
       expect(permissionsForRole(role).length).toBeGreaterThan(0);
     }
@@ -259,6 +261,7 @@ describe("catalog invariants", () => {
           "compliance_officer",
           "agent",
           "rt",
+          "biller",
         ] as const
       ).some((r) => roleHasPermission(r, perm));
       expect(
@@ -280,6 +283,7 @@ describe("catalog invariants", () => {
       "compliance_officer",
       "agent",
       "rt",
+      "biller",
     ] as const) {
       expect(roleHasPermission(role, "admin_team.manage")).toBe(false);
     }
@@ -296,10 +300,65 @@ describe("catalog invariants", () => {
       "compliance_officer",
       "agent",
       "rt",
+      "biller",
     ] as const) {
       expect(roleHasPermission(role, "system.config.manage")).toBe(false);
     }
     // super_admin (the `admin` DB role) holds it via ALL_PERMISSIONS.
     expect(roleHasPermission("admin", "system.config.manage")).toBe(true);
+  });
+});
+
+describe("biller role", () => {
+  it("maps to its own effective bucket", () => {
+    expect(toEffectiveRole("biller")).toBe("biller");
+  });
+
+  it("holds the billing write surface + the billing-context reads", () => {
+    for (const perm of [
+      "billing.manage",
+      "patients.read",
+      "patients.update",
+      "reports.read",
+      "cost.read",
+      "inventory.read",
+    ] as const) {
+      expect(roleHasPermission("biller", perm)).toBe(true);
+    }
+  });
+
+  it("does NOT hold the non-billing admin / CSR / clinical surfaces", () => {
+    // The whole point of the scoped role: a biller gets the Billing area
+    // without the unrelated tools admin.tools.manage unlocks, the CSR
+    // inbox (conversations.manage), refunds (returns.approve), team /
+    // system management, or any clinical surface.
+    for (const perm of [
+      "admin.tools.manage",
+      "admin_team.manage",
+      "system.config.manage",
+      "conversations.manage",
+      "returns.approve",
+      "returns.manage",
+      "cost.write",
+      "metrics.read",
+      "targets.manage",
+      "clinical.read",
+      "clinical.note.write",
+      "provider_portal.manage",
+      "fit_session.override",
+    ] as const) {
+      expect(roleHasPermission("biller", perm)).toBe(false);
+    }
+  });
+
+  it("billing.manage is shared with the admin tiers but off the CSR/clinician tiers", () => {
+    expect(roleHasPermission("admin", "billing.manage")).toBe(true);
+    expect(roleHasPermission("supervisor", "billing.manage")).toBe(true);
+    expect(roleHasPermission("compliance_officer", "billing.manage")).toBe(
+      true,
+    );
+    expect(roleHasPermission("csr", "billing.manage")).toBe(false);
+    expect(roleHasPermission("agent", "billing.manage")).toBe(false);
+    expect(roleHasPermission("rt", "billing.manage")).toBe(false);
   });
 });

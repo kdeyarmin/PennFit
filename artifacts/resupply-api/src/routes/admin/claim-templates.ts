@@ -119,7 +119,7 @@ function rowToApi(r: Row) {
 
 router.get(
   "/admin/claim-templates",
-  requirePermission("admin.tools.manage"),
+  requirePermission("billing.manage"),
   async (req, res) => {
     const orgId = req.orgId;
     if (!orgId) {

@@ -102,7 +102,7 @@ const idParam = z.string().uuid();
 
 router.post(
   "/admin/claims/:id/generate-secondary",
-  requirePermission("admin.tools.manage"),
+  requirePermission("billing.manage"),
   async (req, res) => {
     const parsed = idParam.safeParse(req.params.id);
     if (!parsed.success) {

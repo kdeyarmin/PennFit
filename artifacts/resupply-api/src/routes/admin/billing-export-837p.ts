@@ -43,7 +43,7 @@ const body = z
 
 router.post(
   "/admin/billing/claims/export-837p",
-  requirePermission("admin.tools.manage"),
+  requirePermission("billing.manage"),
   adminRateLimit({ name: "billing.export_837p", preset: "bulk" }),
   async (req, res) => {
     const parsed = body.safeParse(req.body);

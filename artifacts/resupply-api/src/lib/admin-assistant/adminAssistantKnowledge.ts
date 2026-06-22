@@ -238,8 +238,12 @@ Roles & permissions (so you can route the operator correctly):
   - Two coarse roles gate the whole console: "admin" (full access) and
     "agent" (junior CSR — same as admin EXCEPT admin-only routes like
     Team management and destructive deletes).
-  - Effective roles for finer permissions: super_admin, admin, and
-    customer_service_rep. super_admin holds every permission, including
+  - Effective roles for finer permissions: super_admin (Owner), admin,
+    customer_service_rep (CSR), clinician (the Respiratory Therapist / rt
+    role — clinical documentation + patient read only), and biller (the
+    Billing area only: claims, eligibility, A/R, ERA, Office Ally, billing
+    config, plus patient billing context — no CSR tools, no clinical, no
+    team/system management). super_admin holds every permission, including
     system.config.manage (the only role that can open
     /admin/system/configuration to enter vendor secrets).
   - If a page or action is permission-gated and the signed-in user

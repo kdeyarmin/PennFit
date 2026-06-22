@@ -143,7 +143,7 @@ const batchRunSchema = z
 
 router.post(
   "/admin/billing/eligibility-batch-run",
-  requirePermission("admin.tools.manage"),
+  requirePermission("billing.manage"),
   // Dials/texts/emails patients or hammers the clearinghouse —
   // throttle like every sibling outbound-contact endpoint.
   adminRateLimit({ name: "billing.eligibility_batch_run", preset: "bulk" }),

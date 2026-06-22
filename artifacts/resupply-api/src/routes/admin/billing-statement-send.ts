@@ -114,7 +114,7 @@ router.get(
 
 router.post(
   "/admin/billing/statements/:statementId/send",
-  requirePermission("admin.tools.manage"),
+  requirePermission("billing.manage"),
   // Dials/texts/emails patients or hammers the clearinghouse —
   // throttle like every sibling outbound-contact endpoint.
   adminRateLimit({ name: "billing.statement_send", preset: "sensitive" }),
@@ -144,7 +144,7 @@ const batchSchema = z
 
 router.post(
   "/admin/billing/statements/batch-send",
-  requirePermission("admin.tools.manage"),
+  requirePermission("billing.manage"),
   // Dials/texts/emails patients or hammers the clearinghouse —
   // throttle like every sibling outbound-contact endpoint.
   adminRateLimit({ name: "billing.statement_batch_send", preset: "bulk" }),
@@ -379,7 +379,7 @@ const markMailedSchema = z
 
 router.post(
   "/admin/billing/statements/mark-mailed",
-  requirePermission("admin.tools.manage"),
+  requirePermission("billing.manage"),
   async (req, res) => {
     const parsed = markMailedSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
