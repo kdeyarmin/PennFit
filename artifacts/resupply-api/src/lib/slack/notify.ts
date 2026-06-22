@@ -29,6 +29,10 @@ import {
 import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { getEffectiveEnv, getEffectiveEnvForOrg } from "../app-config/store";
+import {
+  DEFAULT_ADMIN_ASSISTANT_NAME,
+  resolveAssistantNamesForOrg,
+} from "../company-info";
 import { isFeatureEnabled, type FeatureFlagKey } from "../feature-flags";
 import { logger } from "../logger";
 import { resolveTenantBaseUrl } from "../tenant-branding";
@@ -409,10 +413,11 @@ export async function notifySlaBreach(input: {
 }
 
 /**
- * A staff member filed a product idea through PennPilot (the admin assistant).
- * Drops it into the ops/digests channel alongside the email to the owner(s),
- * so the team sees ideas as they land. Non-PHI (a product idea, no patient
- * data) — title + area + priority only.
+ * A staff member filed a product idea through the admin assistant. Drops it
+ * into the ops/digests channel alongside the email to the owner(s), so the
+ * team sees ideas as they land. Non-PHI (a product idea, no patient data) —
+ * title + area + priority only. The assistant is named per tenant
+ * ("CareMetric Copilot" by default; "PennPilot" only for the Penn tenant).
  */
 export async function notifyFeatureSuggestion(input: {
   orgId: string | undefined;
@@ -423,10 +428,13 @@ export async function notifyFeatureSuggestion(input: {
   const channel = (
     await resolveSlackEnv(input.orgId)
   ).SLACK_DIGESTS_CHANNEL?.trim();
+  const assistantName = input.orgId
+    ? (await resolveAssistantNamesForOrg(input.orgId)).assistantAdminName
+    : DEFAULT_ADMIN_ASSISTANT_NAME;
   await sendCsAlert({
     orgId: input.orgId,
     severity: "info",
-    title: "💡 New feature suggestion (PennPilot)",
+    title: `💡 New feature suggestion (${assistantName})`,
     lines: [
       `*Title:* ${input.title}`,
       `*Area:* ${input.area ?? "—"}`,

@@ -35,6 +35,9 @@ vi.mock("../feature-flags", () => ({ isFeatureEnabled: vi.fn() }));
 vi.mock("../app-config/store", () => ({
   getEffectiveEnv: vi.fn(),
   getEffectiveEnvForOrg: vi.fn(),
+  // resolveAssistantNamesForOrg (real, in company-info) reads this; null →
+  // the platform default name ("CareMetric Copilot").
+  getTenantConfigValue: vi.fn(async () => null),
 }));
 vi.mock("../tenant-branding", () => ({ resolveTenantBaseUrl: vi.fn() }));
 vi.mock("@workspace/resupply-integrations-slack", async (importOriginal) => {
@@ -316,6 +319,9 @@ describe("notifyFeatureSuggestion", () => {
     expect(serialized).toContain("Bulk export");
     expect(serialized).toContain("Billing");
     expect(serialized).toContain("high");
+    // Platform-default assistant name, NOT the Penn-only "PennPilot".
+    expect(serialized).toContain("CareMetric Copilot");
+    expect(serialized).not.toContain("PennPilot");
   });
 });
 
