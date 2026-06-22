@@ -89,17 +89,38 @@ interface FakeConfig {
   earliestNight?: Record<string, string | undefined>;
   // patientIds that already have a 90-day report row
   alreadySent?: Set<string>;
+  // pre-claimed unique keys `${patientId}:${providerId}:${windowDays}` —
+  // models a slot a CONCURRENT worker already claimed, so this run's claim
+  // INSERT hits a 23505 unique-violation and must NOT send.
+  claimConflict?: Set<string>;
 }
 
-const upsertCalls: Array<Record<string, unknown>> = [];
+// Finalized report rows (claim INSERT merged with the terminal UPDATE),
+// in completion order. Tests assert against these the same way the old
+// suite asserted against the upsert payload.
+const reportRows: Array<Record<string, unknown>> = [];
 
+// Backwards-compatible alias so existing assertions keep reading naturally:
+// the worker now claims (insert 'sending') then UPDATEs to 'sent'/'failed';
+// reportRows holds the merged terminal row.
+const upsertCalls = reportRows;
+
+// In-memory claim ledger keyed by the claim row id. Models the unique
+// (org_id, patient_id, provider_id, window_days) slot: a second claim for an
+// already-claimed key is rejected with a 23505 PostgrestError, exactly like
+// the real DB. `cfg.claimConflict` pre-seeds keys as "already claimed by a
+// concurrent worker" so we can prove the claim-before-send guard.
 function makeClient(cfg: FakeConfig) {
+  const claimedKeys = new Set<string>(cfg.claimConflict ?? []);
+  const rowsById = new Map<string, Record<string, unknown>>();
+  let nextId = 0;
+
   return {
     from(table: string) {
       const builder: Record<string, unknown> = {};
       const ret = () => builder;
       // chainable no-ops
-      for (const m of ["select", "not", "in", "eq", "order", "limit"]) {
+      for (const m of ["select", "not", "in", "order", "limit"]) {
         builder[m] = vi.fn(ret);
       }
       builder.maybeSingle = vi.fn(async () => {
@@ -111,17 +132,54 @@ function makeClient(cfg: FakeConfig) {
         }
         return { data: null };
       });
-      // capture patient_id passed to eq for the idempotency / night probes
-      const origEq = builder.eq as (col: string, val: string) => unknown;
+      // capture patient_id / id passed to eq for the idempotency, night, and
+      // update probes
       builder.eq = vi.fn((col: string, val: string) => {
         if (col === "patient_id")
           (builder as { _patientId?: string })._patientId = val;
-        return origEq(col, val);
+        if (col === "id") (builder as { _rowId?: string })._rowId = val;
+        return builder;
       });
-      builder.upsert = vi.fn(async (row: Record<string, unknown>) => {
-        upsertCalls.push(row);
-        return { error: null };
+
+      // CLAIM: insert a 'sending' row, returning its id. Unique-violation
+      // (23505) when the (patient, provider, window) slot is already claimed.
+      builder.insert = vi.fn((row: Record<string, unknown>) => {
+        const key = `${String(row.patient_id)}:${String(row.provider_id)}:${String(row.window_days)}`;
+        const insertBuilder: Record<string, unknown> = {
+          select: vi.fn(() => insertBuilder),
+          single: vi.fn(async () => {
+            if (claimedKeys.has(key)) {
+              return {
+                data: null,
+                error: { code: "23505", message: "duplicate key" },
+              };
+            }
+            claimedKeys.add(key);
+            const id = `claim-${++nextId}`;
+            rowsById.set(id, { ...row, id });
+            return { data: { id }, error: null };
+          }),
+        };
+        return insertBuilder;
       });
+
+      // UPDATE: transition a claimed row to its terminal status. The .eq("id")
+      // call recorded the row id on the builder.
+      builder.update = vi.fn((patch: Record<string, unknown>) => {
+        const updateBuilder: Record<string, unknown> = {
+          eq: vi.fn((col: string, val: string) => {
+            if (col === "id") {
+              const existing = rowsById.get(val) ?? {};
+              const merged = { ...existing, ...patch };
+              rowsById.set(val, merged);
+              reportRows.push(merged);
+            }
+            return { error: null };
+          }),
+        };
+        return updateBuilder;
+      });
+
       // make the builder awaitable for the list-style queries
       (builder as { then?: unknown }).then = (
         resolve: (v: { data: unknown; error: null }) => void,
@@ -326,6 +384,67 @@ describe("runReferralAdherenceReport", () => {
     expect(failedRow).toMatchObject({ patient_id: "p1", channel: "fax" });
     const sentRow = upsertCalls.find((r) => r.status === "sent");
     expect(sentRow).toMatchObject({ patient_id: "p2", channel: "fax" });
+  });
+
+  it("claim-before-send: a slot claimed by a concurrent run does NOT send", async () => {
+    // A concurrent tick/worker already inserted the 'sending' claim row for
+    // this (patient, provider, window). This run's claim INSERT must hit the
+    // unique-violation (23505) and SKIP — no fax, no email, no PHI disclosure.
+    getOrgScopedClientMock.mockReturnValue(
+      makeClient({
+        prescriptions: [{ patient_id: "p1", provider_id: "prov1" }],
+        providers: [
+          { id: "prov1", fax_e164: "+15551234567", email: "doc@x.test" },
+        ],
+        earliestNight: { p1: DUE_ANCHOR },
+        claimConflict: new Set([`p1:prov1:90`]),
+      }),
+    );
+
+    const stats = await runReferralAdherenceReport();
+
+    // The render happens (it precedes the claim) but NOTHING is sent.
+    expect(sendFaxMock).not.toHaveBeenCalled();
+    expect(sendEmailMock).not.toHaveBeenCalled();
+    expect(stats.sent).toBe(0);
+    expect(stats.failed).toBe(0);
+    // The lost claim is counted as already-sent (another worker owns it), and
+    // no terminal report row is written by this run.
+    expect(stats.skippedAlreadySent).toBe(1);
+    expect(reportRows).toHaveLength(0);
+  });
+
+  it("claims a 'sending' row before sending, then finalizes to 'sent'", async () => {
+    // Prove the claim precedes the vendor call and the row is transitioned to
+    // its terminal status afterward.
+    let claimedBeforeSend = false;
+    sendFaxMock.mockImplementation(async () => {
+      // By the time the fax goes out, the claim row must already exist.
+      claimedBeforeSend = reportRows.length === 0; // not yet finalized
+      return { id: "fax-1", status: "queued" };
+    });
+    getOrgScopedClientMock.mockReturnValue(
+      makeClient({
+        prescriptions: [{ patient_id: "p1", provider_id: "prov1" }],
+        providers: [
+          { id: "prov1", fax_e164: "+15551234567", email: "doc@x.test" },
+        ],
+        earliestNight: { p1: DUE_ANCHOR },
+      }),
+    );
+
+    const stats = await runReferralAdherenceReport();
+
+    expect(claimedBeforeSend).toBe(true);
+    expect(sendFaxMock).toHaveBeenCalledTimes(1);
+    expect(stats.sent).toBe(1);
+    expect(reportRows[0]).toMatchObject({
+      patient_id: "p1",
+      provider_id: "prov1",
+      window_days: 90,
+      channel: "fax",
+      status: "sent",
+    });
   });
 
   it("skips a patient who hasn't reached the 90-day mark yet", async () => {

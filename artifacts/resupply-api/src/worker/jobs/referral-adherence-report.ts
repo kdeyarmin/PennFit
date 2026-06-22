@@ -8,9 +8,13 @@
 //   (preferred) or email on file and who haven't already had a 90-day report
 //   sent, render the SAME Medicare LCD L33718 adherence attestation a CSR can
 //   download by hand, send it to the referring provider via the tenant's own
-//   sender (fax → Telnyx, else email → SendGrid), and record the send in
-//   resupply.referral_adherence_reports for idempotency (unique on
-//   (org_id, patient_id, provider_id, window_days)).
+//   sender (fax → Telnyx, else email → SendGrid). The send is CLAIMED before
+//   the vendor call: a 'sending' row is inserted into
+//   resupply.referral_adherence_reports first, and the unique constraint on
+//   (org_id, patient_id, provider_id, window_days) is the concurrency guard
+//   — a concurrent tick that loses the insert race (23505) SKIPS without
+//   sending, so two overlapping workers can never double-disclose. The row
+//   is then UPDATEd to 'sent'/'failed'.
 //
 // SAFETY — this is a PHI DISCLOSURE. Two independent off switches, BOTH
 // required for anything to send:
@@ -36,10 +40,7 @@
 import type PgBoss from "pg-boss";
 
 import { getOrgScopedClient } from "@workspace/resupply-db";
-import {
-  createTelnyxFaxClient,
-  TelnyxApiError,
-} from "@workspace/resupply-telecom";
+import { createTelnyxFaxClient } from "@workspace/resupply-telecom";
 
 import { createTenantSendgridClient } from "../../lib/email/tenant-sender.js";
 import { signAdherenceAttestationFaxToken } from "../../lib/fax-document-token.js";
@@ -101,8 +102,14 @@ interface Candidate {
 /**
  * Build the per-tenant candidate list: patients with a referring provider
  * (preferring insurance_claims.referring_provider_id, falling back to
- * prescriptions.provider_id) where that provider has a fax OR email. Bounded
- * by MAX_PER_TICK after de-dup. Patients already sent a 90-day report are
+ * prescriptions.provider_id) where that provider has a fax OR email.
+ *
+ * NOT capped here. The MAX_PER_TICK cap is applied by runForOrg AFTER the
+ * per-patient filters (already-reported / not-yet-due) so it counts only
+ * patients actually sent. Capping the raw list here would let a tenant whose
+ * first 50 contactable patients are all skipped (already-sent / not-due)
+ * starve patient 51+ forever, because the next cron rebuilds the same
+ * capped-then-skipped list. Patients already sent a 90-day report are
  * filtered later (per-patient) against referral_adherence_reports.
  */
 async function buildCandidates(
@@ -186,7 +193,6 @@ async function buildCandidates(
       faxE164: contact.faxE164,
       email: contact.email,
     });
-    if (candidates.length >= MAX_PER_TICK) break;
   }
   return candidates;
 }
@@ -267,12 +273,10 @@ async function sendReport(
           event: "referral_adherence_report.fax_failed",
           org_id: orgId,
           provider_id: candidate.providerId,
-          err:
-            err instanceof TelnyxApiError
-              ? err.message
-              : err instanceof Error
-                ? err.message
-                : String(err),
+          // Pass the Error object (not err.message) so the logger's
+          // err.message/err.stack redaction applies. TelnyxApiError extends
+          // Error, so both branches hit the redaction path.
+          err: err instanceof Error ? err : new Error(String(err)),
         },
         "referral-adherence-report: fax dispatch failed",
       );
@@ -313,7 +317,9 @@ async function sendReport(
           event: "referral_adherence_report.email_failed",
           org_id: orgId,
           provider_id: candidate.providerId,
-          err: err instanceof Error ? err.message : String(err),
+          // Pass the Error object (not err.message) so the logger's
+          // err.message/err.stack redaction applies.
+          err: err instanceof Error ? err : new Error(String(err)),
         },
         "referral-adherence-report: email send failed",
       );
@@ -334,11 +340,18 @@ async function runForOrg(orgId: string, stats: TickStats): Promise<void> {
   const db = getOrgScopedClient(orgId);
 
   const candidates = await buildCandidates(db, stats);
+  // MAX_PER_TICK is applied AFTER the per-patient filters below (counting
+  // only patients we actually attempt to send to), NOT against the raw
+  // candidate list — see buildCandidates' note. `processed` counts the
+  // patients that reached the send step this tick.
+  let processed = 0;
   for (const candidate of candidates) {
+    if (processed >= MAX_PER_TICK) break;
     try {
-      // Idempotency: skip if a 90-day report already exists for this
-      // (patient, provider, window). The unique index is the hard backstop;
-      // this read avoids re-rendering/re-sending on every tick.
+      // Idempotency pre-read: skip if a report row already exists for this
+      // (patient, provider, window) in ANY state ('sending' claim, 'sent',
+      // or 'failed'). This read avoids re-rendering on every tick; the
+      // unique-constraint CLAIM below is the hard concurrency backstop.
       const { data: existing, error: existErr } = await db
         .from("referral_adherence_reports")
         .select("id")
@@ -372,11 +385,47 @@ async function runForOrg(orgId: string, stats: TickStats): Promise<void> {
       );
       if (!rendered.ok) {
         // No therapy data / patient gone — not "due" in practice. Skip
-        // without recording a failed row so a later data sync can retry.
+        // without recording a row so a later data sync can retry.
         stats.skippedNotDue += 1;
         continue;
       }
 
+      // ── CLAIM BEFORE SEND (concurrency guard) ─────────────────────────
+      // PHI-disclosure safety: claim the unique
+      // (org_id, patient_id, provider_id, window_days) slot BEFORE the
+      // vendor call by inserting a 'sending' row. If a concurrent tick /
+      // worker already claimed it, this insert hits the unique constraint
+      // (23505) and we SKIP without sending — the constraint, not a
+      // post-hoc dedup, prevents a duplicate disclosure. Only after a
+      // successful claim do we render/send and UPDATE the row to its
+      // terminal status. A 'sending' row that never reaches a terminal
+      // state (worker crash mid-send) still occupies the slot and is NOT
+      // re-sent — the safe default for a PHI disclosure.
+      const { data: claimRow, error: claimErr } = await db
+        .from("referral_adherence_reports")
+        .insert({
+          org_id: orgId,
+          patient_id: candidate.patientId,
+          provider_id: candidate.providerId,
+          window_days: WINDOW_DAYS,
+          channel: candidate.faxE164 ? "fax" : "email",
+          status: "sending",
+        })
+        .select("id")
+        .single();
+      if (claimErr) {
+        if ((claimErr as { code?: string }).code === "23505") {
+          // Another tick/worker already claimed this slot — do NOT send.
+          stats.candidates -= 1;
+          stats.skippedAlreadySent += 1;
+          continue;
+        }
+        throw claimErr;
+      }
+      const claimId = (claimRow as { id: string }).id;
+
+      // We hold the claim — now (and only now) send.
+      processed += 1;
       const outcome = await sendReport(
         orgId,
         candidate,
@@ -384,35 +433,24 @@ async function runForOrg(orgId: string, stats: TickStats): Promise<void> {
         anchorDate,
       );
 
-      // Record the send (sent OR failed) for idempotency. The unique index
-      // makes a concurrent duplicate insert a no-op (ignoreDuplicates).
-      const { error: insertErr } = await db
+      // Transition the claimed row to its terminal status (sent | failed).
+      const { error: updateErr } = await db
         .from("referral_adherence_reports")
-        .upsert(
-          {
-            org_id: orgId,
-            patient_id: candidate.patientId,
-            provider_id: candidate.providerId,
-            window_days: WINDOW_DAYS,
-            channel: outcome.channel,
-            status: outcome.status,
-            vendor_ref: outcome.status === "sent" ? outcome.vendorRef : null,
-            sent_at:
-              outcome.status === "sent" ? new Date().toISOString() : null,
-          },
-          {
-            onConflict: "org_id,patient_id,provider_id,window_days",
-            ignoreDuplicates: true,
-          },
-        );
-      if (insertErr) {
+        .update({
+          channel: outcome.channel,
+          status: outcome.status,
+          vendor_ref: outcome.status === "sent" ? outcome.vendorRef : null,
+          sent_at: outcome.status === "sent" ? new Date().toISOString() : null,
+        })
+        .eq("id", claimId);
+      if (updateErr) {
         logger.warn(
           {
             event: "referral_adherence_report.record_failed",
             org_id: orgId,
             provider_id: candidate.providerId,
           },
-          "referral-adherence-report: failed to record send",
+          "referral-adherence-report: failed to finalize send record",
         );
       }
 
@@ -426,7 +464,9 @@ async function runForOrg(orgId: string, stats: TickStats): Promise<void> {
           event: "referral_adherence_report.patient_failed",
           org_id: orgId,
           provider_id: candidate.providerId,
-          err: err instanceof Error ? err.message : String(err),
+          // Pass the Error object (not err.message) so the logger's
+          // err.message/err.stack redaction applies.
+          err: err instanceof Error ? err : new Error(String(err)),
         },
         "referral-adherence-report: candidate failed — continuing",
       );

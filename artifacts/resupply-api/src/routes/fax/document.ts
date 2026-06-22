@@ -183,8 +183,9 @@ router.get("/fax/document/:token", faxDocumentLimiter, async (req, res) => {
   // Adherence-attestation faxes (Referral CRM Phase 3) re-render the 90-day
   // Medicare LCD L33718 attestation on demand from the composite
   // `${patientId}:${anchorDate}` id. The anchor in the token pins the same
-  // 30-day window the worker computed, so the faxed PDF matches what was
-  // disclosed. Same signed-URL posture; the PDF bytes are never logged.
+  // 90-day therapy horizon start the worker computed (the compliant 30-day
+  // window is derived from it), so the faxed PDF matches what was disclosed.
+  // Same signed-URL posture; the PDF bytes are never logged.
   if (verified.kind === "adherence_attestation") {
     const sep = verified.outreachId.indexOf(":");
     if (sep <= 0) {

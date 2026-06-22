@@ -131,10 +131,13 @@ export function signPaRequestFaxToken(
 }
 
 /** Sign an adherence-attestation fax token (kind=adherence_attestation).
- *  The id is the composite `${patientId}:${anchorDate}` so the on-demand
- *  render reproduces the SAME 90-day window the worker computed — the faxed
- *  PDF matches what was disclosed. anchorDate is a YYYY-MM-DD (no colons), so
- *  the first ':' cleanly splits patientId from the anchor. */
+ *  The id is the composite `${patientId}:${anchorDate}` where anchorDate is
+ *  the 90-day therapy horizon start the worker computed (NOT the 30-day
+ *  compliant window, which the render derives from the anchor). Pinning the
+ *  anchor lets the on-demand render reproduce the SAME attestation the worker
+ *  disclosed — the faxed PDF matches what was sent. anchorDate is a
+ *  YYYY-MM-DD (no colons), so the first ':' cleanly splits patientId from the
+ *  anchor. */
 export function signAdherenceAttestationFaxToken(
   patientId: string,
   anchorDate: string,
