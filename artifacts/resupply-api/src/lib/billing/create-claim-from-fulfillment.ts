@@ -88,6 +88,9 @@ export async function createClaimFromFulfillment(
       fulfillmentId: input.fulfillmentId,
       dateOfServiceOverride: input.dateOfServiceOverride ?? null,
       payerProfileIdOverride: input.payerProfileIdOverride ?? null,
+      // Thread the caller's tenant so the builder reads the fulfillment/patient
+      // from the RIGHT tenant (was defaulting to the seed org).
+      orgId: input.orgId,
     });
   } catch (err) {
     if (err instanceof Error && /not found/i.test(err.message)) {

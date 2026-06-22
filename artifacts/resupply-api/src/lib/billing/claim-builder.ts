@@ -85,6 +85,11 @@ export interface BuildFromFulfillmentInput {
   dateOfServiceOverride?: string | null;
   /** Override the payer; defaults to the patient's primary coverage. */
   payerProfileIdOverride?: string | null;
+  /** Tenant whose fulfillment/patient to read. REQUIRED for multi-tenant
+   *  correctness — falls back to the seed org only when omitted (legacy
+   *  single-tenant callers). A non-seed caller MUST pass this, or the builder
+   *  reads from the seed tenant and reports the fulfillment as not-found. */
+  orgId?: string | null;
 }
 
 const COMPLIANCE_DAYS_WINDOW = 30;
@@ -101,7 +106,11 @@ const COMPLIANCE_MIN_MINUTES = 240;
 export async function buildClaimFromFulfillment(
   input: BuildFromFulfillmentInput,
 ): Promise<ProposedClaim> {
-  const orgId = await resolveSeedOrgId();
+  // Read from the CALLER's tenant when provided; fall back to the seed org
+  // only for legacy single-tenant callers that omit it. Reading from the
+  // seed tenant for a non-seed caller would report a valid fulfillment as
+  // not-found (or cross-tenant) — see BuildFromFulfillmentInput.orgId.
+  const orgId = input.orgId?.trim() || (await resolveSeedOrgId());
   if (!orgId) {
     throw new Error("buildClaimFromFulfillment: tenant context missing");
   }

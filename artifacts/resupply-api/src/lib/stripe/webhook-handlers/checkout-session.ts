@@ -456,6 +456,15 @@ export async function upsertOrderItemsFromSession(
  * race can never drive it negative. Untracked products (absent from
  * `stockByProduct`) are skipped. Fail-soft per product: a failed Stripe write
  * is logged, never thrown — stock drift is reconciled by the monthly count.
+ *
+ * Concurrency: Stripe metadata has no atomic decrement, and the documented
+ * architecture deliberately keeps stock in Stripe (no separate reservation
+ * store). To avoid writing an absolute value computed from a STALE snapshot,
+ * we re-read each product's CURRENT stock_count immediately before the write
+ * and decrement from that — shrinking the lost-update window from "the whole
+ * webhook" to "retrieve→update". A residual race remains under truly
+ * simultaneous same-product checkouts; the monthly inventory reconciliation is
+ * the backstop, consistent with the Stripe-as-truth design.
  */
 export async function decrementStockForPurchase(
   stripe: ReturnType<typeof getStripeClient>,
@@ -479,10 +488,21 @@ export async function decrementStockForPurchase(
     );
   }
   for (const [productId, qty] of qtyByProduct) {
-    const current = stockByProduct.get(productId)!;
-    const next = Math.max(0, current - qty);
-    if (next === current) continue; // already 0 — nothing to write
     try {
+      // Re-read CURRENT stock (not the checkout-time snapshot) so we never
+      // overwrite a concurrent debit with a stale absolute value.
+      const fresh = await stripe.products.retrieve(
+        productId,
+        undefined,
+        accountOptions,
+      );
+      const current = parseStockCount(
+        (fresh.metadata as Record<string, string | undefined> | undefined)
+          ?.stock_count,
+      );
+      if (current === null) continue; // no longer stock-tracked — leave it
+      const next = Math.max(0, current - qty);
+      if (next === current) continue; // already 0 — nothing to write
       await stripe.products.update(
         productId,
         { metadata: { stock_count: String(next) } },
