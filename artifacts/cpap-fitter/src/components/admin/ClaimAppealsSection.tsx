@@ -11,7 +11,7 @@
 // the list is patients.read. PHI: letter body is patient-facing copy; it is
 // rendered but never logged.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Gavel } from "lucide-react";
 
@@ -21,6 +21,7 @@ import {
   type AppealLetterRow,
   faxAppealLetter,
   generateAppealLetter,
+  getDenialSketch,
   listAppealLetters,
   markAppealDelivered,
   recordAppealOutcome,
@@ -62,15 +63,35 @@ export function ClaimAppealsSection({
   }
 
   const [letterBody, setLetterBody] = useState("");
+  const [bodyTouched, setBodyTouched] = useState(false);
   const [genError, setGenError] = useState<string | null>(null);
+
+  // Pre-fill the letter body from the denial analyzer's appeal-letter sketch so
+  // the CSR edits a draft rather than writing from scratch; only seed an empty,
+  // untouched textarea so we never clobber in-progress edits.
+  const sketchQuery = useQuery({
+    queryKey: ["admin", "claim-appeals", "sketch", patientId, claimId],
+    queryFn: () => getDenialSketch(patientId, claimId),
+    staleTime: 60_000,
+  });
+  const sketch = sketchQuery.data?.sketch ?? null;
+  const denialAnalysisId = sketchQuery.data?.denialAnalysisId ?? null;
+  useEffect(() => {
+    if (sketch && !bodyTouched && letterBody === "") {
+      setLetterBody(sketch);
+    }
+  }, [sketch, bodyTouched, letterBody]);
+
   const generate = useMutation({
     mutationFn: () =>
       generateAppealLetter(patientId, claimId, {
         letterBody: letterBody.trim(),
+        denialAnalysisId,
       }),
     onSuccess: () => {
       setGenError(null);
       setLetterBody("");
+      setBodyTouched(false);
       invalidate();
     },
     onError: (err) =>
@@ -104,10 +125,21 @@ export function ClaimAppealsSection({
         <label className="block">
           <span className="text-xs font-medium block mb-1">
             Appeal letter body
+            {sketch && !bodyTouched && letterBody === sketch ? (
+              <span
+                className="ml-2 font-normal"
+                style={{ color: "hsl(var(--ink-3))" }}
+              >
+                · pre-filled from the denial analysis — edit as needed
+              </span>
+            ) : null}
           </span>
           <textarea
             value={letterBody}
-            onChange={(e) => setLetterBody(e.target.value)}
+            onChange={(e) => {
+              setLetterBody(e.target.value);
+              setBodyTouched(true);
+            }}
             rows={4}
             minLength={20}
             maxLength={8000}

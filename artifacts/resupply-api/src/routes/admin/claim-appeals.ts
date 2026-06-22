@@ -72,6 +72,58 @@ router.get(
   },
 );
 
+// GET .../denial-sketch — the latest denial analysis's appeal-letter sketch for
+// this claim, so the appeals workbench can pre-fill the letter body instead of
+// opening a blank textarea. The sketch lives in
+// claim_denial_analyses.analysis_json.appealLetterSketch; the claim points at
+// the newest analysis via insurance_claims.latest_denial_analysis_id.
+router.get(
+  "/admin/patients/:id/insurance-claims/:claimId/denial-sketch",
+  requirePermission("patients.read"),
+  async (req, res) => {
+    const parsed = params.safeParse(req.params);
+    if (!parsed.success) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const orgId = req.orgId;
+    if (!orgId || !orgId.trim()) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+    const { data: claim } = await supabase
+      .from("insurance_claims")
+      .select("latest_denial_analysis_id")
+      .eq("id", parsed.data.claimId)
+      .eq("patient_id", parsed.data.id)
+      .limit(1)
+      .maybeSingle();
+    if (!claim?.latest_denial_analysis_id) {
+      res.json({ denialAnalysisId: null, recommendation: null, sketch: null });
+      return;
+    }
+    const { data: analysis } = await supabase
+      .from("claim_denial_analyses")
+      .select("id, recommendation, analysis_json")
+      .eq("id", claim.latest_denial_analysis_id)
+      .limit(1)
+      .maybeSingle();
+    const analysisJson = analysis?.analysis_json as {
+      appealLetterSketch?: unknown;
+    } | null;
+    const sketch =
+      typeof analysisJson?.appealLetterSketch === "string"
+        ? analysisJson.appealLetterSketch
+        : null;
+    res.json({
+      denialAnalysisId: analysis?.id ?? null,
+      recommendation: analysis?.recommendation ?? null,
+      sketch,
+    });
+  },
+);
+
 router.post(
   "/admin/patients/:id/insurance-claims/:claimId/appeal-letter",
   requirePermission("patients.update"),
