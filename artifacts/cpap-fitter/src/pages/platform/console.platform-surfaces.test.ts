@@ -129,6 +129,15 @@ describe("platform console tenant detail + sidebar", () => {
     expect(SRC).toContain("<PlatformHealthCard />");
   });
 
+  it("surfaces a fleet gross-margin card and self-serve onboarding copy", () => {
+    expect(SRC).toContain("function FleetMarginCard");
+    expect(SRC).toContain("useGetPlatformMargin");
+    expect(SRC).toContain("<FleetMarginCard />");
+    // The create-tenant card reflects self-serve onboarding, not the CLI.
+    expect(SRC).toContain("self-onboard");
+    expect(SRC).not.toContain("tenant:onboard CLI");
+  });
+
   it("shows the tenant's team & access on the detail page", () => {
     expect(SRC).toContain("function TenantAdminsCard");
     expect(SRC).toContain("useTenantAdmins");

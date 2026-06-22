@@ -45,6 +45,7 @@ import {
   getTenantFeatureFlagsQueryKey,
   getTenantQueryKey,
   useGetPlatformHealth,
+  useGetPlatformMargin,
   useGetPlatformMe,
   useGetTenant,
   useListTenants,
@@ -289,7 +290,7 @@ function CreateTenantCard() {
           setSlug("");
           setName("");
           setNotice(
-            `Created “${res.tenant.slug}” (${res.flagsProvisioned} feature flags provisioned). Invite its first owner with the tenant:onboard CLI.`,
+            `Created “${res.tenant.slug}” (${res.flagsProvisioned} feature flags provisioned). This is a manual shell — most tenants self-onboard instead: the owner signs up at the public signup page and manages their own team.`,
           );
           void queryClient.invalidateQueries({
             queryKey: getListTenantsQueryKey(),
@@ -302,7 +303,7 @@ function CreateTenantCard() {
   return (
     <Card
       title="Create a tenant"
-      subtitle="Creates the organization shell + its feature-flag catalog. Invite the tenant's first owner separately with the tenant:onboard CLI."
+      subtitle="Manually pre-provision an organization shell + its feature-flag catalog. Most tenants self-onboard instead — the owner signs up at the public signup page and becomes the owner, then invites their own team."
     >
       <form onSubmit={onSubmit} className="space-y-4">
         <div className="grid gap-4 sm:grid-cols-2">
@@ -1483,6 +1484,126 @@ function CatalogCard() {
   );
 }
 
+function pctMargin(ratio: number | null): string {
+  return ratio == null ? "—" : `${(ratio * 100).toFixed(1)}%`;
+}
+
+// Fleet storefront product gross margin (point-in-time COGS), with the
+// uncosted-revenue blind spot kept explicit and the lowest-margin tenants
+// surfaced. Product COGS only — vendor/infra spend isn't metered yet.
+function FleetMarginCard() {
+  const { data, isPending, isError, refetch } = useGetPlatformMargin(30);
+
+  const ranked = useMemo(() => {
+    const ts = (data?.tenants ?? []).filter((t) => t.revenueCents > 0);
+    // Lowest margin first; tenants with no costed revenue (null ratio)
+    // sort last.
+    return [...ts].sort(
+      (a, b) =>
+        (a.marginRatio ?? Number.POSITIVE_INFINITY) -
+        (b.marginRatio ?? Number.POSITIVE_INFINITY),
+    );
+  }, [data]);
+
+  return (
+    <Card
+      title="Gross margin · 30d"
+      subtitle="Storefront product margin across the fleet, from point-in-time COGS."
+    >
+      {isPending ? (
+        <Spinner label="Loading margin…" />
+      ) : isError || !data ? (
+        <EmptyState
+          title="Couldn't load margin."
+          hint="A transient error — try again."
+          action={
+            <Button intent="secondary" size="sm" onClick={() => void refetch()}>
+              Retry
+            </Button>
+          }
+        />
+      ) : (
+        <div className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <RevenueStat
+              label="Blended margin"
+              value={pctMargin(data.fleet.marginRatio)}
+              hint="on costed revenue"
+            />
+            <RevenueStat
+              label="Margin"
+              value={formatMoney(data.fleet.marginCents)}
+              hint={`of ${formatMoney(data.fleet.costedRevenueCents)} costed`}
+            />
+            <RevenueStat
+              label="Revenue"
+              value={formatMoney(data.fleet.revenueCents)}
+              hint="all paid product lines"
+            />
+            <RevenueStat
+              label="Uncosted"
+              value={formatMoney(data.fleet.uncostedRevenueCents)}
+              hint="no cost recorded"
+            />
+          </div>
+          {data.fleet.lossLineCount > 0 && (
+            <p className="text-xs" style={{ color: "hsl(354 70% 42%)" }}>
+              {data.fleet.lossLineCount} line
+              {data.fleet.lossLineCount === 1 ? "" : "s"} sold below cost (
+              {formatMoney(data.fleet.negativeMarginRevenueCents)} of revenue).
+            </p>
+          )}
+          {ranked.length > 0 && (
+            <div
+              className="border-t pt-3"
+              style={{ borderColor: "hsl(var(--line-1))" }}
+            >
+              <div
+                className="text-[11px] font-medium mb-2"
+                style={{ color: "hsl(var(--ink-2))" }}
+              >
+                By tenant — lowest margin first
+              </div>
+              <div className="space-y-1">
+                {ranked.map((t) => (
+                  <div
+                    key={t.id}
+                    className="flex items-center justify-between gap-3 text-xs"
+                  >
+                    <Link
+                      href={`/platform/tenants/${t.id}`}
+                      className="min-w-0 truncate hover:underline"
+                      style={{ color: "hsl(var(--penn-navy))" }}
+                    >
+                      {t.name ?? t.slug}
+                    </Link>
+                    <span className="flex items-center gap-2 shrink-0">
+                      {t.lossLineCount > 0 && (
+                        <Badge variant="danger">loss</Badge>
+                      )}
+                      <span
+                        className="tabular-nums font-medium"
+                        style={{ color: "hsl(var(--ink-1))" }}
+                      >
+                        {pctMargin(t.marginRatio)}
+                      </span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          <p className="text-[11px]" style={{ color: "hsl(var(--ink-3))" }}>
+            Product COGS only — infrastructure/vendor spend (AI, telephony,
+            email) isn&rsquo;t metered yet. &ldquo;Uncosted&rdquo; is product
+            sold with no recorded cost.
+          </p>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 function PlatformDashboard() {
   const [days, setDays] = useState<number>(30);
   const { data, isPending, isError, refetch, isFetching } =
@@ -1681,6 +1802,8 @@ function PlatformDashboard() {
           <BillingRiskCard />
 
           <FleetRevenueCard />
+
+          <FleetMarginCard />
 
           {isPending || !data ? (
             <Card title="Fleet trends">

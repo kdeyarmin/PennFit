@@ -166,6 +166,57 @@ export function useRevokeOperator(options?: {
   });
 }
 
+// ── Fleet gross margin (product COGS) ──────────────────────────────
+
+export interface MarginAggregateView {
+  lineCount: number;
+  revenueCents: number;
+  costedRevenueCents: number;
+  uncostedRevenueCents: number;
+  costCents: number;
+  marginCents: number;
+  marginRatio: number | null;
+  linesWithKnownCost: number;
+  linesWithUnknownCost: number;
+  lossLineCount: number;
+  negativeMarginRevenueCents: number;
+}
+
+export interface PlatformMarginTenant extends MarginAggregateView {
+  id: string;
+  slug: string;
+  name: string | null;
+  status: string;
+}
+
+export interface PlatformMargin {
+  windowDays: number;
+  generatedAt: string;
+  fleet: MarginAggregateView;
+  tenants: PlatformMarginTenant[];
+}
+
+export const getPlatformMarginQueryKey = (days?: number) =>
+  ["/resupply-api/platform/margin", { days }] as const;
+
+export function useGetPlatformMargin(
+  days?: number,
+  options?: {
+    query?: Partial<UseQueryOptions<PlatformMargin, PlatformError>>;
+  },
+) {
+  const qs = days ? `?days=${encodeURIComponent(String(days))}` : "";
+  return useQuery<PlatformMargin, PlatformError>({
+    queryKey: getPlatformMarginQueryKey(days),
+    queryFn: ({ signal }) =>
+      customFetch<PlatformMargin>(`/resupply-api/platform/margin${qs}`, {
+        method: "GET",
+        signal,
+      }),
+    ...options?.query,
+  });
+}
+
 // ── Tenant directory ───────────────────────────────────────────────
 
 export interface PlatformTenant {
