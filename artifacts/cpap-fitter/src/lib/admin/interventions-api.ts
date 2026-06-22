@@ -2,9 +2,7 @@
 // Interventions are clinical_encounters of type 'adherence_intervention';
 // read on clinical.read, write on clinical.intervention.write.
 
-import { ApiError } from "@workspace/api-client-react/admin";
-
-import { csrfHeader } from "../csrf";
+import { adminJsonFetch as jsonFetch } from "../admin-json-fetch";
 
 export const ASSESSMENT_CATEGORIES = [
   "mask_leak",
@@ -65,31 +63,6 @@ export interface InterventionWorklist {
   interventions: InterventionItem[];
   count: number;
   openCount: number;
-}
-
-async function jsonFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const method = (init.method ?? "GET").toUpperCase();
-  const url = `/resupply-api${path}`;
-  const res = await fetch(url, {
-    ...init,
-    credentials: "include",
-    headers: {
-      Accept: "application/json",
-      ...(init.body ? { "Content-Type": "application/json" } : {}),
-      ...(method === "GET" ? {} : csrfHeader()),
-      ...(init.headers ?? {}),
-    },
-  });
-  if (!res.ok) {
-    let data: unknown = null;
-    try {
-      data = await res.json();
-    } catch {
-      // body not JSON
-    }
-    throw new ApiError(res, data, { method, url });
-  }
-  return (await res.json()) as T;
 }
 
 export function getInterventionWorklist(

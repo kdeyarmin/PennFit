@@ -1,9 +1,7 @@
 // API client for /admin/(patients/:id)/prescription-requests —
 // pre-populated faxable Rx packets.
 
-import { ApiError } from "@workspace/api-client-react/admin";
-
-import { csrfHeader } from "../csrf";
+import { adminJsonFetch as jsonFetch } from "../admin-json-fetch";
 
 export type PrescriptionRequestStatus =
   | "draft"
@@ -84,29 +82,6 @@ export interface CreatePrescriptionRequestRequest {
   returnFaxE164?: string | null;
   returnEmail?: string | null;
   clinicalNotes?: string | null;
-}
-
-async function jsonFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const method = (init.method ?? "GET").toUpperCase();
-  const url = `/resupply-api${path}`;
-  const res = await fetch(url, {
-    ...init,
-    headers: {
-      Accept: "application/json",
-      ...(init.headers ?? {}),
-      ...csrfHeader(),
-    },
-  });
-  if (!res.ok) {
-    let data: unknown = null;
-    try {
-      data = await res.json();
-    } catch {
-      // body not JSON
-    }
-    throw new ApiError(res, data, { method, url });
-  }
-  return (await res.json()) as T;
 }
 
 export async function listPatientPrescriptionRequests(

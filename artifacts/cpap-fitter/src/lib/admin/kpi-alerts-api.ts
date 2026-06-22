@@ -3,37 +3,12 @@
 //   * /admin/metric-thresholds    — the alert-rule config CRUD
 // Both routes return camelCase.
 
-import { ApiError } from "@workspace/api-client-react/admin";
+import { adminJsonFetch } from "../admin-json-fetch";
 
-import { csrfHeader } from "../csrf";
-
-const BASE = "/resupply-api/admin";
-
-async function jsonFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const { headers, ...rest } = init;
-  const method = (init.method ?? "GET").toUpperCase();
-  const url = `${BASE}${path}`;
-  const res = await fetch(url, {
-    ...rest,
-    credentials: "include",
-    headers: {
-      Accept: "application/json",
-      ...csrfHeader(),
-      ...(headers ?? {}),
-    },
-  });
-  if (!res.ok) {
-    let data: unknown = null;
-    try {
-      data = await res.json();
-    } catch {
-      // body not JSON
-    }
-    throw new ApiError(res, data, { method, url });
-  }
-  // 204-less routes always return JSON here.
-  return (await res.json()) as T;
-}
+// Call sites pass paths under /admin (e.g. "/metric-alerts");
+// adminJsonFetch adds the /resupply-api mount.
+const jsonFetch = <T>(path: string, init?: RequestInit): Promise<T> =>
+  adminJsonFetch<T>(`/admin${path}`, init);
 
 // ── Alerts feed ────────────────────────────────────────────────────
 export type AlertStatus = "open" | "acknowledged" | "resolved";

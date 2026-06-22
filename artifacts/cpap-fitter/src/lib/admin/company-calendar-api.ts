@@ -1,8 +1,7 @@
 // Hand-rolled fetch wrappers for /admin/company-calendar — the shared,
 // staff-wide appointment calendar.
 
-import { ApiError } from "@workspace/api-client-react/admin";
-import { csrfHeader } from "../csrf";
+import { adminJsonFetch as jsonFetch } from "../admin-json-fetch";
 
 export type CalendarEventType =
   | "fitting_virtual"
@@ -50,31 +49,6 @@ export interface CalendarEventInput {
   notes?: string | null;
   /** Auth-user id to assign to, or null to clear the assignment. */
   assignedToUserId?: string | null;
-}
-
-async function jsonFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const method = (init.method ?? "GET").toUpperCase();
-  const url = `/resupply-api${path}`;
-  const { headers: initHeaders, ...restInit } = init;
-  const res = await fetch(url, {
-    ...restInit,
-    credentials: "include",
-    headers: {
-      Accept: "application/json",
-      ...csrfHeader(),
-      ...(initHeaders ?? {}),
-    },
-  });
-  if (!res.ok) {
-    let data: unknown = null;
-    try {
-      data = await res.json();
-    } catch {
-      // body not JSON
-    }
-    throw new ApiError(res, data, { method, url });
-  }
-  return (await res.json()) as T;
 }
 
 export interface AssignableStaff {

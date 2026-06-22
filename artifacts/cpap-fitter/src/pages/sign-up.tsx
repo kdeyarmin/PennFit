@@ -15,6 +15,7 @@ import { Link } from "wouter";
 import { authErrorMessage } from "@workspace/resupply-auth-react";
 
 import { authHooks } from "@/lib/auth-hooks";
+import { isValidEmail } from "@/lib/email-format";
 import { AuthLayout } from "@/components/auth-layout";
 import { PasswordInput } from "@/components/password-input";
 
@@ -37,9 +38,16 @@ export function SignUpPage() {
   const passwordsMismatch =
     confirmPassword.length > 0 && confirmPassword !== password;
 
+  // Inline email-format validation (mirrors consent.tsx) so a typo is
+  // caught before the no-enumeration submit hides it behind the generic
+  // "check your email" state.
+  const emailValid = isValidEmail(email);
+  const showEmailError = email.length > 0 && !emailValid;
+
   function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setSubmitError(null);
+    if (!emailValid) return;
     if (passwordsMismatch || confirmPassword !== password) {
       setSubmitError("Passwords don't match.");
       return;
@@ -106,6 +114,7 @@ export function SignUpPage() {
         <label className="block text-sm">
           <span className="font-medium">Email</span>
           <input
+            id="signup-email"
             type="email"
             autoComplete="email"
             required
@@ -114,8 +123,19 @@ export function SignUpPage() {
               setEmail(e.target.value);
               if (submitError) setSubmitError(null);
             }}
+            aria-invalid={showEmailError || undefined}
+            aria-describedby={showEmailError ? "signup-email-error" : undefined}
             className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
           />
+          {showEmailError && (
+            <span
+              id="signup-email-error"
+              role="alert"
+              className="block text-xs mt-1 text-rose-700"
+            >
+              Enter a valid email address (e.g. you@example.com).
+            </span>
+          )}
         </label>
 
         <label className="block text-sm">
@@ -170,7 +190,7 @@ export function SignUpPage() {
 
         <button
           type="submit"
-          disabled={signUp.isPending || passwordsMismatch}
+          disabled={signUp.isPending || passwordsMismatch || showEmailError}
           className="w-full rounded-md bg-[hsl(var(--penn-navy-deep))] text-white font-semibold py-2 text-sm disabled:opacity-60"
         >
           {signUp.isPending ? "Creating account…" : "Create account"}

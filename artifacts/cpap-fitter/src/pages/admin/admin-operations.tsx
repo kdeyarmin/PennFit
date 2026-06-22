@@ -331,15 +331,14 @@ function VendorStrip({
             <div key={it.key} className={`rounded-lg border p-3 ${s.card}`}>
               <div className="flex items-start gap-2">
                 <span
+                  role="img"
                   className={`mt-1 inline-block h-2 w-2 rounded-full ${s.dot}`}
                   aria-label={s.aria}
                 />
                 <div>
                   <div className={`text-sm font-semibold ${s.label}`}>
                     {it.label}{" "}
-                    <span className="text-[11px] font-normal opacity-70">
-                      {s.badge}
-                    </span>
+                    <span className="text-[11px] font-normal">{s.badge}</span>
                   </div>
                   <div className="text-xs text-slate-700 opacity-80">
                     {it.hint}
@@ -493,7 +492,7 @@ function DispatcherCard({
               </span>
             </>
           ) : (
-            <span className="text-slate-400">On-demand dispatcher</span>
+            <span className="text-slate-500">On-demand dispatcher</span>
           )}
         </div>
         <button

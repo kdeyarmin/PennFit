@@ -13,6 +13,7 @@ import { CheckCircle2, Loader2, Lock, Mail, ShieldCheck } from "lucide-react";
 import { authErrorMessage } from "@workspace/resupply-auth-react";
 
 import { authHooks } from "@/lib/auth-hooks";
+import { isValidEmail } from "@/lib/email-format";
 import { AuthLayout } from "@/components/auth-layout";
 import { PasswordInput } from "@/components/password-input";
 
@@ -88,6 +89,12 @@ export function SignInPage() {
   const signIn = authHooks.useSignIn();
   const [, setLocation] = useLocation();
 
+  // Inline email-format validation: surface a field-level error once the
+  // shopper has typed something that isn't a valid address, rather than
+  // waiting for a pointless server round-trip. Mirrors consent.tsx.
+  const emailValid = isValidEmail(email);
+  const showEmailError = email.length > 0 && !emailValid;
+
   useEffect(() => {
     if (!successFlag) return;
     setLocation("/sign-in", { replace: true });
@@ -96,6 +103,9 @@ export function SignInPage() {
   function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setSubmitError(null);
+    // Don't bother the server with a malformed address — the inline
+    // error is already visible.
+    if (!emailValid) return;
     signIn.mutate(
       { email: email.trim(), password },
       {
@@ -198,9 +208,22 @@ export function SignInPage() {
                   setEmail(e.target.value);
                   if (submitError) setSubmitError(null);
                 }}
+                aria-invalid={showEmailError || undefined}
+                aria-describedby={
+                  showEmailError ? "signin-email-error" : undefined
+                }
                 className={FIELD_CLASS}
               />
             </div>
+            {showEmailError && (
+              <p
+                id="signin-email-error"
+                role="alert"
+                className="mt-1 text-sm font-medium text-red-700"
+              >
+                Enter a valid email address (e.g. you@example.com).
+              </p>
+            )}
           </div>
 
           <div>
@@ -249,7 +272,7 @@ export function SignInPage() {
 
           <button
             type="submit"
-            disabled={signIn.isPending}
+            disabled={signIn.isPending || showEmailError}
             className="group relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-lg bg-[linear-gradient(180deg,hsl(var(--penn-navy-soft)),hsl(var(--penn-navy))_55%,hsl(var(--penn-navy-deep)))] py-2.5 text-sm font-semibold text-white shadow-[0_4px_14px_hsl(var(--penn-navy-deep)/0.28)] transition-all hover:shadow-[0_6px_20px_hsl(var(--penn-navy-deep)/0.36)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--penn-navy)/0.45)] focus-visible:ring-offset-2 disabled:opacity-60"
           >
             {signIn.isPending && (
@@ -269,7 +292,7 @@ export function SignInPage() {
           </p>
 
           {/* Trust signal — quiet, high-tech reassurance. */}
-          <div className="flex items-center justify-center gap-1.5 border-t border-slate-100 pt-4 text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400">
+          <div className="flex items-center justify-center gap-1.5 border-t border-slate-100 pt-4 text-[11px] font-medium uppercase tracking-[0.14em] text-slate-500">
             <Lock className="h-3 w-3" aria-hidden="true" />
             Protected by a secure, encrypted connection
           </div>

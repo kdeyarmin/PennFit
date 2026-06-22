@@ -1,6 +1,6 @@
 // Hand-rolled fetch wrapper for the clinical analytics surface.
 
-import { ApiError } from "@workspace/api-client-react/admin";
+import { adminJsonFetch as jsonFetch } from "../admin-json-fetch";
 
 export type EpisodeFunnelStage =
   | "outreach_pending"
@@ -94,23 +94,6 @@ export interface PatientRetentionResponse {
   lapsedPatients: number;
   activeRate: number | null;
   byCohort: RetentionCohortBucket[];
-}
-
-async function jsonFetch<T>(path: string): Promise<T> {
-  const url = `/resupply-api${path}`;
-  const res = await fetch(url, {
-    headers: { Accept: "application/json" },
-  });
-  if (!res.ok) {
-    let data: unknown = null;
-    try {
-      data = await res.json();
-    } catch {
-      // ignore
-    }
-    throw new ApiError(res, data, { method: "GET", url });
-  }
-  return (await res.json()) as T;
 }
 
 export const fetchResupplyFunnel = (days: number) =>
