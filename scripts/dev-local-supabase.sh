@@ -43,6 +43,14 @@ if [[ -z "${DB_CONTAINER:-}" ]]; then
 fi
 echo "[dev-db] db container: $DB_CONTAINER"
 
+# Pre-grant: the migrator connects as `postgres`, but newer local Supabase
+# stacks do NOT give `postgres` CREATE on the `auth` schema. Migration 0059
+# creates auth.set_updated_at(), so without this grant the migrate step fails
+# with "permission denied for schema auth" on a fresh DB. (Step 3 below also
+# grants auth, but that runs too late for the migrations themselves.)
+docker exec -i "$DB_CONTAINER" psql -U supabase_admin -d postgres \
+  -c "GRANT ALL ON SCHEMA auth TO postgres;" >/dev/null
+
 echo "[dev-db] 2/5 apply migrations"
 DATABASE_URL="$DB_URL" node lib/resupply-db/scripts/migrate.mjs
 
@@ -84,8 +92,11 @@ export RESUPPLY_LINK_HMAC_KEY="${RESUPPLY_LINK_HMAC_KEY:-local-dev-hmac-key-not-
 # bootstrap-admin fails if the user already exists; tolerate that on re-run.
 pnpm --filter @workspace/scripts auth:bootstrap-admin --email="$ADMIN_EMAIL" --role=admin || true
 ADMIN_PASSWORD="$ADMIN_PASSWORD" pnpm --filter @workspace/scripts auth:set-admin-password --email="$ADMIN_EMAIL"
-docker exec -i "$DB_CONTAINER" psql -v admin_email="$ADMIN_EMAIL" -U supabase_admin -d postgres \
-  -c "UPDATE resupply_auth.users SET email_verified_at = now() WHERE email_lower = lower(:'admin_email') AND email_verified_at IS NULL;" >/dev/null
+# Inline the email via shell expansion: psql `-v` + `:'var'` interpolation does
+# not substitute inside `-c` strings on this psql build (it errors with a
+# "syntax error at or near :"). The dev email is trusted/static.
+docker exec -i "$DB_CONTAINER" psql -U supabase_admin -d postgres \
+  -c "UPDATE resupply_auth.users SET email_verified_at = now() WHERE email_lower = lower('$ADMIN_EMAIL') AND email_verified_at IS NULL;" >/dev/null
 
 echo "[dev-db] done. Admin: $ADMIN_EMAIL / $ADMIN_PASSWORD"
 echo "[dev-db] SUPABASE_SERVICE_ROLE_KEY is available via: supabase status -o env"

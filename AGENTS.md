@@ -51,10 +51,17 @@ analytics).
    (`lib/resupply-db/scripts/migrate.mjs`), grants the Supabase data-API
    roles on the `resupply`/`resupply_auth` schemas, creates the private
    storage bucket, and seeds a verified dev admin.
-3. **`.env`** is git-ignored and already contains the local Supabase
-   defaults + a dev HMAC key. The apps do **NOT** auto-load `.env`, so
-   source it into the process env before starting the API:
-   `set -a; . ./.env; set +a`.
+3. **`.env`** is git-ignored, so it is **not present on a fresh checkout** —
+ create it once with the deterministic local Supabase defaults. The
+ service-role key is the stable local-dev demo key (`supabase status -o env`
+ prints the same one every time). Minimum vars the API needs at boot:
+ `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres`,
+ `SUPABASE_URL=http://127.0.0.1:54321`, `SUPABASE_SERVICE_ROLE_KEY=<local demo
+ service_role key>`, `RESUPPLY_LINK_HMAC_KEY=<any 32+ byte string>`,
+ `SUPABASE_STORAGE_BUCKET_PRIVATE=attachments`,
+ `RESUPPLY_ALLOWED_ORIGINS=http://localhost:5173`, `PORT=3000`. The apps do
+ **NOT** auto-load `.env`, so source it into the process env before starting
+ the API: `set -a; . ./.env; set +a`.
 4. **API** (port 3000): `pnpm --filter @workspace/resupply-api dev`
    (after sourcing `.env`).
 5. **SPA** (port 5173, proxies to the API): the Vite config **throws** if
