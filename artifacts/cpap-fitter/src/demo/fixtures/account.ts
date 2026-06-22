@@ -23,7 +23,7 @@ import { daysAgo, daysFromNow, dateOnly } from "./dates";
 
 export const DEMO_CUSTOMER = {
   id: "demo-customer-1",
-  email: "alex.demo@pennfit.example",
+  email: "alex.demo@caremetric.example",
   displayName: "Alex Demo",
   role: "customer" as const,
   emailVerified: true,
@@ -53,7 +53,7 @@ export function demoProfile(): ShopMeProfile {
     },
     physicianInfo: {
       name: "Dr. Priya Nair, MD",
-      practice: "Penn Sleep Center",
+      practice: "Lakeside Sleep Center",
       phone: "(215) 555-0148",
       fax: "(215) 555-0149",
       email: null,

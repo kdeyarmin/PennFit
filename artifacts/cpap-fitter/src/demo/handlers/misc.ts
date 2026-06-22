@@ -40,6 +40,22 @@ function chatHandler(req: Parameters<DemoHandler["handle"]>[0]): Response {
 }
 
 export const miscHandlers: DemoHandler[] = [
+  // Storefront branding. The demo is the *platform's* showcase, not the
+  // PennPaps tenant, so it must NOT inherit the bundled "PennPaps" /
+  // "Penn Home Medical Supply" fallback in lib/branding.ts. Return the
+  // CareMetric platform identity (and the CareMetric logo served from
+  // /breathe/) so the storefront header/footer AND the shared admin
+  // chrome (BrandHeader reads storefrontName) both read CareMetric.
+  route("GET", "/api/storefront-branding", () =>
+    json({
+      storefrontName: "CareMetric Breathe",
+      legalName: "CareMetric",
+      tagline: "Your CPAP, made simple. Fit. Shop. Resupply.",
+      logoUrl: "/breathe/caremetric-logo.png",
+      resolved: true,
+    }),
+  ),
+
   // Order tracking (public lookup).
   route("POST", "/api/orders/track", (req) => {
     const body = req.json<{ orderReference?: string }>() ?? {};
@@ -57,7 +73,7 @@ export const miscHandlers: DemoHandler[] = [
   ),
   route("GET", "/api/reminders/manage", () =>
     json({
-      email: "alex.demo@pennfit.example",
+      email: "alex.demo@caremetric.example",
       status: "active",
       items: [
         {
@@ -96,7 +112,7 @@ export const miscHandlers: DemoHandler[] = [
       nextDueAt: it.lastReplacedAt,
     }));
     return json({
-      email: "alex.demo@pennfit.example",
+      email: "alex.demo@caremetric.example",
       status: "active",
       items,
       createdAt: dateOnly(-40),

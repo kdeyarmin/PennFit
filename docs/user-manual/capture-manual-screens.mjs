@@ -64,6 +64,10 @@ const PAGES = [
   ["csr-shop-orders", "/admin/pennpaps/orders"],
   ["csr-company-calendar", "/admin/company-calendar"],
 
+  // ── Documents, intake & e-signature ────────────────────────────────
+  ["admin-referral-reviewer", "/admin/referral-reviews"],
+  ["admin-signature-tracking", "/admin/signature-tracking"],
+
   // ── Biller ─────────────────────────────────────────────────────────
   ["biller-billing-hub", "/admin/billing"],
   ["biller-eligibility", "/admin/billing/eligibility"],

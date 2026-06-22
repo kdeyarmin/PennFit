@@ -71,7 +71,7 @@ export const fitflowHandlers: DemoHandler[] = [
       orderReference,
       deliveredAt: NOW_ISO(),
       message:
-        "Your order has been sent to Penn Home Medical Supply. A team member will contact you within 1 business day to confirm and arrange shipping. (This is a demo — no real order was placed.)",
+        "Your order has been sent to CareMetric Breathe. A team member will contact you within 1 business day to confirm and arrange shipping. (This is a demo — no real order was placed.)",
     });
   }),
 ];

@@ -6,37 +6,45 @@ and is regenerable.
 
 ## What's in it
 
-1. **Cover + page-numbered Table of Contents.**
+1. **Cover + page-numbered Table of Contents.** The cover embeds the
+   CareMetric emblem from `assets/caremetric-emblem.png`.
 2. **Introduction** — platform vs. tenant, signing in, the four roles, and
    the in-app assistants.
 3. **What Sets CareMetric Breathe Apart** — the differentiators and the
    shared platform foundations.
-4. **The Business Case — More Revenue, Less Labor** — revenue levers, the
+4. **The Storefront & End-to-End Fulfillment** — the patient journey from AI
+   mask fitting → shop/checkout → insurance verification → shipping label →
+   delivery (proof of delivery) → resupply loop.
+5. **Paperless Paperwork — Referrals, eFax & E-Signature** — the AI Referral
+   Reviewer (read a referral, flag gaps, verify insurance, accept into a new
+   patient), one-click eFax with a barcode that auto-files signed returns to
+   the chart, and the Awaiting-Signatures dashboard + provider e-sign portal.
+6. **The Business Case — More Revenue, Less Labor** — revenue levers, the
    biller's job transformed (clean claims, pre-bill eligibility, AI denial
    fix/resubmit → paid faster, less audit-prone), and the labor/cost-savings
    estimate.
-5. **CareMetric Copilot & the AI Assistants** — the customer chatbot
+7. **CareMetric Copilot & the AI Assistants** — the customer chatbot
    (CareMetric Assistant) and the staff admin helper (CareMetric Copilot),
    plus the call-deflection savings.
-6. **Running the Business — the Owner's Playbook** — what to watch and when,
+8. **Running the Business — the Owner's Playbook** — what to watch and when,
    how to monitor every area from one screen, the report catalog, and the
    KPI benchmarks the platform tracks to keep you ahead.
-7. **Setup Guide** — what must be configured before going live, and an
-   explanation of **every Control Center toggle** (default state + what it
-   does when on/off).
-8. **Part 1 — Feature Summary by Role** — a one-line description of every
-   feature, grouped by role (Administrator, Biller, CSR, Respiratory
-   Therapist).
-9. **Part 2 — Comprehensive Feature Reference by Role** — the full detail on
-   each feature, including deep-dives on the billing engine (Biller), the
-   resupply engine + e-signature + provider portal (CSR), and the
-   manufacturer integrations + alerts/compliance (RT).
-10. **Part 3 — Job Aides by Role** — curated step-by-step walkthroughs for the
+9. **Setup Guide** — what must be configured before going live (including the
+   **100+ pre-loaded payers**, ready to bill on day one), and an explanation
+   of **every Control Center toggle** (default state + what it does on/off).
+10. **Part 1 — Feature Summary by Role** — a one-line description of every
+    feature, grouped by role (Administrator, Biller, CSR, Respiratory
+    Therapist).
+11. **Part 2 — Comprehensive Feature Reference by Role** — the full detail on
+    each feature, including deep-dives on the billing engine (Biller), the
+    resupply engine + e-signature + provider portal (CSR), and the
+    manufacturer integrations + alerts/compliance (RT).
+12. **Part 3 — Job Aides by Role** — curated step-by-step walkthroughs for the
     highest-value tasks.
-11. **Frequently Asked Questions** — quick answers grouped by domain
+13. **Frequently Asked Questions** — quick answers grouped by domain
     (customer care, billing, reporting, integrations, re-supply, in-person
     orders, RT, documents/e-sign, roles/setup, AI assistants).
-12. **Appendix** — role/permission matrix, competitive comparison, glossary.
+14. **Appendix** — role/permission matrix, competitive comparison, glossary.
 
 > This is distinct from `manual.html` / `render.mjs` in this same folder,
 > which build the shorter **PennPaps Customer Service Manual** PDF that staff
@@ -83,6 +91,13 @@ node docs/user-manual/capture-manual-screens.mjs # → docs/user-manual/screensh
 `capture-manual-screens.mjs` forces demo mode via the
 `pennfit:demo-mode:v1` localStorage flag and visits the storefront plus the
 key admin pages for each role. A few admin pages don't have full demo
-fixtures and render an error state — those names are intentionally omitted
-from the build's screenshot calls (the manual's prose never depends on a
-screenshot to be understood).
+fixtures and render an empty state — those still show the real CareMetric
+chrome, which is fine (the manual's prose never depends on a screenshot to
+be understood).
+
+The demo is the **platform's** showcase, not the PennPaps tenant: a demo
+`/api/storefront-branding` handler (`src/demo/handlers/misc.ts`) returns the
+CareMetric identity and the `/breathe/caremetric-logo.png` logo, and the demo
+fixtures carry CareMetric-neutral sample data (`caremetric.example` emails,
+`CMB-DEMO-…` order refs), so every screenshot shows CareMetric branding with
+no Penn references.

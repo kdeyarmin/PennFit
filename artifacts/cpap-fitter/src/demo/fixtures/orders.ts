@@ -151,7 +151,7 @@ export interface DemoTrackResult {
 
 export function demoTrackResult(orderReference: string): DemoTrackResult {
   return {
-    orderReference: orderReference || "PENN-DEMO-2048",
+    orderReference: orderReference || "CMB-DEMO-2048",
     mask: { name: "ResMed AirFit N20", manufacturer: "ResMed" },
     createdAt: daysAgo(3),
     emailStatus: "sent",

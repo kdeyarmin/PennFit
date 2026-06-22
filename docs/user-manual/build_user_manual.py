@@ -62,6 +62,8 @@ from reportlab.platypus import (
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT_PATH = os.path.join(HERE, "CareMetric-Breathe-User-Manual.pdf")
 SHOTS = os.path.join(HERE, "screenshots")
+ASSETS = os.path.join(HERE, "assets")
+EMBLEM = os.path.join(ASSETS, "caremetric-emblem.png")
 
 # ---------------------------------------------------------------- brand --
 
@@ -98,6 +100,15 @@ def hexc(color):
         int(color.red * 255),
         int(color.green * 255),
         int(color.blue * 255),
+    )
+
+
+def lerp(c1, c2, t):
+    """Linear blend between two reportlab Colors (t in 0..1)."""
+    return Color(
+        c1.red + (c2.red - c1.red) * t,
+        c1.green + (c2.green - c1.green) * t,
+        c1.blue + (c2.blue - c1.blue) * t,
     )
 
 
@@ -616,7 +627,7 @@ SUMMARY = {
             ("Set Up Your Workspace", "Guided checklist: brand, domain, phone/SMS/fax, email sender, and payments."),
             ("Company Information", "Legal name, addresses, and contacts printed on documents, the storefront, and messages."),
             ("Storefront Branding", "Storefront name, tagline, logo, and custom-domain wiring."),
-            ("Phone & SMS / Fax / Email", "Connect the practice's own voice, SMS, fax numbers, and From email address."),
+            ("Phone & SMS / Fax / Email", "Provision dedicated voice, SMS, and fax numbers for the practice and set the From email address."),
             ("Locations", "Define service branches (multi-branch practices) and assign them to patients."),
             ("Account Security", "Enroll your own multi-factor authentication (authenticator app)."),
         ]),
@@ -750,7 +761,7 @@ DETAIL = {
             ("Set Up Your Workspace", "A guided checklist that walks a new practice through the core steps: brand and logo, custom domain, phone/SMS/fax numbers, the email From address, and payment processing. The Home dashboard shows a “finish setting up” banner until the essentials are done."),
             ("Company Information", "Your legal practice name, addresses, NPI/tax identifiers, and contacts. These values are merged onto documents (CMNs, statements), the storefront, and outbound messages, so keep them accurate."),
             ("Storefront Branding", "The patient-facing storefront's name, tagline, logo, and theme, plus custom-domain wiring (e.g. a tenant domain that routes only to your storefront)."),
-            ("Phone & SMS, Fax, Email From Address", "Connect the practice's own Twilio/Telnyx voice & SMS numbers, a fax number, and a verified From email. When set, patient-facing voice, texts, faxes, and email all originate from your practice; until then the platform default is used. Email deliverability requires your sending domain to be SPF/DKIM-authenticated, and that status is shown here."),
+            ("Phone & SMS, Fax, Email From Address", "Dedicated voice, SMS, and fax numbers are <b>provisioned for you through the platform's telephony carrier (Twilio/Telnyx) once you opt into the phone/SMS add-on and your subscription payment is processed</b> — you don't bring or port your own line, and there's no separate carrier account to manage. After provisioning, patient-facing voice, texts, and faxes all originate from your practice's dedicated number; until then the platform default is used. Email uses a verified From address; deliverability requires your sending domain to be SPF/DKIM-authenticated, and that status is shown here."),
             ("Locations", "For multi-branch practices: define each service branch and assign patients to them. Appears only when multi-location is enabled in Control Center."),
             ("Account Security", "Enroll and manage your own multi-factor authentication (authenticator-app TOTP). Strongly recommended for every admin."),
         ]),
@@ -1336,8 +1347,8 @@ PREREQS = [
         ("Custom domain", "Point your domain at the platform so patients see your brand (the platform fronts custom domains through Cloudflare)."),
     ]),
     ("Communication channels", [
-        ("Phone & SMS numbers", "Connect your own voice and SMS numbers so calls and texts come from your practice (required for the voice agent and SMS reminders)."),
-        ("Fax number", "Connect a fax number for inbound referrals and outbound signed paperwork."),
+        ("Phone & SMS numbers", "Opt into the phone/SMS add-on; once your subscription payment clears, dedicated voice and SMS numbers are provisioned for you through the platform's carrier (Twilio/Telnyx) — you don't supply or port your own line. Required for the voice agent and SMS reminders."),
+        ("Fax number", "A fax number is provisioned the same way for inbound referrals and outbound signed paperwork."),
         ("Email From address", "Set your sending address AND authenticate the sending domain (SPF/DKIM) in the email provider — an unauthenticated address still sends but lands in spam."),
     ]),
     ("Money & integrations", [
@@ -1437,6 +1448,53 @@ PLATFORM_FOUNDATIONS = [
     ("CareMetric Copilot (admin assistant)", "An in-app AI helper on every admin page that answers “how do I” questions about the console and forwards staff feature ideas to ownership — always confirming before anything is sent."),
     ("Security & privacy", "Hardened sign-in with optional MFA, role-based access with granular permissions, CSRF and rate-limit protection, and strict PHI discipline: camera images and order payloads are never logged."),
     ("Always-on by design", "Feature flags flip capabilities instantly, vendor outages degrade gracefully instead of taking the site down, and background jobs handle syncs, reminders, and campaigns around the clock."),
+]
+
+# ── The storefront & end-to-end fulfillment journey ──────────────────
+STOREFRONT_INTRO = (
+    "Every tenant gets a complete, ready-to-sell storefront — not a brochure, "
+    "a working e-commerce site that takes the patient from “which mask fits "
+    "me?” all the way to a box on the doorstep, with the practice billing "
+    "either the patient or their insurance. It's the same system that runs "
+    "billing, clinical, and resupply, so an order never has to be re-keyed "
+    "from one tool into another. Here's the whole journey, end to end."
+)
+STOREFRONT_JOURNEY = [
+    ("1 · AI mask fitting, no appointment", "A new patient lands on the storefront and starts the fitter: they consent, the phone or laptop camera measures their face right in the browser, they answer a short comfort questionnaire (mouth-breather, side-sleeper, facial hair, glasses…), and the AI ranks the masks that fit best — each with an add-to-cart button. The camera images never leave the device; only numeric measurements are used. No appointment, no guesswork, far fewer wrong-size exchanges."),
+    ("2 · Shop and buy in minutes", "From the catalog the patient browses masks, cushions, tubing, filters, and bundles — with reviews, machine compatibility, and search — adds to the cart, and checks out through secure Stripe-hosted payment (card data never touches the platform). They can buy once, or choose <b>Subscribe &amp; Save</b> so supplies auto-ship on a cadence, or pick <b>in-store pickup</b> where it's offered."),
+    ("3 · Or bill it to insurance", "Patients who'd rather use their benefits request insurance billing instead of paying cash. That drops a benefit-verification request into a CSR worklist, where staff run a real-time <b>270/271 eligibility</b> check, confirm what's covered and the patient's share, and — when coverage is good — create the order and send a signed payment link for the patient to e-sign and pay any balance. Coverage is confirmed <i>before</i> anything ships, so claims don't bounce later."),
+    ("4 · Pick, pack, and a label in a click", "Paid, unshipped orders queue up in the Shipping console with the patient's address already filled in. Staff rate-shop USPS, UPS, and FedEx, create and print the carrier label, and the tracking number is written back onto the order and emailed to the patient automatically — or they can key in a tracking number by hand. Counter and walk-in orders print a receipt and label the same way."),
+    ("5 · Delivered — with proof", "When the box arrives, staff capture <b>Proof of Delivery</b> right on the order — a delivery photo and an optional signature name — and the order is marked delivered. The patient can follow the whole way with a public <b>order-tracking</b> page (order number + email, no login)."),
+    ("6 · Closing the loop", "After delivery the patient gets a quick satisfaction (NPS) prompt and a one-tap mask-fit check — “great / leaking / uncomfortable.” A problem answer routes straight to a CSR or therapist to fix the fit, and the patient is enrolled in the resupply engine so the next cushion, filter, and tube reorder cycle starts itself. The storefront sale becomes a recurring, self-renewing relationship."),
+]
+
+# ── Paperless paperwork: referrals in, faxes out, signatures tracked ──
+PAPERLESS_INTRO = (
+    "The paperwork around DME — referrals coming in, prescriptions and CMNs "
+    "going out, signatures chased by fax — is where days disappear and "
+    "claims stall waiting on a page that never came back. CareMetric Breathe "
+    "turns that paper chase into a tracked, largely self-driving pipeline: "
+    "AI reads an incoming referral and stages a ready-to-accept patient; any "
+    "document goes out by eFax carrying a barcode that files itself the "
+    "moment it returns signed; and every signature out with a provider is "
+    "tracked until it comes home. Most of it is opt-in — turn each piece on "
+    "per tenant in the Control Center."
+)
+PAPERLESS_REFERRAL = [
+    ("AI reads the whole packet", "Upload a referral PDF — or let an inbound fax open one automatically — and the AI extracts the entire packet in a single pass: patient demographics, primary and secondary insurance, the ordered equipment with HCPCS codes, the sleep-study results, the referring physician (name, NPI, clinic, fax), and the diagnosis codes. Everything lands in an editable form beside the original page so you can check any field against the source."),
+    ("It tells you what's missing", "A completeness check flags exactly what a clean claim will need but the packet doesn't have — no signed physician order, a missing prescriber NPI, no face-to-face note, missing diagnosis codes, or a sleep study that doesn't qualify — so gaps surface at intake instead of at denial."),
+    ("Verify coverage before you commit", "One click runs a live 270/271 eligibility check on the extracted payer and member ID and shows active/inactive status, deductible and out-of-pocket remaining, and any prior-auth requirement — a coverage preview before the patient is ever created."),
+    ("Accept once — patient, insurance, and chart, all at once", "When it looks right, accept it: the system creates the new patient, saves the insurance coverages, splits the referral into named documents (sleep study, physician order, insurance card, chart notes…) filed straight to the chart, and generates a Referral Review summary. A duplicate-patient check warns you before you ever create a second record for someone already on file."),
+    ("Send gaps back to the provider", "If the referral is short something, one action drafts a letter to the referring office listing precisely what's needed; review it on the Documents page and fax it. Find it at <b>Patients &amp; Clinical → Documents &amp; e-sign → Referral reviewer</b>."),
+]
+PAPERLESS_EFAX = [
+    ("Fax anything, from right where you're working", "Prescriptions, CMNs, orders, renewal requests, appeal letters — send any of them out by fax straight from the document, with no fax machine and no separate eFax login. The platform renders the PDF and dispatches it over its fax carrier; a failed fax can be retried in a click, and routine outreach (like a batch of renewal requests) can go automatically."),
+    ("Every signature document carries a barcode", "Any document you send out to be signed is stamped with a scannable barcode and a short tracking code, with plain-text filing instructions printed right on it. That barcode becomes the document's identity for the rest of its life."),
+    ("It files itself when it comes back", "When the signed copy is faxed back, the system reads the barcode off the page, matches it to the document it came from, copies the signed PDF into that patient's chart, marks the item returned and signed, and releases any bill-hold that was waiting on the paperwork — no manual filing and no “whose page is this?” Anything it can't match still lands in a triage queue for a human. (Automatic filing is an opt-in toggle; staff can also run it on demand.)"),
+]
+PAPERLESS_SIGN = [
+    ("One worklist for everything out for signature", "The Awaiting Signatures dashboard lists every packet and document you've sent a provider to sign, who it went to, and how long it has been outstanding — so nothing vanishes into a fax-machine black hole. Scan or type a returned document's barcode to file it instantly; mark items returned, hand-delivered, or canceled; and re-send the ones that have gone quiet."),
+    ("Or skip the fax entirely — providers e-sign online", "Invite a referring provider (by NPI, verified against the national registry) into a secure, MFA-protected portal and stage their CMNs, orders, and packets for signature. They sign on their own device instead of printing and faxing back. Every signature is captured in a tamper-evident, hash-chained audit trail with a printable, ESIGN-compliant certificate you can hand a payer."),
 ]
 
 SAVINGS_INTRO = (
@@ -1701,6 +1759,46 @@ DOC_TEMPLATES = [
 ]
 
 
+# ── Pre-loaded payers (ready to bill day one) ────────────────────────
+PAYERS_INTRO = (
+    "You don't start with an empty payer table. CareMetric Breathe ships with "
+    "<b>100+ fully-configured payer profiles</b> — the complete Pennsylvania "
+    "DME market plus the national carriers, Medicare, Medicaid, federal, and "
+    "workers'-comp / auto programs a PAP business actually bills. Each one "
+    "arrives with the electronic IDs, claim format, timely-filing window, "
+    "prior-auth rules, and claims address already filled in, so you can submit "
+    "clean claims on day one instead of researching payer setup for weeks. "
+    "Billing for a different state? Adding a payer takes a minute on the "
+    "billing config page — the pre-loaded set is a head start, not a fence."
+)
+PAYERS_CATEGORIES = [
+    ("Pennsylvania Blues & major commercial", "Highmark BCBS (Western & Central PA), Independence Blue Cross, Capital BlueCross, UPMC Health Plan, Geisinger Health Plan."),
+    ("National commercial & employer TPAs", "Aetna, Cigna, UnitedHealthcare, Humana, AmeriHealth, Ambetter, Oscar, Surest — plus self-funded administrators (Meritain, UMR, Allied, HealthSmart, Luminare, WebTPA, Imagine360, Nova, MagnaCare, EBMS, Independence Administrators)."),
+    ("Medicare (Part B, DME MAC, Railroad)", "Novitas Solutions (PA Part B), Noridian (DME MAC Jurisdiction A), and Palmetto GBA Railroad Medicare."),
+    ("Medicare Advantage & D-SNP", "Highmark Freedom Blue, UPMC for Life, Geisinger Gold, Aetna Medicare, Capital Senior Blue, Keystone 65, Personal Choice 65, Cigna, Wellcare, Devoted, Clover, Humana Gold Plus, UnitedHealthcare Dual Complete, and more."),
+    ("Medicare Supplement (Medigap)", "AARP/UnitedHealthcare, Mutual of Omaha, Cigna, and Aetna Medigap plans."),
+    ("Medicaid, HealthChoices MCOs, CHIP & CHC", "PA Medical Assistance (FFS), Keystone First, UPMC for You, AmeriHealth Caritas PA, Highmark Wholecare, Geisinger Family, PA Health & Wellness, UHC Community Plan, Health Partners Plans; CHIP and Community HealthChoices (LTSS) plans."),
+    ("Federal programs", "BCBS Federal Employee Program, GEHA, MHBP, NALC, APWU, Compass Rose, SAMBA (FEHB); TRICARE East, TRICARE For Life, VA Community Care Network, CHAMPVA, and Federal Black Lung."),
+    ("Workers' comp & auto no-fault", "SWIF, PMA, Erie, Liberty Mutual, Travelers, The Hartford, plus WC TPAs (Sedgwick, Gallagher Bassett, Broadspire, ESIS) and auto MedPay/PIP (Progressive, Allstate, Nationwide, GEICO, USAA, State Farm). Routed to the right specialty channel, not the standard clearinghouse."),
+    ("Rental PPO networks (router rows)", "Anthem/Elevance BlueCard, First Health, and MultiPlan/PHCS — so you bill the plan on the member's card, not the network."),
+]
+PAYERS_PROFILE_FIELDS = [
+    ("Identity", "CSR-friendly display name, the legal name as it appears on EDI enrollment, the parent organization, and a stable internal code."),
+    ("Electronic IDs & format", "Office Ally payer ID, 5010 payer ID, and ERA payer ID; the claim format (837P, 837I, or paper CMS-1500); and EDI/ERA enrollment status."),
+    ("Submission rules", "Timely-filing window, any required claim modifiers (e.g. Medicare's KX), whether electronic secondary/COB is accepted, whether a referring-provider NPI is required, and a member-ID format hint/pattern."),
+    ("Prior authorization", "Whether capped-rental DME needs prior auth, the submission method (portal, fax, phone, electronic 278, or paper), the PA phone/fax, and the expected turnaround."),
+    ("Claims routing", "Claims mailing address (and a separate appeals address when different), claims phone/fax, the provider-portal URL, and the fee-schedule source."),
+    ("Bookkeeping", "Free-form payer-level notes (PHI-free), an active/inactive flag, and a last-verified date and author so the team can spot stale entries at a glance."),
+]
+PAYERS_NOTE = (
+    "Payer profiles are platform-wide and operator-maintained, so every tenant "
+    "inherits the same vetted catalog. Manage them under <b>Billing → Config → "
+    "Payers</b>: filter by region or line of business, add or edit a payer in "
+    "a drawer (no deploy needed), and export the catalog in Office Ally's "
+    "enrollment-review format for quarterly payer-ID updates."
+)
+
+
 # ── FAQ (by domain) ──────────────────────────────────────────────────
 FAQ = [
     ("Customer care", [
@@ -1717,6 +1815,7 @@ FAQ = [
         ("How do payer payments get posted?", "Upload the 835 ERA file and the system auto-posts allowed, paid, and patient-responsibility amounts at the claim and line level, flags denials for follow-up, and is idempotent if a file is re-posted."),
         ("Does it handle capped rentals and secondary claims?", "Yes — capped-rental cycles auto-advance each month with the correct KH/KI/KX modifier rotation, and a secondary / COB claim auto-drafts after the primary pays (you review before submitting)."),
         ("What if a patient's insurance is unknown?", "Insurance Discovery searches the payer network from the patient's demographics to find active coverage (a paid clearinghouse add-on)."),
+        ("Can we bill on day one?", "Yes — the platform ships with 100+ fully-configured payer profiles (the whole Pennsylvania DME market plus the national carriers, Medicare, Medicaid, federal, and workers'-comp/auto programs), each with electronic IDs, claim format, timely-filing window, prior-auth rules, and claims address pre-filled. Adding a payer for another region takes a minute under Billing → Config → Payers."),
     ]),
     ("Reporting & analytics", [
         ("What reports can I run?", "Revenue summary, orders, patient payments, insurance claims, refunds journal, returns, customer activity, and an all-financial bundle — over any date range up to 90 days."),
@@ -1749,6 +1848,10 @@ FAQ = [
         ("Can I give a referring provider a report?", "Generate a print-quality Therapy Report by provider, patient, or device manufacturer."),
     ]),
     ("Documents, e-signature & provider portal", [
+        ("Can the system read a referral for us?", "Yes — the Referral Reviewer reads an uploaded or faxed referral in one AI pass and extracts the patient's demographics, insurance, ordered items (with HCPCS), sleep study, referring provider, and diagnoses. It flags anything a clean claim is missing, lets you verify insurance in one click, and — once you accept — creates the patient, attaches the coverage, and files the split documents to the chart."),
+        ("Can we fax straight from the system?", "Yes — send prescriptions, CMNs, orders, renewal requests, and appeal letters by eFax right from the document. No fax machine, no separate eFax login, and a failed fax retries in a click."),
+        ("How does a faxed-back signature get filed?", "Every document you send for signature carries a barcode. When the signed page is faxed back, the system reads that barcode, files the document to the right patient's chart, marks it returned and signed, and releases any bill-hold waiting on it — automatically. Anything it can't match goes to a triage queue for a person."),
+        ("How do we keep track of signatures we're waiting on?", "The Awaiting Signatures dashboard lists everything out for a provider's signature, who has it, and how long it's been outstanding — re-send the stale ones, mark items hand-delivered, or scan a returned barcode to file it instantly."),
         ("Do patients have to print and mail forms?", "No — they e-sign on their own device (typed name + explicit ESIGN consent) and the signed PDF auto-files to the chart. It's ESIGN-Act compliant — nothing printed, nothing lost, no delay."),
         ("Which document templates are included?", "SWO, PAP CMN, CMS-484/846/848, DWO / renewal forms, ABN (CMS-R-131), Assignment of Benefits, DMEPOS Supplier Standards, Proof of Delivery, Refill Confirmation, and a new-patient setup packet — plus free-form manual documents and documentation packets."),
         ("Can providers sign instead of faxing?", "Yes — the provider portal lets a referring provider e-sign CMNs, DWOs, prescriptions, and claims on their device, captured in a tamper-evident audit trail. No more fax-and-chase."),
@@ -1852,49 +1955,146 @@ def _header_footer(canvas, doc):
     canvas.restoreState()
 
 
+def _tracked(c, cx, y, text, font, size, tracking, color):
+    """Draw a horizontally-centered, letter-spaced string (the canvas has no
+    setCharSpace in this reportlab build, so use a text object)."""
+    w = c.stringWidth(text, font, size) + tracking * max(len(text) - 1, 0)
+    t = c.beginText(cx - w / 2.0, y)
+    t.setFont(font, size)
+    t.setCharSpace(tracking)
+    t.setFillColor(color)
+    t.textOut(text)
+    # Character spacing (Tc) is graphics state and persists past the text
+    # object — reset it so later drawString()/drawCentredString() calls
+    # don't inherit the tracking and mis-centre.
+    t.setCharSpace(0)
+    c.drawText(t)
+
+
 def _cover(canvas, doc):
-    canvas.saveState()
-    canvas.setFillColor(NAVY_DEEP)
-    canvas.rect(0, 0, PAGE_W, PAGE_H, stroke=0, fill=1)
-    canvas.setFillColor(NAVY)
-    canvas.rect(0, PAGE_H - 4.6 * inch, PAGE_W, 4.6 * inch, stroke=0, fill=1)
-    # gold rule
-    canvas.setFillColor(GOLD)
-    canvas.rect(MARGIN_X, PAGE_H - 3.0 * inch, 1.4 * inch, 0.06 * inch,
-                stroke=0, fill=1)
-    # logo mark
-    canvas.setFillColor(GOLD)
-    canvas.roundRect(MARGIN_X, PAGE_H - 1.7 * inch, 0.62 * inch, 0.62 * inch,
-                     6, stroke=0, fill=1)
-    canvas.setFillColor(NAVY_DEEP)
-    canvas.setFont("Helvetica-Bold", 19)
-    canvas.drawCentredString(MARGIN_X + 0.31 * inch, PAGE_H - 1.45 * inch, "CB")
-    canvas.setFillColor(white)
-    canvas.setFont("Helvetica-Bold", 11)
-    canvas.drawString(MARGIN_X + 0.8 * inch, PAGE_H - 1.32 * inch,
-                      "CAREMETRIC BREATHE")
-    # title
-    canvas.setFillColor(white)
-    canvas.setFont("Helvetica-Bold", 34)
-    canvas.drawString(MARGIN_X, PAGE_H - 2.65 * inch, "User Manual")
-    canvas.setFillColor(GOLD_SOFT)
-    canvas.setFont("Helvetica", 13)
-    canvas.drawString(MARGIN_X, PAGE_H - 3.4 * inch,
-                      "The complete guide to running your PAP department")
-    canvas.setFont("Helvetica-Oblique", 11)
-    canvas.drawString(MARGIN_X, PAGE_H - 3.75 * inch,
-                      "Organised by role: Administrator · Biller · "
-                      "CSR · Respiratory Therapist")
-    # bottom blurb
-    canvas.setFillColor(BODY_GRAY)
-    canvas.setFont("Helvetica", 9.5)
-    canvas.drawString(MARGIN_X, 1.5 * inch,
-                      "CareMetric Breathe is the platform; Penn Home Medical "
-                      "Supply (PennPaps) is one tenant operating on it.")
-    canvas.setFillColor(STEEL)
-    canvas.setFont("Helvetica", 9)
-    canvas.drawString(MARGIN_X, 1.2 * inch, TODAY)
-    canvas.restoreState()
+    """Sophisticated, high-tech title page: deep-navy gradient field, a soft
+    glow lifting the CareMetric emblem, fine circuit-trace accents, and a
+    gold-framed, centered brand lockup."""
+    c = canvas
+    c.saveState()
+    W, H = PAGE_W, PAGE_H
+    cx = W / 2.0
+
+    # 1 — Vertical gradient field (lighter navy high, deep navy low).
+    bands = 140
+    for i in range(bands):
+        t = i / (bands - 1)                 # 0 = bottom, 1 = top
+        c.setFillColor(lerp(NAVY_DEEP, NAVY, t))
+        c.rect(0, H * i / bands, W, H / bands + 1.0, stroke=0, fill=1)
+    # Deepen the very bottom so the footer band reads.
+    for i in range(40):
+        t = i / 39.0
+        c.setFillColor(NAVY_DEEP)
+        c.setFillAlpha(0.04 * (1 - t))
+        c.rect(0, 1.8 * inch * t, W, 0.05 * inch, stroke=0, fill=1)
+    c.setFillAlpha(1)
+
+    # 2 — Fine circuit-trace accents (echo the emblem) — top-right + lower-left.
+    def trace(pts, node_at_end=True):
+        c.setStrokeColor(GOLD_SOFT)
+        c.setStrokeAlpha(0.16)
+        c.setLineWidth(0.7)
+        c.lines([(pts[k][0], pts[k][1], pts[k + 1][0], pts[k + 1][1])
+                 for k in range(len(pts) - 1)])
+        c.setStrokeAlpha(1)
+        if node_at_end:
+            ex, ey = pts[-1]
+            c.setFillColor(GOLD)
+            c.setFillAlpha(0.30)
+            c.rect(ex - 1.6, ey - 1.6, 3.2, 3.2, stroke=0, fill=1)
+            c.setFillAlpha(1)
+    trace([(W - 0.55 * inch, H - 1.7 * inch), (W - 1.9 * inch, H - 1.7 * inch),
+           (W - 1.9 * inch, H - 2.5 * inch), (W - 2.7 * inch, H - 2.5 * inch)])
+    trace([(W - 0.55 * inch, H - 2.15 * inch), (W - 1.35 * inch, H - 2.15 * inch),
+           (W - 1.35 * inch, H - 2.95 * inch)])
+    trace([(0.55 * inch, 2.5 * inch), (1.7 * inch, 2.5 * inch),
+           (1.7 * inch, 1.85 * inch), (2.6 * inch, 1.85 * inch)])
+    trace([(0.55 * inch, 2.05 * inch), (1.15 * inch, 2.05 * inch),
+           (1.15 * inch, 1.5 * inch)])
+
+    # 3 — Inset hairline frame (premium framing).
+    inset = 0.42 * inch
+    c.setStrokeColor(GOLD)
+    c.setStrokeAlpha(0.40)
+    c.setLineWidth(1.0)
+    c.rect(inset, inset, W - 2 * inset, H - 2 * inset, stroke=1, fill=0)
+    c.setStrokeAlpha(0.16)
+    c.setLineWidth(0.6)
+    c.rect(inset + 4, inset + 4, W - 2 * inset - 8, H - 2 * inset - 8,
+           stroke=1, fill=0)
+    c.setStrokeAlpha(1)
+
+    # 4 — Soft white glow to lift the emblem off the navy field.
+    gy = H - 2.55 * inch
+    for r, a in [(1.55, 0.05), (1.15, 0.06), (0.85, 0.08), (0.6, 0.10)]:
+        c.setFillColor(white)
+        c.setFillAlpha(a)
+        c.circle(cx, gy, r * inch, stroke=0, fill=1)
+    c.setFillAlpha(1)
+
+    # 5 — Emblem (the CareMetric logo mark), centered in the upper third.
+    if os.path.exists(EMBLEM):
+        ew = 1.55 * inch
+        eh = ew * 353.0 / 359.0
+        c.drawImage(EMBLEM, cx - ew / 2.0, gy - eh / 2.0, ew, eh,
+                    mask="auto")
+    else:                                   # graceful fallback: gold "CB" tile
+        c.setFillColor(GOLD)
+        c.roundRect(cx - 0.5 * inch, gy - 0.5 * inch, 1.0 * inch, 1.0 * inch,
+                    10, stroke=0, fill=1)
+        c.setFillColor(NAVY_DEEP)
+        c.setFont("Helvetica-Bold", 30)
+        c.drawCentredString(cx, gy - 0.18 * inch, "CB")
+
+    # 6 — Wordmark + kicker.
+    _tracked(c, cx, H - 3.62 * inch, "CAREMETRIC BREATHE",
+             "Helvetica-Bold", 17, 3.2, white)
+    _tracked(c, cx, H - 3.92 * inch, "INTELLIGENT DME & PAP CARE PLATFORM",
+             "Helvetica", 8.2, 2.6, GOLD_SOFT)
+
+    # 7 — Title + centered gold rule.
+    c.setFillColor(white)
+    c.setFont("Helvetica-Bold", 41)
+    c.drawCentredString(cx, H - 5.25 * inch, "User Manual")
+    rule_w = 1.7 * inch
+    c.setFillColor(GOLD)
+    c.rect(cx - rule_w / 2.0, H - 5.58 * inch, rule_w, 0.055 * inch,
+           stroke=0, fill=1)
+
+    # 8 — Subtitle + role line.
+    c.setFillColor(lerp(white, NAVY, 0.10))
+    c.setFont("Helvetica", 13)
+    c.drawCentredString(cx, H - 6.02 * inch,
+                        "The complete guide to running your PAP department")
+    c.setFillColor(GOLD_SOFT)
+    c.setFont("Helvetica-Oblique", 10.5)
+    c.drawCentredString(cx, H - 6.36 * inch,
+                        "Organised by role:  Administrator · Biller · "
+                        "CSR · Respiratory Therapist")
+
+    # 9 — Capability chips (a quiet signal of breadth) over a hairline.
+    chip_y = 2.25 * inch
+    c.setStrokeColor(GOLD)
+    c.setStrokeAlpha(0.25)
+    c.setLineWidth(0.6)
+    c.line(cx - 2.6 * inch, chip_y + 0.34 * inch, cx + 2.6 * inch,
+           chip_y + 0.34 * inch)
+    c.setStrokeAlpha(1)
+    _tracked(c, cx, chip_y,
+             "STOREFRONT   ·   RESUPPLY   ·   BILLING   ·   CLINICAL   "
+             "·   VOICE AI", "Helvetica-Bold", 8.0, 2.0, GOLD_SOFT)
+
+    # 10 — Footer: date / edition. (No tenant branding on the platform cover.)
+    c.setFillColor(lerp(white, NAVY, 0.45))
+    c.setFont("Helvetica", 9)
+    c.drawCentredString(cx, 1.05 * inch,
+                        "%s  ·  Platform edition" % TODAY)
+    c.restoreState()
 
 
 def _make_doc(klass, path):
@@ -1944,12 +2144,15 @@ def make_story(toc_entries):
         "This manual is your guide to using it.", S_INTRO))
     story.append(Paragraph(
         "<b>Platform vs. tenant.</b> CareMetric Breathe is the software "
-        "platform. <b>Penn Home Medical Supply</b> — storefront brand "
-        "“PennPaps” — is one practice (tenant) operating on it. "
-        "Your own practice runs as its own tenant with its own brand, "
-        "numbers, and patients. Where this manual shows “PennPaps” "
-        "in a screenshot, that's the demo tenant; your console shows your "
-        "brand.", S_BODY))
+        "platform — every practice that runs on it is a separate "
+        "<b>tenant</b> with its own brand, web address, phone numbers, "
+        "patients, and billing. A new tenant starts with CareMetric "
+        "branding and makes it their own from System Configuration; "
+        "<b>Penn Home Medical Supply</b> (storefront brand “PennPaps”) is "
+        "simply one example of a tenant operating on the platform. The "
+        "screenshots in this manual come from the CareMetric demo "
+        "environment, so they show the platform's own branding — your live "
+        "console shows whatever brand you configure.", S_BODY))
     story.append(h2("Signing in"))
     story.append(Paragraph(
         "Staff sign in at <b>/admin/sign-in</b> with the email your "
@@ -2003,6 +2206,48 @@ def make_story(toc_entries):
     story.append(h2("The platform underneath every role"))
     story.append(Paragraph(PLATFORM_FOUNDATIONS_INTRO, S_BODY))
     story.append(feature_table(PLATFORM_FOUNDATIONS))
+    story.append(PageBreak())
+
+    # ---- The storefront & end-to-end fulfillment journey ----
+    story += h1("The Storefront & End-to-End Fulfillment")
+    story.append(Paragraph(STOREFRONT_INTRO, S_LEAD))
+    story += shot("storefront-how-it-works",
+                  "The storefront walks a patient from mask fitting to checkout "
+                  "— one front door for fit, shop, and resupply.")
+    for name, para in STOREFRONT_JOURNEY:
+        story.append(Paragraph(
+            "<b><font color=\"%s\">%s.</font></b> %s"
+            % (hexc(NAVY_DEEP), name, para), S_BODY))
+    story += shot("csr-shop-orders",
+                  "The order queue — paid orders ready to fulfill, ship, and "
+                  "track, all in the same system that bills them.")
+    story.append(PageBreak())
+
+    # ---- Paperless paperwork: referrals, eFax, e-signature ----
+    story += h1("Paperless Paperwork — Referrals, eFax & E-Signature")
+    story.append(Paragraph(PAPERLESS_INTRO, S_LEAD))
+    story.append(h2("The referral, read and ready in one pass"))
+    for name, para in PAPERLESS_REFERRAL:
+        story.append(Paragraph(
+            "<b><font color=\"%s\">%s.</font></b> %s"
+            % (hexc(NAVY_DEEP), name, para), S_BODY))
+    story += shot("admin-referral-reviewer",
+                  "The Referral Reviewer — AI-extracted intake beside the "
+                  "original packet, with a completeness check and one-click "
+                  "insurance verification.")
+    story.append(h2("eFax with a barcode — send once, file itself"))
+    for name, para in PAPERLESS_EFAX:
+        story.append(Paragraph(
+            "<b><font color=\"%s\">%s.</font></b> %s"
+            % (hexc(NAVY_DEEP), name, para), S_BODY))
+    story.append(h2("Never lose a signature again"))
+    for name, para in PAPERLESS_SIGN:
+        story.append(Paragraph(
+            "<b><font color=\"%s\">%s.</font></b> %s"
+            % (hexc(NAVY_DEEP), name, para), S_BODY))
+    story += shot("admin-signature-tracking",
+                  "Awaiting Signatures — every document out for a provider's "
+                  "signature, tracked until the barcode comes back.")
     story.append(PageBreak())
 
     # ---- The business case: revenue up, labor down ----
@@ -2131,6 +2376,18 @@ def make_story(toc_entries):
         "<b>System → Setup &amp; Advanced</b>. You can launch without the "
         "optional integrations — the platform degrades gracefully when a "
         "credential is unset; the matching feature simply stays idle."))
+    story.append(Spacer(1, 8))
+
+    story.append(h2("Ready to bill on day one — the pre-loaded payers"))
+    story.append(Paragraph(PAYERS_INTRO, S_BODY))
+    story.append(Paragraph("<b>What's in the box</b>", S_GROUP))
+    story.append(feature_table(PAYERS_CATEGORIES))
+    story.append(Spacer(1, 6))
+    story.append(Paragraph(
+        "<b>What every payer profile already knows</b>", S_GROUP))
+    story.append(feature_table(PAYERS_PROFILE_FIELDS))
+    story.append(Spacer(1, 4))
+    story.append(tip(PAYERS_NOTE))
     story.append(Spacer(1, 8))
 
     story.append(h2("The Control Center — every toggle explained"))
