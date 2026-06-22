@@ -12,7 +12,6 @@
 // reachable without MFA so the SPA can decide where to route.
 
 import { Router, type IRouter, type Request } from "express";
-import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { z } from "zod";
 
 import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
@@ -25,6 +24,7 @@ import {
   requireProvider,
   requireProviderMfaEnrolled,
 } from "../../middlewares/requireProvider";
+import { providerPortalRateLimiter } from "./shared";
 
 const router: IRouter = Router();
 
@@ -56,22 +56,6 @@ async function resolveTenantOrgId(
 ): Promise<string | null> {
   return (await resolveOrgIdByHost(requestHost(req))) ?? resolveSeedOrgId();
 }
-
-// IP-keyed rate limiter in front of every provider data route. The
-// /api/provider tree is not covered by the app-level admin/shop limiters,
-// so this is its defence-in-depth cap (and the gate static analysis
-// recognises — CodeQL js/missing-rate-limiting only credits
-// express-rate-limit, not the custom session/CSRF middleware). 300/15min
-// per IP is well above any honest provider session but well below a
-// scripted flood.
-const providerPortalRateLimiter = expressRateLimit({
-  windowMs: 15 * 60 * 1000,
-  limit: 300,
-  standardHeaders: "draft-7",
-  legacyHeaders: false,
-  keyGenerator: (req: Request) => ipKeyGenerator(req.ip ?? "0.0.0.0"),
-  message: { error: "too_many_requests" },
-});
 
 const SUBJECT_LABELS: Record<string, string> = {
   prescription: "Prescription",

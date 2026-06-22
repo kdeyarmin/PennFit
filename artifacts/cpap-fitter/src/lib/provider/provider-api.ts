@@ -151,6 +151,75 @@ export const declineProviderDocument = (id: string, reason?: string) =>
     },
   );
 
+// ── RTM (remote therapeutic monitoring) — "my patients" ───────────
+
+/** One row in the provider's patient roster. */
+export interface RtmRosterPatient {
+  patientId: string;
+  patientName: string;
+  status: string;
+  /** Earliest therapy-night date (therapy start / setup), or null. */
+  setupDate: string | null;
+  hasData: boolean;
+  lastNightDate: string | null;
+  /** Whole days since the most recent reported night, or null. */
+  staleDays: number | null;
+  avgUsageHours: number | null;
+  compliantNights: number;
+  nightsWithData: number;
+  complianceRatePct: number | null;
+  /** Coarse CMS compliance flag over the recent window. */
+  cmsCompliant: boolean;
+}
+
+export const getProviderRtmRoster = (days?: number) =>
+  jsonFetch<{ windowDays: number; patients: RtmRosterPatient[] }>(
+    `/patients${days ? `?days=${days}` : ""}`,
+  );
+
+export interface RtmCmsWindow {
+  startDate: string;
+  endDate: string;
+  compliantNights: number;
+  ratioPct: number;
+  averageUsageHours: number | null;
+}
+
+export interface RtmPatientDetail {
+  patientId: string;
+  patientName: string;
+  setupDate: string | null;
+  snapshot: {
+    hasData: boolean;
+    windowDays: number;
+    nightsWithData: number;
+    windowStartDate: string | null;
+    windowEndDate: string | null;
+    lastNightDate: string | null;
+    staleDays: number | null;
+    avgUsageHours: number | null;
+    avgAhi: number | null;
+    avgLeakLMin: number | null;
+    compliantNights: number;
+    complianceRatePct: number | null;
+  };
+  cms: {
+    qualifies: boolean;
+    horizonComplete: boolean;
+    window: RtmCmsWindow | null;
+  } | null;
+}
+
+export const getProviderRtmPatient = (id: string, days?: number) =>
+  jsonFetch<RtmPatientDetail>(
+    `/patients/${encodeURIComponent(id)}${days ? `?days=${days}` : ""}`,
+  );
+
+/** URL to the patient's adherence attestation PDF — opened directly in a
+ *  new tab (the cookie session authenticates the GET). */
+export const providerAttestationPdfUrl = (id: string) =>
+  `/api/provider/patients/${encodeURIComponent(id)}/attestation.pdf`;
+
 // ── MFA enrollment ────────────────────────────────────────────────
 
 export interface ProviderMfaStatus {
