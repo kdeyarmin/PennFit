@@ -35,6 +35,7 @@ import { Card } from "@/components/admin/Card";
 import { Spinner } from "@/components/admin/Spinner";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Button } from "@/components/admin/Button";
+import { ClaimAppealsSection } from "@/components/admin/ClaimAppealsSection";
 import { Input } from "@/components/admin/Input";
 import { PayerNameAutocomplete } from "@/components/admin/PayerNameAutocomplete";
 import { HcpcsCodeAutocomplete } from "@/components/admin/HcpcsCodeAutocomplete";
@@ -658,6 +659,7 @@ function ClaimDrawer({
           <ErrorPanel error={error} onRetry={() => void refetch()} />
         ) : (
           <ClaimDrawerContent
+            patientId={patientId}
             claim={data.claim}
             lineItems={data.lineItems}
             events={data.events}
@@ -701,6 +703,7 @@ function ClaimDrawer({
  * @returns A React node containing the fully rendered claim drawer content
  */
 function ClaimDrawerContent({
+  patientId,
   claim,
   lineItems,
   events,
@@ -715,6 +718,7 @@ function ClaimDrawerContent({
   onSubmitToOfficeAlly,
   onRefreshPreflight,
 }: {
+  patientId: string;
   claim: InsuranceClaim;
   lineItems: InsuranceClaimLineItem[];
   events: InsuranceClaimEvent[];
@@ -810,6 +814,10 @@ function ClaimDrawerContent({
             ))}
           </div>
         </section>
+      )}
+
+      {(claim.status === "denied" || claim.status === "appealed") && (
+        <ClaimAppealsSection patientId={patientId} claimId={claim.id} />
       )}
 
       <section className="space-y-2">
