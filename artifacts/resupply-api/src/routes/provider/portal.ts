@@ -37,9 +37,13 @@ const router: IRouter = Router();
  * tenant's signature queue — not the seed org's. We prefer the
  * host-resolved tenant (the same primitive the storefront uses) and fall
  * back to the seed org so platform-host / single-tenant deployments are
- * unaffected: on any host that doesn't resolve to a tenant,
- * `resolveOrgIdByHost` returns null and we land on the seed org —
- * byte-for-byte identical to the historical seed-org behavior.
+ * unaffected: `resolveOrgIdByHost` already fails SOFT to the seed org for
+ * any host that doesn't resolve to a tenant (platform host, unverified,
+ * miss, error), so on those hosts it returns the seed org id — and the
+ * `?? resolveSeedOrgId()` below only matters in the narrow case where it
+ * returns null (DB down such that even the seed org can't be resolved).
+ * Either way single-tenant behavior is byte-for-byte identical to the
+ * historical seed-org behavior.
  *
  * NOTE: the provider account / MFA tables are GLOBAL (no `org_id`) and
  * are read via the raw client off the org-scoped chokepoint, which

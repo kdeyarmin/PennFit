@@ -180,10 +180,12 @@ describe("provider portal — multi-tenant scoping of the signature queue", () =
     expect(providerFilterValue("select")).toBe(PROVIDER_ID);
   });
 
-  it("does NOT return another tenant's documents: a row under a different org is filtered out by org_id", async () => {
-    // The route asks for tenant-A's org; a tenant-B row would never come
-    // back from PostgREST because of the org_id filter. We assert the
-    // route applied tenant-A's org filter (the mechanism that excludes B).
+  it("applies the host tenant's org_id filter to the queue select (the mechanism that excludes other tenants' rows)", async () => {
+    // PostgREST itself enforces the cross-tenant exclusion server-side, so
+    // the staged client cannot return a tenant-B row to assert against.
+    // What this test proves is the precondition: the route applied
+    // tenant-A's org_id filter to the queue select — the filter that makes
+    // a tenant-B row impossible to return.
     resolveOrgIdByHostMock.mockResolvedValueOnce(TENANT_A_ORG);
     stageSupabaseResponse("provider_signature_requests", "select", {
       data: [
