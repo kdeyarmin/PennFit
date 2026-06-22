@@ -40,6 +40,12 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN
     CREATE ROLE service_role NOLOGIN;
   END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+    CREATE ROLE anon NOLOGIN;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+    CREATE ROLE authenticated NOLOGIN;
+  END IF;
 END
 $$;
 --> statement-breakpoint
@@ -104,6 +110,12 @@ AS $$
     (SELECT n FROM paid_orders) AS paid_order_count,
     (SELECT sum_cents FROM paid_orders) AS paid_order_sum_cents
 $$;
+--> statement-breakpoint
+
+-- SECURITY DEFINER: drop the implicit PUBLIC execute (which is what exposes
+-- anon/authenticated over PostgREST) and keep only the service-role grant.
+REVOKE EXECUTE ON FUNCTION resupply.resupply_kpi_window_aggregates(uuid, timestamptz)
+  FROM PUBLIC, anon, authenticated;
 --> statement-breakpoint
 
 GRANT EXECUTE ON FUNCTION resupply.resupply_kpi_window_aggregates(uuid, timestamptz)

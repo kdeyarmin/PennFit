@@ -35,6 +35,12 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN
     CREATE ROLE service_role NOLOGIN;
   END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+    CREATE ROLE anon NOLOGIN;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+    CREATE ROLE authenticated NOLOGIN;
+  END IF;
 END
 $$;
 --> statement-breakpoint
@@ -83,6 +89,12 @@ AS $$
   FROM revenue r
   FULL OUTER JOIN attribution a ON a.customer_id = r.customer_id
 $$;
+--> statement-breakpoint
+
+-- SECURITY DEFINER: drop the implicit PUBLIC execute (which is what exposes
+-- anon/authenticated over PostgREST) and keep only the service-role grant.
+REVOKE EXECUTE ON FUNCTION resupply.ltv_cac_customer_economics(uuid)
+  FROM PUBLIC, anon, authenticated;
 --> statement-breakpoint
 
 GRANT EXECUTE ON FUNCTION resupply.ltv_cac_customer_economics(uuid)
