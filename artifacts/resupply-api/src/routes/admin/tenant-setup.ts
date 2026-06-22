@@ -122,17 +122,17 @@ export function buildTenantSetupItems(
     {
       id: "sms-number",
       group: "Phone, SMS & fax",
-      title: "Get an SMS number",
+      title: "Get your own SMS number",
       description:
-        "Your own number for resupply texts and inbound replies, so messages come from you — not a shared platform number.",
+        "Optional for now: texts already send on the shared platform number. Add your own number when you're ready for messages to come from you — typically as your volume grows.",
       status: smsReady ? "complete" : "incomplete",
       detail: smsReady
         ? set(s.smsFromNumber)
           ? `SMS number: ${s.smsFromNumber}.`
           : "Using a Twilio Messaging Service."
-        : "Not set — texts fall back to the shared platform number.",
+        : "Using the shared platform number — works today; add your own when you're ready to brand it.",
       href: "/admin/phone-settings",
-      required: true,
+      required: false,
     },
     {
       id: "voice-number",
@@ -182,7 +182,7 @@ export function buildTenantSetupItems(
       group: "Your patients",
       title: "Add or import your patients",
       description:
-        "Bring your patient roster in. Migrating from another system? Import your PacWare Patient List — a fill-only sync that never overwrites existing data. Starting fresh? Patients populate automatically as orders and fittings come in.",
+        "Bring your patient roster in. Migrating from another system? Import a CSV — your PacWare Patient List, or any CSV with column mapping. It's a fill-only sync that never overwrites existing data. Starting fresh? Patients populate automatically as orders and fittings come in.",
       status: s.patientCount > 0 ? "complete" : "action",
       detail:
         s.patientCount > 0

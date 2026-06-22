@@ -132,9 +132,11 @@ describe("buildTenantSetupItems", () => {
       .filter((i) => i.required)
       .map((i) => i.id)
       .sort();
-    expect(required).toEqual(
-      ["branding", "email-sender", "payments", "sms-number"].sort(),
-    );
+    // SMS number is RECOMMENDED, not required: outbound SMS already works on
+    // the shared platform number, so a tenant isn't blocked from "set up"
+    // until they provision their own (they do that as they grow).
+    expect(required).toEqual(["branding", "email-sender", "payments"].sort());
+    expect(byId(items, "sms-number").required).toBe(false);
   });
 
   it("gives every item a configuration href", () => {
