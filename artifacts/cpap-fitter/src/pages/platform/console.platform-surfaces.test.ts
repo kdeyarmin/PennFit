@@ -75,4 +75,11 @@ describe("platform console tenant detail + sidebar", () => {
     expect(SRC).toContain("Open storefront");
     expect(SRC).toContain("<CopyableId value={tenant.slug}");
   });
+
+  it("adds a sidebar tenant quick-switcher and a support badge", () => {
+    expect(SRC).toContain("function TenantQuickSwitcher");
+    expect(SRC).toContain("<TenantQuickSwitcher onNavigate={onNavigate} />");
+    // Support nav item carries a "needs reply" count badge.
+    expect(SRC).toContain("supportNeedsReply");
+  });
 });

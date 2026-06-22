@@ -31,6 +31,7 @@ import {
   Menu,
   Plug,
   Rocket,
+  Search,
   ServerCog,
   X,
   type LucideIcon,
@@ -2356,6 +2357,130 @@ function navItemActive(itemHref: string, location: string): boolean {
   return location === itemHref || location.startsWith(`${itemHref}/`);
 }
 
+// A keyboard-navigable "jump to any tenant" box in the sidebar — the
+// fastest path to a tenant from anywhere in the console once the fleet
+// grows past a screenful. Reuses the directory's tenant list (same query
+// key, so it's deduped/cached). Arrow keys move the highlight, Enter
+// opens, Escape clears.
+function TenantQuickSwitcher({ onNavigate }: { onNavigate: () => void }) {
+  const [, navigate] = useLocation();
+  const { data } = useListTenants();
+  const [query, setQuery] = useState("");
+  const [activeIdx, setActiveIdx] = useState(0);
+
+  const matches = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return [];
+    return (data?.tenants ?? [])
+      .filter(
+        (t) =>
+          t.slug.toLowerCase().includes(q) ||
+          (t.name ?? "").toLowerCase().includes(q),
+      )
+      .slice(0, 8);
+  }, [data, query]);
+
+  function go(id: string) {
+    setQuery("");
+    setActiveIdx(0);
+    onNavigate();
+    navigate(`/platform/tenants/${id}`);
+  }
+
+  function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Escape") {
+      setQuery("");
+      setActiveIdx(0);
+      return;
+    }
+    if (matches.length === 0) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActiveIdx((i) => Math.min(i + 1, matches.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActiveIdx((i) => Math.max(i - 1, 0));
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      const m = matches[activeIdx];
+      if (m) go(m.id);
+    }
+  }
+
+  return (
+    <div className="px-3 pt-3">
+      <div className="relative">
+        <Search
+          className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5"
+          style={{ color: "hsl(var(--ink-3))" }}
+          aria-hidden="true"
+        />
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setActiveIdx(0);
+          }}
+          onKeyDown={onKeyDown}
+          placeholder="Jump to tenant…"
+          aria-label="Jump to tenant"
+          autoComplete="off"
+          spellCheck={false}
+          className="w-full rounded-md border pl-8 pr-2 py-1.5 text-xs outline-none focus:ring-2"
+          style={{
+            borderColor: "hsl(var(--line-1))",
+            backgroundColor: "hsl(var(--surface-1))",
+            color: "hsl(var(--ink-1))",
+          }}
+        />
+      </div>
+      {matches.length > 0 && (
+        <ul
+          className="mt-1 rounded-md border overflow-hidden"
+          style={{
+            borderColor: "hsl(var(--line-1))",
+            backgroundColor: "hsl(var(--surface-1))",
+          }}
+        >
+          {matches.map((t, i) => {
+            const active = i === activeIdx;
+            return (
+              <li key={t.id}>
+                <button
+                  type="button"
+                  onMouseEnter={() => setActiveIdx(i)}
+                  onClick={() => go(t.id)}
+                  aria-current={active ? "true" : undefined}
+                  className="w-full text-left px-2.5 py-1.5"
+                  style={{
+                    backgroundColor: active
+                      ? "hsl(var(--penn-navy) / 0.08)"
+                      : "transparent",
+                  }}
+                >
+                  <span
+                    className="block text-xs font-medium truncate"
+                    style={{ color: "hsl(var(--ink-1))" }}
+                  >
+                    {t.name ?? t.slug}
+                  </span>
+                  <span
+                    className="block text-[10px] font-mono truncate"
+                    style={{ color: "hsl(var(--ink-3))" }}
+                  >
+                    {t.slug}
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function SidebarContent({
   location,
   email,
@@ -2367,6 +2492,16 @@ function SidebarContent({
   onSignOut: () => void;
   onNavigate: () => void;
 }) {
+  // "Needs reply" support count drives a badge on the Support nav item so
+  // an operator sees the queue depth without opening it. Cached + shared
+  // with the Support page's own list (cheap, refetched lazily).
+  const supportNeedsReply =
+    useQuery({
+      queryKey: ["platform-support", "awaiting_platform"],
+      queryFn: () => listPlatformSupportTickets("awaiting_platform"),
+      staleTime: 60_000,
+    }).data?.tickets.length ?? 0;
+
   return (
     <>
       <div
@@ -2392,6 +2527,8 @@ function SidebarContent({
           <X className="h-4 w-4" aria-hidden="true" />
         </button>
       </div>
+
+      <TenantQuickSwitcher onNavigate={onNavigate} />
 
       <nav
         aria-label="Platform navigation"
@@ -2430,6 +2567,23 @@ function SidebarContent({
                         aria-hidden="true"
                       />
                       <span className="truncate">{item.label}</span>
+                      {item.href === "/platform/support" &&
+                        supportNeedsReply > 0 && (
+                          <span
+                            className="ml-auto inline-flex items-center justify-center rounded-full text-[10px] font-semibold tabular-nums px-1.5 min-w-[1.25rem] h-5"
+                            style={{
+                              backgroundColor: active
+                                ? "hsl(var(--surface-1))"
+                                : "hsl(var(--penn-gold))",
+                              color: active
+                                ? "hsl(var(--penn-navy))"
+                                : "hsl(var(--penn-onyx))",
+                            }}
+                            aria-label={`${supportNeedsReply} awaiting reply`}
+                          >
+                            {supportNeedsReply > 99 ? "99+" : supportNeedsReply}
+                          </span>
+                        )}
                     </Link>
                   </li>
                 );
