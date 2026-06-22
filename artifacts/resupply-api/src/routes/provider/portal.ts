@@ -19,12 +19,39 @@ import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { appendSignatureEvent } from "../../lib/provider-portal/signature-events";
+import { requestHost } from "../../lib/request-host";
+import { resolveOrgIdByHost } from "../../lib/tenant-branding";
 import {
   requireProvider,
   requireProviderMfaEnrolled,
 } from "../../middlewares/requireProvider";
 
 const router: IRouter = Router();
+
+/**
+ * Resolve the tenant for a provider-portal request from its host.
+ *
+ * The provider e-signature surface reads/writes the org-scoped
+ * `provider_signature_requests` / `provider_signature_events` tables, so
+ * a provider arriving on a verified custom-domain tenant must see THAT
+ * tenant's signature queue — not the seed org's. We prefer the
+ * host-resolved tenant (the same primitive the storefront uses) and fall
+ * back to the seed org so platform-host / single-tenant deployments are
+ * unaffected: on any host that doesn't resolve to a tenant,
+ * `resolveOrgIdByHost` returns null and we land on the seed org —
+ * byte-for-byte identical to the historical seed-org behavior.
+ *
+ * NOTE: the provider account / MFA tables are GLOBAL (no `org_id`) and
+ * are read via the raw client off the org-scoped chokepoint, which
+ * ignores the orgId entirely — so threading the host org through here
+ * changes ONLY the org-scoped signature tables, never the global account
+ * lookups.
+ */
+async function resolveTenantOrgId(
+  req: Pick<Request, "headers">,
+): Promise<string | null> {
+  return (await resolveOrgIdByHost(requestHost(req))) ?? resolveSeedOrgId();
+}
 
 // IP-keyed rate limiter in front of every provider data route. The
 // /api/provider tree is not covered by the app-level admin/shop limiters,
@@ -70,7 +97,7 @@ router.get(
   ...requireProvider,
   async (req, res) => {
     const account = req.providerAccount!;
-    const orgId = await resolveSeedOrgId();
+    const orgId = await resolveTenantOrgId(req);
     if (!orgId) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;
@@ -147,7 +174,7 @@ router.get(
       .enum(["pending", "signed", "declined", "all"])
       .catch("pending")
       .parse(req.query.status);
-    const orgId = await resolveSeedOrgId();
+    const orgId = await resolveTenantOrgId(req);
     if (!orgId) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;
@@ -224,7 +251,7 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const orgId = await resolveSeedOrgId();
+    const orgId = await resolveTenantOrgId(req);
     if (!orgId) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;
@@ -408,7 +435,7 @@ router.post(
       });
       return;
     }
-    const orgId = await resolveSeedOrgId();
+    const orgId = await resolveTenantOrgId(req);
     if (!orgId) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;
@@ -495,7 +522,7 @@ router.post(
     }
     const ids = [...new Set(parsed.data.ids)];
 
-    const orgId = await resolveSeedOrgId();
+    const orgId = await resolveTenantOrgId(req);
     if (!orgId) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;
@@ -587,7 +614,7 @@ router.post(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
-    const orgId = await resolveSeedOrgId();
+    const orgId = await resolveTenantOrgId(req);
     if (!orgId) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;
