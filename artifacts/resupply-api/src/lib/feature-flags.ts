@@ -103,6 +103,7 @@ export const FEATURE_FLAG_KEYS = [
   "asset_recovery.auto_populate",
   "domains.tls_automation",
   "support.tickets",
+  "referrals.adherence_report",
 ] as const;
 
 export type FeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];
