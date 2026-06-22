@@ -1,4 +1,4 @@
--- 0458_penn_storefront_logo.sql
+-- 0466_penn_storefront_logo.sql
 --
 -- Point the seed tenant (Penn Home Medical Supply / storefront "PennPaps")
 -- at its own logo asset.

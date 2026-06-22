@@ -35,7 +35,7 @@ Practical rules:
   renders PennPaps via the host-resolved `GET /api/storefront-branding`
   (`resolveBrandingByHost`, pennpaps.com → verified custom domain), and its
   logo is **tenant data**: `organizations.logo_url` points at the served
-  asset `/penn/pennpaps-logo.jpeg` (migration 0458), so Penn no longer
+  asset `/penn/pennpaps-logo.jpeg` (migration 0466), so Penn no longer
   depends on a bundled client default.
 - **The two in-app AI assistants are tenant-configurable.** Platform
   defaults are **"CareMetric Assistant"** (storefront chatbot) and
