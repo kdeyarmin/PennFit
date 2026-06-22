@@ -212,7 +212,14 @@ export function resolvePlanFlagPreset(
   planCode: string | null | undefined,
 ): ReadonlySet<string> | null {
   if (!planCode) return null;
-  const preset = PLAN_FEATURE_FLAG_PRESETS[planCode as BillingPlanCode];
+  // Founder pricing twins (migration 0426: launch_founder, growth_founder,
+  // scale_founder, mask_fitter_founder) carry the same feature bundle as their
+  // base plan — they only differ on price. Normalize the suffix before lookup
+  // so founder tenants get a preset instead of falling through to no_plan.
+  const base = planCode.endsWith("_founder")
+    ? planCode.slice(0, -"_founder".length)
+    : planCode;
+  const preset = PLAN_FEATURE_FLAG_PRESETS[base as BillingPlanCode];
   if (!preset) return null;
   return new Set(preset);
 }

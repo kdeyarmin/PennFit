@@ -78,14 +78,6 @@ function PresetCard() {
   // bundle — 4 changes." Cleared when the operator interacts again.
   const [lastSummary, setLastSummary] = useState<string | null>(null);
 
-  const previewMutation = useMutation({
-    mutationFn: () => applyFeatureFlagPreset(true),
-    onSuccess: (result) => {
-      setLastSummary(null);
-      setPreview(result);
-    },
-  });
-
   const applyMutation = useMutation({
     mutationFn: () => applyFeatureFlagPreset(false),
     onSuccess: (result) => {
@@ -99,6 +91,17 @@ function PresetCard() {
       );
       void queryClient.invalidateQueries({ queryKey: QUERY_KEY });
       void queryClient.invalidateQueries({ queryKey: ACTIVITY_QUERY_KEY });
+    },
+  });
+
+  const previewMutation = useMutation({
+    mutationFn: () => applyFeatureFlagPreset(true),
+    onSuccess: (result) => {
+      setLastSummary(null);
+      // Clear any error left over from a previous failed apply so the fresh
+      // preview modal doesn't open showing a stale message.
+      applyMutation.reset();
+      setPreview(result);
     },
   });
 
@@ -180,7 +183,11 @@ function PresetCard() {
           preview={preview}
           applying={applyMutation.isPending}
           error={applyMutation.error}
-          onCancel={() => setPreview(null)}
+          onCancel={() => {
+            setPreview(null);
+            // Drop any failed-apply error so reopening the modal starts clean.
+            applyMutation.reset();
+          }}
           onConfirm={() => applyMutation.mutate()}
         />
       )}

@@ -274,51 +274,38 @@ router.post(
       res.status(200).type("text/xml").send("<Response/>");
       return;
     }
-    // Webhook: no req.orgId. Resolve the tenant by the CALLED number (Twilio
-    // `To`) to the tenant that OWNS it (per-tenant-number case, G7), else fall
-    // back to the seed org. `calledOrgId` stays null when the number isn't
-    // owned by any tenant — i.e. it's the SHARED platform number — which we
-    // use below to decide whether to disambiguate by the patient.
+    // Webhook: no req.orgId. Resolve the owning tenant:
+    //   * If the CALLED number (Twilio `To`) is owned by a tenant
+    //     (per-tenant-number case, G7), that tenant is authoritative.
+    //   * Otherwise it's the SHARED platform number, which no single tenant
+    //     owns, so route by the PATIENT: the tenant that has this phone (and,
+    //     when the phone exists in more than one tenant — INCLUDING the seed
+    //     org — the one with the most recent conversation). This must run even
+    //     when the seed org has the patient, or a phone duplicated across the
+    //     seed org and another tenant would always misroute to seed.
+    //   * Fall back to the seed org only when the phone is unknown everywhere,
+    //     so STOP/HELP and unknown-number handling still work.
     const calledOrgId = await resolveOrgIdByCalledNumber(parsed.To);
-    let orgId = calledOrgId ?? (await resolveSeedOrgId());
+    const orgId = calledOrgId
+      ? calledOrgId
+      : ((await resolveOrgIdByPatientPhone(normalizedFrom)) ??
+        (await resolveSeedOrgId()));
     if (!orgId) {
       res.status(200).type("text/xml").send("<Response/>");
       return;
     }
-    let supabase = getOrgScopedClient(orgId);
+    const supabase = getOrgScopedClient(orgId);
 
-    // Direct phone lookup. We pull up to 2 rows so we can detect
-    // ambiguous matches — multiple patients sharing one phone (a
-    // family plan) can't be safely auto-routed; we audit and bail.
-    const lookupByPhone = (db: typeof supabase) =>
-      db
-        .from("patients")
-        .select("id")
-        .eq("phone_e164", normalizedFrom)
-        .limit(2);
-    const { data: lookupRows, error: lookupErr } =
-      await lookupByPhone(supabase);
+    // Direct phone lookup, scoped to the resolved tenant. We pull up to 2 rows
+    // so we can detect ambiguous matches — multiple patients sharing one phone
+    // (a family plan) can't be safely auto-routed; we audit and bail.
+    const { data: lookupRows, error: lookupErr } = await supabase
+      .from("patients")
+      .select("id")
+      .eq("phone_e164", normalizedFrom)
+      .limit(2);
     if (lookupErr) throw lookupErr;
-    let lookupMatches = lookupRows ?? [];
-
-    // SHARED-NUMBER routing: the reply landed on a number not owned by any
-    // tenant (the shared platform number) AND the patient isn't in the
-    // fallback (seed) org — so it most likely belongs to a DIFFERENT tenant
-    // that shares this number. Re-resolve the tenant by the patient's phone
-    // and look again there. Only runs on a miss, so the common path (number
-    // owned, or patient found in the seed org) is untouched. This is what lets
-    // multiple tenants share ONE number for two-way texting until each
-    // provisions its own.
-    if (!calledOrgId && lookupMatches.length === 0) {
-      const altOrgId = await resolveOrgIdByPatientPhone(normalizedFrom);
-      if (altOrgId && altOrgId !== orgId) {
-        orgId = altOrgId;
-        supabase = getOrgScopedClient(orgId);
-        const retry = await lookupByPhone(supabase);
-        if (retry.error) throw retry.error;
-        lookupMatches = retry.data ?? [];
-      }
-    }
+    const lookupMatches = lookupRows ?? [];
     if (lookupMatches.length > 1) {
       await safeAudit({
         action: "messaging.inbound.received",

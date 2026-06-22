@@ -675,7 +675,7 @@ async function main(): Promise<void> {
       `  storefront_name   = ${a.storefrontName ?? "(falls back to name)"}\n` +
       `  feature flags     = ${
         flagsResult.provisioned === 0
-          ? "skipped (seed tenant / no seed org)"
+          ? "none provisioned (seed tenant, no seed org, or seed has no feature_flag rows)"
           : flagsResult.preset
             ? `${flagsResult.enabled}/${flagsResult.provisioned} ON via '${flagsResult.preset}' preset bundle`
             : `${flagsResult.provisioned} provisioned from seed catalog (no --plan; verbatim copy)`

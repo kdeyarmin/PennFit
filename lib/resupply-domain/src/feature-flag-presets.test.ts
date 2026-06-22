@@ -63,5 +63,17 @@ describe("plan feature-flag presets", () => {
       expect(resolvePlanFlagPreset("")).toBeNull();
       expect(resolvePlanFlagPreset("nonexistent_plan")).toBeNull();
     });
+
+    it("maps founder pricing twins to their base plan's bundle (migration 0426)", () => {
+      // *_founder plans differ only on price; they share the base bundle.
+      for (const base of ["mask_fitter", "launch", "growth", "scale"]) {
+        const founder = resolvePlanFlagPreset(`${base}_founder`);
+        const baseSet = resolvePlanFlagPreset(base);
+        expect(founder).not.toBeNull();
+        expect([...(founder ?? [])].sort()).toEqual(
+          [...(baseSet ?? [])].sort(),
+        );
+      }
+    });
   });
 });
