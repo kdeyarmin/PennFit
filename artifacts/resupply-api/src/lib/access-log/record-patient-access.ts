@@ -82,8 +82,8 @@ export function recordPatientAccess(
       void getOrgScopedClient(orgId)
         .from("patient_access_log")
         .insert(row)
-        .then(({ error }) => {
-          if (error) onError(error);
+        .then((result: { error: unknown }) => {
+          if (result.error) onError(result.error);
         }, onError);
     } catch (err) {
       logger.error(
