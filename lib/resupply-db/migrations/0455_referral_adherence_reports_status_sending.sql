@@ -1,4 +1,4 @@
--- 0453_referral_adherence_reports_status_sending — add a 'sending' claim
+-- 0455_referral_adherence_reports_status_sending — add a 'sending' claim
 -- status to the referral-adherence idempotency ledger (Referral CRM Phase 3).
 --
 -- WHY
