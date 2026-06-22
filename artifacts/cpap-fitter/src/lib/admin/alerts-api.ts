@@ -3,9 +3,7 @@
 // shape: plain fetch, credentials + csrfHeader on mutations, errors
 // wrapped in ApiError.
 
-import { ApiError } from "@workspace/api-client-react/admin";
-
-import { csrfHeader } from "../csrf";
+import { adminJsonFetch } from "../admin-json-fetch";
 
 export type AlertChannel = "email" | "sms" | "voice";
 export type AlertSeverity = "info" | "warning" | "critical";
@@ -47,32 +45,10 @@ export interface SendAlertBody {
   variables?: Record<string, string>;
 }
 
-const BASE = "/resupply-api/admin/alerts";
-
-async function jsonFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const { headers, ...rest } = init;
-  const method = (init.method ?? "GET").toUpperCase();
-  const url = `${BASE}${path}`;
-  const res = await fetch(url, {
-    credentials: "include",
-    headers: {
-      Accept: "application/json",
-      ...csrfHeader(),
-      ...(headers ?? {}),
-    },
-    ...rest,
-  });
-  if (!res.ok) {
-    let data: unknown = null;
-    try {
-      data = await res.json();
-    } catch {
-      // body not JSON
-    }
-    throw new ApiError(res, data, { method, url });
-  }
-  return (await res.json()) as T;
-}
+// Routes live under /admin/alerts; adminJsonFetch adds the /resupply-api
+// mount. Call sites pass the sub-path (e.g. "" or `/${key}`).
+const jsonFetch = <T>(path: string, init?: RequestInit): Promise<T> =>
+  adminJsonFetch<T>(`/admin/alerts${path}`, init);
 
 export const listAlerts = () => jsonFetch<{ alerts: AlertDefinition[] }>("");
 

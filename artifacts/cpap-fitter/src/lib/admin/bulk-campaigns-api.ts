@@ -1,8 +1,6 @@
 // Hand-rolled fetch wrapper for /admin/bulk-campaigns/*.
 
-import { ApiError } from "@workspace/api-client-react/admin";
-
-import { csrfHeader } from "../csrf";
+import { adminJsonFetch as jsonFetch } from "../admin-json-fetch";
 
 // Tick interval from the backend worker — used in the UI to show
 // pause/cancel latency ("takes effect within N seconds").
@@ -130,30 +128,6 @@ export interface CreateDraftResponse {
     pending: number;
     suppressed: number;
   };
-}
-
-async function jsonFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const { headers: initHeaders, ...restInit } = init;
-  const method = (init.method ?? "GET").toUpperCase();
-  const url = `/resupply-api${path}`;
-  const res = await fetch(url, {
-    ...restInit,
-    headers: {
-      Accept: "application/json",
-      ...csrfHeader(),
-      ...(initHeaders ?? {}),
-    },
-  });
-  if (!res.ok) {
-    let data: unknown = null;
-    try {
-      data = await res.json();
-    } catch {
-      // ignore
-    }
-    throw new ApiError(res, data, { method, url });
-  }
-  return (await res.json()) as T;
 }
 
 export const listBulkCampaigns = () =>

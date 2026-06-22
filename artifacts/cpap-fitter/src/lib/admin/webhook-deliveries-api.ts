@@ -8,9 +8,7 @@
 // (payloads can carry order PHI). We map the raw snake_case rows to the
 // camelCase shape the rest of the SPA uses.
 
-import { ApiError } from "@workspace/api-client-react/admin";
-
-import { csrfHeader } from "../csrf";
+import { adminJsonFetch as jsonFetch } from "../admin-json-fetch";
 
 export type WebhookDeliveryStatus =
   | "queued"
@@ -42,31 +40,6 @@ interface RawWebhookDelivery {
   next_attempt_at: string | null;
   delivered_at: string | null;
   created_at: string;
-}
-
-async function jsonFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const { headers: initHeaders, ...restInit } = init;
-  const method = (init.method ?? "GET").toUpperCase();
-  const url = `/resupply-api${path}`;
-  const res = await fetch(url, {
-    ...restInit,
-    credentials: "include",
-    headers: {
-      Accept: "application/json",
-      ...csrfHeader(),
-      ...(initHeaders ?? {}),
-    },
-  });
-  if (!res.ok) {
-    let data: unknown = null;
-    try {
-      data = await res.json();
-    } catch {
-      // body not JSON
-    }
-    throw new ApiError(res, data, { method, url });
-  }
-  return (await res.json()) as T;
 }
 
 function mapDelivery(r: RawWebhookDelivery): WebhookDelivery {

@@ -4,9 +4,7 @@
 // server-side). Same hand-rolled fetch + csrfHeader pattern as
 // prescription-requests-api.ts.
 
-import { ApiError } from "@workspace/api-client-react/admin";
-
-import { csrfHeader } from "../csrf";
+import { adminJsonFetch as jsonFetch } from "../admin-json-fetch";
 
 export type SignatureDocumentKind = "prescription_request" | "manual_document";
 export type SignatureTrackingStatus =
@@ -63,30 +61,9 @@ export interface OutstandingSignaturesResponse {
   items: SignatureTrackingItem[];
 }
 
-const BASE = "/resupply-api/admin/signature-tracking";
-
-async function jsonFetch<T>(url: string, init: RequestInit = {}): Promise<T> {
-  const method = (init.method ?? "GET").toUpperCase();
-  const res = await fetch(url, {
-    credentials: "include",
-    ...init,
-    headers: {
-      Accept: "application/json",
-      ...(init.headers ?? {}),
-      ...csrfHeader(),
-    },
-  });
-  if (!res.ok) {
-    let data: unknown = null;
-    try {
-      data = await res.json();
-    } catch {
-      // body not JSON
-    }
-    throw new ApiError(res, data, { method, url });
-  }
-  return (await res.json()) as T;
-}
+// Call sites build full paths from BASE (e.g. `${BASE}/lookup?...`);
+// adminJsonFetch prefixes `/resupply-api`, so BASE omits that mount.
+const BASE = "/admin/signature-tracking";
 
 export async function listOutstandingSignatures(params?: {
   status?: SignatureListStatus;

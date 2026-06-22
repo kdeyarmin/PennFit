@@ -6,33 +6,7 @@
 // `support.tickets` feature flag; platform routes by requirePlatformAdmin.
 // Mirrors the jsonFetch pattern in platform-config-api.ts.
 
-import { ApiError } from "@workspace/api-client-react/admin";
-
-import { csrfHeader } from "../csrf";
-
-async function jsonFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const { headers, ...rest } = init;
-  const method = (init.method ?? "GET").toUpperCase();
-  const url = `/resupply-api${path}`;
-  const res = await fetch(url, {
-    credentials: "include",
-    headers: {
-      Accept: "application/json",
-      ...(init.body ? { "Content-Type": "application/json" } : {}),
-      ...csrfHeader(),
-      ...(headers ?? {}),
-    },
-    ...rest,
-  });
-  if (!res.ok) {
-    let data: unknown = null;
-    try {
-      data = await res.json();
-    } catch {}
-    throw new ApiError(res, data, { method, url });
-  }
-  return (await res.json()) as T;
-}
+import { adminJsonFetch as jsonFetch } from "../admin-json-fetch";
 
 export type SupportTicketStatus =
   | "open"
