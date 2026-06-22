@@ -63,7 +63,6 @@ echo "[dev-db] 3/5 grant data-API roles on resupply schemas"
 # and e.g. the admin Orders page renders "Internal error".
 for s in public resupply resupply_auth; do
   docker exec -i "$DB_CONTAINER" psql -U supabase_admin -d postgres \
-    -c "GRANT ALL ON SCHEMA auth TO postgres;" \
     -c "GRANT USAGE ON SCHEMA $s TO service_role;" \
     -c "GRANT ALL ON ALL TABLES IN SCHEMA $s TO service_role;" \
     -c "GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA $s TO service_role;" \
