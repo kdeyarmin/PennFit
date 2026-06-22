@@ -13,7 +13,7 @@
 //     pin that a direct (invited) caller can't feed garbage measurements
 //     past Zod's shape check.
 
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import express, { type Express } from "express";
 import request from "supertest";
 
@@ -32,9 +32,16 @@ function makeApp(): Express {
 
 // Set a deterministic HMAC key so signFitterInviteToken /
 // verifyFitterInviteToken agree within the test process. Must run
-// before any token is minted.
+// before any token is minted. Capture and restore the prior value so
+// this file can't leak the test key into other suites.
+let savedLinkHmacKey: string | undefined;
 beforeAll(() => {
+  savedLinkHmacKey = process.env.RESUPPLY_LINK_HMAC_KEY;
   process.env.RESUPPLY_LINK_HMAC_KEY = "test-link-hmac-key-value-1234567890";
+});
+afterAll(() => {
+  if (savedLinkHmacKey === undefined) delete process.env.RESUPPLY_LINK_HMAC_KEY;
+  else process.env.RESUPPLY_LINK_HMAC_KEY = savedLinkHmacKey;
 });
 
 const INVITE_ID = "11111111-1111-1111-1111-111111111111";
