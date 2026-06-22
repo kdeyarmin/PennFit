@@ -115,10 +115,21 @@ export interface ResupplyKpiInput {
    *  episode (order) it belongs to. Drives items-per-order. Optional so
    *  existing callers/tests stay valid. */
   fulfillments?: Array<{ episodeId: string }>;
+  /** Pre-aggregated fulfillment counts (line items + distinct orders with
+   *  a fulfillment) computed server-side. When supplied this takes
+   *  precedence over `fulfillments[]` so the caller doesn't have to ship
+   *  every row — the items-per-order ratio is identical because it is
+   *  derived from exactly these two integers. */
+  fulfillmentAggregates?: { lineItems: number; ordersWithFulfillments: number };
   /** amount_total_cents for storefront orders PAID in the window. Drives
    *  average order value (resupply fulfillments bill insurance and carry
    *  no cash amount, so AOV is a storefront-cash metric). Optional. */
   paidOrderAmountsCents?: number[];
+  /** Pre-aggregated paid-order count + cents sum computed server-side.
+   *  When supplied this takes precedence over `paidOrderAmountsCents[]`:
+   *  AOV is `Math.round(sumCents / count)`, identical to the mean of the
+   *  array because the sum is the same integer either way. */
+  paidOrderAggregates?: { count: number; sumCents: number };
 }
 
 export interface ResupplyKpiResult {
@@ -189,26 +200,44 @@ export function aggregateResupplyKpis(
 
   // Items per order: fulfillment line items / distinct orders that have
   // fulfillments. A row with a falsy episodeId can't be attributed to an
-  // order and is dropped.
-  const fulfillments = input.fulfillments ?? [];
-  const fulfillmentOrderIds = new Set<string>();
-  for (const f of fulfillments) {
-    if (f.episodeId) fulfillmentOrderIds.add(f.episodeId);
+  // order and is dropped. Server-pre-aggregated counts (when supplied)
+  // take precedence over re-deriving them from the raw rows.
+  let fulfillmentLineItems: number;
+  let ordersWithFulfillments: number;
+  if (input.fulfillmentAggregates) {
+    fulfillmentLineItems = input.fulfillmentAggregates.lineItems;
+    ordersWithFulfillments = input.fulfillmentAggregates.ordersWithFulfillments;
+  } else {
+    const fulfillments = input.fulfillments ?? [];
+    const fulfillmentOrderIds = new Set<string>();
+    for (const f of fulfillments) {
+      if (f.episodeId) fulfillmentOrderIds.add(f.episodeId);
+    }
+    fulfillmentLineItems = fulfillments.length;
+    ordersWithFulfillments = fulfillmentOrderIds.size;
   }
-  const fulfillmentLineItems = fulfillments.length;
-  const ordersWithFulfillments = fulfillmentOrderIds.size;
   const itemsPerOrder =
     ordersWithFulfillments === 0
       ? null
       : round4(fulfillmentLineItems / ordersWithFulfillments);
 
   // Average order value: mean of paid storefront order totals (cents).
-  const amounts = input.paidOrderAmountsCents ?? [];
-  const paidOrderCount = amounts.length;
+  // Server-pre-aggregated count+sum (when supplied) take precedence; the
+  // mean is the same integer division either way.
+  let paidOrderCount: number;
+  let paidOrderSumCents: number;
+  if (input.paidOrderAggregates) {
+    paidOrderCount = input.paidOrderAggregates.count;
+    paidOrderSumCents = input.paidOrderAggregates.sumCents;
+  } else {
+    const amounts = input.paidOrderAmountsCents ?? [];
+    paidOrderCount = amounts.length;
+    paidOrderSumCents = amounts.reduce((s, c) => s + c, 0);
+  }
   const averageOrderValueCents =
     paidOrderCount === 0
       ? null
-      : Math.round(amounts.reduce((s, c) => s + c, 0) / paidOrderCount);
+      : Math.round(paidOrderSumCents / paidOrderCount);
 
   return {
     totalEpisodes,

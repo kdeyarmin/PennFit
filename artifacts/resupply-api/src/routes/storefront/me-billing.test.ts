@@ -235,6 +235,8 @@ describe("/api/me/billing-statements/:id/pdf", () => {
       } as never,
       submitter: {} as never,
       usageIndicator: "T",
+      billingProviderScope: "org",
+      locationId: null,
     });
     vi.mocked(renderStatementPdf).mockRejectedValueOnce(
       new Error("puppeteer failed"),

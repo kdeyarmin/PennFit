@@ -749,6 +749,14 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             hint: "Projected cash from claims in flight, bucketed by expected landing date",
           },
           {
+            href: "/admin/billing/disputes",
+            label: "Chargeback disputes",
+            icon: Gavel,
+            matchPrefix: "/admin/billing/disputes",
+            requiredPermission: "reports.read",
+            hint: "Card chargebacks against storefront charges, ordered by evidence deadline",
+          },
+          {
             href: "/admin/billing/payer-profitability",
             label: "Payer profitability",
             icon: Landmark,

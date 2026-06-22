@@ -401,6 +401,11 @@ const AdminReferralSourcesPage = lazyWithRetry(() =>
     default: m.AdminReferralSourcesPage,
   })),
 );
+const AdminBillingDisputesPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-billing-disputes").then((m) => ({
+    default: m.AdminBillingDisputesPage,
+  })),
+);
 const AdminTherapyCompliancePage = lazyWithRetry(() =>
   import("@/pages/admin/admin-therapy-compliance").then((m) => ({
     default: m.AdminTherapyCompliancePage,
@@ -853,6 +858,10 @@ function AdminConsole() {
             <Route
               path="/admin/billing/collections-forecast"
               component={AdminBillingCollectionsForecastPage}
+            />
+            <Route
+              path="/admin/billing/disputes"
+              component={AdminBillingDisputesPage}
             />
             <Route
               path="/admin/billing/cmn"

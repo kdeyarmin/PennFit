@@ -18,6 +18,8 @@ import {
 import {
   installSupabaseMock,
   stageSupabaseResponse,
+  stageSupabaseRpcResponse,
+  getSupabaseRpcArgs,
 } from "../../test-helpers/supabase-mock";
 
 const supabaseMock = installSupabaseMock();
@@ -175,6 +177,129 @@ describe("GET /admin/analytics/resupply-funnel.csv", () => {
     expect(csv).toContain("fulfilled,3,funnel");
     expect(csv).toContain("declined,1,drop_out");
     expect(csv).toMatch(/total,6,summary/);
+  });
+});
+
+describe("GET /admin/analytics/resupply-kpis", () => {
+  it("401s without a session", async () => {
+    mockAdmin.current = null;
+    const res = await request(makeApp()).get("/admin/analytics/resupply-kpis");
+    expect(res.status).toBe(401);
+  });
+
+  it("rolls up episodes + the window-aggregates RPC into the KPI shape", async () => {
+    mockAdmin.current = SUPERVISOR;
+    // 4 episodes: confirmed(1) + fulfilled(2) = 3 confirmed orders, 2
+    // fulfilled; distinct patients p1/p2/p3 = 3.
+    stageSupabaseResponse("episodes", "select", {
+      data: [
+        { status: "confirmed", patient_id: "p1" },
+        { status: "fulfilled", patient_id: "p1" },
+        { status: "fulfilled", patient_id: "p2" },
+        { status: "outreach_pending", patient_id: "p3" },
+      ],
+    });
+    // Active-patient COUNT (head select) — stays exact.
+    stageSupabaseResponse("patients", "select", { data: [], count: 10 });
+    // The four formerly-capped aggregations, now one RPC row.
+    stageSupabaseRpcResponse("resupply_kpi_window_aggregates", {
+      data: [
+        {
+          outreach_count: 8,
+          responded_count: 6,
+          fulfillment_line_items: 12,
+          orders_with_fulfillments: 4,
+          paid_order_count: 4,
+          paid_order_sum_cents: 40000,
+        },
+      ],
+    });
+
+    const res = await request(makeApp()).get(
+      "/admin/analytics/resupply-kpis?days=30",
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.windowDays).toBe(30);
+
+    // Episode-derived (unchanged path).
+    expect(res.body.totalEpisodes).toBe(4);
+    expect(res.body.confirmedOrders).toBe(3);
+    expect(res.body.fulfilledOrders).toBe(2);
+    expect(res.body.uniquePatientsServed).toBe(3);
+    expect(res.body.confirmationRate).toBe(0.75); // 3/4
+    expect(res.body.fulfillmentRate).toBe(0.6667); // round4(2/3)
+    expect(res.body.activePatientCount).toBe(10);
+    expect(res.body.ordersPerActivePatientAnnualized).toBe(3.65); // (3/10)*(365/30)
+
+    // RPC-fed fields.
+    expect(res.body.outreachCount).toBe(8);
+    expect(res.body.respondedCount).toBe(6);
+    expect(res.body.connectionRate).toBe(0.75); // 6/8
+    expect(res.body.fulfillmentLineItems).toBe(12);
+    expect(res.body.ordersWithFulfillments).toBe(4);
+    expect(res.body.itemsPerOrder).toBe(3); // 12/4
+    expect(res.body.paidOrderCount).toBe(4);
+    expect(res.body.averageOrderValueCents).toBe(10000); // round(40000/4)
+
+    // RPC is org-scoped + window-scoped.
+    const args = getSupabaseRpcArgs("resupply_kpi_window_aggregates")[0] as {
+      p_org_id?: unknown;
+      p_cutoff?: unknown;
+    };
+    expect(args.p_org_id).toBeDefined();
+    expect(typeof args.p_cutoff).toBe("string");
+  });
+
+  it("coerces bigint columns returned as strings", async () => {
+    mockAdmin.current = SUPERVISOR;
+    stageSupabaseResponse("episodes", "select", { data: [] });
+    stageSupabaseResponse("patients", "select", { data: [], count: 0 });
+    stageSupabaseRpcResponse("resupply_kpi_window_aggregates", {
+      data: [
+        {
+          outreach_count: "8",
+          responded_count: "6",
+          fulfillment_line_items: "12",
+          orders_with_fulfillments: "4",
+          paid_order_count: "4",
+          paid_order_sum_cents: "40000",
+        },
+      ],
+    });
+    const res = await request(makeApp()).get(
+      "/admin/analytics/resupply-kpis?days=30",
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.connectionRate).toBe(0.75);
+    expect(res.body.itemsPerOrder).toBe(3);
+    expect(res.body.averageOrderValueCents).toBe(10000);
+  });
+
+  it("returns nulls cleanly when the RPC reports an empty window", async () => {
+    mockAdmin.current = SUPERVISOR;
+    stageSupabaseResponse("episodes", "select", { data: [] });
+    stageSupabaseResponse("patients", "select", { data: [], count: 0 });
+    stageSupabaseRpcResponse("resupply_kpi_window_aggregates", {
+      data: [
+        {
+          outreach_count: 0,
+          responded_count: 0,
+          fulfillment_line_items: 0,
+          orders_with_fulfillments: 0,
+          paid_order_count: 0,
+          paid_order_sum_cents: 0,
+        },
+      ],
+    });
+    const res = await request(makeApp()).get(
+      "/admin/analytics/resupply-kpis?days=30",
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.totalEpisodes).toBe(0);
+    expect(res.body.confirmationRate).toBeNull();
+    expect(res.body.connectionRate).toBeNull();
+    expect(res.body.itemsPerOrder).toBeNull();
+    expect(res.body.averageOrderValueCents).toBeNull();
   });
 });
 

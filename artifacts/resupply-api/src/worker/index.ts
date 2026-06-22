@@ -57,6 +57,7 @@ import { registerXpsResolveStagedJob } from "./jobs/xps-resolve-staged.js";
 import { registerPhoneLineTypeBackfillJob } from "./jobs/phone-line-type-backfill.js";
 import { registerEligibilityReverifyBatchJob } from "./jobs/eligibility-reverify-batch.js";
 import { registerAutoSubmitBatchJob } from "./jobs/auto-submit-batch.js";
+import { registerPriorAuthAutoSubmitJob } from "./jobs/prior-auth-auto-submit.js";
 import { registerBillHoldSweepJob } from "./jobs/bill-hold-sweep.js";
 import { registerInventoryReservationSweepJob } from "./jobs/inventory-reservation-sweep.js";
 import { registerClinicalOutreachBatchJob } from "./jobs/clinical-outreach-batch.js";
@@ -711,6 +712,18 @@ async function doStartWorker(): Promise<void> {
   // emits outbound 837P claim files).
   await safeRegister("registerAutoSubmitBatchJob", registrationFailures, () =>
     registerAutoSubmitBatchJob(boss),
+  );
+
+  // Prior-auth auto-submit (0433). Front-loads draft Da Vinci PAS prior auths
+  // through the same submit core the manual button uses. Queue + worker always
+  // register; the recurring schedule attaches only when PRIOR_AUTH_AUTOSUBMIT_CRON
+  // is set, and even then transmits nothing until the
+  // billing.auto_submit_prior_auths feature flag is flipped ON (opt-in — it
+  // sends PHI to a real payer PAS endpoint).
+  await safeRegister(
+    "registerPriorAuthAutoSubmitJob",
+    registrationFailures,
+    () => registerPriorAuthAutoSubmitJob(boss),
   );
 
   // Bill-hold sweep (0253). Backfills the default signed-paperwork

@@ -7,7 +7,7 @@
 // Everything renders inside a `.provider-portal` namespace wrapper.
 
 import type { ButtonHTMLAttributes, ReactNode } from "react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { LogOut, ShieldCheck } from "lucide-react";
 
 import { providerAuthHooks } from "@/lib/provider/provider-auth";
@@ -88,6 +88,46 @@ export function ErrorNote({ children }: { children: ReactNode }) {
   );
 }
 
+/** Top-level provider navigation: Documents (e-sign queue) and My
+ *  patients (RTM dashboard). Highlights the active section. */
+function ProviderNav() {
+  const [location] = useLocation();
+  const tabs: { href: string; label: string; active: boolean }[] = [
+    {
+      href: "/provider",
+      label: "Documents",
+      active:
+        location === "/provider" ||
+        location === "/" ||
+        location.startsWith("/provider/sign"),
+    },
+    {
+      href: "/provider/patients",
+      label: "My patients",
+      active: location.startsWith("/provider/patients"),
+    },
+  ];
+  return (
+    <nav className="border-b border-slate-200 bg-white">
+      <div className="mx-auto flex max-w-4xl items-center gap-1 px-4">
+        {tabs.map((t) => (
+          <Link
+            key={t.href}
+            href={t.href}
+            className={`-mb-px border-b-2 px-3 py-3 text-sm font-medium transition-colors ${
+              t.active
+                ? "border-blue-700 text-blue-700"
+                : "border-transparent text-slate-500 hover:text-slate-800"
+            }`}
+          >
+            {t.label}
+          </Link>
+        ))}
+      </div>
+    </nav>
+  );
+}
+
 /** Authenticated-page chrome: header with brand, provider name, sign-out. */
 export function ProviderShell({
   providerName,
@@ -137,6 +177,7 @@ export function ProviderShell({
           </div>
         </div>
       </header>
+      <ProviderNav />
       <main className="mx-auto max-w-4xl px-4 py-8">{children}</main>
     </div>
   );
