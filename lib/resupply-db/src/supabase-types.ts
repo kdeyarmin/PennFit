@@ -116,6 +116,9 @@ export interface Database {
       orders: {
         Row: {
           id: string;
+          // Tenant scope (migration 0463). Nullable: every write path stamps
+          // it, but it was backfilled additively on a populated table.
+          org_id: string | null;
           order_reference: string;
           patient_first_name: string;
           patient_last_name: string;
@@ -6207,9 +6210,11 @@ export interface Database {
     };
     Views: {
       // Mig 0155 — per-touch aggregate metrics for the admin
-      // reporting surface.
+      // reporting surface. Tenant-scoped per (org_id, touch_index) by
+      // migration 0382.
       fitter_campaign_touch_metrics: {
         Row: {
+          org_id: string | null;
           touch_index: number;
           email_sends: number;
           email_failures: number;
@@ -6220,10 +6225,11 @@ export interface Database {
         };
       };
       // Mig 0157 — same shape but broken out per subject-line
-      // variant. One row per (touch_index, subject_variant_key)
-      // actually-shipped combination.
+      // variant. One row per (org_id, touch_index, subject_variant_key)
+      // actually-shipped combination (tenant-scoped by migration 0464).
       fitter_campaign_touch_variant_metrics: {
         Row: {
+          org_id: string | null;
           touch_index: number;
           subject_variant_key: string;
           email_sends: number;

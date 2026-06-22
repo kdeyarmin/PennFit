@@ -96,6 +96,8 @@ export async function runFitterConversionAttributionForOrg(
     .schema("public")
     .from("orders")
     .select("id, patient_email, patient_first_name, created_at")
+    // Tenant-scoped (migration 0463): only attribute THIS tenant's orders.
+    .eq("org_id", orgId)
     .gte("created_at", sinceIso)
     .not("patient_email", "is", null)
     .order("created_at", { ascending: true })

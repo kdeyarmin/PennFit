@@ -142,6 +142,17 @@ jobs:
           scripts/check-tenant-isolation.sh --self-test
           scripts/check-tenant-isolation.sh
 
+      # Raw-escape-hatch org-scope gate. The tenant-isolation guard above only
+      # inspects getOrgScopedClient() callsites; this one inspects the `.raw()`
+      # escape hatch, failing on any read/write of a guarded tenant-scoped
+      # object (public.orders, the fitter metrics views) that omits its org_id
+      # filter — the class of cross-tenant leak that shipped twice. --self-test
+      # plants an unscoped read in a fixture tree and asserts the catch.
+      - name: Raw org-scope guard
+        run: |
+          scripts/check-raw-org-scope.sh --self-test
+          scripts/check-raw-org-scope.sh
+
       # Fixture-driven negative-test harnesses for the guard scripts:
       # each `--self-test` execs the sibling `*.sh.test`, which builds a
       # synthetic tree, plants known violations, and asserts the checker
