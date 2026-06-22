@@ -75,6 +75,7 @@ import {
 } from "@/lib/admin/platform-analytics-api";
 import {
   fetchFleetBillingSummary,
+  fetchPlatformTenantBilling,
   formatMoney,
 } from "@/lib/admin/platform-billing-api";
 import {
@@ -1991,6 +1992,107 @@ function RecentFlagActivityCard({ tenantId }: { tenantId: string }) {
   );
 }
 
+function billingStatusVariant(
+  status: string,
+): "success" | "info" | "danger" | "muted" | "neutral" {
+  switch (status) {
+    case "active":
+      return "success";
+    case "trialing":
+      return "info";
+    case "past_due":
+    case "unpaid":
+      return "danger";
+    case "canceled":
+    case "cancelled":
+      return "muted";
+    default:
+      return "neutral";
+  }
+}
+
+// The tenant's platform subscription at a glance — plan, status, monthly
+// price, renewal, last invoice, add-on count. Reads the same per-tenant
+// billing the platform Billing console renders (shared query key, so it's
+// cached/deduped). Deep edits stay on /platform/billing.
+function TenantBillingCard({ tenantId }: { tenantId: string }) {
+  const { data, isPending, isError, refetch } = useQuery({
+    queryKey: ["platform-billing", "tenants"],
+    queryFn: fetchPlatformTenantBilling,
+  });
+  const row = data?.tenants.find((t) => t.id === tenantId);
+  const sub = row?.billing.subscription ?? null;
+  const monthly = sub
+    ? (sub.customMonthlyPriceCents ?? sub.plan.monthlyPriceCents)
+    : null;
+  const displayStatus = sub ? (sub.stripeStatus ?? sub.status) : "";
+
+  return (
+    <Card
+      title="Plan & billing"
+      subtitle="What this tenant pays to run on the platform."
+      action={
+        <Link href="/platform/billing">
+          <Button intent="ghost" size="sm">
+            Manage
+          </Button>
+        </Link>
+      }
+    >
+      {isPending ? (
+        <Spinner label="Loading billing…" />
+      ) : isError ? (
+        <EmptyState
+          title="Couldn't load billing."
+          hint="It may not be configured for this fleet yet."
+          action={
+            <Button intent="secondary" size="sm" onClick={() => void refetch()}>
+              Retry
+            </Button>
+          }
+        />
+      ) : !sub ? (
+        <EmptyState
+          title="No subscription."
+          hint="Assign a plan from the Billing console."
+        />
+      ) : (
+        <div className="space-y-4">
+          <div className="flex items-center gap-3 flex-wrap">
+            <span
+              className="text-base font-semibold"
+              style={{ color: "hsl(var(--ink-1))" }}
+            >
+              {sub.plan.name}
+            </span>
+            <Badge variant={billingStatusVariant(displayStatus)}>
+              {displayStatus.replace(/_/g, " ")}
+            </Badge>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <MetaItem label="Monthly">
+              {monthly != null ? `${formatMoney(monthly)}/mo` : "—"}
+            </MetaItem>
+            <MetaItem label="Renews">
+              {sub.currentPeriodEnd
+                ? new Date(sub.currentPeriodEnd).toLocaleDateString()
+                : "—"}
+            </MetaItem>
+            <MetaItem label="Last invoice">
+              {sub.lastInvoiceStatus
+                ? sub.lastInvoiceStatus.replace(/_/g, " ")
+                : "—"}
+            </MetaItem>
+            <MetaItem label="Add-ons">
+              {row?.billing.addons.length ?? 0}
+            </MetaItem>
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 // Per-tenant daily trend sparklines (last 30 days) — the same metrics the
 // fleet dashboard charts, scoped to one tenant. Reuses TrendRow/Sparkline.
 function TenantActivityCard({ tenantId }: { tenantId: string }) {
@@ -2305,6 +2407,8 @@ function TenantDetailPage() {
           </div>
 
           <TenantActivityCard tenantId={tenant.id} />
+
+          <TenantBillingCard tenantId={tenant.id} />
 
           <TenantFeatureFlagsCard tenantId={tenant.id} />
 

@@ -88,4 +88,10 @@ describe("platform console tenant detail + sidebar", () => {
     expect(SRC).toContain("useTenantActivitySeries");
     expect(SRC).toContain("<TenantActivityCard tenantId={tenant.id} />");
   });
+
+  it("shows a per-tenant plan & billing snapshot on the detail page", () => {
+    expect(SRC).toContain("function TenantBillingCard");
+    expect(SRC).toContain("fetchPlatformTenantBilling");
+    expect(SRC).toContain("<TenantBillingCard tenantId={tenant.id} />");
+  });
 });
