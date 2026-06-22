@@ -46,6 +46,9 @@ const PAGES = [
   ["storefront-shop", "/shop"],
   ["storefront-how-it-works", "/how-it-works"],
 
+  // ── Platform sign-up (self-serve tenant onboarding) ────────────────
+  ["platform-signup", "/breathe/signup"],
+
   // ── Administrator (Owner & Admin) ──────────────────────────────────
   ["admin-home", "/admin"],
   ["admin-control-center", "/admin/control-center"],
@@ -54,6 +57,7 @@ const PAGES = [
   ["admin-integrations", "/admin/integrations"],
   ["admin-setup", "/admin/setup"],
   ["admin-reports", "/admin/reports"],
+  ["admin-audit-trail", "/admin/analytics/audit-trail"],
 
   // ── CSR ────────────────────────────────────────────────────────────
   ["csr-conversations", "/admin/conversations"],
@@ -63,6 +67,7 @@ const PAGES = [
   ["csr-bulk-campaigns", "/admin/bulk-campaigns"],
   ["csr-shop-orders", "/admin/pennpaps/orders"],
   ["csr-company-calendar", "/admin/company-calendar"],
+  ["csr-fitter-invites", "/admin/fitter-invites"],
 
   // ── Documents, intake & e-signature ────────────────────────────────
   ["admin-referral-reviewer", "/admin/referral-reviews"],
@@ -76,6 +81,8 @@ const PAGES = [
   ["biller-prior-auths", "/admin/billing/prior-auths"],
   ["biller-era", "/admin/billing/era"],
   ["biller-office-ally", "/admin/billing/office-ally"],
+  ["biller-collections", "/admin/billing/collections"],
+  ["biller-adr", "/admin/billing/adr"],
 
   // ── Respiratory Therapist ──────────────────────────────────────────
   ["rt-overview", "/admin/rt-overview"],
@@ -106,12 +113,16 @@ let ok = 0;
 let failed = 0;
 for (const [name, path] of PAGES) {
   try {
+    // Use "load" (not "networkidle"): worklist/board pages (office-ally, the
+    // RT boards, collections, ADR) hold open polling/SSE connections in demo
+    // mode and never reach network idle, so "networkidle" times out on them.
+    // "load" fires once the document + its lazy route chunk are in, then we
+    // give charts / lazy panels a fixed settle window to paint.
     await page.goto(`${BASE_URL}${path}`, {
-      waitUntil: "networkidle",
+      waitUntil: "load",
       timeout: 45000,
     });
-    // Let charts / lazy panels settle.
-    await page.waitForTimeout(2500);
+    await page.waitForTimeout(3500);
     await page.screenshot({ path: `${OUT}/${name}.png` });
     console.log(`ok   ${name} (${path})`);
     ok += 1;

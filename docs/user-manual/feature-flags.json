@@ -418,5 +418,47 @@
     "category": "Referrals",
     "default": "off",
     "description": "Automatically send a patient's 90-day CPAP adherence attestation (Medicare LCD L33718) to their REFERRING PROVIDER, by fax (preferred) or email, once the patient reaches the 90-day therapy mark. This is a PHI disclosure to the treating/referring provider \u2014 a permitted treatment/care-coordination disclosure that you opt into deliberately. Seeded OFF: turn it on only once you have decided the disclosure is appropriate and your providers' fax/email is set up to receive it. Each patient's 90-day report is sent at most once. When OFF, nothing is sent."
+  },
+  {
+    "key": "billing.adr_queue",
+    "label": "Billing \u2014 ADR / audit-response queue",
+    "category": "Billing",
+    "default": "off",
+    "description": "Medicare ADR / audit-response queue + audit-packet builder. When ON, staff can log payer/contractor Additional Documentation Requests against their response deadline, assemble the requested chart documents + generated summaries into one audit-packet PDF, and record the outcome. A nightly SLA sweep surfaces at-risk/overdue deadlines. When OFF, the queue and builder are hidden and the sweep no-ops."
+  },
+  {
+    "key": "collections.dunning",
+    "label": "Collections \u2014 dunning ladder",
+    "category": "Billing",
+    "default": "off",
+    "description": "Patient A/R dunning ladder. When ON, unpaid patient-responsibility balances escalate on a cadence (statement \u2192 reminder \u2192 second notice \u2192 final notice \u2192 agency), pausing automatically the moment the balance is paid or the patient goes onto a payment plan / autopay. Consent + quiet-hours are always enforced. When OFF, the open-scan and tick jobs no-op."
+  },
+  {
+    "key": "collections.agency_export",
+    "label": "Collections \u2014 agency export",
+    "category": "Billing",
+    "default": "off",
+    "description": "Collections-agency hand-off export. When ON, balances that reach the agency step can be exported (formula-injection-guarded CSV) for a collections agency. Nothing is ever sent to an agency automatically \u2014 the export is a reviewed, deliberate action. When OFF, the agency step simply parks the balance for review."
+  },
+  {
+    "key": "slack.notifications",
+    "label": "Slack \u2014 team notifications",
+    "category": "Integrations",
+    "default": "on",
+    "description": "Post real-time CS alerts (a patient reply needing a human, a voice post-call hand-off, an SLA breach) into the operator's Slack channel. Inert until a Slack bot token + alerts channel are configured in System Configuration. Messages are non-PHI (reference + status + a deep link into the admin console)."
+  },
+  {
+    "key": "slack.interactivity",
+    "label": "Slack \u2014 interactivity",
+    "category": "Integrations",
+    "default": "on",
+    "description": "Accept inbound Slack button clicks (Escalate) and the slash command. Every request is verified against the Slack signing secret; inert until that secret is configured in System Configuration."
+  },
+  {
+    "key": "slack.digests",
+    "label": "Slack \u2014 operator digests",
+    "category": "Integrations",
+    "default": "on",
+    "description": "Also post the operator digests (owner weekly KPIs, metric alerts, stuck-job monitor, low-stock inventory) into Slack. Routes to the optional digests channel, else the alerts channel. Inert until Slack credentials are configured. Non-PHI (counts / KPI headlines / SKU + queue names). The email path is unchanged."
   }
 ]

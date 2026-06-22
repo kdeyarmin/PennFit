@@ -636,14 +636,15 @@ SUMMARY = {
         ("Setup & identity", [
             ("Set Up Your Workspace", "Guided checklist: brand, domain, phone/SMS/fax, email sender, and payments."),
             ("Company Information", "Legal name, addresses, and contacts printed on documents, the storefront, and messages."),
-            ("Storefront Branding", "Storefront name, tagline, logo, and custom-domain wiring."),
+            ("Storefront Branding", "Storefront name, tagline, logo (or a one-click starter monogram), and custom-domain wiring."),
             ("Phone & SMS / Fax / Email", "Provision dedicated voice, SMS, and fax numbers for the practice and set the From email address."),
             ("Locations", "Define service branches (multi-branch practices) and assign them to patients."),
             ("Account Security", "Enroll your own multi-factor authentication (authenticator app)."),
         ]),
         ("Team & control", [
-            ("Team", "Invite staff, set their role (Owner, Admin, CSR, Biller, RT), and revoke access."),
+            ("Team", "Invite staff, set their role (Owner, Admin, CSR, Biller, RT), revoke access, and link each teammate's Slack handle."),
             ("Control Center", "On/off switches for major features — voice agent, campaigns, auto-submit, AI billing, chatbots."),
+            ("Recommended preset", "One-click “set my feature flags to the bundle for my plan” — adopt or re-baseline the recommended set after picking or switching a plan."),
             ("System Configuration", "Owner-only vault for integration credentials and platform secrets."),
             ("Automation Rules / Rule Tester", "“When X happens, do Y” automations, with a dry-run tester before you go live."),
             ("Compliance Rules", "Per-payer CPAP adherence thresholds (minimum hours / nights)."),
@@ -652,12 +653,14 @@ SUMMARY = {
         ("Operations & integrations", [
             ("Operations", "Health of background jobs and pipelines (worker, nightly sync)."),
             ("Integrations", "Therapy-cloud connections (ResMed AirView, Philips Care Orchestrator, 3B React Health) and sync status."),
+            ("Slack notifications", "Post real-time CS alerts and operator digests into your team's Slack channel; act on them with Escalate buttons and a slash command."),
             ("PacWare", "CSV import/export bridge to the PacWare billing/warehouse system."),
             ("Outbound Messages / Delivery Failures", "Every SMS & email with its delivery result; retry or resolve bounces."),
             ("Webhook Deliveries", "Outbound event deliveries to partner endpoints; re-queue failed sends."),
         ]),
         ("Analytics & goals", [
             ("Reports", "Exportable CSV/PDF/QuickBooks reports for ops and finance."),
+            ("Audit Trail", "Who accessed which patient's information, and when — filter by employee, patient, and time frame (admins only)."),
             ("Financial analytics", "Margin & COGS, LTV:CAC, inventory turnover, revenue by source, outreach attribution."),
             ("Performance & Goals", "Team throughput, live staffing load, KPI targets, and threshold alerts."),
             ("Clinical & customer analytics", "Resupply funnel, reorder reminders, NPS, and storefront traffic."),
@@ -688,7 +691,10 @@ SUMMARY = {
             ("Filing Deadlines", "Open claims ranked by days left before timely-filing closes."),
             ("Secondary Claims", "Coordination of benefits — roll the primary's balance to the secondary payer."),
             ("Statement Send", "Send patient-responsibility statements by email/SMS, consent-aware."),
+            ("Collections", "Patient balances on a dunning ladder (statement → reminder → notices → agency) that auto-pauses the moment a balance is paid or on a plan."),
             ("Capped Rentals", "13- and 36-month CMS rental cycle tracker with KH/KI/KX modifier rotation."),
+            ("ADR / Audit Response", "Payer/contractor documentation requests ranked by deadline, with a checklist and win-rate outcomes."),
+            ("Audit Packet", "Assemble a complete CPAP/PAP documentation packet (SWO, CMN, sleep study, compliance, POD…) as one PDF."),
         ]),
         ("Tools & configuration", [
             ("ERA Files", "Upload an 835 to auto-post payer adjudications."),
@@ -770,14 +776,15 @@ DETAIL = {
         ("Setup & practice identity", "Everything that makes the platform “yours.” Most of this lives under System → Settings.", [
             ("Set Up Your Workspace", "A guided checklist that walks a new practice through the core steps: brand and logo, custom domain, phone/SMS/fax numbers, the email From address, and payment processing. The Home dashboard shows a “finish setting up” banner until the essentials are done."),
             ("Company Information", "Your legal practice name, addresses, NPI/tax identifiers, and contacts. These values are merged onto documents (CMNs, statements), the storefront, and outbound messages, so keep them accurate."),
-            ("Storefront Branding", "The patient-facing storefront's name, tagline, logo, and theme, plus custom-domain wiring (e.g. a tenant domain that routes only to your storefront)."),
-            ("Phone & SMS, Fax, Email From Address", "Dedicated voice, SMS, and fax numbers are <b>provisioned for you through the platform's telephony carrier (Twilio/Telnyx) once you opt into the phone/SMS add-on and your subscription payment is processed</b> — you don't bring or port your own line, and there's no separate carrier account to manage. After provisioning, patient-facing voice, texts, and faxes all originate from your practice's dedicated number; until then the platform default is used. Email uses a verified From address; deliverability requires your sending domain to be SPF/DKIM-authenticated, and that status is shown here."),
+            ("Storefront Branding", "The patient-facing storefront's name, tagline, logo, and theme, plus custom-domain wiring (e.g. a tenant domain that routes only to your storefront). No logo yet? One click generates a <b>starter monogram</b> tile from your storefront name (entirely in the browser) so the storefront never shows a blank logo while you source artwork."),
+            ("Phone & SMS, Fax, Email From Address", "Messaging works from day one: until you provision your own number, patient texts, calls, and faxes go out on a <b>shared platform number</b>, and an inbound reply is routed back to the tenant that owns the patient — so two-way texting works across tenants before anyone has their own line. When you want messages to originate from <b>your practice's own number</b>, dedicated voice, SMS, and fax numbers are <b>provisioned for you through the platform's telephony carrier (Twilio/Telnyx)</b> — you don't bring or port your own line, and there's no separate carrier account to manage. Email uses the platform default From address until you set your own; deliverability then requires your sending domain to be SPF/DKIM-authenticated, and that status is shown here."),
             ("Locations", "For multi-branch practices: define each service branch and assign patients to them. Appears only when multi-location is enabled in Control Center."),
             ("Account Security", "Enroll and manage your own multi-factor authentication (authenticator-app TOTP). Strongly recommended for every admin."),
         ]),
         ("Team & platform control", "Owner-tier governance. Some items are restricted to the Owner role.", [
-            ("Team", "Invite staff by email, assign a role — Owner, Admin, Customer Service Rep, Biller, or Respiratory Therapist — and manage access (resend invite, revoke, delete, change role). Invitees receive a sign-up link and must accept before they can log in. The last active Owner cannot be demoted (a safety lock). Owner-only."),
+            ("Team", "Invite staff by email, assign a role — Owner, Admin, Customer Service Rep, Biller, or Respiratory Therapist — and manage access (resend invite, revoke, delete, change role). Invitees receive a sign-up link and must accept before they can log in. The last active Owner cannot be demoted (a safety lock). You can also link each teammate's <b>Slack handle</b> here, so Slack escalations and slash-command actions are attributed to the right person. Owner-only."),
             ("Control Center", "The master on/off panel for major features: the voice agent, SMS/email campaigns, claim auto-submit, AI billing, the storefront chatbot, the admin assistant, multi-location, and more. Toggles take effect immediately."),
+            ("Recommended preset", "A one-click card in the Control Center that sets your feature flags to the recommended bundle for your billing plan (Virtual Mask Fitter, Launch, Growth, Scale, or Enterprise). New tenants already land on their plan's preset at onboarding; this lets an existing tenant adopt — or re-baseline to — the recommended set after picking or switching a plan, instead of toggling dozens of flags by hand. It previews the changes first, and you can still fine-tune any individual flag afterward."),
             ("System Configuration", "The Owner-only vault for integration credentials (therapy-cloud, clearinghouse) and platform secrets. Restricted to the Owner role so secrets can never be viewed or entered by a lower role."),
             ("Automation Rules & Rule Tester", "Build “when X, do Y” automations — for example, when an inbound message matches a phrase, send a reply or raise a flag. The Rule Tester dry-runs a rule against sample input before you enable it in production."),
             ("Compliance Rules", "Set per-payer CPAP adherence thresholds (minimum hours per night, minimum nights) that the therapy-monitoring boards measure patients against."),
@@ -786,12 +793,14 @@ DETAIL = {
         ("Operations & integrations", "Keep the plumbing healthy and the partner connections flowing.", [
             ("Operations", "The health board for background jobs and pipelines — the in-process worker, the nightly therapy sync, reminder dispatch. Shows what ran, what's queued, and what failed."),
             ("Integrations", "Connect and monitor therapy-cloud vendors (ResMed AirView, Philips Care Orchestrator, 3B Medical React Health). Shows availability and nightly-sync status; credentials are entered under System Configuration."),
+            ("Slack team notifications", "Bring the work into your team's Slack. With a Slack bot token + channel set in System Configuration, the platform posts real-time CS alerts — a patient reply that needs a human, a voice post-call hand-off, an SLA breach — plus the operator digests (owner weekly KPIs, metric alerts, stuck-job monitor, low-stock inventory) into your channel. Staff can act right from Slack: an <b>Escalate</b> button and a slash command, every inbound request verified against your Slack signing secret. Messages are deliberately <b>non-PHI</b> — a reference, a status, and a deep link back into the admin console — never message bodies, phone numbers, or clinical detail. Three Control Center toggles govern it (<font name=\"Courier\" size=\"8\">slack.notifications</font>, <font name=\"Courier\" size=\"8\">slack.interactivity</font>, <font name=\"Courier\" size=\"8\">slack.digests</font>); all are inert until the Slack credentials are entered."),
             ("PacWare", "A CSV import/export bridge to the PacWare desktop billing/warehouse system (which has no API). Import fills only blank fields on existing patients (never overwrites); exports (patient roster, resupply-due worklist) include a verify step and formula-injection guards."),
             ("Outbound Messages & Delivery Failures", "Every outbound SMS and email with its delivery result (sent/delivered/failed/bounced). Delivery Failures collects bounces and shipping exceptions to retry or resolve."),
             ("Webhook Deliveries", "Outbound event deliveries to partner endpoints, with the ability to re-queue failed or exhausted sends and test-send events."),
         ]),
         ("Analytics, reports & goals", "The numbers that run the business. Most are finance-gated.", [
             ("Reports", "A catalog of exportable reports (CSV/PDF/QuickBooks) — revenue summary, orders, refunds journal, patient payments, insurance claims, customer activity, and more."),
+            ("Patient-Access Audit Trail", "An admins-only report of who accessed which patient's information, and when. Filter by employee, by patient, and by time frame to answer a “who looked at this chart?” question. It is kept out of the CSR and clinician sidebars (it requires the audit-read permission) and the page itself enforces full-admin access."),
             ("Financial analytics", "Captured-cost economics: gross Margin & COGS by product, LTV:CAC by channel, inventory turnover and stockout demand, revenue by source, and outreach attribution."),
             ("Performance & Goals", "Operational management: per-agent Team Throughput, real-time Live Staffing load, KPI Goals & Targets with pace-to-goal, and KPI Alerts that fire when a metric crosses a threshold."),
             ("Clinical & customer analytics", "Resupply funnel and reorder-reminder conversion, post-delivery NPS with comments, and storefront traffic & revenue."),
@@ -832,7 +841,10 @@ DETAIL = {
             ("Filing Deadlines", "Open claims ranked by days remaining before the payer's timely-filing window closes, so you never lose a claim to the clock."),
             ("Secondary Claims", "Coordination of benefits: roll the primary payer's leftover balance onto the secondary payer's claim."),
             ("Statement Send", "Send patient-responsibility statements by email or SMS. Consent- and quiet-hours-aware so you stay compliant."),
+            ("Collections", "Patient balances that have gone unpaid move automatically up a dunning ladder — statement (day 0) → reminder (day 7) → second notice (day 21) → final notice (day 35) → collection agency (day 60). The ladder <b>auto-pauses the instant a balance is paid or put on a payment plan</b>, so you never dun a patient who has already settled up. Batch-print the final-notice letters as one PDF, and export the agency-eligible accounts when you place them with a collections partner. (The dunning ladder is gated behind the <b>collections.dunning</b> flag and agency export behind <b>collections.agency_export</b> in the Control Center.)"),
             ("Capped Rentals", "Track CMS 13- and 36-month capped-rental cycles and rotate the KH/KI/KX modifiers automatically as each cycle advances."),
+            ("ADR / Audit Response", "When a payer or contractor sends an Additional Documentation Request, every open ADR lands here ranked by response deadline, with a per-request checklist of what to gather and a record of the win/loss outcome so you can see how the practice fares on audits. Gated behind the <b>billing.adr_queue</b> flag."),
+            ("Audit Packet", "Assemble a complete, audit-ready CPAP/PAP documentation packet — the Standard Written Order, CMN, sleep study, compliance summary, proof of delivery, and supporting notes — into a single PDF you can send to the payer in one click, instead of hunting the chart for each page."),
         ]),
         ("Tools & configuration", "The clearinghouse, payment posting, manual entry, and the payer rules behind it all.", [
             ("ERA Files", "Upload an 835 remittance and the system auto-posts the payer's adjudications against the matching claims, flagging denials for the worklist."),
@@ -931,6 +943,14 @@ DETAIL = {
 # role_id -> list of (task_title, intro, [steps], optional_tip)
 JOB_AIDES = {
     "administrator": [
+        ("Create your CareMetric Breathe workspace (self-serve sign-up)",
+         "How a brand-new practice gets its own workspace and first Owner login.",
+         ["Go to the public site <b>/breathe</b> and choose <b>Create your account</b> (<b>/breathe/signup</b>).",
+          "Enter your <b>company name</b>, a <b>work email</b>, a <b>password</b> (at least 12 characters), and pick a <b>plan</b> (Virtual Mask Fitter, Launch, Growth, or Scale — Enterprise routes to sales).",
+          "Submit. We provision your organization, copy in your plan's feature-flag bundle, and create your first <b>Owner</b> login.",
+          "Open the <b>verification email</b> we send and click the link to activate the account (sign-in is blocked until it's verified).",
+          "Sign in at <b>/admin/sign-in</b>, confirm payment, then work the setup checklist below."],
+         "Only the first Owner self-signs-up; every teammate after that is invited from the Team page. (Operators can also pre-provision a workspace from the command line.)"),
         ("Sign in and turn on multi-factor authentication",
          "Do this first — every admin account should have MFA.",
          ["Go to <b>/admin/sign-in</b> and sign in with your email and password.",
@@ -969,6 +989,14 @@ JOB_AIDES = {
           "Trigger a sync (or wait for the nightly job) and watch the sync status.",
           "Patient therapy data now flows into the RT Overview and Therapy Fleet boards."],
          "If an integration shows <i>unavailable</i>, a credential is missing — re-check System Configuration; the badge never reveals which secret is unset."),
+        ("Send team alerts to Slack",
+         "Bring real-time CS alerts and operator digests into your team's Slack.",
+         ["In Slack, create an app/bot and note its <b>bot token</b>, <b>signing secret</b>, and the <b>channel</b> for alerts.",
+          "Open <b>System → Setup &amp; Advanced → System Configuration</b> (Owner only) and enter those values.",
+          "In the <b>Control Center</b>, confirm <font name=\"Courier\" size=\"8\">slack.notifications</font>, <font name=\"Courier\" size=\"8\">slack.interactivity</font>, and <font name=\"Courier\" size=\"8\">slack.digests</font> are on (they ship on but stay inert until the credentials exist).",
+          "On the <b>Team</b> page, link each teammate's Slack handle so Escalate actions are attributed correctly.",
+          "Post a test event and confirm the alert (with its Escalate button and deep link) lands in your channel."],
+         "Slack messages are deliberately non-PHI — a reference, a status, and a link back into the console — never message bodies, phone numbers, or clinical detail."),
         ("Check that the plumbing is healthy",
          "A two-minute daily glance at jobs and message delivery.",
          ["Open <b>System → Operations</b> and confirm the background worker and nightly sync ran without errors.",
@@ -1010,6 +1038,12 @@ JOB_AIDES = {
           "Set the date range (up to 90 days).",
           "Export as CSV, PDF, or QuickBooks (Desktop .iif or Online .qbo.csv)."],
          "Patient payments and insurance claims are kept separate so cash isn't double-counted across the two."),
+        ("See who accessed a patient's record",
+         "Answer a “who looked at this chart?” question.",
+         ["Open <b>Analytics &amp; Reports → Audit Trail</b> (admins only).",
+          "Filter by employee, by patient, and by time frame to narrow the access events.",
+          "Read the list of who accessed which patient's information, and when."],
+         "The Audit Trail is kept out of the CSR and clinician sidebars; only full admins can open it."),
         ("Invite a provider to the e-sign portal",
          "End the fax-and-chase cycle with a referring physician.",
          ["Confirm the provider exists under <b>Patients &amp; Clinical → Providers &amp; Recalls → Providers</b> (add them by NPI; NPPES verifies).",
@@ -1118,6 +1152,20 @@ JOB_AIDES = {
           "Mark the requirement satisfied — or it clears itself when the patient e-signs, you upload the doc, or an inbound fax auto-matches it.",
           "The hold lifts automatically when the last requirement is met; the claim joins the next batch."],
          None),
+        ("Work the patient collections ladder",
+         "Escalate unpaid balances without dunning anyone who has already paid.",
+         ["Open <b>Billing → A/R &amp; collections → Collections</b>.",
+          "Each unpaid balance sits on a dunning rung — statement → reminder → second notice → final notice → agency — and advances on its cadence automatically.",
+          "Batch-print the final-notice letters as one PDF for the accounts that have reached that rung.",
+          "For accounts that reach the agency step, export the agency-eligible list (a reviewed, deliberate action) to place with your collections partner."],
+         "The ladder pauses the instant a balance is paid or the patient goes on a payment plan, so settled patients are never dunned. Requires the collections.dunning flag (and collections.agency_export for the hand-off) — an Owner enables them in the Control Center."),
+        ("Respond to a Medicare ADR (audit request)",
+         "Answer an Additional Documentation Request before its deadline.",
+         ["Open <b>Billing → A/R &amp; collections → ADR / Audit Response</b> — open requests are ranked by response deadline.",
+          "Open the request and work its checklist of the documents the payer/contractor wants.",
+          "Use <b>Build audit packet</b> to assemble the SWO, CMN, sleep study, compliance summary, proof of delivery, and notes into one PDF, then submit it.",
+          "Record the outcome (won/lost) so your audit win-rate is tracked."],
+         "Requires the billing.adr_queue flag (an Owner enables it in the Control Center); a nightly sweep surfaces at-risk and overdue deadlines."),
     ],
     "csr": [
         ("Handle an inbound message",
@@ -1347,24 +1395,26 @@ GLOSSARY = [
 # Things that must be set up before going live. (group, [(item, why)])
 PREREQS = [
     ("Accounts & access", [
-        ("Bootstrap the first Owner", "Before anyone can sign in, an Owner account must exist. It is created once from the command line (auth:bootstrap-admin), which emails a password-reset link. Every later teammate is invited from the Team page."),
+        ("Create your workspace", "Sign up at the public site (/breathe → Create your account): enter your company name, work email, a password (12+ characters), and a plan. That provisions your organization and your first Owner login; verify the emailed link, then sign in at /admin/sign-in. (Operators can also pre-provision a workspace from the command line, but self-serve sign-up is the normal path.)"),
         ("Enroll multi-factor authentication", "Each admin should add an authenticator app under System → Account Security before handling patient data."),
         ("Invite your team", "Add staff on the Team page and give each the right role — Owner, Admin, CSR, Biller, or Respiratory Therapist — so they see only what they need."),
+        ("Apply your plan's recommended preset", "In the Control Center, one click sets your feature flags to the recommended bundle for your plan. New tenants already start on it; re-apply it after switching plans, then fine-tune individual flags."),
     ]),
     ("Brand & identity", [
         ("Company information", "Enter your legal name, addresses, and identifiers — they print on documents, statements, and the storefront."),
-        ("Storefront branding", "Set the storefront name, tagline, logo, and theme."),
+        ("Storefront branding", "Set the storefront name, tagline, logo, and theme. No logo yet? Generate a one-click starter monogram from your storefront name so nothing shows blank while you source artwork."),
         ("Custom domain", "Point your domain at the platform so patients see your brand (the platform fronts custom domains through Cloudflare)."),
     ]),
     ("Communication channels", [
-        ("Phone & SMS numbers", "Opt into the phone/SMS add-on; once your subscription payment clears, dedicated voice and SMS numbers are provisioned for you through the platform's carrier (Twilio/Telnyx) — you don't supply or port your own line. Required for the voice agent and SMS reminders."),
-        ("Fax number", "A fax number is provisioned the same way for inbound referrals and outbound signed paperwork."),
-        ("Email From address", "Set your sending address AND authenticate the sending domain (SPF/DKIM) in the email provider — an unauthenticated address still sends but lands in spam."),
+        ("Phone & SMS numbers", "You can start messaging immediately: until you provision your own number, texts and calls go out on a shared platform number, and a patient's reply is routed back to the tenant that owns them. Provision your own dedicated voice and SMS numbers (through the platform's carrier, Twilio/Telnyx — you don't supply or port a line) when you want messages to come from your own number, typically as volume grows. Set this under Phone & SMS."),
+        ("Fax number", "Faxes work on the shared platform number too; provision your own for inbound referrals and outbound signed paperwork when you're ready."),
+        ("Email From address", "The platform default sender works out of the box; to send from your own address, set it AND authenticate the sending domain (SPF/DKIM) in the email provider — an unauthenticated address still sends but lands in spam."),
     ]),
     ("Money & integrations", [
-        ("Payments (Stripe)", "Connect payment processing so the storefront and patient statements can collect."),
+        ("Payments (Stripe)", "Connect payment processing so the storefront and patient statements can collect; you confirm your subscription payment as you finish setup."),
         ("Clearinghouse & billing config", "Enter Office Ally (and, if used, Da Vinci PAS) credentials under System Configuration, then set up payer profiles and fee schedules under Billing → Config before submitting claims."),
         ("Therapy-cloud integrations", "Add ResMed AirView / Philips Care Orchestrator / 3B React Health credentials so adherence data flows into the RT boards."),
+        ("Slack (optional)", "To bring alerts and digests into Slack, add a Slack bot token + channel under System Configuration and link each teammate's Slack handle on the Team page; the Slack toggles ship on but stay inert until the credentials are set."),
     ]),
 ]
 
@@ -1407,11 +1457,12 @@ DIFFERENTIATORS_INTRO = (
 )
 DIFFERENTIATORS = [
     ("AI mask fitting, no appointment",
-     "A patient's phone camera measures their face right in the browser and "
-     "scores every available mask for fit. Images never leave the device — "
-     "only numeric measurements are sent — and none of the leading DME "
-     "platforms offer anything like it. Fewer fitting appointments, fewer "
-     "wrong-size exchanges."),
+     "Staff send a patient an invite link by text or email; the patient's "
+     "phone camera measures their face right in the browser and scores every "
+     "available mask for fit. Images never leave the device — only numeric "
+     "measurements are sent — and none of the leading DME platforms offer "
+     "anything like it. The completed fitting attaches itself to the right "
+     "chart. Fewer fitting appointments, fewer wrong-size exchanges."),
     ("A voice agent that takes reorders",
      "Patients call and a natural AI voice confirms identity, takes the "
      "resupply order, and writes a structured summary with sentiment and "
@@ -1451,7 +1502,7 @@ PLATFORM_FOUNDATIONS_INTRO = (
 )
 PLATFORM_FOUNDATIONS = [
     ("Patient storefront & portal", "A full e-commerce storefront with Stripe checkout, subscriptions, order tracking, returns, document access, insurance details, and caregiver access — backed by a self-service patient account portal."),
-    ("AI mask fitter", "Camera-based facial measurement in the patient's browser scores every available mask for fit. Images never leave the device — only numeric measurements are transmitted."),
+    ("AI mask fitter", "Camera-based facial measurement in the patient's browser scores every available mask for fit. Images never leave the device — only numeric measurements are transmitted. The fitter is <b>invitation-only</b>: staff send a signed invite link by SMS or email from <b>Orders &amp; Shop → Fitter Invites</b>, and the completed fitting attaches back to the patient's chart."),
     ("Resupply reminder engine", "Automated SMS and email reminders with signed one-tap confirm/decline links, quiet-hours awareness, and unsubscribe handling."),
     ("AI voice agent", "A natural-voice phone agent that takes reorders, runs reminder and check-in calls, hands off to staff on request, and writes a structured summary of every call."),
     ("Chatbot & sleep coach", "Patient-facing AI chat for shopping help and therapy coaching, with optional high-confidence email auto-reply; anything uncertain hands off to staff."),
@@ -1470,7 +1521,7 @@ STOREFRONT_INTRO = (
     "from one tool into another. Here's the whole journey, end to end."
 )
 STOREFRONT_JOURNEY = [
-    ("1 · AI mask fitting, no appointment", "A new patient lands on the storefront and starts the fitter: they consent, the phone or laptop camera measures their face right in the browser, they answer a short comfort questionnaire (mouth-breather, side-sleeper, facial hair, glasses…), and the AI ranks the masks that fit best — each with an add-to-cart button. The camera images never leave the device; only numeric measurements are used. No appointment, no guesswork, far fewer wrong-size exchanges."),
+    ("1 · AI mask fitting, by invitation", "The mask fitter is <b>invitation-only</b>: a staff member sends the patient a signed link by text or email from <b>Orders &amp; Shop → Fitter Invites</b> (the public storefront's “get fitted” button routes to an invitation-required explainer, not the fitter). The patient opens the link, consents, the phone or laptop camera measures their face right in the browser, they answer a short comfort questionnaire (mouth-breather, side-sleeper, facial hair, glasses…), and the AI ranks the masks that fit best — each with an add-to-cart button. The camera images never leave the device; only numeric measurements are used. The completed fitting attaches itself to the matching chart (or waits in a holding area for staff to attach). No appointment, no guesswork, far fewer wrong-size exchanges."),
     ("2 · Shop and buy in minutes", "From the catalog the patient browses masks, cushions, tubing, filters, and bundles — with reviews, machine compatibility, and search — adds to the cart, and checks out through secure Stripe-hosted payment (card data never touches the platform). They can buy once, or choose <b>Subscribe &amp; Save</b> so supplies auto-ship on a cadence, or pick <b>in-store pickup</b> where it's offered."),
     ("3 · Or bill it to insurance", "Patients who'd rather use their benefits request insurance billing instead of paying cash. That drops a benefit-verification request into a CSR worklist, where staff run a real-time <b>270/271 eligibility</b> check, confirm what's covered and the patient's share, and — when coverage is good — create the order and send a signed payment link for the patient to e-sign and pay any balance. Coverage is confirmed <i>before</i> anything ships, so claims don't bounce later."),
     ("4 · Pick, pack, and a label in a click", "Paid, unshipped orders queue up in the Shipping console with the patient's address already filled in. Staff rate-shop USPS, UPS, and FedEx, create and print the carrier label, and the tracking number is written back onto the order and emailed to the patient automatically — or they can key in a tracking number by hand. Counter and walk-in orders print a receipt and label the same way."),
@@ -1811,12 +1862,21 @@ PAYERS_NOTE = (
 
 # ── FAQ (by domain) ──────────────────────────────────────────────────
 FAQ = [
+    ("Getting started & signing up", [
+        ("How does a new practice sign up?", "Go to the public CareMetric Breathe site (/breathe) and choose Create your account. Enter your company name, work email, a 12-character password, and a plan; that provisions your workspace and your first Owner login. Verify the emailed link, then sign in at /admin/sign-in and finish setup."),
+        ("Do my staff each sign up too?", "No — only the practice's first Owner self-signs-up. Everyone else is invited from the Team page and sets their own password from the invite link. Public self-signup is for shoppers (storefront accounts) and new tenants, not staff."),
+        ("Why didn't I get an error when I mistyped my email?", "For security the sign-up and sign-in pages never reveal whether an address is on file — they always say “check your email.” If nothing arrives, re-check the address and try again. (Inline checks still catch an obviously malformed email or a password that's too short before you submit.)"),
+        ("Can I start texting patients before I have my own phone number?", "Yes — until you provision your own number, texts and calls go out on a shared platform number and a patient's reply routes back to you automatically. Provision your own dedicated number under Phone & SMS when you want messages to come from your own line."),
+        ("I don't have a logo yet — what shows on my storefront?", "Generate a one-click starter monogram from your storefront name under Storefront Branding; it's created in your browser so nothing shows blank while you source real artwork. A brand-new, unconfigured tenant otherwise shows neutral CareMetric branding, never another tenant's brand."),
+        ("What's the fastest way to turn on the right features for my plan?", "The Control Center has a one-click “Apply recommended preset” that sets your feature flags to the bundle for your billing plan. New tenants already start on it; re-apply it after changing plans, then fine-tune any individual flag."),
+    ]),
     ("Customer care", [
         ("Where do patient messages go?", "SMS, MMS, and email — plus AI call summaries — all land in one unified Conversations inbox. CSRs triage, claim a thread, reply (with canned replies), tag, snooze, and escalate to a Case, so nothing is scattered across separate tools."),
         ("What can the chatbot handle without a person?", "The CareMetric Assistant answers therapy, mask, resupply, and insurance questions 24/7, and for signed-in patients it covers order status, tracking, subscriptions, device info, and returns — handing off to a CSR for anything order-specific, clinical, or actionable."),
         ("How do we make sure a promise to a patient isn't forgotten?", "Use Episodes for dated service promises and Follow-ups for the callback queue; overdue items surface on the Home dashboard."),
         ("Can we run telehealth visits?", "Yes — Video Visits generate a secure join link sent by SMS or email for setups and mask troubleshooting."),
         ("How do we message many patients at once?", "Bulk Campaigns — build an audience with filters, sanity-check the recipient count, and send a batch SMS or email. The Alert Library handles curated one-off alerts."),
+        ("How does a patient use the AI mask fitter?", "The fitter is invitation-only. Staff send the patient a signed link by text or email from Orders & Shop → Fitter Invites; the patient opens it, runs the camera-based fitting in their browser, and the completed result attaches back to their chart (or waits in a holding area for staff to attach). The public storefront's “get fitted” button routes to an invitation-required explainer rather than the fitter."),
     ]),
     ("Billing & revenue cycle", [
         ("Is insurance checked before we bill?", "Yes. Eligibility runs by real-time 270/271 on a schedule and again in the seconds before a claim transmits; inactive or prior-auth-required coverage is held back so claims don't bounce."),
@@ -1872,6 +1932,8 @@ FAQ = [
         ("How do I turn a feature on or off?", "The Control Center has an immediate on/off toggle for every major feature (voice agent, campaigns, auto-submit, AI billing, the chatbots, multi-location, and more)."),
         ("How do I add a teammate?", "Invite them by email on the Team page and pick a role; they set their own password from the link, and admins enroll multi-factor authentication."),
         ("What has to be set up before go-live?", "Brand and domain, phone/SMS/fax numbers, an authenticated email sender, payments, and — for billing — clearinghouse credentials and payer/fee-schedule config. The Setup Guide walks through it."),
+        ("Can the team get alerts in Slack?", "Yes — add a Slack bot token + channel under System Configuration and the platform posts real-time CS alerts and operator digests into your channel, with an Escalate button and a slash command to act on them. Messages are non-PHI (a reference, a status, and a deep link back into the console). Link each teammate's Slack handle on the Team page."),
+        ("Can I see who looked at a patient's record?", "Yes — the admins-only Audit Trail report (Analytics & Reports → Audit Trail) shows who accessed which patient's information and when, filterable by employee, patient, and time frame."),
     ]),
     ("The AI assistants", [
         ("What's the difference between the Assistant and the Copilot?", "CareMetric Assistant is the customer-facing storefront chatbot; CareMetric Copilot is the staff-facing helper inside the admin console. (The Penn tenant calls them PennBot and PennPilot.)"),
@@ -2226,11 +2288,36 @@ def make_story(toc_entries):
         "screenshots in this manual come from the CareMetric demo "
         "environment, so they show the platform's own branding — your live "
         "console shows whatever brand you configure.", S_BODY))
+    story.append(h2("Getting your workspace — self-serve sign-up"))
+    story.append(Paragraph(
+        "A new practice creates its own workspace from the public CareMetric "
+        "Breathe site: open <b>/breathe</b> and choose <b>Create your "
+        "account</b> (<b>/breathe/signup</b>). Enter your company name, a work "
+        "email, a password (at least 12 characters), and pick a plan — Virtual "
+        "Mask Fitter, Launch, Growth, or Scale; Enterprise is custom-quoted, so "
+        "it routes to a sales conversation rather than self-signup. Submitting "
+        "provisions your organization, copies in the feature-flag bundle for "
+        "your plan, and creates your first <b>Owner</b> login.", S_BODY))
+    story.append(Paragraph(
+        "For security the account starts unverified: we email a verification "
+        "link to the address you entered. Click it to activate the account, "
+        "then sign in to your new workspace at <b>/admin/sign-in</b> — you "
+        "confirm payment as you finish setting up. From there the Owner invites "
+        "the rest of the team from the <b>Team</b> page (no one else needs to "
+        "self-sign-up). Operators can still pre-provision a workspace from the "
+        "command line, but self-serve sign-up is the normal path.", S_BODY))
+    story += shot("platform-signup",
+                  "Create your account on the public CareMetric Breathe site — "
+                  "company, work email, password, and a plan spin up your "
+                  "workspace and first Owner login.")
     story.append(h2("Signing in"))
     story.append(Paragraph(
         "Staff sign in at <b>/admin/sign-in</b> with the email your "
         "administrator invited and a password you set from the invite link. "
-        "Forgot it? Use <b>/admin/forgot-password</b>. Every admin should "
+        "Forgot it? Use <b>/admin/forgot-password</b>; a link to verify a new "
+        "email address arrives the same way. To protect against account "
+        "enumeration, these pages always confirm “check your email” whether or "
+        "not the address was on file. Every admin should "
         "enroll multi-factor authentication under <b>System → Account "
         "Security</b>. After signing in you land on the <b>Home</b> "
         "dashboard.", S_BODY))
