@@ -20,6 +20,7 @@ import {
   type AdrScope,
   createAdr,
   getAdrWorklist,
+  suggestAdrFromFax,
 } from "@/lib/admin/adr-api";
 
 const SLA_BADGE: Record<
@@ -217,6 +218,31 @@ function AdrCreateForm({ onCreated }: { onCreated: () => void }) {
   const [adrReference, setAdrReference] = useState("");
   const [receivedAt, setReceivedAt] = useState("");
   const [responseDue, setResponseDue] = useState("");
+  const [faxId, setFaxId] = useState("");
+  const [suggestState, setSuggestState] = useState<
+    "idle" | "loading" | "done" | "offline" | "error"
+  >("idle");
+
+  async function suggestFromFax(): Promise<void> {
+    setSuggestState("loading");
+    try {
+      const s = await suggestAdrFromFax(faxId.trim());
+      if (s.status === "extracted" && s.fields) {
+        if (s.fields.source) setSource(s.fields.source);
+        if (s.fields.contractorName) setContractorName(s.fields.contractorName);
+        if (s.fields.payerName) setPayerName(s.fields.payerName);
+        if (s.fields.adrReference) setAdrReference(s.fields.adrReference);
+        if (s.fields.responseDue) setResponseDue(s.fields.responseDue);
+        setSuggestState("done");
+      } else if (s.status === "offline") {
+        setSuggestState("offline");
+      } else {
+        setSuggestState("error");
+      }
+    } catch {
+      setSuggestState("error");
+    }
+  }
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -237,6 +263,45 @@ function AdrCreateForm({ onCreated }: { onCreated: () => void }) {
   const inputStyle = { borderColor: "hsl(var(--line-1))" };
   return (
     <Card title="Log a new ADR">
+      <div
+        className="flex items-end gap-2 mb-3 pb-3 border-b"
+        style={{ borderColor: "hsl(var(--line-1))" }}
+      >
+        <label className="flex flex-col gap-1 text-sm flex-1 max-w-xs">
+          <span style={{ color: "hsl(var(--ink-3))" }}>
+            Inbound fax ID (AI prefill)
+          </span>
+          <input
+            className="rounded border px-2 py-1.5"
+            style={inputStyle}
+            value={faxId}
+            onChange={(e) => setFaxId(e.target.value)}
+            placeholder="inbound fax UUID"
+          />
+        </label>
+        <button
+          type="button"
+          className="text-sm rounded border px-3 py-1.5 disabled:opacity-50"
+          style={{ borderColor: "hsl(var(--line-1))" }}
+          disabled={!faxId.trim() || suggestState === "loading"}
+          onClick={() => void suggestFromFax()}
+        >
+          {suggestState === "loading" ? "Reading…" : "Suggest from fax"}
+        </button>
+        {suggestState === "done" ? (
+          <span className="text-xs" style={{ color: "hsl(152 70% 24%)" }}>
+            Prefilled — review before saving.
+          </span>
+        ) : suggestState === "offline" ? (
+          <span className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+            AI extraction offline.
+          </span>
+        ) : suggestState === "error" ? (
+          <span className="text-xs" style={{ color: "hsl(38 80% 28%)" }}>
+            Couldn't read that fax.
+          </span>
+        ) : null}
+      </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
         <label className="flex flex-col gap-1">
           <span style={{ color: "hsl(var(--ink-3))" }}>Patient ID *</span>

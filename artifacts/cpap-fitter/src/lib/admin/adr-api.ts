@@ -113,6 +113,34 @@ export async function getAdrWorklist(): Promise<AdrWorklist> {
   return (await res.json()) as AdrWorklist;
 }
 
+export interface AdrSuggestion {
+  status: "extracted" | "offline" | "unsupported" | "failed";
+  fields?: {
+    source?: AdrSource | null;
+    contractorName?: string | null;
+    payerName?: string | null;
+    claimNumber?: string | null;
+    adrReference?: string | null;
+    responseDue?: string | null;
+    confidence?: "high" | "medium" | "low" | null;
+  };
+  reason?: string;
+}
+
+export async function suggestAdrFromFax(
+  inboundFaxId: string,
+): Promise<AdrSuggestion> {
+  const url = "/resupply-api/admin/billing/adr/suggest-from-fax";
+  const res = await fetch(url, {
+    method: "POST",
+    credentials: "include",
+    headers: jsonHeaders(),
+    body: JSON.stringify({ inboundFaxId }),
+  });
+  if (!res.ok) throw await err(res, "POST", url);
+  return (await res.json()) as AdrSuggestion;
+}
+
 export async function getAdr(id: string): Promise<AdrDetail> {
   const url = `/resupply-api/admin/billing/adr/${encodeURIComponent(id)}`;
   const res = await fetch(url, {

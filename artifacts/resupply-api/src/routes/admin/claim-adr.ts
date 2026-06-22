@@ -24,8 +24,10 @@ import {
   getAuditPacketItem,
 } from "@workspace/resupply-domain";
 
+import { extractAdrFromFax } from "../../lib/adr/extract-from-fax";
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
+import { ObjectStorageService } from "../../lib/object-storage/objectStorage";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
@@ -302,6 +304,62 @@ router.post(
     }).catch((err) => logger.warn({ err }, "adr.created audit write failed"));
 
     res.status(201).json({ id: adr.id });
+  },
+);
+
+// ── POST suggest-from-fax (AI intake) ───────────────────────────────
+// Read an inbound ADR fax and extract the fields that pre-fill the create
+// form. Fail-soft: returns {status:'offline'|'failed'|...} rather than erroring.
+const suggestBody = z.object({ inboundFaxId: z.string().uuid() }).strict();
+
+router.post(
+  "/admin/billing/adr/suggest-from-fax",
+  requirePermission("patients.update"),
+  adminRateLimit({ name: "adr.suggest", preset: "sensitive" }),
+  async (req, res) => {
+    const parsed = suggestBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "invalid_body" });
+      return;
+    }
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    if (!(await isFeatureEnabled("billing.adr_queue", orgId))) {
+      res.status(404).json({ error: "feature_disabled" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+    const { data: fax } = await supabase
+      .from("inbound_faxes")
+      .select("media_object_key, media_content_type")
+      .eq("id", parsed.data.inboundFaxId)
+      .limit(1)
+      .maybeSingle();
+    if (!fax || !fax.media_object_key) {
+      res.status(404).json({ error: "fax_not_found" });
+      return;
+    }
+    try {
+      const storage = new ObjectStorageService();
+      const file = await storage.getObjectEntityFile(fax.media_object_key);
+      const resp = await storage.downloadObject(file, 0);
+      if (!resp.ok || !resp.body) {
+        res.json({ status: "unsupported", reason: "unavailable" });
+        return;
+      }
+      const bytes = Buffer.from(await resp.arrayBuffer());
+      const extraction = await extractAdrFromFax({
+        bytes,
+        contentType: fax.media_content_type,
+      });
+      res.json(extraction);
+    } catch (err) {
+      logger.warn({ err }, "adr.suggest_from_fax failed");
+      res.json({ status: "failed", reason: "fetch_error" });
+    }
   },
 );
 
