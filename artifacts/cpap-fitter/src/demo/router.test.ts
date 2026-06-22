@@ -309,13 +309,17 @@ describe("demo router", () => {
     // Regression guard (Codex review): `:id` matches any single segment,
     // so /resupply-api/patients/duplicates was being answered with
     // demoPatientDetail("duplicates") — which has no `groups`, crashing
-    // AdminPatientsDuplicatesPage (data.groups.length). Non-demo ids must
-    // fall through to the empty-collections body instead.
+    // AdminPatientsDuplicatesPage (data.groups.length). The static route
+    // must win: it's now explicitly seeded by ext13 (registered ahead of
+    // adminHandlers), so it returns a real `groups` array — never the
+    // patient-detail fixture.
     const res = await get("/resupply-api/patients/duplicates");
     expect(res!.status).toBe(200);
     const body = (await res!.json()) as Record<string, unknown>;
     expect(Array.isArray(body.groups)).toBe(true);
-    expect((body.groups as unknown[]).length).toBe(0);
+    // Seeded duplicates: a non-empty groups array (the bug returned a
+    // fixture with no `groups` key at all).
+    expect((body.groups as unknown[]).length).toBeGreaterThanOrEqual(1);
     // And a real demo patient id still gets the full detail.
     const detail = (await (await get(
       "/resupply-api/patients/demo-patient-1",

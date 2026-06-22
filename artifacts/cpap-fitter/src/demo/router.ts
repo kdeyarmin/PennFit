@@ -17,19 +17,80 @@ import { adminHandlers } from "./handlers/admin";
 import { therapyHandlers } from "./handlers/therapy";
 import { billingClaimsHandlers } from "./handlers/billing-claims";
 import { platformHandlers } from "./handlers/platform";
+import { analyticsHandlers } from "./handlers/analytics";
+import { advancedBillingHandlers } from "./handlers/advanced-billing";
+import { clinicalHandlers } from "./handlers/clinical";
+import { patientDetailHandlers } from "./handlers/patient-detail";
+import { settingsHandlers } from "./handlers/settings";
+import { integrationsCommsHandlers } from "./handlers/integrations-comms";
+import { ext0Handlers } from "./handlers/ext0";
+import { ext1Handlers } from "./handlers/ext1";
+import { ext2Handlers } from "./handlers/ext2";
+import { ext3Handlers } from "./handlers/ext3";
+import { ext4Handlers } from "./handlers/ext4";
+import { ext5Handlers } from "./handlers/ext5";
+import { ext6Handlers } from "./handlers/ext6";
+import { ext7Handlers } from "./handlers/ext7";
+import { ext8Handlers } from "./handlers/ext8";
+import { ext9Handlers } from "./handlers/ext9";
+import { ext10Handlers } from "./handlers/ext10";
+import { ext11Handlers } from "./handlers/ext11";
+import { ext12Handlers } from "./handlers/ext12";
+import { ext13Handlers } from "./handlers/ext13";
+import { ext14Handlers } from "./handlers/ext14";
+import { ext15Handlers } from "./handlers/ext15";
+import { ext16Handlers } from "./handlers/ext16";
 
 // Order matters only where patterns could overlap; within a surface
-// the more specific routes are declared first in their module.
+// the more specific routes are declared first in their module. The
+// extended-coverage modules below seed the long tail of admin pages
+// (analytics, advanced billing, clinical/RT worklists, patient detail,
+// settings/control, integrations/comms/FHIR). They use distinct
+// `/resupply-api/admin/...` (and `/resupply-api/fhir/...`) prefixes that
+// don't overlap the core handlers above.
 const handlers: DemoHandler[] = [
   ...authHandlers,
   ...accountHandlers,
   ...shopHandlers,
   ...fitflowHandlers,
   ...miscHandlers,
+  // ext13 (patient records) must precede adminHandlers: its static
+  // `GET /resupply-api/patients/duplicates` would otherwise be shadowed by
+  // admin's `GET /resupply-api/patients/:id` param route (first-match wins).
+  ...ext13Handlers,
   ...adminHandlers,
   ...therapyHandlers,
   ...billingClaimsHandlers,
   ...platformHandlers,
+  ...analyticsHandlers,
+  ...advancedBillingHandlers,
+  ...clinicalHandlers,
+  ...patientDetailHandlers,
+  ...settingsHandlers,
+  ...integrationsCommsHandlers,
+  // Extended admin coverage (ext0–ext9): the long tail of admin console
+  // pages — billing ops, CSR/conversation tools, clinical/patient
+  // sub-resources, shop/storefront ops, integrations, providers, etc.
+  // Each module owns a disjoint set of `/resupply-api/admin/...` paths.
+  ...ext0Handlers,
+  ...ext1Handlers,
+  ...ext2Handlers,
+  ...ext3Handlers,
+  ...ext4Handlers,
+  ...ext5Handlers,
+  ...ext6Handlers,
+  ...ext7Handlers,
+  ...ext8Handlers,
+  ...ext9Handlers,
+  // Final coverage pass (ext10–ext16): SPA-facing storefront, patient
+  // portal ("me-*"), patient records, conversations/episodes/provider
+  // portal, and the rules engine. (ext13 is wired earlier, above admin.)
+  ...ext10Handlers,
+  ...ext11Handlers,
+  ...ext12Handlers,
+  ...ext14Handlers,
+  ...ext15Handlers,
+  ...ext16Handlers,
 ];
 
 /** API paths the demo sandbox is responsible for answering. */
