@@ -152,6 +152,21 @@ test("Results page never trips the ErrorBoundary when /api/masks returns non-JSO
   const intercept: InterceptState = { moduleIntercepted: false };
   await mockCameraAndMediaPipe(page, intercept);
 
+  // The virtual mask fitter is invitation-only: every fitter route
+  // (starting at /consent) bounces to /fitter-invite unless an invite
+  // token is present. Seed one in sessionStorage before navigation so
+  // the guarded flow renders. (The server-side /api/recommend gate is
+  // irrelevant here — the dev server doesn't proxy /api/*, so the call
+  // returns the SPA shell and the page falls into its error-alert state,
+  // which this test already treats as acceptable.)
+  await page.addInitScript(() => {
+    try {
+      sessionStorage.setItem("fitter_invite_token", "e2e-invite-token");
+    } catch {
+      /* sessionStorage blocked — the gate will redirect, test will surface it */
+    }
+  });
+
   // Force /api/masks to return non-JSON HTML even when the API is
   // reachable. Reproduces the deploy-window scenario where the
   // Replit proxy serves the SPA shell instead of the resupply-api

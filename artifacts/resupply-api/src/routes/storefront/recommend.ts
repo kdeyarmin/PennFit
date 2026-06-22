@@ -18,6 +18,7 @@ import { Router } from "express";
 import { GetRecommendationBody } from "../../lib/api-zod/index.js";
 import { recommend } from "../../lib/storefront/recommendationEngine.js";
 import { maskCatalog } from "../../data/maskCatalog.js";
+import { verifyFitterInviteToken } from "../../lib/fitter-invite-token.js";
 
 // Server-side plausibility bounds (millimeters). The browser rejects
 // out-of-window measurements before sending (PLAUSIBILITY_BOUNDS in
@@ -53,6 +54,32 @@ const router = Router();
  * base64 strings, binary, or unexpected fields is rejected with 400.
  */
 router.post("/recommend", (req, res) => {
+  // Invitation-only gate. The virtual mask fitter is reachable only
+  // through a signed invite link a DME company (a Breathe customer)
+  // sends a patient by SMS or email; the link carries a token bound to
+  // a fitter_invites row (see lib/fitter-invite-token.ts). Without a
+  // valid, unexpired token the fitter cannot be used — this is the
+  // server-side counterpart to the client route guard in the SPA, so
+  // the gate can't be bypassed by deep-linking or seeding storage.
+  //
+  // The check is intentionally STATELESS (HMAC signature + expiry, no
+  // DB read) to preserve this route's no-persistence design: a genuine
+  // signature proves an invite was actually issued, which is the bar
+  // for "you were invited". Revocation/status enforcement stays on the
+  // stateful resolve/complete endpoints that attach results to a chart.
+  const inviteToken = req.header("x-fitter-invite-token");
+  const verification =
+    typeof inviteToken === "string"
+      ? verifyFitterInviteToken(inviteToken)
+      : null;
+  if (!verification?.valid) {
+    res.status(403).json({
+      error:
+        "The virtual mask fitter is available by invitation only. Ask your local DME company for an invite link or code.",
+    });
+    return;
+  }
+
   // Zod validation — rejects unexpected fields (strict mode) and validates types
   const parseResult = GetRecommendationBody.safeParse(req.body);
 

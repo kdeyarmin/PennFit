@@ -23,7 +23,10 @@ import { expect, test } from "@playwright/test";
 const PUBLIC_ROUTES: ReadonlyArray<{ path: string; label: string }> = [
   { path: "/", label: "home" },
   { path: "/shop", label: "shop" },
-  { path: "/consent", label: "consent" },
+  // /consent is now invitation-gated (it redirects to /fitter-invite
+  // without an invite token), so scan the public invitation-required
+  // landing instead — that's the entry point an uninvited visitor sees.
+  { path: "/fitter-invite", label: "fitter invite" },
   { path: "/contact", label: "contact" },
   { path: "/admin/sign-in", label: "admin sign-in" },
 ];

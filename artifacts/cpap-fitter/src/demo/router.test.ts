@@ -45,7 +45,7 @@ describe("demo router", () => {
   });
 
   it("produces mask recommendations for the fit flow", async () => {
-    const res = await post("/api/recommendations", {
+    const res = await post("/api/recommend", {
       measurements: {},
       answers: {},
     });
