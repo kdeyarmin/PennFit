@@ -246,6 +246,17 @@ function SlackTestButton() {
           platform has registered its Slack app.)
         </span>
       </div>
+      <p className="text-xs">
+        <a
+          href="/guides/setup-slack.pdf"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="font-semibold underline"
+          style={{ color: "hsl(var(--ink-2))" }}
+        >
+          📄 Read the full step-by-step setup guide (PDF)
+        </a>
+      </p>
       <div
         className="rounded-md p-3 text-xs leading-relaxed"
         style={{
