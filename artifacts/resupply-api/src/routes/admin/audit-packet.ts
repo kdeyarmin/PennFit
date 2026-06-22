@@ -34,15 +34,23 @@ import {
   buildAuditPacket,
   type FetchedDocument,
 } from "../../lib/audit-packet/build-audit-packet";
+import {
+  createTelnyxFaxClient,
+  TelnyxApiError,
+} from "@workspace/resupply-telecom";
+
 import { resolveBillingIdentity } from "../../lib/billing/identity-resolver";
+import { signAuditPacketFaxToken } from "../../lib/fax-document-token";
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
+import { resolveTenantFaxFrom } from "../../lib/messaging/tenant-telecom";
 import {
   ObjectNotFoundError,
   ObjectStorageService,
 } from "../../lib/object-storage/objectStorage";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
+import { getFaxPublicBaseUrl, isFaxConfigured } from "./physician-fax-outreach";
 
 const router: IRouter = Router();
 const objectStorage = new ObjectStorageService();
@@ -257,6 +265,123 @@ router.get(
     );
     res.setHeader("Cache-Control", "private, no-store");
     res.status(200).end(bytes.bytes);
+  },
+);
+
+// POST fax — fax a persisted packet to a contractor's fax number, and stamp
+// the linked ADR submitted. Reuses the appeal-fax pipeline (signed mediaUrl +
+// Telnyx). Fail-soft on missing fax config (503, not 500).
+const faxBody = z
+  .object({
+    faxNumber: z
+      .string()
+      .trim()
+      .regex(/^\+[1-9]\d{6,14}$/),
+  })
+  .strict();
+
+router.post(
+  "/admin/audit-packets/:id/fax",
+  requirePermission("patients.update"),
+  adminRateLimit({ name: "audit_packet.fax", preset: "sensitive" }),
+  async (req, res) => {
+    const idParsed = buildParams.safeParse(req.params);
+    if (!idParsed.success) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const parsed = faxBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "invalid_body" });
+      return;
+    }
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    if (!(await isFeatureEnabled("billing.adr_queue", orgId))) {
+      res.status(404).json({ error: "feature_disabled" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+    const { data: row } = await supabase
+      .from("audit_packets")
+      .select("id, object_key, adr_id")
+      .eq("id", idParsed.data.id)
+      .limit(1)
+      .maybeSingle();
+    if (!row || !row.object_key) {
+      res.status(404).json({ error: "packet_not_persisted" });
+      return;
+    }
+    if (!isFaxConfigured()) {
+      res.status(503).json({ error: "fax_not_configured" });
+      return;
+    }
+    const baseUrl = getFaxPublicBaseUrl()!;
+    const token = signAuditPacketFaxToken(row.id);
+    const mediaUrl = `${baseUrl}/resupply-api/fax/document/${token}`;
+    const statusCallbackUrl = `${baseUrl}/resupply-api/fax/webhook`;
+    const tenantFrom = await resolveTenantFaxFrom(orgId);
+    const fromNumber = tenantFrom ?? process.env.TELNYX_FAX_FROM_NUMBER!.trim();
+
+    let vendorRef: string;
+    try {
+      const result = await createTelnyxFaxClient().sendFax({
+        to: parsed.data.faxNumber,
+        from: fromNumber,
+        mediaUrl,
+        statusCallbackUrl,
+      });
+      vendorRef = result.id;
+    } catch (err) {
+      const msg =
+        err instanceof TelnyxApiError
+          ? `Telnyx fax error: ${err.message}`
+          : `Fax dispatch error: ${String(err)}`;
+      logger.warn(
+        { event: "audit_packet_fax_failed", packetId: row.id },
+        "audit_packet.fax: Telnyx dispatch failed",
+      );
+      res.status(502).json({ error: "fax_dispatch_failed", message: msg });
+      return;
+    }
+
+    // Telnyx accepted — stamp the linked ADR as submitted by fax.
+    if (row.adr_id) {
+      const nowIso = new Date().toISOString();
+      await supabase
+        .from("claim_adr_requests")
+        .update({
+          status: "submitted",
+          submitted_at: nowIso,
+          submitted_via: "fax",
+          submitted_packet_id: row.id,
+          sla_status: "decided",
+          updated_at: nowIso,
+        })
+        .eq("id", row.adr_id);
+    }
+
+    await logAudit({
+      action: "audit_packet.faxed",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "audit_packets",
+      targetId: row.id,
+      metadata: {
+        adr_id: row.adr_id,
+        vendor_ref: vendorRef,
+        vendor_name: "telnyx",
+      },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn({ err }, "audit_packet.faxed audit write failed");
+    });
+
+    res.json({ ok: true, vendorRef });
   },
 );
 

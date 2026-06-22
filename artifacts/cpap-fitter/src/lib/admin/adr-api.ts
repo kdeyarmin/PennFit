@@ -209,6 +209,22 @@ export interface BuildPacketResult {
   filename: string;
   pages: number;
   missing: string[];
+  packetId: string | null;
+}
+
+export async function faxAuditPacket(
+  packetId: string,
+  faxNumber: string,
+): Promise<{ ok: boolean; vendorRef?: string }> {
+  const url = `/resupply-api/admin/audit-packets/${encodeURIComponent(packetId)}/fax`;
+  const res = await fetch(url, {
+    method: "POST",
+    credentials: "include",
+    headers: jsonHeaders(),
+    body: JSON.stringify({ faxNumber }),
+  });
+  if (!res.ok) throw await err(res, "POST", url);
+  return (await res.json()) as { ok: boolean; vendorRef?: string };
 }
 
 export interface AuditPacketRecord {
@@ -274,5 +290,6 @@ export async function buildAuditPacket(
     filename: `audit-packet-${patientId.slice(0, 8)}.pdf`,
     pages: Number(res.headers.get("X-Audit-Packet-Pages") ?? 0),
     missing: missingHeader ? missingHeader.split(",").filter(Boolean) : [],
+    packetId: res.headers.get("X-Audit-Packet-Id"),
   };
 }

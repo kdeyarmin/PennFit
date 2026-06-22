@@ -20,6 +20,7 @@ import {
   type AuditCatalogItem,
   buildAuditPacket,
   downloadHistoricalPacket,
+  faxAuditPacket,
   getAuditPacketCatalog,
   getAuditPacketHistory,
   getAuditReadiness,
@@ -61,8 +62,13 @@ export function AdminAuditPacketPage() {
   const [result, setResult] = useState<{
     pages: number;
     missing: string[];
+    packetId: string | null;
   } | null>(null);
   const [buildError, setBuildError] = useState(false);
+  const [faxNumber, setFaxNumber] = useState("");
+  const [faxState, setFaxState] = useState<
+    "idle" | "sending" | "sent" | "error"
+  >("idle");
 
   const catalogQuery = useQuery({
     queryKey: ["admin", "audit-packet-catalog"] as const,
@@ -125,7 +131,12 @@ export function AdminAuditPacketPage() {
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
-      setResult({ pages: res.pages, missing: res.missing });
+      setResult({
+        pages: res.pages,
+        missing: res.missing,
+        packetId: res.packetId,
+      });
+      setFaxState("idle");
       void qc.invalidateQueries({
         queryKey: ["admin", "audit-packets", params.patientId],
       });
@@ -282,6 +293,57 @@ export function AdminAuditPacketPage() {
                   All selected items were included.
                 </p>
               )}
+
+              {result.packetId ? (
+                <div
+                  className="mt-3 pt-3 border-t"
+                  style={{ borderColor: "hsl(var(--line-1))" }}
+                >
+                  <p
+                    className="text-sm font-medium mb-1.5"
+                    style={{ color: "hsl(var(--ink-1))" }}
+                  >
+                    Fax to contractor
+                  </p>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <input
+                      className="rounded border px-2 py-1.5 text-sm"
+                      style={{ borderColor: "hsl(var(--line-1))" }}
+                      placeholder="+15551234567"
+                      value={faxNumber}
+                      onChange={(e) => setFaxNumber(e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      className="text-sm rounded px-3 py-1.5 text-white disabled:opacity-50"
+                      style={{ background: "hsl(var(--penn-navy))" }}
+                      disabled={
+                        !/^\+[1-9]\d{6,14}$/.test(faxNumber.trim()) ||
+                        faxState === "sending"
+                      }
+                      onClick={() => void sendFax(result.packetId!)}
+                    >
+                      {faxState === "sending" ? "Faxing…" : "Send fax"}
+                    </button>
+                    {faxState === "sent" ? (
+                      <span
+                        className="text-sm"
+                        style={{ color: "hsl(152 70% 24%)" }}
+                      >
+                        Faxed — ADR marked submitted.
+                      </span>
+                    ) : null}
+                    {faxState === "error" ? (
+                      <span
+                        className="text-sm"
+                        style={{ color: "hsl(354 75% 38%)" }}
+                      >
+                        Fax failed (check fax setup / number).
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
             </Card>
           ) : null}
 
@@ -324,6 +386,16 @@ export function AdminAuditPacketPage() {
       )}
     </div>
   );
+
+  async function sendFax(packetId: string): Promise<void> {
+    setFaxState("sending");
+    try {
+      await faxAuditPacket(packetId, faxNumber.trim());
+      setFaxState("sent");
+    } catch {
+      setFaxState("error");
+    }
+  }
 
   async function redownload(packetId: string): Promise<void> {
     const blob = await downloadHistoricalPacket(packetId);
