@@ -52,6 +52,7 @@ import {
 } from "@workspace/resupply-ai";
 
 import { logger } from "../logger";
+import { recordAiTokenUsage } from "../metering/usage.js";
 
 export type CallSentiment = "positive" | "neutral" | "concerned" | "distressed";
 
@@ -87,6 +88,11 @@ export interface SummarizeCallInput {
   conversationId?: string;
   /** Override the model. Defaults to Claude Sonnet 4.6. */
   model?: string;
+  /**
+   * Owning tenant, for AI-token COGS attribution. Optional — a missing
+   * orgId records nothing (recordAiTokenUsage no-ops on absent orgId).
+   */
+  orgId?: string;
 }
 
 const SYSTEM_PROMPT = [
@@ -311,6 +317,14 @@ export async function summarizePostCall(
     );
     return null;
   }
+  // Fold this summary's tokens into the tenant's monthly AI COGS rollup.
+  // Fire-and-forget + fail-soft; a missing orgId is a silent no-op.
+  recordAiTokenUsage({
+    orgId: input.orgId,
+    inputTokens: result.response.usage.input_tokens,
+    outputTokens: result.response.usage.output_tokens,
+    source: "voice.post_call_summary",
+  });
   const text = getResponseText(result.response).trim();
   const parsed = parseSummary(text);
   if (!parsed) {

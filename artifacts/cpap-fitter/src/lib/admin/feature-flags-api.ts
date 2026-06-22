@@ -1,9 +1,7 @@
 // Hand-rolled fetch wrappers for /admin/feature-flags — backs the
 // admin Control Center.
 
-import { ApiError } from "@workspace/api-client-react/admin";
-
-import { csrfHeader } from "../csrf";
+import { adminJsonFetch as jsonFetch } from "../admin-json-fetch";
 
 export interface FeatureFlag {
   key: string;
@@ -53,31 +51,6 @@ export function isHighRiskFlag(key: string): boolean {
   return HIGH_RISK_FLAG_KEYS.includes(key);
 }
 
-async function jsonFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const { headers, ...rest } = init;
-  const method = (init.method ?? "GET").toUpperCase();
-  const url = `/resupply-api${path}`;
-  const res = await fetch(url, {
-    credentials: "include",
-    headers: {
-      Accept: "application/json",
-      ...csrfHeader(),
-      ...(headers ?? {}),
-    },
-    ...rest,
-  });
-  if (!res.ok) {
-    let data: unknown = null;
-    try {
-      data = await res.json();
-    } catch {
-      // body not JSON
-    }
-    throw new ApiError(res, data, { method, url });
-  }
-  return (await res.json()) as T;
-}
-
 export interface FeatureFlagActivity {
   occurredAt: string;
   operatorEmail: string | null;
@@ -103,3 +76,34 @@ export const toggleFeatureFlag = (key: string, enabled: boolean) =>
       body: JSON.stringify({ enabled }),
     },
   );
+
+// One change a preset would make (or made) to a flag's enabled state.
+export interface PresetChange {
+  key: string;
+  from: boolean;
+  to: boolean;
+}
+
+export interface ApplyPresetResult {
+  // The billing plan whose recommended bundle was applied / previewed.
+  planCode: string;
+  dryRun: boolean;
+  // Manageable flags considered, and how many the preset would enable.
+  total: number;
+  enabledCount: number;
+  // The flags whose state differs from the recommended bundle.
+  changes: PresetChange[];
+}
+
+/**
+ * Apply (or, with `dryRun`, preview) the recommended feature-flag bundle for
+ * the tenant's current billing plan. The dry run returns the exact diff so
+ * the UI can confirm before writing. A tenant with no active plan gets a 409
+ * `no_plan_preset` (surfaced by the caller as "pick a plan first").
+ */
+export const applyFeatureFlagPreset = (dryRun: boolean) =>
+  jsonFetch<ApplyPresetResult>("/admin/feature-flags/apply-preset", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ dryRun }),
+  });

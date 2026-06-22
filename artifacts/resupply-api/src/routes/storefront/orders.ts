@@ -112,9 +112,9 @@ router.post(
     // platform host → seed org). Prefer that host-resolved tenant so an
     // order placed on a tenant's storefront mirrors into THEIR
     // `shop_customers`; fall back to the seed org only if host resolution
-    // was unavailable. The order row itself lives in the global
-    // `public.orders` table (no org_id, written via `.raw()`), so a
-    // missing tenant must never block the order.
+    // was unavailable. The order row lives in `public.orders` and is stamped
+    // with this org_id (migration 0463), but a missing tenant must never
+    // block the order (org_id is nullable for that reason).
     const orgId = req.orgId ?? (await resolveSeedOrgId());
     const supabase = orgId ? getOrgScopedClient(orgId) : null;
     // Patient-facing copy below names the practice; resolve the tenant's own
@@ -123,14 +123,20 @@ router.post(
     const companyName = (await resolveBrandingByOrgId(orgId ?? undefined))
       .legalName;
 
+    // `supabase` is non-null iff `orgId` is set above; the explicit `&& orgId`
+    // narrows orgId to a non-null string for the `org_id` stamp/filter below.
     let dbId: string | null = null;
-    if (supabase) {
+    if (supabase && orgId) {
       try {
         const { data: inserted, error: insertErr } = await supabase
           .raw()
           .schema("public")
           .from("orders")
           .insert({
+            // Tenant-scoped (migration 0463): stamp the host-resolved org so
+            // the admin order list/detail/analytics reads can filter to their
+            // own tenant. `supabase` is non-null iff `orgId` is set above.
+            org_id: orgId,
             order_reference: orderReference,
             patient_first_name: order.patient.firstName,
             patient_last_name: order.patient.lastName,
@@ -244,7 +250,7 @@ router.post(
 
     // Update DB row with delivery status (best-effort; do not surface errors
     // to the patient if this update fails)
-    if (dbId && supabase) {
+    if (dbId && supabase && orgId) {
       try {
         const status: "sent" | "failed" | "skipped" = !result.configured
           ? "skipped"
@@ -263,7 +269,10 @@ router.post(
                 ? result.deliveredAt
                 : null,
           })
-          .eq("id", dbId);
+          .eq("id", dbId)
+          // Tenant-scoped (migration 0463) — defense in depth; dbId already
+          // came from this org's insert above.
+          .eq("org_id", orgId);
         if (updateErr) throw updateErr;
       } catch (err) {
         logger.error(

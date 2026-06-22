@@ -1,9 +1,7 @@
 // Hand-rolled fetch wrappers for /admin/reports/presets — backs the
 // "Saved presets" section on the Reports page.
 
-import { ApiError } from "@workspace/api-client-react/admin";
-
-import { csrfHeader } from "../csrf";
+import { adminJsonFetch as jsonFetch } from "../admin-json-fetch";
 
 export interface ReportPreset {
   id: string;
@@ -42,33 +40,6 @@ export type ReportPresetCreate =
       rangeTo: string;
       recipient?: string | null;
     };
-
-async function jsonFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const method = (init.method ?? "GET").toUpperCase();
-  const url = `/resupply-api${path}`;
-  const res = await fetch(url, {
-    ...init,
-    credentials: "include",
-    headers: {
-      Accept: "application/json",
-      ...(init.headers ?? {}),
-      ...csrfHeader(),
-    },
-  });
-  if (!res.ok) {
-    let data: unknown = null;
-    try {
-      data = await res.json();
-    } catch {
-      // body not JSON
-    }
-    throw new ApiError(res, data, { method, url });
-  }
-  // 204 No Content has an empty body — skip the JSON parse rather
-  // than letting it throw.
-  if (res.status === 204) return undefined as T;
-  return (await res.json()) as T;
-}
 
 export const listReportPresets = () =>
   jsonFetch<{ presets: ReportPreset[] }>("/admin/reports/presets");

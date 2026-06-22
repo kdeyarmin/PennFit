@@ -30,7 +30,9 @@ export function DemoBanner() {
       }}
     >
       <span>
-        Demo mode — you&rsquo;re viewing sample data, not the live store.
+        Demo mode — you&rsquo;re viewing sample data, not the live store. Most
+        pages are seeded with example data, but not every feature works in the
+        demo; some areas will appear empty.
       </span>
       <button
         type="button"

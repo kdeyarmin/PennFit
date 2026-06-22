@@ -99,6 +99,21 @@ export function Home() {
                 Shop CPAP supplies
               </Button>
             </div>
+            {/*
+              The virtual mask fitter is invitation-only: a patient
+              reaches it through a link/code their DME company sends by
+              text or email. Set that expectation right under the CTA so
+              the "Get fitted" button doesn't feel like a dead end when it
+              routes to the invitation-required page.
+            */}
+            <p
+              className="mt-3 text-sm text-muted-foreground max-w-xl mx-auto"
+              data-testid="home-fitter-invite-note"
+            >
+              The virtual mask fitter is available by invitation. Ask your local
+              DME company (your CPAP supplier) for an invite link or code by
+              text or email to get started.
+            </p>
             <button
               type="button"
               onClick={() => openPennBot()}

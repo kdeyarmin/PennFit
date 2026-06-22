@@ -38,6 +38,9 @@ export interface TeamMember {
   /** Home branch (location) this staff member works at. NULL when
    *  unassigned. Operational only — does not affect billing identity. */
   locationId: string | null;
+  /** Slack user id (Uxxxxxxxx) linking this member to Slack, so the Slack
+   *  "Claim" button can assign a conversation to them. NULL when not linked. */
+  slackUserId: string | null;
   /** When the background invite-expiry notifier emailed this
    *  invitee a heads-up that their admin-typed temporary password
    *  is about to expire. Null when no heads-up was sent (or the
@@ -187,6 +190,7 @@ export async function patchMember(
     displayName: string | null;
     notes: string | null;
     locationId: string | null;
+    slackUserId: string | null;
   }>,
 ): Promise<{ member: TeamMember }> {
   const url = `${BASE}/${encodeURIComponent(id)}`;

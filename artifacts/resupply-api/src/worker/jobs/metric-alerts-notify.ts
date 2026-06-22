@@ -21,6 +21,7 @@ import {
 } from "@workspace/resupply-email";
 
 import { logger } from "../../lib/logger";
+import { notifyOpsDigest } from "../../lib/slack/notify";
 import {
   createQueueWithDlq,
   VENDOR_SEND_QUEUE_OPTS,
@@ -148,6 +149,17 @@ export async function runMetricAlertsNotify(): Promise<MetricAlertsNotifyStats> 
   const rows = (data ?? []) as Array<Record<string, unknown>>;
   stats.pending = rows.length;
   if (rows.length === 0) return stats;
+
+  // Slack ops digest (best-effort, non-PHI: KPI metric keys + severities).
+  // Fires whenever there are newly-pending alerts, independent of email config.
+  void notifyOpsDigest({
+    orgId: undefined,
+    severity: "warning",
+    title: `🟠 KPI alerts — ${rows.length} new`,
+    lines: rows
+      .slice(0, 10)
+      .map((r) => `• \`${String(r.metric_key)}\` (${String(r.severity)})`),
+  });
 
   const recipients = parseRecipientList(process.env.RESUPPLY_ADMIN_EMAILS);
   stats.recipients = recipients.length;

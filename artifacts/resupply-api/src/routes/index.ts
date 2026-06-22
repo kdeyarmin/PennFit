@@ -100,6 +100,7 @@ import shopOrderPodUploadRouter from "./admin/shop-order-pod-upload.js";
 import integrationsStatusRouter from "./admin/integrations-status.js";
 import integrationsNightlySyncRouter from "./admin/integrations-nightly-sync.js";
 import integrationsWebhooksRouter from "./integrations-webhooks.js";
+import slackRouter from "./slack/index.js";
 import integrationsErrorsRouter from "./admin/integrations-errors.js";
 import therapyFleetRouter from "./admin/therapy-fleet.js";
 import therapyClinicalInsightsRouter from "./admin/therapy-clinical-insights.js";
@@ -116,6 +117,8 @@ import glAccountMappingsRouter from "./admin/gl-account-mappings.js";
 import reportPresetsRouter from "./admin/report-presets.js";
 import featureFlagsRouter from "./admin/feature-flags.js";
 import appConfigRouter from "./admin/app-config.js";
+import slackTestRouter from "./admin/slack-test.js";
+import slackOAuthRouter from "./admin/slack-oauth.js";
 import agreementsRouter from "./admin/agreements.js";
 import npsSummaryRouter from "./admin/nps-summary.js";
 import deliveryFailuresRouter from "./admin/delivery-failures.js";
@@ -194,6 +197,10 @@ import claimPaperworkRouter from "./admin/claim-paperwork.js";
 import billingAutoSubmitRouter from "./admin/billing-auto-submit.js";
 import billingStatementsRouter from "./admin/billing-statements.js";
 import claimAppealsRouter from "./admin/claim-appeals.js";
+import claimAdrRouter from "./admin/claim-adr.js";
+import auditPacketRouter from "./admin/audit-packet.js";
+import auditReadinessWorklistRouter from "./admin/audit-readiness-worklist.js";
+import collectionsWorklistRouter from "./admin/collections-worklist.js";
 import webhookSubscriptionsRouter from "./admin/webhook-subscriptions.js";
 import webhookEventCatalogRouter from "./admin/webhook-event-catalog.js";
 import billingDirectorRouter from "./admin/billing-director.js";
@@ -225,6 +232,10 @@ import platformAnalyticsRouter from "./platform/analytics.js";
 import platformImpersonationRouter from "./platform/impersonation.js";
 import platformMeRouter from "./platform/me.js";
 import platformTenantsRouter from "./platform/tenants.js";
+import platformHealthRouter from "./platform/health.js";
+import platformAdminsRouter from "./platform/admins.js";
+import platformMarginRouter from "./platform/margin.js";
+import platformCostRatesRouter from "./platform/cost-rates.js";
 import platformBillingRouter from "./platform/billing.js";
 import platformConfigRouter from "./platform/config.js";
 import platformSupportRouter from "./platform/support.js";
@@ -244,15 +255,29 @@ import signatureTrackingRouter from "./admin/signature-tracking.js";
 import voiceRouter from "./voice/index.js";
 import videoVisitsAdminRouter from "./admin/video-visits.js";
 import videoVisitSessionRouter from "./video-visit-session.js";
+import patientAccessLogRouter from "./admin/patient-access-log.js";
+import { recordPatientAccess } from "../lib/access-log/record-patient-access.js";
 
 const router: IRouter = Router();
 
+// Audit Trail recorder. Attaches a res-finish hook to every request so
+// it adds no latency; on finish it records staff access to patient data
+// (only when requireAdmin populated an admin identity earlier in the
+// chain). Mounted FIRST so the hook wraps every downstream router.
+router.use(recordPatientAccess);
+
 router.use(healthRouter);
 router.use(meRouter);
+// Admin Audit Trail report (admins only — requireAdminOnly on the route).
+router.use(patientAccessLogRouter);
 // Platform super-admin (G4): cross-tenant operator surface, gated by
 // requirePlatformAdmin (the tier above a tenant admin).
 router.use(platformMeRouter);
 router.use(platformTenantsRouter);
+router.use(platformHealthRouter);
+router.use(platformAdminsRouter);
+router.use(platformMarginRouter);
+router.use(platformCostRatesRouter);
 router.use(platformAnalyticsRouter);
 router.use(platformBillingRouter);
 router.use(platformConfigRouter);
@@ -646,6 +671,14 @@ router.use(billingAutoSubmitRouter);
 router.use(billingStatementsRouter);
 // /admin/patients/:id/insurance-claims/:claimId/appeal-letter — PDF.
 router.use(claimAppealsRouter);
+// /admin/billing/adr* — Medicare ADR / audit-response queue.
+router.use(claimAdrRouter);
+// /admin/audit-packet/catalog + /admin/patients/:id/audit-packet — audit-packet builder.
+router.use(auditPacketRouter);
+// /admin/billing/audit-readiness-worklist — proactive audit-gap report.
+router.use(auditReadinessWorklistRouter);
+// /admin/billing/collections* — patient AR dunning / collections worklist.
+router.use(collectionsWorklistRouter);
 // /admin/webhook-subscriptions + /admin/webhook-deliveries — outbound
 // event subscription CRUD + recent-delivery audit.
 router.use(webhookSubscriptionsRouter);
@@ -1020,6 +1053,10 @@ router.use(integrationsNightlySyncRouter);
 // and Care Orchestrator). HMAC-verified. Public mount because
 // vendors don't carry admin sessions.
 router.use(integrationsWebhooksRouter);
+// /slack/interactivity + /slack/commands — Slack button callbacks and the
+// /pennfit slash command. Signature-verified (not admin-cookie); public mount
+// because Slack doesn't carry admin sessions.
+router.use(slackRouter);
 // /admin/integrations/errors — sync-failure triage queue + retry.
 router.use(integrationsErrorsRouter);
 // /admin/therapy-fleet/* — population-level therapy-cloud analytics:
@@ -1084,6 +1121,10 @@ router.use(featureFlagsRouter);
 // enter/rotate integration credentials + platform secrets (migration
 // 0211). super_admin-only (system.config.manage).
 router.use(appConfigRouter);
+// /admin/slack/test — "Send test message" button in System Configuration.
+router.use(slackTestRouter);
+// /admin/slack/oauth/start + /slack/oauth/callback — one-click "Add to Slack".
+router.use(slackOAuthRouter);
 router.use(agreementsRouter);
 // /admin/nps/recent — last-N-days NPS rollup for the post-delivery
 // follow-up. Surfaces band counts + canonical NPS score + a comment

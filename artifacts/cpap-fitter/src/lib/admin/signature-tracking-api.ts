@@ -4,9 +4,7 @@
 // server-side). Same hand-rolled fetch + csrfHeader pattern as
 // prescription-requests-api.ts.
 
-import { ApiError } from "@workspace/api-client-react/admin";
-
-import { csrfHeader } from "../csrf";
+import { adminJsonFetch as jsonFetch } from "../admin-json-fetch";
 
 export type SignatureDocumentKind = "prescription_request" | "manual_document";
 export type SignatureTrackingStatus =
@@ -63,30 +61,9 @@ export interface OutstandingSignaturesResponse {
   items: SignatureTrackingItem[];
 }
 
-const BASE = "/resupply-api/admin/signature-tracking";
-
-async function jsonFetch<T>(url: string, init: RequestInit = {}): Promise<T> {
-  const method = (init.method ?? "GET").toUpperCase();
-  const res = await fetch(url, {
-    credentials: "include",
-    ...init,
-    headers: {
-      Accept: "application/json",
-      ...(init.headers ?? {}),
-      ...csrfHeader(),
-    },
-  });
-  if (!res.ok) {
-    let data: unknown = null;
-    try {
-      data = await res.json();
-    } catch {
-      // body not JSON
-    }
-    throw new ApiError(res, data, { method, url });
-  }
-  return (await res.json()) as T;
-}
+// Call sites build full paths from BASE (e.g. `${BASE}/lookup?...`);
+// adminJsonFetch prefixes `/resupply-api`, so BASE omits that mount.
+const BASE = "/admin/signature-tracking";
 
 export async function listOutstandingSignatures(params?: {
   status?: SignatureListStatus;
@@ -147,10 +124,13 @@ export async function cancelSignatureTracking(
 export async function resendSignatureDocument(
   item: Pick<SignatureTrackingItem, "documentKind" | "documentId">,
 ): Promise<{ ok?: boolean; status?: string; vendorRef?: string }> {
+  // adminJsonFetch prepends the `/resupply-api` mount, so these paths
+  // omit it (matching BASE above). Leaving it in would double-prefix to
+  // `/resupply-api/resupply-api/admin/...` and 404 the resend.
   const path =
     item.documentKind === "prescription_request"
-      ? `/resupply-api/admin/prescription-requests/${encodeURIComponent(item.documentId)}/send-fax`
-      : `/resupply-api/admin/manual-documents/${encodeURIComponent(item.documentId)}/send-fax`;
+      ? `/admin/prescription-requests/${encodeURIComponent(item.documentId)}/send-fax`
+      : `/admin/manual-documents/${encodeURIComponent(item.documentId)}/send-fax`;
   return jsonFetch(path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

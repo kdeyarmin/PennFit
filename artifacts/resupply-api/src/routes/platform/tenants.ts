@@ -28,6 +28,11 @@ import {
   SEED_ORG_SLUG,
 } from "@workspace/resupply-db";
 
+import {
+  FEATURE_FLAG_KEYS,
+  type FeatureFlagKey,
+  invalidateFeatureFlagCache,
+} from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
 import { invalidateBrandingCache } from "../../lib/tenant-branding";
 import {
@@ -41,6 +46,11 @@ const router: IRouter = Router();
 const TENANT_SELECT =
   "id, slug, name, storefront_name, status, custom_domain, custom_domain_status, created_at";
 
+// The single-tenant detail view surfaces a couple more operator-relevant
+// fields than the directory list: the tenant's own outbound sender
+// (migration 0360) and the last-touched timestamp.
+const TENANT_DETAIL_SELECT = `${TENANT_SELECT}, from_email, from_name, updated_at`;
+
 interface OrgRow {
   id: string;
   slug: string;
@@ -50,6 +60,12 @@ interface OrgRow {
   custom_domain: string | null;
   custom_domain_status: string | null;
   created_at: string;
+}
+
+interface OrgDetailRow extends OrgRow {
+  from_email: string | null;
+  from_name: string | null;
+  updated_at: string | null;
 }
 
 function toTenantView(o: OrgRow) {
@@ -64,6 +80,46 @@ function toTenantView(o: OrgRow) {
     createdAt: o.created_at,
   };
 }
+
+function toTenantDetailView(o: OrgDetailRow) {
+  return {
+    ...toTenantView(o),
+    fromEmail: o.from_email,
+    fromName: o.from_name,
+    updatedAt: o.updated_at,
+  };
+}
+
+// Feature-flag keys this running build knows how to toggle. A flag seeded
+// by a newer migration than the deployed build still LISTS (read from DB)
+// but can't be toggled — surfaced as `manageable: false` so the console
+// can disable the switch instead of letting the operator hit a raw 404.
+// Mirrors MANAGEABLE_KEYS in routes/admin/feature-flags.ts.
+const MANAGEABLE_FLAG_KEYS: ReadonlySet<string> = new Set(FEATURE_FLAG_KEYS);
+
+interface FeatureFlagRow {
+  key: string;
+  enabled: boolean;
+  description: string | null;
+  category: string | null;
+  updated_by_email: string | null;
+  updated_at: string;
+}
+
+function toFeatureFlagView(r: FeatureFlagRow) {
+  return {
+    key: r.key,
+    enabled: r.enabled,
+    description: r.description ?? "",
+    category: r.category ?? "General",
+    manageable: MANAGEABLE_FLAG_KEYS.has(r.key),
+    updatedByEmail: r.updated_by_email,
+    updatedAt: r.updated_at,
+  };
+}
+
+const FEATURE_FLAG_SELECT =
+  "key, enabled, description, category, updated_by_email, updated_at";
 
 const tenantIdParam = z.object({ id: z.string().uuid() });
 
@@ -149,6 +205,49 @@ router.get(
 
     const tenants = ((data ?? []) as OrgRow[]).map(toTenantView);
     res.json({ tenants });
+  },
+);
+
+// ── GET /platform/tenants/:id ───────────────────────────────────────
+// One tenant's full record for the detail drill-down. Tenant metadata
+// only (slug, brand, domain, sender) — no patient PHI. A 404 for an
+// unknown id keeps the detail page from rendering a phantom tenant.
+router.get(
+  "/platform/tenants/:id",
+  adminReadRateLimiter,
+  requirePlatformAdmin,
+  async (req, res): Promise<void> => {
+    const parsed = tenantIdParam.safeParse(req.params);
+    if (!parsed.success) {
+      res.status(400).json({ error: "invalid_tenant_id" });
+      return;
+    }
+    const seedOrgId = await resolveSeedOrgId();
+    if (!seedOrgId) {
+      res.status(503).json({ error: "tenant_directory_unavailable" });
+      return;
+    }
+    const { data, error } = await getOrgScopedClient(seedOrgId)
+      .raw()
+      .schema("resupply")
+      .from("organizations")
+      .select(TENANT_DETAIL_SELECT)
+      .eq("id", parsed.data.id)
+      .limit(1)
+      .maybeSingle();
+    if (error) {
+      logger.error(
+        { event: "platform_tenant_detail_failed", err: error },
+        "platform: tenant detail query failed",
+      );
+      res.status(500).json({ error: "tenant_read_failed" });
+      return;
+    }
+    if (!data) {
+      res.status(404).json({ error: "tenant_not_found" });
+      return;
+    }
+    res.json({ tenant: toTenantDetailView(data as OrgDetailRow) });
   },
 );
 
@@ -327,6 +426,389 @@ router.get(
       );
       res.status(500).json({ error: "usage_query_failed" });
     }
+  },
+);
+
+// ── Per-tenant feature flags (platform-operator view) ───────────────
+// A platform admin can read and toggle ANY tenant's feature flags from
+// the console — the cross-tenant equivalent of the per-tenant Control
+// Center (routes/admin/feature-flags.ts), which only ever sees the
+// caller's own org. Reads/writes the TARGET org's rows directly. No PHI:
+// flag keys + states are static config.
+
+const flagKeyParam = z.object({
+  id: z.string().uuid(),
+  key: z.enum(FEATURE_FLAG_KEYS),
+});
+const flagPatchBody = z.object({ enabled: z.boolean() }).strict();
+
+router.get(
+  "/platform/tenants/:id/feature-flags",
+  adminReadRateLimiter,
+  requirePlatformAdmin,
+  async (req, res): Promise<void> => {
+    const parsed = tenantIdParam.safeParse(req.params);
+    if (!parsed.success) {
+      res.status(400).json({ error: "invalid_tenant_id" });
+      return;
+    }
+    const id = parsed.data.id;
+    const seedOrgId = await resolveSeedOrgId();
+    if (!seedOrgId) {
+      res.status(503).json({ error: "tenant_directory_unavailable" });
+      return;
+    }
+    const raw = getOrgScopedClient(seedOrgId).raw();
+
+    // Confirm the tenant exists so a bad id 404s rather than returning [].
+    const { data: org, error: orgErr } = await raw
+      .schema("resupply")
+      .from("organizations")
+      .select("id")
+      .eq("id", id)
+      .limit(1)
+      .maybeSingle();
+    if (orgErr) {
+      logger.error(
+        { event: "platform_tenant_flags_org_read_failed", err: orgErr },
+        "platform: tenant feature-flag org read failed",
+      );
+      res.status(500).json({ error: "tenant_read_failed" });
+      return;
+    }
+    if (!org) {
+      res.status(404).json({ error: "tenant_not_found" });
+      return;
+    }
+
+    const { data, error } = await raw
+      .schema("resupply")
+      .from("feature_flags")
+      .select(FEATURE_FLAG_SELECT)
+      .eq("org_id", id)
+      .order("category", { ascending: true })
+      .order("key", { ascending: true });
+    if (error) {
+      logger.error(
+        { event: "platform_tenant_flags_list_failed", err: error },
+        "platform: tenant feature-flag list failed",
+      );
+      res.status(500).json({ error: "feature_flags_failed" });
+      return;
+    }
+    res.json({
+      tenantId: id,
+      flags: ((data ?? []) as FeatureFlagRow[]).map(toFeatureFlagView),
+    });
+  },
+);
+
+router.patch(
+  "/platform/tenants/:id/feature-flags/:key",
+  adminWriteRateLimiter,
+  requirePlatformAdmin,
+  async (req, res): Promise<void> => {
+    const parsed = flagKeyParam.safeParse(req.params);
+    if (!parsed.success) {
+      // A bad uuid is a 400; an unknown flag key is a 404 (the key isn't in
+      // this build's catalog). Disambiguate so the client can react.
+      const badId = parsed.error.issues.some((i) => i.path[0] === "id");
+      res
+        .status(badId ? 400 : 404)
+        .json({ error: badId ? "invalid_tenant_id" : "unknown_flag" });
+      return;
+    }
+    const bodyParsed = flagPatchBody.safeParse(req.body);
+    if (!bodyParsed.success) {
+      res.status(400).json({ error: "invalid_body" });
+      return;
+    }
+    const { id, key } = parsed.data;
+    const nextEnabled = bodyParsed.data.enabled;
+
+    const seedOrgId = await resolveSeedOrgId();
+    if (!seedOrgId) {
+      res.status(503).json({ error: "tenant_directory_unavailable" });
+      return;
+    }
+    const raw = getOrgScopedClient(seedOrgId).raw();
+
+    // Read prior state — also serves as the tenant-exists / flag-seeded
+    // check, mirroring the per-tenant Control Center handler.
+    const { data: priorRow, error: priorErr } = await raw
+      .schema("resupply")
+      .from("feature_flags")
+      .select(FEATURE_FLAG_SELECT)
+      .eq("org_id", id)
+      .eq("key", key)
+      .maybeSingle();
+    if (priorErr) {
+      logger.error(
+        { event: "platform_tenant_flag_read_failed", err: priorErr },
+        "platform: tenant feature-flag read failed",
+      );
+      res.status(500).json({ error: "feature_flag_read_failed" });
+      return;
+    }
+    if (!priorRow) {
+      // No row → either the tenant doesn't exist or wasn't provisioned.
+      res.status(404).json({ error: "flag_not_seeded", key });
+      return;
+    }
+    const prior = priorRow as FeatureFlagRow;
+    if (prior.enabled === nextEnabled) {
+      res.json({ tenantId: id, flag: toFeatureFlagView(prior) });
+      return;
+    }
+
+    const { data: updated, error: updErr } = await raw
+      .schema("resupply")
+      .from("feature_flags")
+      .update({
+        enabled: nextEnabled,
+        updated_by_user_id: req.platformAdminUserId ?? null,
+        updated_by_email: req.platformAdminEmail ?? null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("org_id", id)
+      .eq("key", key)
+      .select(FEATURE_FLAG_SELECT)
+      .single();
+    if (updErr || !updated) {
+      logger.error(
+        { event: "platform_tenant_flag_update_failed", err: updErr },
+        "platform: tenant feature-flag update failed",
+      );
+      res.status(500).json({ error: "feature_flag_update_failed" });
+      return;
+    }
+
+    invalidateFeatureFlagCache(key as FeatureFlagKey);
+
+    await logAudit({
+      action: "platform.feature_flag.toggle",
+      adminEmail: req.platformAdminEmail ?? "platform-admin",
+      adminUserId: req.platformAdminUserId ?? null,
+      targetTable: "feature_flags",
+      targetId: key,
+      metadata: { orgId: id, key, from: prior.enabled, to: nextEnabled },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn({ err }, "platform: feature_flag toggle audit write failed");
+    });
+
+    // Durable per-tenant toggle record — the same table the tenant's own
+    // Control Center "Recent toggle activity" panel reads, so a
+    // platform-side change is visible to the tenant operator too.
+    const { error: eventErr } = await raw
+      .schema("resupply")
+      .from("feature_flag_events")
+      .insert({
+        org_id: id,
+        key,
+        previous_enabled: prior.enabled,
+        next_enabled: nextEnabled,
+        operator_email: req.platformAdminEmail ?? null,
+      });
+    if (eventErr) {
+      logger.warn(
+        { err: eventErr, key },
+        "platform: feature_flag_events insert failed",
+      );
+    }
+
+    res.json({
+      tenantId: id,
+      flag: toFeatureFlagView(updated as FeatureFlagRow),
+    });
+  },
+);
+
+// ── GET /platform/tenants/:id/feature-flag-activity ─────────────────
+// Recent feature-flag toggle history for one tenant — who flipped what,
+// when, and which direction. Reads `feature_flag_events` (the durable
+// toggle ledger the tenant's own Control Center reads), NOT `audit_log`
+// (retired). Includes platform-side toggles, since the PATCH handler
+// above writes the same rows. No PHI — flag keys are static config.
+const ACTIVITY_DEFAULT_LIMIT = 20;
+const ACTIVITY_MAX_LIMIT = 100;
+const activityQuery = z.object({
+  limit: z
+    .string()
+    .optional()
+    .transform((v) => {
+      if (!v) return ACTIVITY_DEFAULT_LIMIT;
+      const n = Number.parseInt(v, 10);
+      if (!Number.isFinite(n) || n <= 0) return ACTIVITY_DEFAULT_LIMIT;
+      return Math.min(n, ACTIVITY_MAX_LIMIT);
+    }),
+});
+
+interface FlagEventRow {
+  occurred_at: string;
+  operator_email: string | null;
+  key: string;
+  previous_enabled: boolean;
+  next_enabled: boolean;
+}
+
+router.get(
+  "/platform/tenants/:id/feature-flag-activity",
+  adminReadRateLimiter,
+  requirePlatformAdmin,
+  async (req, res): Promise<void> => {
+    const parsed = tenantIdParam.safeParse(req.params);
+    if (!parsed.success) {
+      res.status(400).json({ error: "invalid_tenant_id" });
+      return;
+    }
+    const id = parsed.data.id;
+    // A repeated/array `limit` would throw on `.parse()`; degrade to the
+    // default instead of 5xx (mirrors the admin activity reader).
+    const parsedQuery = activityQuery.safeParse(req.query);
+    const limit = parsedQuery.success
+      ? parsedQuery.data.limit
+      : ACTIVITY_DEFAULT_LIMIT;
+
+    const seedOrgId = await resolveSeedOrgId();
+    if (!seedOrgId) {
+      res.status(503).json({ error: "tenant_directory_unavailable" });
+      return;
+    }
+    const raw = getOrgScopedClient(seedOrgId).raw();
+
+    const { data: org, error: orgErr } = await raw
+      .schema("resupply")
+      .from("organizations")
+      .select("id")
+      .eq("id", id)
+      .limit(1)
+      .maybeSingle();
+    if (orgErr) {
+      logger.error(
+        { event: "platform_tenant_flag_activity_org_read_failed", err: orgErr },
+        "platform: tenant flag-activity org read failed",
+      );
+      res.status(500).json({ error: "tenant_read_failed" });
+      return;
+    }
+    if (!org) {
+      res.status(404).json({ error: "tenant_not_found" });
+      return;
+    }
+
+    const { data, error } = await raw
+      .schema("resupply")
+      .from("feature_flag_events")
+      .select(
+        "occurred_at, operator_email, key, previous_enabled, next_enabled",
+      )
+      .eq("org_id", id)
+      .order("occurred_at", { ascending: false })
+      .limit(limit);
+    if (error) {
+      logger.error(
+        { event: "platform_tenant_flag_activity_failed", err: error },
+        "platform: tenant flag-activity query failed",
+      );
+      res.status(500).json({ error: "feature_flag_activity_failed" });
+      return;
+    }
+
+    const activity = ((data ?? []) as FlagEventRow[]).map((r) => ({
+      occurredAt: r.occurred_at,
+      operatorEmail: r.operator_email ?? null,
+      key: r.key,
+      from: r.previous_enabled,
+      to: r.next_enabled,
+    }));
+    res.json({ tenantId: id, activity });
+  },
+);
+
+// ── GET /platform/tenants/:id/admins ────────────────────────────────
+// The tenant's staff accounts (who can sign into its admin console) —
+// the support/security answer to "who do I contact?" and "is there a
+// stale admin?". Reads `admin_users` for the TARGET org via the scoped
+// facade. admin_users carries the email/role/status directly, so no
+// cross-schema join is needed. Staff emails are operator metadata (a
+// platform admin can already impersonate the tenant) — no patient PHI.
+interface AdminUserRow {
+  id: string;
+  email_lower: string | null;
+  role: string;
+  status: string;
+  display_name: string | null;
+  last_login_at: string | null;
+  invited_at: string | null;
+}
+
+router.get(
+  "/platform/tenants/:id/admins",
+  adminReadRateLimiter,
+  requirePlatformAdmin,
+  async (req, res): Promise<void> => {
+    const parsed = tenantIdParam.safeParse(req.params);
+    if (!parsed.success) {
+      res.status(400).json({ error: "invalid_tenant_id" });
+      return;
+    }
+    const id = parsed.data.id;
+
+    const seedOrgId = await resolveSeedOrgId();
+    if (!seedOrgId) {
+      res.status(503).json({ error: "tenant_directory_unavailable" });
+      return;
+    }
+    // Confirm the tenant exists (404 a bad id) via the global directory.
+    const { data: org, error: orgErr } = await getOrgScopedClient(seedOrgId)
+      .raw()
+      .schema("resupply")
+      .from("organizations")
+      .select("id")
+      .eq("id", id)
+      .limit(1)
+      .maybeSingle();
+    if (orgErr) {
+      logger.error(
+        { event: "platform_tenant_admins_org_read_failed", err: orgErr },
+        "platform: tenant admins org read failed",
+      );
+      res.status(500).json({ error: "tenant_read_failed" });
+      return;
+    }
+    if (!org) {
+      res.status(404).json({ error: "tenant_not_found" });
+      return;
+    }
+
+    // Per-tenant staff via the scoped facade for the TARGET org.
+    const { data, error } = await getOrgScopedClient(id)
+      .from("admin_users")
+      .select(
+        "id, email_lower, role, status, display_name, last_login_at, invited_at",
+      )
+      .order("invited_at", { ascending: false });
+    if (error) {
+      logger.error(
+        { event: "platform_tenant_admins_failed", err: error },
+        "platform: tenant admins query failed",
+      );
+      res.status(500).json({ error: "admins_query_failed" });
+      return;
+    }
+
+    const admins = ((data ?? []) as AdminUserRow[]).map((a) => ({
+      id: a.id,
+      email: a.email_lower,
+      role: a.role,
+      status: a.status,
+      displayName: a.display_name,
+      lastLoginAt: a.last_login_at,
+      invitedAt: a.invited_at,
+    }));
+    res.json({ tenantId: id, admins });
   },
 );
 

@@ -34,6 +34,7 @@ import { z } from "zod";
 import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { notifyNpsDetractor } from "../../lib/slack/notify";
 import { resolveOrgIdForSignedRecord } from "../../lib/storefront/signed-link-org";
 import { verifyNpsToken } from "../../lib/nps-token";
 
@@ -145,6 +146,17 @@ router.post("/shop/orders/nps", npsRateLimiter, async (req, res) => {
     },
     "nps response captured",
   );
+
+  // Detractor (0–6) → ping the CS reps in Slack (best-effort, non-PHI: the
+  // free-text comment is NOT sent, only score + order ref + a comment flag).
+  if (verified.score <= 6) {
+    void notifyNpsDetractor({
+      orgId,
+      orderId: verified.orderId,
+      score: verified.score,
+      hasComment: Boolean(parsed.data.comment),
+    });
+  }
 
   res.json({ ok: true });
 });

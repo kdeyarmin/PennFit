@@ -40,6 +40,7 @@ import {
 
 import { logger } from "../logger";
 import { applyCompanyIdentityToText, getCompanyInfo } from "../company-info";
+import { recordAiTokenUsage } from "../metering/usage.js";
 import {
   DEFAULT_ANTHROPIC_MODEL_CHAT,
   selectLlmProvider,
@@ -221,9 +222,15 @@ export async function generateEmailReply(
   const minConfidence = resolveMinConfidence(env);
 
   if (selection.provider === "anthropic") {
-    return generateViaAnthropic(env, systemPrompt, userPrompt, minConfidence);
+    return generateViaAnthropic(
+      env,
+      systemPrompt,
+      userPrompt,
+      minConfidence,
+      orgId,
+    );
   }
-  return generateViaOpenAi(env, systemPrompt, userPrompt, minConfidence);
+  return generateViaOpenAi(env, systemPrompt, userPrompt, minConfidence, orgId);
 }
 
 async function generateViaAnthropic(
@@ -231,6 +238,7 @@ async function generateViaAnthropic(
   systemPrompt: string,
   userPrompt: string,
   minConfidence: number,
+  orgId?: string,
 ): Promise<EmailReplyResult> {
   const apiKey = env.ANTHROPIC_API_KEY?.trim();
   if (!apiKey) return { kind: "handoff" };
@@ -268,6 +276,14 @@ async function generateViaAnthropic(
       );
       return { kind: "handoff" };
     }
+    // Fold this reply's tokens into the tenant's AI COGS rollup.
+    // Fire-and-forget; absent orgId is a silent no-op.
+    recordAiTokenUsage({
+      orgId,
+      inputTokens: result.response.usage.input_tokens,
+      outputTokens: result.response.usage.output_tokens,
+      source: "email.auto_reply",
+    });
     return parseModelOutput(
       "anthropic",
       getResponseText(result.response),
@@ -291,6 +307,7 @@ async function generateViaOpenAi(
   systemPrompt: string,
   userPrompt: string,
   minConfidence: number,
+  orgId?: string,
 ): Promise<EmailReplyResult> {
   const apiKey = env.OPENAI_API_KEY?.trim();
   if (!apiKey) return { kind: "handoff" };
@@ -335,7 +352,16 @@ async function generateViaOpenAi(
     }
     const json = (await res.json()) as {
       choices?: Array<{ message?: { content?: string } }>;
+      usage?: { prompt_tokens?: number; completion_tokens?: number };
     };
+    // Fold this reply's tokens into the tenant's AI COGS rollup.
+    // Fire-and-forget; absent orgId is a silent no-op.
+    recordAiTokenUsage({
+      orgId,
+      inputTokens: json.usage?.prompt_tokens ?? 0,
+      outputTokens: json.usage?.completion_tokens ?? 0,
+      source: "email.auto_reply",
+    });
     return parseModelOutput(
       "openai",
       json.choices?.[0]?.message?.content ?? "",

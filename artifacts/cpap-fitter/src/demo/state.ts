@@ -76,6 +76,21 @@ export function initDemoStateFromUrl(): void {
   cached = readStorage();
 }
 
+/**
+ * Boot-time resolver used by main.tsx to decide whether to load the
+ * demo sandbox chunk: apply the URL param (and scrub it), falling back
+ * to stored state, then return whether demo is active.
+ *
+ * This module is intentionally dependency-light (no handler/router
+ * imports), so calling it does NOT pull the large demo router/fixtures
+ * into the live bundle — those load only via the dynamic `./demo/boot`
+ * import that this gate guards.
+ */
+export function resolveDemoActive(): boolean {
+  initDemoStateFromUrl();
+  return isDemoActive();
+}
+
 /** Whether the client-side demo sandbox is currently active. */
 export function isDemoActive(): boolean {
   if (cached === null) {

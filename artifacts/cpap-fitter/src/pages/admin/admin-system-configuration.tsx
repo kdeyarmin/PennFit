@@ -12,7 +12,7 @@
 // clears on success and we re-fetch the masked state). Non-secret
 // config (URLs, IDs) is shown in full so it can be verified.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
@@ -21,6 +21,7 @@ import {
   KeyRound,
   RotateCcw,
   Save,
+  Send,
   ShieldAlert,
   SlidersHorizontal,
   Webhook,
@@ -39,8 +40,13 @@ import {
   clearConfigValue,
   getSystemConfig,
   getSystemConfigActivity,
+  sendSlackTest,
   setConfigValue,
 } from "@/lib/admin/app-config-api";
+
+/** Category label that gets the "Send test message" affordance. Must match
+ *  CATEGORY_SLACK in the backend app-config catalog. */
+const SLACK_CATEGORY = "Team notifications (Slack)";
 
 const queryKey = ["admin", "system", "config"] as const;
 const activityKey = ["admin", "system", "config", "activity"] as const;
@@ -147,6 +153,7 @@ export function AdminSystemConfigurationPage() {
                     <SettingRow key={s.key} setting={s} />
                   ))}
                 </div>
+                {cat.category === SLACK_CATEGORY && <SlackTestButton />}
               </Card>
             ))
           )}
@@ -154,6 +161,166 @@ export function AdminSystemConfigurationPage() {
           <RecentActivity />
         </>
       )}
+    </div>
+  );
+}
+
+/** Reads ?slack=… (set by the OAuth callback) once, then strips it from the
+ *  URL so a refresh doesn't re-show the banner. */
+function useSlackOAuthOutcome(onConnected: () => void): string | null {
+  const [outcome] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    return new URLSearchParams(window.location.search).get("slack");
+  });
+  useEffect(() => {
+    if (!outcome) return;
+    if (outcome === "connected") onConnected();
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("slack");
+      window.history.replaceState({}, "", url.toString());
+    }
+    // Run once for the initial outcome.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [outcome]);
+  return outcome;
+}
+
+/** Setup help + connect actions for the Slack category. Offers one-click
+ *  "Add to Slack" (OAuth) plus a "Send test message" verify step that
+ *  auto-saves the workspace id. Shows the inbound Request URLs too. */
+function SlackTestButton() {
+  const queryClient = useQueryClient();
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const origin =
+    typeof window !== "undefined"
+      ? window.location.origin
+      : "https://<your-domain>";
+  const oauthOutcome = useSlackOAuthOutcome(() => {
+    void queryClient.invalidateQueries({ queryKey });
+    setMsg({ ok: true, text: "Connected to Slack via OAuth. 🎉" });
+  });
+  const oauthBanner =
+    oauthOutcome === "error"
+      ? "Slack connection failed or was cancelled. Try again, or enter a bot token manually below."
+      : oauthOutcome === "oauth_unavailable"
+        ? "One-click connect isn't set up by the platform yet — enter a bot token + channel manually below."
+        : null;
+  const test = useMutation({
+    mutationFn: sendSlackTest,
+    onSuccess: (r) => {
+      setMsg({ ok: true, text: r.message });
+      // The test auto-saved the team id — refetch so the field reflects it.
+      void queryClient.invalidateQueries({ queryKey });
+    },
+    onError: (e) =>
+      setMsg({
+        ok: false,
+        text: e instanceof Error ? e.message : "Failed to send.",
+      }),
+  });
+  return (
+    <div
+      className="mt-3 space-y-3 border-t pt-3"
+      style={{ borderColor: "hsl(var(--line-1))" }}
+    >
+      {oauthBanner && (
+        <p className="text-xs" style={{ color: "hsl(var(--destructive))" }}>
+          {oauthBanner}
+        </p>
+      )}
+      {/* One-click connect (recommended). Full-page nav so the OAuth redirect
+          carries the admin session. */}
+      <div className="flex flex-wrap items-center gap-3">
+        <Button
+          intent="primary"
+          size="sm"
+          onClick={() => {
+            window.location.href = `${origin}/resupply-api/admin/slack/oauth/start`;
+          }}
+        >
+          Add to Slack
+        </Button>
+        <span className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+          One click — pick a channel and you're connected. (Available once the
+          platform has registered its Slack app.)
+        </span>
+      </div>
+      <p className="text-xs">
+        <a
+          href="/guides/setup-slack.pdf"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="font-semibold underline"
+          style={{ color: "hsl(var(--ink-2))" }}
+        >
+          📄 Read the full step-by-step setup guide (PDF)
+        </a>
+      </p>
+      <div
+        className="rounded-md p-3 text-xs leading-relaxed"
+        style={{
+          background: "hsl(var(--surface-2))",
+          color: "hsl(var(--ink-3))",
+        }}
+      >
+        <p className="font-semibold" style={{ color: "hsl(var(--ink-2))" }}>
+          Or connect manually
+        </p>
+        <ol className="mt-1 list-decimal space-y-0.5 pl-4">
+          <li>
+            Create a Slack app in your workspace, add the{" "}
+            <code>chat:write</code> bot scope, install it, and paste the bot
+            token + alerts channel id above.
+          </li>
+          <li>Invite the bot to that channel.</li>
+          <li>
+            For buttons + the <code>/pennfit</code> command, paste the signing
+            secret above and set these Request URLs in your Slack app:
+          </li>
+        </ol>
+        <div className="mt-1.5 space-y-0.5 pl-4">
+          <div>
+            Interactivity:{" "}
+            <code className="break-all">
+              {origin}/resupply-api/slack/interactivity
+            </code>
+          </div>
+          <div>
+            Slash command:{" "}
+            <code className="break-all">
+              {origin}/resupply-api/slack/commands
+            </code>
+          </div>
+        </div>
+        <p className="mt-1.5 pl-4">
+          Then hit <span className="font-semibold">Send test message</span> — it
+          confirms the connection and fills in your workspace id automatically.
+        </p>
+      </div>
+      <div className="flex flex-wrap items-center gap-3">
+        <Button
+          intent="secondary"
+          size="sm"
+          isLoading={test.isPending}
+          onClick={() => {
+            setMsg(null);
+            test.mutate();
+          }}
+        >
+          <Send className="h-3.5 w-3.5" /> Send test message
+        </Button>
+        {msg && (
+          <span
+            className="text-xs"
+            style={{
+              color: msg.ok ? "hsl(var(--ink-3))" : "hsl(var(--destructive))",
+            }}
+          >
+            {msg.text}
+          </span>
+        )}
+      </div>
     </div>
   );
 }

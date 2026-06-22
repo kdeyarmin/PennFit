@@ -30,6 +30,85 @@ type KpiLink = {
   testId: string;
 };
 
+// Shown only while the workspace still looks empty (no conversations,
+// episodes, fulfillments, or paused patients) — i.e. a brand-new tenant who
+// hasn't done anything yet. It points straight at the three core "first
+// real action" entry points so the aha-moment is one click away rather than
+// buried in the nav. Disappears on its own once the tenant has any activity.
+const FIRST_ACTIONS: ReadonlyArray<{
+  title: string;
+  blurb: string;
+  href: string;
+  cta: string;
+}> = [
+  {
+    title: "Send a fitting link",
+    blurb:
+      "Text or email a patient an AI mask-fitting link and get their recommended mask + size back.",
+    href: "/admin/fitter-invites",
+    cta: "Open the fitter",
+  },
+  {
+    title: "Take an order",
+    blurb:
+      "Ring up a cash or insurance order at the front desk — no storefront setup needed.",
+    href: "/admin/shop/counter-orders",
+    cta: "Open the front desk",
+  },
+  {
+    title: "Bring in your patients",
+    blurb:
+      "Import your roster from PacWare or any CSV (fill-only — it never overwrites).",
+    href: "/admin/pacware",
+    cta: "Import patients",
+  },
+];
+
+function FirstActionsCard({ show }: { show: boolean }) {
+  if (!show) return null;
+  return (
+    <section
+      className="bg-white border rounded-lg p-5"
+      style={{ borderColor: "hsl(var(--line-1))" }}
+      data-testid="dashboard-first-actions"
+    >
+      <h2
+        className="text-base font-semibold mb-1"
+        style={{ color: "hsl(var(--ink-1))" }}
+      >
+        Get started — try your first action
+      </h2>
+      <p className="text-sm mb-4" style={{ color: "hsl(var(--ink-2))" }}>
+        Your workspace is ready to use right now. Pick one to see the app in
+        action — you can finish branding and settings later.
+      </p>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {FIRST_ACTIONS.map((a) => (
+          <Link
+            key={a.href}
+            href={a.href}
+            className="block rounded-lg border p-4 transition-shadow hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-[#c9a24a] focus-visible:ring-offset-2"
+            style={{ borderColor: "hsl(var(--line-1))" }}
+          >
+            <div
+              className="text-sm font-semibold"
+              style={{ color: "hsl(var(--ink-1))" }}
+            >
+              {a.title}
+            </div>
+            <p className="mt-1 text-xs" style={{ color: "hsl(var(--ink-2))" }}>
+              {a.blurb}
+            </p>
+            <span className="mt-2 inline-block text-xs font-semibold text-blue-700">
+              {a.cta} →
+            </span>
+          </Link>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export function DashboardPage() {
   const { data, isPending, isError, error, refetch } = useGetDashboardSummary();
 
@@ -89,6 +168,17 @@ export function DashboardPage() {
       {isError && <ErrorPanel error={error} onRetry={() => void refetch()} />}
 
       <SetupProgressCard />
+
+      <FirstActionsCard
+        show={
+          !!data &&
+          !data.activeConversations &&
+          !data.awaitingAdmin &&
+          !data.overdueEpisodes &&
+          !data.fulfillmentsThisWeek &&
+          !data.pausedPatients
+        }
+      />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {kpis.map((k) => (

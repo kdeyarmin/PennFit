@@ -56,7 +56,7 @@ const idParam = z.object({ id: z.string().uuid() });
  * Backslash escapes for both wildcards mirror Postgres' standard
  * `ilike` semantics.
  */
-function escapeIlikePattern(s: string): string {
+export function escapeIlikePattern(s: string): string {
   return s.replace(/\\/g, "\\\\").replace(/[%_]/g, (m) => `\\${m}`);
 }
 
@@ -67,7 +67,7 @@ function escapeIlikePattern(s: string): string {
  * so a recall's referenceUrl / evidenceUrl can't be weaponised as a
  * stored XSS that fires when other admins / patients click the link.
  */
-function httpUrl() {
+export function httpUrl() {
   return z
     .string()
     .trim()
@@ -81,7 +81,7 @@ function httpUrl() {
 const SEVERITY_VALUES = ["urgent", "priority", "advisory"] as const;
 const STATUS_VALUES = ["active", "closed"] as const;
 
-const serialMatchSchema = z.discriminatedUnion("kind", [
+export const serialMatchSchema = z.discriminatedUnion("kind", [
   z
     .object({
       kind: z.literal("range"),
@@ -97,7 +97,7 @@ const serialMatchSchema = z.discriminatedUnion("kind", [
     .strict(),
 ]);
 
-const createBody = z
+export const createBody = z
   .object({
     recallReference: z.string().trim().min(1).max(64),
     title: z.string().trim().min(1).max(200),

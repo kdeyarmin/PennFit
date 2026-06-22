@@ -1,7 +1,7 @@
 // Hand-rolled fetch wrapper for the provider-facing therapy-usage
 // report (GET /admin/reports/therapy-usage). Mirrors analytics-api.ts.
 
-import { ApiError } from "@workspace/api-client-react/admin";
+import { adminJsonFetch as jsonFetch } from "../admin-json-fetch";
 
 export type TherapyReportGrouping = "patient" | "provider" | "manufacturer";
 
@@ -36,23 +36,6 @@ export interface TherapyUsageReportResponse {
   grouping: TherapyReportGrouping;
   summary: TherapyUsageSummary;
   groups: TherapyUsageGroup[];
-}
-
-async function jsonFetch<T>(path: string): Promise<T> {
-  const url = `/resupply-api${path}`;
-  const res = await fetch(url, {
-    headers: { Accept: "application/json" },
-  });
-  if (!res.ok) {
-    let data: unknown = null;
-    try {
-      data = await res.json();
-    } catch {
-      // ignore
-    }
-    throw new ApiError(res, data, { method: "GET", url });
-  }
-  return (await res.json()) as T;
 }
 
 export const fetchTherapyUsageReport = (

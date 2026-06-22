@@ -13,21 +13,32 @@ backend, and toggle between demo and live at any time.
 
 ```
 main.tsx
-  └─ import "./demo/boot"   ← FIRST import; installs the fetch wrapper
-        └─ install.ts       ← replaces window.fetch (transparent when off)
-              └─ router.ts   ← dispatches API calls to handlers/*
-                    └─ handlers/*  ← return Responses built from fixtures/*
+  └─ resolveDemoActive()      ← lightweight flag check (no fixtures pulled)
+        └─ if active: await import("./demo/boot")   ← LAZY, demo-only chunk
+              └─ install.ts   ← replaces window.fetch
+                    └─ router.ts   ← dispatches API calls to handlers/*
+                          └─ handlers/*  ← Responses built from fixtures/*
+  └─ then: await import("./App")   ← imported AFTER the optional demo boot
 App.tsx
   └─ <DemoModeProvider>      ← reactive isDemo + enter/exit
         └─ <DemoBanner/>     ← status bar (on) / dismissible invite (off)
 ```
 
-Why `boot` must be imported first: the auth client binds
+The demo sandbox is **code-split**: its router pulls in hundreds of
+seeded routes/fixtures, so it is loaded lazily — `main.tsx` only
+`import("./demo/boot")`s when `resolveDemoActive()` is true, and Vite
+emits it as a separate chunk. Live storefront/admin traffic never
+downloads or parses it.
+
+Why the boot must run before `<App>`: the auth client binds
 `globalThis.fetch` at module-load time
 (`lib/resupply-auth-react/src/client.ts`). The interceptor has to be in
-place before that happens. The wrapper checks the demo flag at **call**
+place before that happens — so `<App>` is imported **dynamically, after**
+the optional demo boot. The wrapper checks the demo flag at **call**
 time, so it stays a no-op passthrough in live mode and toggling needs no
-re-install.
+re-install. (`DemoModeProvider`/`DemoBanner`, imported by `<App>`, are
+small and depend only on the dependency-light `./state` module — not on
+the router/fixtures.)
 
 ## Turning it on
 

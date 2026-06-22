@@ -53,6 +53,11 @@ describe("DemoBanner", () => {
     expect(screen.getByTestId("demo-mode-banner").textContent).toContain(
       "sample data",
     );
+    // The banner also warns that not every feature is wired up in the demo,
+    // so an explorer who hits an empty page knows it's expected.
+    expect(screen.getByTestId("demo-mode-banner").textContent).toContain(
+      "not every feature works in the demo",
+    );
     expect(screen.getByTestId("demo-mode-exit")).toBeTruthy();
   });
 

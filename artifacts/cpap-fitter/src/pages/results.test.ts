@@ -161,7 +161,11 @@ describe("results — structural integrity", () => {
   });
 
   it("still calls useGetRecommendation for the recommendation data", () => {
-    expect(SRC).toContain("useGetRecommendation()");
+    expect(SRC).toContain("useGetRecommendation(");
+  });
+
+  it("threads the invite token to the recommendation request (invitation-only gate)", () => {
+    expect(SRC).toContain("x-fitter-invite-token");
   });
 
   it("still reads measurements from useFitterStore", () => {

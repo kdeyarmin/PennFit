@@ -211,6 +211,11 @@ const AdminAnalyticsOutreachAttributionPage = lazyWithRetry(() =>
     default: m.AdminAnalyticsOutreachAttributionPage,
   })),
 );
+const AdminAuditTrailPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-audit-trail").then((m) => ({
+    default: m.AdminAuditTrailPage,
+  })),
+);
 const AdminAnalyticsAcquisitionFunnelPage = lazyWithRetry(() =>
   import("@/pages/admin/admin-analytics-acquisition-funnel").then((m) => ({
     default: m.AdminAnalyticsAcquisitionFunnelPage,
@@ -556,6 +561,31 @@ const AdminBillingTimelyFilingPage = lazyWithRetry(() =>
     default: m.AdminBillingTimelyFilingPage,
   })),
 );
+const AdminBillingAdrPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-billing-adr").then((m) => ({
+    default: m.AdminBillingAdrPage,
+  })),
+);
+const AdminBillingAdrDetailPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-billing-adr-detail").then((m) => ({
+    default: m.AdminBillingAdrDetailPage,
+  })),
+);
+const AdminAuditPacketPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-audit-packet").then((m) => ({
+    default: m.AdminAuditPacketPage,
+  })),
+);
+const AdminBillingCollectionsPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-billing-collections").then((m) => ({
+    default: m.AdminBillingCollectionsPage,
+  })),
+);
+const AdminBillingAuditReadinessPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-billing-audit-readiness").then((m) => ({
+    default: m.AdminBillingAuditReadinessPage,
+  })),
+);
 const AdminPayerProfitabilityPage = lazyWithRetry(() =>
   import("@/pages/admin/admin-payer-profitability").then((m) => ({
     default: m.AdminPayerProfitabilityPage,
@@ -707,6 +737,11 @@ const AdminNpsPage = lazyWithRetry(() =>
 const AdminSupportPage = lazyWithRetry(() =>
   import("@/pages/admin/admin-support").then((m) => ({
     default: m.AdminSupportPage,
+  })),
+);
+const AdminResourcesPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-resources").then((m) => ({
+    default: m.AdminResourcesPage,
   })),
 );
 const AdminCustomerDetailPage = lazyWithRetry(() =>
@@ -870,6 +905,22 @@ function AdminConsole() {
             <Route
               path="/admin/billing/bill-hold"
               component={AdminBillingBillHoldPage}
+            />
+            <Route path="/admin/billing/adr" component={AdminBillingAdrPage} />
+            <Route path="/admin/billing/adr/:id">
+              {(params) => <AdminBillingAdrDetailPage id={params.id} />}
+            </Route>
+            <Route
+              path="/admin/audit-packet"
+              component={AdminAuditPacketPage}
+            />
+            <Route
+              path="/admin/billing/collections"
+              component={AdminBillingCollectionsPage}
+            />
+            <Route
+              path="/admin/billing/audit-readiness"
+              component={AdminBillingAuditReadinessPage}
             />
             <Route
               path="/admin/billing/timely-filing"
@@ -1157,6 +1208,10 @@ function AdminConsole() {
               path="/admin/analytics/inventory-turnover"
               component={AdminInventoryTurnoverPage}
             />
+            <Route
+              path="/admin/analytics/audit-trail"
+              component={AdminAuditTrailPage}
+            />
             <Route path="/admin/goals" component={AdminGoalsPage} />
             <Route path="/admin/kpi-alerts" component={AdminKpiAlertsPage} />
             <Route path="/admin/analytics" component={AdminAnalyticsPage} />
@@ -1222,6 +1277,7 @@ function AdminConsole() {
             />
             <Route path="/admin/nps" component={AdminNpsPage} />
             <Route path="/admin/support" component={AdminSupportPage} />
+            <Route path="/admin/resources" component={AdminResourcesPage} />
             <Route
               path="/admin/productivity"
               component={AdminProductivityPage}

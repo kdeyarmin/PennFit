@@ -13,6 +13,7 @@ import { useState, type FormEvent } from "react";
 import { Link } from "wouter";
 
 import { authHooks } from "@/lib/auth-hooks";
+import { isValidEmail } from "@/lib/email-format";
 import { AuthLayout } from "@/components/auth-layout";
 
 import { decideForgotPasswordErrorOutcome } from "./forgot-password.helpers";
@@ -32,9 +33,15 @@ export function ForgotPasswordPage() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const forgot = authHooks.useForgotPassword();
 
+  // Inline email-format validation (mirrors consent.tsx) — flag a typo
+  // before the no-enumeration round-trip silently swallows it.
+  const emailValid = isValidEmail(email);
+  const showEmailError = email.length > 0 && !emailValid;
+
   function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setSubmitError(null);
+    if (!emailValid) return;
     forgot.mutate(
       { email: email.trim() },
       {
@@ -84,14 +91,32 @@ export function ForgotPasswordPage() {
             <label className="block text-sm">
               <span className="font-medium">Email</span>
               <input
+                id="forgot-email"
                 type="email"
                 autoComplete="username"
                 required
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  if (submitError) setSubmitError(null);
+                }}
+                aria-invalid={showEmailError || undefined}
+                aria-describedby={
+                  showEmailError ? "forgot-email-error" : undefined
+                }
                 className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
               />
             </label>
+
+            {showEmailError && (
+              <p
+                id="forgot-email-error"
+                role="alert"
+                className="text-sm font-medium text-red-700"
+              >
+                Enter a valid email address (e.g. you@example.com).
+              </p>
+            )}
 
             {submitError && (
               <p
@@ -104,7 +129,7 @@ export function ForgotPasswordPage() {
 
             <button
               type="submit"
-              disabled={forgot.isPending}
+              disabled={forgot.isPending || showEmailError}
               className="w-full rounded-md bg-[hsl(var(--penn-navy-deep))] text-white font-semibold py-2 text-sm disabled:opacity-60"
             >
               {forgot.isPending ? "Sending…" : "Send reset link"}

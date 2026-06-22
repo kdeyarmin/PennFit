@@ -27,6 +27,8 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const APPSHELL_SRC = readFileSync(path.join(__dirname, "AppShell.tsx"), "utf8");
+// findGroupForActiveHref now lives in nav-traversal.ts (imported by AppShell).
+const NAV_SRC = readFileSync(path.join(__dirname, "nav-traversal.ts"), "utf8");
 
 // ---------------------------------------------------------------------------
 // SECTION 1 — Static source-string guards
@@ -58,7 +60,8 @@ describe("AppShell — collapsible nav infrastructure", () => {
   });
 
   it("defines findGroupForActiveHref to compute the active group on each render", () => {
-    expect(APPSHELL_SRC).toContain("function findGroupForActiveHref");
+    expect(NAV_SRC).toContain("function findGroupForActiveHref");
+    expect(APPSHELL_SRC).toContain("findGroupForActiveHref(");
   });
 
   it("skips the first auto-expand effect via a ref so the active group's persisted collapse survives reload", () => {

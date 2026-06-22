@@ -24,6 +24,10 @@ export interface DenialWorkItem {
   winProbability: number;
   scoreCents: number;
   hasAnalysis: boolean;
+  /** Present when the ADR/audit feature is on: is the patient's audit-critical
+   *  documentation complete (defensible) or short (gap-risk)? */
+  auditReady?: boolean;
+  missingRequired?: number;
 }
 
 export interface DenialsWorklistResponse {

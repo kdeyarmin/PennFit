@@ -58,14 +58,14 @@ const router: IRouter = Router();
 const ORDER_ID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-function validateOrderId(raw: unknown): string | null {
+export function validateOrderId(raw: unknown): string | null {
   if (typeof raw !== "string") return null;
   return ORDER_ID_RE.test(raw) ? raw : null;
 }
 
 // A parcel spec the UI supplies (DME staff weigh/measure the box). Weight
 // in ounces keeps the form simple; the adapter converts to pounds for XPS.
-const parcelSchema = z.object({
+export const parcelSchema = z.object({
   weightOz: z
     .number()
     .positive()
@@ -81,14 +81,14 @@ const ratesBodySchema = z.object({
   carrierCode: z.string().trim().max(40).nullish(),
 });
 
-const labelBodySchema = z.object({
+export const labelBodySchema = z.object({
   parcel: parcelSchema,
   residential: z.boolean().optional(),
   shippingService: z.string().trim().min(1).max(60),
   contentDescription: z.string().trim().max(120).nullish(),
 });
 
-const batchBodySchema = z.object({
+export const batchBodySchema = z.object({
   orderIds: z.array(z.string()).min(1).max(50),
   shippingService: z.string().trim().min(1).max(60),
   residential: z.boolean().optional(),
@@ -121,7 +121,7 @@ function tenant(
 }
 
 /** Structural address-validity for the queue list (name not required here). */
-function addressLooksValid(addr: SavedShippingAddress | null): boolean {
+export function addressLooksValid(addr: SavedShippingAddress | null): boolean {
   if (!addr) return false;
   return validateReceiverAddress({
     name: "placeholder",

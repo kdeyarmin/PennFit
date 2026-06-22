@@ -1,0 +1,147 @@
+#!/usr/bin/env bash
+#
+# Negative-test harness for check-raw-org-scope.sh (invoked via its
+# --self-test flag). Proves the guard FAILS on a .raw() read of a guarded
+# table that omits the org_id filter, PASSES once the filter is added,
+# recognizes an `org_id:` insert key, ignores non-guarded tables, and never
+# flags test files — so the gate can never silently decay into a vacuous pass.
+#
+# Strategy: build a throwaway fixture tree and point the real checker at it
+# via RAW_ORG_SCOPE_ROOT, then assert the exit codes for clean / dirty states.
+
+set -euo pipefail
+
+SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/check-raw-org-scope.sh"
+
+if ! command -v rg >/dev/null 2>&1; then
+  echo "self-test: ripgrep (rg) required but not on PATH." >&2
+  exit 2
+fi
+
+FIX="$(mktemp -d)"
+trap 'rm -rf "$FIX"' EXIT
+
+mkdir -p "$FIX/artifacts/resupply-api/src/routes" "$FIX/lib/x/src"
+
+run() {
+  RAW_ORG_SCOPE_ROOT="$FIX" bash "$SCRIPT" "$@"
+}
+
+pass=0
+fail=0
+check() { # check <desc> <expected-exit> <actual-exit>
+  if [[ "$2" == "$3" ]]; then
+    echo "  ok: $1"
+    pass=$((pass + 1))
+  else
+    echo "  FAIL: $1 (expected exit $2, got $3)" >&2
+    fail=$((fail + 1))
+  fi
+}
+
+# A properly-scoped read of a guarded table — must always pass.
+scoped_read() {
+  cat >"$1" <<'EOF'
+const r = await supabase
+  .raw()
+  .schema("public")
+  .from("orders")
+  .select("id")
+  .eq("org_id", orgId);
+EOF
+}
+
+set +e
+
+# 1. Clean tree: only a correctly-scoped read present → pass.
+scoped_read "$FIX/artifacts/resupply-api/src/routes/alpha.ts"
+run >/dev/null 2>&1
+check "scoped guarded read passes" 0 $?
+
+# 2. A guarded read missing org_id → hard fail.
+cat >"$FIX/artifacts/resupply-api/src/routes/beta.ts" <<'EOF'
+const r = await supabase
+  .raw()
+  .schema("public")
+  .from("orders")
+  .select("id")
+  .eq("email_status", "failed");
+EOF
+run >/dev/null 2>&1
+check "guarded read without org_id fails" 1 $?
+
+# 3. Failure output names the offender.
+out="$(run 2>&1)"
+if grep -q "routes/beta.ts" <<<"$out"; then
+  echo "  ok: violation output names the offending file"
+  pass=$((pass + 1))
+else
+  echo "  FAIL: violation output did not name the offender" >&2
+  fail=$((fail + 1))
+fi
+
+# 4. Add the org_id filter → back to a clean pass.
+scoped_read "$FIX/artifacts/resupply-api/src/routes/beta.ts"
+run >/dev/null 2>&1
+check "offender gains org_id filter → passes" 0 $?
+
+# 5. An insert that stamps org_id (no .eq) is recognized.
+cat >"$FIX/artifacts/resupply-api/src/routes/gamma.ts" <<'EOF'
+await supabase
+  .raw()
+  .schema("public")
+  .from("orders")
+  .insert({
+    org_id: orgId,
+    order_reference: ref,
+  });
+EOF
+run >/dev/null 2>&1
+check "insert stamping org_id passes" 0 $?
+
+# 6. A non-guarded table without org_id must NOT fail.
+cat >"$FIX/artifacts/resupply-api/src/routes/delta.ts" <<'EOF'
+const r = await supabase.raw().schema("public").from("usage_events").select("step");
+EOF
+run >/dev/null 2>&1
+check "non-guarded table is ignored" 0 $?
+
+# 7. A test file with an unscoped guarded read must NOT fail (tests exempt).
+cat >"$FIX/artifacts/resupply-api/src/routes/epsilon.test.ts" <<'EOF'
+const r = await supabase.raw().schema("public").from("orders").select("id");
+EOF
+run >/dev/null 2>&1
+check "test file is exempt" 0 $?
+
+# 8. Merely SELECTING the org_id column (no real filter) must still FAIL —
+#    the gate requires a scope operation, not just the substring "org_id".
+cat >"$FIX/artifacts/resupply-api/src/routes/zeta.ts" <<'EOF'
+const r = await supabase
+  .raw()
+  .schema("public")
+  .from("orders")
+  .select("id, org_id") // selecting the column is NOT a filter
+  .eq("email_status", "failed");
+EOF
+run >/dev/null 2>&1
+check "selecting org_id column (no filter) still fails" 1 $?
+# Remove the intentional offender so it doesn't taint later clean-tree checks.
+rm "$FIX/artifacts/resupply-api/src/routes/zeta.ts"
+
+# 9. A `raw-org-scope-exempt` marker comment suppresses the finding.
+cat >"$FIX/artifacts/resupply-api/src/routes/eta.ts" <<'EOF'
+// raw-org-scope-exempt: capability lookup by bearer reference + email.
+const r = await supabase
+  .raw()
+  .schema("public")
+  .from("orders")
+  .select("id")
+  .eq("order_reference", ref);
+EOF
+run >/dev/null 2>&1
+check "raw-org-scope-exempt marker passes" 0 $?
+
+set -e
+
+echo "check-raw-org-scope self-test: ${pass} passed, ${fail} failed."
+[[ "$fail" -eq 0 ]]

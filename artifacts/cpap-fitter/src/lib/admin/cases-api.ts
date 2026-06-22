@@ -2,9 +2,7 @@
 // multi-channel case/ticket object over the F4 cases + case_links tables.
 // Read on cases.read, write on cases.manage. Routes return camelCase.
 
-import { ApiError } from "@workspace/api-client-react/admin";
-
-import { csrfHeader } from "../csrf";
+import { adminJsonFetch as jsonFetch } from "../admin-json-fetch";
 
 export type CaseStatus = "open" | "in_progress" | "resolved" | "closed";
 export type CasePriority = "low" | "normal" | "high" | "urgent";
@@ -41,31 +39,6 @@ export interface CaseLink {
   note: string | null;
   createdByEmail: string | null;
   createdAt: string;
-}
-
-async function jsonFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const { headers, ...rest } = init;
-  const method = (init.method ?? "GET").toUpperCase();
-  const url = `/resupply-api${path}`;
-  const res = await fetch(url, {
-    ...rest,
-    credentials: "include",
-    headers: {
-      Accept: "application/json",
-      ...csrfHeader(),
-      ...(headers ?? {}),
-    },
-  });
-  if (!res.ok) {
-    let data: unknown = null;
-    try {
-      data = await res.json();
-    } catch {
-      // body not JSON
-    }
-    throw new ApiError(res, data, { method, url });
-  }
-  return (await res.json()) as T;
 }
 
 export function listCases(

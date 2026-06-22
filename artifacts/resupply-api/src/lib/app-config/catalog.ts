@@ -94,6 +94,7 @@ export const CATEGORY_REACT_HEALTH =
 export const CATEGORY_OFFICE_ALLY = "Clearinghouse (Office Ally)";
 export const CATEGORY_XPS_SHIP = "Shipping labels (XPS Ship)";
 export const CATEGORY_REMINDERS = "Resupply reminders";
+export const CATEGORY_SLACK = "Team notifications (Slack)";
 
 export const APP_CONFIG_CATALOG: readonly AppConfigSetting[] = [
   // ── Branding & assistants ─────────────────────────────────────────
@@ -715,6 +716,97 @@ export const APP_CONFIG_CATALOG: readonly AppConfigSetting[] = [
     description:
       "Stop escalating an unanswered episode once its first reminder is older than this many days. Default 21. Clamped to (days-between-steps)–120.",
     placeholder: "21",
+  },
+
+  // ── Team notifications (Slack) ────────────────────────────────────
+  // PER-TENANT: each tenant connects its OWN Slack workspace/app, so these
+  // are tenant-scoped — a tenant's own bot token / channels / signing secret /
+  // team id, resolved by orgId. Read at call time via
+  // getEffectiveEnvForOrg(orgId)/getTenantConfigValue(orgId, …); unset for a
+  // tenant → notifications are a complete no-op for that tenant. Real-time CS
+  // alerts (reply-needs-human, voice handoff, SLA breach, …) post when the
+  // `slack.notifications` flag is on; inbound buttons/slash commands are
+  // routed to the owning tenant by Slack team id, verified with that tenant's
+  // signing secret, and gated by the `slack.interactivity` flag.
+  {
+    key: "SLACK_BOT_TOKEN",
+    label: "Bot token",
+    category: CATEGORY_SLACK,
+    secret: true,
+    applyMode: "live",
+    scope: "tenant",
+    description:
+      "Slack bot user OAuth token (xoxb-…) with the chat:write scope. Required to post CS alerts into your Slack workspace.",
+    placeholder: "xoxb-…",
+  },
+  {
+    key: "SLACK_ALERTS_CHANNEL",
+    label: "Alerts channel id",
+    category: CATEGORY_SLACK,
+    secret: false,
+    applyMode: "live",
+    scope: "tenant",
+    description:
+      "Channel id (e.g. C0123ABCD, not the #name) the CS reps watch — real-time handoff/SLA alerts post here. Invite the bot to the channel first.",
+    placeholder: "C0123ABCD",
+  },
+  {
+    key: "SLACK_SIGNING_SECRET",
+    label: "Signing secret",
+    category: CATEGORY_SLACK,
+    secret: true,
+    applyMode: "live",
+    scope: "tenant",
+    description:
+      "App signing secret from your Slack app's Basic Information. Required only for inbound interactivity (Escalate/Claim buttons / the /pennfit slash command). Leave blank for outbound-only alerts.",
+  },
+  {
+    key: "SLACK_TEAM_ID",
+    label: "Workspace (team) id",
+    category: CATEGORY_SLACK,
+    secret: false,
+    applyMode: "live",
+    scope: "tenant",
+    description:
+      "Your Slack workspace id (T0123ABCD). Routes inbound button clicks / slash commands to your tenant. Required for inbound interactivity in a multi-tenant deployment.",
+    placeholder: "T0123ABCD",
+  },
+  {
+    key: "SLACK_DIGESTS_CHANNEL",
+    label: "Digests channel id (optional)",
+    category: CATEGORY_SLACK,
+    secret: false,
+    applyMode: "live",
+    scope: "tenant",
+    description:
+      "Optional separate channel id for operator digests (weekly KPIs, metric alerts, stuck jobs, low stock) — e.g. an #ops channel. Leave blank to post digests into the alerts channel. Gated by the slack.digests flag.",
+    placeholder: "C0123OPS",
+  },
+  // PLATFORM-scoped OAuth app credentials. The platform operator registers ONE
+  // Slack app (distributed) and sets these on /platform/config; each tenant
+  // then clicks "Add to Slack" to install it into their workspace (the OAuth
+  // callback stores the per-tenant bot token + team id + channel). With these
+  // set, a tenant never has to paste a bot token by hand.
+  {
+    key: "SLACK_CLIENT_ID",
+    label: "OAuth client id",
+    category: CATEGORY_SLACK,
+    secret: false,
+    applyMode: "live",
+    scope: "platform",
+    description:
+      "Client id of the platform Slack app (Basic Information → App Credentials). Enables one-click “Add to Slack” for every tenant.",
+    placeholder: "1234567890.1234567890",
+  },
+  {
+    key: "SLACK_CLIENT_SECRET",
+    label: "OAuth client secret",
+    category: CATEGORY_SLACK,
+    secret: true,
+    applyMode: "live",
+    scope: "platform",
+    description:
+      "Client secret of the platform Slack app, used to exchange the OAuth code on install. Register the redirect URL <base>/resupply-api/slack/oauth/callback in the app's OAuth settings.",
   },
 ];
 

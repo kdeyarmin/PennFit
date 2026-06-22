@@ -23,7 +23,7 @@ describe("platform console global surfaces", () => {
     expect(SRC).toContain(
       '<Route path="/platform/billing" component={AdminPlatformBillingPage} />',
     );
-    expect(SRC).toContain('{ href: "/platform/billing", label: "Billing" }');
+    expect(SRC).toContain('href: "/platform/billing", label: "Billing"');
   });
 
   it("mounts the deployment launch checklist", () => {
@@ -32,7 +32,7 @@ describe("platform console global surfaces", () => {
     );
     expect(SRC).toContain('path="/platform/account-setup"');
     expect(SRC).toContain(
-      '{ href: "/platform/account-setup", label: "Account setup" }',
+      'href: "/platform/account-setup", label: "Account setup"',
     );
   });
 
@@ -43,6 +43,137 @@ describe("platform console global surfaces", () => {
     expect(SRC).toContain(
       '<Route path="/platform/system" component={PlatformSystemInfoPage} />',
     );
-    expect(SRC).toContain('{ href: "/platform/system", label: "System info" }');
+    expect(SRC).toContain('href: "/platform/system", label: "System info"');
+  });
+});
+
+// The overhaul added a tenant-detail drill-down and a grouped sidebar.
+// Pin both so a refactor that drops them is caught.
+describe("platform console tenant detail + sidebar", () => {
+  it("mounts the tenant detail drill-down route", () => {
+    expect(SRC).toContain(
+      '<Route path="/platform/tenants/:id" component={TenantDetailPage} />',
+    );
+  });
+
+  it("renders the grouped sidebar navigation", () => {
+    expect(SRC).toContain("const PLATFORM_NAV_GROUPS");
+    expect(SRC).toContain("function SidebarContent");
+    expect(SRC).toContain('href: "/platform/tenants", label: "Directory"');
+  });
+
+  it("guards consequential tenant actions behind a confirmation dialog", () => {
+    expect(SRC).toContain("function ConfirmDialog");
+    expect(SRC).toContain('setConfirm({ kind: "impersonate", tenant: t })');
+  });
+
+  it("surfaces per-tenant flag history and a fleet attention panel", () => {
+    expect(SRC).toContain("function RecentFlagActivityCard");
+    expect(SRC).toContain("useTenantFeatureFlagActivity");
+    expect(SRC).toContain("function NeedsAttentionCard");
+    // The detail header offers a one-click storefront open + copyable slug.
+    expect(SRC).toContain("Open storefront");
+    expect(SRC).toContain("<CopyableId value={tenant.slug}");
+  });
+
+  it("adds a sidebar tenant quick-switcher and a support badge", () => {
+    expect(SRC).toContain("function TenantQuickSwitcher");
+    expect(SRC).toContain("<TenantQuickSwitcher onNavigate={onNavigate} />");
+    // Support nav item carries a "needs reply" count badge.
+    expect(SRC).toContain("supportNeedsReply");
+  });
+
+  it("charts per-tenant activity trends on the detail page", () => {
+    expect(SRC).toContain("function TenantActivityCard");
+    expect(SRC).toContain("useTenantActivitySeries");
+    expect(SRC).toContain("<TenantActivityCard tenantId={tenant.id} />");
+  });
+
+  it("shows a per-tenant plan & billing snapshot on the detail page", () => {
+    expect(SRC).toContain("function TenantBillingCard");
+    expect(SRC).toContain("fetchPlatformTenantBilling");
+    expect(SRC).toContain("<TenantBillingCard tenantId={tenant.id} />");
+  });
+
+  it("adds a ⌘K switcher shortcut and inline reactivate on attention", () => {
+    expect(SRC).toContain('e.key.toLowerCase() === "k"');
+    // The Needs-attention panel reactivates inline, not just links out.
+    expect(SRC).toContain("onReactivate(t.id)");
+  });
+
+  it("deepens platform billing: risk, activity feed, and tenant actions", () => {
+    // Dashboard: at-risk (past-due) tenants + a fleet billing activity feed.
+    expect(SRC).toContain("function BillingRiskCard");
+    expect(SRC).toContain("<BillingRiskCard />");
+    expect(SRC).toContain("function BillingActivityCard");
+    expect(SRC).toContain("fetchPlatformBillingActivity");
+    // Tenant detail: a Sync-Stripe action and a per-tenant billing history.
+    expect(SRC).toContain("syncTenantStripeSubscription");
+    expect(SRC).toContain("<BillingActivityCard tenantId={tenant.id} />");
+  });
+
+  it("adds inline plan change + a full metered-items view", () => {
+    // Inline plan switch: preview the cost, then apply.
+    expect(SRC).toContain("function TenantPlanChanger");
+    expect(SRC).toContain("previewTenantBillingChange");
+    expect(SRC).toContain("updateTenantPlan");
+    expect(SRC).toContain("<TenantPlanChanger");
+    // The metering view unions allowances + used + metered add-on metrics.
+    expect(SRC).toContain("const meterRows");
+    expect(SRC).toContain("Metering &amp; usage");
+  });
+
+  it("surfaces a platform health panel on the dashboard", () => {
+    expect(SRC).toContain("function PlatformHealthCard");
+    expect(SRC).toContain("useGetPlatformHealth");
+    expect(SRC).toContain("<PlatformHealthCard />");
+  });
+
+  it("mounts the vendor-costs (rate card + COGS) surface", () => {
+    expect(SRC).toContain("function PlatformCostsPage");
+    expect(SRC).toContain("function CostRateEditor");
+    expect(SRC).toContain("useGetCostRates");
+    expect(SRC).toContain("useUpdateCostRates");
+    expect(SRC).toContain("tenantVendorCogsCents");
+    expect(SRC).toContain(
+      '<Route path="/platform/costs" component={PlatformCostsPage} />',
+    );
+    expect(SRC).toContain('href: "/platform/costs", label: "Vendor costs"');
+  });
+
+  it("surfaces a fleet gross-margin card and self-serve onboarding copy", () => {
+    expect(SRC).toContain("function FleetMarginCard");
+    expect(SRC).toContain("useGetPlatformMargin");
+    expect(SRC).toContain("<FleetMarginCard />");
+    // The create-tenant card reflects self-serve onboarding, not the CLI.
+    expect(SRC).toContain("self-onboard");
+    expect(SRC).not.toContain("tenant:onboard CLI");
+  });
+
+  it("shows the tenant's team & access on the detail page", () => {
+    expect(SRC).toContain("function TenantAdminsCard");
+    expect(SRC).toContain("useTenantAdmins");
+    expect(SRC).toContain("<TenantAdminsCard tenantId={tenant.id} />");
+  });
+
+  it("mounts the platform operator roster", () => {
+    expect(SRC).toContain("function PlatformOperatorsPage");
+    expect(SRC).toContain("useListOperators");
+    expect(SRC).toContain("useGrantOperator");
+    expect(SRC).toContain("useRevokeOperator");
+    expect(SRC).toContain(
+      '<Route path="/platform/operators" component={PlatformOperatorsPage} />',
+    );
+    expect(SRC).toContain('href: "/platform/operators", label: "Operators"');
+  });
+
+  it("adds add-on management, usage recording, and a catalog re-sync", () => {
+    expect(SRC).toContain("function TenantAddonManager");
+    expect(SRC).toContain("updateTenantAddon");
+    expect(SRC).toContain("function TenantUsageRecorder");
+    expect(SRC).toContain("recordTenantUsage");
+    expect(SRC).toContain("function CatalogCard");
+    expect(SRC).toContain("resyncTenantStripeSubscriptions");
+    expect(SRC).toContain("<CatalogCard />");
   });
 });

@@ -11,6 +11,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 import {
+  getSupabaseFilterCalls,
   installSupabaseMock,
   stageSupabaseResponse,
 } from "../../test-helpers/supabase-mock";
@@ -176,6 +177,26 @@ describe("runFailedEmailDigest — outcomes", () => {
     expect(call.customArgs).toEqual({
       kind: "ops_failed_order_emails_digest_v1",
     });
+  });
+
+  it("is platform-wide: does NOT filter the orders scan by org_id", async () => {
+    // This is a PLATFORM ops alert (to RESUPPLY_ADMIN_ALERTS_EMAIL), not a
+    // tenant query — it must surface delivery failures across EVERY tenant.
+    // Pinning it to the seed org (the only org resolveSeedOrgId yields) would
+    // silently drop non-seed tenants' failures. Lock that in: the orders scan
+    // must NOT carry an org_id filter. (public.orders is org-scoped for the
+    // ADMIN/patient paths in this PR; this platform digest is the deliberate
+    // exemption, marked `raw-org-scope-exempt` in the job + CI guard.)
+    process.env.RESUPPLY_ADMIN_ALERTS_EMAIL = "ops@example.com";
+    stageSupabaseResponse("orders", "select", { count: 1, data: null });
+    stageSupabaseResponse("orders", "select", { data: [makeFailedRow()] });
+
+    await runFailedEmailDigest();
+
+    const orgFilters = getSupabaseFilterCalls("orders", "select").filter(
+      (f) => f.verb === "eq" && f.args[0] === "org_id",
+    );
+    expect(orgFilters).toHaveLength(0);
   });
 });
 

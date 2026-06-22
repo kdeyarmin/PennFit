@@ -18,6 +18,9 @@ import { describe, expect, it } from "vitest";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const APPSHELL_SRC = readFileSync(path.join(__dirname, "AppShell.tsx"), "utf8");
+// The nav model + traversal helpers were extracted to nav-traversal.ts;
+// AppShell imports them. The source guards below pin them in their new home.
+const NAV_SRC = readFileSync(path.join(__dirname, "nav-traversal.ts"), "utf8");
 
 // ---------------------------------------------------------------------------
 // SECTION 1 — Static source-string guards
@@ -32,21 +35,23 @@ describe("AppShell — section/sub-nav infrastructure present", () => {
     expect(APPSHELL_SRC).toContain("admin-subnav-");
   });
 
-  it("defines the longest-prefix active-target resolver", () => {
-    expect(APPSHELL_SRC).toContain("function pickActiveTarget");
-    expect(APPSHELL_SRC).toContain("function flattenTargets");
+  it("defines the longest-prefix active-target resolver in nav-traversal", () => {
+    expect(NAV_SRC).toContain("function pickActiveTarget");
+    expect(NAV_SRC).toContain("function flattenTargets");
+    // AppShell consumes them rather than redefining them.
+    expect(APPSHELL_SRC).toContain('from "./nav-traversal"');
   });
 
-  it("defines the section visibility + landing helpers", () => {
-    expect(APPSHELL_SRC).toContain("function visibleTabs");
-    expect(APPSHELL_SRC).toContain("function sectionVisible");
-    expect(APPSHELL_SRC).toContain("function sectionLandingHref");
-    expect(APPSHELL_SRC).toContain("function sectionBadgeCount");
+  it("defines the section visibility + landing helpers in nav-traversal", () => {
+    expect(NAV_SRC).toContain("function visibleTabs");
+    expect(NAV_SRC).toContain("function sectionVisible");
+    expect(NAV_SRC).toContain("function sectionLandingHref");
+    expect(NAV_SRC).toContain("function sectionBadgeCount");
   });
 
   it("models sidebar entries as sections that own tabs", () => {
-    expect(APPSHELL_SRC).toContain("type NavSection");
-    expect(APPSHELL_SRC).toContain("tabs?: ReadonlyArray<NavLink>");
+    expect(NAV_SRC).toContain("type NavSection");
+    expect(NAV_SRC).toContain("tabs?: ReadonlyArray<NavLink>");
     // The big domains are now tabbed sections, not flat link lists.
     expect(APPSHELL_SRC).toContain('label: "Worklists"');
     expect(APPSHELL_SRC).toContain('label: "A/R & collections"');

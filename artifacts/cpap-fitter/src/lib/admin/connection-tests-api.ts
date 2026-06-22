@@ -10,9 +10,7 @@
 // than catching an HTTP error. Only a malformed body / auth failure
 // throws an ApiError.
 
-import { ApiError } from "@workspace/api-client-react/admin";
-
-import { csrfHeader } from "../csrf";
+import { adminJsonFetch as jsonFetch } from "../admin-json-fetch";
 
 export type LlmProvider = "anthropic" | "openai" | "offline";
 
@@ -42,31 +40,6 @@ export type ConnectionTestResult =
       message: string;
       upstream?: { status?: number | null; code?: string | number | null };
     };
-
-async function jsonFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const { headers, ...rest } = init;
-  const method = (init.method ?? "GET").toUpperCase();
-  const url = `/resupply-api${path}`;
-  const res = await fetch(url, {
-    credentials: "include",
-    headers: {
-      Accept: "application/json",
-      ...csrfHeader(),
-      ...(headers ?? {}),
-    },
-    ...rest,
-  });
-  if (!res.ok) {
-    let data: unknown = null;
-    try {
-      data = await res.json();
-    } catch {
-      // body not JSON
-    }
-    throw new ApiError(res, data, { method, url });
-  }
-  return (await res.json()) as T;
-}
 
 export const getConnectionTestStatus = () =>
   jsonFetch<ConnectionTestStatus>("/platform/connection-tests/status");

@@ -39,6 +39,12 @@ export interface AiFallbackInput {
    * NEVER pass full PHI; this is a hand-curated summary line.
    */
   patientContext?: string;
+  /**
+   * Owning tenant, for AI-token COGS attribution. Pure-data field only —
+   * the implementation folds the classify call's token usage into this
+   * tenant's monthly rollup. Optional; a missing orgId records nothing.
+   */
+  orgId?: string;
 }
 
 export interface AiFallbackResult {

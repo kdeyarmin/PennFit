@@ -42,21 +42,27 @@ function getTokenFromUrl(): string | null {
 }
 
 const REASON_COPY: Record<string, string> = {
-  expired: "This invite link has expired. Ask your care team to resend it.",
+  expired: "This invite link has expired. Ask your DME company to resend it.",
   revoked:
-    "This invite link is no longer active. Ask your care team for a new one.",
-  not_found: "We couldn't find this invite. Ask your care team to resend it.",
+    "This invite link is no longer active. Ask your DME company for a new one.",
+  not_found: "We couldn't find this invite. Ask your DME company to resend it.",
   malformed:
     "This link looks incomplete. Try opening it again, or ask for a fresh link.",
   bad_signature:
     "This link looks incomplete. Try opening it again, or ask for a fresh link.",
   unavailable:
-    "This invite isn't available right now. Ask your care team for a new one.",
+    "This invite isn't available right now. Ask your DME company for a new one.",
   missing:
-    "This page needs an invite link. Ask your care team to send you one.",
+    "This page needs an invite link. Ask your local DME company (your CPAP supplier) to send you one.",
   error:
     "Something went wrong opening your invite. Please try again in a moment.",
 };
+
+// The "missing" reason is what an uninvited visitor sees when a fitter
+// route (e.g. /consent) bounces them here because they have no invite
+// token. It isn't an error — it's the expected gate — so render it as
+// a friendly "invitation required" explainer rather than a red alert.
+const MISSING_REASON = "missing";
 
 export function FitterInvite() {
   useDocumentTitle("Your mask-fitting invite");
@@ -131,7 +137,29 @@ export function FitterInvite() {
             </div>
           )}
 
-          {state.kind === "invalid" && (
+          {state.kind === "invalid" && state.reason === MISSING_REASON && (
+            <div className="text-center space-y-5">
+              <h1 className="text-display text-3xl md:text-4xl font-bold tracking-tight text-gradient-brand">
+                Invitation required
+              </h1>
+              <p className="text-lg text-muted-foreground max-w-xl mx-auto">
+                The virtual mask fitter is available by invitation only. To use
+                it, ask your local DME company (your CPAP supplier) to send you
+                an invite link or code by text or email. Open that link on your
+                phone or computer to get started.
+              </p>
+              <div className="flex items-start gap-3 text-left rounded-xl glass-panel p-4 max-w-xl mx-auto">
+                <ShieldCheck className="w-5 h-5 shrink-0 mt-0.5 text-primary" />
+                <p className="text-sm text-muted-foreground">
+                  Already have a link from your provider? Open it directly — it
+                  carries the invite that unlocks the fitter. Your camera images
+                  never leave your device; only numeric measurements are shared.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {state.kind === "invalid" && state.reason !== MISSING_REASON && (
             <Alert variant="destructive">
               <AlertCircle className="h-4 w-4" />
               <AlertTitle>This invite link isn't usable</AlertTitle>

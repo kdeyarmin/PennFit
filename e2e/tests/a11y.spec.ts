@@ -9,58 +9,36 @@
 // What we lock in here is "the marketing + storefront entry points
 // don't regress". Authenticated-page coverage lands as a follow-up.
 //
-// Severity gate: axe categorises findings as
-// `minor` / `moderate` / `serious` / `critical`. We fail on
-// `serious` + `critical` only; the lower tiers tend to flag
-// cosmetic-but-debatable issues (color contrast on hover states,
-// alt-text on decorative imagery) and would create noisy red
-// builds the team will learn to ignore. Tightening the bar after
-// the noisier findings are addressed is a one-line change.
+// The severity gate (fail on serious/critical only) lives in the shared
+// expectNoSeriousAxeViolations helper, reused by the fitter-funnel and
+// admin a11y specs.
 
-import AxeBuilder from "@axe-core/playwright";
-import { expect, test } from "@playwright/test";
+import { test } from "@playwright/test";
+
+import { expectNoSeriousAxeViolations } from "./axe.helper";
 
 const PUBLIC_ROUTES: ReadonlyArray<{ path: string; label: string }> = [
   { path: "/", label: "home" },
   { path: "/shop", label: "shop" },
-  { path: "/consent", label: "consent" },
+  // /consent is now invitation-gated (it redirects to /fitter-invite
+  // without an invite token), so scan the public invitation-required
+  // landing instead — that's the entry point an uninvited visitor sees.
+  { path: "/fitter-invite", label: "fitter invite" },
   { path: "/contact", label: "contact" },
   { path: "/admin/sign-in", label: "admin sign-in" },
+  // Customer auth forms — directly reachable, and the entry points where
+  // a shopper types credentials, so their inline field errors must stay
+  // accessible.
+  { path: "/sign-in", label: "customer sign-in" },
+  { path: "/sign-up", label: "customer sign-up" },
+  { path: "/forgot-password", label: "forgot password" },
 ];
-
-const FAIL_ON: ReadonlyArray<"serious" | "critical"> = ["serious", "critical"];
 
 for (const { path, label } of PUBLIC_ROUTES) {
   test(`${label} (${path}) has no serious/critical axe violations`, async ({
     page,
   }) => {
     await page.goto(path, { waitUntil: "networkidle" });
-
-    const results = await new AxeBuilder({ page })
-      // WCAG 2.1 AA is the canonical baseline for healthcare-adjacent
-      // public web surfaces. axe's `wcag2a` / `wcag2aa` / `wcag21a` /
-      // `wcag21aa` tags map onto the underlying rule set.
-      .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
-      .analyze();
-
-    const blocking = results.violations.filter((v) =>
-      FAIL_ON.includes(v.impact as "serious" | "critical"),
-    );
-
-    // Format violations for the failure message; AssertionError on the
-    // length keeps the diff small while still telling the developer
-    // which rule + which selector caused the failure.
-    const summary = blocking.map((v) => ({
-      id: v.id,
-      impact: v.impact,
-      help: v.help,
-      nodes: v.nodes.map((n) => n.target).slice(0, 5),
-    }));
-
-    expect(
-      blocking,
-      `Axe found ${blocking.length} serious/critical violation(s) on ${path}:\n` +
-        JSON.stringify(summary, null, 2),
-    ).toHaveLength(0);
+    await expectNoSeriousAxeViolations(page, `${label} (${path})`);
   });
 }

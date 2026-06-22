@@ -20,7 +20,12 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { getOrgScopedClient } from "@workspace/resupply-db";
+import {
+  assessAuditReadiness,
+  coveredKeysFromDocumentTypes,
+} from "@workspace/resupply-domain";
 
+import { isFeatureEnabled } from "../../lib/feature-flags";
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
@@ -301,8 +306,50 @@ router.get(
     }
 
     const worklist = rankDenialWorklist(loaded.inputs);
+    const topItems = worklist.items.slice(0, limit);
+
+    // When the audit feature is on, flag which denied claims are document-
+    // complete (a defensible appeal) vs document-short (likely to lose an
+    // audit too). One bulk doc query over just the displayed patients.
+    let items: Array<
+      (typeof topItems)[number] & {
+        auditReady?: boolean;
+        missingRequired?: number;
+      }
+    > = topItems;
+    if (await isFeatureEnabled("billing.adr_queue", orgId)) {
+      const patientIds = Array.from(
+        new Set(topItems.map((i) => i.patientId).filter(Boolean)),
+      );
+      const docTypesByPatient = new Map<string, Set<string>>();
+      if (patientIds.length > 0) {
+        const { data: pdocs } = await db
+          .from("patient_documents")
+          .select("patient_id, document_type")
+          .in("patient_id", patientIds);
+        for (const d of (pdocs ?? []) as Array<{
+          patient_id: string;
+          document_type: string;
+        }>) {
+          const set = docTypesByPatient.get(d.patient_id) ?? new Set<string>();
+          set.add(d.document_type);
+          docTypesByPatient.set(d.patient_id, set);
+        }
+      }
+      items = topItems.map((i) => {
+        if (!i.patientId) return i;
+        const r = assessAuditReadiness(
+          "device",
+          coveredKeysFromDocumentTypes([
+            ...(docTypesByPatient.get(i.patientId) ?? new Set<string>()),
+          ]),
+        );
+        return { ...i, auditReady: r.ready, missingRequired: r.missing.length };
+      });
+    }
+
     res.json({
-      items: worklist.items.slice(0, limit),
+      items,
       totals: worklist.totals,
       generatedAt: new Date().toISOString(),
     });

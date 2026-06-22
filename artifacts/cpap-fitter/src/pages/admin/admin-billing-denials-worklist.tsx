@@ -188,6 +188,9 @@ function WorklistTable({ items }: { items: DenialWorkItem[] }) {
               Recommendation
             </th>
             <th scope="col" className="text-left px-3 py-2">
+              Audit
+            </th>
+            <th scope="col" className="text-left px-3 py-2">
               Denial
             </th>
             <th scope="col" className="text-left px-3 py-2">
@@ -223,6 +226,15 @@ function WorklistTable({ items }: { items: DenialWorkItem[] }) {
                   </Badge>
                 ) : (
                   <span className="text-xs text-amber-700">not analyzed</span>
+                )}
+              </td>
+              <td className="px-3 py-2">
+                {d.auditReady === true ? (
+                  <Badge variant="success">ready</Badge>
+                ) : d.auditReady === false ? (
+                  <Badge variant="warning">{d.missingRequired} short</Badge>
+                ) : (
+                  <span className="text-xs text-slate-400">—</span>
                 )}
               </td>
               <td className="px-3 py-2 font-mono text-xs text-slate-600">

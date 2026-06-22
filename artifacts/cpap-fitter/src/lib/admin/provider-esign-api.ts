@@ -2,35 +2,15 @@
 // employee console for the provider e-signature portal. Same pattern as
 // providers-api.ts.
 
-import { ApiError } from "@workspace/api-client-react/admin";
-import { csrfHeader } from "../csrf";
+import { adminJsonFetch } from "../admin-json-fetch";
 
+// Full mount, used to build the certificate/log PDF download URLs below.
 const BASE = "/resupply-api/admin/provider-portal";
 
-async function jsonFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const method = (init.method ?? "GET").toUpperCase();
-  const url = `${BASE}${path}`;
-  const { headers, ...rest } = init;
-  const res = await fetch(url, {
-    ...rest,
-    credentials: "include",
-    headers: {
-      Accept: "application/json",
-      ...(method !== "GET" ? csrfHeader() : {}),
-      ...(headers ?? {}),
-    },
-  });
-  if (!res.ok) {
-    let data: unknown = null;
-    try {
-      data = await res.json();
-    } catch {
-      // non-JSON body
-    }
-    throw new ApiError(res, data, { method, url });
-  }
-  return (await res.json()) as T;
-}
+// Routes live under /admin/provider-portal; adminJsonFetch adds the
+// /resupply-api mount, so the wrapper passes the sub-path.
+const jsonFetch = <T>(path: string, init?: RequestInit): Promise<T> =>
+  adminJsonFetch<T>(`/admin/provider-portal${path}`, init);
 
 function post<T>(path: string, body?: unknown): Promise<T> {
   return jsonFetch<T>(path, {

@@ -161,7 +161,15 @@ export function Results() {
     setLocation("/shop/cart");
   };
 
-  const { mutate, data, isPending, error } = useGetRecommendation();
+  // The mask fitter is invitation-only: the recommendation endpoint
+  // requires the signed invite token (set by /fitter-invite) in a
+  // request header. Without it the server returns 403, mirroring the
+  // client-side route guard in App.tsx.
+  const { mutate, data, isPending, error } = useGetRecommendation(
+    inviteToken
+      ? { request: { headers: { "x-fitter-invite-token": inviteToken } } }
+      : undefined,
+  );
 
   // Fire the campaign-enrollment ping the first time `data` arrives
   // with at least one recommendation. Gated by emailConsent so a

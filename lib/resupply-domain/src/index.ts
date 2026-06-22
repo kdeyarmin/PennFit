@@ -4,6 +4,13 @@
 export { RENEWAL_WINDOW_DAYS } from "./dispatcher-constants";
 
 export {
+  PLAN_FEATURE_FLAG_PRESETS,
+  DELIBERATELY_OFF_FLAGS,
+  resolvePlanFlagPreset,
+  type BillingPlanCode,
+} from "./feature-flag-presets";
+
+export {
   COMPLIANT_MINUTES_PER_NIGHT,
   COMPLIANCE_NIGHT_RATIO,
   WINDOW_DAYS,
@@ -192,6 +199,56 @@ export {
   type ExpiryState,
   type ExpiryClassification,
 } from "./authorization-expiry";
+
+export {
+  classifyAdrSla,
+  ADR_HEADS_UP_DAYS,
+  ADR_AT_RISK_DAYS,
+  type AdrSlaStatus,
+  type AdrSlaClassification,
+  type ClassifyAdrSlaOptions,
+} from "./claim-adr";
+
+export {
+  AUDIT_PACKET_CATALOG,
+  AUDIT_PACKET_ITEM_KEYS,
+  getAuditPacketItem,
+  isAuditPacketItemKey,
+  defaultSelection,
+  normalizeSelection,
+  REQUIRED_AUDIT_ITEMS,
+  assessAuditReadiness,
+  coveredKeysFromDocumentTypes,
+  type AuditItemSource,
+  type AuditScope,
+  type AuditItemGroup,
+  type AuditPacketItem,
+  type NormalizedSelection,
+  type AuditReadiness,
+} from "./audit-packet-catalog";
+
+export {
+  aggregateAdrOutcomes,
+  type AdrOutcomeValue,
+  type AdrOutcomeRow,
+  type AdrSourceBucket,
+  type AdrOutcomeAnalytics,
+} from "./adr-analytics";
+
+export {
+  DEFAULT_DUNNING_POLICY,
+  DUNNING_MIN_BALANCE_CENTS,
+  decideDunningAction,
+  nextDunningStep,
+  shouldOpenDunningRun,
+  type DunningStep,
+  type DunningChannel,
+  type DunningPolicyStep,
+  type DunningPauseReason,
+  type DunningDecision,
+  type DunningDecisionInput,
+  type NextDunningStep,
+} from "./dunning";
 
 export {
   classifyCustomerRecency,

@@ -119,6 +119,13 @@ export async function lookupTrackedOrder(
   // the only path that mints a PENN- reference today) and fall back
   // to checking shop_orders by stripe_session_id only if a future
   // shop-side path starts emitting the same reference shape.
+  //
+  // raw-org-scope-exempt: this is a CAPABILITY lookup, not a tenant query —
+  // the globally-unique random order_reference plus a constant-time email
+  // match IS the bearer credential (same posture as reminder_subscriptions'
+  // manage_token), so it must resolve a patient's order regardless of which
+  // tenant placed it. Scoping it to one org would make every non-seed
+  // tenant's reference return not_found. No org filter by design.
   const { data: legacyRow, error: legacyErr } = await supabase
     .raw()
     .schema("public")

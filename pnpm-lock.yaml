@@ -444,6 +444,9 @@ importers:
       '@workspace/resupply-integrations-react-health':
         specifier: workspace:*
         version: link:../../lib/resupply-integrations-react-health
+      '@workspace/resupply-integrations-slack':
+        specifier: workspace:*
+        version: link:../../lib/resupply-integrations-slack
       '@workspace/resupply-integrations-xps-ship':
         specifier: workspace:*
         version: link:../../lib/resupply-integrations-xps-ship
@@ -839,6 +842,15 @@ importers:
         specifier: ^4.1.6
         version: 4.1.6(@types/node@24.13.1)(@vitest/coverage-v8@4.1.6)(esbuild@0.28.1)(jiti@2.7.0)(jsdom@29.1.1(@noble/hashes@1.8.0))(tsx@4.22.0)
 
+  lib/resupply-integrations-slack:
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 24.13.1
+      vitest:
+        specifier: ^4.1.6
+        version: 4.1.6(@types/node@24.13.1)(@vitest/coverage-v8@4.1.6)(esbuild@0.28.1)(jiti@2.7.0)(jsdom@29.1.1(@noble/hashes@1.8.0))(tsx@4.22.0)
+
   lib/resupply-integrations-xps-ship:
     dependencies:
       zod:
@@ -941,6 +953,9 @@ importers:
       '@workspace/resupply-db':
         specifier: workspace:*
         version: link:../lib/resupply-db
+      '@workspace/resupply-domain':
+        specifier: workspace:*
+        version: link:../lib/resupply-domain
       '@workspace/resupply-email':
         specifier: workspace:*
         version: link:../lib/resupply-email

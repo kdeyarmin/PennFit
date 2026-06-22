@@ -1,6 +1,6 @@
 // Hand-rolled fetch wrappers for /admin/patient-documents/retention.
 
-import { csrfHeader } from "../csrf";
+import { adminJsonFetch as jsonFetch } from "../admin-json-fetch";
 
 export type RetentionBucket =
   | "active"
@@ -28,30 +28,6 @@ export interface RetentionDocument {
 export interface RetentionListResponse {
   count: number;
   documents: RetentionDocument[];
-}
-
-async function jsonFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const { headers: initHeaders, ...restInit } = init;
-  const res = await fetch(`/resupply-api${path}`, {
-    ...restInit,
-    credentials: "include",
-    headers: {
-      Accept: "application/json",
-      ...csrfHeader(),
-      ...(initHeaders ?? {}),
-    },
-  });
-  if (!res.ok) {
-    let message = `${res.status} ${res.statusText}`;
-    try {
-      const body = (await res.json()) as { message?: string; error?: string };
-      message = body.message ?? body.error ?? message;
-    } catch {
-      // ignore
-    }
-    throw new Error(message);
-  }
-  return (await res.json()) as T;
 }
 
 export const listRetentionDocuments = (bucket?: RetentionBucket) => {

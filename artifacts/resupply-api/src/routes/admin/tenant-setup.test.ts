@@ -19,6 +19,7 @@ const EMPTY: TenantSetupSnapshot = {
   stripeChargesEnabled: false,
   catalogProductCount: null,
   activeAdminCount: 1,
+  patientCount: 0,
 };
 
 function byId(items: ReturnType<typeof buildTenantSetupItems>, id: string) {
@@ -98,6 +99,23 @@ describe("buildTenantSetupItems", () => {
     expect(byId(ready, "payments").status).toBe("complete");
   });
 
+  it("surfaces the patient import item, completing once the tenant has patients", () => {
+    // Brand-new tenant: a recommended action pointing at the PacWare import.
+    const empty = buildTenantSetupItems(EMPTY);
+    expect(byId(empty, "patients").status).toBe("action");
+    expect(byId(empty, "patients").required).toBe(false);
+    expect(byId(empty, "patients").href).toBe("/admin/pacware");
+
+    // Once patients exist, it flips to complete with a count.
+    const seeded = buildTenantSetupItems({ ...EMPTY, patientCount: 42 });
+    expect(byId(seeded, "patients").status).toBe("complete");
+    expect(byId(seeded, "patients").detail).toContain("42 patients");
+
+    // 1000+ renders with a "+" so a capped count doesn't read as exactly 1000.
+    const big = buildTenantSetupItems({ ...EMPTY, patientCount: 1000 });
+    expect(byId(big, "patients").detail).toContain("1000+ patients");
+  });
+
   it("completes the team item once more than one admin is active", () => {
     expect(byId(buildTenantSetupItems(EMPTY), "team").status).toBe(
       "incomplete",
@@ -114,9 +132,11 @@ describe("buildTenantSetupItems", () => {
       .filter((i) => i.required)
       .map((i) => i.id)
       .sort();
-    expect(required).toEqual(
-      ["branding", "email-sender", "payments", "sms-number"].sort(),
-    );
+    // SMS number is RECOMMENDED, not required: outbound SMS already works on
+    // the shared platform number, so a tenant isn't blocked from "set up"
+    // until they provision their own (they do that as they grow).
+    expect(required).toEqual(["branding", "email-sender", "payments"].sort());
+    expect(byId(items, "sms-number").required).toBe(false);
   });
 
   it("gives every item a configuration href", () => {

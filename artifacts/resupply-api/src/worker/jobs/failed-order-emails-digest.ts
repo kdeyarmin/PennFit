@@ -197,8 +197,15 @@ export async function runFailedEmailDigest(
   const supabase = getOrgScopedClient(orgId);
   // We deliberately select only the two PHI-safe columns. The
   // patient_* columns and the `payload` jsonb stay in the database.
-  // public.orders is cross-schema (not a tenant resupply table), so it
-  // goes through the unscoped escape hatch.
+  //
+  // raw-org-scope-exempt: this is a PLATFORM ops alert, not a tenant query.
+  // It counts failed order-confirmation deliveries across EVERY tenant and
+  // emails the platform operator mailbox (RESUPPLY_ADMIN_ALERTS_EMAIL).
+  // Scoping it to the seed org (the only org `resolveSeedOrgId()` yields)
+  // would silently drop every non-seed tenant's delivery failures and
+  // regress platform-wide alerting. The payload is PHI-safe (order_reference
+  // + created_at only), so a cross-tenant aggregation to the platform owner
+  // is correct here. (Per-tenant digests would be a separate feature.)
   const { count, error: countError } = await supabase
     .raw()
     .schema("public")
@@ -213,6 +220,7 @@ export async function runFailedEmailDigest(
     return { failedCount: 0, sent: false, skippedReason: "no_failures" };
   }
 
+  // raw-org-scope-exempt: platform-wide ops alert (see the count query above).
   const { data: rows, error } = await supabase
     .raw()
     .schema("public")

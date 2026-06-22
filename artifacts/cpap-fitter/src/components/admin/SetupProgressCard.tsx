@@ -54,7 +54,7 @@ export function SetupProgressCard() {
         </div>
         <Link
           href="/admin/setup"
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700"
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-amber-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-800"
         >
           Go to setup
           <ArrowRight className="h-3.5 w-3.5" aria-hidden />
