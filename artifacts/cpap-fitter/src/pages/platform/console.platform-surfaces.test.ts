@@ -23,7 +23,7 @@ describe("platform console global surfaces", () => {
     expect(SRC).toContain(
       '<Route path="/platform/billing" component={AdminPlatformBillingPage} />',
     );
-    expect(SRC).toContain('{ href: "/platform/billing", label: "Billing" }');
+    expect(SRC).toContain('href: "/platform/billing", label: "Billing"');
   });
 
   it("mounts the deployment launch checklist", () => {
@@ -32,7 +32,7 @@ describe("platform console global surfaces", () => {
     );
     expect(SRC).toContain('path="/platform/account-setup"');
     expect(SRC).toContain(
-      '{ href: "/platform/account-setup", label: "Account setup" }',
+      'href: "/platform/account-setup", label: "Account setup"',
     );
   });
 
@@ -43,6 +43,27 @@ describe("platform console global surfaces", () => {
     expect(SRC).toContain(
       '<Route path="/platform/system" component={PlatformSystemInfoPage} />',
     );
-    expect(SRC).toContain('{ href: "/platform/system", label: "System info" }');
+    expect(SRC).toContain('href: "/platform/system", label: "System info"');
+  });
+});
+
+// The overhaul added a tenant-detail drill-down and a grouped sidebar.
+// Pin both so a refactor that drops them is caught.
+describe("platform console tenant detail + sidebar", () => {
+  it("mounts the tenant detail drill-down route", () => {
+    expect(SRC).toContain(
+      '<Route path="/platform/tenants/:id" component={TenantDetailPage} />',
+    );
+  });
+
+  it("renders the grouped sidebar navigation", () => {
+    expect(SRC).toContain("const PLATFORM_NAV_GROUPS");
+    expect(SRC).toContain("function SidebarContent");
+    expect(SRC).toContain('href: "/platform/tenants", label: "Directory"');
+  });
+
+  it("guards consequential tenant actions behind a confirmation dialog", () => {
+    expect(SRC).toContain("function ConfirmDialog");
+    expect(SRC).toContain('setConfirm({ kind: "impersonate", tenant: t })');
   });
 });

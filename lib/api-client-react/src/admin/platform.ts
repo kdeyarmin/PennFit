@@ -177,6 +177,114 @@ export function useTenantUsage(
   });
 }
 
+// ── Single-tenant detail ───────────────────────────────────────────
+
+export interface PlatformTenantDetail extends PlatformTenant {
+  fromEmail: string | null;
+  fromName: string | null;
+  updatedAt: string | null;
+}
+
+export interface GetTenantResponse {
+  tenant: PlatformTenantDetail;
+}
+
+export const getTenantQueryKey = (id: string) =>
+  [`${TENANTS_URL}/${id}`] as const;
+
+export function useGetTenant(
+  id: string,
+  options?: {
+    query?: Partial<UseQueryOptions<GetTenantResponse, PlatformError>>;
+  },
+) {
+  return useQuery<GetTenantResponse, PlatformError>({
+    queryKey: getTenantQueryKey(id),
+    queryFn: ({ signal }) =>
+      customFetch<GetTenantResponse>(
+        `${TENANTS_URL}/${encodeURIComponent(id)}`,
+        { method: "GET", signal },
+      ),
+    ...options?.query,
+  });
+}
+
+// ── Per-tenant feature flags ───────────────────────────────────────
+
+export interface TenantFeatureFlag {
+  key: string;
+  enabled: boolean;
+  description: string;
+  category: string;
+  /** False when this build can't toggle the key (deploy-drift). */
+  manageable: boolean;
+  updatedByEmail: string | null;
+  updatedAt: string;
+}
+
+export interface TenantFeatureFlagsResponse {
+  tenantId: string;
+  flags: TenantFeatureFlag[];
+}
+
+export const getTenantFeatureFlagsQueryKey = (id: string) =>
+  [`${TENANTS_URL}/${id}/feature-flags`] as const;
+
+export function useTenantFeatureFlags(
+  id: string,
+  options?: {
+    query?: Partial<UseQueryOptions<TenantFeatureFlagsResponse, PlatformError>>;
+  },
+) {
+  return useQuery<TenantFeatureFlagsResponse, PlatformError>({
+    queryKey: getTenantFeatureFlagsQueryKey(id),
+    queryFn: ({ signal }) =>
+      customFetch<TenantFeatureFlagsResponse>(
+        `${TENANTS_URL}/${encodeURIComponent(id)}/feature-flags`,
+        { method: "GET", signal },
+      ),
+    ...options?.query,
+  });
+}
+
+export interface ToggleTenantFeatureFlagVariables {
+  key: string;
+  enabled: boolean;
+}
+
+export interface ToggleTenantFeatureFlagResponse {
+  tenantId: string;
+  flag: TenantFeatureFlag;
+}
+
+export function useToggleTenantFeatureFlag(
+  id: string,
+  options?: {
+    mutation?: UseMutationOptions<
+      ToggleTenantFeatureFlagResponse,
+      PlatformError,
+      ToggleTenantFeatureFlagVariables
+    >;
+  },
+) {
+  return useMutation<
+    ToggleTenantFeatureFlagResponse,
+    PlatformError,
+    ToggleTenantFeatureFlagVariables
+  >({
+    mutationFn: ({ key, enabled }) =>
+      customFetch<ToggleTenantFeatureFlagResponse>(
+        `${TENANTS_URL}/${encodeURIComponent(id)}/feature-flags/${encodeURIComponent(key)}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ enabled }),
+        },
+      ),
+    ...options?.mutation,
+  });
+}
+
 // ── Impersonation ──────────────────────────────────────────────────
 
 export interface ImpersonateResponse {

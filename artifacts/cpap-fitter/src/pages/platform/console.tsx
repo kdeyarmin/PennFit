@@ -19,20 +19,43 @@
 // tokens must stay scoped under that class).
 
 import { useMemo, useState } from "react";
-import { Link, Redirect, Route, Switch, useLocation } from "wouter";
+import { Link, Redirect, Route, Switch, useLocation, useRoute } from "wouter";
+import {
+  Activity,
+  Building2,
+  CreditCard,
+  LayoutDashboard,
+  LifeBuoy,
+  Megaphone,
+  Menu,
+  Plug,
+  Rocket,
+  ServerCog,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 
 import {
   ApiError,
   getListTenantsQueryKey,
+  getTenantFeatureFlagsQueryKey,
+  getTenantQueryKey,
   useGetPlatformMe,
+  useGetTenant,
   useListTenants,
   useCreateTenant,
   useSuspendTenant,
   useReactivateTenant,
   useImpersonateTenant,
+  useTenantUsage,
+  useTenantFeatureFlags,
+  useToggleTenantFeatureFlag,
   type PlatformTenant,
+  type TenantFeatureFlag,
 } from "@workspace/api-client-react/admin";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+
+import { AdminModal } from "@/components/admin/AdminModal";
 
 import {
   clearPlatformConfig,
@@ -101,6 +124,111 @@ function statusVariant(
     default:
       return "neutral";
   }
+}
+
+// ── Confirmation dialog ────────────────────────────────────────────
+// A shared guard for the platform's consequential actions. Suspending a
+// tenant takes its custom domain offline and stops its crons;
+// impersonation swaps the operator's session for an act-as-tenant one
+// and navigates away — neither should fire on a stray click. Built on
+// the shared AdminModal (Radix: Escape, focus-trap, scroll-lock).
+
+function ConfirmDialog({
+  title,
+  body,
+  confirmLabel,
+  intent = "primary",
+  isPending,
+  error,
+  onConfirm,
+  onClose,
+}: {
+  title: string;
+  body: React.ReactNode;
+  confirmLabel: string;
+  intent?: "primary" | "secondary";
+  isPending?: boolean;
+  error?: string | null;
+  onConfirm: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <AdminModal title={title} onClose={onClose} className="max-w-md">
+      <div className="space-y-4">
+        <div
+          className="text-sm leading-relaxed"
+          style={{ color: "hsl(var(--ink-2))" }}
+        >
+          {body}
+        </div>
+        {error && (
+          <p className="text-xs" style={{ color: "hsl(354 75% 38%)" }}>
+            {error}
+          </p>
+        )}
+        <div className="flex items-center justify-end gap-2">
+          <Button
+            intent="ghost"
+            size="sm"
+            onClick={onClose}
+            disabled={isPending}
+          >
+            Cancel
+          </Button>
+          <Button
+            intent={intent}
+            size="sm"
+            isLoading={isPending}
+            onClick={onConfirm}
+          >
+            {confirmLabel}
+          </Button>
+        </div>
+      </div>
+    </AdminModal>
+  );
+}
+
+// A compact segmented control (shared by the tenant status filter). The
+// active segment fills navy; the rest are quiet.
+function Segmented<T extends string>({
+  options,
+  value,
+  onChange,
+  ariaLabel,
+}: {
+  options: ReadonlyArray<{ value: T; label: string }>;
+  value: T;
+  onChange: (v: T) => void;
+  ariaLabel: string;
+}) {
+  return (
+    <div
+      className="inline-flex rounded-md overflow-hidden border"
+      style={{ borderColor: "hsl(var(--line-1))" }}
+      role="group"
+      aria-label={ariaLabel}
+    >
+      {options.map((opt) => {
+        const active = opt.value === value;
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => onChange(opt.value)}
+            aria-pressed={active}
+            className="px-3 py-1.5 text-xs font-medium whitespace-nowrap"
+            style={{
+              color: active ? "hsl(var(--surface-1))" : "hsl(var(--ink-2))",
+              backgroundColor: active ? "hsl(var(--penn-navy))" : "transparent",
+            }}
+          >
+            {opt.label}
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 // ── Create-tenant card ─────────────────────────────────────────────
@@ -213,22 +341,34 @@ function TenantDirectory() {
   const impersonate = useImpersonateTenant();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  // The consequential actions (suspend / impersonate) go through a
+  // confirmation step; reactivate is restorative and stays inline.
+  const [confirm, setConfirm] = useState<{
+    kind: "suspend" | "impersonate";
+    tenant: PlatformTenant;
+  } | null>(null);
 
   function invalidate() {
     void queryClient.invalidateQueries({ queryKey: getListTenantsQueryKey() });
   }
 
-  function onSuspend(t: PlatformTenant) {
+  function runSuspend(t: PlatformTenant) {
     setActionError(null);
     setBusyId(t.id);
     suspend.mutate(t.id, {
-      onSuccess: invalidate,
+      onSuccess: () => {
+        invalidate();
+        setConfirm(null);
+      },
       onError: (err) => {
         setActionError(
           err instanceof ApiError && err.status === 400
             ? "The seed tenant can't be suspended."
             : "Couldn't suspend that tenant.",
         );
+        setConfirm(null);
       },
       onSettled: () => setBusyId(null),
     });
@@ -244,7 +384,7 @@ function TenantDirectory() {
     });
   }
 
-  function onImpersonate(t: PlatformTenant) {
+  function runImpersonate(t: PlatformTenant) {
     setActionError(null);
     setBusyId(t.id);
     impersonate.mutate(t.id, {
@@ -256,10 +396,34 @@ function TenantDirectory() {
       },
       onError: () => {
         setActionError("Couldn't start impersonation.");
+        setConfirm(null);
         setBusyId(null);
       },
     });
   }
+
+  const allTenants = useMemo(() => data?.tenants ?? [], [data]);
+  const counts = useMemo(() => {
+    const c = { all: allTenants.length, active: 0, suspended: 0, archived: 0 };
+    for (const t of allTenants) {
+      if (t.status === "active") c.active += 1;
+      else if (t.status === "suspended") c.suspended += 1;
+      else if (t.status === "archived") c.archived += 1;
+    }
+    return c;
+  }, [allTenants]);
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return allTenants.filter((t) => {
+      if (statusFilter !== "all" && t.status !== statusFilter) return false;
+      if (!q) return true;
+      return (
+        t.slug.toLowerCase().includes(q) ||
+        (t.name ?? "").toLowerCase().includes(q) ||
+        (t.customDomain ?? "").toLowerCase().includes(q)
+      );
+    });
+  }, [allTenants, query, statusFilter]);
 
   const columns = useMemo<Column<PlatformTenant>[]>(
     () => [
@@ -267,14 +431,17 @@ function TenantDirectory() {
         key: "name",
         header: "Tenant",
         render: (t) => (
-          <div>
-            <div className="font-medium" style={{ color: "hsl(var(--ink-1))" }}>
+          <Link href={`/platform/tenants/${t.id}`} className="block group">
+            <div
+              className="font-medium group-hover:underline"
+              style={{ color: "hsl(var(--ink-1))" }}
+            >
               {t.name ?? t.slug}
             </div>
             <div className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
               {t.slug}
             </div>
-          </div>
+          </Link>
         ),
       },
       {
@@ -324,12 +491,16 @@ function TenantDirectory() {
           const busy = busyId === t.id;
           return (
             <div className="flex items-center justify-end gap-2">
+              <Link href={`/platform/tenants/${t.id}`}>
+                <Button intent="ghost" size="sm">
+                  View
+                </Button>
+              </Link>
               <Button
                 intent="secondary"
                 size="sm"
                 disabled={busy}
-                isLoading={busy && impersonate.isPending}
-                onClick={() => onImpersonate(t)}
+                onClick={() => setConfirm({ kind: "impersonate", tenant: t })}
               >
                 Impersonate
               </Button>
@@ -348,8 +519,7 @@ function TenantDirectory() {
                   intent="ghost"
                   size="sm"
                   disabled={busy}
-                  isLoading={busy && suspend.isPending}
-                  onClick={() => onSuspend(t)}
+                  onClick={() => setConfirm({ kind: "suspend", tenant: t })}
                 >
                   Suspend
                 </Button>
@@ -360,17 +530,56 @@ function TenantDirectory() {
       },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [busyId, impersonate.isPending, suspend.isPending, reactivate.isPending],
+    [busyId, reactivate.isPending],
+  );
+
+  const statusOptions = useMemo(
+    () => [
+      { value: "all", label: `All ${counts.all}` },
+      { value: "active", label: `Active ${counts.active}` },
+      { value: "suspended", label: `Suspended ${counts.suspended}` },
+      ...(counts.archived
+        ? [{ value: "archived", label: `Archived ${counts.archived}` }]
+        : []),
+    ],
+    [counts],
   );
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Tenants"
-        description="Every organization on the platform. Create, suspend, or operate one as support."
+        description="Every organization on the platform. Search, drill into a tenant, or operate one as support."
       />
       <CreateTenantCard />
-      <Card title="Directory">
+      <Card
+        title="Directory"
+        subtitle={
+          isPending
+            ? undefined
+            : `${counts.active} active · ${counts.suspended} suspended` +
+              (counts.archived ? ` · ${counts.archived} archived` : "")
+        }
+        action={
+          !isPending && !isError ? (
+            <div className="flex items-center gap-2 flex-wrap justify-end">
+              <Segmented
+                ariaLabel="Filter by status"
+                value={statusFilter}
+                onChange={setStatusFilter}
+                options={statusOptions}
+              />
+              <Input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search name, slug, domain…"
+                className="w-44"
+                aria-label="Search tenants"
+              />
+            </div>
+          ) : undefined
+        }
+      >
         {actionError && (
           <p className="text-xs mb-3" style={{ color: "hsl(354 75% 38%)" }}>
             {actionError}
@@ -395,17 +604,65 @@ function TenantDirectory() {
         ) : (
           <Table<PlatformTenant>
             columns={columns}
-            rows={data?.tenants ?? []}
+            rows={filtered}
             rowKey={(t) => t.id}
             emptyState={
               <EmptyState
-                title="No tenants yet."
-                hint="Create the first tenant above."
+                title={
+                  allTenants.length === 0
+                    ? "No tenants yet."
+                    : "No tenants match your filters."
+                }
+                hint={
+                  allTenants.length === 0
+                    ? "Create the first tenant above."
+                    : "Clear the search or status filter."
+                }
               />
             }
           />
         )}
       </Card>
+
+      {confirm?.kind === "suspend" && (
+        <ConfirmDialog
+          title="Suspend tenant?"
+          confirmLabel="Suspend"
+          intent="secondary"
+          isPending={busyId === confirm.tenant.id && suspend.isPending}
+          body={
+            <>
+              <strong style={{ color: "hsl(var(--ink-1))" }}>
+                {confirm.tenant.name ?? confirm.tenant.slug}
+              </strong>{" "}
+              will go offline: its custom domain stops resolving (it falls back
+              to the platform site) and its background jobs pause. You can
+              reactivate it at any time.
+            </>
+          }
+          onConfirm={() => runSuspend(confirm.tenant)}
+          onClose={() => setConfirm(null)}
+        />
+      )}
+      {confirm?.kind === "impersonate" && (
+        <ConfirmDialog
+          title="Operate as this tenant?"
+          confirmLabel="Start impersonation"
+          isPending={busyId === confirm.tenant.id && impersonate.isPending}
+          body={
+            <>
+              You&rsquo;ll get a short-lived, audited act-as-tenant session for{" "}
+              <strong style={{ color: "hsl(var(--ink-1))" }}>
+                {confirm.tenant.name ?? confirm.tenant.slug}
+              </strong>{" "}
+              and be taken to its admin console. Every action is attributed to
+              you. End it from the admin console when you&rsquo;re done.
+            </>
+          }
+          onConfirm={() => runImpersonate(confirm.tenant)}
+          onClose={() => setConfirm(null)}
+        />
+      )}
     </div>
   );
 }
@@ -686,14 +943,17 @@ function PlatformDashboard() {
         key: "name",
         header: "Tenant",
         render: (t) => (
-          <div>
-            <div className="font-medium" style={{ color: "hsl(var(--ink-1))" }}>
+          <Link href={`/platform/tenants/${t.id}`} className="block group">
+            <div
+              className="font-medium group-hover:underline"
+              style={{ color: "hsl(var(--ink-1))" }}
+            >
               {t.name ?? t.slug}
             </div>
             <div className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
               {t.slug}
             </div>
-          </div>
+          </Link>
         ),
         sortable: true,
         sortValue: (t) => (t.name ?? t.slug).toLowerCase(),
@@ -1405,7 +1665,637 @@ function PlatformSupport() {
   );
 }
 
+// ── Tenant detail (drill-down) ─────────────────────────────────────
+
+function MetaItem({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <div
+        className="text-[10px] uppercase tracking-[0.16em] font-semibold mb-1"
+        style={{ color: "hsl(var(--ink-3))" }}
+      >
+        {label}
+      </div>
+      <div className="text-sm" style={{ color: "hsl(var(--ink-1))" }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+// One feature-flag row with an accessible toggle. Non-manageable flags
+// (seeded by a newer build than this deploy) render disabled — mirrors
+// the per-tenant Control Center posture.
+function FeatureFlagRow({
+  tenantId,
+  flag,
+}: {
+  tenantId: string;
+  flag: TenantFeatureFlag;
+}) {
+  const queryClient = useQueryClient();
+  const [error, setError] = useState<string | null>(null);
+  const toggle = useToggleTenantFeatureFlag(tenantId, {
+    mutation: {
+      onSuccess: () => {
+        setError(null);
+        void queryClient.invalidateQueries({
+          queryKey: getTenantFeatureFlagsQueryKey(tenantId),
+        });
+      },
+      onError: () => setError("Couldn't update that flag."),
+    },
+  });
+  const disabled = !flag.manageable || toggle.isPending;
+  return (
+    <div
+      className="py-3 border-t first:border-t-0 flex items-start justify-between gap-4"
+      style={{ borderColor: "hsl(var(--line-1))" }}
+    >
+      <div className="min-w-0">
+        <div
+          className="text-sm font-medium font-mono"
+          style={{ color: "hsl(var(--ink-1))" }}
+        >
+          {flag.key}
+        </div>
+        {flag.description && (
+          <div
+            className="text-xs mt-0.5"
+            style={{ color: "hsl(var(--ink-3))" }}
+          >
+            {flag.description}
+          </div>
+        )}
+        {!flag.manageable && (
+          <div
+            className="text-[11px] mt-1"
+            style={{ color: "hsl(var(--ink-3))" }}
+          >
+            Seeded by a newer build — not toggleable from here yet.
+          </div>
+        )}
+        {error && (
+          <div
+            className="text-[11px] mt-1"
+            style={{ color: "hsl(354 75% 38%)" }}
+          >
+            {error}
+          </div>
+        )}
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={flag.enabled}
+        aria-label={`Toggle ${flag.key}`}
+        disabled={disabled}
+        onClick={() => toggle.mutate({ key: flag.key, enabled: !flag.enabled })}
+        className="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        style={{
+          backgroundColor: flag.enabled
+            ? "hsl(var(--penn-navy))"
+            : "hsl(var(--surface-3))",
+        }}
+      >
+        <span
+          className="inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform"
+          style={{
+            transform: flag.enabled ? "translateX(18px)" : "translateX(2px)",
+          }}
+        />
+      </button>
+    </div>
+  );
+}
+
+function TenantFeatureFlagsCard({ tenantId }: { tenantId: string }) {
+  const { data, isPending, isError, refetch } = useTenantFeatureFlags(tenantId);
+  const grouped = useMemo(() => {
+    const m = new Map<string, TenantFeatureFlag[]>();
+    for (const f of data?.flags ?? []) {
+      const arr = m.get(f.category) ?? [];
+      arr.push(f);
+      m.set(f.category, arr);
+    }
+    return [...m.entries()];
+  }, [data]);
+
+  return (
+    <Card
+      title="Feature flags"
+      subtitle="Toggle this tenant's features without impersonating — mirrors the tenant's own Control Center, and the change shows up in its toggle activity."
+    >
+      {isPending ? (
+        <Spinner label="Loading flags…" />
+      ) : isError ? (
+        <EmptyState
+          title="Couldn't load feature flags."
+          hint="A transient error — try again."
+          action={
+            <Button intent="secondary" size="sm" onClick={() => void refetch()}>
+              Retry
+            </Button>
+          }
+        />
+      ) : (data?.flags.length ?? 0) === 0 ? (
+        <EmptyState
+          title="No feature flags."
+          hint="This tenant hasn't been provisioned a flag catalog yet."
+        />
+      ) : (
+        <div className="space-y-5">
+          {grouped.map(([category, flags]) => (
+            <div key={category}>
+              <div
+                className="text-[10px] uppercase tracking-[0.18em] font-semibold mb-1"
+                style={{ color: "hsl(var(--penn-gold-deep))" }}
+              >
+                {category}
+              </div>
+              <div>
+                {flags.map((f) => (
+                  <FeatureFlagRow key={f.key} tenantId={tenantId} flag={f} />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function TenantDetailPage() {
+  const [, params] = useRoute("/platform/tenants/:id");
+  const id = params?.id ?? "";
+  const queryClient = useQueryClient();
+  const { data, isPending, isError, error, refetch } = useGetTenant(id, {
+    query: {
+      enabled: id.length > 0,
+      retry: (failureCount, err) => {
+        const status = err instanceof ApiError ? err.status : 0;
+        if (status >= 400 && status < 500) return false;
+        return failureCount < 2;
+      },
+    },
+  });
+  const usage = useTenantUsage(id, { query: { enabled: id.length > 0 } });
+  const suspend = useSuspendTenant();
+  const reactivate = useReactivateTenant();
+  const impersonate = useImpersonateTenant();
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<"suspend" | "impersonate" | null>(
+    null,
+  );
+
+  function invalidateTenant() {
+    void queryClient.invalidateQueries({ queryKey: getTenantQueryKey(id) });
+    void queryClient.invalidateQueries({ queryKey: getListTenantsQueryKey() });
+  }
+
+  const status = error instanceof ApiError ? error.status : 0;
+  if (isError) {
+    const notFound = status === 404;
+    return (
+      <div className="space-y-6">
+        <Link
+          href="/platform/tenants"
+          className="text-xs font-medium"
+          style={{ color: "hsl(var(--penn-navy))" }}
+        >
+          ← All tenants
+        </Link>
+        <Card title={notFound ? "Tenant not found" : "Couldn't load tenant"}>
+          <EmptyState
+            title={notFound ? "No tenant with that id." : "The query failed."}
+            hint={
+              notFound
+                ? "It may have been removed. Head back to the directory."
+                : "A transient error — try again."
+            }
+            action={
+              notFound ? undefined : (
+                <Button
+                  intent="secondary"
+                  size="sm"
+                  onClick={() => void refetch()}
+                >
+                  Retry
+                </Button>
+              )
+            }
+          />
+        </Card>
+      </div>
+    );
+  }
+
+  const tenant = data?.tenant;
+
+  function runReactivate() {
+    if (!tenant) return;
+    setActionError(null);
+    reactivate.mutate(tenant.id, {
+      onSuccess: invalidateTenant,
+      onError: () => setActionError("Couldn't reactivate that tenant."),
+    });
+  }
+  function runSuspend() {
+    if (!tenant) return;
+    setActionError(null);
+    suspend.mutate(tenant.id, {
+      onSuccess: () => {
+        invalidateTenant();
+        setConfirm(null);
+      },
+      onError: (err) => {
+        setActionError(
+          err instanceof ApiError && err.status === 400
+            ? "The seed tenant can't be suspended."
+            : "Couldn't suspend that tenant.",
+        );
+        setConfirm(null);
+      },
+    });
+  }
+  function runImpersonate() {
+    if (!tenant) return;
+    setActionError(null);
+    impersonate.mutate(tenant.id, {
+      onSuccess: () => window.location.assign("/admin"),
+      onError: () => {
+        setActionError("Couldn't start impersonation.");
+        setConfirm(null);
+      },
+    });
+  }
+
+  return (
+    <div className="space-y-6">
+      <Link
+        href="/platform/tenants"
+        className="inline-block text-xs font-medium"
+        style={{ color: "hsl(var(--penn-navy))" }}
+      >
+        ← All tenants
+      </Link>
+
+      {isPending || !tenant ? (
+        <Card title="Loading tenant…">
+          <Spinner label="Loading tenant…" />
+        </Card>
+      ) : (
+        <>
+          <Card>
+            <div className="flex items-start justify-between gap-4 flex-wrap">
+              <div className="min-w-0">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <h1
+                    className="text-xl font-semibold leading-tight"
+                    style={{ color: "hsl(var(--ink-1))" }}
+                  >
+                    {tenant.name ?? tenant.slug}
+                  </h1>
+                  <Badge variant={statusVariant(tenant.status)}>
+                    {tenant.status}
+                  </Badge>
+                </div>
+                <div
+                  className="text-xs font-mono mt-1"
+                  style={{ color: "hsl(var(--ink-3))" }}
+                >
+                  {tenant.slug}
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  intent="secondary"
+                  size="sm"
+                  onClick={() => setConfirm("impersonate")}
+                >
+                  Impersonate
+                </Button>
+                {tenant.status === "suspended" ? (
+                  <Button
+                    intent="ghost"
+                    size="sm"
+                    isLoading={reactivate.isPending}
+                    onClick={runReactivate}
+                  >
+                    Reactivate
+                  </Button>
+                ) : (
+                  <Button
+                    intent="ghost"
+                    size="sm"
+                    onClick={() => setConfirm("suspend")}
+                  >
+                    Suspend
+                  </Button>
+                )}
+              </div>
+            </div>
+            {actionError && (
+              <p className="text-xs mt-3" style={{ color: "hsl(354 75% 38%)" }}>
+                {actionError}
+              </p>
+            )}
+            <div
+              className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 mt-5 pt-5 border-t"
+              style={{ borderColor: "hsl(var(--line-1))" }}
+            >
+              <MetaItem label="Custom domain">
+                {tenant.customDomain ? (
+                  <span>
+                    {tenant.customDomain}
+                    {tenant.customDomainStatus &&
+                    tenant.customDomainStatus !== "active" ? (
+                      <span style={{ color: "hsl(var(--ink-3))" }}>
+                        {" "}
+                        ({tenant.customDomainStatus})
+                      </span>
+                    ) : null}
+                  </span>
+                ) : (
+                  <span style={{ color: "hsl(var(--ink-3))" }}>—</span>
+                )}
+              </MetaItem>
+              <MetaItem label="From address">
+                {tenant.fromEmail ? (
+                  <span>
+                    {tenant.fromName ? `${tenant.fromName} · ` : ""}
+                    {tenant.fromEmail}
+                  </span>
+                ) : (
+                  <span style={{ color: "hsl(var(--ink-3))" }}>
+                    Platform default
+                  </span>
+                )}
+              </MetaItem>
+              <MetaItem label="Created">
+                {new Date(tenant.createdAt).toLocaleDateString()}
+              </MetaItem>
+              <MetaItem label="Last updated">
+                {tenant.updatedAt
+                  ? new Date(tenant.updatedAt).toLocaleDateString()
+                  : "—"}
+              </MetaItem>
+            </div>
+          </Card>
+
+          <div className="grid gap-4 sm:grid-cols-3">
+            <KpiCard
+              label="Patients"
+              value={
+                usage.isPending ? "" : fmtCount(usage.data?.usage.patients)
+              }
+              isLoading={usage.isPending}
+              hint="all-time"
+            />
+            <KpiCard
+              label="Orders"
+              tone="gold"
+              value={usage.isPending ? "" : fmtCount(usage.data?.usage.orders)}
+              isLoading={usage.isPending}
+              hint="all-time"
+            />
+            <KpiCard
+              label="Conversations"
+              value={
+                usage.isPending ? "" : fmtCount(usage.data?.usage.conversations)
+              }
+              isLoading={usage.isPending}
+              hint="all-time"
+            />
+          </div>
+
+          <TenantFeatureFlagsCard tenantId={tenant.id} />
+
+          <p className="text-[11px]" style={{ color: "hsl(var(--ink-3))" }}>
+            Counts are aggregates only — no patient records cross this surface.
+            To see a tenant's actual data, use audited impersonation above.
+          </p>
+        </>
+      )}
+
+      {confirm === "suspend" && tenant && (
+        <ConfirmDialog
+          title="Suspend tenant?"
+          confirmLabel="Suspend"
+          intent="secondary"
+          isPending={suspend.isPending}
+          body={
+            <>
+              <strong style={{ color: "hsl(var(--ink-1))" }}>
+                {tenant.name ?? tenant.slug}
+              </strong>{" "}
+              will go offline: its custom domain stops resolving and its
+              background jobs pause. You can reactivate it at any time.
+            </>
+          }
+          onConfirm={runSuspend}
+          onClose={() => setConfirm(null)}
+        />
+      )}
+      {confirm === "impersonate" && tenant && (
+        <ConfirmDialog
+          title="Operate as this tenant?"
+          confirmLabel="Start impersonation"
+          isPending={impersonate.isPending}
+          body={
+            <>
+              You&rsquo;ll get a short-lived, audited act-as-tenant session for{" "}
+              <strong style={{ color: "hsl(var(--ink-1))" }}>
+                {tenant.name ?? tenant.slug}
+              </strong>{" "}
+              and be taken to its admin console. Every action is attributed to
+              you.
+            </>
+          }
+          onConfirm={runImpersonate}
+          onClose={() => setConfirm(null)}
+        />
+      )}
+    </div>
+  );
+}
+
 // ── Shell ──────────────────────────────────────────────────────────
+
+// The platform console's grouped sidebar nav. Each entry is one route in
+// the <Switch> below; the groups give the eight surfaces a hierarchy the
+// old single horizontal tab-strip couldn't (it scrolled off-screen on
+// narrow viewports). Keep the hrefs in sync with the routes.
+const PLATFORM_NAV_GROUPS: ReadonlyArray<{
+  label: string;
+  items: ReadonlyArray<{ href: string; label: string; icon: LucideIcon }>;
+}> = [
+  {
+    label: "Overview",
+    items: [{ href: "/platform", label: "Dashboard", icon: LayoutDashboard }],
+  },
+  {
+    label: "Tenants",
+    items: [{ href: "/platform/tenants", label: "Directory", icon: Building2 }],
+  },
+  {
+    label: "Growth",
+    items: [
+      { href: "/platform/outreach", label: "Outreach", icon: Megaphone },
+      { href: "/platform/billing", label: "Billing", icon: CreditCard },
+    ],
+  },
+  {
+    label: "Operations",
+    items: [
+      { href: "/platform/support", label: "Support", icon: LifeBuoy },
+      {
+        href: "/platform/integrations",
+        label: "Global integrations",
+        icon: Plug,
+      },
+      {
+        href: "/platform/connection-tests",
+        label: "Connection tests",
+        icon: Activity,
+      },
+    ],
+  },
+  {
+    label: "Deployment",
+    items: [
+      { href: "/platform/account-setup", label: "Account setup", icon: Rocket },
+      { href: "/platform/system", label: "System info", icon: ServerCog },
+    ],
+  },
+];
+
+function navItemActive(itemHref: string, location: string): boolean {
+  // Dashboard ("/platform") must match exactly so it isn't lit up on every
+  // child route; the rest also match their sub-routes (e.g. the tenant
+  // directory stays active on a tenant-detail page).
+  if (itemHref === "/platform") return location === "/platform";
+  return location === itemHref || location.startsWith(`${itemHref}/`);
+}
+
+function SidebarContent({
+  location,
+  email,
+  onSignOut,
+  onNavigate,
+}: {
+  location: string;
+  email: string | null;
+  onSignOut: () => void;
+  onNavigate: () => void;
+}) {
+  return (
+    <>
+      <div
+        className="flex items-center justify-between px-4 py-4 border-b"
+        style={{ borderColor: "hsl(var(--line-1))" }}
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          <span
+            className="text-sm font-bold tracking-tight truncate"
+            style={{ color: "hsl(var(--ink-1))" }}
+          >
+            CareMetric Breathe
+          </span>
+          <Badge variant="info">Platform</Badge>
+        </div>
+        <button
+          type="button"
+          aria-label="Close navigation"
+          onClick={onNavigate}
+          className="lg:hidden"
+          style={{ color: "hsl(var(--ink-3))" }}
+        >
+          <X className="h-4 w-4" aria-hidden="true" />
+        </button>
+      </div>
+
+      <nav
+        aria-label="Platform navigation"
+        className="flex-1 overflow-y-auto px-2 py-3 space-y-4"
+      >
+        {PLATFORM_NAV_GROUPS.map((group) => (
+          <div key={group.label}>
+            <div
+              className="px-2 mb-1 text-[10px] uppercase tracking-[0.16em] font-semibold"
+              style={{ color: "hsl(var(--ink-3))" }}
+            >
+              {group.label}
+            </div>
+            <ul className="space-y-0.5">
+              {group.items.map((item) => {
+                const active = navItemActive(item.href, location);
+                const Icon = item.icon;
+                return (
+                  <li key={item.href}>
+                    <Link
+                      href={item.href}
+                      onClick={onNavigate}
+                      aria-current={active ? "page" : undefined}
+                      className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm font-medium transition-colors hover:bg-[hsl(var(--surface-3))]"
+                      style={{
+                        color: active
+                          ? "hsl(var(--surface-1))"
+                          : "hsl(var(--ink-2))",
+                        backgroundColor: active
+                          ? "hsl(var(--penn-navy))"
+                          : undefined,
+                      }}
+                    >
+                      <Icon
+                        className="h-4 w-4 shrink-0 opacity-90"
+                        aria-hidden="true"
+                      />
+                      <span className="truncate">{item.label}</span>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ))}
+      </nav>
+
+      <div
+        className="border-t px-3 py-3 space-y-2"
+        style={{ borderColor: "hsl(var(--line-1))" }}
+      >
+        <Link
+          href="/admin"
+          onClick={onNavigate}
+          className="block text-xs font-medium"
+          style={{ color: "hsl(var(--penn-navy))" }}
+        >
+          ← Admin console
+        </Link>
+        {email && (
+          <div
+            className="text-[11px] truncate"
+            style={{ color: "hsl(var(--ink-3))" }}
+            title={email}
+          >
+            {email}
+          </div>
+        )}
+        <Button intent="ghost" size="sm" onClick={onSignOut} className="px-0">
+          Sign out
+        </Button>
+      </div>
+    </>
+  );
+}
 
 function PlatformShell({
   email,
@@ -1415,74 +2305,101 @@ function PlatformShell({
   children: React.ReactNode;
 }) {
   const identity = useDashboardIdentity();
+  const [location] = useLocation();
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const signOut = () => {
+    void identity.signOut();
+  };
+
   return (
     <div
-      className="admin-root min-h-screen"
+      className="admin-root min-h-screen lg:flex"
       style={{ backgroundColor: "hsl(var(--surface-1))" }}
     >
-      <header
-        className="border-b"
+      {/* Desktop sidebar */}
+      <aside
+        className="hidden lg:flex lg:flex-col w-64 shrink-0 sticky top-0 h-screen border-r"
         style={{
           borderColor: "hsl(var(--line-1))",
           backgroundColor: "hsl(var(--surface-2))",
         }}
       >
-        <div className="mx-auto max-w-5xl px-4 py-3 flex items-center justify-between gap-x-4 gap-y-2 flex-wrap">
-          <div className="flex items-center gap-2 min-w-0">
+        <SidebarContent
+          location={location}
+          email={email}
+          onSignOut={signOut}
+          onNavigate={() => {}}
+        />
+      </aside>
+
+      {/* Mobile drawer */}
+      {mobileNavOpen && (
+        <div
+          className="lg:hidden fixed inset-0 z-40"
+          role="dialog"
+          aria-modal="true"
+        >
+          <button
+            type="button"
+            aria-label="Close navigation"
+            className="absolute inset-0"
+            style={{ backgroundColor: "rgba(0,0,0,0.4)" }}
+            onClick={() => setMobileNavOpen(false)}
+          />
+          <div
+            className="absolute inset-y-0 left-0 w-72 max-w-[80%] flex flex-col border-r shadow-xl"
+            style={{
+              borderColor: "hsl(var(--line-1))",
+              backgroundColor: "hsl(var(--surface-2))",
+            }}
+          >
+            <SidebarContent
+              location={location}
+              email={email}
+              onSignOut={signOut}
+              onNavigate={() => setMobileNavOpen(false)}
+            />
+          </div>
+        </div>
+      )}
+
+      <div className="flex-1 min-w-0 flex flex-col">
+        {/* Mobile top bar */}
+        <header
+          className="lg:hidden border-b flex items-center justify-between px-4 py-3"
+          style={{
+            borderColor: "hsl(var(--line-1))",
+            backgroundColor: "hsl(var(--surface-2))",
+          }}
+        >
+          <button
+            type="button"
+            aria-label="Open navigation"
+            onClick={() => setMobileNavOpen(true)}
+            className="inline-flex items-center justify-center rounded-md p-1.5"
+            style={{ color: "hsl(var(--ink-1))" }}
+          >
+            <Menu className="h-5 w-5" aria-hidden="true" />
+          </button>
+          <div className="flex items-center gap-2">
             <span
-              className="text-sm font-bold tracking-tight truncate"
+              className="text-sm font-bold tracking-tight"
               style={{ color: "hsl(var(--ink-1))" }}
             >
               CareMetric Breathe
             </span>
             <Badge variant="info">Platform</Badge>
           </div>
-          <div className="flex items-center gap-3 min-w-0">
-            <Link
-              href="/admin"
-              className="text-xs font-medium whitespace-nowrap"
-              style={{ color: "hsl(var(--penn-navy))" }}
-            >
-              Admin console
-            </Link>
-            {email && (
-              <span
-                className="text-xs truncate hidden sm:inline"
-                style={{ color: "hsl(var(--ink-3))" }}
-                title={email}
-              >
-                {email}
-              </span>
-            )}
-            <Button
-              intent="ghost"
-              size="sm"
-              onClick={() => {
-                void identity.signOut();
-              }}
-            >
-              Sign out
-            </Button>
-          </div>
-        </div>
-      </header>
-      <PlatformNav />
-      <main className="mx-auto max-w-5xl px-4 py-8">{children}</main>
+          <div className="w-7" />
+        </header>
+
+        <main className="mx-auto w-full max-w-6xl px-4 sm:px-6 py-8 flex-1">
+          {children}
+        </main>
+      </div>
     </div>
   );
 }
-
-const PLATFORM_NAV: ReadonlyArray<{ href: string; label: string }> = [
-  { href: "/platform", label: "Dashboard" },
-  { href: "/platform/tenants", label: "Tenants" },
-  { href: "/platform/outreach", label: "Outreach" },
-  { href: "/platform/billing", label: "Billing" },
-  { href: "/platform/support", label: "Support" },
-  { href: "/platform/integrations", label: "Global integrations" },
-  { href: "/platform/connection-tests", label: "Connection tests" },
-  { href: "/platform/account-setup", label: "Account setup" },
-  { href: "/platform/system", label: "System info" },
-];
 
 function PlatformConnectionTests() {
   return (
@@ -1493,46 +2410,6 @@ function PlatformConnectionTests() {
       />
       <ConnectionTests />
     </div>
-  );
-}
-
-function PlatformNav() {
-  const [location] = useLocation();
-  return (
-    <nav
-      className="border-b"
-      style={{
-        borderColor: "hsl(var(--line-1))",
-        backgroundColor: "hsl(var(--surface-1))",
-      }}
-      aria-label="Platform navigation"
-    >
-      {/* On narrow screens the eight tabs exceed the viewport width, so the
-          row scrolls horizontally instead of overflowing the page. Items
-          stay on one line (`whitespace-nowrap` + `shrink-0`). */}
-      <div className="mx-auto max-w-5xl px-4 flex items-center gap-1 overflow-x-auto">
-        {PLATFORM_NAV.map((item) => {
-          const active =
-            item.href === "/platform"
-              ? location === "/platform"
-              : location === item.href || location.startsWith(`${item.href}/`);
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              aria-current={active ? "page" : undefined}
-              className="text-xs font-medium px-3 py-2.5 -mb-px border-b-2 whitespace-nowrap shrink-0"
-              style={{
-                color: active ? "hsl(var(--penn-navy))" : "hsl(var(--ink-3))",
-                borderColor: active ? "hsl(var(--penn-navy))" : "transparent",
-              }}
-            >
-              {item.label}
-            </Link>
-          );
-        })}
-      </div>
-    </nav>
   );
 }
 
@@ -1575,6 +2452,7 @@ function PlatformConsole() {
       <Switch>
         <Route path="/platform" component={PlatformDashboard} />
         <Route path="/platform/tenants" component={TenantDirectory} />
+        <Route path="/platform/tenants/:id" component={TenantDetailPage} />
         <Route path="/platform/outreach" component={PlatformOutreachPage} />
         <Route path="/platform/billing" component={AdminPlatformBillingPage} />
         <Route path="/platform/support" component={PlatformSupport} />
