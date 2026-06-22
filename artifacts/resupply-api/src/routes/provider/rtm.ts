@@ -41,6 +41,7 @@ import {
   type AttestationInputs,
 } from "../../lib/compliance-attestation";
 import { logger } from "../../lib/logger";
+import { therapyNightSourceRank } from "../../lib/therapy-night-source-priority";
 import {
   requireProvider,
   requireProviderMfaEnrolled,
@@ -51,15 +52,18 @@ const router: IRouter = Router();
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
-/** Source priority when the same night exists from multiple feeds —
- *  identical to the admin compliance-attestation + patient dashboard so
- *  the provider view, the customer portal, and the attestation never
- *  disagree about a given night. */
-const SOURCE_PRIORITY: Record<string, number> = {
-  resmed_airview: 0,
-  philips_care: 1,
-  manual: 2,
-};
+/** Max UUIDs per `.in(...)` filter. PostgREST encodes the list into the
+ *  request URI, so an unbounded list risks request-URI-too-long; the rest
+ *  of the repo chunks roster id-lists at 200 (worker bulk-campaign-tick). */
+const ID_CHUNK_SIZE = 200;
+
+function chunk<T>(items: readonly T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) {
+    out.push(items.slice(i, i + size));
+  }
+  return out;
+}
 
 const ROSTER_WINDOW_DAYS = 30;
 const CMS_COMPLIANCE_RATE_PCT = 70;
@@ -81,8 +85,8 @@ function dedupeNights(rows: readonly NightRow[]): NightRow[] {
       byDate.set(row.night_date, row);
       continue;
     }
-    const newRank = SOURCE_PRIORITY[row.source] ?? 99;
-    const oldRank = SOURCE_PRIORITY[existing.source] ?? 99;
+    const newRank = therapyNightSourceRank(row.source);
+    const oldRank = therapyNightSourceRank(existing.source);
     if (newRank < oldRank) byDate.set(row.night_date, row);
   }
   return Array.from(byDate.values());
@@ -209,62 +213,81 @@ router.get(
       .toISOString()
       .slice(0, 10);
 
+    // All three roster reads filter on the provider's patient-id list.
+    // That list is unbounded (a large panel), so we MUST chunk the
+    // `.in(...)` UUID lists — PostgREST encodes them into the request URI
+    // and an oversized list errors (URI-too-long). Aggregating per chunk
+    // also removes the previous single global `.limit(20_000)` scan, which
+    // silently truncated nights for large panels and corrupted the
+    // hasData / setupDate / compliance rollups and "needs attention" sort.
+    const idChunks = chunk(patientIds, ID_CHUNK_SIZE);
+
     // Patient name snapshots — scoped to this tenant AND restricted to
     // the provider's own patient ids.
-    const { data: patientRows, error: pErr } = await db
-      .from("patients")
-      .select("id, legal_first_name, legal_last_name, status, created_at")
-      .in("id", patientIds);
-    if (pErr) throw pErr;
-
-    // Recent therapy nights for the rollup, batched across the roster.
-    const { data: nightRows, error: nErr } = await db
-      .from("patient_therapy_nights")
-      .select(
-        "patient_id, night_date, source, usage_minutes, ahi, leak_rate_l_min",
-      )
-      .in("patient_id", patientIds)
-      .gte("night_date", startIso)
-      .limit(20_000);
-    if (nErr) throw nErr;
-
+    const patientRows: Array<{
+      id: string;
+      legal_first_name: string;
+      legal_last_name: string;
+      status: string | null;
+      created_at: string;
+    }> = [];
+    // Recent therapy nights for the rollup, per patient.
+    const nightsByPatient = new Map<string, NightRow[]>();
     // Earliest therapy night per patient = the therapy-start (setup) date.
-    const { data: firstNightRows, error: fErr } = await db
-      .from("patient_therapy_nights")
-      .select("patient_id, night_date")
-      .in("patient_id", patientIds)
-      .order("night_date", { ascending: true })
-      .limit(20_000);
-    if (fErr) throw fErr;
-
     const setupByPatient = new Map<string, string>();
-    for (const row of (firstNightRows ?? []) as Array<{
-      patient_id: string;
-      night_date: string;
-    }>) {
-      if (!setupByPatient.has(row.patient_id)) {
-        setupByPatient.set(row.patient_id, row.night_date);
+
+    for (const ids of idChunks) {
+      const { data: chunkPatients, error: pErr } = await db
+        .from("patients")
+        .select("id, legal_first_name, legal_last_name, status, created_at")
+        .in("id", ids);
+      if (pErr) throw pErr;
+      patientRows.push(
+        ...((chunkPatients ?? []) as Array<{
+          id: string;
+          legal_first_name: string;
+          legal_last_name: string;
+          status: string | null;
+          created_at: string;
+        }>),
+      );
+
+      // The recent-window date filter bounds this read per chunk, so no
+      // global cap is needed and no patient's nights are dropped.
+      const { data: chunkNights, error: nErr } = await db
+        .from("patient_therapy_nights")
+        .select(
+          "patient_id, night_date, source, usage_minutes, ahi, leak_rate_l_min",
+        )
+        .in("patient_id", ids)
+        .gte("night_date", startIso);
+      if (nErr) throw nErr;
+      for (const row of (chunkNights ?? []) as Array<
+        NightRow & { patient_id: string }
+      >) {
+        const list = nightsByPatient.get(row.patient_id) ?? [];
+        list.push(row);
+        nightsByPatient.set(row.patient_id, list);
+      }
+
+      const { data: chunkFirstNights, error: fErr } = await db
+        .from("patient_therapy_nights")
+        .select("patient_id, night_date")
+        .in("patient_id", ids)
+        .order("night_date", { ascending: true });
+      if (fErr) throw fErr;
+      for (const row of (chunkFirstNights ?? []) as Array<{
+        patient_id: string;
+        night_date: string;
+      }>) {
+        const prior = setupByPatient.get(row.patient_id);
+        if (prior == null || row.night_date < prior) {
+          setupByPatient.set(row.patient_id, row.night_date);
+        }
       }
     }
 
-    const nightsByPatient = new Map<string, NightRow[]>();
-    for (const row of (nightRows ?? []) as Array<
-      NightRow & { patient_id: string }
-    >) {
-      const list = nightsByPatient.get(row.patient_id) ?? [];
-      list.push(row);
-      nightsByPatient.set(row.patient_id, list);
-    }
-
-    const patients = (
-      (patientRows ?? []) as Array<{
-        id: string;
-        legal_first_name: string;
-        legal_last_name: string;
-        status: string | null;
-        created_at: string;
-      }>
-    ).map((p) => {
+    const patients = patientRows.map((p) => {
       const deduped = dedupeNights(nightsByPatient.get(p.id) ?? []);
       const snapshot = buildTherapySnapshot(
         deduped.map(toSnapshotNight),

@@ -39,7 +39,16 @@ function ComplianceBadge({ patient }: { patient: RtmRosterPatient }) {
       </span>
     );
   }
-  const pct = patient.complianceRatePct ?? 0;
+  // hasData but no compliance rate = "unknown", NOT 0% (non-compliant).
+  // Mirror the detail page, which renders "—" for a null rate.
+  if (patient.complianceRatePct == null) {
+    return (
+      <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-500 ring-1 ring-inset ring-slate-200">
+        — compliant
+      </span>
+    );
+  }
+  const pct = patient.complianceRatePct;
   const cls = patient.cmsCompliant
     ? "bg-emerald-100 text-emerald-800 ring-emerald-200"
     : pct >= 50
@@ -107,7 +116,7 @@ export function ProviderPatients({
                   </p>
                   <p className="truncate text-sm text-slate-500">
                     Avg usage {fmtUsage(p.avgUsageHours)} · {p.compliantNights}{" "}
-                    of {p.nightsWithData} compliant nights ·{" "}
+                    compliant of {p.nightsWithData} nights ·{" "}
                     {fmtStale(p.staleDays)}
                   </p>
                 </div>

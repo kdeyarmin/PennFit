@@ -70,7 +70,11 @@ vi.mock("./shared", () => {
 type Row = Record<string, unknown>;
 const dbState = vi.hoisted(() => ({
   rowsByTable: {} as Record<string, Row[]>,
-  calls: [] as Array<{ table: string; eqs: Record<string, unknown> }>,
+  calls: [] as Array<{
+    table: string;
+    eqs: Record<string, unknown>;
+    ins: Record<string, unknown[]>;
+  }>,
 }));
 
 function makeBuilder(table: string) {
@@ -90,7 +94,7 @@ function makeBuilder(table: string) {
     return builder;
   };
   const resolveRows = (): Row[] => {
-    dbState.calls.push({ table, eqs: { ...eqs } });
+    dbState.calls.push({ table, eqs: { ...eqs }, ins: { ...ins } });
     let rows = dbState.rowsByTable[table] ?? [];
     // Honor the provider_id + patient_id eq() filters so the test sees
     // the route's scoping reflected in what comes back.
@@ -218,6 +222,58 @@ describe("GET /api/provider/patients (roster)", () => {
     const res = await request(makeApp()).get("/api/provider/patients");
     expect(res.status).toBe(200);
     expect(res.body.patients).toEqual([]);
+  });
+
+  it("chunks the .in() id lists and drops NO patient for a >chunk-size panel", async () => {
+    // A panel larger than the 200-id chunk: every patient must come back
+    // (no global .limit(20_000) truncation) and every .in() list must be
+    // bounded so PostgREST never sees a URI-too-long id list.
+    const PANEL = 250;
+    const pad = (n: number) => n.toString().padStart(4, "0");
+    const ids = Array.from(
+      { length: PANEL },
+      (_, i) => `99999999-9999-4999-8999-0000000${pad(i)}`,
+    );
+    dbState.rowsByTable.prescriptions = ids.map((id) => ({
+      provider_id: PROVIDER_ID,
+      patient_id: id,
+    }));
+    dbState.rowsByTable.patients = ids.map((id, i) => ({
+      id,
+      legal_first_name: `First${i}`,
+      legal_last_name: `Last${i}`,
+      date_of_birth: "1950-01-01",
+      status: "active",
+      created_at: "2026-01-01T00:00:00.000Z",
+    }));
+    dbState.rowsByTable.patient_therapy_nights = ids.map((id) => ({
+      patient_id: id,
+      night_date: "2026-06-20",
+      source: "resmed_airview",
+      usage_minutes: 360,
+      ahi: 3.1,
+      leak_rate_l_min: 12,
+    }));
+
+    const res = await request(makeApp()).get("/api/provider/patients");
+    expect(res.status).toBe(200);
+    // Not truncated: every patient is present and uniquely.
+    expect(res.body.patients).toHaveLength(PANEL);
+    expect(
+      new Set(res.body.patients.map((p: { patientId: string }) => p.patientId))
+        .size,
+    ).toBe(PANEL);
+
+    // Every .in("id", …) on patients was chunked to ≤200 and together
+    // covered the whole panel exactly once.
+    const patientInLists = dbState.calls
+      .filter((c) => c.table === "patients" && Array.isArray(c.ins.id))
+      .map((c) => c.ins.id as string[]);
+    expect(patientInLists.length).toBeGreaterThan(1);
+    for (const list of patientInLists) {
+      expect(list.length).toBeLessThanOrEqual(200);
+    }
+    expect(patientInLists.flat().sort()).toEqual([...ids].sort());
   });
 });
 

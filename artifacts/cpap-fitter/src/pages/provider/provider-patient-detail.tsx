@@ -12,7 +12,7 @@ import {
   providerAttestationPdfUrl,
   type RtmPatientDetail,
 } from "@/lib/provider/provider-api";
-import { Button, Card, ErrorNote, ProviderShell, Spinner } from "./provider-ui";
+import { Card, ErrorNote, ProviderShell, Spinner } from "./provider-ui";
 
 function fmtDate(iso: string | null): string {
   if (!iso) return "—";
@@ -133,11 +133,10 @@ export function ProviderPatientDetail({
               href={providerAttestationPdfUrl(id)}
               target="_blank"
               rel="noopener noreferrer"
+              className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 transition-colors hover:bg-slate-50"
             >
-              <Button variant="secondary">
-                <FileText className="h-4 w-4" aria-hidden="true" />
-                Adherence attestation (PDF)
-              </Button>
+              <FileText className="h-4 w-4" aria-hidden="true" />
+              Adherence attestation (PDF)
             </a>
           </div>
 
