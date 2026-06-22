@@ -188,6 +188,35 @@ describe("reserveCartInventory — success and oversold-release", () => {
     });
   });
 
+  it("forwards the idempotency key to the RPC so a retry reuses its hold", async () => {
+    rpcMock.mockResolvedValue({ data: "res_a", error: null });
+    await reserveCartInventory({
+      orgId: ORG,
+      stripe: makeStripe({ price_a: { productId: "prod_a", stockCount: 5 } }),
+      items: [{ priceId: "price_a", quantity: 1, mode: "one_time" }],
+      idempotencyKey: "idem_abc",
+    });
+    expect(rpcMock).toHaveBeenCalledTimes(1);
+    const [, args] = rpcMock.mock.calls[0]!;
+    expect(args).toMatchObject({
+      p_sku: "prod_a",
+      p_idempotency_key: "idem_abc",
+    });
+  });
+
+  it("passes p_idempotency_key: null when no key is supplied", async () => {
+    rpcMock.mockResolvedValue({ data: "res_a", error: null });
+    await reserveCartInventory({
+      orgId: ORG,
+      stripe: makeStripe({ price_a: { productId: "prod_a", stockCount: 5 } }),
+      items: [{ priceId: "price_a", quantity: 1, mode: "one_time" }],
+    });
+    const [, args] = rpcMock.mock.calls[0]!;
+    expect(
+      (args as { p_idempotency_key: unknown }).p_idempotency_key,
+    ).toBeNull();
+  });
+
   it("releases earlier holds and returns ok:false when a later SKU is oversold", async () => {
     // First product reserves fine (res_a); second product is oversold (null).
     rpcMock

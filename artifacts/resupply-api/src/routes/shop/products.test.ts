@@ -55,6 +55,21 @@ vi.mock("../../lib/tenant-branding", () => ({
   resolveOrgIdByHost: (host: unknown) => resolveOrgIdByHostMock(host),
 }));
 
+// In-flight reservation ledger: the route subtracts active holds from the
+// advertised stock so a held-out unit doesn't read as in-stock. Default → no
+// holds (empty map); per-test overrides stage a per-sku reserved count.
+const getActiveReservedBySkuMock = vi.fn(
+  async (
+    _orgId: unknown,
+    _skus: unknown,
+    _log?: unknown,
+  ): Promise<Map<string, number>> => new Map(),
+);
+vi.mock("../../lib/inventory/reservations", () => ({
+  getActiveReservedBySku: (orgId: unknown, skus: unknown, log?: unknown) =>
+    getActiveReservedBySkuMock(orgId, skus, log),
+}));
+
 import productsRouter, { invalidateShopProductsCache } from "./products";
 
 function makeApp(): Express {
@@ -63,10 +78,17 @@ function makeApp(): Express {
   return app;
 }
 
-function freshProduct(id: string, name: string, unitAmount: number) {
+function freshProduct(
+  id: string,
+  name: string,
+  unitAmount: number,
+  stockCount?: number,
+) {
   // Shape matches Stripe.Product fields that projectProduct() inspects:
   // products-meta.ts:196–215 requires `metadata.category` to be a known
-  // ShopCategory and `default_price` to be an active one_time Price.
+  // ShopCategory and `default_price` to be an active one_time Price. When
+  // `stockCount` is provided, set `metadata.stock_count` so the product reads
+  // as stock-tracked (otherwise stockCount projects to null = unlimited).
   return {
     id,
     active: true,
@@ -75,6 +97,7 @@ function freshProduct(id: string, name: string, unitAmount: number) {
     images: [],
     metadata: {
       category: "mask",
+      ...(stockCount != null ? { stock_count: String(stockCount) } : {}),
     },
     default_price: {
       id: `price_${id}`,
@@ -97,6 +120,8 @@ beforeEach(() => {
   stripeAccountRequestOptionsMock.mockResolvedValue({});
   resolveOrgIdByHostMock.mockReset();
   resolveOrgIdByHostMock.mockResolvedValue(null);
+  getActiveReservedBySkuMock.mockReset();
+  getActiveReservedBySkuMock.mockResolvedValue(new Map());
 
   getStripeClientMock.mockReturnValue({
     products: { list: stripeProductsList },
@@ -318,5 +343,60 @@ describe("GET /shop/products — per-tenant (Connect) catalog", () => {
     expect(stripeProductsList).toHaveBeenCalledWith(expect.anything(), {
       stripeAccount: "acct_B",
     });
+  });
+});
+
+describe("GET /shop/products — stock net of in-flight reservations", () => {
+  it("subtracts active holds from the advertised stockCount", async () => {
+    readStripeConfigOrNullMock.mockReturnValue({
+      secretKey: "skRESV01_net_stock",
+      publishableKey: "pk_test_x",
+    });
+    // A tenant must resolve for the reservation-adjust branch to run.
+    resolveOrgIdByHostMock.mockResolvedValue("orgRESV");
+    // Product advertises 10 units in Stripe metadata...
+    stripeProductsList.mockResolvedValue({
+      data: [freshProduct("prod_resv", "Mask Reserved", 1000, 10)],
+    });
+    // ...but 4 are held by in-flight checkouts.
+    getActiveReservedBySkuMock.mockResolvedValue(new Map([["prod_resv", 4]]));
+
+    const res = await request(makeApp()).get("/shop/products");
+    expect(res.status).toBe(200);
+    // The ledger was consulted for exactly the catalog's product ids.
+    expect(getActiveReservedBySkuMock).toHaveBeenCalledWith(
+      "orgRESV",
+      ["prod_resv"],
+      // req.log is undefined under the bare express() test harness (no pino
+      // middleware) — the route forwards it verbatim as the optional logger.
+      undefined,
+    );
+    // Advertised stock is net of the holds: 10 - 4 = 6.
+    expect(res.body.products).toHaveLength(1);
+    expect(res.body.products[0].id).toBe("prod_resv");
+    expect(res.body.products[0].stockCount).toBe(6);
+    // The by-category projection is adjusted too.
+    expect(res.body.byCategory.mask[0].stockCount).toBe(6);
+  });
+
+  it("leaves stockCount unchanged when there are no active holds", async () => {
+    readStripeConfigOrNullMock.mockReturnValue({
+      secretKey: "skRESV02_raw_stock",
+      publishableKey: "pk_test_x",
+    });
+    resolveOrgIdByHostMock.mockResolvedValue("orgRESV2");
+    stripeProductsList.mockResolvedValue({
+      data: [freshProduct("prod_raw", "Mask Raw", 1000, 8)],
+    });
+    // Empty map → no holds → raw stock passes through untouched (fail-open
+    // and the no-reservations common case share this branch).
+    getActiveReservedBySkuMock.mockResolvedValue(new Map());
+
+    const res = await request(makeApp()).get("/shop/products");
+    expect(res.status).toBe(200);
+    expect(res.body.products).toHaveLength(1);
+    expect(res.body.products[0].id).toBe("prod_raw");
+    expect(res.body.products[0].stockCount).toBe(8);
+    expect(res.body.byCategory.mask[0].stockCount).toBe(8);
   });
 });

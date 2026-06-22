@@ -41,10 +41,19 @@ import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { parseStockCount } from "../stripe/products-meta";
 
-/** Default reservation TTL: 15 minutes (Stripe Checkout sessions expire at
- *  ~24h, but a hold only needs to cover the realistic "decide + pay" window;
- *  a leaked hold past this point is swept to `expired` and frees the stock). */
-export const DEFAULT_RESERVATION_TTL_MS = 15 * 60 * 1000;
+/** Default reservation TTL: 23 hours — pinned to the Stripe Checkout session
+ *  lifetime. A hold MUST stay live for as long as its session is payable: a
+ *  shorter TTL (the old 15-min window) let the hold lapse while the session was
+ *  still completable, so a second buyer could be granted the same unit and both
+ *  sessions could pay → oversell. The checkout routes pass `expires_at` =
+ *  `now + DEFAULT_RESERVATION_TTL_MS` to BOTH `reserve_inventory` and the Stripe
+ *  Session (`expires_at`), so the hold and the session lapse together. We use
+ *  23h (not a flat 24h) to stay safely under Stripe's hard ceiling — Stripe
+ *  rejects an `expires_at` more than 24h out, and an exact-24h value plus any
+ *  request-time/clock skew would round over that edge. The sweep + the
+ *  `expires_at > now()` filter in `reserve_inventory` then keep the ledger and
+ *  availability consistent with what a checkout would actually grant. */
+export const DEFAULT_RESERVATION_TTL_MS = 23 * 60 * 60 * 1000;
 
 export interface ReservationCartItem {
   priceId: string;
@@ -61,6 +70,12 @@ export interface ReserveCartInventoryInput {
   requestOptions?: Stripe.RequestOptions;
   items: ReservationCartItem[];
   ttlMs?: number;
+  /** The route's namespaced idempotency key (same value handed to Stripe's
+   *  Session create). When set, `reserve_inventory` reuses the existing active
+   *  hold for the same (org, sku, idempotency_key) instead of taking a second
+   *  hold — so a client retry of the SAME checkout isn't refused with a phantom
+   *  oversell on a last-unit SKU. Omit to fall back to always-insert. */
+  idempotencyKey?: string;
   log?: ReservationLogger;
 }
 
@@ -99,6 +114,7 @@ export async function reserveCartInventory(
     requestOptions = {},
     items,
     ttlMs = DEFAULT_RESERVATION_TTL_MS,
+    idempotencyKey,
     log,
   } = input;
 
@@ -184,6 +200,7 @@ export async function reserveCartInventory(
           p_qty: qty,
           p_available: stockCount,
           p_expires_at: expiresAt,
+          p_idempotency_key: idempotencyKey ?? null,
         });
       if (error) throw error;
 
@@ -204,7 +221,7 @@ export async function reserveCartInventory(
   } catch (err) {
     // FAIL OPEN. A reservation error must never block a sale.
     log?.warn?.(
-      { err: err instanceof Error ? err.message : String(err) },
+      { err: err instanceof Error ? err : new Error(String(err)) },
       "inventory reservation failed (fail-open; checkout proceeds unguarded)",
     );
     return { ok: true, reservationIds: [] };
@@ -236,7 +253,7 @@ export async function attachSessionToReservations(
       {
         sessionId,
         count: reservationIds.length,
-        err: err instanceof Error ? err.message : String(err),
+        err: err instanceof Error ? err : new Error(String(err)),
       },
       "inventory reservation session-attach failed (non-fatal — holds expire via TTL)",
     );
@@ -266,7 +283,7 @@ export async function consumeReservationsForSession(
     log?.warn?.(
       {
         sessionId,
-        err: err instanceof Error ? err.message : String(err),
+        err: err instanceof Error ? err : new Error(String(err)),
       },
       "inventory reservation consume failed (non-fatal — hold expires via TTL)",
     );
@@ -296,7 +313,7 @@ export async function releaseReservationsForSession(
     log?.warn?.(
       {
         sessionId,
-        err: err instanceof Error ? err.message : String(err),
+        err: err instanceof Error ? err : new Error(String(err)),
       },
       "inventory reservation release failed (non-fatal — hold expires via TTL)",
     );
@@ -326,7 +343,7 @@ export async function releaseReservationIds(
     log?.warn?.(
       {
         count: reservationIds.length,
-        err: err instanceof Error ? err.message : String(err),
+        err: err instanceof Error ? err : new Error(String(err)),
       },
       "inventory reservation release-by-id failed (non-fatal — holds expire via TTL)",
     );
@@ -357,7 +374,7 @@ export async function expireStaleReservations(
     return data?.length ?? 0;
   } catch (err) {
     log?.warn?.(
-      { orgId, err: err instanceof Error ? err.message : String(err) },
+      { orgId, err: err instanceof Error ? err : new Error(String(err)) },
       "inventory reservation expire-sweep failed for tenant (non-fatal)",
     );
     return 0;
@@ -394,7 +411,7 @@ export async function getActiveReservedBySku(
     }
   } catch (err) {
     log?.warn?.(
-      { err: err instanceof Error ? err.message : String(err) },
+      { err: err instanceof Error ? err : new Error(String(err)) },
       "inventory reserved-by-sku read failed (non-fatal — catalog shows raw stock)",
     );
   }

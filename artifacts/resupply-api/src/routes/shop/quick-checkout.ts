@@ -49,6 +49,7 @@ import {
   reserveCartInventory,
   attachSessionToReservations,
   releaseReservationIds,
+  DEFAULT_RESERVATION_TTL_MS,
 } from "../../lib/inventory/reservations";
 import { stripeErrLogFields } from "../../lib/stripe/err-log-fields";
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
@@ -304,6 +305,54 @@ router.post(
       return;
     }
 
+    // Subscription mode is enabled if ANY basket line is "subscription".
+    // Computed BEFORE the reservation so it can feed the idempotency key, which
+    // the reservation now keys its hold to (idempotent-retry reuse).
+    const isSubscription = basket.some((b) => b.mode === "subscription");
+
+    // Namespace the Stripe idempotency key by customer + basket, exactly
+    // as /shop/checkout does. Stripe scopes idempotency keys account-wide,
+    // so passing a raw client-supplied `Idempotency-Key` verbatim means
+    // two unrelated authenticated patients who happen to send the same
+    // header value would resolve to the SAME Checkout Session — patient B
+    // would receive patient A's session URL, line items, and Stripe
+    // Customer attachment (cross-user PHI/cart leak). Hashing in the
+    // server-side customerId (and the basket) makes the effective key
+    // unforgeable across customers while still de-duping a real
+    // double-click from one buyer. Including the basket also yields a
+    // fresh Session when the same buyer changes their cart and re-submits.
+    // Computed up here (was below the reservation) so the inventory hold can be
+    // keyed to it — a client retry of the same checkout then reuses its hold.
+    const clientKey =
+      typeof req.headers["idempotency-key"] === "string"
+        ? req.headers["idempotency-key"]
+        : randomUUID();
+    const basketHash = createHash("sha256")
+      .update(
+        JSON.stringify(
+          [...basket]
+            .map((b) => ({
+              priceId: b.priceId,
+              quantity: b.quantity,
+              mode: b.mode,
+            }))
+            .sort((a, b) => a.priceId.localeCompare(b.priceId)),
+        ),
+      )
+      .digest("hex");
+    const idempotencyKey = createHash("sha256")
+      .update(
+        `${customerId}|${clientKey}|${basketHash}|${isSubscription ? "sub" : "one"}`,
+      )
+      .digest("hex");
+
+    // Pin the Stripe Checkout Session lifetime to the inventory-hold TTL so the
+    // session and the hold lapse TOGETHER — mirrors /shop/checkout. Epoch
+    // seconds for Stripe; the hold derives its own from DEFAULT_RESERVATION_TTL_MS.
+    const sessionExpiresAtSec = Math.floor(
+      (Date.now() + DEFAULT_RESERVATION_TTL_MS) / 1000,
+    );
+
     // Inventory reservation / oversell guard — same rationale as
     // /shop/checkout: hold the requested units between validation and payment
     // so concurrent buyers can't all pass the stock check and oversell.
@@ -317,6 +366,10 @@ router.post(
         stripe,
         requestOptions: connectOptions,
         items: basket,
+        // Key the hold to the SAME namespaced idempotency key handed to Stripe
+        // below, so a client retry reuses its existing hold rather than being
+        // refused with a phantom oversell on a last-unit SKU.
+        idempotencyKey,
         log: req.log,
       });
       if (!reservation.ok) {
@@ -340,44 +393,6 @@ router.post(
       email,
       displayName,
     });
-
-    // Subscription mode is enabled if ANY basket line is "subscription"
-    // (computed here so it can also feed the idempotency key below).
-    const isSubscription = basket.some((b) => b.mode === "subscription");
-
-    // Namespace the Stripe idempotency key by customer + basket, exactly
-    // as /shop/checkout does. Stripe scopes idempotency keys account-wide,
-    // so passing a raw client-supplied `Idempotency-Key` verbatim means
-    // two unrelated authenticated patients who happen to send the same
-    // header value would resolve to the SAME Checkout Session — patient B
-    // would receive patient A's session URL, line items, and Stripe
-    // Customer attachment (cross-user PHI/cart leak). Hashing in the
-    // server-side customerId (and the basket) makes the effective key
-    // unforgeable across customers while still de-duping a real
-    // double-click from one buyer. Including the basket also yields a
-    // fresh Session when the same buyer changes their cart and re-submits.
-    const clientKey =
-      typeof req.headers["idempotency-key"] === "string"
-        ? req.headers["idempotency-key"]
-        : randomUUID();
-    const basketHash = createHash("sha256")
-      .update(
-        JSON.stringify(
-          [...basket]
-            .map((b) => ({
-              priceId: b.priceId,
-              quantity: b.quantity,
-              mode: b.mode,
-            }))
-            .sort((a, b) => a.priceId.localeCompare(b.priceId)),
-        ),
-      )
-      .digest("hex");
-    const idempotencyKey = createHash("sha256")
-      .update(
-        `${customerId}|${clientKey}|${basketHash}|${isSubscription ? "sub" : "one"}`,
-      )
-      .digest("hex");
 
     const successUrl = `${config.publicBaseUrl}${successPath}?session_id={CHECKOUT_SESSION_ID}`;
     const cancelUrl = `${config.publicBaseUrl}${cancelPath}`;
@@ -412,6 +427,7 @@ router.post(
         | "payment_method_collection"
       > = {
         customer: stripeCustomerId,
+        expires_at: sessionExpiresAtSec,
         line_items: basket.map((it) => ({
           price: it.priceId,
           quantity: it.quantity,

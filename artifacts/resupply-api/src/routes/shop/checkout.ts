@@ -44,6 +44,7 @@ import {
   reserveCartInventory,
   attachSessionToReservations,
   releaseReservationIds,
+  DEFAULT_RESERVATION_TTL_MS,
 } from "../../lib/inventory/reservations";
 import { stripeErrLogFields } from "../../lib/stripe/err-log-fields";
 import { readCustomerProfile } from "../../lib/customer-profile";
@@ -251,6 +252,17 @@ router.post(
       )
       .digest("hex");
 
+    // Pin the Stripe Checkout Session lifetime to the inventory-hold TTL so the
+    // session and the hold lapse TOGETHER. Without an explicit expires_at a
+    // session lives ~24h while the hold used to expire in 15 min — after which
+    // the hold stopped counting toward availability but the session was still
+    // payable, so a second buyer could be granted the same unit and both could
+    // pay → oversell. Same wall-clock window feeds both (epoch seconds for
+    // Stripe; the hold derives its own from DEFAULT_RESERVATION_TTL_MS).
+    const sessionExpiresAtSec = Math.floor(
+      (Date.now() + DEFAULT_RESERVATION_TTL_MS) / 1000,
+    );
+
     const stripe = getStripeClient(config);
     // Stripe Connect (G5): route the Checkout session + its Customer to the
     // tenant's connected account when set; NULL → {} → platform account.
@@ -301,6 +313,10 @@ router.post(
         stripe,
         requestOptions: connectOptions,
         items,
+        // Key the hold to the SAME namespaced idempotency key we hand Stripe
+        // below, so a client retry of this checkout reuses its existing hold
+        // instead of being refused with a phantom oversell on a last-unit SKU.
+        idempotencyKey,
         log: req.log,
       });
       if (!reservation.ok) {
@@ -378,6 +394,7 @@ router.post(
         session = await stripe.checkout.sessions.create(
           {
             mode: "subscription",
+            expires_at: sessionExpiresAtSec,
             customer: stripeCustomerId,
             customer_update: {
               shipping: "auto",
@@ -411,6 +428,7 @@ router.post(
         session = await stripe.checkout.sessions.create(
           {
             mode: "payment",
+            expires_at: sessionExpiresAtSec,
             ...(stripeCustomerId
               ? {
                   customer: stripeCustomerId,

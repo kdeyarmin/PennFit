@@ -88,6 +88,9 @@ vi.mock("../../lib/inventory/reservations", () => ({
     attachSessionToReservationsMock(...args),
   releaseReservationIds: (...args: unknown[]) =>
     releaseReservationIdsMock(...args),
+  // The route reads this constant to pin the Stripe Session expires_at to the
+  // hold TTL; provide it so the named import resolves under the mock.
+  DEFAULT_RESERVATION_TTL_MS: 23 * 60 * 60 * 1000,
 }));
 
 // ── Logger mock ───────────────────────────────────────────────────────────────
