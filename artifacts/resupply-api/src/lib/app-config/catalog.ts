@@ -756,6 +756,16 @@ export const APP_CONFIG_CATALOG: readonly AppConfigSetting[] = [
     description:
       "App signing secret from the Slack app's Basic Information. Required only for inbound interactivity (Escalate buttons / the /pennfit slash command). Leave blank for outbound-only alerts.",
   },
+  {
+    key: "SLACK_DIGESTS_CHANNEL",
+    label: "Digests channel id (optional)",
+    category: CATEGORY_SLACK,
+    secret: false,
+    applyMode: "live",
+    description:
+      "Optional separate channel id for operator digests (weekly KPIs, metric alerts, stuck jobs, low stock) — e.g. an #ops channel. Leave blank to post digests into the alerts channel. Gated by the slack.digests flag.",
+    placeholder: "C0123OPS",
+  },
 ];
 
 /** Fast membership set of every writable key. */

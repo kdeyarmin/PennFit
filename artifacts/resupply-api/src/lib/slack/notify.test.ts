@@ -27,6 +27,7 @@ import { isFeatureEnabled } from "../feature-flags";
 import { resolveTenantBaseUrl } from "../tenant-branding";
 import {
   notifyConversationNeedsHuman,
+  notifyOpsDigest,
   notifyReminderEscalation,
   notifySlaBreach,
   notifyVoiceHandoff,
@@ -158,6 +159,52 @@ describe("notifySlaBreach", () => {
     });
     const [, input] = postSlackMessageMock.mock.calls[0]!;
     expect(JSON.stringify(input)).toContain("42");
+  });
+});
+
+describe("notifyOpsDigest", () => {
+  it("posts under the slack.digests flag to the digests channel when set", async () => {
+    getEffectiveEnvMock.mockResolvedValue({
+      ...CONFIGURED,
+      SLACK_DIGESTS_CHANNEL: "C-OPS",
+    } as NodeJS.ProcessEnv);
+
+    await notifyOpsDigest({
+      orgId: undefined,
+      severity: "critical",
+      title: "🔴 Stuck jobs",
+      lines: ["*Total:* 3"],
+    });
+
+    expect(isFeatureEnabledMock).toHaveBeenCalledWith(
+      "slack.digests",
+      undefined,
+    );
+    const [, input] = postSlackMessageMock.mock.calls[0]!;
+    expect(input.channel).toBe("C-OPS");
+    expect(JSON.stringify(input)).toContain("Stuck jobs");
+  });
+
+  it("falls back to the default channel when no digests channel is set", async () => {
+    await notifyOpsDigest({
+      orgId: undefined,
+      severity: "info",
+      title: "📊 Weekly",
+      lines: ["• Revenue: 100"],
+    });
+    const [, input] = postSlackMessageMock.mock.calls[0]!;
+    expect(input.channel).toBe("C1");
+  });
+
+  it("no-ops when the slack.digests flag is off", async () => {
+    isFeatureEnabledMock.mockResolvedValue(false);
+    await notifyOpsDigest({
+      orgId: undefined,
+      severity: "info",
+      title: "x",
+      lines: ["y"],
+    });
+    expect(postSlackMessageMock).not.toHaveBeenCalled();
   });
 });
 

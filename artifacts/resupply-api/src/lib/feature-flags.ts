@@ -106,6 +106,7 @@ export const FEATURE_FLAG_KEYS = [
   "referrals.adherence_report",
   "slack.notifications",
   "slack.interactivity",
+  "slack.digests",
 ] as const;
 
 export type FeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];

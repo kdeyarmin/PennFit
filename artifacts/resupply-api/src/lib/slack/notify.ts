@@ -26,7 +26,7 @@ import {
 } from "@workspace/resupply-integrations-slack";
 
 import { getEffectiveEnv } from "../app-config/store";
-import { isFeatureEnabled } from "../feature-flags";
+import { isFeatureEnabled, type FeatureFlagKey } from "../feature-flags";
 import { logger } from "../logger";
 import { resolveTenantBaseUrl } from "../tenant-branding";
 
@@ -73,6 +73,10 @@ interface CsAlertInput {
   severity: SlackSeverity;
   lines: string[];
   actions?: SlackAction[];
+  /** Flag gating this post. Defaults to the real-time CS-alerts flag. */
+  flagKey?: FeatureFlagKey;
+  /** Channel override; defaults to the config's default alerts channel. */
+  channel?: string;
 }
 
 /**
@@ -81,7 +85,8 @@ interface CsAlertInput {
  */
 async function sendCsAlert(input: CsAlertInput): Promise<void> {
   try {
-    if (!(await isFeatureEnabled("slack.notifications", input.orgId))) return;
+    const flagKey = input.flagKey ?? "slack.notifications";
+    if (!(await isFeatureEnabled(flagKey, input.orgId))) return;
     const config = readSlackConfigOrNull(await getEffectiveEnv());
     if (!config) return; // not configured — silent no-op
 
@@ -92,6 +97,7 @@ async function sendCsAlert(input: CsAlertInput): Promise<void> {
       actions: input.actions,
     });
     const res = await postSlackMessage(config, {
+      channel: input.channel ?? config.defaultChannel,
       text: buildFallbackText({ title: input.title, lines: input.lines }),
       blocks,
     });
@@ -250,5 +256,29 @@ export async function notifySlaBreach(input: {
       `*Conversation:* \`${input.conversationId}\``,
     ],
     actions: conversationActions(config, link, input.conversationId, false),
+  });
+}
+
+/**
+ * Post an operator/ops digest (owner weekly KPIs, metric alerts, stuck-job
+ * DLQ depth, low stock) into Slack. Gated by the SEPARATE `slack.digests`
+ * flag and routed to `SLACK_DIGESTS_CHANNEL` when set (else the default
+ * alerts channel) so ops digests can live in an #ops channel apart from the
+ * real-time CS alerts. Non-PHI: counts / KPI headlines / SKU + queue names.
+ */
+export async function notifyOpsDigest(input: {
+  orgId: string | undefined;
+  title: string;
+  severity: SlackSeverity;
+  lines: string[];
+}): Promise<void> {
+  const channel = (await getEffectiveEnv()).SLACK_DIGESTS_CHANNEL?.trim();
+  await sendCsAlert({
+    orgId: input.orgId,
+    severity: input.severity,
+    title: input.title,
+    lines: input.lines,
+    flagKey: "slack.digests",
+    channel: channel || undefined,
   });
 }
