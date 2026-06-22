@@ -80,7 +80,8 @@ router.post(
           : result.kind === "some_claims_not_found" ||
               result.kind === "batch_payer_mismatch" ||
               result.kind === "payer_not_configured" ||
-              result.kind === "claim_detail_unavailable"
+              result.kind === "claim_detail_unavailable" ||
+              result.kind === "location_billing_mismatch"
             ? 409
             : 400;
       res.status(status).json({ error: result.kind, ...(result.detail ?? {}) });
