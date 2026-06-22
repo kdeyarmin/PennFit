@@ -49,6 +49,7 @@ import { registerDemoDripJob } from "./jobs/demo-drip.js";
 import { registerFitterSupplyCampaignJob } from "./jobs/fitter-supply-campaign.js";
 import { registerFitterConversionAttributionJob } from "./jobs/fitter-conversion-attribution.js";
 import { registerCartAbandonmentJob } from "./jobs/cart-abandonment-scan.js";
+import { registerReviewRequestJob } from "./jobs/review-request-scan.js";
 import { registerFailedEmailDigestJob } from "./jobs/failed-order-emails-digest.js";
 import { registerPacwareReadyToSyncDigestJob } from "./jobs/pacware-ready-to-sync-digest.js";
 import { registerTherapyNightlySyncJob } from "./jobs/therapy-integrations-nightly-sync.js";
@@ -583,6 +584,13 @@ async function doStartWorker(): Promise<void> {
   // RESUPPLY_CART_ABANDONMENT_CRON_ENABLED=1 to turn it on.
   await safeRegister("registerCartAbandonmentJob", registrationFailures, () =>
     registerCartAbandonmentJob(boss),
+  );
+  // Post-purchase review-request sweep — hourly at :23. Same shared
+  // dispatcher as the admin "Send due" button; one-send-per-order via the
+  // atomic review_request_sent_at claim. Off by default — flip
+  // RESUPPLY_REVIEW_REQUEST_CRON_ENABLED=1 to turn it on.
+  await safeRegister("registerReviewRequestJob", registrationFailures, () =>
+    registerReviewRequestJob(boss),
   );
   // Demo-lead nurture drip — hourly at :37. Walks each Breathe demo
   // signup (newsletter_subscribers, source='breathe-demo') through a
