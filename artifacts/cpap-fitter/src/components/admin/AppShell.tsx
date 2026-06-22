@@ -827,6 +827,14 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             hint: "Claims held from billing until their signed paperwork is back",
           },
           {
+            href: "/admin/billing/adr",
+            label: "ADR / audit response",
+            icon: ShieldAlert,
+            matchPrefix: "/admin/billing/adr",
+            requiredPermission: "reports.read",
+            hint: "Payer/contractor documentation requests by deadline; build the audit-response packet",
+          },
+          {
             href: "/admin/billing/auto-submit",
             label: "Auto-submit",
             icon: Send,

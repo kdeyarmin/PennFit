@@ -561,6 +561,16 @@ const AdminBillingTimelyFilingPage = lazyWithRetry(() =>
     default: m.AdminBillingTimelyFilingPage,
   })),
 );
+const AdminBillingAdrPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-billing-adr").then((m) => ({
+    default: m.AdminBillingAdrPage,
+  })),
+);
+const AdminAuditPacketPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-audit-packet").then((m) => ({
+    default: m.AdminAuditPacketPage,
+  })),
+);
 const AdminPayerProfitabilityPage = lazyWithRetry(() =>
   import("@/pages/admin/admin-payer-profitability").then((m) => ({
     default: m.AdminPayerProfitabilityPage,
@@ -875,6 +885,11 @@ function AdminConsole() {
             <Route
               path="/admin/billing/bill-hold"
               component={AdminBillingBillHoldPage}
+            />
+            <Route path="/admin/billing/adr" component={AdminBillingAdrPage} />
+            <Route
+              path="/admin/audit-packet"
+              component={AdminAuditPacketPage}
             />
             <Route
               path="/admin/billing/timely-filing"
