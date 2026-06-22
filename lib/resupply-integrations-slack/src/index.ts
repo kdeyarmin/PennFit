@@ -22,6 +22,8 @@ export {
 } from "./config";
 export {
   postSlackMessage,
+  slackAuthTest,
+  type AuthTestResult,
   type PostMessageInput,
   type PostMessageOptions,
   type PostMessageResult,

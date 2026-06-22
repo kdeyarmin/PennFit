@@ -165,13 +165,24 @@ export function AdminSystemConfigurationPage() {
   );
 }
 
-/** "Send test message" button for the Slack category — posts a verification
- *  message to the tenant's configured channel and shows the outcome inline. */
+/** Setup help + "Send test message" button for the Slack category. The test
+ *  verifies the token, auto-saves the workspace (team) id, and posts a
+ *  confirmation — so the operator never has to find the team id by hand. The
+ *  inbound Request URLs (to paste into the Slack app) are shown too. */
 function SlackTestButton() {
+  const queryClient = useQueryClient();
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const origin =
+    typeof window !== "undefined"
+      ? window.location.origin
+      : "https://<your-domain>";
   const test = useMutation({
     mutationFn: sendSlackTest,
-    onSuccess: (r) => setMsg({ ok: true, text: r.message }),
+    onSuccess: (r) => {
+      setMsg({ ok: true, text: r.message });
+      // The test auto-saved the team id — refetch so the field reflects it.
+      void queryClient.invalidateQueries({ queryKey });
+    },
     onError: (e) =>
       setMsg({
         ok: false,
@@ -179,28 +190,74 @@ function SlackTestButton() {
       }),
   });
   return (
-    <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-slate-200 pt-3">
-      <Button
-        intent="secondary"
-        size="sm"
-        isLoading={test.isPending}
-        onClick={() => {
-          setMsg(null);
-          test.mutate();
+    <div
+      className="mt-3 space-y-3 border-t pt-3"
+      style={{ borderColor: "hsl(var(--line-1))" }}
+    >
+      <div
+        className="rounded-md p-3 text-xs leading-relaxed"
+        style={{
+          background: "hsl(var(--surface-2))",
+          color: "hsl(var(--ink-3))",
         }}
       >
-        <Send className="h-3.5 w-3.5" /> Send test message
-      </Button>
-      {msg && (
-        <span
-          className="text-xs"
-          style={{
-            color: msg.ok ? "hsl(var(--ink-3))" : "hsl(var(--destructive))",
+        <p className="font-semibold" style={{ color: "hsl(var(--ink-2))" }}>
+          Quick setup
+        </p>
+        <ol className="mt-1 list-decimal space-y-0.5 pl-4">
+          <li>
+            Create a Slack app in your workspace, add the{" "}
+            <code>chat:write</code> bot scope, install it, and paste the bot
+            token + alerts channel id above.
+          </li>
+          <li>Invite the bot to that channel.</li>
+          <li>
+            For buttons + the <code>/pennfit</code> command, paste the signing
+            secret above and set these Request URLs in your Slack app:
+          </li>
+        </ol>
+        <div className="mt-1.5 space-y-0.5 pl-4">
+          <div>
+            Interactivity:{" "}
+            <code className="break-all">
+              {origin}/resupply-api/slack/interactivity
+            </code>
+          </div>
+          <div>
+            Slash command:{" "}
+            <code className="break-all">
+              {origin}/resupply-api/slack/commands
+            </code>
+          </div>
+        </div>
+        <p className="mt-1.5 pl-4">
+          Then hit <span className="font-semibold">Send test message</span> — it
+          confirms the connection and fills in your workspace id automatically.
+        </p>
+      </div>
+      <div className="flex flex-wrap items-center gap-3">
+        <Button
+          intent="secondary"
+          size="sm"
+          isLoading={test.isPending}
+          onClick={() => {
+            setMsg(null);
+            test.mutate();
           }}
         >
-          {msg.text}
-        </span>
-      )}
+          <Send className="h-3.5 w-3.5" /> Send test message
+        </Button>
+        {msg && (
+          <span
+            className="text-xs"
+            style={{
+              color: msg.ok ? "hsl(var(--ink-3))" : "hsl(var(--destructive))",
+            }}
+          >
+            {msg.text}
+          </span>
+        )}
+      </div>
     </div>
   );
 }

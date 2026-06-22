@@ -20,6 +20,7 @@ import {
   postSlackMessage,
   readSlackConfigOrNull,
   severityEmoji,
+  slackAuthTest,
   type SlackAction,
   type SlackConfig,
   type SlackSeverity,
@@ -43,15 +44,28 @@ function resolveSlackEnv(
 }
 
 export type SlackTestResult =
-  | { ok: true }
-  | { ok: false; reason: "not_configured" | "send_failed"; error?: string };
+  | {
+      ok: true;
+      /** Workspace name auth.test reported (for operator confirmation). */
+      team: string | null;
+      /** Workspace id (T…) — caller persists it so inbound routing is auto-set. */
+      teamId: string | null;
+      /** Channel the test landed in. */
+      channel: string;
+    }
+  | {
+      ok: false;
+      reason: "not_configured" | "auth_failed" | "send_failed";
+      error?: string;
+    };
 
 /**
- * Post a one-off verification message to a tenant's configured Slack channel.
- * Powers the System Configuration "Send test message" button so an operator can
- * confirm the bot token + channel are wired correctly. Bypasses the feature
- * flags on purpose (it's a config test, not an alert) but still requires the
- * channel/token to be configured. Returns a typed result; never throws.
+ * Verify a tenant's Slack wiring and post a confirmation message — powers the
+ * System Configuration "Send test message" / connect step. It (1) checks the
+ * bot token + channel are set, (2) calls auth.test to confirm the token and
+ * learn the workspace name + team id (so setup can auto-save the team id rather
+ * than make the operator find it), then (3) posts a visible test message.
+ * Bypasses the feature flags on purpose (it's a config test). Never throws.
  */
 export async function sendSlackTestMessage(
   orgId: string | undefined,
@@ -59,6 +73,11 @@ export async function sendSlackTestMessage(
   try {
     const config = readSlackConfigOrNull(await resolveSlackEnv(orgId));
     if (!config) return { ok: false, reason: "not_configured" };
+
+    const auth = await slackAuthTest(config);
+    if (!auth.ok)
+      return { ok: false, reason: "auth_failed", error: auth.error };
+
     const res = await postSlackMessage(config, {
       text: "✅ CareMetric Breathe test message — your Slack integration is connected.",
       blocks: buildAlertBlocks({
@@ -69,9 +88,14 @@ export async function sendSlackTestMessage(
         ],
       }),
     });
-    return res.ok
-      ? { ok: true }
-      : { ok: false, reason: "send_failed", error: res.error };
+    if (!res.ok) return { ok: false, reason: "send_failed", error: res.error };
+
+    return {
+      ok: true,
+      team: auth.team ?? null,
+      teamId: auth.teamId ?? null,
+      channel: config.defaultChannel,
+    };
   } catch (err) {
     return {
       ok: false,

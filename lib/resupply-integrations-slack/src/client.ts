@@ -10,7 +10,68 @@
 import type { SlackConfig } from "./config";
 
 const CHAT_POST_MESSAGE_URL = "https://slack.com/api/chat.postMessage";
+const AUTH_TEST_URL = "https://slack.com/api/auth.test";
 const DEFAULT_TIMEOUT_MS = 5_000;
+
+export interface AuthTestResult {
+  ok: boolean;
+  /** Workspace name, e.g. "Acme Home Medical". */
+  team?: string;
+  /** Workspace id, e.g. "T0123ABCD" — used to route inbound requests. */
+  teamId?: string;
+  /** The bot user id the token belongs to. */
+  botUserId?: string;
+  /** Slack `error` code or transport error string on failure. */
+  error?: string;
+}
+
+/**
+ * Call auth.test to verify a bot token and learn which workspace it belongs to
+ * (name + team id). Lets setup auto-detect the team id instead of asking the
+ * operator to hunt for it. Never throws.
+ */
+export async function slackAuthTest(
+  config: SlackConfig,
+  options: PostMessageOptions = {},
+): Promise<AuthTestResult> {
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetchImpl(AUTH_TEST_URL, {
+      method: "POST",
+      headers: { authorization: `Bearer ${config.botToken}` },
+      signal: controller.signal,
+    });
+    if (!res.ok) return { ok: false, error: `http_${res.status}` };
+    const json = (await res.json()) as {
+      ok?: boolean;
+      team?: string;
+      team_id?: string;
+      user_id?: string;
+      error?: string;
+    };
+    if (!json.ok)
+      return { ok: false, error: json.error ?? "unknown_slack_error" };
+    return {
+      ok: true,
+      team: json.team,
+      teamId: json.team_id,
+      botUserId: json.user_id,
+    };
+  } catch (err) {
+    const error =
+      err instanceof Error
+        ? err.name === "AbortError"
+          ? "timeout"
+          : err.message
+        : "unknown_error";
+    return { ok: false, error };
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 export interface PostMessageInput {
   /** Channel id; falls back to the config's default channel when omitted. */

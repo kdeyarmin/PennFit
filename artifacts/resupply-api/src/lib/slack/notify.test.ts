@@ -20,10 +20,13 @@ vi.mock("@workspace/resupply-integrations-slack", async (importOriginal) => {
     await importOriginal<
       typeof import("@workspace/resupply-integrations-slack")
     >();
-  return { ...actual, postSlackMessage: vi.fn() };
+  return { ...actual, postSlackMessage: vi.fn(), slackAuthTest: vi.fn() };
 });
 
-import { postSlackMessage } from "@workspace/resupply-integrations-slack";
+import {
+  postSlackMessage,
+  slackAuthTest,
+} from "@workspace/resupply-integrations-slack";
 
 import { getEffectiveEnv, getEffectiveEnvForOrg } from "../app-config/store";
 import { isFeatureEnabled } from "../feature-flags";
@@ -44,6 +47,7 @@ const getEffectiveEnvMock = vi.mocked(getEffectiveEnv);
 const getEffectiveEnvForOrgMock = vi.mocked(getEffectiveEnvForOrg);
 const resolveTenantBaseUrlMock = vi.mocked(resolveTenantBaseUrl);
 const postSlackMessageMock = vi.mocked(postSlackMessage);
+const slackAuthTestMock = vi.mocked(slackAuthTest);
 
 const CONFIGURED = {
   SLACK_BOT_TOKEN: "xoxb-test",
@@ -65,6 +69,12 @@ beforeEach(() => {
   setSlackEnv(CONFIGURED);
   resolveTenantBaseUrlMock.mockResolvedValue("https://tenant.example");
   postSlackMessageMock.mockResolvedValue({ ok: true, ts: "1" });
+  slackAuthTestMock.mockResolvedValue({
+    ok: true,
+    team: "Acme HME",
+    teamId: "T999",
+    botUserId: "U999",
+  });
 });
 
 describe("notifyConversationNeedsHuman", () => {
@@ -182,16 +192,34 @@ describe("notifySlaBreach", () => {
 });
 
 describe("sendSlackTestMessage", () => {
-  it("posts a test message and returns ok when configured", async () => {
+  it("verifies via auth.test, posts, and returns the workspace + team id", async () => {
     const result = await sendSlackTestMessage("org-1");
-    expect(result).toEqual({ ok: true });
+    expect(result).toEqual({
+      ok: true,
+      team: "Acme HME",
+      teamId: "T999",
+      channel: "C1",
+    });
+    expect(slackAuthTestMock).toHaveBeenCalledTimes(1);
     expect(postSlackMessageMock).toHaveBeenCalledTimes(1);
   });
 
-  it("returns not_configured (no post) when Slack is unset", async () => {
+  it("returns not_configured (no auth/post) when Slack is unset", async () => {
     setSlackEnv({} as NodeJS.ProcessEnv);
     const result = await sendSlackTestMessage("org-1");
     expect(result).toEqual({ ok: false, reason: "not_configured" });
+    expect(slackAuthTestMock).not.toHaveBeenCalled();
+    expect(postSlackMessageMock).not.toHaveBeenCalled();
+  });
+
+  it("returns auth_failed (no post) when the bot token is rejected", async () => {
+    slackAuthTestMock.mockResolvedValue({ ok: false, error: "invalid_auth" });
+    const result = await sendSlackTestMessage("org-1");
+    expect(result).toEqual({
+      ok: false,
+      reason: "auth_failed",
+      error: "invalid_auth",
+    });
     expect(postSlackMessageMock).not.toHaveBeenCalled();
   });
 
