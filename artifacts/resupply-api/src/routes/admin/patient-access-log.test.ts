@@ -149,6 +149,28 @@ describe("GET /admin/patient-access-log — JSON report", () => {
     );
     expect(res.status).toBe(400);
   });
+
+  it("rejects an unparseable date with 400 (does not silently widen the window)", async () => {
+    mockAdmin.current = ADMIN;
+    const res = await request(makeApp()).get(
+      "/admin/patient-access-log?from=notadate",
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("escapes ilike wildcards in adminEmail so they match literally", async () => {
+    mockAdmin.current = ADMIN;
+    stageRow();
+    const res = await request(makeApp()).get(
+      "/admin/patient-access-log?adminEmail=" + encodeURIComponent("ops%_x"),
+    );
+    expect(res.status).toBe(200);
+    const filters = getSupabaseFilterCalls("patient_access_log", "select");
+    const ilike = filters.find(
+      (f) => f.verb === "ilike" && f.args[0] === "admin_email",
+    );
+    expect(ilike?.args[1]).toBe("%ops\\%\\_x%");
+  });
 });
 
 describe("GET /admin/patient-access-log — CSV export", () => {

@@ -31,9 +31,21 @@ const SELECT_COLUMNS =
   "target_table, target_id, patient_id, status_code, ip, user_agent, " +
   "impersonator_user_id, occurred_at";
 
+// A date or datetime string that `new Date()` can parse. Rejecting
+// unparseable values at the schema layer (400) is safer than silently
+// dropping the filter, which would unexpectedly widen the report window.
+const dateish = z
+  .string()
+  .trim()
+  .min(1)
+  .max(40)
+  .refine((v) => !Number.isNaN(new Date(v).getTime()), {
+    message: "must be a valid date or datetime",
+  });
+
 const querySchema = z.object({
-  from: z.string().trim().min(1).max(40).optional(),
-  to: z.string().trim().min(1).max(40).optional(),
+  from: dateish.optional(),
+  to: dateish.optional(),
   adminEmail: z.string().trim().max(254).optional(),
   adminUserId: z.string().trim().max(128).optional(),
   patientId: z.string().trim().max(128).optional(),
@@ -129,6 +141,13 @@ async function resolvePatientNames(
   return names;
 }
 
+/** Escape PostgREST `ilike` wildcards so user input matches literally —
+ *  `%`, `_`, and the escape char `\` (same approach as other admin
+ *  search routes, e.g. denial-codes / product-hcpcs-map). */
+function escapeLike(s: string): string {
+  return s.replace(/[\\%_]/g, (m) => `\\${m}`);
+}
+
 function csvCell(v: unknown): string {
   if (v === null || v === undefined) return "";
   let s = String(v);
@@ -164,7 +183,9 @@ router.get("/admin/patient-access-log", requireAdminOnly, async (req, res) => {
     return;
   }
   const orgId = req.orgId;
-  if (!orgId) {
+  // getOrgScopedClient throws on an empty/whitespace org id — guard for
+  // blank, not just falsy, so a whitespace value can't crash the handler.
+  if (!orgId || !orgId.trim()) {
     res.status(500).json({ error: "tenant_context_missing" });
     return;
   }
@@ -184,10 +205,11 @@ router.get("/admin/patient-access-log", requireAdminOnly, async (req, res) => {
   if (from) query = query.gte("occurred_at", from);
   if (to) query = query.lte("occurred_at", to);
   if (q.adminUserId) query = query.eq("admin_user_id", q.adminUserId);
-  if (q.adminEmail) query = query.ilike("admin_email", `%${q.adminEmail}%`);
+  if (q.adminEmail)
+    query = query.ilike("admin_email", `%${escapeLike(q.adminEmail)}%`);
   if (q.patientId) query = query.eq("patient_id", q.patientId);
   if (q.targetTable) query = query.eq("target_table", q.targetTable);
-  if (q.action) query = query.ilike("action", `%${q.action}%`);
+  if (q.action) query = query.ilike("action", `%${escapeLike(q.action)}%`);
 
   query = query
     .order("occurred_at", { ascending: false })

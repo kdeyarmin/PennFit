@@ -817,7 +817,7 @@ export interface Database {
       patient_access_log: {
         Row: {
           id: string;
-          org_id: string | null;
+          org_id: string;
           admin_user_id: string;
           admin_email: string;
           admin_role: string | null;
@@ -835,7 +835,7 @@ export interface Database {
         };
         Insert: {
           id?: string;
-          org_id?: string | null;
+          org_id: string;
           admin_user_id: string;
           admin_email: string;
           admin_role?: string | null;

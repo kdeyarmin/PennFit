@@ -222,14 +222,30 @@ export function AdminAuditTrailPage() {
           <table className="min-w-[920px] w-full text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
               <tr>
-                <th className="px-3 py-2 font-medium">When</th>
-                <th className="px-3 py-2 font-medium">Employee</th>
-                <th className="px-3 py-2 font-medium">Action</th>
-                <th className="px-3 py-2 font-medium">Patient</th>
-                <th className="px-3 py-2 font-medium">Record</th>
-                <th className="px-3 py-2 font-medium">Request</th>
-                <th className="px-3 py-2 font-medium">Status</th>
-                <th className="px-3 py-2 font-medium">IP</th>
+                <th scope="col" className="px-3 py-2 font-medium">
+                  When
+                </th>
+                <th scope="col" className="px-3 py-2 font-medium">
+                  Employee
+                </th>
+                <th scope="col" className="px-3 py-2 font-medium">
+                  Action
+                </th>
+                <th scope="col" className="px-3 py-2 font-medium">
+                  Patient
+                </th>
+                <th scope="col" className="px-3 py-2 font-medium">
+                  Record
+                </th>
+                <th scope="col" className="px-3 py-2 font-medium">
+                  Request
+                </th>
+                <th scope="col" className="px-3 py-2 font-medium">
+                  Status
+                </th>
+                <th scope="col" className="px-3 py-2 font-medium">
+                  IP
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">

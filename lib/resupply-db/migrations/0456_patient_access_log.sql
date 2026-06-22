@@ -26,7 +26,7 @@
 
 CREATE TABLE IF NOT EXISTS "resupply"."patient_access_log" (
   "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-  "org_id" uuid,
+  "org_id" uuid NOT NULL REFERENCES "resupply"."organizations"("id"),
   "admin_user_id" text NOT NULL,
   "admin_email" text NOT NULL,
   "admin_role" text,

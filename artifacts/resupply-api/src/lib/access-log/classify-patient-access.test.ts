@@ -44,10 +44,39 @@ describe("classifyPatientAccess", () => {
     ).toBe("patients.create");
   });
 
-  it("captures non-uuid customer ids as the patient id", () => {
+  it("records the /admin/patients/:id/onboarding family against the patient", () => {
+    // Codex/Copilot P1: this admin per-patient namespace was previously
+    // missed because only `/patients` was in the allowlist.
+    const id = "55555555-5555-4555-8555-555555555555";
     const d = classifyPatientAccess(
       "GET",
-      "/resupply-api/admin/customers/cus_ABC123",
+      `/resupply-api/admin/patients/${id}/onboarding`,
+    );
+    expect(d).toEqual({
+      action: "patients.view",
+      targetTable: "patients",
+      targetId: id,
+      patientId: id,
+    });
+  });
+
+  it("does not treat the /admin/patients/clinical-encounters/query sub-collection as a patient", () => {
+    const d = classifyPatientAccess(
+      "GET",
+      "/resupply-api/admin/patients/clinical-encounters/query",
+    );
+    expect(d).toMatchObject({
+      action: "patients.view",
+      targetTable: "patients",
+      targetId: null,
+      patientId: null,
+    });
+  });
+
+  it("records the real /admin/shop/customers surface (not the old guessed prefix)", () => {
+    const d = classifyPatientAccess(
+      "GET",
+      "/resupply-api/admin/shop/customers/cus_ABC123",
     );
     expect(d).toEqual({
       action: "customers.view",
@@ -57,14 +86,25 @@ describe("classifyPatientAccess", () => {
     });
   });
 
-  it("does not treat verb sub-paths as ids", () => {
+  it("records customer sub-routes (notes/timeline/followups) against the customer id", () => {
     const d = classifyPatientAccess(
-      "GET",
-      "/resupply-api/admin/customers/export",
+      "POST",
+      "/resupply-api/admin/shop/customers/cus_ABC123/notes",
     );
     expect(d).toEqual({
-      action: "customers.view",
+      action: "customers.create",
       targetTable: "customers",
+      targetId: "cus_ABC123",
+      patientId: "cus_ABC123",
+    });
+  });
+
+  it("does not treat verb sub-paths as ids", () => {
+    // `/patients/merge` is a real bulk action, not a patient id.
+    const d = classifyPatientAccess("POST", "/resupply-api/patients/merge");
+    expect(d).toEqual({
+      action: "patients.create",
+      targetTable: "patients",
       targetId: null,
       patientId: null,
     });
@@ -84,13 +124,30 @@ describe("classifyPatientAccess", () => {
     });
   });
 
-  it("does not let /admin/customers swallow /admin/customer-notes", () => {
+  it("records shop orders at the real /admin/shop/orders path", () => {
+    const orderId = "66666666-6666-4666-8666-666666666666";
     const d = classifyPatientAccess(
       "GET",
-      "/resupply-api/admin/customer-notes?customerId=x",
+      `/resupply-api/admin/shop/orders/${orderId}/notes`,
     );
-    expect(d?.targetTable).toBe("customers");
-    expect(d?.action).toBe("customers.view");
+    expect(d).toEqual({
+      action: "orders.view",
+      targetTable: "orders",
+      targetId: orderId,
+      patientId: null,
+    });
+  });
+
+  it("records the /admin/clinical/outreach surface", () => {
+    const d = classifyPatientAccess(
+      "GET",
+      "/resupply-api/admin/clinical/outreach/eligible",
+    );
+    expect(d).toMatchObject({
+      targetTable: "clinical_outreach",
+      action: "clinical_outreach.view",
+      patientId: null,
+    });
   });
 
   it("matches under the /api mount as well as /resupply-api", () => {

@@ -41,42 +41,51 @@ interface RouteRule {
 }
 
 // Ordered most-specific first. The matcher requires an exact match or a
-// `prefix + "/"` boundary, so "/admin/customers" never swallows
-// "/admin/customer-notes" — but keeping specific entries first is still
-// the clearest way to read the intent.
+// `prefix + "/"` boundary. Every prefix below is verified against the
+// actual route registrations in artifacts/resupply-api/src/routes (NOT
+// guessed from file names — several earlier guesses drifted from the
+// real mounts). When adding a patient-facing admin surface, grep its
+// router for the real path literal and add the prefix here.
 const PATIENT_DATA_ROUTES: readonly RouteRule[] = [
-  // Resupply patients (the canonical PHI record).
+  // Resupply patients (the canonical PHI record): /patients/:id and all
+  // sub-resources (documents, prescriptions, claims, timeline, notes…).
   { prefix: "/patients", table: "patients", person: true },
-  // Storefront customers (the cash-pay / shop-side patient record).
-  { prefix: "/admin/customers", table: "customers", person: true },
-  { prefix: "/admin/customer-notes", table: "customers" },
-  { prefix: "/admin/customer-timeline", table: "customers" },
-  { prefix: "/admin/customer-followups", table: "customers" },
+  // Admin per-patient surfaces mounted under /admin/patients/:id —
+  // onboarding, per-patient clinical encounters, per-patient CMN docs.
+  { prefix: "/admin/patients", table: "patients", person: true },
+  // Storefront customers (the cash-pay / shop-side patient record),
+  // including their notes / timeline / followups / reorder sub-paths
+  // (all mounted under /admin/shop/customers/:userId/…).
+  { prefix: "/admin/shop/customers", table: "customers", person: true },
+  // Standalone prescription record.
+  { prefix: "/prescriptions", table: "prescriptions" },
   // Patient conversations + message threads.
   { prefix: "/conversations", table: "conversations" },
   { prefix: "/admin/conversations-search", table: "conversations" },
   // Clinical / care surfaces.
-  { prefix: "/admin/clinical-encounters", table: "clinical_encounters" },
-  { prefix: "/admin/clinical-outreach", table: "clinical_outreach" },
+  { prefix: "/admin/clinical", table: "clinical_outreach" }, // /admin/clinical/outreach/*
   { prefix: "/admin/coaching-plans", table: "coaching_plans" },
   { prefix: "/admin/cmn-documents", table: "cmn_documents" },
   { prefix: "/admin/cases", table: "cases" },
-  { prefix: "/admin/patient-documents", table: "patient_documents" },
   // Resupply episodes + orders tied to a patient.
   { prefix: "/episodes", table: "episodes" },
-  { prefix: "/admin/shop-orders", table: "orders" },
-  { prefix: "/admin/order-notes", table: "orders" },
+  { prefix: "/admin/shop/orders", table: "orders" },
   { prefix: "/admin/orders", table: "orders" },
 ] as const;
 
 // Segments that follow a resource prefix but are NOT record ids — verbs
-// and sub-collections. Keeps "/admin/customers/export" from recording a
-// patient id of "export".
+// and sub-collections that appear as the FIRST segment after a prefix.
+// Keeps e.g. "/patients/merge" or "/admin/patients/clinical-encounters/
+// query" from recording a patient id of "merge" / "clinical-encounters".
 const NON_ID_SEGMENTS = new Set<string>([
   "export",
+  "export.csv",
   "search",
   "bulk",
+  "bulk-status",
+  "bulk-send",
   "count",
+  "counts",
   "summary",
   "recent",
   "list",
@@ -85,8 +94,16 @@ const NON_ID_SEGMENTS = new Set<string>([
   "create",
   "csv",
   "import",
+  "import-csv",
   "open",
   "all",
+  "merge",
+  "duplicates",
+  "query",
+  "clinical-encounters",
+  "eligible",
+  "run",
+  "send-due",
 ]);
 
 function verbForMethod(method: string): string {
