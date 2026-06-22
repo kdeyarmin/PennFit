@@ -33,6 +33,13 @@ import { ext6Handlers } from "./handlers/ext6";
 import { ext7Handlers } from "./handlers/ext7";
 import { ext8Handlers } from "./handlers/ext8";
 import { ext9Handlers } from "./handlers/ext9";
+import { ext10Handlers } from "./handlers/ext10";
+import { ext11Handlers } from "./handlers/ext11";
+import { ext12Handlers } from "./handlers/ext12";
+import { ext13Handlers } from "./handlers/ext13";
+import { ext14Handlers } from "./handlers/ext14";
+import { ext15Handlers } from "./handlers/ext15";
+import { ext16Handlers } from "./handlers/ext16";
 
 // Order matters only where patterns could overlap; within a surface
 // the more specific routes are declared first in their module. The
@@ -47,6 +54,10 @@ const handlers: DemoHandler[] = [
   ...shopHandlers,
   ...fitflowHandlers,
   ...miscHandlers,
+  // ext13 (patient records) must precede adminHandlers: its static
+  // `GET /resupply-api/patients/duplicates` would otherwise be shadowed by
+  // admin's `GET /resupply-api/patients/:id` param route (first-match wins).
+  ...ext13Handlers,
   ...adminHandlers,
   ...therapyHandlers,
   ...billingClaimsHandlers,
@@ -71,6 +82,15 @@ const handlers: DemoHandler[] = [
   ...ext7Handlers,
   ...ext8Handlers,
   ...ext9Handlers,
+  // Final coverage pass (ext10–ext16): SPA-facing storefront, patient
+  // portal ("me-*"), patient records, conversations/episodes/provider
+  // portal, and the rules engine. (ext13 is wired earlier, above admin.)
+  ...ext10Handlers,
+  ...ext11Handlers,
+  ...ext12Handlers,
+  ...ext14Handlers,
+  ...ext15Handlers,
+  ...ext16Handlers,
 ];
 
 /** API paths the demo sandbox is responsible for answering. */
