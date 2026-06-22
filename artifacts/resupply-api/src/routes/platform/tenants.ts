@@ -625,6 +625,108 @@ router.patch(
   },
 );
 
+// ── GET /platform/tenants/:id/feature-flag-activity ─────────────────
+// Recent feature-flag toggle history for one tenant — who flipped what,
+// when, and which direction. Reads `feature_flag_events` (the durable
+// toggle ledger the tenant's own Control Center reads), NOT `audit_log`
+// (retired). Includes platform-side toggles, since the PATCH handler
+// above writes the same rows. No PHI — flag keys are static config.
+const ACTIVITY_DEFAULT_LIMIT = 20;
+const ACTIVITY_MAX_LIMIT = 100;
+const activityQuery = z.object({
+  limit: z
+    .string()
+    .optional()
+    .transform((v) => {
+      if (!v) return ACTIVITY_DEFAULT_LIMIT;
+      const n = Number.parseInt(v, 10);
+      if (!Number.isFinite(n) || n <= 0) return ACTIVITY_DEFAULT_LIMIT;
+      return Math.min(n, ACTIVITY_MAX_LIMIT);
+    }),
+});
+
+interface FlagEventRow {
+  occurred_at: string;
+  operator_email: string | null;
+  key: string;
+  previous_enabled: boolean;
+  next_enabled: boolean;
+}
+
+router.get(
+  "/platform/tenants/:id/feature-flag-activity",
+  adminReadRateLimiter,
+  requirePlatformAdmin,
+  async (req, res): Promise<void> => {
+    const parsed = tenantIdParam.safeParse(req.params);
+    if (!parsed.success) {
+      res.status(400).json({ error: "invalid_tenant_id" });
+      return;
+    }
+    const id = parsed.data.id;
+    // A repeated/array `limit` would throw on `.parse()`; degrade to the
+    // default instead of 5xx (mirrors the admin activity reader).
+    const parsedQuery = activityQuery.safeParse(req.query);
+    const limit = parsedQuery.success
+      ? parsedQuery.data.limit
+      : ACTIVITY_DEFAULT_LIMIT;
+
+    const seedOrgId = await resolveSeedOrgId();
+    if (!seedOrgId) {
+      res.status(503).json({ error: "tenant_directory_unavailable" });
+      return;
+    }
+    const raw = getOrgScopedClient(seedOrgId).raw();
+
+    const { data: org, error: orgErr } = await raw
+      .schema("resupply")
+      .from("organizations")
+      .select("id")
+      .eq("id", id)
+      .limit(1)
+      .maybeSingle();
+    if (orgErr) {
+      logger.error(
+        { event: "platform_tenant_flag_activity_org_read_failed", err: orgErr },
+        "platform: tenant flag-activity org read failed",
+      );
+      res.status(500).json({ error: "tenant_read_failed" });
+      return;
+    }
+    if (!org) {
+      res.status(404).json({ error: "tenant_not_found" });
+      return;
+    }
+
+    const { data, error } = await raw
+      .schema("resupply")
+      .from("feature_flag_events")
+      .select(
+        "occurred_at, operator_email, key, previous_enabled, next_enabled",
+      )
+      .eq("org_id", id)
+      .order("occurred_at", { ascending: false })
+      .limit(limit);
+    if (error) {
+      logger.error(
+        { event: "platform_tenant_flag_activity_failed", err: error },
+        "platform: tenant flag-activity query failed",
+      );
+      res.status(500).json({ error: "feature_flag_activity_failed" });
+      return;
+    }
+
+    const activity = ((data ?? []) as FlagEventRow[]).map((r) => ({
+      occurredAt: r.occurred_at,
+      operatorEmail: r.operator_email ?? null,
+      key: r.key,
+      from: r.previous_enabled,
+      to: r.next_enabled,
+    }));
+    res.json({ tenantId: id, activity });
+  },
+);
+
 /**
  * Create a new tenant SHELL: the `organizations` row + its feature-flag
  * provisioning. The first ADMIN is intentionally NOT created here — that

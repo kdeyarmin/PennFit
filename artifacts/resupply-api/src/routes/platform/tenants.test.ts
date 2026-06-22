@@ -459,6 +459,54 @@ describe("PATCH /platform/tenants/:id/feature-flags/:key", () => {
   });
 });
 
+describe("GET /platform/tenants/:id/feature-flag-activity", () => {
+  it("401s for a non-platform-admin", async () => {
+    const res = await request(makeApp()).get(
+      `/platform/tenants/${TENANT_ID}/feature-flag-activity`,
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it("404s when the tenant does not exist", async () => {
+    mockPlatformAdmin.current = { userId: "u_p", email: "ops@cm" };
+    stageSupabaseResponse("organizations", "select", { data: null });
+    const res = await request(makeApp()).get(
+      `/platform/tenants/${TENANT_ID}/feature-flag-activity`,
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("returns recent toggle events for the tenant", async () => {
+    mockPlatformAdmin.current = { userId: "u_p", email: "ops@cm" };
+    stageSupabaseResponse("organizations", "select", {
+      data: { id: TENANT_ID },
+    });
+    stageSupabaseResponse("feature_flag_events", "select", {
+      data: [
+        {
+          occurred_at: "2026-06-02T00:00:00Z",
+          operator_email: "ops@cm",
+          key: "admin.assistant",
+          previous_enabled: true,
+          next_enabled: false,
+        },
+      ],
+    });
+    const res = await request(makeApp()).get(
+      `/platform/tenants/${TENANT_ID}/feature-flag-activity`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.tenantId).toBe(TENANT_ID);
+    expect(res.body.activity).toHaveLength(1);
+    expect(res.body.activity[0]).toMatchObject({
+      key: "admin.assistant",
+      operatorEmail: "ops@cm",
+      from: true,
+      to: false,
+    });
+  });
+});
+
 describe("POST /platform/tenants (create)", () => {
   it("401s when the caller is not a platform admin", async () => {
     const res = await request(makeApp())

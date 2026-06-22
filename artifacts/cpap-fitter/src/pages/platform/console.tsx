@@ -24,6 +24,7 @@ import {
   Activity,
   Building2,
   CreditCard,
+  ExternalLink,
   LayoutDashboard,
   LifeBuoy,
   Megaphone,
@@ -49,6 +50,7 @@ import {
   useImpersonateTenant,
   useTenantUsage,
   useTenantFeatureFlags,
+  useTenantFeatureFlagActivity,
   useToggleTenantFeatureFlag,
   type PlatformTenant,
   type TenantFeatureFlag,
@@ -56,6 +58,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { AdminModal } from "@/components/admin/AdminModal";
+import { CopyableId } from "@/components/admin/CopyableId";
 
 import {
   clearPlatformConfig,
@@ -929,6 +932,57 @@ function downloadTenantsCsv(
   URL.revokeObjectURL(url);
 }
 
+// Surfaces tenants that need an operator's eyes — currently the suspended
+// ones (offline until reactivated). Renders nothing when all is well, so
+// it stays out of the way on a healthy fleet.
+function NeedsAttentionCard({
+  tenants,
+}: {
+  tenants: PlatformAnalyticsTenantRow[];
+}) {
+  const suspended = useMemo(
+    () => tenants.filter((t) => t.status === "suspended"),
+    [tenants],
+  );
+  if (suspended.length === 0) return null;
+  return (
+    <Card
+      title="Needs attention"
+      subtitle={`${suspended.length} suspended tenant${
+        suspended.length === 1 ? "" : "s"
+      } — offline until reactivated.`}
+    >
+      <ul className="space-y-1">
+        {suspended.map((t) => (
+          <li key={t.id}>
+            <Link
+              href={`/platform/tenants/${t.id}`}
+              className="flex items-center justify-between gap-3 rounded-md px-3 py-2 border hover:bg-[hsl(var(--surface-3))]"
+              style={{ borderColor: "hsl(var(--line-1))" }}
+            >
+              <span className="min-w-0">
+                <span
+                  className="text-sm font-medium block truncate"
+                  style={{ color: "hsl(var(--ink-1))" }}
+                >
+                  {t.name ?? t.slug}
+                </span>
+                <span
+                  className="text-xs"
+                  style={{ color: "hsl(var(--ink-3))" }}
+                >
+                  {t.slug}
+                </span>
+              </span>
+              <Badge variant="danger">suspended</Badge>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </Card>
+  );
+}
+
 function PlatformDashboard() {
   const [days, setDays] = useState<number>(30);
   const { data, isPending, isError, refetch, isFetching } =
@@ -1119,6 +1173,8 @@ function PlatformDashboard() {
               }
             />
           </div>
+
+          {data && <NeedsAttentionCard tenants={data.tenants} />}
 
           <FleetRevenueCard />
 
@@ -1777,20 +1833,43 @@ function FeatureFlagRow({
 
 function TenantFeatureFlagsCard({ tenantId }: { tenantId: string }) {
   const { data, isPending, isError, refetch } = useTenantFeatureFlags(tenantId);
+  const [query, setQuery] = useState("");
   const grouped = useMemo(() => {
+    const q = query.trim().toLowerCase();
     const m = new Map<string, TenantFeatureFlag[]>();
     for (const f of data?.flags ?? []) {
+      if (
+        q &&
+        !f.key.toLowerCase().includes(q) &&
+        !f.description.toLowerCase().includes(q) &&
+        !f.category.toLowerCase().includes(q)
+      ) {
+        continue;
+      }
       const arr = m.get(f.category) ?? [];
       arr.push(f);
       m.set(f.category, arr);
     }
     return [...m.entries()];
-  }, [data]);
+  }, [data, query]);
+
+  const hasFlags = (data?.flags.length ?? 0) > 0;
 
   return (
     <Card
       title="Feature flags"
       subtitle="Toggle this tenant's features without impersonating — mirrors the tenant's own Control Center, and the change shows up in its toggle activity."
+      action={
+        hasFlags ? (
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Filter flags…"
+            className="w-40"
+            aria-label="Filter feature flags"
+          />
+        ) : undefined
+      }
     >
       {isPending ? (
         <Spinner label="Loading flags…" />
@@ -1804,10 +1883,15 @@ function TenantFeatureFlagsCard({ tenantId }: { tenantId: string }) {
             </Button>
           }
         />
-      ) : (data?.flags.length ?? 0) === 0 ? (
+      ) : !hasFlags ? (
         <EmptyState
           title="No feature flags."
           hint="This tenant hasn't been provisioned a flag catalog yet."
+        />
+      ) : grouped.length === 0 ? (
+        <EmptyState
+          title="No flags match your filter."
+          hint="Clear the filter to see the full catalog."
         />
       ) : (
         <div className="space-y-5">
@@ -1827,6 +1911,79 @@ function TenantFeatureFlagsCard({ tenantId }: { tenantId: string }) {
             </div>
           ))}
         </div>
+      )}
+    </Card>
+  );
+}
+
+// Recent feature-flag toggle history for the tenant — who flipped what,
+// when, and which way. Reads the per-tenant toggle ledger (the same
+// `feature_flag_events` the tenant's own Control Center surfaces), so a
+// platform-side change is auditable here too.
+function RecentFlagActivityCard({ tenantId }: { tenantId: string }) {
+  const { data, isPending, isError, refetch } =
+    useTenantFeatureFlagActivity(tenantId);
+  const activity = data?.activity ?? [];
+
+  return (
+    <Card
+      title="Recent flag changes"
+      subtitle="The last toggles for this tenant — from its own Control Center and from here."
+    >
+      {isPending ? (
+        <Spinner label="Loading activity…" />
+      ) : isError ? (
+        <EmptyState
+          title="Couldn't load activity."
+          hint="A transient error — try again."
+          action={
+            <Button intent="secondary" size="sm" onClick={() => void refetch()}>
+              Retry
+            </Button>
+          }
+        />
+      ) : activity.length === 0 ? (
+        <EmptyState
+          title="No toggles yet."
+          hint="Feature-flag changes for this tenant will show up here."
+        />
+      ) : (
+        <ul className="space-y-0">
+          {activity.map((a, i) => (
+            <li
+              key={`${a.occurredAt}-${a.key}-${i}`}
+              className="py-2.5 border-t first:border-t-0 flex items-start justify-between gap-4"
+              style={{ borderColor: "hsl(var(--line-1))" }}
+            >
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span
+                    className="text-sm font-mono"
+                    style={{ color: "hsl(var(--ink-1))" }}
+                  >
+                    {a.key}
+                  </span>
+                  <Badge variant={a.to ? "success" : "muted"}>
+                    {a.to ? "enabled" : "disabled"}
+                  </Badge>
+                </div>
+                <div
+                  className="text-[11px] mt-0.5"
+                  style={{ color: "hsl(var(--ink-3))" }}
+                >
+                  {a.operatorEmail ?? "system"}
+                </div>
+              </div>
+              <span
+                className="text-[11px] tabular-nums whitespace-nowrap"
+                style={{ color: "hsl(var(--ink-3))" }}
+                title={new Date(a.occurredAt).toLocaleString()}
+              >
+                {new Date(a.occurredAt).toLocaleDateString()}
+              </span>
+            </li>
+          ))}
+        </ul>
       )}
     </Card>
   );
@@ -1968,10 +2125,22 @@ function TenantDetailPage() {
                   </Badge>
                 </div>
                 <div
-                  className="text-xs font-mono mt-1"
+                  className="text-xs mt-1 flex items-center gap-3 flex-wrap"
                   style={{ color: "hsl(var(--ink-3))" }}
                 >
-                  {tenant.slug}
+                  <CopyableId value={tenant.slug} title="Copy slug" />
+                  {tenant.customDomain && (
+                    <a
+                      href={`https://${tenant.customDomain}`}
+                      target="_blank"
+                      rel="noreferrer noopener"
+                      className="inline-flex items-center gap-1 hover:underline"
+                      style={{ color: "hsl(var(--penn-navy))" }}
+                    >
+                      Open storefront
+                      <ExternalLink className="h-3 w-3" aria-hidden="true" />
+                    </a>
+                  )}
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -2077,6 +2246,8 @@ function TenantDetailPage() {
           </div>
 
           <TenantFeatureFlagsCard tenantId={tenant.id} />
+
+          <RecentFlagActivityCard tenantId={tenant.id} />
 
           <p className="text-[11px]" style={{ color: "hsl(var(--ink-3))" }}>
             Counts are aggregates only — no patient records cross this surface.

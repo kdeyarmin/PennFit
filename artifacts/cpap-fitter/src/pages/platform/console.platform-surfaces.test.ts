@@ -66,4 +66,13 @@ describe("platform console tenant detail + sidebar", () => {
     expect(SRC).toContain("function ConfirmDialog");
     expect(SRC).toContain('setConfirm({ kind: "impersonate", tenant: t })');
   });
+
+  it("surfaces per-tenant flag history and a fleet attention panel", () => {
+    expect(SRC).toContain("function RecentFlagActivityCard");
+    expect(SRC).toContain("useTenantFeatureFlagActivity");
+    expect(SRC).toContain("function NeedsAttentionCard");
+    // The detail header offers a one-click storefront open + copyable slug.
+    expect(SRC).toContain("Open storefront");
+    expect(SRC).toContain("<CopyableId value={tenant.slug}");
+  });
 });

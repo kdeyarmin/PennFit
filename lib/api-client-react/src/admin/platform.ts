@@ -285,6 +285,43 @@ export function useToggleTenantFeatureFlag(
   });
 }
 
+// ── Per-tenant feature-flag activity ───────────────────────────────
+
+export interface TenantFlagActivity {
+  occurredAt: string;
+  operatorEmail: string | null;
+  key: string;
+  from: boolean;
+  to: boolean;
+}
+
+export interface TenantFlagActivityResponse {
+  tenantId: string;
+  activity: TenantFlagActivity[];
+}
+
+export const getTenantFlagActivityQueryKey = (id: string, limit?: number) =>
+  [`${TENANTS_URL}/${id}/feature-flag-activity`, { limit }] as const;
+
+export function useTenantFeatureFlagActivity(
+  id: string,
+  limit?: number,
+  options?: {
+    query?: Partial<UseQueryOptions<TenantFlagActivityResponse, PlatformError>>;
+  },
+) {
+  const qs = limit ? `?limit=${encodeURIComponent(String(limit))}` : "";
+  return useQuery<TenantFlagActivityResponse, PlatformError>({
+    queryKey: getTenantFlagActivityQueryKey(id, limit),
+    queryFn: ({ signal }) =>
+      customFetch<TenantFlagActivityResponse>(
+        `${TENANTS_URL}/${encodeURIComponent(id)}/feature-flag-activity${qs}`,
+        { method: "GET", signal },
+      ),
+    ...options?.query,
+  });
+}
+
 // ── Impersonation ──────────────────────────────────────────────────
 
 export interface ImpersonateResponse {
