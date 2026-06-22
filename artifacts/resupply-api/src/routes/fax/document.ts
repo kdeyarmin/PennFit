@@ -25,6 +25,7 @@ import { getDocumentSupplierName } from "../../lib/company-info.js";
 import { verifyFaxDocumentToken } from "../../lib/fax-document-token.js";
 import { renderManualDocumentPacketForFax } from "../../lib/manual-documents/packet-service.js";
 import { renderManualDocumentForFax } from "../../lib/manual-documents/render-for-fax.js";
+import { renderAdherenceAttestationPdf } from "../../lib/referral-adherence/render.js";
 import { resolveOrgIdForSignedRecord } from "../../lib/storefront/signed-link-org.js";
 
 const router: IRouter = Router();
@@ -176,6 +177,43 @@ router.get("/fax/document/:token", faxDocumentLimiter, async (req, res) => {
     res.setHeader("Content-Disposition", 'inline; filename="pa-request.pdf"');
     res.setHeader("Cache-Control", "no-store");
     res.end(result.pdf);
+    return;
+  }
+
+  // Adherence-attestation faxes (Referral CRM Phase 3) re-render the 90-day
+  // Medicare LCD L33718 attestation on demand from the composite
+  // `${patientId}:${anchorDate}` id. The anchor in the token pins the same
+  // 30-day window the worker computed, so the faxed PDF matches what was
+  // disclosed. Same signed-URL posture; the PDF bytes are never logged.
+  if (verified.kind === "adherence_attestation") {
+    const sep = verified.outreachId.indexOf(":");
+    if (sep <= 0) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const patientId = verified.outreachId.slice(0, sep);
+    const anchorDate = verified.outreachId.slice(sep + 1);
+    const attOrgId = await resolveOrgIdForSignedRecord("patients", patientId);
+    if (!attOrgId) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const rendered = await renderAdherenceAttestationPdf(
+      attOrgId,
+      patientId,
+      anchorDate,
+    );
+    if (!rendered.ok) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      'inline; filename="adherence-attestation.pdf"',
+    );
+    res.setHeader("Cache-Control", "no-store");
+    res.end(rendered.pdf);
     return;
   }
 
