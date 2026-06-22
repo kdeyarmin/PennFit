@@ -232,6 +232,7 @@ import platformAnalyticsRouter from "./platform/analytics.js";
 import platformImpersonationRouter from "./platform/impersonation.js";
 import platformMeRouter from "./platform/me.js";
 import platformTenantsRouter from "./platform/tenants.js";
+import platformHealthRouter from "./platform/health.js";
 import platformBillingRouter from "./platform/billing.js";
 import platformConfigRouter from "./platform/config.js";
 import platformSupportRouter from "./platform/support.js";
@@ -270,6 +271,7 @@ router.use(patientAccessLogRouter);
 // requirePlatformAdmin (the tier above a tenant admin).
 router.use(platformMeRouter);
 router.use(platformTenantsRouter);
+router.use(platformHealthRouter);
 router.use(platformAnalyticsRouter);
 router.use(platformBillingRouter);
 router.use(platformConfigRouter);

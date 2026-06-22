@@ -42,6 +42,7 @@ import {
   getListTenantsQueryKey,
   getTenantFeatureFlagsQueryKey,
   getTenantQueryKey,
+  useGetPlatformHealth,
   useGetPlatformMe,
   useGetTenant,
   useListTenants,
@@ -946,6 +947,157 @@ function downloadTenantsCsv(
   URL.revokeObjectURL(url);
 }
 
+// A status dot + label: green when wired/healthy, muted grey otherwise.
+function HealthDot({ ok, label }: { ok: boolean; label: string }) {
+  return (
+    <span
+      className="inline-flex items-center gap-1.5 text-xs"
+      style={{ color: "hsl(var(--ink-2))" }}
+    >
+      <span
+        className="inline-block h-2 w-2 rounded-full shrink-0"
+        style={{
+          backgroundColor: ok ? "hsl(152 60% 38%)" : "hsl(var(--ink-3))",
+        }}
+        aria-hidden="true"
+      />
+      {label}
+    </span>
+  );
+}
+
+// "Is the platform up and wired?" — DB + in-process worker readiness (the
+// same /readyz probe) plus which infrastructure credentials are present in
+// the running process. Polls every 60s so a degradation surfaces without a
+// manual refresh.
+function PlatformHealthCard() {
+  const { data, isPending, isError, refetch, isFetching } =
+    useGetPlatformHealth({ query: { refetchInterval: 60_000 } });
+
+  if (isPending) {
+    return (
+      <Card title="Platform health">
+        <Spinner label="Checking health…" />
+      </Card>
+    );
+  }
+  if (isError || !data) {
+    return (
+      <Card title="Platform health">
+        <EmptyState
+          title="Couldn't load health."
+          hint="A transient error — try again."
+          action={
+            <Button intent="secondary" size="sm" onClick={() => void refetch()}>
+              Retry
+            </Button>
+          }
+        />
+      </Card>
+    );
+  }
+
+  const ready = data.readiness.status === "ready";
+  const { db, queue } = data.readiness.checks;
+  const v = data.vendors;
+  const vendorGroups: Array<{
+    label: string;
+    items: Array<[string, boolean]>;
+  }> = [
+    {
+      label: "AI",
+      items: [
+        ["Anthropic", v.ai.anthropic],
+        ["OpenAI", v.ai.openai],
+        ["ElevenLabs", v.ai.elevenlabs],
+        ["Deepgram", v.ai.deepgram],
+      ],
+    },
+    {
+      label: "Comms",
+      items: [
+        ["SendGrid", v.comms.sendgrid],
+        ["Twilio voice", v.comms.twilioVoice],
+        ["Twilio SMS", v.comms.twilioSms],
+        ["Telnyx fax", v.comms.telnyxFax],
+      ],
+    },
+    {
+      label: "Payments",
+      items: [
+        ["Stripe", v.payments.stripe],
+        ["Platform billing", v.payments.platformBilling],
+      ],
+    },
+    { label: "Storage", items: [["Object storage", v.storage]] },
+  ];
+
+  return (
+    <Card
+      title="Platform health"
+      subtitle={`DB + worker readiness and infrastructure wiring · probe ${data.readiness.latencyMs}ms`}
+      action={
+        <div className="flex items-center gap-2">
+          <Badge variant={ready ? "success" : "danger"}>
+            {ready ? "Operational" : "Degraded"}
+          </Badge>
+          <Button
+            intent="secondary"
+            size="sm"
+            isLoading={isFetching}
+            onClick={() => void refetch()}
+          >
+            Refresh
+          </Button>
+        </div>
+      }
+    >
+      <div className="space-y-4">
+        <div className="flex items-center gap-5 flex-wrap">
+          <HealthDot
+            ok={db === "ok"}
+            label={
+              db === "ok"
+                ? "Database"
+                : `Database · ${data.readiness.errors?.db ?? "failed"}`
+            }
+          />
+          <HealthDot
+            ok={queue === "ok"}
+            label={
+              queue === "ok"
+                ? "Worker"
+                : `Worker · ${data.readiness.errors?.queue ?? "failed"}`
+            }
+          />
+        </div>
+        <div
+          className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 border-t pt-3"
+          style={{ borderColor: "hsl(var(--line-1))" }}
+        >
+          {vendorGroups.map((g) => (
+            <div key={g.label}>
+              <div
+                className="text-[10px] uppercase tracking-[0.16em] font-semibold mb-1.5"
+                style={{ color: "hsl(var(--ink-3))" }}
+              >
+                {g.label}
+              </div>
+              <div className="space-y-1">
+                {g.items.map(([label, ok]) => (
+                  <div key={label}>
+                    <HealthDot ok={ok} label={label} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 // Surfaces tenants that need an operator's eyes — currently the suspended
 // ones (offline until reactivated). Renders nothing when all is well, so
 // it stays out of the way on a healthy fleet.
@@ -1514,6 +1666,8 @@ function PlatformDashboard() {
               }
             />
           </div>
+
+          <PlatformHealthCard />
 
           {data && <NeedsAttentionCard tenants={data.tenants} />}
 

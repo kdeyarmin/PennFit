@@ -123,6 +123,12 @@ describe("platform console tenant detail + sidebar", () => {
     expect(SRC).toContain("Metering &amp; usage");
   });
 
+  it("surfaces a platform health panel on the dashboard", () => {
+    expect(SRC).toContain("function PlatformHealthCard");
+    expect(SRC).toContain("useGetPlatformHealth");
+    expect(SRC).toContain("<PlatformHealthCard />");
+  });
+
   it("adds add-on management, usage recording, and a catalog re-sync", () => {
     expect(SRC).toContain("function TenantAddonManager");
     expect(SRC).toContain("updateTenantAddon");

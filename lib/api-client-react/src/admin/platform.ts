@@ -52,6 +52,52 @@ export function useGetPlatformMe(options?: {
   });
 }
 
+// ── Platform health ────────────────────────────────────────────────
+
+export interface PlatformHealth {
+  generatedAt: string;
+  readiness: {
+    status: "ready" | "not_ready";
+    checks: { db: "ok" | "failed"; queue: "ok" | "failed" };
+    errors: Record<string, string> | null;
+    latencyMs: number;
+  };
+  vendors: {
+    ai: {
+      anthropic: boolean;
+      openai: boolean;
+      elevenlabs: boolean;
+      deepgram: boolean;
+    };
+    comms: {
+      sendgrid: boolean;
+      twilioVoice: boolean;
+      twilioSms: boolean;
+      telnyxFax: boolean;
+    };
+    payments: { stripe: boolean; platformBilling: boolean };
+    storage: boolean;
+  };
+}
+
+const PLATFORM_HEALTH_URL = "/resupply-api/platform/health";
+
+export const getPlatformHealthQueryKey = () => [PLATFORM_HEALTH_URL] as const;
+
+export function useGetPlatformHealth(options?: {
+  query?: Partial<UseQueryOptions<PlatformHealth, PlatformError>>;
+}) {
+  return useQuery<PlatformHealth, PlatformError>({
+    queryKey: getPlatformHealthQueryKey(),
+    queryFn: ({ signal }) =>
+      customFetch<PlatformHealth>(PLATFORM_HEALTH_URL, {
+        method: "GET",
+        signal,
+      }),
+    ...options?.query,
+  });
+}
+
 // ── Tenant directory ───────────────────────────────────────────────
 
 export interface PlatformTenant {
