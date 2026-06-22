@@ -440,6 +440,112 @@ def flag_table(flags):
     return t
 
 
+def three_col_table(headers, rows, widths):
+    """Header + body table with alternating tints (used by the savings
+    tables and the competitive matrix)."""
+    hd = [Paragraph("<b>%s</b>" % h, S_FEATURE_DESC) for h in headers]
+    body = [hd]
+    for r in rows:
+        body.append([Paragraph(c, S_FEATURE_DESC) if isinstance(c, str) else c
+                     for c in r])
+    t = Table(body, colWidths=widths, hAlign="LEFT")
+    style = [
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("LEFTPADDING", (0, 0), (-1, -1), 7),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 7),
+        ("BACKGROUND", (0, 0), (-1, 0), NAVY),
+        ("TEXTCOLOR", (0, 0), (-1, 0), white),
+    ]
+    for r in range(1, len(body)):
+        style.append(("BACKGROUND", (0, r), (-1, r),
+                      PEARL if r % 2 else MIST))
+    t.setStyle(TableStyle(style))
+    return t
+
+
+def savings_stat_row(stats):
+    """Three big-number stat tiles for the ROI roll-up."""
+    cells = []
+    for big, label in stats:
+        cells.append([
+            Paragraph('<font color="%s" size="20"><b>%s</b></font>'
+                      % (hexc(GOLD_DEEP), big),
+                      ParagraphStyle("big", alignment=TA_CENTER, leading=24)),
+            Paragraph(label, ParagraphStyle(
+                "biglabel", parent=S_FEATURE_DESC, alignment=TA_CENTER)),
+        ])
+    w = (CONTENT_W - 0.4 * inch) / 3.0
+    t = Table([cells], colWidths=[w, w, w], hAlign="CENTER")
+    t.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("BACKGROUND", (0, 0), (-1, -1), NAVY_DEEP),
+        ("TEXTCOLOR", (0, 0), (-1, -1), white),
+        ("TOPPADDING", (0, 0), (-1, -1), 12),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
+        ("LINEAFTER", (0, 0), (0, -1), 0.6, NAVY_SOFT),
+        ("LINEAFTER", (1, 0), (1, -1), 0.6, NAVY_SOFT),
+    ]))
+    return t
+
+
+class Marker(Flowable):
+    """Matrix cell marker drawn as a vector circle — full / half / open.
+    (Helvetica lacks the ◐/○ glyphs, which render as boxes, so we draw
+    them.) `kind` is "full", "half"/"some", or anything else for open."""
+
+    R = 3.6
+
+    def __init__(self, kind):
+        super().__init__()
+        self.kind = kind
+        self.width = 14
+        self.height = 11
+        self.hAlign = "CENTER"
+
+    def draw(self):
+        c = self.canv
+        x, y, r = self.width / 2.0, self.height / 2.0, self.R
+        c.saveState()
+        if self.kind == "full":
+            c.setFillColor(NAVY)
+            c.setStrokeColor(NAVY)
+            c.circle(x, y, r, stroke=1, fill=1)
+        elif self.kind in ("half", "some"):
+            c.setFillColor(NAVY_SOFT)
+            c.wedge(x - r, y - r, x + r, y + r, 90, 180, stroke=0, fill=1)
+            c.setStrokeColor(STEEL)
+            c.setLineWidth(0.9)
+            c.circle(x, y, r, stroke=1, fill=0)
+        else:
+            c.setStrokeColor(STEEL)
+            c.setLineWidth(0.9)
+            c.circle(x, y, r, stroke=1, fill=0)
+        c.restoreState()
+
+
+def marker_legend():
+    """Inline 'full / partial / none' legend using drawn markers."""
+    lab = ParagraphStyle("legend", parent=S_FEATURE_DESC, fontSize=8.5)
+    cells = [
+        Marker("full"), Paragraph("full", lab),
+        Marker("half"), Paragraph("partial / Owner-gated", lab),
+        Marker("none"), Paragraph("none", lab),
+    ]
+    w = [0.2 * inch, 0.55 * inch, 0.2 * inch, 1.5 * inch, 0.2 * inch,
+         0.5 * inch]
+    t = Table([cells], colWidths=w, hAlign="LEFT")
+    t.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+    ]))
+    return t
+
+
 # =====================================================================
 # CONTENT
 # =====================================================================
@@ -653,6 +759,16 @@ DETAIL = {
         ]),
     ],
     "biller": [
+        ("How the billing engine works, end to end", "This is what makes CareMetric Breathe's revenue cycle different: the work happens ahead of you. The sections below explain the machinery; the worklists that follow are where you drive it.", [
+            ("The claim types it handles", "Every bill is an insurance claim with a payer sequence. <b>Primary</b> claims are built automatically from a fulfillment (the shipped order) or keyed by hand. <b>Secondary / COB</b> claims are coordination-of-benefits bills the system can auto-draft once a primary pays and leaves a balance, snapshotting the primary's paid / contractual / patient-responsibility amounts into the 837P COB loop — they always land in <i>draft</i> for a biller to review, never auto-submit. <b>Capped-rental</b> claims are generated month by month for Medicare CPAP rentals, each seeded with the correct rental-month modifier. <b>Corrected / void-replacement / paper-backup</b> claims are keyed from the Manual Claim screen when an automated path doesn't fit."),
+            ("Modifiers, applied by rule", "Modifiers (RR rental, KH/KI/KJ capped-rental months, KX medical-necessity, NU purchase, GA/GZ ABN, LT/RT) are applied automatically from a per-payer rule store. Each rule is keyed to a payer + HCPCS + a condition — “rental month ≤ 3”, “rental month ≥ 4”, “compliant at 90 days”, “initial dispense”, “prior auth approved”, “ABN on file” — and the highest-priority match wins as the claim is built. Capped rentals rotate the month modifier for you: KH for months 1–3, KI from month 4, plus KX once the patient proves CMS compliance (≥4 hours on ≥70% of nights in a 30-day window). Hand-keyed claims pull the same modifiers so manual and automated claims bill identically."),
+            ("Eligibility, five ways", "The platform runs the 270/271 eligibility transaction for you in five places: (1) a real-time check that returns a 271 in seconds (or a deferred SFTP round-trip when real-time isn't configured); (2) a <b>quick check</b> you can run with no patient record at all — type a name, DOB, and member ID and read coverage back instantly; (3) the system-wide <b>Eligibility worklist</b> that surfaces rejected and inactive coverage first; (4) scheduled <b>auto-re-verification</b> that fires fresh 270s for the most-urgent active coverages on a cadence; and (5) an automatic <b>pre-submit precheck</b> that re-confirms coverage in the moments before a claim is transmitted and holds back anything inactive or needing prior auth."),
+            ("One-click insurance verification, everywhere", "A Verify-Insurance button rides on the patient chart, the patient's billing tab, and the eligibility worklist, plus a standalone cross-patient verifier — so anyone can confirm coverage in one click from wherever they already are, and the 271 result shows inline. No separate payer portal, no phone tree."),
+            ("Insurance discovery", "When a patient's plan is unknown — or a coverage on file came back inactive — Insurance Discovery searches the payer network from their demographics (name, DOB, ZIP, optional SSN/member-id) and returns the active coverages it finds, ready to attach. It turns “we don't know who covers them” into a billable claim. (A paid clearinghouse add-on; enable per tenant.)"),
+            ("Auto-submit to the clearinghouse", "Submission-ready claims flow through a pipeline: a <b>preflight scrub</b> (required fields, HCPCS/diagnosis match) drops unsalvageable claims; an <b>eligibility gate</b> blocks stale or inactive coverage; the optional <b>AI scrubber</b> flags or fixes the rest; clean claims are <b>batched per payer</b> into 837P files and transmitted to Office Ally over SFTP, with control numbers tracked and 999 / 277CA acknowledgements reconciled automatically. You can drive it two ways — review and approve a staged batch yourself (Auto-submit), or let the scheduled cron transmit clean, eligible claims unattended. A <b>bill-hold</b> gate keeps any claim from going out while required signed paperwork is still outstanding, and lifts the hold the moment the last document is back."),
+            ("AI claim scrubbing & denial recovery", "Before submission the AI scrubber reviews each draft for semantic problems — wrong modifier for the rental month, quantity over the LCD limit, HCPCS/diagnosis mismatch, fee-schedule drift, duplicate risk — and returns a verdict (ready / fixable / blocking) with one-click patches. After a denial, the AI denial analyzer reads the CARC/RARC codes, explains the root cause, drafts the corrective steps and an appeal letter, and recommends the next move (resubmit, appeal, bill the patient, write off). When the fix is safe and confidence is high, it offers a one-click auto-resubmit. The <b>AI Queue</b> buckets all of this — blocking, fixable, needs-analysis, and auto-resubmit-ready — so a biller always works the highest-payoff claim first. PHI is minimized before anything reaches the model (names → initials, DOB → year, member IDs fingerprinted)."),
+            ("ERA auto-posting", "Upload an 835 remittance and the system matches each claim block to your claims and posts the adjudication automatically — allowed, paid, and patient-responsibility amounts at both the claim and line level, a posted event with the check/EFT reference, and a status flip to paid or denied. Denied lines are handed straight to the denial analyzer. Re-posting the same file is a safe no-op (idempotent), so payer redeliveries never double-count."),
+        ]),
         ("Billing dashboards", "Read-first views that tell you where the money is. Open these to know what to work next.", [
             ("Billing Hub", "The A/R director's home base: money in flight, top payers, aging summary, and the day's billing KPIs. Start here, then drop into a worklist."),
             ("Denials & DSO", "Benchmark view of the trailing 90-day denial rate and trailing 180-day days-to-pay (DSO) per payer, with trend lines so you can see which payers are slipping."),
@@ -809,6 +925,20 @@ JOB_AIDES = {
           "Follow the clickable links it returns straight to the right page.",
           "Have an idea for a missing feature? Tell it — after you confirm, it emails a structured suggestion to the owners."],
          "The assistant only explains the app and (with your OK) forwards ideas. It never changes data or shows patient PHI."),
+        ("Get billing ready for go-live",
+         "Stand up the revenue cycle before the first claim.",
+         ["Enter clearinghouse credentials (Office Ally; and Da Vinci PAS if used) under <b>System Configuration</b>.",
+          "Under <b>Billing → Config</b>, add your payer profiles, import the CMS DMEPOS fee schedule, and set modifier + denial-code rules.",
+          "Decide automation posture in the Control Center: eligibility pre-check, auto-re-verify, claim auto-submit, AI billing — start manual, then enable as you trust it.",
+          "Validate against Office Ally's test (T) cycle before flipping line-level changes like the ordering-provider loop on live claims."],
+         "Run claims through the manual staged-approval path first; turn on the auto-submit cron once a few clean batches have gone out."),
+        ("Connect PacWare (billing/warehouse) sync",
+         "Bridge to a legacy PacWare system without an API.",
+         ["Open <b>System → Operations → PacWare</b>.",
+          "Import the patient roster CSV — existing patients only have BLANK fields filled, never overwritten.",
+          "Export the patient roster or resupply-due worklist with the verify step (preview the count + sample first).",
+          "Nothing is ever pushed automatically; the opt-in “ready to sync” notice tells staff when an export is worth running."],
+         None),
     ],
     "biller": [
         ("Verify a patient's insurance (270/271)",
@@ -867,6 +997,49 @@ JOB_AIDES = {
           "Import or enter the fee schedule (CMS import is available), modifier rules, and denial-code mappings.",
           "Map HCPCS coverage diagnoses so claims build with the right codes."],
          "Fee-schedule and clearinghouse setup is usually a one-time job with an admin — once it's right, the worklists run smoothly."),
+        ("Quick-verify a patient's coverage from their chart",
+         "The one-click check you'll use most.",
+         ["Open the patient (<b>Patients &amp; Clinical → Patients</b>) or their billing tab.",
+          "Click <b>Verify insurance</b> in the quick-actions card.",
+          "Read the 271 result inline — active/inactive, plan, copay/deductible — or the “queued” note if the payer answers by deferred file.",
+          "The result is saved to the patient's eligibility history for the next biller."],
+         "Same button lives on the eligibility worklist and a standalone cross-patient verifier (Billing → Verify Insurance) for bulk checks."),
+        ("Find unknown coverage with Insurance Discovery",
+         "Turn “we don't know who covers them” into a billable claim.",
+         ["Open <b>Billing → Worklists → Insurance Discovery</b>.",
+          "Enter the patient's demographics (name, DOB, ZIP; optional SSN / member-id hint).",
+          "Run the search; review the active coverages the payer network returns.",
+          "Attach the right coverage to the patient and proceed to verify/bill."],
+         "Insurance Discovery is a paid clearinghouse add-on — if it's greyed out, an Owner enables it in the Control Center for your tenant."),
+        ("Work the AI Queue",
+         "Let the assistant tee up the highest-payoff claims.",
+         ["Open <b>Billing → Worklists → AI Queue</b>.",
+          "<b>Blocking</b> drafts need your input — open, fix the flagged issue, re-scrub.",
+          "<b>Fixable</b> drafts come with suggested patches — review and apply with one click.",
+          "<b>Needs analysis</b> denials — run the denial analyzer to get root cause + fix steps.",
+          "<b>Auto-resubmit ready</b> — the fix is safe and high-confidence; approve the one-click resubmit."],
+         "The AI never changes a claim without you approving the patch; PHI is minimized before anything reaches the model."),
+        ("Advance a capped-rental cycle",
+         "Keep Medicare CPAP rentals billing on schedule with the right modifiers.",
+         ["Open <b>Billing → A/R &amp; collections → Capped Rentals</b>.",
+          "Review the cycles due for their next rental month.",
+          "Confirm the auto-generated monthly claim — the modifier is already rotated (KH months 1–3, KI from month 4, plus KX once 90-day compliance is met).",
+          "Submit it with the rest of your batch."],
+         "Compliance (≥4 hrs on ≥70% of nights) is read from the therapy-cloud sync, so the KX modifier is applied only when the data supports it."),
+        ("Generate and submit a secondary (COB) claim",
+         "Collect the balance the primary left behind.",
+         ["After a primary pays (via ERA), open <b>Billing → A/R &amp; collections → Secondary Claims</b>.",
+          "Open the auto-drafted secondary — the COB amounts (paid, contractual, patient responsibility) are already snapshotted from the primary's 835.",
+          "Review the secondary payer and line amounts, then submit.",
+          "If auto-draft is off for your tenant, use the COB-eligible worklist to create it."],
+         "Secondary claims are never auto-submitted — they always wait for a biller to review."),
+        ("Clear a bill hold",
+         "Release a claim once its paperwork is back.",
+         ["A claim with outstanding REQUIRED paperwork (Rx, SWO/DWO, CMN, AOB, ABN, proof of delivery) is held from submission.",
+          "Open the claim or <b>Billing → Worklists → Bill Hold</b> to see what's missing.",
+          "Mark the requirement satisfied — or it clears itself when the patient e-signs, you upload the doc, or an inbound fax auto-matches it.",
+          "The hold lifts automatically when the last requirement is met; the claim joins the next batch."],
+         None),
     ],
     "csr": [
         ("Handle an inbound message",
@@ -940,6 +1113,27 @@ JOB_AIDES = {
           "When they finish, review the returned mask and size recommendation.",
           "Convert it to an order, or follow up from the Prospects funnel."],
          None),
+        ("Reply to a patient email (with AI assist)",
+         "Work the email side of the inbox.",
+         ["Open <b>Workspace → Email Inbox</b> and pick a thread in “needs response.”",
+          "If AI auto-reply is on, a high-confidence draft may already be proposed — review and send, or edit first.",
+          "For anything order-, account-, or clinically-specific, write the reply yourself or escalate to a case.",
+          "Sent threads move to “already answered.”"],
+         "AI auto-reply only sends on its own above a confidence bar; everything else falls to a human by design."),
+        ("Recover an abandoned cart",
+         "Win back a shopper who didn't finish checkout.",
+         ["Open <b>Orders &amp; Shop → Storefront &amp; Leads → Abandoned Carts</b>.",
+          "Review the cart and the customer's contact info.",
+          "Send a recovery message (or let the automated cart-abandonment outreach handle it).",
+          "Follow up if they re-engage."],
+         None),
+        ("Moderate a product review or answer a question",
+         "Keep the storefront's social proof clean and helpful.",
+         ["Open <b>Orders &amp; Shop → Storefront &amp; Leads → Reviews</b> (or Product Q&amp;A).",
+          "Read the pending review/question.",
+          "Approve, reply, or reject per your policy.",
+          "Approved content publishes to the storefront."],
+         None),
     ],
     "rt": [
         ("Review the therapy board and spot at-risk patients",
@@ -998,6 +1192,20 @@ JOB_AIDES = {
           "Review the manufacturer recall registry.",
           "The system scans recalls against your dispensed serials and flags at-risk patients.",
           "Reach out to affected patients and arrange a remedy."],
+         None),
+        ("Request or renew a prescription",
+         "Keep orders billable with current paperwork.",
+         ["From the patient chart or <b>Patients &amp; Clinical → Providers &amp; Recalls → Providers</b>, find the ordering provider.",
+          "Start a prescription / renewal request and stage the document.",
+          "Send it for the provider's e-signature (or fax it) and track it under Awaiting Signatures.",
+          "Once signed, it files to the chart and lifts any related bill hold."],
+         None),
+        ("Run a population outreach from a compliance cohort",
+         "Act on a whole at-risk group at once.",
+         ["Open <b>Patients &amp; Clinical → Therapy Monitoring → Therapy Fleet</b>.",
+          "Pick the cohort that needs attention (e.g. low-usage, leak, or slipping adherence).",
+          "Launch consent/DND-aware Clinical Outreach to the cohort.",
+          "Track responses and open interventions for those who need a closer touch."],
          None),
     ],
 }
@@ -1108,6 +1316,159 @@ FLAG_CATEGORY_ORDER = [
 ]
 with open(os.path.join(HERE, "feature-flags.json"), encoding="utf-8") as _ff:
     FLAGS = json.load(_ff)
+
+
+# ── What sets the platform apart ─────────────────────────────────────
+DIFFERENTIATORS_INTRO = (
+    "Most DME operations run on a patchwork: a billing system here, a "
+    "resupply vendor there, an e-ordering tool, and spreadsheets between "
+    "them. CareMetric Breathe replaces the patchwork with one AI-native "
+    "platform built specifically for CPAP/PAP resupply — so the handoffs "
+    "that used to mean re-keying, portal-hopping, and phone tag simply "
+    "disappear. These are the capabilities that set it apart."
+)
+DIFFERENTIATORS = [
+    ("AI mask fitting, no appointment",
+     "A patient's phone camera measures their face right in the browser and "
+     "scores every available mask for fit. Images never leave the device — "
+     "only numeric measurements are sent — and none of the leading DME "
+     "platforms offer anything like it. Fewer fitting appointments, fewer "
+     "wrong-size exchanges."),
+    ("A voice agent that takes reorders",
+     "Patients call and a natural AI voice confirms identity, takes the "
+     "resupply order, and writes a structured summary with sentiment and "
+     "clinical flags — 24/7, with no hold queue. It hands off to a human the "
+     "moment the caller asks."),
+    ("Resupply that runs itself",
+     "Device-reported usage and payer replacement schedules trigger SMS and "
+     "email reminders with signed one-tap confirm links; confirmed orders "
+     "flow straight to fulfillment and billing. The reorder cycle turns "
+     "without a CSR dialing a phone."),
+    ("Eligibility and claims that work ahead of you",
+     "Real-time 270/271 eligibility runs on a schedule and again right "
+     "before a claim goes out; claims arrive pre-scrubbed; the AI flags the "
+     "fix before submission. Billers stop chasing avoidable rejections."),
+    ("Denial recovery ranked by dollars",
+     "When a denial does land, the worklist ranks every one by recoverable "
+     "value weighted by win-probability, and the AI denial analyzer reads "
+     "the CARC/RARC codes, explains the root cause, drafts the fix or appeal, "
+     "and — when it is safe — offers a one-click resubmit."),
+    ("Every channel, one inbox",
+     "SMS, MMS, email, chat, and AI call summaries land in a single triage "
+     "queue with assignment, priorities, and consent and quiet-hours "
+     "enforced automatically. One inbox replaces five tools."),
+    ("Therapy data from all three clouds, one PAP department",
+     "Nightly sync from ResMed AirView, Philips Care Orchestrator, and 3B "
+     "React Health drives CMS 90-day compliance tracking, clinical "
+     "worklists, and resupply timing — and it lives in the SAME system as "
+     "the storefront, the customer database, billing, and documentation. No "
+     "swivel-chair between systems, no per-module pricing, no integration "
+     "projects."),
+]
+
+PLATFORM_FOUNDATIONS_INTRO = (
+    "Beneath the four role workspaces sits a shared platform layer. These "
+    "capabilities serve patients directly or protect the business as a "
+    "whole, and every role benefits from them."
+)
+PLATFORM_FOUNDATIONS = [
+    ("Patient storefront & portal", "A full e-commerce storefront with Stripe checkout, subscriptions, order tracking, returns, document access, insurance details, and caregiver access — backed by a self-service patient account portal."),
+    ("AI mask fitter", "Camera-based facial measurement in the patient's browser scores every available mask for fit. Images never leave the device — only numeric measurements are transmitted."),
+    ("Resupply reminder engine", "Automated SMS and email reminders with signed one-tap confirm/decline links, quiet-hours awareness, and unsubscribe handling."),
+    ("AI voice agent", "A natural-voice phone agent that takes reorders, runs reminder and check-in calls, hands off to staff on request, and writes a structured summary of every call."),
+    ("Chatbot & sleep coach", "Patient-facing AI chat for shopping help and therapy coaching, with optional high-confidence email auto-reply; anything uncertain hands off to staff."),
+    ("CareMetric Copilot (admin assistant)", "An in-app AI helper on every admin page that answers “how do I” questions about the console and forwards staff feature ideas to ownership — always confirming before anything is sent."),
+    ("Security & privacy", "Hardened sign-in with optional MFA, role-based access with granular permissions, CSRF and rate-limit protection, and strict PHI discipline: camera images and order payloads are never logged."),
+    ("Always-on by design", "Feature flags flip capabilities instantly, vendor outages degrade gracefully instead of taking the site down, and background jobs handle syncs, reminders, and campaigns around the clock."),
+]
+
+SAVINGS_INTRO = (
+    "Because CareMetric Breathe is one platform — inventory, billing, the "
+    "customer database, clinical care, and documentation together — the "
+    "handoffs that used to mean re-keying, portal-hopping, and phone tag "
+    "disappear. The estimates below are illustrative for a typical "
+    "single-location PAP operation (about 1,500 active resupply patients; a "
+    "team of one owner, one biller, two CSRs, and one respiratory "
+    "therapist). Tune them to your own volumes."
+)
+SAVINGS_FEATURE = [
+    ("AI mask fitter", "In-person fitting appointments and trial-and-error exchanges", "15–30 min / new setup"),
+    ("Reminder engine + voice agent", "Outbound reorder calls and voicemail loops", "6–10 min / resupply order"),
+    ("Real-time eligibility", "Payer phone calls and portal checks", "10–15 min / verification"),
+    ("AI scrubbing + ranked denials", "Hunting denial causes claim by claim", "~15 min / denial worked"),
+    ("Therapy-cloud sync", "Pulling three vendor portals for compliance data", "~10 min / patient / month"),
+    ("Unified inbox + patient 360", "Cross-referencing phone logs, email, fax, and billing", "30–60 min / rep / day"),
+    ("Fax OCR + e-signature packets", "Manual filing, printing, and signature chasing", "5–10 min / document"),
+    ("PacWare sync", "Re-keying patients and orders into the billing system", "3–5 min / record"),
+]
+SAVINGS_ROLE = [
+    ("Administrator (Owner)", "Live dashboards and KPI alerts replace hand-built reports and spreadsheet checks", "~45 min / day"),
+    ("Biller", "Eligibility runs itself; claims arrive scrubbed and denials arrive ranked", "~2.0 hrs / day"),
+    ("Customer Service Rep (each of 2)", "Reorders confirm themselves by text, link, or the AI phone agent; one inbox replaces five tools", "~2.5 hrs / day"),
+    ("Respiratory Therapist", "Compliance data lands nightly and worklists build themselves", "~1.5 hrs / day"),
+]
+SAVINGS_TOTALS = [
+    ("~9.25", "staff-hours back per day"),
+    ("~200", "hours back per month"),
+    ("~$5,000", "per month (~$60K/yr) at $25/hr"),
+]
+SAVINGS_CLOSE = (
+    "And that is labor alone. Consolidating onto one platform also retires "
+    "the rest of the stack — the business-management system, the resupply "
+    "add-on, the e-ordering tool, and the spreadsheets between them — along "
+    "with the subscriptions and integration upkeep they carry."
+)
+SAVINGS_FOOTNOTE = (
+    "Illustrative planning estimates, not a guarantee. Actual savings depend "
+    "on patient volume, payer mix, and current workflows. Per-task figures "
+    "reflect the manual workflows each feature replaces; the roll-up assumes "
+    "the team mix above, 21.7 workdays per month, and a $25/hour fully "
+    "loaded labor rate (9.25 hrs/day × 21.7 days ≈ 200 hrs; 200 hrs × $25 ≈ "
+    "$5,000/month, ≈ $60,000/year)."
+)
+
+# Competitive matrix (appendix). ● native · ◐ partial / add-on / partner · ○ not core.
+MATRIX_VENDORS = ["CMB", "Brightree", "Niko", "TIMS"]
+MATRIX_INTRO = (
+    "How CareMetric Breathe's (CMB) marquee features line up against the "
+    "DME/HME platforms a resupply business is most likely to evaluate. A "
+    "full circle = native, half = partial / add-on / via partner, open = "
+    "not offered or not core."
+)
+MATRIX_FOOTNOTE = (
+    "CareMetric Breathe entries reflect the shipped platform described in "
+    "this manual. Competitor entries summarize publicly available product "
+    "information and may be delivered via partners or paid add-ons; verify "
+    "with each vendor before relying on this comparison."
+)
+COMPARE_MATRIX = [
+    ("Patient experience", [
+        ("AI camera-based mask fitting, in-browser, privacy-first", ["full", "none", "none", "none"]),
+        ("Patient e-commerce storefront, subscriptions, cash-pay", ["full", "half", "half", "half"]),
+        ("Automated resupply outreach, one-tap confirm (SMS/email)", ["full", "full", "half", "half"]),
+        ("Conversational AI voice agent for reorders/check-ins", ["full", "half", "none", "none"]),
+        ("Patient AI chatbot and sleep coach", ["full", "none", "none", "none"]),
+    ]),
+    ("Clinical & therapy", [
+        ("Therapy-cloud sync (ResMed, Philips, React Health)", ["full", "full", "half", "half"]),
+        ("CMS 90-day setup-adherence tracking", ["full", "full", "half", "half"]),
+        ("Clinical intervention, coaching, mask-fit worklists", ["full", "half", "none", "none"]),
+        ("Inbound fax OCR and document triage", ["full", "full", "half", "half"]),
+    ]),
+    ("Revenue cycle", [
+        ("Clearinghouse claims (837P/835) + real-time eligibility", ["full", "full", "full", "full"]),
+        ("AI claim scrubbing + denial recovery by win-probability", ["full", "half", "half", "none"]),
+        ("Electronic prior authorization (Da Vinci PAS)", ["full", "half", "none", "none"]),
+        ("DME A/R: capped rentals, secondary/COB, timely filing", ["full", "full", "full", "full"]),
+        ("Patient statements, payment plans, payment links", ["full", "full", "full", "full"]),
+    ]),
+    ("Operations & intelligence", [
+        ("Unified omnichannel inbox (SMS, MMS, email, chat)", ["full", "half", "half", "none"]),
+        ("Provider e-signature and e-ordering collaboration", ["full", "half", "half", "none"]),
+        ("Analytics: margin, LTV/CAC, payer profitability", ["full", "half", "half", "half"]),
+        ("In-app AI staff assistant + no-code automation rules", ["full", "half", "half", "none"]),
+    ]),
+]
 
 
 # =====================================================================
@@ -1332,6 +1693,43 @@ def make_story(toc_entries):
         S_BODY))
     story.append(PageBreak())
 
+    # ---- What sets it apart ----
+    story += h1("What Sets CareMetric Breathe Apart")
+    story.append(Paragraph(DIFFERENTIATORS_INTRO, S_LEAD))
+    story.append(h2("Capabilities a spreadsheet stack can't match"))
+    story.append(feature_table(DIFFERENTIATORS))
+    story.append(Spacer(1, 6))
+    story += shot("storefront-home",
+                  "The patient storefront — one front door for fitting, "
+                  "shopping, and resupply, with the AI assistant one tap away.")
+
+    story.append(h2("The platform underneath every role"))
+    story.append(Paragraph(PLATFORM_FOUNDATIONS_INTRO, S_BODY))
+    story.append(feature_table(PLATFORM_FOUNDATIONS))
+
+    story.append(h2("Hours back, every day — the owner's ROI"))
+    story.append(Paragraph(SAVINGS_INTRO, S_BODY))
+    story.append(Paragraph("<b>Where the time goes — by feature</b>", S_GROUP))
+    story.append(three_col_table(
+        ["Feature", "Replaces this manual work", "Time saved"],
+        SAVINGS_FEATURE,
+        [1.7 * inch, CONTENT_W - 1.7 * inch - 1.5 * inch, 1.5 * inch]))
+    story.append(Spacer(1, 6))
+    story.append(Paragraph("<b>Rolled up by role</b>", S_GROUP))
+    story.append(three_col_table(
+        ["Role", "What runs itself", "Per day"],
+        SAVINGS_ROLE,
+        [1.7 * inch, CONTENT_W - 1.7 * inch - 1.2 * inch, 1.2 * inch]))
+    story.append(Spacer(1, 8))
+    story.append(savings_stat_row(SAVINGS_TOTALS))
+    story.append(Spacer(1, 6))
+    story.append(Paragraph(SAVINGS_CLOSE, S_BODY))
+    story.append(Spacer(1, 4))
+    story.append(Paragraph(
+        '<font size="8">%s</font>' % SAVINGS_FOOTNOTE,
+        ParagraphStyle("fn", parent=S_TIP, fontName="Helvetica")))
+    story.append(PageBreak())
+
     # ---- Setup Guide ----
     story += h1("Setup Guide")
     story.append(Paragraph(SETUP_INTRO, S_LEAD))
@@ -1470,21 +1868,16 @@ def make_story(toc_entries):
     # ---- Appendix ----
     story += h1("Appendix")
     story.append(h2("Role & permission matrix"))
-    story.append(Paragraph(
-        "What each role can reach. ● full access · ◐ partial / "
-        "view-only or Owner-gated · ○ none.", S_BODY))
+    story.append(Paragraph("What each role can reach.", S_BODY))
+    story.append(marker_legend())
+    story.append(Spacer(1, 5))
     header = ["Area", "Admin", "Biller", "CSR", "RT"]
     rows = [[Paragraph("<b>%s</b>" % h, S_FEATURE_DESC) for h in header]]
-    glyph = {"full": "●", "some": "◐", "none": "○"}
     for area in MATRIX_AREAS:
         vals = MATRIX[area]
         row = [Paragraph(area, S_FEATURE_DESC)]
         for v in vals:
-            row.append(Paragraph(
-                "<font color=\"%s\">%s</font>"
-                % (hexc(NAVY if v != "none" else STEEL), glyph[v]),
-                ParagraphStyle("c", parent=S_FEATURE_DESC,
-                               alignment=TA_CENTER)))
+            row.append(Marker(v))
         rows.append(row)
     cw = [CONTENT_W - 4 * 0.78 * inch] + [0.78 * inch] * 4
     t = Table(rows, colWidths=cw, hAlign="LEFT")
@@ -1505,6 +1898,32 @@ def make_story(toc_entries):
     story.append(t)
     story.append(Spacer(1, 6))
     story.append(Paragraph(MATRIX_NOTE, S_BODY))
+
+    story.append(h2("How it compares"))
+    story.append(Paragraph(MATRIX_INTRO, S_BODY))
+    story.append(Paragraph(
+        "<font size=\"8.5\">CMB = CareMetric Breathe · Brightree = Brightree "
+        "with its ReSupply module · Niko = NikoHealth · TIMS = TIMS "
+        "Software.</font>", S_TIP))
+    story.append(Spacer(1, 4))
+    cap_w = 0.86 * inch
+    feat_w = CONTENT_W - 4 * cap_w
+    center = ParagraphStyle("mc", parent=S_FEATURE_DESC, alignment=TA_CENTER)
+    for group, rows in COMPARE_MATRIX:
+        story.append(Paragraph(group, S_GROUP))
+        body_rows = []
+        for label, marks in rows:
+            cells = [Paragraph(label, S_FEATURE_DESC)]
+            for m in marks:
+                cells.append(Marker(m))
+            body_rows.append(cells)
+        story.append(three_col_table(
+            ["Feature"] + MATRIX_VENDORS, body_rows,
+            [feat_w, cap_w, cap_w, cap_w, cap_w]))
+        story.append(Spacer(1, 4))
+    story.append(Paragraph('<font size="8">%s</font>' % MATRIX_FOOTNOTE,
+                           ParagraphStyle("mfn", parent=S_TIP,
+                                          fontName="Helvetica")))
 
     story.append(h2("Glossary"))
     story.append(feature_table(GLOSSARY))
