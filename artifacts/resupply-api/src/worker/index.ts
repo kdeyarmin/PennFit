@@ -77,6 +77,7 @@ import { registerCoachingAutoEnrollJob } from "./jobs/coaching-auto-enroll.js";
 import { registerPayerEstimateStatsJob } from "./jobs/payer-estimate-stats-refresh.js";
 import { registerPriorAuthExpirySweepJob } from "./jobs/prior-auth-expiry-sweep.js";
 import { registerAdrSlaSweepJob } from "./jobs/adr-sla-sweep.js";
+import { registerAdrAlertDigestJob } from "./jobs/adr-alert-digest.js";
 import {
   registerDunningOpenScanJob,
   registerDunningTickJob,
@@ -878,6 +879,18 @@ async function doStartWorker(): Promise<void> {
       "billing.adr-sla-sweep",
       ["claim_adr_requests"],
       registerAdrSlaSweepJob,
+    ),
+  );
+
+  // Daily ADR deadline alert digest — emails operators the overdue / at-risk
+  // ADRs so a 30-day clock can't slip by. OPT-IN cron (ADR_ALERT_DIGEST_CRON);
+  // gated per-tenant by billing.adr_queue. No PHI in the digest.
+  await safeRegister("billing.adr-alert-digest", registrationFailures, () =>
+    registerIfProvisioned(
+      boss,
+      "billing.adr-alert-digest",
+      ["claim_adr_requests"],
+      registerAdrAlertDigestJob,
     ),
   );
 
