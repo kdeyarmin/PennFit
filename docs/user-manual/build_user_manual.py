@@ -1549,6 +1549,48 @@ BUSINESS_CASE_CLOSE = (
 )
 
 
+# ── The AI assistants (chat + copilot) ───────────────────────────────
+ASSISTANTS_INTRO = (
+    "Two AI assistants work alongside the business around the clock — one "
+    "on the storefront answering patients, one inside the admin console "
+    "guiding staff. Both are built in, both fall back gracefully (Claude "
+    "first, then OpenAI, then a safe offline reply) if a vendor key is "
+    "missing, and both are renamable per tenant — the Penn Home Medical "
+    "Supply tenant calls them PennBot and PennPilot."
+)
+ASSISTANT_CUSTOMER = [
+    ("Answers patients 24/7", "A chat assistant on the storefront answers questions about CPAP therapy, masks, resupply, insurance, and your company — instantly, day or night, with no hold queue and no callback. It is the front line for the routine questions that used to ring the phone."),
+    ("Knows the patient's account", "For a signed-in patient it is account-aware: it can pull recent orders, order status and tracking, active subscriptions, and device details, and help with returns, refunds, and account changes. So “where's my order?” and “when's my next refill?” answer themselves."),
+    ("Knows when to hand off", "Anything it can't resolve — order-specific, clinical, or an action that needs a person — it escalates to a CSR by opening a message thread, with the context attached. It never accepts sensitive data (SSN, card, member ID), it is not a clinician, and it gives no medical advice."),
+    ("A sleep coach, too", "In sleep-coach mode it offers supportive, plain-language coaching and troubleshooting for patients adjusting to therapy — the kind of reassurance that keeps new patients adherent."),
+    ("The same brain by email", "The optional email auto-reply uses the same knowledge base to answer inbound patient emails automatically — but only when it is highly confident. Anything below the confidence bar (or order/clinical-specific) falls through to a human, exactly like a hand-off in chat."),
+]
+ASSISTANT_STAFF = [
+    ("Every employee's guide to the console", "CareMetric Copilot floats on every admin page. Ask it “how does this work?” or “where's the page that does X?” and it answers from a complete map of the console and returns one-click links straight to the right screen. New hires get productive without interrupting a supervisor, and veterans find the rarely-used corner fast."),
+    ("Walks staff through the work", "Beyond finding pages, it explains workflows in plain language — “walk me through processing a claim,” “how do I turn a feature on?” — so the answer to a how-do-I question is a chat away instead of a training ticket."),
+    ("Turns ideas into action — safely", "Its one action, after the employee confirms, emails a structured feature suggestion to the owners. It takes no other actions: it never changes data, never sends anything silently, and never echoes patient PHI. It's an on/off toggle in the Control Center."),
+]
+CALL_DEFLECTION = (
+    "Every routine question a patient resolves in chat is a phone call your "
+    "team never has to staff. An inbound call ties up a CSR for several "
+    "minutes of handle time plus the queue around it; a chat the assistant "
+    "answers costs essentially nothing and happens 24/7 — including the "
+    "nights and weekends when no one is at the desk. Across a busy resupply "
+    "line that is hours of phone time removed every week, shorter holds for "
+    "the calls that do need a person, and patients who get an instant "
+    "answer instead of waiting for a callback. The Copilot side compounds "
+    "it: less time lost to “how do I…?” and faster onboarding for every new "
+    "hire."
+)
+CALL_DEFLECTION_MATH = (
+    "Illustrative: at a $25/hour blended rate, a 6-minute call is about "
+    "$2.50 of labor. Deflecting even 20–30 routine questions a day to chat "
+    "is roughly $50–75/day — about $1,000–1,500 a month — before counting "
+    "the after-hours coverage you'd otherwise have to pay for. Directional "
+    "planning figures, not a guarantee; tune to your call volume and rate."
+)
+
+
 # ── Owner's playbook: managing the software ──────────────────────────
 OWNER_PLAYBOOK_INTRO = (
     "Running the practice from CareMetric Breathe is mostly a matter of "
@@ -1920,6 +1962,37 @@ def make_story(toc_entries):
     story.append(Paragraph(
         '<font size="8">%s</font>' % SAVINGS_FOOTNOTE,
         ParagraphStyle("fn", parent=S_TIP, fontName="Helvetica")))
+    story.append(PageBreak())
+
+    # ---- The AI assistants (chat + copilot) ----
+    story += h1("CareMetric Copilot & the AI Assistants")
+    story.append(Paragraph(ASSISTANTS_INTRO, S_LEAD))
+
+    story.append(h2("CareMetric Assistant — the patient's 24/7 answer"))
+    story.append(Paragraph(
+        "The storefront chatbot (PennBot for the Penn tenant) is the "
+        "customer-facing assistant.", S_BODY))
+    for name, para in ASSISTANT_CUSTOMER:
+        story.append(Paragraph(
+            "<b><font color=\"%s\">%s.</font></b> %s"
+            % (hexc(NAVY_DEEP), name, para), S_BODY))
+
+    story.append(h2("CareMetric Copilot — every employee's guide to the app"))
+    story.append(Paragraph(
+        "The in-app admin assistant (PennPilot for the Penn tenant) is the "
+        "staff-facing helper, on every admin page.", S_BODY))
+    for name, para in ASSISTANT_STAFF:
+        story.append(Paragraph(
+            "<b><font color=\"%s\">%s.</font></b> %s"
+            % (hexc(NAVY_DEEP), name, para), S_BODY))
+    story += shot("admin-home",
+                  "“Ask CareMetric Copilot” sits in the corner of every "
+                  "admin page — staff get an answer without leaving the work.")
+
+    story.append(h2("What a deflected call is worth"))
+    story.append(Paragraph(CALL_DEFLECTION, S_BODY))
+    story.append(Spacer(1, 4))
+    story.append(tip(CALL_DEFLECTION_MATH))
     story.append(PageBreak())
 
     # ---- Running the business (owner's playbook) ----

@@ -15,22 +15,25 @@ and is regenerable.
    biller's job transformed (clean claims, pre-bill eligibility, AI denial
    fix/resubmit → paid faster, less audit-prone), and the labor/cost-savings
    estimate.
-5. **Running the Business — the Owner's Playbook** — what to watch and when,
+5. **CareMetric Copilot & the AI Assistants** — the customer chatbot
+   (CareMetric Assistant) and the staff admin helper (CareMetric Copilot),
+   plus the call-deflection savings.
+6. **Running the Business — the Owner's Playbook** — what to watch and when,
    how to monitor every area from one screen, the report catalog, and the
    KPI benchmarks the platform tracks to keep you ahead.
-6. **Setup Guide** — what must be configured before going live, and an
+7. **Setup Guide** — what must be configured before going live, and an
    explanation of **every Control Center toggle** (default state + what it
    does when on/off).
-7. **Part 1 — Feature Summary by Role** — a one-line description of every
+8. **Part 1 — Feature Summary by Role** — a one-line description of every
    feature, grouped by role (Administrator, Biller, CSR, Respiratory
    Therapist).
-8. **Part 2 — Comprehensive Feature Reference by Role** — the full detail on
+9. **Part 2 — Comprehensive Feature Reference by Role** — the full detail on
    each feature, including deep-dives on the billing engine (Biller), the
    resupply engine + e-signature + provider portal (CSR), and the
    manufacturer integrations + alerts/compliance (RT).
-9. **Part 3 — Job Aides by Role** — curated step-by-step walkthroughs for the
-   highest-value tasks.
-10. **Appendix** — role/permission matrix, competitive comparison, glossary.
+10. **Part 3 — Job Aides by Role** — curated step-by-step walkthroughs for the
+    highest-value tasks.
+11. **Appendix** — role/permission matrix, competitive comparison, glossary.
 
 > This is distinct from `manual.html` / `render.mjs` in this same folder,
 > which build the shorter **PennPaps Customer Service Manual** PDF that staff
