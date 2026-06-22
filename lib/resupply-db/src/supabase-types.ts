@@ -3881,6 +3881,27 @@ export interface Database {
         >;
         Relationships: [];
       };
+      davinci_pas_credentials: {
+        Row: {
+          org_id: string | null;
+          id: string;
+          payer_slug: string;
+          /** Bearer access token forwarded in the PAS POST Authorization
+           *  header. Plaintext; NEVER returned over the API or logged. */
+          access_token: string;
+          is_active: boolean;
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["davinci_pas_credentials"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["davinci_pas_credentials"]["Row"]
+        >;
+        Relationships: [];
+      };
       era_files: {
         Row: {
           org_id: string | null;
