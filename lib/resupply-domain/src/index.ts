@@ -211,6 +211,7 @@ export {
   normalizeSelection,
   REQUIRED_AUDIT_ITEMS,
   assessAuditReadiness,
+  coveredKeysFromDocumentTypes,
   type AuditItemSource,
   type AuditScope,
   type AuditItemGroup,
@@ -218,6 +219,14 @@ export {
   type NormalizedSelection,
   type AuditReadiness,
 } from "./audit-packet-catalog";
+
+export {
+  aggregateAdrOutcomes,
+  type AdrOutcomeValue,
+  type AdrOutcomeRow,
+  type AdrSourceBucket,
+  type AdrOutcomeAnalytics,
+} from "./adr-analytics";
 
 export {
   DEFAULT_DUNNING_POLICY,

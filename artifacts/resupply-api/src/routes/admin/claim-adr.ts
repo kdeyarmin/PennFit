@@ -16,10 +16,11 @@ import { z } from "zod";
 import { logAudit } from "@workspace/resupply-audit";
 import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 import {
-  AUDIT_PACKET_CATALOG,
   type AuditScope,
+  aggregateAdrOutcomes,
   assessAuditReadiness,
   classifyAdrSla,
+  coveredKeysFromDocumentTypes,
   defaultSelection,
   getAuditPacketItem,
 } from "@workspace/resupply-domain";
@@ -133,16 +134,10 @@ router.get(
         docTypesByPatient.set(d.patient_id, set);
       }
     }
-    const coveredFor = (patientId: string): string[] => {
-      const types = docTypesByPatient.get(patientId) ?? new Set<string>();
-      const covered: string[] = [];
-      for (const item of AUDIT_PACKET_CATALOG) {
-        if (item.source === "generated") covered.push(item.key);
-        else if (item.documentTypes.some((t) => types.has(t)))
-          covered.push(item.key);
-      }
-      return covered;
-    };
+    const coveredFor = (patientId: string): string[] =>
+      coveredKeysFromDocumentTypes([
+        ...(docTypesByPatient.get(patientId) ?? new Set<string>()),
+      ]);
 
     const items = list.map((r) => {
       const cls = classifyAdrSla(r.response_due, todayIso(), {
@@ -505,66 +500,8 @@ router.get(
       .select("source, outcome, status")
       .in("status", ["submitted", "closed"])
       .limit(2000);
-    const rows = (data ?? []) as Array<{
-      source: string;
-      outcome: string;
-      status: string;
-    }>;
-
-    type Bucket = {
-      source: string;
-      total: number;
-      favorable: number;
-      partial: number;
-      unfavorable: number;
-      pending: number;
-    };
-    const bySource = new Map<string, Bucket>();
-    let favorable = 0;
-    let partial = 0;
-    let unfavorable = 0;
-    let decided = 0;
-    for (const r of rows) {
-      const b =
-        bySource.get(r.source) ??
-        ({
-          source: r.source,
-          total: 0,
-          favorable: 0,
-          partial: 0,
-          unfavorable: 0,
-          pending: 0,
-        } as Bucket);
-      b.total += 1;
-      if (r.outcome === "favorable") {
-        b.favorable += 1;
-        favorable += 1;
-        decided += 1;
-      } else if (r.outcome === "partial") {
-        b.partial += 1;
-        partial += 1;
-        decided += 1;
-      } else if (r.outcome === "unfavorable") {
-        b.unfavorable += 1;
-        unfavorable += 1;
-        decided += 1;
-      } else {
-        b.pending += 1;
-      }
-      bySource.set(r.source, b);
-    }
-    res.json({
-      totals: {
-        responded: rows.length,
-        decided,
-        favorable,
-        partial,
-        unfavorable,
-        // Win rate = (favorable + partial) / decided.
-        winRate: decided > 0 ? (favorable + partial) / decided : null,
-      },
-      bySource: Array.from(bySource.values()).sort((a, b) => b.total - a.total),
-    });
+    const rows = (data ?? []) as Array<{ source: string; outcome: string }>;
+    res.json(aggregateAdrOutcomes(rows));
   },
 );
 

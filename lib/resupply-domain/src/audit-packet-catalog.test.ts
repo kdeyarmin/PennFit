@@ -5,6 +5,7 @@ import {
   AUDIT_PACKET_ITEM_KEYS,
   REQUIRED_AUDIT_ITEMS,
   assessAuditReadiness,
+  coveredKeysFromDocumentTypes,
   defaultSelection,
   getAuditPacketItem,
   isAuditPacketItemKey,
@@ -125,6 +126,39 @@ describe("assessAuditReadiness", () => {
       "claim_detail", // not required — shouldn't change readiness
     ]);
     expect(r.ready).toBe(true);
+  });
+});
+
+describe("coveredKeysFromDocumentTypes", () => {
+  it("always covers generated items, even with no documents", () => {
+    const covered = coveredKeysFromDocumentTypes([]);
+    // cover_sheet, claim_detail, equipment_detail, continued_use,
+    // replacement_schedule are generated.
+    expect(covered).toEqual(
+      expect.arrayContaining(["cover_sheet", "claim_detail"]),
+    );
+    // An on_file item with nothing on file is NOT covered.
+    expect(covered).not.toContain("swo");
+  });
+
+  it("covers an on_file item when a matching document type is present", () => {
+    const covered = coveredKeysFromDocumentTypes(["sleep_study", "swo"]);
+    expect(covered).toContain("sleep_study");
+    expect(covered).toContain("swo");
+  });
+
+  it("covers a hybrid item from any of its document types", () => {
+    // proof_of_delivery is hybrid; "pod" is one of its document types.
+    expect(coveredKeysFromDocumentTypes(["pod"])).toContain(
+      "proof_of_delivery",
+    );
+  });
+
+  it("feeds readiness: missing required surfaces as a gap", () => {
+    const covered = coveredKeysFromDocumentTypes(["swo"]);
+    const r = assessAuditReadiness("device", covered);
+    expect(r.present).toContain("swo");
+    expect(r.missing).toContain("sleep_study");
   });
 });
 

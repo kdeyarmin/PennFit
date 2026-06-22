@@ -24,6 +24,7 @@ import {
   type AuditScope,
   WINDOW_DAYS,
   assessAuditReadiness,
+  coveredKeysFromDocumentTypes,
   defaultSelection,
   findBestAdherenceWindow,
   getAuditPacketItem,
@@ -107,26 +108,13 @@ router.get(
       .from("patient_documents")
       .select("document_type")
       .eq("patient_id", idParsed.data.id);
-    const docTypes = new Set(
-      ((docRowsRaw ?? []) as Array<{ document_type: string }>).map(
-        (d) => d.document_type,
-      ),
+    const docTypes = (
+      (docRowsRaw ?? []) as Array<{ document_type: string }>
+    ).map((d) => d.document_type);
+    const readiness = assessAuditReadiness(
+      scope,
+      coveredKeysFromDocumentTypes(docTypes),
     );
-
-    // An item is "covered" when the system can produce it (generated) or a
-    // matching chart document is on file.
-    const coveredKeys: string[] = [];
-    for (const item of AUDIT_PACKET_CATALOG) {
-      if (item.source === "generated") {
-        coveredKeys.push(item.key);
-        continue;
-      }
-      if (item.documentTypes.some((t) => docTypes.has(t))) {
-        coveredKeys.push(item.key);
-      }
-    }
-
-    const readiness = assessAuditReadiness(scope, coveredKeys);
     res.json({
       readiness,
       items: readiness.required.map((key) => ({

@@ -354,6 +354,27 @@ export interface AuditReadiness {
 }
 
 /**
+ * The catalog item keys "covered" for a patient given the document types on
+ * file. A generated item is always covered (the system produces it); an
+ * on_file/hybrid item is covered when one of its document types is present.
+ * Pure — the I/O (reading patient_documents) happens in the caller.
+ */
+export function coveredKeysFromDocumentTypes(
+  documentTypes: readonly string[],
+): string[] {
+  const present = new Set(documentTypes);
+  const covered: string[] = [];
+  for (const item of AUDIT_PACKET_CATALOG) {
+    if (item.source === "generated") {
+      covered.push(item.key);
+    } else if (item.documentTypes.some((t) => present.has(t))) {
+      covered.push(item.key);
+    }
+  }
+  return covered;
+}
+
+/**
  * Assess audit readiness for a scope given the set of item keys that are
  * "covered" — i.e. have a stored chart document on file. Pure. A required item
  * not in `coveredKeys` is a gap an auditor would deny on.
