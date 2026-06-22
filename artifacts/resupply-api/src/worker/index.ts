@@ -77,6 +77,12 @@ import { registerCoachingProgressJob } from "./jobs/coaching-plan-progress.js";
 import { registerCoachingAutoEnrollJob } from "./jobs/coaching-auto-enroll.js";
 import { registerPayerEstimateStatsJob } from "./jobs/payer-estimate-stats-refresh.js";
 import { registerPriorAuthExpirySweepJob } from "./jobs/prior-auth-expiry-sweep.js";
+import { registerAdrSlaSweepJob } from "./jobs/adr-sla-sweep.js";
+import { registerAdrAlertDigestJob } from "./jobs/adr-alert-digest.js";
+import {
+  registerDunningOpenScanJob,
+  registerDunningTickJob,
+} from "./jobs/dunning-engine.js";
 import { registerShopOrderDeliveryFollowupJob } from "./jobs/shop-order-delivery-followup.js";
 import { registerPatientPacketReminderJob } from "./jobs/patient-packet-reminders.js";
 import { registerTherapyMilestonesJob } from "./jobs/therapy-milestones.js";
@@ -870,6 +876,54 @@ async function doStartWorker(): Promise<void> {
       "prior-auth.expiry-sweep",
       ["prior_authorizations"],
       registerPriorAuthExpirySweepJob,
+    ),
+  );
+
+  // Daily Medicare ADR SLA cache refresh. Re-derives
+  // claim_adr_requests.sla_status (on_track/at_risk/overdue) for open ADRs so
+  // the audit-response worklist buckets stay correct as deadlines pass. Gated
+  // per-tenant by the billing.adr_queue flag (no-op when off). Runs 04:37 UTC.
+  await safeRegister("billing.adr-sla-sweep", registrationFailures, () =>
+    registerIfProvisioned(
+      boss,
+      "billing.adr-sla-sweep",
+      ["claim_adr_requests"],
+      registerAdrSlaSweepJob,
+    ),
+  );
+
+  // Daily ADR deadline alert digest — emails operators the overdue / at-risk
+  // ADRs so a 30-day clock can't slip by. OPT-IN cron (ADR_ALERT_DIGEST_CRON);
+  // gated per-tenant by billing.adr_queue. No PHI in the digest.
+  await safeRegister("billing.adr-alert-digest", registrationFailures, () =>
+    registerIfProvisioned(
+      boss,
+      "billing.adr-alert-digest",
+      ["claim_adr_requests"],
+      registerAdrAlertDigestJob,
+    ),
+  );
+
+  // Patient AR dunning engine: open-scan opens runs for unpaid balances;
+  // tick escalates them on the ladder (consent + quiet-hours enforced), both
+  // gated per-tenant by collections.dunning (no-op when off).
+  await safeRegister(
+    "collections.dunning-open-scan",
+    registrationFailures,
+    () =>
+      registerIfProvisioned(
+        boss,
+        "collections.dunning-open-scan",
+        ["patient_dunning_runs"],
+        registerDunningOpenScanJob,
+      ),
+  );
+  await safeRegister("collections.dunning-tick", registrationFailures, () =>
+    registerIfProvisioned(
+      boss,
+      "collections.dunning-tick",
+      ["patient_dunning_runs"],
+      registerDunningTickJob,
     ),
   );
 

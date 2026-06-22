@@ -561,6 +561,31 @@ const AdminBillingTimelyFilingPage = lazyWithRetry(() =>
     default: m.AdminBillingTimelyFilingPage,
   })),
 );
+const AdminBillingAdrPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-billing-adr").then((m) => ({
+    default: m.AdminBillingAdrPage,
+  })),
+);
+const AdminBillingAdrDetailPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-billing-adr-detail").then((m) => ({
+    default: m.AdminBillingAdrDetailPage,
+  })),
+);
+const AdminAuditPacketPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-audit-packet").then((m) => ({
+    default: m.AdminAuditPacketPage,
+  })),
+);
+const AdminBillingCollectionsPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-billing-collections").then((m) => ({
+    default: m.AdminBillingCollectionsPage,
+  })),
+);
+const AdminBillingAuditReadinessPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-billing-audit-readiness").then((m) => ({
+    default: m.AdminBillingAuditReadinessPage,
+  })),
+);
 const AdminPayerProfitabilityPage = lazyWithRetry(() =>
   import("@/pages/admin/admin-payer-profitability").then((m) => ({
     default: m.AdminPayerProfitabilityPage,
@@ -880,6 +905,22 @@ function AdminConsole() {
             <Route
               path="/admin/billing/bill-hold"
               component={AdminBillingBillHoldPage}
+            />
+            <Route path="/admin/billing/adr" component={AdminBillingAdrPage} />
+            <Route path="/admin/billing/adr/:id">
+              {(params) => <AdminBillingAdrDetailPage id={params.id} />}
+            </Route>
+            <Route
+              path="/admin/audit-packet"
+              component={AdminAuditPacketPage}
+            />
+            <Route
+              path="/admin/billing/collections"
+              component={AdminBillingCollectionsPage}
+            />
+            <Route
+              path="/admin/billing/audit-readiness"
+              component={AdminBillingAuditReadinessPage}
             />
             <Route
               path="/admin/billing/timely-filing"

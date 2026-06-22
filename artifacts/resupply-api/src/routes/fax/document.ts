@@ -23,6 +23,7 @@ import { renderAppealPdfForLetterId } from "../../lib/billing/appeal-letter-rend
 import { buildPaRequestPdf } from "../../lib/billing/pa-request-render.js";
 import { getDocumentSupplierName } from "../../lib/company-info.js";
 import { verifyFaxDocumentToken } from "../../lib/fax-document-token.js";
+import { ObjectStorageService } from "../../lib/object-storage/objectStorage.js";
 import { renderManualDocumentPacketForFax } from "../../lib/manual-documents/packet-service.js";
 import { renderManualDocumentForFax } from "../../lib/manual-documents/render-for-fax.js";
 import { renderAdherenceAttestationPdf } from "../../lib/referral-adherence/render.js";
@@ -215,6 +216,50 @@ router.get("/fax/document/:token", faxDocumentLimiter, async (req, res) => {
     );
     res.setHeader("Cache-Control", "no-store");
     res.end(rendered.pdf);
+    return;
+  }
+
+  // Audit-packet faxes stream the persisted packet PDF (audit_packets row's
+  // object_key) to the contractor. Same signed-URL posture; bytes never logged.
+  if (verified.kind === "audit_packet") {
+    const orgId = await resolveOrgIdForSignedRecord(
+      "audit_packets",
+      verified.outreachId,
+    );
+    if (!orgId) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+    const { data: row } = await supabase
+      .from("audit_packets")
+      .select("object_key")
+      .eq("id", verified.outreachId)
+      .limit(1)
+      .maybeSingle();
+    if (!row || !row.object_key) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    try {
+      const storage = new ObjectStorageService();
+      const file = await storage.getObjectEntityFile(row.object_key);
+      const resp = await storage.downloadObject(file, 0);
+      if (!resp.ok || !resp.body) {
+        res.status(404).json({ error: "not_found" });
+        return;
+      }
+      const buf = Buffer.from(await resp.arrayBuffer());
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader(
+        "Content-Disposition",
+        'inline; filename="audit-packet.pdf"',
+      );
+      res.setHeader("Cache-Control", "no-store");
+      res.end(buf);
+    } catch {
+      res.status(404).json({ error: "not_found" });
+    }
     return;
   }
 

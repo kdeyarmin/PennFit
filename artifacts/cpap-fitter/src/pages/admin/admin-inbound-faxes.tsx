@@ -15,7 +15,9 @@
 // purpose.
 
 import { useState } from "react";
+import { Link } from "wouter";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { listFeatureFlags } from "@/lib/admin/feature-flags-api";
 import {
   CheckCircle2,
   ExternalLink,
@@ -484,6 +486,14 @@ function TriageModal({
   filter: Filter;
 }) {
   const qc = useQueryClient();
+  // Show the "Log ADR" shortcut only when the ADR/audit feature is on.
+  const adrEnabled = useQuery({
+    queryKey: ["admin", "feature-flags", "billing.adr_queue"] as const,
+    queryFn: listFeatureFlags,
+    staleTime: 5 * 60_000,
+    select: (d) =>
+      d.flags.some((f) => f.key === "billing.adr_queue" && f.enabled),
+  });
 
   const [patientId, setPatientId] = useState(fax?.attachedPatientId ?? "");
   const [providerId, setProviderId] = useState(fax?.attachedProviderId ?? "");
@@ -758,6 +768,19 @@ function TriageModal({
             >
               Attach to patient
             </Button>
+            {adrEnabled.data ? (
+              <Link
+                href={`/admin/billing/adr?faxId=${encodeURIComponent(faxId)}${
+                  patientId.trim()
+                    ? `&patientId=${encodeURIComponent(patientId.trim())}`
+                    : ""
+                }`}
+                className="inline-flex items-center rounded border px-3 py-1.5 text-sm"
+                style={{ borderColor: "hsl(var(--line-1))" }}
+              >
+                Log ADR from this fax
+              </Link>
+            ) : null}
           </div>
         </div>
       </div>

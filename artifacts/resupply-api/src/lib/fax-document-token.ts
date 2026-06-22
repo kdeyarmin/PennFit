@@ -31,7 +31,8 @@ export type FaxDocumentKind =
   | "manual_document"
   | "manual_document_packet"
   | "pa_request"
-  | "adherence_attestation";
+  | "adherence_attestation"
+  | "audit_packet";
 
 const DEFAULT_TTL_SECONDS = 3600; // 1 hour — Telnyx fetches immediately
 
@@ -150,6 +151,19 @@ export function signAdherenceAttestationFaxToken(
   });
 }
 
+/** Sign an audit-packet fax token (kind=audit_packet). The id is the
+ *  audit_packets row id; its persisted object_key is streamed on demand. */
+export function signAuditPacketFaxToken(
+  auditPacketId: string,
+  ttlSeconds = DEFAULT_TTL_SECONDS,
+): string {
+  return signToken({
+    id: auditPacketId,
+    k: "audit_packet",
+    e: Math.floor(Date.now() / 1000) + ttlSeconds,
+  });
+}
+
 export type VerifyFaxDocumentTokenResult =
   | { valid: true; outreachId: string; kind: FaxDocumentKind }
   | { valid: false };
@@ -200,6 +214,8 @@ export function verifyFaxDocumentToken(
             ? "pa_request"
             : p.k === "adherence_attestation"
               ? "adherence_attestation"
-              : "physician_outreach";
+              : p.k === "audit_packet"
+                ? "audit_packet"
+                : "physician_outreach";
   return { valid: true, outreachId: p.id, kind };
 }

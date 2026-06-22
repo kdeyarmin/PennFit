@@ -33,6 +33,7 @@ import { PortalTab } from "@/components/admin/PortalTab";
 import { PrescriptionsTab } from "@/components/admin/PrescriptionsTab";
 import { SettingsCard } from "@/components/admin/SettingsCard";
 import { openPdfInNewTab, summarizePdfError } from "@/lib/admin/pdf-download";
+import { listFeatureFlags } from "@/lib/admin/feature-flags-api";
 import {
   Badge,
   humanizeStatus,
@@ -100,6 +101,14 @@ export function PatientDetailPage({ id }: { id: string }) {
   const [, setLocation] = useLocation();
   const [tab, setTab] = useState<Tab>("timeline");
   const { data, isPending, isError, error, refetch } = useGetPatient(id);
+  // Show the audit-packet shortcut only when the ADR/audit feature is on.
+  const auditPacketEnabled = useQuery({
+    queryKey: ["admin", "feature-flags", "billing.adr_queue"] as const,
+    queryFn: listFeatureFlags,
+    staleTime: 5 * 60_000,
+    select: (d) =>
+      d.flags.some((f) => f.key === "billing.adr_queue" && f.enabled),
+  });
 
   if (isError) {
     return (
@@ -392,6 +401,16 @@ export function PatientDetailPage({ id }: { id: string }) {
         >
           Claims
         </TabButton>
+        {auditPacketEnabled.data ? (
+          <TabButton
+            active={false}
+            onClick={() =>
+              setLocation(`/admin/audit-packet?patientId=${id}&scope=device`)
+            }
+          >
+            Audit packet
+          </TabButton>
+        ) : null}
         <TabButton
           active={tab === "equipment"}
           onClick={() => setTab("equipment")}

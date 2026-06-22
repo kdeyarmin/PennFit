@@ -3545,6 +3545,181 @@ export interface Database {
         >;
         Relationships: [];
       };
+      // Migration 0460: Medicare ADR / audit-response queue.
+      claim_adr_requests: {
+        Row: {
+          org_id: string | null;
+          id: string;
+          claim_id: string | null;
+          patient_id: string;
+          source:
+            | "rac"
+            | "cert"
+            | "tpe"
+            | "upic"
+            | "payer_medical_review"
+            | "other";
+          contractor_name: string | null;
+          payer_name: string | null;
+          adr_reference: string | null;
+          scope: "device" | "supplies" | "both";
+          received_at: string | null;
+          response_due: string | null;
+          received_via:
+            | "inbound_fax"
+            | "mail"
+            | "portal"
+            | "email"
+            | "manual"
+            | null;
+          received_inbound_fax_id: string | null;
+          status: "open" | "in_progress" | "submitted" | "closed";
+          outcome:
+            | "pending"
+            | "favorable"
+            | "partial"
+            | "unfavorable"
+            | "withdrawn";
+          sla_status: "on_track" | "at_risk" | "overdue" | "decided";
+          submitted_at: string | null;
+          submitted_via: "fax" | "mail" | "portal" | null;
+          submitted_packet_id: string | null;
+          notes: string | null;
+          created_by_email: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["claim_adr_requests"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["claim_adr_requests"]["Row"]
+        >;
+        Relationships: [];
+      };
+      // Migration 0460: ADR response checklist (keyed to AUDIT_PACKET_CATALOG).
+      claim_adr_documents: {
+        Row: {
+          org_id: string | null;
+          id: string;
+          adr_id: string;
+          item_key: string;
+          label: string;
+          status: "outstanding" | "attached" | "generated" | "waived" | "na";
+          document_id: string | null;
+          attached_at: string | null;
+          attached_via:
+            | "upload"
+            | "on_file"
+            | "generated"
+            | "inbound_fax"
+            | "manual"
+            | null;
+          attached_by_email: string | null;
+          waived_reason: string | null;
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["claim_adr_documents"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["claim_adr_documents"]["Row"]
+        >;
+        Relationships: [];
+      };
+      // Migration 0460: a record of each assembled audit-packet PDF.
+      audit_packets: {
+        Row: {
+          org_id: string | null;
+          id: string;
+          patient_id: string;
+          claim_id: string | null;
+          adr_id: string | null;
+          scope: "device" | "supplies" | "both";
+          selected_items: string[];
+          item_count: number;
+          page_count: number | null;
+          size_bytes: number | null;
+          object_key: string | null;
+          notes: string | null;
+          generated_by_email: string | null;
+          generated_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["audit_packets"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["audit_packets"]["Row"]>;
+        Relationships: [];
+      };
+      // Migration 0461: patient AR dunning / collections engine.
+      patient_dunning_runs: {
+        Row: {
+          org_id: string | null;
+          id: string;
+          patient_id: string;
+          opened_balance_cents: number;
+          opened_on: string;
+          current_step:
+            | "statement"
+            | "reminder"
+            | "second_notice"
+            | "final_notice"
+            | "agency"
+            | "resolved";
+          next_action_at: string | null;
+          last_step_at: string | null;
+          status: "active" | "paused" | "resolved" | "cancelled";
+          paused_reason:
+            | "payment_plan_active"
+            | "autopay_enrolled"
+            | "disputed"
+            | "manual_hold"
+            | null;
+          resolved_reason:
+            | "paid"
+            | "written_off"
+            | "agency_handoff"
+            | "manual"
+            | null;
+          created_by_email: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["patient_dunning_runs"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["patient_dunning_runs"]["Row"]
+        >;
+        Relationships: [];
+      };
+      patient_dunning_events: {
+        Row: {
+          org_id: string | null;
+          id: string;
+          run_id: string;
+          step: string;
+          channel: "email" | "sms" | "letter" | "none";
+          outcome:
+            | "sent"
+            | "skipped"
+            | "failed"
+            | "paused"
+            | "resolved"
+            | "handoff";
+          detail: string | null;
+          amount_at_touch_cents: number | null;
+          actor_email: string | null;
+          occurred_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["patient_dunning_events"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["patient_dunning_events"]["Row"]
+        >;
+        Relationships: [];
+      };
       patient_packet_documents: {
         Row: {
           org_id: string | null;
