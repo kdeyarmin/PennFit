@@ -17,9 +17,20 @@ import { adminHandlers } from "./handlers/admin";
 import { therapyHandlers } from "./handlers/therapy";
 import { billingClaimsHandlers } from "./handlers/billing-claims";
 import { platformHandlers } from "./handlers/platform";
+import { analyticsHandlers } from "./handlers/analytics";
+import { advancedBillingHandlers } from "./handlers/advanced-billing";
+import { clinicalHandlers } from "./handlers/clinical";
+import { patientDetailHandlers } from "./handlers/patient-detail";
+import { settingsHandlers } from "./handlers/settings";
+import { integrationsCommsHandlers } from "./handlers/integrations-comms";
 
 // Order matters only where patterns could overlap; within a surface
-// the more specific routes are declared first in their module.
+// the more specific routes are declared first in their module. The
+// extended-coverage modules below seed the long tail of admin pages
+// (analytics, advanced billing, clinical/RT worklists, patient detail,
+// settings/control, integrations/comms/FHIR). They use distinct
+// `/resupply-api/admin/...` (and `/resupply-api/fhir/...`) prefixes that
+// don't overlap the core handlers above.
 const handlers: DemoHandler[] = [
   ...authHandlers,
   ...accountHandlers,
@@ -30,6 +41,12 @@ const handlers: DemoHandler[] = [
   ...therapyHandlers,
   ...billingClaimsHandlers,
   ...platformHandlers,
+  ...analyticsHandlers,
+  ...advancedBillingHandlers,
+  ...clinicalHandlers,
+  ...patientDetailHandlers,
+  ...settingsHandlers,
+  ...integrationsCommsHandlers,
 ];
 
 /** API paths the demo sandbox is responsible for answering. */
