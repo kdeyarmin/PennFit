@@ -77,6 +77,10 @@ import { registerCoachingAutoEnrollJob } from "./jobs/coaching-auto-enroll.js";
 import { registerPayerEstimateStatsJob } from "./jobs/payer-estimate-stats-refresh.js";
 import { registerPriorAuthExpirySweepJob } from "./jobs/prior-auth-expiry-sweep.js";
 import { registerAdrSlaSweepJob } from "./jobs/adr-sla-sweep.js";
+import {
+  registerDunningOpenScanJob,
+  registerDunningTickJob,
+} from "./jobs/dunning-engine.js";
 import { registerShopOrderDeliveryFollowupJob } from "./jobs/shop-order-delivery-followup.js";
 import { registerPatientPacketReminderJob } from "./jobs/patient-packet-reminders.js";
 import { registerTherapyMilestonesJob } from "./jobs/therapy-milestones.js";
@@ -874,6 +878,29 @@ async function doStartWorker(): Promise<void> {
       "billing.adr-sla-sweep",
       ["claim_adr_requests"],
       registerAdrSlaSweepJob,
+    ),
+  );
+
+  // Patient AR dunning engine: open-scan opens runs for unpaid balances;
+  // tick escalates them on the ladder (consent + quiet-hours enforced), both
+  // gated per-tenant by collections.dunning (no-op when off).
+  await safeRegister(
+    "collections.dunning-open-scan",
+    registrationFailures,
+    () =>
+      registerIfProvisioned(
+        boss,
+        "collections.dunning-open-scan",
+        ["patient_dunning_runs"],
+        registerDunningOpenScanJob,
+      ),
+  );
+  await safeRegister("collections.dunning-tick", registrationFailures, () =>
+    registerIfProvisioned(
+      boss,
+      "collections.dunning-tick",
+      ["patient_dunning_runs"],
+      registerDunningTickJob,
     ),
   );
 

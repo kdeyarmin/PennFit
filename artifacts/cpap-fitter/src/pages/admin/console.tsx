@@ -571,6 +571,11 @@ const AdminAuditPacketPage = lazyWithRetry(() =>
     default: m.AdminAuditPacketPage,
   })),
 );
+const AdminBillingCollectionsPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-billing-collections").then((m) => ({
+    default: m.AdminBillingCollectionsPage,
+  })),
+);
 const AdminPayerProfitabilityPage = lazyWithRetry(() =>
   import("@/pages/admin/admin-payer-profitability").then((m) => ({
     default: m.AdminPayerProfitabilityPage,
@@ -890,6 +895,10 @@ function AdminConsole() {
             <Route
               path="/admin/audit-packet"
               component={AdminAuditPacketPage}
+            />
+            <Route
+              path="/admin/billing/collections"
+              component={AdminBillingCollectionsPage}
             />
             <Route
               path="/admin/billing/timely-filing"
