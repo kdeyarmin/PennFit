@@ -55,6 +55,25 @@ async function readJsonOrThrow<T>(
   return data as T;
 }
 
+export interface DenialSketch {
+  denialAnalysisId: string | null;
+  recommendation: string | null;
+  sketch: string | null;
+}
+
+// The latest denial analysis's appeal-letter sketch, used to pre-fill the
+// generate form so the CSR edits a draft instead of writing from scratch.
+export async function getDenialSketch(
+  patientId: string,
+  claimId: string,
+): Promise<DenialSketch> {
+  const url = `/resupply-api/admin/patients/${encodeURIComponent(
+    patientId,
+  )}/insurance-claims/${encodeURIComponent(claimId)}/denial-sketch`;
+  const res = await fetch(url, { credentials: "same-origin" });
+  return readJsonOrThrow<DenialSketch>(res, "GET", url);
+}
+
 export async function listAppealLetters(
   patientId: string,
   claimId: string,
@@ -75,7 +94,11 @@ export async function listAppealLetters(
 export async function generateAppealLetter(
   patientId: string,
   claimId: string,
-  input: { letterBody: string; deliveryMethod?: AppealDeliveryMethod },
+  input: {
+    letterBody: string;
+    deliveryMethod?: AppealDeliveryMethod;
+    denialAnalysisId?: string | null;
+  },
 ): Promise<{ appealId: string | null }> {
   const url = base(patientId, claimId);
   const res = await fetch(url, {
