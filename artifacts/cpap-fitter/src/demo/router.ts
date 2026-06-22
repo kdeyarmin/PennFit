@@ -23,6 +23,16 @@ import { clinicalHandlers } from "./handlers/clinical";
 import { patientDetailHandlers } from "./handlers/patient-detail";
 import { settingsHandlers } from "./handlers/settings";
 import { integrationsCommsHandlers } from "./handlers/integrations-comms";
+import { ext0Handlers } from "./handlers/ext0";
+import { ext1Handlers } from "./handlers/ext1";
+import { ext2Handlers } from "./handlers/ext2";
+import { ext3Handlers } from "./handlers/ext3";
+import { ext4Handlers } from "./handlers/ext4";
+import { ext5Handlers } from "./handlers/ext5";
+import { ext6Handlers } from "./handlers/ext6";
+import { ext7Handlers } from "./handlers/ext7";
+import { ext8Handlers } from "./handlers/ext8";
+import { ext9Handlers } from "./handlers/ext9";
 
 // Order matters only where patterns could overlap; within a surface
 // the more specific routes are declared first in their module. The
@@ -47,6 +57,20 @@ const handlers: DemoHandler[] = [
   ...patientDetailHandlers,
   ...settingsHandlers,
   ...integrationsCommsHandlers,
+  // Extended admin coverage (ext0–ext9): the long tail of admin console
+  // pages — billing ops, CSR/conversation tools, clinical/patient
+  // sub-resources, shop/storefront ops, integrations, providers, etc.
+  // Each module owns a disjoint set of `/resupply-api/admin/...` paths.
+  ...ext0Handlers,
+  ...ext1Handlers,
+  ...ext2Handlers,
+  ...ext3Handlers,
+  ...ext4Handlers,
+  ...ext5Handlers,
+  ...ext6Handlers,
+  ...ext7Handlers,
+  ...ext8Handlers,
+  ...ext9Handlers,
 ];
 
 /** API paths the demo sandbox is responsible for answering. */
