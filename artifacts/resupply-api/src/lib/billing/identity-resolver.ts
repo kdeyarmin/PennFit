@@ -29,11 +29,13 @@ import {
   type SubmitterIdentity,
 } from "@workspace/resupply-integrations-office-ally";
 
+import { isFeatureEnabled } from "../feature-flags";
 import { logger } from "../logger";
 
 type OrgRow = Database["resupply"]["Tables"]["dme_organization"]["Row"];
 type ClearinghouseRow =
   Database["resupply"]["Tables"]["clearinghouse_credentials"]["Row"];
+type LocationRow = Database["resupply"]["Tables"]["locations"]["Row"];
 
 export interface ResolvedBillingIdentity {
   source: "db" | "env" | "stub";
@@ -41,6 +43,24 @@ export interface ResolvedBillingIdentity {
   billingProvider: BillingProvider;
   submitter: SubmitterIdentity;
   usageIndicator: "P" | "T";
+  /**
+   * Multi-location Phase 1: the resolved billing PROVIDER scope.
+   *  - "org"      → the org-level identity (the historical behavior; this
+   *                 is ALWAYS the value for single-location deployments,
+   *                 the flag-off default, a patient with no location_id,
+   *                 or a location with no billing NPI).
+   *  - "location" → the servicing patient's branch carried its own billing
+   *                 NPI and multi_location.enabled is ON, so the
+   *                 billingProvider (NPI/name/taxId/address) was overlaid
+   *                 from that branch. The `locationId` field names it.
+   * The submitter (the EDI/clearinghouse account), usageIndicator, and
+   * `source` are UNCHANGED by a location overlay — a branch bills under its
+   * own NPI through the SAME submitter account / clearinghouse transport.
+   */
+  billingProviderScope: "org" | "location";
+  /** The location whose identity was used, when billingProviderScope is
+   *  "location"; null otherwise. */
+  locationId: string | null;
 }
 
 export interface ResolvedClearinghouse {
@@ -70,6 +90,17 @@ export async function resolveBillingIdentity(
     orgId?: string;
     env?: NodeJS.ProcessEnv;
     clearinghouseSlug?: string;
+    /**
+     * Multi-location Phase 1 (opt-in). The servicing patient's branch
+     * (`patients.location_id`). When supplied AND `multi_location.enabled`
+     * is ON for the tenant AND the branch carries its own billing NPI, the
+     * returned billingProvider (NPI/name/taxId/address) is overlaid from the
+     * branch. When OMITTED, the flag is OFF, the location row is missing, or
+     * the branch has no billing NPI → the resolver returns the IDENTICAL
+     * org-level identity it has always returned (byte for byte). Every
+     * existing caller that doesn't pass this is therefore unaffected.
+     */
+    locationId?: string;
   } = {},
 ): Promise<ResolvedBillingIdentity> {
   const env = opts.env ?? process.env;
@@ -93,8 +124,13 @@ export async function resolveBillingIdentity(
   const org = scoped ? await loadOrganization(scoped) : null;
   const ch = scoped ? await loadClearinghouse(scoped, clearinghouseSlug) : null;
 
+  // Compute the ORG-LEVEL identity exactly as before. The optional
+  // location overlay (Phase 1) is applied to this base at the very end —
+  // and ONLY when explicitly requested + permitted — so every existing
+  // caller (no locationId) gets the identical result, byte for byte.
+  let base: ResolvedBillingIdentity;
   if (org && ch) {
-    return {
+    base = {
       source: "db",
       organization: org,
       billingProvider: orgToBillingProvider(org),
@@ -105,38 +141,148 @@ export async function resolveBillingIdentity(
         contactPhoneE164: ch.contact_phone_e164 ?? org.phone_e164,
       },
       usageIndicator: ch.usage_indicator,
+      billingProviderScope: "org",
+      locationId: null,
     };
+  } else {
+    // 2. Fall back to env (legacy path) — SEED ORG ONLY (see isSeedOrg above).
+    const envBilling = isSeedOrg ? envBillingProvider(env) : null;
+    const envSubmitter = isSeedOrg ? envSubmitter_(env) : null;
+    if (envBilling && envSubmitter) {
+      base = {
+        source: "env",
+        organization: org,
+        billingProvider: envBilling,
+        submitter: envSubmitter,
+        usageIndicator: env.OFFICE_ALLY_USAGE_INDICATOR === "P" ? "P" : "T",
+        billingProviderScope: "org",
+        locationId: null,
+      };
+    } else {
+      // 3. Final stub — log loudly so a prod deploy never silently bills.
+      logger.warn(
+        {
+          event: "billing_identity_stub",
+          hasDbOrg: !!org,
+          hasDbClearinghouse: !!ch,
+          hasEnvBilling: !!envBilling,
+        },
+        "billing identity falling back to STUB values; configure dme_organization + clearinghouse_credentials or OFFICE_ALLY_* env",
+      );
+      base = {
+        source: "stub",
+        organization: org,
+        billingProvider: stubBillingProvider(),
+        submitter: stubSubmitter(),
+        usageIndicator: "T",
+        billingProviderScope: "org",
+        locationId: null,
+      };
+    }
   }
 
-  // 2. Fall back to env (legacy path) — SEED ORG ONLY (see isSeedOrg above).
-  const envBilling = isSeedOrg ? envBillingProvider(env) : null;
-  const envSubmitter = isSeedOrg ? envSubmitter_(env) : null;
-  if (envBilling && envSubmitter) {
-    return {
-      source: "env",
-      organization: org,
-      billingProvider: envBilling,
-      submitter: envSubmitter,
-      usageIndicator: env.OFFICE_ALLY_USAGE_INDICATOR === "P" ? "P" : "T",
-    };
+  // Multi-location Phase 1 overlay. Strictly opt-in and fail-safe: returns
+  // `base` unchanged unless a concrete branch identity is requested AND
+  // permitted AND present. See applyLocationOverlay for the gate.
+  return applyLocationOverlay(base, {
+    scoped,
+    orgId,
+    locationId: opts.locationId,
+  });
+}
+
+/**
+ * Multi-location Phase 1: overlay a branch's billing identity onto the
+ * org-level base, when (and only when) ALL of the following hold:
+ *   - a `locationId` was explicitly supplied by the caller (the servicing
+ *     patient's `patients.location_id`);
+ *   - `multi_location.enabled` is ON for the tenant;
+ *   - the org-level base is a REAL identity (`source !== "stub"`) — a branch
+ *     cannot bill if the org itself is unconfigured (fail closed);
+ *   - the location row loads and carries its own billing NPI (`locations.npi`).
+ *
+ * When ANY condition fails, `base` is returned UNCHANGED — so single-location
+ * deployments, the flag-off default, a patient with no `location_id`, and a
+ * branch with no billing NPI all keep the exact org-level identity. Only the
+ * billingProvider (NPI/name/taxId/address) is overlaid; the submitter
+ * (EDI/clearinghouse account), usageIndicator, and source are kept at the org
+ * level — a branch bills under its own NPI through the SAME submitter account.
+ */
+async function applyLocationOverlay(
+  base: ResolvedBillingIdentity,
+  ctx: {
+    scoped: OrgScopedClient | null;
+    orgId: string | null;
+    locationId: string | undefined;
+  },
+): Promise<ResolvedBillingIdentity> {
+  const { scoped, orgId, locationId } = ctx;
+  // No branch requested, no tenant client, or the org identity is a stub →
+  // nothing to overlay. This is the hot path for every existing caller.
+  if (!locationId || !scoped || base.source === "stub") return base;
+
+  // The flag governs whether locations touch claims at all. OFF (the seeded
+  // default) → never overlay; identical to today.
+  if (!orgId || !(await isFeatureEnabled("multi_location.enabled", orgId))) {
+    return base;
   }
 
-  // 3. Final stub — log loudly so a prod deploy never silently bills.
-  logger.warn(
-    {
-      event: "billing_identity_stub",
-      hasDbOrg: !!org,
-      hasDbClearinghouse: !!ch,
-      hasEnvBilling: !!envBilling,
-    },
-    "billing identity falling back to STUB values; configure dme_organization + clearinghouse_credentials or OFFICE_ALLY_* env",
-  );
+  const location = await loadLocation(scoped, locationId);
+  // No row, inactive branch, or no branch billing NPI → org identity stands.
+  const branchNpi = location?.npi?.trim();
+  if (!location || location.is_active === false || !branchNpi) {
+    return base;
+  }
+
+  // Build the branch billing provider, falling back PER FIELD to the
+  // org-level base so a partially-configured branch (e.g. NPI only) still
+  // produces a complete, valid 2010AA loop.
+  const orgBp = base.billingProvider;
+  const branchAddressLine1 =
+    location.billing_address_line1?.trim() ||
+    location.address_line1?.trim() ||
+    undefined;
+  const branchAddressLine2 =
+    location.billing_address_line2?.trim() || undefined;
+  const branchProvider: BillingProvider = {
+    organizationName:
+      location.billing_legal_name?.trim() ||
+      location.name?.trim() ||
+      orgBp.organizationName,
+    npi: branchNpi,
+    taxId: location.billing_tax_id?.trim() || orgBp.taxId,
+    // Use the branch address only when it supplies a line1 (the anchor of a
+    // valid address); otherwise keep the org address wholesale rather than
+    // splicing a half-branch / half-org address. When the branch DOES supply a
+    // line1 but omits a city/state/zip, fall back PER FIELD to the org address
+    // rather than emitting an empty N4 element (an empty city/state/zip is an
+    // invalid 2010AA loop). billing_address_line2 is optional and is included
+    // when the branch supplies one.
+    address: branchAddressLine1
+      ? {
+          line1: branchAddressLine1,
+          ...(branchAddressLine2 ? { line2: branchAddressLine2 } : {}),
+          city:
+            location.billing_city?.trim() ||
+            location.city?.trim() ||
+            orgBp.address.city,
+          state:
+            location.billing_state?.trim() ||
+            location.state?.trim() ||
+            orgBp.address.state,
+          zip:
+            location.billing_zip?.trim() ||
+            location.postal_code?.trim() ||
+            orgBp.address.zip,
+        }
+      : orgBp.address,
+  };
+
   return {
-    source: "stub",
-    organization: org,
-    billingProvider: stubBillingProvider(),
-    submitter: stubSubmitter(),
-    usageIndicator: "T",
+    ...base,
+    billingProvider: branchProvider,
+    billingProviderScope: "location",
+    locationId: location.id,
   };
 }
 
@@ -331,6 +477,34 @@ function buildDiscoveryConfig(
 }
 
 // ── Loaders ─────────────────────────────────────────────────────────
+
+/**
+ * Multi-location Phase 1: load a single branch's billing identity fields.
+ * Org-scoped (the facade appends `.eq("org_id", <tenant>)`), so a tenant
+ * can only ever read its OWN branches — a `location_id` from another tenant
+ * returns no row and the resolver falls back to the org identity.
+ */
+async function loadLocation(
+  supabase: OrgScopedClient,
+  locationId: string,
+): Promise<LocationRow | null> {
+  const { data, error } = await supabase
+    .from("locations")
+    .select(
+      "id, name, npi, is_active, address_line1, city, state, postal_code, billing_legal_name, billing_tax_id, billing_ptan, billing_address_line1, billing_address_line2, billing_city, billing_state, billing_zip",
+    )
+    .eq("id", locationId)
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    logger.warn(
+      { err: error },
+      "identity-resolver: locations read failed (treating as missing → org identity)",
+    );
+    return null;
+  }
+  return data;
+}
 
 async function loadOrganization(
   supabase: OrgScopedClient,

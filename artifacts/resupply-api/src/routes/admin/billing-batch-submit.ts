@@ -80,7 +80,8 @@ router.post(
               result.kind === "claim_missing_required_data" ||
               result.kind === "eligibility_blocked" ||
               result.kind === "bill_hold" ||
-              result.kind === "concurrent_submission"
+              result.kind === "concurrent_submission" ||
+              result.kind === "location_billing_mismatch"
             ? 409
             : 400;
       res.status(status).json({ error: result.kind, ...result.detail });

@@ -227,3 +227,67 @@ describe("POST appeal-letter/:letterId/fax", () => {
     expect(res.body.error).toBe("fax_dispatch_failed");
   });
 });
+
+describe("GET insurance-claims/:claimId/denial-sketch", () => {
+  const sketchUrl = `/admin/patients/${PID}/insurance-claims/${CLAIM_ID}/denial-sketch`;
+  const DA_ID = "44444444-4444-4444-8444-444444444444";
+
+  it("500 tenant_context_missing when orgId is absent", async () => {
+    // orgId: null tells the requireAdmin mock to attach no req.orgId, so the
+    // route hits its fail-closed missing-tenant guard.
+    mockAdmin.current = { ...ADMIN, orgId: null };
+    const res = await request(makeApp()).get(sketchUrl);
+    expect(res.status).toBe(500);
+    expect(res.body.error).toBe("tenant_context_missing");
+  });
+
+  it("404 claim_not_found when the claim/patient pair has no row", async () => {
+    mockAdmin.current = ADMIN;
+    // insurance_claims is queried first; a null row → 404 (claim_denial_analyses
+    // is never reached).
+    stageSupabaseResponse("insurance_claims", "select", { data: null });
+    const res = await request(makeApp()).get(sketchUrl);
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe("claim_not_found");
+    expect(supabaseMock.callCount("claim_denial_analyses", "select")).toBe(0);
+  });
+
+  it("200 with all-null payload when the claim has no denial analysis", async () => {
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("insurance_claims", "select", {
+      data: { id: CLAIM_ID, latest_denial_analysis_id: null },
+    });
+    const res = await request(makeApp()).get(sketchUrl);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      denialAnalysisId: null,
+      recommendation: null,
+      sketch: null,
+    });
+    // No second read when there's no analysis pointer.
+    expect(supabaseMock.callCount("claim_denial_analyses", "select")).toBe(0);
+  });
+
+  it("200 returns the recommendation + appealLetterSketch from the latest analysis", async () => {
+    mockAdmin.current = ADMIN;
+    // Staging order mirrors the route: insurance_claims first, then
+    // claim_denial_analyses.
+    stageSupabaseResponse("insurance_claims", "select", {
+      data: { id: CLAIM_ID, latest_denial_analysis_id: DA_ID },
+    });
+    stageSupabaseResponse("claim_denial_analyses", "select", {
+      data: {
+        id: DA_ID,
+        recommendation: "appeal",
+        analysis_json: { appealLetterSketch: "Dear payer, please reconsider…" },
+      },
+    });
+    const res = await request(makeApp()).get(sketchUrl);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      denialAnalysisId: DA_ID,
+      recommendation: "appeal",
+      sketch: "Dear payer, please reconsider…",
+    });
+  });
+});

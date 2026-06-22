@@ -21,6 +21,10 @@ import {
 
 import { logAudit } from "@workspace/resupply-audit";
 
+import {
+  davinciPasTokenEnvKey,
+  resolveDavinciPasToken,
+} from "./davinci-pas-token";
 import { resolveBillingIdentity } from "./identity-resolver";
 import { logger } from "../logger";
 import {
@@ -287,14 +291,23 @@ export async function submitPriorAuth(
     },
   });
 
-  const tokenEnvKey = `DAVINCI_PAS_TOKEN_${payerProfile.slug.toUpperCase()}`;
-  const accessToken = process.env[tokenEnvKey] ?? "";
+  // Resolve the payer's PAS Bearer token: a stored, org-scoped
+  // davinci_pas_credentials row wins, falling back to the legacy
+  // DAVINCI_PAS_TOKEN_<SLUG> env var when no row exists (current deploy +
+  // dev/preview). Neither present → the same no_pas_credentials 409 as before.
+  // The token is a secret and is never logged.
+  const accessToken = await resolveDavinciPasToken({
+    orgId,
+    payerSlug: payerProfile.slug,
+  });
   if (!accessToken) {
     return {
       ok: false,
       httpStatus: 409,
       code: "no_pas_credentials",
-      message: `Set ${tokenEnvKey} or store the token in clearinghouse_credentials`,
+      message: `Store the token in davinci_pas_credentials for this payer, or set ${davinciPasTokenEnvKey(
+        payerProfile.slug,
+      )}`,
     };
   }
 

@@ -14,6 +14,8 @@ import {
 import {
   installSupabaseMock,
   stageSupabaseResponse,
+  stageSupabaseRpcResponse,
+  getSupabaseRpcArgs,
   getSupabaseCallCount,
   getSupabaseWritePayloads,
 } from "../../test-helpers/supabase-mock";
@@ -74,28 +76,37 @@ describe("GET /admin/analytics/ltv-cac", () => {
     expect(res.body.requiredPermission).toBe("cost.read");
   });
 
-  it("joins paid-order revenue to channel attribution and rolls up", async () => {
+  it("rolls up the per-customer economics RPC by channel", async () => {
     mockAdmin.current = ADMIN;
-    stageSupabaseResponse("shop_orders", "select", {
-      data: [
-        { customer_id: "c1", amount_total_cents: 30000, paid_at: "2026-05-01" },
-        { customer_id: "c1", amount_total_cents: 10000, paid_at: "2026-05-10" },
-        { customer_id: "c2", amount_total_cents: 20000, paid_at: "2026-05-02" },
-      ],
-    });
-    stageSupabaseResponse("customer_acquisition", "select", {
+    // resupply.ltv_cac_customer_economics returns one flattened row per
+    // customer (the union of paid-revenue + attribution). c1 paid
+    // 30000+10000 = 40000 on paid_search (cost 8000); c2 paid 20000 with
+    // no attribution row → unattributed, unknown cost.
+    stageSupabaseRpcResponse("ltv_cac_customer_economics", {
       data: [
         {
           customer_id: "c1",
+          lifetime_revenue_cents: 40000,
           channel: "paid_search",
           acquisition_cost_cents: 8000,
         },
-        // c2 has no attribution row → unattributed
+        {
+          customer_id: "c2",
+          lifetime_revenue_cents: 20000,
+          channel: null,
+          acquisition_cost_cents: null,
+        },
       ],
     });
 
     const res = await request(makeApp()).get("/admin/analytics/ltv-cac");
     expect(res.status).toBe(200);
+
+    // The RPC is org-scoped via p_org_id.
+    const args = getSupabaseRpcArgs("ltv_cac_customer_economics")[0] as {
+      p_org_id?: unknown;
+    };
+    expect(args.p_org_id).toBeDefined();
 
     const paid = res.body.byChannel.find(
       (c: { channel: string }) => c.channel === "paid_search",
@@ -114,6 +125,29 @@ describe("GET /admin/analytics/ltv-cac", () => {
 
     expect(res.body.totals.customerCount).toBe(2);
     expect(res.body.totals.totalRevenueCents).toBe(60000);
+  });
+
+  it("handles bigint cents coming back as strings from the RPC", async () => {
+    // PostgREST returns bigint columns as JSON strings; the route must
+    // Number() them so the rollup math stays integer-correct.
+    mockAdmin.current = ADMIN;
+    stageSupabaseRpcResponse("ltv_cac_customer_economics", {
+      data: [
+        {
+          customer_id: "c1",
+          lifetime_revenue_cents: "40000",
+          channel: "paid_search",
+          acquisition_cost_cents: 8000,
+        },
+      ],
+    });
+    const res = await request(makeApp()).get("/admin/analytics/ltv-cac");
+    expect(res.status).toBe(200);
+    const paid = res.body.byChannel.find(
+      (c: { channel: string }) => c.channel === "paid_search",
+    );
+    expect(paid.avgLtvCents).toBe(40000);
+    expect(res.body.totals.totalRevenueCents).toBe(40000);
   });
 });
 

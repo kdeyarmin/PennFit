@@ -179,6 +179,50 @@ sketch in the 06-21 review; don't start without an explicit business trigger.
 
 ---
 
+## 7. Follow-up wave (this session) — PRs #1208–#1212 + new gaps
+
+After PR #1207 merged the §2 disputes/appeals + §3 prior-auth work, the rest of
+the implementable backlog shipped as draft PRs (each self-verified, hard-rules-
+clean, migration bands kept distinct):
+
+| PR    | Item                                                                      | Migrations |
+| ----- | ------------------------------------------------------------------------- | ---------- |
+| #1208 | §3 inventory reservation / oversell guard (atomic RPC, fail-open)         | 0434       |
+| #1209 | §4 perf hygiene — `ltv-cac` + `resupply-kpis` aggregations → SQL RPCs     | 0436/0437  |
+| #1210 | §6 multi-location billing identity (Phase 1)                              | 0450       |
+| #1211 | §6 provider RTM dashboard (Phase 1)                                       | none       |
+| #1212 | §5 test coverage (patient-packets / provider-esign / insurance-claims-ai) | none       |
+
+**New gaps surfaced while building the above** (not in the original review):
+
+- **Unattended crons are seed-org-only.** The new prior-auth auto-submit worker
+  (#1207) — like the existing claims auto-submit cron — runs against the seed
+  org via `resolveSeedOrgId`, so non-seed tenants get no unattended PA
+  submission. Generalize the unattended crons to fan over all active tenants
+  (`forEachActiveOrg`, which the #1208 reservation sweep already uses — a good
+  template). _Effort: M._
+- **`DAVINCI_PAS_TOKEN_<PAYER_SLUG>` is still process-env**, not
+  `clearinghouse_credentials` — a multi-tenant tail that matters more now that a
+  worker transmits unattended. (Already noted under §6; restated here for the
+  automation context.)
+- **CodeQL `js/request-forgery` recurs on any relocated outbound fetch** (it
+  tripped on the prior-auth extraction, mitigation intact). Worth a permanent
+  baseline/dismissal note so future PRs don't re-trip the merge gate.
+
+**Small additions folded in alongside this update:**
+
+- **Appeals letter prefill** — the appeals workbench (#1207) opens a blank
+  textarea even though the denial analyzer already produced an
+  `appeal_letter_sketch`; prefill it (and link `denial_analysis_id`).
+- **Catalog net-of-holds** (on #1208) — `/shop/products` projects raw Stripe
+  `stock_count`; subtract live reservations so the catalog doesn't advertise
+  held-out units as in stock.
+- **Provider portal `orgId` threading** (on #1211) — the new RTM routes thread
+  `req.orgId`, but the legacy e-sign routes in `portal.ts` still resolve the
+  seed org; apply the same threading so the whole portal is tenant-correct.
+
+---
+
 ## Suggested order
 
 1. **Activation pass** (§1) — owner decision, ~0 engineering, highest ROI.
