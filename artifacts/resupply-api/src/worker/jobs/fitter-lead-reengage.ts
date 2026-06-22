@@ -275,6 +275,9 @@ async function fitterLeadReengageSweepForOrg(
       .schema("public")
       .from("orders")
       .select("patient_email")
+      // Tenant-scoped (migration 0463): a conversion only counts if the order
+      // was placed in THIS tenant's org.
+      .eq("org_id", orgId)
       .or(orClauses);
     if (convErr) throw convErr;
     for (const r of converted ?? []) {

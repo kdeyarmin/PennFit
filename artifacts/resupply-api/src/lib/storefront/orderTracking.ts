@@ -132,6 +132,8 @@ export async function lookupTrackedOrder(
       "order_reference, patient_email, mask_name, mask_manufacturer, mask_model_number, email_status, email_delivered_at, created_at",
     )
     .eq("order_reference", normalizedReference)
+    // Tenant-scoped (migration 0463): only match an order in this org.
+    .eq("org_id", orgId)
     .limit(1)
     .maybeSingle();
   if (legacyErr) {

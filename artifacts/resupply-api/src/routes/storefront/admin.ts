@@ -91,18 +91,23 @@ router.get("/admin/orders", async (req, res) => {
   void buildQuery;
 
   const raw = supabase.raw();
+  // Tenant-scoped (migration 0463): public.orders carries org_id, so filter
+  // to the caller's tenant. `.raw()` bypasses the org-scoped client's
+  // automatic filtering, so the org filter is applied explicitly here.
   let rowsQuery = raw
     .schema("public")
     .from("orders")
     .select(
       "id, order_reference, patient_first_name, patient_last_name, patient_email, mask_name, mask_manufacturer, shipping_city, shipping_state, email_status, created_at",
     )
+    .eq("org_id", orgId)
     .order("created_at", { ascending: false })
     .range(offset, offset + pageSize - 1);
   let countQuery = raw
     .schema("public")
     .from("orders")
-    .select("*", { count: "exact", head: true });
+    .select("*", { count: "exact", head: true })
+    .eq("org_id", orgId);
 
   if (q) {
     // Escape LIKE metacharacters then run a 4-column ilike via .or().
@@ -205,6 +210,9 @@ router.get("/admin/orders/:id", async (req, res) => {
     .from("orders")
     .select("*")
     .eq("id", id)
+    // Tenant-scoped (migration 0463): a tenant admin can only open an order
+    // belonging to their own org — a cross-tenant id resolves to 404.
+    .eq("org_id", orgId)
     .limit(1)
     .maybeSingle();
   if (error) throw error;
@@ -279,23 +287,33 @@ router.get("/admin/analytics", async (req, res) => {
   // reduce JS-side. The dataset is admin-internal and bounded
   // (low-thousands of orders / events at our scale); when this grows
   // these become RPC functions exposing pre-aggregated views.
+  // Tenant-scoped (migration 0463): every public.orders aggregation input is
+  // filtered to the caller's org. `usage_events` has no org_id and stays a
+  // platform-global funnel signal (it carries no PHI and no tenant dimension).
   const raw = supabase.raw();
   const [totalRes, statusRes, masksRes, funnelRes, recentRes] =
     await Promise.all([
       raw
         .schema("public")
         .from("orders")
-        .select("*", { count: "exact", head: true }),
-      raw.schema("public").from("orders").select("email_status"),
+        .select("*", { count: "exact", head: true })
+        .eq("org_id", orgId),
       raw
         .schema("public")
         .from("orders")
-        .select("mask_name, mask_manufacturer"),
+        .select("email_status")
+        .eq("org_id", orgId),
+      raw
+        .schema("public")
+        .from("orders")
+        .select("mask_name, mask_manufacturer")
+        .eq("org_id", orgId),
       raw.schema("public").from("usage_events").select("step"),
       raw
         .schema("public")
         .from("orders")
         .select("created_at")
+        .eq("org_id", orgId)
         .gte("created_at", sinceIso),
     ]);
   if (totalRes.error) throw totalRes.error;
@@ -577,7 +595,10 @@ router.post("/admin/reminders/send-due", requireCsrf, async (req, res) => {
       .schema("public")
       .from("reminder_subscriptions")
       .update({ last_sent_at: nowIso, updated_at: nowIso })
-      .eq("id", row.id);
+      .eq("id", row.id)
+      // Defense in depth (migration 0378): row.id came from this org's
+      // candidate select above, but pin the org on the write too.
+      .eq("org_id", orgId);
     if (stampErr) {
       logger.warn(
         { err: stampErr, id: row.id },

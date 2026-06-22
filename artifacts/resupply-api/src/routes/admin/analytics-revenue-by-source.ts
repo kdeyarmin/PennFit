@@ -19,7 +19,7 @@
 import { Router, type IRouter, type Response } from "express";
 import { z } from "zod";
 
-import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import {
   aggregateRevenueBySource,
@@ -57,13 +57,10 @@ function isoDaysAgo(days: number): string {
 async function loadRevenueBySource(cutoff: string, orgId: string) {
   const supabase = getOrgScopedClient(orgId);
 
-  // public.orders is the LEGACY clinical-intake form table (migration 0027):
-  // it has NO org_id column and is written only by the seed tenant's intake
-  // flow, so a head-count of it is meaningful only for the seed tenant.
-  // Counting it for any other tenant would surface a CROSS-TENANT number, so
-  // non-seed tenants get 0 here until the intake table is tenant-scoped.
-  const seedOrgId = await resolveSeedOrgId();
-  const includeClinicalIntake = seedOrgId !== null && orgId === seedOrgId;
+  // public.orders is the LEGACY clinical-intake form table (migration 0027).
+  // As of migration 0463 it carries org_id, so we count each tenant's OWN
+  // intake orders (head-only — the rows hold PHI we never pull).
+  const includeClinicalIntake = true;
 
   const [shopRes, fulRes] = await Promise.all([
     supabase
@@ -96,6 +93,7 @@ async function loadRevenueBySource(cutoff: string, orgId: string) {
       .schema("public")
       .from("orders")
       .select("id", { count: "exact", head: true })
+      .eq("org_id", orgId)
       .gte("created_at", cutoff);
     if (clinicalRes.error) throw clinicalRes.error;
     clinicalFormOrderCount = clinicalRes.count ?? 0;

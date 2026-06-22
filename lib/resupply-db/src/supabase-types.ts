@@ -116,6 +116,9 @@ export interface Database {
       orders: {
         Row: {
           id: string;
+          // Tenant scope (migration 0463). Nullable: every write path stamps
+          // it, but it was backfilled additively on a populated table.
+          org_id: string | null;
           order_reference: string;
           patient_first_name: string;
           patient_last_name: string;

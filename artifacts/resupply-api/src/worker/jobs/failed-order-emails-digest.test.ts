@@ -11,6 +11,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 import {
+  getSupabaseFilterCalls,
   installSupabaseMock,
   stageSupabaseResponse,
 } from "../../test-helpers/supabase-mock";
@@ -176,6 +177,24 @@ describe("runFailedEmailDigest — outcomes", () => {
     expect(call.customArgs).toEqual({
       kind: "ops_failed_order_emails_digest_v1",
     });
+  });
+
+  it("scopes the orders scan to the tenant's org_id (migration 0463)", async () => {
+    // Regression test for the cross-tenant leak: public.orders gained an
+    // org_id (migration 0463), and every .raw() read of it must filter by
+    // org so the digest never counts another tenant's failed orders. Both the
+    // count head-query and the row fetch must carry the org filter.
+    process.env.RESUPPLY_ADMIN_ALERTS_EMAIL = "ops@example.com";
+    stageSupabaseResponse("orders", "select", { count: 1, data: null });
+    stageSupabaseResponse("orders", "select", { data: [makeFailedRow()] });
+
+    await runFailedEmailDigest();
+
+    const orgFilters = getSupabaseFilterCalls("orders", "select").filter(
+      (f) => f.verb === "eq" && f.args[0] === "org_id",
+    );
+    // One eq("org_id", …) for the count query, one for the row fetch.
+    expect(orgFilters.length).toBeGreaterThanOrEqual(2);
   });
 });
 

@@ -198,12 +198,14 @@ export async function runFailedEmailDigest(
   // We deliberately select only the two PHI-safe columns. The
   // patient_* columns and the `payload` jsonb stay in the database.
   // public.orders is cross-schema (not a tenant resupply table), so it
-  // goes through the unscoped escape hatch.
+  // goes through the .raw() escape hatch — but as of migration 0463 it
+  // carries org_id, so we scope the digest to this org's failed orders.
   const { count, error: countError } = await supabase
     .raw()
     .schema("public")
     .from("orders")
     .select("id", { count: "exact", head: true })
+    .eq("org_id", orgId)
     .eq("email_status", "failed")
     .gte("created_at", cutoffIso);
   if (countError) throw countError;
@@ -218,6 +220,7 @@ export async function runFailedEmailDigest(
     .schema("public")
     .from("orders")
     .select("order_reference, created_at")
+    .eq("org_id", orgId)
     .eq("email_status", "failed")
     .gte("created_at", cutoffIso)
     .order("created_at", { ascending: false })

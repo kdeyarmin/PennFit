@@ -9,6 +9,12 @@ const CHECKS = [
   // callsite in application code (reviewed global/auth callers exempt).
   // See check-tenant-isolation.sh.
   "scripts/check-tenant-isolation.sh",
+  // Raw-escape-hatch org-scope gate: the chokepoint guard above only inspects
+  // getOrgScopedClient() callsites, not the `.raw()` escape hatch downstream.
+  // This fails on any `.raw()` read/write of a guarded tenant-scoped object
+  // (public.orders, the fitter metrics views) that omits its org_id filter —
+  // the exact class of leak that shipped twice. See check-raw-org-scope.sh.
+  "scripts/check-raw-org-scope.sh",
 ];
 
 function commandWorks(command) {
