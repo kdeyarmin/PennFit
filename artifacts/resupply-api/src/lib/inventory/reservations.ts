@@ -363,3 +363,40 @@ export async function expireStaleReservations(
     return 0;
   }
 }
+
+/**
+ * Sum the still-live active holds per sku (Stripe product id) for a tenant, so
+ * the storefront catalog can show stock NET of in-flight reservations instead
+ * of the raw point-in-time `stock_count`. Read-only and **fail-open**: any
+ * error returns an empty map and the caller falls back to raw stock — the
+ * catalog must never break (or hide products) because the ledger hiccuped.
+ * Mirrors the `reserve_inventory` availability filter (`status='active'` AND
+ * `expires_at > now()`) so the display matches what a checkout would grant.
+ */
+export async function getActiveReservedBySku(
+  orgId: string,
+  skus: string[],
+  log?: ReservationLogger,
+): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  if (!orgId || !orgId.trim() || skus.length === 0) return out;
+  try {
+    const supabase = getOrgScopedClient(orgId);
+    const { data, error } = await supabase
+      .from("inventory_reservations")
+      .select("sku, quantity")
+      .eq("status", "active")
+      .gt("expires_at", new Date().toISOString())
+      .in("sku", skus);
+    if (error) throw error;
+    for (const row of data ?? []) {
+      out.set(row.sku, (out.get(row.sku) ?? 0) + row.quantity);
+    }
+  } catch (err) {
+    log?.warn?.(
+      { err: err instanceof Error ? err.message : String(err) },
+      "inventory reserved-by-sku read failed (non-fatal — catalog shows raw stock)",
+    );
+  }
+  return out;
+}
