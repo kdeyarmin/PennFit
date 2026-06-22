@@ -241,10 +241,18 @@ CREATE INDEX IF NOT EXISTS "audit_packets_adr_idx"
 -- Seeded OFF: net-new surface. When OFF, the ADR worklist + nav are hidden,
 -- the SLA sweep no-ops, and the audit-packet builder route returns 404/feature
 -- disabled. Turning it on lights up an empty queue — it never changes billing.
-INSERT INTO resupply.feature_flags (key, enabled, description, category)
-VALUES
+--
+-- feature_flags is PER-TENANT since migration 0350 (PK re-keyed from (key) to
+-- (org_id, key)), so seed one row per organization and conflict on
+-- (org_id, key). ON CONFLICT DO NOTHING keeps re-runs idempotent and never
+-- clobbers an admin's intentional toggle.
+INSERT INTO resupply.feature_flags ("org_id", "key", "enabled", "description", "category")
+SELECT o."id", v."key", v."enabled", v."description", v."category"
+FROM "resupply"."organizations" o
+CROSS JOIN (VALUES
   ('billing.adr_queue',
    false,
    'Medicare ADR / audit-response queue + audit-packet builder. When ON, staff can log payer/contractor Additional Documentation Requests against their response deadline, assemble the requested chart documents + generated summaries into one audit-packet PDF, and record the outcome. The nightly SLA sweep (ADR_SLA_SWEEP_CRON) surfaces at-risk/overdue deadlines. When OFF, the queue and builder are hidden and the sweep no-ops.',
    'Billing')
-ON CONFLICT (key) DO NOTHING;
+) AS v("key", "enabled", "description", "category")
+ON CONFLICT ("org_id", "key") DO NOTHING;
