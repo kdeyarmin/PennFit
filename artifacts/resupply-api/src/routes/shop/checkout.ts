@@ -40,6 +40,12 @@ import { getActivePickupLocationById } from "../../lib/pickup/locations";
 import { getOrCreateStripeCustomer } from "../../lib/stripe/customer";
 import { stripeAccountRequestOptions } from "../../lib/stripe/connect";
 import { validateCartItems } from "../../lib/stripe/validate-cart";
+import {
+  reserveCartInventory,
+  attachSessionToReservations,
+  releaseReservationIds,
+  DEFAULT_RESERVATION_TTL_MS,
+} from "../../lib/inventory/reservations";
 import { stripeErrLogFields } from "../../lib/stripe/err-log-fields";
 import { readCustomerProfile } from "../../lib/customer-profile";
 import { rateLimit } from "../../middlewares/rate-limit";
@@ -246,6 +252,17 @@ router.post(
       )
       .digest("hex");
 
+    // Pin the Stripe Checkout Session lifetime to the inventory-hold TTL so the
+    // session and the hold lapse TOGETHER. Without an explicit expires_at a
+    // session lives ~24h while the hold used to expire in 15 min — after which
+    // the hold stopped counting toward availability but the session was still
+    // payable, so a second buyer could be granted the same unit and both could
+    // pay → oversell. Same wall-clock window feeds both (epoch seconds for
+    // Stripe; the hold derives its own from DEFAULT_RESERVATION_TTL_MS).
+    const sessionExpiresAtSec = Math.floor(
+      (Date.now() + DEFAULT_RESERVATION_TTL_MS) / 1000,
+    );
+
     const stripe = getStripeClient(config);
     // Stripe Connect (G5): route the Checkout session + its Customer to the
     // tenant's connected account when set; NULL → {} → platform account.
@@ -278,6 +295,43 @@ router.post(
         })),
       });
       return;
+    }
+
+    // Inventory reservation / oversell guard. validateCart compared the cart
+    // against the live stock_count, but between here and payment completion
+    // concurrent buyers could each pass that same check and all complete →
+    // oversell. Reserve the requested units now so a second concurrent buyer
+    // is refused. FAIL-OPEN: a reservation-system error returns ok:true with
+    // no ids and checkout proceeds unguarded (the pre-existing behaviour) —
+    // only a clean "oversold" verdict blocks the sale. We resolve the org the
+    // same way the shop_orders mirror below does (guest → seed tenant).
+    const reservationOrgId = req.orgId ?? (await resolveSeedOrgId());
+    let reservationIds: string[] = [];
+    if (reservationOrgId) {
+      const reservation = await reserveCartInventory({
+        orgId: reservationOrgId,
+        stripe,
+        requestOptions: connectOptions,
+        items,
+        // Key the hold to the SAME namespaced idempotency key we hand Stripe
+        // below, so a client retry of this checkout reuses its existing hold
+        // instead of being refused with a phantom oversell on a last-unit SKU.
+        idempotencyKey,
+        log: req.log,
+      });
+      if (!reservation.ok) {
+        req.log?.warn(
+          { productId: reservation.oversoldProductId },
+          "shop checkout: inventory reservation refused (oversold)",
+        );
+        res.status(409).json({
+          error: "out_of_stock",
+          message:
+            "Sorry — one or more items just sold out while you were checking out. Please adjust your cart and try again.",
+        });
+        return;
+      }
+      reservationIds = reservation.reservationIds;
     }
 
     // If the user is signed in, attach (or create) their Stripe Customer
@@ -340,6 +394,7 @@ router.post(
         session = await stripe.checkout.sessions.create(
           {
             mode: "subscription",
+            expires_at: sessionExpiresAtSec,
             customer: stripeCustomerId,
             customer_update: {
               shipping: "auto",
@@ -373,6 +428,7 @@ router.post(
         session = await stripe.checkout.sessions.create(
           {
             mode: "payment",
+            expires_at: sessionExpiresAtSec,
             ...(stripeCustomerId
               ? {
                   customer: stripeCustomerId,
@@ -426,6 +482,12 @@ router.post(
         { ...stripeErrLogFields(err) },
         "stripe checkout.sessions.create failed",
       );
+      // No Stripe session was created, so there's nothing to attach the
+      // holds to and they'd otherwise leak until TTL. Release them now so
+      // the reserved stock frees immediately. Best-effort (never throws).
+      if (reservationOrgId && reservationIds.length > 0) {
+        await releaseReservationIds(reservationOrgId, reservationIds, req.log);
+      }
       res.status(502).json({
         error: "stripe_create_failed",
         message:
@@ -439,8 +501,24 @@ router.post(
       // mode, but TypeScript can't prove it. Treat a missing URL as a
       // bug we want to catch loudly rather than silently.
       req.log?.error({ sessionId: session.id }, "stripe session has no url");
+      if (reservationOrgId && reservationIds.length > 0) {
+        await releaseReservationIds(reservationOrgId, reservationIds, req.log);
+      }
       res.status(502).json({ error: "stripe_create_failed" });
       return;
+    }
+
+    // Stamp the new session id onto the holds so the webhook can later
+    // consume (paid) or release (expired/failed) them. Best-effort — a
+    // failure here just means the holds expire via TTL instead of being
+    // resolved precisely; never blocks the checkout response.
+    if (reservationOrgId && reservationIds.length > 0) {
+      await attachSessionToReservations(
+        reservationOrgId,
+        reservationIds,
+        session.id,
+        req.log,
+      );
     }
 
     // Mirror the session into shop_orders as a fresh `pending` row.

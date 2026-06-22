@@ -59,6 +59,7 @@ import { registerEligibilityReverifyBatchJob } from "./jobs/eligibility-reverify
 import { registerAutoSubmitBatchJob } from "./jobs/auto-submit-batch.js";
 import { registerPriorAuthAutoSubmitJob } from "./jobs/prior-auth-auto-submit.js";
 import { registerBillHoldSweepJob } from "./jobs/bill-hold-sweep.js";
+import { registerInventoryReservationSweepJob } from "./jobs/inventory-reservation-sweep.js";
 import { registerClinicalOutreachBatchJob } from "./jobs/clinical-outreach-batch.js";
 import { registerOutreachPlaybookTickJob } from "./jobs/outreach-playbook-tick.js";
 import { registerSlaEscalationSweepJob } from "./jobs/sla-escalation-sweep.js";
@@ -733,6 +734,16 @@ async function doStartWorker(): Promise<void> {
   // is set (opt-in — it seeds holds across the draft-claim backlog).
   await safeRegister("registerBillHoldSweepJob", registrationFailures, () =>
     registerBillHoldSweepJob(boss),
+  );
+
+  // Inventory-reservation sweep — every 5 min (cadence overridable via
+  // INVENTORY_RESERVATION_SWEEP_CRON). Expires stale checkout holds across
+  // every tenant. Always-on: the oversell guard is fail-open and strictly
+  // safer, so there's no reason to gate the housekeeping sweep.
+  await safeRegister(
+    "registerInventoryReservationSweepJob",
+    registrationFailures,
+    () => registerInventoryReservationSweepJob(boss),
   );
 
   // Proactive clinical outreach (RT #23). Queue + worker always register;

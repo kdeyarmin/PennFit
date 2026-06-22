@@ -45,6 +45,12 @@ import { isFeatureEnabled } from "../../lib/feature-flags";
 import { getOrCreateStripeCustomer } from "../../lib/stripe/customer";
 import { stripeAccountRequestOptions } from "../../lib/stripe/connect";
 import { validateCartItems } from "../../lib/stripe/validate-cart";
+import {
+  reserveCartInventory,
+  attachSessionToReservations,
+  releaseReservationIds,
+  DEFAULT_RESERVATION_TTL_MS,
+} from "../../lib/inventory/reservations";
 import { stripeErrLogFields } from "../../lib/stripe/err-log-fields";
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
 import { rateLimit } from "../../middlewares/rate-limit";
@@ -299,15 +305,9 @@ router.post(
       return;
     }
 
-    const { stripeCustomerId } = await getOrCreateStripeCustomer(config, {
-      orgId: req.orgId,
-      customerId: customerId,
-      email,
-      displayName,
-    });
-
-    // Subscription mode is enabled if ANY basket line is "subscription"
-    // (computed here so it can also feed the idempotency key below).
+    // Subscription mode is enabled if ANY basket line is "subscription".
+    // Computed BEFORE the reservation so it can feed the idempotency key, which
+    // the reservation now keys its hold to (idempotent-retry reuse).
     const isSubscription = basket.some((b) => b.mode === "subscription");
 
     // Namespace the Stripe idempotency key by customer + basket, exactly
@@ -321,6 +321,8 @@ router.post(
     // unforgeable across customers while still de-duping a real
     // double-click from one buyer. Including the basket also yields a
     // fresh Session when the same buyer changes their cart and re-submits.
+    // Computed up here (was below the reservation) so the inventory hold can be
+    // keyed to it — a client retry of the same checkout then reuses its hold.
     const clientKey =
       typeof req.headers["idempotency-key"] === "string"
         ? req.headers["idempotency-key"]
@@ -343,6 +345,54 @@ router.post(
         `${customerId}|${clientKey}|${basketHash}|${isSubscription ? "sub" : "one"}`,
       )
       .digest("hex");
+
+    // Pin the Stripe Checkout Session lifetime to the inventory-hold TTL so the
+    // session and the hold lapse TOGETHER — mirrors /shop/checkout. Epoch
+    // seconds for Stripe; the hold derives its own from DEFAULT_RESERVATION_TTL_MS.
+    const sessionExpiresAtSec = Math.floor(
+      (Date.now() + DEFAULT_RESERVATION_TTL_MS) / 1000,
+    );
+
+    // Inventory reservation / oversell guard — same rationale as
+    // /shop/checkout: hold the requested units between validation and payment
+    // so concurrent buyers can't all pass the stock check and oversell.
+    // FAIL-OPEN: a reservation-system error returns ok:true with no ids and
+    // checkout proceeds unguarded; only a clean "oversold" verdict blocks.
+    const reservationOrgId = req.orgId ?? null;
+    let reservationIds: string[] = [];
+    if (reservationOrgId) {
+      const reservation = await reserveCartInventory({
+        orgId: reservationOrgId,
+        stripe,
+        requestOptions: connectOptions,
+        items: basket,
+        // Key the hold to the SAME namespaced idempotency key handed to Stripe
+        // below, so a client retry reuses its existing hold rather than being
+        // refused with a phantom oversell on a last-unit SKU.
+        idempotencyKey,
+        log: req.log,
+      });
+      if (!reservation.ok) {
+        req.log?.warn(
+          { productId: reservation.oversoldProductId },
+          "quick-checkout: inventory reservation refused (oversold)",
+        );
+        res.status(409).json({
+          error: "out_of_stock",
+          message:
+            "Sorry — one or more items just sold out while you were checking out. Please adjust your cart and try again.",
+        });
+        return;
+      }
+      reservationIds = reservation.reservationIds;
+    }
+
+    const { stripeCustomerId } = await getOrCreateStripeCustomer(config, {
+      orgId: req.orgId,
+      customerId: customerId,
+      email,
+      displayName,
+    });
 
     const successUrl = `${config.publicBaseUrl}${successPath}?session_id={CHECKOUT_SESSION_ID}`;
     const cancelUrl = `${config.publicBaseUrl}${cancelPath}`;
@@ -377,6 +427,7 @@ router.post(
         | "payment_method_collection"
       > = {
         customer: stripeCustomerId,
+        expires_at: sessionExpiresAtSec,
         line_items: basket.map((it) => ({
           price: it.priceId,
           quantity: it.quantity,
@@ -437,6 +488,11 @@ router.post(
         { ...stripeErrLogFields(err) },
         "stripe quick-checkout sessions.create failed",
       );
+      // No session was created — release the holds so the reserved stock
+      // frees immediately rather than leaking until TTL. Best-effort.
+      if (reservationOrgId && reservationIds.length > 0) {
+        await releaseReservationIds(reservationOrgId, reservationIds, req.log);
+      }
       res.status(502).json({
         error: "stripe_create_failed",
         message:
@@ -450,8 +506,22 @@ router.post(
         { sessionId: session.id },
         "quick-checkout session has no url",
       );
+      if (reservationOrgId && reservationIds.length > 0) {
+        await releaseReservationIds(reservationOrgId, reservationIds, req.log);
+      }
       res.status(502).json({ error: "stripe_create_failed" });
       return;
+    }
+
+    // Stamp the session id onto the holds so the webhook can consume/release
+    // them. Best-effort — a failure just leaves the holds to expire via TTL.
+    if (reservationOrgId && reservationIds.length > 0) {
+      await attachSessionToReservations(
+        reservationOrgId,
+        reservationIds,
+        session.id,
+        req.log,
+      );
     }
 
     // Mirror to shop_orders. We split the upsert into INSERT-or-

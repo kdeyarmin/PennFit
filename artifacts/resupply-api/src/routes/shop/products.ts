@@ -18,6 +18,7 @@ import {
   readStripeConfigOrNull,
 } from "../../lib/stripe/config";
 import { stripeAccountRequestOptions } from "../../lib/stripe/connect";
+import { getActiveReservedBySku } from "../../lib/inventory/reservations";
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { requestHost } from "../../lib/request-host";
 import { resolveOrgIdByHost } from "../../lib/tenant-branding";
@@ -328,12 +329,56 @@ router.get("/shop/products", async (req, res) => {
   const purchasingEnabled =
     config !== null && (await isFeatureEnabled("storefront.checkout", orgId));
 
+  // Show stock NET of in-flight reservations (migration 0434): a held-out unit
+  // shouldn't advertise as in-stock for the ~15-min checkout window. We build
+  // ADJUSTED COPIES for the response only — the cached `products`/`byCategory`
+  // arrays are never mutated, so a later request can't double-subtract.
+  // Fail-open: an empty map (no holds, or a ledger error) leaves raw stock.
+  let responseProducts = products;
+  let responseByCategory = byCategory;
+  if (!previewMode && orgId) {
+    const reservedBySku = await getActiveReservedBySku(
+      orgId,
+      products.map((p) => p.id),
+      req.log,
+    );
+    if (reservedBySku.size > 0) {
+      const adjustedById = new Map<string, ShopProductView>();
+      const adjust = (p: ShopProductView): ShopProductView => {
+        const reserved = reservedBySku.get(p.id) ?? 0;
+        if (reserved <= 0 || p.stockCount == null) return p;
+        const cached = adjustedById.get(p.id);
+        if (cached) return cached;
+        const copy: ShopProductView = {
+          ...p,
+          stockCount: Math.max(0, p.stockCount - reserved),
+        };
+        adjustedById.set(p.id, copy);
+        return copy;
+      };
+      responseProducts = products.map(adjust);
+      responseByCategory = {
+        mask: [],
+        cushion: [],
+        tubing: [],
+        filter: [],
+        headgear: [],
+        chamber: [],
+        accessory: [],
+        bundle: [],
+      };
+      for (const cat of SHOP_CATEGORIES) {
+        responseByCategory[cat] = byCategory[cat].map(adjust);
+      }
+    }
+  }
+
   res.json({
     previewMode,
     purchasingEnabled,
     categories: SHOP_CATEGORIES,
-    products,
-    byCategory,
+    products: responseProducts,
+    byCategory: responseByCategory,
   });
 });
 

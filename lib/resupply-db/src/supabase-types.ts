@@ -147,6 +147,30 @@ export interface Database {
   };
   resupply: {
     Tables: {
+      // Short-lived inventory holds (migration 0434). One row per reserved
+      // SKU (= Stripe product id) per checkout; status walks
+      // active → consumed | released | expired. Closes the oversell window
+      // between cart validation and payment completion.
+      inventory_reservations: {
+        Row: {
+          id: string;
+          org_id: string;
+          sku: string;
+          quantity: number;
+          checkout_session_id: string | null;
+          status: "active" | "consumed" | "released" | "expired";
+          expires_at: string;
+          created_at: string;
+          consumed_at: string | null;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["inventory_reservations"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["inventory_reservations"]["Row"]
+        >;
+        Relationships: [];
+      };
       // Short-lived voice Media Stream handoff (migration 0418). Shared
       // across replicas so Twilio's WS upgrade can claim a session that any
       // replica registered. conversation_id PK; payload is the full
@@ -5986,6 +6010,20 @@ export interface Database {
       };
     };
     Functions: {
+      // Mig 0434 — atomic inventory reservation. Serializes concurrent
+      // reservers per (org, sku) with a txn-scoped advisory lock, sums the
+      // still-live active holds, and either inserts a new hold (returning
+      // its uuid) or returns NULL when granting it would exceed available.
+      reserve_inventory: {
+        Args: {
+          p_org_id: string;
+          p_sku: string;
+          p_qty: number;
+          p_available: number;
+          p_expires_at: string;
+        };
+        Returns: string | null;
+      };
       // Mig 0253 — per-branch (location) operational rollup for the
       // /admin/locations/rollup endpoint. One row per branch plus a
       // NULL-location_id "unassigned" row. bigint counts serialize as
