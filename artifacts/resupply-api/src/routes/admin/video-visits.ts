@@ -128,7 +128,7 @@ async function tryCreateTwilioSms(
   }
 }
 
-function escapeHtml(s: string): string {
+export function escapeHtml(s: string): string {
   return s
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
@@ -136,7 +136,7 @@ function escapeHtml(s: string): string {
     .replaceAll('"', "&quot;");
 }
 
-function formatWhen(scheduledAt: string | null): string | null {
+export function formatWhen(scheduledAt: string | null): string | null {
   if (!scheduledAt) return null;
   const d = new Date(scheduledAt);
   if (Number.isNaN(d.getTime())) return null;
@@ -151,7 +151,7 @@ function formatWhen(scheduledAt: string | null): string | null {
   });
 }
 
-function renderInviteEmailHtml(
+export function renderInviteEmailHtml(
   greeting: string,
   practiceName: string,
   when: string | null,
@@ -178,7 +178,7 @@ function renderInviteEmailHtml(
   </body></html>`;
 }
 
-function renderInviteEmailText(
+export function renderInviteEmailText(
   greeting: string,
   practiceName: string,
   when: string | null,
@@ -268,7 +268,7 @@ async function deliverInvite(opts: {
   }
 }
 
-interface VisitListRow {
+export interface VisitListRow {
   id: string;
   patient_id: string | null;
   purpose: string;
@@ -295,7 +295,7 @@ interface VisitListRow {
   } | null;
 }
 
-function toApiVisit(r: VisitListRow) {
+export function toApiVisit(r: VisitListRow) {
   return {
     id: r.id,
     patientId: r.patient_id,
@@ -365,7 +365,7 @@ router.get(
 
 const E164_RE = /^\+\d{10,15}$/;
 
-const createBody = z
+export const createBody = z
   .object({
     purpose: z.enum(["setup", "troubleshooting", "follow_up", "other"]),
     channel: z.enum(["email", "sms", "none"]),
