@@ -36,6 +36,7 @@ import {
   notifyReminderEscalation,
   notifySlaBreach,
   notifyVoiceHandoff,
+  sendSlackTestMessage,
 } from "./notify";
 
 const isFeatureEnabledMock = vi.mocked(isFeatureEnabled);
@@ -177,6 +178,34 @@ describe("notifySlaBreach", () => {
     });
     const [, input] = postSlackMessageMock.mock.calls[0]!;
     expect(JSON.stringify(input)).toContain("42");
+  });
+});
+
+describe("sendSlackTestMessage", () => {
+  it("posts a test message and returns ok when configured", async () => {
+    const result = await sendSlackTestMessage("org-1");
+    expect(result).toEqual({ ok: true });
+    expect(postSlackMessageMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns not_configured (no post) when Slack is unset", async () => {
+    setSlackEnv({} as NodeJS.ProcessEnv);
+    const result = await sendSlackTestMessage("org-1");
+    expect(result).toEqual({ ok: false, reason: "not_configured" });
+    expect(postSlackMessageMock).not.toHaveBeenCalled();
+  });
+
+  it("surfaces a send failure with the Slack error code", async () => {
+    postSlackMessageMock.mockResolvedValue({
+      ok: false,
+      error: "channel_not_found",
+    });
+    const result = await sendSlackTestMessage("org-1");
+    expect(result).toEqual({
+      ok: false,
+      reason: "send_failed",
+      error: "channel_not_found",
+    });
   });
 });
 

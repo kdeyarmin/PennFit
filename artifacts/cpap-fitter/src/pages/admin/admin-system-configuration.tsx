@@ -21,6 +21,7 @@ import {
   KeyRound,
   RotateCcw,
   Save,
+  Send,
   ShieldAlert,
   SlidersHorizontal,
   Webhook,
@@ -39,8 +40,13 @@ import {
   clearConfigValue,
   getSystemConfig,
   getSystemConfigActivity,
+  sendSlackTest,
   setConfigValue,
 } from "@/lib/admin/app-config-api";
+
+/** Category label that gets the "Send test message" affordance. Must match
+ *  CATEGORY_SLACK in the backend app-config catalog. */
+const SLACK_CATEGORY = "Team notifications (Slack)";
 
 const queryKey = ["admin", "system", "config"] as const;
 const activityKey = ["admin", "system", "config", "activity"] as const;
@@ -147,12 +153,53 @@ export function AdminSystemConfigurationPage() {
                     <SettingRow key={s.key} setting={s} />
                   ))}
                 </div>
+                {cat.category === SLACK_CATEGORY && <SlackTestButton />}
               </Card>
             ))
           )}
           <WebhookReferenceCard webhooks={data?.webhookReference} />
           <RecentActivity />
         </>
+      )}
+    </div>
+  );
+}
+
+/** "Send test message" button for the Slack category — posts a verification
+ *  message to the tenant's configured channel and shows the outcome inline. */
+function SlackTestButton() {
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const test = useMutation({
+    mutationFn: sendSlackTest,
+    onSuccess: (r) => setMsg({ ok: true, text: r.message }),
+    onError: (e) =>
+      setMsg({
+        ok: false,
+        text: e instanceof Error ? e.message : "Failed to send.",
+      }),
+  });
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-slate-200 pt-3">
+      <Button
+        intent="secondary"
+        size="sm"
+        isLoading={test.isPending}
+        onClick={() => {
+          setMsg(null);
+          test.mutate();
+        }}
+      >
+        <Send className="h-3.5 w-3.5" /> Send test message
+      </Button>
+      {msg && (
+        <span
+          className="text-xs"
+          style={{
+            color: msg.ok ? "hsl(var(--ink-3))" : "hsl(var(--destructive))",
+          }}
+        >
+          {msg.text}
+        </span>
       )}
     </div>
   );

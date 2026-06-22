@@ -42,6 +42,45 @@ function resolveSlackEnv(
   return orgId ? getEffectiveEnvForOrg(orgId) : getEffectiveEnv();
 }
 
+export type SlackTestResult =
+  | { ok: true }
+  | { ok: false; reason: "not_configured" | "send_failed"; error?: string };
+
+/**
+ * Post a one-off verification message to a tenant's configured Slack channel.
+ * Powers the System Configuration "Send test message" button so an operator can
+ * confirm the bot token + channel are wired correctly. Bypasses the feature
+ * flags on purpose (it's a config test, not an alert) but still requires the
+ * channel/token to be configured. Returns a typed result; never throws.
+ */
+export async function sendSlackTestMessage(
+  orgId: string | undefined,
+): Promise<SlackTestResult> {
+  try {
+    const config = readSlackConfigOrNull(await resolveSlackEnv(orgId));
+    if (!config) return { ok: false, reason: "not_configured" };
+    const res = await postSlackMessage(config, {
+      text: "✅ CareMetric Breathe test message — your Slack integration is connected.",
+      blocks: buildAlertBlocks({
+        title: "✅ Slack connected",
+        lines: [
+          "This is a test from your CareMetric Breathe System Configuration.",
+          "Real-time CS alerts will post to this channel.",
+        ],
+      }),
+    });
+    return res.ok
+      ? { ok: true }
+      : { ok: false, reason: "send_failed", error: res.error };
+  } catch (err) {
+    return {
+      ok: false,
+      reason: "send_failed",
+      error: err instanceof Error ? err.message.slice(0, 200) : "unknown",
+    };
+  }
+}
+
 /** Action id the inbound interactivity endpoint routes "Claim" clicks to. */
 export const CLAIM_ACTION_ID = "claim_conversation";
 /** Action id the inbound interactivity endpoint routes "Escalate" clicks to. */
