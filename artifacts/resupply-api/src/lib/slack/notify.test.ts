@@ -56,6 +56,7 @@ import { resolveTenantBaseUrl } from "../tenant-branding";
 import {
   notifyConversationNeedsHuman,
   notifyDeliveryFailureSpike,
+  notifyFeatureSuggestion,
   notifyNpsDetractor,
   notifyOpsDigest,
   notifyReminderEscalation,
@@ -298,6 +299,23 @@ describe("notifyDeliveryFailureSpike", () => {
     expect(serialized).toContain(
       "https://tenant.example/admin/delivery-failures",
     );
+  });
+});
+
+describe("notifyFeatureSuggestion", () => {
+  it("posts title/area/priority under the slack.digests flag", async () => {
+    await notifyFeatureSuggestion({
+      orgId: "org-1",
+      title: "Bulk export",
+      area: "Billing",
+      priority: "high",
+    });
+    expect(isFeatureEnabledMock).toHaveBeenCalledWith("slack.digests", "org-1");
+    const [, input] = postSlackMessageMock.mock.calls[0]!;
+    const serialized = JSON.stringify(input);
+    expect(serialized).toContain("Bulk export");
+    expect(serialized).toContain("Billing");
+    expect(serialized).toContain("high");
   });
 });
 

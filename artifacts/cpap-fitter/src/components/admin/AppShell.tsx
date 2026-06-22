@@ -1125,6 +1125,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         hint: "File a support request — our AI assistant answers how-to questions instantly, and a person handles the rest",
       },
       {
+        label: "Help & Resources",
+        icon: BookOpenCheck,
+        href: "/admin/resources",
+        matchPrefix: "/admin/resources",
+        hint: "Downloadable setup guides and documentation for your team",
+      },
+      {
         label: "Automation",
         icon: ScrollText,
         hint: "Automation rules and the rule dry-run tester",

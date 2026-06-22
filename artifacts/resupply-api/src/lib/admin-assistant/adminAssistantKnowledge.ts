@@ -212,6 +212,10 @@ ANALYTICS & REPORTS:
     (/admin/therapy-usage-report), Customer NPS (/admin/nps), Storefront Analytics (/admin/pennpaps/analytics).
 
 SYSTEM (mostly admin / super-admin):
+  - Support (/admin/support) — file a support request; the in-app assistant
+    answers how-to questions and a person handles the rest.
+  - Help & Resources (/admin/resources) — downloadable setup guides (e.g. the
+    Slack setup guide PDF) for staff.
   - Automation: Rules (/admin/rules), Compliance Rules (/admin/compliance-rules),
     Rule Tester (/admin/rule-tester) — dry-run a rule before enabling it.
   - Operations: Operations (/admin/operations), Outbound Messages (/admin/outbound-messages) —

@@ -409,6 +409,35 @@ export async function notifySlaBreach(input: {
 }
 
 /**
+ * A staff member filed a product idea through PennPilot (the admin assistant).
+ * Drops it into the ops/digests channel alongside the email to the owner(s),
+ * so the team sees ideas as they land. Non-PHI (a product idea, no patient
+ * data) — title + area + priority only.
+ */
+export async function notifyFeatureSuggestion(input: {
+  orgId: string | undefined;
+  title: string;
+  area: string | null;
+  priority: string | null;
+}): Promise<void> {
+  const channel = (
+    await resolveSlackEnv(input.orgId)
+  ).SLACK_DIGESTS_CHANNEL?.trim();
+  await sendCsAlert({
+    orgId: input.orgId,
+    severity: "info",
+    title: "💡 New feature suggestion (PennPilot)",
+    lines: [
+      `*Title:* ${input.title}`,
+      `*Area:* ${input.area ?? "—"}`,
+      `*Priority:* ${input.priority ?? "—"}`,
+    ],
+    flagKey: "slack.digests",
+    channel: channel || undefined,
+  });
+}
+
+/**
  * Outbound patient messages are failing/bouncing at an unusual rate — a
  * bouncing sender domain, a bad number batch, a carrier block. Ops/CS signal;
  * non-PHI (just a count + window + a link to the triage queue).
