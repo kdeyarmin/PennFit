@@ -52,7 +52,8 @@ The detail and a ranked shortlist follow.
 
 ## Tier 1 — Strategic / growth gaps (highest leverage)
 
-### 1.1 Provider-facing e-prescribe + EHR intake network  ⭐ biggest gap
+### 1.1 Provider-facing e-prescribe + EHR intake network ⭐ biggest gap
+
 **What the market does:** Parachute Health turned DME referral intake into a
 **network** — clinics/hospitals e-prescribe DME from inside Epic / Cerner /
 PointClickCare, with AI fax-to-digital, bidirectional EHR write-back, and
@@ -77,6 +78,7 @@ attach the sleep study + e-sign — mirroring our existing patient-packet e-sign
 plumbing. Phase 2: SMART-on-FHIR / PointClickCare app-marketplace listing.
 
 ### 1.2 Native patient mobile app (iOS/Android) + push
+
 **What the market does:** ResMed **myAir**, AdaptHealth **myAPP**, and most
 resupply vendors ship native apps with **push notifications**, biometric login,
 and app-store presence — the channel patients actually keep on their phone.
@@ -89,6 +91,7 @@ true installable PWA with Web Push. Push is the cheapest incremental engagement
 channel and the one channel we don't have.
 
 ### 1.3 Patient self-scheduling (fittings / setups / telehealth)
+
 **What the market does:** Online self-booking for mask fittings, setups, and
 telehealth, with automated reminders and no-show management.
 **What we have (verified):** A **staff-side** company calendar + video-visit
@@ -100,6 +103,7 @@ broker every appointment.
 calendar (we already have the video-visit token + reminder infra to build on).
 
 ### 1.4 Spanish / multilingual patient surface
+
 **What the market does:** Patient-facing DME tools commonly ship Spanish.
 **What we have (verified):** **No i18n framework** — all patient copy is
 hard-coded English (the only `lang`/locale hits are CPAP-domain strings, not
@@ -116,6 +120,7 @@ and conversion in many DME markets, and a frequent RFP checkbox.
 Our RCM stack is genuinely strong; these are the specific holes vs. best-in-class.
 
 ### 2.1 Medicare ADR / audit-response (RAC / CERT / TPE) workflow
+
 **Market:** DME-focused RCM tools manage **Additional Documentation Requests**
 and audit responses (deadline tracking, document packaging, appeal letters) —
 the highest-dollar back-office risk in DME.
@@ -128,6 +133,7 @@ response, outcome) — narrow, high-value, and consistent with "compliance handl
 out of band" since it's operational, not a compliance attestation engine.
 
 ### 2.2 Vendor / distributor restock EDI (850 PO / 855 / 856 ASN)
+
 **Market:** Inventory replenishment via distributor EDI / punch-out (auto-PO
 when stock dips).
 **Us (verified):** Rich _inbound_ inventory (reservations, reconciliation, low-
@@ -139,6 +145,7 @@ CSV/email to start, mirroring the PacWare pattern) and a reorder-point trigger
 off the low-stock job we already run.
 
 ### 2.3 Two-way accounting sync
+
 **Market:** Live QuickBooks Online / NetSuite sync.
 **Us:** **Export-only** (QuickBooks IIF/QBO + CSV/PDF reports). No write-back,
 no live ledger sync.
@@ -147,6 +154,7 @@ no live ledger sync.
 payouts) as the first connector.
 
 ### 2.4 Patient AR collections / dunning engine
+
 **Market:** Structured dunning ladders + collections-agency handoff for patient
 responsibility.
 **Us (verified):** Patient statements (consent + quiet-hours aware), payment
@@ -156,6 +164,7 @@ plans, autopay — but **no escalating collections workflow** or agency export.
 agency export) reusing the playbook/escalation engine we already have.
 
 ### 2.5 Third-party patient financing
+
 **Market:** CareCredit / Affirm-style financing at checkout for large out-of-
 pocket DME.
 **Us:** In-house payment plans + autopay only.
@@ -167,6 +176,7 @@ pocket DME.
 ## Tier 3 — Patient-experience gaps
 
 ### 3.1 Live, branded shipment tracking
+
 **Market:** "Order received → processing → driver en route → delivered" branded
 tracking page; a top driver of reduced "where's my order?" calls.
 **Us:** Order tracking exists with a carrier link "when available" and a
@@ -176,12 +186,14 @@ not a live branded status timeline fed by carrier webhooks.
 proactive "shipped/out-for-delivery/delivered" notifications.
 
 ### 3.2 Reputation / review syndication
+
 **Market:** Push post-delivery reviews to Google/Yelp; manage reputation.
 **Us:** Robust **internal** reviews + Q&A + NPS + moderation — but reviews stay
 on-platform.
 **Recommendation:** Syndicate qualifying NPS promoters to Google review prompts.
 
 ### 3.3 Accessibility coverage for the admin console
+
 **Us:** Storefront has axe a11y e2e tests; the **admin** console isn't covered.
 **Recommendation:** Extend axe checks to admin surfaces (also an RFP checkbox).
 
@@ -190,6 +202,7 @@ on-platform.
 ## Tier 4 — Last-mile / fulfillment operations
 
 ### 4.1 Driver app + route optimization (local delivery)
+
 **Market:** DMEs that deliver locally use driver mobile apps with route
 optimization, on-truck signature/photo capture, and live ETA.
 **Us (verified):** POD **photo** capture (`0111_shop_orders_pod_photo`,
@@ -201,6 +214,7 @@ delivery routes.
 optimization can be a later phase.
 
 ### 4.2 Custom report builder / scheduled exports / warehouse feed
+
 **Market:** Ad-hoc report builder + scheduled email exports + BI/warehouse feed.
 **Us:** Many strong _canned_ analytics (LTV/CAC, payer profitability, fleet
 KPIs) and CSV/PDF/QuickBooks exports — but **no self-serve report builder or
@@ -229,20 +243,20 @@ These already exist in code but are partial — completing them beats net-new wo
 
 ## Ranked shortlist (leverage ÷ effort)
 
-| # | Gap | Tier | Leverage | Rough effort |
-|---|-----|------|----------|--------------|
-| 1 | Provider e-prescribe portal (phase 1, no EHR) | 1.1 | Very high (growth) | Medium |
-| 2 | Patient self-scheduling on existing calendar | 1.3 | High | Low–Med |
-| 3 | Live branded shipment tracking + push/email | 3.1 | High | Medium |
-| 4 | Native app shell / Web Push | 1.2 | High | Medium |
-| 5 | Spanish i18n for storefront + messaging | 1.4 | High | Medium |
-| 6 | Patient AR dunning ladder (reuse playbooks) | 2.4 | High ($) | Low–Med |
-| 7 | QuickBooks Online two-way sync | 2.3 | Med–High | Medium |
-| 8 | Medicare ADR/audit-response queue | 2.1 | High ($, risk) | Medium |
-| 9 | Vendor restock PO + reorder point | 2.2 | Medium | Medium |
-| 10 | Finish Tier-5 half-built surfaces | 5 | Med (cheap) | Low |
-| 11 | Driver app + POD signature (if local delivery) | 4.1 | Tenant-dependent | Med–High |
-| 12 | EHR / SMART-on-FHIR + e-prescribe network (phase 2) | 1.1 | Very high | High |
+| #   | Gap                                                 | Tier | Leverage           | Rough effort |
+| --- | --------------------------------------------------- | ---- | ------------------ | ------------ |
+| 1   | Provider e-prescribe portal (phase 1, no EHR)       | 1.1  | Very high (growth) | Medium       |
+| 2   | Patient self-scheduling on existing calendar        | 1.3  | High               | Low–Med      |
+| 3   | Live branded shipment tracking + push/email         | 3.1  | High               | Medium       |
+| 4   | Native app shell / Web Push                         | 1.2  | High               | Medium       |
+| 5   | Spanish i18n for storefront + messaging             | 1.4  | High               | Medium       |
+| 6   | Patient AR dunning ladder (reuse playbooks)         | 2.4  | High ($)           | Low–Med      |
+| 7   | QuickBooks Online two-way sync                      | 2.3  | Med–High           | Medium       |
+| 8   | Medicare ADR/audit-response queue                   | 2.1  | High ($, risk)     | Medium       |
+| 9   | Vendor restock PO + reorder point                   | 2.2  | Medium             | Medium       |
+| 10  | Finish Tier-5 half-built surfaces                   | 5    | Med (cheap)        | Low          |
+| 11  | Driver app + POD signature (if local delivery)      | 4.1  | Tenant-dependent   | Med–High     |
+| 12  | EHR / SMART-on-FHIR + e-prescribe network (phase 2) | 1.1  | Very high          | High         |
 
 **If you do three things:** (1) the **provider e-prescribe portal** (unlocks
 referral growth), (2) **patient self-scheduling + live tracking** (the two most
