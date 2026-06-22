@@ -48,7 +48,7 @@ vi.mock("../../lib/email/tenant-sender", () => ({
 }));
 
 const isFaxConfiguredMock = vi.hoisted(() => vi.fn());
-vi.mock("../admin/physician-fax-outreach.js", () => ({
+vi.mock("../../routes/admin/physician-fax-outreach.js", () => ({
   isFaxConfigured: isFaxConfiguredMock,
   getFaxPublicBaseUrl: vi.fn(() => "https://example.test"),
 }));
@@ -112,7 +112,7 @@ function makeClient(cfg: FakeConfig) {
         return { data: null };
       });
       // capture patient_id passed to eq for the idempotency / night probes
-      const origEq = builder.eq as ReturnType<typeof vi.fn>;
+      const origEq = builder.eq as (col: string, val: string) => unknown;
       builder.eq = vi.fn((col: string, val: string) => {
         if (col === "patient_id")
           (builder as { _patientId?: string })._patientId = val;

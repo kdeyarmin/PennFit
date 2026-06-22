@@ -51,7 +51,7 @@ import { renderAdherenceAttestationPdf } from "../../lib/referral-adherence/rend
 import {
   getFaxPublicBaseUrl,
   isFaxConfigured,
-} from "../admin/physician-fax-outreach.js";
+} from "../../routes/admin/physician-fax-outreach.js";
 import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import {
   createQueueWithDlq,
