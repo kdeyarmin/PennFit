@@ -61,73 +61,46 @@ router.get(
     }
     const supabase = getOrgScopedClient(orgId);
 
-    // Paid-order revenue per customer (the LTV numerator). Refunded
-    // orders keep paid_at set, so they must be excluded explicitly —
-    // the Customer-360 rollup documents the same rule ("refunded
-    // orders are excluded — money was returned"); counting them here
-    // inflated the finance-facing LTV:CAC ratio relative to the rest
-    // of the app.
-    const { data: orders, error: ordersErr } = await supabase
-      .from("shop_orders")
-      .select("customer_id, amount_total_cents, paid_at, status")
-      .not("paid_at", "is", null)
-      .neq("status", "refunded")
-      .limit(20000);
-    if (ordersErr) {
+    // Per-customer LTV/CAC economics — the (lifetime paid revenue, channel,
+    // acquisition cost) tuple per customer — is computed server-side in
+    // resupply.ltv_cac_customer_economics (migration 0436). Moving the
+    // rollup into Postgres replaces the former pair of `.limit(20000)`
+    // reads (paid orders + attribution) that silently truncated above the
+    // cap. The RPC mirrors the JS exactly: revenue is paid orders only
+    // (`paid_at IS NOT NULL` AND `status <> 'refunded'` — refunded orders
+    // keep paid_at set and must be excluded, the same rule the Customer-360
+    // rollup documents); the result is the UNION of every customer with
+    // revenue OR an attribution row, with revenue defaulting to 0 and a
+    // NULL channel → "unattributed". The channel rollup + LTV:CAC ratio
+    // math stays in the tested, pure buildLtvCacReport below, so the
+    // response is byte-for-byte unchanged.
+    const { data: economics, error: economicsErr } = await supabase
+      .raw()
+      .schema("resupply")
+      .rpc("ltv_cac_customer_economics", { p_org_id: orgId });
+    if (economicsErr) {
       res
         .status(500)
-        .json({ error: "query_failed", message: ordersErr.message });
+        .json({ error: "query_failed", message: economicsErr.message });
       return;
     }
 
-    const revenueByCustomer = new Map<string, number>();
-    for (const o of (orders ?? []) as Array<Record<string, unknown>>) {
-      const cid = typeof o.customer_id === "string" ? o.customer_id : "";
-      if (cid === "") continue;
-      const amt =
-        typeof o.amount_total_cents === "number" ? o.amount_total_cents : 0;
-      revenueByCustomer.set(cid, (revenueByCustomer.get(cid) ?? 0) + amt);
-    }
-
-    // Attribution rows (channel + acquisition cost) per customer.
-    const { data: attribution, error: attrErr } = await supabase
-      .from("customer_acquisition")
-      .select("customer_id, channel, acquisition_cost_cents")
-      .limit(20000);
-    if (attrErr) {
-      res.status(500).json({ error: "query_failed", message: attrErr.message });
-      return;
-    }
-    const attrByCustomer = new Map<
-      string,
-      { channel: AcquisitionChannel; acquisitionCostCents: number | null }
-    >();
-    for (const a of (attribution ?? []) as Array<Record<string, unknown>>) {
-      const cid = typeof a.customer_id === "string" ? a.customer_id : "";
-      if (cid === "") continue;
-      attrByCustomer.set(cid, {
-        channel: a.channel as AcquisitionChannel,
-        acquisitionCostCents:
-          typeof a.acquisition_cost_cents === "number"
-            ? a.acquisition_cost_cents
-            : null,
-      });
-    }
-
-    // Union of every customer who has revenue OR an attribution row.
-    const customerIds = new Set<string>([
-      ...revenueByCustomer.keys(),
-      ...attrByCustomer.keys(),
-    ]);
-    const inputs: CustomerEconomicsInput[] = [...customerIds].map((cid) => {
-      const attr = attrByCustomer.get(cid);
-      return {
-        customerId: cid,
-        channel: attr ? attr.channel : null,
-        lifetimeRevenueCents: revenueByCustomer.get(cid) ?? 0,
-        acquisitionCostCents: attr ? attr.acquisitionCostCents : null,
-      };
-    });
+    const inputs: CustomerEconomicsInput[] = (
+      (economics ?? []) as Array<{
+        customer_id: string;
+        lifetime_revenue_cents: number | string;
+        channel: string | null;
+        acquisition_cost_cents: number | null;
+      }>
+    ).map((row) => ({
+      customerId: row.customer_id,
+      channel: row.channel == null ? null : (row.channel as AcquisitionChannel),
+      lifetimeRevenueCents: Number(row.lifetime_revenue_cents),
+      acquisitionCostCents:
+        typeof row.acquisition_cost_cents === "number"
+          ? row.acquisition_cost_cents
+          : null,
+    }));
 
     const report = buildLtvCacReport(inputs);
     res.json({ ...report, generatedAt: new Date().toISOString() });
