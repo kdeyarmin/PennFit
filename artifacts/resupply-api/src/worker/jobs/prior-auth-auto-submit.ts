@@ -76,10 +76,38 @@ export async function registerPriorAuthAutoSubmitJob(
       .limit(MAX_PER_TICK);
     if (error) throw error;
 
+    // Attempt each PA at most once. submitPriorAuth only advances the parent PA
+    // out of `draft` for an identifier-matched `responded` outcome — a
+    // `rejected`/`transport_failed` attempt (where PHI may already have reached
+    // the payer) leaves the PA in `draft`, so without this guard the next tick
+    // would re-select and re-transmit it every run. Exclude any candidate that
+    // already has a davinci_pas_submissions row; recovery for a failed transmit
+    // is a deliberate manual action via the admin "Submit" button.
+    const candidates: Array<{ id: string; patient_id: string }> = drafts ?? [];
+    let toSubmit = candidates;
+    let alreadyAttempted = 0;
+    if (candidates.length > 0) {
+      const { data: attempted, error: attemptedErr } = await supabase
+        .from("davinci_pas_submissions")
+        .select("prior_authorization_id")
+        .in(
+          "prior_authorization_id",
+          candidates.map((p) => p.id),
+        );
+      if (attemptedErr) throw attemptedErr;
+      const attemptedIds = new Set(
+        (attempted ?? []).map(
+          (r: { prior_authorization_id: string }) => r.prior_authorization_id,
+        ),
+      );
+      toSubmit = candidates.filter((p) => !attemptedIds.has(p.id));
+      alreadyAttempted = candidates.length - toSubmit.length;
+    }
+
     let submitted = 0;
     let skipped = 0;
     let failed = 0;
-    for (const pa of drafts ?? []) {
+    for (const pa of toSubmit) {
       try {
         const result = await submitPriorAuth({
           orgId,
@@ -110,7 +138,8 @@ export async function registerPriorAuthAutoSubmitJob(
       logger.info(
         {
           event: "billing.prior-auth-auto-submit.completed",
-          candidates: drafts?.length ?? 0,
+          candidates: candidates.length,
+          alreadyAttempted,
           submitted,
           skipped,
           failed,
@@ -126,6 +155,19 @@ export async function registerPriorAuthAutoSubmitJob(
     logger.info(
       { queue: PRIOR_AUTH_AUTO_SUBMIT_JOB, cron },
       "prior-auth-auto-submit: recurring schedule attached",
+    );
+  } else {
+    // boss.schedule() persists the cron row in pg-boss, so merely not
+    // re-scheduling does NOT stop a previously-attached schedule. Clear any
+    // stale row so removing the env var actually turns the cron off (same
+    // pattern as auto-submit-batch). typeof-guarded — test doubles / old
+    // pg-boss may not implement unschedule.
+    if (typeof boss.unschedule === "function") {
+      await boss.unschedule(PRIOR_AUTH_AUTO_SUBMIT_JOB).catch(() => undefined);
+    }
+    logger.info(
+      { queue: PRIOR_AUTH_AUTO_SUBMIT_JOB },
+      "prior-auth-auto-submit registered (cron opt-in unset; manual-trigger only)",
     );
   }
 }
