@@ -81,8 +81,12 @@ import {
   fetchPlatformTenantBilling,
   formatMoney,
   previewTenantBillingChange,
+  recordTenantUsage,
+  resyncTenantStripeSubscriptions,
   syncTenantStripeSubscription,
+  updateTenantAddon,
   updateTenantPlan,
+  type BillingAddon,
   type BillingPlan,
 } from "@/lib/admin/platform-billing-api";
 import {
@@ -1183,6 +1187,143 @@ function BillingActivityCard({ tenantId }: { tenantId?: string }) {
   );
 }
 
+// Platform plan/add-on catalog at a glance + the deliberate "re-sync every
+// tenant's live Stripe subscription to current catalog pricing" action
+// (the counterpart to a catalog price edit, which doesn't auto-reprice
+// existing subscriptions). Deep price edits live on /platform/billing.
+function CatalogCard() {
+  const queryClient = useQueryClient();
+  const catalog = useQuery({
+    queryKey: ["platform-billing", "catalog"],
+    queryFn: fetchPlatformBillingCatalog,
+  });
+  const summary = useQuery({
+    queryKey: ["platform-billing-summary"],
+    queryFn: fetchFleetBillingSummary,
+  });
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [resyncResult, setResyncResult] = useState<{
+    total: number;
+    synced: number;
+    failed: number;
+  } | null>(null);
+  const resync = useMutation({
+    mutationFn: resyncTenantStripeSubscriptions,
+    onSuccess: (r) => {
+      setResyncResult(r);
+      setConfirmOpen(false);
+      void queryClient.invalidateQueries({ queryKey: ["platform-billing"] });
+    },
+  });
+
+  const plans = catalog.data?.plans ?? [];
+  const byPlan = new Map(
+    (summary.data?.byPlan ?? []).map((p) => [p.planCode, p.tenants]),
+  );
+
+  return (
+    <Card
+      title="Plan catalog"
+      subtitle="Platform plans + add-ons. Edit pricing on the Billing console; re-sync pushes current pricing to every tenant's live Stripe subscription."
+      action={
+        <Link href="/platform/billing">
+          <Button intent="ghost" size="sm">
+            Edit catalog
+          </Button>
+        </Link>
+      }
+    >
+      {catalog.isPending ? (
+        <Spinner label="Loading catalog…" />
+      ) : catalog.isError ? (
+        <EmptyState
+          title="Couldn't load the catalog."
+          hint="A transient error — try again."
+          action={
+            <Button
+              intent="secondary"
+              size="sm"
+              onClick={() => void catalog.refetch()}
+            >
+              Retry
+            </Button>
+          }
+        />
+      ) : (
+        <div className="space-y-4">
+          <div className="space-y-1">
+            {plans.map((p) => (
+              <div
+                key={p.code}
+                className="flex items-center justify-between text-xs"
+              >
+                <span style={{ color: "hsl(var(--ink-2))" }}>
+                  {p.name}
+                  {p.isCustom ? (
+                    <span style={{ color: "hsl(var(--ink-3))" }}>
+                      {" "}
+                      (custom)
+                    </span>
+                  ) : null}
+                </span>
+                <span
+                  className="tabular-nums"
+                  style={{ color: "hsl(var(--ink-1))" }}
+                >
+                  {p.monthlyPriceCents != null
+                    ? `${formatMoney(p.monthlyPriceCents)}/mo`
+                    : "Custom"}
+                  <span style={{ color: "hsl(var(--ink-3))" }}>
+                    {" "}
+                    · {byPlan.get(p.code) ?? 0} tenant
+                    {(byPlan.get(p.code) ?? 0) === 1 ? "" : "s"}
+                  </span>
+                </span>
+              </div>
+            ))}
+          </div>
+          <div
+            className="border-t pt-3 flex items-center justify-between gap-3 flex-wrap"
+            style={{ borderColor: "hsl(var(--line-1))" }}
+          >
+            <div className="text-[11px]" style={{ color: "hsl(var(--ink-3))" }}>
+              {catalog.data?.addons.length ?? 0} add-on
+              {(catalog.data?.addons.length ?? 0) === 1 ? "" : "s"} in catalog.
+              {resyncResult
+                ? ` Last re-sync: ${resyncResult.synced}/${resyncResult.total} synced` +
+                  (resyncResult.failed
+                    ? `, ${resyncResult.failed} failed.`
+                    : ".")
+                : ""}
+            </div>
+            <Button
+              intent="secondary"
+              size="sm"
+              isLoading={resync.isPending}
+              onClick={() => setConfirmOpen(true)}
+            >
+              Re-sync to Stripe
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {confirmOpen && (
+        <ConfirmDialog
+          title="Re-sync all subscriptions?"
+          confirmLabel="Re-sync to Stripe"
+          intent="secondary"
+          isPending={resync.isPending}
+          error={resync.isError ? "Re-sync failed. Try again." : null}
+          body="This pushes current catalog + custom pricing to EVERY tenant's live Stripe subscription. Use it after editing a plan's price so existing subscriptions pick up the change."
+          onConfirm={() => resync.mutate()}
+          onClose={() => setConfirmOpen(false)}
+        />
+      )}
+    </Card>
+  );
+}
+
 function PlatformDashboard() {
   const [days, setDays] = useState<number>(30);
   const { data, isPending, isError, refetch, isFetching } =
@@ -1449,6 +1590,8 @@ function PlatformDashboard() {
           )}
 
           <BillingActivityCard />
+
+          <CatalogCard />
         </>
       )}
     </div>
@@ -2338,6 +2481,267 @@ function TenantPlanChanger({
   );
 }
 
+// Inline add-on quantity changes for the tenant detail page. Mirrors the
+// plan switcher: pick a recurring add-on + quantity → preview → confirm →
+// apply. Quantity 0 removes the add-on. Recurring-priced add-ons only;
+// one-time/project add-ons stay on /platform/billing.
+function TenantAddonManager({
+  tenantId,
+  currentAddons,
+  catalogAddons,
+}: {
+  tenantId: string;
+  currentAddons: Array<{ id: string; quantity: number; addon: BillingAddon }>;
+  catalogAddons: BillingAddon[];
+}) {
+  const queryClient = useQueryClient();
+  const recurring = useMemo(
+    () =>
+      catalogAddons.filter(
+        (a) => a.isActive !== false && a.recurringPriceCents != null,
+      ),
+    [catalogAddons],
+  );
+  const currentQty = useMemo(
+    () => new Map(currentAddons.map((a) => [a.addon.code, a.quantity])),
+    [currentAddons],
+  );
+  const [addonCode, setAddonCode] = useState(recurring[0]?.code ?? "");
+  const [qty, setQty] = useState(0);
+  const [confirmPreview, setConfirmPreview] = useState<string | null>(null);
+
+  // Default the quantity to whatever the tenant currently has for the
+  // selected add-on, so a "Review" with no edits is correctly inert.
+  useEffect(() => {
+    setQty(currentQty.get(addonCode) ?? 0);
+  }, [addonCode, currentQty]);
+
+  const preview = useMutation({
+    mutationFn: () =>
+      previewTenantBillingChange(tenantId, {
+        kind: "addon",
+        addonCode,
+        quantity: qty,
+      }),
+    onSuccess: (p) => setConfirmPreview(buildPreviewConfirm(p)),
+  });
+  const apply = useMutation({
+    mutationFn: () => updateTenantAddon(tenantId, { addonCode, quantity: qty }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: ["platform-billing", "tenants"],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["platform-billing", "activity"],
+      });
+      setConfirmPreview(null);
+    },
+  });
+
+  if (recurring.length === 0) return null;
+  const dirty = (currentQty.get(addonCode) ?? 0) !== qty;
+
+  return (
+    <div
+      className="border-t pt-3"
+      style={{ borderColor: "hsl(var(--line-1))" }}
+    >
+      <div
+        className="text-[11px] font-medium mb-2"
+        style={{ color: "hsl(var(--ink-2))" }}
+      >
+        Add-ons
+      </div>
+      {currentAddons.length > 0 && (
+        <ul className="space-y-1 mb-3">
+          {currentAddons.map((a) => (
+            <li
+              key={a.id}
+              className="flex items-center justify-between text-xs"
+            >
+              <span style={{ color: "hsl(var(--ink-2))" }}>
+                {a.addon.name}
+                {a.addon.unitLabel ? (
+                  <span style={{ color: "hsl(var(--ink-3))" }}>
+                    {" "}
+                    · {a.addon.unitLabel}
+                  </span>
+                ) : null}
+              </span>
+              <span
+                className="tabular-nums font-medium"
+                style={{ color: "hsl(var(--ink-1))" }}
+              >
+                ×{a.quantity}
+                {a.addon.recurringPriceCents != null
+                  ? ` · ${formatMoney(a.addon.recurringPriceCents)}/mo`
+                  : ""}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="flex items-center gap-2 flex-wrap">
+        <select
+          value={addonCode}
+          onChange={(e) => setAddonCode(e.target.value)}
+          aria-label="Select an add-on"
+          className="rounded-md border px-2 py-1.5 text-xs outline-none focus:ring-2"
+          style={{
+            borderColor: "hsl(var(--line-1))",
+            backgroundColor: "hsl(var(--surface-1))",
+            color: "hsl(var(--ink-1))",
+          }}
+        >
+          {recurring.map((a) => (
+            <option key={a.code} value={a.code}>
+              {a.name}
+              {a.recurringPriceCents != null
+                ? ` — ${formatMoney(a.recurringPriceCents)}/mo`
+                : ""}
+            </option>
+          ))}
+        </select>
+        <input
+          type="number"
+          min={0}
+          value={qty}
+          onChange={(e) =>
+            setQty(Math.max(0, Number.parseInt(e.target.value || "0", 10) || 0))
+          }
+          aria-label="Quantity"
+          className="w-16 rounded-md border px-2 py-1.5 text-xs tabular-nums outline-none focus:ring-2"
+          style={{
+            borderColor: "hsl(var(--line-1))",
+            backgroundColor: "hsl(var(--surface-1))",
+            color: "hsl(var(--ink-1))",
+          }}
+        />
+        <Button
+          intent="secondary"
+          size="sm"
+          disabled={!dirty || preview.isPending}
+          isLoading={preview.isPending}
+          onClick={() => preview.mutate()}
+        >
+          Review change
+        </Button>
+      </div>
+      {preview.isError && (
+        <p className="text-xs mt-1" style={{ color: "hsl(354 75% 38%)" }}>
+          Couldn&rsquo;t price that change. Try again.
+        </p>
+      )}
+      {confirmPreview && (
+        <ConfirmDialog
+          title="Change add-on?"
+          confirmLabel="Apply change"
+          isPending={apply.isPending}
+          error={apply.isError ? "Couldn't apply the change." : null}
+          body={<span className="whitespace-pre-line">{confirmPreview}</span>}
+          onConfirm={() => apply.mutate()}
+          onClose={() => setConfirmPreview(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// Record a metered usage event for the tenant (super-admin manual entry).
+// A small inline form on the billing card; on success the usage section
+// re-reads and reflects the new total.
+function TenantUsageRecorder({
+  tenantId,
+  metricKeys,
+}: {
+  tenantId: string;
+  metricKeys: string[];
+}) {
+  const queryClient = useQueryClient();
+  const [metricKey, setMetricKey] = useState(metricKeys[0] ?? "");
+  const [quantity, setQuantity] = useState(1);
+  const record = useMutation({
+    mutationFn: () =>
+      recordTenantUsage({
+        tenantId,
+        metricKey,
+        quantity,
+        source: "platform-console",
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: ["platform-billing", "tenants"],
+      });
+      setQuantity(1);
+    },
+  });
+
+  if (metricKeys.length === 0) return null;
+
+  return (
+    <div
+      className="border-t pt-3"
+      style={{ borderColor: "hsl(var(--line-1))" }}
+    >
+      <div
+        className="text-[11px] font-medium mb-2"
+        style={{ color: "hsl(var(--ink-2))" }}
+      >
+        Record usage
+      </div>
+      <div className="flex items-center gap-2 flex-wrap">
+        <select
+          value={metricKey}
+          onChange={(e) => setMetricKey(e.target.value)}
+          aria-label="Select a metric"
+          className="rounded-md border px-2 py-1.5 text-xs outline-none focus:ring-2"
+          style={{
+            borderColor: "hsl(var(--line-1))",
+            backgroundColor: "hsl(var(--surface-1))",
+            color: "hsl(var(--ink-1))",
+          }}
+        >
+          {metricKeys.map((k) => (
+            <option key={k} value={k}>
+              {k.replace(/_/g, " ")}
+            </option>
+          ))}
+        </select>
+        <input
+          type="number"
+          min={1}
+          value={quantity}
+          onChange={(e) =>
+            setQuantity(
+              Math.max(1, Number.parseInt(e.target.value || "1", 10) || 1),
+            )
+          }
+          aria-label="Quantity"
+          className="w-16 rounded-md border px-2 py-1.5 text-xs tabular-nums outline-none focus:ring-2"
+          style={{
+            borderColor: "hsl(var(--line-1))",
+            backgroundColor: "hsl(var(--surface-1))",
+            color: "hsl(var(--ink-1))",
+          }}
+        />
+        <Button
+          intent="secondary"
+          size="sm"
+          isLoading={record.isPending}
+          onClick={() => record.mutate()}
+        >
+          Record
+        </Button>
+        {record.isError && (
+          <span className="text-xs" style={{ color: "hsl(354 75% 38%)" }}>
+            Couldn&rsquo;t record.
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function TenantBillingCard({ tenantId }: { tenantId: string }) {
   const queryClient = useQueryClient();
   const { data, isPending, isError, refetch } = useQuery({
@@ -2534,6 +2938,15 @@ function TenantBillingCard({ tenantId }: { tenantId: string }) {
             currentPlanCode={sub.plan.code}
             currentStatus={sub.status}
             plans={catalog.data?.plans ?? []}
+          />
+          <TenantAddonManager
+            tenantId={tenantId}
+            currentAddons={row?.billing.addons ?? []}
+            catalogAddons={catalog.data?.addons ?? []}
+          />
+          <TenantUsageRecorder
+            tenantId={tenantId}
+            metricKeys={meterRows.map((m) => m.key)}
           />
         </div>
       )}

@@ -122,4 +122,14 @@ describe("platform console tenant detail + sidebar", () => {
     expect(SRC).toContain("const meterRows");
     expect(SRC).toContain("Metering &amp; usage");
   });
+
+  it("adds add-on management, usage recording, and a catalog re-sync", () => {
+    expect(SRC).toContain("function TenantAddonManager");
+    expect(SRC).toContain("updateTenantAddon");
+    expect(SRC).toContain("function TenantUsageRecorder");
+    expect(SRC).toContain("recordTenantUsage");
+    expect(SRC).toContain("function CatalogCard");
+    expect(SRC).toContain("resyncTenantStripeSubscriptions");
+    expect(SRC).toContain("<CatalogCard />");
+  });
 });
