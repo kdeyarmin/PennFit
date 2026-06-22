@@ -91,7 +91,10 @@ export function ClaimAppealsSection({
     onSuccess: () => {
       setGenError(null);
       setLetterBody("");
-      setBodyTouched(false);
+      // Keep the textarea marked touched after a generate so the prefill effect
+      // doesn't re-seed the cleared body (which would re-enable Generate and
+      // let a second click persist a duplicate appeal letter for the claim).
+      setBodyTouched(true);
       invalidate();
     },
     onError: (err) =>

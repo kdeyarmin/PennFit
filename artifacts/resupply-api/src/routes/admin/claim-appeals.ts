@@ -94,12 +94,19 @@ router.get(
     const supabase = getOrgScopedClient(orgId);
     const { data: claim } = await supabase
       .from("insurance_claims")
-      .select("latest_denial_analysis_id")
+      .select("id, latest_denial_analysis_id")
       .eq("id", parsed.data.claimId)
       .eq("patient_id", parsed.data.id)
       .limit(1)
       .maybeSingle();
-    if (!claim?.latest_denial_analysis_id) {
+    // Distinguish "claim doesn't exist for this patient" (404) from "claim
+    // exists but has no denial analysis yet" (200 + null sketch) — otherwise an
+    // invalid claim/patient path silently succeeds and hides caller bugs.
+    if (!claim) {
+      res.status(404).json({ error: "claim_not_found" });
+      return;
+    }
+    if (!claim.latest_denial_analysis_id) {
       res.json({ denialAnalysisId: null, recommendation: null, sketch: null });
       return;
     }
