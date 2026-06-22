@@ -68,6 +68,7 @@ import { registerMetricsSnapshotJob } from "./jobs/metrics-snapshot.js";
 import { registerMetricAlertsEvaluatorJob } from "./jobs/metric-alerts-evaluator.js";
 import { registerMetricAlertsNotifyJob } from "./jobs/metric-alerts-notify.js";
 import { registerDlqMonitorJob } from "./jobs/dlq-monitor.js";
+import { registerDeliveryFailureMonitorJob } from "./jobs/delivery-failure-monitor.js";
 import { registerOwnerDigestJob } from "./jobs/owner-digest.js";
 import { registerTherapyFleetAlertsJob } from "./jobs/therapy-fleet-alerts-scan.js";
 import { registerSetupDeadlineOutreachJob } from "./jobs/therapy-setup-deadline-outreach.js";
@@ -811,6 +812,15 @@ async function doStartWorker(): Promise<void> {
   // that exhausted their retries; without it a DLQ fills silently.
   await safeRegister("registerDlqMonitorJob", registrationFailures, () =>
     registerDlqMonitorJob(boss),
+  );
+
+  // Watch for a spike in failed/bounced outbound patient messages every
+  // 15 min and ping the CS reps in Slack. Inert (cheap count, no post) until
+  // Slack is configured. Threshold env-tunable.
+  await safeRegister(
+    "registerDeliveryFailureMonitorJob",
+    registrationFailures,
+    () => registerDeliveryFailureMonitorJob(boss),
   );
 
   // Weekly owner KPI digest (Mondays 13:00 UTC).

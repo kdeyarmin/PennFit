@@ -27,6 +27,7 @@ import { isFeatureEnabled } from "../feature-flags";
 import { resolveTenantBaseUrl } from "../tenant-branding";
 import {
   notifyConversationNeedsHuman,
+  notifyDeliveryFailureSpike,
   notifyNpsDetractor,
   notifyOpsDigest,
   notifyReminderEscalation,
@@ -160,6 +161,24 @@ describe("notifySlaBreach", () => {
     });
     const [, input] = postSlackMessageMock.mock.calls[0]!;
     expect(JSON.stringify(input)).toContain("42");
+  });
+});
+
+describe("notifyDeliveryFailureSpike", () => {
+  it("posts the count + window with a triage link, critical severity", async () => {
+    await notifyDeliveryFailureSpike({
+      orgId: "org-1",
+      count: 9,
+      windowMinutes: 15,
+    });
+    const [, input] = postSlackMessageMock.mock.calls[0]!;
+    const serialized = JSON.stringify(input);
+    expect(serialized).toContain("9");
+    expect(serialized).toContain("15 min");
+    expect(serialized).toContain("🔴");
+    expect(serialized).toContain(
+      "https://tenant.example/admin/delivery-failures",
+    );
   });
 });
 

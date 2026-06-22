@@ -268,6 +268,30 @@ export async function notifySlaBreach(input: {
 }
 
 /**
+ * Outbound patient messages are failing/bouncing at an unusual rate — a
+ * bouncing sender domain, a bad number batch, a carrier block. Ops/CS signal;
+ * non-PHI (just a count + window + a link to the triage queue).
+ */
+export async function notifyDeliveryFailureSpike(input: {
+  orgId: string | undefined;
+  count: number;
+  windowMinutes: number;
+}): Promise<void> {
+  const link = await adminPathDeepLink(input.orgId, "/admin/delivery-failures");
+  await sendCsAlert({
+    orgId: input.orgId,
+    severity: "critical",
+    title: `${severityEmoji("critical")} Delivery failures spiking`,
+    lines: [
+      `*${input.count}* failed/bounced outbound message(s) in the last ${input.windowMinutes} min`,
+    ],
+    actions: link
+      ? [{ kind: "link", text: "Open delivery failures", url: link }]
+      : undefined,
+  });
+}
+
+/**
  * A patient submitted a low NPS score (a "detractor", 0–6) after delivery.
  * Real-time CS signal. The free-text comment is NOT sent (patient PHI) — only
  * the score, order reference, and whether a comment exists, plus a link to the
