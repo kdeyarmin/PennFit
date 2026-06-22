@@ -43,6 +43,14 @@ if [[ -z "${DB_CONTAINER:-}" ]]; then
 fi
 echo "[dev-db] db container: $DB_CONTAINER"
 
+# Newer Supabase local images do NOT grant the `postgres` role rights on the
+# `auth` schema, but some migrations create objects there (e.g. 0059's
+# auth.set_updated_at trigger function). The post-migration grant block below
+# (step 3) is too late — migrate.mjs connects as `postgres`. Grant auth-schema
+# access up front so a fresh DB migrates cleanly regardless of CLI version.
+docker exec -i "$DB_CONTAINER" psql -U supabase_admin -d postgres \
+  -c "GRANT ALL ON SCHEMA auth TO postgres;" >/dev/null
+
 echo "[dev-db] 2/5 apply migrations"
 DATABASE_URL="$DB_URL" node lib/resupply-db/scripts/migrate.mjs
 
@@ -84,8 +92,10 @@ export RESUPPLY_LINK_HMAC_KEY="${RESUPPLY_LINK_HMAC_KEY:-local-dev-hmac-key-not-
 # bootstrap-admin fails if the user already exists; tolerate that on re-run.
 pnpm --filter @workspace/scripts auth:bootstrap-admin --email="$ADMIN_EMAIL" --role=admin || true
 ADMIN_PASSWORD="$ADMIN_PASSWORD" pnpm --filter @workspace/scripts auth:set-admin-password --email="$ADMIN_EMAIL"
-docker exec -i "$DB_CONTAINER" psql -v admin_email="$ADMIN_EMAIL" -U supabase_admin -d postgres \
-  -c "UPDATE resupply_auth.users SET email_verified_at = now() WHERE email_lower = lower(:'admin_email') AND email_verified_at IS NULL;" >/dev/null
+# Escape single quotes for safe SQL string literal embedding.
+SAFE_ADMIN_EMAIL="${ADMIN_EMAIL//\'/\'\'}"
+docker exec -i "$DB_CONTAINER" psql -U supabase_admin -d postgres \
+  -c "UPDATE resupply_auth.users SET email_verified_at = now() WHERE email_lower = lower('${SAFE_ADMIN_EMAIL}') AND email_verified_at IS NULL;" >/dev/null
 
 echo "[dev-db] done. Admin: $ADMIN_EMAIL / $ADMIN_PASSWORD"
 echo "[dev-db] SUPABASE_SERVICE_ROLE_KEY is available via: supabase status -o env"
