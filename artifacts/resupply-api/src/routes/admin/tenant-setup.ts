@@ -67,6 +67,9 @@ export interface TenantSetupSnapshot {
    */
   catalogProductCount: number | null;
   activeAdminCount: number;
+  /** Count of patients in the tenant's workspace (drives the "add/import
+   *  patients" item). 0 for a brand-new tenant. */
+  patientCount: number;
 }
 
 /**
@@ -173,6 +176,22 @@ export function buildTenantSetupItems(
       required: true,
     },
 
+    // ── Your patients ────────────────────────────────────────────────
+    {
+      id: "patients",
+      group: "Your patients",
+      title: "Add or import your patients",
+      description:
+        "Bring your patient roster in. Migrating from another system? Import your PacWare Patient List — a fill-only sync that never overwrites existing data. Starting fresh? Patients populate automatically as orders and fittings come in.",
+      status: s.patientCount > 0 ? "complete" : "action",
+      detail:
+        s.patientCount > 0
+          ? `${s.patientCount}${s.patientCount >= 1000 ? "+" : ""} patient${s.patientCount === 1 ? "" : "s"} in your workspace.`
+          : "No patients yet — import your existing list from PacWare, or they'll populate as you take orders.",
+      href: "/admin/pacware",
+      required: false,
+    },
+
     // ── Payments ─────────────────────────────────────────────────────
     {
       id: "payments",
@@ -242,6 +261,7 @@ async function loadSnapshot(orgId: string): Promise<TenantSetupSnapshot> {
     stripeChargesEnabled: false,
     catalogProductCount: null,
     activeAdminCount: 0,
+    patientCount: 0,
   };
 
   try {
@@ -288,6 +308,21 @@ async function loadSnapshot(orgId: string): Promise<TenantSetupSnapshot> {
     logger.warn(
       { event: "tenant_setup_admin_count_failed", err },
       "tenant-setup: admin count probe failed",
+    );
+  }
+
+  // Patient count (fail-soft): drives the "add or import your patients" item.
+  // org-scoped client filters by org_id; head:true makes it a COUNT-only query.
+  try {
+    const { count, error } = await getOrgScopedClient(orgId)
+      .from("patients")
+      .select("*", { count: "exact", head: true });
+    if (error) throw error;
+    base.patientCount = count ?? 0;
+  } catch (err) {
+    logger.warn(
+      { event: "tenant_setup_patient_count_failed", err },
+      "tenant-setup: patient count probe failed",
     );
   }
 
