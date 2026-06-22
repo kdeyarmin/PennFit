@@ -8,12 +8,18 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, useLocation } from "wouter";
+import { CheckCircle2, Loader2, Lock, Mail, ShieldCheck } from "lucide-react";
 
 import { authErrorMessage } from "@workspace/resupply-auth-react";
 
 import { authHooks } from "@/lib/auth-hooks";
 import { AuthLayout } from "@/components/auth-layout";
 import { PasswordInput } from "@/components/password-input";
+
+// Shared field styling — a calm white input with a brand-navy focus
+// ring. Leading room (pl-10) is reserved for the inline channel icon.
+const FIELD_CLASS =
+  "mt-1 w-full rounded-lg border border-slate-200 bg-white pl-10 pr-3 py-2.5 text-sm text-slate-900 shadow-sm transition-colors placeholder:text-slate-400 focus:border-[hsl(var(--penn-navy))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--penn-navy)/0.18)]";
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -111,107 +117,162 @@ export function SignInPage() {
     <AuthLayout variant="customer">
       <form
         onSubmit={onSubmit}
-        className="w-full max-w-sm rounded-lg shadow-sm border bg-white p-6 space-y-4"
+        className="relative w-full max-w-md overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_2px_hsl(var(--penn-navy-deep)/0.06),0_18px_40px_hsl(var(--penn-navy-deep)/0.10)]"
       >
-        <div>
-          <h1 className="text-xl font-semibold">Sign in</h1>
-          <p className="text-sm text-muted-foreground">
-            Sign in to view your orders and saved shipping info.
-          </p>
-        </div>
+        {/* High-tech accent rail — navy → cyan → navy gradient. */}
+        <div
+          aria-hidden="true"
+          className="h-1 w-full bg-[linear-gradient(90deg,hsl(var(--penn-navy-deep)),hsl(var(--penn-cyan)),hsl(var(--penn-navy-soft)))]"
+        />
 
-        {successFlag === "reset" && (
-          <p
-            role="status"
-            data-testid="signin-reset-success"
-            className="text-sm rounded-md px-3 py-2 bg-emerald-50 text-emerald-900"
-          >
-            Your password has been updated. Sign in with your new password.
-          </p>
-        )}
-        {successFlag === "verified" && (
-          <p
-            role="status"
-            data-testid="signin-verified-success"
-            className="text-sm rounded-md px-3 py-2 bg-emerald-50 text-emerald-900"
-          >
-            Your email is verified. Sign in to continue.
-          </p>
-        )}
+        <div className="space-y-5 p-7">
+          {/* Branded header: gradient-ringed shield mark + welcome copy. */}
+          <div className="flex flex-col items-center text-center">
+            <div className="relative mb-3">
+              <span
+                aria-hidden="true"
+                className="absolute inset-0 -m-1 rounded-2xl bg-[hsl(var(--penn-cyan)/0.25)] blur-md"
+              />
+              <span className="relative inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-[linear-gradient(150deg,hsl(var(--penn-navy-soft)),hsl(var(--penn-navy))_55%,hsl(var(--penn-navy-deep)))] shadow-inner ring-1 ring-white/15">
+                <ShieldCheck
+                  className="h-6 w-6 text-white"
+                  aria-hidden="true"
+                />
+              </span>
+            </div>
+            <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+              Welcome back
+            </h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Sign in to view your orders and saved shipping info.
+            </p>
+          </div>
 
-        <div>
-          <label htmlFor="signin-email" className="block text-sm font-medium">
-            Email
-          </label>
-          <input
-            id="signin-email"
-            type="email"
-            autoComplete="username"
-            required
-            value={email}
-            onChange={(e) => {
-              setEmail(e.target.value);
-              if (submitError) setSubmitError(null);
-            }}
-            className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
-          />
-        </div>
-
-        <div>
-          <label
-            htmlFor="signin-password"
-            className="block text-sm font-medium"
-          >
-            Password
-          </label>
-          <PasswordInput
-            id="signin-password"
-            autoComplete="current-password"
-            required
-            value={password}
-            onChange={(e) => {
-              setPassword(e.target.value);
-              if (submitError) setSubmitError(null);
-            }}
-            inputTestId="signin-password-input"
-          />
-        </div>
-
-        {submitError && (
-          <p
-            role="alert"
-            className="text-sm rounded-md px-3 py-2 bg-red-50 text-red-900"
-          >
-            {submitError}
-          </p>
-        )}
-
-        <button
-          type="submit"
-          disabled={signIn.isPending}
-          className="w-full rounded-md bg-[hsl(var(--penn-navy-deep))] text-white font-semibold py-2 text-sm disabled:opacity-60"
-        >
-          {signIn.isPending ? "Signing in…" : "Sign in"}
-        </button>
-
-        <div className="text-xs text-center space-y-1">
-          <p>
-            <Link
-              href={`${basePath}/forgot-password`}
-              className="underline text-[hsl(var(--penn-navy-deep))]"
+          {successFlag === "reset" && (
+            <p
+              role="status"
+              data-testid="signin-reset-success"
+              className="flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900"
             >
-              Forgot your password?
-            </Link>
-          </p>
-          <p>
+              <CheckCircle2
+                className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600"
+                aria-hidden="true"
+              />
+              Your password has been updated. Sign in with your new password.
+            </p>
+          )}
+          {successFlag === "verified" && (
+            <p
+              role="status"
+              data-testid="signin-verified-success"
+              className="flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900"
+            >
+              <CheckCircle2
+                className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600"
+                aria-hidden="true"
+              />
+              Your email is verified. Sign in to continue.
+            </p>
+          )}
+
+          <div>
+            <label
+              htmlFor="signin-email"
+              className="block text-sm font-medium text-slate-700"
+            >
+              Email
+            </label>
+            <div className="relative">
+              <Mail
+                className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+                aria-hidden="true"
+              />
+              <input
+                id="signin-email"
+                type="email"
+                autoComplete="username"
+                required
+                placeholder="you@example.com"
+                value={email}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  if (submitError) setSubmitError(null);
+                }}
+                className={FIELD_CLASS}
+              />
+            </div>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between">
+              <label
+                htmlFor="signin-password"
+                className="block text-sm font-medium text-slate-700"
+              >
+                Password
+              </label>
+              <Link
+                href={`${basePath}/forgot-password`}
+                className="text-xs font-medium text-[hsl(var(--penn-navy))] hover:underline"
+              >
+                Forgot password?
+              </Link>
+            </div>
+            <div className="relative">
+              <Lock
+                className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-slate-400"
+                aria-hidden="true"
+              />
+              <PasswordInput
+                id="signin-password"
+                autoComplete="current-password"
+                required
+                value={password}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  if (submitError) setSubmitError(null);
+                }}
+                inputTestId="signin-password-input"
+                className="border-slate-200 bg-white pl-10 py-2.5 shadow-sm transition-colors placeholder:text-slate-400 focus:border-[hsl(var(--penn-navy))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--penn-navy)/0.18)]"
+              />
+            </div>
+          </div>
+
+          {submitError && (
+            <p
+              role="alert"
+              className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900"
+            >
+              {submitError}
+            </p>
+          )}
+
+          <button
+            type="submit"
+            disabled={signIn.isPending}
+            className="group relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-lg bg-[linear-gradient(180deg,hsl(var(--penn-navy-soft)),hsl(var(--penn-navy))_55%,hsl(var(--penn-navy-deep)))] py-2.5 text-sm font-semibold text-white shadow-[0_4px_14px_hsl(var(--penn-navy-deep)/0.28)] transition-all hover:shadow-[0_6px_20px_hsl(var(--penn-navy-deep)/0.36)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--penn-navy)/0.45)] focus-visible:ring-offset-2 disabled:opacity-60"
+          >
+            {signIn.isPending && (
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+            )}
+            {signIn.isPending ? "Signing in…" : "Sign in"}
+          </button>
+
+          <p className="text-center text-sm text-muted-foreground">
             New here?{" "}
             <Link
               href={`${basePath}/sign-up`}
-              className="underline text-[hsl(var(--penn-navy-deep))]"
+              className="font-medium text-[hsl(var(--penn-navy))] hover:underline"
             >
               Create an account
             </Link>
           </p>
+
+          {/* Trust signal — quiet, high-tech reassurance. */}
+          <div className="flex items-center justify-center gap-1.5 border-t border-slate-100 pt-4 text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400">
+            <Lock className="h-3 w-3" aria-hidden="true" />
+            Secured with end-to-end encryption
+          </div>
         </div>
       </form>
     </AuthLayout>
