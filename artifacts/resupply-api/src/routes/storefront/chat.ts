@@ -249,6 +249,7 @@ interface OpenAiStreamDelta {
     };
     finish_reason?: string | null;
   }>;
+  usage?: { prompt_tokens?: number; completion_tokens?: number };
 }
 
 let fetchImplOverride: typeof fetch | undefined;
@@ -603,8 +604,17 @@ router.post("/chat", chatRateLimit, async (req, res) => {
         messages.length,
         toolCtx,
         degradedReply,
+        orgId,
       )
-    : handleJson(res, initial, apiKey, messages.length, toolCtx, degradedReply);
+    : handleJson(
+        res,
+        initial,
+        apiKey,
+        messages.length,
+        toolCtx,
+        degradedReply,
+        orgId,
+      );
 });
 
 async function handleJson(
@@ -614,6 +624,7 @@ async function handleJson(
   turns: number,
   toolCtx: ChatToolContext,
   degradedReply: string,
+  orgId: string | undefined,
 ): Promise<void> {
   // Circuit breaker: during a SUSTAINED OpenAI outage, skip the upstream
   // entirely and degrade instantly rather than making every request wait
@@ -709,6 +720,15 @@ async function handleJson(
       }
 
       const json = (await upstream.json()) as OpenAiChatResponse;
+      // Fold every round's tokens into the tenant's AI COGS rollup — each
+      // round is a separately-billed completion. Mirrors the Anthropic
+      // branch; absent orgId is a silent no-op.
+      recordAiTokenUsage({
+        orgId,
+        inputTokens: json.usage?.prompt_tokens ?? 0,
+        outputTokens: json.usage?.completion_tokens ?? 0,
+        source: "storefront.chat",
+      });
       const message = json.choices?.[0]?.message;
       const toolCalls = message?.tool_calls;
       if (toolCalls && toolCalls.length > 0 && round < MAX_TOOL_ROUNDS) {
@@ -778,6 +798,9 @@ interface StreamRoundResult {
   finishReason: string | null;
   /** True if the upstream HTTP fetch failed before / during streaming. */
   degraded: boolean;
+  /** Prompt/completion tokens from the include_usage final chunk (0 if absent). */
+  inputTokens: number;
+  outputTokens: number;
 }
 
 /**
@@ -806,6 +829,9 @@ async function runStreamingRound(
       temperature: 0.5,
       max_tokens: 500,
       stream: true,
+      // Ask OpenAI to emit a final usage-only chunk (choices: []) so the
+      // streaming path can attribute token COGS, same as handleJson.
+      stream_options: { include_usage: true },
       tools: CHAT_TOOLS,
       tool_choice: "auto",
       messages,
@@ -823,7 +849,14 @@ async function runStreamingRound(
       },
       "chat: openai HTTP error during stream open",
     );
-    return { content: "", toolCalls: [], finishReason: null, degraded: true };
+    return {
+      content: "",
+      toolCalls: [],
+      finishReason: null,
+      degraded: true,
+      inputTokens: 0,
+      outputTokens: 0,
+    };
   }
 
   const reader = upstream.body.getReader();
@@ -831,6 +864,8 @@ async function runStreamingRound(
   let buffer = "";
   let content = "";
   let finishReason: string | null = null;
+  let inputTokens = 0;
+  let outputTokens = 0;
   // Tool calls arrive across multiple deltas keyed by index. We
   // accumulate the id, name, and arguments-string fragments.
   const toolAccumulator = new Map<
@@ -858,6 +893,12 @@ async function runStreamingRound(
           parsed = JSON.parse(payload);
         } catch {
           continue;
+        }
+        // The include_usage final chunk carries usage with an empty
+        // choices array — capture it before the choice guard below.
+        if (parsed.usage) {
+          inputTokens = parsed.usage.prompt_tokens ?? 0;
+          outputTokens = parsed.usage.completion_tokens ?? 0;
         }
         const choice = parsed.choices?.[0];
         if (!choice) continue;
@@ -903,7 +944,14 @@ async function runStreamingRound(
     });
   }
 
-  return { content, toolCalls, finishReason, degraded: false };
+  return {
+    content,
+    toolCalls,
+    finishReason,
+    degraded: false,
+    inputTokens,
+    outputTokens,
+  };
 }
 
 /**
@@ -927,6 +975,7 @@ async function handleStreaming(
   turns: number,
   toolCtx: ChatToolContext,
   degradedReply: string,
+  orgId: string | undefined,
 ): Promise<void> {
   startSseHeaders(res);
 
@@ -977,6 +1026,14 @@ async function handleStreaming(
         ctrl.signal,
         writeChunk,
       );
+      // Fold every round's tokens into the tenant's AI COGS rollup — each
+      // round is a separately-billed completion. Absent orgId is a no-op.
+      recordAiTokenUsage({
+        orgId,
+        inputTokens: result.inputTokens,
+        outputTokens: result.outputTokens,
+        source: "storefront.chat",
+      });
       if (result.degraded) {
         if (totalChars === 0) {
           safeEvent({ type: "chunk", text: degradedReply });
