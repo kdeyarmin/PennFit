@@ -57,6 +57,7 @@ const byNumber = new Map<string, CacheEntry<string | null>>();
 export function invalidateTenantTelecomCache(): void {
   byOrg.clear();
   byNumber.clear();
+  byPatientPhone.clear();
 }
 
 async function rawOrgClient() {
@@ -312,12 +313,86 @@ export async function resolveOrgIdByFaxNumber(
   return value;
 }
 
+// patient phone (normalized E.164) → owning orgId, for routing an inbound
+// reply that landed on a SHARED number. Cached briefly like the others.
+const byPatientPhone = new Map<string, CacheEntry<string | null>>();
+
 /**
- * Reverse lookup for inbound webhooks: the `org_id` that owns the called
- * `To` number (SMS or voice), or `null` when no tenant is bound to it
- * (caller falls back to the seed org). The unique partial indexes
- * guarantee at most one match per number. Fails soft to `null`.
+ * Disambiguate an inbound reply that arrived on a SHARED platform number —
+ * one not bound to any single tenant — by the PATIENT's number: route it to
+ * the tenant that this patient belongs to (and, if more than one does, the
+ * one that most recently messaged them).
+ *
+ * This is the middle step between `resolveOrgIdByCalledNumber` (number owned
+ * by a specific tenant → route straight there) and the seed-org fallback.
+ * Without it, every tenant sharing one number would have its patients' replies
+ * collapse into the single org that owns the number (the seed org). With it, a
+ * shared number works for two-way texting across tenants until each provisions
+ * its own number.
+ *
+ * Resolution: find every patient row across all tenants with this phone. One
+ * owning tenant → route there. More than one (the same phone exists in two
+ * tenants — uncommon) → tie-break by the most recent conversation activity
+ * (`conversations.last_message_at`). Cross-tenant read via `.raw()`; returns
+ * ONLY an org_id, never PHI. Fails soft to null so the caller drops to the
+ * seed-org fallback (today's behavior).
  */
+export async function resolveOrgIdByPatientPhone(
+  fromNumber: string | undefined,
+): Promise<string | null> {
+  const number = fromNumber?.trim();
+  if (!number) return null;
+  const now = Date.now();
+  const cached = byPatientPhone.get(number);
+  if (cached && cached.expiresAt > now) return cached.value;
+
+  let value: string | null = null;
+  try {
+    const raw = await rawOrgClient();
+    if (raw) {
+      const { data, error } = await raw
+        .schema("resupply")
+        .from("patients")
+        .select("id, org_id")
+        .eq("phone_e164", number)
+        .not("org_id", "is", null)
+        .limit(25);
+      if (error) throw error;
+      const rows =
+        (data as { id: string; org_id: string | null }[] | null) ?? [];
+      const orgs = [
+        ...new Set(rows.map((r) => r.org_id).filter((o): o is string => !!o)),
+      ];
+      if (orgs.length === 1) {
+        value = orgs[0] ?? null;
+      } else if (orgs.length > 1) {
+        // Same phone across multiple tenants — route to whichever has the
+        // most recent conversation activity for one of those patient rows.
+        const ids = rows.map((r) => r.id);
+        const { data: conv, error: convErr } = await raw
+          .schema("resupply")
+          .from("conversations")
+          .select("org_id, last_message_at")
+          .in("patient_id", ids)
+          .order("last_message_at", { ascending: false, nullsFirst: false })
+          .limit(1)
+          .maybeSingle();
+        if (convErr) throw convErr;
+        value =
+          (conv as { org_id: string | null } | null)?.org_id ?? orgs[0] ?? null;
+      }
+    }
+  } catch (err) {
+    logger.warn(
+      { event: "tenant_telecom_org_by_patient_phone_failed", err },
+      "tenant-telecom: org-by-patient-phone lookup failed",
+    );
+    value = null;
+  }
+
+  byPatientPhone.set(number, { value, expiresAt: now + CACHE_TTL_MS });
+  return value;
+}
 export async function resolveOrgIdByCalledNumber(
   toNumber: string | undefined,
 ): Promise<string | null> {

@@ -56,6 +56,7 @@ vi.mock("../../lib/messaging/ingest-mms", () => ({
 }));
 
 import inboundRouter, { __setAiFallbackAdapterForTests } from "./inbound";
+import { invalidateTenantTelecomCache } from "../../lib/messaging/tenant-telecom";
 
 const PATIENT_ID = "11111111-1111-4111-8111-111111111111";
 const EPISODE_ID = "22222222-2222-4222-8222-222222222222";
@@ -123,6 +124,9 @@ describe("POST /sms/inbound", () => {
     for (const k of ENV_KEYS) originalEnv[k] = process.env[k];
     for (const k of ENV_KEYS) delete process.env[k];
     supabaseMock.reset();
+    // The tenant-telecom resolvers cache by phone number at module scope;
+    // clear it so a prior test's routing result doesn't leak into the next.
+    invalidateTenantTelecomCache();
     logAuditMock.mockReset().mockResolvedValue(undefined);
     placeOrderMock.mockReset();
     pausePatientMock.mockReset().mockResolvedValue(undefined);
@@ -207,6 +211,61 @@ describe("POST /sms/inbound", () => {
     expect(audit.metadata.outcome).toBe("ambiguous_phone");
     expect(audit.metadata.match_count).toBe(2);
     expect(JSON.stringify(audit.metadata)).not.toContain(FROM_PHONE);
+  });
+
+  it("shared number: re-routes a reply to the tenant that owns the patient (not the seed org)", async () => {
+    // The reply lands on the SHARED platform number (To not owned by any
+    // tenant → resolveOrgIdByCalledNumber miss → seed-org fallback). The
+    // patient isn't in the seed org, so the handler re-resolves by the
+    // patient's phone to ORG_B and processes the message THERE.
+    const ORG_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    setMessagingEnv();
+    // patients/select FIFO: seed miss → resolver (found in ORG_B) → retry in B.
+    stageSupabaseResponse("patients", "select", { data: [] });
+    stageSupabaseResponse("patients", "select", {
+      data: [{ id: PATIENT_ID, org_id: ORG_B }],
+    });
+    stageSupabaseResponse("patients", "select", { data: [{ id: PATIENT_ID }] });
+    // Then the normal known-patient dispatch flow, now scoped to ORG_B.
+    stageSupabaseResponse("messages", "select", { data: null });
+    stageSupabaseResponse("conversations", "select", {
+      data: { id: CONVERSATION_ID },
+    });
+    stageSupabaseResponse("messages", "insert", {
+      data: { id: "44444444-4444-4444-8444-444444444444" },
+    });
+    stageSupabaseResponse("messages", "select", {
+      data: { body: "Reply YES to confirm your refill." },
+    });
+    placeOrderMock.mockResolvedValue({
+      status: "ok",
+      episodeId: EPISODE_ID,
+      patientId: PATIENT_ID,
+      fulfillmentIds: ["f1"],
+    });
+
+    const res = await request(makeApp())
+      .post("/resupply-api/sms/inbound")
+      .type("form")
+      .send({
+        From: FROM_PHONE,
+        To: "+12158675309", // the shared platform number
+        Body: "YES",
+        MessageSid: "SM_shared",
+        NumMedia: "0",
+      });
+
+    expect(res.status).toBe(200);
+    // Three patient lookups prove the re-resolution ran: seed miss, the
+    // cross-org resolver, and the retry in the resolved tenant.
+    expect(supabaseMock.callCount("patients", "select")).toBe(3);
+    // The inbound message was recorded under ORG_B (the org-scoped client
+    // stamps org_id onto the insert), proving it routed to the right tenant.
+    const insert = supabaseMock.writePayloads("messages", "insert")[0] as {
+      org_id?: string;
+    };
+    expect(insert.org_id).toBe(ORG_B);
+    expect(placeOrderMock).toHaveBeenCalled();
   });
 
   it("dispatches confirm intent → places order, closes, audits ok", async () => {
