@@ -76,6 +76,7 @@ import { registerCoachingProgressJob } from "./jobs/coaching-plan-progress.js";
 import { registerCoachingAutoEnrollJob } from "./jobs/coaching-auto-enroll.js";
 import { registerPayerEstimateStatsJob } from "./jobs/payer-estimate-stats-refresh.js";
 import { registerPriorAuthExpirySweepJob } from "./jobs/prior-auth-expiry-sweep.js";
+import { registerAdrSlaSweepJob } from "./jobs/adr-sla-sweep.js";
 import { registerShopOrderDeliveryFollowupJob } from "./jobs/shop-order-delivery-followup.js";
 import { registerPatientPacketReminderJob } from "./jobs/patient-packet-reminders.js";
 import { registerTherapyMilestonesJob } from "./jobs/therapy-milestones.js";
@@ -860,6 +861,19 @@ async function doStartWorker(): Promise<void> {
       "prior-auth.expiry-sweep",
       ["prior_authorizations"],
       registerPriorAuthExpirySweepJob,
+    ),
+  );
+
+  // Daily Medicare ADR SLA cache refresh. Re-derives
+  // claim_adr_requests.sla_status (on_track/at_risk/overdue) for open ADRs so
+  // the audit-response worklist buckets stay correct as deadlines pass. Gated
+  // per-tenant by the billing.adr_queue flag (no-op when off). Runs 04:37 UTC.
+  await safeRegister("billing.adr-sla-sweep", registrationFailures, () =>
+    registerIfProvisioned(
+      boss,
+      "billing.adr-sla-sweep",
+      ["claim_adr_requests"],
+      registerAdrSlaSweepJob,
     ),
   );
 
