@@ -40,6 +40,11 @@ rebuild:
 - **Resupply-due → draft order** — `worker/jobs/resupply-auto-draft.ts` +
   `routes/admin/resupply-order-drafts.ts`, flag-gated (`resupply.auto_order_drafts`,
   migration 0391). This is an **activation** decision, not an open build.
+- **Chargeback disputes admin page** (this branch) — `/admin/billing/disputes`
+  (`pages/admin/admin-billing-disputes.tsx` + `lib/admin/billing-disputes-api.ts`),
+  the missing UI for the `0429` backend. Open/all worklist ordered by evidence
+  deadline, with an approaching/overdue deadline highlighted. Closes §2's
+  first bullet.
 
 ---
 
@@ -67,23 +72,24 @@ live state there — production may already differ from the seeded default.)
 
 ---
 
-## 2. UI loose ends from the backend-first PR #1200 (small, low-risk)
+## 2. UI loose ends from the backend-first PR #1200
 
 PR #1200 landed some capabilities backend-first. The data is captured but
 operators can't see or act on it yet:
 
-- **Stripe disputes have no admin surface.** `routes/admin/billing-disputes.ts`
-  exposes a read endpoint (`GET`, `requirePermission("reports.read")`) but **no
-  SPA page consumes it** (no `stripe_disputes` reference under
-  `artifacts/cpap-fitter/src`). A missed dispute = a missed deadline = lost
-  revenue, which is the whole point of persisting them. Build an
-  `/admin/billing/disputes` page. _Effort: S (1–2d)._
-- **Appeals outcome / mark-delivered have no UI control.** The `0428` columns
-  and the `mark-delivered` / `outcome` transitions exist server-side, but the
-  denials/appeals SPA (`pages/admin/admin-billing-denials*.tsx`) doesn't yet
-  let a CSR record an appeal's delivery or outcome — so win-rate stays
-  unmeasurable in the UI. Wire the controls into the existing denials surface.
-  _Effort: S (1–2d)._
+- ✅ **Stripe disputes admin surface — DONE (this branch).** Built
+  `/admin/billing/disputes` (`admin-billing-disputes.tsx` +
+  `billing-disputes-api.ts`); see "Shipped" above.
+- **Appeals outcome / mark-delivered have no UI — bigger than first scoped.**
+  Re-verified this branch: there is **no appeal-letter UI in the SPA at all**
+  (the only `appeal-letter` reference in `artifacts/cpap-fitter/src` is a code
+  comment). The whole appeal flow — generate letter, list letters, fax,
+  mark-delivered, record outcome — is backend-only (`routes/admin/claim-appeals.ts`).
+  So this is not "wire a control into an existing list"; it's **building the
+  appeal-letter workbench section** (likely on the patient claim/ClinicalTabs
+  surface). _Effort: **M (3–5d)**, not S._ Backend endpoints already exist:
+  `POST .../appeal-letter`, `…/:letterId/fax`, `…/:letterId/mark-delivered`,
+  `…/:letterId/outcome`.
 
 ---
 
@@ -92,10 +98,15 @@ operators can't see or act on it yet:
 - **Prior-auth automation is manual-only.** Da Vinci PAS submit is a manual
   click (`routes/admin/davinci-pas-submit.ts`); **no worker or auto-engine
   invokes `submitPasBundle`** (grep-confirmed none under `worker/`). PA-required
-  items wait on a human. Add an opt-in pass (mirroring the auto-submit posture)
-  that front-loads PAs. Also note the per-payer token still lives in process env
-  (`DAVINCI_PAS_TOKEN_<PAYER_SLUG>`), not `clearinghouse_credentials` — a
-  multi-tenant tail. _Effort: M (3–5d)._
+  items wait on a human. **Prerequisite (verified this branch):** the submit
+  logic is a **large inline route handler** (builds the FHIR bundle from many
+  joined rows, SSRF-guarded outbound, parses + persists the ClaimResponse) — it
+  must be **extracted into a shared `submitPriorAuth({ orgId, paId })` helper**
+  before a worker can reuse it without duplicating the bundle-build. Then add an
+  opt-in flag-gated worker pass (mirroring the auto-submit posture). Also note
+  the per-payer token still lives in process env (`DAVINCI_PAS_TOKEN_<PAYER_SLUG>`),
+  not `clearinghouse_credentials` — a multi-tenant tail. _Effort: M (3–5d),
+  extraction-first._
 - **Inventory reservation / oversell under concurrency.** PR #1200 added a
   stock-**decrement** guard, but there is still **no `inventory_reservations`
   table** (no such migration) — stock remains `shop_products.metadata.stock_count`
@@ -116,8 +127,13 @@ operators can't see or act on it yet:
   `staffing-live.ts`). Silent truncation past the cap; push into SQL RPCs.
   _Effort: S–M._
 - **`count:'exact'` on hot dashboards.** ~100+ across admin files vs a handful
-  of `'estimated'`; switch where the exact total isn't user-visible
-  (`inbox-counts.ts`, `ops-status.ts`, `billing-director.ts`). _Effort: S._
+  of `'estimated'`. **Caveat (verified this branch):** this is **not** a safe
+  blanket change. The `inbox-counts.ts` calls are **user-visible nav badges**
+  over small, selectively-filtered sets — PostgREST `'estimated'` returns the
+  planner's whole-table estimate, so it would show wrong badge numbers. `exact`
+  is correct (and cheap) there. Only switch counts that are **not** user-visible
+  and run over large unbounded sets; treat each callsite individually rather
+  than sweeping the file. _Effort: S, but per-callsite._
 
 ---
 
