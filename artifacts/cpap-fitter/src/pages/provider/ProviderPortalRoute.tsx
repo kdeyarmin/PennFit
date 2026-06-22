@@ -24,6 +24,8 @@ import { ProviderSignIn } from "./provider-sign-in";
 import { ProviderMfaSetup } from "./provider-mfa-setup";
 import { ProviderQueue } from "./provider-queue";
 import { ProviderSignDocument } from "./provider-sign-document";
+import { ProviderPatients } from "./provider-patients";
+import { ProviderPatientDetail } from "./provider-patient-detail";
 import { Button, Card, ProviderAuthLayout, Spinner } from "./provider-ui";
 
 function NoAccess() {
@@ -138,6 +140,25 @@ export function ProviderPortalRoute() {
             )}
           />
         )}
+      </Route>
+      <Route path="/provider/patients/:id">
+        {(params: { id: string }) => (
+          <Gated
+            render={(me) => (
+              <ProviderPatientDetail
+                id={params.id}
+                providerName={me.provider?.legalName}
+              />
+            )}
+          />
+        )}
+      </Route>
+      <Route path="/provider/patients">
+        <Gated
+          render={(me) => (
+            <ProviderPatients providerName={me.provider?.legalName} />
+          )}
+        />
       </Route>
       <Route path="/provider">
         <Gated
