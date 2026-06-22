@@ -953,6 +953,9 @@ importers:
       '@workspace/resupply-db':
         specifier: workspace:*
         version: link:../lib/resupply-db
+      '@workspace/resupply-domain':
+        specifier: workspace:*
+        version: link:../lib/resupply-domain
       '@workspace/resupply-email':
         specifier: workspace:*
         version: link:../lib/resupply-email

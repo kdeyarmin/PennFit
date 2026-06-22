@@ -4,6 +4,13 @@
 export { RENEWAL_WINDOW_DAYS } from "./dispatcher-constants";
 
 export {
+  PLAN_FEATURE_FLAG_PRESETS,
+  DELIBERATELY_OFF_FLAGS,
+  resolvePlanFlagPreset,
+  type BillingPlanCode,
+} from "./feature-flag-presets";
+
+export {
   COMPLIANT_MINUTES_PER_NIGHT,
   COMPLIANCE_NIGHT_RATIO,
   WINDOW_DAYS,

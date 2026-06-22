@@ -31,6 +31,14 @@
 //   from the billing console). Idempotent: an existing current plan is never
 //   silently switched.
 //
+//   The --plan also drives the tenant's STARTING feature flags: each plan
+//   carries a preset "bundle" (lib/resupply-domain/feature-flag-presets.ts,
+//   mirroring the marketed tiers) and only that bundle's flags default ON —
+//   so the operator reviews nothing at signup and a Launch tenant doesn't get
+//   Scale-tier automation. Without --plan, all flags are copied from the seed
+//   tenant verbatim (legacy behavior). Every flag stays individually
+//   toggleable afterward in the admin Control Center.
+//
 // Fax number (migration 0368 — per-tenant fax identity):
 //   * --provision-fax        auto-orders a fax-capable DID from Telnyx
 //                            (needs TELNYX_API_KEY + TELNYX_FAX_CONNECTION_ID)
@@ -69,6 +77,7 @@ import {
   getSupabaseServiceRoleClient,
   SEED_ORG_SLUG,
 } from "@workspace/resupply-db";
+import { resolvePlanFlagPreset } from "@workspace/resupply-domain";
 import {
   createSendgridClient,
   EmailConfigError,
@@ -317,15 +326,27 @@ type OnboardClient = ReturnType<typeof getSupabaseServiceRoleClient>;
  * Provision the tenant's feature-flag rows. Since Phase 1 (migration
  * 0350) feature_flags is keyed (org_id, key), so a new org needs its own
  * row per flag before its admins can toggle anything in Control Center.
- * Copies the seed tenant's current catalog (keys + enabled + metadata)
- * as the starting point. Idempotent: existing (org_id, key) rows are left
- * untouched. No-op when onboarding the seed tenant itself (it already
- * carries the canonical rows from the seed migrations).
+ * Copies the seed tenant's catalog (keys + metadata) as the starting point.
+ *
+ * Enabled state:
+ *   * With a recognized `planCode`, apply that plan's preset bundle
+ *     (`resolvePlanFlagPreset`, mirroring the marketed tiers): only the
+ *     plan's flags default ON, the rest OFF. This is the "streamlined
+ *     signup" path — the operator reviews nothing, and a Launch tenant
+ *     isn't handed Scale-tier automation. Every flag stays toggleable in
+ *     Control Center afterward.
+ *   * Without a plan (or an unrecognized one), fall back to the legacy
+ *     behavior: copy the seed tenant's `enabled` state verbatim.
+ *
+ * Idempotent: existing (org_id, key) rows are left untouched. No-op when
+ * onboarding the seed tenant itself (it already carries the canonical rows
+ * from the seed migrations).
  */
 async function provisionFeatureFlags(
   supabase: OnboardClient,
   orgId: string,
-): Promise<{ provisioned: number; skipped: boolean }> {
+  planCode: string | null,
+): Promise<{ provisioned: number; enabled: number; preset: string | null }> {
   const { data: seedOrg, error: seedErr } = await supabase
     .schema("resupply")
     .from("organizations")
@@ -334,7 +355,7 @@ async function provisionFeatureFlags(
     .maybeSingle();
   if (seedErr) throw seedErr;
   if (!seedOrg || seedOrg.id === orgId) {
-    return { provisioned: 0, skipped: true };
+    return { provisioned: 0, enabled: 0, preset: null };
   }
 
   const { data: seedFlags, error: flagsErr } = await supabase
@@ -344,13 +365,17 @@ async function provisionFeatureFlags(
     .eq("org_id", seedOrg.id);
   if (flagsErr) throw flagsErr;
   if (!seedFlags || seedFlags.length === 0) {
-    return { provisioned: 0, skipped: false };
+    return { provisioned: 0, enabled: 0, preset: null };
   }
+
+  // A recognized plan code selects a preset bundle; otherwise null → keep
+  // the seed tenant's enabled state (legacy copy-all behavior).
+  const preset = resolvePlanFlagPreset(planCode);
 
   const rows = seedFlags.map((f) => ({
     org_id: orgId,
     key: f.key,
-    enabled: f.enabled,
+    enabled: preset ? preset.has(f.key) : f.enabled,
     description: f.description,
     category: f.category,
   }));
@@ -359,7 +384,11 @@ async function provisionFeatureFlags(
     .from("feature_flags")
     .upsert(rows, { onConflict: "org_id,key", ignoreDuplicates: true });
   if (insErr) throw insErr;
-  return { provisioned: rows.length, skipped: false };
+  return {
+    provisioned: rows.length,
+    enabled: rows.filter((r) => r.enabled).length,
+    preset: preset ? planCode : null,
+  };
 }
 
 /**
@@ -481,8 +510,10 @@ async function main(): Promise<void> {
     orgAction = "created";
   }
 
-  // ── 1b. Provision the tenant's feature flags (Phase 1, org-scoped). ─
-  const flagsResult = await provisionFeatureFlags(supabase, orgId);
+  // ── 1b. Provision the tenant's feature flags (Phase 1, org-scoped).
+  //        With a --plan, apply that plan's preset bundle (only its flags
+  //        default ON); otherwise copy the seed tenant's state verbatim. ─
+  const flagsResult = await provisionFeatureFlags(supabase, orgId, a.plan);
 
   // ── 1c. Optionally assign a billing plan (e.g. mask_fitter). ────────
   const planResult = await provisionBillingPlan(supabase, orgId, a.plan);
@@ -643,9 +674,11 @@ async function main(): Promise<void> {
       `  organization      = ${a.orgName} (${orgAction}) org_id=${orgId} status=${a.status}\n` +
       `  storefront_name   = ${a.storefrontName ?? "(falls back to name)"}\n` +
       `  feature flags     = ${
-        flagsResult.skipped
+        flagsResult.provisioned === 0
           ? "skipped (seed tenant / no seed org)"
-          : `${flagsResult.provisioned} provisioned from seed catalog`
+          : flagsResult.preset
+            ? `${flagsResult.enabled}/${flagsResult.provisioned} ON via '${flagsResult.preset}' preset bundle`
+            : `${flagsResult.provisioned} provisioned from seed catalog (no --plan; verbatim copy)`
       }\n` +
       `  billing plan      = ${planResult}\n` +
       `  admin auth user   = ${emailLower} (${userAction}) role=admin\n` +
