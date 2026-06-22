@@ -159,6 +159,14 @@ export function AdminBillingAdrPage() {
                         </span>
                       </div>
                       <div className="flex items-center gap-3 text-xs">
+                        {item.auditReady === false ? (
+                          <Badge variant="warning">
+                            {item.missingRequired} doc
+                            {item.missingRequired === 1 ? "" : "s"} short
+                          </Badge>
+                        ) : item.auditReady === true ? (
+                          <Badge variant="success">audit ready</Badge>
+                        ) : null}
                         {item.adr_reference ? (
                           <span style={{ color: "hsl(var(--ink-3))" }}>
                             Ref {item.adr_reference}

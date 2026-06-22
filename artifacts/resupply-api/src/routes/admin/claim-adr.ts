@@ -16,6 +16,9 @@ import { z } from "zod";
 import { logAudit } from "@workspace/resupply-audit";
 import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 import {
+  AUDIT_PACKET_CATALOG,
+  type AuditScope,
+  assessAuditReadiness,
   classifyAdrSla,
   defaultSelection,
   getAuditPacketItem,
@@ -110,15 +113,50 @@ router.get(
       }
     }
 
+    // Audit readiness per patient — which audit-critical documents are on
+    // file. Fetched in one bulk query, then assessed per ADR's scope.
+    const patientIds = Array.from(new Set(list.map((r) => r.patient_id)));
+    const docTypesByPatient = new Map<string, Set<string>>();
+    if (patientIds.length > 0) {
+      const { data: pdocs } = await supabase
+        .from("patient_documents")
+        .select("patient_id, document_type")
+        .in("patient_id", patientIds);
+      for (const d of (pdocs ?? []) as Array<{
+        patient_id: string;
+        document_type: string;
+      }>) {
+        const set = docTypesByPatient.get(d.patient_id) ?? new Set<string>();
+        set.add(d.document_type);
+        docTypesByPatient.set(d.patient_id, set);
+      }
+    }
+    const coveredFor = (patientId: string): string[] => {
+      const types = docTypesByPatient.get(patientId) ?? new Set<string>();
+      const covered: string[] = [];
+      for (const item of AUDIT_PACKET_CATALOG) {
+        if (item.source === "generated") covered.push(item.key);
+        else if (item.documentTypes.some((t) => types.has(t)))
+          covered.push(item.key);
+      }
+      return covered;
+    };
+
     const items = list.map((r) => {
       const cls = classifyAdrSla(r.response_due, todayIso(), {
         decided: false,
       });
+      const readiness = assessAuditReadiness(
+        r.scope as AuditScope,
+        coveredFor(r.patient_id),
+      );
       return {
         ...r,
         slaStatus: cls.status,
         daysOut: cls.daysOut,
         outstandingDocs: outstanding.get(r.id) ?? 0,
+        auditReady: readiness.ready,
+        missingRequired: readiness.missing.length,
       };
     });
     res.json({

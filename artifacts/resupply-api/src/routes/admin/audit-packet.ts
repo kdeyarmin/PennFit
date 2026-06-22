@@ -22,12 +22,15 @@ import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 import {
   AUDIT_PACKET_CATALOG,
   type AuditScope,
+  WINDOW_DAYS,
   assessAuditReadiness,
   defaultSelection,
+  findBestAdherenceWindow,
   getAuditPacketItem,
 } from "@workspace/resupply-domain";
 
 import {
+  type AuditAdherence,
   buildAuditPacket,
   type FetchedDocument,
 } from "../../lib/audit-packet/build-audit-packet";
@@ -196,31 +199,114 @@ router.post(
       return;
     }
 
-    // Optional claim + ADR context (validated to belong to this patient).
-    const [claimRes, adrRes] = await Promise.all([
-      parsed.data.claimId
-        ? supabase
-            .from("insurance_claims")
-            .select("id, patient_id, claim_number, payer_name, date_of_service")
-            .eq("id", parsed.data.claimId)
-            .eq("patient_id", patientId)
-            .limit(1)
-            .maybeSingle()
-        : Promise.resolve({ data: null }),
-      parsed.data.adrId
-        ? supabase
-            .from("claim_adr_requests")
-            .select(
-              "id, patient_id, source, contractor_name, payer_name, adr_reference, received_at, response_due",
-            )
-            .eq("id", parsed.data.adrId)
-            .eq("patient_id", patientId)
-            .limit(1)
-            .maybeSingle()
-        : Promise.resolve({ data: null }),
-    ]);
+    // Optional claim + ADR context (validated to belong to this patient), plus
+    // the structured data the generated summaries render from.
+    const [claimRes, adrRes, nightsRes, equipRes, coverageRes] =
+      await Promise.all([
+        parsed.data.claimId
+          ? supabase
+              .from("insurance_claims")
+              .select(
+                "id, patient_id, claim_number, payer_name, date_of_service, total_billed_cents, total_allowed_cents, total_paid_cents, patient_responsibility_cents",
+              )
+              .eq("id", parsed.data.claimId)
+              .eq("patient_id", patientId)
+              .limit(1)
+              .maybeSingle()
+          : Promise.resolve({ data: null }),
+        parsed.data.adrId
+          ? supabase
+              .from("claim_adr_requests")
+              .select(
+                "id, patient_id, source, contractor_name, payer_name, adr_reference, received_at, response_due",
+              )
+              .eq("id", parsed.data.adrId)
+              .eq("patient_id", patientId)
+              .limit(1)
+              .maybeSingle()
+          : Promise.resolve({ data: null }),
+        supabase
+          .from("patient_therapy_nights")
+          .select("night_date, usage_minutes")
+          .eq("patient_id", patientId)
+          .order("night_date", { ascending: true })
+          .limit(400),
+        supabase
+          .from("equipment_assets")
+          .select(
+            "device_class, manufacturer, model, serial_number, dispensed_at",
+          )
+          .eq("patient_id", patientId)
+          .eq("status", "active")
+          .limit(50),
+        supabase
+          .from("insurance_coverages")
+          .select("member_id, payer_name")
+          .eq("patient_id", patientId)
+          .eq("rank", "primary")
+          .limit(1)
+          .maybeSingle(),
+      ]);
     const claim = claimRes.data;
     const adr = adrRes.data;
+    const coverage = coverageRes.data;
+
+    // Claim line items (HCPCS / modifiers) when a claim is in context.
+    let lineItems: Array<{ hcpcs_code: string; modifier: string | null }> = [];
+    if (claim) {
+      const { data: liRaw } = await supabase
+        .from("insurance_claim_line_items")
+        .select("hcpcs_code, modifier")
+        .eq("claim_id", claim.id);
+      lineItems = (liRaw ?? []) as Array<{
+        hcpcs_code: string;
+        modifier: string | null;
+      }>;
+    }
+
+    // Adherence window from device nights (Medicare 4h/70%/30-day rule).
+    const nights = (
+      (nightsRes.data ?? []) as Array<{
+        night_date: string;
+        usage_minutes: number | null;
+      }>
+    ).map((n) => ({ date: n.night_date, usageMinutes: n.usage_minutes }));
+    let adherence: AuditAdherence | null = null;
+    let lastUsageDate: string | null = null;
+    if (nights.length > 0) {
+      const anchor = nights[0]!.date;
+      const today = new Date().toISOString().slice(0, 10);
+      const result = findBestAdherenceWindow(nights, anchor, today);
+      const w = result.window;
+      if (w) {
+        adherence = {
+          windowStart: w.startDate,
+          windowEnd: w.endDate,
+          nightsUsed: w.compliantNights,
+          nightsTotal: WINDOW_DAYS,
+          avgHoursPerNight: w.averageUsageHoursOnUsedNights,
+          meetsCms: result.qualifies,
+        };
+      }
+      const used = nights.filter((n) => (n.usageMinutes ?? 0) > 0);
+      lastUsageDate = used.length > 0 ? used[used.length - 1]!.date : null;
+    }
+
+    const equipment = (
+      (equipRes.data ?? []) as Array<{
+        device_class: string;
+        manufacturer: string | null;
+        model: string | null;
+        serial_number: string | null;
+        dispensed_at: string | null;
+      }>
+    ).map((e) => ({
+      hcpcs: "",
+      description: [e.device_class, e.model].filter(Boolean).join(" "),
+      serialNumber: e.serial_number,
+      manufacturer: e.manufacturer,
+      dispensedOn: e.dispensed_at,
+    }));
 
     // Resolve company identity for the cover-sheet letterhead.
     const identity = await resolveBillingIdentity({ orgId });
@@ -287,15 +373,38 @@ router.post(
       patient: {
         name: `${patient.legal_first_name} ${patient.legal_last_name}`,
         dateOfBirth: patient.date_of_birth,
-        memberId: null,
+        memberId: coverage?.member_id ?? null,
       },
       claim: claim
         ? {
             claimNumber: claim.claim_number,
             payerName: claim.payer_name,
             datesOfService: claim.date_of_service,
+            hcpcs: Array.from(
+              new Set(lineItems.map((l) => l.hcpcs_code).filter(Boolean)),
+            ),
+            modifiers: Array.from(
+              new Set(
+                lineItems
+                  .flatMap((l) => (l.modifier ?? "").split(/[,\s]+/))
+                  .filter(Boolean),
+              ),
+            ),
+            billedCents: claim.total_billed_cents,
+            allowedCents: claim.total_allowed_cents,
+            paidCents: claim.total_paid_cents,
           }
         : null,
+      adherence,
+      equipment,
+      continuedUse:
+        lastUsageDate || adherence
+          ? {
+              lastUsageDate,
+              method: "device data",
+              note: "Continued use established from connected device therapy data.",
+            }
+          : null,
       generatedOn: new Date(),
     });
 

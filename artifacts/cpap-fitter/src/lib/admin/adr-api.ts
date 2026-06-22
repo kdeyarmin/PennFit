@@ -40,6 +40,8 @@ export interface AdrWorklistItem {
   slaStatus: AdrSlaStatus;
   daysOut: number | null;
   outstandingDocs: number;
+  auditReady?: boolean;
+  missingRequired?: number;
 }
 
 export interface AdrWorklist {
