@@ -322,6 +322,57 @@ export function useTenantFeatureFlagActivity(
   });
 }
 
+// ── Per-tenant activity series (sparklines) ────────────────────────
+
+export interface TenantActivitySeries {
+  tenantId: string;
+  days: number;
+  dayKeys: string[];
+  window: {
+    newTenants: number;
+    newPatients: number;
+    newOrders: number;
+    newConversations: number;
+    gmvCents: number;
+    delta: {
+      newPatients: number | null;
+      newOrders: number | null;
+      newConversations: number | null;
+      gmvCents: number | null;
+    };
+  };
+  series: {
+    newTenants: number[];
+    newPatients: number[];
+    newOrders: number[];
+    newConversations: number[];
+    gmvCents: number[];
+  };
+  generatedAt: string;
+}
+
+export const getTenantActivitySeriesQueryKey = (id: string, days?: number) =>
+  [`${TENANTS_URL}/${id}/activity-series`, { days }] as const;
+
+export function useTenantActivitySeries(
+  id: string,
+  days?: number,
+  options?: {
+    query?: Partial<UseQueryOptions<TenantActivitySeries, PlatformError>>;
+  },
+) {
+  const qs = days ? `?days=${encodeURIComponent(String(days))}` : "";
+  return useQuery<TenantActivitySeries, PlatformError>({
+    queryKey: getTenantActivitySeriesQueryKey(id, days),
+    queryFn: ({ signal }) =>
+      customFetch<TenantActivitySeries>(
+        `${TENANTS_URL}/${encodeURIComponent(id)}/activity-series${qs}`,
+        { method: "GET", signal },
+      ),
+    ...options?.query,
+  });
+}
+
 // ── Impersonation ──────────────────────────────────────────────────
 
 export interface ImpersonateResponse {

@@ -50,6 +50,7 @@ import {
   useReactivateTenant,
   useImpersonateTenant,
   useTenantUsage,
+  useTenantActivitySeries,
   useTenantFeatureFlags,
   useTenantFeatureFlagActivity,
   useToggleTenantFeatureFlag,
@@ -1990,6 +1991,63 @@ function RecentFlagActivityCard({ tenantId }: { tenantId: string }) {
   );
 }
 
+// Per-tenant daily trend sparklines (last 30 days) — the same metrics the
+// fleet dashboard charts, scoped to one tenant. Reuses TrendRow/Sparkline.
+function TenantActivityCard({ tenantId }: { tenantId: string }) {
+  const { data, isPending, isError, refetch } = useTenantActivitySeries(
+    tenantId,
+    30,
+  );
+  return (
+    <Card
+      title="Activity · 30d"
+      subtitle="Daily new patients, paid orders, and conversations. Δ compares the last 30 days to the prior 30."
+    >
+      {isPending ? (
+        <Spinner label="Loading activity…" />
+      ) : isError ? (
+        <EmptyState
+          title="Couldn't load activity."
+          hint="A transient error — try again."
+          action={
+            <Button intent="secondary" size="sm" onClick={() => void refetch()}>
+              Retry
+            </Button>
+          }
+        />
+      ) : data ? (
+        <>
+          <TrendRow
+            label="Revenue (GMV)"
+            total={fmtUsd(data.window.gmvCents)}
+            values={data.series.gmvCents.map((c) => c / 100)}
+            delta={data.window.delta.gmvCents}
+            color="hsl(var(--penn-gold-deep))"
+          />
+          <TrendRow
+            label="New patients"
+            total={data.window.newPatients.toLocaleString()}
+            values={data.series.newPatients}
+            delta={data.window.delta.newPatients}
+          />
+          <TrendRow
+            label="Paid orders"
+            total={data.window.newOrders.toLocaleString()}
+            values={data.series.newOrders}
+            delta={data.window.delta.newOrders}
+          />
+          <TrendRow
+            label="Conversations"
+            total={data.window.newConversations.toLocaleString()}
+            values={data.series.newConversations}
+            delta={data.window.delta.newConversations}
+          />
+        </>
+      ) : null}
+    </Card>
+  );
+}
+
 function TenantDetailPage() {
   const [, params] = useRoute("/platform/tenants/:id");
   const id = params?.id ?? "";
@@ -2245,6 +2303,8 @@ function TenantDetailPage() {
               hint="all-time"
             />
           </div>
+
+          <TenantActivityCard tenantId={tenant.id} />
 
           <TenantFeatureFlagsCard tenantId={tenant.id} />
 

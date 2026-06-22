@@ -82,4 +82,10 @@ describe("platform console tenant detail + sidebar", () => {
     // Support nav item carries a "needs reply" count badge.
     expect(SRC).toContain("supportNeedsReply");
   });
+
+  it("charts per-tenant activity trends on the detail page", () => {
+    expect(SRC).toContain("function TenantActivityCard");
+    expect(SRC).toContain("useTenantActivitySeries");
+    expect(SRC).toContain("<TenantActivityCard tenantId={tenant.id} />");
+  });
 });
