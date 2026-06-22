@@ -13,6 +13,8 @@ import { describe, expect, it } from "vitest";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const APPSHELL_SRC = readFileSync(path.join(__dirname, "AppShell.tsx"), "utf8");
+// findGroupForActiveHref was extracted to nav-traversal.ts (imported by AppShell).
+const NAV_SRC = readFileSync(path.join(__dirname, "nav-traversal.ts"), "utf8");
 
 // ---------------------------------------------------------------------------
 // Retired: Appointment requests (Schedule group).
@@ -168,7 +170,7 @@ describe("AppShell — collapsible nav machinery present", () => {
   });
 
   it("defines findGroupForActiveHref helper", () => {
-    expect(APPSHELL_SRC).toContain("function findGroupForActiveHref");
+    expect(NAV_SRC).toContain("function findGroupForActiveHref");
   });
 
   it("defines loadInitialExpandedGroups helper", () => {
@@ -287,10 +289,9 @@ describe("AppShell NAV_GROUPS — admin.tools.manage gated entries", () => {
     // an entry the caller lacks permission for and — for multi-page sections
     // — keeps it only while at least one tab the caller can see remains.
     expect(APPSHELL_SRC).toContain("sectionVisible(link, permissions)");
-    expect(APPSHELL_SRC).toContain(
-      "permissions.has(section.requiredPermission)",
-    );
-    expect(APPSHELL_SRC).toContain("permissions.has(tab.requiredPermission)");
+    // The gating logic itself lives in nav-traversal.ts now.
+    expect(NAV_SRC).toContain("permissions.has(section.requiredPermission)");
+    expect(NAV_SRC).toContain("permissions.has(tab.requiredPermission)");
   });
 
   it("drops groups left with no visible items after filtering", () => {
