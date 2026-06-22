@@ -1510,6 +1510,45 @@ COMPARE_MATRIX = [
 ]
 
 
+# ── The business case: revenue up, labor down ────────────────────────
+BUSINESS_CASE_INTRO = (
+    "CareMetric Breathe earns its keep two ways at once: it collects more "
+    "of the revenue you've already earned, and it does it with less staff "
+    "time. The same automation that confirms reorders and scrubs claims "
+    "also removes the manual work behind them — so the practice grows "
+    "without growing headcount."
+)
+REVENUE_LEVERS = [
+    ("More reorders confirmed", "Automated reminders with one-tap confirm — and the AI voice agent for calls — lift the share of eligible patients who actually reorder on time, instead of supplies (and revenue) slipping."),
+    ("More clean claims paid", "AI scrubbing plus the pre-bill eligibility gate raise your first-pass acceptance rate, so more of what you bill is actually paid and less is written off."),
+    ("Denials recovered, not lost", "The AI denial analyzer fixes and resubmits denials ranked by recoverable dollars — recapturing money that would otherwise be abandoned."),
+    ("Faster cash, lower DSO", "Auto-submit and ERA auto-posting compress the claim-to-cash cycle, so the same revenue arrives sooner and working capital improves."),
+    ("Coverage you didn't know about", "Insurance Discovery finds active coverage from a patient's demographics — turning would-be self-pay or uncollected balances into billable claims."),
+    ("Every billable cycle captured", "Capped-rental month tracking and automatic secondary / COB drafting make sure no rental month or leftover balance is missed."),
+    ("More new patients", "The in-browser AI mask fitter and storefront convert visitors without an appointment, widening the top of the funnel."),
+]
+BILLER_TRANSFORM_INTRO = (
+    "Nowhere is the impact bigger than the biller's seat. The platform "
+    "moves the work upstream — verify, scrub, prevent — and automates the "
+    "cleanup, so a single biller can carry far more claims, cleanly."
+)
+BILLER_TRANSFORM = [
+    ("Insurance verified before you bill", "Coverage is confirmed by real-time 270/271 on a schedule and again in the seconds before a claim transmits. Inactive or prior-auth-required coverage is held back automatically — so claims don't bounce for eligibility and you stop billing into dead coverage."),
+    ("Only clean claims go out", "Every claim is scrubbed — structurally and by AI — before submission: wrong modifier for the rental month, quantity over the LCD limit, HCPCS/diagnosis mismatch, fee-schedule drift. Problems are flagged or fixed first, so your first-pass acceptance rate climbs and rejections fall."),
+    ("Denials research and fix themselves", "When a denial lands, the AI reads the CARC/RARC codes, researches the root cause, populates the corrective patch, and — when it's safe and high-confidence — resubmits in one click. The worklist is ranked by recoverable dollars, so the biggest recoveries happen first instead of claims aging into write-offs."),
+    ("Paid faster, and audit-ready", "Clean claims plus automatic payment posting mean cash arrives sooner (a lower DSO). And because required paperwork is enforced by bill hold, signed on file via e-signature, and every claim and signature carries a tamper-evident audit trail, you go into any payer audit far less exposed."),
+]
+BUSINESS_CASE_CLOSE = (
+    "The labor estimates below total roughly 200 staff-hours and about "
+    "$5,000 a month for a typical single-location practice. The revenue "
+    "side compounds on top: even a few points of improvement on first-pass "
+    "rate, denial recovery, and reorder confirmation — on the same patient "
+    "base — adds materially more collected revenue every month. Together "
+    "that is the return: more dollars in, fewer hours spent, on one "
+    "platform."
+)
+
+
 # ── Owner's playbook: managing the software ──────────────────────────
 OWNER_PLAYBOOK_INTRO = (
     "Running the practice from CareMetric Breathe is mostly a matter of "
@@ -1837,8 +1876,27 @@ def make_story(toc_entries):
     story.append(h2("The platform underneath every role"))
     story.append(Paragraph(PLATFORM_FOUNDATIONS_INTRO, S_BODY))
     story.append(feature_table(PLATFORM_FOUNDATIONS))
+    story.append(PageBreak())
 
-    story.append(h2("Hours back, every day — the owner's ROI"))
+    # ---- The business case: revenue up, labor down ----
+    story += h1("The Business Case — More Revenue, Less Labor")
+    story.append(Paragraph(BUSINESS_CASE_INTRO, S_LEAD))
+
+    story.append(h2("Where the new revenue comes from"))
+    story.append(feature_table(REVENUE_LEVERS))
+
+    story.append(h2("The biller's job, transformed"))
+    story.append(Paragraph(BILLER_TRANSFORM_INTRO, S_BODY))
+    for name, para in BILLER_TRANSFORM:
+        story.append(Paragraph(
+            "<b><font color=\"%s\">%s.</font></b> %s"
+            % (hexc(NAVY_DEEP), name, para), S_BODY))
+    story += shot("biller-eligibility",
+                  "Coverage is verified before billing and re-checked the "
+                  "moment before a claim goes out — claims stop bouncing for "
+                  "eligibility.")
+
+    story.append(h2("Hours back, every day — and what they cost"))
     story.append(Paragraph(SAVINGS_INTRO, S_BODY))
     story.append(Paragraph("<b>Where the time goes — by feature</b>", S_GROUP))
     story.append(three_col_table(
@@ -1855,6 +1913,9 @@ def make_story(toc_entries):
     story.append(savings_stat_row(SAVINGS_TOTALS))
     story.append(Spacer(1, 6))
     story.append(Paragraph(SAVINGS_CLOSE, S_BODY))
+
+    story.append(h2("What it adds up to"))
+    story.append(Paragraph(BUSINESS_CASE_CLOSE, S_BODY))
     story.append(Spacer(1, 4))
     story.append(Paragraph(
         '<font size="8">%s</font>' % SAVINGS_FOOTNOTE,

@@ -9,24 +9,28 @@ and is regenerable.
 1. **Cover + page-numbered Table of Contents.**
 2. **Introduction** — platform vs. tenant, signing in, the four roles, and
    the in-app assistants.
-3. **What Sets CareMetric Breathe Apart** — the differentiators, the shared
-   platform foundations, and the owner ROI (time saved by feature and role).
-4. **Running the Business — the Owner's Playbook** — what to watch and when,
+3. **What Sets CareMetric Breathe Apart** — the differentiators and the
+   shared platform foundations.
+4. **The Business Case — More Revenue, Less Labor** — revenue levers, the
+   biller's job transformed (clean claims, pre-bill eligibility, AI denial
+   fix/resubmit → paid faster, less audit-prone), and the labor/cost-savings
+   estimate.
+5. **Running the Business — the Owner's Playbook** — what to watch and when,
    how to monitor every area from one screen, the report catalog, and the
    KPI benchmarks the platform tracks to keep you ahead.
-5. **Setup Guide** — what must be configured before going live, and an
+6. **Setup Guide** — what must be configured before going live, and an
    explanation of **every Control Center toggle** (default state + what it
    does when on/off).
-6. **Part 1 — Feature Summary by Role** — a one-line description of every
+7. **Part 1 — Feature Summary by Role** — a one-line description of every
    feature, grouped by role (Administrator, Biller, CSR, Respiratory
    Therapist).
-7. **Part 2 — Comprehensive Feature Reference by Role** — the full detail on
+8. **Part 2 — Comprehensive Feature Reference by Role** — the full detail on
    each feature, including deep-dives on the billing engine (Biller), the
    resupply engine + e-signature + provider portal (CSR), and the
    manufacturer integrations + alerts/compliance (RT).
-8. **Part 3 — Job Aides by Role** — curated step-by-step walkthroughs for the
+9. **Part 3 — Job Aides by Role** — curated step-by-step walkthroughs for the
    highest-value tasks.
-9. **Appendix** — role/permission matrix, competitive comparison, glossary.
+10. **Appendix** — role/permission matrix, competitive comparison, glossary.
 
 > This is distinct from `manual.html` / `render.mjs` in this same folder,
 > which build the shorter **PennPaps Customer Service Manual** PDF that staff
