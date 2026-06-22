@@ -132,19 +132,51 @@ router.post(
       res.status(503).json({ error: "tenant_directory_unavailable" });
       return;
     }
-    const { error } = await raw
+    const adminsTable = raw.schema("resupply").from("platform_admins");
+
+    // Honest idempotency: if the user is already an operator, return the
+    // PERSISTED row (original grant timestamp + granter) and don't write a
+    // fresh "granted" audit for an elevation that didn't happen.
+    const existing = await adminsTable
+      .select("granted_by_email, created_at")
+      .eq("auth_user_id", user.id)
+      .maybeSingle();
+    if (existing.error) {
+      logger.error(
+        { event: "platform_operator_grant_failed", err: existing.error },
+        "platform: operator existence check failed",
+      );
+      res.status(500).json({ error: "operator_grant_failed" });
+      return;
+    }
+    if (existing.data) {
+      res.status(200).json({
+        operator: {
+          authUserId: user.id,
+          email: user.emailLower,
+          displayName: user.displayName,
+          status: user.status,
+          grantedByEmail:
+            (existing.data as { granted_by_email: string | null })
+              .granted_by_email ?? null,
+          createdAt: (existing.data as { created_at: string }).created_at,
+        },
+      });
+      return;
+    }
+
+    const inserted = await raw
       .schema("resupply")
       .from("platform_admins")
-      .upsert(
-        {
-          auth_user_id: user.id,
-          granted_by_email: req.platformAdminEmail ?? "platform-admin",
-        },
-        { onConflict: "auth_user_id", ignoreDuplicates: true },
-      );
-    if (error) {
+      .insert({
+        auth_user_id: user.id,
+        granted_by_email: req.platformAdminEmail ?? "platform-admin",
+      })
+      .select("granted_by_email, created_at")
+      .single();
+    if (inserted.error || !inserted.data) {
       logger.error(
-        { event: "platform_operator_grant_failed", err: error },
+        { event: "platform_operator_grant_failed", err: inserted.error },
         "platform: operator grant failed",
       );
       res.status(500).json({ error: "operator_grant_failed" });
@@ -170,8 +202,10 @@ router.post(
         email: user.emailLower,
         displayName: user.displayName,
         status: user.status,
-        grantedByEmail: req.platformAdminEmail ?? null,
-        createdAt: new Date().toISOString(),
+        grantedByEmail:
+          (inserted.data as { granted_by_email: string | null })
+            .granted_by_email ?? null,
+        createdAt: (inserted.data as { created_at: string }).created_at,
       },
     });
   },

@@ -119,7 +119,7 @@ describe("POST /platform/admins (grant)", () => {
     expect(res.body.error).toBe("no_such_user");
   });
 
-  it("grants platform access to an existing user (201)", async () => {
+  it("grants platform access to an existing user (201) and returns the persisted row", async () => {
     mockPlatformAdmin.current = { userId: "u_self", email: "me@cm" };
     authRepo.findUserByEmail.mockResolvedValue({
       id: "u_new",
@@ -127,7 +127,14 @@ describe("POST /platform/admins (grant)", () => {
       displayName: "New Op",
       status: "active",
     });
-    stageSupabaseResponse("platform_admins", "upsert", { error: null });
+    // No existing operator row → falls through to insert.
+    stageSupabaseResponse("platform_admins", "select", { data: null });
+    stageSupabaseResponse("platform_admins", "insert", {
+      data: {
+        granted_by_email: "me@cm",
+        created_at: "2026-06-22T00:00:00Z",
+      },
+    });
     const res = await request(makeApp())
       .post("/platform/admins")
       .send({ email: "new@example.com" });
@@ -135,9 +142,42 @@ describe("POST /platform/admins (grant)", () => {
     expect(res.body.operator).toMatchObject({
       authUserId: "u_new",
       email: "new@example.com",
+      grantedByEmail: "me@cm",
+      createdAt: "2026-06-22T00:00:00Z",
     });
-    const upserts = supabaseMock.writePayloads("platform_admins", "upsert");
-    expect((upserts[0] as { auth_user_id: string }).auth_user_id).toBe("u_new");
+    const inserts = supabaseMock.writePayloads("platform_admins", "insert");
+    expect((inserts[0] as { auth_user_id: string }).auth_user_id).toBe("u_new");
+  });
+
+  it("is idempotent for an existing operator (200, persisted grant unchanged, no insert)", async () => {
+    mockPlatformAdmin.current = { userId: "u_self", email: "me@cm" };
+    authRepo.findUserByEmail.mockResolvedValue({
+      id: "u_existing",
+      emailLower: "existing@example.com",
+      displayName: "Existing Op",
+      status: "active",
+    });
+    // Already an operator — return the original grant metadata verbatim.
+    stageSupabaseResponse("platform_admins", "select", {
+      data: {
+        granted_by_email: "migration:0355",
+        created_at: "2026-01-01T00:00:00Z",
+      },
+    });
+    const res = await request(makeApp())
+      .post("/platform/admins")
+      .send({ email: "existing@example.com" });
+    expect(res.status).toBe(200);
+    expect(res.body.operator).toMatchObject({
+      authUserId: "u_existing",
+      email: "existing@example.com",
+      grantedByEmail: "migration:0355",
+      createdAt: "2026-01-01T00:00:00Z",
+    });
+    // No row was inserted for an already-present operator.
+    expect(
+      supabaseMock.writePayloads("platform_admins", "insert"),
+    ).toHaveLength(0);
   });
 });
 

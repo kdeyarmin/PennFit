@@ -33,8 +33,9 @@ const querySchema = z.object({
 });
 
 // Per-tenant line cap (mirrors the admin margin route) so a high-volume
-// tenant can't time the rollup out; the margin then reflects "the most
-// recent N costed lines", an acceptable degradation for a trend figure.
+// tenant can't time the rollup out; with the most-recent-first ordering
+// below, the margin then reflects "the most recent N order lines" (costed
+// and uncosted alike), an acceptable degradation for a trend figure.
 const ITEM_CAP = 5000;
 
 interface OrgRow {
@@ -53,6 +54,10 @@ async function tenantMargin(
       .from("shop_order_items")
       .select("quantity, unit_amount_cents, unit_cost_cents")
       .gte("paid_at", cutoffIso)
+      // Most-recent-first so the ITEM_CAP truncation is deterministic and
+      // actually keeps the newest lines (without an explicit order the cap
+      // would slice an arbitrary, Postgres-return-order subset).
+      .order("paid_at", { ascending: false })
       .limit(ITEM_CAP);
     if (error) throw error;
     const lines: MarginInput[] = (
@@ -116,24 +121,35 @@ router.get(
       res.status(503).json({ error: "tenant_directory_unavailable" });
       return;
     }
-    const { data: orgs, error } = await getOrgScopedClient(seedOrgId)
-      .raw()
-      .schema("resupply")
-      .from("organizations")
-      .select("id, slug, name, status")
-      .order("created_at", { ascending: true });
-    if (error) {
-      logger.error(
-        { event: "platform_margin_dir_failed", err: error },
-        "platform margin: tenant directory query failed",
-      );
-      res.status(500).json({ error: "margin_failed" });
-      return;
+    // Page through the directory: PostgREST caps an unbounded select at
+    // ~1000 rows, which would silently drop tenants past the cap from the
+    // fleet rollup. (created_at, id) is a stable total order for paging.
+    const dir = getOrgScopedClient(seedOrgId).raw().schema("resupply");
+    const PAGE_SIZE = 1000;
+    const orgRows: OrgRow[] = [];
+    for (let offset = 0; ; offset += PAGE_SIZE) {
+      const { data, error } = await dir
+        .from("organizations")
+        .select("id, slug, name, status")
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true })
+        .range(offset, offset + PAGE_SIZE - 1);
+      if (error) {
+        logger.error(
+          { event: "platform_margin_dir_failed", err: error },
+          "platform margin: tenant directory query failed",
+        );
+        res.status(500).json({ error: "margin_failed" });
+        return;
+      }
+      const page = (data ?? []) as OrgRow[];
+      orgRows.push(...page);
+      if (page.length < PAGE_SIZE) break;
     }
 
     const fleet = aggregateMargin([]);
     const tenants = await Promise.all(
-      ((orgs ?? []) as OrgRow[]).map(async (o) => {
+      orgRows.map(async (o) => {
         const agg = await tenantMargin(o.id, cutoffIso);
         addInto(fleet, agg);
         return {
