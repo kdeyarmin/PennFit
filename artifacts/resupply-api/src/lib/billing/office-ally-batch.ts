@@ -1058,7 +1058,13 @@ export type Export837PResult =
         | "some_claims_not_found"
         | "batch_payer_mismatch"
         | "payer_not_configured"
-        | "claim_detail_unavailable";
+        | "claim_detail_unavailable"
+        // Multi-location Phase 1: like the submit path, one exported 837P
+        // interchange carries exactly one billing provider. With
+        // multi_location.enabled ON, a selection whose claims span branches
+        // with DIFFERENT billing identities is refused (fail closed) rather
+        // than emitting them all under the org/first-branch NPI.
+        | "location_billing_mismatch";
       detail?: Record<string, unknown>;
     };
 
@@ -1122,7 +1128,37 @@ export async function buildExport837P(input: {
     details.push(d);
   }
 
-  const identity = await resolveBillingIdentity({ orgId: input.orgId });
+  // Multi-location Phase 1: resolve the SINGLE billing identity for this
+  // interchange — the SAME pre-flight the submit/resubmit path runs. With
+  // multi_location.enabled ON, every claim's servicing branch must resolve to
+  // one billing identity (a 837P file carries exactly one billing provider);
+  // a selection spanning branches with different billing NPIs is refused so
+  // the export never silently emits a branch claim under the org/first-branch
+  // NPI. Flag OFF (the seeded default / single-location path) → a complete
+  // no-op: `locationId` is undefined and the org identity is resolved exactly
+  // as before, byte for byte.
+  const exportLocation = await resolveBatchBillingLocation({
+    supabase,
+    orgId: input.orgId,
+    claims,
+  });
+  if (!exportLocation.ok) {
+    return {
+      ok: false,
+      kind: "location_billing_mismatch",
+      detail: {
+        message:
+          "claims in this export span branches with different billing identities; " +
+          "split the export so each 837P bills one branch",
+        npis: exportLocation.distinctNpis,
+      },
+    };
+  }
+
+  const identity = await resolveBillingIdentity({
+    orgId: input.orgId,
+    locationId: exportLocation.locationId,
+  });
   const control = allocateControlNumbers({
     submittedAt: Date.now(),
     sequence: 1,

@@ -363,6 +363,83 @@ describe("resolveBillingIdentity — multi-location Phase 1 overlay", () => {
     expect(result.billingProvider.address.line1).toBe("1 Penn Plaza");
     expect(result.billingProvider.address.zip).toBe("19103");
   });
+
+  it("branch with line1 but missing city/state/zip fills EACH from the org address", async () => {
+    // Regression (PR #1210 P2): a branch that supplies a billing_address_line1
+    // but omits city/state/zip must NOT emit empty N4 elements — each missing
+    // field falls back PER FIELD to the org address (not all-or-nothing).
+    const orgId = freshOrgId("d7");
+    stageSupabaseResponse("organizations", "select", { data: { id: orgId } });
+    stageOrgIdentity();
+    stageSupabaseResponse("feature_flags", "select", {
+      data: { enabled: true },
+    });
+    stageSupabaseResponse("locations", "select", {
+      data: {
+        id: LOCATION_ID,
+        name: "South Branch",
+        npi: "5656565656",
+        is_active: true,
+        // A real branch billing line1, but city/state/zip omitted entirely.
+        billing_address_line1: "42 South St",
+        billing_address_line2: null,
+        billing_city: null,
+        billing_state: null,
+        billing_zip: null,
+        address_line1: null,
+        city: null,
+        state: null,
+        postal_code: null,
+      },
+    });
+    const result = await resolveBillingIdentity({
+      orgId,
+      locationId: LOCATION_ID,
+      env: {},
+    });
+    expect(result.billingProviderScope).toBe("location");
+    // The branch line1 is used …
+    expect(result.billingProvider.address.line1).toBe("42 South St");
+    // … but the missing city/state/zip each fall back to the org address,
+    // never an empty string.
+    expect(result.billingProvider.address.city).toBe("Philadelphia");
+    expect(result.billingProvider.address.state).toBe("PA");
+    expect(result.billingProvider.address.zip).toBe("19103");
+    // No line2 supplied → none applied.
+    expect(result.billingProvider.address.line2).toBeUndefined();
+  });
+
+  it("applies billing_address_line2 to the branch billing address", async () => {
+    // Regression (PR #1210 P2): billing_address_line2 was selected but never
+    // applied to the returned BillingProvider.address.
+    const orgId = freshOrgId("d8");
+    stageSupabaseResponse("organizations", "select", { data: { id: orgId } });
+    stageOrgIdentity();
+    stageSupabaseResponse("feature_flags", "select", {
+      data: { enabled: true },
+    });
+    stageSupabaseResponse("locations", "select", {
+      data: {
+        id: LOCATION_ID,
+        name: "North Branch",
+        npi: "7878787878",
+        is_active: true,
+        billing_address_line1: "9 North Ave",
+        billing_address_line2: "Suite 200",
+        billing_city: "Pittsburgh",
+        billing_state: "PA",
+        billing_zip: "15201",
+      },
+    });
+    const result = await resolveBillingIdentity({
+      orgId,
+      locationId: LOCATION_ID,
+      env: {},
+    });
+    expect(result.billingProviderScope).toBe("location");
+    expect(result.billingProvider.address.line1).toBe("9 North Ave");
+    expect(result.billingProvider.address.line2).toBe("Suite 200");
+  });
 });
 
 describe("resolveClearinghouse", () => {

@@ -242,6 +242,8 @@ async function applyLocationOverlay(
     location.billing_address_line1?.trim() ||
     location.address_line1?.trim() ||
     undefined;
+  const branchAddressLine2 =
+    location.billing_address_line2?.trim() || undefined;
   const branchProvider: BillingProvider = {
     organizationName:
       location.billing_legal_name?.trim() ||
@@ -251,14 +253,27 @@ async function applyLocationOverlay(
     taxId: location.billing_tax_id?.trim() || orgBp.taxId,
     // Use the branch address only when it supplies a line1 (the anchor of a
     // valid address); otherwise keep the org address wholesale rather than
-    // splicing a half-branch / half-org address.
+    // splicing a half-branch / half-org address. When the branch DOES supply a
+    // line1 but omits a city/state/zip, fall back PER FIELD to the org address
+    // rather than emitting an empty N4 element (an empty city/state/zip is an
+    // invalid 2010AA loop). billing_address_line2 is optional and is included
+    // when the branch supplies one.
     address: branchAddressLine1
       ? {
           line1: branchAddressLine1,
-          city: location.billing_city?.trim() || location.city?.trim() || "",
-          state: location.billing_state?.trim() || location.state?.trim() || "",
+          ...(branchAddressLine2 ? { line2: branchAddressLine2 } : {}),
+          city:
+            location.billing_city?.trim() ||
+            location.city?.trim() ||
+            orgBp.address.city,
+          state:
+            location.billing_state?.trim() ||
+            location.state?.trim() ||
+            orgBp.address.state,
           zip:
-            location.billing_zip?.trim() || location.postal_code?.trim() || "",
+            location.billing_zip?.trim() ||
+            location.postal_code?.trim() ||
+            orgBp.address.zip,
         }
       : orgBp.address,
   };
@@ -483,7 +498,7 @@ async function loadLocation(
     .maybeSingle();
   if (error) {
     logger.warn(
-      { err: error.message },
+      { err: error },
       "identity-resolver: locations read failed (treating as missing → org identity)",
     );
     return null;

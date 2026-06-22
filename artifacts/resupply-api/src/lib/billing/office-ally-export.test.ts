@@ -20,10 +20,17 @@ vi.mock("../feature-flags", () => ({
 }));
 
 import { MOCK_ORG_ID } from "../../test-helpers/auth-mocks";
+import { isFeatureEnabled } from "../feature-flags";
 import { buildExport837P } from "./office-ally-batch";
+
+const isFeatureEnabledMock = vi.mocked(isFeatureEnabled);
 
 beforeEach(() => {
   supabaseMock.reset();
+  // Default: every flag (incl. multi_location.enabled) OFF, so the
+  // single-location path is the baseline. Multi-location tests opt in below.
+  isFeatureEnabledMock.mockReset();
+  isFeatureEnabledMock.mockResolvedValue(false);
 });
 
 function makeClaim(overrides: Record<string, unknown> = {}) {
@@ -142,5 +149,166 @@ describe("buildExport837P", () => {
       receiver: { interchangeId: "X", organizationName: "Y" },
     });
     expect(result).toMatchObject({ ok: false, kind: "payer_not_configured" });
+  });
+});
+
+// Multi-location Phase 1 (PR #1210 P1): the clearinghouse-neutral export path
+// must honor per-location billing identity exactly like the submit/resubmit
+// path — emit the BRANCH NPI for a branch claim, and refuse a mixed-location
+// export (one 837P interchange carries one billing provider).
+describe("buildExport837P — multi-location Phase 1", () => {
+  const WEST_LOCATION_ID = "00000000-0000-4000-8000-0000000000c3";
+  const EAST_LOCATION_ID = "00000000-0000-4000-8000-0000000000c4";
+
+  // A complete org-level DB identity (org NPI 9999999999) so the location
+  // overlay has a real base to overlay onto (it never overlays onto a stub).
+  function stageOrgIdentity(times: number) {
+    for (let i = 0; i < times; i += 1) {
+      stageSupabaseResponse("dme_organization", "select", {
+        data: {
+          id: "org_1",
+          singleton: true,
+          legal_name: "PennPaps Inc",
+          organizational_npi: "9999999999",
+          tax_id: "999999999",
+          physical_address_line1: "1 Penn Plaza",
+          physical_city: "Philadelphia",
+          physical_state: "PA",
+          physical_zip: "19103",
+          phone_e164: "+18001234567",
+        },
+      });
+      stageSupabaseResponse("clearinghouse_credentials", "select", {
+        data: {
+          id: "ch_1",
+          slug: "office_ally",
+          etin: "DBETIN",
+          usage_indicator: "T",
+          submitter_organization_name: "PennPaps Inc Submitter",
+          contact_name: "Billing",
+          contact_phone_e164: "+18005550100",
+          sftp_host: "h",
+          sftp_port: 22,
+          sftp_username: "u",
+          private_key_path: "/k",
+          known_hosts_path: "/kh",
+          remote_inbox_dir: "in",
+        },
+      });
+    }
+  }
+
+  function westBranchRow() {
+    return {
+      id: WEST_LOCATION_ID,
+      name: "West Branch",
+      npi: "1212121212",
+      is_active: true,
+      billing_legal_name: "PennPaps West LLC",
+      billing_tax_id: "222222222",
+      billing_address_line1: "9 West Ave",
+      billing_address_line2: null,
+      billing_city: "Pittsburgh",
+      billing_state: "PA",
+      billing_zip: "15201",
+    };
+  }
+  function eastBranchRow() {
+    return {
+      id: EAST_LOCATION_ID,
+      name: "East Branch",
+      npi: "3434343434",
+      is_active: true,
+      billing_legal_name: "PennPaps East LLC",
+      billing_tax_id: "333333333",
+      billing_address_line1: "7 East Ave",
+      billing_address_line2: null,
+      billing_city: "Scranton",
+      billing_state: "PA",
+      billing_zip: "18503",
+    };
+  }
+
+  it("emits the BRANCH billing NPI for a single-branch export", async () => {
+    isFeatureEnabledMock.mockResolvedValue(true);
+    // One claim for a patient anchored to the West branch.
+    stageSupabaseResponse("insurance_claims", "select", {
+      data: [makeClaim({ id: "c1", patient_id: "pat1" })],
+    });
+    stageSupabaseResponse("payer_profiles", "select", {
+      data: { payer_legal_name: "Aetna", office_ally_payer_id: "60054" },
+    });
+    stageClaimDetail();
+    // resolveBatchBillingLocation: patient → West branch.
+    stageSupabaseResponse("patients", "select", {
+      data: [{ id: "pat1", location_id: WEST_LOCATION_ID }],
+    });
+    // Two resolveBillingIdentity passes (mismatch probe + final build), each
+    // reads org + clearinghouse + the West location row.
+    stageOrgIdentity(2);
+    stageSupabaseResponse("locations", "select", { data: westBranchRow() });
+    stageSupabaseResponse("locations", "select", { data: westBranchRow() });
+
+    const result = await buildExport837P({
+      orgId: MOCK_ORG_ID,
+      claimIds: ["c1"],
+      receiver: {
+        interchangeId: "MYCLR",
+        organizationName: "MY CLEARINGHOUSE",
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      // The 2010AA billing-provider loop carries the BRANCH NPI, not the org's.
+      expect(result.payload).toContain("1212121212");
+      expect(result.payload).not.toContain("9999999999");
+    }
+  });
+
+  it("rejects a mixed-location export (location_billing_mismatch)", async () => {
+    isFeatureEnabledMock.mockResolvedValue(true);
+    // Two claims, same payer, but patients anchored to DIFFERENT branches.
+    stageSupabaseResponse("insurance_claims", "select", {
+      data: [
+        makeClaim({ id: "c1", patient_id: "patW" }),
+        makeClaim({ id: "c2", patient_id: "patE" }),
+      ],
+    });
+    stageSupabaseResponse("payer_profiles", "select", {
+      data: { payer_legal_name: "Aetna", office_ally_payer_id: "60054" },
+    });
+    // buildOneDetail runs for both claims before the mismatch check.
+    stageClaimDetail();
+    stageClaimDetail();
+    // resolveBatchBillingLocation: patW → West, patE → East.
+    stageSupabaseResponse("patients", "select", {
+      data: [
+        { id: "patW", location_id: WEST_LOCATION_ID },
+        { id: "patE", location_id: EAST_LOCATION_ID },
+      ],
+    });
+    // Two distinct candidates → two resolveBillingIdentity calls (one each).
+    stageOrgIdentity(2);
+    stageSupabaseResponse("locations", "select", { data: westBranchRow() });
+    stageSupabaseResponse("locations", "select", { data: eastBranchRow() });
+
+    const result = await buildExport837P({
+      orgId: MOCK_ORG_ID,
+      claimIds: ["c1", "c2"],
+      receiver: {
+        interchangeId: "MYCLR",
+        organizationName: "MY CLEARINGHOUSE",
+      },
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.kind).toBe("location_billing_mismatch");
+      // Both distinct branch NPIs are surfaced for the operator.
+      expect(result.detail?.npis).toEqual(
+        expect.arrayContaining(["1212121212", "3434343434"]),
+      );
+    }
   });
 });
