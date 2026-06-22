@@ -152,7 +152,7 @@ describe("notifyVoiceHandoff", () => {
     expect(JSON.stringify(input)).toContain("🔴");
   });
 
-  it("does not offer an Escalate button (already escalated)", async () => {
+  it("offers Claim but not Escalate/Snooze (already escalated)", async () => {
     await notifyVoiceHandoff({
       orgId: "org-1",
       conversationId: "conv-1",
@@ -160,7 +160,10 @@ describe("notifyVoiceHandoff", () => {
       outcome: "ok",
     });
     const [, input] = postSlackMessageMock.mock.calls[0]!;
-    expect(JSON.stringify(input)).not.toContain("escalate_conversation");
+    const serialized = JSON.stringify(input);
+    expect(serialized).toContain("claim_conversation");
+    expect(serialized).not.toContain("escalate_conversation");
+    expect(serialized).not.toContain("snooze_conversation");
   });
 });
 

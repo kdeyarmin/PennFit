@@ -143,39 +143,46 @@ async function sendCsAlert(input: CsAlertInput): Promise<void> {
   }
 }
 
-/** Build the standard "Open in admin" link + (when interactivity is wired) an
- *  Escalate button for a conversation alert. */
+/**
+ * Build the "Open in admin" link plus whichever interactive buttons this alert
+ * should offer. Buttons only render when inbound interactivity can service them
+ * (signing secret present); the endpoint re-checks the flag + signature.
+ */
 function conversationActions(
   config: SlackConfig | null,
   link: string | undefined,
   conversationId: string,
-  includeEscalate: boolean,
+  buttons: { claim?: boolean; escalate?: boolean; snooze?: boolean } = {},
 ): SlackAction[] {
   const actions: SlackAction[] = [];
   if (link) actions.push({ kind: "link", text: "Open in admin", url: link });
-  // Only offer the action buttons when inbound interactivity can actually
-  // service them (signing secret present); the endpoint re-checks the flag.
-  if (includeEscalate && config?.signingSecret) {
-    actions.push({
-      kind: "button",
-      text: "Claim",
-      actionId: CLAIM_ACTION_ID,
-      value: conversationId,
-      style: "primary",
-    });
-    actions.push({
-      kind: "button",
-      text: "Escalate",
-      actionId: ESCALATE_ACTION_ID,
-      value: conversationId,
-      style: "danger",
-    });
-    actions.push({
-      kind: "button",
-      text: "Snooze 1d",
-      actionId: SNOOZE_ACTION_ID,
-      value: conversationId,
-    });
+  if (config?.signingSecret) {
+    if (buttons.claim) {
+      actions.push({
+        kind: "button",
+        text: "Claim",
+        actionId: CLAIM_ACTION_ID,
+        value: conversationId,
+        style: "primary",
+      });
+    }
+    if (buttons.escalate) {
+      actions.push({
+        kind: "button",
+        text: "Escalate",
+        actionId: ESCALATE_ACTION_ID,
+        value: conversationId,
+        style: "danger",
+      });
+    }
+    if (buttons.snooze) {
+      actions.push({
+        kind: "button",
+        text: "Snooze 1d",
+        actionId: SNOOZE_ACTION_ID,
+        value: conversationId,
+      });
+    }
   }
   return actions;
 }
@@ -204,7 +211,11 @@ export async function notifyConversationNeedsHuman(input: {
     severity: "warning",
     title: `${severityEmoji("warning")} Patient reply needs a human`,
     lines,
-    actions: conversationActions(config, link, input.conversationId, true),
+    actions: conversationActions(config, link, input.conversationId, {
+      claim: true,
+      escalate: true,
+      snooze: true,
+    }),
   });
 }
 
@@ -233,7 +244,9 @@ export async function notifyVoiceHandoff(input: {
       `*Conversation:* \`${input.conversationId}\``,
       `*Outcome:* ${input.outcome}`,
     ],
-    actions: conversationActions(config, link, input.conversationId, false),
+    actions: conversationActions(config, link, input.conversationId, {
+      claim: true,
+    }),
   });
 }
 
@@ -284,7 +297,9 @@ export async function notifySlaBreach(input: {
       `*Overdue:* ${input.minutesOverdue} min`,
       `*Conversation:* \`${input.conversationId}\``,
     ],
-    actions: conversationActions(config, link, input.conversationId, false),
+    actions: conversationActions(config, link, input.conversationId, {
+      claim: true,
+    }),
   });
 }
 
