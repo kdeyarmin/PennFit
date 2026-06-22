@@ -121,7 +121,7 @@ export function Masks() {
             data-testid="masks-ask-pennbot"
           >
             <Sparkles className="w-3.5 h-3.5" />
-            Ask PennBot
+            Ask {c.assistantStorefrontName}
           </Button>
         </div>
       </div>

@@ -150,8 +150,7 @@ export function ProviderSignIn() {
               Recovery is coordinator-mediated.
             */}
             <p className="text-center text-sm text-slate-500">
-              Locked out? Contact your PennPaps coordinator to reset your
-              access.
+              Locked out? Contact your account coordinator to reset your access.
             </p>
           </form>
         ) : (

@@ -186,8 +186,8 @@ describe("sw-push.js — install/activate/push listeners still present", () => {
     expect(SW_SRC).toContain("self.registration.showNotification(");
   });
 
-  it("push listener falls back to generic title when event.data is missing", () => {
-    expect(SW_SRC).toContain('payload.title || "PennPaps"');
+  it("push listener falls back to the platform title when event.data is missing", () => {
+    expect(SW_SRC).toContain('payload.title || "CareMetric Breathe"');
   });
 
   it("push listener stashes url in notification data for the click handler", () => {

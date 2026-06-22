@@ -427,7 +427,7 @@ export function Help() {
               <p className="text-sm text-muted-foreground max-w-md mx-auto">
                 Try a different keyword, ask{" "}
                 <strong className="text-[hsl(var(--penn-navy))]">
-                  PennBot
+                  {contact.assistantStorefrontName}
                 </strong>{" "}
                 in the chat bubble, or{" "}
                 <Link
@@ -585,7 +585,7 @@ export function Help() {
             data-testid="help-cta-pennbot"
           >
             <Sparkles className="w-4 h-4" />
-            Ask PennBot
+            Ask {contact.assistantStorefrontName}
           </Button>
           {contact.phoneE164 && (
             <a href={`tel:${contact.phoneE164}`}>

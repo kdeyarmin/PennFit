@@ -1,4 +1,4 @@
-// PennPaps push-notification service worker (Phase C.1, feature #4).
+// CareMetric Breathe push-notification service worker (Phase C.1, feature #4).
 //
 // Purpose: receive Web Push events from the server and surface them
 // as browser notifications, plus open /account on click.
@@ -29,10 +29,10 @@ self.addEventListener("push", (event) => {
     try {
       payload = event.data.json();
     } catch (_err) {
-      payload = { title: "PennPaps", body: event.data.text() };
+      payload = { title: "CareMetric Breathe", body: event.data.text() };
     }
   }
-  const title = payload.title || "PennPaps";
+  const title = payload.title || "CareMetric Breathe";
   const options = {
     body: payload.body || "",
     icon: "/icon-192.png",
@@ -73,7 +73,7 @@ self.addEventListener("notificationclick", (event) => {
     self.clients
       .matchAll({ type: "window", includeUncontrolled: true })
       .then((clientList) => {
-        // Re-focus an existing PennPaps tab if one is open; otherwise
+        // Re-focus an existing CareMetric Breathe tab if one is open; otherwise
         // open a new one. This matches the standard W3C example and
         // avoids spawning a new tab on every click.
         for (const client of clientList) {
