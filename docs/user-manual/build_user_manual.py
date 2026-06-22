@@ -44,6 +44,7 @@ from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.platypus import (
     BaseDocTemplate,
+    CondPageBreak,
     Flowable,
     Frame,
     Image as RLImage,
@@ -344,6 +345,11 @@ def feature_table(features, tint_offset=0):
         tint = PEARL if (i + tint_offset) % 2 == 0 else MIST
         style.append(("BACKGROUND", (0, i), (-1, i), tint))
     t.setStyle(TableStyle(style))
+    # Mark atomic: every feature table here is <= ~10 rows so it always fits
+    # on a page. space_before_headings() keeps it whole (and with its heading)
+    # so it never straddles a page break. (Plain Table — wrapping happens in
+    # one place to avoid nested KeepTogethers, which balloon the layout.)
+    t._atomic_table = True
     return t
 
 
@@ -488,6 +494,10 @@ def three_col_table(headers, rows, widths):
         style.append(("BACKGROUND", (0, r), (-1, r),
                       PEARL if r % 2 else MIST))
     t.setStyle(TableStyle(style))
+    # Atomic: header + body stay together (these are all short enough to fit)
+    # so the navy header is never split from its rows. Wrapped once in
+    # space_before_headings() to avoid nested KeepTogethers.
+    t._atomic_table = True
     return t
 
 
@@ -2117,6 +2127,69 @@ def _make_doc(klass, path):
     return doc
 
 
+def space_before_headings(flowables):
+    """Stop sub-headings being orphaned at the foot of a page.
+
+    A heading (an H2 sub-heading, a group/task label, or a drawn
+    GroupHeading) must never be the last thing on a page. Two cases:
+
+      * If the heading is immediately followed by an *atomic* block — a
+        KeepTogether, which is what the feature/three-column tables and the
+        FAQ Q&A blocks return, and which always fits on a page — bundle the
+        heading together with it so the table can't jump to the next page and
+        leave the heading stranded.
+      * Otherwise (prose, bullet lists, or the long Control-Center flag
+        tables that legitimately span pages) just insert a CondPageBreak so
+        the heading has at least a few lines of room beneath it.
+
+    H1 section headings already force a page break and are skipped. Applied
+    identically in both build passes, so the captured TOC page numbers stay
+    exact."""
+    HEAD_STYLE_NAMES = {"H2Sub", "group", "task"}
+
+    def is_heading(f):
+        if isinstance(f, GroupHeading):
+            return True
+        return isinstance(f, Paragraph) and f.style.name in HEAD_STYLE_NAMES
+
+    def is_atomic(f):
+        return isinstance(f, Table) and getattr(f, "_atomic_table", False)
+
+    out = []
+    i = 0
+    n = len(flowables)
+    while i < n:
+        f = flowables[i]
+        if is_heading(f):
+            j = i + 1
+            spacer = None
+            if j < n and isinstance(flowables[j], Spacer):
+                spacer = flowables[j]
+                j += 1
+            nxt = flowables[j] if j < n else None
+            # Bundle the heading with the table that follows it. For a short
+            # atomic table the pair stays whole on one page; for a long
+            # flag-category table the KeepTogether degrades gracefully —
+            # heading + first rows stay together and the rest flows on — so
+            # the heading is never stranded at the foot of a page.
+            if isinstance(nxt, Table):
+                grp = [f] + ([spacer] if spacer else []) + [nxt]
+                out.append(KeepTogether(grp))
+                i = j + 1
+                continue
+            out.append(CondPageBreak(0.9 * inch))
+            out.append(f)
+            i += 1
+            continue
+        if is_atomic(f):
+            out.append(KeepTogether([f]))
+            i += 1
+            continue
+        out.append(f)
+        i += 1
+    return out
+
+
 def make_story(toc_entries):
     story = []
 
@@ -2516,10 +2589,12 @@ def make_story(toc_entries):
         "faqQ", fontName="Helvetica-Bold", fontSize=9.8, leading=13,
         textColor=NAVY_DEEP, spaceBefore=7, spaceAfter=1)
     for domain, qas in FAQ:
-        story.append(h2(domain))
-        for q, a in qas:
-            block = [Paragraph("Q&nbsp;&nbsp;" + q, q_style),
-                     Paragraph(a, S_BODY)]
+        for idx, (q, a) in enumerate(qas):
+            qa = [Paragraph("Q&nbsp;&nbsp;" + q, q_style),
+                  Paragraph(a, S_BODY)]
+            # Bundle the domain heading with its first Q&A so the heading is
+            # never orphaned at the foot of a page (flattened — no nesting).
+            block = [h2(domain), *qa] if idx == 0 else qa
             story.append(KeepTogether(block))
     story.append(PageBreak())
 
@@ -2553,6 +2628,7 @@ def make_story(toc_entries):
         tstyle.append(("BACKGROUND", (0, r), (-1, r),
                        PEARL if r % 2 else MIST))
     t.setStyle(TableStyle(tstyle))
+    t._atomic_table = True
     story.append(t)
     story.append(Spacer(1, 6))
     story.append(Paragraph(MATRIX_NOTE, S_BODY))
@@ -2591,7 +2667,7 @@ def make_story(toc_entries):
         "practice administrator. Owners can find deployment and operator "
         "runbooks in the project documentation.", S_BODY))
 
-    return story
+    return space_before_headings(story)
 
 
 def _count_toc_pages(entries):

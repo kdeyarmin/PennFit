@@ -53,3 +53,7 @@ Thumbs.db
 .env.*
 !.env.example
 test-results/
+
+# Python bytecode (docs/user-manual build script)
+__pycache__/
+*.pyc
