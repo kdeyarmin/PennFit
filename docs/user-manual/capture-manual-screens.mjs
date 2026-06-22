@@ -120,7 +120,11 @@ for (const [name, path] of PAGES) {
     // give charts / lazy panels a fixed settle window to paint.
     await page.goto(`${BASE_URL}${path}`, {
       waitUntil: "load",
-      timeout: 45000,
+      // 90s (not 45s): on a cold Vite dev server the first load of a heavy
+      // lazy route triggers on-demand dependency optimization that can take
+      // a while; warm pages still return in a couple of seconds, so the
+      // headroom only matters for the first cold pass.
+      timeout: 90000,
     });
     await page.waitForTimeout(3500);
     await page.screenshot({ path: `${OUT}/${name}.png` });

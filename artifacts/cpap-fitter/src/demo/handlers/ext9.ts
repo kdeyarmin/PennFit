@@ -539,7 +539,7 @@ export const ext9Handlers: DemoHandler[] = [
           snoozeUntil:
             action === "snoozed" ? (body?.snoozeUntil ?? null) : null,
           note: body?.note ?? null,
-          updatedByEmail: "demo.csr@pennfit.example",
+          updatedByEmail: "demo.csr@caremetric.example",
           updatedAt: NOW_ISO(),
         },
       });

@@ -44,7 +44,7 @@ function seedNum(id: string): number {
   return Number.parseInt(id.replace(/\D/g, ""), 10) || 1;
 }
 
-const DEMO_ADMIN_EMAIL = "demo.admin@pennfit.example";
+const DEMO_ADMIN_EMAIL = "demo.admin@caremetric.example";
 const DEMO_ADMIN_ID = "demo-admin-1";
 
 // ── /patients/:id/insurance-coverages ──────────────────────────────

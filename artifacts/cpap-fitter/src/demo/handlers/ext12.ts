@@ -139,7 +139,7 @@ const referralHandlers: DemoHandler[] = [
         {
           id: "demo-referral-1",
           code: "BREATHE24",
-          refereeEmail: "jordan.sample@pennfit.example",
+          refereeEmail: "jordan.sample@caremetric.example",
           refereeName: "Jordan Sample",
           status: "converted",
           convertedAt: daysAgo(9),
@@ -148,7 +148,7 @@ const referralHandlers: DemoHandler[] = [
         {
           id: "demo-referral-2",
           code: "SLEEPWELL",
-          refereeEmail: "casey.demo@pennfit.example",
+          refereeEmail: "casey.demo@caremetric.example",
           refereeName: "Casey Demo",
           status: "pending",
           convertedAt: null,
