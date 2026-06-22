@@ -16,7 +16,10 @@ import {
 
 const supabaseMock = installSupabaseMock();
 
-import { reconcileMembershipFromSubscription } from "./membership-reconcile";
+import {
+  joinMembershipFromSubscription,
+  reconcileMembershipFromSubscription,
+} from "./membership-reconcile";
 
 beforeEach(() => supabaseMock.reset());
 
@@ -117,6 +120,94 @@ describe("reconcileMembershipFromSubscription", () => {
       undefined,
     );
 
+    expect(supabaseMock.callCount("shop_customers", "update")).toBe(0);
+  });
+});
+
+describe("joinMembershipFromSubscription", () => {
+  it("sets the tier + links the sub on a self-serve join (active)", async () => {
+    stageSupabaseResponse("shop_customers", "select", {
+      data: { customer_id: "cust-1", membership_started_at: null },
+    });
+    stageSupabaseResponse("shop_customers", "update", {
+      data: { customer_id: "cust-1" },
+    });
+
+    const periodEnd = Math.floor(Date.now() / 1000) + 30 * 86400;
+    await joinMembershipFromSubscription(
+      sub(
+        {
+          status: "active",
+          metadata: {
+            customer_id: "cust-1",
+            membership_tier: "monthly_unlimited",
+          } as Stripe.Metadata,
+        },
+        periodEnd,
+      ),
+      undefined,
+    );
+
+    const patch = getSupabaseWritePayloads(
+      "shop_customers",
+      "update",
+    )[0] as Record<string, unknown>;
+    expect(patch.membership_tier).toBe("monthly_unlimited");
+    expect(patch.membership_stripe_subscription_id).toBe("sub_1");
+    expect(patch.membership_renews_at).toBe(
+      new Date(periodEnd * 1000).toISOString(),
+    );
+    expect(patch.membership_started_at).toBeTruthy();
+  });
+
+  it("preserves an existing membership_started_at on replay", async () => {
+    stageSupabaseResponse("shop_customers", "select", {
+      data: {
+        customer_id: "cust-1",
+        membership_started_at: "2026-01-01T00:00:00Z",
+      },
+    });
+    stageSupabaseResponse("shop_customers", "update", {
+      data: { customer_id: "cust-1" },
+    });
+
+    await joinMembershipFromSubscription(
+      sub({
+        status: "active",
+        metadata: {
+          customer_id: "cust-1",
+          membership_tier: "quarterly_unlimited",
+        } as Stripe.Metadata,
+      }),
+      undefined,
+    );
+
+    const patch = getSupabaseWritePayloads(
+      "shop_customers",
+      "update",
+    )[0] as Record<string, unknown>;
+    expect(patch.membership_started_at).toBe("2026-01-01T00:00:00Z");
+  });
+
+  it("no-ops for a subscription without membership_tier metadata", async () => {
+    await joinMembershipFromSubscription(
+      sub({ status: "active", metadata: {} as Stripe.Metadata }),
+      undefined,
+    );
+    expect(supabaseMock.callCount("shop_customers", "update")).toBe(0);
+  });
+
+  it("no-ops when the subscription is not active/trialing", async () => {
+    await joinMembershipFromSubscription(
+      sub({
+        status: "incomplete",
+        metadata: {
+          customer_id: "cust-1",
+          membership_tier: "monthly_unlimited",
+        } as Stripe.Metadata,
+      }),
+      undefined,
+    );
     expect(supabaseMock.callCount("shop_customers", "update")).toBe(0);
   });
 });
