@@ -26,6 +26,8 @@ import {
   type SlackSeverity,
 } from "@workspace/resupply-integrations-slack";
 
+import { getOrgScopedClient } from "@workspace/resupply-db";
+
 import { getEffectiveEnv, getEffectiveEnvForOrg } from "../app-config/store";
 import { isFeatureEnabled, type FeatureFlagKey } from "../feature-flags";
 import { logger } from "../logger";
@@ -152,6 +154,40 @@ async function adminPathDeepLink(
   return base ? `${base}${path}` : undefined;
 }
 
+/**
+ * If a conversation is already owned by a rep who has linked their Slack id
+ * (Team settings), return a Slack `<@U…>` mention so the alert pings THEM
+ * directly. Returns null for unassigned threads / unlinked reps. Best-effort:
+ * any error degrades to no mention (never blocks the alert).
+ */
+async function resolveAssignedSlackMention(
+  orgId: string | undefined,
+  conversationId: string,
+): Promise<string | null> {
+  if (!orgId) return null;
+  try {
+    const supabase = getOrgScopedClient(orgId);
+    const { data: conv } = await supabase
+      .from("conversations")
+      .select("assigned_admin_user_id")
+      .eq("id", conversationId)
+      .limit(1)
+      .maybeSingle();
+    const adminId = conv?.assigned_admin_user_id;
+    if (!adminId) return null;
+    const { data: admin } = await supabase
+      .from("admin_users")
+      .select("slack_user_id")
+      .eq("id", adminId)
+      .limit(1)
+      .maybeSingle();
+    const slackUserId = admin?.slack_user_id;
+    return slackUserId ? `<@${slackUserId}>` : null;
+  } catch {
+    return null;
+  }
+}
+
 interface CsAlertInput {
   orgId: string | undefined;
   title: string;
@@ -269,6 +305,12 @@ export async function notifyConversationNeedsHuman(input: {
     `*Conversation:* \`${input.conversationId}\``,
   ];
   if (input.reason) lines.push(`*Reason:* ${input.reason}`);
+  // If a rep already owns this thread and has linked their Slack id, ping them
+  // directly so "your patient replied" reaches the right person.
+  const mention = config
+    ? await resolveAssignedSlackMention(input.orgId, input.conversationId)
+    : null;
+  if (mention) lines.unshift(`${mention} — your patient replied`);
   await sendCsAlert({
     orgId: input.orgId,
     severity: "warning",

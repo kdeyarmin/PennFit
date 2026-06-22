@@ -9,6 +9,28 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+// Mutable holder for the org-scoped DB mock (assigned rep + their Slack id).
+const dbState = vi.hoisted(() => ({
+  assignedAdminId: null as string | null,
+  adminSlackId: null as string | null,
+}));
+vi.mock("@workspace/resupply-db", () => ({
+  getOrgScopedClient: () => ({
+    from: (table: string) => {
+      const data =
+        table === "conversations"
+          ? { assigned_admin_user_id: dbState.assignedAdminId }
+          : { slack_user_id: dbState.adminSlackId };
+      const chain = {
+        select: () => chain,
+        eq: () => chain,
+        limit: () => chain,
+        maybeSingle: () => Promise.resolve({ data }),
+      };
+      return chain;
+    },
+  }),
+}));
 vi.mock("../feature-flags", () => ({ isFeatureEnabled: vi.fn() }));
 vi.mock("../app-config/store", () => ({
   getEffectiveEnv: vi.fn(),
@@ -65,6 +87,8 @@ function setSlackEnv(env: NodeJS.ProcessEnv): void {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  dbState.assignedAdminId = null;
+  dbState.adminSlackId = null;
   isFeatureEnabledMock.mockResolvedValue(true);
   setSlackEnv(CONFIGURED);
   resolveTenantBaseUrlMock.mockResolvedValue("https://tenant.example");
@@ -114,6 +138,28 @@ describe("notifyConversationNeedsHuman", () => {
 
     const [, input] = postSlackMessageMock.mock.calls[0]!;
     expect(JSON.stringify(input)).not.toContain("escalate_conversation");
+  });
+
+  it("@-mentions the assigned rep when they've linked their Slack id", async () => {
+    dbState.assignedAdminId = "admin-1";
+    dbState.adminSlackId = "U7ABC";
+    await notifyConversationNeedsHuman({
+      orgId: "org-1",
+      conversationId: "conv-9",
+      channel: "sms",
+    });
+    const [, input] = postSlackMessageMock.mock.calls[0]!;
+    expect(JSON.stringify(input)).toContain("<@U7ABC>");
+  });
+
+  it("does not mention anyone when the thread is unassigned", async () => {
+    await notifyConversationNeedsHuman({
+      orgId: "org-1",
+      conversationId: "conv-9",
+      channel: "sms",
+    });
+    const [, input] = postSlackMessageMock.mock.calls[0]!;
+    expect(JSON.stringify(input)).not.toContain("<@");
   });
 
   it("no-ops when the flag is off", async () => {
