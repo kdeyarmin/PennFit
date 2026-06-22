@@ -48,11 +48,7 @@ import { requirePermission } from "../../middlewares/requireAdmin";
 const router: IRouter = Router();
 
 type EpisodeDbRow = Database["resupply"]["Tables"]["episodes"]["Row"];
-type ConversationDbRow = Database["resupply"]["Tables"]["conversations"]["Row"];
-type FulfillmentDbRow = Database["resupply"]["Tables"]["fulfillments"]["Row"];
-type ShopOrderDbRow = Database["resupply"]["Tables"]["shop_orders"]["Row"];
 type PatientDbRow = Database["resupply"]["Tables"]["patients"]["Row"];
-type MessageDbRow = Database["resupply"]["Tables"]["messages"]["Row"];
 
 const windowSchema = z.object({
   days: z.coerce.number().int().min(1).max(365).optional().default(30),
@@ -90,9 +86,9 @@ router.get(
 // confirmation/conversion rate, fulfillment rate, and orders per
 // active patient — the numbers DME operators benchmark a resupply
 // program on. Read-only aggregation over episodes + conversations +
-// inbound messages. The conversation/message reads are window-bounded
-// and capped; on a very high-volume window the connection rate is an
-// approximation over the cap (still representative).
+// inbound messages. The conversation / message / fulfillment / paid-order
+// counts are aggregated server-side (migration 0437) so the window KPIs
+// are exact regardless of volume (no client-side row cap).
 router.get(
   "/admin/analytics/resupply-kpis",
   requirePermission("reports.read"),
@@ -111,58 +107,40 @@ router.get(
     }
     const supabase = getOrgScopedClient(orgId);
 
-    // These reads are independent of one another, so fan them out
-    // concurrently rather than blocking on each in series. (The inbound-
-    // messages read below depends on the conversations result, so it
-    // stays sequential.)
+    // The episode rollup is window-bounded only (no cap), so it stays a
+    // table read. The four formerly-capped aggregations (outreach
+    // conversations, inbound replies, fulfillment line items, paid-order
+    // AOV) are folded into resupply.resupply_kpi_window_aggregates
+    // (migration 0437) so they no longer silently truncate above the old
+    // `.limit(20000/50000)` caps. The active-patient COUNT stays exact —
+    // it is the orders-per-patient denominator. These three reads are
+    // independent, so fan them out concurrently.
     const [
       { data: episodeRows, error: epErr },
-      { data: convRows, error: convErr },
       { count: activePatientCount, error: patErr },
-      { data: fulfillmentRows, error: fulErr },
-      { data: orderRows, error: ordErr },
+      { data: kpiAggRows, error: kpiAggErr },
     ] = await Promise.all([
       // Episodes created in the window → confirmation/fulfillment + unique patients.
       supabase
         .from("episodes")
         .select("status, patient_id")
         .gte("created_at", cutoff),
-      // Episode-linked (resupply) conversations opened in the window =
-      // outreach denominator. episode_id IS NOT NULL excludes in-app
-      // shop threads. Capped for safety on very large windows.
-      supabase
-        .from("conversations")
-        .select("id")
-        .not("episode_id", "is", null)
-        .gte("created_at", cutoff)
-        .limit(20000),
       // Active-patient count for the orders-per-patient denominator.
       supabase
         .from("patients")
         .select("*", { count: "exact", head: true })
         .eq("status", "active"),
-      // Fulfillment line items in the window → items per order. Capped for
-      // safety on very large windows.
-      supabase
-        .from("fulfillments")
-        .select("episode_id")
-        .gte("created_at", cutoff)
-        .limit(50000),
-      // Paid storefront orders in the window → average order value. Resupply
-      // fulfillments bill insurance and carry no cash amount, so AOV is a
-      // storefront-cash metric.
-      supabase
-        .from("shop_orders")
-        .select("amount_total_cents")
-        .eq("status", "paid")
-        .gte("created_at", cutoff)
-        .limit(50000),
+      // Window aggregates: outreach_count, responded_count (distinct),
+      // fulfillment_line_items, orders_with_fulfillments (distinct),
+      // paid_order_count, paid_order_sum_cents.
+      supabase.raw().schema("resupply").rpc("resupply_kpi_window_aggregates", {
+        p_org_id: orgId,
+        p_cutoff: cutoff,
+      }),
     ]);
     if (epErr) throw epErr;
-    if (convErr) throw convErr;
     if (patErr) throw patErr;
-    if (fulErr) throw fulErr;
-    if (ordErr) throw ordErr;
+    if (kpiAggErr) throw kpiAggErr;
 
     const episodes: EpisodeKpiRow[] = (
       (episodeRows ?? []) as EpisodeDbRow[]
@@ -170,46 +148,32 @@ router.get(
       status: r.status,
       patientId: r.patient_id,
     }));
-    const outreachIds = new Set(
-      ((convRows ?? []) as ConversationDbRow[]).map((r) => r.id),
-    );
 
-    // Inbound patient messages in the window → which of those
-    // conversations actually got a reply (distinct).
-    let respondedCount = 0;
-    if (outreachIds.size > 0) {
-      const { data: msgRows, error: msgErr } = await supabase
-        .from("messages")
-        .select("conversation_id")
-        .eq("direction", "inbound")
-        .gte("created_at", cutoff)
-        .limit(50000);
-      if (msgErr) throw msgErr;
-      const responded = new Set<string>();
-      for (const m of (msgRows ?? []) as MessageDbRow[]) {
-        if (m.conversation_id && outreachIds.has(m.conversation_id)) {
-          responded.add(m.conversation_id);
-        }
-      }
-      respondedCount = responded.size;
-    }
-
-    const fulfillments = ((fulfillmentRows ?? []) as FulfillmentDbRow[])
-      .filter((r) => r.episode_id)
-      .map((r) => ({ episodeId: r.episode_id as string }));
-
-    const paidOrderAmountsCents = ((orderRows ?? []) as ShopOrderDbRow[])
-      .map((r) => r.amount_total_cents)
-      .filter((c): c is number => typeof c === "number");
+    const agg = (
+      (kpiAggRows ?? []) as Array<{
+        outreach_count: number | string | null;
+        responded_count: number | string | null;
+        fulfillment_line_items: number | string | null;
+        orders_with_fulfillments: number | string | null;
+        paid_order_count: number | string | null;
+        paid_order_sum_cents: number | string | null;
+      }>
+    )[0];
 
     const result = aggregateResupplyKpis({
       episodes,
-      outreachCount: outreachIds.size,
-      respondedCount,
+      outreachCount: Number(agg?.outreach_count ?? 0),
+      respondedCount: Number(agg?.responded_count ?? 0),
       activePatientCount: activePatientCount ?? 0,
       windowDays: days,
-      fulfillments,
-      paidOrderAmountsCents,
+      fulfillmentAggregates: {
+        lineItems: Number(agg?.fulfillment_line_items ?? 0),
+        ordersWithFulfillments: Number(agg?.orders_with_fulfillments ?? 0),
+      },
+      paidOrderAggregates: {
+        count: Number(agg?.paid_order_count ?? 0),
+        sumCents: Number(agg?.paid_order_sum_cents ?? 0),
+      },
     });
     res.json({ windowDays: days, ...result });
   },
