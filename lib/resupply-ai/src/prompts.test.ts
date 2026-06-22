@@ -152,6 +152,12 @@ describe("buildSystemPrompt — breathe_prospect (B2B platform sales)", () => {
     );
   });
 
+  it("records a real call summary on the lead, not just contact info", () => {
+    const prompt = buildSystemPrompt(salesInput);
+    expect(prompt).toMatch(/SUMMARY OF THE CALL/i);
+    expect(prompt).toMatch(/never just "wants pricing\."/i);
+  });
+
   it("carries no patient PHI clauses (no DOB verification, no medical-advice scope)", () => {
     const prompt = buildSystemPrompt(salesInput);
     expect(prompt).not.toContain("verify_patient_identity");

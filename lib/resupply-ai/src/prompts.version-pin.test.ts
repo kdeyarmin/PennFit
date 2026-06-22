@@ -170,6 +170,13 @@ const PROMPT_VERSION_HASHES: Readonly<Record<string, string>> = {
   // below.
   "2026-06-22.v21":
     "8d7fb4c7ff77bb8e7b7aa65a2b2db91973b2de48b3096a2c2b243170b225cff0",
+  // v22 makes the breathe_prospect agent write a real call summary into the
+  // capture_sales_lead message (situation, patient count, pain points, what
+  // they want, next step). The PATIENT render is byte-for-byte unchanged from
+  // v18, so this hash matches v18's. The sales variant is pinned separately in
+  // BREATHE_SALES_PROMPT_HASH below.
+  "2026-06-22.v22":
+    "8d7fb4c7ff77bb8e7b7aa65a2b2db91973b2de48b3096a2c2b243170b225cff0",
 };
 
 function renderCanonicalPrompt(): string {
@@ -217,10 +224,12 @@ const SHOP_PROMPT_HASH =
  * objection blocks plus a playbook cue), changing it again. v21 makes the agent
  * always ask for a callback phone number and spell the caller's email back
  * letter by letter before send_info_email / start_breathe_signup (narrowing the
- * char-by-char prohibition to web links), changing it again.
+ * char-by-char prohibition to web links), changing it again. v22 makes the
+ * capture_sales_lead message a real call summary (situation, patient count,
+ * pain points, what they want, next step), changing it again.
  */
 const BREATHE_SALES_PROMPT_HASH =
-  "f664f3206f104dd3064e8e5af59bc99c4fc633df345b3e82157c23822fb6f135";
+  "39203d33cddf86a5ba5fca48316c88cc6bbaf05535f0b84821ff69800e673415";
 
 describe("PROMPT_VERSION drift detector", () => {
   it("has a recorded hash for the currently-shipped PROMPT_VERSION", () => {

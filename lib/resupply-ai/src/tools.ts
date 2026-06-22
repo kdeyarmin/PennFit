@@ -693,7 +693,7 @@ export const OPENAI_TOOL_DESCRIPTORS: readonly OpenAiToolDescriptor[] = [
           type: "string",
           maxLength: 2000,
           description:
-            "A short summary of what they want / their question, in your words.",
+            "A genuine summary of the CALL — written so whoever follows up can pick up the phone or email already knowing the context, not just a contact card. In a few sentences capture: who they are and what kind of operation (DME / HME / sleep lab), roughly how many active patients, how they run resupply today and what's frustrating them, what they're looking for or interested in (which plan, if any came up), and the agreed next step. Plain prose in your own words — never just 'wants pricing'.",
         },
       },
       required: ["message"],

@@ -122,8 +122,16 @@ import { BREATHE_SALES_KNOWLEDGE } from "./breathe-sales-knowledge";
  * to web addresses/links (the caller's own email is the spelled-back
  * exception). Only the breathe_prospect render changes — the patient and
  * shop_customer renders are byte-for-byte unchanged from v18.
+ *
+ * v22 makes the breathe_prospect agent write a real CALL SUMMARY into the
+ * capture_sales_lead message (who they are, their operation + patient count,
+ * how they run resupply today and their pain points, what they're looking for /
+ * which plan, and the agreed next step) so the lead-notification email gives
+ * the owner the context to follow up — not just a contact card. Only the
+ * breathe_prospect render changes — the patient and shop_customer renders are
+ * byte-for-byte unchanged from v18.
  */
-export const PROMPT_VERSION = "2026-06-22.v21" as const;
+export const PROMPT_VERSION = "2026-06-22.v22" as const;
 
 /**
  * Caller-facing greeting phrase. Exposed so callers can A/B without
@@ -379,7 +387,7 @@ export function buildSystemPrompt(input: BuildSystemPromptInput): string {
     const salesTools = `Tools — the only things you can actually DO are call tools; never promise an action you can't complete with one:
 - identify_call_reason: record the call's reason once you understand it.
 - send_info_email: email the caller platform info. Pick the topic that fits (overview, pricing, a sign-up link, or a general follow-up). SPELL their email back letter by letter and WAIT for them to confirm it before you call this — never send in the same turn you spell it back. You can only send to the address they give you on this call.
-- capture_sales_lead: record a lead or take a message for human follow-up. Use it whenever they're interested but not ready, want a person, or have a service/support need. Always include the caller's name (contact_name), their business/DME name (company_name), and their callback phone number (phone) when you've learned them, plus whatever else they'll share.
+- capture_sales_lead: record a lead or take a message for human follow-up. Use it whenever they're interested but not ready, want a person, or have a service/support need. Always include the caller's name (contact_name), their business/DME name (company_name), and their callback phone number (phone) when you've learned them, plus whatever else they'll share. CRUCIAL: the message must be a real SUMMARY OF THE CALL, not just contact info — in a few sentences, write who they are and what kind of operation, roughly how many patients, how they run resupply today and what's frustrating them, what they're looking for or interested in (and which plan if it came up), and the next step you agreed on. Write it so the person following up can call or email already knowing the context — never just "wants pricing."
 - start_breathe_signup: create their CareMetric Breathe account — only AFTER they've chosen a specific plan. Collect the business name, an admin email (spell the email back letter by letter and confirm it before you call this), and the plan they picked, then tell them to watch for the email to verify and set their password. Never call this for Enterprise (hand off instead) or before a plan is settled. Read the result honestly — only say it's started if the tool returns success; if the email's already in use or it didn't go through, explain simply and offer to have someone follow up.
 - request_human_handoff: escalate to a person. end_call: end the call.`;
 
