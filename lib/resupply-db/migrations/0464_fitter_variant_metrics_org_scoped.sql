@@ -54,6 +54,12 @@ LEFT JOIN (
 USING (org_id, touch_index, subject_variant_key);
 --> statement-breakpoint
 
--- Reporting index: per-(org, variant) scans group on these columns.
+-- Reporting indexes: the view groups BOTH base tables by
+-- (org_id, touch_index, subject_variant_key), so index both to keep the
+-- per-(org, variant) aggregation off the less-selective single-column indexes
+-- as data grows.
 CREATE INDEX IF NOT EXISTS "fitter_campaign_touches_org_variant_idx"
   ON "resupply"."fitter_campaign_touches" ("org_id", "touch_index", "subject_variant_key");
+--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "fitter_campaign_clicks_org_variant_idx"
+  ON "resupply"."fitter_campaign_clicks" ("org_id", "touch_index", "subject_variant_key");

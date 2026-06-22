@@ -19,14 +19,25 @@
 #
 # WHAT IT CHECKS
 #   For every `.from("<table>")` whose table is in GUARDED_TABLES below, the
-#   call-chain window (the `.from(...)` line plus the next few lines, up to the
-#   statement terminator) must mention `org_id`. An `.eq("org_id", orgId)`
-#   filter on a read, or an `org_id:` key on an insert, both satisfy it.
+#   call-chain statement (the `.from(...)` line forward to the statement
+#   terminator) must contain a REAL org-scope OPERATION — not merely the
+#   substring `org_id` (a selected column, comment, or string literal must NOT
+#   satisfy a security gate). Accepted:
+#     * a filter:  .eq("org_id", …) / .in("org_id", …) / .match({ org_id … })
+#     * an insert/update stamp:  org_id:
 #
 #   The table list is a curated allowlist of tenant-scoped objects that are
 #   reached via `.raw()`. Adding a new such table here is a deliberate,
 #   reviewed step — the same posture as the EXCLUDES in
 #   check-tenant-isolation.sh.
+#
+# EXEMPTION
+#   A callsite with a genuinely non-org access pattern — a capability lookup
+#   keyed by a bearer credential (e.g. a random reference + email), or a
+#   platform-wide aggregation to the platform operator — declares itself with a
+#   `raw-org-scope-exempt` marker comment (on or just above the `.from(...)`),
+#   with a justification. This is the visible, reviewed escape hatch, mirroring
+#   the EXCLUDES in check-tenant-isolation.sh — not a routine bypass.
 #
 # Usage:
 #   bash scripts/check-raw-org-scope.sh            # enforce (CI)
@@ -74,6 +85,10 @@ GUARDED_TABLES=(
 # they sit inside a Promise.all([...]) array element).
 MAX_SCAN="${RAW_ORG_SCOPE_MAX_SCAN:-25}"
 
+# How many lines ABOVE the `.from(...)` to scan for a `raw-org-scope-exempt`
+# marker (the explanatory comment block typically sits just above the chain).
+LEAD_SCAN="${RAW_ORG_SCOPE_LEAD_SCAN:-14}"
+
 EXCLUDES=(
   --glob '!**/node_modules/**'
   --glob '!**/dist/**'
@@ -112,7 +127,13 @@ while IFS= read -r m; do
   line="${rest%%:*}"
   # Capture the statement: from the `.from(...)` line forward to the first line
   # whose code ends in `;` (the statement terminator), capped at MAX_SCAN. Then
-  # check for an org_id mention anywhere within that captured statement.
+  # require a REAL org-scope operation within it — not just any mention of the
+  # substring "org_id" (which a selected column, a comment, or a string literal
+  # would satisfy, letting an unscoped cross-tenant read slip through a security
+  # gate). Accepted forms:
+  #   * a filter:  .eq("org_id", …) / .in("org_id", …) / .match({ org_id … })
+  #   * an insert/update stamp:  org_id:
+  #   * an explicit, justified exemption marker:  raw-org-scope-exempt
   end=$((line + MAX_SCAN))
   block="$(awk -v start="$line" -v stop="$end" '
     NR < start { next }
@@ -122,7 +143,16 @@ while IFS= read -r m; do
     stripped ~ /;$/ { exit }
     NR >= stop { exit }
   ' "$file")"
-  if ! grep -q "org_id" <<<"$block"; then
+  # An exemption marker can sit ABOVE the .from() (on the comment block that
+  # explains why), so also scan a window of leading context for it. The block
+  # below the .from() is short, so a generous lead window covers the typical
+  # "explanatory comment then the query chain" layout.
+  lead_start=$((line > LEAD_SCAN ? line - LEAD_SCAN : 1))
+  lead="$(sed -n "${lead_start},${line}p" "$file")"
+  if grep -qE 'raw-org-scope-exempt' <<<"$block$lead"; then
+    continue
+  fi
+  if ! grep -qE '\.(eq|in|match)\(\s*\{?\s*"?org_id"?|org_id\s*:' <<<"$block"; then
     offenders+=("$file:$line")
   fi
 done <<<"$matches"
@@ -135,9 +165,10 @@ if [[ "${#offenders[@]}" -gt 0 ]]; then
     printf '  %s\n' "$o" >&2
   done
   echo >&2
-  echo "Add .eq(\"org_id\", orgId) to the read (or org_id: orgId to the insert). If this object is" >&2
-  echo "genuinely platform-global, remove it from GUARDED_TABLES in scripts/check-raw-org-scope.sh" >&2
-  echo "with a justifying comment." >&2
+  echo "Add .eq(\"org_id\", orgId) to the read (or org_id: orgId to the insert)." >&2
+  echo "If the callsite genuinely has no org to scope to (a capability lookup by bearer" >&2
+  echo "credential, or a platform-wide aggregation to the platform operator), add a" >&2
+  echo "'raw-org-scope-exempt' marker comment with a justification on/above the .from()." >&2
   exit 1
 fi
 

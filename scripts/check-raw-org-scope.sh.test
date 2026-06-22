@@ -113,6 +113,34 @@ EOF
 run >/dev/null 2>&1
 check "test file is exempt" 0 $?
 
+# 8. Merely SELECTING the org_id column (no real filter) must still FAIL —
+#    the gate requires a scope operation, not just the substring "org_id".
+cat >"$FIX/artifacts/resupply-api/src/routes/zeta.ts" <<'EOF'
+const r = await supabase
+  .raw()
+  .schema("public")
+  .from("orders")
+  .select("id, org_id") // selecting the column is NOT a filter
+  .eq("email_status", "failed");
+EOF
+run >/dev/null 2>&1
+check "selecting org_id column (no filter) still fails" 1 $?
+# Remove the intentional offender so it doesn't taint later clean-tree checks.
+rm "$FIX/artifacts/resupply-api/src/routes/zeta.ts"
+
+# 9. A `raw-org-scope-exempt` marker comment suppresses the finding.
+cat >"$FIX/artifacts/resupply-api/src/routes/eta.ts" <<'EOF'
+// raw-org-scope-exempt: capability lookup by bearer reference + email.
+const r = await supabase
+  .raw()
+  .schema("public")
+  .from("orders")
+  .select("id")
+  .eq("order_reference", ref);
+EOF
+run >/dev/null 2>&1
+check "raw-org-scope-exempt marker passes" 0 $?
+
 set -e
 
 echo "check-raw-org-scope self-test: ${pass} passed, ${fail} failed."
