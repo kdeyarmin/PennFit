@@ -705,7 +705,11 @@ router.post(
                 : ("agent" as const),
             body: m.body ?? "",
           }));
-        const result = await adapter.classify({ body: parsed.Body, thread });
+        const result = await adapter.classify({
+          body: parsed.Body,
+          thread,
+          orgId,
+        });
         intent = result.intent;
         agentReply = result.reply ?? null;
         resolvedBy = "ai";

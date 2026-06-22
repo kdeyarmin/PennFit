@@ -128,6 +128,7 @@ interface OpenAiChatResponse {
     message?: { content?: string | null; tool_calls?: OpenAiToolCall[] };
     finish_reason?: string;
   }>;
+  usage?: { prompt_tokens?: number; completion_tokens?: number };
 }
 
 interface OpenAiStreamDelta {
@@ -454,6 +455,15 @@ async function handleJson(
       }
 
       const json = (await upstream.json()) as OpenAiChatResponse;
+      // Fold every round's tokens into the tenant's AI COGS rollup — each
+      // tool round is a separately-billed completion. Mirrors the
+      // Anthropic branch; absent orgId is a silent no-op.
+      recordAiTokenUsage({
+        orgId: toolCtx.orgId,
+        inputTokens: json.usage?.prompt_tokens ?? 0,
+        outputTokens: json.usage?.completion_tokens ?? 0,
+        source: "admin.assistant",
+      });
       const message = json.choices?.[0]?.message;
       const toolCalls = message?.tool_calls;
       if (toolCalls && toolCalls.length > 0 && round < MAX_ADMIN_TOOL_ROUNDS) {

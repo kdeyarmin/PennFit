@@ -39,6 +39,7 @@ import {
   getAnthropicClient,
 } from "../llm-provider";
 import { logger } from "../logger";
+import { recordAiTokenUsage } from "../metering/usage.js";
 import {
   CATALOG_CHAT_TOOLS,
   executeChatTool,
@@ -144,6 +145,11 @@ export interface SleepCoachInput {
    * `getAnthropicClient()`.
    */
   anthropicClient?: AnthropicClient;
+  /**
+   * Owning tenant, for AI-token COGS attribution. Optional — a missing
+   * orgId records nothing (recordAiTokenUsage no-ops on absent orgId).
+   */
+  orgId?: string;
 }
 
 export interface SleepCoachReply {
@@ -240,6 +246,15 @@ export async function askSleepCoach(
           latencyMs,
         };
       }
+      // Fold every round's tokens into the tenant's AI COGS rollup — each
+      // tool round is a separately-billed model call. Fire-and-forget;
+      // absent orgId is a silent no-op.
+      recordAiTokenUsage({
+        orgId: input.orgId,
+        inputTokens: result.response.usage.input_tokens,
+        outputTokens: result.response.usage.output_tokens,
+        source: "sleep_coach",
+      });
       const text = getResponseText(result.response).trim();
       const toolCalls = getResponseToolCalls(result.response);
 
@@ -372,6 +387,7 @@ export async function askSleepCoach(
           content?: string | null;
           tool_calls?: OpenAiCoachToolCall[];
         };
+        usage?: { prompt_tokens?: number; completion_tokens?: number };
       }
     | { ok: false; errorMessage: string }
   > => {
@@ -436,8 +452,13 @@ export async function askSleepCoach(
               tool_calls?: OpenAiCoachToolCall[];
             };
           }>;
+          usage?: { prompt_tokens?: number; completion_tokens?: number };
         };
-        return { ok: true, message: json.choices?.[0]?.message ?? {} };
+        return {
+          ok: true,
+          message: json.choices?.[0]?.message ?? {},
+          usage: json.usage,
+        };
       } catch (err) {
         const isAbort = err instanceof Error && err.name === "AbortError";
         const message = err instanceof Error ? err.message : String(err);
@@ -478,6 +499,15 @@ export async function askSleepCoach(
         latencyMs: Date.now() - startedAt,
       };
     }
+    // Fold every round's tokens into the tenant's AI COGS rollup — each
+    // tool round is a separately-billed completion. Fire-and-forget;
+    // absent orgId is a silent no-op.
+    recordAiTokenUsage({
+      orgId: input.orgId,
+      inputTokens: result.usage?.prompt_tokens ?? 0,
+      outputTokens: result.usage?.completion_tokens ?? 0,
+      source: "sleep_coach",
+    });
     const message = result.message;
     const toolCalls = message.tool_calls ?? [];
     if (toolCalls.length > 0 && round < MAX_TOOL_ROUNDS) {

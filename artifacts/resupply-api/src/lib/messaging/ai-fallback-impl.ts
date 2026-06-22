@@ -45,6 +45,7 @@ import type {
 import { INTENT_NAMES } from "@workspace/resupply-messaging";
 
 import { logger } from "../logger";
+import { recordAiTokenUsage } from "../metering/usage.js";
 
 const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
 const DEFAULT_MODEL = "gpt-4o-mini";
@@ -212,7 +213,16 @@ export function createOpenAiFallbackAdapter(
           }
           const json = (await res.json()) as {
             choices?: Array<{ message?: { content?: string } }>;
+            usage?: { prompt_tokens?: number; completion_tokens?: number };
           };
+          // Fold this classification's tokens into the tenant's AI COGS
+          // rollup (fire-and-forget; absent orgId is a silent no-op).
+          recordAiTokenUsage({
+            orgId: input.orgId,
+            inputTokens: json.usage?.prompt_tokens ?? 0,
+            outputTokens: json.usage?.completion_tokens ?? 0,
+            source: "sms.intent_classifier",
+          });
           const content = json.choices?.[0]?.message?.content ?? "";
           const result = parseModelOutput(content);
           logClassification("openai", input, result);
@@ -328,6 +338,14 @@ export function createAnthropicFallbackAdapter(
           );
           return { intent: "unknown" };
         }
+        // Fold this classification's tokens into the tenant's AI COGS
+        // rollup (fire-and-forget; absent orgId is a silent no-op).
+        recordAiTokenUsage({
+          orgId: input.orgId,
+          inputTokens: result.response.usage.input_tokens,
+          outputTokens: result.response.usage.output_tokens,
+          source: "sms.intent_classifier",
+        });
         const parsed = parseModelOutput(getResponseText(result.response));
         logClassification("anthropic", input, parsed);
         return parsed;

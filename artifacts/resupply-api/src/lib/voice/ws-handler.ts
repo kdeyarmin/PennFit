@@ -1778,6 +1778,7 @@ async function runPostCallSummary(
       practiceName: input.practiceName,
       endReason: input.endReason,
       conversationId: input.conversationId,
+      orgId: input.orgId,
     });
     if (!summary) return;
     await logAudit({
