@@ -721,7 +721,7 @@ function generateSummary(
   } else {
     // Out of range — be honest about it and recommend professional sizing
     const direction = noseW < min ? "narrower than" : "wider than";
-    measureClause = `your ${noseW.toFixed(0)} mm nose width is ${direction} this mask's typical ${min}–${max} mm range, so a sizing fitting at Penn Home Medical Supply is recommended`;
+    measureClause = `your ${noseW.toFixed(0)} mm nose width is ${direction} this mask's typical ${min}–${max} mm range, so a professional sizing fitting is recommended`;
   }
 
   return `Because ${needsClause}, the ${mask.manufacturer} ${mask.name} (model ${mask.modelNumber}) ${matchClause} — and ${measureClause}.`;
@@ -947,9 +947,9 @@ export function recommend(
   const alternatives = remaining.slice(0, 5).map((m) => m.recommendation);
 
   const disclaimer =
-    "This is a starting recommendation from Penn Home Medical Supply to guide your initial fitting — not a clinical diagnosis or prescription. " +
+    "This is a starting recommendation to guide your initial fitting — not a clinical diagnosis or prescription. " +
     "Actual mask fit depends on individual facial anatomy, pressure settings, and personal comfort. " +
-    "Please contact your Penn Home Medical Supply respiratory therapist or DME specialist to confirm fit with physical sizing templates " +
+    "Please contact your respiratory therapist or DME specialist to confirm fit with physical sizing templates " +
     "before finalizing your mask selection.";
 
   return {

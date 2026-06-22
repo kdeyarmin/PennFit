@@ -467,7 +467,7 @@ const storefrontOrderLimiter = expressRateLimit({
   keyGenerator: (req: Request) => ipKeyGenerator(req.ip ?? "0.0.0.0"),
   message: {
     error:
-      "Too many order attempts from this network. Please wait a few minutes and try again, or call Penn Home Medical Supply directly.",
+      "Too many order attempts from this network. Please wait a few minutes and try again, or call us directly.",
   },
 });
 app.use("/api/orders", storefrontOrderLimiter);
