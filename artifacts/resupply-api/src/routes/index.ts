@@ -194,6 +194,8 @@ import claimPaperworkRouter from "./admin/claim-paperwork.js";
 import billingAutoSubmitRouter from "./admin/billing-auto-submit.js";
 import billingStatementsRouter from "./admin/billing-statements.js";
 import claimAppealsRouter from "./admin/claim-appeals.js";
+import claimAdrRouter from "./admin/claim-adr.js";
+import auditPacketRouter from "./admin/audit-packet.js";
 import webhookSubscriptionsRouter from "./admin/webhook-subscriptions.js";
 import webhookEventCatalogRouter from "./admin/webhook-event-catalog.js";
 import billingDirectorRouter from "./admin/billing-director.js";
@@ -656,6 +658,10 @@ router.use(billingAutoSubmitRouter);
 router.use(billingStatementsRouter);
 // /admin/patients/:id/insurance-claims/:claimId/appeal-letter — PDF.
 router.use(claimAppealsRouter);
+// /admin/billing/adr* — Medicare ADR / audit-response queue.
+router.use(claimAdrRouter);
+// /admin/audit-packet/catalog + /admin/patients/:id/audit-packet — audit-packet builder.
+router.use(auditPacketRouter);
 // /admin/webhook-subscriptions + /admin/webhook-deliveries — outbound
 // event subscription CRUD + recent-delivery audit.
 router.use(webhookSubscriptionsRouter);

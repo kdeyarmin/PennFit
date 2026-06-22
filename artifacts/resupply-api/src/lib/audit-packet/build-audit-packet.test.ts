@@ -89,7 +89,9 @@ describe("buildAuditPacket", () => {
 
     const byKey = Object.fromEntries(res.items.map((i) => [i.key, i.status]));
     expect(byKey.cover_sheet).toBe("generated");
-    expect(byKey.compliance_report).toBe("generated");
+    // compliance_report is hybrid: no stored printout here, but adherence data
+    // is present, so it renders the generated summary as a fallback.
+    expect(byKey.compliance_report).toBe("fallback");
     expect(byKey.sleep_study).toBe("attached");
     // Selected but nothing on file — reported missing, not rendered as a gap.
     expect(byKey.reeval_31_91).toBe("missing");

@@ -159,10 +159,10 @@ export const AUDIT_PACKET_CATALOG: readonly AuditPacketItem[] = [
     key: "compliance_report",
     label: "Adherence / compliance report",
     description:
-      "Generated objective-usage summary from device data showing PAP use ≥4 hours/night on ≥70% of nights over a 30-consecutive-day window within the first 90 days of therapy.",
+      "Objective-usage proof showing PAP use ≥4 hours/night on ≥70% of nights over a 30-consecutive-day window within the first 90 days of therapy. Embeds the uploaded device/cloud compliance printout if on file, otherwise a summary generated from device data.",
     group: "adherence",
-    source: "generated",
-    documentTypes: [],
+    source: "hybrid",
+    documentTypes: ["compliance_report", "usage_report", "adherence_report"],
     scope: "both",
     defaultForDevice: true,
     defaultForSupplies: true,
