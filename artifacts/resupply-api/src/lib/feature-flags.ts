@@ -98,6 +98,8 @@ export const FEATURE_FLAG_KEYS = [
   "billing.bill_hold",
   "billing.bill_hold_auto_remind",
   "billing.adr_queue",
+  "collections.dunning",
+  "collections.agency_export",
   "fax.auto_file_signed",
   "fax.referral_review",
   "frontdesk.counter_orders",

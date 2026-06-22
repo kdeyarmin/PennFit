@@ -217,6 +217,21 @@ export {
 } from "./audit-packet-catalog";
 
 export {
+  DEFAULT_DUNNING_POLICY,
+  DUNNING_MIN_BALANCE_CENTS,
+  decideDunningAction,
+  nextDunningStep,
+  shouldOpenDunningRun,
+  type DunningStep,
+  type DunningChannel,
+  type DunningPolicyStep,
+  type DunningPauseReason,
+  type DunningDecision,
+  type DunningDecisionInput,
+  type NextDunningStep,
+} from "./dunning";
+
+export {
   classifyCustomerRecency,
   CUSTOMER_LAPSED_DAYS,
   WINBACK_COOLDOWN_DAYS,

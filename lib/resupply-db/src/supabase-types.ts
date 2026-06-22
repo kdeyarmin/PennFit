@@ -3647,6 +3647,75 @@ export interface Database {
         Update: Partial<Database["resupply"]["Tables"]["audit_packets"]["Row"]>;
         Relationships: [];
       };
+      // Migration 0458: patient AR dunning / collections engine.
+      patient_dunning_runs: {
+        Row: {
+          org_id: string | null;
+          id: string;
+          patient_id: string;
+          opened_balance_cents: number;
+          opened_on: string;
+          current_step:
+            | "statement"
+            | "reminder"
+            | "second_notice"
+            | "final_notice"
+            | "agency"
+            | "resolved";
+          next_action_at: string | null;
+          last_step_at: string | null;
+          status: "active" | "paused" | "resolved" | "cancelled";
+          paused_reason:
+            | "payment_plan_active"
+            | "autopay_enrolled"
+            | "disputed"
+            | "manual_hold"
+            | null;
+          resolved_reason:
+            | "paid"
+            | "written_off"
+            | "agency_handoff"
+            | "manual"
+            | null;
+          created_by_email: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["patient_dunning_runs"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["patient_dunning_runs"]["Row"]
+        >;
+        Relationships: [];
+      };
+      patient_dunning_events: {
+        Row: {
+          org_id: string | null;
+          id: string;
+          run_id: string;
+          step: string;
+          channel: "email" | "sms" | "letter" | "none";
+          outcome:
+            | "sent"
+            | "skipped"
+            | "failed"
+            | "paused"
+            | "resolved"
+            | "handoff";
+          detail: string | null;
+          amount_at_touch_cents: number | null;
+          actor_email: string | null;
+          occurred_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["patient_dunning_events"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["patient_dunning_events"]["Row"]
+        >;
+        Relationships: [];
+      };
       patient_packet_documents: {
         Row: {
           org_id: string | null;
