@@ -12,6 +12,7 @@
 //     transparently retries the non-streaming JSON endpoint.
 
 import { csrfHeader } from "./csrf";
+import { getCompanyContact } from "./contact";
 
 export interface AdminAssistantMessage {
   role: "user" | "assistant";
@@ -42,8 +43,10 @@ export class AdminAssistantApiError extends Error {
 
 const ENDPOINT = "/resupply-api/admin/assistant/chat";
 
-const UNAUTHORIZED_REPLY =
-  "Your admin session expired. Please sign in again to keep chatting with PennPilot.";
+// Resolved at call time so it reflects the live tenant's admin-assistant
+// name (CareMetric Copilot by default; "PennPilot" for the Penn tenant).
+const unauthorizedReply = () =>
+  `Your admin session expired. Please sign in again to keep chatting with ${getCompanyContact().assistantAdminName}.`;
 const RATE_LIMITED_REPLY =
   "You're sending messages too quickly. Please wait a minute and try again.";
 
@@ -64,7 +67,7 @@ export async function postAdminAssistantMessage(
   });
 
   if (res.status === 401 || res.status === 403) {
-    return { reply: UNAUTHORIZED_REPLY, unauthorized: true };
+    return { reply: unauthorizedReply(), unauthorized: true };
   }
 
   if (res.status === 429) {
@@ -80,7 +83,8 @@ export async function postAdminAssistantMessage(
     } | null;
     throw new AdminAssistantApiError(
       res.status,
-      body?.error ?? `PennPilot request failed (${res.status})`,
+      body?.error ??
+        `${getCompanyContact().assistantAdminName} request failed (${res.status})`,
     );
   }
 
@@ -124,7 +128,7 @@ export async function streamAdminAssistantMessage(
   }
 
   if (res.status === 401 || res.status === 403) {
-    onChunk(UNAUTHORIZED_REPLY);
+    onChunk(unauthorizedReply());
     return { unauthorized: true };
   }
 
