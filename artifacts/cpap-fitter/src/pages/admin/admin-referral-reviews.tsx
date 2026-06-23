@@ -299,7 +299,7 @@ function buildAcceptBody(
 // the last page no earlier than the first. Without the `end >= start` check
 // an inverted range (e.g. pages 10–3) passes the per-bound `>= 1` filter and
 // is sent to the API. Documents that aren't included are always "valid".
-function isDocumentPageRangeValid(d: {
+export function isDocumentPageRangeValid(d: {
   include: boolean;
   pageStart: string;
   pageEnd: string;
