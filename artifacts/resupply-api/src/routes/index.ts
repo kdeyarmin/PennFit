@@ -201,6 +201,7 @@ import claimAdrRouter from "./admin/claim-adr.js";
 import auditPacketRouter from "./admin/audit-packet.js";
 import auditReadinessWorklistRouter from "./admin/audit-readiness-worklist.js";
 import collectionsWorklistRouter from "./admin/collections-worklist.js";
+import billingNotesRouter from "./admin/billing-notes.js";
 import webhookSubscriptionsRouter from "./admin/webhook-subscriptions.js";
 import webhookEventCatalogRouter from "./admin/webhook-event-catalog.js";
 import billingDirectorRouter from "./admin/billing-director.js";
@@ -679,6 +680,7 @@ router.use(auditPacketRouter);
 router.use(auditReadinessWorklistRouter);
 // /admin/billing/collections* — patient AR dunning / collections worklist.
 router.use(collectionsWorklistRouter);
+router.use(billingNotesRouter);
 // /admin/webhook-subscriptions + /admin/webhook-deliveries — outbound
 // event subscription CRUD + recent-delivery audit.
 router.use(webhookSubscriptionsRouter);
