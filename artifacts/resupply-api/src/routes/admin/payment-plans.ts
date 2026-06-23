@@ -465,10 +465,25 @@ async function audit(
 // Charging itself stays gated behind the seeded-OFF
 // billing.payment_plan_autocharge flag + the worker cron — authorizing a
 // plan never charges anything on its own.
+// Return targets are RELATIVE admin paths, not absolute URLs. The server
+// builds the absolute success/cancel URLs from its own origin below, so a
+// caller can't turn this Stripe-hosted setup link into an open redirect to an
+// attacker host (the prior `z.string().url()` accepted any absolute URL, which
+// a `patients.update` user could weaponize for post-setup phishing of a
+// patient). Mirrors the storefront checkout (`successPath`/`cancelPath`) and
+// platform billing return-path patterns. A single leading slash only — `//host`
+// and backslash tricks are rejected so it stays same-origin.
+const relativeAdminPath = z
+  .string()
+  .max(300)
+  .refine(
+    (s) => s.startsWith("/") && !s.startsWith("//") && !s.includes("\\"),
+    { message: "must be a relative path" },
+  );
 const authorizeBody = z
   .object({
-    successUrl: z.string().url().max(2000),
-    cancelUrl: z.string().url().max(2000),
+    successPath: relativeAdminPath,
+    cancelPath: relativeAdminPath,
   })
   .strict();
 
@@ -523,6 +538,22 @@ router.post(
       return;
     }
 
+    // Build the absolute return URLs from the SERVER's origin + the validated
+    // relative paths, so the hosted Stripe setup link can only ever return to
+    // this app's own host. Mirrors platform/billing checkout origin resolution.
+    const host = req.get("host");
+    const origin = host
+      ? `${req.protocol}://${host}`
+      : process.env.RAILWAY_PUBLIC_DOMAIN
+        ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
+        : "";
+    if (!origin) {
+      res.status(500).json({ error: "origin_unresolved" });
+      return;
+    }
+    const successUrl = `${origin}${parsed.data.successPath}`;
+    const cancelUrl = `${origin}${parsed.data.cancelPath}`;
+
     const stripe = getStripeClient(config);
     // Create the setup session ON THE TENANT'S connected account (G5) when it
     // has one, so the customer + mandated payment method are minted on the
@@ -547,8 +578,8 @@ router.post(
           ...(plan.stripe_customer_id
             ? { customer: plan.stripe_customer_id }
             : {}),
-          success_url: parsed.data.successUrl,
-          cancel_url: parsed.data.cancelUrl,
+          success_url: successUrl,
+          cancel_url: cancelUrl,
           // The webhook keys off these to find the plan + store the PM.
           metadata: {
             payment_plan_id: plan.id,

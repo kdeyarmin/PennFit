@@ -95,16 +95,18 @@ export function PaymentPlansSection({ patientId }: { patientId: string }) {
       authWindowRef.current = window.open("about:blank", "_blank");
     },
     mutationFn: async (planId: string): Promise<string> => {
-      const origin = window.location.origin;
       const res = await fetch(
         `${BASE}/admin/payment-plans/${planId}/authorize-autopay`,
         {
           method: "POST",
           credentials: "same-origin",
           headers: { "Content-Type": "application/json", ...csrfHeader() },
+          // Relative paths only — the server builds the absolute success/cancel
+          // URLs from its own origin (prevents an open redirect on the
+          // Stripe-hosted setup link).
           body: JSON.stringify({
-            successUrl: `${origin}/admin/patients/${patientId}?autopay=ok`,
-            cancelUrl: `${origin}/admin/patients/${patientId}?autopay=cancelled`,
+            successPath: `/admin/patients/${patientId}?autopay=ok`,
+            cancelPath: `/admin/patients/${patientId}?autopay=cancelled`,
           }),
         },
       );
