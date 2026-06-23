@@ -597,6 +597,51 @@ router.post(
       return;
     }
 
+    // Fire-and-forget "we received your return" email so the patient
+    // isn't left wondering between drop-off and refund. Same posture as
+    // the approve / refund handlers — never blocks the response.
+    void (async () => {
+      const toEmail = await resolveCustomerEmailForReturn(
+        orgId,
+        updated.customer_id,
+        updated.order_id,
+      );
+      if (!toEmail) {
+        logger.info(
+          { returnId: updated.id, kind: "received" },
+          "shop-return status email skipped — no recipient",
+        );
+        return;
+      }
+      const result = await sendReturnStatusEmail({
+        kind: "received",
+        toEmail,
+        returnId: updated.id,
+        stripeSessionId: updated.stripe_session_id ?? "",
+        orgId,
+      });
+      if (!result.delivered) {
+        logger.warn(
+          {
+            returnId: updated.id,
+            kind: "received",
+            configured: result.configured,
+            errorCode: result.error,
+          },
+          "shop-return received email did not deliver",
+        );
+      }
+    })().catch((err) => {
+      logger.warn(
+        {
+          returnId: updated.id,
+          kind: "received",
+          errorName: err instanceof Error ? err.name : "non_error_thrown",
+        },
+        "shop-return received email threw unexpectedly",
+      );
+    });
+
     // Opt-in restock — only when the CSR confirms the item is resaleable
     // (most DME consumables are not, hence default false). The status guard
     // above makes this once-only: a re-call won't match shipped_back/approved.
