@@ -5585,6 +5585,21 @@ export interface Database {
         >;
         Relationships: [];
       };
+      billing_notes: {
+        Row: {
+          org_id: string | null;
+          id: string;
+          category: "claims" | "collections" | "payer" | "patient" | "general";
+          patient_id: string | null;
+          body: string;
+          author_email: string;
+          author_user_id: string | null;
+          created_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["billing_notes"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["billing_notes"]["Row"]>;
+        Relationships: [];
+      };
       shop_order_nps_responses: {
         Row: {
           org_id: string | null;

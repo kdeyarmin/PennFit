@@ -70,6 +70,7 @@ import {
   Target,
   Menu,
   CircleDollarSign,
+  StickyNote,
   Landmark,
   Gavel,
   FilePlus2,
@@ -797,6 +798,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             matchPrefix: "/admin/billing/collections",
             requiredPermission: "reports.read",
             hint: "Patient balances on the dunning ladder — pause, resolve, or cancel a run",
+          },
+          {
+            href: "/admin/billing/notes",
+            label: "Billing notes",
+            icon: StickyNote,
+            matchPrefix: "/admin/billing/notes",
+            hint: "Shared notes log for the billing team — claims, collections, payers, and account context",
           },
           {
             href: "/admin/billing/auto-submit",
