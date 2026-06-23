@@ -134,11 +134,11 @@ export function makeRequireRole(role: "admin" | "agent") {
     // admin can do anything an agent can.
     if (role === "agent") {
       if (user.role !== "agent" && user.role !== "admin") {
-        authError(res, 403, "session_required", "Not authorized.");
+        authError(res, 403, "forbidden", "Not authorized.");
         return;
       }
     } else if (user.role !== "admin") {
-      authError(res, 403, "session_required", "Not authorized.");
+      authError(res, 403, "forbidden", "Not authorized.");
       return;
     }
     next();

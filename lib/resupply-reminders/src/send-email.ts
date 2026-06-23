@@ -117,6 +117,7 @@ export async function sendReminderEmail(
   // seed-org bridge resolves the original operating company when a
   // caller hasn't threaded orgId yet (see input doc).
   const orgId = input.orgId ?? (await resolveSeedOrgId()) ?? "";
+  if (!orgId) return { status: "tenant_not_resolved" };
   const db = getOrgScopedClient(orgId, supabase);
 
   const { data: patient, error: patientErr } = await db

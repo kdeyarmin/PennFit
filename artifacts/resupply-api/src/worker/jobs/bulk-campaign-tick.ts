@@ -334,6 +334,7 @@ export async function processTick(
       {
         templateKey: campaign.template_key,
         channel,
+        orgId,
         variables: {},
       },
       // Empty fallback — if the template is missing or the DB is

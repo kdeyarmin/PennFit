@@ -34,4 +34,24 @@ describe("createAirviewAdapter", () => {
     });
     expect(adapter.availability()).toEqual({ status: "configured" });
   });
+
+  it("re-reads credentials at availability call time", () => {
+    const env: NodeJS.ProcessEnv = {};
+    const adapter = createAirviewAdapter(env);
+
+    expect(adapter.availability()).toEqual({
+      status: "unavailable",
+      reason: "not_configured",
+    });
+
+    Object.assign(env, {
+      AIRVIEW_API_BASE_URL: "https://api.example.com",
+      AIRVIEW_OAUTH_TOKEN_URL: "https://api.example.com/oauth/token",
+      AIRVIEW_CLIENT_ID: "id",
+      AIRVIEW_CLIENT_SECRET: "secret",
+      AIRVIEW_DME_ID: "dme",
+    });
+
+    expect(adapter.availability()).toEqual({ status: "configured" });
+  });
 });

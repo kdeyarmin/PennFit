@@ -111,12 +111,7 @@ export function ConversationsPage() {
       ...(channelFilter
         ? { channel: channelFilter as keyof typeof ListConversationsChannel }
         : {}),
-      // The new `view` parameter isn't in the generated zod schema yet;
-      // it's a server-side-only filter we pass through. Cast through
-      // unknown to satisfy the strict generated type.
-      ...(view
-        ? ({ view } as unknown as Partial<ListConversationsParams>)
-        : {}),
+      ...(view ? { view: view as ListConversationsParams["view"] } : {}),
       limit: pageSize,
       offset,
     }),

@@ -1268,13 +1268,26 @@ function AdminConsole() {
               path="/admin/shop/subscriptions"
               component={AdminShopSubscriptionsPage}
             />
-            <Route path="/admin/team" component={AdminTeamPage} />
+            <Route path="/admin/team">
+              {() =>
+                canManageTools ? (
+                  <AdminTeamPage />
+                ) : (
+                  <NotAuthorizedPage reason="not-authorized" />
+                )
+              }
+            </Route>
             <Route path="/admin/operations" component={AdminOperationsPage} />
             <Route path="/admin/reports" component={AdminReportsPage} />
-            <Route
-              path="/admin/control-center"
-              component={AdminControlCenterPage}
-            />
+            <Route path="/admin/control-center">
+              {() =>
+                canManageTools ? (
+                  <AdminControlCenterPage />
+                ) : (
+                  <NotAuthorizedPage reason="not-authorized" />
+                )
+              }
+            </Route>
             <Route path="/admin/nps" component={AdminNpsPage} />
             <Route path="/admin/support" component={AdminSupportPage} />
             <Route path="/admin/resources" component={AdminResourcesPage} />

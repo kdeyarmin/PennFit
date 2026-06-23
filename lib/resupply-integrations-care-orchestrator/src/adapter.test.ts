@@ -34,4 +34,25 @@ describe("createCareOrchestratorAdapter", () => {
     });
     expect(adapter.availability()).toEqual({ status: "configured" });
   });
+
+  it("re-reads credentials at availability call time", () => {
+    const env: NodeJS.ProcessEnv = {};
+    const adapter = createCareOrchestratorAdapter(env);
+
+    expect(adapter.availability()).toEqual({
+      status: "unavailable",
+      reason: "not_configured",
+    });
+
+    Object.assign(env, {
+      CARE_ORCHESTRATOR_API_BASE_URL: "https://api.example.com",
+      CARE_ORCHESTRATOR_OAUTH_TOKEN_URL:
+        "https://api.example.com/oauth/token",
+      CARE_ORCHESTRATOR_CLIENT_ID: "id",
+      CARE_ORCHESTRATOR_CLIENT_SECRET: "secret",
+      CARE_ORCHESTRATOR_PARTNER_ID: "partner",
+    });
+
+    expect(adapter.availability()).toEqual({ status: "configured" });
+  });
 });

@@ -23,11 +23,10 @@ export { fetchAirviewSnapshot } from "./client";
 export function createAirviewAdapter(
   env: NodeJS.ProcessEnv = process.env,
 ): IntegrationAdapter {
-  const config = readAirviewConfigOrNull(env);
-
   return {
     source: "resmed_airview",
     availability() {
+      const config = readAirviewConfigOrNull(env);
       if (!config) {
         return { status: "unavailable", reason: "not_configured" };
       }
@@ -36,6 +35,7 @@ export function createAirviewAdapter(
     async fetchSnapshot(
       input: FetchSnapshotInput,
     ): Promise<FetchSnapshotResult> {
+      const config = readAirviewConfigOrNull(env);
       if (!config) {
         return { ok: false, error: "unavailable" };
       }
