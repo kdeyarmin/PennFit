@@ -1,4 +1,4 @@
-// Route tests for /admin/billing/notes (migration 0465 — the billing
+// Route tests for /admin/billing/notes (migration 0467 — the billing
 // team's free-form notes log).
 //
 // Mirrors order-notes.test.ts. Coverage:

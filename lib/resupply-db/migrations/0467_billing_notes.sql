@@ -1,4 +1,4 @@
--- 0465_billing_notes — a free-form notes log for the billing team.
+-- 0467_billing_notes — a free-form notes log for the billing team.
 --
 -- Why
 -- ---

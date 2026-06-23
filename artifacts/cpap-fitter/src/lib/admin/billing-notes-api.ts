@@ -1,5 +1,5 @@
 // Fetch wrappers for the billing team's free-form notes log (migration
-// 0465). Any admin staffer can read + post (requireAdmin server-side).
+// 0467). Any admin staffer can read + post (requireAdmin server-side).
 
 import { ApiError } from "@workspace/api-client-react/admin";
 

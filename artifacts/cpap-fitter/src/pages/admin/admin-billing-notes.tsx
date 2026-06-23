@@ -1,4 +1,4 @@
-// /admin/billing/notes — the billing team's free-form notes log (0465).
+// /admin/billing/notes — the billing team's free-form notes log (0467).
 //
 // A shared scratchpad for billers: cross-cutting notes about claims,
 // collections, payers, and patient accounts that don't belong on one

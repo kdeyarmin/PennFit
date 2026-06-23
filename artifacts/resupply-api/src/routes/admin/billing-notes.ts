@@ -1,5 +1,5 @@
 // /admin/billing/notes — a free-form notes log for the billing team
-// (migration 0465).
+// (migration 0467).
 //
 //   GET  /admin/billing/notes            — list (newest first), optional
 //                                           ?category= and ?patientId= filters
