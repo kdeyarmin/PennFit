@@ -1,4 +1,4 @@
--- 0467_harden_public_tables_and_rpc_grants
+-- 0468_harden_public_tables_and_rpc_grants
 --
 -- Fixes a hardening migration that was accidentally written under
 -- lib/resupply-db/drizzle/ instead of lib/resupply-db/migrations/, so it was
