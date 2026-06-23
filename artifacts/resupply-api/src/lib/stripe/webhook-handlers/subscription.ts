@@ -18,7 +18,10 @@ import {
 
 import { formatIntervalLabel } from "../products-meta";
 import { resolveWebhookOrgId } from "../webhook-org-context";
-import { reconcileMembershipFromSubscription } from "./membership-reconcile";
+import {
+  joinMembershipFromSubscription,
+  reconcileMembershipFromSubscription,
+} from "./membership-reconcile";
 import { readCustomerIdFromMetadata } from "./shared";
 
 type ShopSubscriptionUpdate =
@@ -41,6 +44,18 @@ export async function handleSubscriptionEvent(
   const subscription = event.data.object as Stripe.Subscription;
   const eventCreatedAt = new Date(event.created * 1000);
   await upsertSubscription(subscription, eventCreatedAt, log);
+  // Self-serve membership JOIN: a storefront membership-checkout subscription
+  // stamps membership_tier metadata; set the tier on the customer once active.
+  // Runs BEFORE reconcile so the same created event links the sub, then
+  // reconcile (by sub id) can refresh the renewal date. Best-effort.
+  try {
+    await joinMembershipFromSubscription(subscription, log);
+  } catch (err) {
+    log?.warn?.(
+      { err, subscriptionId: subscription.id },
+      "membership join failed (non-fatal)",
+    );
+  }
   // Independently reconcile a cash-pay membership backed by this subscription
   // (downgrade-on-cancel / refresh renewal). Best-effort — a membership
   // reconcile failure must NOT fail the shop_subscriptions mirror above or the

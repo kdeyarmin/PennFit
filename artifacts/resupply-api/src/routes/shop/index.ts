@@ -30,6 +30,7 @@ import meExportRouter from "./me-export";
 import meReorderSuggestionsRouter from "./me-reorder-suggestions";
 import myOrdersRouter from "./my-orders";
 import myReturnsRouter from "./my-returns";
+import membershipCheckoutRouter from "./membership-checkout";
 import mySubscriptionsRouter from "./my-subscriptions";
 import orderRouter from "./order";
 import orderPodRouter from "./order-pod";
@@ -153,6 +154,7 @@ router.use(myReturnsRouter);
 // receipt re-send route" answerable.
 router.use(resendReceiptRouter);
 router.use(mySubscriptionsRouter);
+router.use(membershipCheckoutRouter);
 router.use(quickCheckoutRouter);
 router.use(cartSnapshotRouter);
 // Customer-submitted product reviews. Public reads + author writes

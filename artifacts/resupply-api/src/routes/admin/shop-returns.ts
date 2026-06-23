@@ -50,6 +50,7 @@ import {
 } from "../../lib/stripe/config";
 import { stripeAccountRequestOptions } from "../../lib/stripe/connect";
 import { sendReturnStatusEmail } from "../../lib/shop-returns/send-return-status-email";
+import { restockReturnedOrder } from "../../lib/shop-returns/restock";
 import { logger } from "../../lib/logger";
 
 type ShopReturnRow = Database["resupply"]["Tables"]["shop_returns"]["Row"];
@@ -441,6 +442,17 @@ const noteOnly = z
   .object({ note: z.string().trim().max(2000).optional().nullable() })
   .strict();
 
+// mark-received also accepts an opt-in `restock` flag: when true, the
+// returned order's items are added back to sellable Stripe stock_count.
+// Defaults false because most DME consumables (opened masks/supplies) can't
+// be resold.
+const markReceivedBody = z
+  .object({
+    note: z.string().trim().max(2000).optional().nullable(),
+    restock: z.boolean().optional().default(false),
+  })
+  .strict();
+
 router.post(
   "/admin/shop/returns/:id/reject",
   requirePermission("returns.manage"),
@@ -548,7 +560,7 @@ router.post(
       res.status(400).json({ error: "missing_id" });
       return;
     }
-    const parsed = noteOnly.safeParse(req.body ?? {});
+    const parsed = markReceivedBody.safeParse(req.body ?? {});
     if (!parsed.success) {
       res.status(400).json({ error: "invalid_body" });
       return;
@@ -584,7 +596,40 @@ router.post(
       res.status(409).json({ error: "not_in_shipped_or_approved_state" });
       return;
     }
-    res.json({ return: serializeReturnRow(updated) });
+
+    // Opt-in restock — only when the CSR confirms the item is resaleable
+    // (most DME consumables are not, hence default false). The status guard
+    // above makes this once-only: a re-call won't match shipped_back/approved.
+    // Best-effort: a restock failure never fails the receipt.
+    let restocked = 0;
+    if (parsed.data.restock) {
+      try {
+        const stripeConfig = readStripeConfigOrNull(process.env);
+        if (stripeConfig) {
+          const stripe = getStripeClient(stripeConfig);
+          const accountOptions = await stripeAccountRequestOptions(orgId);
+          const result = await restockReturnedOrder({
+            stripe,
+            accountOptions,
+            supabase,
+            orderId: updated.order_id ?? null,
+            sessionId: updated.stripe_session_id ?? null,
+            log: req.log,
+          });
+          restocked = result.productsRestocked;
+        }
+      } catch (restockErr) {
+        req.log?.warn(
+          { err: restockErr, returnId: id },
+          "return restock failed (non-fatal)",
+        );
+      }
+    }
+
+    res.json({
+      return: serializeReturnRow(updated),
+      productsRestocked: restocked,
+    });
   },
 );
 

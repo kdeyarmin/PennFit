@@ -49,6 +49,7 @@ import {
 } from "@/lib/account-api";
 import { fetchShopProducts } from "@/lib/shop-api";
 import { OrdersSection } from "@/components/account/OrdersSection";
+import { MembershipSection } from "@/components/account/MembershipSection";
 import { SubscriptionsSection } from "@/components/account/SubscriptionsSection";
 import { DocumentsSection } from "@/components/account/DocumentsSection";
 import { ProfileSection } from "@/components/account/ProfileSection";
@@ -455,6 +456,7 @@ function AccountInner() {
             {activeTab === "orders" && (
               <>
                 <ReorderSuggestionsSection />
+                <MembershipSection />
                 <SubscriptionsSection previewMode={previewMode === true} />
                 <OrdersSection
                   orders={data.recentOrders ?? []}

@@ -27,6 +27,27 @@ async function jsonFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   return (await res.json()) as T;
 }
 
+// ---- Cash-pay membership self-serve join ----
+
+export type MembershipOption = {
+  tier: string;
+  priceId: string;
+  unitAmountCents: number | null;
+  currency: string | null;
+  interval: string | null;
+  intervalCount: number | null;
+};
+
+export const getMembershipOptions = () =>
+  jsonFetch<{ tiers: MembershipOption[] }>("/shop/membership/options");
+
+export const startMembershipCheckout = (tier: string) =>
+  jsonFetch<{ url: string | null }>("/shop/membership/checkout", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ tier }),
+  });
+
 // ---- Equipment self-register ----
 
 export type SelfEquipmentItem = {
