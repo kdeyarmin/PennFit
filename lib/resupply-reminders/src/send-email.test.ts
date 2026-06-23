@@ -222,6 +222,16 @@ describe("sendReminderEmail — seed-org bridge", () => {
     expect(resolveSeedOrgIdMock).toHaveBeenCalledTimes(1);
     expect(tryUpsertMock.mock.calls[0][1].orgId).toBe(ORG_ID);
   });
+
+  it("returns tenant_not_resolved when orgId is omitted and no seed tenant exists", async () => {
+    resolveSeedOrgIdMock.mockResolvedValueOnce(null);
+
+    const result = await sendReminderEmail(makeInput({ orgId: undefined }));
+
+    expect(result.status).toBe("tenant_not_resolved");
+    expect(patientReadMock).not.toHaveBeenCalled();
+    expect(sendEmailMock).not.toHaveBeenCalled();
+  });
 });
 
 describe("sendReminderEmail — early exits", () => {

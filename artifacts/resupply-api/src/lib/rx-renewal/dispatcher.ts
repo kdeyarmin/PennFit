@@ -301,6 +301,7 @@ export async function runRxRenewalSendDue(
             // shop_customers in this stack. Per-customer
             // overrides skip; global template still applies.
             customerId: null,
+            orgId,
             variables: tmplVars,
           },
           {
@@ -327,6 +328,7 @@ export async function runRxRenewalSendDue(
             templateKey: "rx_renewal.sms",
             channel: "sms",
             customerId: null,
+            orgId,
             variables: tmplVars,
           },
           {
@@ -374,6 +376,7 @@ export async function runRxRenewalSendDue(
             templateKey: "rx_renewal.push",
             channel: "push",
             customerId: null,
+            orgId,
             variables: tmplVars,
           },
           {

@@ -176,6 +176,7 @@ export async function sendBackInStockEmail(
       // without a shop_customers id, so per-customer overrides don't
       // apply today.
       customerId: null,
+      orgId: payload.orgId,
       variables: buildVariables(payload),
     },
     {

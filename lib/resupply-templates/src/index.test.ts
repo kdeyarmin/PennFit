@@ -207,10 +207,14 @@ describe("renderMessage", () => {
   });
 
   it("partitions cache by customerId so an override doesn't leak to the global path", async () => {
-    const calls: Array<{ key: string; channel: string; cust: string | null }> =
-      [];
-    const lookup: TemplateLookup = vi.fn(async (key, channel, cust) => {
-      calls.push({ key, channel, cust });
+    const calls: Array<{
+      key: string;
+      channel: string;
+      cust: string | null;
+      org: string | null;
+    }> = [];
+    const lookup: TemplateLookup = vi.fn(async (key, channel, cust, org) => {
+      calls.push({ key, channel, cust, org });
       return sampleTemplate;
     });
     await renderMessage(
@@ -234,8 +238,48 @@ describe("renderMessage", () => {
       lookup,
     );
     expect(calls).toEqual([
-      { key: "rx_renewal.30_day", channel: "email", cust: "cust_a" },
-      { key: "rx_renewal.30_day", channel: "email", cust: null },
+      {
+        key: "rx_renewal.30_day",
+        channel: "email",
+        cust: "cust_a",
+        org: null,
+      },
+      { key: "rx_renewal.30_day", channel: "email", cust: null, org: null },
     ]);
+  });
+
+  it("partitions global template cache by orgId", async () => {
+    const lookup: TemplateLookup = vi.fn(async (key, channel, _cust, org) => ({
+      ...sampleTemplate,
+      templateKey: key,
+      channel,
+      subject: `Template for ${org ?? "seed"}`,
+      bodyText: `Tenant ${org ?? "seed"} body`,
+    }));
+
+    const first = await renderMessage(
+      {
+        templateKey: "rx_renewal.30_day",
+        channel: "email",
+        orgId: "org_a",
+        variables: {},
+      },
+      fallback,
+      lookup,
+    );
+    const second = await renderMessage(
+      {
+        templateKey: "rx_renewal.30_day",
+        channel: "email",
+        orgId: "org_b",
+        variables: {},
+      },
+      fallback,
+      lookup,
+    );
+
+    expect(first.subject).toBe("Template for org_a");
+    expect(second.subject).toBe("Template for org_b");
+    expect(lookup).toHaveBeenCalledTimes(2);
   });
 });

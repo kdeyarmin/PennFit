@@ -62,7 +62,7 @@ describe("ForgotPasswordPage — visible 5xx alert", () => {
 
     const alert = screen.getByRole("alert");
     expect(alert.textContent ?? "").toContain("credentials store");
-    expect(alert.textContent ?? "").toContain("status.pennpaps.com");
+    expect(alert.textContent ?? "").toContain("status.cmbreathe.com");
     expect(alert.textContent ?? "").toContain("send a reset link");
     // 5xx path MUST NOT fold to the success view — the user needs
     // to know the email wasn't queued.

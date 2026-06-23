@@ -17,11 +17,10 @@ export { fetchCareOrchestratorSnapshot } from "./client";
 export function createCareOrchestratorAdapter(
   env: NodeJS.ProcessEnv = process.env,
 ): IntegrationAdapter {
-  const config = readCareOrchestratorConfigOrNull(env);
-
   return {
     source: "philips_care",
     availability() {
+      const config = readCareOrchestratorConfigOrNull(env);
       if (!config) {
         return { status: "unavailable", reason: "not_configured" };
       }
@@ -30,6 +29,7 @@ export function createCareOrchestratorAdapter(
     async fetchSnapshot(
       input: FetchSnapshotInput,
     ): Promise<FetchSnapshotResult> {
+      const config = readCareOrchestratorConfigOrNull(env);
       if (!config) {
         return { ok: false, error: "unavailable" };
       }

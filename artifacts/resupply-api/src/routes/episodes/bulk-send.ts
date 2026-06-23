@@ -282,6 +282,8 @@ router.post(
 
 function errorMessageFor(outcome: SendReminderOutcome): string {
   switch (outcome.status) {
+    case "tenant_not_resolved":
+      return "Tenant context could not be resolved for this send.";
     case "patient_not_found":
       return "Patient row not found for this episode.";
     case "patient_not_active":

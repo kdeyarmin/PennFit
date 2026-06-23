@@ -47,8 +47,7 @@ export function errorHandler(
   }
 
   const requestId = (req as Request & { id?: string }).id ?? null;
-  const errName = err instanceof Error ? err.name : "unknown";
-  const errMessage = err instanceof Error ? err.message : String(err);
+  const errName = err instanceof Error ? err.name : typeof err;
 
   // Pino's req.log carries the per-request id automatically. Fall
   // back to the module logger if it isn't attached (e.g. early
@@ -58,8 +57,7 @@ export function errorHandler(
     {
       event: "unhandled_route_error",
       errName,
-      errMessage,
-      stack: err instanceof Error ? err.stack : undefined,
+      ...(err instanceof Error ? { err } : {}),
       requestId,
     },
     "unhandled error in route handler",

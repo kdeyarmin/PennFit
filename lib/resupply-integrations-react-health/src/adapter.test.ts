@@ -34,4 +34,24 @@ describe("createReactHealthAdapter", () => {
     });
     expect(adapter.availability()).toEqual({ status: "configured" });
   });
+
+  it("re-reads credentials at availability call time", () => {
+    const env: NodeJS.ProcessEnv = {};
+    const adapter = createReactHealthAdapter(env);
+
+    expect(adapter.availability()).toEqual({
+      status: "unavailable",
+      reason: "not_configured",
+    });
+
+    Object.assign(env, {
+      REACT_HEALTH_API_BASE_URL: "https://api.example.com",
+      REACT_HEALTH_OAUTH_TOKEN_URL: "https://api.example.com/oauth/token",
+      REACT_HEALTH_CLIENT_ID: "id",
+      REACT_HEALTH_CLIENT_SECRET: "secret",
+      REACT_HEALTH_ACCOUNT_ID: "acct",
+    });
+
+    expect(adapter.availability()).toEqual({ status: "configured" });
+  });
 });
