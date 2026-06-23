@@ -65,7 +65,9 @@ import {
   getStripeClient,
   readStripeConfigOrNull,
 } from "../../lib/stripe/config";
+import { stripeAccountRequestOptions } from "../../lib/stripe/connect";
 import { stripeErrLogFields } from "../../lib/stripe/err-log-fields";
+import { releaseReservationsForSession } from "../../lib/inventory/reservations";
 
 const router: IRouter = Router();
 
@@ -436,6 +438,146 @@ router.post(
         canEditAddress: row.shipped_at === null,
       },
     });
+  },
+);
+
+// ---------------------------------------------------------------------
+// POST /shop/me/orders/:orderId/cancel
+// ---------------------------------------------------------------------
+// Customer-initiated self-serve cancellation, allowed ONLY while the
+// order is paid and not yet handed to the carrier. We issue a FULL Stripe
+// refund, flip the order to `refunded` (there is no separate `canceled`
+// status — a pre-ship cancel IS a full refund), and release the inventory
+// holds. The "refund issued" patient notice fires from the resulting
+// charge.refunded webhook (refund-notification.ts), so the customer gets
+// the same confirmation as any other refund.
+//
+// Ordering / race notes: we refund FIRST, then re-assert the not-yet-
+// shipped invariant in the UPDATE's WHERE clause. If an admin enters
+// tracking between our pre-check and the refund (a sub-second race), the
+// refund has still gone out — we log it for follow-up rather than leave
+// the customer un-refunded. The Stripe idempotency key collapses
+// double-clicks to a single Refund object.
+router.post(
+  "/shop/me/orders/:orderId/cancel",
+  requireSignedIn,
+  async (req, res) => {
+    const orderId = validateOrderId(req.params.orderId);
+    if (!orderId) {
+      res.status(400).json({ error: "invalid_order_id" });
+      return;
+    }
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+    const { data: existing, error: existsErr } = await supabase
+      .from("shop_orders")
+      .select(
+        "id, customer_id, status, shipped_at, stripe_payment_intent_id, stripe_session_id",
+      )
+      .eq("id", orderId)
+      .limit(1)
+      .maybeSingle();
+    if (existsErr) throw existsErr;
+    // 404 collapses "no such order" and "belongs to another shopper" so a
+    // foreign order id can't be probed.
+    if (!existing || existing.customer_id !== req.userCustomerId) {
+      res.status(404).json({ error: "order_not_found" });
+      return;
+    }
+    if (existing.status === "refunded") {
+      res.status(409).json({ error: "order_already_refunded" });
+      return;
+    }
+    if (existing.status !== "paid") {
+      res
+        .status(409)
+        .json({ error: "order_not_paid", currentStatus: existing.status });
+      return;
+    }
+    if (existing.shipped_at !== null) {
+      res.status(409).json({ error: "order_already_shipped" });
+      return;
+    }
+    if (!existing.stripe_payment_intent_id) {
+      // No captured PaymentIntent → nothing to refund (shouldn't happen
+      // for a paid order, but guard so we never claim a cancel we can't
+      // back with a refund).
+      res.status(409).json({ error: "order_no_payment_intent" });
+      return;
+    }
+
+    const config = readStripeConfigOrNull();
+    if (!config) {
+      res.status(503).json({ error: "stripe_not_configured" });
+      return;
+    }
+    const stripe = getStripeClient(config);
+    const acct = await stripeAccountRequestOptions(orgId);
+    const paymentIntentId = existing.stripe_payment_intent_id;
+    try {
+      await stripe.refunds.create(
+        {
+          payment_intent: paymentIntentId,
+          reason: "requested_by_customer",
+          metadata: { shop_order_id: orderId, canceled_by: "customer" },
+        },
+        // Per-order idempotency: a double-click collapses to one Refund.
+        { ...acct, idempotencyKey: `cancel-${orderId}` },
+      );
+    } catch (err) {
+      req.log?.warn?.(
+        { orderId, ...stripeErrLogFields(err) },
+        "shop/me/orders: customer cancel — stripe refund failed",
+      );
+      res.status(502).json({ error: "stripe_refund_failed" });
+      return;
+    }
+
+    // Flip to refunded, re-asserting not-yet-shipped so a race with the
+    // admin tracking endpoint can't ship an order we just refunded. We do
+    // NOT set amount_refunded_cents here — the charge.refunded webhook is
+    // the canonical mirror and is what fires the refund notice.
+    const { data: row, error: updateErr } = await supabase
+      .from("shop_orders")
+      .update({ status: "refunded", updated_at: new Date().toISOString() })
+      .eq("id", orderId)
+      .eq("customer_id", req.userCustomerId!)
+      .is("shipped_at", null)
+      .select("id, status")
+      .limit(1)
+      .maybeSingle();
+    if (updateErr) throw updateErr;
+    if (!row) {
+      // The order shipped in the sub-second race AFTER we issued the
+      // refund. The money is already back with the customer; surface it
+      // loudly so an operator can reconcile the shipped-but-refunded order.
+      req.log?.warn?.(
+        { orderId, customerId: req.userCustomerId },
+        "shop/me/orders: cancel refunded an order that shipped in a race — reconcile",
+      );
+      res.json({ ok: true, order: { id: orderId, status: "refunded" } });
+      return;
+    }
+
+    // Release the inventory holds so the stock frees up immediately
+    // (best-effort — a stale hold also expires via TTL).
+    if (existing.stripe_session_id) {
+      await releaseReservationsForSession(
+        orgId,
+        existing.stripe_session_id,
+        req.log,
+      );
+    }
+
+    req.log?.info?.(
+      { orderId, customerId: req.userCustomerId },
+      "shop/me/orders: order canceled + refunded by customer",
+    );
+    res.json({ ok: true, order: { id: row.id, status: row.status } });
   },
 );
 

@@ -34,6 +34,7 @@ import {
   ShieldCheck,
   ShoppingBag,
   Truck,
+  XCircle,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -54,6 +55,7 @@ import { useCompanyContact } from "@/lib/contact";
 import { BrandName } from "@/components/company-contact";
 import { toast } from "@/hooks/use-toast";
 import {
+  cancelOrder,
   fetchMyOrders,
   formatMoneyCents,
   resendOrderReceipt,
@@ -358,8 +360,128 @@ function OrderCard({
       <ShipmentSection order={order} onOrderUpdated={onOrderUpdated} />
       <ResendReceiptControl sessionId={order.sessionId} orderId={order.id} />
       <ReturnRequestControl order={order} />
+      {order.shippedAt === null && order.deliveredAt === null && (
+        <CancelOrderControl orderId={order.id} />
+      )}
     </li>
   );
+}
+
+// Self-serve cancellation for a paid order that hasn't shipped yet.
+// Two-step (button → inline confirm) because it's a money-out, terminal
+// action. On success the server has issued a full refund and the order is
+// done; we show a persistent confirmation rather than mutate the (typed
+// "paid") order in place — the next page load reflects the refund.
+function CancelOrderControl({ orderId }: { orderId: string }) {
+  const [phase, setPhase] = useState<
+    "idle" | "confirming" | "canceling" | "done" | "error"
+  >("idle");
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const onCancel = async () => {
+    setPhase("canceling");
+    setErrorMsg(null);
+    try {
+      await cancelOrder(orderId);
+      setPhase("done");
+    } catch (err) {
+      const code = (err as { code?: string }).code ?? "unknown";
+      setErrorMsg(cancelMessageForCode(code));
+      setPhase("error");
+    }
+  };
+
+  if (phase === "done") {
+    return (
+      <div
+        className="mt-4 pt-3 border-t border-border/40"
+        data-testid={`order-${orderId}-cancel-done`}
+      >
+        <span
+          role="status"
+          className="text-sm text-emerald-700 inline-flex items-center gap-1.5"
+        >
+          <CheckCircle2 className="w-4 h-4" />
+          Order canceled — your refund is on the way.
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="mt-4 pt-3 border-t border-border/40 flex flex-wrap items-center gap-3"
+      data-testid={`order-${orderId}-cancel-controls`}
+    >
+      {phase === "confirming" ? (
+        <>
+          <span className="text-sm text-foreground">
+            Cancel this order and refund it?
+          </span>
+          <Button
+            type="button"
+            variant="destructive"
+            size="sm"
+            onClick={onCancel}
+            data-testid={`order-${orderId}-cancel-confirm`}
+          >
+            Yes, cancel &amp; refund
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => setPhase("idle")}
+          >
+            Keep order
+          </Button>
+        </>
+      ) : (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => setPhase("confirming")}
+          disabled={phase === "canceling"}
+          data-testid={`order-${orderId}-cancel`}
+        >
+          {phase === "canceling" ? (
+            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+          ) : (
+            <XCircle className="w-4 h-4 mr-2" />
+          )}
+          Cancel order
+        </Button>
+      )}
+      {phase === "error" && errorMsg && (
+        <span
+          role="alert"
+          className="text-xs text-rose-700 inline-flex items-center gap-1"
+        >
+          <AlertCircle className="w-3.5 h-3.5" />
+          {errorMsg}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function cancelMessageForCode(code: string): string {
+  switch (code) {
+    case "order_already_shipped":
+      return "This order already shipped — start a return instead.";
+    case "order_already_refunded":
+      return "This order was already refunded.";
+    case "order_not_paid":
+      return "This order can't be canceled.";
+    case "stripe_not_configured":
+    case "stripe_refund_failed":
+      return "We couldn't process the refund right now. Please contact support.";
+    case "order_not_found":
+      return "We couldn't find this order.";
+    default:
+      return "Something went wrong canceling this order. Please try again.";
+  }
 }
 
 // 60-day comfort-guarantee return initiation (Phase A.3, was 30 days
