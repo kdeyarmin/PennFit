@@ -1,0 +1,31 @@
+-- Adds the idempotency column for the third transactional shop email:
+-- the DELIVERED notification ("your order arrived"), fired when an
+-- order's delivered_at is stamped — either by an admin clicking
+-- "mark delivered" (POST /admin/shop/orders/:id/delivered) or by the
+-- carrier tracking webhook (applyCarrierTrackingEvent).
+--
+-- This mirrors the two existing email-idempotency columns added in
+-- 0016 (order_confirmation_email_sent_at, shipping_email_sent_at):
+-- the send is gated by an ATOMIC CLAIM on this timestamp
+--   UPDATE shop_orders SET delivered_email_sent_at = now()
+--   WHERE id = $1 AND delivered_email_sent_at IS NULL RETURNING ...
+-- so two concurrent delivery events (admin + webhook racing) send the
+-- notice exactly once, and a send failure releases the claim (sets it
+-- back to NULL) so a later retry can re-send.
+--
+-- Why a SEPARATE column rather than reusing shipping_email_sent_at:
+--   "shipped" and "delivered" are independent lifecycle milestones —
+--   an order legitimately gets BOTH notices, the delivered one when
+--   delivered_at is stamped. Collapsing them would suppress the
+--   delivered email on every order that already sent a shipped email
+--   (i.e. all of them). Same rationale as 0016's two-column split.
+--
+-- NULLABLE additive, no default, no backfill: pre-existing delivered
+-- orders stay NULL ("no delivered email recorded"); we deliberately
+-- do NOT retro-send a "your order arrived" notice for orders that were
+-- delivered before this column existed — surprise-emailing a customer
+-- about a weeks-old delivery would erode trust. The NULL default
+-- itself produces the correct "not yet sent" state for new orders.
+
+ALTER TABLE "resupply"."shop_orders"
+  ADD COLUMN IF NOT EXISTS "delivered_email_sent_at" timestamp with time zone;

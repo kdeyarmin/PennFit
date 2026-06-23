@@ -64,6 +64,7 @@ import {
 import { stripeAccountRequestOptions } from "../../lib/stripe/connect";
 import { stripeErrLogFields } from "../../lib/stripe/err-log-fields";
 import { sendShippingNotificationEmail } from "../../lib/order-emails/send-shipping-notification-email";
+import { sendDeliveredNotificationIfNew } from "../../lib/order-emails/delivered-notification";
 import { sendReadyForPickupEmail } from "../../lib/order-emails/send-ready-for-pickup-email";
 import { getPickupLocationsByIds } from "../../lib/pickup/locations";
 import { sendPushToCustomer } from "../../lib/web-push";
@@ -827,6 +828,23 @@ router.post(
               : new Error(String(packetErr)),
         },
         "admin/shop/orders: auto-send patient packet failed (non-fatal)",
+      );
+    }
+
+    // Best-effort "your order arrived" notification. The delivery
+    // transition has already committed; a SendGrid/Twilio hiccup must
+    // NOT 500 the route. Idempotent across the admin click and the
+    // carrier webhook via the atomic delivered_email_sent_at claim.
+    try {
+      await sendDeliveredNotificationIfNew({ orderId, orgId, log: req.log });
+    } catch (notifyErr) {
+      req.log?.warn?.(
+        {
+          orderId,
+          err:
+            notifyErr instanceof Error ? notifyErr.message : String(notifyErr),
+        },
+        "admin/shop/orders: delivered notification failed (non-fatal)",
       );
     }
 

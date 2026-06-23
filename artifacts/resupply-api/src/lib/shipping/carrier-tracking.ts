@@ -23,6 +23,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { autoSendPatientPacketOnDelivery } from "../patient-packet/auto-send-on-delivery";
+import { sendDeliveredNotificationIfNew } from "../order-emails/delivered-notification";
 import { logger } from "../logger";
 
 export interface CarrierWebhookConfig {
@@ -157,10 +158,11 @@ export async function applyCarrierTrackingEvent(
         .limit(1)
         .maybeSingle();
       if (updErr || !updated) return { matched: true, updated: false };
-      // Mirror the admin mark-delivered side effect (POD / patient-packet
-      // auto-send). Best-effort — never fails the webhook ACK.
+      // Mirror the admin mark-delivered side effects. Best-effort —
+      // neither may fail the webhook ACK.
+      const orderOrgId = order.org_id ?? orgId;
+      // (a) POD / patient-packet auto-send.
       try {
-        const orderOrgId = order.org_id ?? orgId;
         await autoSendPatientPacketOnDelivery({
           orderId: order.id,
           orgId: orderOrgId,
@@ -171,6 +173,26 @@ export async function applyCarrierTrackingEvent(
           "carrier-tracking: patient-packet auto-send failed (non-fatal)",
         );
         void packetErr;
+      }
+      // (b) "Your order arrived" notification. Idempotent with the admin
+      // route via the atomic delivered_email_sent_at claim, so the patient
+      // gets exactly one notice whether the admin or the carrier marks it
+      // delivered first.
+      try {
+        await sendDeliveredNotificationIfNew({
+          orderId: order.id,
+          orgId: orderOrgId,
+          log,
+        });
+      } catch (notifyErr) {
+        log.warn?.(
+          {
+            event: "carrier_tracking_delivered_notify_failed",
+            orderId: order.id,
+          },
+          "carrier-tracking: delivered notification failed (non-fatal)",
+        );
+        void notifyErr;
       }
       return { matched: true, updated: true };
     }

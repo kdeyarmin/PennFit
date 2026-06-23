@@ -786,7 +786,12 @@ describe("POST /admin/shop/orders/:orderId/delivered", () => {
     );
     expect(res.status).toBe(200);
     expect(res.body.order.deliveredAt).toBe(deliveredAtIso);
-    expect(getSupabaseCallCount("shop_orders", "update")).toBe(1);
+    // Two updates now: (1) the delivered_at stamp, then (2) the
+    // best-effort "your order arrived" notification's atomic claim on
+    // delivered_email_sent_at (sendDeliveredNotificationIfNew). Both
+    // target shop_orders; the second is fail-soft and never blocks the
+    // 200 above.
+    expect(getSupabaseCallCount("shop_orders", "update")).toBe(2);
   });
 
   it("is idempotent on a re-fire (does not bump delivered_at)", async () => {

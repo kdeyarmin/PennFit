@@ -5505,6 +5505,10 @@ export interface Database {
           shipping_address_json: Json | null;
           confirmation_email_sent_at: string | null;
           shipping_email_sent_at: string | null;
+          // Migration 0471: idempotency claim for the "your order
+          // arrived" delivered notification (admin mark-delivered +
+          // carrier webhook both gate the send on this timestamp).
+          delivered_email_sent_at: string | null;
           customer_email: string | null;
           review_request_sent_at: string | null;
           pod_object_key: string | null;
