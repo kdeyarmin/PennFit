@@ -40,6 +40,29 @@ describe("therapy nightly-sync — bounded, rotating scan", () => {
   it("bounds the scan to one page per run", () => {
     expect(SRC).toContain(".limit(MAX_LINKS_PER_RUN)");
   });
+
+  it("stamps last_synced_at on a schema-validation failure (no rotation starvation)", () => {
+    // The validation-failure branch must stamp the link (mirroring the
+    // fetch-error branch) so a persistently malformed payload can't keep
+    // sorting to the front of every night's page.
+    expect(SRC).toContain("snapshot_failed_schema_validation");
+  });
+
+  it("stamps links skipped for a missing / unavailable adapter so they rotate", () => {
+    expect(SRC).toContain("stampLinkSkipped(supabase, link.id");
+    expect(SRC).toContain('"adapter_missing"');
+    expect(SRC).toContain('"adapter_unavailable"');
+  });
+
+  it("scopes the integration-health counter per tenant (not a global key)", () => {
+    // A global key lets a healthy tenant reset a failing tenant's
+    // consecutive-failure counter across the forEachActiveOrg fan-out.
+    expect(SRC).toContain(
+      "const healthKey = `${THERAPY_NIGHTLY_SYNC_JOB}:${orgId}`",
+    );
+    expect(SRC).toContain("recordIntegrationFailure(\n      healthKey,");
+    expect(SRC).toContain("recordIntegrationSuccess(healthKey)");
+  });
 });
 
 describe("normalizeSnapshotForPersistence — per-night resilience", () => {

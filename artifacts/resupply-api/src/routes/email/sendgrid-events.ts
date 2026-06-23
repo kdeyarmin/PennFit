@@ -121,7 +121,14 @@ router.post(
           if (statusUpdate.deliveryStatus === "delivered") {
             update.delivered_at = new Date().toISOString();
           }
+          // Tenant-agnostic webhook: the SendGrid message id is globally
+          // unique, so match across ALL tenants via `.raw()`. The org-scoped
+          // client would append `.eq("org_id", seedOrgId)` and silently drop
+          // a non-seed tenant's delivery/bounce status (mirrors the Twilio
+          // SMS status-callback pattern).
           let query = supabase
+            .raw()
+            .schema("resupply")
             .from("messages")
             .update(update)
             .filter(

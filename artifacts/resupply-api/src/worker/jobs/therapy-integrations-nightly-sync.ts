@@ -55,6 +55,27 @@ async function sleep(ms: number): Promise<void> {
   await new Promise((r) => setTimeout(r, ms));
 }
 
+// Stamp a link that was skipped before any adapter fetch (no adapter, or
+// adapter credentials unavailable) so it rotates to the back of the
+// least-recently-synced queue. Without a stamp the link keeps sorting to
+// the front of every night's MAX_LINKS_PER_RUN page and starves the rest
+// of the population.
+async function stampLinkSkipped(
+  supabase: ReturnType<typeof getOrgScopedClient>,
+  linkId: string,
+  status: "adapter_missing" | "adapter_unavailable",
+): Promise<void> {
+  const { error } = await supabase
+    .from("patient_therapy_links")
+    .update({
+      last_synced_at: new Date().toISOString(),
+      last_sync_status: status,
+      last_sync_error: status,
+    })
+    .eq("id", linkId);
+  if (error) throw error;
+}
+
 /**
  * Coerce the common per-night vendor quirks that would otherwise fail
  * `integrationSnapshotSchema` and cause the ENTIRE snapshot — valid device
@@ -195,10 +216,28 @@ export async function runTherapyNightlySyncForOrg(
     const source = link.source as IntegrationSource;
     const adapter = adapters.get(source);
     if (!adapter) {
+      // Stamp so a link whose source has no configured adapter rotates to
+      // the back of the queue instead of permanently occupying the front
+      // of every night's page (rotation starvation). Best-effort: a stamp
+      // write failure here must not abort the whole tenant's run.
+      await stampLinkSkipped(supabase, link.id, "adapter_missing").catch(
+        (err) =>
+          logger.warn(
+            { err, link_id: link.id, source },
+            "nightly-sync: failed to stamp adapter_missing link",
+          ),
+      );
       result.failed += 1;
       continue;
     }
     if (adapter.availability().status === "unavailable") {
+      await stampLinkSkipped(supabase, link.id, "adapter_unavailable").catch(
+        (err) =>
+          logger.warn(
+            { err, link_id: link.id, source },
+            "nightly-sync: failed to stamp adapter_unavailable link",
+          ),
+      );
       result.failed += 1;
       continue;
     }
@@ -267,6 +306,43 @@ export async function runTherapyNightlySyncForOrg(
           },
           "nightly-sync: snapshot failed schema validation after normalization; dropping",
         );
+        // Stamp the link (and persist an error snapshot) before continuing,
+        // exactly like the fetch-error branch above. Without this, a link
+        // with a persistently malformed vendor payload keeps `last_synced_at`
+        // null/oldest and sorts to the front of every night's
+        // MAX_LINKS_PER_RUN page — starving the rest of the population, the
+        // very rotation-starvation failure the ordering was added to fix.
+        const { error: invalidSnapErr } = await supabase
+          .from("patient_integration_snapshots")
+          .upsert(
+            {
+              patient_id: link.patient_id,
+              source,
+              partner_patient_id: link.partner_patient_id,
+              payload: {
+                source,
+                partnerPatientId: link.partner_patient_id,
+                settings: null,
+                compliance: null,
+                recentNights: [],
+                supplies: [],
+              } as unknown as Json,
+              fetch_status: "error",
+              fetch_error: "snapshot_failed_schema_validation",
+              fetched_at: fetchedAtIso,
+            },
+            { onConflict: "patient_id,source" },
+          );
+        if (invalidSnapErr) throw invalidSnapErr;
+        const { error: invalidStampErr } = await supabase
+          .from("patient_therapy_links")
+          .update({
+            last_synced_at: fetchedAtIso,
+            last_sync_status: "error",
+            last_sync_error: "snapshot_failed_schema_validation",
+          })
+          .eq("id", link.id);
+        if (invalidStampErr) throw invalidStampErr;
         result.failed += 1;
         await sleep(THROTTLE_MS);
         continue;
@@ -348,15 +424,19 @@ export async function runTherapyNightlySyncForOrg(
   const HIGH_FAILURE_RATE = 0.8;
   const totalFailureRun =
     result.scanned > 0 && result.failed / result.scanned >= HIGH_FAILURE_RATE;
+  // Scope the integration-health counter PER TENANT. This job fans out over
+  // every active org (`forEachActiveOrg` below), so a global key lets a
+  // healthy tenant processed after a failing one reset the failing tenant's
+  // consecutive-failure counter — suppressing its outage alert (and vice
+  // versa). Matches the office-ally inbound-poll `${JOB}:${orgId}` pattern.
+  const healthKey = `${THERAPY_NIGHTLY_SYNC_JOB}:${orgId}`;
   if (totalFailureRun) {
     await recordIntegrationFailure(
-      THERAPY_NIGHTLY_SYNC_JOB,
+      healthKey,
       `${result.failed}/${result.scanned} links failed (${Math.round((result.failed / result.scanned) * 100)}%)`,
     ).catch(() => undefined);
   } else if (result.scanned > 0) {
-    await recordIntegrationSuccess(THERAPY_NIGHTLY_SYNC_JOB).catch(
-      () => undefined,
-    );
+    await recordIntegrationSuccess(healthKey).catch(() => undefined);
   }
 
   return result;

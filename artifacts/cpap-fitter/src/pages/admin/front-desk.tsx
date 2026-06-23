@@ -624,7 +624,8 @@ function CounterOrderPanel({
           ) : (
             <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {products.map((p) => {
-                const outOfStock = p.stockCount === 0;
+                const outOfStock =
+                  typeof p.stockCount === "number" && p.stockCount <= 0;
                 return (
                   <li
                     key={p.id}

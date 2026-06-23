@@ -171,6 +171,43 @@ describe("POST /email/sendgrid-events", () => {
     expect(typeof updates[0]?.delivered_at).toBe("string");
   });
 
+  it("updates the messages row across tenants (no seed org_id scoping)", async () => {
+    // The SendGrid message id is globally unique, so the delivery-status
+    // update must match across ALL tenants via `.raw()`. If it went
+    // through the org-scoped `.from()` it would inject `org_id` into the
+    // patch and append `.eq("org_id", seedOrgId)`, silently dropping a
+    // non-seed tenant's delivery/bounce status. Assert neither appears.
+    const { publicKeyBase64, privateKeyPem } = freshKeyPair();
+    setBaseEnv(publicKeyBase64);
+    stageMessageUpdates(1);
+
+    const ts = String(Math.floor(Date.now() / 1000));
+    const body = JSON.stringify([
+      { event: "delivered", sg_message_id: "sg.msg.cross-tenant.1" },
+    ]);
+    const sig = signBody(privateKeyPem, ts, body);
+
+    const app = buildApp();
+    const res = await request(app)
+      .post("/email/sendgrid-events")
+      .set("content-type", "application/json")
+      .set(SENDGRID_SIGNATURE_HEADER, sig)
+      .set(SENDGRID_TIMESTAMP_HEADER, ts)
+      .send(body);
+
+    expect(res.status).toBe(200);
+    expect(getSupabaseCallCount("messages", "update")).toBe(1);
+    const update = getSupabaseWritePayloads("messages", "update")[0] as Record<
+      string,
+      unknown
+    >;
+    // The patch must NOT carry an org_id (org-scoped .update() would add it).
+    expect(update).not.toHaveProperty("org_id");
+    // ...and no .eq("org_id", …) filter is applied.
+    const filters = getSupabaseFilterCalls("messages", "update");
+    expect(filters.some((f) => f.args[0] === "org_id")).toBe(false);
+  });
+
   it("matches messages on the bare X-Message-Id (first dot-segment of sg_message_id)", async () => {
     // The send paths store SendGrid's bare X-Message-Id response
     // header; the Event Webhook appends filter-routing segments

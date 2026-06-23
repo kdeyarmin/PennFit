@@ -76,4 +76,30 @@ describe("decideCappedRentalAdvance", () => {
     });
     expect(d.action).toBe("transfer");
   });
+
+  it("no-ops on a corrupt startDate instead of advancing on month count", () => {
+    // A garbage startDate makes the anniversary NaN; `asOfMs < NaN` is
+    // false, so without the finite-guard this would skip noop and
+    // advance/transfer purely on currentMonth vs maxMonths. Billing must
+    // never move forward on an un-anchorable date.
+    const d = decideCappedRentalAdvance({
+      startDate: "not-a-date",
+      currentMonth: 5,
+      maxMonths: 13,
+      asOf: new Date("2030-01-01T00:00:00Z"),
+    });
+    expect(d.action).toBe("noop");
+    expect(d.nextMonth).toBe(5);
+  });
+
+  it("no-ops on a corrupt startDate even at the cap (no spurious transfer)", () => {
+    const d = decideCappedRentalAdvance({
+      startDate: "",
+      currentMonth: 13,
+      maxMonths: 13,
+      asOf: new Date("2030-01-01T00:00:00Z"),
+    });
+    expect(d.action).toBe("noop");
+    expect(d.nextMonth).toBe(13);
+  });
 });

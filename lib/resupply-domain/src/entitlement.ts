@@ -139,10 +139,26 @@ export function resolveResupplyEntitlement(
   const effectiveIntervalDays = Math.max(0, minIntervalDays - graceDays);
 
   // ── Interval gate ───────────────────────────────────────────────
-  const eligibleOn =
+  // A `null` last-fill is a first fill → the gate is open. A *corrupt*
+  // (Invalid Date) last-fill must NOT silently open it: an un-guarded
+  // `NaN` getTime() makes `eligibleOn` an Invalid Date, every comparison
+  // reads false, `tooSoon` is false, and the patient is reported eligible
+  // — the exact "silently authorize a dispense" failure the reference-data
+  // clamps above guard against. Fail safe by anchoring the interval at
+  // `now` (treat the unknown last dispense as just-happened), blocking for
+  // the full interval rather than waving the dispense through.
+  const lastFulfilledMs =
+    lastFulfilledAt === null ? null : lastFulfilledAt.getTime();
+  const intervalAnchorMs =
     lastFulfilledAt === null
+      ? null
+      : Number.isFinite(lastFulfilledMs)
+        ? (lastFulfilledMs as number)
+        : now.getTime();
+  const eligibleOn =
+    intervalAnchorMs === null
       ? now
-      : new Date(lastFulfilledAt.getTime() + effectiveIntervalDays * DAY_MS);
+      : new Date(intervalAnchorMs + effectiveIntervalDays * DAY_MS);
   const tooSoon = eligibleOn.getTime() > now.getTime();
   const daysUntilEligible = tooSoon
     ? Math.ceil((eligibleOn.getTime() - now.getTime()) / DAY_MS)
