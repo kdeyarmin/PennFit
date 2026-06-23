@@ -50,8 +50,8 @@ async function resolveOrgIdForExistingPayment(
     .eq("id", paymentId)
     .maybeSingle();
   if (error) throw error;
-  if (data?.org_id) return data.org_id;
-  return resolvePatientPaymentOrgId();
+  const id = data?.org_id?.trim();
+  if (id) return id;
 }
 
 export interface CreateIntentInput {
