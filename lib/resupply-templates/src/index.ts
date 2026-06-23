@@ -98,7 +98,7 @@ export type TemplateLookup = (
   templateKey: string,
   channel: Channel,
   customerId: string | null,
-  orgId: string | null,
+  orgId?: string | null,
 ) => Promise<MessageTemplate | null>;
 
 /**
