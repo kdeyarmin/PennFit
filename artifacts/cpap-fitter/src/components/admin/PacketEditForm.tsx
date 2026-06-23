@@ -45,6 +45,14 @@ export function PacketEditForm({
   // Seed the fields once both the packet detail and the template catalog
   // have loaded (so we know which documents are currently included).
   useEffect(() => {
+    setSeeded(false);
+    setTitle("");
+    setKeys({});
+    setDelivery(null);
+    setError(null);
+  }, [packetId]);
+
+  useEffect(() => {
     if (seeded) return;
     const detail = detailQuery.data;
     const list = templatesQuery.data?.templates;
@@ -56,7 +64,7 @@ export function PacketEditForm({
     setKeys(next);
     setDelivery(detail.packet.delivery_details);
     setSeeded(true);
-  }, [detailQuery.data, templatesQuery.data, seeded]);
+  }, [detailQuery.data, templatesQuery.data, seeded, packetId]);
 
   if (detailQuery.isPending || templatesQuery.isPending || !seeded) {
     return (

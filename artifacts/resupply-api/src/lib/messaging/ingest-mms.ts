@@ -192,6 +192,8 @@ export interface IngestMmsMediaInput {
   numMedia: number;
   twilioAccountSid: string;
   twilioAuthToken: string;
+  /** Tenant that owns the parent message row. */
+  orgId?: string;
 }
 
 export interface IngestMmsMediaResult {
@@ -503,6 +505,11 @@ export interface PersistInboundAttachmentInput {
   twilioMediaSid?: string | null;
   /** Short tag for log lines + filename fallback ("mms" / "email"). */
   source?: string;
+  /**
+   * Owning tenant for the message row. When unset, falls back to the
+   * seed org (single-tenant / legacy callers).
+   */
+  orgId?: string;
 }
 
 export type PersistInboundAttachmentOutcome =
@@ -596,7 +603,7 @@ export async function persistInboundAttachment(
     input.twilioMediaSid ?? null,
   );
 
-  const orgId = await resolveSeedOrgId();
+  const orgId = input.orgId ?? (await resolveSeedOrgId());
   if (!orgId) {
     // No seed tenant resolvable — the GCS bytes we just uploaded become
     // an orphan the attachment sweep reaps. Count as a transient error
@@ -759,6 +766,7 @@ export async function ingestInboundMmsMedia(
         filename: null,
         twilioMediaSid: downloaded.twilioMediaSid,
         source: "mms",
+        orgId: input.orgId,
       },
       logger,
       storage,

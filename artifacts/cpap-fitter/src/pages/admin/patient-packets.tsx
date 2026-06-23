@@ -1256,6 +1256,11 @@ function PacketDetailPanel({
   const [actionMsg, setActionMsg] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
 
+  useEffect(() => {
+    setEditing(false);
+    setActionMsg(null);
+  }, [packetId]);
+
   const refresh = () => {
     void qc.invalidateQueries({ queryKey: getPatientPacketQueryKey(packetId) });
     onChanged();
@@ -1352,6 +1357,7 @@ function PacketDetailPanel({
         {/* Documents — read-only list, or the edit form when editing */}
         {editing ? (
           <PacketEditForm
+            key={packetId}
             packetId={packetId}
             onSaved={() => {
               setEditing(false);

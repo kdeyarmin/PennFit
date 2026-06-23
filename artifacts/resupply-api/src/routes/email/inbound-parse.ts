@@ -403,6 +403,7 @@ router.post("/email/inbound-parse", inboundParseLimiter, async (req, res) => {
             filename: att.filename,
             twilioMediaSid: null,
             source: "email",
+            orgId,
           },
           req.log,
         );

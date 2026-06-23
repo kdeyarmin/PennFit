@@ -17,7 +17,7 @@
 // Entirely best-effort — the caller invokes this fire-and-forget and a
 // failure here never affects the delivery transition.
 
-import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logAudit } from "@workspace/resupply-audit";
 
@@ -27,14 +27,14 @@ import { createAndSendPatientPacket } from "./send";
 
 export async function autoSendPatientPacketOnDelivery(opts: {
   orderId: string;
+  /** Owning tenant — required for multi-tenant feature gating + queries. */
+  orgId: string;
 }): Promise<void> {
-  const { orderId } = opts;
-  if (!(await isFeatureEnabled("patient_packets.autosend_on_delivery"))) {
+  const { orderId, orgId } = opts;
+  if (!(await isFeatureEnabled("patient_packets.autosend_on_delivery", orgId))) {
     return;
   }
 
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) return;
   const supabase = getOrgScopedClient(orgId);
 
   const { data: order, error: orderErr } = await supabase

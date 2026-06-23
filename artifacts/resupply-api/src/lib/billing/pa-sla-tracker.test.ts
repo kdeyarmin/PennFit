@@ -7,14 +7,16 @@ import {
 
 const supabaseMock = installSupabaseMock();
 
-import { runPaMcoSlaSweep } from "./pa-sla-tracker";
+import { runPaMcoSlaSweepForOrg } from "./pa-sla-tracker";
 
-describe("runPaMcoSlaSweep", () => {
+const TEST_ORG_ID = "00000000-0000-4000-8000-000000000000";
+
+describe("runPaMcoSlaSweepForOrg", () => {
   beforeEach(() => supabaseMock.reset());
 
   it("returns zero counts on an empty PA set", async () => {
     stageSupabaseResponse("prior_authorizations", "select", { data: [] });
-    const stats = await runPaMcoSlaSweep();
+    const stats = await runPaMcoSlaSweepForOrg(TEST_ORG_ID);
     expect(stats.scanned).toBe(0);
     expect(stats.updated).toBe(0);
     expect(stats.alertsCreated).toBe(0);
@@ -46,7 +48,7 @@ describe("runPaMcoSlaSweep", () => {
         { display_name: "Keystone First", line_of_business: "medicaid_mco" },
       ],
     });
-    const stats = await runPaMcoSlaSweep();
+    const stats = await runPaMcoSlaSweepForOrg(TEST_ORG_ID);
     expect(stats.scanned).toBe(1);
     expect(stats.byStatus.decided).toBe(1);
   });
@@ -74,7 +76,7 @@ describe("runPaMcoSlaSweep", () => {
     stageSupabaseResponse("payer_profiles", "select", {
       data: [{ display_name: "Highmark BCBS", line_of_business: "commercial" }],
     });
-    const stats = await runPaMcoSlaSweep();
+    const stats = await runPaMcoSlaSweepForOrg(TEST_ORG_ID);
     expect(stats.scanned).toBe(1);
     expect(stats.updated).toBe(0);
     expect(stats.alertsCreated).toBe(0);

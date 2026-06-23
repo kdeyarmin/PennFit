@@ -88,7 +88,10 @@ describe("applyCarrierTrackingEvent", () => {
       | undefined;
     expect(patch?.delivered_at).toBeTruthy();
     expect(patch?.shipped_at).toBeTruthy();
-    expect(autoSendMock).toHaveBeenCalledWith({ orderId: "o1" });
+    expect(autoSendMock).toHaveBeenCalledWith({
+      orderId: "o1",
+      orgId: "00000000-0000-4000-8000-000000000000",
+    });
   });
 
   it("is a no-op when already delivered", async () => {

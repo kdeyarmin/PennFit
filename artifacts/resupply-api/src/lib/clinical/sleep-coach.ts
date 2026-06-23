@@ -179,7 +179,7 @@ type OpenAiCoachMessage =
 export async function askSleepCoach(
   input: SleepCoachInput,
 ): Promise<SleepCoachReply> {
-  const context = await assembleContext(input.patientId);
+  const context = await assembleContext(input.patientId, input.orgId);
   const userMessage = buildUserMessage(
     input.question,
     input.thread ?? [],
@@ -553,12 +553,13 @@ export async function askSleepCoach(
 
 async function assembleContext(
   patientId: string,
+  explicitOrgId?: string,
 ): Promise<Record<string, unknown>> {
-  // Resolve the tenant for the file-local worker pattern. A missing org
+  // Resolve the tenant for therapy-context assembly. A missing org
   // degrades to the same shape an empty-data patient produces — the
   // coach then answers from the system prompt without any rollup, the
   // same behavior as a patient with no nights on file.
-  const orgId = await resolveSeedOrgId();
+  const orgId = explicitOrgId ?? (await resolveSeedOrgId());
   if (!orgId) {
     return {
       patient: { initials: "", dobYear: null },
