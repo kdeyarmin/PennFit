@@ -29,6 +29,7 @@ import {
 
 import { Button } from "@/components/admin/Button";
 import { Card } from "@/components/admin/Card";
+import { PatientBillingNotesPanel } from "@/components/admin/PatientBillingNotesPanel";
 import { PaymentPlansSection } from "@/components/admin/PaymentPlansSection";
 import { Spinner } from "@/components/admin/Spinner";
 import {
@@ -875,6 +876,8 @@ export function PatientBillingTab({ patientId }: { patientId: string }) {
       </Card>
 
       <PaymentPlansSection patientId={patientId} />
+
+      <PatientBillingNotesPanel patientId={patientId} />
     </div>
   );
 }
