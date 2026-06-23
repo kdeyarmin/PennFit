@@ -354,6 +354,7 @@ async function lifecycleTouchpointsSweepForOrg(
     .raw()
     .schema("resupply")
     .rpc("patients_with_therapy_anniversary", {
+      p_org_id: orgId,
       p_mmdd: mmdd,
       p_current_year: currentYear,
       p_limit: PER_KIND_MAX * 4,

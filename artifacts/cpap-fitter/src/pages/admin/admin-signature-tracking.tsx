@@ -358,7 +358,7 @@ function ReturnedFaxLookup({ onFiled }: { onFiled: () => void }) {
             <Input
               id="trackingCode"
               autoFocus
-              placeholder="PFS-XXXXXXXX"
+              placeholder="CMB-XXXXXXXX"
               value={code}
               onChange={(e) => setCode(e.target.value)}
             />

@@ -201,7 +201,10 @@ describe("GET /admin/therapy-fleet/worklist", () => {
     expect(res.body.entries[1].patientName).toBe("Grace Hopper");
     // includeHandled defaults to false, so the route over-fetches
     // (limit*4, capped 500) to refill the page after hiding handled rows.
+    // Must be org-scoped (it previously leaked every tenant's worklist
+    // rows — see migration 0470).
     expect(getSupabaseRpcArgs("therapy_fleet_worklist")[0]).toEqual({
+      p_org_id: MOCK_ORG_ID,
       p_window_days: 30,
       p_limit: 200,
     });

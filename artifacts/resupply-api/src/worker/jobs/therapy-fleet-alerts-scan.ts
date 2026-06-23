@@ -206,12 +206,16 @@ async function therapyFleetAlertsScanForOrg(
   const worklist = await supabase
     .raw()
     .schema("resupply")
-    .rpc("therapy_fleet_worklist", { p_window_days: 30, p_limit: 1000 });
+    .rpc("therapy_fleet_worklist", {
+      p_org_id: orgId,
+      p_window_days: 30,
+      p_limit: 1000,
+    });
   if (worklist.error) throw worklist.error;
   const setups = await supabase
     .raw()
     .schema("resupply")
-    .rpc("therapy_setup_adherence_list", { p_limit: 1000 });
+    .rpc("therapy_setup_adherence_list", { p_org_id: orgId, p_limit: 1000 });
   if (setups.error) throw setups.error;
 
   const detected: DetectedAlert[] = [];

@@ -341,6 +341,7 @@ async function buildWorklist(
     .raw()
     .schema("resupply")
     .rpc("therapy_fleet_worklist", {
+      p_org_id: orgId,
       p_window_days: windowDays,
       p_limit: needsOverfetch ? Math.min(limit * 4, 500) : limit,
     });

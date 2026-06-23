@@ -52,9 +52,7 @@ async function resolveOrgIdForExistingPayment(
   if (error) throw error;
   const id = data?.org_id?.trim();
   if (id) return id;
-  throw new Error(
-    `patient-payment: org_id not found for payment ${paymentId}`,
-  );
+  throw new Error(`patient-payment: org_id not found for payment ${paymentId}`);
 }
 
 export interface CreateIntentInput {
