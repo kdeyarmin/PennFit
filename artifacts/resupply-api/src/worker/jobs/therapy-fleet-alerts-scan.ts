@@ -211,7 +211,7 @@ async function therapyFleetAlertsScanForOrg(
   const setups = await supabase
     .raw()
     .schema("resupply")
-    .rpc("therapy_setup_adherence_list", { p_limit: 1000 });
+    .rpc("therapy_setup_adherence_list", { p_org_id: orgId, p_limit: 1000 });
   if (setups.error) throw setups.error;
 
   const detected: DetectedAlert[] = [];

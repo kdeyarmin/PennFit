@@ -117,6 +117,7 @@ async function buildSetups(
     .raw()
     .schema("resupply")
     .rpc("therapy_setup_adherence_list", {
+      p_org_id: orgId,
       // Over-fetch when filtering by status so the trimmed result still
       // fills a page.
       p_limit: status ? Math.min(limit * 4, 500) : limit,

@@ -158,6 +158,13 @@ describe("GET /admin/therapy-compliance/setups", () => {
       patientName: "Grace Hopper",
       status: "at_risk",
     });
+    // Regression guard: the list RPC must be org-scoped (it previously
+    // leaked every tenant's adherence rows — see migration 0469).
+    expect(getSupabaseRpcArgs("therapy_setup_adherence_list")[0]).toMatchObject(
+      {
+        p_org_id: MOCK_ORG_ID,
+      },
+    );
   });
 
   it("filters by status", async () => {
