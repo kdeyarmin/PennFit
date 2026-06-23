@@ -15,7 +15,9 @@
 -- exactly as before.
 --
 -- Idempotent / non-destructive: only fills logo_url when still NULL, so an
--- admin-uploaded logo is never overwritten.
+-- admin-uploaded logo is never overwritten (and an already-set row is not
+-- needlessly re-written).
 UPDATE "resupply"."organizations"
-SET "logo_url" = COALESCE("logo_url", '/penn/pennpaps-logo.jpeg')
-WHERE "slug" = 'penn-home-medical';
+SET "logo_url" = '/penn/pennpaps-logo.jpeg'
+WHERE "slug" = 'penn-home-medical'
+  AND "logo_url" IS NULL;

@@ -137,7 +137,7 @@
     "label": "Admin \u2014 assistant",
     "category": "Voice & AI",
     "default": "on",
-    "description": "PennPilot \u2014 the in-app admin tech-support and program-manager assistant. When ON, signed-in staff can ask how the app works and where to find features, and PennPilot can email feature suggestions to the super-admins (after confirming). Claude Sonnet / GPT fallback; degrades to an offline reply when no AI provider key is set."
+    "description": "CareMetric Copilot \u2014 the in-app admin tech-support and program-manager assistant (renamable per tenant; \u201cPennPilot\u201d for the Penn tenant). When ON, signed-in staff can ask how the app works and where to find features, and the assistant can email feature suggestions to the super-admins (after confirming). Claude Sonnet / GPT fallback; degrades to an offline reply when no AI provider key is set."
   },
   {
     "key": "reminder_escalation.voice",
@@ -396,7 +396,7 @@
     "label": "Fax \u2014 auto file signed",
     "category": "Operations",
     "default": "off",
-    "description": "Inbound-fax barcode auto-filing. When ON, every received fax is scanned (via the existing Claude vision path) for the PennFit signature-tracking code (PFS-XXXXXXXX). On an exact unique match to an outstanding signature, the fax is filed into the patient's chart, the signature is marked returned & signed (advancing the source prescription packet), and any claim paperwork requirement it was sent to clear is satisfied (releasing the bill hold). When OFF, faxes are triaged by hand exactly as before. Degrades to hand-triage whenever no AI key is configured or the scan finds no code."
+    "description": "Inbound-fax barcode auto-filing. When ON, every received fax is scanned (via the existing Claude vision path) for the platform's signature-tracking code (PFS-XXXXXXXX). On an exact unique match to an outstanding signature, the fax is filed into the patient's chart, the signature is marked returned & signed (advancing the source prescription packet), and any claim paperwork requirement it was sent to clear is satisfied (releasing the bill hold). When OFF, faxes are triaged by hand exactly as before. Degrades to hand-triage whenever no AI key is configured or the scan finds no code."
   },
   {
     "key": "fax.referral_review",

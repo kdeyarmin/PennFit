@@ -731,8 +731,8 @@ SUMMARY = {
         ("Orders, shop & leads", [
             ("Orders", "Storefront orders — fulfill, refund, track, and look up."),
             ("Shipping Labels", "Print shipping labels with the patient address merged; tracking auto-fills."),
-            ("Subscriptions / Returns / Backorders", "Recurring resupply, return/RMA decisions, and out-of-stock handling."),
-            ("Customers / Reviews / Q&A", "Shop accounts, product reviews to moderate, and customer questions to answer."),
+            ("Subscriptions / Returns / Backorders", "Recurring resupply, return/RMA decisions (with optional restock-to-inventory), and out-of-stock handling."),
+            ("Customers / Reviews / Q&A", "Shop accounts and cash-pay membership tiers, product reviews (auto-requested after purchase) to moderate, and customer questions to answer."),
             ("Abandoned Carts / Back-in-Stock / Insurance Leads", "Recover carts, notify waitlists, and work benefit-verification requests."),
             ("Fitter Invites & Prospects", "Invite patients to the AI mask fitter and track the conversion funnel."),
         ]),
@@ -896,8 +896,8 @@ DETAIL = {
         ("Orders, shop & leads", "Fulfillment and the storefront acquisition funnel.", [
             ("Orders", "Work storefront orders — fulfill, refund, look up, and track — from a single queue."),
             ("Shipping Labels", "Print shipping labels with the patient's address merged in; tracking numbers auto-fill back onto the order."),
-            ("Subscriptions, Returns & Backorders", "Manage recurring resupply/Subscribe-and-Save subscriptions, decide returns/RMAs and refunds (comfort-guarantee aware), and handle out-of-stock SKUs and substitutions."),
-            ("Customers, Reviews & Product Q&A", "Registered shop accounts with in-app messaging, product reviews to moderate and reply to, and customer questions to answer or reject."),
+            ("Subscriptions, Returns & Backorders", "Manage recurring resupply/Subscribe-and-Save subscriptions, decide returns/RMAs and refunds (comfort-guarantee aware), and handle out-of-stock SKUs and substitutions. When a returned item is genuinely resaleable, marking it received can optionally <b>restock</b> it — adding its quantities back to tracked inventory. It's off by default (most DME consumables aren't resaleable), so you opt in per return."),
+            ("Customers, Reviews & Product Q&A", "Registered shop accounts (including each customer's cash-pay <b>membership tier</b>) with in-app messaging, product reviews to moderate and reply to, and customer questions to answer or reject. The post-purchase <b>review request</b> can be sent on demand (“Send due”) or, once enabled, goes out automatically on an hourly sweep about two weeks after delivery — one request per order, consent-aware."),
             ("Abandoned Carts, Back-in-Stock & Insurance Leads", "Recover abandoned carts with outreach, notify customers when items restock, and work new benefit-verification requests from the storefront."),
             ("Fitter Invites & Prospects", "Invite a patient to the AI mask fitter and review the returned mask & size recommendation; the Prospects view tracks the fitter conversion funnel."),
         ]),
@@ -1501,7 +1501,7 @@ PLATFORM_FOUNDATIONS_INTRO = (
     "whole, and every role benefits from them."
 )
 PLATFORM_FOUNDATIONS = [
-    ("Patient storefront & portal", "A full e-commerce storefront with Stripe checkout, subscriptions, order tracking, returns, document access, insurance details, and caregiver access — backed by a self-service patient account portal."),
+    ("Patient storefront & portal", "A full e-commerce storefront with Stripe checkout, subscriptions, order tracking, returns, document access, insurance details, caregiver access, and self-serve cash-pay memberships — backed by a self-service patient account portal."),
     ("AI mask fitter", "Camera-based facial measurement in the patient's browser scores every available mask for fit. Images never leave the device — only numeric measurements are transmitted. The fitter is <b>invitation-only</b>: staff send a signed invite link by SMS or email from <b>Orders &amp; Shop → Fitter Invites</b>, and the completed fitting attaches back to the patient's chart."),
     ("Resupply reminder engine", "Automated SMS and email reminders with signed one-tap confirm/decline links, quiet-hours awareness, and unsubscribe handling."),
     ("AI voice agent", "A natural-voice phone agent that takes reorders, runs reminder and check-in calls, hands off to staff on request, and writes a structured summary of every call."),
@@ -1877,6 +1877,9 @@ FAQ = [
         ("Can we run telehealth visits?", "Yes — Video Visits generate a secure join link sent by SMS or email for setups and mask troubleshooting."),
         ("How do we message many patients at once?", "Bulk Campaigns — build an audience with filters, sanity-check the recipient count, and send a batch SMS or email. The Alert Library handles curated one-off alerts."),
         ("How does a patient use the AI mask fitter?", "The fitter is invitation-only. Staff send the patient a signed link by text or email from Orders & Shop → Fitter Invites; the patient opens it, runs the camera-based fitting in their browser, and the completed result attaches back to their chart (or waits in a holding area for staff to attach). The public storefront's “get fitted” button routes to an invitation-required explainer rather than the fitter."),
+        ("Can patients buy a membership themselves?", "Yes — when membership pricing is configured, patients can join a cash-pay tier (Monthly Unlimited or Quarterly Unlimited) right from their account page; it's a Stripe subscription, and their membership tier is set automatically once the subscription is active. Staff can still set or adjust a tier from the customer record. If no membership pricing is set up, the option simply doesn't appear."),
+        ("Do post-purchase review requests go out automatically?", "They can. The review request can always be sent on demand from the Reviews worklist (“Send due”), and once the automatic sweep is enabled it goes out on its own about two weeks after delivery — one request per order, only to customers who haven't opted out."),
+        ("Can a returned item go back into inventory?", "Optionally. When you mark a return received you can choose to restock it, which adds the quantities back to tracked stock. It's off by default because most DME consumables (opened masks and supplies) aren't resaleable — so you opt in only for genuinely resaleable items."),
     ]),
     ("Billing & revenue cycle", [
         ("Is insurance checked before we bill?", "Yes. Eligibility runs by real-time 270/271 on a schedule and again in the seconds before a claim transmits; inactive or prior-auth-required coverage is held back so claims don't bounce."),

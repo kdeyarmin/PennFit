@@ -21,20 +21,39 @@
 // empty state, so they still render their real layout/header — useful for
 // the manual even without seeded rows. The manual's prose never depends on
 // a screenshot to be understood.
-// Import the repo's pinned Playwright build directly (the same approach
-// render.mjs uses) and launch the matching pre-installed Chromium via an
-// explicit executablePath — this environment ships a specific browser
-// build under /opt/pw-browsers, and the executablePath override skips
-// Playwright's "download the matching browser" check.
-import { chromium } from "/home/user/PennFit/node_modules/.pnpm/playwright@1.60.0/node_modules/playwright/index.mjs";
-import { mkdirSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+// Import the repo's pinned Playwright build and launch the matching
+// pre-installed Chromium via an explicit executablePath — this environment
+// ships a specific browser build under /opt/pw-browsers, and the
+// executablePath override skips Playwright's "download the matching browser"
+// check. `playwright` isn't a direct dependency of this docs directory (only
+// the e2e workspace depends on `@playwright/test`), so we resolve the pinned
+// build out of pnpm's store relative to the repo root — derived from this
+// script's own location, so it works wherever the repo is checked out and
+// survives a Playwright version bump.
+import { mkdirSync, readdirSync } from "node:fs";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, resolve } from "node:path";
 
 const CHROMIUM_EXECUTABLE =
   process.env.PW_CHROMIUM_EXECUTABLE ??
   "/opt/pw-browsers/chromium-1194/chrome-linux/chrome";
 const HERE = dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = resolve(HERE, "..", "..");
+
+function resolvePlaywrightEntry() {
+  const pnpmDir = resolve(REPO_ROOT, "node_modules", ".pnpm");
+  const entry = readdirSync(pnpmDir).find((d) => /^playwright@/.test(d));
+  if (!entry) {
+    throw new Error(
+      "playwright not found under node_modules/.pnpm — run `pnpm install` first.",
+    );
+  }
+  return pathToFileURL(
+    resolve(pnpmDir, entry, "node_modules", "playwright", "index.mjs"),
+  ).href;
+}
+
+const { chromium } = await import(resolvePlaywrightEntry());
 const BASE_URL = process.env.E2E_BASE_URL ?? "http://localhost:5173";
 const OUT = process.env.SCREENSHOT_OUT_DIR ?? resolve(HERE, "screenshots");
 mkdirSync(OUT, { recursive: true });
