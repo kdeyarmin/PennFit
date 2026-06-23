@@ -108,17 +108,39 @@ async function transition(
   } else {
     update.status = "cancelled";
   }
-  const { error } = await supabase
+  const { data: updatedRows, error } = await supabase
     .from("patient_dunning_runs")
     .update(update)
-    .eq("id", p.data.id);
+    .eq("id", p.data.id)
+    .select("id, current_step");
   if (error) throw error;
+  // PostgREST reports no error when zero rows match (unknown id, or a run
+  // owned by another tenant). Without this guard the route would log a
+  // dunning event against a non-existent run and falsely report success.
+  const updatedRun = updatedRows?.[0];
+  if (!updatedRun) {
+    res.status(404).json({ error: "not_found" });
+    return;
+  }
 
+  // Distinct, schema-valid outcome per action: a cancel previously shared
+  // "paused", conflating a terminal cancel with a resumable pause. (The
+  // outcome CHECK has no "cancelled"; a cancelled run skips its remaining
+  // ladder, so "skipped" is the closest valid code — `detail` still records
+  // the exact `manual_cancel`.)
+  const eventOutcome =
+    action === "resolve"
+      ? "resolved"
+      : action === "pause"
+        ? "paused"
+        : "skipped";
   await supabase.from("patient_dunning_events").insert({
     run_id: p.data.id,
-    step: "statement",
+    // Log against the run's actual ladder step, not a hardcoded "statement"
+    // (matches the dunning-engine's logEvent).
+    step: updatedRun.current_step,
     channel: "none",
-    outcome: action === "resolve" ? "resolved" : "paused",
+    outcome: eventOutcome,
     detail: `manual_${action}`,
     actor_email: req.adminEmail ?? null,
   });
