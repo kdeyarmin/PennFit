@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "wouter";
+
+import { safeHref } from "@/lib/safe-url";
 import {
   ArrowRight,
   PackageX,
@@ -156,7 +158,7 @@ function ReturnRow({ row }: { row: MyReturnRow }) {
       </div>
       {row.returnLabelUrl && row.status === "approved" && (
         <a
-          href={row.returnLabelUrl}
+          href={safeHref(row.returnLabelUrl) ?? "#"}
           target="_blank"
           rel="noopener noreferrer"
           className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-[hsl(var(--penn-navy))] hover:underline"

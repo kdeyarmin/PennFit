@@ -301,8 +301,25 @@ export const stripeWebhookHandler: RequestHandler = async (
   // exactly as before.
   let webhookOrgId = await resolveSeedOrgId();
   if (event.account) {
-    webhookOrgId =
-      (await resolveOrgIdByConnectedAccount(event.account)) ?? webhookOrgId;
+    const mappedOrgId = await resolveOrgIdByConnectedAccount(event.account);
+    if (!mappedOrgId) {
+      // A Connect event for a connected account we can't map to a tenant. Do
+      // NOT fall back to the seed org — applying another tenant's payment to
+      // the seed tenant's orders/payments is a cross-tenant financial-data
+      // bug. Release the dedupe row and 500 so Stripe RETRIES (covers a brief
+      // onboarding race where the account→org mapping isn't persisted yet); a
+      // permanently-unmapped account simply ages out of Stripe's retry window
+      // having touched nothing. (No-op for single-tenant: event.account is
+      // absent, so this branch never runs.)
+      log?.warn?.(
+        { stripeAccount: event.account, type: event.type },
+        "stripe webhook: connected account not mapped to a tenant; refusing seed-org fallback",
+      );
+      if (dedupeInserted) await tryDeleteWebhookEventRecord(event.id, log);
+      res.status(500).json({ error: "unmapped_connected_account" });
+      return;
+    }
+    webhookOrgId = mappedOrgId;
   }
   if (webhookOrgId) enterWebhookOrg(webhookOrgId);
 
