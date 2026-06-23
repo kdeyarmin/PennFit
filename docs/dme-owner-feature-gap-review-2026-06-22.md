@@ -166,6 +166,27 @@ consent/staffing/vendor-config prerequisite is met):
 
 ---
 
+## Implemented in this PR
+
+The three buildable genuinely-open gaps were closed here (additive, fail-soft,
+tested; no schema change). The deliberate non-goals (supplier procurement,
+multi-location operations) were left as-is.
+
+- **Storefront self-serve membership join** (Lens A) —
+  `GET /shop/membership/options` + `POST /shop/membership/checkout` create a
+  Stripe subscription Checkout for a tier; the `customer.subscription.*`
+  webhook (`joinMembershipFromSubscription`) sets `membership_tier` once
+  active. Gated by `STRIPE_MEMBERSHIP_{MONTHLY,QUARTERLY}_PRICE_ID` (unset →
+  unavailable, prior behaviour). Storefront `MembershipSection` on `/account`.
+- **Review-request cron** (Lens A) — `review-request.scan` worker (hourly :23,
+  env `RESUPPLY_REVIEW_REQUEST_CRON_ENABLED=1`) running the same shared
+  dispatcher as the admin "Send due" button.
+- **Returns/RMA restock** (Lens C) — `mark-received` gained an opt-in
+  `restock: true` that adds the returned order's quantities back to tracked
+  `stock_count` (default off — most DME consumables aren't resaleable).
+
+---
+
 ## Appendix — "already shipped, do NOT rebuild" (verified 2026-06-22)
 
 Paperwork (ABN/AOB/POD/CMN/DWO/e-sign), full RCM/EDI (270/271, 276/277, 837P,
