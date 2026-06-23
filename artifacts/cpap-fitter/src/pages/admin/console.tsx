@@ -581,6 +581,11 @@ const AdminBillingCollectionsPage = lazyWithRetry(() =>
     default: m.AdminBillingCollectionsPage,
   })),
 );
+const AdminBillingNotesPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-billing-notes").then((m) => ({
+    default: m.AdminBillingNotesPage,
+  })),
+);
 const AdminBillingAuditReadinessPage = lazyWithRetry(() =>
   import("@/pages/admin/admin-billing-audit-readiness").then((m) => ({
     default: m.AdminBillingAuditReadinessPage,
@@ -917,6 +922,10 @@ function AdminConsole() {
             <Route
               path="/admin/billing/collections"
               component={AdminBillingCollectionsPage}
+            />
+            <Route
+              path="/admin/billing/notes"
+              component={AdminBillingNotesPage}
             />
             <Route
               path="/admin/billing/audit-readiness"
