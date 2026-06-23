@@ -18,6 +18,8 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
+import { getOrgScopedClient } from "@workspace/resupply-db";
+
 import { getOrCreateStripeCustomer } from "../../lib/stripe/customer";
 import {
   getStripeClient,
@@ -132,6 +134,35 @@ router.post(
       res.status(503).json({ error: "billing_unavailable" });
       return;
     }
+    if (!req.orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+
+    // Already-a-member guard: an existing PAID membership with a linked
+    // subscription must NOT create a second Stripe subscription (the webhook
+    // would overwrite the link without canceling the old one, double-billing
+    // the customer). They manage/cancel via /account instead.
+    const supabase = getOrgScopedClient(req.orgId);
+    const { data: existing, error: existingErr } = await supabase
+      .from("shop_customers")
+      .select("membership_tier, membership_stripe_subscription_id")
+      .eq("customer_id", customerId)
+      .limit(1)
+      .maybeSingle();
+    if (existingErr) throw existingErr;
+    if (
+      existing &&
+      isPaidMembershipTier(existing.membership_tier) &&
+      existing.membership_stripe_subscription_id
+    ) {
+      res.status(409).json({
+        error: "already_member",
+        currentTier: existing.membership_tier,
+      });
+      return;
+    }
+
     const stripe = getStripeClient(config);
     const connectOptions = await stripeAccountRequestOptions(req.orgId);
 
@@ -152,8 +183,17 @@ router.post(
       return;
     }
 
-    const successUrl = `${config.publicBaseUrl}/shop/me?membership=joined`;
-    const cancelUrl = `${config.publicBaseUrl}/shop/membership`;
+    // Land back on the real storefront account page (MembershipSection lives
+    // on /account); /shop/me is an API path, not an SPA route.
+    const successUrl = `${config.publicBaseUrl}/account?membership=joined`;
+    const cancelUrl = `${config.publicBaseUrl}/account`;
+
+    // Server-derived idempotency key so a double-click / browser retry reuses
+    // the same Checkout Session instead of creating a second subscription. A
+    // 10-minute bucket lets a legitimate later re-join (e.g. after a cancel)
+    // start a fresh session.
+    const bucket = Math.floor(Date.now() / (10 * 60 * 1000));
+    const idempotencyKey = `membership:${customerId}:${tier}:${bucket}`;
 
     try {
       const session = await stripe.checkout.sessions.create(
@@ -180,7 +220,7 @@ router.post(
           },
           automatic_tax: { enabled: false },
         },
-        connectOptions,
+        { idempotencyKey, ...connectOptions },
       );
       res.json({ url: session.url });
     } catch (err) {

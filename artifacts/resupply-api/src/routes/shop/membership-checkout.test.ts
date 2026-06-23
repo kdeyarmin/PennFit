@@ -8,6 +8,12 @@ import {
   makeRequireSignedInMock,
   type MockSignedInProfile,
 } from "../../test-helpers/auth-mocks";
+import {
+  installSupabaseMock,
+  stageSupabaseResponse,
+} from "../../test-helpers/supabase-mock";
+
+const supabaseMock = installSupabaseMock();
 
 const { mockSignedIn } = vi.hoisted(() => ({
   mockSignedIn: { current: null as string | MockSignedInProfile | null },
@@ -51,6 +57,9 @@ function makeApp(): Express {
 }
 
 beforeEach(() => {
+  supabaseMock.reset();
+  // Default: not currently a member (the already-member guard reads this).
+  stageSupabaseResponse("shop_customers", "select", { data: null });
   mockSignedIn.current = null;
   readStripeConfigOrNullMock.mockReset();
   getStripeClientMock.mockReset();
@@ -107,12 +116,40 @@ describe("POST /shop/membership/checkout", () => {
     const arg = sessionsCreate.mock.calls[0][0] as Record<string, unknown>;
     expect(arg.mode).toBe("subscription");
     expect(arg.line_items).toEqual([{ price: "price_monthly", quantity: 1 }]);
+    expect(arg.success_url).toBe(
+      "https://shop.example.com/account?membership=joined",
+    );
+    expect(arg.cancel_url).toBe("https://shop.example.com/account");
     expect(
       (arg.subscription_data as { metadata: Record<string, string> }).metadata,
     ).toMatchObject({
       customer_id: CUSTOMER,
       membership_tier: "monthly_unlimited",
     });
+    // A server-derived idempotency key guards against double-click duplicates.
+    const opts = sessionsCreate.mock.calls[0][1] as Record<string, unknown>;
+    expect(typeof opts.idempotencyKey).toBe("string");
+    expect(opts.idempotencyKey).toContain(
+      "membership:cust-1:monthly_unlimited",
+    );
+  });
+
+  it("409 when the customer already has a paid membership", async () => {
+    mockSignedIn.current = CUSTOMER;
+    process.env.STRIPE_MEMBERSHIP_QUARTERLY_PRICE_ID = "price_quarterly";
+    supabaseMock.reset();
+    stageSupabaseResponse("shop_customers", "select", {
+      data: {
+        membership_tier: "monthly_unlimited",
+        membership_stripe_subscription_id: "sub_existing",
+      },
+    });
+    const res = await request(makeApp())
+      .post("/shop/membership/checkout")
+      .send({ tier: "quarterly_unlimited" });
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("already_member");
+    expect(sessionsCreate).not.toHaveBeenCalled();
   });
 
   it("400 on an unknown tier", async () => {
