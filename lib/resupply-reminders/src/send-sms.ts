@@ -119,7 +119,12 @@ export async function sendReminderSms(
   // Tenant isolation chokepoint: scope every read/write to orgId. The
   // seed-org bridge resolves the original operating company when a
   // caller hasn't threaded orgId yet (see input doc).
-  const orgId = input.orgId ?? (await resolveSeedOrgId()) ?? "";
+  const rawOrgId = input.orgId;
+  const orgId =
+    rawOrgId === undefined
+      ? ((await resolveSeedOrgId()) ?? "")
+      : rawOrgId.trim();
+  if (!orgId) return { status: "tenant_not_resolved" };
   const db = getOrgScopedClient(orgId, supabase);
 
   const { data: patient, error: patientErr } = await db

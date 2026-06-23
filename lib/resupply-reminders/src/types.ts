@@ -53,6 +53,7 @@ export interface EmailSendConfig {
 
 export type SendReminderOutcome =
   | { status: "ok"; conversationId: string; vendorRef: string }
+  | { status: "tenant_not_resolved" }
   | { status: "patient_not_found" }
   | { status: "patient_not_active"; patientStatus: string }
   | { status: "patient_missing_phone" }

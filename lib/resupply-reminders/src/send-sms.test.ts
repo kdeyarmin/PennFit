@@ -218,6 +218,16 @@ describe("sendReminderSms — seed-org bridge", () => {
     // The bridge-resolved org propagates to the projection too.
     expect(tryUpsertMock.mock.calls[0][1].orgId).toBe(ORG_ID);
   });
+
+  it("returns tenant_not_resolved when orgId is omitted and no seed tenant exists", async () => {
+    resolveSeedOrgIdMock.mockResolvedValueOnce(null);
+
+    const result = await sendReminderSms(makeInput({ orgId: undefined }));
+
+    expect(result.status).toBe("tenant_not_resolved");
+    expect(patientReadMock).not.toHaveBeenCalled();
+    expect(sendSmsMock).not.toHaveBeenCalled();
+  });
 });
 
 describe("sendReminderSms — early exits", () => {

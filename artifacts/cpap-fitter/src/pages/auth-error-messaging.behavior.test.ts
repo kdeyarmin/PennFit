@@ -10,7 +10,7 @@
 //
 //   * a refactor of `authErrorMessage` / `serverUnavailableMessage`
 //     that breaks the 5xx branch (e.g. swapping `>= 500` for `> 500`,
-//     or dropping the status.pennpaps.com reference);
+//     or dropping the platform status reference);
 //   * a change to `AuthError.status` semantics that makes status=503
 //     no longer look like a server outage to the helper;
 //   * the forgot-password no-enumeration contract (4xx → success
@@ -56,9 +56,9 @@ const RESET_OPTS = {
 } as const;
 
 // The bits of copy the 5xx branch must produce, regardless of which
-// page is calling. If status.pennpaps.com ever moves or the
+// page is calling. If the platform status host ever moves or the
 // "credentials store" phrasing changes, we want to know explicitly.
-const STATUS_URL_SUBSTRING = "status.pennpaps.com";
+const STATUS_URL_SUBSTRING = "status.cmbreathe.com";
 const CREDENTIALS_STORE_SUBSTRING = "credentials store";
 
 describe("customer sign-in — 5xx renders server-trouble copy", () => {
