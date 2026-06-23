@@ -107,6 +107,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 export function decideCappedRentalAdvance(
   input: CappedRentalAdvanceInput,
 ): CappedRentalAdvanceDecision {
+  const asOfMs = (input.asOf ?? new Date()).getTime();
   const start = new Date(`${input.startDate}T00:00:00Z`).getTime();
   // A corrupt / unparseable startDate makes `start` (and therefore
   // `nextDueMs`) NaN. `asOfMs < NaN` is false, so without this guard the
@@ -115,11 +116,10 @@ export function decideCappedRentalAdvance(
   // transferring ownership) with no valid anniversary. Never advance billing
   // on an un-anchorable date; treat it as "not yet due".
   if (!Number.isFinite(start)) {
-    return { action: "noop", nextMonth: input.currentMonth, nextDueMs: start };
+    return { action: "noop", nextMonth: input.currentMonth, nextDueMs: asOfMs };
   }
   const nextDueMs =
     start + input.currentMonth * CAPPED_RENTAL_CYCLE_DAYS * DAY_MS;
-  const asOfMs = (input.asOf ?? new Date()).getTime();
 
   if (asOfMs < nextDueMs) {
     return { action: "noop", nextMonth: input.currentMonth, nextDueMs };
