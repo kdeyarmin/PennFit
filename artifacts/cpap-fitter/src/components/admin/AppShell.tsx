@@ -103,6 +103,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
+import { toast } from "@/hooks/use-toast";
 import { useDashboardIdentity } from "@/lib/admin/identity";
 import {
   useGetAdminMe,
@@ -1935,9 +1936,28 @@ export function AdminHeaderChip({
           // /sign-in. Soft-navigate via wouter so jsdom doesn't
           // refuse the navigation in tests; the cookie + cache
           // cleanup happens inside the identity shim's signOut().
-          void signOut().finally(() => {
-            setShellLocation("/admin/sign-in");
-          });
+          //
+          // Navigate ONLY on success. A failed /sign-out (5xx / network
+          // blip) leaves the pf_session cookie valid — navigating to
+          // /admin/sign-in anyway would show a signed-out screen while the
+          // admin is still authenticated (the next /me succeeds), a false
+          // sign-out that's especially dangerous on a shared workstation
+          // since admin tokens unlock PHI. On failure, stay put and surface
+          // a retry prompt. The shim re-throws precisely so we can do this.
+          void signOut().then(
+            () => {
+              setShellLocation("/admin/sign-in");
+            },
+            (err: unknown) => {
+              console.error("admin sign-out failed", err);
+              toast({
+                variant: "destructive",
+                title: "Sign-out failed",
+                description:
+                  "You're still signed in. Check your connection and try again.",
+              });
+            },
+          );
         }}
         className="text-xs font-semibold px-3 py-1.5 rounded-md border transition-colors"
         style={{
