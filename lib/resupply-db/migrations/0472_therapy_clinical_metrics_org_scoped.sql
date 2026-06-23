@@ -86,5 +86,12 @@ AS $$
 $$;
 --> statement-breakpoint
 
+-- SECURITY DEFINER + PostgREST-exposed schema: drop the implicit PUBLIC
+-- EXECUTE so anon/authenticated can't call this RPC directly; the API invokes
+-- it server-side as service_role only.
+REVOKE EXECUTE ON FUNCTION resupply.therapy_clinical_metrics(uuid[], uuid, int)
+  FROM PUBLIC, anon, authenticated;
+--> statement-breakpoint
+
 GRANT EXECUTE ON FUNCTION resupply.therapy_clinical_metrics(uuid[], uuid, int)
   TO service_role;
