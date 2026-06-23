@@ -1,12 +1,12 @@
 // Route tests for /admin/billing/notes (migration 0467 — the billing
 // team's free-form notes log).
 //
-// Mirrors order-notes.test.ts. Coverage:
+// Coverage:
 //   * 401 paths for GET + POST (no admin)
 //   * GET returns the notes array
 //   * POST validates body length (empty + over-limit) and category
-//   * POST inserts + audits with non-PHI metadata; the envelope never
-//     contains the body content
+//   * POST inserts + emits a structured, non-PHI log line; the body content
+//     never appears in the log metadata
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import express, { type Express } from "express";
@@ -31,12 +31,12 @@ vi.mock("../../middlewares/requireAdmin", () =>
   makeRequireAdminMock(mockAdmin),
 );
 
-const logAuditMock = vi.hoisted(() =>
-  vi.fn<(input: unknown) => Promise<undefined>>(async () => undefined),
-);
-vi.mock("@workspace/resupply-audit", () => ({
-  logAudit: logAuditMock,
+const loggerMock = vi.hoisted(() => ({
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
 }));
+vi.mock("../../lib/logger", () => ({ logger: loggerMock }));
 
 import billingNotesRouter from "./billing-notes";
 
@@ -57,7 +57,9 @@ function makeApp(): Express {
 beforeEach(() => {
   mockAdmin.current = null;
   supabaseMock.reset();
-  logAuditMock.mockClear();
+  loggerMock.info.mockClear();
+  loggerMock.warn.mockClear();
+  loggerMock.error.mockClear();
 });
 
 describe("GET /admin/billing/notes", () => {
@@ -150,7 +152,7 @@ describe("POST /admin/billing/notes", () => {
     expect(getSupabaseCallCount("billing_notes", "insert")).toBe(0);
   });
 
-  it("inserts + audits with non-PHI envelope", async () => {
+  it("inserts + emits a non-PHI structured log line", async () => {
     mockAdmin.current = ADMIN;
     stageSupabaseResponse("billing_notes", "insert", {
       data: {
@@ -170,25 +172,21 @@ describe("POST /admin/billing/notes", () => {
       createdAt: "2026-06-04T12:00:00.000Z",
     });
 
-    expect(logAuditMock).toHaveBeenCalledTimes(1);
-    const audit = logAuditMock.mock.calls[0]?.[0] as {
-      action: string;
-      targetTable: string;
-      targetId: string;
-      metadata: Record<string, unknown>;
-    };
-    expect(audit.action).toBe("billing.note.create");
-    expect(audit.targetTable).toBe("billing_notes");
-    expect(audit.targetId).toBe("note_new");
-    expect(audit.metadata).toEqual({
+    const createLog = loggerMock.info.mock.calls.find(
+      (c) => c[1] === "admin.billing.note.create",
+    );
+    expect(createLog).toBeDefined();
+    const meta = createLog?.[0] as Record<string, unknown>;
+    expect(meta).toMatchObject({
+      noteId: "note_new",
       category: "collections",
-      patient_id: null,
-      body_length:
+      patientId: null,
+      bodyLength:
         "Agency wants the next overdue export by Friday; balance climbing."
           .length,
     });
-    // Critical: no body content in the audit envelope.
-    expect(JSON.stringify(audit.metadata)).not.toContain("Agency");
-    expect(JSON.stringify(audit.metadata)).not.toContain("Friday");
+    // Critical: no body content in the log metadata.
+    expect(JSON.stringify(meta)).not.toContain("Agency");
+    expect(JSON.stringify(meta)).not.toContain("Friday");
   });
 });

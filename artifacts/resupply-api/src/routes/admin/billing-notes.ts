@@ -17,13 +17,17 @@
 // is intentionally no edit/delete affordance, mirroring the other note
 // families.
 //
-// PHI / log posture: the body may contain anything the biller types. The
-// audit row records category + body_length only — never the body content.
+// PHI / log posture: the body may contain anything the biller types. On
+// create we emit ONE structured log line with category + patient_id +
+// body_length — never the body content itself. We deliberately do NOT call
+// `@workspace/resupply-audit` here: that package is a retired no-op stub and
+// CLAUDE.md forbids writing new audit logic against it, so a `logAudit()`
+// call would record nothing in production and overstate the contract. The
+// application logger is the supported observability path.
 
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { logAudit } from "@workspace/resupply-audit";
 import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
@@ -68,7 +72,7 @@ router.get("/admin/billing/notes", requireAdmin, async (req, res) => {
     return;
   }
   const orgId = req.orgId;
-  if (!orgId) {
+  if (!orgId || !orgId.trim()) {
     res.status(500).json({ error: "tenant_context_missing" });
     return;
   }
@@ -133,7 +137,7 @@ router.post(
     const patientId = parsed.data.patientId ?? null;
 
     const orgId = req.orgId;
-    if (!orgId) {
+    if (!orgId || !orgId.trim()) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
@@ -167,24 +171,20 @@ router.post(
       .single();
     if (insErr) throw insErr;
 
-    // Audit. Structural metadata only — same policy as the other note
-    // families. The body content NEVER lands in the envelope.
-    await logAudit({
-      action: "billing.note.create",
-      adminEmail: req.adminEmail ?? null,
-      adminUserId: req.adminUserId ?? null,
-      targetTable: "billing_notes",
-      targetId: inserted.id,
-      metadata: {
+    // Structured observability record. Structural metadata only — the note
+    // body NEVER lands in the log line (it may contain anything the biller
+    // typed). NOT an audit_log write: @workspace/resupply-audit is a retired
+    // no-op stub (CLAUDE.md hard rule), so this goes through the app logger.
+    logger.info(
+      {
+        noteId: inserted.id,
         category,
-        patient_id: patientId,
-        body_length: body.length,
+        patientId,
+        bodyLength: body.length,
+        adminEmail: req.adminEmail,
       },
-      ip: req.ip ?? null,
-      userAgent: req.get("user-agent") ?? null,
-    }).catch((err) => {
-      logger.warn({ err }, "billing.note.create audit write failed");
-    });
+      "admin.billing.note.create",
+    );
 
     res.status(201).json({
       id: inserted.id,

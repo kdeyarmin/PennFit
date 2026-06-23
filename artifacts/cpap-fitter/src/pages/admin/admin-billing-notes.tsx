@@ -14,6 +14,7 @@ import { Card } from "@/components/admin/Card";
 import { Badge } from "@/components/admin/Badge";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Spinner } from "@/components/admin/Spinner";
+import { formatAppDateTime } from "@/lib/utils";
 import {
   type BillingNote,
   type BillingNoteCategory,
@@ -36,19 +37,6 @@ const CATEGORY_LABEL: Record<BillingNoteCategory, string> = {
   patient: "Patient",
   general: "General",
 };
-
-function formatWhen(iso: string): string {
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime())
-    ? iso
-    : d.toLocaleString("en-US", {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-        hour: "numeric",
-        minute: "2-digit",
-      });
-}
 
 export function AdminBillingNotesPage() {
   const qc = useQueryClient();
@@ -122,6 +110,7 @@ export function AdminBillingNotesPage() {
           <textarea
             className="w-full text-sm rounded border px-3 py-2 bg-transparent min-h-[80px]"
             style={{ borderColor: "hsl(var(--line-1))" }}
+            aria-label="Billing note"
             placeholder="What should the next biller know?"
             maxLength={4000}
             value={draft}
@@ -238,7 +227,7 @@ function NoteRow({ note }: { note: BillingNote }) {
           ) : null}
         </span>
         <span className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
-          {note.authorEmail} · {formatWhen(note.createdAt)}
+          {note.authorEmail} · {formatAppDateTime(note.createdAt)}
         </span>
       </div>
       <p
