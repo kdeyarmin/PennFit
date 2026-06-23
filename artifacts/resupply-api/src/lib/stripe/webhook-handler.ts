@@ -346,6 +346,19 @@ export const stripeWebhookHandler: RequestHandler = async (
           await recordAutopayAuthorization(config, session, log);
           break;
         }
+        // Membership-join Checkout (mode:"subscription", no shippable supply).
+        // The customer.subscription.* webhook (joinMembershipFromSubscription)
+        // sets membership_tier; the order pipeline must NOT run here, or
+        // markPaid would create a spurious shippable shop_orders row (default
+        // ship fulfillment, no address) and fire order-confirmation / review /
+        // fulfillment follow-ups for a non-order.
+        if (session.metadata?.flow === "membership") {
+          log?.info?.(
+            { sessionId: session.id },
+            "membership checkout completed — order pipeline skipped (tier set by subscription webhook)",
+          );
+          break;
+        }
         const paidRow = await markPaid(session, log);
         // Best-effort: mirror the session's line items into
         // shop_order_items so the verified-purchaser badge and the

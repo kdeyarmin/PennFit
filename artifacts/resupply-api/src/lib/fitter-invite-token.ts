@@ -86,6 +86,15 @@ export function verifyFitterInviteToken(
   const sigEncoded = token.slice(idx + 1);
   const sigBuf = base64urlDecode(sigEncoded);
   if (!sigBuf) return { valid: false, reason: "malformed" };
+  // Reject non-canonical base64url: the last character of a 32-byte HMAC
+  // has only 4 meaningful bits; the bottom 2 bits must be zero. Node.js's
+  // Buffer.from(..., 'base64') silently ignores those bits, so 'A' (000000)
+  // and 'B' (000001) would otherwise decode identically, letting a one-char
+  // flip pass signature verification. Re-encoding and comparing catches any
+  // token where the padding bits are non-zero.
+  if (base64urlEncode(sigBuf) !== sigEncoded) {
+    return { valid: false, reason: "malformed" };
+  }
 
   // Verify the signature before trusting any part of the payload.
   const expectedSig = createHmac("sha256", getLinkHmacKey())

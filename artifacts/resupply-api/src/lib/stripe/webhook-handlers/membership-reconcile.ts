@@ -28,7 +28,9 @@ import type Stripe from "stripe";
 
 import { getOrgScopedClient } from "@workspace/resupply-db";
 
+import { isPaidMembershipTier } from "../membership-config";
 import { resolveWebhookOrgId } from "../webhook-org-context";
+import { readCustomerIdFromMetadata } from "./shared";
 
 type SubscriptionLogger =
   | {
@@ -133,4 +135,62 @@ export async function reconcileMembershipFromSubscription(
       "membership renewal date refreshed from subscription period",
     );
   }
+}
+
+/**
+ * Set a customer's membership tier from a SELF-SERVE join subscription —
+ * the complement to reconcileMembershipFromSubscription's
+ * downgrade-on-cancel. The storefront membership-checkout route stamps
+ * `subscription_data.metadata = { customer_id, membership_tier }`; once the
+ * subscription goes active/trialing we set the tier + link it on the
+ * shop_customers row (keyed by the metadata customer_id, since the row isn't
+ * linked to this subscription yet). No-op for non-membership subscriptions
+ * (no membership_tier metadata) and for non-active states (the cancel/lapse
+ * path is owned by reconcileMembershipFromSubscription).
+ *
+ * Idempotent: re-delivery re-writes the same tier + link; membership_started_at
+ * is preserved if already set, so a replay never resets the join date.
+ */
+export async function joinMembershipFromSubscription(
+  subscription: Stripe.Subscription,
+  log: SubscriptionLogger,
+): Promise<void> {
+  const tier = subscription.metadata?.membership_tier;
+  if (!isPaidMembershipTier(tier)) return;
+  if (subscription.status !== "active" && subscription.status !== "trialing") {
+    return;
+  }
+  const customerId = readCustomerIdFromMetadata(subscription.metadata);
+  if (!customerId) return;
+
+  const orgId = await resolveWebhookOrgId();
+  if (!orgId) return;
+  const supabase = getOrgScopedClient(orgId);
+
+  // Preserve an existing join date (idempotent replay) — read first.
+  const { data: existing, error } = await supabase
+    .from("shop_customers")
+    .select("customer_id, membership_started_at")
+    .eq("customer_id", customerId)
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  if (!existing) return; // unknown customer — drop (no synthetic row)
+
+  const nowIso = new Date().toISOString();
+  const { error: updErr } = await supabase
+    .from("shop_customers")
+    .update({
+      membership_tier: tier,
+      membership_stripe_subscription_id: subscription.id,
+      membership_started_at: existing.membership_started_at ?? nowIso,
+      membership_renews_at: earliestPeriodEndIso(subscription),
+      updated_at: nowIso,
+    })
+    .eq("customer_id", customerId);
+  if (updErr) throw updErr;
+  log?.info?.(
+    { customerId, subscriptionId: subscription.id, tier },
+    "membership tier set from self-serve join",
+  );
 }
