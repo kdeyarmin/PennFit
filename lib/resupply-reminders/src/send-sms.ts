@@ -121,7 +121,9 @@ export async function sendReminderSms(
   // caller hasn't threaded orgId yet (see input doc).
   const rawOrgId = input.orgId;
   const orgId =
-    rawOrgId === undefined ? (await resolveSeedOrgId()) ?? "" : rawOrgId.trim();
+    rawOrgId === undefined
+      ? ((await resolveSeedOrgId()) ?? "")
+      : rawOrgId.trim();
   if (!orgId) return { status: "tenant_not_resolved" };
   const db = getOrgScopedClient(orgId, supabase);
 
