@@ -219,6 +219,7 @@ export async function sendAppointmentAssignedEmail(
       templateKey: "appointment.assigned.email",
       channel: "email",
       customerId: null,
+      orgId: input.orgId,
       variables: {
         assignee_name: fields.greetingName,
         appointment_date: fields.date,

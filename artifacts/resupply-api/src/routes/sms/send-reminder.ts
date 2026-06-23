@@ -141,6 +141,9 @@ router.post(
           messageSid: outcome.vendorRef,
         });
         return;
+      case "tenant_not_resolved":
+        res.status(500).json({ error: "tenant_context_missing" });
+        return;
       case "patient_not_found":
         res.status(404).json({ error: "patient_not_found" });
         return;

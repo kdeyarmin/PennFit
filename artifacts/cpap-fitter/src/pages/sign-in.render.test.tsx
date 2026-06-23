@@ -78,7 +78,7 @@ describe("SignInPage — 5xx server-trouble alert renders into the DOM", () => {
 
     const alert = screen.getByRole("alert");
     expect(alert.textContent ?? "").toContain("credentials store");
-    expect(alert.textContent ?? "").toContain("status.pennpaps.com");
+    expect(alert.textContent ?? "").toContain("status.cmbreathe.com");
     // The action verb proves the page-specific options reached the
     // helper — i.e. the page didn't accidentally call the helper
     // with a generic default.

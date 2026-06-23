@@ -1005,7 +1005,24 @@ export interface ConversationListItem {
   status: ConversationListItemStatus;
   lastMessageAt?: string | null;
   createdAt: string;
+  assignedAdminUserId?: string | null;
+  assignedAt?: string | null;
+  priority?: ConversationListItemPriority;
+  slaDueAt?: string | null;
+  escalatedAt?: string | null;
+  escalationReason?: string | null;
+  snoozedUntil?: string | null;
 }
+
+export type ConversationListItemPriority =
+  (typeof ConversationListItemPriority)[keyof typeof ConversationListItemPriority];
+
+export const ConversationListItemPriority = {
+  low: "low",
+  normal: "normal",
+  high: "high",
+  urgent: "urgent",
+} as const;
 
 export interface ConversationListPage {
   items: ConversationListItem[];
@@ -2072,6 +2089,16 @@ export type ListConversationsParams = {
    */
   patientId?: string;
   /**
+   * Inbox bucket filter.
+   */
+  view?: ListConversationsView;
+  /**
+   * Restrict to one assignee. Mutually exclusive with view=mine.
+   */
+  assignedTo?: string;
+  priority?: ListConversationsPriority;
+  includeSnoozed?: "0" | "1" | "false" | "true";
+  /**
    * @minimum 1
    * @maximum 100
    */
@@ -2081,6 +2108,26 @@ export type ListConversationsParams = {
    */
   offset?: number;
 };
+
+export type ListConversationsView =
+  (typeof ListConversationsView)[keyof typeof ListConversationsView];
+
+export const ListConversationsView = {
+  mine: "mine",
+  unassigned: "unassigned",
+  escalated: "escalated",
+  breaching: "breaching",
+} as const;
+
+export type ListConversationsPriority =
+  (typeof ListConversationsPriority)[keyof typeof ListConversationsPriority];
+
+export const ListConversationsPriority = {
+  low: "low",
+  normal: "normal",
+  high: "high",
+  urgent: "urgent",
+} as const;
 
 export type ListConversationsStatus =
   (typeof ListConversationsStatus)[keyof typeof ListConversationsStatus];

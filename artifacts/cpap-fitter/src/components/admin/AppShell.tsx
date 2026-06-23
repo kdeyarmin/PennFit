@@ -1261,6 +1261,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             label: "Team",
             icon: UsersRound,
             matchPrefix: "/admin/team",
+            requiredPermission: "admin.tools.manage",
             hint: "Manage admin & agent accounts",
           },
           {
@@ -1308,6 +1309,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             label: "Control Center",
             icon: ToggleLeft,
             matchPrefix: "/admin/control-center",
+            requiredPermission: "admin.tools.manage",
             hint: "On/off switches for major features (voice, SMS, campaigns, AI billing, …)",
           },
           {

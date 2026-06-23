@@ -347,6 +347,7 @@ describe("requireRole", () => {
     });
     const r = await supertest(app).get("/x");
     expect(r.status).toBe(403);
+    expect(r.body.error).toBe("forbidden");
   });
 
   it("agent role admits both agent and admin", async () => {
@@ -368,6 +369,7 @@ describe("requireRole", () => {
       });
       const r = await supertest(app).get("/x");
       expect(r.status).toBe(403);
+      expect(r.body.error).toBe("forbidden");
     }
   });
 });

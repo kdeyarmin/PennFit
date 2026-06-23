@@ -68,6 +68,11 @@ export interface RenderRequest {
   templateKey: string;
   channel: Channel;
   /**
+   * Tenant scope for global templates. This is part of the cache key so
+   * one tenant's template lookup result cannot bleed into another tenant.
+   */
+  orgId?: string | null;
+  /**
    * For Phase 3: the per-customer override path keys on this. In
    * Phase 1 the lookup ignores it (and per-customer overrides are
    * not yet exposed) but the field is in the contract today so
@@ -93,6 +98,7 @@ export type TemplateLookup = (
   templateKey: string,
   channel: Channel,
   customerId: string | null,
+  orgId?: string | null,
 ) => Promise<MessageTemplate | null>;
 
 /**
@@ -187,8 +193,9 @@ function cacheKey(
   templateKey: string,
   channel: Channel,
   customerId: string | null,
+  orgId: string | null,
 ): string {
-  return `${templateKey}|${channel}|${customerId ?? "_global_"}`;
+  return `${orgId ?? "_seed_"}|${templateKey}|${channel}|${customerId ?? "_global_"}`;
 }
 
 function cacheGet(key: string): CacheEntry | null {
@@ -249,13 +256,14 @@ export async function renderMessage(
   lookup: TemplateLookup,
 ): Promise<RenderResult> {
   const customerId = req.customerId ?? null;
-  const key = cacheKey(req.templateKey, req.channel, customerId);
+  const orgId = req.orgId ?? null;
+  const key = cacheKey(req.templateKey, req.channel, customerId, orgId);
 
   let entry = cacheGet(key);
   if (!entry) {
     let value: MessageTemplate | null;
     try {
-      value = await lookup(req.templateKey, req.channel, customerId);
+      value = await lookup(req.templateKey, req.channel, customerId, orgId);
     } catch {
       // Lookup failed (DB outage, table missing, network blip).
       // Cache the null briefly so we don't hammer the DB on every

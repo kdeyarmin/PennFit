@@ -74,7 +74,7 @@ describe("ResetPasswordPage — 5xx server-trouble alert renders into the DOM", 
 
     const alert = screen.getByRole("alert");
     expect(alert.textContent ?? "").toContain("credentials store");
-    expect(alert.textContent ?? "").toContain("status.pennpaps.com");
+    expect(alert.textContent ?? "").toContain("status.cmbreathe.com");
     expect(alert.textContent ?? "").toContain("update your password");
   });
 

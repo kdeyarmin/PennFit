@@ -7,7 +7,7 @@
 //   1. AuthError with status >= 500 — the credentials store is
 //      unreachable. The user is staring at a "stuck" form and can't
 //      tell whether their input is wrong or the backend is down.
-//      Render copy that points them at status.pennpaps.com so they
+//      Render copy that points them at the platform status page so they
 //      know to retry rather than reach for support.
 //   2. AuthError with status < 500 — the server already produced
 //      a user-facing message (`userMessage`). Render it as-is.
@@ -21,6 +21,8 @@
 // miss one. This module is now the single source of truth.
 
 import { AuthError } from "./client";
+
+const PLATFORM_STATUS_HOST = "status.cmbreathe.com";
 
 export interface AuthErrorMessageOptions {
   /**
@@ -54,7 +56,7 @@ export function serverUnavailableMessage(
   return (
     `We can't reach the credentials store right now, so we couldn't ${opts.action}.` +
     ` This is a server problem, not your ${opts.subject}.` +
-    ` Please try again in a minute — if it keeps failing, check status.pennpaps.com.`
+    ` Please try again in a minute — if it keeps failing, check ${PLATFORM_STATUS_HOST}.`
   );
 }
 

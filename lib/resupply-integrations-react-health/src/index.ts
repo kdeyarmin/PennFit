@@ -24,11 +24,10 @@ export { fetchReactHealthSnapshot } from "./client";
 export function createReactHealthAdapter(
   env: NodeJS.ProcessEnv = process.env,
 ): IntegrationAdapter {
-  const config = readReactHealthConfigOrNull(env);
-
   return {
     source: "react_health",
     availability() {
+      const config = readReactHealthConfigOrNull(env);
       if (!config) {
         return { status: "unavailable", reason: "not_configured" };
       }
@@ -37,6 +36,7 @@ export function createReactHealthAdapter(
     async fetchSnapshot(
       input: FetchSnapshotInput,
     ): Promise<FetchSnapshotResult> {
+      const config = readReactHealthConfigOrNull(env);
       if (!config) {
         return { ok: false, error: "unavailable" };
       }

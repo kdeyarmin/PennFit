@@ -128,9 +128,10 @@ export const messageTemplateLookup: TemplateLookup = async (
   templateKey,
   channel,
   customerId,
+  renderOrgId,
 ) => {
   try {
-    const orgId = await resolveSeedOrgId();
+    const orgId = renderOrgId ?? (await resolveSeedOrgId());
     if (!orgId) return null;
     const supabase = getOrgScopedClient(orgId);
 
