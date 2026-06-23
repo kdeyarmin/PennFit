@@ -57,7 +57,13 @@ export async function getBillingNotes(opts?: {
   });
   if (!res.ok) throw await err(res, "GET", url);
   const json = (await res.json()) as { notes?: BillingNote[] };
-  return json.notes ?? [];
+  // Strict contract: the route always returns a `notes` array (even when
+  // empty). A missing/malformed shape is a server regression we want to
+  // surface as an error, not silently render as "no notes".
+  if (!Array.isArray(json.notes)) {
+    throw new ApiError(res, json, { method: "GET", url });
+  }
+  return json.notes;
 }
 
 export async function createBillingNote(

@@ -60,6 +60,10 @@ export function PatientBillingNotesPanel({ patientId }: { patientId: string }) {
     onSuccess: () => {
       setDraft("");
       void qc.invalidateQueries({ queryKey });
+      // Keep the standalone Billing Notes log (keys prefixed
+      // ["admin","billing-notes"]) consistent — a note added here should
+      // show there too, not sit stale behind its 15s staleTime.
+      void qc.invalidateQueries({ queryKey: ["admin", "billing-notes"] });
     },
   });
 
