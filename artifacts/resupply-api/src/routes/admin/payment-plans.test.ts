@@ -214,8 +214,8 @@ describe("POST /admin/payment-plans/:id/authorize-autopay — return-path valida
     const res = await request(makeApp())
       .post(`/admin/payment-plans/${PLAN_ID}/authorize-autopay`)
       .send({
-        successUrl: "https://evil.example/finish",
-        cancelUrl: "https://evil.example/cancel",
+        successPath: "https://evil.example/finish",
+        cancelPath: "https://evil.example/cancel",
       });
     expect(res.status).toBe(400);
     expect(res.body.error).toBe("invalid_body");
