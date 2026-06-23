@@ -816,7 +816,7 @@ router.post(
     // signature packet. Feature-flag-gated, one-time per patient, and
     // never fatal to the delivery transition.
     try {
-      await autoSendPatientPacketOnDelivery({ orderId });
+      await autoSendPatientPacketOnDelivery({ orderId, orgId });
     } catch (packetErr) {
       req.log?.warn?.(
         {
@@ -1010,7 +1010,7 @@ router.post(
     // store is the pickup equivalent of delivery, so the same
     // feature-flag-gated, one-time packet send applies.
     try {
-      await autoSendPatientPacketOnDelivery({ orderId });
+      await autoSendPatientPacketOnDelivery({ orderId, orgId });
     } catch (packetErr) {
       req.log?.warn?.(
         {

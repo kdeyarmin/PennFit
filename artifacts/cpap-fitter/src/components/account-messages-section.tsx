@@ -55,6 +55,7 @@ export function AccountMessagesSection() {
   const [sending, setSending] = useState(false);
   const [unreadFromCsr, setUnreadFromCsr] = useState(0);
   const listRef = useRef<HTMLDivElement | null>(null);
+  const sendInFlightRef = useRef(false);
 
   // Single shared loader so the initial fetch + the polling timer +
   // the post-send refresh all share one code path.
@@ -114,7 +115,7 @@ export function AccountMessagesSection() {
   useEffect(() => {
     let intervalId: number | null = null;
     function start() {
-      if (intervalId !== null) return;
+      if (intervalId !== null || sending) return;
       intervalId = window.setInterval(() => {
         void reload();
       }, POLL_INTERVAL_MS);
@@ -126,20 +127,20 @@ export function AccountMessagesSection() {
       }
     }
     function onVisibility() {
-      if (document.hidden) {
+      if (document.hidden || sending) {
         stop();
       } else {
         void reload();
         start();
       }
     }
-    if (!document.hidden) start();
+    if (!document.hidden && !sending) start();
     document.addEventListener("visibilitychange", onVisibility);
     return () => {
       stop();
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [reload]);
+  }, [reload, sending]);
 
   // Auto-scroll to the bottom on new messages.
   useEffect(() => {
@@ -150,7 +151,8 @@ export function AccountMessagesSection() {
 
   async function handleSend() {
     const trimmed = draft.trim();
-    if (!trimmed) return;
+    if (!trimmed || sendInFlightRef.current) return;
+    sendInFlightRef.current = true;
     setSending(true);
     // Optimistic append — gives instant feedback even if the
     // network round-trip is slow. We use a temporary id; the
@@ -184,6 +186,7 @@ export function AccountMessagesSection() {
         variant: "destructive",
       });
     } finally {
+      sendInFlightRef.current = false;
       setSending(false);
     }
   }

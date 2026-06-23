@@ -132,7 +132,7 @@ export async function applyCarrierTrackingEvent(
     const { data: order, error } = await supabase
       .schema("resupply")
       .from("shop_orders")
-      .select("id, shipped_at, delivered_at")
+      .select("id, org_id, shipped_at, delivered_at")
       .eq("tracking_number", event.trackingNumber)
       .limit(1)
       .maybeSingle();
@@ -160,7 +160,11 @@ export async function applyCarrierTrackingEvent(
       // Mirror the admin mark-delivered side effect (POD / patient-packet
       // auto-send). Best-effort — never fails the webhook ACK.
       try {
-        await autoSendPatientPacketOnDelivery({ orderId: order.id });
+        const orderOrgId = order.org_id ?? orgId;
+        await autoSendPatientPacketOnDelivery({
+          orderId: order.id,
+          orgId: orderOrgId,
+        });
       } catch (packetErr) {
         log.warn?.(
           { event: "carrier_tracking_autosend_failed", orderId: order.id },

@@ -15,10 +15,10 @@ import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { isFeatureEnabled } from "../lib/feature-flags";
-import { readPracticeName } from "../lib/messaging/messaging-config";
 import { resolveIceServers } from "../lib/video/ice-servers";
 import { verifyVideoVisitToken } from "../lib/video/video-visit-token";
 import { resolveOrgIdForSignedRecord } from "../lib/storefront/signed-link-org";
+import { resolveBrandingByOrgId } from "../lib/tenant-branding";
 
 const router: IRouter = Router();
 
@@ -50,10 +50,6 @@ router.get("/video-visit/session", sessionLimiter, async (req, res) => {
     res.status(404).json({ state: "invalid" });
     return;
   }
-  if (!(await isFeatureEnabled("telehealth.video", req.orgId))) {
-    res.status(503).json({ state: "disabled" });
-    return;
-  }
 
   // Public token route (no request tenant). Derive the visit's owning
   // tenant from its record (the HMAC token is the authorization) so a
@@ -66,6 +62,10 @@ router.get("/video-visit/session", sessionLimiter, async (req, res) => {
   if (!orgId) {
     // No tenant context — treat the link as not resolvable (signed-link 404).
     res.status(404).json({ state: "invalid" });
+    return;
+  }
+  if (!(await isFeatureEnabled("telehealth.video", orgId))) {
+    res.status(503).json({ state: "disabled" });
     return;
   }
   const supabase = getOrgScopedClient(orgId);
@@ -89,7 +89,7 @@ router.get("/video-visit/session", sessionLimiter, async (req, res) => {
     role: verified.role,
     purpose: visit.purpose,
     scheduledAt: visit.scheduled_at,
-    practiceName: readPracticeName(),
+    practiceName: (await resolveBrandingByOrgId(orgId)).storefrontName,
     wsPath: VIDEO_SIGNAL_WS_PATH,
     iceServers: await resolveIceServers(),
   });

@@ -28,6 +28,35 @@ import { logger } from "../logger";
 
 type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
 
+async function resolvePatientPaymentOrgId(explicit?: string): Promise<string> {
+  const orgId = explicit ?? (await resolveSeedOrgId());
+  if (!orgId) {
+    throw new Error(
+      "patient-payment: tenant context missing (seed org unresolved)",
+    );
+  }
+  return orgId;
+}
+
+/** Webhook / status updates have no caller org — read it from the row. */
+async function resolveOrgIdForExistingPayment(
+  paymentId: string,
+): Promise<string> {
+  const raw = getSupabaseServiceRoleClient();
+  const { data, error } = await raw
+    .schema("resupply")
+    .from("patient_payments")
+    .select("org_id")
+    .eq("id", paymentId)
+    .maybeSingle();
+  if (error) throw error;
+  const id = data?.org_id?.trim();
+  if (id) return id;
+  throw new Error(
+    `patient-payment: org_id not found for payment ${paymentId}`,
+  );
+}
+
 export interface CreateIntentInput {
   patientId: string;
   /** Per-claim allocation. Sum across entries must equal amount_cents
@@ -93,12 +122,7 @@ export async function createPaymentIntent(
       message: "Stripe secret key is not set",
     };
   }
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) {
-    throw new Error(
-      "patient-payment: tenant context missing (seed org unresolved)",
-    );
-  }
+  const orgId = await resolvePatientPaymentOrgId(input.orgId);
   const supabase = getOrgScopedClient(orgId);
 
   // Validate every claim belongs to the patient AND the requested
@@ -297,12 +321,7 @@ export async function createPaymentCheckoutSession(
       message: "Stripe secret key is not set",
     };
   }
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) {
-    throw new Error(
-      "patient-payment: tenant context missing (seed org unresolved)",
-    );
-  }
+  const orgId = await resolvePatientPaymentOrgId(input.orgId);
   const supabase = getOrgScopedClient(orgId);
 
   // Same per-allocation ownership + balance gates as the intent
@@ -542,12 +561,7 @@ export async function createAdhocPaymentCheckoutSession(
       message: "Stripe secret key is not set",
     };
   }
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) {
-    throw new Error(
-      "patient-payment: tenant context missing (seed org unresolved)",
-    );
-  }
+  const orgId = await resolvePatientPaymentOrgId(input.orgId);
   const supabase = getOrgScopedClient(orgId);
 
   // Reserve our patient_payments row up front so the Checkout Session
@@ -707,12 +721,7 @@ export interface MarkPaymentInput {
 export async function markPaymentStatus(
   input: MarkPaymentInput,
 ): Promise<void> {
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) {
-    throw new Error(
-      "patient-payment: tenant context missing (seed org unresolved)",
-    );
-  }
+  const orgId = await resolveOrgIdForExistingPayment(input.paymentId);
   const supabase = getOrgScopedClient(orgId);
   const update: Database["resupply"]["Tables"]["patient_payments"]["Update"] = {
     status: input.status,

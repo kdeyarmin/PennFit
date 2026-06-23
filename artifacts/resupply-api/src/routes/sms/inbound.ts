@@ -616,6 +616,7 @@ router.post(
             numMedia,
             twilioAccountSid: cfg.sms.twilioAccountSid,
             twilioAuthToken: cfg.sms.twilioAuthToken,
+            orgId,
           },
           req.log,
         );

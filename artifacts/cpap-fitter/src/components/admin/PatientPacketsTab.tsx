@@ -56,6 +56,10 @@ export function PatientPacketsTab({
   const [feedback, setFeedback] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    setEditingId(null);
+  }, [patientId]);
+
   const templates = templatesQuery.data?.templates ?? [];
   const packets = packetsQuery.data?.packets ?? [];
   const onboardingTemplates = templates.filter((t) => !t.standalone);
@@ -343,6 +347,7 @@ export function PatientPacketsTab({
 
       {editingId && (
         <PacketEditForm
+          key={editingId}
           packetId={editingId}
           onSaved={() => {
             setEditingId(null);

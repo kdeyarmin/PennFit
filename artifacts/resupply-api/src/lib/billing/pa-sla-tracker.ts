@@ -19,11 +19,7 @@
 //     and 'missed' (idempotent via the existing alert dedupe key
 //     in csr_compliance_alerts.metric_snapshot).
 
-import {
-  type Database,
-  getOrgScopedClient,
-  resolveSeedOrgId,
-} from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../logger";
 
@@ -43,15 +39,15 @@ export interface SweepStats {
   byStatus: Record<SlaStatus, number>;
 }
 
-export async function runPaMcoSlaSweep(): Promise<SweepStats> {
+export async function runPaMcoSlaSweepForOrg(
+  orgId: string,
+): Promise<SweepStats> {
   const stats: SweepStats = {
     scanned: 0,
     updated: 0,
     alertsCreated: 0,
     byStatus: { on_track: 0, at_risk: 0, missed: 0, decided: 0 },
   };
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) return stats;
   const supabase = getOrgScopedClient(orgId);
 
   // Pull every PA that is potentially MCO-bound and currently in a
@@ -164,6 +160,34 @@ export async function runPaMcoSlaSweep(): Promise<SweepStats> {
   );
 
   return stats;
+}
+
+/** Fan out the MCO SLA sweep across every active tenant (worker cron). */
+export async function runPaMcoSlaSweep(): Promise<SweepStats> {
+  const aggregate: SweepStats = {
+    scanned: 0,
+    updated: 0,
+    alertsCreated: 0,
+    byStatus: { on_track: 0, at_risk: 0, missed: 0, decided: 0 },
+  };
+
+  const { forEachActiveOrg } =
+    await import("../../worker/lib/for-each-active-org.js");
+
+  await forEachActiveOrg(
+    async (orgId) => {
+      const stats = await runPaMcoSlaSweepForOrg(orgId);
+      aggregate.scanned += stats.scanned;
+      aggregate.updated += stats.updated;
+      aggregate.alertsCreated += stats.alertsCreated;
+      for (const status of Object.keys(stats.byStatus) as SlaStatus[]) {
+        aggregate.byStatus[status] += stats.byStatus[status];
+      }
+    },
+    { jobName: "pa-mco-sla.sweep" },
+  );
+
+  return aggregate;
 }
 
 function computeTargetDate(submittedAt: string): string {

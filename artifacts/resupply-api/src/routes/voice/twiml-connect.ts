@@ -81,25 +81,6 @@ router.post("/voice/twiml-connect", signatureMiddleware, async (req, res) => {
     return;
   }
 
-  // Control Center feature gate. When the voice agent is turned off
-  // we hang the caller up cleanly rather than route them to the AI
-  // bridge. The hangup TwiML returns 200 so Twilio doesn't retry.
-  if (!(await isFeatureEnabled("voice.agent", req.orgId))) {
-    logger.info(
-      { event: "voice_twiml_disabled_by_feature_flag" },
-      "twiml-connect: voice agent disabled via Control Center; hanging up",
-    );
-    res
-      .status(200)
-      .type("text/xml")
-      .send(
-        buildHangupTwiml(
-          "Sorry, our automated assistant is unavailable right now. Please call back during business hours.",
-        ),
-      );
-    return;
-  }
-
   const conversationId =
     typeof req.query.conversationId === "string"
       ? req.query.conversationId
@@ -149,6 +130,26 @@ router.post("/voice/twiml-connect", signatureMiddleware, async (req, res) => {
       .send(
         buildHangupTwiml(
           "Sorry, this call could not be connected. Please try again later.",
+        ),
+      );
+    return;
+  }
+
+  // Control Center feature gate. When the voice agent is turned off
+  // we hang the caller up cleanly rather than route them to the AI
+  // bridge. The hangup TwiML returns 200 so Twilio doesn't retry.
+  const voiceOrgId = pending.orgId;
+  if (!(await isFeatureEnabled("voice.agent", voiceOrgId))) {
+    logger.info(
+      { event: "voice_twiml_disabled_by_feature_flag" },
+      "twiml-connect: voice agent disabled via Control Center; hanging up",
+    );
+    res
+      .status(200)
+      .type("text/xml")
+      .send(
+        buildHangupTwiml(
+          "Sorry, our automated assistant is unavailable right now. Please call back during business hours.",
         ),
       );
     return;

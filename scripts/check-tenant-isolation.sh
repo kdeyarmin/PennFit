@@ -114,6 +114,15 @@ EXCLUDES=(
   # org to scope to; the unscoped service-role client is correct here — the
   # same global-table rationale as the entries above.
   --glob '!**/lib/voice/pending-sessions.ts'
+  # patient-payment's resolveOrgIdForExistingPayment is a payment-to-org
+  # BOOTSTRAP RESOLVER — Stripe webhook handlers and worker jobs only have a
+  # paymentId, with no req.orgId. The function does a narrow org_id-only
+  # lookup on the existing patient_payments row to resolve which tenant owns
+  # the payment, then every subsequent DB read in this file goes through
+  # getOrgScopedClient(orgId). This is the same reviewed resolver pattern as
+  # requireAdmin (reads auth.users to attach req.orgId before any tenant
+  # context exists); the unscoped call is confined to that one bootstrap step.
+  --glob '!**/lib/billing/patient-payment.ts'
 )
 
 # Match a CALL (open paren) so bare `import { getSupabaseServiceRoleClient }`
