@@ -584,7 +584,7 @@ function UploadPanel({
           type="text"
           value={trackingCode}
           disabled={uploading}
-          placeholder="Tracking code from the document (PFS-XXXXXXXX)"
+          placeholder="Tracking code from the document (CMB-XXXXXXXX)"
           onChange={(e) => setTrackingCode(e.target.value)}
           className="block w-full rounded-md border border-border/60 bg-white px-3 py-1.5 text-sm"
         />
