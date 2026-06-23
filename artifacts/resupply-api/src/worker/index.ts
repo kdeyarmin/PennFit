@@ -107,6 +107,7 @@ import { registerLowStockAlertsJob } from "./jobs/low-stock-alerts.js";
 import { registerPrescriptionRequestAutoDraftJob } from "./jobs/prescription-request-auto-draft.js";
 import { registerConversationOrphanAssigneeSweepJob } from "./jobs/conversation-orphan-assignee-sweep.js";
 import { registerPaymentFailedAlertJob } from "./jobs/payment-failed-alert.js";
+import { registerSubscriptionBillingNoticeJob } from "./jobs/subscription-billing-notice.js";
 import { registerIfProvisioned } from "./lib/table-guard.js";
 import { resolvePgBossPoolMax } from "./lib/pgboss-pool.js";
 
@@ -1187,6 +1188,16 @@ async function doStartWorker(): Promise<void> {
     "registerPaymentFailedAlertJob",
     registrationFailures,
     () => registerPaymentFailedAlertJob(boss),
+  );
+
+  // On-demand — retry-backed storefront subscription billing notices
+  // (renewing-soon advance notice + auto-renewal receipt), enqueued by the
+  // Stripe invoice.upcoming / invoice.paid webhooks so the SendGrid send
+  // stays off the webhook ACK path and survives a transient failure.
+  await safeRegister(
+    "registerSubscriptionBillingNoticeJob",
+    registrationFailures,
+    () => registerSubscriptionBillingNoticeJob(boss),
   );
 
   if (registrationFailures.length > 0) {
