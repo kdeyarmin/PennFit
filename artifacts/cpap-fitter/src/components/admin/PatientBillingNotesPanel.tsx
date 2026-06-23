@@ -137,13 +137,13 @@ export function PatientBillingNotesPanel({ patientId }: { patientId: string }) {
             error={query.error}
             onRetry={() => void query.refetch()}
           />
-        ) : query.data.length === 0 ? (
+        ) : (query.data ?? []).length === 0 ? (
           <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
             No billing notes for this patient yet.
           </p>
         ) : (
           <div className="space-y-2">
-            {query.data.map((note) => (
+            {(query.data ?? []).map((note) => (
               <NoteRow key={note.id} note={note} />
             ))}
           </div>

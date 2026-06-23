@@ -56,8 +56,8 @@ export async function getBillingNotes(opts?: {
     headers: { Accept: "application/json" },
   });
   if (!res.ok) throw await err(res, "GET", url);
-  const json = (await res.json()) as { notes: BillingNote[] };
-  return json.notes;
+  const json = (await res.json()) as { notes?: BillingNote[] };
+  return json.notes ?? [];
 }
 
 export async function createBillingNote(
