@@ -160,8 +160,7 @@ export async function applyCarrierTrackingEvent(
       // Mirror the admin mark-delivered side effect (POD / patient-packet
       // auto-send). Best-effort — never fails the webhook ACK.
       try {
-        const orderOrgId =
-          (order as { org_id?: string | null }).org_id ?? orgId;
+        const orderOrgId = order.org_id ?? orgId;
         await autoSendPatientPacketOnDelivery({
           orderId: order.id,
           orgId: orderOrgId,
