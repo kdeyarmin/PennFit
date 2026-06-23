@@ -126,6 +126,8 @@ describe("roleHasPermission", () => {
     expect(
       roleHasPermission("compliance_officer", "conversations.manage"),
     ).toBe(true);
+    // Biller works patient-balance / benefit threads in the shared inbox.
+    expect(roleHasPermission("biller", "conversations.manage")).toBe(true);
   });
 
   it("admin.tools.manage is admin-bucket-and-up", () => {
@@ -314,7 +316,7 @@ describe("biller role", () => {
     expect(toEffectiveRole("biller")).toBe("biller");
   });
 
-  it("holds the billing write surface + the billing-context reads", () => {
+  it("holds the billing write surface + the billing-context reads + inbox", () => {
     for (const perm of [
       "billing.manage",
       "patients.read",
@@ -322,21 +324,23 @@ describe("biller role", () => {
       "reports.read",
       "cost.read",
       "inventory.read",
+      // Revenue-cycle staff work patient-balance / benefit threads in the
+      // shared omnichannel inbox, so a biller gets conversations.manage.
+      "conversations.manage",
     ] as const) {
       expect(roleHasPermission("biller", perm)).toBe(true);
     }
   });
 
-  it("does NOT hold the non-billing admin / CSR / clinical surfaces", () => {
+  it("does NOT hold the non-billing admin / clinical surfaces", () => {
     // The whole point of the scoped role: a biller gets the Billing area
-    // without the unrelated tools admin.tools.manage unlocks, the CSR
-    // inbox (conversations.manage), refunds (returns.approve), team /
-    // system management, or any clinical surface.
+    // (and the shared inbox) without the unrelated tools admin.tools.manage
+    // unlocks, refunds (returns.approve), team / system management, or any
+    // clinical surface.
     for (const perm of [
       "admin.tools.manage",
       "admin_team.manage",
       "system.config.manage",
-      "conversations.manage",
       "returns.approve",
       "returns.manage",
       "cost.write",

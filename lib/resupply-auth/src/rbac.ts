@@ -327,11 +327,13 @@ const EFFECTIVE_ROLE_PERMISSIONS: Record<
   // appeals key off patients.read/patients.update), the billing
   // dashboards/worklists (reports.read), payer profitability / margin
   // economics (cost.read), and line-item / HCPCS stock context
-  // (inventory.read). Deliberately EXCLUDES admin.tools.manage (would
-  // unlock unrelated CSR tools — macros, templates, alerts, outbound
-  // messages, webhooks, PacWare, bot playground), conversations.manage
-  // (the CSR inbox), all clinical perms, returns approval, team
-  // management, and system config.
+  // (inventory.read). Also includes conversations.manage: revenue-cycle
+  // staff work patient-balance and benefit-verification threads in the
+  // shared omnichannel inbox (triage / claim / snooze / tag / reply), so a
+  // biller gets the inbox like a CSR. Deliberately EXCLUDES
+  // admin.tools.manage (would unlock unrelated tools — macros, templates,
+  // alerts, outbound messages, webhooks, PacWare, bot playground), all
+  // clinical perms, returns approval, team management, and system config.
   biller: new Set<Permission>([
     "patients.read",
     "patients.update",
@@ -339,6 +341,7 @@ const EFFECTIVE_ROLE_PERMISSIONS: Record<
     "cost.read",
     "inventory.read",
     "billing.manage",
+    "conversations.manage",
   ]),
 };
 

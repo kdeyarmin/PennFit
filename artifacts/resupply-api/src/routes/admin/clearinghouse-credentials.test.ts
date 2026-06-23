@@ -1,22 +1,23 @@
 // Tests for clearinghouse-credentials route — requirePermission middleware wiring.
 //
-// Scope: only the routes changed in this PR.
-//   GET /admin/clearinghouse-credentials       → requirePermission("admin.tools.manage")
-//   GET /admin/clearinghouse-credentials/:id   → requirePermission("admin.tools.manage")
-//   GET /admin/clearinghouse-inbound-files     → requirePermission("admin.tools.manage")
+// Scope: the read + ops routes, now gated on billing.manage so a Biller who
+// runs the clearinghouse can use them (broadened from billing.manage).
+//   GET /admin/clearinghouse-credentials       → requirePermission("billing.manage")
+//   GET /admin/clearinghouse-credentials/:id   → requirePermission("billing.manage")
+//   GET /admin/clearinghouse-inbound-files     → requirePermission("billing.manage")
 //
-// Routes NOT changed (requireAdminOnly still in place) are not under test here:
-//   POST  /admin/clearinghouse-credentials
-//   PATCH /admin/clearinghouse-credentials/:id
-//   POST  /admin/clearinghouse-credentials/:id/test
-//   POST  /admin/office-ally/poll-now
+// Credential WRITES stay admin-only and are not under test here:
+//   POST  /admin/clearinghouse-credentials              (requireAdminOnly)
+//   PATCH /admin/clearinghouse-credentials/:id          (requireAdminOnly)
+// (POST /admin/clearinghouse-credentials/:id/test and POST
+//  /admin/office-ally/poll-now are also billing.manage now, untested here.)
 //
 // Strategy:
 //   - 401 gate: no session → 401.
 //   - Permission gate: "agent" role maps to customer_service_rep which does NOT
-//     carry admin.tools.manage → 403 with error "permission_denied".
+//     carry billing.manage → 403 with error "permission_denied".
 //   - Admin / supervisor role (super_admin or admin effective bucket) carries
-//     admin.tools.manage → handler proceeds.
+//     billing.manage → handler proceeds.
 //   - Happy-path responses verified against staged Supabase data.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -150,7 +151,7 @@ function stubAgent() {
     userId: "u_agent_1",
     email: "agent@example.com",
     role: "agent",
-    // agent → customer_service_rep effective role, which lacks admin.tools.manage
+    // agent → customer_service_rep effective role, which lacks billing.manage
   };
 }
 
@@ -159,7 +160,7 @@ function stubSupervisor() {
     userId: "u_supervisor_1",
     email: "supervisor@example.com",
     role: "admin", // coarse role
-    granularRole: "supervisor", // → admin effective role → has admin.tools.manage
+    granularRole: "supervisor", // → admin effective role → has billing.manage
   };
 }
 
@@ -171,7 +172,7 @@ beforeEach(() => {
 
 // ── GET /admin/clearinghouse-credentials ──────────────────────────────────────
 
-describe("GET /admin/clearinghouse-credentials — requirePermission('admin.tools.manage')", () => {
+describe("GET /admin/clearinghouse-credentials — requirePermission('billing.manage')", () => {
   it("returns 401 when no admin session is present", async () => {
     const res = await request(makeApp()).get(
       "/admin/clearinghouse-credentials",
@@ -179,17 +180,17 @@ describe("GET /admin/clearinghouse-credentials — requirePermission('admin.tool
     expect(res.status).toBe(401);
   });
 
-  it("returns 403 for an agent (customer_service_rep lacks admin.tools.manage)", async () => {
+  it("returns 403 for an agent (customer_service_rep lacks billing.manage)", async () => {
     stubAgent();
     const res = await request(makeApp()).get(
       "/admin/clearinghouse-credentials",
     );
     expect(res.status).toBe(403);
     expect(res.body.error).toBe("permission_denied");
-    expect(res.body.requiredPermission).toBe("admin.tools.manage");
+    expect(res.body.requiredPermission).toBe("billing.manage");
   });
 
-  it("returns 200 for an admin (super_admin carries admin.tools.manage)", async () => {
+  it("returns 200 for an admin (super_admin carries billing.manage)", async () => {
     stubAdmin();
     stageSupabaseResponse("clearinghouse_credentials", "select", {
       data: [fakeRow],
@@ -203,7 +204,7 @@ describe("GET /admin/clearinghouse-credentials — requirePermission('admin.tool
     expect(res.body.clearinghouses[0].slug).toBe("test-ch");
   });
 
-  it("returns 200 for a supervisor (admin effective role carries admin.tools.manage)", async () => {
+  it("returns 200 for a supervisor (admin effective role carries billing.manage)", async () => {
     stubSupervisor();
     stageSupabaseResponse("clearinghouse_credentials", "select", { data: [] });
     const res = await request(makeApp()).get(
@@ -250,7 +251,7 @@ describe("GET /admin/clearinghouse-credentials — requirePermission('admin.tool
 
 // ── GET /admin/clearinghouse-credentials/:id ──────────────────────────────────
 
-describe("GET /admin/clearinghouse-credentials/:id — requirePermission('admin.tools.manage')", () => {
+describe("GET /admin/clearinghouse-credentials/:id — requirePermission('billing.manage')", () => {
   it("returns 401 when no admin session is present", async () => {
     const res = await request(makeApp()).get(
       `/admin/clearinghouse-credentials/${CRED_ID}`,
@@ -258,14 +259,14 @@ describe("GET /admin/clearinghouse-credentials/:id — requirePermission('admin.
     expect(res.status).toBe(401);
   });
 
-  it("returns 403 for an agent (customer_service_rep lacks admin.tools.manage)", async () => {
+  it("returns 403 for an agent (customer_service_rep lacks billing.manage)", async () => {
     stubAgent();
     const res = await request(makeApp()).get(
       `/admin/clearinghouse-credentials/${CRED_ID}`,
     );
     expect(res.status).toBe(403);
     expect(res.body.error).toBe("permission_denied");
-    expect(res.body.requiredPermission).toBe("admin.tools.manage");
+    expect(res.body.requiredPermission).toBe("billing.manage");
   });
 
   it("returns 404 for a non-UUID id", async () => {
@@ -302,7 +303,7 @@ describe("GET /admin/clearinghouse-credentials/:id — requirePermission('admin.
     expect(res.body.clearinghouse.slug).toBe("test-ch");
   });
 
-  it("returns 200 for a supervisor (admin effective role carries admin.tools.manage)", async () => {
+  it("returns 200 for a supervisor (admin effective role carries billing.manage)", async () => {
     stubSupervisor();
     stageSupabaseResponse("clearinghouse_credentials", "select", {
       data: fakeRow,
@@ -317,7 +318,7 @@ describe("GET /admin/clearinghouse-credentials/:id — requirePermission('admin.
 
 // ── GET /admin/clearinghouse-inbound-files ────────────────────────────────────
 
-describe("GET /admin/clearinghouse-inbound-files — requirePermission('admin.tools.manage')", () => {
+describe("GET /admin/clearinghouse-inbound-files — requirePermission('billing.manage')", () => {
   it("returns 401 when no admin session is present", async () => {
     const res = await request(makeApp()).get(
       "/admin/clearinghouse-inbound-files",
@@ -325,14 +326,14 @@ describe("GET /admin/clearinghouse-inbound-files — requirePermission('admin.to
     expect(res.status).toBe(401);
   });
 
-  it("returns 403 for an agent (customer_service_rep lacks admin.tools.manage)", async () => {
+  it("returns 403 for an agent (customer_service_rep lacks billing.manage)", async () => {
     stubAgent();
     const res = await request(makeApp()).get(
       "/admin/clearinghouse-inbound-files",
     );
     expect(res.status).toBe(403);
     expect(res.body.error).toBe("permission_denied");
-    expect(res.body.requiredPermission).toBe("admin.tools.manage");
+    expect(res.body.requiredPermission).toBe("billing.manage");
   });
 
   it("returns 200 with empty files list when admin requests", async () => {

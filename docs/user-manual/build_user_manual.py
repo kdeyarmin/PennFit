@@ -1354,7 +1354,7 @@ MATRIX_AREAS = [
 # value per (area, role): "full", "some", or "none"
 MATRIX = {
     "Home & Workspace":                         ("full", "some", "full", "some"),
-    "Conversations / inbox & cases":            ("full", "none", "full", "none"),
+    "Conversations / inbox & cases":            ("full", "full", "full", "none"),
     "Patients (read / edit)":                   ("full", "some", "full", "some"),
     "Orders, shop & returns":                   ("full", "none", "full", "none"),
     "Billing & revenue cycle":                  ("full", "full", "none", "none"),
@@ -1367,7 +1367,8 @@ MATRIX_NOTE = (
     "<b>Administrator</b> combines the Owner and Admin tiers — Owner-only "
     "items (Team management, System Configuration) are marked partial because "
     "only the Owner role can use them. <b>Biller</b> reaches the whole Billing "
-    "area plus patient billing context, but not the CSR inbox, clinical notes, "
+    "area plus patient billing context and the shared inbox (revenue-cycle "
+    "staff work patient-balance and benefit threads), but not clinical notes "
     "or settings. A practice can grant any combination by assigning the "
     "matching role on the Team page."
 )
