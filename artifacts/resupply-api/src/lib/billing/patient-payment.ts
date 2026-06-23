@@ -14,9 +14,10 @@
 import {
   type Database,
   type Json,
-  getSupabaseServiceRoleClient,
+  type ResupplySupabaseClient,
   getOrgScopedClient,
   resolveSeedOrgId,
+  resolveOrgIdForPayment,
 } from "@workspace/resupply-db";
 import type Stripe from "stripe";
 
@@ -26,7 +27,7 @@ import { stripeErrLogFields } from "../stripe/err-log-fields";
 import { getDocumentSupplierName } from "../company-info";
 import { logger } from "../logger";
 
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+type SupabaseClient = ResupplySupabaseClient;
 
 async function resolvePatientPaymentOrgId(explicit?: string): Promise<string> {
   const orgId = explicit ?? (await resolveSeedOrgId());
@@ -42,15 +43,8 @@ async function resolvePatientPaymentOrgId(explicit?: string): Promise<string> {
 async function resolveOrgIdForExistingPayment(
   paymentId: string,
 ): Promise<string> {
-  const raw = getSupabaseServiceRoleClient();
-  const { data, error } = await raw
-    .schema("resupply")
-    .from("patient_payments")
-    .select("org_id")
-    .eq("id", paymentId)
-    .maybeSingle();
-  if (error) throw error;
-  if (data?.org_id) return data.org_id;
+  const orgId = await resolveOrgIdForPayment(paymentId);
+  if (orgId) return orgId;
   return resolvePatientPaymentOrgId();
 }
 

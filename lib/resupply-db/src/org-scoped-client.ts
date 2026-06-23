@@ -274,3 +274,39 @@ export async function listActiveOrgIds(
     return [];
   }
 }
+
+/**
+ * Resolve the `org_id` of an existing `patient_payments` row by its id.
+ *
+ * This is a TENANT-RESOLVER read: the Stripe webhook and worker-job paths
+ * that call `markPaymentStatus()` have no `req.orgId` (they are not
+ * Express request handlers). To build the org-scoped client for the
+ * subsequent status-flip, they must first look up which tenant the payment
+ * belongs to — the same "bootstrap" pattern as `resolveSeedOrgId()` and
+ * `requireAdmin` (which resolves `req.orgId` before any tenant context
+ * exists). Because this lookup reads a tenant row BY PRIMARY KEY without
+ * knowing the tenant first, it legitimately goes through the unscoped
+ * service-role client and lives here in `lib/resupply-db` rather than in
+ * application code.
+ *
+ * Returns `null` (rather than throwing) on a lookup error or missing row
+ * so callers can fall back to `resolveSeedOrgId()` for the single-tenant
+ * case (legacy rows created before the `org_id` backfill).
+ */
+export async function resolveOrgIdForPayment(
+  paymentId: string,
+  client: ResupplySupabaseClient = getSupabaseServiceRoleClient(),
+): Promise<string | null> {
+  try {
+    const { data, error } = await client
+      .schema("resupply")
+      .from("patient_payments")
+      .select("org_id")
+      .eq("id", paymentId)
+      .maybeSingle();
+    if (error) return null;
+    return (data as { org_id?: string | null } | null)?.org_id ?? null;
+  } catch {
+    return null;
+  }
+}

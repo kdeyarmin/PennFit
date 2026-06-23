@@ -37,6 +37,7 @@ export {
   getOrgScopedClient,
   resolveSeedOrgId,
   listActiveOrgIds,
+  resolveOrgIdForPayment,
   SEED_ORG_SLUG,
   ORG_COLUMN,
   __resetSeedOrgIdForTests,
