@@ -858,6 +858,27 @@ router.post(
       res.status(409).json({ error: "not_in_received_state" });
       return;
     }
+    // Coordinate with the charge.refunded webhook's generic "refund issued"
+    // notice (refund-notification.ts): this returns flow sends its own
+    // richer, return-context "refunded" email below, so claim the order's
+    // refund_email_sent_at now (claim-if-null) to suppress the webhook's
+    // duplicate. Stamped synchronously here — within the same request, ms
+    // after the Stripe refund — so it wins the race against the async
+    // webhook. Best-effort: a stamp failure at worst yields one extra
+    // generic notice, never a missed refund.
+    if (updated.order_id) {
+      const { error: claimErr } = await supabase
+        .from("shop_orders")
+        .update({ refund_email_sent_at: nowIso, updated_at: nowIso })
+        .eq("id", updated.order_id)
+        .is("refund_email_sent_at", null);
+      if (claimErr) {
+        req.log?.warn(
+          { returnId: updated.id, code: claimErr.code },
+          "shop-return refund: refund-notice claim stamp failed (non-fatal)",
+        );
+      }
+    }
     // Fire-and-forget refund-issued email. Same posture as the
     // approve handler above — never blocks the response.
     void (async () => {

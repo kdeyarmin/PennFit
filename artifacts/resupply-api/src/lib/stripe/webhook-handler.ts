@@ -59,6 +59,7 @@ type ShopOrderUpdate = Database["resupply"]["Tables"]["shop_orders"]["Update"];
 
 import { maybeDispatchPaymentFailedAlert } from "../alerts/payment-failed-trigger";
 import { maybeSendSubscriptionBillingNotice } from "../billing/subscription-billing-notice";
+import { sendRefundNotificationIfNew } from "../order-emails/refund-notification";
 import { recordOutboundMessageUsage } from "../metering/usage";
 import { handlePlatformTenantStripeEvent } from "../platform-billing/stripe";
 import { getBoss } from "../../worker/index.js";
@@ -1163,6 +1164,33 @@ async function markStatusByPaymentIntent(
           stripeEventId: ctx.stripeEventId,
         },
         "refund audit write failed",
+      );
+    }
+  }
+
+  // Best-effort "refund issued" patient notice. Sends at most once per
+  // order via the atomic refund_email_sent_at claim, and is a no-op when
+  // the returns RMA flow already stamped it (return-driven refunds send
+  // their own richer email). A SendGrid/DB hiccup never fails the webhook.
+  for (const refundedRow of updated) {
+    try {
+      await sendRefundNotificationIfNew({
+        orgId,
+        orderId: refundedRow.id,
+        amountRefundedCents: ctx.amountRefundedCents,
+        currency: ctx.currency,
+        isPartial: !isFullRefund,
+        log: ctx.log,
+      });
+    } catch (notifyErr) {
+      ctx.log?.info?.(
+        {
+          event: "refund_notification_failed",
+          orderId: refundedRow.id,
+          err:
+            notifyErr instanceof Error ? notifyErr.message : String(notifyErr),
+        },
+        "refund notification dispatch threw (non-fatal)",
       );
     }
   }
