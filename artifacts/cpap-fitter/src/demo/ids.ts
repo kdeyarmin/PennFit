@@ -10,7 +10,7 @@ export function demoSessionId(): string {
   return `demo_sess_${crypto.randomUUID().replace(/-/g, "").slice(0, 8)}`;
 }
 
-/** `PENN-DEMO-<4 digits>` — a fake order reference for the demo. */
+/** `CMB-DEMO-<4 digits>` — a fake order reference for the demo. */
 export function demoOrderReference(): string {
   const range = 9000;
   const limit = Math.floor(0x100000000 / range) * range; // largest multiple of range < 2^32
@@ -23,5 +23,5 @@ export function demoOrderReference(): string {
   } while (x >= limit);
 
   const n = x % range;
-  return `PENN-DEMO-${2000 + n}`;
+  return `CMB-DEMO-${2000 + n}`;
 }

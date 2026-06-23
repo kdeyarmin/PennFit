@@ -138,7 +138,7 @@ export function demoEraFiles() {
         matchedSubmissionId: "demo-sub-1",
         status: "processed",
         rejectionReason: null,
-        ingestedByEmail: "billing@pennfit.example",
+        ingestedByEmail: "billing@caremetric.example",
         ingestedAt: daysAgo(2),
       },
       {

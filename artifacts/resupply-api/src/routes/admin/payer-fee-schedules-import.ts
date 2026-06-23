@@ -12,7 +12,7 @@ import { getOrgScopedClient } from "@workspace/resupply-db";
 import { parseFeeScheduleCsv } from "../../lib/billing/fee-schedule-csv";
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
-import { requireAdminOnly } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
@@ -28,7 +28,7 @@ const body = z
 
 router.post(
   "/admin/payer-fee-schedules/import-csv",
-  requireAdminOnly,
+  requirePermission("billing.manage"),
   adminRateLimit({
     name: "payer_fee_schedules.import",
     preset: "sensitive",

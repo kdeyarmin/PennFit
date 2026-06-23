@@ -8,7 +8,7 @@
 
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { LifeBuoy } from "lucide-react";
+import { BookOpen, LifeBuoy } from "lucide-react";
 
 import { Badge } from "@/components/admin/Badge";
 import { Button } from "@/components/admin/Button";
@@ -329,6 +329,24 @@ export function AdminSupportPage() {
       />
       <div className="grid gap-6 lg:grid-cols-[340px_1fr] items-start">
         <div className="space-y-6">
+          <Card
+            title="User manual"
+            subtitle="The complete CareMetric Breathe operator manual — every feature, the setup guide, and step-by-step job aides for each role."
+          >
+            <a
+              href="/resupply-api/admin/support/manual"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-semibold"
+              style={{
+                backgroundColor: "hsl(var(--penn-navy))",
+                color: "white",
+              }}
+            >
+              <BookOpen className="h-4 w-4" />
+              Open the User Manual (PDF)
+            </a>
+          </Card>
           <NewTicketCard onCreated={(id) => setSelectedId(id)} />
           <Card title="Your tickets">
             {list.isPending ? (

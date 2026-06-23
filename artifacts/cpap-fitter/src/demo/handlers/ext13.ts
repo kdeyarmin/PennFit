@@ -143,7 +143,7 @@ function demoFollowups(patientId: string, includeCompleted: boolean) {
       dueAt: daysFromNow(1),
       completedAt: null,
       completedByEmail: null,
-      createdByEmail: "demo.admin@pennfit.example",
+      createdByEmail: "demo.admin@caremetric.example",
       createdAt: daysAgo(2),
     },
   ];
@@ -153,8 +153,8 @@ function demoFollowups(patientId: string, includeCompleted: boolean) {
       body: "Left voicemail about resupply eligibility; will retry.",
       dueAt: daysAgo(6),
       completedAt: daysAgo(5),
-      completedByEmail: "demo.admin@pennfit.example",
-      createdByEmail: "demo.admin@pennfit.example",
+      completedByEmail: "demo.admin@caremetric.example",
+      createdByEmail: "demo.admin@caremetric.example",
       createdAt: daysAgo(8),
     },
   ];
@@ -309,7 +309,7 @@ function demoClaimDetail(patientId: string, claimId: string) {
             payerRef: keyed.claimNumber,
             documentId: null,
             note: keyed.denialReason,
-            actorEmail: "demo.admin@pennfit.example",
+            actorEmail: "demo.admin@caremetric.example",
             occurredAt: keyed.decisionAt,
           },
           {
@@ -319,7 +319,7 @@ function demoClaimDetail(patientId: string, claimId: string) {
             payerRef: keyed.claimNumber,
             documentId: null,
             note: null,
-            actorEmail: "demo.admin@pennfit.example",
+            actorEmail: "demo.admin@caremetric.example",
             occurredAt: keyed.submittedAt,
           },
         ]
@@ -331,7 +331,7 @@ function demoClaimDetail(patientId: string, claimId: string) {
             payerRef: keyed.claimNumber,
             documentId: null,
             note: null,
-            actorEmail: "demo.admin@pennfit.example",
+            actorEmail: "demo.admin@caremetric.example",
             occurredAt: keyed.paidAt,
           },
           {
@@ -341,7 +341,7 @@ function demoClaimDetail(patientId: string, claimId: string) {
             payerRef: keyed.claimNumber,
             documentId: null,
             note: null,
-            actorEmail: "demo.admin@pennfit.example",
+            actorEmail: "demo.admin@caremetric.example",
             occurredAt: keyed.decisionAt,
           },
           {
@@ -351,7 +351,7 @@ function demoClaimDetail(patientId: string, claimId: string) {
             payerRef: keyed.claimNumber,
             documentId: null,
             note: null,
-            actorEmail: "demo.admin@pennfit.example",
+            actorEmail: "demo.admin@caremetric.example",
             occurredAt: keyed.submittedAt,
           },
         ],

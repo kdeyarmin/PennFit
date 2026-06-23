@@ -134,6 +134,7 @@ const ROLE_VALUES: AdminRole[] = [
   "compliance_officer",
   "agent",
   "rt",
+  "biller",
 ];
 
 /** Map a granular admin role to the coarse auth.users.role bucket.
@@ -158,6 +159,7 @@ const ROLE_EMAIL_LABEL: Record<AdminRole, string> = {
   fulfillment: "Customer service rep",
   agent: "Customer service rep",
   rt: "Respiratory therapist",
+  biller: "Biller",
 };
 
 const inviteBody = z

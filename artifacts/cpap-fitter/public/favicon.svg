@@ -9,7 +9,7 @@
   <text x="90" y="106" text-anchor="middle"
         font-family="'Inter', -apple-system, BlinkMacSystemFont, sans-serif"
         font-size="76" font-weight="700" fill="#FFFFFF"
-        letter-spacing="-0.04em">PP</text>
+        letter-spacing="-0.04em">CB</text>
   <path d="M40 138 Q90 156 140 140" fill="none" stroke="#F4B942"
         stroke-width="7" stroke-linecap="round"/>
 </svg>

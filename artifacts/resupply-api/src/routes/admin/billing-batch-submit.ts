@@ -37,7 +37,7 @@ const body = z
 
 router.post(
   "/admin/billing/batch-submit-office-ally",
-  requirePermission("admin.tools.manage"),
+  requirePermission("billing.manage"),
   adminRateLimit({ name: "billing.batch_submit_office_ally", preset: "bulk" }),
   async (req, res) => {
     const parsed = body.safeParse(req.body);

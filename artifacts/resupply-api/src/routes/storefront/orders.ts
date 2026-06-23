@@ -117,6 +117,11 @@ router.post(
     // block the order (org_id is nullable for that reason).
     const orgId = req.orgId ?? (await resolveSeedOrgId());
     const supabase = orgId ? getOrgScopedClient(orgId) : null;
+    // Patient-facing copy below names the practice; resolve the tenant's own
+    // company name (CareMetric Breathe for an unconfigured tenant) so these
+    // messages never hardcode the seed tenant's brand.
+    const companyName = (await resolveBrandingByOrgId(orgId ?? undefined))
+      .legalName;
 
     // `supabase` is non-null iff `orgId` is set above; the explicit `&& orgId`
     // narrows orgId to a non-null string for the `org_id` stamp/filter below.
@@ -279,16 +284,14 @@ router.post(
 
     if (!result.configured) {
       res.status(503).json({
-        error:
-          "Order delivery is not configured on this server. Please ask Penn Home Medical Supply to set up email delivery.",
+        error: `Order delivery is not configured on this server. Please ask ${companyName} to set up email delivery.`,
       });
       return;
     }
 
     if (!result.delivered) {
       res.status(502).json({
-        error:
-          "We could not deliver your order to Penn Home Medical Supply. Please try again or call us directly.",
+        error: `We could not deliver your order to ${companyName}. Please try again or call us directly.`,
         details: result.error ? [result.error] : undefined,
       });
       return;
@@ -393,8 +396,7 @@ router.post(
       success: true,
       orderReference: result.orderReference,
       deliveredAt: result.deliveredAt,
-      message:
-        "Your order has been sent to Penn Home Medical Supply. A team member will contact you within 1 business day to confirm and arrange shipping.",
+      message: `Your order has been sent to ${companyName}. A team member will contact you within 1 business day to confirm and arrange shipping.`,
     });
   },
 );

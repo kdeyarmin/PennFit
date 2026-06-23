@@ -280,7 +280,7 @@ export const accountHandlers: DemoHandler[] = [
     return json({
       caregiver: {
         name: body.name ?? "Demo Caregiver",
-        email: body.email ?? "caregiver@pennfit.example",
+        email: body.email ?? "caregiver@caremetric.example",
         consentAt: NOW_ISO(),
         revokedAt: null,
       },

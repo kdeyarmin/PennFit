@@ -18,6 +18,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { getCompanyContact } from "@/lib/contact";
+
 import {
   isNativeApp,
   promptBiometric,
@@ -42,7 +44,6 @@ export interface UseBiometricSignIn {
 }
 
 const DEFAULT_LABEL = "Face ID / Touch ID";
-const DEFAULT_REASON = "Unlock PennPaps";
 
 export function useBiometricSignIn(): UseBiometricSignIn {
   const [available, setAvailable] = useState(false);
@@ -81,7 +82,9 @@ export function useBiometricSignIn(): UseBiometricSignIn {
   const prompt = useCallback(async (reason?: string): Promise<boolean> => {
     setBusy(true);
     try {
-      const r = await promptBiometric(reason ?? DEFAULT_REASON);
+      const r = await promptBiometric(
+        reason ?? `Unlock ${getCompanyContact().name}`,
+      );
       if (mountedRef.current) {
         setLastResult(r);
       }

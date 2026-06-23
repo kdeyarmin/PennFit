@@ -8,9 +8,8 @@ import {
   Heart,
   ChevronDown,
 } from "lucide-react";
-import pennLogo from "@assets/IMG_2053_1777233708393.jpeg";
 import { SignedIn } from "@/lib/identity";
-import { useStorefrontBranding } from "@/lib/branding";
+import { PLATFORM_LOGO_URL, useStorefrontBranding } from "@/lib/branding";
 import { UserMenu } from "@/components/user-menu";
 import { FitFlowStepper } from "@/components/fit-flow-stepper";
 import { MobileCtaBar } from "@/components/mobile-cta-bar";
@@ -268,16 +267,16 @@ export function Layout({ children }: { children: React.ReactNode }) {
               className="flex items-center gap-3 transition-opacity hover:opacity-80"
             >
               <img
-                src={branding.logoUrl ?? pennLogo}
+                src={branding.logoUrl ?? PLATFORM_LOGO_URL}
                 alt={branding.storefrontName}
-                // Intrinsic dimensions of the bundled asset (386×228) so the
+                // Intrinsic dimensions of the platform logo (518×481) so the
                 // browser reserves the right aspect ratio and the sticky
                 // header doesn't shift on first paint (CLS). Only applied to
                 // the default logo — a tenant's uploaded logo has its own
                 // aspect ratio, so we let the browser size it naturally. CSS
                 // still drives the rendered height via h-12/h-14 + w-auto.
-                width={branding.logoUrl ? undefined : 386}
-                height={branding.logoUrl ? undefined : 228}
+                width={branding.logoUrl ? undefined : 518}
+                height={branding.logoUrl ? undefined : 481}
                 className="h-12 md:h-14 w-auto"
               />
               <div className="hidden sm:flex flex-col leading-tight border-l border-border/60 pl-3">
@@ -492,10 +491,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
               {/* Brand block */}
               <div className="col-span-2 md:col-span-3 flex items-center gap-3">
                 <img
-                  src={branding.logoUrl ?? pennLogo}
+                  src={branding.logoUrl ?? PLATFORM_LOGO_URL}
                   alt={branding.legalName}
-                  width={branding.logoUrl ? undefined : 386}
-                  height={branding.logoUrl ? undefined : 228}
+                  width={branding.logoUrl ? undefined : 518}
+                  height={branding.logoUrl ? undefined : 481}
                   className="h-9 w-auto rounded-md"
                 />
                 <div className="leading-tight">

@@ -15,6 +15,7 @@ import router from "./routes";
 import storefrontRouter from "./routes/storefront";
 import providerPortalRouter from "./routes/provider";
 import { getAuthDeps } from "./lib/auth-deps";
+import { PLATFORM_NAME } from "./lib/company-info";
 import { isDeployedRuntime } from "./lib/deployed-runtime";
 import { logger } from "./lib/logger";
 import { providerPortalFeatureGate } from "./lib/provider-portal-feature-gate";
@@ -380,8 +381,11 @@ const authDeps = getAuthDeps();
 app.use(
   "/resupply-api/auth",
   makeAuthRouter(authDeps, {
-    productName: "PennPaps",
-    signatureName: "Penn Home Medical Supply",
+    // Auth mail (verify, reset, invites) carries the PLATFORM identity by
+    // design (CLAUDE.md) — it fires before any tenant is resolved, and a new
+    // tenant must never receive Penn-branded auth email.
+    productName: PLATFORM_NAME,
+    signatureName: PLATFORM_NAME,
     // Admin SPA pages live under /admin/{reset-password,verify-email}
     // — emit links that land there instead of on the customer pages.
     uiPathPrefix: "/admin",
@@ -406,8 +410,8 @@ const storefrontAuthDeps: AuthDeps = { ...authDeps, allowSignUp: true };
 app.use(
   "/api/auth",
   makeAuthRouter(storefrontAuthDeps, {
-    productName: "PennPaps",
-    signatureName: "Penn Home Medical Supply",
+    productName: PLATFORM_NAME,
+    signatureName: PLATFORM_NAME,
   }),
 );
 logger.info(
@@ -436,8 +440,8 @@ const providerAuthDeps: AuthDeps = { ...authDeps, allowSignUp: false };
 app.use(
   "/api/provider/auth",
   makeAuthRouter(providerAuthDeps, {
-    productName: "PennPaps Provider Portal",
-    signatureName: "Penn Home Medical Supply",
+    productName: `${PLATFORM_NAME} Provider Portal`,
+    signatureName: PLATFORM_NAME,
   }),
 );
 logger.info(
@@ -478,7 +482,7 @@ const storefrontOrderLimiter = expressRateLimit({
   keyGenerator: (req: Request) => ipKeyGenerator(req.ip ?? "0.0.0.0"),
   message: {
     error:
-      "Too many order attempts from this network. Please wait a few minutes and try again, or call Penn Home Medical Supply directly.",
+      "Too many order attempts from this network. Please wait a few minutes and try again, or call us directly.",
   },
 });
 app.use("/api/orders", storefrontOrderLimiter);

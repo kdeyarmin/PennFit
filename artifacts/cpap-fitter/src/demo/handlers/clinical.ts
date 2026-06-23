@@ -73,7 +73,7 @@ function clinicalEncounters() {
         note: "Patient comfortable, no immediate concerns",
         linkedAlertId: null,
         linkedEpisodeId: null,
-        authorEmail: "demo.rt@pennfit.example",
+        authorEmail: "demo.rt@caremetric.example",
         createdAt: daysAgo(2),
       },
       {
@@ -87,7 +87,7 @@ function clinicalEncounters() {
         note: null,
         linkedAlertId: "demo-alert-3",
         linkedEpisodeId: null,
-        authorEmail: "demo.rt@pennfit.example",
+        authorEmail: "demo.rt@caremetric.example",
         createdAt: daysAgo(9),
       },
       {
@@ -101,7 +101,7 @@ function clinicalEncounters() {
         note: "Patient doing well, no follow-up needed",
         linkedAlertId: null,
         linkedEpisodeId: null,
-        authorEmail: "demo.csr@pennfit.example",
+        authorEmail: "demo.csr@caremetric.example",
         createdAt: daysAgo(18),
       },
     ],
@@ -120,7 +120,7 @@ const INTERVENTIONS = [
     reason: "High leak trending up; usage falling",
     plan: "Refit to nasal pillows + headgear coaching",
     followUpAt: daysFromNow(-1),
-    authorEmail: "demo.rt@pennfit.example",
+    authorEmail: "demo.rt@caremetric.example",
     createdAt: daysAgo(10),
     open: true,
   },
@@ -132,7 +132,7 @@ const INTERVENTIONS = [
     reason: "Patient finds pressure too strong on exhale",
     plan: "Enable EPR, lower ramp start pressure",
     followUpAt: daysFromNow(5),
-    authorEmail: "demo.rt@pennfit.example",
+    authorEmail: "demo.rt@caremetric.example",
     createdAt: daysAgo(6),
     open: true,
   },
@@ -144,7 +144,7 @@ const INTERVENTIONS = [
     reason: "Inconsistent nightly use, low engagement",
     plan: "Weekly coaching texts + adherence app setup",
     followUpAt: daysFromNow(-12),
-    authorEmail: "demo.csr@pennfit.example",
+    authorEmail: "demo.csr@caremetric.example",
     createdAt: daysAgo(30),
     open: false,
   },
@@ -156,7 +156,7 @@ function setupChecklist() {
   const done = (note: string | null, ago: number) => ({
     status: "done" as const,
     note,
-    completedByEmail: "demo.rt@pennfit.example",
+    completedByEmail: "demo.rt@caremetric.example",
     completedAt: daysAgo(ago),
     updatedAt: daysAgo(ago),
   });
@@ -205,7 +205,7 @@ function rtOutcomes(windowDays: number) {
   });
   const rows = [
     {
-      authorEmail: "demo.rt@pennfit.example",
+      authorEmail: "demo.rt@caremetric.example",
       authorUserId: "demo-user-rt-1",
       encountersTotal: 42,
       patientsManaged: 31,
@@ -222,7 +222,7 @@ function rtOutcomes(windowDays: number) {
       lastActiveAt: daysAgo(1),
     },
     {
-      authorEmail: "demo.rt2@pennfit.example",
+      authorEmail: "demo.rt2@caremetric.example",
       authorUserId: "demo-user-rt-2",
       encountersTotal: 27,
       patientsManaged: 22,
@@ -239,7 +239,7 @@ function rtOutcomes(windowDays: number) {
       lastActiveAt: daysAgo(2),
     },
     {
-      authorEmail: "demo.csr@pennfit.example",
+      authorEmail: "demo.csr@caremetric.example",
       authorUserId: "demo-user-csr-1",
       encountersTotal: 15,
       patientsManaged: 14,
@@ -459,7 +459,7 @@ function customerFollowups(includeCompleted: boolean) {
       dueAt: daysFromNow(-1),
       completedAt: null,
       completedByEmail: null,
-      createdByEmail: "demo.csr@pennfit.example",
+      createdByEmail: "demo.csr@caremetric.example",
       createdAt: daysAgo(3),
     },
     {
@@ -468,7 +468,7 @@ function customerFollowups(includeCompleted: boolean) {
       dueAt: daysFromNow(2),
       completedAt: null,
       completedByEmail: null,
-      createdByEmail: "demo.csr@pennfit.example",
+      createdByEmail: "demo.csr@caremetric.example",
       createdAt: daysAgo(1),
     },
   ];
@@ -478,8 +478,8 @@ function customerFollowups(includeCompleted: boolean) {
       body: "Walk through humidifier cleaning",
       dueAt: daysAgo(7),
       completedAt: daysAgo(6),
-      completedByEmail: "demo.rt@pennfit.example",
-      createdByEmail: "demo.csr@pennfit.example",
+      completedByEmail: "demo.rt@caremetric.example",
+      createdByEmail: "demo.csr@caremetric.example",
       createdAt: daysAgo(10),
     },
   ];
@@ -499,7 +499,7 @@ function followupsList() {
         subjectEmail: null,
         body: "Refit follow-up — confirm leak resolved",
         dueAt: daysFromNow(-1),
-        createdByEmail: "demo.rt@pennfit.example",
+        createdByEmail: "demo.rt@caremetric.example",
         createdAt: daysAgo(3),
       },
       {
@@ -510,7 +510,7 @@ function followupsList() {
         subjectEmail: "demo.patient@example.com",
         body: "Call back re: replacement cushion sizing",
         dueAt: daysFromNow(1),
-        createdByEmail: "demo.csr@pennfit.example",
+        createdByEmail: "demo.csr@caremetric.example",
         createdAt: daysAgo(2),
       },
       {
@@ -521,7 +521,7 @@ function followupsList() {
         subjectEmail: null,
         body: "Re-check usage after EPR change",
         dueAt: daysFromNow(5),
-        createdByEmail: "demo.rt@pennfit.example",
+        createdByEmail: "demo.rt@caremetric.example",
         createdAt: daysAgo(1),
       },
     ],

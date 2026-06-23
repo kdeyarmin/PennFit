@@ -185,7 +185,7 @@ export function ReturnsPage() {
             data-testid="returns-ask-pennbot"
           >
             <Sparkles className="w-4 h-4 mr-1.5" />
-            Ask PennBot
+            Ask {contact.assistantStorefrontName}
           </Button>
         </div>
       </section>

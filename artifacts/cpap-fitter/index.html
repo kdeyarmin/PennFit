@@ -8,59 +8,58 @@
       copy, and form fields. WCAG 2.1 SC 1.4.4 (Resize text).
     -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>
-      PennPaps.com — CPAP Fitter, Shop & Resupply by Penn Home Medical Supply
-    </title>
+    <title>CareMetric Breathe — CPAP Fitter, Shop &amp; Resupply</title>
     <meta
       name="description"
-      content="PennPaps.com is the online CPAP storefront from Penn Home Medical Supply: get fitted for a mask in minutes, shop cushions, filters, and tubing direct, and let us handle insurance and resupply. Privacy-first, on-device fitting."
+      content="CareMetric Breathe is the online CPAP/DME resupply platform: get fitted for a mask in minutes, shop cushions, filters, and tubing direct, and let us handle insurance and resupply. Privacy-first, on-device fitting."
     />
 
     <!--
-      Per-page canonical URLs are managed at runtime by the
-      useDocumentTitle hook (see src/hooks/use-document-title.tsx),
-      which points each route at its production-shaped URL on
-      pennpaps.com. We deliberately do NOT ship a static
-      <link rel="canonical"> here because a single hardcoded
-      canonical would tell search engines that every SPA route is
-      the same as the homepage and collapse indexation.
+      This static shell carries the CareMetric Breathe *platform* defaults.
+      Per-tenant title/description/canonical are set at runtime by the
+      useDocumentTitle hook (see src/hooks/use-document-title.tsx), which
+      points each route at its production-shaped URL on the active tenant's
+      own domain. We deliberately do NOT ship a static
+      <link rel="canonical"> here because a single hardcoded canonical
+      would tell search engines that every SPA route is the same as the
+      homepage and collapse indexation.
     -->
 
     <!-- Open Graph / social preview -->
     <meta property="og:type" content="website" />
     <meta
       property="og:title"
-      content="PennPaps.com — by Penn Home Medical Supply"
+      content="CareMetric Breathe — your CPAP, made simple"
     />
     <meta
       property="og:description"
-      content="Your CPAP, made simple. Get fitted for a mask, shop supplies, and stay on schedule with resupply — direct from Penn Home Medical Supply. Your face image never leaves your device."
+      content="Your CPAP, made simple. Get fitted for a mask, shop supplies, and stay on schedule with resupply. Your face image never leaves your device."
     />
     <meta property="og:image" content="/opengraph.jpg" />
     <!--
       og:url is read by social bots at share time. Bots typically do
       NOT execute JS, so a static value here is the right call for an
-      SPA without SSR. Pointing every share preview at the production
+      SPA without SSR. Pointing every share preview at the platform
       homepage avoids share cards that show preview/staging hostnames.
     -->
-    <meta property="og:url" content="https://pennpaps.com/" />
-    <meta property="og:site_name" content="Penn Home Medical Supply" />
+    <meta property="og:url" content="https://cmbreathe.com/" />
+    <meta property="og:site_name" content="CareMetric Breathe" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta
       name="twitter:title"
-      content="PennPaps.com — by Penn Home Medical Supply"
+      content="CareMetric Breathe — your CPAP, made simple"
     />
     <meta
       name="twitter:description"
-      content="Your CPAP, made simple. Get fitted for a mask, shop supplies, and stay on schedule with resupply — direct from Penn Home Medical Supply."
+      content="Your CPAP, made simple. Get fitted for a mask, shop supplies, and stay on schedule with resupply."
     />
     <meta name="twitter:image" content="/opengraph.jpg" />
 
     <!--
-      Content Security Policy. The privacy promise of PennPaps is that the
-      patient's face image stays on-device. We enforce that at the browser
-      level by restricting where the page may load resources from and where
-      it may post data:
+      Content Security Policy. The privacy promise of CareMetric Breathe is
+      that the patient's face image stays on-device. We enforce that at the
+      browser level by restricting where the page may load resources from and
+      where it may post data:
 
         - Scripts/styles/images: same-origin only (+ inline for Vite's
           dev runtime and Tailwind, +blob/data for the captured image
@@ -110,20 +109,21 @@
     />
 
     <!--
-      JSON-LD structured data. Tells search engines that pennpaps.com is the
-      online storefront for a real local medical-equipment supplier in PA, so
-      the brand can show up in Google's knowledge panels and local pack.
+      JSON-LD structured data. Platform defaults for the CareMetric Breathe
+      CPAP/DME resupply storefront, so the brand can show up in Google's
+      knowledge panels. Per-tenant publisher details are emitted at runtime
+      by the useDocumentTitle hook for each tenant's own domain.
     -->
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",
         "@type": "MedicalBusiness",
-        "name": "Penn Home Medical Supply",
-        "alternateName": "PennPaps",
-        "url": "https://pennpaps.com",
-        "logo": "https://pennpaps.com/logo.svg",
-        "image": "https://pennpaps.com/opengraph.jpg",
-        "description": "Online CPAP storefront from Penn Home Medical Supply. Get fitted for a mask in minutes, shop cushions, filters, tubing, and headgear, and stay on schedule with resupply.",
+        "name": "CareMetric Breathe",
+        "alternateName": "CareMetric",
+        "url": "https://cmbreathe.com",
+        "logo": "https://cmbreathe.com/breathe/caremetric-logo.png",
+        "image": "https://cmbreathe.com/opengraph.jpg",
+        "description": "CareMetric Breathe — the online CPAP/DME resupply platform. Get fitted for a mask in minutes, shop cushions, filters, tubing, and headgear, and stay on schedule with resupply.",
         "areaServed": "US",
         "medicalSpecialty": "Pulmonary",
         "priceRange": "$$",
@@ -131,7 +131,7 @@
         "potentialAction": {
           "@type": "ReserveAction",
           "name": "Start virtual mask fitting",
-          "target": "https://pennpaps.com/capture"
+          "target": "https://cmbreathe.com/capture"
         }
       }
     </script>

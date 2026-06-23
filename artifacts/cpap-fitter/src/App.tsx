@@ -14,6 +14,7 @@ import { Layout } from "@/components/layout";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { CartSnapshotSync } from "@/hooks/use-cart-snapshot";
 import { lazyWithRetry } from "@/lib/lazy-with-retry";
+import { getCompanyContact } from "@/lib/contact";
 
 // The landing page is the ONE eagerly-imported route. It's the most
 // common entry point, so keeping it in the initial chunk avoids a
@@ -919,8 +920,7 @@ function GuardedOrderSuccess() {
             "fitter_order_confirmation",
             JSON.stringify({
               orderReference: data.orderReference,
-              message:
-                "Your order has been sent to Penn Home Medical Supply. A team member will contact you within 1 business day to confirm and arrange shipping.",
+              message: `Your order has been sent to ${getCompanyContact().legalName}. A team member will contact you within 1 business day to confirm and arrange shipping.`,
               mask: {
                 name: data.mask.name,
                 manufacturer: data.mask.manufacturer ?? "",

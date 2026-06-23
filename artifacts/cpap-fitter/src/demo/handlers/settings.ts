@@ -37,7 +37,7 @@ interface DemoFeatureFlag {
   updatedAt: string;
 }
 
-const DEMO_OPERATOR_EMAIL = "demo.admin@pennfit.example";
+const DEMO_OPERATOR_EMAIL = "demo.admin@caremetric.example";
 
 // A realistic spread across categories with a believable on/off mix.
 const FEATURE_FLAG_SEED: Array<
@@ -459,7 +459,7 @@ function demoTeam() {
     members: [
       {
         id: "00000000-0000-4000-8000-0000000030a1",
-        email: "demo.admin@pennfit.example",
+        email: "demo.admin@caremetric.example",
         authUserId: "demo-auth-1",
         role: "admin",
         status: "active",
@@ -477,7 +477,7 @@ function demoTeam() {
       },
       {
         id: "00000000-0000-4000-8000-0000000030a2",
-        email: "casey.csr@pennfit.example",
+        email: "casey.csr@caremetric.example",
         authUserId: "demo-auth-2",
         role: "csr",
         status: "active",
@@ -495,7 +495,7 @@ function demoTeam() {
       },
       {
         id: "00000000-0000-4000-8000-0000000030a3",
-        email: "morgan.rt@pennfit.example",
+        email: "morgan.rt@caremetric.example",
         authUserId: "demo-auth-3",
         role: "supervisor",
         status: "active",
@@ -513,7 +513,7 @@ function demoTeam() {
       },
       {
         id: "00000000-0000-4000-8000-0000000030a4",
-        email: "riley.fitter@pennfit.example",
+        email: "riley.fitter@caremetric.example",
         authUserId: null,
         role: "fitter",
         status: "pending",
@@ -806,7 +806,7 @@ function demoCsrComplianceAlerts() {
 function demoPatientAccessLog() {
   const rows = [
     {
-      adminEmail: "casey.csr@pennfit.example",
+      adminEmail: "casey.csr@caremetric.example",
       adminUserId: "demo-auth-2",
       adminRole: "csr",
       action: "view_patient",
@@ -816,7 +816,7 @@ function demoPatientAccessLog() {
       statusCode: 200,
     },
     {
-      adminEmail: "demo.admin@pennfit.example",
+      adminEmail: "demo.admin@caremetric.example",
       adminUserId: "demo-auth-1",
       adminRole: "admin",
       action: "update_patient",
@@ -826,7 +826,7 @@ function demoPatientAccessLog() {
       statusCode: 200,
     },
     {
-      adminEmail: "morgan.rt@pennfit.example",
+      adminEmail: "morgan.rt@caremetric.example",
       adminUserId: "demo-auth-3",
       adminRole: "supervisor",
       action: "view_patient",

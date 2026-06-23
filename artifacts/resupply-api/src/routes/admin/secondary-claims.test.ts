@@ -31,13 +31,13 @@ import secondaryClaimsRouter, {
   type PrimaryClaimTotals,
 } from "./secondary-claims";
 
-// admin holds reports.read + admin.tools.manage.
+// admin holds reports.read + billing.manage (the generate-secondary gate).
 const ADMIN: MockAdminCtx = {
   userId: "u_admin",
   email: "biller@penn.example.com",
   role: "admin",
 };
-// csr holds reports.read but NOT admin.tools.manage.
+// csr holds reports.read but NOT billing.manage.
 const CSR: MockAdminCtx = {
   userId: "u_csr",
   email: "csr@penn.example.com",
@@ -192,7 +192,7 @@ describe("GET /admin/billing/secondary-eligible", () => {
 });
 
 describe("POST /admin/claims/:id/generate-secondary", () => {
-  it("403s for a role without admin.tools.manage (csr)", async () => {
+  it("403s for a role without billing.manage (csr)", async () => {
     mockAdmin.current = CSR;
     const res = await request(makeApp()).post(
       `/admin/claims/${PRIMARY_ID}/generate-secondary`,

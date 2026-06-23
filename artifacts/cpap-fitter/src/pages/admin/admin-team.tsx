@@ -62,14 +62,16 @@ const ROLE_LABEL: Record<TeamRole, string> = {
   fitter: "Customer service rep",
   fulfillment: "Customer service rep",
   agent: "Customer service rep",
+  biller: "Biller",
 };
 
-/** Roles offered in the invite + edit selectors — the 3 effective
- *  buckets only. Existing rows persisted under one of the legacy
- *  names (supervisor, compliance_officer, fitter, fulfillment, agent)
- *  continue to resolve correctly through ROLE_LABEL above; new
- *  invites pick exactly one of these three. */
-const ROLE_OPTIONS: TeamRole[] = ["admin", "supervisor", "csr"];
+/** Roles offered in the invite + edit selectors. Owner / Admin /
+ *  Customer service rep are the three general buckets; Biller is the
+ *  billing-scoped role (Billing area only). Existing rows persisted
+ *  under a legacy name (supervisor, compliance_officer, fitter,
+ *  fulfillment, agent) continue to resolve correctly through
+ *  ROLE_LABEL above; new invites pick exactly one of these. */
+const ROLE_OPTIONS: TeamRole[] = ["admin", "supervisor", "csr", "biller"];
 
 const STATUS_TONE: Record<TeamStatus, string> = {
   active: "bg-emerald-100 text-emerald-900 border-emerald-300",

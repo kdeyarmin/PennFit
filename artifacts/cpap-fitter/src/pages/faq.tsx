@@ -119,7 +119,7 @@ const sections: FaqSection[] = [
     id: "choosing-a-mask",
     title: "Choosing the Right Mask",
     blurb:
-      "How to think about mask styles, fit, and what PennPaps recommends for your face shape.",
+      "How to think about mask styles, fit, and what we recommend for your face shape.",
     Icon: Glasses,
     items: [
       {
@@ -228,7 +228,7 @@ const sections: FaqSection[] = [
         ),
       },
       {
-        q: "Can I order replacement supplies through PennPaps?",
+        q: "Can I order replacement supplies through this site?",
         a: (
           <>
             Yes, two ways. (1) <strong>Resupply program</strong> — once you're
@@ -308,8 +308,7 @@ const sections: FaqSection[] = [
             <strong>headgear every 6 months</strong> (elastic stretches),{" "}
             <strong>tubing every 3 months</strong>, and{" "}
             <strong>filters monthly</strong>. Insurance typically covers this
-            cadence — PennPaps's resupply program tracks it for you
-            automatically.
+            cadence — our resupply program tracks it for you automatically.
           </>
         ),
       },
@@ -344,7 +343,7 @@ const sections: FaqSection[] = [
             Mask marks usually mean the headgear is too tight or the cushion is
             the wrong size. Loosen the straps until you hear a slight leak, then
             tighten in tiny increments until it stops. If marks persist, it's a
-            fit issue — retake the PennPaps scan or contact us for an exchange.
+            fit issue — retake the scan or contact us for an exchange.
           </>
         ),
       },
@@ -411,9 +410,8 @@ const sections: FaqSection[] = [
           <>
             This is almost always a comfort issue — the mask is too tight, the
             cushion is wrong, or the pressure feels too high. Don't push through
-            it. Retake the PennPaps scan and contact us; we'll help you switch
-            to a better-tolerated style at no extra charge during your first 30
-            days.
+            it. Retake the scan and contact us; we'll help you switch to a
+            better-tolerated style at no extra charge during your first 30 days.
           </>
         ),
       },
@@ -696,7 +694,7 @@ export function Faq() {
               data-testid="faq-ask-pennbot"
             >
               <Sparkles className="w-3 h-3" />
-              Ask PennBot
+              Ask {contact.assistantStorefrontName}
             </Button>
             <span className="hidden sm:inline">— typed answers in seconds</span>
           </div>
@@ -751,7 +749,7 @@ export function Faq() {
               <p className="text-sm text-muted-foreground max-w-md mx-auto">
                 Try a different keyword, ask{" "}
                 <strong className="text-[hsl(var(--penn-navy))]">
-                  PennBot
+                  {contact.assistantStorefrontName}
                 </strong>{" "}
                 in the chat bubble (bottom-right), or{" "}
                 <Link

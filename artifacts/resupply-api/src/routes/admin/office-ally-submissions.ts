@@ -126,7 +126,7 @@ const SUBMISSIONS_PAGE_SIZE = 1000;
 // ── LIST ────────────────────────────────────────────────────────────
 router.get(
   "/admin/office-ally-submissions",
-  requirePermission("admin.tools.manage"),
+  requirePermission("billing.manage"),
   async (req, res) => {
     const orgId = req.orgId;
     if (!orgId) {
@@ -190,7 +190,7 @@ router.get(
 // (creating a chain), so the UI guards against double-clicks.
 router.post(
   "/admin/office-ally/bulk-resubmit",
-  requirePermission("admin.tools.manage"),
+  requirePermission("billing.manage"),
   adminRateLimit({
     name: "office_ally.bulk_resubmit",
     preset: "bulk",
@@ -338,7 +338,7 @@ router.post(
 //                            on rows where both are set
 router.get(
   "/admin/office-ally/operations-summary",
-  requirePermission("admin.tools.manage"),
+  requirePermission("billing.manage"),
   async (req, res) => {
     const orgId = req.orgId;
     if (!orgId) {
@@ -428,7 +428,7 @@ router.get(
 //   * acceptanceRatePct   — accepted / (accepted+rejected); null on 0 denom
 router.get(
   "/admin/office-ally/payer-stats",
-  requirePermission("admin.tools.manage"),
+  requirePermission("billing.manage"),
   async (req, res) => {
     const orgId = req.orgId;
     if (!orgId) {
@@ -581,7 +581,7 @@ router.get(
 // drown in red rejections.
 router.get(
   "/admin/office-ally/health",
-  requirePermission("admin.tools.manage"),
+  requirePermission("billing.manage"),
   async (req, res) => {
     const orgId = req.orgId;
     if (!orgId) {
@@ -646,7 +646,7 @@ router.get(
 // enrollment queue.
 router.get(
   "/admin/office-ally/enrollment-watchlist",
-  requirePermission("admin.tools.manage"),
+  requirePermission("billing.manage"),
   async (req, res) => {
     const orgId = req.orgId;
     if (!orgId) {
@@ -696,7 +696,7 @@ router.get(
 // collide on disk.
 router.get(
   "/admin/office-ally-submissions/export.csv",
-  requirePermission("admin.tools.manage"),
+  requirePermission("billing.manage"),
   async (req, res) => {
     const orgId = req.orgId;
     if (!orgId) {
@@ -757,7 +757,7 @@ router.get(
 // ── DETAIL incl linked claims, patient names, resubmit chain ──────
 router.get(
   "/admin/office-ally-submissions/:id",
-  requirePermission("admin.tools.manage"),
+  requirePermission("billing.manage"),
   async (req, res) => {
     const orgId = req.orgId;
     if (!orgId) {
@@ -997,7 +997,7 @@ router.get(
 // (corrected-claim) flow.
 router.post(
   "/admin/office-ally-submissions/:id/resubmit",
-  requirePermission("admin.tools.manage"),
+  requirePermission("billing.manage"),
   adminRateLimit({
     name: "office_ally_submissions.resubmit",
     preset: "bulk",

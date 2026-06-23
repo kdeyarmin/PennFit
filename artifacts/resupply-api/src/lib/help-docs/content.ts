@@ -16,7 +16,7 @@ import type { AdminRole } from "@workspace/resupply-db";
 
 /** Bump when the copy below changes so cached/rendered bytes refresh
  *  and the document footer advertises the right revision. */
-export const HELP_DOC_VERSION = "2026-06-10.v1";
+export const HELP_DOC_VERSION = "2026-06-22.v2";
 
 /** A single labelled block of a help document. Mirrors the structured-
  *  content shape the patient-packet templates use (heading + prose +
@@ -164,6 +164,7 @@ const STAFF_GETTING_STARTED: HelpDoc = {
     {
       heading: "Getting help",
       paragraphs: [
+        "For step-by-step instructions on any feature, open the full User Manual from the Support page in the admin console, and use the in-app assistant on any page to ask how something works or where to find it.",
         "Questions about a workflow or your access? Reach out to your administrator or supervisor — they can walk you through any part of the console and adjust your permissions when your responsibilities change.",
       ],
     },
@@ -190,8 +191,8 @@ const ADMINISTRATOR_GUIDE: HelpDoc = {
     {
       heading: "Roles and permissions",
       paragraphs: [
-        "Roles range from front-line customer-service reps and fitters up to supervisors and administrators. Grant each person the least access they need to do their job, and review your team list periodically to remove anyone who has left.",
-        "Only administrators can manage the team or change another member's role, so keep the number of administrators small.",
+        "There are five staff roles. The Owner has full access, including team management and system settings; an Admin has broad day-to-day management access; a Customer Service Rep handles patients, the inbox, orders, and scheduling; a Biller works the billing and revenue-cycle area; and a Respiratory Therapist works the clinical and therapy-monitoring tools. A page above someone's role simply won't appear in their menu.",
+        "Grant each person the least access they need to do their job, and review your team list periodically to remove anyone who has left. Only the Owner can manage the team or change another member's role, so keep the number of top-level administrators small.",
       ],
     },
     {

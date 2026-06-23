@@ -4,11 +4,14 @@
 //   - POST /admin/billing/era-ingest
 //     (adminRateLimit with preset "sensitive" was REMOVED)
 //
-// The route still requires requireAdminOnly.
+// The route requires the billing-scoped permission (billing.manage) —
+// held by super_admin, admin, and the biller role; a plain agent/CSR is
+// rejected.
 //
 // Tests verify:
 //   1. adminRateLimit is no longer wired (the spy is never invoked).
-//   2. Route remains protected by requireAdminOnly (401/403).
+//   2. Route remains protected by requirePermission("billing.manage")
+//      (401 unauthenticated / 403 for a role without it).
 //   3. Route functions normally without returning 429.
 //   4. Duplicate detection, parse failures, and validation still work.
 
@@ -161,14 +164,14 @@ describe("POST /admin/billing/era-ingest — adminRateLimit removed", () => {
     expect(adminRateLimitSpy).not.toHaveBeenCalled();
   });
 
-  it("returns 401 when unauthenticated (requireAdminOnly still gates the route)", async () => {
+  it("returns 401 when unauthenticated (billing.manage gate still applies)", async () => {
     const res = await request(makeApp())
       .post("/admin/billing/era-ingest")
       .send(validBody);
     expect(res.status).toBe(401);
   });
 
-  it("returns 403 when agent (requireAdminOnly blocks non-admin)", async () => {
+  it("returns 403 when agent (lacks billing.manage)", async () => {
     stubAgent();
     const res = await request(makeApp())
       .post("/admin/billing/era-ingest")

@@ -15,7 +15,7 @@ import type { ReactNode } from "react";
 import { Link } from "wouter";
 import { ArrowLeft, MessageCircle, ShieldCheck } from "lucide-react";
 
-import pennLogo from "@assets/IMG_2053_1777233708393.jpeg";
+import { PLATFORM_LOGO_URL, useStorefrontBranding } from "@/lib/branding";
 import { useCompanyContact } from "@/lib/contact";
 import {
   BrandName,
@@ -40,6 +40,7 @@ interface Props {
 export function AuthLayout({ variant, children }: Props) {
   const isAdmin = variant === "admin";
   const c = useCompanyContact();
+  const branding = useStorefrontBranding();
   // Website host as a plain string (mirrors <WebsiteHost/>'s logic) for
   // contexts that require a string rather than a ReactNode — e.g. the
   // "Back to <host>" escape-link label below.
@@ -73,7 +74,7 @@ export function AuthLayout({ variant, children }: Props) {
             data-testid="auth-brand-link"
           >
             <img
-              src={pennLogo}
+              src={branding.logoUrl ?? PLATFORM_LOGO_URL}
               alt={c.legalName}
               className="h-9 w-auto rounded-md"
             />

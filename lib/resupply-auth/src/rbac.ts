@@ -26,6 +26,7 @@
 //   * admin                 ← db: supervisor + compliance_officer
 //   * customer_service_rep  ← db: csr + fitter + fulfillment + agent
 //   * clinician             ← db: rt
+//   * biller                ← db: biller
 //
 // What does NOT live here
 // -----------------------
@@ -97,6 +98,16 @@ import type { AdminRole } from "@workspace/resupply-db";
  *                              invite/manage provider accounts, stage
  *                              documents for signature, track + release
  *                              signed items, print the signature audit log
+ *   billing.manage          — revenue-cycle write surface: transmit /
+ *                              submit / batch claims, ERA (835) posting,
+ *                              Office Ally clearinghouse ops, fee-schedule
+ *                              import, and billing-config writes. The
+ *                              billing-scoped counterpart to
+ *                              admin.tools.manage — held by super_admin,
+ *                              admin, and the dedicated `biller` role so a
+ *                              biller gets the billing tools WITHOUT the
+ *                              unrelated CSR-tool surface admin.tools.manage
+ *                              also unlocks.
  *   system.config.manage    — read/write the System Configuration store
  *                              (integration credentials + platform
  *                              secrets). super_admin ONLY — like
@@ -133,6 +144,7 @@ export type Permission =
   | "cases.manage"
   | "targets.manage"
   | "provider_portal.manage"
+  | "billing.manage"
   | "system.config.manage";
 
 /** Full enumeration — handy for tests and for the `admin` role
@@ -166,6 +178,7 @@ const ALL_PERMISSIONS: ReadonlyArray<Permission> = [
   "cases.manage",
   "targets.manage",
   "provider_portal.manage",
+  "billing.manage",
   "system.config.manage",
 ];
 
@@ -185,12 +198,18 @@ const ALL_PERMISSIONS: ReadonlyArray<Permission> = [
  *                              compliance resolution.
  *   * clinician             — respiratory therapist (rt). Clinical
  *                              encounter documentation + patient read.
+ *   * biller                — revenue-cycle staff. The Billing area
+ *                              (claims, eligibility, A/R, ERA, Office
+ *                              Ally, billing config) + patient billing
+ *                              context. No CSR tools, no clinical, no
+ *                              team management, no system config.
  */
 export type EffectiveRole =
   | "super_admin"
   | "admin"
   | "customer_service_rep"
-  | "clinician";
+  | "clinician"
+  | "biller";
 
 /**
  * Normalize a DB-persisted role to the 3-bucket effective model.
@@ -211,6 +230,8 @@ export function toEffectiveRole(role: AdminRole): EffectiveRole {
       return "admin";
     case "rt":
       return "clinician";
+    case "biller":
+      return "biller";
     case "csr":
     case "fitter":
     case "fulfillment":
@@ -259,6 +280,10 @@ const EFFECTIVE_ROLE_PERMISSIONS: Record<
     "cases.manage",
     "targets.manage",
     "provider_portal.manage",
+    // Admins run billing too: grant the billing-scoped write surface so
+    // the routes re-gated off admin.tools.manage onto billing.manage stay
+    // reachable by admin (super_admin holds it via ALL_PERMISSIONS).
+    "billing.manage",
   ]),
 
   // Union of legacy `csr` + `fitter` + `fulfillment` + `agent`.
@@ -294,6 +319,29 @@ const EFFECTIVE_ROLE_PERMISSIONS: Record<
     "clinical.read",
     "clinical.note.write",
     "clinical.intervention.write",
+  ]),
+
+  // Revenue-cycle staff (db role `biller`). Scoped to the Billing area:
+  // the billing-only write surface (billing.manage) plus the read context
+  // a biller needs — patient demographics/notes (claims, statements,
+  // appeals key off patients.read/patients.update), the billing
+  // dashboards/worklists (reports.read), payer profitability / margin
+  // economics (cost.read), and line-item / HCPCS stock context
+  // (inventory.read). Also includes conversations.manage: revenue-cycle
+  // staff work patient-balance and benefit-verification threads in the
+  // shared omnichannel inbox (triage / claim / snooze / tag / reply), so a
+  // biller gets the inbox like a CSR. Deliberately EXCLUDES
+  // admin.tools.manage (would unlock unrelated tools — macros, templates,
+  // alerts, outbound messages, webhooks, PacWare, bot playground), all
+  // clinical perms, returns approval, team management, and system config.
+  biller: new Set<Permission>([
+    "patients.read",
+    "patients.update",
+    "reports.read",
+    "cost.read",
+    "inventory.read",
+    "billing.manage",
+    "conversations.manage",
   ]),
 };
 

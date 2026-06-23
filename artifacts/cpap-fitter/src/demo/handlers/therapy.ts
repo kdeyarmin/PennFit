@@ -54,7 +54,7 @@ export const therapyHandlers: DemoHandler[] = [
     "POST",
     "/resupply-api/admin/therapy-resupply/draft-orders/:id/approve",
     (_req, { id }) => {
-      const ref = `PENN-DEMO-90${(String(id).match(/\d+/)?.[0] ?? "1").slice(-2)}`;
+      const ref = `CMB-DEMO-90${(String(id).match(/\d+/)?.[0] ?? "1").slice(-2)}`;
       return json({
         ok: true,
         draftId: id,

@@ -286,10 +286,10 @@ describe("team.ts — DELETE /admin/team/:id guards", () => {
 });
 
 // ---------------------------------------------------------------------------
-// ROLE_VALUES catalog — all 7 granular roles present
+// ROLE_VALUES catalog — all 9 granular roles present
 // ---------------------------------------------------------------------------
 describe("team.ts — ROLE_VALUES catalog", () => {
-  it("includes all 7 granular admin roles", () => {
+  it("includes all 9 granular admin roles", () => {
     expect(SRC).toContain('"admin"');
     expect(SRC).toContain('"supervisor"');
     expect(SRC).toContain('"csr"');
@@ -297,6 +297,8 @@ describe("team.ts — ROLE_VALUES catalog", () => {
     expect(SRC).toContain('"fulfillment"');
     expect(SRC).toContain('"compliance_officer"');
     expect(SRC).toContain('"agent"');
+    expect(SRC).toContain('"rt"');
+    expect(SRC).toContain('"biller"');
   });
 });
 

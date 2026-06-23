@@ -724,7 +724,8 @@ export interface Database {
             | "fulfillment"
             | "compliance_officer"
             | "agent"
-            | "rt";
+            | "rt"
+            | "biller";
           status: "pending" | "active" | "revoked";
           display_name: string | null;
           notes: string | null;
@@ -756,7 +757,8 @@ export interface Database {
             | "fulfillment"
             | "compliance_officer"
             | "agent"
-            | "rt";
+            | "rt"
+            | "biller";
           status?: "pending" | "active" | "revoked";
           display_name?: string | null;
           notes?: string | null;

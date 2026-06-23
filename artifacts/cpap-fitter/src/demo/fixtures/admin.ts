@@ -6,7 +6,7 @@ import { daysAgo, hoursAgo, daysFromNow, NOW_ISO } from "./dates";
 
 export const DEMO_ADMIN_AUTH = {
   id: "demo-admin-1",
-  email: "demo.admin@pennfit.example",
+  email: "demo.admin@caremetric.example",
   displayName: "Demo Admin",
   role: "admin" as const,
   emailVerified: true,
@@ -18,18 +18,40 @@ export function demoAdminIdentity(): AdminIdentity {
     userId: DEMO_ADMIN_AUTH.id,
     email: DEMO_ADMIN_AUTH.email,
     role: "admin",
-    // Grant a broad permission set so every nav entry is explorable.
+    // Grant the full RBAC permission set (the demo admin is an Owner /
+    // super_admin) so every nav entry is explorable. These are the exact
+    // permission tokens the sidebar's `requiredPermission` checks against
+    // (lib/resupply-auth `Permission`), so the whole console renders.
     permissions: [
+      "patients.read",
+      "patients.update",
+      "returns.read",
+      "returns.approve",
+      "returns.manage",
+      "orders.create",
+      "compliance.read",
+      "compliance.resolve",
+      "audit.export",
+      "audit.read",
+      "admin_team.manage",
+      "reports.read",
+      "cost.read",
+      "cost.write",
+      "metrics.read",
+      "bulk_campaigns.send",
+      "fit_session.override",
+      "inventory.read",
+      "conversations.manage",
       "admin.tools.manage",
-      "admin.patients.read",
-      "admin.patients.write",
-      "admin.billing.read",
-      "admin.billing.write",
-      "admin.shop.read",
-      "admin.shop.write",
-      "admin.reports.read",
-      "admin.team.manage",
-      "admin.settings.manage",
+      "clinical.read",
+      "clinical.note.write",
+      "clinical.intervention.write",
+      "cases.read",
+      "cases.manage",
+      "targets.manage",
+      "provider_portal.manage",
+      "billing.manage",
+      "system.config.manage",
     ],
   };
 }
@@ -218,7 +240,7 @@ export function demoShopCustomers(opts: {
     return {
       userId: `demo-customer-${i + 1}`,
       displayName: `${first} ${last}`,
-      emailRedacted: `${first.slice(0, 2).toLowerCase()}****@pennfit.example`,
+      emailRedacted: `${first.slice(0, 2).toLowerCase()}****@caremetric.example`,
       ordersCount: orders,
       lifetimeValueCents: orders * 8995,
       lastOrderAt: i % 5 === 0 ? null : daysAgo(i + 1),
@@ -262,7 +284,7 @@ export function demoCustomerDetail(userId: string) {
     customer: {
       userId,
       displayName: `${first} ${last}`,
-      email: `${first.toLowerCase()}.${last.toLowerCase()}@pennfit.example`,
+      email: `${first.toLowerCase()}.${last.toLowerCase()}@caremetric.example`,
       stripeCustomerId: `cus_demo${n}`,
       shippingAddress: null,
       defaultPaymentMethod: {
@@ -325,7 +347,7 @@ function demoConversationHeader(i: number) {
     customerId: i % 2 === 0 ? null : `demo-customer-${i + 1}`,
     customerDisplayName: i % 2 === 0 ? null : `${first} ${LAST_NAMES[i]}`,
     customerEmail:
-      i % 2 === 0 ? null : `${first.toLowerCase()}@pennfit.example`,
+      i % 2 === 0 ? null : `${first.toLowerCase()}@caremetric.example`,
     channel: CONV_CHANNELS[i % CONV_CHANNELS.length],
     status: CONV_STATUSES[i % CONV_STATUSES.length],
     lastMessageAt: hoursAgo(i + 1),
@@ -412,7 +434,7 @@ export function demoConversationDetail(id: string) {
             1,
             "outbound",
             "admin",
-            `Hi ${name}, it's the Penn Home Medical Supply team — your CPAP supplies are due for resupply. Reply YES to confirm and we'll ship today.`,
+            `Hi ${name}, it's the CareMetric Breathe team — your CPAP supplies are due for resupply. Reply YES to confirm and we'll ship today.`,
             6,
           ),
           demoMessage(
@@ -654,7 +676,7 @@ export function demoFitterLeads() {
   ];
   const rows = FIRST_NAMES.slice(0, 10).map((first, i) => ({
     id: `demo-lead-${i + 1}`,
-    email: `${first.toLowerCase()}.lead@pennfit.example`,
+    email: `${first.toLowerCase()}.lead@caremetric.example`,
     phoneE164: i % 2 === 0 ? `+121555501${(10 + i).toString()}` : null,
     smsOptIn: i % 2 === 0,
     marketingOptIn: i % 3 !== 0,
@@ -773,9 +795,9 @@ export function demoSystemInfo() {
       lastMigrationAt: daysAgo(3),
     },
     publicUrls: {
-      shop: "https://pennfit.example",
-      voice: "https://pennfit.example",
-      dashboard: "https://pennfit.example/admin",
+      shop: "https://caremetric.example",
+      voice: "https://caremetric.example",
+      dashboard: "https://caremetric.example/admin",
     },
     auth: {
       adminAllowlistCount: 2,
@@ -810,10 +832,10 @@ function demoAdminOrderRow(i: number) {
   const first = FIRST_NAMES[i % FIRST_NAMES.length];
   return {
     id: `demo-aorder-${i + 1}`,
-    orderReference: `PENN-DEMO-${2000 + i}`,
+    orderReference: `CMB-DEMO-${2000 + i}`,
     patientFirstName: first,
     patientLastName: LAST_NAMES[i % LAST_NAMES.length],
-    patientEmail: `${first.toLowerCase()}@pennfit.example`,
+    patientEmail: `${first.toLowerCase()}@caremetric.example`,
     patientPhone: `+121555502${(10 + i).toString()}`,
     patientDateOfBirth: "1972-03-14",
     maskId: "demo-mask-n20",

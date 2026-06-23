@@ -22,10 +22,11 @@
 //      reused from the poll-worker module, which updates the matched
 //      office_ally_submissions row + per-claim events.
 //
-// Permission: requireAdminOnly. The PHI surface area on inbound EDI
+// Permission: billing.manage. The PHI surface area on inbound EDI
 // is meaningful — these files contain claim numbers, payer EOB
 // detail, and (for 271) eligibility responses — so manual upload is
-// gated tighter than the read-only inbound-files list.
+// gated to the billing-scoped permission (admins + billers), not the
+// broad CSR surface.
 
 import { createHash } from "node:crypto";
 
@@ -39,7 +40,7 @@ import { classifyEdiPayload } from "@workspace/resupply-integrations-office-ally
 import { resolveClearinghouse } from "../../lib/billing/identity-resolver";
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
-import { requireAdminOnly } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 import {
   dispatch271,
   dispatch277,
@@ -75,7 +76,7 @@ const uploadAckJsonParser = express.json({ limit: "5mb" });
 router.post(
   "/admin/office-ally/upload-ack",
   uploadAckJsonParser,
-  requireAdminOnly,
+  requirePermission("billing.manage"),
   adminRateLimit({
     name: "office_ally.upload_ack",
     preset: "sensitive",

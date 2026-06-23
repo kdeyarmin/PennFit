@@ -3,17 +3,22 @@
 // remain on disk; this surface only stores their paths + the
 // non-secret config (host, ETIN, contact info, etc).
 //
-//   GET    /admin/clearinghouse-credentials
-//   GET    /admin/clearinghouse-credentials/:id
+// Gates: the read + day-to-day ops surface is billing.manage (so a Biller
+// who runs the clearinghouse can see connection status + inbound files,
+// trigger a poll, and test connectivity); only the credential WRITES
+// (create / update — which persist the routing + key paths) stay admin-only.
+//
+//   GET    /admin/clearinghouse-credentials              billing.manage
+//   GET    /admin/clearinghouse-credentials/:id          billing.manage
 //   POST   /admin/clearinghouse-credentials              admin-only
 //   PATCH  /admin/clearinghouse-credentials/:id          admin-only
-//   POST   /admin/clearinghouse-credentials/:id/test     admin-only
+//   POST   /admin/clearinghouse-credentials/:id/test     billing.manage
 //          — list the remote outbound directory using the configured
 //            key + known_hosts and return success/failure for the UI's
 //            "test connection" button.
-//   POST   /admin/office-ally/poll-now                   admin-only
+//   POST   /admin/office-ally/poll-now                   billing.manage
 //          — manually fire the inbound-poll worker job.
-//   GET    /admin/clearinghouse-inbound-files            — audit list
+//   GET    /admin/clearinghouse-inbound-files            billing.manage — audit list
 
 import { Router, type IRouter } from "express";
 import { z } from "zod";
@@ -128,7 +133,7 @@ function rowToApi(r: Row) {
 
 router.get(
   "/admin/clearinghouse-credentials",
-  requirePermission("admin.tools.manage"),
+  requirePermission("billing.manage"),
   async (req, res) => {
     const orgId = req.orgId;
     if (!orgId) {
@@ -147,7 +152,7 @@ router.get(
 
 router.get(
   "/admin/clearinghouse-credentials/:id",
-  requirePermission("admin.tools.manage"),
+  requirePermission("billing.manage"),
   async (req, res) => {
     const parsed = idParam.safeParse(req.params);
     if (!parsed.success) {
@@ -368,9 +373,12 @@ router.patch(
 );
 
 // ── TEST CONNECTION ─────────────────────────────────────────────────
+// Ops/connectivity check (lists the remote outbound dir; returns ok + file
+// count, never secrets), so it's billing.manage like poll-now — the cockpit
+// renders a "test connection" button per clearinghouse card for billers.
 router.post(
   "/admin/clearinghouse-credentials/:id/test",
-  requireAdminOnly,
+  requirePermission("billing.manage"),
   adminRateLimit({
     name: "clearinghouse_credentials.test",
     preset: "mutation",
@@ -440,7 +448,7 @@ router.post(
 // ── MANUAL POLL TRIGGER ────────────────────────────────────────────
 router.post(
   "/admin/office-ally/poll-now",
-  requireAdminOnly,
+  requirePermission("billing.manage"),
   adminRateLimit({ name: "office_ally.poll_now", preset: "bulk" }),
   async (req, res) => {
     const orgId = req.orgId;
@@ -478,7 +486,7 @@ router.post(
 // ── INBOUND FILE AUDIT LIST ────────────────────────────────────────
 router.get(
   "/admin/clearinghouse-inbound-files",
-  requirePermission("admin.tools.manage"),
+  requirePermission("billing.manage"),
   async (req, res) => {
     const orgId = req.orgId;
     if (!orgId) {

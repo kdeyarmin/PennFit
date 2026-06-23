@@ -472,7 +472,7 @@ export function Insurance() {
             data-testid="insurance-ask-pennbot"
           >
             <Sparkles className="w-4 h-4" />
-            Ask PennBot
+            Ask {c.assistantStorefrontName}
           </Button>
         </div>
         <div className="glass-card rounded-2xl p-2 sm:p-4">

@@ -110,7 +110,7 @@ const createBody = z.object({
 
 router.post(
   "/admin/payer-coverage-diagnoses",
-  requirePermission("admin.tools.manage"),
+  requirePermission("billing.manage"),
   adminRateLimit({
     name: "payer_coverage_override.create",
     preset: "mutation",
@@ -179,7 +179,7 @@ const idParam = z.string().uuid();
 
 router.delete(
   "/admin/payer-coverage-diagnoses/:id",
-  requirePermission("admin.tools.manage"),
+  requirePermission("billing.manage"),
   adminRateLimit({ name: "payer_coverage_override.delete", preset: "destroy" }),
   async (req, res) => {
     const parsed = idParam.safeParse(req.params.id);

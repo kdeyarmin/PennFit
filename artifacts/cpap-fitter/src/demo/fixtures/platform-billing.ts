@@ -33,9 +33,9 @@ export function demoPlatformTenantBilling() {
     tenants: [
       {
         id: "demo-tenant-1",
-        slug: "penn-home-medical",
-        name: "Penn Home Medical Supply",
-        storefrontName: "PennPaps",
+        slug: "riverside-home-medical",
+        name: "Riverside Home Medical",
+        storefrontName: "RiversideCPAP",
         status: "active",
         faxNumber: "+12155551212",
         faxProvisionedAt: new Date(Date.now() - 90 * 864e5).toISOString(),
@@ -61,7 +61,7 @@ export function demoPlatformBillingSummary() {
   // (artifacts/resupply-api/src/lib/fleet-billing.ts): mrrCents is the sum of
   // per-tenant recurring (plan + add-ons), addonMrrCents is a subset of it,
   // sum(byPlan.mrrCents) === mrrCents, and arpuCents = round(mrr / paying).
-  // Penn = Growth ($1,899) + $98 add-ons; Acme = Launch ($799), no add-ons.
+  // Riverside = Growth ($1,899) + $98 add-ons; Acme = Launch ($799), none.
   return {
     mrrCents: 279600,
     addonMrrCents: 9800,
@@ -88,10 +88,10 @@ export function demoPlatformBillingActivity(tenantId?: string | null) {
     {
       id: "evt-1",
       tenantId: "demo-tenant-1",
-      tenantName: "Penn Home Medical Supply",
+      tenantName: "Riverside Home Medical",
       action: "tenant.billing.subscription.selected",
       actor: "tenant" as const,
-      operatorEmail: "owner@pennpaps.example",
+      operatorEmail: "owner@caremetric.example",
       summary: "Switched to the Growth plan",
       metadata: { planCode: "growth" },
       occurredAt: min(6),
@@ -99,10 +99,10 @@ export function demoPlatformBillingActivity(tenantId?: string | null) {
     {
       id: "evt-2",
       tenantId: "demo-tenant-1",
-      tenantName: "Penn Home Medical Supply",
+      tenantName: "Riverside Home Medical",
       action: "tenant.billing.addon.updated",
       actor: "tenant" as const,
-      operatorEmail: "owner@pennpaps.example",
+      operatorEmail: "owner@caremetric.example",
       summary: "Set Additional staff seat to 2",
       metadata: { addonCode: "additional_seat", quantity: 2 },
       occurredAt: min(20),

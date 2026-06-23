@@ -21,38 +21,47 @@ import { daysAgo, dateOnly } from "../fixtures/dates";
 export const ext10Handlers: DemoHandler[] = [
   // ── Public identity: company info (footer / "call us" / chat) ──────
   // GET /api/company-info — see routes/storefront/company-info.ts.
-  // Tenant-branded to Penn Home Medical Supply / PennPaps.
+  // The demo represents the CareMetric **platform** (an unconfigured
+  // tenant), NOT the Penn tenant, so it must read the CareMetric platform
+  // identity — including the platform-default assistant names
+  // ("CareMetric Assistant" / "CareMetric Copilot"), so the storefront
+  // chatbot and the admin assistant widget never flash "PennBot"/"PennPilot."
+  // (Mirrors company-info.ts DEFAULTS + DEFAULT_*_ASSISTANT_NAME.)
   route("GET", "/api/company-info", () =>
     json({
-      name: "PennPaps",
-      legalName: "Penn Home Medical Supply",
-      phoneE164: "+12155550123",
-      phoneDisplay: "(215) 555-0123",
-      supportEmail: "support@pennpaps.com",
-      generalEmail: "info@pennpaps.com",
+      name: "CareMetric Breathe",
+      legalName: "CareMetric Breathe",
+      phoneE164: "+18005550100",
+      phoneDisplay: "(800) 555-0100",
+      supportEmail: "support@cmbreathe.com",
+      generalEmail: "hello@cmbreathe.com",
       supportHours: "Mon–Fri 8am–7pm ET · Sat 9am–2pm ET",
-      websiteUrl: "https://pennpaps.com",
+      websiteUrl: "https://cmbreathe.com",
       address: {
-        line1: "2400 Chestnut Street",
-        line2: "Suite 110",
-        city: "Philadelphia",
-        state: "PA",
-        postalCode: "19103",
+        line1: "100 Innovation Way",
+        line2: "Suite 200",
+        city: "Austin",
+        state: "TX",
+        postalCode: "78701",
         country: "US",
       },
-      assistantStorefrontName: "PennBot",
-      assistantAdminName: "PennPilot",
+      assistantStorefrontName: "CareMetric Assistant",
+      assistantAdminName: "CareMetric Copilot",
     }),
   ),
 
   // ── Public identity: host-resolved storefront branding ────────────
   // GET /api/storefront-branding — see routes/storefront/storefront-branding.ts.
+  // NOTE: this is shadowed by miscHandlers' earlier (first-match-wins)
+  // /api/storefront-branding, which already returns the CareMetric platform
+  // identity. Kept aligned to CareMetric so the two never disagree if the
+  // ordering ever changes.
   route("GET", "/api/storefront-branding", () =>
     json({
-      storefrontName: "PennPaps",
-      legalName: "Penn Home Medical Supply",
+      storefrontName: "CareMetric Breathe",
+      legalName: "CareMetric Breathe",
       tagline: "Your CPAP, made simple. Fit. Shop. Resupply.",
-      logoUrl: null,
+      logoUrl: "/breathe/caremetric-logo.png",
       resolved: true,
     }),
   ),
