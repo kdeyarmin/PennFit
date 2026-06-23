@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import type Stripe from "stripe";
 
 import { logAudit } from "@workspace/resupply-audit";
@@ -946,29 +948,42 @@ export async function createTenantCheckoutSession(args: {
     tenant_slug: tenant.slug,
     plan_code: plan.code,
   };
-  const session = await stripe.checkout.sessions.create({
-    mode: "subscription",
-    ...(customer.customerId ? { customer: customer.customerId } : {}),
-    line_items: [
-      {
-        price_data: {
-          currency: "usd",
-          product_data: {
-            name: plan.name,
-            metadata: priceMetadata("plan", plan.code),
+  // Idempotency: a double-click / retry / second tab must NOT create a
+  // second Checkout Session (and thus a second auto-charging subscription).
+  // Key on org + plan + amount so the SAME pending checkout is returned for
+  // 24h (Stripe's idempotency window, which matches a Checkout Session's
+  // default lifetime); a genuine plan/price change rotates the key and
+  // yields a fresh session. Mirrors the storefront + patient-payment paths,
+  // which both key their checkout creation.
+  const idempotencyKey = createHash("sha256")
+    .update(`platform-checkout|${args.orgId}|${plan.code}|${planAmount}`)
+    .digest("hex");
+  const session = await stripe.checkout.sessions.create(
+    {
+      mode: "subscription",
+      ...(customer.customerId ? { customer: customer.customerId } : {}),
+      line_items: [
+        {
+          price_data: {
+            currency: "usd",
+            product_data: {
+              name: plan.name,
+              metadata: priceMetadata("plan", plan.code),
+            },
+            unit_amount: planAmount,
+            recurring: { interval: "month" },
           },
-          unit_amount: planAmount,
-          recurring: { interval: "month" },
+          quantity: 1,
         },
-        quantity: 1,
-      },
-    ],
-    subscription_data: { metadata: subMetadata },
-    client_reference_id: args.orgId,
-    metadata: { billing_scope: PLATFORM_BILLING_SCOPE, org_id: args.orgId },
-    success_url: args.successUrl,
-    cancel_url: args.cancelUrl,
-  });
+      ],
+      subscription_data: { metadata: subMetadata },
+      client_reference_id: args.orgId,
+      metadata: { billing_scope: PLATFORM_BILLING_SCOPE, org_id: args.orgId },
+      success_url: args.successUrl,
+      cancel_url: args.cancelUrl,
+    },
+    { idempotencyKey },
+  );
 
   await logAudit({
     action: "platform.billing.checkout.created",
