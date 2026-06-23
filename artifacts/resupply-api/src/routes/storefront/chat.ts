@@ -288,21 +288,19 @@ function buildInitialMessages(
   const messages: OpenAiMessage[] = [
     { role: "system", content: systemPrompt },
     ...userTurns.map((m): OpenAiMessage => {
-      // Defense-in-depth: scrub user-supplied messages of obvious
-      // PII (phone, email, SSN, DOB, long member-id digit runs)
-      // before forwarding to OpenAI. The system prompt also
-      // forbids the model from echoing PHI; this layer reduces
-      // the raw identifiers that ever leave PennPaps. Assistant
-      // turns originate from us and have already passed through
-      // the model's no-PHI rules, so we don't re-redact them.
-      if (m.role === "user") {
-        const { text, counts } = redactPiiForOutbound(m.content);
-        for (const [k, n] of Object.entries(counts)) {
-          aggregateCounts[k] = (aggregateCounts[k] ?? 0) + n;
-        }
-        return { role: "user", content: text };
+      // Defense-in-depth: scrub obvious PII (phone, email, SSN, DOB, long
+      // member-id digit runs) before forwarding to the vendor. The system
+      // prompt also forbids the model from echoing PHI; this layer reduces
+      // the raw identifiers that ever leave the platform. We scrub BOTH
+      // roles: the SPA replays the whole transcript (including prior
+      // "assistant" turns) back on each request, so those turns are
+      // client-supplied and untrusted on the inbound path — re-scrubbing
+      // them is strictly safer and can only remove identifiers.
+      const { text, counts } = redactPiiForOutbound(m.content);
+      for (const [k, n] of Object.entries(counts)) {
+        aggregateCounts[k] = (aggregateCounts[k] ?? 0) + n;
       }
-      return { role: "assistant", content: m.content };
+      return { role: m.role, content: text };
     }),
   ];
   return { messages, redactionCounts: aggregateCounts };
