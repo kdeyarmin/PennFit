@@ -35,12 +35,16 @@ import {
   adminRateLimit,
   adminReadRateLimiter,
 } from "../../middlewares/admin-rate-limit";
+import { practiceTodayIso } from "../../lib/billing-date";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
 const uuid = z.string().uuid();
-const todayIso = (): string => new Date().toISOString().slice(0, 10);
+// Practice-local business date so "overdue" installment counts match the
+// autocharge worker (which now also uses the practice-local day) instead of
+// flipping a day early/late across the UTC boundary.
+const todayIso = (): string => practiceTodayIso();
 
 const createBody = z
   .object({

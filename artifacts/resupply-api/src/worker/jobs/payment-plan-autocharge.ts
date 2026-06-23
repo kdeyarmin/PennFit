@@ -25,6 +25,7 @@ import {
   type OrgScopedClient,
 } from "@workspace/resupply-db";
 
+import { practiceTodayIso } from "../../lib/billing-date.js";
 import { isFeatureEnabled } from "../../lib/feature-flags.js";
 import {
   getStripeClient,
@@ -223,7 +224,11 @@ async function paymentPlanAutochargeForOrg(
   // platform account (seed / not-yet-onboarded); `{ stripeAccount }` once the
   // tenant's connected account has charges_enabled.
   const accountOptions = await stripeAccountRequestOptions(orgId);
-  const todayIso = new Date().toISOString().slice(0, 10);
+  // Practice-local business date, not UTC: an installment due "today" must
+  // become chargeable at the start of the practice's local day, not shift by
+  // up to ~hours across the UTC boundary (off-session money movement on the
+  // wrong calendar day / wrong overdue count).
+  const todayIso = practiceTodayIso();
 
   // Keyset-paginate the plan scan. PostgREST silently caps un-limited
   // reads at the server's max-rows (~1000): an unpaginated read would
