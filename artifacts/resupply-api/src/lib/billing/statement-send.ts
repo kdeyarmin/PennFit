@@ -27,7 +27,13 @@ import {
 } from "@workspace/resupply-email";
 import { createTwilioSmsClient } from "@workspace/resupply-telecom";
 
-import { shouldSendEmail, shouldSendSms, type DndOptions } from "../comm-prefs";
+import {
+  isOutsideSmsSendWindow,
+  resolveTimezone,
+  shouldSendEmail,
+  shouldSendSms,
+  type DndOptions,
+} from "../comm-prefs";
 import {
   getDocumentSupplierName,
   getDocumentSupplierNameSync,
@@ -126,8 +132,22 @@ export function pickStatementChannel(
 ): ChannelPick {
   const emailOk =
     contact.hasEmail && shouldSendEmail(prefs, "billingStatement", now, opts);
+  // SMS must clear BOTH the per-patient DND window (shouldSendSms) AND the
+  // hard TCPA 9am-8pm local send window every other SMS-dispatching job
+  // enforces (isOutsideSmsSendWindow). Without this, a statement/dunning SMS
+  // could land outside the legal window whenever the patient hasn't set a DND
+  // window (the default is null → DND protects nobody). Outside the window we
+  // simply don't pick SMS — the picker falls back to email when available, or
+  // returns null so the caller defers to the next run (when the window opens),
+  // exactly the fail-safe posture reminders/check-ins/rx-renewal use.
+  const tz = resolveTimezone(prefs, opts.shippingZip);
   const smsOk =
-    contact.hasPhone && shouldSendSms(prefs, "transactional", now, opts);
+    contact.hasPhone &&
+    shouldSendSms(prefs, "transactional", now, opts) &&
+    !isOutsideSmsSendWindow(now, {
+      timezone: tz,
+      shippingZip: opts.shippingZip,
+    });
 
   const order: StatementChannel[] =
     prefs.preferredChannel === "sms" ? ["sms", "email"] : ["email", "sms"];
