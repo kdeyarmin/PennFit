@@ -155,7 +155,7 @@ export function OrdersSection({
             >
               <div className="min-w-0">
                 <p className="font-medium tabular-nums">
-                  {o.amountTotalCents
+                  {o.amountTotalCents != null
                     ? formatMoneyCents(o.amountTotalCents, o.currency ?? "usd")
                     : "—"}{" "}
                   <span className="ml-2 text-xs uppercase tracking-wide text-muted-foreground">

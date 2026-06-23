@@ -283,12 +283,8 @@ function buildAcceptBody(
     insurance: insurance(form.insurance),
     secondaryInsurance: insurance(form.secondaryInsurance),
     documents: form.documents
-      .filter(
-        (d) =>
-          d.include &&
-          Number.parseInt(d.pageStart, 10) >= 1 &&
-          Number.parseInt(d.pageEnd, 10) >= 1,
-      )
+      .filter(isDocumentPageRangeValid)
+      .filter((d) => d.include)
       .map((d) => ({
         type: d.type,
         pageStart: Number.parseInt(d.pageStart, 10),
@@ -297,6 +293,27 @@ function buildAcceptBody(
       })),
     confirmDuplicateOverride,
   };
+}
+
+// An included document must carry a valid page range: both bounds >= 1 and
+// the last page no earlier than the first. Without the `end >= start` check
+// an inverted range (e.g. pages 10–3) passes the per-bound `>= 1` filter and
+// is sent to the API. Documents that aren't included are always "valid".
+function isDocumentPageRangeValid(d: {
+  include: boolean;
+  pageStart: string;
+  pageEnd: string;
+}): boolean {
+  if (!d.include) return true;
+  const start = Number.parseInt(d.pageStart, 10);
+  const end = Number.parseInt(d.pageEnd, 10);
+  return (
+    Number.isFinite(start) &&
+    Number.isFinite(end) &&
+    start >= 1 &&
+    end >= 1 &&
+    end >= start
+  );
 }
 
 // ── Page ────────────────────────────────────────────────────────────
@@ -806,11 +823,14 @@ function ReviewDetail({
 
   const confidence = review.extraction?.confidence ?? null;
   const includedDocCount = form?.documents.filter((d) => d.include).length ?? 0;
+  const documentRangesValid =
+    form?.documents.every(isDocumentPageRangeValid) ?? true;
   const canAccept =
     !!form &&
     form.firstName.trim() !== "" &&
     form.lastName.trim() !== "" &&
     /^\d{4}-\d{2}-\d{2}$/.test(form.dob.trim()) &&
+    documentRangesValid &&
     review.status !== "accepted" &&
     review.status !== "dismissed";
 
@@ -1066,8 +1086,9 @@ function ReviewDetail({
                       className="text-xs"
                       style={{ color: "hsl(var(--ink-3))" }}
                     >
-                      First/last name and a YYYY-MM-DD date of birth are
-                      required.
+                      {documentRangesValid
+                        ? "First/last name and a YYYY-MM-DD date of birth are required."
+                        : "Fix the highlighted document page ranges (last page can't be before the first)."}
                     </span>
                   )}
                 </div>
@@ -1419,68 +1440,85 @@ function IntakeFormFields({
           </p>
         ) : (
           <div className="space-y-2">
-            {form.documents.map((d, i) => (
-              <div key={i} className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={d.include}
-                  aria-label={`Include ${SECTION_LABEL[d.type]}`}
-                  onChange={(e) => {
-                    const documents = form.documents.slice();
-                    documents[i] = { ...d, include: e.target.checked };
-                    setForm({ ...form, documents });
-                  }}
-                />
-                <Select
-                  value={d.type}
-                  aria-label="Document type"
-                  options={(
-                    Object.keys(SECTION_LABEL) as ReferralSectionType[]
-                  ).map((t) => ({ value: t, label: SECTION_LABEL[t] }))}
-                  onChange={(e) => {
-                    const documents = form.documents.slice();
-                    documents[i] = {
-                      ...d,
-                      type: e.target.value as ReferralSectionType,
-                    };
-                    setForm({ ...form, documents });
-                  }}
-                />
-                <span style={{ color: "hsl(var(--ink-3))" }}>pages</span>
-                <Input
-                  className="w-16"
-                  value={d.pageStart}
-                  aria-label="First page"
-                  onChange={(e) => {
-                    const documents = form.documents.slice();
-                    documents[i] = { ...d, pageStart: e.target.value };
-                    setForm({ ...form, documents });
-                  }}
-                />
-                <span style={{ color: "hsl(var(--ink-3))" }}>–</span>
-                <Input
-                  className="w-16"
-                  value={d.pageEnd}
-                  aria-label="Last page"
-                  onChange={(e) => {
-                    const documents = form.documents.slice();
-                    documents[i] = { ...d, pageEnd: e.target.value };
-                    setForm({ ...form, documents });
-                  }}
-                />
-                <Input
-                  className="flex-1"
-                  value={d.title}
-                  aria-label="Document title"
-                  placeholder={SECTION_LABEL[d.type]}
-                  onChange={(e) => {
-                    const documents = form.documents.slice();
-                    documents[i] = { ...d, title: e.target.value };
-                    setForm({ ...form, documents });
-                  }}
-                />
-              </div>
-            ))}
+            {form.documents.map((d, i) => {
+              const rangeValid = isDocumentPageRangeValid(d);
+              return (
+                <div key={i} className="space-y-1">
+                  <div className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={d.include}
+                      aria-label={`Include ${SECTION_LABEL[d.type]}`}
+                      onChange={(e) => {
+                        const documents = form.documents.slice();
+                        documents[i] = { ...d, include: e.target.checked };
+                        setForm({ ...form, documents });
+                      }}
+                    />
+                    <Select
+                      value={d.type}
+                      aria-label="Document type"
+                      options={(
+                        Object.keys(SECTION_LABEL) as ReferralSectionType[]
+                      ).map((t) => ({ value: t, label: SECTION_LABEL[t] }))}
+                      onChange={(e) => {
+                        const documents = form.documents.slice();
+                        documents[i] = {
+                          ...d,
+                          type: e.target.value as ReferralSectionType,
+                        };
+                        setForm({ ...form, documents });
+                      }}
+                    />
+                    <span style={{ color: "hsl(var(--ink-3))" }}>pages</span>
+                    <Input
+                      className="w-16"
+                      value={d.pageStart}
+                      aria-label="First page"
+                      aria-invalid={!rangeValid}
+                      onChange={(e) => {
+                        const documents = form.documents.slice();
+                        documents[i] = { ...d, pageStart: e.target.value };
+                        setForm({ ...form, documents });
+                      }}
+                    />
+                    <span style={{ color: "hsl(var(--ink-3))" }}>–</span>
+                    <Input
+                      className="w-16"
+                      value={d.pageEnd}
+                      aria-label="Last page"
+                      aria-invalid={!rangeValid}
+                      onChange={(e) => {
+                        const documents = form.documents.slice();
+                        documents[i] = { ...d, pageEnd: e.target.value };
+                        setForm({ ...form, documents });
+                      }}
+                    />
+                    <Input
+                      className="flex-1"
+                      value={d.title}
+                      aria-label="Document title"
+                      placeholder={SECTION_LABEL[d.type]}
+                      onChange={(e) => {
+                        const documents = form.documents.slice();
+                        documents[i] = { ...d, title: e.target.value };
+                        setForm({ ...form, documents });
+                      }}
+                    />
+                  </div>
+                  {!rangeValid && (
+                    <p
+                      className="text-xs pl-6"
+                      style={{ color: "hsl(var(--danger, 0 70% 45%))" }}
+                      role="alert"
+                    >
+                      Enter a valid page range — the last page can't be before
+                      the first.
+                    </p>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </Card>

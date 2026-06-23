@@ -174,6 +174,21 @@ describe("resolveResupplyEntitlement", () => {
       expect(r.status).toBe("quantity_exceeded");
       expect(r.maxQuantityNow).toBe(0);
     });
+
+    it("does not mark eligible on a corrupt (Invalid Date) last-fill", () => {
+      // An Invalid Date last-fill (getTime() → NaN) is "we shipped before
+      // but the date is corrupt", NOT a first fill. It must fail safe to
+      // blocked: anchoring at `now` blocks for the full interval rather
+      // than producing an Invalid-Date eligibleOn that reads as eligible.
+      const r = resolveResupplyEntitlement(
+        baseInput({ lastFulfilledAt: new Date("not-a-date") }),
+      );
+      expect(Number.isNaN(r.eligibleOn.getTime())).toBe(false);
+      expect(r.status).toBe("too_soon");
+      expect(r.eligible).toBe(false);
+      // Blocked for the full 15-day interval (anchor = now).
+      expect(r.daysUntilEligible).toBe(15);
+    });
   });
 
   describe("graceDays aligns the interval gate with the ship window", () => {

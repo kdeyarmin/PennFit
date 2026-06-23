@@ -108,6 +108,15 @@ export function decideCappedRentalAdvance(
   input: CappedRentalAdvanceInput,
 ): CappedRentalAdvanceDecision {
   const start = new Date(`${input.startDate}T00:00:00Z`).getTime();
+  // A corrupt / unparseable startDate makes `start` (and therefore
+  // `nextDueMs`) NaN. `asOfMs < NaN` is false, so without this guard the
+  // function would skip `noop` and fall through to advance/transfer purely
+  // on the month count — silently moving a capped-rental cycle forward (or
+  // transferring ownership) with no valid anniversary. Never advance billing
+  // on an un-anchorable date; treat it as "not yet due".
+  if (!Number.isFinite(start)) {
+    return { action: "noop", nextMonth: input.currentMonth, nextDueMs: start };
+  }
   const nextDueMs =
     start + input.currentMonth * CAPPED_RENTAL_CYCLE_DAYS * DAY_MS;
   const asOfMs = (input.asOf ?? new Date()).getTime();

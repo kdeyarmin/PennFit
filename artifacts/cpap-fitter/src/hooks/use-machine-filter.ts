@@ -98,6 +98,11 @@ export function useMachineFilter(): UseMachineFilter {
     })();
     return () => {
       controller.abort();
+      // Clear the spinner on cleanup too: the abort branch above skips
+      // `setLoading(false)` (signal is aborted), so without this a fetch
+      // that's still in flight when the toggle is switched off (or the
+      // component unmounts) would leave `loading` stuck true.
+      setLoading(false);
     };
   }, [enabled, device, compatPredicate]);
 

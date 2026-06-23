@@ -125,7 +125,13 @@ export function Results() {
         if (!result.purchasingEnabled) return;
         const byModel = new Map<string, ShopProductView>();
         for (const p of result.products) {
-          if (p.modelNumber && p.stockCount !== 0) {
+          // Untracked inventory (null) is always purchasable; a tracked
+          // count is in stock only when strictly positive. Match the rest
+          // of the shop's `<= 0` out-of-stock rule so negative (oversold)
+          // inventory isn't mistaken for available.
+          const outOfStock =
+            typeof p.stockCount === "number" && p.stockCount <= 0;
+          if (p.modelNumber && !outOfStock) {
             byModel.set(p.modelNumber, p);
           }
         }
