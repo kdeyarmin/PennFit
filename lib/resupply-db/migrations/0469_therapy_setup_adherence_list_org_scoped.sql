@@ -29,11 +29,33 @@
 --     whole pipeline is then tenant-scoped.
 --   * DROP the old global `(int)` signature so a stale overload can't let a
 --     caller silently re-aggregate across tenants.
+--   * REVOKE the default PUBLIC EXECUTE grant (this is created AFTER 0468's
+--     one-time SECURITY DEFINER hardening sweep, so it would otherwise be
+--     callable by the PostgREST anon/authenticated roles) and GRANT only
+--     service_role — matching the 0468 convention.
 --
 -- The runtime cutover (the three callers pass p_org_id) ships in the same PR.
 -- Single-tenant (seed) behavior is unchanged.
 --
 -- Per ADR 003 — versioned hand-authored migration. Idempotent.
+
+-- Ensure the PostgREST roles exist so the REVOKE below is safe on a
+-- from-scratch / vanilla-Postgres replay (0468 creates them, but guard
+-- here too so this migration is self-contained).
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN
+    CREATE ROLE service_role NOLOGIN;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+    CREATE ROLE anon NOLOGIN;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+    CREATE ROLE authenticated NOLOGIN;
+  END IF;
+END
+$$;
+--> statement-breakpoint
 
 DROP FUNCTION IF EXISTS resupply.therapy_setup_adherence_list(int);
 --> statement-breakpoint
@@ -74,7 +96,8 @@ AS $$
       thr.min_minutes, thr.required_nights, win.window_days
     FROM nights n
     JOIN firsts f USING (patient_id)
-    LEFT JOIN resupply.patients p ON p.id = n.patient_id
+    LEFT JOIN resupply.patients p
+      ON p.id = n.patient_id AND p.org_id = p_org_id
     CROSS JOIN LATERAL resupply.resolve_compliance_thresholds(p.insurance_payer) thr
     CROSS JOIN LATERAL resupply.resolve_compliance_window(p.insurance_payer) win
     WHERE f.first_night >= current_date - 89
@@ -134,5 +157,12 @@ AS $$
     ((first_night + 89) - current_date) ASC
   LIMIT p_limit
 $$;
+--> statement-breakpoint
+-- SECURITY DEFINER + PostgREST-exposed schema: created after 0468's one-time
+-- hardening sweep, so it carries PostgreSQL's default PUBLIC EXECUTE grant.
+-- Revoke it so anon/authenticated can't call this RPC directly with an
+-- arbitrary p_org_id; the API invokes it server-side as service_role only.
+REVOKE EXECUTE ON FUNCTION resupply.therapy_setup_adherence_list(uuid, int)
+  FROM PUBLIC, anon, authenticated;
 --> statement-breakpoint
 GRANT EXECUTE ON FUNCTION resupply.therapy_setup_adherence_list(uuid, int) TO service_role;
