@@ -28,9 +28,7 @@ import { logger } from "../logger";
 
 type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
 
-async function resolvePatientPaymentOrgId(
-  explicit?: string,
-): Promise<string> {
+async function resolvePatientPaymentOrgId(explicit?: string): Promise<string> {
   const orgId = explicit ?? (await resolveSeedOrgId());
   if (!orgId) {
     throw new Error(

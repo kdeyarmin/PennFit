@@ -19,10 +19,7 @@
 //     and 'missed' (idempotent via the existing alert dedupe key
 //     in csr_compliance_alerts.metric_snapshot).
 
-import {
-  type Database,
-  getOrgScopedClient,
-} from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../logger";
 
@@ -42,7 +39,9 @@ export interface SweepStats {
   byStatus: Record<SlaStatus, number>;
 }
 
-export async function runPaMcoSlaSweepForOrg(orgId: string): Promise<SweepStats> {
+export async function runPaMcoSlaSweepForOrg(
+  orgId: string,
+): Promise<SweepStats> {
   const stats: SweepStats = {
     scanned: 0,
     updated: 0,

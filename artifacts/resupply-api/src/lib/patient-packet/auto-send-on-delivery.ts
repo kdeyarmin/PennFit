@@ -31,7 +31,9 @@ export async function autoSendPatientPacketOnDelivery(opts: {
   orgId: string;
 }): Promise<void> {
   const { orderId, orgId } = opts;
-  if (!(await isFeatureEnabled("patient_packets.autosend_on_delivery", orgId))) {
+  if (
+    !(await isFeatureEnabled("patient_packets.autosend_on_delivery", orgId))
+  ) {
     return;
   }
 
