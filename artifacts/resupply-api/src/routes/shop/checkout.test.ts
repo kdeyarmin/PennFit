@@ -37,6 +37,7 @@ import {
   installSupabaseMock,
   getSupabaseCallCount,
   getSupabaseWritePayloads,
+  stageSupabaseResponse,
 } from "../../test-helpers/supabase-mock";
 
 // ── Supabase mock ─────────────────────────────────────────────────────────────
@@ -362,6 +363,112 @@ describe("POST /shop/checkout — failure modes", () => {
     expect(res.body.error).toBe("stripe_create_failed");
     // The order was never mirrored because the Session was never created.
     expect(getSupabaseCallCount("shop_orders", "upsert")).toBe(0);
+  });
+
+  it("re-mirrors the order WITHOUT cart_hash when the cart_hash index trips (23505)", async () => {
+    stubStripeConfigured();
+    stubCartValid();
+    // A returning customer re-checks-out an IDENTICAL cart: the new Stripe
+    // session is valid, but the first shop_orders mirror collides with the
+    // partial unique index shop_orders_cart_hash_unique_idx (migration 0062) and
+    // PostgREST surfaces Postgres 23505. The route must NOT 500 — and must still
+    // persist a row for THIS session (cart_hash null) so the success page can
+    // find the order. So: first upsert errors, second (cart_hash-free) succeeds.
+    stageSupabaseResponse("shop_orders", "upsert", {
+      data: null,
+      error: {
+        code: "23505",
+        message:
+          'duplicate key value violates unique constraint "shop_orders_cart_hash_unique_idx"',
+      },
+    });
+    stageSupabaseResponse("shop_orders", "upsert", { data: null, error: null });
+
+    const res = await request(makeApp())
+      .post("/shop/checkout")
+      .send({ items: ONE_ITEM });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ sessionId: SESSION_ID, url: SESSION_URL });
+    // Two upserts: the cart_hash one, then the cart_hash-free retry.
+    expect(getSupabaseCallCount("shop_orders", "upsert")).toBe(2);
+    const payloads = getSupabaseWritePayloads(
+      "shop_orders",
+      "upsert",
+    ) as Array<{ stripe_session_id: string; cart_hash: string | null }>;
+    expect(payloads[0]!.cart_hash).toBeTruthy();
+    expect(payloads[1]!.cart_hash).toBeNull();
+    expect(payloads[1]!.stripe_session_id).toBe(SESSION_ID);
+    // Logged at info (no PHI), not error.
+    expect(reqLog.error).not.toHaveBeenCalled();
+    expect(reqLog.info).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns 500 when the cart_hash-free retry also fails", async () => {
+    stubStripeConfigured();
+    stubCartValid();
+    stageSupabaseResponse("shop_orders", "upsert", {
+      data: null,
+      error: {
+        code: "23505",
+        message:
+          'duplicate key value violates unique constraint "shop_orders_cart_hash_unique_idx"',
+      },
+    });
+    stageSupabaseResponse("shop_orders", "upsert", {
+      data: null,
+      error: { code: "08006", message: "connection failure" },
+    });
+
+    const res = await request(makeApp())
+      .post("/shop/checkout")
+      .send({ items: ONE_ITEM });
+
+    expect(res.status).toBe(500);
+    expect(res.body.error).toBe("shop_order_persist_failed");
+  });
+
+  it("returns 500 on a 23505 that is NOT the cart_hash index (unexpected uniqueness bug)", async () => {
+    stubStripeConfigured();
+    stubCartValid();
+    // A 23505 on some OTHER constraint must NOT be mislabelled a benign
+    // cart_hash collision — it still 500s and is not retried.
+    stageSupabaseResponse("shop_orders", "upsert", {
+      data: null,
+      error: {
+        code: "23505",
+        message:
+          'duplicate key value violates unique constraint "shop_orders_pkey"',
+      },
+    });
+
+    const res = await request(makeApp())
+      .post("/shop/checkout")
+      .send({ items: ONE_ITEM });
+
+    expect(res.status).toBe(500);
+    expect(res.body.error).toBe("shop_order_persist_failed");
+    expect(getSupabaseCallCount("shop_orders", "upsert")).toBe(1);
+    expect(reqLog.error).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns 500 when the shop_orders mirror fails for a non-conflict reason", async () => {
+    stubStripeConfigured();
+    stubCartValid();
+    // Any DB error that is NOT the benign cart_hash unique violation must still
+    // surface as a 500.
+    stageSupabaseResponse("shop_orders", "upsert", {
+      data: null,
+      error: { code: "08006", message: "connection failure" },
+    });
+
+    const res = await request(makeApp())
+      .post("/shop/checkout")
+      .send({ items: ONE_ITEM });
+
+    expect(res.status).toBe(500);
+    expect(res.body.error).toBe("shop_order_persist_failed");
+    expect(reqLog.error).toHaveBeenCalledTimes(1);
   });
 
   it("returns 502 when the created Session has no url", async () => {

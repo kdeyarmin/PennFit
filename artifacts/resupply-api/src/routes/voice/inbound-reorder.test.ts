@@ -410,6 +410,9 @@ describe("POST /voice/inbound-reorder — identified caller → realtime bridge"
     expect(pending!.episodeId).toBe(EPISODE_ID);
     expect(pending!.callContext).toBeTruthy();
     expect(pending!.greeting).toBeTruthy();
+    // The inbound webhook's CallSid is bound at register() time so the WS
+    // handler is never null-keyed during the pre-`start`-frame window.
+    expect(pending!.twilioCallSid).toBe("CA_bridge");
   });
 
   it("transfers to a human when the voice agent is disabled in the Control Center", async () => {

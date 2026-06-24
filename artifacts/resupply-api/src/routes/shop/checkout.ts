@@ -539,25 +539,66 @@ router.post(
       return;
     }
     const supabase = getOrgScopedClient(orgId);
-    const { error: upsertErr } = await supabase.from("shop_orders").upsert(
-      {
-        stripe_session_id: session.id,
-        status: "pending",
-        cart_hash: cartHash,
-        fulfillment_method: fulfillmentMethod,
-        ...(pickupLocationId ? { pickup_location_id: pickupLocationId } : {}),
-        ...(req.userCustomerId ? { customer_id: req.userCustomerId } : {}),
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "stripe_session_id", ignoreDuplicates: true },
-    );
+    const orderRow = {
+      stripe_session_id: session.id,
+      status: "pending" as const,
+      cart_hash: cartHash as string | null,
+      fulfillment_method: fulfillmentMethod,
+      ...(pickupLocationId ? { pickup_location_id: pickupLocationId } : {}),
+      ...(req.userCustomerId ? { customer_id: req.userCustomerId } : {}),
+      updated_at: new Date().toISOString(),
+    };
+    const { error: upsertErr } = await supabase
+      .from("shop_orders")
+      .upsert(orderRow, {
+        onConflict: "stripe_session_id",
+        ignoreDuplicates: true,
+      });
     if (upsertErr) {
-      req.log?.error(
-        { err: upsertErr, sessionId: session.id },
-        "shop checkout: shop_orders upsert failed",
-      );
-      res.status(500).json({ error: "shop_order_persist_failed" });
-      return;
+      // `onConflict: stripe_session_id` only swallows a session-id collision.
+      // A returning customer re-checking-out an IDENTICAL cart yields a NEW
+      // Stripe session but the SAME cart_hash, so the mirror insert trips the
+      // separate partial unique index `shop_orders_cart_hash_unique_idx`
+      // (migration 0062, WHERE cart_hash IS NOT NULL) with Postgres 23505.
+      // Narrow to THAT constraint — any other 23505 is an unexpected uniqueness
+      // bug and must still 500 (and not be mislabelled a cart_hash collision).
+      const isCartHashConflict =
+        upsertErr.code === "23505" &&
+        /cart_hash/i.test(
+          `${upsertErr.message ?? ""} ${upsertErr.details ?? ""}`,
+        );
+      if (isCartHashConflict) {
+        // Re-insert WITHOUT cart_hash so THIS session still gets its own
+        // shop_orders row (a NULL cart_hash is exempt from the partial index).
+        // The checkout-success page looks the order up by stripe_session_id
+        // immediately and 404s if there's no local row; markPaid later owns the
+        // same row by that key. We drop only the cart_hash de-dupe signal.
+        const { error: retryErr } = await supabase
+          .from("shop_orders")
+          .upsert(
+            { ...orderRow, cart_hash: null },
+            { onConflict: "stripe_session_id", ignoreDuplicates: true },
+          );
+        if (retryErr) {
+          req.log?.error(
+            { err: retryErr, sessionId: session.id },
+            "shop checkout: cart_hash-free order mirror retry failed",
+          );
+          res.status(500).json({ error: "shop_order_persist_failed" });
+          return;
+        }
+        req.log?.info(
+          { sessionId: session.id },
+          "shop checkout: duplicate cart_hash; mirrored order without cart_hash",
+        );
+      } else {
+        req.log?.error(
+          { err: upsertErr, sessionId: session.id },
+          "shop checkout: shop_orders upsert failed",
+        );
+        res.status(500).json({ error: "shop_order_persist_failed" });
+        return;
+      }
     }
 
     res.json({

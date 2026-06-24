@@ -848,6 +848,26 @@ export async function handleVoiceWsConnection(
         return;
       case "start":
         streamSid = frame.start.streamSid;
+        // Twilio's `start` frame is the authoritative CallSid source, so it
+        // wins. But if we pre-bound a SID (outbound attachCallSid, or the
+        // inbound webhook) and the frame disagrees, something rerouted the
+        // call onto the wrong WS — log it before overwriting so the
+        // pre-`start` audit rows (keyed on the old SID) can be reconciled.
+        if (
+          twilioCallSid &&
+          frame.start.callSid &&
+          frame.start.callSid !== twilioCallSid
+        ) {
+          logger.warn(
+            {
+              event: "voice.ws.callsid_mismatch",
+              pendingCallSid: twilioCallSid,
+              startFrameCallSid: frame.start.callSid,
+              conversationId: pending.conversationId,
+            },
+            "voice.ws: start-frame CallSid differs from pending session; trusting start frame",
+          );
+        }
         twilioCallSid = frame.start.callSid;
         twilioStarted = true;
         maybeSpeakFirst();

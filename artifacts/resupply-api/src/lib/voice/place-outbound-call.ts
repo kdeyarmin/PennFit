@@ -224,7 +224,21 @@ export async function placeOutboundReorderCall(
     throw err;
   }
 
-  await getPendingSessions().attachCallSid(conversationId, callSid);
+  // attachCallSid is best-effort (read-modify-write on the pending row, which
+  // can lose to a claim/expiry race). It returns false when the SID was NOT
+  // stamped — the WS handler then runs with twilioCallSid=null until the
+  // `start` frame lands. We can't fail the call over it (the dial already
+  // succeeded), but a silent miss made the binding window invisible, so log it.
+  const callSidAttached = await getPendingSessions().attachCallSid(
+    conversationId,
+    callSid,
+  );
+  if (!callSidAttached) {
+    logger.warn(
+      { event: "voice.place-call.attach_callsid_miss", conversationId },
+      "voice.place-call: attachCallSid did not stamp the pending session (claimed/expired?); WS will bind from the start frame",
+    );
+  }
   const { error: updateErr } = await supabase
     .from("conversations")
     .update({
