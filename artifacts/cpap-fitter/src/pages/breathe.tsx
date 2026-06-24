@@ -1160,6 +1160,7 @@ const FOOTER_LINKS: { href: string; label: string }[] = [
   { href: "/breathe/features", label: "Features" },
   { href: "/breathe/resupply-engine", label: "Resupply engine" },
   { href: "/breathe/ai-voice", label: "AI voice agent" },
+  { href: "/breathe/communications", label: "Communications" },
   { href: "/breathe/get-paid", label: "Get paid" },
   { href: "/breathe/patient-experience", label: "Patient experience" },
   { href: "/breathe/roi", label: "ROI" },
@@ -1821,6 +1822,14 @@ function AiWorkforce() {
             </article>
           ))}
         </div>
+        <p className="bx-stats-note bx-reveal">
+          Calls, texts, emails, and faxes all land in one inbox — with AI
+          drafting, triaging, and auto-replying so your team resolves instead of
+          re-keying.{" "}
+          <Link href="/breathe/communications">
+            See how patient communications work →
+          </Link>
+        </p>
       </div>
     </section>
   );

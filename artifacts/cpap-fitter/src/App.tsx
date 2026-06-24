@@ -630,6 +630,11 @@ const BreatheResupplyEngine = lazyWithRetry(() =>
     default: m.BreatheResupplyEngine,
   })),
 );
+const BreatheCommunications = lazyWithRetry(() =>
+  import("@/pages/breathe-communications").then((m) => ({
+    default: m.BreatheCommunications,
+  })),
+);
 
 const Reminders = lazyWithRetry(() =>
   import("@/pages/reminders").then((m) => ({ default: m.Reminders })),
@@ -1305,6 +1310,10 @@ function TopRouter() {
         <Route
           path="/breathe/resupply-engine"
           component={BreatheResupplyEngine}
+        />
+        <Route
+          path="/breathe/communications"
+          component={BreatheCommunications}
         />
         <Route
           path="/breathe/switch/brightree"
