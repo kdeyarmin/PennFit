@@ -1,14 +1,12 @@
-// /admin/billing/notes — the billing team's free-form notes log (0467).
-//
-// A shared scratchpad for billers: cross-cutting notes about claims,
-// collections, payers, and patient accounts that don't belong on one
-// specific claim or order. Append-only, newest first, filterable by
-// category. Any admin staffer can read + post.
+// Billing notes for ONE patient — rendered inside PatientBillingTab so a
+// biller sees account-specific notes (and can add them) in context, without
+// leaving the patient. Backed by the same /admin/billing/notes endpoint
+// (migration 0467) as the standalone Billing Notes log, filtered to this
+// patient_id. Append-only; the create path logs a structural, non-PHI line
+// server-side (never the body).
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link } from "wouter";
-import { StickyNote } from "lucide-react";
 
 import { Card } from "@/components/admin/Card";
 import { Badge } from "@/components/admin/Badge";
@@ -23,10 +21,10 @@ import {
 } from "@/lib/admin/billing-notes-api";
 
 const CATEGORIES: { value: BillingNoteCategory; label: string }[] = [
+  { value: "patient", label: "Patient" },
   { value: "claims", label: "Claims" },
   { value: "collections", label: "Collections" },
   { value: "payer", label: "Payer" },
-  { value: "patient", label: "Patient" },
   { value: "general", label: "General" },
 ];
 
@@ -38,26 +36,33 @@ const CATEGORY_LABEL: Record<BillingNoteCategory, string> = {
   general: "General",
 };
 
-export function AdminBillingNotesPage() {
+export function PatientBillingNotesPanel({ patientId }: { patientId: string }) {
   const qc = useQueryClient();
-  const [filter, setFilter] = useState<BillingNoteCategory | "all">("all");
+  const queryKey = ["patient-billing-notes", patientId] as const;
 
   const query = useQuery({
-    queryKey: ["admin", "billing-notes", filter] as const,
-    queryFn: () =>
-      getBillingNotes({ category: filter === "all" ? undefined : filter }),
+    queryKey,
+    queryFn: () => getBillingNotes({ patientId }),
     staleTime: 15_000,
   });
 
   const [draft, setDraft] = useState("");
   const [draftCategory, setDraftCategory] =
-    useState<BillingNoteCategory>("general");
+    useState<BillingNoteCategory>("patient");
 
   const addMut = useMutation({
     mutationFn: () =>
-      createBillingNote({ category: draftCategory, body: draft.trim() }),
+      createBillingNote({
+        category: draftCategory,
+        body: draft.trim(),
+        patientId,
+      }),
     onSuccess: () => {
       setDraft("");
+      void qc.invalidateQueries({ queryKey });
+      // Keep the standalone Billing Notes log (keys prefixed
+      // ["admin","billing-notes"]) consistent — a note added here should
+      // show there too, not sit stale behind its 15s staleTime.
       void qc.invalidateQueries({ queryKey: ["admin", "billing-notes"] });
     },
   });
@@ -65,35 +70,25 @@ export function AdminBillingNotesPage() {
   const canSubmit = draft.trim().length > 0 && !addMut.isPending;
 
   return (
-    <div
-      className="admin-root p-6 space-y-6 max-w-4xl"
-      data-testid="admin-billing-notes-page"
-    >
-      <header>
-        <h1 className="text-2xl font-semibold flex items-center gap-2">
-          <StickyNote className="h-6 w-6" />
-          Billing notes
-        </h1>
-        <p className="text-sm mt-1" style={{ color: "hsl(var(--ink-3))" }}>
-          A shared log for the billing team — claims follow-ups, collections,
-          payer calls, and account context. For notes about one specific claim,
-          use the event log on that claim instead.
+    <Card title="Billing notes">
+      <div className="space-y-4">
+        <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+          Account-level billing notes for this patient. For a note about one
+          specific claim, use that claim's event log instead.
         </p>
-      </header>
 
-      {/* Compose */}
-      <Card title="Add a note">
-        <div className="space-y-3">
+        {/* Compose */}
+        <div className="space-y-2">
           <div className="flex items-center gap-2 flex-wrap">
             <label
               className="text-xs font-medium"
               style={{ color: "hsl(var(--ink-3))" }}
-              htmlFor="billing-note-category"
+              htmlFor="patient-billing-note-category"
             >
               Category
             </label>
             <select
-              id="billing-note-category"
+              id="patient-billing-note-category"
               className="text-sm rounded border px-2 py-1 bg-transparent"
               style={{ borderColor: "hsl(var(--line-1))" }}
               value={draftCategory}
@@ -109,10 +104,10 @@ export function AdminBillingNotesPage() {
             </select>
           </div>
           <textarea
-            className="w-full text-sm rounded border px-3 py-2 bg-transparent min-h-[80px]"
+            className="w-full text-sm rounded border px-3 py-2 bg-transparent min-h-[64px]"
             style={{ borderColor: "hsl(var(--line-1))" }}
-            aria-label="Billing note"
-            placeholder="What should the next biller know?"
+            aria-label="Billing note for this patient"
+            placeholder="What should the next biller know about this account?"
             maxLength={4000}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
@@ -137,96 +132,40 @@ export function AdminBillingNotesPage() {
             </p>
           ) : null}
         </div>
-      </Card>
 
-      {/* Filter */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <FilterChip
-          active={filter === "all"}
-          onClick={() => setFilter("all")}
-          label="All"
-        />
-        {CATEGORIES.map((c) => (
-          <FilterChip
-            key={c.value}
-            active={filter === c.value}
-            onClick={() => setFilter(c.value)}
-            label={c.label}
+        {/* Feed */}
+        {query.isPending ? (
+          <Spinner label="Loading notes…" />
+        ) : query.isError ? (
+          <ErrorPanel
+            error={query.error}
+            onRetry={() => void query.refetch()}
           />
-        ))}
-      </div>
-
-      {/* Feed */}
-      {query.isPending ? (
-        <Spinner label="Loading notes…" />
-      ) : query.isError ? (
-        <ErrorPanel error={query.error} onRetry={() => void query.refetch()} />
-      ) : query.data.length === 0 ? (
-        <Card>
+        ) : (query.data ?? []).length === 0 ? (
           <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
-            No notes yet
-            {filter === "all" ? "" : ` in ${CATEGORY_LABEL[filter]}`}. Add the
-            first one above.
+            No billing notes for this patient yet.
           </p>
-        </Card>
-      ) : (
-        <Card title={`Notes (${query.data.length})`}>
+        ) : (
           <div className="space-y-2">
-            {query.data.map((note) => (
+            {(query.data ?? []).map((note) => (
               <NoteRow key={note.id} note={note} />
             ))}
           </div>
-        </Card>
-      )}
-    </div>
-  );
-}
-
-function FilterChip({
-  active,
-  onClick,
-  label,
-}: {
-  active: boolean;
-  onClick: () => void;
-  label: string;
-}) {
-  return (
-    <button
-      type="button"
-      className="text-xs rounded-full border px-3 py-1"
-      style={{
-        borderColor: "hsl(var(--line-1))",
-        background: active ? "hsl(var(--ink-1))" : "transparent",
-        color: active ? "hsl(var(--paper-1))" : "hsl(var(--ink-2))",
-      }}
-      onClick={onClick}
-    >
-      {label}
-    </button>
+        )}
+      </div>
+    </Card>
   );
 }
 
 function NoteRow({ note }: { note: BillingNote }) {
   return (
     <div
-      className="rounded border p-3 space-y-2"
+      className="rounded border p-3 space-y-1"
       style={{ borderColor: "hsl(var(--line-1))" }}
-      data-testid="billing-note-row"
+      data-testid="patient-billing-note-row"
     >
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <span className="flex items-center gap-2 text-sm">
-          <Badge variant="neutral">{CATEGORY_LABEL[note.category]}</Badge>
-          {note.patientId ? (
-            <Link
-              href={`/admin/patients/${note.patientId}`}
-              className="text-xs underline"
-              style={{ color: "hsl(var(--ink-2))" }}
-            >
-              View patient
-            </Link>
-          ) : null}
-        </span>
+        <Badge variant="neutral">{CATEGORY_LABEL[note.category]}</Badge>
         <span className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
           {note.authorEmail} · {formatAppDateTime(note.createdAt)}
         </span>

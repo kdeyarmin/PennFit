@@ -42,18 +42,27 @@ async function err(
   return new ApiError(res, data, { method, url });
 }
 
-export async function getBillingNotes(
-  category?: BillingNoteCategory,
-): Promise<BillingNote[]> {
-  const url =
-    "/resupply-api/admin/billing/notes" +
-    (category ? `?category=${encodeURIComponent(category)}` : "");
+export async function getBillingNotes(opts?: {
+  category?: BillingNoteCategory;
+  patientId?: string;
+}): Promise<BillingNote[]> {
+  const params = new URLSearchParams();
+  if (opts?.category) params.set("category", opts.category);
+  if (opts?.patientId) params.set("patientId", opts.patientId);
+  const qs = params.toString();
+  const url = "/resupply-api/admin/billing/notes" + (qs ? `?${qs}` : "");
   const res = await fetch(url, {
     credentials: "include",
     headers: { Accept: "application/json" },
   });
   if (!res.ok) throw await err(res, "GET", url);
-  const json = (await res.json()) as { notes: BillingNote[] };
+  const json = (await res.json()) as { notes?: BillingNote[] };
+  // Strict contract: the route always returns a `notes` array (even when
+  // empty). A missing/malformed shape is a server regression we want to
+  // surface as an error, not silently render as "no notes".
+  if (!Array.isArray(json.notes)) {
+    throw new ApiError(res, json, { method: "GET", url });
+  }
   return json.notes;
 }
 
