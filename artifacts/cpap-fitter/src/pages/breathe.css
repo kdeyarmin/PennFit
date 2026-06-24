@@ -591,6 +591,9 @@
   cursor: pointer;
   color: var(--bx-cyan);
   font-weight: 600;
+  /* Clear the browser-default underline on anchor (<Link>) uses of this
+     class — buttons have none, so the underline must only appear on hover. */
+  text-decoration: none;
 }
 .bx-linkbtn:hover {
   text-decoration: underline;
@@ -4111,6 +4114,9 @@
   font: inherit;
   font-weight: 600;
   cursor: pointer;
+  /* Clear the browser-default underline on anchor (<Link>) uses of this
+     class — underline should only appear on hover. */
+  text-decoration: none;
 }
 .bx-linkbtn:hover {
   text-decoration: underline;
