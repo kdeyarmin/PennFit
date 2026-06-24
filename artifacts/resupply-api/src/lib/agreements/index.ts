@@ -94,7 +94,7 @@ that apply to Business Associate under this BAA.
 
 5. ACCESS, AMENDMENT, AND ACCOUNTING. Business Associate will make PHI
 available to Covered Entity as necessary to satisfy Covered Entity's
-obligations under 45 C.F.R. Sec.Sec. 164.524, 164.526, and 164.528
+obligations under 45 C.F.R. Secs. 164.524, 164.526, and 164.528
 (access, amendment, and accounting of disclosures). Where an individual
 requests access, amendment, or an accounting directly from Business
 Associate, Business Associate will forward the request to Covered Entity,
@@ -283,8 +283,8 @@ outages, labor disputes, or governmental action.
 not cured within thirty (30) days of written notice. ${COMPANY} may
 suspend access immediately for non-payment or for use that violates law or
 this Agreement or that threatens the security or integrity of the Service.
-On termination your access ends and you may export Customer Data for a
-reasonable period.
+On termination, Customer's access ends and Customer may export Customer
+Data for a reasonable period.
 
 13. GOVERNING LAW; DISPUTE RESOLUTION. This Agreement is governed by the
 laws of the Commonwealth of Pennsylvania, without regard to its
