@@ -5505,11 +5505,11 @@ export interface Database {
           shipping_address_json: Json | null;
           confirmation_email_sent_at: string | null;
           shipping_email_sent_at: string | null;
-          // Migration 0471: idempotency claim for the "your order
+          // Migration 0474: idempotency claim for the "your order
           // arrived" delivered notification (admin mark-delivered +
           // carrier webhook both gate the send on this timestamp).
           delivered_email_sent_at: string | null;
-          // Migration 0472: idempotency/coordination claim for the
+          // Migration 0475: idempotency/coordination claim for the
           // "refund issued" notification — the charge.refunded webhook
           // sends it for admin/dashboard refunds, the returns RMA flow
           // stamps it to stay authoritative for return-driven refunds.
