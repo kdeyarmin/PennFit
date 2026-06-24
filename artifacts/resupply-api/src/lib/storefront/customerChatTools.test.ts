@@ -11,6 +11,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 
 import {
   installSupabaseMock,
+  stageSupabaseResponse,
   getSupabaseWritePayloads,
   getSupabaseCallCount,
 } from "../../test-helpers/supabase-mock";
@@ -178,5 +179,163 @@ describe("unknown tool", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error).toMatch(/unknown tool/i);
+  });
+});
+
+describe("update_order_shipping_address", () => {
+  const ORDER_ID = "11111111-2222-3333-8444-555555555555";
+  const validArgs = {
+    orderId: ORDER_ID,
+    line1: "456 New Address Ln",
+    line2: "Suite 9",
+    city: "Philadelphia",
+    state: "pa",
+    postalCode: "19104",
+  };
+
+  it("updates the address on a paid, unshipped order and echoes city/state", async () => {
+    stageSupabaseResponse("shop_orders", "select", {
+      data: {
+        id: ORDER_ID,
+        status: "paid",
+        shipped_at: null,
+        fulfillment_method: "ship",
+      },
+    });
+    stageSupabaseResponse("shop_orders", "update", { data: { id: ORDER_ID } });
+
+    const result = await executeCustomerChatTool(
+      "update_order_shipping_address",
+      validArgs,
+      makeCtx(),
+    );
+    expect(result).toEqual({
+      ok: true,
+      data: {
+        addressUpdated: true,
+        orderId: ORDER_ID,
+        city: "Philadelphia",
+        // State is normalised to uppercase.
+        state: "PA",
+      },
+    });
+    // The persisted address carries the pinned country + uppercased state.
+    const writes = getSupabaseWritePayloads("shop_orders", "update");
+    expect(writes[0]?.shipping_address_json).toMatchObject({
+      line1: "456 New Address Ln",
+      line2: "Suite 9",
+      city: "Philadelphia",
+      state: "PA",
+      postalCode: "19104",
+      country: "US",
+    });
+  });
+
+  it("returns not_found (and never writes) for an order that isn't the caller's", async () => {
+    // IDOR guard: the customer_id filter means a foreign id selects nothing.
+    stageSupabaseResponse("shop_orders", "select", { data: null });
+
+    const result = await executeCustomerChatTool(
+      "update_order_shipping_address",
+      validArgs,
+      makeCtx(),
+    );
+    expect(result).toEqual({
+      ok: true,
+      data: { found: false, kind: "order" },
+    });
+    expect(getSupabaseCallCount("shop_orders", "update")).toBe(0);
+  });
+
+  it("refuses (no write) when the order already shipped", async () => {
+    stageSupabaseResponse("shop_orders", "select", {
+      data: {
+        id: ORDER_ID,
+        status: "paid",
+        shipped_at: "2026-04-01T00:00:00Z",
+        fulfillment_method: "ship",
+      },
+    });
+
+    const result = await executeCustomerChatTool(
+      "update_order_shipping_address",
+      validArgs,
+      makeCtx(),
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/already shipped/i);
+    expect(getSupabaseCallCount("shop_orders", "update")).toBe(0);
+  });
+
+  it("refuses (no write) for a pickup order", async () => {
+    stageSupabaseResponse("shop_orders", "select", {
+      data: {
+        id: ORDER_ID,
+        status: "paid",
+        shipped_at: null,
+        fulfillment_method: "pickup",
+      },
+    });
+
+    const result = await executeCustomerChatTool(
+      "update_order_shipping_address",
+      validArgs,
+      makeCtx(),
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/pickup/i);
+    expect(getSupabaseCallCount("shop_orders", "update")).toBe(0);
+  });
+
+  it("refuses (no write) when the order isn't paid", async () => {
+    stageSupabaseResponse("shop_orders", "select", {
+      data: {
+        id: ORDER_ID,
+        status: "pending",
+        shipped_at: null,
+        fulfillment_method: "ship",
+      },
+    });
+
+    const result = await executeCustomerChatTool(
+      "update_order_shipping_address",
+      validArgs,
+      makeCtx(),
+    );
+    expect(result.ok).toBe(false);
+    expect(getSupabaseCallCount("shop_orders", "update")).toBe(0);
+  });
+
+  it("reports a shipped-in-race when the guarded update matches no row", async () => {
+    stageSupabaseResponse("shop_orders", "select", {
+      data: {
+        id: ORDER_ID,
+        status: "paid",
+        shipped_at: null,
+        fulfillment_method: "ship",
+      },
+    });
+    // UPDATE ... WHERE shipped_at IS NULL matched 0 rows (shipped mid-flight).
+    stageSupabaseResponse("shop_orders", "update", { data: null });
+
+    const result = await executeCustomerChatTool(
+      "update_order_shipping_address",
+      validArgs,
+      makeCtx(),
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/just shipped/i);
+  });
+
+  it("rejects invalid arguments without touching the database", async () => {
+    const result = await executeCustomerChatTool(
+      "update_order_shipping_address",
+      { orderId: ORDER_ID, line1: "1 Main" }, // missing city/state/postalCode
+      makeCtx(),
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/invalid arguments/i);
+    expect(getSupabaseCallCount("shop_orders", "select")).toBe(0);
+    expect(getSupabaseCallCount("shop_orders", "update")).toBe(0);
   });
 });

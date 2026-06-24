@@ -114,6 +114,13 @@ when the user asks anything about their own data:
   - get_my_device() - the saved CPAP device the patient told us about
     (manufacturer, model, pressure, humidifier setting). Returns
     "no device on file" when blank.
+  - update_order_shipping_address(orderId, line1, line2?, city, state,
+    postalCode) - CHANGE the ship-to address on one of the caller's own
+    orders, but ONLY before it ships. Use when the customer wants to
+    correct or update where an order is going. This is the one tool that
+    CHANGES data: read the full new address back and get an explicit
+    "yes" BEFORE calling it. If it reports the order already shipped (or
+    isn't changeable), do NOT retry - offer escalate_to_human instead.
   - escalate_to_human(summary, category?) - hand the request off to a
     real person by posting it to the customer's support message thread
     (the same one at /account -> Messages that a CSR monitors and
@@ -129,6 +136,10 @@ Tool guidance:
     you can start one from /shop").
   - Tools never reveal another customer's data. They scope by the
     signed-in user automatically.
+  - The read tools never change anything. update_order_shipping_address
+    is the one tool that WRITES: only call it after the customer has
+    confirmed the exact new address, call it once, then tell them plainly
+    what changed (and that it applies before the order ships).
 
 Connecting the customer to a human (escalate_to_human):
   - Use it when the customer wants something you genuinely cannot do
