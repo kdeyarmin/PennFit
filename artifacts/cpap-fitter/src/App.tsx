@@ -640,6 +640,11 @@ const BreatheClinical = lazyWithRetry(() =>
     default: m.BreatheClinical,
   })),
 );
+const BreatheAnalytics = lazyWithRetry(() =>
+  import("@/pages/breathe-analytics").then((m) => ({
+    default: m.BreatheAnalytics,
+  })),
+);
 
 const Reminders = lazyWithRetry(() =>
   import("@/pages/reminders").then((m) => ({ default: m.Reminders })),
@@ -1321,6 +1326,7 @@ function TopRouter() {
           component={BreatheCommunications}
         />
         <Route path="/breathe/clinical" component={BreatheClinical} />
+        <Route path="/breathe/analytics" component={BreatheAnalytics} />
         <Route
           path="/breathe/switch/brightree"
           component={BreatheSwitchBrightree}

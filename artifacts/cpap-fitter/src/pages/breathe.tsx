@@ -1164,6 +1164,7 @@ const FOOTER_LINKS: { href: string; label: string }[] = [
   { href: "/breathe/get-paid", label: "Get paid" },
   { href: "/breathe/clinical", label: "Clinical & therapy" },
   { href: "/breathe/patient-experience", label: "Patient experience" },
+  { href: "/breathe/analytics", label: "Analytics" },
   { href: "/breathe/roi", label: "ROI" },
   { href: "/breathe/pricing", label: "Pricing" },
   { href: "/breathe/security", label: "Security" },
@@ -2972,7 +2973,9 @@ function Outcomes({ showClaimsEngine = true }: { showClaimsEngine?: boolean }) {
         <p className="bx-outcomes-foot">
           Illustrative ranges drawn from published DME and healthcare
           revenue-cycle benchmarks; actual results depend on your payer mix,
-          patient base, and current processes. Directional, not a guarantee.
+          patient base, and current processes. Directional, not a guarantee. On
+          your own numbers, every figure here is a live dashboard you can drill
+          into — <Link href="/breathe/analytics">see the analytics →</Link>
         </p>
       </div>
     </section>
