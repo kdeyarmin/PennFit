@@ -95,6 +95,10 @@ export function ProviderQueue({
               onClick={() => {
                 setTab(t.key);
                 setBatchOpen(false);
+                // Drop any checkboxes from the previous tab so the
+                // selection + "Select all"/"Clear" toggle reflect only
+                // what's visible in the tab now shown.
+                setChecked(new Set());
               }}
               className={`rounded-md px-3.5 py-1.5 text-sm font-medium transition-colors ${
                 tab === t.key

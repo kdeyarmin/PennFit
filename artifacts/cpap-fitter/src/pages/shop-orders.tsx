@@ -289,6 +289,11 @@ function OrderCard({
   order: OrderHistoryItem;
   onOrderUpdated: (next: OrderHistoryItem) => void;
 }) {
+  // Set once the customer self-cancels: flips the card to its refunded
+  // presentation (badge + confirmation) and removes the now-invalid
+  // mutation controls. A page reload drops the card entirely (the orders
+  // list is server-filtered to status='paid').
+  const [canceled, setCanceled] = useState(false);
   const paidAt = order.paidAt ?? order.createdAt;
   const dateLabel = new Date(paidAt).toLocaleDateString(undefined, {
     year: "numeric",
@@ -312,9 +317,13 @@ function OrderCard({
         <div className="flex items-center gap-3">
           <Badge
             variant="outline"
-            className="border-emerald-200 bg-emerald-50 text-emerald-700 font-semibold"
+            className={
+              canceled
+                ? "border-slate-200 bg-slate-50 text-slate-600 font-semibold"
+                : "border-emerald-200 bg-emerald-50 text-emerald-700 font-semibold"
+            }
           >
-            Paid
+            {canceled ? "Refunded" : "Paid"}
           </Badge>
           {order.amountTotalCents !== null && (
             <div
@@ -357,52 +366,96 @@ function OrderCard({
           </li>
         ))}
       </ul>
-      <ShipmentSection order={order} onOrderUpdated={onOrderUpdated} />
-      <ResendReceiptControl sessionId={order.sessionId} orderId={order.id} />
-      <ReturnRequestControl order={order} />
-      {order.shippedAt === null && order.deliveredAt === null && (
-        <CancelOrderControl orderId={order.id} />
+      {canceled ? (
+        <div
+          className="mt-4 pt-3 border-t border-border/40"
+          data-testid={`order-${order.id}-cancel-done`}
+        >
+          <span
+            role="status"
+            className="text-sm text-emerald-700 inline-flex items-center gap-1.5"
+          >
+            <CheckCircle2 className="w-4 h-4" />
+            Order canceled — your refund is on the way.
+          </span>
+        </div>
+      ) : (
+        <>
+          <ShipmentSection order={order} onOrderUpdated={onOrderUpdated} />
+          <ResendReceiptControl
+            sessionId={order.sessionId}
+            orderId={order.id}
+          />
+          <ReturnRequestControl order={order} />
+          {/* Cancel is offered only while nothing has been fulfilled: not
+              shipped, not delivered, and (for pickup orders) not collected.
+              A pickup order never gets a shipped_at, so without the pickup
+              check the button would persist after collection. */}
+          {order.shippedAt === null &&
+            order.deliveredAt === null &&
+            order.pickup?.pickedUpAt == null && (
+              <CancelOrderControl
+                orderId={order.id}
+                onCanceled={() => setCanceled(true)}
+              />
+            )}
+        </>
       )}
     </li>
   );
 }
 
-// Self-serve cancellation for a paid order that hasn't shipped yet.
-// Two-step (button → inline confirm) because it's a money-out, terminal
-// action. On success the server has issued a full refund and the order is
-// done; we show a persistent confirmation rather than mutate the (typed
-// "paid") order in place — the next page load reflects the refund.
-function CancelOrderControl({ orderId }: { orderId: string }) {
+// Self-serve cancellation for a paid order that hasn't shipped or been
+// picked up yet. Two-step (button → inline confirm) because it's a
+// money-out, terminal action. On success the server has issued a full
+// refund; we notify the parent OrderCard (onCanceled) which flips the whole
+// card to its refunded presentation — so the contradictory "Paid" badge,
+// address-edit, and return controls disappear alongside the confirmation.
+function CancelOrderControl({
+  orderId,
+  onCanceled,
+}: {
+  orderId: string;
+  onCanceled: () => void;
+}) {
   const [phase, setPhase] = useState<
-    "idle" | "confirming" | "canceling" | "done" | "error"
+    "idle" | "confirming" | "canceling" | "error"
   >("idle");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  // A terminal error means the order can't be canceled at all (already
+  // shipped/picked up/refunded) — we drop the button rather than loop.
+  const [terminal, setTerminal] = useState(false);
 
   const onCancel = async () => {
+    // Guard against a double-submit (Enter-held / fast double-click) landing
+    // a second request before the confirm button unmounts.
+    if (phase === "canceling") return;
     setPhase("canceling");
     setErrorMsg(null);
     try {
       await cancelOrder(orderId);
-      setPhase("done");
+      onCanceled();
     } catch (err) {
       const code = (err as { code?: string }).code ?? "unknown";
       setErrorMsg(cancelMessageForCode(code));
+      setTerminal(TERMINAL_CANCEL_CODES.has(code));
       setPhase("error");
     }
   };
 
-  if (phase === "done") {
+  // Terminal failure: show the explanation only — no retry affordance.
+  if (phase === "error" && terminal) {
     return (
       <div
         className="mt-4 pt-3 border-t border-border/40"
-        data-testid={`order-${orderId}-cancel-done`}
+        data-testid={`order-${orderId}-cancel-controls`}
       >
         <span
-          role="status"
-          className="text-sm text-emerald-700 inline-flex items-center gap-1.5"
+          role="alert"
+          className="text-xs text-rose-700 inline-flex items-center gap-1"
         >
-          <CheckCircle2 className="w-4 h-4" />
-          Order canceled — your refund is on the way.
+          <AlertCircle className="w-3.5 h-3.5" />
+          {errorMsg}
         </span>
       </div>
     );
@@ -470,6 +523,8 @@ function cancelMessageForCode(code: string): string {
   switch (code) {
     case "order_already_shipped":
       return "This order already shipped — start a return instead.";
+    case "order_already_picked_up":
+      return "This order was already picked up — start a return instead.";
     case "order_already_refunded":
       return "This order was already refunded.";
     case "order_not_paid":
@@ -483,6 +538,18 @@ function cancelMessageForCode(code: string): string {
       return "Something went wrong canceling this order. Please try again.";
   }
 }
+
+// Codes where the cancel can NEVER succeed on retry (the order already
+// moved past the cancellable window). For these we suppress the "Cancel
+// order" button so the customer isn't invited into an infinite retry loop;
+// transient failures (stripe/network) keep the button so a retry is offered.
+const TERMINAL_CANCEL_CODES = new Set([
+  "order_already_shipped",
+  "order_already_picked_up",
+  "order_already_refunded",
+  "order_not_paid",
+  "order_not_found",
+]);
 
 // 60-day comfort-guarantee return initiation (Phase A.3, was 30 days
 // pre-A.3). Only renders for orders paid within 60 days that don't

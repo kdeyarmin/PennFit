@@ -510,6 +510,57 @@ describe("POST /shop/me/orders/:orderId/cancel", () => {
     expect(refundsCreateMock).not.toHaveBeenCalled();
   });
 
+  it("returns 409 (no refund) when a pickup order was already collected", async () => {
+    // Pickup orders never get a shipped_at, so the shipped guard can't
+    // catch them — without the picked_up_at guard a customer could refund
+    // an order they already walked out of the store with.
+    stubSignedIn("user_alice");
+    stripeConfigRef.current = { secretKey: "sk_test_x" };
+    stageSupabaseResponse("shop_orders", "select", {
+      data: {
+        id: CANCEL_ID,
+        customer_id: "user_alice",
+        status: "paid",
+        shipped_at: null,
+        picked_up_at: "2026-04-02T00:00:00Z",
+        amount_refunded_cents: 0,
+        stripe_payment_intent_id: "pi_1",
+        stripe_session_id: "cs_1",
+      },
+    });
+    const res = await request(makeApp()).post(
+      `/resupply-api/shop/me/orders/${CANCEL_ID}/cancel`,
+    );
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("order_already_picked_up");
+    expect(refundsCreateMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 409 (no second refund) when a partial refund was already issued", async () => {
+    // A prior partial refund leaves status='paid'; without this guard the
+    // cancel would issue a SECOND, full refund on top of it (over-refund).
+    stubSignedIn("user_alice");
+    stripeConfigRef.current = { secretKey: "sk_test_x" };
+    stageSupabaseResponse("shop_orders", "select", {
+      data: {
+        id: CANCEL_ID,
+        customer_id: "user_alice",
+        status: "paid",
+        shipped_at: null,
+        picked_up_at: null,
+        amount_refunded_cents: 1500,
+        stripe_payment_intent_id: "pi_1",
+        stripe_session_id: "cs_1",
+      },
+    });
+    const res = await request(makeApp()).post(
+      `/resupply-api/shop/me/orders/${CANCEL_ID}/cancel`,
+    );
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("order_already_refunded");
+    expect(refundsCreateMock).not.toHaveBeenCalled();
+  });
+
   it("returns 503 when Stripe is not configured", async () => {
     stubSignedIn("user_alice");
     stripeConfigRef.current = null;

@@ -476,7 +476,7 @@ router.post(
     const { data: existing, error: existsErr } = await supabase
       .from("shop_orders")
       .select(
-        "id, customer_id, status, shipped_at, stripe_payment_intent_id, stripe_session_id",
+        "id, customer_id, status, shipped_at, picked_up_at, amount_refunded_cents, stripe_payment_intent_id, stripe_session_id",
       )
       .eq("id", orderId)
       .limit(1)
@@ -500,6 +500,22 @@ router.post(
     }
     if (existing.shipped_at !== null) {
       res.status(409).json({ error: "order_already_shipped" });
+      return;
+    }
+    // In-store pickup orders never get a shipped_at, so the shipped guard
+    // above can't catch a pickup order the customer already collected.
+    // Once picked_up_at is stamped the goods are gone — refusing here is
+    // what stops a customer from refunding an order they walked out with.
+    if (existing.picked_up_at) {
+      res.status(409).json({ error: "order_already_picked_up" });
+      return;
+    }
+    // A prior (partial) refund leaves status='paid', so without this guard
+    // a self-cancel would issue a SECOND, full refund on top of it — an
+    // over-refund. Any non-zero amount already refunded routes the
+    // customer to support instead.
+    if ((existing.amount_refunded_cents ?? 0) > 0) {
+      res.status(409).json({ error: "order_already_refunded" });
       return;
     }
     if (!existing.stripe_payment_intent_id) {
@@ -537,16 +553,18 @@ router.post(
       return;
     }
 
-    // Flip to refunded, re-asserting not-yet-shipped so a race with the
-    // admin tracking endpoint can't ship an order we just refunded. We do
-    // NOT set amount_refunded_cents here — the charge.refunded webhook is
-    // the canonical mirror and is what fires the refund notice.
+    // Flip to refunded, re-asserting not-yet-shipped AND not-yet-picked-up
+    // so a race with the admin tracking / mark-picked-up endpoints can't
+    // fulfil an order we just refunded. We do NOT set amount_refunded_cents
+    // here — the charge.refunded webhook is the canonical mirror and is
+    // what fires the refund notice.
     const { data: row, error: updateErr } = await supabase
       .from("shop_orders")
       .update({ status: "refunded", updated_at: new Date().toISOString() })
       .eq("id", orderId)
       .eq("customer_id", req.userCustomerId!)
       .is("shipped_at", null)
+      .is("picked_up_at", null)
       .select("id, status")
       .limit(1)
       .maybeSingle();
