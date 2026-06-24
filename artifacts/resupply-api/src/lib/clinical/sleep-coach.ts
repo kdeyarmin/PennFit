@@ -34,10 +34,7 @@ import {
 import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 import { COMPLIANT_MINUTES_PER_NIGHT } from "@workspace/resupply-domain";
 
-import {
-  applyCompanyIdentityToText,
-  getCompanyInfo,
-} from "../company-info";
+import { applyCompanyIdentityToText, getCompanyInfo } from "../company-info";
 import {
   DEFAULT_ANTHROPIC_MODEL_CHAT,
   getAnthropicClient,

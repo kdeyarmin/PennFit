@@ -162,8 +162,18 @@ describe("normalizeSnapshotForPersistence — per-night resilience", () => {
       ...baseSnapshot,
       recentNights: [],
       supplies: [
-        { category: "not-a-real-category", description: "junk", lastReplacedDate: null, nextEligibleDate: null },
-        { category: "tubing", description: "Standard tube", lastReplacedDate: null, nextEligibleDate: null },
+        {
+          category: "not-a-real-category",
+          description: "junk",
+          lastReplacedDate: null,
+          nextEligibleDate: null,
+        },
+        {
+          category: "tubing",
+          description: "Standard tube",
+          lastReplacedDate: null,
+          nextEligibleDate: null,
+        },
       ],
     };
     const normalized = normalizeSnapshotForPersistence(raw);

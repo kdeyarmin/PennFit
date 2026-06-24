@@ -112,8 +112,16 @@ describe("staff MFA probe: keyed by auth.users.id, no org-scoped bridge", () => 
   it("findAllActiveSecrets returns every device by auth.users.id, no bridge", async () => {
     stageSupabaseResponse("admin_mfa_secrets", "select", {
       data: [
-        { id: "dev-1", secret_base32: "JBSWY3DPEHPK3PXP", last_used_counter: 1 },
-        { id: "dev-2", secret_base32: "KRSXG5DJNZTW2ZLT", last_used_counter: 2 },
+        {
+          id: "dev-1",
+          secret_base32: "JBSWY3DPEHPK3PXP",
+          last_used_counter: 1,
+        },
+        {
+          id: "dev-2",
+          secret_base32: "KRSXG5DJNZTW2ZLT",
+          last_used_counter: 2,
+        },
       ],
       error: null,
     });
@@ -197,7 +205,10 @@ describe("consumeRecoveryCode: successful first use", () => {
     );
     expect(
       filters.some(
-        (f) => f.verb === "eq" && f.args[0] === "staff_user_id" && f.args[1] === "user-abc",
+        (f) =>
+          f.verb === "eq" &&
+          f.args[0] === "staff_user_id" &&
+          f.args[1] === "user-abc",
       ),
     ).toBe(true);
   });
