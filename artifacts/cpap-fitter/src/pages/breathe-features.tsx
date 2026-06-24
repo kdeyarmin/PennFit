@@ -960,7 +960,7 @@ function Integrations() {
         <div className="bx-price-cta bx-reveal">
           <span>
             Coming from Brightree, Bonafide, or NikoHealth? Keep your patients
-            and your data — we migrate you with a spreadsheet import.
+            and your data — we migrate you with a spreadsheet (CSV) import.
           </span>
           <Link className="bx-btn bx-btn-primary" href="/breathe/compare">
             See the side-by-side <ArrowRight size={16} />

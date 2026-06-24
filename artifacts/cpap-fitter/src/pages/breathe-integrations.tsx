@@ -226,11 +226,8 @@ const ALERT_TAGS: { label: string; tone: "risk" | "warn" | "info" }[] = [
   { label: "Setup at risk", tone: "risk" },
   { label: "High AHI", tone: "warn" },
   { label: "High leak", tone: "warn" },
-  { label: "Usage declining", tone: "warn" },
-  { label: "Low usage", tone: "warn" },
-  { label: "No recent data", tone: "info" },
-  { label: "Message failed", tone: "info" },
-  { label: "No response", tone: "info" },
+  { label: "Usage decline", tone: "warn" },
+  { label: "Device silent", tone: "info" },
 ];
 
 function AiEarlyWarning() {
@@ -394,7 +391,7 @@ const PAYER_SYSTEMS: IntItem[] = [
   {
     mark: "PacWare",
     tag: "Billing",
-    sub: "Legacy spreadsheet file exchange",
+    sub: "Legacy spreadsheet (CSV) exchange",
     points: [
       "A safe import that only fills in blanks and never overwrites",
       "Resupply-due worklist export with a verify step",
@@ -445,7 +442,7 @@ const INT_FAQ: { q: string; a: string }[] = [
   },
   {
     q: "Can I get my billing data back out?",
-    a: "Always. PacWare stays your system of record for the warehouse, and Breathe exchanges patient and resupply-due data with it over spreadsheet files — with a verify step and protection against spreadsheet formula attacks — so the round-trip is lossless and your data is never held hostage.",
+    a: "Always. PacWare stays your system of record for the warehouse, and Breathe exchanges patient and resupply-due data with it over spreadsheet (CSV) files — with a verify step and protection against spreadsheet formula attacks — so the round-trip is lossless and your data is never held hostage.",
   },
 ];
 

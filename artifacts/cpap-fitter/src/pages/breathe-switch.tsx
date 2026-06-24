@@ -73,7 +73,7 @@ const COMMON_REASONS: SwitchConfig["reasons"] = [
   {
     icon: <Repeat size={20} />,
     title: "Your data comes with you",
-    body: "Move in with a spreadsheet and move out the same way. A safe import only fills in blanks and never overwrites what you already have, and you can export on demand — no lock-in, no hostage data.",
+    body: "Move in with a spreadsheet (CSV) and move out the same way. A safe import only fills in blanks and never overwrites what you already have, and you can export on demand — no lock-in, no hostage data.",
   },
   {
     icon: <MessageSquare size={20} />,
@@ -97,7 +97,7 @@ const SWITCH_PAGES: Record<string, SwitchConfig> = {
   bonafide: {
     slug: "bonafide",
     name: "Bonafide",
-    sub: "Move your roster in with a spreadsheet and run resupply, revenue cycle, clinical monitoring, and the storefront on one record — with the AI doing the repetitive work. Here's what changes, line by line, and how the move works.",
+    sub: "Move your roster in with a spreadsheet (CSV) and run resupply, revenue cycle, clinical monitoring, and the storefront on one record — with the AI doing the repetitive work. Here's what changes, line by line, and how the move works.",
     wants: [
       "Billing/RCM, clinical monitoring, and a branded storefront on the same record as resupply",
       "One platform to run instead of resupply in one tool and claims in another",
@@ -121,7 +121,7 @@ const SWITCH_PAGES: Record<string, SwitchConfig> = {
 function SwitchPage({ cfg }: { cfg: SwitchConfig }) {
   useDocumentTitle(
     `Switch from ${cfg.name} to Breathe — Breathe by CareMetric.ai`,
-    `Thinking of leaving ${cfg.name}? See how Breathe compares feature by feature, why teams move to an AI-native, single-record DME platform, and how a spreadsheet-based switch gets you live on day one.`,
+    `Thinking of leaving ${cfg.name}? See how Breathe compares feature by feature, why teams move to an AI-native, single-record DME platform, and how a spreadsheet (CSV) import gets you live on day one.`,
   );
   return (
     <BreatheShell>

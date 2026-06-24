@@ -3198,7 +3198,7 @@ const CAPABILITIES: Capability[] = [
     points: [
       "Margin, DSO, LTV/CAC & payer-profitability dashboards",
       "KPI alerts, goal tracking & live staffing load",
-      "Smart triggers, rules & spreadsheet / PDF / QuickBooks export",
+      "Smart triggers, rules & CSV / PDF / QuickBooks export",
     ],
   },
 ];
@@ -4752,8 +4752,8 @@ function Pricing() {
           <p className="bx-lede">
             Transparent subscription tiers sized to your patient base — monthly
             or annual (two months free), with onboarding and migration included.
-            Upload a spreadsheet of your patients and you&apos;re live on day
-            one, and your data stays yours — always exportable (back out to
+            Upload a spreadsheet (CSV) of your patients and you&apos;re live on
+            day one, and your data stays yours — always exportable (back out to
             PacWare too). License premium modules à la carte.
           </p>
         </div>
@@ -4792,8 +4792,8 @@ function PricingHome() {
           <p className="bx-lede">
             Subscription tiers sized to your patient base — monthly or annual
             (two months free), with onboarding and migration included. Upload a
-            spreadsheet of your patients and you&apos;re live on day one. Add
-            premium modules only when you need them.
+            spreadsheet (CSV) of your patients and you&apos;re live on day one.
+            Add premium modules only when you need them.
           </p>
         </div>
         <BillingToggle mode={billing} onChange={setBilling} />
@@ -5055,7 +5055,7 @@ const PRICING_FAQ: { q: string; a: React.ReactNode }[] = [
   },
   {
     q: "How fast can we be live?",
-    a: "Day one. Upload a spreadsheet of your patients and your team starts the same day; the deeper payer, clearinghouse, and online-system connections come online over the following weeks, not quarters. The roster import is a safe import that only fills in blanks and never overwrites what you already have, so there's no risky all-at-once switchover.",
+    a: "Day one. Upload a spreadsheet (CSV) of your patients and your team starts the same day; the deeper payer, clearinghouse, and online-system connections come online over the following weeks, not quarters. The roster import is a safe import that only fills in blanks and never overwrites what you already have, so there's no risky all-at-once switchover.",
   },
   {
     q: "What does it replace?",
@@ -5183,7 +5183,7 @@ function Manifesto() {
 const FAQ: { q: string; a: React.ReactNode }[] = [
   {
     q: "Will it work with our billing system?",
-    a: "Yes. Breathe exchanges patient and worklist data with PacWare as spreadsheet files and builds standard 837P claims. Once the AI scrubs them clean you have a choice: submit automatically through the built-in Office Ally connection, or download the 837P and upload it to the clearinghouse of your choice. Either way, ERAs (835) post back and reconcile automatically. PacWare stays your system of record for the warehouse; Breathe runs the resupply and revenue engine on top.",
+    a: "Yes. Breathe exchanges patient and worklist data with PacWare as spreadsheet (CSV) files and builds standard 837P claims. Once the AI scrubs them clean you have a choice: submit automatically through the built-in Office Ally connection, or download the 837P and upload it to the clearinghouse of your choice. Either way, ERAs (835) post back and reconcile automatically. PacWare stays your system of record for the warehouse; Breathe runs the resupply and revenue engine on top.",
   },
   {
     q: "Can we import our current patients?",
@@ -5191,7 +5191,7 @@ const FAQ: { q: string; a: React.ReactNode }[] = [
   },
   {
     q: "How long does implementation take?",
-    a: "You can be working on day one — upload a spreadsheet of your patients and your team starts the same day. The deeper connections (payers, clearinghouse, online systems) come online over the following weeks, not quarters. Because the roster imports as a safe import that only fills in blanks and never overwrites what you already have — new patients added and blank fields filled, an existing value never overwritten — there is no risky all-at-once switchover.",
+    a: "You can be working on day one — upload a spreadsheet (CSV) of your patients and your team starts the same day. The deeper connections (payers, clearinghouse, online systems) come online over the following weeks, not quarters. Because the roster imports as a safe import that only fills in blanks and never overwrites what you already have — new patients added and blank fields filled, an existing value never overwritten — there is no risky all-at-once switchover.",
   },
   {
     q: "Is our patient data safe?",
@@ -5265,7 +5265,7 @@ const AUDIENCES: Capability[] = [
     points: [
       "One patient record and one workflow across every location",
       "Live margin, DSO, and growth dashboards across the business",
-      "Stand up a new site in weeks with a spreadsheet import, not a quarter",
+      "Stand up a new site in weeks with a spreadsheet (CSV) import, not a quarter",
     ],
   },
   {
@@ -5338,7 +5338,7 @@ const FOUNDING_PERKS: { icon: React.ReactNode; title: string; body: string }[] =
     {
       icon: <Headphones size={20} />,
       title: "White-glove migration",
-      body: "We sit with you through the spreadsheet import, your first resupply run, and your first claim batch — hands-on, not a ticket queue.",
+      body: "We sit with you through the spreadsheet (CSV) import, your first resupply run, and your first claim batch — hands-on, not a ticket queue.",
     },
   ];
 
