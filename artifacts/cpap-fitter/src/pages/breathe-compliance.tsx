@@ -873,7 +873,7 @@ function Faq() {
           Looking for the control list a security review reads, or the full
           revenue-cycle detail?{" "}
           <Link href="/breathe/security">See security</Link> ·{" "}
-          <Link href="/breathe/get-paid">see the revenue cycle →</Link>
+          <Link href="/breathe/get-paid">See the revenue cycle →</Link>
         </p>
       </div>
     </section>
