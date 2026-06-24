@@ -69,10 +69,10 @@ const INDUSTRY_STUDIES: IndustryStudy[] = [
     situation:
       "Initial claim denials average roughly 11–12%, and every reworked claim costs an estimated $25–$118 in staff time — a tax on revenue that scales with volume.",
     approach:
-      "AI scrubs each 837P for missing modifiers and documentation before it's filed, runs real-time 270/271 eligibility, and ranks the denials that do happen by recoverable dollars × win-probability.",
+      "AI scrubs each 837P for missing modifiers and documentation before it's filed, runs instant 270/271 eligibility, and ranks the denials that do happen by recoverable dollars × win-probability.",
     points: [
       "Pre-submission scrubbing pushes first-pass acceptance toward best practice",
-      "Real-time eligibility stops claims going out against lapsed coverage",
+      "Instant eligibility stops claims going out against lapsed coverage",
       "Denial worklists focus staff on the dollars worth chasing",
     ],
     source:
@@ -86,9 +86,9 @@ const INDUSTRY_STUDIES: IndustryStudy[] = [
     situation:
       "About one in three CPAP patients drifts out of adherence, and Medicare requires documented usage (4 hours a night on 21 of 30 days in the first 90) to keep paying — so a silent patient is both a clinical and a billing risk.",
     approach:
-      "AI pulls adherence nightly from the device clouds (ResMed, Philips, 3B), normalizes it into one fleet view, and surfaces at-risk patients on a worklist before they quit — with the CMS documentation captured automatically.",
+      "AI pulls adherence nightly from the online systems (ResMed, Philips, 3B), brings it together into one view, and surfaces at-risk patients on a worklist before they quit — with the CMS documentation captured automatically.",
     points: [
-      "One adherence worklist across every device cloud",
+      "One adherence worklist across every manufacturer system",
       "Early-warning flags reach patients before they fall off",
       "CMS 4-hour / 90-day proof documented without manual chart work",
     ],
@@ -166,7 +166,7 @@ const MODELED: { num: string; label: string; basis: string; gold?: boolean }[] =
     {
       num: "7 → 1",
       label: "point tools collapsed into one login",
-      basis: "resupply, RCM, CRM, telehealth, e-sign, dashboards, IVR",
+      basis: "resupply, RCM, CRM, telehealth, e-sign, dashboards, phone system",
     },
   ];
 

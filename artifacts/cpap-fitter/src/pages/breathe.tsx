@@ -936,7 +936,7 @@ function SignupSection() {
 export function BreatheHome() {
   useDocumentTitle(
     "Breathe — All-in-One CPAP & DME Software by CareMetric.ai",
-    "Breathe is the all-in-one platform for CPAP & DME providers: automate resupply reordering, scrub claims clean before they're filed, sync therapy compliance from ResMed, Philips & 3B, and e-sign documentation — so you capture more revenue, cut denials, and keep patients on therapy.",
+    "Breathe is the all-in-one platform for CPAP & DME providers: automate resupply reordering, scrub claims clean before they're filed, pull in therapy compliance from ResMed, Philips & 3B, and e-sign documentation — so you capture more revenue, cut denials, and keep patients on therapy.",
     { schema: "Article" },
   );
   return (
@@ -1115,7 +1115,7 @@ export function BreathePricing() {
 export function BreatheSecurity() {
   useDocumentTitle(
     "Security — Breathe by CareMetric.ai",
-    "Breathe's security posture: HIPAA-eligible infrastructure, on-device patient imaging, and the principles behind the platform.",
+    "Breathe's security practices: HIPAA-eligible infrastructure, on-device patient imaging, and the principles behind the platform.",
   );
   return (
     <BreatheShell>
@@ -1127,7 +1127,7 @@ export function BreatheSecurity() {
             Patient trust, <span className="grad-em">engineered in.</span>
           </>
         }
-        sub="HIPAA-eligible infrastructure, on-device patient imaging, and a least-privilege posture — the questions your compliance team will ask, answered."
+        sub="HIPAA-eligible infrastructure, on-device patient imaging, and staff access limited to what each person needs — the questions your compliance team will ask, answered."
       />
       <Security />
       <SecurityPosture />
@@ -1293,7 +1293,7 @@ function Hero() {
             <p className="bx-hero-sub bx-reveal in">
               Breathe is the all-in-one platform for CPAP &amp; DME providers.
               It automates the resupply reordering that eats your staff&apos;s
-              day, scrubs every claim clean before it&apos;s filed, and syncs
+              day, scrubs every claim clean before it&apos;s filed, and pulls
               live compliance data straight from ResMed, Philips &amp; 3B — so
               you book more orders, deny fewer claims, and keep patients on
               therapy.
@@ -1420,8 +1420,8 @@ function IntegrationsStrip() {
     <section className="bx-integrations bx-reveal" aria-label="Integrations">
       <div className="bx-shell bx-integrations-head">
         <p className="bx-integrations-label">
-          <Plug size={13} /> Connected to the device clouds, clearinghouses, and
-          billing systems you already run
+          <Plug size={13} /> Connected to the online systems, clearinghouses,
+          and billing systems you already run
         </p>
         <Link className="bx-integrations-link" href="/breathe/integrations">
           See how it connects <ArrowRight size={14} />
@@ -1669,14 +1669,14 @@ const RECOVERY: {
     metric: "e-PA",
     metricSub: "submitted, not faxed",
     title: "Never lose a claim to a missing auth",
-    body: "Electronic prior authorization through Da Vinci FHIR PAS — submitted, not faxed-and-waited. Missed and at-risk SLAs and soon-to-expire auths surface on their own worklist, so an expired auth never quietly turns a delivered order into a write-off.",
+    body: "Electronic prior authorization — submitted electronically, not faxed-and-waited. Missed and at-risk deadlines and soon-to-expire auths surface on their own worklist, so an expired auth never quietly turns a delivered order into a write-off.",
   },
   {
     icon: <BadgeCheck size={22} />,
     metric: "270 / 271",
     metricSub: "always current",
     title: "Stop billing dead coverage",
-    body: "Real-time eligibility runs before you dispense, and a re-verification worklist catches coverage that's lapsed or terminating before the claim ever goes out. Dead coverage is one of the most preventable denial reasons in DME — caught here, not at the EOB.",
+    body: "Instant eligibility runs before you dispense, and a re-verification worklist catches coverage that's lapsed or terminating before the claim ever goes out. Dead coverage is one of the most preventable denial reasons in DME — caught here, not at the EOB.",
   },
 ];
 
@@ -1824,7 +1824,7 @@ const REPLACED = [
   "Telehealth app",
   "Document & e-sign",
   "Therapy dashboards",
-  "Call-center IVR",
+  "Call-center phone menu",
 ];
 
 function Replaces() {
@@ -1909,7 +1909,7 @@ const DAY: {
     icon: <RefreshCw size={20} />,
     time: "Before anyone logs in",
     title: "The day builds itself overnight",
-    body: "The nightly sync pulls adherence from ResMed, Philips, and 3B; the resupply engine assembles an eligibility-ranked worklist; and the AI voice agent has already answered after-hours calls and booked the reorders behind them.",
+    body: "Each night, Breathe pulls adherence from ResMed, Philips, and 3B; the resupply engine assembles an eligibility-ranked worklist; and the AI voice agent has already answered after-hours calls and booked the reorders behind them.",
   },
   {
     icon: <MessageSquare size={20} />,
@@ -2128,7 +2128,7 @@ const LIVE_SHOTS: { src: string; cap: string; alt: string }[] = [
   {
     src: "/breathe/screens/console-fleet.jpg",
     cap: "Therapy fleet — compliance across ResMed, Philips & 3B",
-    alt: "Breathe admin: therapy fleet compliance dashboard across device clouds",
+    alt: "Breathe admin: therapy fleet compliance dashboard across manufacturer systems",
   },
   {
     src: "/breathe/screens/console-denials.jpg",
@@ -2509,14 +2509,14 @@ const FEATURES: Feature[] = [
   {
     icon: <Receipt size={22} />,
     title: "Revenue Cycle + AI Claims",
-    body: "Insurance Discovery that turns self-pay patients into billable claims, real-time 270/271 eligibility, AI claim scrubbing, one-click Office Ally auto-submission — or a downloadable 837P for any clearinghouse — and a denials worklist ranked by recoverable dollars × win probability.",
+    body: "Insurance Discovery that turns self-pay patients into billable claims, instant 270/271 eligibility, AI claim scrubbing, one-click Office Ally auto-submission — or a downloadable 837P for any clearinghouse — and a denials worklist ranked by recoverable dollars × win probability.",
     tag: "AI",
     gold: true,
   },
   {
     icon: <Stethoscope size={22} />,
     title: "Therapy Monitoring",
-    body: "Pulls adherence data straight from ResMed, Philips, and 3B device clouds and surfaces exactly who is falling off therapy — and who is due for resupply.",
+    body: "Pulls adherence data straight from ResMed, Philips, and 3B's online systems and surfaces exactly who is falling off therapy — and who is due for resupply.",
   },
   {
     icon: <Workflow size={22} />,
@@ -2800,7 +2800,7 @@ const CLAIMS_FLOW: {
   {
     icon: <BadgeCheck size={16} />,
     label: "Eligibility",
-    sub: "270 / 271 real-time",
+    sub: "270 / 271 instant",
   },
   {
     icon: <Sparkles size={16} />,
@@ -2975,10 +2975,11 @@ const RCM_WORKLISTS: Capability[] = [
   {
     icon: <ClipboardSignature size={20} />,
     title: "Electronic prior auth",
-    summary: "FHIR submission through Da Vinci PAS, with SLA tracking.",
+    summary:
+      "Prior authorization submitted electronically, with deadline tracking.",
     points: [
       "Submit auth requests electronically, not by fax-and-wait",
-      "Missed / at-risk SLA worklist with renewal tracking",
+      "Missed / at-risk deadline worklist with renewal tracking",
     ],
   },
   {
@@ -3040,7 +3041,7 @@ function RevenueCycle() {
             Get paid the first time — <em>automated end to end</em>
           </h2>
           <p className="bx-lede">
-            From real-time eligibility to posted cash, the whole claim lifecycle
+            From instant eligibility to posted cash, the whole claim lifecycle
             runs on the same patient record. Specialists review exceptions; the
             platform does the keying, the submission, the posting, and the
             prioritizing.
@@ -3119,7 +3120,7 @@ const CAPABILITIES: Capability[] = [
     title: "Revenue cycle & claims",
     summary: "Get paid the first time, faster — end to end.",
     points: [
-      "Real-time 270/271 eligibility & re-verification",
+      "Instant 270/271 eligibility & re-verification",
       "AI-scrubbed 837P auto-submitted via Office Ally",
       "835/ERA auto-posting + denials ranked by $ recoverable",
       "Prior auth, A/R aging, timely-filing & capped rentals",
@@ -3197,7 +3198,7 @@ const CAPABILITIES: Capability[] = [
     points: [
       "Margin, DSO, LTV/CAC & payer-profitability dashboards",
       "KPI alerts, goal tracking & live staffing load",
-      "Smart triggers, rules & CSV / PDF / QuickBooks export",
+      "Smart triggers, rules & spreadsheet / PDF / QuickBooks export",
     ],
   },
 ];
@@ -3259,7 +3260,7 @@ function Capabilities() {
  * on the Integrations page.
  */
 const DEVICE_CLOUDS: { mark: string; sub: string; tag: string }[] = [
-  { mark: "ResMed", sub: "AirView", tag: "Therapy cloud" },
+  { mark: "ResMed", sub: "AirView", tag: "Therapy system" },
   { mark: "Philips", sub: "Care Orchestrator", tag: "Respironics" },
   { mark: "3B Medical", sub: "React Health", tag: "Luna G3" },
 ];
@@ -3272,14 +3273,14 @@ function UnifiedFleet() {
           <span className="bx-eyebrow">
             <Network size={13} /> Connected therapy
           </span>
-          <h2 className="bx-h2">Three device clouds. One fleet view.</h2>
+          <h2 className="bx-h2">Three manufacturer systems. One view.</h2>
           <p className="bx-lede">
             Your patients are scattered across ResMed AirView, Philips Care
             Orchestrator, and 3B&apos;s React Health portal — three logins,
-            three exports, the same patient re-keyed three times. Breathe
-            compiles all of them onto one screen, then watches the whole fleet
-            for you and flags who&apos;s slipping <em>before</em> they fall out
-            of compliance.
+            three exports, the same patient re-keyed three times. Breathe brings
+            all of them together onto one screen, then watches every patient for
+            you and flags who&apos;s slipping <em>before</em> they fall out of
+            compliance.
           </p>
         </div>
         <div className="bx-logogrid bx-reveal">
@@ -3295,13 +3296,13 @@ function UnifiedFleet() {
           </div>
           <article className="bx-logocard bx-logocard-unified">
             <span className="bx-logocard-tag">Breathe</span>
-            <span className="bx-logocard-mark">One fleet</span>
+            <span className="bx-logocard-mark">One view</span>
             <span className="bx-logocard-sub">every patient, every night</span>
           </article>
         </div>
         <div className="bx-price-cta bx-reveal">
           <span>
-            See the unified fleet view and the AI early-warning system in depth.
+            See the one-view dashboard and the AI early-warning system in depth.
           </span>
           <Link className="bx-btn bx-btn-primary" href="/breathe/integrations">
             Explore integrations <ArrowRight size={16} />
@@ -3323,8 +3324,8 @@ function UnifiedFleet() {
 const NATIVE_STACK: { icon: React.ReactNode; label: string; note: string }[] = [
   {
     icon: <KeyRound size={17} />,
-    label: "Authentication & MFA",
-    note: "argon2id, TOTP, device sessions",
+    label: "Sign-in & two-factor security",
+    note: "strong password hashing, two-factor, device sessions",
   },
   {
     icon: <MessageSquare size={17} />,
@@ -3333,7 +3334,7 @@ const NATIVE_STACK: { icon: React.ReactNode; label: string; note: string }[] = [
   },
   {
     icon: <BrainCircuit size={17} />,
-    label: "AI orchestration",
+    label: "Coordinated AI",
     note: "voice agent, chat, scrubbing, coaching",
   },
   {
@@ -3349,7 +3350,7 @@ const NATIVE_STACK: { icon: React.ReactNode; label: string; note: string }[] = [
   {
     icon: <Stethoscope size={17} />,
     label: "Therapy monitoring",
-    note: "device-cloud adherence + early alerts",
+    note: "online-system adherence + early alerts",
   },
 ];
 
@@ -3367,7 +3368,7 @@ function BuiltInHouse() {
       <div className="bx-shell">
         <div className="bx-section-head center bx-reveal">
           <span className="bx-eyebrow">
-            <Cpu size={13} /> One codebase
+            <Cpu size={13} /> One system
           </span>
           <h2 className="bx-h2">Built in-house — not bolted on</h2>
           <p className="bx-lede">
@@ -3396,7 +3397,7 @@ function BuiltInHouse() {
           <article className="bx-vs-col bx-vs-native">
             <header>
               <span className="bx-vs-kicker">Breathe</span>
-              <h3>One native stack, one record</h3>
+              <h3>One system built in-house, one record</h3>
             </header>
             <ul className="bx-vs-native-list">
               {NATIVE_STACK.map((n) => (
@@ -3461,7 +3462,7 @@ const COMPARE_ROWS: CompareRow[] = [
     cols: ["no", "no", "no"],
   },
   {
-    label: "Live therapy-cloud monitoring",
+    label: "Live therapy online-system monitoring",
     sub: "ResMed · Philips · 3B",
     breathe: "yes",
     cols: ["partial", "partial", "no"],
@@ -3473,14 +3474,14 @@ const COMPARE_ROWS: CompareRow[] = [
     cols: ["no", "partial", "no"],
   },
   {
-    label: "One codebase, built in-house",
+    label: "One system, built in-house",
     sub: "not acquired & bolted-on modules",
     breathe: "yes",
     cols: ["no", "no", "partial"],
   },
   {
     label: "Electronic prior authorization",
-    sub: "FHIR · Da Vinci PAS",
+    sub: "submitted electronically",
     breathe: "yes",
     cols: ["partial", "no", "partial"],
   },
@@ -3744,7 +3745,7 @@ const ROLES: Role[] = [
     icon: <Stethoscope size={20} />,
     title: "Respiratory Therapist / Clinical",
     hours: 9,
-    why: "Adherence boards pull from the device clouds and surface exactly who is slipping, replacing hours of manual report-pulling with a prioritized worklist.",
+    why: "Adherence boards pull from the manufacturer systems and surface exactly who is slipping, replacing hours of manual report-pulling with a prioritized worklist.",
     drivers: [
       "Live ResMed / Philips / 3B adherence monitoring",
       "Telehealth visits with secure one-tap patient join links",
@@ -3768,7 +3769,7 @@ const ROLES: Role[] = [
     hours: 6,
     why: "Every number lives in one system with KPI alerts, so leadership stops reconciling spreadsheets across tools and starts acting on live signal.",
     drivers: [
-      "Real-time margin, DSO, LTV/CAC and payer dashboards",
+      "Live margin, DSO, LTV/CAC and payer dashboards",
       "KPI alerts that page you before a metric slips",
       "Team throughput & goals in a single source of truth",
     ],
@@ -4201,7 +4202,7 @@ const PLANS: {
     price: "Custom",
     cadence: "",
     monthlyCents: null,
-    setup: "Contracted volume + SLA",
+    setup: "Contracted volume + response deadlines",
     blurb:
       "For high-volume DME operations needing custom integration and support.",
     highlights: [
@@ -4209,7 +4210,7 @@ const PLANS: {
       "Virtual mask fitter — 25 fittings/mo, then $2 each",
       "Custom integration + migration plan",
       "Advanced security and account controls",
-      "Dedicated success manager + priority SLA",
+      "Dedicated success manager + priority response deadlines",
     ],
   },
 ];
@@ -4302,7 +4303,7 @@ function liveToPlanCards(plans: PublicPlan[]): PlanCard[] {
     cadence: p.isCustom || p.monthlyPriceCents == null ? "" : "/mo",
     monthlyCents: p.isCustom ? null : p.monthlyPriceCents,
     setup: p.isCustom
-      ? "Contracted volume + SLA"
+      ? "Contracted volume + response deadlines"
       : p.onboardingFeeCents != null && p.onboardingFeeCents > 0
         ? `+ ${dollars(p.onboardingFeeCents)} one-time onboarding`
         : "Onboarding included",
@@ -4418,7 +4419,7 @@ const ADDON_GROUPS: {
     group: "Integrations & one-time",
     items: [
       {
-        name: "Additional therapy-cloud vendor",
+        name: "Additional therapy online-system vendor",
         price: "$299/mo",
         code: "additional_therapy_vendor",
       },
@@ -4751,9 +4752,9 @@ function Pricing() {
           <p className="bx-lede">
             Transparent subscription tiers sized to your patient base — monthly
             or annual (two months free), with onboarding and migration included.
-            Upload a CSV of your patients and you&apos;re live on day one, and
-            your data stays yours — always exportable (back out to PacWare too).
-            License premium modules à la carte.
+            Upload a spreadsheet of your patients and you&apos;re live on day
+            one, and your data stays yours — always exportable (back out to
+            PacWare too). License premium modules à la carte.
           </p>
         </div>
         <BillingToggle mode={billing} onChange={setBilling} />
@@ -4791,8 +4792,8 @@ function PricingHome() {
           <p className="bx-lede">
             Subscription tiers sized to your patient base — monthly or annual
             (two months free), with onboarding and migration included. Upload a
-            CSV of your patients and you&apos;re live on day one. Add premium
-            modules only when you need them.
+            spreadsheet of your patients and you&apos;re live on day one. Add
+            premium modules only when you need them.
           </p>
         </div>
         <BillingToggle mode={billing} onChange={setBilling} />
@@ -4822,27 +4823,27 @@ const SECURITY: { icon: React.ReactNode; title: string; body: string }[] = [
   {
     icon: <ShieldCheck size={20} />,
     title: "HIPAA-eligible infrastructure",
-    body: "Every AI and communications vendor in the stack is HIPAA-eligible, and patient data flows through a SOC 2-aligned posture.",
+    body: "Every AI and communications vendor we use is HIPAA-eligible, and patient data is handled with SOC 2-level security practices.",
   },
   {
     icon: <KeyRound size={20} />,
-    title: "Least-privilege access",
-    body: "Granular, permission-gated admin roles mean each teammate sees only what their job requires — enforced at every route.",
+    title: "Access limited to what each person needs",
+    body: "Granular, permission-gated admin roles mean each teammate sees only what their job requires — enforced everywhere.",
   },
   {
     icon: <Database size={20} />,
     title: "PHI minimization",
-    body: "Order payloads and patient images are treated as world-readable and kept out of application logs by design, not by policy alone.",
+    body: "Order details and patient images are treated as if anyone could read them and kept out of application logs by design, not by policy alone.",
   },
   {
     icon: <Server size={20} />,
-    title: "Tenant isolation",
-    body: "Multi-tenant by architecture: your brand, sending domain, and patient data are cleanly separated from every other operator.",
+    title: "Your business kept separate",
+    body: "Every business is kept separate and private: your brand, sending email address, and patient data are cleanly separated from every other operator.",
   },
   {
     icon: <Network size={20} />,
     title: "Encrypted in transit",
-    body: "Same-origin, strict-CSP delivery with TLS everywhere — no third-party trackers or font CDNs reaching into patient sessions.",
+    body: "Encrypted connections everywhere — no outside trackers or third-party services reaching into patient sessions.",
   },
 ];
 
@@ -4856,9 +4857,9 @@ function Security() {
           </span>
           <h2 className="bx-h2">Built for PHI from the first line of code</h2>
           <p className="bx-lede">
-            Patient privacy isn&apos;t a settings page — it&apos;s an
-            architectural invariant. The hard rules are enforced in the
-            codebase, not left to operator discipline.
+            Patient privacy isn&apos;t a settings page — it&apos;s built into
+            how the product works. The hard rules are enforced in the software
+            itself, not left to operator discipline.
           </p>
         </div>
         <div className="bx-sec-grid">
@@ -4905,22 +4906,22 @@ const SECURITY_POSTURE: Capability[] = [
   {
     icon: <KeyRound size={20} />,
     title: "Authentication, in-house",
-    summary: "Identity is ours — no third-party SSO vendor in the loop.",
+    summary: "Identity is ours — no outside login service in the loop.",
     points: [
-      "argon2id password hashing",
-      "TOTP multi-factor with recovery codes",
-      "DB-backed sessions + CSRF protection",
-      "Rate-limited auth endpoints",
+      "Strong, modern password hashing (argon2id)",
+      "App-based two-factor sign-in with recovery codes",
+      "Server-backed sessions + protection against forged requests",
+      "Sign-in is limited to block password guessing",
     ],
   },
   {
     icon: <Database size={20} />,
     title: "Data handling",
-    summary: "PHI minimized by architecture, not policy alone.",
+    summary: "PHI minimized by how the product is built, not policy alone.",
     points: [
-      "Order payloads & images kept out of logs",
+      "Order details & images kept out of logs",
       "Mask imaging on-device — frames never transmitted",
-      "Per-object storage access control",
+      "Access control on every stored file",
       "Your data exports on demand — no lock-in",
     ],
     gold: true,
@@ -4928,11 +4929,12 @@ const SECURITY_POSTURE: Capability[] = [
   {
     icon: <Server size={20} />,
     title: "Access & isolation",
-    summary: "Least-privilege, multi-tenant by design.",
+    summary:
+      "Staff only get the access they need, every business kept separate.",
     points: [
-      "Permission-gated admin routes, every mutation",
-      "Per-tenant brand, sending domain & data separation",
-      "Strict-CSP, same-origin delivery — no trackers",
+      "Permission-gated admin actions, every change",
+      "Each business's brand, sending email address & data kept separate",
+      "Encrypted delivery — no trackers",
       "HIPAA-eligible vendors end to end",
     ],
   },
@@ -5002,7 +5004,7 @@ const ROI_LEVERS: Capability[] = [
     title: "Tools retired",
     summary: "≈ $1,500 / seat / yr in point-tool licenses you drop.",
     points: [
-      "Resupply, RCM, CRM, telehealth, e-sign & IVR in one platform",
+      "Resupply, RCM, CRM, telehealth, e-sign & phone system in one platform",
       "No per-module upsells or integration glue to maintain",
       "Your data exports back out on demand",
     ],
@@ -5053,11 +5055,11 @@ const PRICING_FAQ: { q: string; a: React.ReactNode }[] = [
   },
   {
     q: "How fast can we be live?",
-    a: "Day one. Upload a CSV of your patients and your team starts the same day; the deeper payer, clearinghouse, and device-cloud connections come online over the following weeks, not quarters. The roster import is a fill-only sync, so there's no risky big-bang cutover.",
+    a: "Day one. Upload a spreadsheet of your patients and your team starts the same day; the deeper payer, clearinghouse, and online-system connections come online over the following weeks, not quarters. The roster import is a safe import that only fills in blanks and never overwrites what you already have, so there's no risky all-at-once switchover.",
   },
   {
     q: "What does it replace?",
-    a: "For most operators, the platform retires a stack of point tools — separate resupply software, an RCM/billing suite, a patient CRM, a telehealth app, a document/e-sign tool, therapy dashboards, and a call-center IVR — into one login. The ROI calculator models that consolidation per seat.",
+    a: "For most operators, the platform retires a stack of point tools — separate resupply software, an RCM/billing suite, a patient CRM, a telehealth app, a document/e-sign tool, therapy dashboards, and a call-center phone system — into one login. The ROI calculator models that consolidation per seat.",
   },
 ];
 
@@ -5102,7 +5104,7 @@ const STEPS: {
     icon: <Database size={20} />,
     n: "01",
     title: "Import your patients — day one",
-    body: "Upload a CSV of your current patients and they're in the system the same day. The importer is pre-mapped to PacWare's export, but any billing or CRM system that can export your roster to CSV works just as well. It's a fill-only sync — new patients are added and blank fields filled, while an existing value is never overwritten.",
+    body: "Upload a spreadsheet of your current patients and they're in the system the same day. The importer is pre-mapped to PacWare's export, but any billing or CRM system that can export your roster to a spreadsheet works just as well. It's a safe import that only fills in blanks and never overwrites what you already have — new patients are added and blank fields filled, while an existing value is never overwritten.",
   },
   {
     icon: <Plug size={20} />,
@@ -5129,9 +5131,9 @@ export function Onboarding() {
           <h2 className="bx-h2">Ready on day one</h2>
           <p className="bx-lede">
             Moving off legacy DME software is the scariest part — so we made it
-            the easiest. Upload a CSV of your patients and you&apos;re running
-            the same day; the deeper payer and device-cloud connections come
-            online over the following weeks. Your data comes with you, and
+            the easiest. Upload a spreadsheet of your patients and you&apos;re
+            running the same day; the deeper payer and online-system connections
+            come online over the following weeks. Your data comes with you, and
             nothing you already have gets clobbered.
           </p>
         </div>
@@ -5178,26 +5180,26 @@ function Manifesto() {
 const FAQ: { q: string; a: React.ReactNode }[] = [
   {
     q: "Will it work with our billing system?",
-    a: "Yes. Breathe exchanges patient and worklist data with PacWare over CSV and builds standard ASC X12 5010 837P claims. Once the AI scrubs them clean you have a choice: submit automatically through the built-in Office Ally integration, or download the 837P and upload it to the clearinghouse of your choice. Either way, ERAs (835) post back and reconcile automatically. PacWare stays your system of record for the warehouse; Breathe runs the resupply and revenue engine on top.",
+    a: "Yes. Breathe exchanges patient and worklist data with PacWare as spreadsheet files and builds standard 837P claims. Once the AI scrubs them clean you have a choice: submit automatically through the built-in Office Ally connection, or download the 837P and upload it to the clearinghouse of your choice. Either way, ERAs (835) post back and reconcile automatically. PacWare stays your system of record for the warehouse; Breathe runs the resupply and revenue engine on top.",
   },
   {
     q: "Can we import our current patients?",
-    a: "Yes — on day one. Export your patient roster to a CSV and upload it, and your patients are in the system the same day. The importer is pre-mapped to PacWare's export format, but any billing or CRM system that can produce a CSV of your patients works. It runs as a fill-only sync — new patients are added and blank fields filled, and an existing value is never overwritten — so you can re-import as often as you like with no risk of clobbering data.",
+    a: "Yes — on day one. Export your patient roster to a spreadsheet and upload it, and your patients are in the system the same day. The importer is pre-mapped to PacWare's export format, but any billing or CRM system that can produce a spreadsheet of your patients works. It runs as a safe import that only fills in blanks and never overwrites what you already have — new patients are added and blank fields filled, and an existing value is never overwritten — so you can re-import as often as you like with no risk of clobbering data.",
   },
   {
     q: "How long does implementation take?",
-    a: "You can be working on day one — upload a CSV of your patients and your team starts the same day. The deeper connections (payers, clearinghouse, device clouds) come online over the following weeks, not quarters. Because the roster imports as a fill-only sync — new patients added and blank fields filled, an existing value never overwritten — there is no risky big-bang cutover.",
+    a: "You can be working on day one — upload a spreadsheet of your patients and your team starts the same day. The deeper connections (payers, clearinghouse, online systems) come online over the following weeks, not quarters. Because the roster imports as a safe import that only fills in blanks and never overwrites what you already have — new patients added and blank fields filled, an existing value never overwritten — there is no risky all-at-once switchover.",
   },
   {
     q: "Is our patient data safe?",
-    a: "Privacy is architectural. Mask-fitting images are processed on-device and never transmitted, order payloads and images are kept out of application logs by design, admin access is least-privilege and permission-gated, and every AI vendor in the stack is HIPAA-eligible.",
+    a: "Privacy is built into how the product works. Mask-fitting images are processed on-device and never transmitted, order details and images are kept out of application logs by design, admin access is limited to what each person needs and permission-gated, and every AI vendor we use is HIPAA-eligible.",
   },
   {
     q: "Does the AI replace my staff?",
     a: "No — it removes the repetitive work so your team can do the human parts. The voice agent leaves a summary for review, claims are scrubbed before a person approves them, and the admin copilot always confirms before it sends anything. People stay in the loop.",
   },
   {
-    q: "Which device clouds do you support?",
+    q: "Which manufacturer systems do you support?",
     a: "ResMed AirView, Philips Care Orchestrator, and 3B React Health today, with adherence pulled nightly and surfaced as a prioritized worklist of who is slipping and who is due.",
   },
   {
@@ -5260,7 +5262,7 @@ const AUDIENCES: Capability[] = [
     points: [
       "One patient record and one workflow across every location",
       "Live margin, DSO, and growth dashboards across the business",
-      "Stand up a new site in weeks with a CSV import, not a quarter",
+      "Stand up a new site in weeks with a spreadsheet import, not a quarter",
     ],
   },
   {
@@ -5333,7 +5335,7 @@ const FOUNDING_PERKS: { icon: React.ReactNode; title: string; body: string }[] =
     {
       icon: <Headphones size={20} />,
       title: "White-glove migration",
-      body: "We sit with you through the CSV import, your first resupply run, and your first claim batch — hands-on, not a ticket queue.",
+      body: "We sit with you through the spreadsheet import, your first resupply run, and your first claim batch — hands-on, not a ticket queue.",
     },
   ];
 

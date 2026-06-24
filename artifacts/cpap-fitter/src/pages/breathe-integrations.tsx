@@ -48,9 +48,9 @@ function LoginSprawl() {
           <h2 className="bx-h2">Three portals. Three logins. One patient.</h2>
           <p className="bx-lede">
             Most DME companies run more than one CPAP manufacturer — and each
-            one ships its own cloud. So your respiratory therapist signs into
-            three separate systems, pulls three separate reports, and stitches
-            the picture together by hand.
+            one ships its own online system. So your respiratory therapist signs
+            into three separate systems, pulls three separate reports, and
+            stitches the picture together by hand.
           </p>
         </div>
         <div className="bx-sprawl bx-reveal">
@@ -63,8 +63,9 @@ function LoginSprawl() {
           ))}
         </div>
         <p className="bx-sprawl-foot">
-          No shared record. No cross-cloud view. The patient quietly drifting
-          out of compliance in one portal is invisible in the other two.
+          No shared record. No combined view across systems. The patient quietly
+          drifting out of compliance in one portal is invisible in the other
+          two.
         </p>
       </div>
     </section>
@@ -146,10 +147,10 @@ function UnifiedFleetView() {
           </span>
           <h2 className="bx-h2">Every patient, every night — compiled</h2>
           <p className="bx-lede">
-            Breathe pulls each device cloud nightly and normalizes it into one
-            model, so usage, AHI, leak, and pressure sit on a single screen and
-            a single patient record — whichever manufacturer the machine came
-            from.
+            Breathe pulls from each manufacturer's online system nightly and
+            brings it together into one view, so usage, AHI, leak, and pressure
+            sit on a single screen and a single patient record — whichever
+            manufacturer the machine came from.
           </p>
         </div>
         <div className="bx-fleet-wrap bx-reveal">
@@ -200,8 +201,8 @@ function UnifiedFleetView() {
 const ALERT_STEPS: { idx: string; title: string; body: string }[] = [
   {
     idx: "1",
-    title: "Nightly sync",
-    body: "Every active device link across all three clouds is pulled and normalized into one model — usage, AHI, leak, pressure, supply windows.",
+    title: "Nightly update",
+    body: "Every active machine connection across all three manufacturer systems is pulled and brought together into one view — usage, AHI, leak, pressure, supply windows.",
   },
   {
     idx: "2",
@@ -221,15 +222,15 @@ const ALERT_STEPS: { idx: string; title: string; body: string }[] = [
 ];
 
 const ALERT_TAGS: { label: string; tone: "risk" | "warn" | "info" }[] = [
-  { label: "compliance_risk", tone: "risk" },
-  { label: "setup_at_risk", tone: "risk" },
-  { label: "high_ahi", tone: "warn" },
-  { label: "high_leak", tone: "warn" },
-  { label: "usage_decline", tone: "warn" },
-  { label: "low_usage", tone: "warn" },
-  { label: "no_recent_data", tone: "info" },
-  { label: "send_failure", tone: "info" },
-  { label: "no_response", tone: "info" },
+  { label: "Compliance risk", tone: "risk" },
+  { label: "Setup at risk", tone: "risk" },
+  { label: "High AHI", tone: "warn" },
+  { label: "High leak", tone: "warn" },
+  { label: "Usage declining", tone: "warn" },
+  { label: "Low usage", tone: "warn" },
+  { label: "No recent data", tone: "info" },
+  { label: "Message failed", tone: "info" },
+  { label: "No response", tone: "info" },
 ];
 
 function AiEarlyWarning() {
@@ -321,8 +322,8 @@ const DEVICE_CLOUDS: IntItem[] = [
     tag: "Care Orchestrator",
     sub: "Respironics DreamStation",
     points: [
-      "Same unified per-night therapy model",
-      "Usage, AHI, leak & pressure normalized",
+      "Same unified per-night therapy view",
+      "Usage, AHI, leak & pressure combined into one consistent view",
       "Mask, tubing & filter replacement windows",
       "Mapped to the same patient record",
     ],
@@ -334,7 +335,7 @@ const DEVICE_CLOUDS: IntItem[] = [
     sub: "Luna G3 · iCode Connect",
     points: [
       "Luna G3 therapy nights pulled nightly",
-      "Adherence ranked beside the other clouds",
+      "Adherence ranked beside the other systems",
       "Device settings & supply tracking",
       "One fleet, one worklist, one record",
     ],
@@ -347,13 +348,14 @@ function DeviceCloudGrid() {
       <div className="bx-shell">
         <div className="bx-section-head center bx-reveal">
           <span className="bx-eyebrow">
-            <Network size={13} /> Therapy clouds
+            <Network size={13} /> Therapy systems
           </span>
-          <h2 className="bx-h2">The manufacturer clouds Breathe unifies</h2>
+          <h2 className="bx-h2">The manufacturer systems Breathe unifies</h2>
           <p className="bx-lede">
-            Breathe reads from each cloud with your own credentials — rotated at
-            call time, fail-soft if a vendor is down — and never replaces the
-            portal. It compiles, it doesn&apos;t take over.
+            Breathe reads from each system with your own logins — changed
+            instantly when you need to, and it keeps working if a vendor is down
+            — and never replaces the portal. It compiles, it doesn&apos;t take
+            over.
           </p>
         </div>
         <div className="bx-intgrid">
@@ -370,20 +372,20 @@ const PAYER_SYSTEMS: IntItem[] = [
   {
     mark: "Office Ally",
     tag: "Clearinghouse",
-    sub: "EDI over SFTP",
+    sub: "Secure electronic file transfer",
     points: [
       "837P claims, AI-scrubbed before they file",
       "835 / ERA auto-posting & reconciliation",
-      "270 / 271 real-time eligibility",
+      "270 / 271 instant eligibility",
       "276 / 277 & 277CA claim status",
     ],
   },
   {
     mark: "Da Vinci PAS",
     tag: "Prior auth",
-    sub: "FHIR electronic PA",
+    sub: "Electronic prior auth",
     points: [
-      "FHIR PAS bundles built per payer & plan",
+      "Prior-auth requests built per payer & plan",
       "Submitted and tracked to a decision",
       "Approval / denial reasons parsed back in",
     ],
@@ -392,11 +394,11 @@ const PAYER_SYSTEMS: IntItem[] = [
   {
     mark: "PacWare",
     tag: "Billing",
-    sub: "Legacy CSV exchange",
+    sub: "Legacy spreadsheet file exchange",
     points: [
-      "Fill-only patient import — never overwrites",
+      "A safe import that only fills in blanks and never overwrites",
       "Resupply-due worklist export with a verify step",
-      "Formula-injection-guarded, lossless round-trip",
+      "Protected against spreadsheet formula attacks, lossless round-trip",
       "Your warehouse system of record stays yours",
     ],
   },
@@ -410,7 +412,7 @@ function PayerBillingGrid() {
           <span className="bx-eyebrow">
             <Workflow size={13} /> Payers & billing
           </span>
-          <h2 className="bx-h2">The rest of the stack, connected too</h2>
+          <h2 className="bx-h2">The rest of your systems, connected too</h2>
           <p className="bx-lede">
             Claims, remittances, eligibility, and prior authorization move
             through the systems you already use — and your legacy billing system
@@ -434,16 +436,16 @@ const INT_FAQ: { q: string; a: string }[] = [
     a: "No — Breathe augments them. AirView, Care Orchestrator, and React Health stay exactly as they are; Breathe reads from them nightly and compiles a single fleet view on top, so your team stops signing into three places to answer one question about a patient.",
   },
   {
-    q: "How does connecting a cloud work?",
-    a: "Each tenant connects its own vendor credentials, stored per-organization and read at call time — so rotating a secret takes effect immediately, with no redeploy. A connector that isn't configured simply reports unavailable in the admin console; it never blocks the rest of the platform from running.",
+    q: "How does connecting an online system work?",
+    a: "Each business connects its own vendor logins, stored separately for your business and used when needed — so changing a password takes effect immediately, with nothing to restart. A connection that isn't configured simply reports unavailable in the admin console; it never blocks the rest of the platform from running.",
   },
   {
-    q: "What happens if a manufacturer cloud is down?",
-    a: "The sync is fail-soft. A vendor outage skips that one adapter for the night and resumes on the next run, while the rest of the fleet keeps updating. A third-party hiccup never takes your console offline.",
+    q: "What happens if a manufacturer system is down?",
+    a: "The nightly update keeps working if one system is down. A vendor outage skips that one connection for the night and resumes on the next run, while the rest of the fleet keeps updating. An outside hiccup never takes your console offline.",
   },
   {
     q: "Can I get my billing data back out?",
-    a: "Always. PacWare stays your system of record for the warehouse, and Breathe exchanges patient and resupply-due data with it over CSV — with a verify step and formula-injection guarding — so the round-trip is lossless and your data is never held hostage.",
+    a: "Always. PacWare stays your system of record for the warehouse, and Breathe exchanges patient and resupply-due data with it over spreadsheet files — with a verify step and protection against spreadsheet formula attacks — so the round-trip is lossless and your data is never held hostage.",
   },
 ];
 
@@ -480,7 +482,7 @@ function IntegrationsFaq() {
 export function BreatheIntegrations() {
   useDocumentTitle(
     "Integrations — Breathe by CareMetric.ai",
-    "Breathe unifies your CPAP manufacturer clouds — ResMed AirView, Philips Care Orchestrator, and 3B React Health — into one fleet view, then uses AI to flag at-risk patients early. Plus Office Ally claims, Da Vinci PAS prior auth, and PacWare billing.",
+    "Breathe unifies your CPAP manufacturer systems — ResMed AirView, Philips Care Orchestrator, and 3B React Health — into one fleet view, then uses AI to flag at-risk patients early. Plus Office Ally claims, Da Vinci PAS prior auth, and PacWare billing.",
   );
   return (
     <BreatheShell>
@@ -489,7 +491,7 @@ export function BreatheIntegrations() {
         eyebrow="Integrations"
         title={
           <>
-            Three device clouds. One fleet.{" "}
+            Three manufacturer systems. One view.{" "}
             <span className="grad-em">Zero swivel-chair.</span>
           </>
         }

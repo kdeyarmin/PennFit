@@ -80,7 +80,7 @@ const FRAGMENT_COST: Capability[] = [
     summary: "Staff time spent moving data instead of helping patients.",
     points: [
       "The same patient typed into three or four systems",
-      "Nightly CSV exports to keep tools in sync",
+      "Nightly spreadsheet exports to keep tools up to date",
       "Mistakes introduced at every hand-off",
     ],
   },
@@ -145,7 +145,7 @@ function FragmentedCost() {
 /* ───────────────── What one platform changes ───────────────── */
 const POINT_TOOLS: string[] = [
   "A separate login for every job",
-  "CSVs and exports to move a patient between tools",
+  "Spreadsheets and exports to move a patient between tools",
   "Numbers that never quite agree across systems",
   "At-risk patients spotted late, if at all",
   "Nobody owns the patient end to end",
@@ -214,7 +214,7 @@ const PERSONAS: Capability[] = [
     summary: "Run the business on live signal, not last month's export.",
     points: [
       "One source of truth across the whole operation",
-      "Margin, DSO, and growth in real time",
+      "Margin, DSO, and growth, live",
       "Grow resupply without adding headcount",
     ],
   },
@@ -234,7 +234,7 @@ const PERSONAS: Capability[] = [
     title: "Respiratory therapists",
     summary: "See who's slipping before they quit therapy.",
     points: [
-      "One adherence worklist across every device cloud",
+      "One adherence worklist across every manufacturer's online system",
       "CMS 90-day cohorts tracked automatically",
       "Telehealth visits with one-tap patient join",
     ],
@@ -300,7 +300,7 @@ const GLOSSARY: { term: string; def: string }[] = [
   },
   {
     term: "Prior authorization",
-    def: "A payer's advance approval before certain equipment ships. Breathe can route it electronically via FHIR (Da Vinci PAS) instead of by fax.",
+    def: "A payer's advance approval before certain equipment ships. Breathe can route it electronically instead of by fax.",
   },
 ];
 
