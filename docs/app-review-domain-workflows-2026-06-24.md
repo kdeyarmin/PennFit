@@ -5,7 +5,7 @@ A **workflow / ease-of-use review of every product domain** at `main` =
 ([`app-review-2026-06-12.md`](./app-review-2026-06-12.md) and the
 `app-review-*` series), this one uses a **UX lens**: for each domain it
 traces the actual user journey through the page code, then judges whether
-the workflow is *logical, complete, and low-friction* for a non-technical
+the workflow is _logical, complete, and low-friction_ for a non-technical
 operator (a DME/CPAP small-business owner, CSR, RT, or biller) — and for
 the customer-facing half, a tired, often older, often phone-bound patient.
 
@@ -21,7 +21,7 @@ backing route handlers, with file:line citations. The seven:
 6. System / Settings / onboarding
 7. Customer-facing (patient) storefront + mask fitter
 
-**Scope caveats.** This is a *code-reading* review, not a live
+**Scope caveats.** This is a _code-reading_ review, not a live
 click-through with production data, so a few findings may already be
 mitigated by runtime state. Findings were **not** exhaustively
 cross-checked against the full prior-review corpus — the engineering
@@ -39,9 +39,9 @@ claim-lifecycle order, the Home dashboard and Billing Hub are real command
 centers, and Control Center is a best-in-class feature-switch UI. The app
 is not disorganized.
 
-**The friction is concentrated in seven *repeating* patterns, not a
+**The friction is concentrated in seven _repeating_ patterns, not a
 hundred unique bugs.** The same handful of workflow defects recur across
-nearly every domain — which is the good news: a small number of *systemic*
+nearly every domain — which is the good news: a small number of _systemic_
 fixes, several of which can copy a pattern that **already exists elsewhere
 in the same codebase**, would lift the whole product. The app frequently
 contains the cure for its own disease (the billing **verify** page already
@@ -51,15 +51,15 @@ that fixes them, which the analytics dashboards never do).
 
 ### The seven cross-cutting patterns, ranked by leverage
 
-| # | Pattern | Where it recurs | Fix already in-repo? |
-|---|---------|-----------------|----------------------|
-| **A** | **Raw UUID / slug / SKU hand-entry** where a search picker belongs | All 6 admin domains | ✅ `admin-billing-verify.tsx` patient search; `HcpcsCodeAutocomplete` |
-| **B** | **Dead-end surfaces** — show info, offer no next action / no escalation | Workspace, Patients, Orders, Billing, Analytics | ✅ Home tiles, Billing Hub, therapy-resupply all close their loop |
-| **C** | **Overlapping near-duplicate pages** with no "use this when…" guidance | Workspace, Patients, Orders, Billing, Analytics, System | — (IA / copy work) |
-| **D** | **Broken list→detail→action handoff** — no URL-addressable detail, no context carried, no return path | Billing (worst), Patients, Workspace, Analytics | partial (`?claim=` param exists but unread) |
-| **E** | **First-run / empty states fail new tenants** — filter-empty ≠ day-one guidance; onboarding skippable | System, Patients, Billing, Orders, Analytics, Customer | ✅ server-driven `/admin/setup` checklist already exists |
-| **F** | **Jargon leaks to the wrong audience** — payer/clinical/infra terms to patients & non-technical owners | Customer, System | — (copy work) |
-| **G** | **Async/confirmation states strand users; billable actions under-confirmed** | Customer, System | ✅ Control Center typed-confirm is the model |
+| #     | Pattern                                                                                                | Where it recurs                                         | Fix already in-repo?                                                  |
+| ----- | ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------- | --------------------------------------------------------------------- |
+| **A** | **Raw UUID / slug / SKU hand-entry** where a search picker belongs                                     | All 6 admin domains                                     | ✅ `admin-billing-verify.tsx` patient search; `HcpcsCodeAutocomplete` |
+| **B** | **Dead-end surfaces** — show info, offer no next action / no escalation                                | Workspace, Patients, Orders, Billing, Analytics         | ✅ Home tiles, Billing Hub, therapy-resupply all close their loop     |
+| **C** | **Overlapping near-duplicate pages** with no "use this when…" guidance                                 | Workspace, Patients, Orders, Billing, Analytics, System | — (IA / copy work)                                                    |
+| **D** | **Broken list→detail→action handoff** — no URL-addressable detail, no context carried, no return path  | Billing (worst), Patients, Workspace, Analytics         | partial (`?claim=` param exists but unread)                           |
+| **E** | **First-run / empty states fail new tenants** — filter-empty ≠ day-one guidance; onboarding skippable  | System, Patients, Billing, Orders, Analytics, Customer  | ✅ server-driven `/admin/setup` checklist already exists              |
+| **F** | **Jargon leaks to the wrong audience** — payer/clinical/infra terms to patients & non-technical owners | Customer, System                                        | — (copy work)                                                         |
+| **G** | **Async/confirmation states strand users; billable actions under-confirmed**                           | Customer, System                                        | ✅ Control Center typed-confirm is the model                          |
 
 If only the **top three** are done — **A** (one shared `<PatientSearchCombobox>`
 replacing every UUID box), **D** for Billing (make a claim URL-addressable),
@@ -71,7 +71,7 @@ biller) improves materially for a modest, low-risk amount of work.
 
 ## Cross-cutting patterns in detail
 
-### A — Raw IDs/slugs/SKUs where a picker belongs  ·  *leverage: very high · effort: M*
+### A — Raw IDs/slugs/SKUs where a picker belongs · _leverage: very high · effort: M_
 
 The single most pervasive friction in the product. Non-technical staff are
 repeatedly asked to **type or paste an opaque identifier no human knows**:
@@ -84,7 +84,7 @@ repeatedly asked to **type or paste an opaque identifier no human knows**:
 - **Patients & Clinical:** Inbound-fax filing wants patient/provider/Rx UUIDs
   (`admin-inbound-faxes.tsx:663`); "New coaching plan" and clinical lookup demand
   a hand-typed patient UUID (`admin-coaching.tsx:107`, `admin-clinical.tsx:57`);
-  provider e-sign captures a typed patient *name string* with no chart link
+  provider e-sign captures a typed patient _name string_ with no chart link
   (`admin-provider-esign.tsx:266`); fitter-invite attach wants a chart UUID
   (`admin-fitter-invites.tsx`).
 - **Orders & Shop:** Returns "Replace" requires pasting Stripe `prod_…`/`price_…`
@@ -103,7 +103,7 @@ and template variants) and replace every UUID/slug/SKU text input with it.
 One component, ~12 small swaps; unblocks workflows that are today effectively
 unusable for the target user.
 
-### B — Dead-end surfaces (no next action)  ·  *leverage: very high · effort: M–L*
+### B — Dead-end surfaces (no next action) · _leverage: very high · effort: M–L_
 
 Surfaces that present information but give the user nowhere to go:
 
@@ -137,7 +137,7 @@ select→draft→send loop (`admin-therapy-resupply.tsx:551`).
 (drill-through, escalate, or act-in-place). Start with conversation-detail and
 the analytics drill-throughs.
 
-### C — Overlapping near-duplicate pages  ·  *leverage: high · effort: M*
+### C — Overlapping near-duplicate pages · _leverage: high · effort: M_
 
 Users repeatedly pay a "which page do I use?" tax:
 
@@ -163,7 +163,7 @@ fleet summary; the two e-sign systems → one); where pages are genuinely distin
 add a one-line "use this when…" subheader and standardize merge-token syntax;
 group the 25-tab 360 into ~6 labeled clusters; add an Analytics overview/index.
 
-### D — Broken list→detail→action handoff  ·  *leverage: high · effort: M*
+### D — Broken list→detail→action handoff · _leverage: high · effort: M_
 
 The worst case is **Billing**: the claim workbench tracks the open claim in
 local `useState` and never reads the URL (verified: `admin-insurance-claims.tsx:124`),
@@ -180,7 +180,7 @@ workbench parse `?claim=<id>` on mount and standardize every worklist to link
 reason) in deep links; add a "← back to [queue]" affordance on landing surfaces.
 One change repairs the billing handoff across the whole domain.
 
-### E — First-run / empty states fail new tenants  ·  *leverage: high · effort: S–M*
+### E — First-run / empty states fail new tenants · _leverage: high · effort: S–M_
 
 A brand-new tenant is the highest-stakes moment and gets the least guidance:
 
@@ -198,14 +198,14 @@ A brand-new tenant is the highest-stakes moment and gets the least guidance:
 
 **The fix already exists.** The server-driven `/admin/setup` checklist
 (`admin-setup-checklist.tsx`, `tenant-setup.ts:79`) is genuinely good — live
-status, deep links, warm copy. It just isn't *unmissable*.
+status, deep links, warm copy. It just isn't _unmissable_.
 
 **Fix:** redirect a never-configured tenant to `/admin/setup` after the
 agreements gate; make `SetupProgressCard` render in loading/error states; branch
 empty states on `total === 0` for first-run guidance vs filtered-empty; add
 domain-level "getting started" cards (esp. Billing).
 
-### F — Jargon leaks to the wrong audience  ·  *leverage: high · effort: S–M*
+### F — Jargon leaks to the wrong audience · _leverage: high · effort: S–M_
 
 - **Patients** meet payer/clinical jargon at the buying moment: "cash-pay"
   (`shop.tsx:583`), undefined "deductible/coinsurance/post-deductible"
@@ -222,7 +222,7 @@ prescription needed"); reframe/gate platform-ops pages or add a plain "we handle
 this" signal; add field-level help/links for the required clinical-billing
 identifiers.
 
-### G — Async/confirmation states strand users; billable actions under-confirmed  ·  *leverage: med–high · effort: S–M*
+### G — Async/confirmation states strand users; billable actions under-confirmed · _leverage: med–high · effort: S–M_
 
 - **Customer:** Post-payment "Confirming…" polls ~4× then tells the user to refresh
   manually, with no "safe to close" reassurance — anxious patients re-pay or call
@@ -244,18 +244,18 @@ link"; a confirm dialog stating the cost before provisioning a number.
 
 ## Prioritized backlog (suggested first sprint)
 
-| Rank | Item | Pattern · Domain | Effort | Why now |
-|------|------|------------------|--------|---------|
-| 1 | Extract `<PatientSearchCombobox>` (+ provider/SKU/template) and replace **every** UUID/slug/SKU input | A · all | M | Unblocks ~12 workflows that are unusable for non-technical staff; fix exists in-repo |
-| 2 | Make a claim **URL-addressable** (`?claim=<id>`), fix manual-claim nav, standardize worklist links | D · Billing | M | One change repairs the list→claim handoff across 14 worklists |
-| 3 | Turn **conversation-detail** into a launchpad — Open case / Schedule follow-up / Add to calendar | B · Workspace | M | Biggest single gap on the highest-traffic CSR screen |
-| 4 | **Add a Shop Orders list→detail** (status, line items, tracking/delivered/refund) and relabel the fitter "Orders" | B · Orders | M–L | Closes the broken fulfillment loop; fixes the most damaging label mismatch |
-| 5 | Add **dashboard→worklist drill-through** on every analytics chart | B · Analytics | M | Converts dead charts into operating tools |
-| 6 | De-jargon customer money moments + **bounded payment polling** + reminder-link recovery | F·G · Customer | S–M | Direct conversion/trust/revenue protection |
-| 7 | Make **onboarding unmissable** — redirect never-configured tenants to `/admin/setup`; fix `SetupProgressCard` silent-fail | E · System | S | Day-one experience; prevents running on defaults |
-| 8 | Collapse **settings sprawl** to one hub; merge Email-Inbox→Conversations; add "use this when…" subheaders | C · System+Workspace | M | Removes the recurring "which page?" tax |
-| 9 | Group the **25-tab patient 360** into ~6 labeled clusters; merge duplicate doc/timeline tabs | C · Patients | M | Largest single cut to daily cognitive load |
-| 10 | Wire **monitoring→action**: carry alert reason, deep-link the intervention form, cross-link the two clinical nav groups | B·D · Patients | M | Fixes the domain's biggest dead-end pattern |
+| Rank | Item                                                                                                                      | Pattern · Domain     | Effort | Why now                                                                              |
+| ---- | ------------------------------------------------------------------------------------------------------------------------- | -------------------- | ------ | ------------------------------------------------------------------------------------ |
+| 1    | Extract `<PatientSearchCombobox>` (+ provider/SKU/template) and replace **every** UUID/slug/SKU input                     | A · all              | M      | Unblocks ~12 workflows that are unusable for non-technical staff; fix exists in-repo |
+| 2    | Make a claim **URL-addressable** (`?claim=<id>`), fix manual-claim nav, standardize worklist links                        | D · Billing          | M      | One change repairs the list→claim handoff across 14 worklists                        |
+| 3    | Turn **conversation-detail** into a launchpad — Open case / Schedule follow-up / Add to calendar                          | B · Workspace        | M      | Biggest single gap on the highest-traffic CSR screen                                 |
+| 4    | **Add a Shop Orders list→detail** (status, line items, tracking/delivered/refund) and relabel the fitter "Orders"         | B · Orders           | M–L    | Closes the broken fulfillment loop; fixes the most damaging label mismatch           |
+| 5    | Add **dashboard→worklist drill-through** on every analytics chart                                                         | B · Analytics        | M      | Converts dead charts into operating tools                                            |
+| 6    | De-jargon customer money moments + **bounded payment polling** + reminder-link recovery                                   | F·G · Customer       | S–M    | Direct conversion/trust/revenue protection                                           |
+| 7    | Make **onboarding unmissable** — redirect never-configured tenants to `/admin/setup`; fix `SetupProgressCard` silent-fail | E · System           | S      | Day-one experience; prevents running on defaults                                     |
+| 8    | Collapse **settings sprawl** to one hub; merge Email-Inbox→Conversations; add "use this when…" subheaders                 | C · System+Workspace | M      | Removes the recurring "which page?" tax                                              |
+| 9    | Group the **25-tab patient 360** into ~6 labeled clusters; merge duplicate doc/timeline tabs                              | C · Patients         | M      | Largest single cut to daily cognitive load                                           |
+| 10   | Wire **monitoring→action**: carry alert reason, deep-link the intervention form, cross-link the two clinical nav groups   | B·D · Patients       | M      | Fixes the domain's biggest dead-end pattern                                          |
 
 ---
 
@@ -309,21 +309,21 @@ send proactive outreach.
 
 **Primary workflows traced**
 
-1. *Start-of-day triage* — Home (`dashboard.tsx:112`) → setup progress → 5 clickable
+1. _Start-of-day triage_ — Home (`dashboard.tsx:112`) → setup progress → 5 clickable
    KPI tiles (`:115`, each deep-links a pre-filtered queue) → `TodayWorklistSection`
    (8 cards, top-5 each, `admin-today.tsx:93`) → quick links. **Smooth** — the
    best-designed page in the domain.
-2. *Answer an inbound thread* — list (`conversations.tsx:74`) → detail
+2. _Answer an inbound thread_ — list (`conversations.tsx:74`) → detail
    (`conversation-detail.tsx:68`): timeline + reply composer (canned replies,
    Draft-with-AI, autosaved drafts) + SLA/assignment + triage + Patient360 sidebar.
    **Smooth within the thread**; broken at escalation (below).
-3. *Walk-in counter order* — Front Desk (`front-desk.tsx:917`): search-or-capture
+3. _Walk-in counter order_ — Front Desk (`front-desk.tsx:917`): search-or-capture
    patient → cart → payment/fulfillment → pre-dispense checklist → place → handoff.
    A clean linear state machine. **Smooth**, with one ship-lane dead-end.
-4. *Send a bulk campaign* — `admin-bulk-campaigns.tsx`: resolve audience → preview →
+4. _Send a bulk campaign_ — `admin-bulk-campaigns.tsx`: resolve audience → preview →
    count-named confirm (`:678`). Logical arc, but requires typing a template-key
    **slug** (`:587`). **Has friction.**
-5. *Book an appointment* — calendar `EventEditor` (`admin-company-calendar.tsx:940`):
+5. _Book an appointment_ — calendar `EventEditor` (`admin-company-calendar.tsx:940`):
    patient never pre-linked, always a fresh typeahead. **Has friction.**
 
 **Strengths:** Home is excellent (deep-links + "all clear" empties +
@@ -337,22 +337,22 @@ consistent; nav badges and the open inbox poll on a matching 60s cadence.
 - **[High] Conversation detail has no "create case / follow-up / appointment"
   handoff** — `conversation-detail.tsx:340`. The TriagePanel offers only tags,
   snooze, claim; Patient360Panel has no escalation either. The CSR's highest-traffic
-  screen is a read-and-reply island. *Fix:* add Open-case / Schedule-follow-up /
+  screen is a read-and-reply island. _Fix:_ add Open-case / Schedule-follow-up /
   Add-to-calendar actions pre-linked to the patient/conversation.
 - **[High] Cases can only be populated by hand-typing raw UUIDs** —
   `admin-cases.tsx:391`. The one page meant to unify channels is the hardest to
-  fill. *Fix:* search/picker + "Add to case" from conversations/orders/faxes.
+  fill. _Fix:_ search/picker + "Add to case" from conversations/orders/faxes.
 - **[High] Email Inbox duplicates Conversations** — `email-inbox.tsx`; the email
-  channel already lives in Conversations and rows route to the same detail. *Fix:*
+  channel already lives in Conversations and rows route to the same detail. _Fix:_
   demote to a saved Conversations view.
 - **[High] Bulk Campaigns "Template key" is an unguessable free-text slug** —
   `admin-bulk-campaigns.tsx:587`; the referenced template library is itself
-  permission-gated away from the CSR who can start a campaign. *Fix:* dropdown of
+  permission-gated away from the CSR who can start a campaign. _Fix:_ dropdown of
   existing templates.
 - **[Med] Front Desk ship lane is a visible dead-end** — `front-desk.tsx:773`
-  (selectable, then hard-blocked). *Fix:* hide/disable with tooltip.
+  (selectable, then hard-blocked). _Fix:_ hide/disable with tooltip.
 - **[Med] "Alert Library" send is a mislabeled real send requiring a raw Patient
-  ID** — `admin-alerts.tsx:346`. *Fix:* patient picker; relabel.
+  ID** — `admin-alerts.tsx:346`. _Fix:_ patient picker; relabel.
 - **[Med] No pre-linked appointment from a patient/conversation** —
   `admin-company-calendar.tsx:953` (the locked-patient pattern exists in
   StartVideoVisitModal but isn't reused).
@@ -382,22 +382,22 @@ central hub.
 
 **Primary workflows traced**
 
-- *New referral → patient record* — upload (`patients.tsx:538` / `referral-reviews.tsx`)
+- _New referral → patient record_ — upload (`patients.tsx:538` / `referral-reviews.tsx`)
   → AI extract → verify insurance → accept creates patient + files docs + deep-links
   to chart (`referral-reviews.tsx:865`). **Smooth** — best-connected flow. Manual
   alternative has minor friction (raw E.164 phone, "customer" vs "patient" naming).
-- *Paperwork → signature → filed* — draft (`admin-documents.tsx`) → packet
+- _Paperwork → signature → filed_ — draft (`admin-documents.tsx`) → packet
   (`patient-packets.tsx`) → track (`admin-signature-tracking.tsx`) → file returned
   fax. **Has friction** — splits across two provider-signature systems + UUID fax
   filing.
-- *Therapy alert → action* — board surfaces a patient → bare `/admin/patients/{id}`
+- _Therapy alert → action_ — board surfaces a patient → bare `/admin/patients/{id}`
   → RT must separately find the Interventions worklist. **Broken-feeling** — no
   context carried; two disconnected nav groups.
-- *Resupply due → order* — `therapy-resupply.tsx:129` select → draft → approve & send
+- _Resupply due → order_ — `therapy-resupply.tsx:129` select → draft → approve & send
   (`:551`). **Smooth** — the one board that closes its loop.
-- *Mask-fit report → follow-up* — `mask-fit-worklist.tsx`: "Actioned" only flips a
+- _Mask-fit report → follow-up_ — `mask-fit-worklist.tsx`: "Actioned" only flips a
   status string. **Broken-feeling dead-end.**
-- *Duplicate cleanup* — `admin-patients-duplicates.tsx`: group, pick survivor, merge.
+- _Duplicate cleanup_ — `admin-patients-duplicates.tsx`: group, pick survivor, merge.
   **Smooth.**
 
 **Strengths:** patient-detail action surface is excellent (SMS/email/voice, verify
@@ -412,35 +412,35 @@ empty/error states.
 - **[High] 25 ungrouped tabs on the patient 360** — `patient-detail.tsx:296`, with
   near-duplicates (documents vs forms vs packets/signatures vs fax = 4 doc surfaces;
   timeline vs activity; episodes vs fulfillments vs resupply; Billing re-aggregating
-  Insurance/PA/Claims that are also their own tabs). *Fix:* ~6 labeled clusters +
+  Insurance/PA/Claims that are also their own tabs). _Fix:_ ~6 labeled clusters +
   merge duplicates.
 - **[High] Monitoring→action handoff carries no context** — `rt-overview.tsx:597`,
   `therapy-fleet.tsx:1083`, `therapy-compliance.tsx:221` all link to a bare patient
-  page; the two nav groups never link to each other. *Fix:* pass the alert reason;
+  page; the two nav groups never link to each other. _Fix:_ pass the alert reason;
   deep-link the intervention form.
 - **[High] Mask-fit worklist is a triage dead-end** — `admin-mask-fit-worklist.tsx`;
-  "Actioned" writes only a status string. *Fix:* inline Log-intervention /
+  "Actioned" writes only a status string. _Fix:_ inline Log-intervention /
   Invite-to-fitter carrying the fit outcome.
 - **[High] Two competing provider-signature systems** —
   `admin-signature-tracking.tsx:50` vs `admin-provider-esign.tsx:58`; the portal's
-  "New request" captures only a typed patient *name string*. *Fix:* consolidate;
+  "New request" captures only a typed patient _name string_. _Fix:_ consolidate;
   require a patient FK + attached document.
 - **[High] Inbound-fax filing requires hand-copied UUIDs** —
-  `admin-inbound-faxes.tsx:663`. *Fix:* the patient/provider typeahead used elsewhere.
+  `admin-inbound-faxes.tsx:663`. _Fix:_ the patient/provider typeahead used elsewhere.
 - **[High] Three near-duplicate non-adherence outreach surfaces** — Interventions
   vs Clinical-outreach vs Coaching (`AppShell.tsx:460`), distinguished only by hidden
-  data source. *Fix:* "use this when…" subheaders or merge into one worklist with a
+  data source. _Fix:_ "use this when…" subheaders or merge into one worklist with a
   stage filter.
 - **[High] Coaching & clinical lookup require pasting a raw patient UUID** —
-  `admin-coaching.tsx:107`, `admin-clinical.tsx:57`. *Fix:* patient typeahead.
+  `admin-coaching.tsx:107`, `admin-clinical.tsx:57`. _Fix:_ patient typeahead.
 - **[Med] Roster has no true first-run empty state** — `patients.tsx:650`
   (filter-oriented even at zero patients).
 - **[Med] "Customer" vs "Patient" terminology split + raw E.164 input** —
   `patients.tsx:543`.
 - **[Med] therapy-compliance is a read-only dead-end overlapping fleet** —
-  `admin-therapy-compliance.tsx:137`. *Fix:* make it a tab of fleet.
+  `admin-therapy-compliance.tsx:137`. _Fix:_ make it a tab of fleet.
 - **[Med] rt-overview is a strictly-weaker subset of therapy-fleet** —
-  `admin-rt-overview.tsx:90`. *Fix:* make it the lightweight landing that links into
+  `admin-rt-overview.tsx:90`. _Fix:_ make it the lightweight landing that links into
   fleet.
 - **[Med] "Mark contacted/resolved" records no real action** —
   `admin-therapy-fleet.tsx:1205`.
@@ -464,20 +464,20 @@ process a comfort-guarantee return, keep catalog/stock accurate, convert leads.
 
 **Primary workflows traced**
 
-- *Fulfill a paid shop order* — **no order workspace.** A paid order surfaces only
+- _Fulfill a paid shop order_ — **no order workspace.** A paid order surfaces only
   on `admin-shipping.tsx:138` ("Awaiting shipment"); "mark delivered" and "refund"
   exist server-side but are on no page. **Broken-feeling.**
-- *Process a return/refund* — `admin-shop-returns.tsx`: approve (`:442`) → received
+- _Process a return/refund_ — `admin-shop-returns.tsx`: approve (`:442`) → received
   (`:508`) → refund (`:532`). **Smooth** until **Replace**, which demands typed
   Stripe IDs (`:563`).
-- *Add/edit a product* — `admin-shop-product-new.tsx`: one clean validated form.
+- _Add/edit a product_ — `admin-shop-product-new.tsx`: one clean validated form.
   Edits split: copy on the edit page, price/stock only on the grid
   (`admin-shop-inventory.tsx:1291`). **Smooth**, minor split.
-- *Monthly reconcile* — `admin-shop-inventory-reconcile.tsx`: period → per-SKU counts
+- _Monthly reconcile_ — `admin-shop-inventory-reconcile.tsx`: period → per-SKU counts
   → submit. **Smooth.**
-- *Recover an abandoned cart* — `admin-shop-abandoned-carts.tsx:172`: one "Send due
+- _Recover an abandoned cart_ — `admin-shop-abandoned-carts.tsx:172`: one "Send due
   reminders" button, email-only, no per-row. **Has friction.**
-- *Take a counter/phone order* — `CsrOrderRequestsPanel.tsx`: build line items, send
+- _Take a counter/phone order_ — `CsrOrderRequestsPanel.tsx`: build line items, send
   sign-&-pay link, resend/cancel. **Smooth and well-designed.**
 
 **Strengths:** the sign-&-pay panel is excellent (lifecycle badges, link fallback);
@@ -491,36 +491,36 @@ consistent helpful empty states.
 - **[High] "Orders" nav points at the read-only fitter log, not the order you
   fulfill** — `pennpaps-orders.tsx` / `pennpaps-order-detail.tsx:120` (zero actions);
   nav hint says "fulfill, refund, look up" (`AppShell.tsx:544`). Deep label-vs-reality
-  mismatch. *Fix:* rename to "Fitter order requests"; add a real Shop Orders list.
+  mismatch. _Fix:_ rename to "Fitter order requests"; add a real Shop Orders list.
 - **[High] No Shop Orders list/detail page at all** — verified no `/admin/shop/orders`
-  route; mark-delivered/tracking/refund endpoints exist but appear on no page. *Fix:*
+  route; mark-delivered/tracking/refund endpoints exist but appear on no page. _Fix:_
   add Shop Orders list → detail with the actions the backend already supports.
 - **[High] Returns "Replace" requires pasting raw Stripe product & price IDs** —
   `admin-shop-returns.tsx:563`. Non-technical staff will default to refunding
-  (revenue loss). *Fix:* catalog product/variant picker.
+  (revenue loss). _Fix:_ catalog product/variant picker.
 - **[Med] Fitter-invite "attach to chart" needs a hand-pasted patient UUID** —
-  `admin-fitter-invites.tsx`. *Fix:* patient search.
+  `admin-fitter-invites.tsx`. _Fix:_ patient search.
 - **[Med] Returns & customer rows identify people by truncated IDs, not names/links**
-  — `admin-shop-returns.tsx:377`, `admin-customer-detail.tsx:774`. *Fix:* names +
+  — `admin-shop-returns.tsx:377`, `admin-customer-detail.tsx:774`. _Fix:_ names +
   click-through.
 - **[Med] Backorders & substitution rules are SKU-string typing with no picker** —
-  `admin-backorders.tsx:269`; a typo silently creates a dead rule. *Fix:* SKU
+  `admin-backorders.tsx:269`; a typo silently creates a dead rule. _Fix:_ SKU
   autocomplete + existence validation.
 - **[Med] Subscriptions is a metrics dashboard with no per-subscriber actions** —
   `admin-shop-subscriptions.tsx`; "pause/skip/change date" — a daily CSR request —
-  can't be done here. *Fix:* searchable subscriber list with lifecycle actions, or
+  can't be done here. _Fix:_ searchable subscriber list with lifecycle actions, or
   relabel "Subscription analytics."
 - **[Med] Abandoned-cart recovery is a single all-or-nothing email button** —
-  `admin-shop-abandoned-carts.tsx:172`. *Fix:* per-row "Send now" + alternate channel.
+  `admin-shop-abandoned-carts.tsx:172`. _Fix:_ per-row "Send now" + alternate channel.
 - **[Med] Product edit split across two surfaces with no obvious bridge** —
-  `admin-shop-product-edit.tsx` vs grid. *Fix:* surface read-only price/stock with a
+  `admin-shop-product-edit.tsx` vs grid. _Fix:_ surface read-only price/stock with a
   link, or unify.
 - **[Low] Shipping batch action requires typing a service code; no carrier picker** —
   `admin-shipping.tsx:232`.
 - **[Low] Back-in-stock list is dispatch-only with no waitlist drill-down** —
   `admin-shop-back-in-stock.tsx`.
 - **[Low] Inventory "preview mode" (no Stripe) looks editable but fails on save** —
-  `admin-shop-inventory.tsx:1018`. *Fix:* link the banner to the Stripe-connect step.
+  `admin-shop-inventory.tsx:1018`. _Fix:_ link the banner to the Stripe-connect step.
 
 **Top 3:** (1) Add a real Shop Orders list→detail and relabel the fitter "Orders."
 (2) Replace every raw-ID/SKU box with a catalog/patient picker (returns Replace
@@ -542,16 +542,16 @@ thread, and 14 worklist tabs are a lot to internalize cold.
 
 **Primary workflows traced**
 
-1. *Work the eligibility queue* — `admin-billing-eligibility.tsx:86`: filters, summary
+1. _Work the eligibility queue_ — `admin-billing-eligibility.tsx:86`: filters, summary
    pills, per-row "Open" → patient page. **Strong list; action one indirection away.**
-2. *Post an ERA (835)* — `admin-billing-era.tsx:54`: hash-dedupe, inline paid-total +
+2. _Post an ERA (835)_ — `admin-billing-era.tsx:54`: hash-dedupe, inline paid-total +
    matched/unmatched, history. **Excellent.** Gap: "N unmatched" isn't clickable.
-3. *Appeal/resubmit a denial* — `admin-billing-denials-worklist.tsx:57`: ranked by
+3. _Appeal/resubmit a denial_ — `admin-billing-denials-worklist.tsx:57`: ranked by
    recoverable × win-prob; row → patient page. **Great prioritization; weak handoff.**
-4. *Submit a manual claim* — `admin-billing-manual-claim.tsx:38`: requires a raw typed
+4. _Submit a manual claim_ — `admin-billing-manual-claim.tsx:38`: requires a raw typed
    **patient uuid** (`:96`), then navigates to a dead `?claim=` param on the patient
    page (`:68`). **The worst flow in the domain.**
-5. *Onboard billing config* — `admin-billing-config.tsx:30`: 9-card grid, honest but
+5. _Onboard billing config_ — `admin-billing-config.tsx:30`: 9-card grid, honest but
    **no sequencing** — a non-expert can't tell what's mandatory before claims transmit.
 
 **Strengths:** deliberate IA; the hub closes the loop; consistent worklist skeleton
@@ -565,31 +565,31 @@ and verify are best-in-class; PHI discipline doesn't hurt triage.
   destinations** — the workbench tracks the open claim in local `useState`
   (`admin-insurance-claims.tsx:124`) and never reads the URL; worklists link to
   `/admin/patients/:id`, `/…/insurance-claims`, and `/…?claim=<id>` — none auto-opens
-  the claim. *Fix:* parse `?claim=<id>` and set `openClaimId` on mount; standardize
+  the claim. _Fix:_ parse `?claim=<id>` and set `openClaimId` on mount; standardize
   every worklist link.
 - **[High] Manual-claim requires a hand-typed patient UUID** —
   `admin-billing-manual-claim.tsx:96` (the lone UUID box; verify already has search).
-  *Fix:* the existing patient autocomplete.
+  _Fix:_ the existing patient autocomplete.
 - **[High] Manual-claim's success navigation is broken** —
   `admin-billing-manual-claim.tsx:68` lands on the patient root with a dead `?claim=`;
-  the promised "add lines + submit" continuation is missing. *Fix:* navigate to the
+  the promised "add lines + submit" continuation is missing. _Fix:_ navigate to the
   workbench and honor the param.
 - **[Med] Billing config is an unguided wall for a non-expert** —
   `admin-billing-config.tsx:30`: nine equal cards, no order, no required-vs-optional,
-  not linked from `/admin/setup`. *Fix:* sequence + readiness badges + a setup step.
+  not linked from `/admin/setup`. _Fix:_ sequence + readiness badges + a setup step.
 - **[Med] No billing first-run / empty-state** — a fresh tenant sees a hub of zeros
-  with no "configure payers, then create your first claim." *Fix:* detect
+  with no "configure payers, then create your first claim." _Fix:_ detect
   unconfigured billing → 3-step getting-started card.
 - **[Med] ERA "unmatched need manual link" is a dead end** — `admin-billing-era.tsx:183`.
-  *Fix:* link the count to a filtered manual-match view.
+  _Fix:_ link the count to a filtered manual-match view.
 - **[Med] Two SLA windows can disagree** — `admin-billing-prior-auths.tsx:84` vs
-  `admin-billing-eligibility-worklist.tsx:48` (local state; hub uses a third). *Fix:*
+  `admin-billing-eligibility-worklist.tsx:48` (local state; hub uses a third). _Fix:_
   one saved preference.
 - **[Med] "Open" links are ambiguous and unlabeled** — same word, different
-  destinations; no "back to queue." *Fix:* honest labels + a back affordance.
+  destinations; no "back to queue." _Fix:_ honest labels + a back affordance.
 - **[Med] Config "read-only, managed by engineering" surfaces are a self-service gap**
   — modifier rules / denial codes / claim templates (`admin-billing-config.tsx:64`).
-  *Fix:* make at least modifier rules + templates tenant-editable.
+  _Fix:_ make at least modifier rules + templates tenant-editable.
 - **[Low] Capped rentals diverges from the worklist skeleton** —
   `admin-billing-capped-rentals.tsx`.
 - **[Low] Hub buries claim creation under "Ready to bill"** — `admin-billing-hub.tsx:254`;
@@ -622,15 +622,15 @@ patient (`admin-analytics.tsx:520`); the Audit packet is a real generate→fax f
 
 **Primary workflows traced**
 
-1. *Export a month-end finance bundle* — Reports → preset → "All financial data" →
+1. _Export a month-end finance bundle_ — Reports → preset → "All financial data" →
    QuickBooks Desktop/Online or email-to-accountant (`admin-reports.tsx:95`).
    **Excellent.**
-2. *Set & track a goal* — `admin-goals.tsx:147` → pace bar with projection (`:243`).
+2. _Set & track a goal_ — `admin-goals.tsx:147` → pace bar with projection (`:243`).
    **Strong standalone, but disconnected** — dashboards never show the goal line.
-3. *Get alerted when denials spike* — the nav hint and empty-state suggest
+3. _Get alerted when denials spike_ — the nav hint and empty-state suggest
    denials/churn (`admin-kpi-alerts.tsx:233`), but the only selectable metrics are 4
    revenue/order keys (`:33`). **Broken promise.**
-4. *Check who accessed a patient* — `admin-audit-trail.tsx:120`: filter by
+4. _Check who accessed a patient_ — `admin-audit-trail.tsx:120`: filter by
    patient/employee/date/action → table + CSV. **Genuinely usable.**
 
 **Strengths:** the Reports page is the model the dashboards should follow; Audit
@@ -642,21 +642,21 @@ empty states are consistently good; the Audit packet is complete and well-guided
 - **[High] Dashboards dead-end with no path to action** — Financial + several
   Clinical pages (`admin-analytics-margin.tsx:174`, `admin-inventory-turnover.tsx:164`,
   `admin-reorder-reminders.tsx:100`, `admin-analytics-channel-engagement.tsx:203`).
-  *Fix:* row-level drill links to the matching worklist.
+  _Fix:_ row-level drill links to the matching worklist.
 - **[High] KPI alerts promise denials/churn but can't create them** —
-  `admin-kpi-alerts.tsx:33`. *Fix:* add the metric keys, or correct the copy.
+  `admin-kpi-alerts.tsx:33`. _Fix:_ add the metric keys, or correct the copy.
 - **[High] Analytics sprawl: ~16 dashboards across 4 sections, no index** —
-  `AppShell.tsx:930`. *Fix:* an Analytics-home overview with links into the deep
+  `AppShell.tsx:930`. _Fix:_ an Analytics-home overview with links into the deep
   dashboards.
 - **[Med] Redundant revenue/economics pages** — margin / revenue-by-source / ltv-cac
-  slice the same data. *Fix:* one "Unit economics" page with a toggle.
+  slice the same data. _Fix:_ one "Unit economics" page with a toggle.
 - **[Med] Dead "CSR productivity" panel duplicates a live page** —
   `admin-analytics.tsx:811` (permanently degraded, one tab from the working Team
-  throughput). *Fix:* remove the dead panel.
+  throughput). _Fix:_ remove the dead panel.
 - **[Med] Goals and the dashboards that measure them are disconnected** —
-  `admin-goals.tsx:28`. *Fix:* overlay the target on the chart; "Set target" link.
+  `admin-goals.tsx:28`. _Fix:_ overlay the target on the chart; "Set target" link.
 - **[Med] No scheduled/recurring reports** — `admin-reports.tsx` (saved presets store a
-  recipient but nothing auto-sends). *Fix:* "email this preset monthly."
+  recipient but nothing auto-sends). _Fix:_ "email this preset monthly."
 - **[Med] Reports max 90 days blocks annual/quarterly views** — `admin-reports.tsx:38`.
 - **[Med] Audit Trail patient & record columns aren't clickable** —
   `admin-audit-trail.tsx:273`.
@@ -689,17 +689,17 @@ but opt-in. **Verdict: lightly guided, one step short of a true first-run wizard
 
 **Primary workflows traced**
 
-1. *Complete first-run setup* — dashboard nudge → `/admin/setup` → grouped checklist
+1. _Complete first-run setup_ — dashboard nudge → `/admin/setup` → grouped checklist
    with live status + deep links. **Strong**, but required-vs-recommended is
    debatable and three targets live outside the Settings nav.
-2. *Set up email-From + domain auth* — `admin-email-settings.tsx`: live SendGrid
+2. _Set up email-From + domain auth_ — `admin-email-settings.tsx`: live SendGrid
    domain-auth banner (`:205`), correct warnings, dirty-gated save. **Excellent** —
-   only gap is no link to *where* to authenticate.
-3. *Add a team member* — `admin-team.tsx`: invite + role + optional password. **Complete**,
+   only gap is no link to _where_ to authenticate.
+3. _Add a team member_ — `admin-team.tsx`: invite + role + optional password. **Complete**,
    but role vocabulary is tri-named.
-4. *Turn on a feature* — `admin-control-center.tsx`: optimistic toggles, typed
+4. _Turn on a feature_ — `admin-control-center.tsx`: optimistic toggles, typed
    high-risk confirm (`:726`), plan-preset dry-run diff. **Excellent — the standout.**
-5. *Configure phone/SMS* — `admin-phone-settings.tsx`: provision or BYO E.164. **Good**,
+5. _Configure phone/SMS_ — `admin-phone-settings.tsx`: provision or BYO E.164. **Good**,
    but billable provisioning is one click under soft warning (`:210`).
 
 **Strengths:** Control Center is a model feature-switch UI; the server-driven tenant
@@ -711,31 +711,31 @@ loop is coherent.
 **Findings**
 
 - **[High] No forced first-run path, and the only nudge fails silent** —
-  `SetupProgressCard.tsx:24`, `dashboard.tsx:170`. *Fix:* redirect a never-configured
+  `SetupProgressCard.tsx:24`, `dashboard.tsx:170`. _Fix:_ redirect a never-configured
   tenant to `/admin/setup`; render the card in loading/error states.
 - **[High] Settings sprawl: five overlapping "config" surfaces with no map** —
   `AppShell.tsx:1200` (Settings / Company info / Storefront branding / System Config /
   Control Center); "Settings" holds only a demo toggle (`admin-settings.tsx:102`).
-  *Fix:* make the checklist the canonical hub; rename/merge "Settings."
+  _Fix:_ make the checklist the canonical hub; rename/merge "Settings."
 - **[High] "Company information" is a two-named, jargon-heavy, dead-on-arrival form**
   — `admin-billing-config-organization.tsx:295`: ~9 sections, 10 required fields, Save
   disabled with bottom-only feedback, identifiers (NPI/taxonomy/PTAN/surety) with no
-  help; reachable at two URLs. *Fix:* first-run framing, inline required-field flags,
+  help; reachable at two URLs. _Fix:_ first-run framing, inline required-field flags,
   field-level help, one canonical URL.
 - **[Med] Owner-facing nav surfaces platform-ops pages they can't act on** —
   `admin-operations.tsx`, `admin-integrations.tsx` (deploy/infra jargon, raw error
-  codes). *Fix:* gate behind a higher role or label "platform/advanced."
+  codes). _Fix:_ gate behind a higher role or label "platform/advanced."
 - **[Med] Automation rules are developer-grade** — `rules.tsx`, `admin-compliance-rules.tsx`
   (SKU prefix, payer match, integer priority, resolution order only in a code
-  comment). *Fix:* surface the order + a plain "what this rule does" preview.
+  comment). _Fix:_ surface the order + a plain "what this rule does" preview.
 - **[Med] Bot Playground promises prompt-tuning the owner can't do** —
   `admin-bot-playground.tsx:262` (says "tune," then "edit code"); prints raw env-var
-  names. *Fix:* reframe as "rehearse/preview"; plain offline copy.
+  names. _Fix:_ reframe as "rehearse/preview"; plain offline copy.
 - **[Med] Billable provisioning is one click with only soft warnings** —
-  `admin-phone-settings.tsx:210`, `admin-fax-settings.tsx:166`. *Fix:* a confirm dialog
+  `admin-phone-settings.tsx:210`, `admin-fax-settings.tsx:166`. _Fix:_ a confirm dialog
   stating the cost.
 - **[Med] Two look-alike checklists for two audiences** — `account-setup.tsx` (platform
-  deployment, CLI) vs `admin-setup-checklist.tsx` (tenant). *Fix:* hide account-setup
+  deployment, CLI) vs `admin-setup-checklist.tsx` (tenant). _Fix:_ hide account-setup
   from owners.
 - **[Low] Team role vocabulary is tri-named** — `admin-team.tsx:58`.
 - **[Low] Help & Resources is a near-empty hub** — `admin-resources.tsx:18` (one PDF).
@@ -759,18 +759,18 @@ phoning.
 
 **Primary journeys traced**
 
-- *(a) Mask-fitter funnel* — `/fitter-invite` (`fitter-invite.tsx:105`) → `/consent`
+- _(a) Mask-fitter funnel_ — `/fitter-invite` (`fitter-invite.tsx:105`) → `/consent`
   (`consent.tsx:464`) → `/capture` (`capture.tsx:182`) → `/measure` (`measure.tsx:114`,
   on-device MediaPipe) → `/questionnaire` → `/results` (`results.tsx:527`) → `/order`.
   **Mostly smooth and unusually well-guarded;** friction is the invite-gate confusion
-  + funnel length.
-- *(b) Shop → checkout* — `/shop` (`shop.tsx:417`) → product → cart (`shop-cart.tsx:618`)
+  - funnel length.
+- _(b) Shop → checkout_ — `/shop` (`shop.tsx:417`) → product → cart (`shop-cart.tsx:618`)
   → Stripe → success (`shop-checkout-success.tsx:177`). **Has friction** — "cash-pay"
   jargon, insurance buried, post-payment polling can strand.
-- *(c) Resupply/reorder* — SMS/email link → `/reminders-manage` (`reminders-manage.tsx:159`)
+- _(c) Resupply/reorder_ — SMS/email link → `/reminders-manage` (`reminders-manage.tsx:159`)
   or `/order-pay` (`order-pay.tsx:160`) → confirm/pay. **Has friction / drop-out risk**
   — ambiguous expired-vs-confirmed, no link recovery.
-- *(d) Account self-service* — `/account` (`account.tsx:456`), `/account/billing`
+- _(d) Account self-service_ — `/account` (`account.tsx:456`), `/account/billing`
   (`account-billing.tsx:273`). **Broken-feeling at the edges** — empty states don't
   guide, payment-update hard-redirects, billing jargon.
 
@@ -783,37 +783,37 @@ rehydrates from `?ref+?email`; storage-blocked heads-up prevents silent data los
 **Findings**
 
 - **[High] "Cash-pay" is unexplained jargon at the buying moment** — `shop.tsx:583`,
-  `results.tsx:148`. *Fix:* "Pay now by card" + "No prescription needed — ships
+  `results.tsx:148`. _Fix:_ "Pay now by card" + "No prescription needed — ships
   directly. Insurance claims take longer."
 - **[High] Post-payment confirmation can strand the patient on "Confirming…"** —
   `shop-checkout-success.tsx:177`, `order-pay.tsx:355` (no ETA, no "safe to close," no
-  fallback). *Fix:* "still processing — safe to close, we'll email your receipt" +
+  fallback). _Fix:_ "still processing — safe to close, we'll email your receipt" +
   `/track-order` link.
 - **[High] Expired vs. already-confirmed reminder link is ambiguous** —
-  `reminders-manage.tsx:159` (one vague message conflates three states). *Fix:*
+  `reminders-manage.tsx:159` (one vague message conflates three states). _Fix:_
   distinguish them; offer "text me a new link."
 - **[High] Insurance pathway is visually subordinate in the cart** — `shop-cart.tsx:1233`
-  (footer link) vs the dominant card-checkout button. *Fix:* a co-equal "Or use
+  (footer link) vs the dominant card-checkout button. _Fix:_ a co-equal "Or use
   insurance — $0 with prescription" in the sidebar.
 - **[High] Deductible/coinsurance/"post-deductible" unexplained in the estimate** —
-  `insurance-estimate.tsx:50,399`. *Fix:* inline definitions + state the assumption.
+  `insurance-estimate.tsx:50,399`. _Fix:_ inline definitions + state the assumption.
 - **[Med] Update-payment hard-redirects out of the SPA with no signal** —
-  `account.tsx:631`. *Fix:* "Opening secure billing…" interstitial.
+  `account.tsx:631`. _Fix:_ "Opening secure billing…" interstitial.
 - **[Med] Account/orders empty states don't guide the next step** — `shop-orders.tsx`,
-  account orders tab. *Fix:* "Browse supplies" / "Add a card" CTA.
+  account orders tab. _Fix:_ "Browse supplies" / "Add a card" CTA.
 - **[Med] Billing page leaks payer jargon** — `account-billing.tsx:726` ("claims," "EOB,"
-  "payer"). *Fix:* "Insurance charges & what you owe" + tooltips.
+  "payer"). _Fix:_ "Insurance charges & what you owe" + tooltips.
 - **[Med] "DME company/supplier" leaks into patient copy** — `fitter-invite.tsx:48`,
-  `home.tsx:76`. *Fix:* lead with "your CPAP supplier."
+  `home.tsx:76`. _Fix:_ lead with "your CPAP supplier."
 - **[Med] Resupply "nothing ships until you confirm" reads as contradictory** —
-  `help-resupply-reminders.tsx:74`. *Fix:* an explicit 3-step "remind → tap YES → ship
+  `help-resupply-reminders.tsx:74`. _Fix:_ an explicit 3-step "remind → tap YES → ship
   & bill."
 - **[Med] Out-of-stock isn't re-validated before Stripe checkout** — `shop-cart.tsx:499`.
-  *Fix:* pre-flight validate-cart with a "we adjusted your cart" toast.
-- **[Med] Phone-ordering option is hard to find** — `help.tsx:145` (buried). *Fix:* a
+  _Fix:_ pre-flight validate-cart with a "we adjusted your cart" toast.
+- **[Med] Phone-ordering option is hard to find** — `help.tsx:145` (buried). _Fix:_ a
   persistent "Prefer to call?" header entry.
 - **[Low] The fitter funnel is long, and the home CTA can feel like a dead-end** —
-  `home.tsx:86` ("Get fitted") routes uninvited visitors toward an invite wall. *Fix:*
+  `home.tsx:86` ("Get fitted") routes uninvited visitors toward an invite wall. _Fix:_
   relabel "Have an invite? Start your mask fitting," or lead walk-ups to `/masks`.
 
 **Top 3:** (1) De-jargon the money moments (cash-pay, deductible, co-equal insurance).
