@@ -72,7 +72,7 @@ const COMPLIANCE_PILLARS: CompliancePillar[] = [
   {
     icon: <BadgeCheck size={20} />,
     title: "Eligibility verified before you bill",
-    body: "Real-time 270/271 eligibility checks — and automatic re-verification — confirm a patient's coverage is active before an order ships, so claims never go out against lapsed benefits.",
+    body: "Instant 270/271 eligibility checks — and automatic re-verification — confirm a patient's coverage is active before an order ships, so claims never go out against lapsed benefits.",
     gold: true,
   },
   {
@@ -96,12 +96,12 @@ const COMPLIANCE_PILLARS: CompliancePillar[] = [
   {
     icon: <Stethoscope size={20} />,
     title: "Adherence documentation, captured automatically",
-    body: "Nightly adherence pulls from ResMed, Philips, and 3B device clouds document the Medicare 4-hour rule and the 90-day compliance window automatically — the usage proof payers require to keep paying for therapy.",
+    body: "Nightly adherence pulls from ResMed, Philips, and 3B's online systems document the Medicare 4-hour rule and the 90-day compliance window automatically — the usage proof payers require to keep paying for therapy.",
   },
   {
     icon: <ClipboardSignature size={20} />,
     title: "Prior auth and signed paperwork on file",
-    body: "Electronic prior authorization through DaVinci PAS keeps auth requests moving, while one-click CMN/Rx generation, e-signature packets, and proof-of-delivery photos keep the supporting documentation attached to the right patient record.",
+    body: "Electronic prior authorization keeps auth requests moving, while one-click CMN/Rx generation, e-signature packets, and proof-of-delivery photos keep the supporting documentation attached to the right patient record.",
   },
   {
     icon: <RefreshCw size={20} />,
@@ -147,11 +147,11 @@ const FAQ_GROUPS: FaqGroup[] = [
       },
       {
         q: "Which payers does it work with?",
-        a: "Breathe bills Medicare, Medicaid, and commercial payers through standard EDI. Eligibility uses the 270/271 transaction, claims are submitted as 837P, and remittances post from the 835/ERA — the same standards every major payer accepts. Submission runs through the Office Ally clearinghouse out of the box, and you can download the 837P to file through any clearinghouse you already contract with.",
+        a: "Breathe bills Medicare, Medicaid, and commercial payers electronically. Eligibility uses the 270/271 transaction, claims are submitted as 837P, and remittances post from the 835/ERA — the same standards every major payer accepts. Submission runs through the Office Ally clearinghouse out of the box, and you can download the 837P to file through any clearinghouse you already contract with.",
       },
       {
         q: "How does it handle the Medicare CPAP compliance rules?",
-        a: "Adherence data is pulled nightly from ResMed, Philips, and 3B device clouds, so the Medicare 4-hour usage rule and the 90-day compliance window are documented automatically. At-risk patients surface on a worklist before they fall off therapy, which protects both the patient and your ability to keep billing for their supplies.",
+        a: "Adherence data is pulled nightly from ResMed, Philips, and 3B's online systems, so the Medicare 4-hour usage rule and the 90-day compliance window are documented automatically. At-risk patients surface on a worklist before they fall off therapy, which protects both the patient and your ability to keep billing for their supplies.",
       },
       {
         q: "Does it stop me from billing resupply too early?",
@@ -163,7 +163,7 @@ const FAQ_GROUPS: FaqGroup[] = [
       },
       {
         q: "What about prior authorization?",
-        a: "Electronic prior authorization is supported through DaVinci PAS (a FHIR-based standard), so auth requests can move electronically instead of by fax-and-wait. Fewer no-auth denials means fewer full appeal cycles to recover the money.",
+        a: "Prior authorization can be submitted electronically, so auth requests move electronically instead of by fax-and-wait. Fewer no-auth denials means fewer full appeal cycles to recover the money.",
       },
     ],
   },
@@ -176,7 +176,7 @@ const FAQ_GROUPS: FaqGroup[] = [
     items: [
       {
         q: "Is Breathe HIPAA-compliant?",
-        a: "Breathe runs on HIPAA-eligible infrastructure with a least-privilege posture — every AI and communications vendor in the stack is HIPAA-eligible — and will sign a Business Associate Agreement with your organization. HIPAA compliance is a shared responsibility: the platform provides the safeguards, and your organization operates them under your own policies. We're built to answer the questions your compliance team will ask.",
+        a: "Breathe runs on HIPAA-eligible infrastructure where staff only get the access they need — every AI and communications vendor we use is HIPAA-eligible — and will sign a Business Associate Agreement with your organization. HIPAA compliance is a shared responsibility: the platform provides the safeguards, and your organization operates them under your own policies. We're built to answer the questions your compliance team will ask.",
       },
       {
         q: "What happens to the mask-fitter photos?",
@@ -184,7 +184,7 @@ const FAQ_GROUPS: FaqGroup[] = [
       },
       {
         q: "Who can see patient data inside the platform?",
-        a: "Access is role-based with granular permissions, so each teammate sees only what their job requires, and admin accounts can be protected with multi-factor authentication. You control the locations, roles, and permissions for your own team.",
+        a: "Access is role-based with granular permissions, so each teammate sees only what their job requires, and admin accounts can be protected with two-factor sign-in. You control the locations, roles, and permissions for your own team.",
       },
     ],
   },
@@ -218,11 +218,11 @@ const FAQ_GROUPS: FaqGroup[] = [
     items: [
       {
         q: "What does Breathe replace?",
-        a: "For most operators it retires a stack of point tools — separate resupply software, an RCM/billing suite, a patient CRM, a telehealth app, a document/e-sign tool, therapy dashboards, and a call-center IVR — into one login on a single patient record.",
+        a: "For most operators it retires a pile of separate tools — separate resupply software, an RCM/billing suite, a patient CRM, a telehealth app, a document/e-sign tool, therapy dashboards, and a call-center phone menu — into one login on a single patient record.",
       },
       {
         q: "Do I have to give up PacWare or my billing system of record?",
-        a: "No. PacWare stays your system of record. Breathe does a fill-only, lossless sync — it fills in blank fields and adds new patients, but never overwrites an existing value — and nothing is ever pushed automatically. You stay in control of the billing/warehouse system you already trust.",
+        a: "No. PacWare stays your system of record. Breathe does a safe import that only fills in blanks and never overwrites what you already have — it fills in blank fields and adds new patients, but never overwrites an existing value — and nothing is ever pushed automatically. You stay in control of the billing/warehouse system you already trust.",
       },
       {
         q: "Is my data locked in?",
@@ -235,19 +235,19 @@ const FAQ_GROUPS: FaqGroup[] = [
     icon: <Bot size={13} />,
     eyebrow: "AI workforce",
     title: "AI & automation",
-    lede: "What the AI actually does — and what happens if a vendor key isn't set.",
+    lede: "What the AI actually does — and what happens if a vendor login isn't set.",
     items: [
       {
         q: "What does the AI do?",
-        a: "Breathe puts a shift of AI teammates on the floor: a 24/7 voice agent that answers resupply and status calls and books orders, a storefront chatbot and high-confidence email auto-reply, AI claim scrubbing, AI referral-fax intake that pre-fills a patient, a sleep coach for the make-or-break first weeks, and SMS intent triage. Best-in-class models from Anthropic, OpenAI, and ElevenLabs are wired in where each is strongest.",
+        a: "Breathe puts a shift of AI teammates on the floor: a 24/7 voice agent that answers resupply and status calls and books orders, a storefront chatbot and high-confidence email auto-reply, AI claim scrubbing, AI referral-fax intake that pre-fills a patient, a sleep coach for the make-or-break first weeks, and text-message intent triage. Best-in-class AI from Anthropic, OpenAI, and ElevenLabs is built in where each is strongest.",
       },
       {
         q: "Does the AI ever send something without a human?",
         a: "Only when it's safe to. The email auto-reply sends automatically only on high-confidence, general questions and hands off cleanly to a human for anything order-, account-, or clinically-specific. The admin assistant always confirms with you before it emails anything. Every channel honors consent, quiet hours, and frequency caps.",
       },
       {
-        q: "What if an AI vendor is down or a key isn't configured?",
-        a: "Every AI surface degrades gracefully — a missing key or a vendor outage never breaks the app. The platform falls back to a safe offline response or a human hand-off, so the rest of your business keeps running.",
+        q: "What if an AI vendor is down or a login isn't configured?",
+        a: "Every AI feature fails safely — a missing login or a vendor outage never breaks the app. The platform falls back to a safe offline response or a human hand-off, so the rest of your business keeps running.",
       },
     ],
   },
@@ -281,7 +281,7 @@ const FAQ_GROUPS: FaqGroup[] = [
       },
       {
         q: "How long until we're live?",
-        a: "You can be live on day one. Integrations connect out of the box and you flip each surface on at your own pace — a missing credential never blocks the rest of the platform.",
+        a: "You can be live on day one. Integrations connect out of the box and you flip each feature on at your own pace — a missing login never blocks the rest of the platform.",
       },
     ],
   },
@@ -385,7 +385,7 @@ function Intro() {
               See how it stays compliant <ArrowRight size={17} />
             </a>
             <Link className="bx-btn bx-btn-ghost" href="/breathe/security">
-              Read the security posture
+              Read about our security
             </Link>
           </div>
         </div>

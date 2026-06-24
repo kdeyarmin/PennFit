@@ -112,9 +112,9 @@ const LEVERS: Lever[] = [
   {
     icon: <Users size={22} />,
     metric: "7 → 1",
-    unit: "the whole stack, one platform",
+    unit: "every tool, one platform",
     title: "Grow your panel without growing payroll",
-    body: "Stop paying for — and swivel-chairing between — a CRM, a resupply tool, an RCM suite, a telehealth app, an e-sign service and a call center. One platform means far more throughput per person.",
+    body: "Stop paying for — and clicking back and forth between — a CRM, a resupply tool, an RCM suite, a telehealth app, an e-sign service and a call center. One platform means far more throughput per person.",
     points: [
       "One platform retires seven point tools and their per-seat licenses",
       "After-hours and peak call volume covered with zero added headcount",
@@ -150,7 +150,7 @@ const CAPABILITIES: Capability[] = [
     title: "Revenue cycle and claims",
     summary: "Get paid the first time, faster — end to end.",
     points: [
-      "Real-time 270/271 eligibility and automatic re-verification",
+      "Instant 270/271 eligibility and automatic re-verification",
       "AI-scrubbed 837P auto-submitted via Office Ally — or any clearinghouse",
       "835/ERA auto-posting and denials ranked by dollars recoverable × win odds",
       "Prior auth, A/R aging, timely-filing and capped-rental modifier rotation",
@@ -163,7 +163,7 @@ const CAPABILITIES: Capability[] = [
     title: "Therapy monitoring and compliance",
     summary: "See who is slipping off therapy before they quit.",
     points: [
-      "Nightly adherence pulls from ResMed, Philips and 3B device clouds",
+      "Nightly adherence pulls from ResMed, Philips and 3B's online systems",
       "CMS 90-day compliance cohorts with at-risk alerts",
       "RT encounters, interventions and provider-ready usage reports",
       "Equipment-recall registry with serial-number matching",
@@ -220,18 +220,19 @@ const CAPABILITIES: Capability[] = [
       "Margin, DSO, LTV/CAC, payer-profitability and acquisition-funnel dashboards",
       "KPI alerts and goal tracking that page you before a number slips",
       "Owner weekly digest, CSR productivity and live staffing load",
-      "CSV, PDF and QuickBooks exports plus an outbound webhook feed",
+      "Spreadsheet, PDF and QuickBooks exports plus an automatic data feed to other systems",
     ],
   },
   {
     icon: <ShieldCheck size={20} />,
     title: "Platform and control",
-    summary: "Multi-location, multi-tenant, and you stay in control.",
+    summary:
+      "Multi-location, your business kept separate and private, and you stay in control.",
     points: [
-      "Role-based access, granular permissions and admin MFA",
+      "Role-based access, granular permissions and admin two-factor sign-in",
       "Feature flags to switch each surface on at your own pace",
-      "Locations, team management and per-tenant branded From addresses",
-      "PacWare stays your system of record — fill-only, lossless sync",
+      "Locations, team management and your own branded From addresses",
+      "PacWare stays your system of record — a safe import that only fills in blanks and never overwrites what you already have",
     ],
   },
 ];
@@ -269,7 +270,7 @@ const AI_CELLS: AiCell[] = [
   {
     icon: <FileStack size={22} />,
     title: "AI referral intake",
-    body: "Drop in a referral fax and the model extracts the patient and clinical details to pre-fill intake — no manual re-keying.",
+    body: "Drop in a referral fax and AI pulls out the patient and clinical details to pre-fill intake — no manual re-keying.",
   },
   {
     icon: <ScanFace size={22} />,
@@ -394,7 +395,7 @@ const ROLES: RoleBlock[] = [
     features: [
       {
         icon: <Receipt size={20} />,
-        title: "Real-time eligibility (270/271)",
+        title: "Instant eligibility (270/271)",
         body: "Coverage is verified and re-verified automatically before an order ships, so claims don't go out against lapsed benefits.",
         impacts: [
           {
@@ -439,8 +440,8 @@ const ROLES: RoleBlock[] = [
       },
       {
         icon: <ClipboardSignature size={20} />,
-        title: "Electronic prior authorization (PAS)",
-        body: "FHIR-based prior-auth submission through DaVinci PAS keeps auth requests moving without faxing forms back and forth.",
+        title: "Electronic prior authorization",
+        body: "Prior-auth requests are submitted electronically, keeping auth moving without faxing forms back and forth.",
         impacts: [
           {
             kind: "time",
@@ -464,7 +465,7 @@ const ROLES: RoleBlock[] = [
     features: [
       {
         icon: <Stethoscope size={20} />,
-        title: "Live therapy-cloud monitoring",
+        title: "Live therapy monitoring",
         body: "Adherence data pulls nightly from ResMed AirView, Philips Care Orchestrator, and 3B React Health into one prioritized board of who is falling off and who is due.",
         impacts: [
           {
@@ -573,7 +574,7 @@ const ROLES: RoleBlock[] = [
     icon: <Gauge size={22} />,
     title: "Operations Manager / Owner",
     mission:
-      "Run the whole business from one source of truth — and consolidate the stack of point tools you license today.",
+      "Run the whole business from one source of truth — and consolidate the pile of point tools you license today.",
     hours: 6,
     features: [
       {
@@ -617,7 +618,7 @@ const ROLES: RoleBlock[] = [
           },
           {
             kind: "time",
-            text: "No swivel-chair between systems and no exports between them.",
+            text: "No jumping between systems and no exports between them.",
           },
         ],
       },
@@ -851,8 +852,8 @@ function Capabilities() {
           <p className="bx-lede">
             Resupply, revenue cycle, clinical monitoring, patient communication,
             a branded storefront, telehealth, and an AI workforce — every
-            workflow on the same patient record. No exports, no swivel-chair, no
-            patients lost between systems.
+            workflow on the same patient record. No exports, no jumping between
+            apps, no patients lost between systems.
           </p>
         </div>
         <div className="bx-caps">
@@ -902,9 +903,9 @@ function AiWorkforce() {
           <p className="bx-lede">
             Breathe puts a whole shift of AI teammates on the floor — answering
             calls, drafting replies, scrubbing claims, reading faxes, fitting
-            masks, and coaching patients. Best-in-class models from Anthropic,
-            OpenAI, and ElevenLabs are wired in where each is strongest, and
-            every one degrades gracefully if a key is unset.
+            masks, and coaching patients. Best-in-class AI from Anthropic,
+            OpenAI, and ElevenLabs is put to work where each is strongest, and
+            everything keeps running smoothly even if one is turned off.
           </p>
         </div>
         <div className="bx-features">
@@ -942,10 +943,10 @@ function Integrations() {
           </span>
           <h2 className="bx-h2">It plugs into the tools you already run</h2>
           <p className="bx-lede">
-            Device clouds, your clearinghouse, prior-auth, payments, messaging,
-            and your billing system of record — connected on day one. Flip each
-            one on when you&apos;re ready; a missing credential never breaks the
-            app.
+            Manufacturer online systems, your clearinghouse, prior-auth,
+            payments, messaging, and your billing system of record — connected
+            on day one. Flip each one on when you&apos;re ready; a missing login
+            never breaks the app.
           </p>
         </div>
         <div className="bxf-chips bx-reveal">
@@ -959,7 +960,7 @@ function Integrations() {
         <div className="bx-price-cta bx-reveal">
           <span>
             Coming from Brightree, Bonafide, or NikoHealth? Keep your patients
-            and your data — we migrate you with a CSV import.
+            and your data — we migrate you with a spreadsheet (CSV) import.
           </span>
           <Link className="bx-btn bx-btn-primary" href="/breathe/compare">
             See the side-by-side <ArrowRight size={16} />
@@ -1186,7 +1187,7 @@ function Footer() {
         <ul className="bx-footer-badges" aria-label="Security posture">
           <li>
             <ShieldCheck size={14} aria-hidden="true" />
-            HIPAA-eligible infrastructure
+            HIPAA-eligible systems
           </li>
           <li>
             <ScanFace size={14} aria-hidden="true" />
