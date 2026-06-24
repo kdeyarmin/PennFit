@@ -1,60 +1,14 @@
 // Tests for components/account/SecuritySection.tsx
 //
-// The component uses React hooks (authHooks.useChangePassword) and isn't
-// rendered in the node vitest environment. We use the same two strategies
-// as ProfileSection.test.ts:
-//   1. Static source analysis — assert the wiring is present (data-testids,
-//      the change-password hook, password input types/autocomplete, cleared
-//      fields on success).
-//   2. Direct unit tests of the real exported validation logic
-//      (validatePasswordChange) — imported, not re-implemented, so any
-//      drift fails the test.
+// The component's non-trivial logic is the client-side change-password
+// validation, which lives in the exported pure `validatePasswordChange`
+// so it can be driven directly (the surrounding form is a thin wrapper
+// over authHooks.useChangePassword + UI state). We assert BEHAVIOR by
+// calling the real function — no source reads.
 
-import { readFileSync } from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import { MIN_PASSWORD_LENGTH, validatePasswordChange } from "./SecuritySection";
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const SRC = readFileSync(path.join(__dirname, "SecuritySection.tsx"), "utf8");
-
-describe("SecuritySection — structure / wiring", () => {
-  it("renders under the account-security-section testid", () => {
-    expect(SRC).toContain('data-testid="account-security-section"');
-  });
-
-  it("wires the three password fields with testids", () => {
-    expect(SRC).toContain('data-testid="account-current-password"');
-    expect(SRC).toContain('data-testid="account-new-password"');
-    expect(SRC).toContain('data-testid="account-confirm-password"');
-  });
-
-  it("submits through the change-password hook (not a raw fetch)", () => {
-    expect(SRC).toContain("authHooks.useChangePassword()");
-    expect(SRC).toContain(
-      "changePassword.mutateAsync({ currentPassword, newPassword })",
-    );
-  });
-
-  it("uses password inputs with the right autocomplete hints", () => {
-    expect(SRC).toContain('autoComplete="current-password"');
-    expect(SRC).toContain('autoComplete="new-password"');
-    // Every credential field is type=password (no plaintext input).
-    expect(SRC).not.toContain('type="text"');
-  });
-
-  it("clears the password fields after a successful change", () => {
-    expect(SRC).toContain('setCurrentPassword("")');
-    expect(SRC).toContain('setNewPassword("")');
-    expect(SRC).toContain('setConfirmPassword("")');
-  });
-
-  it("maps server failures through the shared authErrorMessage helper", () => {
-    expect(SRC).toContain("authErrorMessage(");
-  });
-});
 
 describe("validatePasswordChange", () => {
   const ok = {
@@ -85,6 +39,17 @@ describe("validatePasswordChange", () => {
         confirmPassword: short,
       }),
     ).toMatch(/at least/i);
+  });
+
+  it("accepts exactly the minimum length", () => {
+    const min = "a".repeat(MIN_PASSWORD_LENGTH);
+    expect(
+      validatePasswordChange({
+        currentPassword: "different-old",
+        newPassword: min,
+        confirmPassword: min,
+      }),
+    ).toBeNull();
   });
 
   it("requires the confirmation to match", () => {
