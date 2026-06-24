@@ -549,6 +549,299 @@ export async function sendShippingNotificationIfNew(args: {
   }
 }
 
+// ---------------------------------------------------------------------
+// Shared helpers for the read-side lookup endpoints (list + detail).
+// ---------------------------------------------------------------------
+
+// Line-item projection. NOTE: shop_order_items has NO `name` /
+// `amount_subtotal_cents` columns (verified against supabase-types.ts —
+// the real columns are `product_id`, `quantity`, `unit_amount_cents`,
+// `currency`). The client contract still wants `{ name, quantity,
+// amountSubtotalCents }`, so we DERIVE them here rather than invent DB
+// columns:
+//   * `name` — the stable `product_id`, with a short-id fallback shape
+//     identical to the customer-facing /shop/me/orders projection. We
+//     deliberately do NOT make a Stripe products.list round-trip from
+//     this lookup surface (keeps the endpoint dependency-free + fail-
+//     soft); the admin UI shows the product id, which uniquely
+//     identifies the SKU.
+//   * `amountSubtotalCents` — computed as unit_amount_cents * quantity,
+//     or null when the per-unit price is null (older / preview orders).
+interface LineItemRow {
+  product_id: string;
+  quantity: number;
+  unit_amount_cents: number | null;
+}
+
+function projectLineItem(row: LineItemRow): {
+  name: string;
+  quantity: number;
+  amountSubtotalCents: number | null;
+} {
+  const qty = row.quantity ?? 0;
+  return {
+    name: row.product_id ? `Product ${row.product_id.slice(0, 12)}` : "Product",
+    quantity: qty,
+    amountSubtotalCents:
+      typeof row.unit_amount_cents === "number"
+        ? row.unit_amount_cents * qty
+        : null,
+  };
+}
+
+// Bulk-resolve customer display name + email for a page of orders from a
+// single shop_customers fetch keyed on the distinct customer_ids. Guest
+// orders (customer_id null) and unmatched ids resolve to null/null. PHI:
+// the returned map is used only to populate the response body — never
+// logged.
+async function resolveCustomerIdentities(
+  supabase: ReturnType<typeof getOrgScopedClient>,
+  customerIds: string[],
+): Promise<Map<string, { name: string | null; email: string | null }>> {
+  const out = new Map<string, { name: string | null; email: string | null }>();
+  const distinct = Array.from(new Set(customerIds.filter((id) => id)));
+  if (distinct.length === 0) return out;
+  const { data, error } = await supabase
+    .from("shop_customers")
+    .select("customer_id, display_name, email_lower")
+    .in("customer_id", distinct);
+  if (error) throw error;
+  for (const c of data ?? []) {
+    out.set(c.customer_id, {
+      name: c.display_name ?? null,
+      email: c.email_lower ?? null,
+    });
+  }
+  return out;
+}
+
+// Bulk item-count rollup for a page of orders — one shop_order_items
+// fetch keyed on the page's order ids, summing quantities per order.
+// Mirrors the customers.ts directory rollup.
+async function resolveItemCounts(
+  supabase: ReturnType<typeof getOrgScopedClient>,
+  orderIds: string[],
+): Promise<Map<string, number>> {
+  const counts = new Map<string, number>();
+  if (orderIds.length === 0) return counts;
+  const { data, error } = await supabase
+    .from("shop_order_items")
+    .select("order_id, quantity")
+    .in("order_id", orderIds);
+  if (error) throw error;
+  for (const i of data ?? []) {
+    counts.set(i.order_id, (counts.get(i.order_id) ?? 0) + (i.quantity ?? 0));
+  }
+  return counts;
+}
+
+function listItemProjection(
+  row: OrderRow,
+  itemCount: number,
+  identity: { name: string | null; email: string | null } | undefined,
+) {
+  return {
+    id: row.id,
+    status: row.status,
+    customerName: identity?.name ?? null,
+    customerEmail: identity?.email ?? null,
+    amountTotalCents: row.amountTotalCents,
+    currency: row.currency,
+    createdAt: row.createdAt,
+    paidAt: row.paidAt,
+    shippedAt: row.shippedAt,
+    deliveredAt: row.deliveredAt,
+    trackingCarrier: row.trackingCarrier,
+    trackingNumber: row.trackingNumber,
+    fulfillmentMethod: row.fulfillmentMethod,
+    itemCount,
+  };
+}
+
+// List query params. All optional; `q` matches the order id / Stripe
+// session id (text columns only — we deliberately do NOT search PHI name
+// columns). `limit`/`offset` page the result.
+const listQuerySchema = z.object({
+  status: z.string().trim().min(1).max(50).optional(),
+  q: z.string().trim().min(1).max(200).optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional().default(25),
+  offset: z.coerce.number().int().min(0).optional().default(0),
+});
+
+// ---------------------------------------------------------------------
+// GET /admin/shop/orders — paged order lookup.
+// ---------------------------------------------------------------------
+// Read-only directory of shop orders for the admin console. Scoped to
+// the tenant (getOrgScopedClient). Optional status filter + id/session
+// search. PHI: logs ids/counts only — never names, emails, or line
+// items.
+router.get(
+  "/admin/shop/orders",
+  requirePermission("returns.manage"),
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const parsed = listQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "invalid_query",
+        issues: parsed.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
+      });
+      return;
+    }
+    const { status, q, limit, offset } = parsed.data;
+
+    const supabase = getOrgScopedClient(orgId);
+    let query = supabase
+      .from("shop_orders")
+      .select(ORDER_COLUMNS, { count: "exact" })
+      .order("created_at", { ascending: false })
+      .range(offset, offset + limit - 1);
+    if (status) {
+      query = query.eq("status", status);
+    }
+    if (q) {
+      // Match the order id OR the Stripe session id (text columns).
+      // PostgREST `.or()` with ilike; the term is escaped for the
+      // PostgREST filter grammar (commas/parens would otherwise split
+      // the predicate). We strip those characters defensively since a
+      // free-form id/session search never legitimately contains them.
+      const term = q.replace(/[(),*]/g, "");
+      query = query.or(`id.ilike.%${term}%,stripe_session_id.ilike.%${term}%`);
+    }
+
+    const { data, error, count } = await query;
+    if (error) throw error;
+    // `.select(cols, { count })` with a runtime column-list string can't
+    // be statically narrowed by PostgREST's generics, so cast to the
+    // exact row shape rowToOrderRow consumes.
+    const orderRows = (data ?? []) as Array<
+      Parameters<typeof rowToOrderRow>[0]
+    >;
+    const rows = orderRows.map((r) => rowToOrderRow(r));
+
+    const itemCounts = await resolveItemCounts(
+      supabase,
+      rows.map((r) => r.id),
+    );
+    const identities = await resolveCustomerIdentities(
+      supabase,
+      rows
+        .map((r) => r.customerId)
+        .filter((id): id is string => typeof id === "string"),
+    );
+
+    req.log?.info?.(
+      {
+        adminEmail: req.adminEmail,
+        returned: rows.length,
+        total: count ?? rows.length,
+        offset,
+        limit,
+        hasStatus: status !== undefined,
+        hasQuery: q !== undefined,
+      },
+      "admin/shop/orders: list",
+    );
+
+    res.json({
+      orders: rows.map((r) =>
+        listItemProjection(
+          r,
+          itemCounts.get(r.id) ?? 0,
+          r.customerId ? identities.get(r.customerId) : undefined,
+        ),
+      ),
+      total: count ?? rows.length,
+      limit,
+      offset,
+    });
+  },
+);
+
+// ---------------------------------------------------------------------
+// GET /admin/shop/orders/:orderId — single-order detail.
+// ---------------------------------------------------------------------
+// Full order record + its line items + resolved customer identity.
+// Scoped to the tenant. PHI: logs ids/counts only.
+router.get(
+  "/admin/shop/orders/:orderId",
+  requirePermission("returns.manage"),
+  async (req, res) => {
+    const orderId = validateOrderId(req.params.orderId);
+    if (!orderId) {
+      res.status(400).json({ error: "invalid_order_id" });
+      return;
+    }
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const order = await loadOrder(orgId, orderId);
+    if (!order) {
+      res.status(404).json({ error: "order_not_found" });
+      return;
+    }
+
+    const supabase = getOrgScopedClient(orgId);
+    const { data: itemData, error: itemErr } = await supabase
+      .from("shop_order_items")
+      .select("product_id, quantity, unit_amount_cents")
+      .eq("order_id", orderId);
+    if (itemErr) throw itemErr;
+    const lineItems = ((itemData ?? []) as LineItemRow[]).map((r) =>
+      projectLineItem(r),
+    );
+
+    const identities = order.customerId
+      ? await resolveCustomerIdentities(supabase, [order.customerId])
+      : new Map<string, { name: string | null; email: string | null }>();
+    const identity = order.customerId
+      ? identities.get(order.customerId)
+      : undefined;
+
+    const itemCount = lineItems.reduce((sum, li) => sum + li.quantity, 0);
+
+    req.log?.info?.(
+      {
+        orderId,
+        adminEmail: req.adminEmail,
+        lineItemCount: lineItems.length,
+        itemCount,
+      },
+      "admin/shop/orders: detail",
+    );
+
+    res.json({
+      id: order.id,
+      status: order.status,
+      customerName: identity?.name ?? null,
+      customerEmail: identity?.email ?? null,
+      amountTotalCents: order.amountTotalCents,
+      currency: order.currency,
+      createdAt: order.createdAt,
+      paidAt: order.paidAt,
+      shippedAt: order.shippedAt,
+      deliveredAt: order.deliveredAt,
+      trackingCarrier: order.trackingCarrier,
+      trackingNumber: order.trackingNumber,
+      fulfillmentMethod: order.fulfillmentMethod,
+      itemCount,
+      stripeSessionId: order.stripeSessionId,
+      stripePaymentIntentId: order.stripePaymentIntentId,
+      shippingAddress: order.shippingAddress,
+      lineItems,
+    });
+  },
+);
+
 function projectOrder(row: OrderRow) {
   return {
     id: row.id,

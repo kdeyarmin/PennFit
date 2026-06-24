@@ -537,11 +537,19 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         hint: "Storefront fulfillment — orders, subscriptions, returns, backorders",
         tabs: [
           {
-            href: "/admin/pennpaps/orders",
+            href: "/admin/shop/orders",
             label: "Orders",
             icon: ShoppingBag,
+            matchPrefix: "/admin/shop/orders",
+            requiredPermission: "returns.manage",
+            hint: "Paid storefront orders — look one up, set tracking, mark delivered, refund",
+          },
+          {
+            href: "/admin/pennpaps/orders",
+            label: "Fitter requests",
+            icon: ScanFace,
             matchPrefix: "/admin/pennpaps/orders",
-            hint: "Storefront orders — fulfill, refund, look up",
+            hint: "AI mask-fitter order requests — read-only log of submitted fittings",
           },
           {
             href: "/admin/shipping",

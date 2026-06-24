@@ -146,6 +146,11 @@ const AdminShopReturnsPage = lazyWithRetry(() =>
     default: m.AdminShopReturnsPage,
   })),
 );
+const AdminShopOrdersPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-shop-orders").then((m) => ({
+    default: m.AdminShopOrdersPage,
+  })),
+);
 const AdminFollowupsPage = lazyWithRetry(() =>
   import("@/pages/admin/admin-followups").then((m) => ({
     default: m.AdminFollowupsPage,
@@ -1150,6 +1155,7 @@ function AdminConsole() {
             <Route path="/admin/shop/customers/:userId">
               {(params) => <AdminCustomerDetailPage userId={params.userId} />}
             </Route>
+            <Route path="/admin/shop/orders" component={AdminShopOrdersPage} />
             <Route
               path="/admin/shop/returns"
               component={AdminShopReturnsPage}
