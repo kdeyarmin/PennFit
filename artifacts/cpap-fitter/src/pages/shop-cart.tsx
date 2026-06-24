@@ -1230,16 +1230,20 @@ export function ShopCart() {
                   : "Secure payment processed by Stripe. We never see your card details."}
               </p>
 
-              <div className="border-t border-border/40 mt-5 pt-4 text-center">
-                <Link
-                  href="/consent"
-                  className="text-xs text-muted-foreground hover:text-primary transition-colors inline-flex items-center gap-1.5"
-                  data-testid="cart-insurance-link"
-                >
-                  <ShieldCheck className="w-3.5 h-3.5" />
-                  Have insurance? Use it for $0 →
+              {/* Insurance is a co-equal path, not a buried footer link —
+                  many patients owe $0 with a prescription, so make choosing
+                  it as easy as paying by card. */}
+              <Button
+                asChild
+                variant="outline"
+                className="w-full mt-3"
+                data-testid="cart-insurance-button"
+              >
+                <Link href="/consent" data-testid="cart-insurance-link">
+                  <ShieldCheck className="w-4 h-4 mr-2" />
+                  Use insurance instead — $0 with a prescription
                 </Link>
-              </div>
+              </Button>
             </div>
           </aside>
           {/*
