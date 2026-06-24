@@ -27,6 +27,11 @@ export interface InventoryProductRow {
   id: string;
   name: string;
   category: string;
+  /**
+   * Stripe default-price id (price_…) — needed to issue a replacement.
+   * Surfaced by the list endpoint; the patch responses omit it.
+   */
+  priceId?: string | null;
   priceCents: number | null;
   currency: string | null;
   stockCount: number | null;
@@ -72,6 +77,7 @@ export async function listShopInventory(): Promise<ListShopInventoryResponse> {
       name: string;
       category: string;
       price?: {
+        id?: string | null;
         unitAmount?: number | null;
         amount?: number | null;
         currency: string | null;
@@ -86,6 +92,7 @@ export async function listShopInventory(): Promise<ListShopInventoryResponse> {
       id: p.id,
       name: p.name,
       category: p.category,
+      priceId: p.price?.id ?? null,
       priceCents: p.price?.unitAmount ?? p.price?.amount ?? null,
       currency: p.price?.currency ?? null,
       stockCount: p.stockCount ?? null,
