@@ -64,30 +64,55 @@ import { FaxOutreachTab } from "@/pages/admin/patient-detail/FaxOutreachTab";
 import { FormAcksTab } from "@/pages/admin/patient-detail/FormAcksTab";
 import { IntegrationSourceCard } from "@/pages/admin/patient-detail/IntegrationSourceCard";
 
-type Tab =
-  | "timeline"
-  | "activity"
-  | "address"
-  | "episodes"
-  | "conversations"
-  | "fulfillments"
-  | "prescriptions"
-  | "notes"
-  | "followups"
-  | "onboarding"
-  | "fax-outreach"
-  | "documents"
-  | "portal"
-  | "device-data"
-  | "sleep-studies"
-  | "insurance"
-  | "prior-auths"
-  | "billing"
-  | "resupply"
-  | "equipment"
-  | "forms"
-  | "packets"
-  | "alert-overrides";
+// Runtime list of the tab keys so a ?tab=<key> deep-link can be validated
+// (the therapy-monitoring boards link here with the relevant tab pre-opened).
+const PATIENT_TABS = [
+  "timeline",
+  "activity",
+  "address",
+  "episodes",
+  "conversations",
+  "fulfillments",
+  "prescriptions",
+  "notes",
+  "followups",
+  "onboarding",
+  "fax-outreach",
+  "documents",
+  "portal",
+  "device-data",
+  "sleep-studies",
+  "insurance",
+  "prior-auths",
+  "billing",
+  "resupply",
+  "equipment",
+  "forms",
+  "packets",
+  "alert-overrides",
+] as const;
+
+type Tab = (typeof PATIENT_TABS)[number];
+
+// Validate a ?tab=<key> value against the known tabs, falling back to the
+// default. A monitoring board can deep-link straight to the therapy telemetry
+// that flagged the patient, instead of dropping the RT on the default tab to
+// re-derive why.
+export function pickPatientTab(raw: string | null | undefined): Tab {
+  return raw && (PATIENT_TABS as readonly string[]).includes(raw)
+    ? (raw as Tab)
+    : "timeline";
+}
+
+function initialTab(): Tab {
+  try {
+    return pickPatientTab(
+      new URLSearchParams(window.location.search).get("tab"),
+    );
+  } catch {
+    return "timeline";
+  }
+}
 
 /**
  * Admin detail page for a patient, presenting header info, action controls, settings, and a tabbed view of related data.
@@ -99,7 +124,7 @@ type Tab =
  */
 export function PatientDetailPage({ id }: { id: string }) {
   const [, setLocation] = useLocation();
-  const [tab, setTab] = useState<Tab>("timeline");
+  const [tab, setTab] = useState<Tab>(initialTab);
   const { data, isPending, isError, error, refetch } = useGetPatient(id);
   // Show the audit-packet shortcut only when the ADR/audit feature is on.
   const auditPacketEnabled = useQuery({
