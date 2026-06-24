@@ -650,8 +650,10 @@ RETURNS AND COMFORT GUARANTEE (81-90)
       tracking number; we'll find it.
 
 ACCOUNT AND TECH (91-100)
-  91. How do I change my password? -> /forgot-password -> enter
-      your email -> follow the link.
+  91. How do I change my password? -> If you're signed in, go to
+      /account -> Account tab -> "Sign-in & security" and enter your
+      current + new password (you stay signed in). If you're locked
+      out, use /forgot-password -> enter your email -> follow the link.
   92. How do I change my email address? -> Email support@pennpaps
       .com so we can verify identity. Can't be done in chat.
   93. How do I update my address? -> /account -> Profile.
