@@ -157,12 +157,24 @@ export function AdminShopOrdersPage() {
               <table className="w-full text-sm min-w-[680px]">
                 <thead className="text-xs uppercase tracking-wider text-left text-slate-600">
                   <tr>
-                    <th className="px-2 py-2">Order</th>
-                    <th className="px-2 py-2">Customer</th>
-                    <th className="px-2 py-2">Status</th>
-                    <th className="px-2 py-2 text-right">Total</th>
-                    <th className="px-2 py-2 text-right">Items</th>
-                    <th className="px-2 py-2">Placed</th>
+                    <th scope="col" className="px-2 py-2">
+                      Order
+                    </th>
+                    <th scope="col" className="px-2 py-2">
+                      Customer
+                    </th>
+                    <th scope="col" className="px-2 py-2">
+                      Status
+                    </th>
+                    <th scope="col" className="px-2 py-2 text-right">
+                      Total
+                    </th>
+                    <th scope="col" className="px-2 py-2 text-right">
+                      Items
+                    </th>
+                    <th scope="col" className="px-2 py-2">
+                      Placed
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -403,11 +415,22 @@ function OrderDetail({
               <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500 pt-2">
                 Refund
               </h3>
-              <Input
+              {/* Stripe only accepts these three refund reasons; a
+                  free-typed reason was rejected as invalid_body with no
+                  refund issued. Empty = no reason recorded. */}
+              <Select
                 value={refundReason}
                 onChange={(e) => setRefundReason(e.target.value)}
-                placeholder="Reason (optional)"
                 aria-label="Refund reason"
+                emptyOptionLabel="No reason"
+                options={[
+                  {
+                    value: "requested_by_customer",
+                    label: "Requested by customer",
+                  },
+                  { value: "duplicate", label: "Duplicate" },
+                  { value: "fraudulent", label: "Fraudulent" },
+                ]}
               />
               <Button
                 intent="secondary"

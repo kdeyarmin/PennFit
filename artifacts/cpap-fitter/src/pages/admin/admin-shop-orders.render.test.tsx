@@ -106,6 +106,24 @@ describe("AdminShopOrdersPage", () => {
     );
   });
 
+  it("refunds with a Stripe-allowed reason chosen from the select", async () => {
+    renderPage();
+    fireEvent.click(await screen.findByTestId("shop-order-open-ord-12345678"));
+    await screen.findByText(/AirFit P10/); // detail panel loaded
+
+    // The reason is a constrained select (free text was rejected by
+    // Stripe's enum schema); pick one and confirm it's forwarded.
+    fireEvent.change(screen.getByLabelText("Refund reason"), {
+      target: { value: "duplicate" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /refund order/i }));
+    await waitFor(() =>
+      expect(refundShopOrder).toHaveBeenCalledWith("ord-12345678", {
+        reason: "duplicate",
+      }),
+    );
+  });
+
   it("searches orders by the typed query (debounced)", async () => {
     renderPage();
     await screen.findByText("Ada Lovelace");

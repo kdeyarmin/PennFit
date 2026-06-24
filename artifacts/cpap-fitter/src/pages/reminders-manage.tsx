@@ -88,7 +88,7 @@ export function manageLoadErrorCopy(status: number): {
 }
 
 /**
- * Render the "Manage reminders" page which lets a user view and edit their reminder subscription using a single-use token from the URL.
+ * Render the "Manage reminders" page which lets a user view and edit their reminder subscription using a capability token from the URL.
  *
  * The component reads the token once from the query string (then removes it from the browser URL), fetches the subscription, and renders one of several states: missing token, loading, fetch error, unsubscribed confirmation, or the editable list of reminder items. Users can toggle items, update last-replaced dates and intervals, save changes (with validation requiring at least one enabled item), or perform a confirmed unsubscribe that disables all reminders.
  *
@@ -97,10 +97,11 @@ export function manageLoadErrorCopy(status: number): {
 export function RemindersManage() {
   useDocumentTitle(PAGE_TITLE);
   const [confirm, ConfirmDialogEl] = useConfirmDialog();
-  // Read the token ONCE on mount, then strip it from the URL so the
-  // single-use manage secret doesn't persist in browser history,
-  // autocomplete, or shareable URLs. Subsequent updates / unsubscribe
-  // calls reuse the captured token rather than re-reading window.location.
+  // Read the token ONCE on mount, then strip it from the URL so the manage
+  // secret — a stable capability token (not single-use), so anyone holding
+  // it can manage the subscription — doesn't persist in browser history,
+  // autocomplete, or shareable URLs. Subsequent updates / unsubscribe calls
+  // reuse the captured token rather than re-reading window.location.
   const [token] = useState(() => {
     if (typeof window === "undefined") return "";
     return new URLSearchParams(window.location.search).get("token") ?? "";

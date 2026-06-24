@@ -644,7 +644,10 @@ function listItemProjection(
     id: row.id,
     status: row.status,
     customerName: identity?.name ?? null,
-    customerEmail: identity?.email ?? null,
+    // Guest checkout has no linked shop_customers row, so fall back to the
+    // email captured on the order itself — otherwise staff see "Guest"
+    // with no way to contact the buyer.
+    customerEmail: identity?.email ?? row.customerEmail ?? null,
     amountTotalCents: row.amountTotalCents,
     currency: row.currency,
     createdAt: row.createdAt,
@@ -657,6 +660,17 @@ function listItemProjection(
     itemCount,
   };
 }
+
+// Fulfillment-stage filters live in timestamp columns, NOT the `status`
+// column — which only ever holds the payment lifecycle (paid → refunded).
+// Selecting one of these filters means "this stage has been reached"
+// (timestamp is set); filtering them on `status` returned nothing.
+const FULFILLMENT_FILTER_COLUMNS: Record<string, string> = {
+  shipped: "shipped_at",
+  delivered: "delivered_at",
+  ready_for_pickup: "ready_for_pickup_at",
+  picked_up: "picked_up_at",
+};
 
 // List query params. All optional; `q` matches the order id / Stripe
 // session id (text columns only — we deliberately do NOT search PHI name
@@ -704,7 +718,12 @@ router.get(
       .order("created_at", { ascending: false })
       .range(offset, offset + limit - 1);
     if (status) {
-      query = query.eq("status", status);
+      const fulfillmentColumn = FULFILLMENT_FILTER_COLUMNS[status];
+      if (fulfillmentColumn) {
+        query = query.not(fulfillmentColumn, "is", null);
+      } else {
+        query = query.eq("status", status);
+      }
     }
     if (q) {
       // Match the order id OR the Stripe session id (text columns).
@@ -823,7 +842,9 @@ router.get(
       id: order.id,
       status: order.status,
       customerName: identity?.name ?? null,
-      customerEmail: identity?.email ?? null,
+      // Guest checkout: fall back to the order's captured email (see the
+      // list projection note) so the detail view can still contact them.
+      customerEmail: identity?.email ?? order.customerEmail ?? null,
       amountTotalCents: order.amountTotalCents,
       currency: order.currency,
       createdAt: order.createdAt,

@@ -17,6 +17,7 @@ import { Card } from "@/components/admin/Card";
 import { addCaseLink, createCase } from "@/lib/admin/cases-api";
 import { createAdminPatientFollowup } from "@/lib/admin/patient-followups-api";
 import { createAdminCustomerFollowup } from "@/lib/admin/customer-followups-api";
+import { appDateIsoOffset, parseAppDateTimeLocalInput } from "@/lib/utils";
 
 export interface ConversationEscalatePanelProps {
   conversationId: string;
@@ -26,12 +27,6 @@ export interface ConversationEscalatePanelProps {
   customerId: string | null;
   /** Human label for the subject — seeds the default case title / note. */
   subjectLabel: string;
-}
-
-function tomorrowIso(): string {
-  const d = new Date();
-  d.setDate(d.getDate() + 1);
-  return d.toISOString().slice(0, 10);
 }
 
 const labelClass = "block text-[11px] font-semibold uppercase tracking-wider";
@@ -65,11 +60,18 @@ export function ConversationEscalatePanel({
   });
 
   // ── Schedule a follow-up ───────────────────────────────────────────
-  const [dueDate, setDueDate] = useState(tomorrowIso);
+  // Default to tomorrow in the practice timezone (not UTC) so the date
+  // doesn't slip a day for CSRs working near local midnight.
+  const [dueDate, setDueDate] = useState(() => appDateIsoOffset(1));
   const [note, setNote] = useState("");
   const scheduleFollowup = useMutation({
     mutationFn: async () => {
-      const dueAt = new Date(`${dueDate}T09:00`);
+      // Interpret "<date> 09:00" in the practice timezone (the app's
+      // calendar standard), not the viewer's browser timezone.
+      const dueAt = parseAppDateTimeLocalInput(`${dueDate}T09:00`);
+      if (!dueAt) {
+        throw new Error("Pick a valid follow-up date.");
+      }
       const body = note.trim() || `Follow up: ${subjectLabel}`;
       if (patientId) {
         return createAdminPatientFollowup(patientId, body, dueAt);

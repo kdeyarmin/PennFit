@@ -1212,11 +1212,13 @@ describe("GET /admin/shop/orders", () => {
     expect(first.lineItems).toBeUndefined();
     expect(first.stripeSessionId).toBeUndefined();
 
-    // Guest order — unmatched customer_id resolves to null/null.
+    // Guest order — no linked customer, so the name is null, but the email
+    // falls back to the one captured on the order itself so staff can still
+    // contact the buyer.
     expect(second.id).toBe(SECOND_ID);
     expect(second.itemCount).toBe(4);
     expect(second.customerName).toBeNull();
-    expect(second.customerEmail).toBeNull();
+    expect(second.customerEmail).toBe("guest@example.com");
 
     // Newest-first ordering + paging window applied at the DB layer.
     const selectFilters = getSupabaseFilterCalls("shop_orders", "select");
@@ -1258,6 +1260,38 @@ describe("GET /admin/shop/orders", () => {
     expect(String(orCall!.args[0])).toContain(
       "stripe_session_id.ilike.%cs_test%",
     );
+  });
+
+  it("maps a fulfillment-stage filter to its timestamp column, not status", async () => {
+    stubVerifiedAdmin();
+    stageSupabaseResponse("shop_orders", "select", {
+      data: [paidOrderRow({ id: VALID_ID, customer_id: null })],
+      count: 1,
+    });
+    stageSupabaseResponse("shop_order_items", "select", { data: [] });
+
+    const res = await request(makeApp()).get(
+      "/resupply-api/admin/shop/orders?status=shipped",
+    );
+    expect(res.status).toBe(200);
+
+    const selectFilters = getSupabaseFilterCalls("shop_orders", "select");
+    // "shipped" is a fulfillment stage tracked by a timestamp column, not a
+    // value of the payment-lifecycle `status` column — so it must filter on
+    // shipped_at IS NOT NULL. Querying .eq("status","shipped") would always
+    // return empty (the bug this guards against).
+    expect(
+      selectFilters.some(
+        (c) =>
+          c.verb === "not" &&
+          c.args[0] === "shipped_at" &&
+          c.args[1] === "is" &&
+          c.args[2] === null,
+      ),
+    ).toBe(true);
+    expect(
+      selectFilters.some((c) => c.verb === "eq" && c.args[0] === "status"),
+    ).toBe(false);
   });
 });
 
