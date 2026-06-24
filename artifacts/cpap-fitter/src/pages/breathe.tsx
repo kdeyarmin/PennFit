@@ -953,6 +953,8 @@ export function BreatheHome() {
           therapy fleet, and the audience breakdown — lives on the Product,
           Compare, and Integrations pages so this page stays scannable. */}
       <ResupplyEngine />
+      <RevenueRecovery />
+      <AiWorkforce />
       <BuiltInHouse />
       <Replaces />
       <Outcomes />
@@ -990,6 +992,7 @@ export function BreatheProduct() {
       <FeatureVideos />
       <UnifiedFleet />
       <BuiltInHouse />
+      <RevenueRecovery />
       <RevenueCycle />
       <AiBento />
       <Outcomes showClaimsEngine={false} />
@@ -1309,6 +1312,12 @@ function Hero() {
               Live demo on sample data · No call · No credit card
             </div>
             <p className="bx-hero-talk bx-reveal in">
+              Switching from Brightree, Bonafide, or NikoHealth?{" "}
+              <Link className="bx-linkbtn" href="/breathe/compare">
+                See the side-by-side →
+              </Link>
+            </p>
+            <p className="bx-hero-talk bx-reveal in">
               Questions, or need a hand getting set up?{" "}
               <button
                 type="button"
@@ -1598,6 +1607,189 @@ function ResupplyEngine() {
         </div>
         <div className="bx-pillars">
           {ENGINE_STEPS.map((p) => (
+            <article
+              className={`bx-pillar bx-reveal${p.gold ? " gold" : ""}`}
+              key={p.title}
+            >
+              <div className="bx-pillar-top">
+                <span className="bx-pillar-ic">{p.icon}</span>
+                <span className="bx-pillar-metric">
+                  <b>{p.metric}</b>
+                  <small>{p.metricSub}</small>
+                </span>
+              </div>
+              <h3 className="bx-pillar-title">{p.title}</h3>
+              <p className="bx-pillar-body">{p.body}</p>
+            </article>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ───────────────────── Revenue recovery ("found money") ───────────────────── */
+/*
+ * The platform's most differentiated, highest-dollar advantage — and the one
+ * that makes an owner rip out Brightree: the RCM-recovery worklists that find
+ * revenue the current system writes off. Insurance Discovery, denial recovery
+ * ranked by dollars, electronic prior auth, and always-current eligibility all
+ * live deeper in the product (RevenueCycle), but on the home page they were
+ * buried in role bullets. This band surfaces them as outcomes, not mechanics.
+ * Reuses the .bx-pillar grid so it needs no new CSS.
+ */
+const RECOVERY: {
+  icon: React.ReactNode;
+  metric: string;
+  metricSub: string;
+  title: string;
+  body: string;
+  gold?: boolean;
+}[] = [
+  {
+    icon: <Network size={22} />,
+    metric: "Self-pay",
+    metricSub: "→ billable claim",
+    title: "Find coverage your patients didn't know they had",
+    gold: true,
+    body: "Insurance Discovery searches the payer network from a patient's demographics and surfaces active coverage when insurance is unknown, inactive, or written off as self-pay — turning patients you'd never bill into paid claims you can.",
+  },
+  {
+    icon: <LineChart size={22} />,
+    metric: "$ × win",
+    metricSub: "denials, ranked",
+    title: "Recover the denials actually worth fighting",
+    body: "Every open denial is ranked by recoverable dollars times the probability of winning the appeal, so your team works the money — not the queue. The AI scrubber re-checks and auto-resubmits the rest. Each rework costs $25–$118; most never get touched.",
+  },
+  {
+    icon: <ClipboardSignature size={22} />,
+    metric: "e-PA",
+    metricSub: "submitted, not faxed",
+    title: "Never lose a claim to a missing auth",
+    body: "Electronic prior authorization through Da Vinci FHIR PAS — submitted, not faxed-and-waited. Missed and at-risk SLAs and soon-to-expire auths surface on their own worklist, so an expired auth never quietly turns a delivered order into a write-off.",
+  },
+  {
+    icon: <BadgeCheck size={22} />,
+    metric: "270 / 271",
+    metricSub: "always current",
+    title: "Stop billing dead coverage",
+    body: "Real-time eligibility runs before you dispense, and a re-verification worklist catches coverage that's lapsed or terminating before the claim ever goes out. Dead coverage is one of the most preventable denial reasons in DME — caught here, not at the EOB.",
+  },
+];
+
+function RevenueRecovery() {
+  return (
+    <section className="bx-section" id="revenue-recovery">
+      <div className="bx-shell">
+        <div className="bx-section-head center bx-reveal">
+          <span className="bx-eyebrow">
+            <CircleDollarSign size={13} /> Recover lost revenue
+          </span>
+          <h2 className="bx-h2">
+            Find the revenue you&apos;re already writing off
+          </h2>
+          <p className="bx-lede">
+            Most DME losses aren&apos;t missing patients — they&apos;re coverage
+            you never found, denials you never worked, and auths that quietly
+            expired. Breathe&apos;s revenue-cycle AI runs all four worklists on
+            every patient record, so the dollars a legacy system writes off get
+            recovered automatically.
+          </p>
+        </div>
+        <div className="bx-pillars">
+          {RECOVERY.map((p) => (
+            <article
+              className={`bx-pillar bx-reveal${p.gold ? " gold" : ""}`}
+              key={p.title}
+            >
+              <div className="bx-pillar-top">
+                <span className="bx-pillar-ic">{p.icon}</span>
+                <span className="bx-pillar-metric">
+                  <b>{p.metric}</b>
+                  <small>{p.metricSub}</small>
+                </span>
+              </div>
+              <h3 className="bx-pillar-title">{p.title}</h3>
+              <p className="bx-pillar-body">{p.body}</p>
+            </article>
+          ))}
+        </div>
+        <p className="bx-stats-note bx-reveal">
+          Plus secondary &amp; COB rollover, capped-rental tracking, A/R aging,
+          timely-filing alerts, and payer-profitability — the full revenue cycle
+          on one record.{" "}
+          <Link href="/breathe/roi">See what it recovers on your numbers →</Link>
+        </p>
+      </div>
+    </section>
+  );
+}
+
+/* ─────────────────── AI workforce (the labor story, quantified) ─────────────────── */
+/*
+ * The "less labor" half of the ICP promise — and the only half the site used
+ * to leave un-quantified. The voice agent was the only AI sold on the home
+ * page; the chatbot, email auto-reply, and admin copilot (the rest of the
+ * "staff you don't hire") were invisible. This band names the whole AI
+ * workforce and ties it to hours-per-teammate. Reuses .bx-pillar — no new CSS.
+ */
+const WORKFORCE: {
+  icon: React.ReactNode;
+  metric: string;
+  metricSub: string;
+  title: string;
+  body: string;
+  gold?: boolean;
+}[] = [
+  {
+    icon: <Mic size={22} />,
+    metric: "24 / 7",
+    metricSub: "calls, answered & placed",
+    title: "An AI voice agent on your own number",
+    gold: true,
+    body: "It answers inbound patient calls and places outbound resupply and follow-up calls on your practice's own line — after hours and on weekends — then writes a summary, flags sentiment, and hands off to a human only when it should.",
+  },
+  {
+    icon: <MessageSquare size={22} />,
+    metric: "Tickets ↓",
+    metricSub: "deflected & converted",
+    title: "A chatbot that answers and sells",
+    body: "Grounded in your products and policies, the storefront assistant answers patient questions and steers shoppers to orders — without a CSR watching a chat queue all day.",
+  },
+  {
+    icon: <Mail size={22} />,
+    metric: "Inbox",
+    metricSub: "triaged automatically",
+    title: "Email replies that write themselves",
+    body: "Routine patient emails get a high-confidence answer automatically; anything order-, account-, or clinically-specific routes straight to a person. Your team stops triaging and starts resolving.",
+  },
+  {
+    icon: <Bot size={22} />,
+    metric: "Onboard",
+    metricSub: "in days, not weeks",
+    title: "A copilot for your staff",
+    body: "An in-app assistant answers “how do I…” on every admin screen, so new coordinators ramp without shadowing a veteran — and your best people stop being the help desk.",
+  },
+];
+
+function AiWorkforce() {
+  return (
+    <section className="bx-section" id="ai-workforce">
+      <div className="bx-shell">
+        <div className="bx-section-head center bx-reveal">
+          <span className="bx-eyebrow">
+            <Sparkles size={13} /> The AI workforce
+          </span>
+          <h2 className="bx-h2">The staff you don&apos;t have to hire</h2>
+          <p className="bx-lede">
+            Breathe&apos;s AI handles the routine calls, chats, emails, and
+            questions that fill your team&apos;s day — the repetitive contact
+            that eats 9+ hours per teammate every week. Grow your panel without
+            growing payroll.
+          </p>
+        </div>
+        <div className="bx-pillars">
+          {WORKFORCE.map((p) => (
             <article
               className={`bx-pillar bx-reveal${p.gold ? " gold" : ""}`}
               key={p.title}
@@ -2312,7 +2504,7 @@ const FEATURES: Feature[] = [
   {
     icon: <Receipt size={22} />,
     title: "Revenue Cycle + AI Claims",
-    body: "Real-time 270/271 eligibility, AI claim scrubbing, one-click Office Ally auto-submission — or a downloadable 837P for any clearinghouse — and a denials worklist ranked by recoverable dollars × win probability.",
+    body: "Insurance Discovery that turns self-pay patients into billable claims, real-time 270/271 eligibility, AI claim scrubbing, one-click Office Ally auto-submission — or a downloadable 837P for any clearinghouse — and a denials worklist ranked by recoverable dollars × win probability.",
     tag: "AI",
     gold: true,
   },
@@ -3728,7 +3920,9 @@ function Roi() {
             <div className="bx-roi-total-label">Estimated annual impact</div>
             <div className="bx-roi-total">{money(r.total)}</div>
             <div className="bx-roi-total-sub">
-              ≈ {money(r.total / 12)} every month back in the business.
+              ≈ {money(r.total / 12)} every month back in the business —
+              typically many times the subscription.{" "}
+              <Link href="/breathe/pricing">See pricing →</Link>
             </div>
 
             <div className="bx-roi-breakdown">
@@ -5189,17 +5383,24 @@ export function ClosingCta() {
             <Link className="bx-btn bx-btn-gold" href="/breathe/signup">
               Create your account <ArrowRight size={17} />
             </Link>
-            <Link className="bx-btn bx-btn-ghost" href="/breathe/product">
-              Explore the platform
+            <Link className="bx-btn bx-btn-ghost" href="/breathe/pricing">
+              See pricing
             </Link>
+          </div>
+          <p className="bx-hero-talk">
+            Or{" "}
+            <Link className="bx-linkbtn" href="/breathe/product">
+              explore the platform
+            </Link>{" "}
+            ·{" "}
             <button
               type="button"
-              className="bx-btn bx-btn-ghost"
+              className="bx-linkbtn"
               onClick={() => openContact("breathe-cta")}
             >
-              Contact support
+              contact support
             </button>
-          </div>
+          </p>
           <div className="bx-cta-meta">
             <span>
               <Radio size={13} /> No credit card
