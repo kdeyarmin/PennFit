@@ -5,7 +5,7 @@
 // plan prompts for a resolution note. Closed plans are hidden
 // behind a toggle so the day-to-day view stays tight.
 
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { HeartPulse, Plus } from "lucide-react";
 
@@ -14,6 +14,8 @@ import { Spinner } from "@/components/admin/Spinner";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Button } from "@/components/admin/Button";
 import { Input } from "@/components/admin/Input";
+import { PatientSearchCombobox } from "@/components/admin/PatientSearchCombobox";
+import type { PatientListItem } from "@workspace/api-client-react/admin";
 import { usePromptDialog, type PromptFn } from "@/hooks/use-prompt-dialog";
 import {
   createCoachingPlan,
@@ -86,57 +88,36 @@ export function AdminCoachingPage() {
 
 function NewPlanCard() {
   const qc = useQueryClient();
-  const [patientId, setPatientId] = useState("");
+  const [patient, setPatient] = useState<PatientListItem | null>(null);
   const [target, setTarget] = useState("70");
-  const patientInputRef = useRef<HTMLInputElement>(null);
   const create = useMutation({
     mutationFn: () =>
       createCoachingPlan({
-        patientId: patientId.trim(),
+        patientId: patient!.id,
         targetCompliancePct: Number(target) || 70,
       }),
     onSuccess: () => {
-      setPatientId("");
-      setTarget("70");
       // Ready the next entry — these are often opened in batches.
-      patientInputRef.current?.focus();
+      setPatient(null);
+      setTarget("70");
       void qc.invalidateQueries({ queryKey: ["admin", "coaching", "plans"] });
     },
   });
 
-  const trimmedId = patientId.trim();
-  const isUuid =
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-      trimmedId,
-    );
-  // Only flag once they've typed something — an empty box isn't "wrong".
-  const showUuidError = trimmedId.length > 0 && !isUuid;
   return (
     <Card title="Open a new plan">
       <div className="flex flex-wrap gap-2 items-end">
         <div className="flex-1 min-w-[12rem]">
           <label className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground block mb-1">
-            Patient ID (UUID)
+            Patient
           </label>
-          <Input
-            ref={patientInputRef}
-            value={patientId}
-            onChange={(e) => setPatientId(e.target.value)}
-            placeholder="00000000-0000-0000-0000-000000000000"
-            aria-label="Patient ID (UUID)"
-            aria-invalid={showUuidError}
-            aria-describedby={showUuidError ? "coaching-uuid-error" : undefined}
-            style={{ fontFamily: "monospace" }}
+          <PatientSearchCombobox
+            value={patient}
+            onChange={setPatient}
+            aria-label="Patient"
+            autoFocus
+            testId="coaching-patient"
           />
-          {showUuidError && (
-            <p
-              id="coaching-uuid-error"
-              role="alert"
-              className="mt-1 text-[11px] text-rose-700"
-            >
-              Not a valid UUID — expected 8-4-4-4-12 hex digits.
-            </p>
-          )}
         </div>
         <div>
           <label className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground block mb-1">
@@ -153,7 +134,7 @@ function NewPlanCard() {
           />
         </div>
         <Button
-          disabled={!isUuid || create.isPending}
+          disabled={!patient || create.isPending}
           isLoading={create.isPending}
           onClick={() => create.mutate()}
         >
