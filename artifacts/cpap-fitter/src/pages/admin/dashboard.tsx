@@ -1,9 +1,48 @@
-import { Link } from "wouter";
+import { useEffect } from "react";
+import { Link, useLocation } from "wouter";
+import { useQuery } from "@tanstack/react-query";
 import { useGetDashboardSummary } from "@workspace/api-client-react/admin";
 import { KpiCard } from "@/components/admin/Card";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { SetupProgressCard } from "@/components/admin/SetupProgressCard";
+import { fetchTenantSetup } from "@/lib/admin/tenant-setup-api";
+import { shouldRedirectToSetup } from "@/lib/admin/onboarding-redirect";
 import { TodayWorklistSection } from "@/pages/admin/admin-today";
+
+const ONBOARDING_REDIRECT_KEY = "cmb-onboarding-redirected";
+
+// Send a brand-new tenant to the guided setup checklist once, on their first
+// dashboard landing of the session — so onboarding can't be silently skipped.
+// Conservative + loop-proof: only fires when nothing is configured yet, and
+// the once-flag is set before navigating (if it can't be persisted we bail,
+// so a redirect we can't remember never loops).
+function useOnboardingRedirect() {
+  const [, navigate] = useLocation();
+  const { data } = useQuery({
+    queryKey: ["admin-tenant-setup"],
+    queryFn: fetchTenantSetup,
+    staleTime: 60_000,
+  });
+
+  useEffect(() => {
+    let alreadyRedirected = false;
+    try {
+      alreadyRedirected =
+        sessionStorage.getItem(ONBOARDING_REDIRECT_KEY) === "1";
+    } catch {
+      // sessionStorage unavailable (private mode) — handled below.
+    }
+    if (!shouldRedirectToSetup(data?.summary, alreadyRedirected)) return;
+    try {
+      sessionStorage.setItem(ONBOARDING_REDIRECT_KEY, "1");
+    } catch {
+      // Can't persist the once-flag → don't redirect (an unremembered
+      // redirect could loop).
+      return;
+    }
+    navigate("/admin/setup");
+  }, [data, navigate]);
+}
 
 // Admin Home landing. This is the single start-of-day screen — it merges
 // what used to be three overlapping surfaces (the old /admin dashboard,
@@ -111,6 +150,7 @@ function FirstActionsCard({ show }: { show: boolean }) {
 
 export function DashboardPage() {
   const { data, isPending, isError, error, refetch } = useGetDashboardSummary();
+  useOnboardingRedirect();
 
   const kpis: KpiLink[] = [
     {
