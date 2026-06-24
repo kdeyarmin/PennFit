@@ -2332,6 +2332,29 @@
   background: linear-gradient(135deg, var(--bx-cyan), var(--bx-blue));
   box-shadow: 0 0 10px rgba(84, 200, 255, 0.5);
 }
+/* "Explore the platform" index cards (homepage ExploreDeepDives): the whole
+   .bx-cap is a <Link>, so it carries a small arrow affordance that slides on
+   hover to signal it navigates. Inherits .bx-cap's lift/border-glow hover. */
+.bx-cap-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--bx-cyan);
+}
+.bx-cap.gold .bx-cap-more {
+  color: var(--bx-gold-soft);
+}
+.bx-cap-more svg {
+  transition: transform 0.25s ease;
+}
+.bx-cap:hover .bx-cap-more svg {
+  transform: translateX(4px);
+}
+
 /* Case-studies page (breathe-case-studies.tsx). Industry cards reuse .bx-cap
    but stack situation/approach/points/source as siblings, so give them an even
    flex-gap and bottom-align the cited source. */
