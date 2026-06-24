@@ -108,7 +108,24 @@ const STATUS_VALUES: ShopReturnStatus[] = [
   "replaced",
   "closed",
 ];
-const STATUS_FILTER = new Set<string>([...STATUS_VALUES, "all", "open"]);
+const STATUS_FILTER = new Set<string>([
+  ...STATUS_VALUES,
+  "all",
+  "open",
+  "needs_action",
+]);
+
+// The in-flight states that require ADMIN action right now, as opposed to
+// the full "open" pipeline (which also includes `approved` — that's waiting
+// on the CUSTOMER to ship the item back, nothing for the admin to do).
+//   requested    → approve / reject
+//   shipped_back → mark received
+//   received     → refund / resolve
+const NEEDS_ACTION_STATUSES: ShopReturnStatus[] = [
+  "requested",
+  "shipped_back",
+  "received",
+];
 
 const PAGE_SIZE_DEFAULT = 25;
 const PAGE_SIZE_MAX = 100;
@@ -253,6 +270,8 @@ router.get(
         "shipped_back",
         "received",
       ]);
+    } else if (status === "needs_action") {
+      listQuery = listQuery.in("status", NEEDS_ACTION_STATUSES);
     } else if (status !== "all") {
       listQuery = listQuery.eq("status", status);
     }

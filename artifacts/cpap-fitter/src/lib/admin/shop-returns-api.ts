@@ -61,7 +61,7 @@ export interface AdminReturnListResponse {
 const BASE = "/resupply-api/admin/shop/returns";
 
 export async function listAdminShopReturns(params: {
-  status: ReturnStatus | "all" | "open";
+  status: ReturnStatus | "all" | "open" | "needs_action";
   cursor?: string;
   limit?: number;
 }): Promise<AdminReturnListResponse> {

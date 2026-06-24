@@ -28,6 +28,7 @@ import {
 import {
   installSupabaseMock,
   stageSupabaseResponse,
+  getSupabaseFilterCalls,
 } from "../../test-helpers/supabase-mock";
 
 const supabaseMock = installSupabaseMock();
@@ -425,5 +426,71 @@ describe("POST /admin/shop/returns/:id/approve — requirePermission gate smoke"
 
     // 200 or 409 (state mismatch) — not 401/403.
     expect([200, 409]).toContain(res.status);
+  });
+});
+
+// ===========================================================================
+// GET /admin/shop/returns — status filters (work-queue ergonomics)
+// ===========================================================================
+describe("GET /admin/shop/returns — status filters", () => {
+  beforeEach(() => {
+    // Supervisor → admin effective role → has returns.read.
+    mockAdmin.current = {
+      userId: "u_supervisor_1",
+      email: "sup@penn.example.com",
+      role: "admin",
+      granularRole: "supervisor",
+    };
+  });
+
+  function statusInArgs(): unknown {
+    const inCalls = getSupabaseFilterCalls("shop_returns", "select").filter(
+      (c) => c.verb === "in" && c.args[0] === "status",
+    );
+    expect(inCalls).toHaveLength(1);
+    return inCalls[0]!.args[1];
+  }
+
+  it("rejects an unknown status with 400", async () => {
+    const res = await request(makeApp()).get(
+      "/resupply-api/admin/shop/returns?status=bogus",
+    );
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("invalid_status");
+  });
+
+  it("status=needs_action filters to admin-actionable states (excludes approved)", async () => {
+    stageSupabaseResponse("shop_returns", "select", { data: [] });
+    const res = await request(makeApp()).get(
+      "/resupply-api/admin/shop/returns?status=needs_action",
+    );
+    expect(res.status).toBe(200);
+    const statuses = statusInArgs();
+    expect(statuses).toEqual(["requested", "shipped_back", "received"]);
+    // `approved` is deliberately excluded — it's waiting on the CUSTOMER
+    // to ship the item back, not on the admin.
+    expect(statuses).not.toContain("approved");
+  });
+
+  it("status=open keeps the full in-flight pipeline (includes approved)", async () => {
+    stageSupabaseResponse("shop_returns", "select", { data: [] });
+    const res = await request(makeApp()).get(
+      "/resupply-api/admin/shop/returns?status=open",
+    );
+    expect(res.status).toBe(200);
+    expect(statusInArgs()).toContain("approved");
+  });
+
+  it("a single status filters to exactly that status (eq, not in)", async () => {
+    stageSupabaseResponse("shop_returns", "select", { data: [] });
+    const res = await request(makeApp()).get(
+      "/resupply-api/admin/shop/returns?status=refunded",
+    );
+    expect(res.status).toBe(200);
+    const eqCalls = getSupabaseFilterCalls("shop_returns", "select").filter(
+      (c) => c.verb === "eq" && c.args[0] === "status",
+    );
+    expect(eqCalls).toHaveLength(1);
+    expect(eqCalls[0]!.args[1]).toBe("refunded");
   });
 });

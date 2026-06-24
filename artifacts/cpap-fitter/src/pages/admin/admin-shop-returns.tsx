@@ -43,9 +43,14 @@ import {
 import { ReturnNotesPanel } from "@/components/admin/ReturnNotesPanel";
 import { PageHeader } from "@/components/admin/PageHeader";
 
-type Tab = ReturnStatus | "all" | "open";
+type Tab = ReturnStatus | "all" | "open" | "needs_action";
 
 const TABS: ReadonlyArray<{ id: Tab; label: string }> = [
+  // "Needs action" = only the states waiting on the ADMIN (requested /
+  // in-transit-received / received-awaiting-refund). "Open" is the full
+  // in-flight pipeline, which also includes `approved` (waiting on the
+  // customer to ship). The actionable view is the default landing tab.
+  { id: "needs_action", label: "Needs action" },
   { id: "open", label: "Open" },
   { id: "requested", label: "Requested" },
   { id: "approved", label: "Approved" },
@@ -62,8 +67,8 @@ const PAGE_SIZE = 25;
 const TAB_IDS: ReadonlySet<Tab> = new Set(TABS.map((t) => t.id));
 
 // Type-narrowing guard passed to useUrlState so unknown ?tab= values
-// silently coerce back to the "open" default rather than landing the
-// page in an unrecognised state.
+// silently coerce back to the "needs_action" default rather than landing
+// the page in an unrecognised state.
 const isTab = (v: string): v is Tab => TAB_IDS.has(v as Tab);
 
 export function AdminShopReturnsPage() {
@@ -73,7 +78,7 @@ export function AdminShopReturnsPage() {
   // popstate listener) is owned by useUrlState.
   const [tab, setTab] = useUrlState<Tab>({
     key: "tab",
-    defaultValue: "open",
+    defaultValue: "needs_action",
     isAllowed: isTab,
   });
 
