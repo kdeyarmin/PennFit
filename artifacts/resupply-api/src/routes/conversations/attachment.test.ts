@@ -170,6 +170,97 @@ describe("GET /conversations/:id/messages/:messageId/attachments/:attachmentId",
     );
   });
 
+  it("forces attachment disposition when ?download=1 is set", async () => {
+    stubAdmin();
+    stageSupabaseResponse("message_attachments", "select", {
+      data: {
+        object_key: "/objects/uploads/abc",
+        filename: "mms-MEdef.png",
+        content_type: "image/png",
+        message_id: MSG_ID,
+      },
+    });
+    stageSupabaseResponse("messages", "select", {
+      data: { conversation_id: CONV_ID },
+    });
+    getObjectEntityFileMock.mockResolvedValue({ name: "abc" });
+    downloadObjectMock.mockResolvedValue(
+      new Response(new Uint8Array([1, 2, 3, 4]), {
+        status: 200,
+        headers: { "content-type": "image/png" },
+      }),
+    );
+
+    const res = await request(makeApp()).get(
+      `/resupply-api/conversations/${CONV_ID}/messages/${MSG_ID}/attachments/${ATT_ID}?download=1`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers["content-disposition"]).toContain("attachment;");
+    expect(res.headers["content-disposition"]).not.toContain("inline");
+    expect(res.headers["content-disposition"]).toContain("mms-MEdef.png");
+  });
+
+  it("emits a bare attachment disposition when ?download=1 and no filename", async () => {
+    stubAdmin();
+    stageSupabaseResponse("message_attachments", "select", {
+      data: {
+        object_key: "/objects/uploads/abc",
+        filename: null,
+        content_type: "image/png",
+        message_id: MSG_ID,
+      },
+    });
+    stageSupabaseResponse("messages", "select", {
+      data: { conversation_id: CONV_ID },
+    });
+    getObjectEntityFileMock.mockResolvedValue({ name: "abc" });
+    downloadObjectMock.mockResolvedValue(
+      new Response(new Uint8Array([1, 2, 3, 4]), {
+        status: 200,
+        headers: { "content-type": "image/png" },
+      }),
+    );
+
+    const res = await request(makeApp()).get(
+      `/resupply-api/conversations/${CONV_ID}/messages/${MSG_ID}/attachments/${ATT_ID}?download=1`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers["content-disposition"]).toBe("attachment");
+  });
+
+  it("sanitizes quote/backslash chars in the filename to prevent header injection", async () => {
+    stubAdmin();
+    stageSupabaseResponse("message_attachments", "select", {
+      data: {
+        object_key: "/objects/uploads/abc",
+        filename: 'evil"; attachment; filename="other.png',
+        content_type: "image/png",
+        message_id: MSG_ID,
+      },
+    });
+    stageSupabaseResponse("messages", "select", {
+      data: { conversation_id: CONV_ID },
+    });
+    getObjectEntityFileMock.mockResolvedValue({ name: "abc" });
+    downloadObjectMock.mockResolvedValue(
+      new Response(new Uint8Array([1, 2, 3, 4]), {
+        status: 200,
+        headers: { "content-type": "image/png" },
+      }),
+    );
+
+    const res = await request(makeApp()).get(
+      `/resupply-api/conversations/${CONV_ID}/messages/${MSG_ID}/attachments/${ATT_ID}`,
+    );
+    expect(res.status).toBe(200);
+    const disposition = res.headers["content-disposition"] as string;
+    // The raw quote must not survive into the ASCII fil="..." value, or it
+    // would break out and inject a sibling field. encodeURIComponent in the
+    // filename* part renders the quote as %22, which is safe.
+    expect(disposition).not.toContain('filename="evil";');
+    expect(disposition).toContain("filename=");
+  });
+
   it("returns 404 when GCS reports the object missing", async () => {
     stubAdmin();
     stageSupabaseResponse("message_attachments", "select", {

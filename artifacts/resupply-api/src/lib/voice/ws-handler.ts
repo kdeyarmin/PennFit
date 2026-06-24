@@ -80,9 +80,6 @@ import { getAnthropicClient } from "../llm-provider";
 import { logger } from "../logger";
 import { recordTenantUsage } from "../metering/usage";
 import type { PendingSessionEntry } from "./pending-sessions";
-// TEMP diagnostic — remove with voice-session-debug once inbound turn-taking
-// on the sales line is fixed.
-import { pushVoiceDebug } from "./voice-session-debug";
 import { routeVoiceHandoffToCsrQueue } from "./post-call-handoff";
 import {
   summarizePostCall,
@@ -1280,13 +1277,6 @@ export async function handleBreatheSalesWsConnection(
   const MAX_SALES_CALL_MS = 15 * 60 * 1000;
   let maxTimer: ReturnType<typeof setTimeout> | null = null;
 
-  // TEMP DIAGNOSTIC (remove with voice-session-debug): record the live
-  // OpenAI session timeline so one real call answers "does caller audio reach
-  // the model, and does its VAD fire on caller speech?".
-  let mediaFrames = 0;
-  const dbg = (event: string, detail?: unknown): void =>
-    pushVoiceDebug({ conversationId: pending.conversationId, event, detail });
-
   // Graceful end_call drain: when the agent says goodbye and ends the call,
   // VoiceBridge calls sink.waitForPlaybackDone() so we don't close the Twilio
   // stream while the farewell audio is still queued (Twilio echoes a `mark`
@@ -1434,7 +1424,6 @@ export async function handleBreatheSalesWsConnection(
       },
       "voice sales: closed",
     );
-    dbg("call_cleanup", { reason, mediaFrames });
     bridge.close(reason);
     try {
       ws.close(1000, "sales-closed");
@@ -1482,25 +1471,10 @@ export async function handleBreatheSalesWsConnection(
       },
       "voice sales: tool invoked",
     );
-    // TEMP DIAGNOSTIC (remove with voice-session-debug): record tool calls
-    // into the session buffer so we can correlate an "extra" response_done
-    // (the post-tool follow-up turn forced by bridge.ts requestFollowUp)
-    // with the bookkeeping tool that triggered it — i.e. confirm whether
-    // the agent's "continuing without waiting" is a silent-tool follow-up.
-    dbg("tool_invoked", { name: invocation.name, status: invocation.status });
   });
   bridge.on("session.closed", (info) =>
     cleanup(info.reason || "session-closed"),
   );
-
-  // TEMP DIAGNOSTIC (remove with voice-session-debug): raw OpenAI session
-  // signals — did the session open/error/close, did the server VAD fire on
-  // caller speech, did the model produce a response?
-  client.on("open", () => dbg("session_open"));
-  client.on("error", (e) => dbg("session_error", e));
-  client.on("closed", (c) => dbg("session_closed", c));
-  client.on("input.speech_started", () => dbg("caller_speech_started"));
-  client.on("response.done", (r) => dbg("response_done", r));
 
   maxTimer = setTimeout(
     () => cleanup("max-duration-exceeded"),
@@ -1515,13 +1489,9 @@ export async function handleBreatheSalesWsConnection(
       case "start":
         streamSid = frame.start.streamSid;
         twilioStarted = true;
-        dbg("twilio_start", { streamSid: frame.start.streamSid });
         maybeSpeakFirst();
         return;
       case "media":
-        // TEMP DIAGNOSTIC: confirm caller audio actually reaches us.
-        mediaFrames += 1;
-        if (mediaFrames === 1) dbg("first_caller_media");
         bridge.forwardCallerAudio(frame.media.payload);
         return;
       case "stop":
@@ -1831,13 +1801,13 @@ async function runPostCallSummary(
       "voice: post-call summary written",
     );
 
-    // Persist the summary where staff actually read the call: as a
-    // system message on the conversation thread. The legacy logAudit
-    // call above is a retired no-op stub — without this row the
-    // summary's outcome/concerns/follow-ups were computed and then
-    // dropped on the floor. The summarizer's own prompt forbids PHI in
-    // any field, and `messages` is the RLS-scoped store that already
-    // holds the call transcript, so this is the right home for it.
+    // Durable write: persist the summary where staff actually read the
+    // call — as a system message on the conversation thread. (The legacy
+    // logAudit call above is a retired no-op stub, so this row is what
+    // keeps the summary's outcome/concerns/follow-ups from being computed
+    // and then dropped.) The summarizer's own prompt forbids PHI in any
+    // field, and `messages` is the RLS-scoped store that already holds the
+    // call transcript, so this is the right home for it.
     await persistSummaryMessage(input, summary);
 
     // Route the conversation into the CSR escalated-queue when the

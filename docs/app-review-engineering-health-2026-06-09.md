@@ -140,7 +140,7 @@ near-strict TS (`noImplicitAny` + `strictNullChecks` on). Gaps:
 | F4  | **Expand the axe e2e beyond 5 public routes** to a few high-traffic `learn-*` pages and 1–2 admin surfaces (sign-in is covered; dashboards are not).                                                                                                                                                                                                      | M      | `e2e/tests/a11y.spec.ts:23`                                         |
 | F5  | ✅ **Implemented (this PR).** `ScrollToTop` now also moves focus to the `#main-content` landmark on every client-side navigation (skipping initial load); the landmark already had `tabIndex={-1}` + focus-visible-only outline, so pointer users see no change.                                                                                          | done   | `components/layout.tsx` (`ScrollToTop`)                             |
 | F6  | **MediaPipe model download progress.** The ~5.5MB `face_landmarker.task` loads on `/measure` entry with no progress indicator — on slow connections the fitter looks frozen at its highest-intent moment.                                                                                                                                                 | M      | `public/mediapipe/models/face_landmarker.task`, measure page loader |
-| F7  | ~~Hide unpublished video cards~~ — **withdrawn on implementation review** (§7): empty-id videos are already filtered out (and the whole section hides when none are publishable); the "Coming soon" branch is unreachable defensive code.                                                                                                                 | —      | `components/learn-video-library.tsx:35-39`                          |
+| F7  | ~~Hide unpublished video cards~~ — **moot: the static `LearnVideoLibrary` section was removed** (it only ever shipped empty-id placeholder videos). The live `/learn/videos` page (API-backed) is unaffected.                                                                                                                                             | done   | —                                                                   |
 | F8  | **Distinguish transient vs permanent failure on `/results`.** Both render the same generic error; a Retry button on 5xx/timeout keeps the patient in-funnel at the most expensive drop-off point.                                                                                                                                                         | S      | `pages/results.tsx:200`                                             |
 | F9  | **Consolidate query `staleTime` policy.** Admin pages mix 30s/60s ad hoc; one documented default per surface removes confusing tab-to-tab inconsistency.                                                                                                                                                                                                  | S      | `components/admin/*.tsx`                                            |
 
@@ -205,10 +205,10 @@ Found during Wave-1 implementation (same PR):
   re-fetch the patient row and reject non-active status inside the send
   function itself; the only remaining window is the milliseconds between that
   select and the vendor call, which no application-level check can close.
-- **F7 "Coming-soon video cards shown to customers"** — `LearnVideoLibrary`
-  filters empty-id videos at line 35 and hides the entire section when none
-  are publishable; the per-card placeholder branch is unreachable defensive
-  code (its own header comment says exactly this).
+- **F7 "Coming-soon video cards shown to customers"** — moot: the static
+  `LearnVideoLibrary` section (which only ever shipped empty-id placeholder
+  videos) was removed from `/learn`. The live, API-backed `/learn/videos`
+  page is a separate feature and remains in place.
 - **S4 resolved as "already handled"** — all three delegated signature checks
   are constant-time by construction (ECDSA / Ed25519 `crypto.verify`,
   `timingSafeEqual` for the Twilio HMAC).
