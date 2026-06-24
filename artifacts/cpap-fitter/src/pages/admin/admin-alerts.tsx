@@ -56,6 +56,11 @@ export function AdminAlertsPage() {
               {"{{first_name}}"}
             </code>
             . Edits take effect immediately.
+            <span className="mt-1 block font-semibold">
+              Use this to send one curated alert to a single patient.
+            </span>{" "}
+            For a one-off email to a whole audience use Bulk campaigns; for a
+            multi-step contact sequence use Outreach playbooks.
           </>
         }
       />

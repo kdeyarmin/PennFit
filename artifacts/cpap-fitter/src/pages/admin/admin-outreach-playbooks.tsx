@@ -134,6 +134,13 @@ export function AdminOutreachPlaybooksPage() {
           Start one for a patient and the texts and emails send themselves;
           phone touches land in the call queue with a script.
         </p>
+        <p className="text-xs mt-1" style={{ color: "hsl(var(--ink-3))" }}>
+          <span className="font-semibold">
+            Use this to run a multi-step contact sequence for one patient.
+          </span>{" "}
+          Blast a whole audience at once in Bulk campaigns; send a single
+          curated alert in the Alert Library.
+        </p>
       </header>
 
       <nav
