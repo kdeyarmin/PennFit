@@ -242,7 +242,7 @@ function WorklistTable({ items }: { items: DenialWorkItem[] }) {
               </td>
               <td className="px-3 py-2 text-xs">
                 <Link
-                  href={`/admin/patients/${d.patientId}`}
+                  href={`/admin/patients/${d.patientId}/insurance-claims?claim=${d.claimId}`}
                   className="underline decoration-dotted"
                   style={{ color: "hsl(var(--ink-1))" }}
                 >

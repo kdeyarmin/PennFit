@@ -138,7 +138,7 @@ function ClaimSection({
             >
               <div className="min-w-0">
                 <Link
-                  href={`/admin/patients/${c.patientId}/insurance-claims`}
+                  href={`/admin/patients/${c.patientId}/insurance-claims?claim=${c.id}`}
                   className="font-medium underline truncate block"
                   style={{ color: "hsl(var(--ink-1))" }}
                 >

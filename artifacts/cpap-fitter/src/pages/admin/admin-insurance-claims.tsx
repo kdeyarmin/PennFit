@@ -20,7 +20,7 @@
 // most loudly: durable history they can grep through, structured
 // per-line accounting, and a single-place audit trail.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import {
@@ -125,6 +125,23 @@ export function AdminInsuranceClaimsPage({ patientId }: { patientId: string }) {
   // Multi-select for batch 837P export. Holds claim ids the biller has
   // ticked; the toolbar that appears builds one 837P for the whole set.
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  // Open the claim named in ?claim=<id> on mount — the billing worklists
+  // deep-link here with the specific claim to work — then strip the param so
+  // closing the drawer (or a refresh) doesn't force it back open.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const claimParam = params.get("claim");
+    if (!claimParam) return;
+    setOpenClaimId(claimParam);
+    params.delete("claim");
+    const qs = params.toString();
+    window.history.replaceState(
+      null,
+      "",
+      window.location.pathname + (qs ? `?${qs}` : ""),
+    );
+  }, []);
 
   const { data, isPending, isError, error, refetch } = useQuery({
     queryKey: ["admin", "insurance-claims", patientId],
