@@ -229,22 +229,80 @@ export async function markPaid(
     ...update,
     stripe_session_id: session.id,
   };
-  const { data: rows, error } = await supabase
+
+  // Guarded write — a paid event must NEVER resurrect a terminal refunded
+  // order. markPaid runs for BOTH checkout.session.completed and
+  // .async_payment_succeeded (distinct event ids, so the stripe_webhook_events
+  // id-dedup does not collapse them), and a dashboard "Resend" or a very
+  // delayed retry of `completed` can also land AFTER a charge.refunded flipped
+  // the row to "refunded". A bare upsert(status:"paid") would silently revert
+  // refunded -> paid in any of those, corrupting the refund pipeline.
+  //
+  // So: (1) try a guarded UPDATE that excludes refunded rows; if it matched,
+  // we're done. (2) If nothing matched, the row either does not exist yet or is
+  // refunded — disambiguate by existence. A refunded row is terminal: leave it.
+  // (3) A genuinely missing row is the crash-recovery case the original upsert
+  // existed for (checkout.ts died after creating the Stripe session but before
+  // mirroring the pending row) — INSERT it.
+  const { data: updatedRows, error: updateErr } = await supabase
     .from("shop_orders")
-    .upsert(upsertRow, { onConflict: "stripe_session_id" })
+    .update(update)
+    .eq("stripe_session_id", session.id)
+    .neq("status", "refunded")
     .select("id, customer_id, paid_at");
-  if (error) throw error;
+  if (updateErr) throw updateErr;
+
+  let row = updatedRows?.[0] ?? null;
+  if (!row) {
+    const { data: existing, error: existErr } = await supabase
+      .from("shop_orders")
+      .select("id, status")
+      .eq("stripe_session_id", session.id)
+      .maybeSingle();
+    if (existErr) throw existErr;
+    if (existing) {
+      // Present but excluded by the guard ⇒ refunded. A paid event arrived
+      // after the refund; do not resurrect a terminal order.
+      log?.info?.(
+        { sessionId: session.id, status: existing.status },
+        "shop order markPaid skipped — order is terminal (refunded), not resurrecting",
+      );
+      return null;
+    }
+    // Genuinely missing — INSERT (crash recovery).
+    const { data: insertedRows, error: insertErr } = await supabase
+      .from("shop_orders")
+      .insert(upsertRow)
+      .select("id, customer_id, paid_at");
+    if (insertErr) {
+      // Two concurrent paid events for the same brand-new session both find no
+      // row and race to INSERT — one wins, the other trips the
+      // stripe_session_id unique constraint (23505). That's benign: the winner
+      // already wrote the paid row, so re-read and return it rather than
+      // throwing the webhook into a Stripe retry loop.
+      if ((insertErr as { code?: string }).code === "23505") {
+        const { data: raced } = await supabase
+          .from("shop_orders")
+          .select("id, customer_id, paid_at")
+          .eq("stripe_session_id", session.id)
+          .maybeSingle();
+        row = raced ?? null;
+      } else {
+        throw insertErr;
+      }
+    } else {
+      row = insertedRows?.[0] ?? null;
+    }
+  }
 
   log?.info?.({ amountCents: session.amount_total }, "shop order marked paid");
 
-  const row = rows?.[0];
   if (!row) {
-    // Should be unreachable after the upsert above (the row either
-    // existed and was updated, or didn't and was inserted). Log loud
-    // so an operator can investigate if it ever fires.
+    // Should be unreachable after the update/insert above. Log loud so an
+    // operator can investigate if it ever fires.
     log?.info?.(
       { sessionId: session.id },
-      "shop order markPaid: upsert returned no row — investigate",
+      "shop order markPaid: no row after update/insert — investigate",
     );
     return null;
   }

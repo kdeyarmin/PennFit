@@ -11,15 +11,15 @@ Next available migration number: **`0474`** (`0473` is the current tip).
 
 ## Blocking vs. deferred
 
-| #   | Item                                                 | Real bug?            | In-repo fixable            | External gate                | Verdict                             |
-| --- | ---------------------------------------------------- | -------------------- | -------------------------- | ---------------------------- | ----------------------------------- |
-| 1   | Stripe double-subscription idempotency               | yes (race)           | yes, code-only             | Stripe test-mode replay      | **Launch-blocking**                 |
-| 2   | `cart_hash` 500                                      | yes (low-prob)       | yes, code-only             | none                         | **Launch-blocking**                 |
-| 3   | Capped-rental modifiers / OA 837P / G47.33 preflight | partial              | seed migration + preflight | DMEPOS sign-off + OA sandbox | **Launch-blocking** (e-claims live) |
-| 4   | Voice inbound CallSid binding                        | yes (medium)         | yes, code-only             | Twilio test call             | **Launch-blocking** (voice live)    |
-| 5   | markPaid refunded→paid                               | no (already correct) | n/a — add regression test  | none                         | No action (lock with test)          |
-| 6   | Refund restock on `charge.refunded`                  | product decision     | n/a                        | none                         | **Decided: keep CSR-return-only**   |
-| 7   | Fail-open reservation / counter & sub holds          | no (by design)       | n/a                        | n/a                          | No action                           |
+| #   | Item                                                 | Real bug?        | In-repo fixable            | External gate                | Verdict                             |
+| --- | ---------------------------------------------------- | ---------------- | -------------------------- | ---------------------------- | ----------------------------------- |
+| 1   | Stripe double-subscription idempotency               | yes (race)       | yes, code-only             | Stripe test-mode replay      | **Launch-blocking**                 |
+| 2   | `cart_hash` 500                                      | yes (low-prob)   | yes, code-only             | none                         | **Launch-blocking**                 |
+| 3   | Capped-rental modifiers / OA 837P / G47.33 preflight | partial          | seed migration + preflight | DMEPOS sign-off + OA sandbox | **Launch-blocking** (e-claims live) |
+| 4   | Voice inbound CallSid binding                        | yes (medium)     | yes, code-only             | Twilio test call             | **Launch-blocking** (voice live)    |
+| 5   | markPaid refunded→paid                               | yes (narrow)     | yes, code-only             | none                         | **Fixed: guard + test**             |
+| 6   | Refund restock on `charge.refunded`                  | product decision | n/a                        | none                         | **Decided: keep CSR-return-only**   |
+| 7   | Fail-open reservation / counter & sub holds          | no (by design)   | n/a                        | n/a                          | No action                           |
 
 ## Findings (evidence)
 
@@ -87,12 +87,20 @@ Next available migration number: **`0474`** (`0473` is the current tip).
   `start`-frame mismatch guard, log `attachCallSid` failures. Code-only, no
   migration.
 
-### 5. markPaid refunded→paid — not a bug
+### 5. markPaid refunded→paid — real (narrow), now fixed
 
-- No reverse transition exists. Full refund → terminal `refunded`; partial
-  refund leaves `paid`; `markStatus` filters `status='pending'` only
-  (`artifacts/resupply-api/src/lib/stripe/webhook-handlers/checkout-session.ts`).
-- **Action:** add a regression test to lock the terminal behavior.
+- Initial triage was wrong: it conflated `markStatus` (guarded —
+  `status='pending'` only) with `markPaid`, which was **unguarded**. `markPaid`
+  runs for BOTH `checkout.session.completed` and
+  `checkout.session.async_payment_succeeded` (distinct event ids, not collapsed
+  by the `stripe_webhook_events` id-dedup), and its `upsert(status:"paid")`
+  had no status filter — so a dashboard "Resend" / very delayed retry of
+  `completed` landing AFTER a `charge.refunded` would flip `refunded → paid`.
+- **Fix:** guarded write in
+  `artifacts/resupply-api/src/lib/stripe/webhook-handlers/checkout-session.ts` —
+  UPDATE excludes `status='refunded'`; a missing row still INSERTs (crash
+  recovery); concurrent-insert race (23505) re-reads. Code-only, no migration.
+  Regression test locks all three paths.
 
 ### 6. Refund restock — decided: keep CSR-return-only
 
