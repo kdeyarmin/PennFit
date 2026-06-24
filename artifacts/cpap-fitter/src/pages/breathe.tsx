@@ -3600,6 +3600,25 @@ export function Comparison() {
             </table>
           </div>
         </div>
+        <div className="bx-compare-legend bx-reveal">
+          <span>
+            <span className="bx-yes">
+              <Check size={15} strokeWidth={2.6} />
+            </span>
+            Built in &amp; included
+          </span>
+          <span>
+            <span className="bx-partial">partial</span>
+            Add-on you license separately, a bolted-on / acquired module, or a
+            limited version
+          </span>
+          <span>
+            <span className="bx-no">
+              <Minus size={15} />
+            </span>
+            Not available
+          </span>
+        </div>
         <p className="bx-compare-foot">
           Comparison reflects publicly described capabilities of each product as
           of 2026 and is provided for illustration. All marks are property of
