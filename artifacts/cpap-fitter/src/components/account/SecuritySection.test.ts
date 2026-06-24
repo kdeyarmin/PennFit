@@ -8,7 +8,13 @@
 
 import { describe, expect, it } from "vitest";
 
-import { MIN_PASSWORD_LENGTH, validatePasswordChange } from "./SecuritySection";
+import { AccountApiError } from "@/lib/account-api";
+
+import {
+  MIN_PASSWORD_LENGTH,
+  closeAccountErrorMessage,
+  validatePasswordChange,
+} from "./SecuritySection";
 
 describe("validatePasswordChange", () => {
   const ok = {
@@ -66,5 +72,31 @@ describe("validatePasswordChange", () => {
         confirmPassword: "samepassword1",
       }),
     ).toMatch(/different from the current/i);
+  });
+});
+
+describe("closeAccountErrorMessage", () => {
+  it("maps a wrong-password error to a specific message", () => {
+    const err = new AccountApiError(403, { error: "invalid_password" });
+    expect(closeAccountErrorMessage(err)).toMatch(/password is incorrect/i);
+  });
+
+  it("maps the no-credential case to a support message", () => {
+    const err = new AccountApiError(400, { error: "password_unavailable" });
+    expect(closeAccountErrorMessage(err)).toMatch(/contact support/i);
+  });
+
+  it("maps a missing-password body error to a confirm prompt", () => {
+    const err = new AccountApiError(400, { error: "invalid_body" });
+    expect(closeAccountErrorMessage(err)).toMatch(/enter your password/i);
+  });
+
+  it("falls back for unknown API errors and non-API throwables", () => {
+    expect(closeAccountErrorMessage(new AccountApiError(500, null))).toMatch(
+      /couldn't close your account/i,
+    );
+    expect(closeAccountErrorMessage(new Error("network"))).toMatch(
+      /couldn't close your account/i,
+    );
   });
 });

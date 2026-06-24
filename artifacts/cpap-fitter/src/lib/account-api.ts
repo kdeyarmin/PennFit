@@ -136,6 +136,19 @@ async function meFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
 export const fetchShopMe = () => meFetch<ShopMeResponse>("/shop/me");
 
 /**
+ * Close ("delete") the signed-in customer's account. The server anonymizes
+ * PII (name/email/phone/address) on the customer + retained orders, disables
+ * login, and revokes every session — so after this resolves the session is
+ * dead and the SPA should hard-redirect to a signed-out state. Re-verifies
+ * the current password server-side; pass it through.
+ */
+export const closeAccount = (password: string) =>
+  meFetch<{ closed: boolean }>("/shop/me/account/close", {
+    method: "POST",
+    body: JSON.stringify({ password }),
+  });
+
+/**
  * Open a Stripe Customer Portal session. Backend returns a short-lived
  * Stripe-hosted URL; the caller is responsible for navigating the
  * browser to it. After the customer closes the portal, Stripe bounces
