@@ -77,8 +77,8 @@ function CallFlow() {
             The agent answers your inbound resupply and status calls and places
             outbound reorder and follow-up calls on your own practice line. It
             listens, talks back naturally, confirms the patient&apos;s coverage,
-            places the order, and writes the whole thing up — without a person on
-            the line.
+            places the order, and writes the whole thing up — without a person
+            on the line.
           </p>
         </div>
         <div className="bx-claims-engine bx-reveal">
@@ -127,8 +127,8 @@ function VoiceDemo() {
           <p className="bx-lede">
             Contractions, backchannels, a beat of empathy, one question at a
             time — the agent is tuned for natural turn-taking, not a phone-tree
-            script. Patients can interrupt it mid-sentence and it yields, the way
-            a person would.
+            script. Patients can interrupt it mid-sentence and it yields, the
+            way a person would.
           </p>
         </div>
         <div className="bx-caps bx-reveal">
@@ -148,8 +148,8 @@ function VoiceDemo() {
             </div>
             <p className="bx-voice-transcript">
               “…of course — let me pull that up. Looks like you&apos;re due for
-              cushions and tubing, and your insurance still has you covered. Want
-              me to send those out today?”
+              cushions and tubing, and your insurance still has you covered.
+              Want me to send those out today?”
             </p>
             <div className="bx-voice-action">
               <Check size={13} /> Order placed · eligibility confirmed
@@ -170,9 +170,9 @@ function VoiceDemo() {
               ))}
             </div>
             <p className="bx-voice-transcript">
-              “Hi Maria, it&apos;s the team at your DME — no rush at all. I wanted
-              to check the new mask is feeling comfortable, and see if you need
-              anything before your next resupply.”
+              “Hi Maria, it&apos;s the team at your DME — no rush at all. I
+              wanted to check the new mask is feeling comfortable, and see if
+              you need anything before your next resupply.”
             </p>
             <div className="bx-voice-action">
               <Check size={13} /> Follow-up logged · sentiment: positive
@@ -256,8 +256,8 @@ function VoiceStack() {
           <p className="bx-lede">
             The agent isn&apos;t one model doing everything badly — it&apos;s
             four specialists working together: a reasoning brain, a human voice,
-            an audit-grade transcriber, and a writer that documents the call. And
-            if any one of them is ever unavailable, that piece steps aside
+            an audit-grade transcriber, and a writer that documents the call.
+            And if any one of them is ever unavailable, that piece steps aside
             quietly instead of dropping the call.
           </p>
         </div>
@@ -362,8 +362,9 @@ function AfterCall() {
           ))}
         </div>
         <p className="bx-stats-note bx-reveal">
-          Resupply calls are the most repetitive, after-hours-heavy work in a DME
-          office — and the orders behind them are your most predictable revenue.{" "}
+          Resupply calls are the most repetitive, after-hours-heavy work in a
+          DME office — and the orders behind them are your most predictable
+          revenue.{" "}
           <Link href="/breathe/roi">
             See what answering all of them is worth →
           </Link>

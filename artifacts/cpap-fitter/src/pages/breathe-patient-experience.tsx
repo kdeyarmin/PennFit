@@ -225,8 +225,7 @@ function Retention() {
           <Link href="/breathe/patient-experience#experience">
             See everything they get above
           </Link>{" "}
-          ·{" "}
-          <Link href="/breathe/roi">size the revenue →</Link>
+          · <Link href="/breathe/roi">size the revenue →</Link>
         </p>
       </div>
     </section>

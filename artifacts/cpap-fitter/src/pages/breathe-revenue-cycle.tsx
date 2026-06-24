@@ -93,9 +93,22 @@ const SCRUB_FLOW: {
   sub: string;
   gold?: boolean;
 }[] = [
-  { icon: <FileCheck2 size={15} />, label: "Build 837P", sub: "from the order" },
-  { icon: <BrainCircuit size={15} />, label: "Scrub", sub: "modifiers + docs", gold: true },
-  { icon: <BadgeCheck size={15} />, label: "Predict denials", sub: "before filing" },
+  {
+    icon: <FileCheck2 size={15} />,
+    label: "Build 837P",
+    sub: "from the order",
+  },
+  {
+    icon: <BrainCircuit size={15} />,
+    label: "Scrub",
+    sub: "modifiers + docs",
+    gold: true,
+  },
+  {
+    icon: <BadgeCheck size={15} />,
+    label: "Predict denials",
+    sub: "before filing",
+  },
   { icon: <Send size={15} />, label: "Auto-submit", sub: "Office Ally / any" },
 ];
 
@@ -361,8 +374,8 @@ function Payer() {
           <p className="bx-lede">
             Getting paid is one thing; knowing whether it was worth it is
             another. Breathe maps every payment back to your contracted rates so
-            you can see real margin by payer and product — and never lose a clean
-            claim to a missed deadline.
+            you can see real margin by payer and product — and never lose a
+            clean claim to a missed deadline.
           </p>
         </div>
         <div className="bx-caps bx-caps-3">
@@ -390,9 +403,7 @@ function Payer() {
           Initial DME denials average roughly 11–12%, and every reworked claim
           costs an estimated $25–$118 in staff time. Cutting that is the fastest
           revenue you&apos;ll find.{" "}
-          <Link href="/breathe/roi">
-            Size it on your own numbers →
-          </Link>
+          <Link href="/breathe/roi">Size it on your own numbers →</Link>
         </p>
       </div>
     </section>

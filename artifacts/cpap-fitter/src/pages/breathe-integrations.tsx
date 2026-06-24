@@ -471,9 +471,9 @@ function OpsGrid() {
           <h2 className="bx-h2">The day-to-day tools, wired in too</h2>
           <p className="bx-lede">
             Beyond the device clouds and the clearinghouse, Breathe connects the
-            tools that run the rest of your day — shipping and tracking, the team
-            chat your staff already lives in, and the accounting your books are
-            kept in — so nothing has to be re-keyed between systems.
+            tools that run the rest of your day — shipping and tracking, the
+            team chat your staff already lives in, and the accounting your books
+            are kept in — so nothing has to be re-keyed between systems.
           </p>
         </div>
         <div className="bx-intgrid">
