@@ -63,8 +63,32 @@ function buildState(
   return out;
 }
 
+// Map a failed manage-link load to user-facing copy. The manage token is a
+// stable capability secret in the URL (not a time-expiring link), so a 404
+// means the link is invalid/incomplete or the subscription was removed —
+// NOT "used after unsubscribing" (unsubscribing keeps the row, which still
+// loads with status "unsubscribed"). Everything else is a transient error
+// worth a retry.
+export function manageLoadErrorCopy(status: number): {
+  title: string;
+  description: string;
+} {
+  if (status === 404) {
+    return {
+      title: "Subscription not found",
+      description:
+        "This link isn't valid — it may be incomplete, or the subscription was removed. Sign up again to start fresh.",
+    };
+  }
+  return {
+    title: "Could not load subscription",
+    description:
+      "Try refreshing in a moment. If this keeps happening, sign up again.",
+  };
+}
+
 /**
- * Render the "Manage reminders" page which lets a user view and edit their reminder subscription using a single-use token from the URL.
+ * Render the "Manage reminders" page which lets a user view and edit their reminder subscription using a capability token from the URL.
  *
  * The component reads the token once from the query string (then removes it from the browser URL), fetches the subscription, and renders one of several states: missing token, loading, fetch error, unsubscribed confirmation, or the editable list of reminder items. Users can toggle items, update last-replaced dates and intervals, save changes (with validation requiring at least one enabled item), or perform a confirmed unsubscribe that disables all reminders.
  *
@@ -73,10 +97,11 @@ function buildState(
 export function RemindersManage() {
   useDocumentTitle(PAGE_TITLE);
   const [confirm, ConfirmDialogEl] = useConfirmDialog();
-  // Read the token ONCE on mount, then strip it from the URL so the
-  // single-use manage secret doesn't persist in browser history,
-  // autocomplete, or shareable URLs. Subsequent updates / unsubscribe
-  // calls reuse the captured token rather than re-reading window.location.
+  // Read the token ONCE on mount, then strip it from the URL so the manage
+  // secret — a stable capability token (not single-use), so anyone holding
+  // it can manage the subscription — doesn't persist in browser history,
+  // autocomplete, or shareable URLs. Subsequent updates / unsubscribe calls
+  // reuse the captured token rather than re-reading window.location.
   const [token] = useState(() => {
     if (typeof window === "undefined") return "";
     return new URLSearchParams(window.location.search).get("token") ?? "";
@@ -158,7 +183,7 @@ export function RemindersManage() {
 
   if (error) {
     const apiError = error as ApiError | null;
-    const status = apiError?.status ?? 0;
+    const copy = manageLoadErrorCopy(apiError?.status ?? 0);
     return (
       <div className="relative z-10 container max-w-xl mx-auto px-4 py-16">
         <Card className="border-0 glass-card rounded-2xl">
@@ -166,16 +191,8 @@ export function RemindersManage() {
             <div className="mx-auto w-14 h-14 rounded-2xl icon-halo-navy flex items-center justify-center">
               <ShieldOff className="w-6 h-6" />
             </div>
-            <CardTitle>
-              {status === 404
-                ? "Subscription not found"
-                : "Could not load subscription"}
-            </CardTitle>
-            <CardDescription>
-              {status === 404
-                ? "This link doesn't match an active subscription. It may have been used after unsubscribing — sign up again to start fresh."
-                : "Try refreshing in a moment. If this keeps happening, sign up again."}
-            </CardDescription>
+            <CardTitle>{copy.title}</CardTitle>
+            <CardDescription>{copy.description}</CardDescription>
           </CardHeader>
           <CardContent className="text-center">
             <Link href="/reminders">
@@ -187,7 +204,13 @@ export function RemindersManage() {
     );
   }
 
-  if (unsubscribed) {
+  // Show the unsubscribed state both right after the user unsubscribes
+  // (`unsubscribed` local) AND when they open a manage link whose
+  // subscription is already unsubscribed (`data.status`). Without the
+  // latter, a returning unsubscribed user would land on the edit form with
+  // every item mysteriously off and no explanation of why.
+  const alreadyUnsubscribed = data?.status === "unsubscribed";
+  if (unsubscribed || alreadyUnsubscribed) {
     return (
       <div className="relative z-10 container max-w-xl mx-auto px-4 py-16">
         <Card className="border-0 glass-card rounded-2xl">
@@ -195,10 +218,15 @@ export function RemindersManage() {
             <div className="mx-auto w-14 h-14 rounded-2xl icon-halo-navy flex items-center justify-center">
               <BellOff className="w-6 h-6" />
             </div>
-            <CardTitle>You've been unsubscribed</CardTitle>
+            <CardTitle>
+              {unsubscribed
+                ? "You've been unsubscribed"
+                : "You're unsubscribed"}
+            </CardTitle>
             <CardDescription>
-              We won't send you any more reminders. Changed your mind? You can
-              sign up again any time.
+              {unsubscribed
+                ? "We won't send you any more reminders. Changed your mind? You can sign up again any time."
+                : "This email is already unsubscribed from reorder reminders. Changed your mind? You can sign up again any time."}
             </CardDescription>
           </CardHeader>
           <CardContent className="text-center space-y-2">

@@ -595,7 +595,7 @@ function PatientRow({
     <tr className="border-t" style={{ borderColor: "hsl(var(--line-1))" }}>
       <Td>
         <Link
-          href={`/admin/patients/${row.patientId}`}
+          href={`/admin/patients/${row.patientId}?tab=device-data`}
           className="font-medium hover:underline"
         >
           {patientName}

@@ -13,7 +13,8 @@ import { Card } from "@/components/admin/Card";
 import { Spinner } from "@/components/admin/Spinner";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Button } from "@/components/admin/Button";
-import { Input } from "@/components/admin/Input";
+import { PatientSearchCombobox } from "@/components/admin/PatientSearchCombobox";
+import type { PatientListItem } from "@workspace/api-client-react/admin";
 import {
   createClinicalEncounter,
   getClinicalEncounters,
@@ -31,7 +32,7 @@ const ENCOUNTER_LABELS: Record<EncounterType, string> = {
 };
 
 export function AdminClinicalPage() {
-  const [patientId, setPatientId] = useState("");
+  const [patient, setPatient] = useState<PatientListItem | null>(null);
   const [active, setActive] = useState<string | null>(null);
 
   return (
@@ -52,19 +53,18 @@ export function AdminClinicalPage() {
         <div className="flex flex-wrap gap-2 items-end">
           <div className="flex-1 min-w-[14rem]">
             <label className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground block mb-1">
-              Patient ID
+              Patient
             </label>
-            <Input
-              value={patientId}
-              onChange={(e) => setPatientId(e.target.value)}
-              placeholder="patient id"
-              aria-label="Patient ID"
-              style={{ fontFamily: "monospace" }}
+            <PatientSearchCombobox
+              value={patient}
+              onChange={setPatient}
+              aria-label="Patient"
+              testId="clinical-patient"
             />
           </div>
           <Button
-            disabled={patientId.trim().length === 0}
-            onClick={() => setActive(patientId.trim() || null)}
+            disabled={!patient}
+            onClick={() => setActive(patient?.id ?? null)}
           >
             Load encounters
           </Button>

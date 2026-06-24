@@ -33,6 +33,7 @@ import {
   installSupabaseMock,
   stageSupabaseResponse,
   getSupabaseCallCount,
+  getSupabaseFilterCalls,
 } from "../../test-helpers/supabase-mock";
 
 const supabaseMock = installSupabaseMock();
@@ -1134,6 +1135,238 @@ describe("POST /admin/shop/orders/:orderId/ready-for-pickup", () => {
     expect(res.status).toBe(200);
     expect(res.body.order.fulfillmentMethod).toBe("pickup");
     expect(res.body.order.readyForPickupAt).toBe(readyIso);
+  });
+});
+
+// =====================================================================
+// GET /admin/shop/orders — paged lookup
+// =====================================================================
+describe("GET /admin/shop/orders", () => {
+  it("rejects callers without admin sign-in (gated)", async () => {
+    const res = await request(makeApp()).get("/resupply-api/admin/shop/orders");
+    expect([401, 403]).toContain(res.status);
+    // Gate runs before any DB read.
+    expect(getSupabaseCallCount("shop_orders", "select")).toBe(0);
+  });
+
+  it("rejects an out-of-range limit", async () => {
+    stubVerifiedAdmin();
+    const res = await request(makeApp()).get(
+      "/resupply-api/admin/shop/orders?limit=500",
+    );
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("invalid_query");
+    expect(getSupabaseCallCount("shop_orders", "select")).toBe(0);
+  });
+
+  it("returns the shaped page with total, item counts, and resolved customer identity", async () => {
+    stubVerifiedAdmin();
+    const SECOND_ID = "22222222-3333-4444-8555-666666666666";
+    // Page of two orders — count: 5 simulates more rows than this page.
+    stageSupabaseResponse("shop_orders", "select", {
+      data: [
+        paidOrderRow({ id: VALID_ID, customer_id: "user_alice" }),
+        paidOrderRow({
+          id: SECOND_ID,
+          customer_id: null,
+          customer_email: "guest@example.com",
+        }),
+      ],
+      count: 5,
+    });
+    // Bulk item-count rollup (summed quantities per order).
+    stageSupabaseResponse("shop_order_items", "select", {
+      data: [
+        { order_id: VALID_ID, quantity: 2 },
+        { order_id: VALID_ID, quantity: 1 },
+        { order_id: SECOND_ID, quantity: 4 },
+      ],
+    });
+    // Bulk customer identity resolution (only the linked order matches).
+    stageSupabaseResponse("shop_customers", "select", {
+      data: [
+        {
+          customer_id: "user_alice",
+          display_name: "Alice Buyer",
+          email_lower: "alice@example.com",
+        },
+      ],
+    });
+
+    const res = await request(makeApp()).get(
+      "/resupply-api/admin/shop/orders?limit=25&offset=0",
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.total).toBe(5);
+    expect(res.body.limit).toBe(25);
+    expect(res.body.offset).toBe(0);
+    expect(res.body.orders).toHaveLength(2);
+
+    const [first, second] = res.body.orders;
+    expect(first.id).toBe(VALID_ID);
+    expect(first.itemCount).toBe(3);
+    expect(first.customerName).toBe("Alice Buyer");
+    expect(first.customerEmail).toBe("alice@example.com");
+    expect(first.status).toBe("paid");
+    // Detail-only fields must NOT leak into the list item shape.
+    expect(first.lineItems).toBeUndefined();
+    expect(first.stripeSessionId).toBeUndefined();
+
+    // Guest order — no linked customer, so the name is null, but the email
+    // falls back to the one captured on the order itself so staff can still
+    // contact the buyer.
+    expect(second.id).toBe(SECOND_ID);
+    expect(second.itemCount).toBe(4);
+    expect(second.customerName).toBeNull();
+    expect(second.customerEmail).toBe("guest@example.com");
+
+    // Newest-first ordering + paging window applied at the DB layer.
+    const selectFilters = getSupabaseFilterCalls("shop_orders", "select");
+    expect(
+      selectFilters.some(
+        (c) => c.verb === "order" && c.args[0] === "created_at",
+      ),
+    ).toBe(true);
+    expect(selectFilters.some((c) => c.verb === "range")).toBe(true);
+  });
+
+  it("applies a status filter and an id/session search predicate", async () => {
+    stubVerifiedAdmin();
+    stageSupabaseResponse("shop_orders", "select", {
+      data: [paidOrderRow({ id: VALID_ID, customer_id: null })],
+      count: 1,
+    });
+    stageSupabaseResponse("shop_order_items", "select", { data: [] });
+
+    const res = await request(makeApp()).get(
+      "/resupply-api/admin/shop/orders?status=paid&q=cs_test",
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.orders).toHaveLength(1);
+
+    const selectFilters = getSupabaseFilterCalls("shop_orders", "select");
+    // status filter → .eq("status", "paid")
+    expect(
+      selectFilters.some(
+        (c) =>
+          c.verb === "eq" && c.args[0] === "status" && c.args[1] === "paid",
+      ),
+    ).toBe(true);
+    // search → .or() across id + stripe_session_id (text columns only,
+    // never PHI name columns).
+    const orCall = selectFilters.find((c) => c.verb === "or");
+    expect(orCall).toBeDefined();
+    expect(String(orCall!.args[0])).toContain("id.ilike.%cs_test%");
+    expect(String(orCall!.args[0])).toContain(
+      "stripe_session_id.ilike.%cs_test%",
+    );
+  });
+
+  it("maps a fulfillment-stage filter to its timestamp column, not status", async () => {
+    stubVerifiedAdmin();
+    stageSupabaseResponse("shop_orders", "select", {
+      data: [paidOrderRow({ id: VALID_ID, customer_id: null })],
+      count: 1,
+    });
+    stageSupabaseResponse("shop_order_items", "select", { data: [] });
+
+    const res = await request(makeApp()).get(
+      "/resupply-api/admin/shop/orders?status=shipped",
+    );
+    expect(res.status).toBe(200);
+
+    const selectFilters = getSupabaseFilterCalls("shop_orders", "select");
+    // "shipped" is a fulfillment stage tracked by a timestamp column, not a
+    // value of the payment-lifecycle `status` column — so it must filter on
+    // shipped_at IS NOT NULL. Querying .eq("status","shipped") would always
+    // return empty (the bug this guards against).
+    expect(
+      selectFilters.some(
+        (c) =>
+          c.verb === "not" &&
+          c.args[0] === "shipped_at" &&
+          c.args[1] === "is" &&
+          c.args[2] === null,
+      ),
+    ).toBe(true);
+    expect(
+      selectFilters.some((c) => c.verb === "eq" && c.args[0] === "status"),
+    ).toBe(false);
+  });
+});
+
+// =====================================================================
+// GET /admin/shop/orders/:orderId — single-order detail
+// =====================================================================
+describe("GET /admin/shop/orders/:orderId", () => {
+  it("rejects callers without admin sign-in (gated)", async () => {
+    const res = await request(makeApp()).get(
+      `/resupply-api/admin/shop/orders/${VALID_ID}`,
+    );
+    expect([401, 403]).toContain(res.status);
+  });
+
+  it("rejects ids that aren't a UUID", async () => {
+    stubVerifiedAdmin();
+    const res = await request(makeApp()).get(
+      "/resupply-api/admin/shop/orders/not-a-uuid",
+    );
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("invalid_order_id");
+  });
+
+  it("returns 404 when the order doesn't exist", async () => {
+    stubVerifiedAdmin();
+    stageSupabaseResponse("shop_orders", "select", { data: null });
+    const res = await request(makeApp()).get(
+      `/resupply-api/admin/shop/orders/${VALID_ID}`,
+    );
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe("order_not_found");
+  });
+
+  it("returns the full order + derived line items + resolved customer", async () => {
+    stubVerifiedAdmin();
+    stageSupabaseResponse("shop_orders", "select", {
+      data: paidOrderRow({ customer_id: "user_alice" }),
+    }); // loadOrder
+    // Line items — derived name (product id) + computed subtotal
+    // (unit_amount_cents * quantity). The table has no name/subtotal
+    // columns, so the route projects from the real columns.
+    stageSupabaseResponse("shop_order_items", "select", {
+      data: [
+        { product_id: "prod_abc123", quantity: 2, unit_amount_cents: 1500 },
+        { product_id: "prod_def456", quantity: 1, unit_amount_cents: null },
+      ],
+    });
+    stageSupabaseResponse("shop_customers", "select", {
+      data: [
+        {
+          customer_id: "user_alice",
+          display_name: "Alice Buyer",
+          email_lower: "alice@example.com",
+        },
+      ],
+    });
+
+    const res = await request(makeApp()).get(
+      `/resupply-api/admin/shop/orders/${VALID_ID}`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.id).toBe(VALID_ID);
+    expect(res.body.stripeSessionId).toBe("cs_test_1");
+    expect(res.body.stripePaymentIntentId).toBe("pi_test_1");
+    expect(res.body.customerName).toBe("Alice Buyer");
+    expect(res.body.customerEmail).toBe("alice@example.com");
+    expect(res.body.itemCount).toBe(3);
+
+    expect(res.body.lineItems).toHaveLength(2);
+    const [li0, li1] = res.body.lineItems;
+    expect(li0.name).toBe("Product prod_abc123");
+    expect(li0.quantity).toBe(2);
+    expect(li0.amountSubtotalCents).toBe(3000);
+    // Null per-unit price → null subtotal (never silently zero).
+    expect(li1.amountSubtotalCents).toBeNull();
   });
 });
 

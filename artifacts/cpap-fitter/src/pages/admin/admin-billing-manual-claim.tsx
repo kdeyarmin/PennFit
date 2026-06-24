@@ -17,7 +17,9 @@ import { FilePlus2 } from "lucide-react";
 import { Card } from "@/components/admin/Card";
 import { Button } from "@/components/admin/Button";
 import { Input } from "@/components/admin/Input";
+import { PatientSearchCombobox } from "@/components/admin/PatientSearchCombobox";
 import { PayerNameAutocomplete } from "@/components/admin/PayerNameAutocomplete";
+import type { PatientListItem } from "@workspace/api-client-react/admin";
 import {
   createManualClaim,
   type ClaimFrequencyCode,
@@ -37,7 +39,7 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 export function AdminBillingManualClaimPage() {
   const [, navigate] = useLocation();
-  const [patientId, setPatientId] = useState("");
+  const [patient, setPatient] = useState<PatientListItem | null>(null);
   const [payerName, setPayerName] = useState("");
   const [dateOfService, setDateOfService] = useState("");
   const [frequency, setFrequency] = useState<ClaimFrequencyCode>("1");
@@ -48,14 +50,14 @@ export function AdminBillingManualClaimPage() {
   const isAdjustment = frequency === "7" || frequency === "8";
 
   const valid =
-    patientId.trim() !== "" &&
+    patient !== null &&
     payerName.trim() !== "" &&
     ISO_DATE.test(dateOfService.trim()) &&
     (!isAdjustment || originalClaimNumber.trim() !== "");
 
   const create = useMutation({
     mutationFn: () =>
-      createManualClaim(patientId.trim(), {
+      createManualClaim(patient!.id, {
         payerName: payerName.trim(),
         dateOfService: dateOfService.trim(),
         claimFrequencyCode: frequency,
@@ -64,8 +66,11 @@ export function AdminBillingManualClaimPage() {
         notes: notes.trim() || null,
       }),
     onSuccess: (res) => {
-      // Jump to the patient's billing workbench to add lines + submit.
-      navigate(`/admin/patients/${patientId.trim()}?claim=${res.id}`);
+      // Jump to the patient's claim workbench (opened to this claim) to add
+      // lines + submit.
+      navigate(
+        `/admin/patients/${patient!.id}/insurance-claims?claim=${res.id}`,
+      );
     },
   });
 
@@ -89,13 +94,11 @@ export function AdminBillingManualClaimPage() {
 
       <Card title="New claim">
         <div className="space-y-3">
-          <Field label="Patient ID" required>
-            <Input
-              value={patientId}
-              onChange={(e) => setPatientId(e.target.value)}
-              placeholder="patient uuid"
-              aria-label="Patient ID"
-              className="font-mono"
+          <Field label="Patient" required>
+            <PatientSearchCombobox
+              value={patient}
+              onChange={setPatient}
+              testId="manual-claim-patient"
             />
           </Field>
           <Field label="Payer name" required>

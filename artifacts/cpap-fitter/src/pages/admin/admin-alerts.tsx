@@ -16,6 +16,8 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { PageHeader } from "@/components/admin/PageHeader";
+import { PatientSearchCombobox } from "@/components/admin/PatientSearchCombobox";
+import type { PatientListItem } from "@workspace/api-client-react/admin";
 
 import {
   type AlertChannel,
@@ -54,6 +56,11 @@ export function AdminAlertsPage() {
               {"{{first_name}}"}
             </code>
             . Edits take effect immediately.
+            <span className="mt-1 block font-semibold">
+              Use this to send one curated alert to a single patient.
+            </span>{" "}
+            For a one-off email to a whole audience use Bulk campaigns; for a
+            multi-step contact sequence use Outreach playbooks.
           </>
         }
       />
@@ -338,16 +345,15 @@ function SendTestForm({
   alert: AlertDefinition;
   onClose: () => void;
 }) {
-  const [patientId, setPatientId] = useState("");
+  const [patient, setPatient] = useState<PatientListItem | null>(null);
   const [channel, setChannel] = useState<AlertChannel>(
     (alert.channels[0] as AlertChannel) ?? "email",
   );
 
   const send = useMutation({
-    mutationFn: () =>
-      sendAlert(alert.key, { patientId: patientId.trim(), channel }),
+    mutationFn: () => sendAlert(alert.key, { patientId: patient!.id, channel }),
     onSuccess: () => {
-      setPatientId("");
+      setPatient(null);
     },
   });
 
@@ -356,15 +362,13 @@ function SendTestForm({
       <div className="grid gap-2 sm:grid-cols-2">
         <div>
           <label className="mb-1 block text-xs font-semibold text-slate-600">
-            Patient ID
+            Patient
           </label>
-          <input
-            type="text"
-            value={patientId}
-            onChange={(e) => setPatientId(e.target.value)}
-            aria-label="Patient ID"
-            placeholder="UUID"
-            className="w-full rounded border border-slate-300 px-2 py-1.5 font-mono text-xs"
+          <PatientSearchCombobox
+            value={patient}
+            onChange={setPatient}
+            aria-label="Patient"
+            testId="alert-patient"
           />
         </div>
         <div>
@@ -406,7 +410,7 @@ function SendTestForm({
         <button
           type="button"
           onClick={() => send.mutate()}
-          disabled={patientId.trim() === "" || send.isPending}
+          disabled={!patient || send.isPending}
           className="rounded bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
         >
           {send.isPending ? "Sending…" : "Send"}

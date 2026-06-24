@@ -67,6 +67,13 @@ export function AdminBulkCampaignsPage() {
             pick an email or SMS template, preview the recipient counts, then
             start sending.
           </p>
+          <p className="text-xs mt-1" style={{ color: "hsl(var(--ink-3))" }}>
+            <span className="font-semibold">
+              Use this for a one-off blast to a whole audience.
+            </span>{" "}
+            Send one curated alert to a single patient in the Alert Library; run
+            a multi-step contact sequence in Outreach playbooks.
+          </p>
         </div>
         <Button onClick={() => setShowNew(true)}>
           <Plus className="h-4 w-4 mr-1.5" />

@@ -654,7 +654,7 @@ function ClinicalInsightsTable({
                 </td>
                 <td className="py-1.5 px-1">
                   <Link
-                    href={`/admin/patients/${e.patientId}`}
+                    href={`/admin/patients/${e.patientId}?tab=device-data`}
                     className="font-medium hover:underline"
                     style={{ color: "hsl(var(--penn-navy))" }}
                   >
@@ -816,7 +816,7 @@ function AlertRow({
           {ALERT_LABELS[alert.alertType] ?? alert.alertType}
         </Badge>
         <Link
-          href={`/admin/patients/${alert.patientId}`}
+          href={`/admin/patients/${alert.patientId}?tab=device-data`}
           className="text-sm font-medium hover:underline truncate"
           style={{ color: "hsl(var(--penn-navy))" }}
         >
@@ -1081,7 +1081,7 @@ function WorklistTable({
             >
               <td className="py-2">
                 <Link
-                  href={`/admin/patients/${e.patientId}`}
+                  href={`/admin/patients/${e.patientId}?tab=device-data`}
                   className="font-medium hover:underline"
                   style={{ color: "hsl(var(--penn-navy))" }}
                 >

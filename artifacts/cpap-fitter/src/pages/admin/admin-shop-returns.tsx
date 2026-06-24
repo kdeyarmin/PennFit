@@ -44,6 +44,8 @@ import {
 } from "@/lib/admin/shop-returns-api";
 import { ReturnNotesPanel } from "@/components/admin/ReturnNotesPanel";
 import { PageHeader } from "@/components/admin/PageHeader";
+import { ProductSearchCombobox } from "@/components/admin/ProductSearchCombobox";
+import type { InventoryProductRow } from "@/lib/admin/shop-inventory-api";
 
 type Tab = ReturnStatus | "all" | "open" | "needs_action";
 
@@ -330,8 +332,8 @@ function ReturnCard({ item }: { item: AdminReturn }) {
   const [rejectNote, setRejectNote] = useState("");
   const [showReject, setShowReject] = useState(false);
   const [showReplace, setShowReplace] = useState(false);
-  const [replaceProductId, setReplaceProductId] = useState("");
-  const [replacePriceId, setReplacePriceId] = useState("");
+  const [replaceProduct, setReplaceProduct] =
+    useState<InventoryProductRow | null>(null);
   const [showNote, setShowNote] = useState(false);
   const [extraNote, setExtraNote] = useState("");
   // Phase 15: append-only internal notes log, separate from the
@@ -560,38 +562,27 @@ function ReturnCard({ item }: { item: AdminReturn }) {
               </button>
             ) : (
               <div className="flex flex-wrap items-center gap-2">
-                <input
-                  type="text"
-                  value={replaceProductId}
-                  onChange={(e) => setReplaceProductId(e.target.value)}
-                  placeholder="prod_xxx"
-                  aria-label="Replacement Stripe product ID"
-                  className="rounded border border-slate-300 px-2 py-1.5 text-xs font-mono"
-                />
-                <input
-                  type="text"
-                  value={replacePriceId}
-                  onChange={(e) => setReplacePriceId(e.target.value)}
-                  placeholder="price_xxx"
-                  aria-label="Replacement Stripe price ID"
-                  className="rounded border border-slate-300 px-2 py-1.5 text-xs font-mono"
-                />
+                <div className="min-w-[16rem]">
+                  <ProductSearchCombobox
+                    value={replaceProduct}
+                    onChange={setReplaceProduct}
+                    aria-label="Replacement product"
+                    testId={`return-${item.id}-replace`}
+                  />
+                </div>
                 <button
                   type="button"
                   onClick={async () => {
+                    if (!replaceProduct?.priceId) return;
                     if (
                       !(await confirm({
                         title: "Send replacement?",
                         description: (
                           <>
                             Send replacement product{" "}
-                            <code className="font-mono text-xs">
-                              {replaceProductId}
-                            </code>{" "}
-                            at price{" "}
-                            <code className="font-mono text-xs">
-                              {replacePriceId}
-                            </code>
+                            <span className="font-semibold">
+                              {replaceProduct.name}
+                            </span>
                             ? This creates a new order for the customer.
                           </>
                         ),
@@ -600,13 +591,11 @@ function ReturnCard({ item }: { item: AdminReturn }) {
                     )
                       return;
                     replaceMut.mutate({
-                      exchangeProductId: replaceProductId,
-                      exchangePriceId: replacePriceId,
+                      exchangeProductId: replaceProduct.id,
+                      exchangePriceId: replaceProduct.priceId,
                     });
                   }}
-                  disabled={
-                    replaceMut.isPending || !replaceProductId || !replacePriceId
-                  }
+                  disabled={replaceMut.isPending || !replaceProduct?.priceId}
                   className="rounded bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
                 >
                   {replaceMut.isPending ? "Saving…" : "Confirm replace"}

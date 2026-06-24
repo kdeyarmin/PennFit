@@ -8,8 +8,10 @@
 // reports.read-gated server-side; aggregates only — no per-message PHI.
 
 import { useState, type ComponentType } from "react";
+import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import {
+  ArrowUpRight,
   Download,
   MessageSquare,
   Mail,
@@ -206,12 +208,24 @@ function MessagingTable({ rows }: { rows: MessagingChannelStats[] }) {
   );
   return (
     <section className="space-y-2">
-      <h2
-        className="text-sm font-semibold"
-        style={{ color: "hsl(var(--ink-1))" }}
-      >
-        Messaging channels
-      </h2>
+      <div className="flex items-center justify-between gap-3">
+        <h2
+          className="text-sm font-semibold"
+          style={{ color: "hsl(var(--ink-1))" }}
+        >
+          Messaging channels
+        </h2>
+        {/* Drill from "Failed" counts to the queue where you actually
+            resolve bounced messages. */}
+        <Link
+          href="/admin/delivery-failures"
+          className="inline-flex items-center gap-1 text-xs font-medium underline decoration-dotted"
+          style={{ color: "hsl(var(--penn-navy))" }}
+        >
+          Investigate failed sends
+          <ArrowUpRight className="h-3 w-3" aria-hidden />
+        </Link>
+      </div>
       {allEmpty ? (
         <Card>
           <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>

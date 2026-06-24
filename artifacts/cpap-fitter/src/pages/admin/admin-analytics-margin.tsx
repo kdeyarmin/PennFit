@@ -10,6 +10,7 @@
 // team. Aggregates only — no per-order PHI.
 
 import { useState } from "react";
+import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { DollarSign } from "lucide-react";
 
@@ -215,13 +216,18 @@ function ByProductTable({ rows }: { rows: ProductMargin[] }) {
                 className="border-t border-slate-100 hover:bg-slate-50"
               >
                 <td className="px-3 py-2">
-                  <div className="text-slate-900">
+                  {/* Drill straight to the product editor — a low-margin row
+                      is only useful if you can act on its price/cost. */}
+                  <Link
+                    href={`/admin/shop/inventory/${r.productId}/edit`}
+                    className="text-slate-900 underline decoration-dotted hover:text-slate-700"
+                  >
                     {r.productName ?? (
                       <span className="font-mono text-xs text-slate-500">
                         {r.productId}
                       </span>
                     )}
-                  </div>
+                  </Link>
                   {r.productName && (
                     <div className="font-mono text-[11px] text-slate-400">
                       {r.productId}

@@ -20,7 +20,7 @@
 // most loudly: durable history they can grep through, structured
 // per-line accounting, and a single-place audit trail.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import {
@@ -39,6 +39,7 @@ import { ClaimAppealsSection } from "@/components/admin/ClaimAppealsSection";
 import { Input } from "@/components/admin/Input";
 import { PayerNameAutocomplete } from "@/components/admin/PayerNameAutocomplete";
 import { HcpcsCodeAutocomplete } from "@/components/admin/HcpcsCodeAutocomplete";
+import { consumeClaimParam } from "@/lib/admin/claim-deeplink";
 import { todayAppDateIso } from "@/lib/utils";
 import {
   createInsuranceClaim,
@@ -125,6 +126,20 @@ export function AdminInsuranceClaimsPage({ patientId }: { patientId: string }) {
   // Multi-select for batch 837P export. Holds claim ids the biller has
   // ticked; the toolbar that appears builds one 837P for the whole set.
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  // Open the claim named in ?claim=<id> on mount — the billing worklists
+  // deep-link here with the specific claim to work — then strip the param so
+  // closing the drawer (or a refresh) doesn't force it back open.
+  useEffect(() => {
+    const { claimId, nextSearch } = consumeClaimParam(window.location.search);
+    if (!claimId) return;
+    setOpenClaimId(claimId);
+    window.history.replaceState(
+      null,
+      "",
+      window.location.pathname + nextSearch,
+    );
+  }, []);
 
   const { data, isPending, isError, error, refetch } = useQuery({
     queryKey: ["admin", "insurance-claims", patientId],

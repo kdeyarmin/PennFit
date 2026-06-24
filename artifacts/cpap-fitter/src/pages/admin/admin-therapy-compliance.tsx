@@ -219,7 +219,7 @@ function SetupTable({ setups }: { setups: SetupEntry[] }) {
             >
               <td className="py-2">
                 <Link
-                  href={`/admin/patients/${e.patientId}`}
+                  href={`/admin/patients/${e.patientId}?tab=device-data`}
                   className="font-medium hover:underline"
                   style={{ color: "hsl(var(--penn-navy))" }}
                 >

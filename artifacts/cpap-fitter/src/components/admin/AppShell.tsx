@@ -192,15 +192,11 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             label: "Conversations",
             icon: MessageSquareText,
             matchPrefix: "/admin/conversations",
+            // Email Inbox was a read-only duplicate of this list (email
+            // threads already live here); filter to channel=email for the old
+            // email-only view. /admin/email-inbox redirects here.
             hint: "Inbound SMS, MMS, and email threads",
             badgeKey: "awaitingReplyConversations",
-          },
-          {
-            href: "/admin/email-inbox",
-            label: "Email Inbox",
-            icon: Mail,
-            matchPrefix: "/admin/email-inbox",
-            hint: "Inbound patient emails — needs-response vs already-answered mailboxes",
           },
           {
             href: "/admin/cases",
@@ -537,11 +533,19 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         hint: "Storefront fulfillment — orders, subscriptions, returns, backorders",
         tabs: [
           {
-            href: "/admin/pennpaps/orders",
+            href: "/admin/shop/orders",
             label: "Orders",
             icon: ShoppingBag,
+            matchPrefix: "/admin/shop/orders",
+            requiredPermission: "returns.manage",
+            hint: "Paid storefront orders — look one up, set tracking, mark delivered, refund",
+          },
+          {
+            href: "/admin/pennpaps/orders",
+            label: "Fitter requests",
+            icon: ScanFace,
             matchPrefix: "/admin/pennpaps/orders",
-            hint: "Storefront orders — fulfill, refund, look up",
+            hint: "AI mask-fitter order requests — read-only log of submitted fittings",
           },
           {
             href: "/admin/shipping",

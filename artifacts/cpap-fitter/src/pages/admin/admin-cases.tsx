@@ -6,7 +6,8 @@
 // Renders the F4 /admin/cases CRUD. cases.read to view, cases.manage to
 // mutate (both in the CSR tier). Nav gated on cases.read.
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { Link } from "wouter";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FolderKanban, Plus, Link2 } from "lucide-react";
 
@@ -42,6 +43,55 @@ const LINK_KINDS: CaseLinkKind[] = [
   "work_item",
   "other",
 ];
+
+// Per-kind guidance for the "add link" form. These references are opaque
+// ids — and the entities behind them are deliberately NOT name/text
+// searchable (the lookup resolves conversations by UUID only; the shop
+// orders search matches the order id, never the PHI customer name). So
+// rather than a fake search box, each kind gets a tailored placeholder
+// plus a deep link to the list page where the id can be found and copied.
+const REF_KIND_META: Record<
+  CaseLinkKind,
+  { placeholder: string; find: { label: string; href: string } | null }
+> = {
+  conversation: {
+    placeholder: "Conversation id",
+    find: { label: "Conversations", href: "/admin/conversations" },
+  },
+  order: {
+    placeholder: "Order id",
+    find: { label: "Shop orders", href: "/admin/shop/orders" },
+  },
+  followup: { placeholder: "Follow-up id", find: null },
+  fax: {
+    placeholder: "Fax id",
+    find: { label: "Inbound faxes", href: "/admin/inbound-faxes" },
+  },
+  review: { placeholder: "Review id", find: null },
+  product_question: { placeholder: "Question reference", find: null },
+  referral: {
+    placeholder: "Referral id",
+    find: { label: "Referrals", href: "/admin/referral-reviews" },
+  },
+  work_item: { placeholder: "Work item reference", find: null },
+  other: { placeholder: "Reference", find: null },
+};
+
+// Deep link to OPEN a linked entity, for the kinds that have a per-entity
+// route (so a case becomes a launchpad, not just a list of ids to copy).
+// Returns null for kinds with no dedicated route — those stay copy-only.
+export function caseLinkHref(kind: CaseLinkKind, refId: string): string | null {
+  const id = refId.trim();
+  if (id === "") return null;
+  switch (kind) {
+    case "conversation":
+      return `/admin/conversations/${encodeURIComponent(id)}`;
+    case "referral":
+      return `/admin/referral-reviews?review=${encodeURIComponent(id)}`;
+    default:
+      return null;
+  }
+}
 
 const STATUS_VARIANT: Record<
   CaseStatus,
@@ -88,6 +138,25 @@ export function AdminCasesPage() {
       else next.add(id);
       return next;
     });
+
+  // Open the case named in ?case=<id> on mount — surfaces like the
+  // conversation "Open a case" action deep-link here. Switch to the "all"
+  // filter so the case is visible whatever its status, expand it, then strip
+  // the param so a refresh doesn't force it back open.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const caseId = params.get("case");
+    if (!caseId) return;
+    setFilter("all");
+    setExpandedIds((prev) => new Set(prev).add(caseId));
+    params.delete("case");
+    const qs = params.toString();
+    window.history.replaceState(
+      null,
+      "",
+      window.location.pathname + (qs ? `?${qs}` : ""),
+    );
+  }, []);
 
   return (
     <div className="p-6 space-y-6 max-w-4xl" data-testid="admin-cases-page">
@@ -315,6 +384,7 @@ function CaseDetail({
       invalidate();
     },
   });
+  const refMeta = REF_KIND_META[linkKind];
 
   return (
     <div className="mt-3 pt-3 border-t border-slate-100 space-y-3">
@@ -356,54 +426,84 @@ function CaseDetail({
               </p>
             ) : (
               <ul className="space-y-1">
-                {detail.data.links.map((l) => (
-                  <li
-                    key={l.id}
-                    className="flex items-center gap-2 text-xs text-slate-700"
-                  >
-                    <Link2 className="h-3 w-3 text-slate-400" />
-                    <span className="uppercase tracking-wider text-slate-500">
-                      {l.linkKind.replace(/_/g, " ")}
-                    </span>
-                    <CopyableId value={l.refId} />
-                    {l.note && (
-                      <span className="text-slate-400">· {l.note}</span>
-                    )}
-                  </li>
-                ))}
+                {detail.data.links.map((l) => {
+                  const href = caseLinkHref(l.linkKind, l.refId);
+                  return (
+                    <li
+                      key={l.id}
+                      className="flex items-center gap-2 text-xs text-slate-700"
+                    >
+                      <Link2 className="h-3 w-3 text-slate-400" />
+                      <span className="uppercase tracking-wider text-slate-500">
+                        {l.linkKind.replace(/_/g, " ")}
+                      </span>
+                      <CopyableId value={l.refId} />
+                      {href && (
+                        <Link
+                          href={href}
+                          className="underline hover:text-slate-900"
+                          title={`Open this ${l.linkKind.replace(/_/g, " ")}`}
+                        >
+                          Open
+                        </Link>
+                      )}
+                      {l.note && (
+                        <span className="text-slate-400">· {l.note}</span>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </div>
 
-          <div className="flex flex-wrap gap-2 items-end">
-            <select
-              value={linkKind}
-              onChange={(e) => setLinkKind(e.target.value as CaseLinkKind)}
-              className="rounded border border-slate-300 px-2 py-1.5 text-xs"
-              aria-label="Link kind"
-            >
-              {LINK_KINDS.map((k) => (
-                <option key={k} value={k}>
-                  {k.replace(/_/g, " ")}
-                </option>
-              ))}
-            </select>
-            <Input
-              value={refId}
-              onChange={(e) => setRefId(e.target.value)}
-              placeholder="ref id (conversation id, order id, …)"
-              aria-label="Linked ref id"
-              className="font-mono text-xs w-[260px]"
-            />
-            <Button
-              intent="secondary"
-              size="sm"
-              disabled={refId.trim() === "" || addLink.isPending}
-              isLoading={addLink.isPending}
-              onClick={() => addLink.mutate()}
-            >
-              Link
-            </Button>
+          <div>
+            <div className="flex flex-wrap gap-2 items-end">
+              <select
+                value={linkKind}
+                onChange={(e) => {
+                  setLinkKind(e.target.value as CaseLinkKind);
+                  // An id entered for one kind isn't valid for another.
+                  setRefId("");
+                }}
+                className="rounded border border-slate-300 px-2 py-1.5 text-xs"
+                aria-label="Link kind"
+              >
+                {LINK_KINDS.map((k) => (
+                  <option key={k} value={k}>
+                    {k.replace(/_/g, " ")}
+                  </option>
+                ))}
+              </select>
+              <Input
+                value={refId}
+                onChange={(e) => setRefId(e.target.value)}
+                placeholder={refMeta.placeholder}
+                aria-label="Linked ref id"
+                className="font-mono text-xs w-[260px]"
+              />
+              <Button
+                intent="secondary"
+                size="sm"
+                disabled={refId.trim() === "" || addLink.isPending}
+                isLoading={addLink.isPending}
+                onClick={() => addLink.mutate()}
+              >
+                Link
+              </Button>
+            </div>
+            {refMeta.find && (
+              <p className="text-[10px] text-slate-400 mt-1">
+                Find the {linkKind.replace(/_/g, " ")} id on{" "}
+                <Link
+                  href={refMeta.find.href}
+                  className="underline hover:text-slate-600"
+                >
+                  {refMeta.find.label}
+                </Link>{" "}
+                and copy it from the row or URL.
+              </p>
+            )}
           </div>
           {addLink.error instanceof Error && (
             <p className="text-xs" style={{ color: "#b91c1c" }} role="alert">

@@ -70,6 +70,13 @@ export function AdminInterventionsPage() {
           Why a patient fell off therapy, the plan to recover them, and whether
           it worked. Open interventions (outcome pending) first.
         </p>
+        <p className="text-xs mt-1" style={{ color: "hsl(var(--ink-3))" }}>
+          <span className="font-semibold">
+            Use this to record an intervention&apos;s outcome.
+          </span>{" "}
+          Open a step-by-step recovery plan in Adherence coaching; send a batch
+          of due check-ins in Clinical outreach.
+        </p>
       </header>
 
       <div
