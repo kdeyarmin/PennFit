@@ -1,6 +1,7 @@
 import { Link } from "wouter";
 import {
   Activity,
+  ArrowRight,
   BadgeCheck,
   Bot,
   BrainCircuit,
@@ -273,6 +274,150 @@ function Recover() {
           </p>
         </div>
         <CapGrid items={RECOVER} />
+      </div>
+    </section>
+  );
+}
+
+/* ── The one-step ADR audit packet ── */
+const PACKET_FLOW: {
+  icon: React.ReactNode;
+  label: string;
+  sub: string;
+  gold?: boolean;
+}[] = [
+  {
+    icon: <ScrollText size={15} />,
+    label: "Log the ADR",
+    sub: "or read the fax",
+  },
+  {
+    icon: <ClipboardCheck size={15} />,
+    label: "Pick the scope",
+    sub: "device / supplies",
+  },
+  { icon: <Cpu size={15} />, label: "Generate", sub: "one click", gold: true },
+  {
+    icon: <FileCheck2 size={15} />,
+    label: "One PDF",
+    sub: "cover sheet + index",
+  },
+  {
+    icon: <Send size={15} />,
+    label: "Fax the contractor",
+    sub: "marked submitted",
+  },
+];
+
+const PACKET_CARDS: Cap[] = [
+  {
+    icon: <FileSignature size={20} />,
+    title: "Pulled from your chart",
+    summary: "The documents already on file, gathered for you.",
+    points: [
+      "Signed order / SWO, the qualifying sleep study, and face-to-face notes",
+      "Proof-of-delivery photo and the CMN, pulled straight from storage",
+      "Merged as true PDFs — text stays selectable — each behind a divider page",
+    ],
+  },
+  {
+    icon: <Cpu size={20} />,
+    title: "Generated on the spot",
+    summary: "The summaries an auditor wants, built from your data.",
+    gold: true,
+    points: [
+      "A cover sheet and table of contents with the patient, contractor, and deadline",
+      "The LCD L33718 adherence report, computed from the device nights",
+      "Equipment, claim detail, continued-use, and the supply replacement record",
+    ],
+  },
+  {
+    icon: <ClipboardCheck size={20} />,
+    title: "Readiness check first",
+    summary: "Know what's missing before you build — not at audit time.",
+    points: [
+      "Flags which required documents are present vs still needed for that scope",
+      "So staff chase a missing SWO or sleep study early, not against the deadline",
+      "The response deadline is tracked on-track / at-risk / overdue, with a nightly sweep and alert digest",
+    ],
+  },
+];
+
+function AuditPacket() {
+  return (
+    <section className="bx-section" id="audit-packet">
+      <div className="bx-shell">
+        <div className="bx-section-head center bx-reveal">
+          <span className="bx-eyebrow">
+            <ShieldCheck size={13} /> The easy audit response
+          </span>
+          <h2 className="bx-h2">
+            When the auditor asks, answer in <em>one step</em>
+          </h2>
+          <p className="bx-lede">
+            A Medicare records request — an ADR from RAC, CERT, TPE, or UPIC —
+            used to mean digging through folders and hand-assembling a stack of
+            PDFs against a clock. In Breathe you log the request once (or let it
+            read the fax), pick the scope, and click Generate: the whole
+            response builds itself into a single PDF you can download or fax to
+            the contractor.
+          </p>
+        </div>
+        <div className="bx-claims-engine bx-reveal">
+          <div className="bx-claims-engine-head">
+            <Workflow size={15} /> From records request to filed response
+          </div>
+          <ol className="bx-claims-flow">
+            {PACKET_FLOW.map((s, i) => (
+              <li
+                className={`bx-claims-step${s.gold ? " gold" : ""}`}
+                key={s.label}
+              >
+                <span className="bx-claims-ic">{s.icon}</span>
+                <span className="bx-claims-meta">
+                  <b>{s.label}</b>
+                  <i>{s.sub}</i>
+                </span>
+                {i < PACKET_FLOW.length - 1 ? (
+                  <ArrowRight
+                    className="bx-claims-arrow"
+                    size={15}
+                    aria-hidden="true"
+                  />
+                ) : null}
+              </li>
+            ))}
+          </ol>
+        </div>
+        <div className="bx-caps bx-caps-3" style={{ marginTop: 28 }}>
+          {PACKET_CARDS.map((c) => (
+            <article
+              className={`bx-cap bx-reveal${c.gold ? " gold" : ""}`}
+              key={c.title}
+            >
+              <div className="bx-cap-head">
+                <span className="bx-cap-ic">{c.icon}</span>
+                <div>
+                  <h3>{c.title}</h3>
+                  <p className="bx-cap-summary">{c.summary}</p>
+                </div>
+              </div>
+              <ul className="bx-cap-list">
+                {c.points.map((p) => (
+                  <li key={p}>{p}</li>
+                ))}
+              </ul>
+            </article>
+          ))}
+        </div>
+        <p className="bx-stats-note bx-reveal">
+          The one step assembles the packet — it gathers every document on file
+          and generates the summaries; it can't produce a document that was
+          never uploaded, which is exactly what the readiness check is for.
+          Designed to turn a multi-hour scramble into a few clicks (available
+          with the audit-response queue enabled).{" "}
+          <Link href="/breathe/get-paid">See the full revenue cycle →</Link>
+        </p>
       </div>
     </section>
   );
@@ -756,6 +901,7 @@ export function BreatheCompliance() {
       />
       <Prevent />
       <Recover />
+      <AuditPacket />
       <Therapy />
       <Safeguards />
       <AiGuards />
