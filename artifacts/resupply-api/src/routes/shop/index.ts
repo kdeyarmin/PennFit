@@ -57,6 +57,7 @@ import meReferralsRouter from "./me-referrals";
 import meDocumentsRouter from "./me-documents";
 import meBillingPortalRouter from "./me-billing-portal";
 import meCaregiverRouter from "./me-caregiver";
+import meAccountRouter from "./me-account";
 
 const router: IRouter = Router();
 router.use(productsRouter);
@@ -144,6 +145,7 @@ router.use(meBillingPortalRouter);
 // on behalf of the patient). Critical for the elderly CPAP cohort
 // where adult-child / spouse caregivers manage logistics.
 router.use(meCaregiverRouter);
+router.use(meAccountRouter);
 router.use(meExportRouter);
 router.use(meReorderSuggestionsRouter);
 router.use(myOrdersRouter);

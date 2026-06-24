@@ -108,7 +108,24 @@ const STATUS_VALUES: ShopReturnStatus[] = [
   "replaced",
   "closed",
 ];
-const STATUS_FILTER = new Set<string>([...STATUS_VALUES, "all", "open"]);
+const STATUS_FILTER = new Set<string>([
+  ...STATUS_VALUES,
+  "all",
+  "open",
+  "needs_action",
+]);
+
+// The in-flight states that require ADMIN action right now, as opposed to
+// the full "open" pipeline (which also includes `approved` — that's waiting
+// on the CUSTOMER to ship the item back, nothing for the admin to do).
+//   requested    → approve / reject
+//   shipped_back → mark received
+//   received     → refund / resolve
+const NEEDS_ACTION_STATUSES: ShopReturnStatus[] = [
+  "requested",
+  "shipped_back",
+  "received",
+];
 
 const PAGE_SIZE_DEFAULT = 25;
 const PAGE_SIZE_MAX = 100;
@@ -253,6 +270,8 @@ router.get(
         "shipped_back",
         "received",
       ]);
+    } else if (status === "needs_action") {
+      listQuery = listQuery.in("status", NEEDS_ACTION_STATUSES);
     } else if (status !== "all") {
       listQuery = listQuery.eq("status", status);
     }
@@ -597,6 +616,51 @@ router.post(
       return;
     }
 
+    // Fire-and-forget "we received your return" email so the patient
+    // isn't left wondering between drop-off and refund. Same posture as
+    // the approve / refund handlers — never blocks the response.
+    void (async () => {
+      const toEmail = await resolveCustomerEmailForReturn(
+        orgId,
+        updated.customer_id,
+        updated.order_id,
+      );
+      if (!toEmail) {
+        logger.info(
+          { returnId: updated.id, kind: "received" },
+          "shop-return status email skipped — no recipient",
+        );
+        return;
+      }
+      const result = await sendReturnStatusEmail({
+        kind: "received",
+        toEmail,
+        returnId: updated.id,
+        stripeSessionId: updated.stripe_session_id ?? "",
+        orgId,
+      });
+      if (!result.delivered) {
+        logger.warn(
+          {
+            returnId: updated.id,
+            kind: "received",
+            configured: result.configured,
+            errorCode: result.error,
+          },
+          "shop-return received email did not deliver",
+        );
+      }
+    })().catch((err) => {
+      logger.warn(
+        {
+          returnId: updated.id,
+          kind: "received",
+          errorName: err instanceof Error ? err.name : "non_error_thrown",
+        },
+        "shop-return received email threw unexpectedly",
+      );
+    });
+
     // Opt-in restock — only when the CSR confirms the item is resaleable
     // (most DME consumables are not, hence default false). The status guard
     // above makes this once-only: a re-call won't match shipped_back/approved.
@@ -857,6 +921,27 @@ router.post(
     if (!updated) {
       res.status(409).json({ error: "not_in_received_state" });
       return;
+    }
+    // Coordinate with the charge.refunded webhook's generic "refund issued"
+    // notice (refund-notification.ts): this returns flow sends its own
+    // richer, return-context "refunded" email below, so claim the order's
+    // refund_email_sent_at now (claim-if-null) to suppress the webhook's
+    // duplicate. Stamped synchronously here — within the same request, ms
+    // after the Stripe refund — so it wins the race against the async
+    // webhook. Best-effort: a stamp failure at worst yields one extra
+    // generic notice, never a missed refund.
+    if (updated.order_id) {
+      const { error: claimErr } = await supabase
+        .from("shop_orders")
+        .update({ refund_email_sent_at: nowIso, updated_at: nowIso })
+        .eq("id", updated.order_id)
+        .is("refund_email_sent_at", null);
+      if (claimErr) {
+        req.log?.warn(
+          { returnId: updated.id, code: claimErr.code },
+          "shop-return refund: refund-notice claim stamp failed (non-fatal)",
+        );
+      }
     }
     // Fire-and-forget refund-issued email. Same posture as the
     // approve handler above — never blocks the response.

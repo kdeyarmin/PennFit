@@ -30,6 +30,7 @@ import { z } from "zod";
 
 import type {
   CpapDeviceInfo,
+  Json,
   ResupplySupabaseClient,
   SavedShippingAddress,
 } from "@workspace/resupply-db";
@@ -73,6 +74,24 @@ const orderDetailsArgsSchema = z
   .strict();
 
 const noArgsSchema = z.object({}).strict();
+
+// Mirrors the addressBodySchema in routes/shop/my-orders.ts (the canonical
+// POST /shop/me/orders/:id/shipping-address validator). Kept in lockstep
+// with that route's pre-ship guard; both must stay aligned. `country` is
+// pinned server-side (US-only), so the model doesn't supply it.
+const updateAddressArgsSchema = z
+  .object({
+    orderId: z.string().min(1).max(64),
+    line1: z.string().trim().min(1).max(200),
+    line2: z
+      .union([z.string().trim().max(200), z.null()])
+      .optional()
+      .transform((v) => (v === undefined || v === "" ? null : v)),
+    city: z.string().trim().min(1).max(100),
+    state: z.string().trim().min(2).max(2),
+    postalCode: z.string().trim().min(3).max(20),
+  })
+  .strict();
 
 /**
  * `escalate_to_human` summary cap — comfortably under the in-app body
@@ -164,6 +183,41 @@ export const CUSTOMER_CHAT_TOOLS: OpenAiToolDescriptor[] = [
         type: "object",
         additionalProperties: false,
         properties: {},
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "update_order_shipping_address",
+      description:
+        "Change the ship-to address on one of the signed-in customer's own orders — allowed ONLY before the order ships. Pass the orderId from get_my_recent_orders plus the full new US address. The server re-checks ownership and that the order is paid and not yet shipped, so a shipped or foreign order is refused. Use this ONLY after the customer has confirmed the exact new address out loud (read it back, get a clear yes) — it changes real shipping data. If the result indicates the order already shipped, is a pickup order, or otherwise can't be changed, do NOT retry; offer escalate_to_human instead. After it succeeds, confirm the new city/state plainly and note it applies as long as the order hasn't shipped.",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        required: ["orderId", "line1", "city", "state", "postalCode"],
+        properties: {
+          orderId: {
+            type: "string",
+            description:
+              "The internal order id returned by get_my_recent_orders. UUID.",
+          },
+          line1: {
+            type: "string",
+            description: "Street address line 1 (house number + street).",
+          },
+          line2: {
+            type: "string",
+            description:
+              "Optional street address line 2 (apt/suite/unit). Omit if none.",
+          },
+          city: { type: "string", description: "City." },
+          state: {
+            type: "string",
+            description: "Two-letter US state code, e.g. PA.",
+          },
+          postalCode: { type: "string", description: "US ZIP code." },
+        },
       },
     },
   },
@@ -280,8 +334,18 @@ export type CustomerChatToolResult =
   | { ok: true; data: { subscriptions: SubscriptionEntry[] } }
   | { ok: true; data: DeviceEntry }
   | { ok: true; data: { found: false; kind: "device" | "order" } }
+  | { ok: true; data: AddressUpdateResult }
   | { ok: true; data: EscalationResult }
   | { ok: false; error: string };
+
+interface AddressUpdateResult {
+  /** Discriminator so the model knows the write landed. */
+  addressUpdated: true;
+  orderId: string;
+  /** Echoed back so the model can confirm the change to the customer. */
+  city: string;
+  state: string;
+}
 
 interface EscalationResult {
   /** Discriminator so the model knows this was the escalation tool. */
@@ -565,6 +629,114 @@ async function executeGetDevice(
   };
 }
 
+/**
+ * Change the ship-to address on one of the caller's orders. The only
+ * WRITE tool besides escalate_to_human. Mirrors the guard in
+ * POST /shop/me/orders/:id/shipping-address (routes/shop/my-orders.ts):
+ * a pre-check disambiguates not-found / not-paid / already-shipped /
+ * pickup, then a guarded UPDATE re-asserts paid + not-shipped so a race
+ * with the warehouse entering tracking can't slip an address change onto
+ * a parcel that just left. Ownership is enforced by the customer_id
+ * filter on both the read and the write — a forged orderId from another
+ * patient returns not_found and never updates a row.
+ */
+async function executeUpdateShippingAddress(
+  ctx: CustomerChatToolContext,
+  rawArgs: unknown,
+): Promise<CustomerChatToolResult> {
+  const parsed = updateAddressArgsSchema.safeParse(rawArgs ?? {});
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: `update_order_shipping_address: invalid arguments — ${parsed.error.issues
+        .map((i) => `${i.path.join(".") || "<root>"}: ${i.message}`)
+        .join("; ")}`,
+    };
+  }
+
+  const address: SavedShippingAddress = {
+    line1: parsed.data.line1,
+    line2: parsed.data.line2 ?? null,
+    city: parsed.data.city,
+    // Normalise to uppercase so it matches the storefront's address
+    // display + admin filters (same as the route).
+    state: parsed.data.state.toUpperCase(),
+    postalCode: parsed.data.postalCode,
+    country: "US",
+  };
+
+  // Pre-check: load the row (scoped to this caller) to give the model a
+  // specific, friendly reason rather than collapsing everything to a bare
+  // failure.
+  const { data: existing, error } = await ctx.supabase
+    .schema("resupply")
+    .from("shop_orders")
+    .select("id, status, shipped_at, fulfillment_method")
+    .eq("id", parsed.data.orderId)
+    .eq("customer_id", ctx.customerId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!existing) {
+    return { ok: true, data: { found: false, kind: "order" } };
+  }
+  if (existing.fulfillment_method === "pickup") {
+    return {
+      ok: false,
+      error:
+        "This is a pickup order, so there's no shipping address to change.",
+    };
+  }
+  if (existing.status !== "paid") {
+    return {
+      ok: false,
+      error:
+        "This order isn't in a state where its shipping address can be changed.",
+    };
+  }
+  if (existing.shipped_at !== null) {
+    return {
+      ok: false,
+      error:
+        "This order has already shipped, so its address can't be changed here.",
+    };
+  }
+
+  // Guarded write: re-assert paid + not-shipped in the WHERE clause so a
+  // race with the admin tracking endpoint can't slip through.
+  const { data: row, error: updateErr } = await ctx.supabase
+    .schema("resupply")
+    .from("shop_orders")
+    .update({
+      shipping_address_json: address as unknown as Json,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", parsed.data.orderId)
+    .eq("customer_id", ctx.customerId)
+    .eq("status", "paid")
+    .is("shipped_at", null)
+    .select("id")
+    .maybeSingle();
+  if (updateErr) throw updateErr;
+  if (!row) {
+    // Lost the race — the order shipped between our pre-check and update.
+    return {
+      ok: false,
+      error:
+        "This order just shipped, so its address can no longer be changed.",
+    };
+  }
+
+  return {
+    ok: true,
+    data: {
+      addressUpdated: true,
+      orderId: row.id,
+      city: address.city,
+      state: address.state,
+    },
+  };
+}
+
 /** Map an escalation category to a short human label for the CSR message. */
 const ESCALATION_CATEGORY_LABELS: Record<string, string> = {
   order_issue: "Order issue",
@@ -689,6 +861,8 @@ export async function executeCustomerChatTool(
       return executeGetSubscriptions(ctx, rawArgs);
     case "get_my_device":
       return executeGetDevice(ctx, rawArgs);
+    case "update_order_shipping_address":
+      return executeUpdateShippingAddress(ctx, rawArgs);
     case "escalate_to_human":
       return executeEscalateToHuman(ctx, rawArgs);
     default:

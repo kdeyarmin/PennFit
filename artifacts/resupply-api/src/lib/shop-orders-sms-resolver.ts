@@ -45,6 +45,13 @@ function readPrefs(raw: Json | null): CommunicationPreferences {
 export interface ResolveSmsRecipientArgs {
   customerId: string | null;
   customerEmailFromOrder: string | null;
+  /**
+   * Tenant the order belongs to. When provided, shop_customers + patients
+   * are read in THIS org so a non-seed tenant's customer resolves correctly
+   * (and matches the tenant-scoped SMS sender). Omitted callers fall back to
+   * the seed org for backward compatibility.
+   */
+  orgId?: string | null;
 }
 
 export interface SmsRecipient {
@@ -66,7 +73,8 @@ export interface SmsRecipient {
 export async function resolveSmsRecipientForShopOrder(
   args: ResolveSmsRecipientArgs,
 ): Promise<SmsRecipient | null> {
-  const orgId = await resolveSeedOrgId();
+  const orgId =
+    args.orgId && args.orgId.trim() ? args.orgId : await resolveSeedOrgId();
   if (!orgId) {
     // Tenant context missing — no recipient resolvable. Same
     // "no SMS — skip silently" null return this function already uses.

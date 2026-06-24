@@ -53,6 +53,7 @@ import { MembershipSection } from "@/components/account/MembershipSection";
 import { SubscriptionsSection } from "@/components/account/SubscriptionsSection";
 import { DocumentsSection } from "@/components/account/DocumentsSection";
 import { ProfileSection } from "@/components/account/ProfileSection";
+import { SecuritySection } from "@/components/account/SecuritySection";
 import { ClinicalInfoSection } from "@/components/clinical-info-section";
 import { AccountMessagesSection } from "@/components/account-messages-section";
 import { CustomerChatSection } from "@/components/customer-chat-section";
@@ -498,6 +499,7 @@ function AccountInner() {
                 <ReferralProgramSection />
                 <CaregiverSection />
                 <CommPrefsSection onDirtyChange={setCommPrefsDirty} />
+                <SecuritySection />
                 <DataExportSection />
               </>
             )}

@@ -1,0 +1,31 @@
+-- Adds the idempotency/coordination column for the patient "refund
+-- issued" notification, fired when a shop order is refunded.
+--
+-- A refund reaches a customer through three paths today, only one of
+-- which notified them:
+--   1. Returns RMA flow (POST /admin/shop/returns/:id/refund) — issues
+--      the Stripe refund AND already emails a return-context "refunded"
+--      notice.
+--   2. Admin order refund (POST /admin/shop/orders/:id/refund) — issues
+--      the Stripe refund, NO email.
+--   3. A refund issued directly in the Stripe dashboard — NO email.
+-- Paths 2 and 3 left the customer with a silent money-back-to-card and
+-- no confirmation (a trust gap + support contacts).
+--
+-- The fix sends a generic "refund issued" notice from the charge.refunded
+-- webhook (covering paths 2 and 3), gated by an ATOMIC CLAIM on this
+-- column so it sends at most once per order:
+--   UPDATE shop_orders SET refund_email_sent_at = now()
+--   WHERE id = $1 AND refund_email_sent_at IS NULL RETURNING ...
+--
+-- Path 1 (returns flow) stays authoritative for return-driven refunds: it
+-- stamps this column synchronously when it issues the refund, so the later
+-- charge.refunded webhook finds the claim already taken and skips — the
+-- customer gets the richer return-context email, never two notices.
+--
+-- NULLABLE additive, no default, no backfill: pre-existing refunded orders
+-- stay NULL; we deliberately do NOT retro-send a refund notice for past
+-- refunds. The NULL default itself is the correct "not yet notified" state.
+
+ALTER TABLE "resupply"."shop_orders"
+  ADD COLUMN IF NOT EXISTS "refund_email_sent_at" timestamp with time zone;

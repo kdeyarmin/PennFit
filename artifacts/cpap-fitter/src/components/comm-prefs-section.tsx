@@ -168,6 +168,46 @@ export function CommPrefsSection({
         </p>
       </div>
 
+      <div className="space-y-2 pt-3 border-t border-[hsl(var(--line-2))]">
+        <div className="text-xs uppercase tracking-wider font-semibold text-muted-foreground">
+          Preferred channel
+        </div>
+        <p className="text-xs text-muted-foreground">
+          When a message can reach you either way, we&apos;ll use this first.
+        </p>
+        <div
+          className="inline-flex rounded-lg border border-border/40 p-1"
+          role="radiogroup"
+          aria-label="Preferred channel"
+        >
+          {(["email", "sms"] as const).map((ch) => {
+            const active = prefs.preferredChannel === ch;
+            return (
+              <button
+                key={ch}
+                type="button"
+                role="radio"
+                aria-checked={active}
+                disabled={saving}
+                onClick={() => {
+                  if (prefs.preferredChannel !== ch) {
+                    void save({ ...prefs, preferredChannel: ch });
+                  }
+                }}
+                data-testid={`comm-preferred-${ch}`}
+                className={`px-3.5 py-1.5 text-sm rounded-md transition-colors disabled:opacity-60 ${
+                  active
+                    ? "bg-[hsl(var(--penn-navy))] text-white font-semibold"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {ch === "email" ? "Email" : "Text"}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       <PushNotificationToggle />
 
       <BiometricLockToggle />

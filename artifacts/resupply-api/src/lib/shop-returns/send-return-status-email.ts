@@ -7,6 +7,10 @@
 //                 that "no return shipment is required" when the
 //                 label fields are absent (rare — staff-issued
 //                 refund without intake).
+//   * received  — the warehouse logged the returned item as received;
+//                 reassure the patient we have it and the refund/exchange
+//                 is being processed (otherwise the package "disappears"
+//                 between drop-off and refund).
 //   * refunded  — the Stripe refund has been issued; tell the
 //                 patient how much, in what currency, and to expect
 //                 5-10 business days for it to land on the card.
@@ -33,7 +37,7 @@ import {
 
 const DEFAULT_BASE_URL = "https://cmbreathe.com";
 
-export type ReturnStatusKind = "approved" | "refunded";
+export type ReturnStatusKind = "approved" | "received" | "refunded";
 
 export interface SendReturnStatusEmailInput {
   kind: ReturnStatusKind;
@@ -224,6 +228,48 @@ function buildRefundedBody(
   return { subject, html, text };
 }
 
+function buildReceivedBody(
+  input: SendReturnStatusEmailInput,
+  myReturnsUrl: string,
+  brand: StorefrontBranding,
+): { subject: string; html: string; text: string } {
+  const orderTail = lastChars(input.stripeSessionId, 8);
+  const subject = `We've received your ${brand.storefrontName} return`;
+
+  const text = [
+    "We've received your returned item — thank you.",
+    "",
+    `Order: ...${orderTail}`,
+    "",
+    "Our team is processing it now. You'll get a separate confirmation as soon as your refund or exchange is on its way.",
+    "",
+    `See all your returns: ${myReturnsUrl}`,
+  ].join("\n");
+
+  const html = `<!DOCTYPE html>
+<html><body style="margin:0;padding:0;background:#f7f4ec;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f7f4ec;padding:24px 0;"><tr><td align="center">
+    <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;padding:32px;max-width:560px;">
+      <tr><td style="padding-bottom:16px;border-bottom:2px solid #1f8a4c;">
+        <div style="font-size:14px;letter-spacing:0.08em;color:#1f5130;text-transform:uppercase;font-weight:600;">${escapeHtml(brand.storefrontName)}</div>
+        <div style="font-size:22px;color:#1a1a1a;font-weight:700;margin-top:4px;">Return received</div>
+      </td></tr>
+      <tr><td style="padding-top:20px;color:#333;font-size:15px;line-height:1.5;">
+        We've received your returned item on order <strong>&hellip;${escapeHtml(orderTail)}</strong> &mdash; thank you.
+      </td></tr>
+      <tr><td style="padding-top:16px;color:#555;font-size:14px;line-height:1.5;">
+        Our team is processing it now. You'll get a separate confirmation as soon as your refund or exchange is on its way.
+      </td></tr>
+      <tr><td style="padding-top:24px;"><a href="${escapeHtml(myReturnsUrl)}" style="color:#1f5130;font-size:13px;text-decoration:underline;">View all your returns</a></td></tr>
+      <tr><td style="padding-top:28px;border-top:1px solid #eee;color:#888;font-size:12px;line-height:1.4;">
+        Questions? Reply to this email and our team will help.
+      </td></tr>
+    </table>
+  </td></tr></table></body></html>`;
+
+  return { subject, html, text };
+}
+
 export async function sendReturnStatusEmail(
   input: SendReturnStatusEmailInput,
 ): Promise<SendReturnStatusEmailResult> {
@@ -255,7 +301,9 @@ export async function sendReturnStatusEmail(
   const body =
     input.kind === "approved"
       ? buildApprovedBody(input, myReturnsUrl, brand)
-      : buildRefundedBody(input, myReturnsUrl, brand);
+      : input.kind === "received"
+        ? buildReceivedBody(input, myReturnsUrl, brand)
+        : buildRefundedBody(input, myReturnsUrl, brand);
 
   try {
     const { messageId } = await client.sendEmail({
@@ -267,7 +315,9 @@ export async function sendReturnStatusEmail(
         kind:
           input.kind === "approved"
             ? "return_approved_v1"
-            : "return_refunded_v1",
+            : input.kind === "received"
+              ? "return_received_v1"
+              : "return_refunded_v1",
         return_id: input.returnId,
       },
     });

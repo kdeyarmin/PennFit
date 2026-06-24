@@ -57,6 +57,29 @@ describe("resolveSmsRecipientForShopOrder", () => {
     });
   });
 
+  it("resolves in the provided tenant org when orgId is passed", async () => {
+    // The new delivered-SMS path passes the order's orgId so the recipient
+    // resolves in that tenant (matching the tenant-scoped sender) instead of
+    // falling back to the seed org. The orgId branch must still resolve.
+    stageSupabaseResponse("shop_customers", "select", {
+      data: OPTED_IN_CUSTOMER,
+    });
+    stageSupabaseResponse("patients", "select", { data: [PATIENT_ROW] });
+
+    const result = await resolveSmsRecipientForShopOrder({
+      customerId: "cust-1",
+      customerEmailFromOrder: null,
+      orgId: "22222222-2222-4222-8222-222222222222",
+    });
+
+    expect(result).toEqual({
+      phoneE164: "+15551234567",
+      patientFirstName: "Pat",
+      timezone: "America/New_York",
+      zip: "19104",
+    });
+  });
+
   it("returns null when the email matches more than one patient", async () => {
     stageSupabaseResponse("shop_customers", "select", {
       data: {

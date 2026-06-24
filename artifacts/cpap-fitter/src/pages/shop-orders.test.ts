@@ -68,3 +68,35 @@ describe("shop-orders — regression: core behaviour retained", () => {
     expect(SRC).toContain("loadingMore");
   });
 });
+
+describe("shop-orders — self-serve cancel guards", () => {
+  // The cancel button must not show once an order is fulfilled. A pickup
+  // order never gets shipped_at, so the gate must also check pickedUpAt —
+  // otherwise the button persists after the customer collects in store.
+  it("gates the Cancel button on pickup collection, not just shipping", () => {
+    expect(SRC).toContain("order.pickup?.pickedUpAt == null");
+    expect(SRC).toContain("order.shippedAt === null");
+    expect(SRC).toContain("order.deliveredAt === null");
+  });
+
+  // A terminal failure (already shipped / picked up / refunded) can never
+  // succeed on retry, so the button is dropped instead of re-offered.
+  it("treats unfulfillable states as terminal (no infinite retry)", () => {
+    expect(SRC).toContain("TERMINAL_CANCEL_CODES");
+    expect(SRC).toContain("order_already_picked_up");
+    expect(SRC).toContain('phase === "error" && terminal');
+  });
+
+  // On success the card flips to its refunded presentation so the stale
+  // "Paid" badge + address-edit / return controls don't linger.
+  it("flips the card to a refunded presentation after a successful cancel", () => {
+    expect(SRC).toContain("onCanceled");
+    expect(SRC).toContain("setCanceled(true)");
+    expect(SRC).toContain('canceled ? "Refunded" : "Paid"');
+  });
+
+  // Double-submit guard on the confirm action.
+  it("guards against a double-submit while canceling", () => {
+    expect(SRC).toContain('if (phase === "canceling") return;');
+  });
+});

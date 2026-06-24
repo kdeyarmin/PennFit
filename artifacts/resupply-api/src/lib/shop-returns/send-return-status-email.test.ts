@@ -79,6 +79,25 @@ describe("sendReturnStatusEmail", () => {
     });
   });
 
+  it("sends a received notice with the right copy + customArgs", async () => {
+    const result = await sendReturnStatusEmail({
+      kind: "received",
+      toEmail: "buyer@example.com",
+      returnId: "ret-rcv",
+      stripeSessionId: "cs_test_22223333",
+    });
+
+    expect(result).toMatchObject({ configured: true, delivered: true });
+    const arg = sendEmailMock.mock.calls[0]![0];
+    expect(arg.subject).toBe("We've received your PennPaps return");
+    expect(arg.html).toContain("Return received");
+    expect(arg.text).toContain("We've received your returned item");
+    expect(arg.customArgs).toEqual({
+      kind: "return_received_v1",
+      return_id: "ret-rcv",
+    });
+  });
+
   it("brands the refunded email with the seed tenant's storefront name by default", async () => {
     await sendReturnStatusEmail({
       kind: "refunded",

@@ -8,11 +8,18 @@ import {
 
 const supabaseMock = installSupabaseMock();
 
-const { autoSendMock } = vi.hoisted(() => ({
+const { autoSendMock, deliveredNotifyMock } = vi.hoisted(() => ({
   autoSendMock: vi.fn(async () => undefined),
+  deliveredNotifyMock: vi.fn(async () => ({
+    skipped: true as const,
+    reason: "test",
+  })),
 }));
 vi.mock("../patient-packet/auto-send-on-delivery", () => ({
   autoSendPatientPacketOnDelivery: autoSendMock,
+}));
+vi.mock("../order-emails/delivered-notification", () => ({
+  sendDeliveredNotificationIfNew: deliveredNotifyMock,
 }));
 
 import {
@@ -25,6 +32,8 @@ beforeEach(() => {
   supabaseMock.reset();
   autoSendMock.mockReset();
   autoSendMock.mockResolvedValue(undefined);
+  deliveredNotifyMock.mockReset();
+  deliveredNotifyMock.mockResolvedValue({ skipped: true, reason: "test" });
 });
 
 describe("parseCarrierEvent", () => {
@@ -92,6 +101,14 @@ describe("applyCarrierTrackingEvent", () => {
       orderId: "o1",
       orgId: "00000000-0000-4000-8000-000000000000",
     });
+    // The carrier-driven delivery also fires the "your order arrived"
+    // notification (idempotent with the admin route via the atomic claim).
+    expect(deliveredNotifyMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderId: "o1",
+        orgId: "00000000-0000-4000-8000-000000000000",
+      }),
+    );
   });
 
   it("is a no-op when already delivered", async () => {
@@ -105,6 +122,7 @@ describe("applyCarrierTrackingEvent", () => {
     expect(r).toEqual({ matched: true, updated: false });
     expect(supabaseMock.callCount("shop_orders", "update")).toBe(0);
     expect(autoSendMock).not.toHaveBeenCalled();
+    expect(deliveredNotifyMock).not.toHaveBeenCalled();
   });
 
   it("stamps shipped_at on a shipped event (no auto-send)", async () => {

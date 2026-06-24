@@ -151,6 +151,7 @@ describe("admin-shop-returns — TAB_IDS and tabs", () => {
   });
 
   const expectedTabs = [
+    "needs_action",
     "open",
     "requested",
     "approved",
@@ -173,21 +174,23 @@ describe("admin-shop-returns — TAB_IDS and tabs", () => {
 // ---------------------------------------------------------------------------
 //
 // Source (from admin-shop-returns.tsx):
-//   type Tab = ReturnStatus | "all" | "open";
+//   type Tab = ReturnStatus | "all" | "open" | "needs_action";
 //   const TABS = [
-//     { id: "open" }, { id: "requested" }, { id: "approved" },
-//     { id: "shipped_back" }, { id: "received" }, { id: "refunded" },
-//     { id: "replaced" }, { id: "rejected" }, { id: "all" },
+//     { id: "needs_action" }, { id: "open" }, { id: "requested" },
+//     { id: "approved" }, { id: "shipped_back" }, { id: "received" },
+//     { id: "refunded" }, { id: "replaced" }, { id: "rejected" },
+//     { id: "all" },
 //   ];
 //   const TAB_IDS: ReadonlySet<Tab> = new Set(TABS.map((t) => t.id));
 //
 //   function readTabFromUrl(): Tab {
-//     if (typeof window === "undefined") return "open";
+//     if (typeof window === "undefined") return "needs_action";
 //     const raw = new URLSearchParams(window.location.search).get("tab");
-//     return raw && TAB_IDS.has(raw as Tab) ? (raw as Tab) : "open";
+//     return raw && TAB_IDS.has(raw as Tab) ? (raw as Tab) : "needs_action";
 //   }
 
 type ReturnTab =
+  | "needs_action"
   | "open"
   | "requested"
   | "approved"
@@ -199,6 +202,7 @@ type ReturnTab =
   | "all";
 
 const TABS_RETURNS: ReadonlyArray<{ id: ReturnTab }> = [
+  { id: "needs_action" },
   { id: "open" },
   { id: "requested" },
   { id: "approved" },
@@ -215,39 +219,45 @@ const TAB_IDS_RETURNS: ReadonlySet<ReturnTab> = new Set(
 );
 
 // Parameterised re-implementation that accepts the search string so
-// tests don't need a real window.
+// tests don't need a real window. The default landing tab is the
+// actionable "needs_action" view.
 function readTabFromSearch(search: string): ReturnTab {
   const raw = new URLSearchParams(search).get("tab");
   return raw && TAB_IDS_RETURNS.has(raw as ReturnTab)
     ? (raw as ReturnTab)
-    : "open";
+    : "needs_action";
 }
 
-describe("readTabFromUrl logic — returns 'open' by default", () => {
-  it("returns 'open' when search string is empty", () => {
-    expect(readTabFromSearch("")).toBe("open");
+describe("readTabFromUrl logic — returns 'needs_action' by default", () => {
+  it("returns 'needs_action' when search string is empty", () => {
+    expect(readTabFromSearch("")).toBe("needs_action");
   });
 
-  it("returns 'open' when 'tab' param is absent", () => {
-    expect(readTabFromSearch("?page=2")).toBe("open");
+  it("returns 'needs_action' when 'tab' param is absent", () => {
+    expect(readTabFromSearch("?page=2")).toBe("needs_action");
   });
 
-  it("returns 'open' when 'tab' param is empty", () => {
-    expect(readTabFromSearch("?tab=")).toBe("open");
+  it("returns 'needs_action' when 'tab' param is empty", () => {
+    expect(readTabFromSearch("?tab=")).toBe("needs_action");
   });
 
-  it("returns 'open' for an unknown tab value", () => {
-    expect(readTabFromSearch("?tab=unknown")).toBe("open");
+  it("returns 'needs_action' for an unknown tab value", () => {
+    expect(readTabFromSearch("?tab=unknown")).toBe("needs_action");
   });
 
-  it("returns 'open' for a value with wrong casing", () => {
-    expect(readTabFromSearch("?tab=Approved")).toBe("open");
-    expect(readTabFromSearch("?tab=OPEN")).toBe("open");
+  it("returns 'needs_action' for a value with wrong casing", () => {
+    expect(readTabFromSearch("?tab=Approved")).toBe("needs_action");
+    expect(readTabFromSearch("?tab=OPEN")).toBe("needs_action");
+  });
+
+  it("still honors an explicit ?tab=open", () => {
+    expect(readTabFromSearch("?tab=open")).toBe("open");
   });
 });
 
 describe("readTabFromUrl logic — returns valid tab values", () => {
   const validTabs: ReturnTab[] = [
+    "needs_action",
     "open",
     "requested",
     "approved",
@@ -273,8 +283,8 @@ describe("readTabFromUrl logic — returns valid tab values", () => {
 });
 
 describe("readTabFromUrl logic — TAB_IDS invariants", () => {
-  it("contains exactly 9 tabs", () => {
-    expect(TAB_IDS_RETURNS.size).toBe(9);
+  it("contains exactly 10 tabs", () => {
+    expect(TAB_IDS_RETURNS.size).toBe(10);
   });
 
   it("includes both the synthetic 'open' and 'all' tabs", () => {
@@ -287,7 +297,7 @@ describe("readTabFromUrl logic — TAB_IDS invariants", () => {
   });
 
   it("does not include partial matches like 'ship'", () => {
-    expect(readTabFromSearch("?tab=ship")).toBe("open");
+    expect(readTabFromSearch("?tab=ship")).toBe("needs_action");
   });
 });
 
@@ -384,8 +394,10 @@ describe("admin-shop-returns — useUrlState hook integration", () => {
     expect(SRC).toMatch(/useUrlState[\s\S]{0,50}key:\s*["']tab["']/);
   });
 
-  it("calls useUrlState with defaultValue: 'open'", () => {
-    expect(SRC).toMatch(/useUrlState[\s\S]{0,80}defaultValue:\s*["']open["']/);
+  it("calls useUrlState with defaultValue: 'needs_action'", () => {
+    expect(SRC).toMatch(
+      /useUrlState[\s\S]{0,80}defaultValue:\s*["']needs_action["']/,
+    );
   });
 
   it("passes isAllowed guard to useUrlState for type safety", () => {

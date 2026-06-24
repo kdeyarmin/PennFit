@@ -37,15 +37,22 @@ import {
   refundReturn,
   rejectReturn,
   replaceReturn,
+  returnActionableSince,
+  waitingDays,
   type AdminReturn,
   type ReturnStatus,
 } from "@/lib/admin/shop-returns-api";
 import { ReturnNotesPanel } from "@/components/admin/ReturnNotesPanel";
 import { PageHeader } from "@/components/admin/PageHeader";
 
-type Tab = ReturnStatus | "all" | "open";
+type Tab = ReturnStatus | "all" | "open" | "needs_action";
 
 const TABS: ReadonlyArray<{ id: Tab; label: string }> = [
+  // "Needs action" = only the states waiting on the ADMIN (requested /
+  // in-transit-received / received-awaiting-refund). "Open" is the full
+  // in-flight pipeline, which also includes `approved` (waiting on the
+  // customer to ship). The actionable view is the default landing tab.
+  { id: "needs_action", label: "Needs action" },
   { id: "open", label: "Open" },
   { id: "requested", label: "Requested" },
   { id: "approved", label: "Approved" },
@@ -62,8 +69,8 @@ const PAGE_SIZE = 25;
 const TAB_IDS: ReadonlySet<Tab> = new Set(TABS.map((t) => t.id));
 
 // Type-narrowing guard passed to useUrlState so unknown ?tab= values
-// silently coerce back to the "open" default rather than landing the
-// page in an unrecognised state.
+// silently coerce back to the "needs_action" default rather than landing
+// the page in an unrecognised state.
 const isTab = (v: string): v is Tab => TAB_IDS.has(v as Tab);
 
 export function AdminShopReturnsPage() {
@@ -73,7 +80,7 @@ export function AdminShopReturnsPage() {
   // popstate listener) is owned by useUrlState.
   const [tab, setTab] = useUrlState<Tab>({
     key: "tab",
-    defaultValue: "open",
+    defaultValue: "needs_action",
     isAllowed: isTab,
   });
 
@@ -218,6 +225,32 @@ const STATUS_LABELS: Record<ReturnStatus, string> = {
   closed: "Closed",
 };
 
+// At-a-glance "how long has this been waiting on us" badge. Renders only
+// for admin-actionable states (requested / shipped_back / received); stays
+// hidden for `approved` (waiting on the customer) and terminal states. Tone
+// escalates with age so an aging queue is visible without sorting.
+function WaitingBadge({ item }: { item: AdminReturn }) {
+  const since = returnActionableSince(item);
+  if (!since) return null;
+  const days = waitingDays(since, Date.now());
+  const tone =
+    days >= 7
+      ? "border-rose-200 bg-rose-50 text-rose-700"
+      : days >= 3
+        ? "border-amber-200 bg-amber-50 text-amber-700"
+        : "border-slate-200 bg-slate-50 text-slate-600";
+  const label = days === 0 ? "today" : days === 1 ? "1 day" : `${days} days`;
+  return (
+    <span
+      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${tone}`}
+      data-testid={`shop-return-${item.id}-waiting`}
+      title="How long this return has been waiting on our team"
+    >
+      waiting {label}
+    </span>
+  );
+}
+
 /**
  * Render a single admin return card showing status, metadata, notes, and status-gated actions.
  *
@@ -339,6 +372,7 @@ function ReturnCard({ item }: { item: AdminReturn }) {
             <span className="text-xs text-slate-600">
               {REASON_LABELS[item.reason] ?? item.reason}
             </span>
+            <WaitingBadge item={item} />
           </div>
           <div className="text-sm font-mono text-slate-700">
             Order {item.sessionId.slice(-12)}

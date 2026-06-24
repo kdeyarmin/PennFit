@@ -21,21 +21,33 @@ import {
 
 const supabaseMock = installSupabaseMock();
 
-const { mockSignedIn } = vi.hoisted(() => ({
+const { mockSignedIn, stripeConfigRef, refundsCreateMock } = vi.hoisted(() => ({
   mockSignedIn: { current: null as string | null },
+  // Defaults to null → preview mode for the GET name lookup (existing
+  // tests). The cancel happy-path test sets a fake config.
+  stripeConfigRef: { current: null as unknown },
+  refundsCreateMock: vi.fn(),
 }));
 vi.mock("../../middlewares/requireSignedIn", () =>
   makeRequireSignedInMock(mockSignedIn),
 );
 
-// Force preview-mode for the Stripe name lookup so the test never
-// reaches a real Stripe SDK call. The handler degrades gracefully
-// to "Product <id>" in this branch.
+// Stripe config is configurable (default null → preview-mode name lookup,
+// which the GET handler degrades to "Product <id>"). getStripeClient
+// returns a fake whose refunds.create is asserted by the cancel tests.
 vi.mock("../../lib/stripe/config", () => ({
-  readStripeConfigOrNull: () => null,
-  getStripeClient: () => {
-    throw new Error("getStripeClient should not be called when config is null");
-  },
+  readStripeConfigOrNull: () => stripeConfigRef.current,
+  getStripeClient: () => ({
+    refunds: { create: (...args: unknown[]) => refundsCreateMock(...args) },
+  }),
+}));
+vi.mock("../../lib/stripe/connect", () => ({
+  stripeAccountRequestOptions: vi.fn(async () => ({})),
+}));
+const restockReturnedOrderMock = vi.fn();
+vi.mock("../../lib/shop-returns/restock", () => ({
+  restockReturnedOrder: (...args: unknown[]) =>
+    restockReturnedOrderMock(...args),
 }));
 
 import myOrdersRouter from "./my-orders";
@@ -53,6 +65,9 @@ function stubSignedIn(userId: string): void {
 
 beforeEach(() => {
   mockSignedIn.current = null;
+  stripeConfigRef.current = null;
+  refundsCreateMock.mockReset();
+  restockReturnedOrderMock.mockReset();
   supabaseMock.reset();
 });
 
@@ -413,5 +428,243 @@ describe("POST /shop/me/orders/:orderId/shipping-address", () => {
       .send(validAddress);
     expect(res.status).toBe(409);
     expect(res.body.error).toBe("order_already_shipped");
+  });
+});
+
+// =====================================================================
+// POST /shop/me/orders/:orderId/cancel
+// =====================================================================
+describe("POST /shop/me/orders/:orderId/cancel", () => {
+  const CANCEL_ID = "11111111-2222-3333-8444-555555555555";
+
+  it("returns 401 when the caller has no session", async () => {
+    const res = await request(makeApp()).post(
+      `/resupply-api/shop/me/orders/${CANCEL_ID}/cancel`,
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it("rejects non-UUID order ids", async () => {
+    stubSignedIn("user_alice");
+    const res = await request(makeApp()).post(
+      "/resupply-api/shop/me/orders/not-a-uuid/cancel",
+    );
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("invalid_order_id");
+  });
+
+  it("returns 404 (not 403) when the order belongs to another shopper", async () => {
+    stubSignedIn("user_alice");
+    stageSupabaseResponse("shop_orders", "select", {
+      data: {
+        id: CANCEL_ID,
+        customer_id: "user_bob",
+        status: "paid",
+        shipped_at: null,
+        stripe_payment_intent_id: "pi_1",
+        stripe_session_id: "cs_1",
+      },
+    });
+    const res = await request(makeApp()).post(
+      `/resupply-api/shop/me/orders/${CANCEL_ID}/cancel`,
+    );
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe("order_not_found");
+    expect(refundsCreateMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 409 when already refunded", async () => {
+    stubSignedIn("user_alice");
+    stageSupabaseResponse("shop_orders", "select", {
+      data: {
+        id: CANCEL_ID,
+        customer_id: "user_alice",
+        status: "refunded",
+        shipped_at: null,
+        stripe_payment_intent_id: "pi_1",
+        stripe_session_id: "cs_1",
+      },
+    });
+    const res = await request(makeApp()).post(
+      `/resupply-api/shop/me/orders/${CANCEL_ID}/cancel`,
+    );
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("order_already_refunded");
+    expect(refundsCreateMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 409 when the order has already shipped", async () => {
+    stubSignedIn("user_alice");
+    stageSupabaseResponse("shop_orders", "select", {
+      data: {
+        id: CANCEL_ID,
+        customer_id: "user_alice",
+        status: "paid",
+        shipped_at: "2026-04-01T00:00:00Z",
+        stripe_payment_intent_id: "pi_1",
+        stripe_session_id: "cs_1",
+      },
+    });
+    const res = await request(makeApp()).post(
+      `/resupply-api/shop/me/orders/${CANCEL_ID}/cancel`,
+    );
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("order_already_shipped");
+    expect(refundsCreateMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 409 (no refund) when a pickup order was already collected", async () => {
+    // Pickup orders never get a shipped_at, so the shipped guard can't
+    // catch them — without the picked_up_at guard a customer could refund
+    // an order they already walked out of the store with.
+    stubSignedIn("user_alice");
+    stripeConfigRef.current = { secretKey: "sk_test_x" };
+    stageSupabaseResponse("shop_orders", "select", {
+      data: {
+        id: CANCEL_ID,
+        customer_id: "user_alice",
+        status: "paid",
+        shipped_at: null,
+        picked_up_at: "2026-04-02T00:00:00Z",
+        amount_refunded_cents: 0,
+        stripe_payment_intent_id: "pi_1",
+        stripe_session_id: "cs_1",
+      },
+    });
+    const res = await request(makeApp()).post(
+      `/resupply-api/shop/me/orders/${CANCEL_ID}/cancel`,
+    );
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("order_already_picked_up");
+    expect(refundsCreateMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 409 (no second refund) when a partial refund was already issued", async () => {
+    // A prior partial refund leaves status='paid'; without this guard the
+    // cancel would issue a SECOND, full refund on top of it (over-refund).
+    stubSignedIn("user_alice");
+    stripeConfigRef.current = { secretKey: "sk_test_x" };
+    stageSupabaseResponse("shop_orders", "select", {
+      data: {
+        id: CANCEL_ID,
+        customer_id: "user_alice",
+        status: "paid",
+        shipped_at: null,
+        picked_up_at: null,
+        amount_refunded_cents: 1500,
+        stripe_payment_intent_id: "pi_1",
+        stripe_session_id: "cs_1",
+      },
+    });
+    const res = await request(makeApp()).post(
+      `/resupply-api/shop/me/orders/${CANCEL_ID}/cancel`,
+    );
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("order_already_refunded");
+    expect(refundsCreateMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 503 when Stripe is not configured", async () => {
+    stubSignedIn("user_alice");
+    stripeConfigRef.current = null;
+    stageSupabaseResponse("shop_orders", "select", {
+      data: {
+        id: CANCEL_ID,
+        customer_id: "user_alice",
+        status: "paid",
+        shipped_at: null,
+        stripe_payment_intent_id: "pi_1",
+        stripe_session_id: "cs_1",
+      },
+    });
+    const res = await request(makeApp()).post(
+      `/resupply-api/shop/me/orders/${CANCEL_ID}/cancel`,
+    );
+    expect(res.status).toBe(503);
+    expect(res.body.error).toBe("stripe_not_configured");
+  });
+
+  it("refunds, flips to refunded, and returns ok on the happy path", async () => {
+    stubSignedIn("user_alice");
+    stripeConfigRef.current = { secretKey: "sk_test_x" };
+    refundsCreateMock.mockResolvedValue({ id: "re_1", status: "succeeded" });
+    stageSupabaseResponse("shop_orders", "select", {
+      data: {
+        id: CANCEL_ID,
+        customer_id: "user_alice",
+        status: "paid",
+        shipped_at: null,
+        stripe_payment_intent_id: "pi_123",
+        stripe_session_id: "cs_123",
+      },
+    });
+    stageSupabaseResponse("shop_orders", "update", {
+      data: { id: CANCEL_ID, status: "refunded" },
+    });
+
+    const res = await request(makeApp()).post(
+      `/resupply-api/shop/me/orders/${CANCEL_ID}/cancel`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      ok: true,
+      order: { id: CANCEL_ID, status: "refunded" },
+    });
+    // Full refund issued against the captured PaymentIntent, idempotent.
+    expect(refundsCreateMock).toHaveBeenCalledTimes(1);
+    const [params, opts] = refundsCreateMock.mock.calls[0]!;
+    expect(params).toMatchObject({ payment_intent: "pi_123" });
+    expect(opts).toMatchObject({ idempotencyKey: `cancel-${CANCEL_ID}` });
+    // Pre-ship cancel restocks the items (the reservation was already
+    // consumed at checkout, so releasing holds would be a no-op).
+    expect(restockReturnedOrderMock).toHaveBeenCalledWith(
+      expect.objectContaining({ orderId: CANCEL_ID, sessionId: "cs_123" }),
+    );
+  });
+
+  it("still returns ok (refund already issued) if the order shipped in a race", async () => {
+    stubSignedIn("user_alice");
+    stripeConfigRef.current = { secretKey: "sk_test_x" };
+    refundsCreateMock.mockResolvedValue({ id: "re_2", status: "succeeded" });
+    stageSupabaseResponse("shop_orders", "select", {
+      data: {
+        id: CANCEL_ID,
+        customer_id: "user_alice",
+        status: "paid",
+        shipped_at: null,
+        stripe_payment_intent_id: "pi_123",
+        stripe_session_id: "cs_123",
+      },
+    });
+    // UPDATE ... WHERE shipped_at IS NULL matches 0 rows (shipped mid-flight).
+    stageSupabaseResponse("shop_orders", "update", { data: null });
+
+    const res = await request(makeApp()).post(
+      `/resupply-api/shop/me/orders/${CANCEL_ID}/cancel`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(refundsCreateMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns 502 when the Stripe refund fails", async () => {
+    stubSignedIn("user_alice");
+    stripeConfigRef.current = { secretKey: "sk_test_x" };
+    refundsCreateMock.mockRejectedValue(new Error("card_declined"));
+    stageSupabaseResponse("shop_orders", "select", {
+      data: {
+        id: CANCEL_ID,
+        customer_id: "user_alice",
+        status: "paid",
+        shipped_at: null,
+        stripe_payment_intent_id: "pi_123",
+        stripe_session_id: "cs_123",
+      },
+    });
+    const res = await request(makeApp()).post(
+      `/resupply-api/shop/me/orders/${CANCEL_ID}/cancel`,
+    );
+    expect(res.status).toBe(502);
+    expect(res.body.error).toBe("stripe_refund_failed");
   });
 });

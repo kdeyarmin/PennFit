@@ -102,6 +102,29 @@ export interface QueueDetail extends QueueItem {
 export const getProviderQueueItem = (id: string) =>
   jsonFetch<QueueDetail>(`/queue/${encodeURIComponent(id)}`);
 
+/**
+ * The ids of the documents that are still awaiting signature — i.e. the
+ * ones eligible for the "select all / batch sign" control. Signed/declined
+ * rows are excluded (you can't re-sign them). Pure; unit-tested.
+ */
+export function pendingQueueIds(
+  requests: readonly { id: string; status: string }[],
+): string[] {
+  return requests.filter((r) => r.status === "pending").map((r) => r.id);
+}
+
+/**
+ * True when every pending document is already selected (and there's at
+ * least one) — drives the "Select all" ↔ "Clear selection" toggle label
+ * and the header checkbox state.
+ */
+export function allPendingSelected(
+  pendingIds: readonly string[],
+  checked: ReadonlySet<string>,
+): boolean {
+  return pendingIds.length > 0 && pendingIds.every((id) => checked.has(id));
+}
+
 export const signProviderDocument = (
   id: string,
   body: {
@@ -176,6 +199,22 @@ export const getProviderRtmRoster = (days?: number) =>
   jsonFetch<{ windowDays: number; patients: RtmRosterPatient[] }>(
     `/patients${days ? `?days=${days}` : ""}`,
   );
+
+/**
+ * Client-side roster search: case-insensitive substring match on the
+ * patient's name. A blank/whitespace query returns the list unchanged.
+ * Pure (no `Date`, no fetch) so it's unit-tested directly and reused by
+ * the "My patients" page filter box. The roster is already fully loaded
+ * (server caps it at 200), so filtering in-memory avoids a round-trip.
+ */
+export function filterRosterPatients<T extends { patientName: string }>(
+  patients: readonly T[],
+  query: string,
+): T[] {
+  const needle = query.trim().toLowerCase();
+  if (needle === "") return [...patients];
+  return patients.filter((p) => p.patientName.toLowerCase().includes(needle));
+}
 
 export interface RtmCmsWindow {
   startDate: string;

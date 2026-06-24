@@ -58,10 +58,16 @@ import { enterWebhookOrg, resolveWebhookOrgId } from "./webhook-org-context";
 type ShopOrderUpdate = Database["resupply"]["Tables"]["shop_orders"]["Update"];
 
 import { maybeDispatchPaymentFailedAlert } from "../alerts/payment-failed-trigger";
+import { maybeSendSubscriptionBillingNotice } from "../billing/subscription-billing-notice";
+import { sendRefundNotificationIfNew } from "../order-emails/refund-notification";
 import { recordOutboundMessageUsage } from "../metering/usage";
 import { handlePlatformTenantStripeEvent } from "../platform-billing/stripe";
 import { getBoss } from "../../worker/index.js";
 import { PAYMENT_FAILED_ALERT_JOB } from "../../worker/jobs/payment-failed-alert.js";
+import {
+  SUBSCRIPTION_BILLING_NOTICE_JOB,
+  type SubscriptionBillingNoticeJobData,
+} from "../../worker/jobs/subscription-billing-notice.js";
 import {
   getStripeClient,
   readPlatformBillingStripeConfigOrNull,
@@ -190,6 +196,38 @@ export async function tryDeleteWebhookEventRecord(
   } catch {
     log?.warn?.({ eventId }, "stripe webhook: dedup record cleanup threw");
   }
+}
+
+/**
+ * Enqueue a storefront subscription billing notice (renewing-soon /
+ * receipt) onto the retry-backed pg-boss queue, keeping the SendGrid send
+ * off the webhook ACK path. Falls back to the fire-and-forget direct
+ * dispatch when the worker isn't running (or the enqueue itself fails) —
+ * degraded, but never worse than dropping the notice. Never throws.
+ */
+async function enqueueSubscriptionBillingNotice(
+  payload: SubscriptionBillingNoticeJobData,
+  log: Request["log"] | undefined,
+): Promise<void> {
+  const boss = getBoss();
+  if (boss) {
+    try {
+      await boss.send(SUBSCRIPTION_BILLING_NOTICE_JOB, payload);
+      return;
+    } catch (err) {
+      log?.warn?.(
+        { event: "subscription_billing_notice_enqueue_failed", err },
+        "stripe: subscription billing notice enqueue failed — falling back to direct dispatch",
+      );
+    }
+  }
+  void maybeSendSubscriptionBillingNotice({ ...payload, log });
+}
+
+/** Stripe timestamps are unix seconds; convert to ISO (null-safe). */
+function stripeUnixToIso(ts: number | null | undefined): string | null {
+  if (ts == null) return null;
+  return new Date(ts * 1000).toISOString();
 }
 
 export const stripeWebhookHandler: RequestHandler = async (
@@ -621,8 +659,65 @@ export const stripeWebhookHandler: RequestHandler = async (
         );
         break;
       }
+      case "invoice.upcoming": {
+        // Advance "your subscription renews soon" heads-up for storefront
+        // Subscribe & Save subscriptions. invoice.upcoming is a preview
+        // (no invoice id) Stripe sends ahead of the renewal charge based on
+        // the dashboard's "upcoming renewal" setting; it never maps to
+        // platform billing, so there's no platform branch to consult.
+        const invoice = event.data.object as Stripe.Invoice;
+        const subRef = invoice.parent?.subscription_details?.subscription;
+        const subscriptionId =
+          typeof subRef === "string" ? subRef : (subRef?.id ?? null);
+        // Only subscription invoices get a renewal notice.
+        if (subscriptionId) {
+          await enqueueSubscriptionBillingNotice(
+            {
+              orgId: webhookOrgId,
+              kind: "renewing_soon",
+              stripeCustomerId:
+                typeof invoice.customer === "string"
+                  ? invoice.customer
+                  : (invoice.customer?.id ?? null),
+              amountCents: invoice.amount_due,
+              currency: invoice.currency,
+              chargeDateIso: stripeUnixToIso(
+                invoice.next_payment_attempt ?? invoice.period_end ?? null,
+              ),
+            },
+            log,
+          );
+        }
+        break;
+      }
       case "invoice.paid": {
-        await handlePlatformTenantStripeEvent(event);
+        if (await handlePlatformTenantStripeEvent(event)) break;
+        // Storefront Subscribe & Save renewal payment receipt. Only for
+        // auto-renewal cycles (billing_reason = subscription_cycle): the
+        // FIRST subscription invoice (subscription_create) is already
+        // covered by the checkout order-confirmation email, so receipting
+        // it here would duplicate. One-off shop purchases go through
+        // Checkout (payment mode), not invoices, and already get an order
+        // confirmation — so they never reach this branch.
+        const invoice = event.data.object as Stripe.Invoice;
+        if (invoice.billing_reason === "subscription_cycle") {
+          await enqueueSubscriptionBillingNotice(
+            {
+              orgId: webhookOrgId,
+              kind: "receipt",
+              stripeCustomerId:
+                typeof invoice.customer === "string"
+                  ? invoice.customer
+                  : (invoice.customer?.id ?? null),
+              amountCents: invoice.amount_paid ?? invoice.amount_due,
+              currency: invoice.currency,
+              chargeDateIso: stripeUnixToIso(
+                invoice.status_transitions?.paid_at ?? invoice.created ?? null,
+              ),
+            },
+            log,
+          );
+        }
         break;
       }
       case "invoice.payment_failed": {
@@ -1086,6 +1181,38 @@ async function markStatusByPaymentIntent(
           stripeEventId: ctx.stripeEventId,
         },
         "refund audit write failed",
+      );
+    }
+  }
+
+  // Best-effort "refund issued" patient notice. Sends at most once per
+  // order via the atomic refund_email_sent_at claim, and is a no-op when
+  // the returns RMA flow already stamped it (return-driven refunds send
+  // their own richer email). A SendGrid/DB hiccup never fails the webhook.
+  for (const refundedRow of updated) {
+    try {
+      await sendRefundNotificationIfNew({
+        orgId,
+        orderId: refundedRow.id,
+        amountRefundedCents: ctx.amountRefundedCents,
+        currency: ctx.currency,
+        isPartial: !isFullRefund,
+        log: ctx.log,
+      });
+    } catch (notifyErr) {
+      ctx.log?.info?.(
+        {
+          event: "refund_notification_failed",
+          orderId: refundedRow.id,
+          // Log the Error object (not its .message string) so the logger's
+          // err.* redaction applies — err.message can carry DSN/PHI
+          // fragments (ADR 006/007).
+          err:
+            notifyErr instanceof Error
+              ? notifyErr
+              : new Error(String(notifyErr)),
+        },
+        "refund notification dispatch threw (non-fatal)",
       );
     }
   }

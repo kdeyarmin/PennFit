@@ -747,6 +747,53 @@ export async function updateOrderShippingAddress(
   };
 }
 
+/**
+ * Self-serve cancel a paid, not-yet-shipped order. Issues a full refund
+ * server-side and flips the order to `refunded`; the customer gets the
+ * standard refund email.
+ *
+ * Possible codes:
+ *   - "order_not_found"          — wrong id / someone else's order (404)
+ *   - "order_already_refunded"   — nothing left to cancel
+ *   - "order_not_paid"           — never billed
+ *   - "order_already_shipped"    — too late, use the return flow
+ *   - "stripe_not_configured"    — preview/dev (503)
+ *   - "stripe_refund_failed"     — Stripe declined the refund (502)
+ */
+export async function cancelOrder(
+  orderId: string,
+): Promise<{ ok: boolean; order: { id: string; status: string } }> {
+  const res = await fetch(
+    `/resupply-api/shop/me/orders/${encodeURIComponent(orderId)}/cancel`,
+    {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        // Signed-in POST — app-level CSRF gate requires this header.
+        ...csrfHeader(),
+      },
+    },
+  );
+  if (!res.ok) {
+    let code = `http_${res.status}`;
+    try {
+      const body = (await res.json()) as { error?: string };
+      if (body && typeof body.error === "string") code = body.error;
+    } catch {
+      // Body wasn't JSON — keep http_<status>.
+    }
+    const err = new Error(`Failed to cancel order (${code})`) as Error & {
+      code: string;
+    };
+    err.code = code;
+    throw err;
+  }
+  return (await res.json()) as {
+    ok: boolean;
+    order: { id: string; status: string };
+  };
+}
+
 // ────────────────────────────────────────── site-wide reviews aggregate
 //
 // Powers the trust-signal strip on the marketing home page. One
