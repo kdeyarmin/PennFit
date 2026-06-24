@@ -99,6 +99,47 @@ describe("pickStatementChannel (pure)", () => {
     );
     expect(got.channel).toBeNull();
   });
+
+  it("falls back to email when SMS is outside the TCPA 9am-8pm window", () => {
+    // SMS-preferred + opted in, but 1am ET is outside the legal SMS send
+    // window → SMS is not picked; email (always-window-OK) is used instead.
+    const got = pickStatementChannel(
+      prefs({
+        smsTransactional: true,
+        preferredChannel: "sms",
+        timezone: "America/New_York",
+      }),
+      { hasEmail: true, hasPhone: true },
+      new Date("2026-06-01T05:00:00Z"), // 1am ET — outside 9–20
+    );
+    expect(got.channel).toBe("email");
+  });
+
+  it("defers (channel null) when SMS is the only channel and it's outside the TCPA window", () => {
+    const got = pickStatementChannel(
+      prefs({
+        smsTransactional: true,
+        preferredChannel: "sms",
+        timezone: "America/New_York",
+      }),
+      { hasEmail: false, hasPhone: true },
+      new Date("2026-06-01T05:00:00Z"), // 1am ET — outside 9–20
+    );
+    expect(got.channel).toBeNull();
+  });
+
+  it("still picks SMS inside the TCPA window", () => {
+    const got = pickStatementChannel(
+      prefs({
+        smsTransactional: true,
+        preferredChannel: "sms",
+        timezone: "America/New_York",
+      }),
+      { hasEmail: true, hasPhone: true },
+      noon, // 1pm ET — inside 9–20
+    );
+    expect(got.channel).toBe("sms");
+  });
 });
 
 describe("sendOneStatement", () => {

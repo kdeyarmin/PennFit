@@ -63,6 +63,15 @@ describe("maintenance-nudges — quiet-period guard is in-memory", () => {
   });
 });
 
+describe("maintenance-nudges — only active patients are nudged", () => {
+  it("filters the candidate roster query on status = 'active'", () => {
+    // Every other patient-send path gates on status === 'active'; this job
+    // must not email paused / discharged patients. Pinned to the candidate
+    // query so the gate can't be dropped in a future refactor.
+    expect(SRC).toMatch(/\.eq\("status",\s*"active"\)/);
+  });
+});
+
 describe("maintenance-nudges — last-completion read is batched", () => {
   it("uses the patient_maintenance_latest_by_task RPC, not a per-patient log read", () => {
     expect(SRC).toContain('.rpc("patient_maintenance_latest_by_task"');

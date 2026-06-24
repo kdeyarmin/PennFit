@@ -34,6 +34,7 @@ import {
   readStatementPrefs,
   sendStatementMessage,
 } from "../../lib/billing/statement-send";
+import { practiceTodayIso } from "../../lib/billing-date";
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
 import { forEachActiveOrg } from "../lib/for-each-active-org";
@@ -122,7 +123,11 @@ export async function runDunningOpenScanForOrg(
   const stats: OpenScanStats = { candidates: 0, opened: 0 };
   if (!(await isFeatureEnabled("collections.dunning", orgId))) return stats;
   const supabase = getOrgScopedClient(orgId);
-  const todayIso = today.toISOString().slice(0, 10);
+  // Practice-local business date, not UTC — the open-scan cron runs in the
+  // early-UTC hours (still the prior evening in US timezones), so a UTC date
+  // would stamp opened_on a day ahead and shift the whole +7/+21/+35/+60 ladder
+  // one calendar day early for US patients.
+  const todayIso = practiceTodayIso(today);
 
   // One set-based query (migration 0462) returns every patient over the floor
   // with no active run / plan / autopay — net balance already computed. Far
@@ -179,7 +184,8 @@ export async function runDunningTickForOrg(
   };
   if (!(await isFeatureEnabled("collections.dunning", orgId))) return stats;
   const supabase = getOrgScopedClient(orgId);
-  const todayIso = now.toISOString().slice(0, 10);
+  // Practice-local business date for the ladder decision (see open-scan note).
+  const todayIso = practiceTodayIso(now);
 
   const { data: dueRows } = await supabase
     .from("patient_dunning_runs")

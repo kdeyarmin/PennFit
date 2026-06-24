@@ -1,0 +1,19 @@
+-- Drop the orphaned ZERO-ARG resupply.therapy_clinical_signal_counts() overload.
+--
+-- Migration 0381 dropped the original global (no-arg) signal-counts RPC and
+-- replaced it with an ORG-SCOPED therapy_clinical_signal_counts(p_org_id uuid)
+-- that filters `org_id = p_org_id`. Migration 0414 (a copy of the older 0338
+-- clinical-signal-daily-metrics migration) then re-created the zero-arg global
+-- overload via `CREATE OR REPLACE FUNCTION ...()`, so BOTH overloads now exist:
+--   * therapy_clinical_signal_counts(uuid)  — tenant-safe, used by the only
+--                                             caller (therapy-fleet-daily-snapshot)
+--   * therapy_clinical_signal_counts()      — aggregates EVERY tenant's open
+--                                             clinical signals with no org filter
+-- The zero-arg overload is unused by application code and is a cross-tenant
+-- footgun (a future caller, a manual RPC, or accidental overload resolution
+-- would aggregate all tenants). Drop it; the org-scoped overload is unaffected
+-- (DROP FUNCTION targets the exact zero-arg signature).
+--
+-- Idempotent: IF EXISTS makes a re-apply a no-op. Targets only the no-arg
+-- signature, so the org-scoped (uuid) overload is never touched.
+DROP FUNCTION IF EXISTS resupply.therapy_clinical_signal_counts();

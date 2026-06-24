@@ -428,8 +428,12 @@ router.post(
           // Treat as success — there's nothing to delete.
           previousObjectDeleted = true;
         } else {
+          // Hard rule: object keys are PHI pointers and must NOT reach the
+          // application logger. Log the failure category only; the audit row
+          // below (and the sweep job) handle reconciliation of the orphaned
+          // object without leaking its storage key into world-readable logs.
           req.log.warn(
-            { err, previous_object_key: previousObjectKey },
+            { err },
             "prescription_attachment_replace_cleanup_failed",
           );
           previousObjectDeleted = "errored";

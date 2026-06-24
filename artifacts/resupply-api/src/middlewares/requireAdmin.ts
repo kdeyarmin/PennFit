@@ -99,6 +99,30 @@ declare global {
   }
 }
 
+/**
+ * Mandatory-MFA policy, captured ONCE at module load (deploy-time policy,
+ * matching routes/admin/mfa.ts:readEnforcementModeFromEnv). When set, an
+ * admin/agent with NO verified MFA enrollment is blocked from the entire
+ * admin API surface except the enrollment + identity endpoints — the
+ * server-side companion to the SPA's enrollment banner. To re-arm, redeploy.
+ */
+const MFA_REQUIRED_FOR_ADMINS: boolean = (() => {
+  const v = process.env.AUTH_REQUIRE_MFA_FOR_ADMINS?.trim().toLowerCase();
+  return v === "true" || v === "1" || v === "yes";
+})();
+
+/**
+ * Paths an admin with no MFA enrollment must STILL reach so they can learn
+ * they must enroll (`/me`, `/admin/mfa/status`) and complete enrollment
+ * (`/admin/mfa/enroll/*`). The whole `/admin/mfa/` subtree is allowed — an
+ * unenrolled admin can't disable/regenerate what they don't have, so it's
+ * harmless and avoids brittle per-endpoint matching. Everything else is
+ * blocked while the mandatory-MFA policy is on and the admin is unenrolled.
+ */
+function isMfaEnrollmentAllowedPath(path: string): boolean {
+  return path.includes("/admin/mfa/") || path.endsWith("/me");
+}
+
 interface ResolvedAdmin {
   email: string;
   userId: string;
@@ -373,6 +397,57 @@ export async function requireAdmin(
           "Your organization must accept the required agreements before using the console.",
       });
       return;
+    }
+  }
+
+  // Mandatory-MFA enforcement (server-side companion to the SPA banner).
+  // When AUTH_REQUIRE_MFA_FOR_ADMINS is set, an admin/agent with NO verified
+  // MFA enrollment is blocked from the entire admin API surface EXCEPT the
+  // MFA-enrollment endpoints + the `/me` identity probe — so a freshly
+  // seeded admin can still sign in and enroll, but cannot otherwise act
+  // password-only. Without this, the env flag was UI-only: an unenrolled
+  // admin could call every requireAdmin route directly (curl / scripted
+  // client / compromised extension), making the "MFA required" policy
+  // cosmetic. Mirrors the provider portal's requireProviderMfaEnrolled gate.
+  // Impersonation sessions are exempt — the platform admin already cleared
+  // MFA at their own sign-in, and they have no MFA row in the target tenant.
+  // OFF by default (flag unset), so default deploys pay no extra DB round-trip.
+  if (MFA_REQUIRED_FOR_ADMINS && req.impersonation !== true) {
+    const path = req.originalUrl.split("?")[0] ?? "";
+    if (!isMfaEnrollmentAllowedPath(path)) {
+      const deps = getAuthDeps();
+      let hasVerifiedMfa: boolean;
+      try {
+        hasVerifiedMfa = deps.mfa
+          ? Boolean(await deps.mfa.findActiveSecret(admin.userId))
+          : false;
+      } catch (err) {
+        // Can't confirm enrollment → fail closed. The enrollment endpoints
+        // are allowlisted above and don't reach this probe, so a blocked
+        // admin can still navigate to set up MFA.
+        logger.warn(
+          {
+            event: "resupply_admin_mfa_enrollment_probe_failed",
+            adminUserId: admin.userId,
+            err,
+          },
+          "requireAdmin: MFA enrollment probe failed; failing closed",
+        );
+        res.status(403).json({
+          error: "mfa_enrollment_required",
+          message:
+            "Two-factor authentication must be set up before you can use the console.",
+        });
+        return;
+      }
+      if (!hasVerifiedMfa) {
+        res.status(403).json({
+          error: "mfa_enrollment_required",
+          message:
+            "Two-factor authentication must be set up before you can use the console.",
+        });
+        return;
+      }
     }
   }
 

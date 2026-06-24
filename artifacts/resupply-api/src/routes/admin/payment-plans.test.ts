@@ -202,3 +202,45 @@ describe("PATCH /admin/payment-plans/:id (cancel)", () => {
     expect(res.status).toBe(409);
   });
 });
+
+describe("POST /admin/payment-plans/:id/authorize-autopay — return-path validation", () => {
+  // The authorize body must be RELATIVE admin paths, not absolute URLs, so the
+  // Stripe-hosted setup link can't be turned into an open redirect. Validation
+  // runs before the Stripe-config check, so absolute/protocol-relative inputs
+  // 400 without needing Stripe wired; a valid relative path passes validation
+  // and then 503s at the (unconfigured-in-test) Stripe-config gate.
+  it("rejects absolute success/cancel URLs with 400", async () => {
+    mockAdmin.current = CSR;
+    const res = await request(makeApp())
+      .post(`/admin/payment-plans/${PLAN_ID}/authorize-autopay`)
+      .send({
+        successPath: "https://evil.example/finish",
+        cancelPath: "https://evil.example/cancel",
+      });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("invalid_body");
+  });
+
+  it("rejects a protocol-relative path (//host) with 400", async () => {
+    mockAdmin.current = CSR;
+    const res = await request(makeApp())
+      .post(`/admin/payment-plans/${PLAN_ID}/authorize-autopay`)
+      .send({
+        successPath: "//evil.example/ok",
+        cancelPath: "/admin/patients/x?autopay=cancelled",
+      });
+    expect(res.status).toBe(400);
+  });
+
+  it("accepts relative admin paths (passes validation, 503 at the Stripe gate)", async () => {
+    mockAdmin.current = CSR;
+    const res = await request(makeApp())
+      .post(`/admin/payment-plans/${PLAN_ID}/authorize-autopay`)
+      .send({
+        successPath: `/admin/patients/${PATIENT_ID}?autopay=ok`,
+        cancelPath: `/admin/patients/${PATIENT_ID}?autopay=cancelled`,
+      });
+    expect(res.status).toBe(503);
+    expect(res.body.error).toBe("stripe_not_configured");
+  });
+});

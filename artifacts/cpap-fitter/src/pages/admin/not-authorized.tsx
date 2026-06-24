@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
 
+import { toast } from "@/hooks/use-toast";
 import { useDashboardIdentity } from "@/lib/admin/identity";
 import { clearAllDrafts } from "@/lib/admin/use-draft-autosave";
 import { PLATFORM_NAME, useStorefrontBranding } from "@/lib/branding";
@@ -243,11 +244,27 @@ export function NotAuthorizedPage({
                     // Drop any persisted reply drafts before sign-out so
                     // PHI doesn't survive across admin sessions.
                     clearAllDrafts();
-                    void signOut().finally(() => {
-                      // Soft navigate via wouter — the identity shim
-                      // handles cookie + cache cleanup on its own.
-                      setNotAuthLocation("/admin/sign-in");
-                    });
+                    // Navigate ONLY on success — a failed /sign-out leaves the
+                    // session cookie valid, so navigating to the sign-in screen
+                    // would be a false sign-out (the admin is still
+                    // authenticated). Stay put + re-enable the button + warn.
+                    void signOut().then(
+                      () => {
+                        // Soft navigate via wouter — the identity shim
+                        // handles cookie + cache cleanup on its own.
+                        setNotAuthLocation("/admin/sign-in");
+                      },
+                      (err: unknown) => {
+                        console.error("admin sign-out failed", err);
+                        setIsSigningOut(false);
+                        toast({
+                          variant: "destructive",
+                          title: "Sign-out failed",
+                          description:
+                            "You're still signed in. Check your connection and try again.",
+                        });
+                      },
+                    );
                   }}
                   disabled={isSigningOut}
                   aria-busy={isSigningOut}
