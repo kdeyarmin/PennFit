@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   applyRequiredModifierBaseline,
   buildClaimLineRows,
+  cappedRentalRotationForLine,
   type ProposedClaimLine,
 } from "./claim-builder";
 
@@ -19,6 +20,51 @@ function line(overrides: Partial<ProposedClaimLine> = {}): ProposedClaimLine {
     ...overrides,
   };
 }
+
+describe("cappedRentalRotationForLine", () => {
+  it("returns the CMS rotation for an adherence-gated capped-rental code", () => {
+    // Month 1 → KH; months 2-3 → KI; months 4+ → KJ (+ KX when compliant).
+    expect(cappedRentalRotationForLine("E0601", 1, false)).toEqual([
+      "RR",
+      "KH",
+    ]);
+    expect(cappedRentalRotationForLine("E0601", 2, false)).toEqual([
+      "RR",
+      "KI",
+    ]);
+    expect(cappedRentalRotationForLine("E0601", 3, true)).toEqual(["RR", "KI"]);
+    // The bug fixed here: months 4+ must be KJ (not the old seed's KI), and KX
+    // only rides along when adherence is documented.
+    expect(cappedRentalRotationForLine("E0601", 4, true)).toEqual([
+      "RR",
+      "KJ",
+      "KX",
+    ]);
+    expect(cappedRentalRotationForLine("E0601", 5, false)).toEqual([
+      "RR",
+      "KJ",
+    ]);
+    // Other adherence-gated codes follow the same rotation.
+    expect(cappedRentalRotationForLine("E0470", 4, true)).toEqual([
+      "RR",
+      "KJ",
+      "KX",
+    ]);
+    expect(cappedRentalRotationForLine("E0471", 1, false)).toEqual([
+      "RR",
+      "KH",
+    ]);
+  });
+
+  it("returns [] for a non-capped-rental code (no spurious RR on supplies)", () => {
+    expect(cappedRentalRotationForLine("A7034", 4, true)).toEqual([]);
+    expect(cappedRentalRotationForLine("A7030", 1, false)).toEqual([]);
+  });
+
+  it("returns [] when the rental month is unknown", () => {
+    expect(cappedRentalRotationForLine("E0601", null, true)).toEqual([]);
+  });
+});
 
 describe("applyRequiredModifierBaseline", () => {
   it("prepends the first required modifier when none are present", () => {

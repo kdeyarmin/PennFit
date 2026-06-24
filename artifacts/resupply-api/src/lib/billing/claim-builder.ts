@@ -32,10 +32,35 @@ import {
   buildAbnScope,
   resolveModifiersFromRules,
 } from "./modifier-rules";
+import {
+  CAPPED_RENTAL_KX_HCPCS,
+  pickCappedRentalModifiers,
+} from "@workspace/resupply-domain";
 import { fetchUnitCostsBySku } from "./product-cost-lookup";
 import { pickFeeScheduleRowByModifiers } from "./fee-schedule-match";
 
 type SupabaseClient = OrgScopedClient;
+
+/**
+ * Capped-rental modifier rotation (RR + KH/KI/KJ, plus KX) for a claim line,
+ * or `[]` when the line isn't an adherence-gated capped-rental code or the
+ * rental month is unknown. This rotation is a CMS sequence the per-condition
+ * payer-rule engine cannot express (KJ on months 4+, and KX only when
+ * months>=4 AND adherence is documented — a conjunction), so both the manual
+ * claim builder and the auto-advance worker take it from the same shared
+ * pickCappedRentalModifiers(). Exported for direct testing.
+ */
+export function cappedRentalRotationForLine(
+  hcpcsCode: string,
+  rentalMonth: number | null,
+  isCompliant: boolean,
+): string[] {
+  if (!(CAPPED_RENTAL_KX_HCPCS as readonly string[]).includes(hcpcsCode)) {
+    return [];
+  }
+  if (rentalMonth === null) return [];
+  return pickCappedRentalModifiers(hcpcsCode, rentalMonth, isCompliant);
+}
 
 export interface ProposedClaimLine {
   hcpcsCode: string;
@@ -357,10 +382,21 @@ export async function buildClaimFromFulfillment(
         lineItem.hcpcsCode,
         lineCtx,
       );
-      // Merge + dedupe modifiers while preserving order; the EDI
-      // builder accepts up to 4 modifiers per line.
+      // Capped-rental rotation (see cappedRentalRotationForLine): the manual
+      // path and the auto-advance worker share pickCappedRentalModifiers() so a
+      // hand-built claim and an auto-advanced one carry IDENTICAL, CMS-correct
+      // modifiers. The DB's coarse KH-months-1-3 / KI-months-4+ seed rows for
+      // these codes were wrong and are dropped in migration 0474.
+      const cappedRotation = cappedRentalRotationForLine(
+        lineItem.hcpcsCode,
+        lineCtx.rentalMonth,
+        lineCtx.isCompliant,
+      );
+      // Merge + dedupe modifiers while preserving order (rotation first so the
+      // canonical RR/KH/KI/KJ ordering leads); the EDI builder accepts up to 4
+      // modifiers per line.
       const merged: string[] = [];
-      for (const m of [...lineItem.modifiers, ...extra]) {
+      for (const m of [...cappedRotation, ...lineItem.modifiers, ...extra]) {
         if (!merged.includes(m)) merged.push(m);
       }
       lineItem.modifiers = merged.slice(0, 4);
