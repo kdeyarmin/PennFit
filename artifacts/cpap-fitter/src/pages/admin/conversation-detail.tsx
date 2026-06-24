@@ -42,6 +42,7 @@ import {
   type CoachingNoteKind,
 } from "@/lib/admin/coaching-notes-api";
 import { triageApi } from "@/lib/admin/conversation-triage-api";
+import { ConversationEscalatePanel } from "@/components/admin/ConversationEscalatePanel";
 import { Patient360Panel } from "@/components/admin/Patient360Panel";
 import { Customer360Panel } from "@/components/admin/Customer360Panel";
 import { ConversationAssignmentBar } from "@/components/admin/ConversationAssignmentBar";
@@ -349,6 +350,21 @@ export function ConversationDetailPage({ id }: { id: string }) {
             }
             onChanged={() => void refetch()}
           />
+
+          {(data.patientId || data.customerId) && (
+            <ConversationEscalatePanel
+              conversationId={data.id}
+              patientId={data.patientId ?? null}
+              customerId={data.customerId ?? null}
+              subjectLabel={
+                data.patientId
+                  ? fullName(data.patientFirstName, data.patientLastName)
+                  : (data.customerDisplayName ??
+                    data.customerEmail ??
+                    "shop customer")
+              }
+            />
+          )}
 
           <CoachingNotesPanel
             conversationId={data.id}

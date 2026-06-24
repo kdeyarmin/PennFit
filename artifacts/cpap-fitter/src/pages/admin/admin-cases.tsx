@@ -6,7 +6,7 @@
 // Renders the F4 /admin/cases CRUD. cases.read to view, cases.manage to
 // mutate (both in the CSR tier). Nav gated on cases.read.
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FolderKanban, Plus, Link2 } from "lucide-react";
 
@@ -88,6 +88,25 @@ export function AdminCasesPage() {
       else next.add(id);
       return next;
     });
+
+  // Open the case named in ?case=<id> on mount — surfaces like the
+  // conversation "Open a case" action deep-link here. Switch to the "all"
+  // filter so the case is visible whatever its status, expand it, then strip
+  // the param so a refresh doesn't force it back open.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const caseId = params.get("case");
+    if (!caseId) return;
+    setFilter("all");
+    setExpandedIds((prev) => new Set(prev).add(caseId));
+    params.delete("case");
+    const qs = params.toString();
+    window.history.replaceState(
+      null,
+      "",
+      window.location.pathname + (qs ? `?${qs}` : ""),
+    );
+  }, []);
 
   return (
     <div className="p-6 space-y-6 max-w-4xl" data-testid="admin-cases-page">
