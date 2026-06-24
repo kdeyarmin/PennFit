@@ -176,7 +176,14 @@ router.get(
       const forceDownload = req.query.download === "1";
       const disposition = forceDownload ? "attachment" : "inline";
       if (row.filename) {
-        const safeAscii = row.filename.replace(/[^\x20-\x7E]/g, "_");
+        // Strip non-printable chars AND the `"` / `\` that would let a
+        // filename like `evil"; attachment; filename="other.jpg` break out
+        // of the quoted value and inject a sibling Content-Disposition
+        // field. The RFC 5987-style filename*=UTF-8'' value is
+        // encodeURIComponent-safe. Mirrors shop/me-documents.
+        const safeAscii = row.filename
+          .replace(/[^\x20-\x7E]/g, "_")
+          .replace(/["\\]/g, "_");
         const encoded = encodeURIComponent(row.filename);
         res.setHeader(
           "Content-Disposition",
