@@ -180,7 +180,11 @@ export function ShopFilterBar({
       {!isSearching && categories.length > 0 && (
         <div
           className="mt-2 -mx-1 px-1 flex gap-1.5 overflow-x-auto pb-0.5 scrollbar-thin"
-          role="tablist"
+          // These are scroll-to-category buttons (jumpTo), not tabs — there are
+          // no tabpanels and no selected-tab state. role="tablist" is invalid
+          // here (axe aria-required-children: a tablist's children must be
+          // role="tab"), so use a labeled group of buttons instead.
+          role="group"
           aria-label="Jump to category"
         >
           <button

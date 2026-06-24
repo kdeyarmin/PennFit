@@ -38,6 +38,7 @@ import type {
   OffSessionCharger,
   OffSessionChargeResult,
 } from "../../lib/billing/payment-plan-autocharge.js";
+import { practiceTodayIso } from "../../lib/billing-date.js";
 import { isFeatureEnabled } from "../../lib/feature-flags.js";
 import {
   getStripeClient,
@@ -196,7 +197,9 @@ async function patientAutopayChargeForOrg(
   // platform account (seed / not-yet-onboarded); `{ stripeAccount }` once the
   // tenant's connected account has charges_enabled.
   const accountOptions = await stripeAccountRequestOptions(orgId);
-  const todayIso = new Date().toISOString().slice(0, 10);
+  // Practice-local business date, not UTC (see payment-plan-autocharge): a
+  // balance "due today" must be evaluated on the practice's local calendar day.
+  const todayIso = practiceTodayIso();
 
   // Keyset-page the enabled authorizations: PostgREST caps each
   // response at ~1000 rows, and an unpaginated read would silently

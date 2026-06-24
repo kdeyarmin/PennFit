@@ -400,6 +400,21 @@ function buildRealtimeConfig(
     if (!row.realtime_enabled || !row.realtime_url) {
       return null;
     }
+    // The real-time POST carries PHI (the X12 270 with name/DOB/member id) and
+    // the API key in the Authorization header, and the URL is operator-supplied
+    // (admin Clearinghouse config). Enforce the SAME https + officeally.io
+    // allowlist the env reader and the discovery path apply — a DB row must not
+    // be a way around it. A bad/typo'd/cleartext URL fails closed (real-time
+    // unavailable, falling back to SFTP submit-and-poll) rather than
+    // exfiltrating PHI + the API key to an attacker-chosen host. The URL itself
+    // is non-PHI and safe to log for the operator to fix.
+    if (!isAllowedOfficeAllyEdiUrl(row.realtime_url)) {
+      logger.warn(
+        { event: "realtime_url_rejected", url: row.realtime_url },
+        "identity-resolver: realtime_url is not an https officeally.io URL; disabling real-time eligibility",
+      );
+      return null;
+    }
     // API-key precedence: the DB row's stored key wins (the
     // `realtime_password` column carries the Authorization header value),
     // with OFFICE_ALLY_REALTIME_API_KEY / _PASSWORD as the env fallback

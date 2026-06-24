@@ -230,6 +230,10 @@ async function buildClinicalInsightReport(
       // rather than failing the whole report.
       supabase.raw().schema("resupply").rpc("therapy_clinical_metrics", {
         p_patient_ids: ids,
+        // Org-scope the SECURITY DEFINER RPC (migration 0472): it only returns
+        // metrics for patients that belong to p_org_id, so a stray foreign
+        // patient id can never surface another tenant's therapy numbers.
+        p_org_id: orgId,
         p_window_days: METRICS_WINDOW_DAYS,
       }),
     ]);

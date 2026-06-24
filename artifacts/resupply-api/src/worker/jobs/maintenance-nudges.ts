@@ -253,6 +253,13 @@ async function maintenanceNudgeSweepForOrg(
       .from("patients")
       .select("id, email")
       .not("email", "is", null)
+      // Only ACTIVE patients get hygiene-maintenance email. Every other
+      // patient-send path gates on status === 'active' (reminders
+      // send-sms/send-email, escalation planning); this job was the outlier
+      // and would email paused / discharged / deceased patients who happened
+      // to have engaged with a maintenance task in the past. Filter in-DB so
+      // inactive rows don't consume the scan budget either.
+      .eq("status", "active")
       .gt("id", lastPatientId);
     const filteredQuery = excludeFilter
       ? baseQuery.not("id", "in", excludeFilter)

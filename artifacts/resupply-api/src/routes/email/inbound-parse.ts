@@ -358,6 +358,35 @@ router.post("/email/inbound-parse", inboundParseLimiter, async (req, res) => {
   const sendgridMessageId = extractMessageIdHeader(parsed.fields.headers);
 
   const inboundIso = inboundAt.toISOString();
+
+  // Replay protection. SendGrid Inbound Parse carries no vendor signature —
+  // basic auth is the only gate, so a captured (authenticated) POST can be
+  // replayed verbatim and would otherwise insert a duplicate inbound message
+  // (duplicate PHI in the inbox) and re-trigger the auto-reply. When the email
+  // carries a Message-ID, skip if we've already stored it (mirrors the SMS
+  // MessageSid pre-check). The companion migration
+  // (0473_messages_sendgrid_message_id_unique.sql) enforces uniqueness at the
+  // storage layer too; this pre-check returns a clean 200 instead of a 500 on
+  // the duplicate-key violation.
+  if (sendgridMessageId) {
+    const { data: existingMsg, error: dupErr } = await supabase
+      .from("messages")
+      .select("id")
+      .eq("direction", "inbound")
+      .filter("vendor_metadata->>sendgrid_message_id", "eq", sendgridMessageId)
+      .limit(1)
+      .maybeSingle();
+    if (dupErr) throw dupErr;
+    if (existingMsg) {
+      req.log?.info?.(
+        { event: "email_inbound_duplicate_message_id" },
+        "email.inbound-parse: duplicate Message-ID — replayed webhook discarded",
+      );
+      res.status(200).json({ ok: true, deduped: true });
+      return;
+    }
+  }
+
   const { data: insertedMsg, error: insertMsgErr } = await supabase
     .from("messages")
     .insert({

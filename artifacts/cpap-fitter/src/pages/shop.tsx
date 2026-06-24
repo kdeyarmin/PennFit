@@ -833,7 +833,9 @@ function ProductCard({
           {oneTimeOutOfStock ? (
             <Badge
               variant="outline"
-              className="border-slate-300 text-slate-500 bg-slate-100 font-semibold"
+              // text-slate-600 (#475569) on bg-slate-100 clears WCAG AA 4.5:1;
+              // the prior text-slate-500 was 4.34:1 (axe color-contrast).
+              className="border-slate-300 text-slate-600 bg-slate-100 font-semibold"
               data-testid={`shop-stock-out-${product.id}`}
             >
               Out of stock

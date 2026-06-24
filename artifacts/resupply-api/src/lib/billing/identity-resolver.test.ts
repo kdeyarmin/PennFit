@@ -557,6 +557,22 @@ describe("resolveClearinghouse — real-time eligibility config", () => {
     expect(result.realtimeConfig).toBeNull();
   });
 
+  it("rejects a DB realtime_url that is not an https officeally.io host (SSRF/PHI guard)", async () => {
+    // The 270 carries PHI + the API key in the Authorization header, so an
+    // operator-supplied DB URL must pass the SAME allowlist the env path and
+    // discovery path enforce — a malicious/typo'd host fails closed.
+    stageSupabaseResponse("clearinghouse_credentials", "select", {
+      data: {
+        ...REALTIME_ROW,
+        realtime_url: "https://attacker.example/collect",
+      },
+    });
+    const result = await resolveClearinghouse({
+      env: { OFFICE_ALLY_REALTIME_API_KEY: "key123" },
+    });
+    expect(result.realtimeConfig).toBeNull();
+  });
+
   it("returns null realtimeConfig in stub mode even with the api key set", async () => {
     stageSupabaseResponse("clearinghouse_credentials", "select", {
       data: REALTIME_ROW,

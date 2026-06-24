@@ -22,13 +22,14 @@ import {
   type OrgScopedClient,
 } from "@workspace/resupply-db";
 import {
-  CMS_COMPLIANT_NIGHTS,
-  COMPLIANT_MINUTES_PER_NIGHT,
+  type AdherenceNight,
   decideCappedRentalAdvance,
+  findBestAdherenceWindow,
   pickCappedRentalModifiers,
 } from "@workspace/resupply-domain";
 
 import { logger } from "../logger";
+import { therapyNightSourceRank } from "../therapy-night-source-priority";
 
 type SupabaseClient = OrgScopedClient;
 
@@ -283,24 +284,52 @@ async function isPatientCompliant(
   supabase: SupabaseClient,
   patientId: string,
 ): Promise<boolean> {
-  const since = new Date(Date.now() - 30 * 24 * 3600 * 1000)
-    .toISOString()
-    .slice(0, 10);
-  const { data: nights, error: nightsErr } = await supabase
+  // KX asserts the patient met Medicare LCD L33718 adherence (≥4h on ≥21 of
+  // 30 consecutive CALENDAR days within the first 90 days of therapy). Use the
+  // SAME canonical window finder the compliance attestation + referral reports
+  // use (findBestAdherenceWindow) so the modifier we put on the wire matches
+  // what we would attest to the payer — instead of a divergent "count reported
+  // nights in the last 30 days" heuristic that (a) double-counted a calendar
+  // day reported by multiple integration sources and (b) could be truncated by
+  // a LIMIT. Dedupe by night via the shared source-priority ranking first.
+  const { data: nightRowsRaw, error: nightsErr } = await supabase
     .from("patient_therapy_nights")
-    .select("usage_minutes")
+    .select("night_date, source, usage_minutes")
     .eq("patient_id", patientId)
-    .gte("night_date", since)
-    .limit(60);
+    .order("night_date", { ascending: true });
   // Throw: a swallowed read error would silently classify the patient
   // non-compliant, dropping the KX modifier from a real claim (payer
   // denial). The caller's per-cycle catch counts it as errored instead.
   if (nightsErr) throw nightsErr;
-  const compliant = (nights ?? []).filter(
-    (n: Database["resupply"]["Tables"]["patient_therapy_nights"]["Row"]) =>
-      (n.usage_minutes ?? 0) >= COMPLIANT_MINUTES_PER_NIGHT,
-  ).length;
-  return compliant >= CMS_COMPLIANT_NIGHTS;
+  const nightRows = (nightRowsRaw ?? []) as Array<{
+    night_date: string;
+    source: string;
+    usage_minutes: number | null;
+  }>;
+  if (nightRows.length === 0) return false;
+
+  const byDate = new Map<string, (typeof nightRows)[number]>();
+  for (const row of nightRows) {
+    if (!row.night_date) continue;
+    const existing = byDate.get(row.night_date);
+    if (
+      !existing ||
+      therapyNightSourceRank(row.source) <
+        therapyNightSourceRank(existing.source)
+    ) {
+      byDate.set(row.night_date, row);
+    }
+  }
+  const nights: AdherenceNight[] = Array.from(byDate.values())
+    .map((r) => ({ date: r.night_date, usageMinutes: r.usage_minutes }))
+    .sort((a, b) => (a.date < b.date ? -1 : 1));
+  if (nights.length === 0) return false;
+
+  const anchorDate = nights[0]!.date;
+  // Match the attestation/referral path's asOf (UTC calendar day) so the KX
+  // determination is identical to the document we'd fax the payer.
+  const asOfDate = new Date().toISOString().slice(0, 10);
+  return findBestAdherenceWindow(nights, anchorDate, asOfDate).qualifies;
 }
 
 async function defaultBilledForHcpcs(

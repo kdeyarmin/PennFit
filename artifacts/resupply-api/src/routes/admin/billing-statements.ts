@@ -32,7 +32,20 @@ const body = z
       .regex(/^\d{4}-\d{2}-\d{2}$/)
       .nullable()
       .optional(),
-    paymentUrl: z.string().url().max(500).nullable().optional(),
+    paymentUrl: z
+      .string()
+      .trim()
+      .url()
+      .max(500)
+      // http(s) only — a bare z.string().url() accepts javascript:/data: URLs,
+      // and this value is rendered into mailed statement PDFs. Matches the
+      // httpUrl() guard used on shop-returns / equipment-recalls.
+      .refine(
+        (u) => /^https?:\/\//i.test(u),
+        "URL must use http or https protocol",
+      )
+      .nullable()
+      .optional(),
     deliveryMethod: z.enum(["email", "sms", "mail", "in_person"]).optional(),
   })
   .strict()

@@ -1,6 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { BookOpen, HelpCircle, Wrench, Heart, Sparkles } from "lucide-react";
 
+import { safeHref } from "@/lib/safe-url";
+
 import {
   fetchEducationFeed,
   type EducationCategory,
@@ -66,7 +68,7 @@ export function EducationFeedSection() {
         {data.articles.map((a) => (
           <li key={a.slug}>
             <a
-              href={a.slug}
+              href={safeHref(a.slug) ?? "#"}
               className="block rounded-xl border p-3 hover:shadow-sm transition-shadow"
               style={{ borderColor: "hsl(var(--line-1))" }}
             >

@@ -355,6 +355,109 @@ describe("runCappedRentalAdvance — defaultBilledForHcpcs fallback paths", () =
 });
 
 // ---------------------------------------------------------------------------
+// CMS adherence gate for the KX modifier (findBestAdherenceWindow)
+// ---------------------------------------------------------------------------
+
+// `n` consecutive compliant (≥4h) nights ending `endDaysAgo` days before today,
+// anchored far enough in the past that a full 30-day window has elapsed.
+function datedNights(n: number, endDaysAgo: number) {
+  const rows: Array<{
+    night_date: string;
+    source: string;
+    usage_minutes: number;
+  }> = [];
+  for (let i = 0; i < n; i++) {
+    const d = new Date();
+    d.setUTCDate(d.getUTCDate() - (endDaysAgo + (n - 1 - i)));
+    rows.push({
+      night_date: d.toISOString().slice(0, 10),
+      source: "manual",
+      usage_minutes: 300,
+    });
+  }
+  return rows;
+}
+
+describe("runCappedRentalAdvance — KX adherence gate", () => {
+  // Month 4+ is where KX applies. start_date long ago so a 30-day window has
+  // elapsed and the advancer enters the advance branch.
+  const month4Cycle = { ...BASE_CYCLE, current_month: 3 };
+
+  function stageMonth4(nights: Array<Record<string, unknown>>) {
+    stageSupabaseResponse("capped_rental_cycles", "select", {
+      data: [month4Cycle],
+      error: null,
+    });
+    stageSupabaseResponse("patient_therapy_nights", "select", {
+      data: nights,
+      error: null,
+    });
+    stageSupabaseResponse("payer_profiles", "select", {
+      data: { display_name: "BCBS", payer_legal_name: "BCBS" },
+      error: null,
+    });
+    stageSupabaseResponse("payer_fee_schedules", "select", {
+      data: { allowed_cents: 25000 },
+      error: null,
+    });
+    stageSupabaseResponse("capped_rental_cycles", "update", {
+      data: [{ id: "cycle-001" }],
+      error: null,
+    });
+    stageSupabaseResponse("insurance_claims", "insert", {
+      data: { id: "claim-kx" },
+      error: null,
+    });
+    stageSupabaseResponse("insurance_claim_line_items", "insert", {
+      data: null,
+      error: null,
+    });
+    stageSupabaseResponse("insurance_claim_events", "insert", {
+      data: null,
+      error: null,
+    });
+    stageSupabaseResponse("capped_rental_cycles", "update", {
+      data: null,
+      error: null,
+    });
+  }
+
+  function lineModifier(): string {
+    const [line] = supabaseMock.writePayloads(
+      "insurance_claim_line_items",
+      "insert",
+    ) as Array<Record<string, unknown>>;
+    return String(line!.modifier ?? "");
+  }
+
+  it("applies KX when the patient has ≥21 of 30 compliant calendar days", async () => {
+    // 25 distinct compliant calendar days, anchored ~60 days ago.
+    stageMonth4(datedNights(25, 36));
+    const stats = await runCappedRentalAdvance();
+    expect(stats.advanced).toBe(1);
+    expect(lineModifier()).toContain("KX");
+  });
+
+  it("omits KX when too few distinct compliant calendar days exist", async () => {
+    stageMonth4(datedNights(10, 36));
+    const stats = await runCappedRentalAdvance();
+    expect(stats.advanced).toBe(1);
+    expect(lineModifier()).not.toContain("KX");
+  });
+
+  it("does NOT double-count a calendar day reported by multiple sources", async () => {
+    // 15 distinct days, each reported by two sources (30 rows) → 15 < 21,
+    // so duplicates must NOT inflate the patient to compliant.
+    const base = datedNights(15, 36);
+    const dupes = base.map((r) => ({ ...r, source: "resmed_airview" }));
+    stageMonth4([...base, ...dupes]);
+    const stats = await runCappedRentalAdvance();
+    expect(stats.advanced).toBe(1);
+    expect(lineModifier()).not.toContain("KX");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Stats and advance logic
 // ---------------------------------------------------------------------------
 

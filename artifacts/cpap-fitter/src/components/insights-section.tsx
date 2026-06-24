@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "wouter";
 import { Activity, ArrowRight, Sparkles, X } from "lucide-react";
+
+import { safeHref } from "@/lib/safe-url";
 import {
   dismissInsight,
   fetchInsights,
@@ -173,7 +175,7 @@ function InsightCard({
       </div>
       <div className="flex justify-end">
         <Link
-          href={insight.cta.url}
+          href={safeHref(insight.cta.url) ?? "#"}
           className="inline-flex items-center gap-1 text-xs font-medium text-[hsl(var(--penn-navy))] hover:underline"
           data-testid={`account-insight-cta-${insight.kind}`}
         >
