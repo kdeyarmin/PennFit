@@ -7,6 +7,7 @@
 // backed by GET /admin/reorder-reminders/funnel.
 
 import { useState, type ReactNode } from "react";
+import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { BellRing, CheckCircle2, PhoneCall, Send, Truck } from "lucide-react";
 
@@ -76,6 +77,15 @@ export function AdminReorderRemindersPage() {
           How the SMS → email → call reminder ladder converts due episodes into
           shipped reorders, and which channel is doing the work.
         </p>
+        {/* This board reports the funnel; act on the supplies that are due
+            in the Resupply Opportunities worklist. */}
+        <Link
+          href="/admin/therapy-resupply"
+          className="mt-1 inline-block text-xs font-medium underline decoration-dotted"
+          style={{ color: "hsl(var(--penn-navy))" }}
+        >
+          Work resupply opportunities →
+        </Link>
       </header>
 
       <Card

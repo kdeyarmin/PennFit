@@ -9,6 +9,7 @@
 // cost.read-gated server-side; nav gated to match. Aggregates only.
 
 import { useState } from "react";
+import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Boxes } from "lucide-react";
 
@@ -206,11 +207,17 @@ function ProductTable({ products }: { products: InvProductRow[] }) {
               className="border-t border-slate-100 hover:bg-slate-50"
             >
               <td className="px-3 py-2">
-                {p.productName ?? (
-                  <span className="font-mono text-xs text-slate-500">
-                    {p.productId}
-                  </span>
-                )}
+                {/* A slow mover is only actionable if you can open it. */}
+                <Link
+                  href={`/admin/shop/inventory/${p.productId}/edit`}
+                  className="underline decoration-dotted hover:text-slate-700"
+                >
+                  {p.productName ?? (
+                    <span className="font-mono text-xs text-slate-500">
+                      {p.productId}
+                    </span>
+                  )}
+                </Link>
               </td>
               <td className="px-3 py-2 text-right tabular-nums">
                 {p.onHandQty ?? <span className="text-amber-700">—</span>}
@@ -232,7 +239,19 @@ function ProductTable({ products }: { products: InvProductRow[] }) {
                   color: p.waitingCount > 0 ? "#b45309" : "hsl(var(--ink-3))",
                 }}
               >
-                {p.waitingCount}
+                {p.waitingCount > 0 ? (
+                  // Drill to the back-in-stock / backorder queue to clear the
+                  // waitlist this demand represents.
+                  <Link
+                    href="/admin/shop/backorders"
+                    className="underline decoration-dotted"
+                    style={{ color: "inherit" }}
+                  >
+                    {p.waitingCount}
+                  </Link>
+                ) : (
+                  p.waitingCount
+                )}
               </td>
               <td className="px-3 py-2 text-right tabular-nums">
                 {p.stockoutDemandCents != null
