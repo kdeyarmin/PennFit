@@ -87,10 +87,30 @@ async function stampLinkSkipped(
  * We normalize in place: ISO timestamps -> YYYY-MM-DD, numerics
  * rounded/clamped to the schema shape (non-negative int | non-negative
  * number | null), drop ONLY the individual nights whose date can't be
- * salvaged, and strip any extra keys (the night schema is exact). Non-night
- * fields are left untouched — a malformed settings/compliance block is a
- * different, rarer failure handled by the safeParse below.
+ * salvaged, and strip any extra keys (the night schema is exact). The
+ * `supplies` array gets the same treatment: its `lastReplacedDate` /
+ * `nextEligibleDate` are date-coerced (both are nullable, so an
+ * unsalvageable value becomes null rather than dropping the line), and a
+ * line whose structural fields (`category` / `description`) are unusable is
+ * dropped on its own — so a single vendor supply line returning a full ISO
+ * timestamp can no longer nuke the whole snapshot (every valid night,
+ * setting, and compliance figure with it). A malformed settings/compliance
+ * block is a different, rarer failure still handled by the safeParse below.
  */
+// Valid supply categories, mirroring `supplyItemSchema.category`
+// (lib/resupply-integrations). A line whose category isn't one of these
+// can't satisfy the schema, so it's dropped individually rather than
+// failing the whole snapshot.
+const SUPPLY_CATEGORIES = new Set([
+  "mask",
+  "cushion",
+  "headgear",
+  "tubing",
+  "filter",
+  "humidifier_chamber",
+  "other",
+]);
+
 export function normalizeSnapshotForPersistence(snapshot: unknown): unknown {
   if (!snapshot || typeof snapshot !== "object") return snapshot;
   const snap = snapshot as Record<string, unknown>;
@@ -143,7 +163,48 @@ export function normalizeSnapshotForPersistence(snapshot: unknown): unknown {
     );
   }
 
-  return { ...snap, recentNights: normalizedNights };
+  // Supplies get the same salvage treatment. The date fields are nullable,
+  // so a non-date value (e.g. a full ISO timestamp) coerces to null rather
+  // than dropping the line; only a line with an unusable category/description
+  // is dropped on its own. Without this, one bad supply date fails the strict
+  // schema and discards the ENTIRE snapshot (the same "reads successful,
+  // persists zero data" mode the night normalization prevents).
+  const supplies = snap.supplies;
+  if (!Array.isArray(supplies)) {
+    return { ...snap, recentNights: normalizedNights };
+  }
+  const normalizedSupplies = supplies.flatMap((raw) => {
+    if (!raw || typeof raw !== "object") return [];
+    const s = raw as Record<string, unknown>;
+    if (typeof s.category !== "string" || !SUPPLY_CATEGORIES.has(s.category)) {
+      return []; // unusable structural field -> drop only this line
+    }
+    if (typeof s.description !== "string") return [];
+    return [
+      {
+        category: s.category,
+        description: s.description,
+        lastReplacedDate: toDate(s.lastReplacedDate),
+        nextEligibleDate: toDate(s.nextEligibleDate),
+      },
+    ];
+  });
+  if (normalizedSupplies.length < supplies.length) {
+    logger.warn(
+      {
+        event: "therapy_sync_supplies_dropped",
+        received: supplies.length,
+        kept: normalizedSupplies.length,
+      },
+      "therapy-nightly-sync: dropped supply lines with unusable category/description during normalization",
+    );
+  }
+
+  return {
+    ...snap,
+    recentNights: normalizedNights,
+    supplies: normalizedSupplies,
+  };
 }
 
 export async function registerTherapyNightlySyncJob(

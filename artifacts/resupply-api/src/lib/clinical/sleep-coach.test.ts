@@ -372,3 +372,46 @@ describe("askSleepCoach — OpenAI fallback path (tools)", () => {
     }
   });
 });
+
+describe("askSleepCoach — per-tenant branding", () => {
+  it("rewrites the seed 'PennPaps' brand in the prompt AND the reply to the host tenant", async () => {
+    stageEmptyContext();
+    // A non-seed tenant's company identity (source: "database"), so
+    // applyCompanyIdentityToText rewrites the canonical placeholders.
+    stageSupabaseResponse("dme_organization", "select", {
+      data: {
+        legal_name: "Acme Sleep LLC",
+        dba_name: "Acme Sleep",
+        org_id: "org-acme-brand-test",
+      },
+    });
+
+    let capturedSystem = "";
+    const client = makeClient(
+      // The model echoes the seed brand; the I/O-boundary rewrite must
+      // catch it on the way out.
+      [textResponse("Thanks for choosing PennPaps — try the top strap.")],
+      (req) => {
+        const sys = req.system;
+        if (Array.isArray(sys) && sys[0] && typeof sys[0] === "object") {
+          capturedSystem = (sys[0] as { text?: string }).text ?? "";
+        }
+      },
+    );
+
+    const result = await askSleepCoach({
+      patientId: "pt_brand",
+      question: "My mask is leaking — help?",
+      anthropicClient: client,
+      orgId: "org-acme-brand-test",
+    });
+
+    // Prompt was branded before it reached the model.
+    expect(capturedSystem).toContain("Acme Sleep");
+    expect(capturedSystem).not.toContain("PennPaps");
+    // And the model's reply was branded on the way back to the patient.
+    expect(result.reply).toBe(
+      "Thanks for choosing Acme Sleep — try the top strap.",
+    );
+  });
+});

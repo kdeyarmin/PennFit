@@ -112,6 +112,68 @@ describe("normalizeSnapshotForPersistence — per-night resilience", () => {
     expect(parsed.data.recentNights[1]!.nightDate).toBe("2026-01-16");
   });
 
+  it("salvages a supply line with a full ISO timestamp instead of dropping the whole snapshot", () => {
+    const raw = {
+      ...baseSnapshot,
+      recentNights: [
+        {
+          nightDate: "2026-01-16",
+          usageMinutes: 300,
+          ahi: null,
+          leakRateLMin: null,
+          pressureP95Cmh2o: null,
+        },
+      ],
+      supplies: [
+        // Vendor returns a timestamped date — would fail the strict
+        // `^\d{4}-\d{2}-\d{2}$` regex and nuke the entire snapshot.
+        {
+          category: "mask",
+          description: "AirFit P10",
+          lastReplacedDate: "2025-12-01T00:00:00Z",
+          nextEligibleDate: "2026-06-01",
+        },
+        // Non-date garbage -> coerced to null (the field is nullable).
+        {
+          category: "filter",
+          description: "Disposable filter",
+          lastReplacedDate: "whenever",
+          nextEligibleDate: null,
+        },
+      ],
+    };
+    const normalized = normalizeSnapshotForPersistence(raw);
+    const parsed = integrationSnapshotSchema.safeParse(normalized);
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    // Every valid night survived alongside the salvaged supplies.
+    expect(parsed.data.recentNights).toHaveLength(1);
+    expect(parsed.data.supplies).toHaveLength(2);
+    expect(parsed.data.supplies[0]).toMatchObject({
+      category: "mask",
+      lastReplacedDate: "2025-12-01", // ISO timestamp -> date
+      nextEligibleDate: "2026-06-01",
+    });
+    expect(parsed.data.supplies[1]!.lastReplacedDate).toBeNull(); // unsalvageable -> null
+  });
+
+  it("drops only a supply line whose category is unusable, keeping the rest", () => {
+    const raw = {
+      ...baseSnapshot,
+      recentNights: [],
+      supplies: [
+        { category: "not-a-real-category", description: "junk", lastReplacedDate: null, nextEligibleDate: null },
+        { category: "tubing", description: "Standard tube", lastReplacedDate: null, nextEligibleDate: null },
+      ],
+    };
+    const normalized = normalizeSnapshotForPersistence(raw);
+    const parsed = integrationSnapshotSchema.safeParse(normalized);
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    expect(parsed.data.supplies).toHaveLength(1);
+    expect(parsed.data.supplies[0]!.category).toBe("tubing");
+  });
+
   it("leaves a snapshot without recentNights untouched", () => {
     const snap = { ...baseSnapshot };
     expect(normalizeSnapshotForPersistence(snap)).toEqual(snap);
