@@ -480,6 +480,12 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
       // The caller dialed US — the agent must greet first, not wait for
       // the caller to break the silence.
       agentSpeaksFirst: true,
+      // Bind the CallSid from the inbound webhook NOW (unlike the outbound
+      // flow, which only learns the SID post-dial via attachCallSid). Without
+      // this the WS handler runs with twilioCallSid=null until Twilio's `start`
+      // frame lands ~100-500ms in, and any audit/IVR-analytics write in that
+      // window keys on a null SID (e.g. voice_reorder_sessions .eq(twilio_call_sid, null)).
+      twilioCallSid: CallSid,
     });
   } catch (err) {
     // The store is now a DB round-trip and can throw. Fail soft to a human

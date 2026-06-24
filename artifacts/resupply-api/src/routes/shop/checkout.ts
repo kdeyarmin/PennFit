@@ -552,12 +552,30 @@ router.post(
       { onConflict: "stripe_session_id", ignoreDuplicates: true },
     );
     if (upsertErr) {
-      req.log?.error(
-        { err: upsertErr, sessionId: session.id },
-        "shop checkout: shop_orders upsert failed",
-      );
-      res.status(500).json({ error: "shop_order_persist_failed" });
-      return;
+      // `onConflict: stripe_session_id` only swallows a session-id collision.
+      // A unique violation on the SEPARATE partial index
+      // `shop_orders_cart_hash_unique_idx` (migration 0062) is a different
+      // beast: a returning customer re-checking-out an IDENTICAL cart yields a
+      // new Stripe session but the same cart_hash, so the mirror insert trips
+      // that index with Postgres 23505. That's benign — the prior order row
+      // already represents this cart, the Stripe session we just created is
+      // still valid and payable, and markPaid owns the row keyed by
+      // stripe_session_id (it does not set cart_hash, so payment can't collide).
+      // Surfacing it as a 500 would block a legitimate repeat purchase, so we
+      // log and fall through to returning the session URL.
+      if (upsertErr.code === "23505") {
+        req.log?.info(
+          { sessionId: session.id },
+          "shop checkout: duplicate cart_hash; reusing existing order row, returning new session",
+        );
+      } else {
+        req.log?.error(
+          { err: upsertErr, sessionId: session.id },
+          "shop checkout: shop_orders upsert failed",
+        );
+        res.status(500).json({ error: "shop_order_persist_failed" });
+        return;
+      }
     }
 
     res.json({

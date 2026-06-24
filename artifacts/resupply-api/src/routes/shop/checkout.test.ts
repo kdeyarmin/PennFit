@@ -37,6 +37,7 @@ import {
   installSupabaseMock,
   getSupabaseCallCount,
   getSupabaseWritePayloads,
+  stageSupabaseResponse,
 } from "../../test-helpers/supabase-mock";
 
 // ── Supabase mock ─────────────────────────────────────────────────────────────
@@ -362,6 +363,54 @@ describe("POST /shop/checkout — failure modes", () => {
     expect(res.body.error).toBe("stripe_create_failed");
     // The order was never mirrored because the Session was never created.
     expect(getSupabaseCallCount("shop_orders", "upsert")).toBe(0);
+  });
+
+  it("returns 200 with the session when the mirror trips the cart_hash unique index (23505)", async () => {
+    stubStripeConfigured();
+    stubCartValid();
+    // A returning customer re-checks-out an IDENTICAL cart: the new Stripe
+    // session is valid, but the shop_orders mirror collides with the partial
+    // unique index shop_orders_cart_hash_unique_idx (migration 0062) and
+    // PostgREST surfaces Postgres 23505. That is benign — the prior order row
+    // already represents this cart and the new session is still payable, so
+    // the route must NOT 500.
+    stageSupabaseResponse("shop_orders", "upsert", {
+      data: null,
+      error: {
+        code: "23505",
+        message:
+          'duplicate key value violates unique constraint "shop_orders_cart_hash_unique_idx"',
+      },
+    });
+
+    const res = await request(makeApp())
+      .post("/shop/checkout")
+      .send({ items: ONE_ITEM });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ sessionId: SESSION_ID, url: SESSION_URL });
+    // The collision is logged at info (no PHI), not error.
+    expect(reqLog.error).not.toHaveBeenCalled();
+    expect(reqLog.info).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns 500 when the shop_orders mirror fails for a non-conflict reason", async () => {
+    stubStripeConfigured();
+    stubCartValid();
+    // Any DB error that is NOT the benign cart_hash unique violation must still
+    // surface as a 500 — we only special-case 23505.
+    stageSupabaseResponse("shop_orders", "upsert", {
+      data: null,
+      error: { code: "08006", message: "connection failure" },
+    });
+
+    const res = await request(makeApp())
+      .post("/shop/checkout")
+      .send({ items: ONE_ITEM });
+
+    expect(res.status).toBe(500);
+    expect(res.body.error).toBe("shop_order_persist_failed");
+    expect(reqLog.error).toHaveBeenCalledTimes(1);
   });
 
   it("returns 502 when the created Session has no url", async () => {

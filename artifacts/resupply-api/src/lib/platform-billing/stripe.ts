@@ -632,6 +632,41 @@ function subscriptionStatus(sub: Stripe.Subscription): string | null {
   return sub.status ?? null;
 }
 
+/**
+ * Find a platform-billing subscription already living on this Stripe customer.
+ *
+ * Race guard for the double-subscription bug: the
+ * `tenant_billing_subscriptions` row may not yet carry
+ * `stripe_subscription_id` (a concurrent sync — a double-clicked "subscribe",
+ * a retry, a webhook racing the request — created the subscription on Stripe
+ * but hasn't written the id back to the DB yet). Minting a NEW subscription in
+ * that window leaves two active subs on the same customer, both billing, with
+ * the slower DB write orphaning one. So before `subscriptions.create()` we ask
+ * Stripe directly. Stripe can't filter subscriptions by metadata server-side,
+ * so list the customer's subscriptions and match our platform scope + org.
+ * Returns the live (non-terminal) match's id, or null when there's genuinely
+ * nothing to adopt.
+ */
+export async function findExistingPlatformSubscriptionId(
+  stripe: Stripe,
+  customerId: string,
+  orgId: string,
+): Promise<string | null> {
+  const list = await stripe.subscriptions.list({
+    customer: customerId,
+    status: "all",
+    limit: 100,
+  });
+  const match = list.data.find(
+    (s) =>
+      s.metadata?.billing_scope === PLATFORM_BILLING_SCOPE &&
+      s.metadata?.org_id === orgId &&
+      s.status !== "canceled" &&
+      s.status !== "incomplete_expired",
+  );
+  return match?.id ?? null;
+}
+
 export async function syncTenantStripeSubscription(args: {
   orgId: string;
   adminEmail?: string | null;
@@ -824,17 +859,24 @@ export async function syncTenantStripeSubscription(args: {
     tenant_slug: tenant.slug,
     plan_code: plan.code,
   };
+  // Resolve the subscription to update: the DB-recorded id if we have one,
+  // otherwise adopt any platform subscription already on the customer (race
+  // guard — see findExistingPlatformSubscriptionId). Only when BOTH are empty
+  // do we mint a new one.
+  const targetSubId =
+    sub.stripe_subscription_id ??
+    (await findExistingPlatformSubscriptionId(stripe, customer.id, args.orgId));
+
   let stripeSub: Stripe.Subscription;
-  if (sub.stripe_subscription_id) {
-    const existing = await stripe.subscriptions.retrieve(
-      sub.stripe_subscription_id,
-      { expand: ["items"] },
-    );
+  if (targetSubId) {
+    const existing = await stripe.subscriptions.retrieve(targetSubId, {
+      expand: ["items"],
+    });
     const deletedItems = (existing.items?.data ?? []).map((item) => ({
       id: item.id,
       deleted: true,
     }));
-    stripeSub = await stripe.subscriptions.update(sub.stripe_subscription_id, {
+    stripeSub = await stripe.subscriptions.update(targetSubId, {
       metadata,
       items: [
         ...deletedItems,
@@ -844,14 +886,28 @@ export async function syncTenantStripeSubscription(args: {
       expand: ["latest_invoice"],
     });
   } else {
-    stripeSub = await stripe.subscriptions.create({
-      customer: customer.id,
-      items: items as unknown as Stripe.SubscriptionCreateParams.Item[],
-      metadata,
-      collection_method: "send_invoice",
-      days_until_due: 15,
-      expand: ["latest_invoice"],
-    });
+    // Idempotency key bounds the network-retry race: a retried create with the
+    // SAME body returns the SAME subscription within Stripe's 24h window
+    // instead of a duplicate. Keyed on the stable identity of this tenant's
+    // plan subscription (account + org + customer + plan); a real plan change
+    // rotates the key. Combined with the pre-create adoption above, this closes
+    // both the network-retry and the app-level concurrent-create races.
+    const idempotencyKey = createHash("sha256")
+      .update(
+        `platform-subscription|${accountId}|${args.orgId}|${customer.id}|${plan.code}`,
+      )
+      .digest("hex");
+    stripeSub = await stripe.subscriptions.create(
+      {
+        customer: customer.id,
+        items: items as unknown as Stripe.SubscriptionCreateParams.Item[],
+        metadata,
+        collection_method: "send_invoice",
+        days_until_due: 15,
+        expand: ["latest_invoice"],
+      },
+      { idempotencyKey },
+    );
   }
 
   const latestInvoice = invoiceStatus(stripeSub.latest_invoice);
