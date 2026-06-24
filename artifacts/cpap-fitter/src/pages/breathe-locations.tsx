@@ -212,11 +212,11 @@ function Rollup() {
           <table className="bx-fleet">
             <thead>
               <tr>
-                <th>Branch</th>
-                <th>Patients</th>
-                <th>Active</th>
-                <th>Staff</th>
-                <th>Status</th>
+                <th scope="col">Branch</th>
+                <th scope="col">Patients</th>
+                <th scope="col">Active</th>
+                <th scope="col">Staff</th>
+                <th scope="col">Status</th>
               </tr>
             </thead>
             <tbody>

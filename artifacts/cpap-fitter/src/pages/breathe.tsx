@@ -938,7 +938,8 @@ function SignupSection() {
    index grid surfaces all of them from the main funnel — one card per pillar,
    a one-line "what you'll find," each linking the dedicated page. Reuses the
    .bx-cap card (the class is element-agnostic, so a <Link> picks up the same
-   styling + hover) — no new CSS. */
+   styling + hover); the only new rule is the small .bx-cap-more arrow
+   affordance in breathe.css. */
 const EXPLORE: {
   icon: React.ReactNode;
   title: string;
