@@ -39,3 +39,19 @@ WHERE r.payer_profile_id = p.id
     (r.condition = 'if_rental_month_le_3' AND r.modifiers_csv = 'KH')
     OR (r.condition = 'if_rental_month_ge_4' AND r.modifiers_csv = 'KI,KX')
   );
+
+-- The same 0130 migration also seeded a claim_templates row,
+-- 'rental_month_4_plus', whose E0601 line carries the SAME wrong month-4+
+-- modifiers ('RR,KI,KX'). A template stamps its modifiers straight onto the
+-- draft lines, so a CSR applying it would emit the wrong KI even after the
+-- payer-rule fix. Correct it in place to 'RR,KJ,KX' (KJ is the months-4-13
+-- band; KX rides along for an established compliant rental). Guarded to the
+-- original wrong value so an operator-edited template is left untouched, and
+-- the description's "(KI+KX)" label is fixed to match. ('rental_month_1' is
+-- already correct at 'RR,KH' and is intentionally untouched.)
+UPDATE "resupply"."claim_templates"
+SET
+  lines_json = replace(lines_json::text, '"RR,KI,KX"', '"RR,KJ,KX"')::jsonb,
+  description = replace(description, '(KI+KX)', '(KJ+KX)')
+WHERE slug = 'rental_month_4_plus'
+  AND lines_json::text LIKE '%"RR,KI,KX"%';

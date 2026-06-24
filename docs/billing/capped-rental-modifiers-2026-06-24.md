@@ -50,13 +50,28 @@ wrong. Only **manually built** claims (`buildClaimFromFulfillment` →
 
 ## The fix
 
-- **`claim-builder.ts`**: the manual path now derives capped-rental modifiers
-  for E0601 / E0470 / E0471 from the same `pickCappedRentalModifiers()` the
-  worker uses (`cappedRentalRotationForLine`), so hand-built and auto-advanced
-  claims carry identical, CMS-correct modifiers.
-- **Migration 0474**: drops the wrong rotation rows from the Noridian seed
-  (guarded to the original values, so operator-customised rows are preserved).
-  `pickCappedRentalModifiers()` is now the single source of truth.
+The wrong modifiers reached claims through **three** seeded surfaces; all are
+now realigned on the shared `pickCappedRentalModifiers()`:
+
+- **`claim-builder.ts`** (manual fulfillment-to-claim): derives the rotation
+  from `pickCappedRentalModifiers()` via `cappedRentalRotationForLine`, and
+  `mergeLineModifiers` strips any stale month-band/KX a copied commercial-payer
+  rule or applied template still carries (so no conflicting `KJ`+`KI` pair).
+  An initial dispense (no prior claims → `rentalMonth` null) is treated as
+  month 1 so it still gets `RR`+`KH`.
+- **`/admin/payer-modifier-rules/resolve`** (the manual-claim line editor's
+  modifier prefill): merges the same rotation, so the prefill still surfaces
+  `KH`/`KI`/`KJ` after the seed rows are gone.
+- **Migration 0474** does two things, both guarded to the original wrong values
+  so operator edits are preserved:
+  1. drops the wrong `payer_modifier_rules` rotation rows from the Noridian
+     seed;
+  2. corrects the `claim_templates` row `rental_month_4_plus` from `RR,KI,KX`
+     to `RR,KJ,KX` (the `rental_month_1` template was already correct at
+     `RR,KH`).
+
+`pickCappedRentalModifiers()` is the single source of truth; the auto-advance
+worker already used it.
 
 ## Validation still required before go-live
 

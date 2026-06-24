@@ -15,6 +15,10 @@ import {
   type ModifierRuleRow,
   resolveModifiersFromRules,
 } from "../../lib/billing/modifier-rules";
+import {
+  cappedRentalRotationForLine,
+  mergeLineModifiers,
+} from "../../lib/billing/claim-builder";
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import {
@@ -190,7 +194,20 @@ router.get(
       .order("priority", { ascending: true });
     if (error) throw error;
     const rules = (data ?? []) as ModifierRuleRow[];
-    const modifiers = resolveModifiersFromRules(rules, ctx);
+    const ruleModifiers = resolveModifiersFromRules(rules, ctx);
+    // Capped-rental month-band + KX modifiers no longer live in
+    // payer_modifier_rules (migration 0474 dropped the wrong seed rows): they
+    // come from the shared pickCappedRentalModifiers() so the prefill matches
+    // what the claim builder and the auto-advance worker actually emit. Merge
+    // it in here too, otherwise the manual-claim line editor would prefill no
+    // month-band modifier (KH/KI/KJ) for E0601/E0470/E0471.
+    const cappedRotation = cappedRentalRotationForLine(
+      q.hcpcs,
+      ctx.rentalMonth,
+      ctx.isCompliant,
+      ctx.isInitialDispense,
+    );
+    const modifiers = mergeLineModifiers(cappedRotation, [], ruleModifiers);
     res.json({
       payerProfileId: q.payerProfileId,
       hcpcs: q.hcpcs,

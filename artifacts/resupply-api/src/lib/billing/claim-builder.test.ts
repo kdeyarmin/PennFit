@@ -4,6 +4,7 @@ import {
   applyRequiredModifierBaseline,
   buildClaimLineRows,
   cappedRentalRotationForLine,
+  mergeLineModifiers,
   type ProposedClaimLine,
 } from "./claim-builder";
 
@@ -61,8 +62,52 @@ describe("cappedRentalRotationForLine", () => {
     expect(cappedRentalRotationForLine("A7030", 1, false)).toEqual([]);
   });
 
-  it("returns [] when the rental month is unknown", () => {
+  it("returns [] when the rental month is unknown and it isn't an initial dispense", () => {
     expect(cappedRentalRotationForLine("E0601", null, true)).toEqual([]);
+  });
+
+  it("treats an initial dispense (rentalMonth null) as month 1 → RR+KH", () => {
+    // resolveRuleContext leaves rentalMonth null on the first dispense; the
+    // month-1 claim must still carry KH.
+    expect(cappedRentalRotationForLine("E0601", null, false, true)).toEqual([
+      "RR",
+      "KH",
+    ]);
+    // A known month wins over the initial-dispense fallback.
+    expect(cappedRentalRotationForLine("E0601", 4, true, true)).toEqual([
+      "RR",
+      "KJ",
+      "KX",
+    ]);
+  });
+});
+
+describe("mergeLineModifiers", () => {
+  it("strips a stale month-band/KX from base + extra when a rotation owns them", () => {
+    // A copied commercial-payer rule (or an applied template) still carries the
+    // old KI; the rotation contributes the correct KJ. The result must NOT emit
+    // both (capped_rental_month_exclusive).
+    expect(
+      mergeLineModifiers(["RR", "KJ", "KX"], ["RR"], ["KI", "KX"]),
+    ).toEqual(["RR", "KJ", "KX"]);
+  });
+
+  it("preserves non-rotation modifiers (e.g. ABN GA) alongside the rotation", () => {
+    expect(mergeLineModifiers(["RR", "KJ"], [], ["GA"])).toEqual([
+      "RR",
+      "KJ",
+      "GA",
+    ]);
+  });
+
+  it("passes base + extra through unchanged when there is no rotation", () => {
+    expect(mergeLineModifiers([], ["NU"], ["KX"])).toEqual(["NU", "KX"]);
+  });
+
+  it("dedupes and caps at the 4-modifier EDI limit", () => {
+    expect(
+      mergeLineModifiers(["RR", "KJ", "KX"], ["RR"], ["GA", "GY", "GZ"]),
+    ).toEqual(["RR", "KJ", "KX", "GA"]);
   });
 });
 
