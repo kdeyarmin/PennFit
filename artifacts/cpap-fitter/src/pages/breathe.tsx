@@ -5104,7 +5104,7 @@ const STEPS: {
     icon: <Database size={20} />,
     n: "01",
     title: "Import your patients — day one",
-    body: "Upload a spreadsheet of your current patients and they're in the system the same day. The importer is pre-mapped to PacWare's export, but any billing or CRM system that can export your roster to a spreadsheet works just as well. It's a safe import that only fills in blanks and never overwrites what you already have — new patients are added and blank fields filled, while an existing value is never overwritten.",
+    body: "Upload a spreadsheet of your current patients and their demographics and they're in the system the same day. Almost any software exports a spreadsheet (CSV) — billing systems, CRMs, EHRs, you name it — so your patients come straight in; the importer is pre-mapped to PacWare's export and works just as well with anything else. It's a safe import that only fills in blanks and never overwrites what you already have — new patients are added and blank fields filled, while an existing value is never overwritten.",
   },
   {
     icon: <Plug size={20} />,
@@ -5130,11 +5130,14 @@ export function Onboarding() {
           </span>
           <h2 className="bx-h2">Ready on day one</h2>
           <p className="bx-lede">
-            Moving off legacy DME software is the scariest part — so we made it
-            the easiest. Upload a spreadsheet of your patients and you&apos;re
-            running the same day; the deeper payer and online-system connections
-            come online over the following weeks. Your data comes with you, and
-            nothing you already have gets clobbered.
+            Adopting new software is the scariest part — so we made it the
+            easiest, and you don&apos;t have to rip anything out. If your
+            current software can export a spreadsheet (CSV) of your patients and
+            their demographics — and almost any billing system, CRM, or EHR can
+            — they import the same day, and Breathe runs right alongside the
+            tools you already use. The deeper payer and online-system
+            connections come online over the following weeks, and nothing you
+            already have gets clobbered.
           </p>
         </div>
         <div className="bx-steps">
@@ -5184,7 +5187,7 @@ const FAQ: { q: string; a: React.ReactNode }[] = [
   },
   {
     q: "Can we import our current patients?",
-    a: "Yes — on day one. Export your patient roster to a spreadsheet and upload it, and your patients are in the system the same day. The importer is pre-mapped to PacWare's export format, but any billing or CRM system that can produce a spreadsheet of your patients works. It runs as a safe import that only fills in blanks and never overwrites what you already have — new patients are added and blank fields filled, and an existing value is never overwritten — so you can re-import as often as you like with no risk of clobbering data.",
+    a: "Yes — on day one. Export your patient roster to a spreadsheet and upload it, and your patients are in the system the same day. The importer is pre-mapped to PacWare's export format, but almost any software you already run — a billing system, CRM, or EHR — that can produce a spreadsheet (CSV) of your patients works just as well, so Breathe drops in alongside your current tools. It runs as a safe import that only fills in blanks and never overwrites what you already have — new patients are added and blank fields filled, and an existing value is never overwritten — so you can re-import as often as you like with no risk of clobbering data.",
   },
   {
     q: "How long does implementation take?",
