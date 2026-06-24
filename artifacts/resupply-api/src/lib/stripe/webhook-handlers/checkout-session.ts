@@ -281,11 +281,15 @@ export async function markPaid(
       // already wrote the paid row, so re-read and return it rather than
       // throwing the webhook into a Stripe retry loop.
       if ((insertErr as { code?: string }).code === "23505") {
-        const { data: raced } = await supabase
+        const { data: raced, error: racedErr } = await supabase
           .from("shop_orders")
           .select("id, customer_id, paid_at")
           .eq("stripe_session_id", session.id)
           .maybeSingle();
+        // If the re-read itself fails (transient DB issue), throw so the webhook
+        // 500s and Stripe retries — proceeding with row=null would silently drop
+        // the paid order from local history.
+        if (racedErr) throw racedErr;
         row = raced ?? null;
       } else {
         throw insertErr;

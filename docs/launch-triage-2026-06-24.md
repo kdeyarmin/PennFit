@@ -11,15 +11,15 @@ Next available migration number: **`0474`** (`0473` is the current tip).
 
 ## Blocking vs. deferred
 
-| #   | Item                                                 | Real bug?        | In-repo fixable            | External gate                | Verdict                             |
-| --- | ---------------------------------------------------- | ---------------- | -------------------------- | ---------------------------- | ----------------------------------- |
-| 1   | Stripe double-subscription idempotency               | yes (race)       | yes, code-only             | Stripe test-mode replay      | **Launch-blocking**                 |
-| 2   | `cart_hash` 500                                      | yes (low-prob)   | yes, code-only             | none                         | **Launch-blocking**                 |
-| 3   | Capped-rental modifiers / OA 837P / G47.33 preflight | partial          | seed migration + preflight | DMEPOS sign-off + OA sandbox | **Launch-blocking** (e-claims live) |
-| 4   | Voice inbound CallSid binding                        | yes (medium)     | yes, code-only             | Twilio test call             | **Launch-blocking** (voice live)    |
-| 5   | markPaid refunded→paid                               | yes (narrow)     | yes, code-only             | none                         | **Fixed: guard + test**             |
-| 6   | Refund restock on `charge.refunded`                  | product decision | n/a                        | none                         | **Decided: keep CSR-return-only**   |
-| 7   | Fail-open reservation / counter & sub holds          | no (by design)   | n/a                        | n/a                          | No action                           |
+| #   | Item                                                 | Real bug?         | In-repo fixable            | External gate                | Verdict                             |
+| --- | ---------------------------------------------------- | ----------------- | -------------------------- | ---------------------------- | ----------------------------------- |
+| 1   | Stripe double-subscription idempotency               | yes (race)        | yes, code-only             | Stripe test-mode replay      | **Launch-blocking**                 |
+| 2   | `cart_hash` 500                                      | yes (repeat cart) | yes, code-only             | none                         | **Launch-blocking**                 |
+| 3   | Capped-rental modifiers / OA 837P / G47.33 preflight | partial           | seed migration + preflight | DMEPOS sign-off + OA sandbox | **Launch-blocking** (e-claims live) |
+| 4   | Voice inbound CallSid binding                        | yes (medium)      | yes, code-only             | Twilio test call             | **Launch-blocking** (voice live)    |
+| 5   | markPaid refunded→paid                               | yes (narrow)      | yes, code-only             | none                         | **Fixed: guard + test**             |
+| 6   | Refund restock on `charge.refunded`                  | product decision  | n/a                        | none                         | **Decided: keep CSR-return-only**   |
+| 7   | Fail-open reservation / counter & sub holds          | no (by design)    | n/a                        | n/a                          | No action                           |
 
 ## Findings (evidence)
 
@@ -40,13 +40,20 @@ Next available migration number: **`0474`** (`0473` is the current tip).
   - pre-create lookup that reuses an existing active sub. Code-only, no
     migration. Validation requires Stripe test-mode event-sequence replay.
 
-### 2. `cart_hash` 500 — real low-probability bug
+### 2. `cart_hash` 500 — real bug (repeat-cart checkout)
 
-- `createHash("sha256").update(JSON.stringify(sortedItems))` at
-  `artifacts/resupply-api/src/routes/shop/checkout.ts:365` is uncaught; a
-  malformed/circular payload 500s instead of returning a 4xx.
-- **Fix:** validate item shape (or guard the stringify) before hashing; return a
-  client error. Code-only, no migration. Add a unit test.
+- The `shop_orders` mirror upsert in
+  `artifacts/resupply-api/src/routes/shop/checkout.ts` uses
+  `onConflict: stripe_session_id`, which only swallows a session-id collision.
+  A returning customer re-checking-out an **identical cart** gets a NEW Stripe
+  session but the SAME `cart_hash`, so the insert trips the separate partial
+  unique index `shop_orders_cart_hash_unique_idx` (migration 0062) with Postgres
+  **23505** → a 500, even though the new session is valid and payable.
+- **Fix:** detect the cart_hash-specific 23505 (narrowly — other 23505s still 500) and re-insert the mirror **without** `cart_hash` (NULL is exempt from the
+  partial index). That keeps a local `shop_orders` row keyed by the new
+  `stripe_session_id`, so the checkout-success page (which looks the order up by
+  session id) doesn't 404. Code-only, no migration. Unit tests cover the retry,
+  the non-cart_hash 23505, and the retry-failure path.
 
 ### 3. Capped-rental modifiers / Office Ally 837P / G47.33
 

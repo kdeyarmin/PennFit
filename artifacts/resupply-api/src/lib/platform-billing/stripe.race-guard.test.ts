@@ -46,6 +46,34 @@ describe("findExistingPlatformSubscriptionId", () => {
     );
   });
 
+  it("pages past the first 100 subscriptions to find a later match", async () => {
+    // A customer that accumulated >100 subscriptions (e.g. a retry storm): the
+    // match sits on page 2. The race guard must page through, not cap at one.
+    const page1 = Array.from({ length: 100 }, (_, i) => ({
+      id: `sub_noise_${i}`,
+      status: "active",
+      metadata: { billing_scope: SCOPE, org_id: "org_other" },
+    }));
+    const match = {
+      id: "sub_page2",
+      status: "active",
+      metadata: { billing_scope: SCOPE, org_id: ORG },
+    };
+    const list = vi
+      .fn()
+      .mockResolvedValueOnce({ data: page1, has_more: true })
+      .mockResolvedValueOnce({ data: [match], has_more: false });
+    const client = { subscriptions: { list } } as never;
+
+    const id = await findExistingPlatformSubscriptionId(client, CUSTOMER, ORG);
+    expect(id).toBe("sub_page2");
+    expect(list).toHaveBeenCalledTimes(2);
+    // The second call carries the cursor from the last item of page 1.
+    expect(list).toHaveBeenLastCalledWith(
+      expect.objectContaining({ starting_after: "sub_noise_99" }),
+    );
+  });
+
   it("returns null when there is nothing to adopt", async () => {
     const { client } = fakeStripe([]);
     expect(

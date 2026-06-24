@@ -652,19 +652,29 @@ export async function findExistingPlatformSubscriptionId(
   customerId: string,
   orgId: string,
 ): Promise<string | null> {
-  const list = await stripe.subscriptions.list({
-    customer: customerId,
-    status: "all",
-    limit: 100,
-  });
-  const match = list.data.find(
-    (s) =>
-      s.metadata?.billing_scope === PLATFORM_BILLING_SCOPE &&
-      s.metadata?.org_id === orgId &&
-      s.status !== "canceled" &&
-      s.status !== "incomplete_expired",
-  );
-  return match?.id ?? null;
+  const matches = (s: Stripe.Subscription): boolean =>
+    s.metadata?.billing_scope === PLATFORM_BILLING_SCOPE &&
+    s.metadata?.org_id === orgId &&
+    s.status !== "canceled" &&
+    s.status !== "incomplete_expired";
+  // Page through ALL of the customer's subscriptions. As a race guard, missing
+  // an existing live sub because it sat past the first page would defeat the
+  // purpose (a customer can accumulate many during a retry storm), so we don't
+  // cap at one page. `starting_after` walks Stripe's cursor; we stop early the
+  // moment a page yields a match.
+  let startingAfter: string | undefined;
+  for (;;) {
+    const page = await stripe.subscriptions.list({
+      customer: customerId,
+      status: "all",
+      limit: 100,
+      ...(startingAfter ? { starting_after: startingAfter } : {}),
+    });
+    const match = page.data.find(matches);
+    if (match) return match.id;
+    if (!page.has_more || page.data.length === 0) return null;
+    startingAfter = page.data[page.data.length - 1]!.id;
+  }
 }
 
 export async function syncTenantStripeSubscription(args: {
