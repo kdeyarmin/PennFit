@@ -62,7 +62,17 @@ export async function sendDeliveredNotificationIfNew(args: {
     )
     .limit(1)
     .maybeSingle();
-  if (claimErr) throw claimErr;
+  if (claimErr) {
+    // Honor the "NEVER throws" contract: a claim-query hiccup must not
+    // bubble out of this best-effort notifier (it runs on the admin
+    // mark-delivered + carrier-webhook paths). Log the Error object so the
+    // logger's err.* redaction applies, then fail soft.
+    log?.warn?.(
+      { orderId, err: claimErr },
+      "delivered notification email skipped — claim query failed",
+    );
+    return { skipped: true, reason: "claim_failed" };
+  }
 
   if (!claimedRow) {
     log?.info?.(
@@ -199,6 +209,9 @@ export async function sendDeliveredNotificationIfNew(args: {
       const smsRecipient = await resolveSmsRecipientForShopOrder({
         customerId: claimedRow.customer_id,
         customerEmailFromOrder: claimedRow.customer_email ?? null,
+        // Resolve the recipient in THIS order's tenant so it matches the
+        // tenant-scoped Twilio sender below (not the seed org).
+        orgId,
       });
       if (smsRecipient) {
         const smsClient = createTwilioSmsClient(
@@ -221,7 +234,10 @@ export async function sendDeliveredNotificationIfNew(args: {
         log?.warn?.(
           {
             orderId: claimedRow.id,
-            err: smsErr instanceof Error ? smsErr.message : String(smsErr),
+            // Log the Error object (not its .message string) so the
+            // logger's err.* redaction applies — err.message can carry
+            // DSN/PHI fragments (ADR 006/007).
+            err: smsErr instanceof Error ? smsErr : new Error(String(smsErr)),
           },
           "delivered notification sms send threw (non-fatal)",
         );

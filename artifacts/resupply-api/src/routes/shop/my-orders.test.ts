@@ -44,8 +44,10 @@ vi.mock("../../lib/stripe/config", () => ({
 vi.mock("../../lib/stripe/connect", () => ({
   stripeAccountRequestOptions: vi.fn(async () => ({})),
 }));
-vi.mock("../../lib/inventory/reservations", () => ({
-  releaseReservationsForSession: vi.fn(async () => undefined),
+const restockReturnedOrderMock = vi.fn();
+vi.mock("../../lib/shop-returns/restock", () => ({
+  restockReturnedOrder: (...args: unknown[]) =>
+    restockReturnedOrderMock(...args),
 }));
 
 import myOrdersRouter from "./my-orders";
@@ -65,6 +67,7 @@ beforeEach(() => {
   mockSignedIn.current = null;
   stripeConfigRef.current = null;
   refundsCreateMock.mockReset();
+  restockReturnedOrderMock.mockReset();
   supabaseMock.reset();
 });
 
@@ -612,6 +615,11 @@ describe("POST /shop/me/orders/:orderId/cancel", () => {
     const [params, opts] = refundsCreateMock.mock.calls[0]!;
     expect(params).toMatchObject({ payment_intent: "pi_123" });
     expect(opts).toMatchObject({ idempotencyKey: `cancel-${CANCEL_ID}` });
+    // Pre-ship cancel restocks the items (the reservation was already
+    // consumed at checkout, so releasing holds would be a no-op).
+    expect(restockReturnedOrderMock).toHaveBeenCalledWith(
+      expect.objectContaining({ orderId: CANCEL_ID, sessionId: "cs_123" }),
+    );
   });
 
   it("still returns ok (refund already issued) if the order shipped in a race", async () => {

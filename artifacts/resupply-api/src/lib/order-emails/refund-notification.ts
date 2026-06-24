@@ -54,7 +54,17 @@ export async function sendRefundNotificationIfNew(args: {
     .select("id, stripe_session_id, customer_id, customer_email")
     .limit(1)
     .maybeSingle();
-  if (claimErr) throw claimErr;
+  if (claimErr) {
+    // Honor the "NEVER throws" contract: this runs on the Stripe
+    // charge.refunded webhook path, which has already mirrored the refund
+    // and must not 500 on a claim-query hiccup. Log the Error object (so
+    // err.* redaction applies) and fail soft.
+    log?.warn?.(
+      { orderId, err: claimErr },
+      "refund notification email skipped — claim query failed",
+    );
+    return { skipped: true, reason: "claim_failed" };
+  }
 
   if (!claimedRow) {
     // Already notified (returns flow stamped it, or a prior refund event)

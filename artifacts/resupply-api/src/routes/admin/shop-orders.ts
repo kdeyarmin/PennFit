@@ -841,8 +841,13 @@ router.post(
       req.log?.warn?.(
         {
           orderId,
+          // Log the Error object (not its .message string) so the logger's
+          // err.* redaction applies — err.message can carry DSN/PHI
+          // fragments (ADR 006/007).
           err:
-            notifyErr instanceof Error ? notifyErr.message : String(notifyErr),
+            notifyErr instanceof Error
+              ? notifyErr
+              : new Error(String(notifyErr)),
         },
         "admin/shop/orders: delivered notification failed (non-fatal)",
       );

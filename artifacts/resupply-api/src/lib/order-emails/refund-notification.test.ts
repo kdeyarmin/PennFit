@@ -93,6 +93,19 @@ describe("sendRefundNotificationIfNew", () => {
     expect(sendEmailMock).not.toHaveBeenCalled();
   });
 
+  it("fails soft (never throws) when the claim query itself errors", async () => {
+    // The claim UPDATE errors (DB hiccup). Since this runs on the
+    // charge.refunded webhook path, the helper must NOT throw and must not
+    // send — it honors its "NEVER throws" contract by returning skipped.
+    stageSupabaseResponse("shop_orders", "update", {
+      error: { message: "db unavailable" },
+    });
+
+    const r = await sendRefundNotificationIfNew(baseArgs());
+    expect(r).toEqual({ skipped: true, reason: "claim_failed" });
+    expect(sendEmailMock).not.toHaveBeenCalled();
+  });
+
   it("falls back to the guest customer_email when no linked customer", async () => {
     stageSupabaseResponse("shop_orders", "update", {
       data: {

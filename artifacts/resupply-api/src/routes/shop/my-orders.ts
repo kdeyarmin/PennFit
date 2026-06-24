@@ -67,7 +67,7 @@ import {
 } from "../../lib/stripe/config";
 import { stripeAccountRequestOptions } from "../../lib/stripe/connect";
 import { stripeErrLogFields } from "../../lib/stripe/err-log-fields";
-import { releaseReservationsForSession } from "../../lib/inventory/reservations";
+import { restockReturnedOrder } from "../../lib/shop-returns/restock";
 
 const router: IRouter = Router();
 
@@ -468,7 +468,9 @@ router.post(
       return;
     }
     const orgId = req.orgId;
-    if (!orgId) {
+    // Reject whitespace-only org ids too — getOrgScopedClient throws on a
+    // blank id, matching the tenant-context guard used elsewhere.
+    if (!orgId || !orgId.trim()) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
@@ -581,13 +583,24 @@ router.post(
       return;
     }
 
-    // Release the inventory holds so the stock frees up immediately
-    // (best-effort — a stale hold also expires via TTL).
-    if (existing.stripe_session_id) {
-      await releaseReservationsForSession(
-        orgId,
-        existing.stripe_session_id,
-        req.log,
+    // Return the items to sellable Stripe stock_count. The reservation was
+    // CONSUMED at checkout (the order is paid), so releasing holds would be
+    // a no-op here — restock is what actually frees the SKU after a pre-ship
+    // cancel. Best-effort: a restock hiccup must never fail the (already
+    // issued) refund — worst case the count self-corrects at reconciliation.
+    try {
+      await restockReturnedOrder({
+        stripe,
+        accountOptions: acct,
+        supabase,
+        orderId,
+        sessionId: existing.stripe_session_id,
+        log: req.log,
+      });
+    } catch (restockErr) {
+      req.log?.warn?.(
+        { orderId, err: restockErr },
+        "shop/me/orders: cancel restock failed (non-fatal)",
       );
     }
 
