@@ -110,11 +110,6 @@ const ConversationDetailPage = lazyWithRetry(() =>
     default: m.ConversationDetailPage,
   })),
 );
-const EmailInboxPage = lazyWithRetry(() =>
-  import("@/pages/admin/email-inbox").then((m) => ({
-    default: m.EmailInboxPage,
-  })),
-);
 const EpisodesPage = lazyWithRetry(() =>
   import("@/pages/admin/episodes").then((m) => ({ default: m.EpisodesPage })),
 );
@@ -1088,7 +1083,10 @@ function AdminConsole() {
             <Route path="/admin/conversations/:id">
               {(params) => <ConversationDetailPage id={params.id} />}
             </Route>
-            <Route path="/admin/email-inbox" component={EmailInboxPage} />
+            {/* Email Inbox merged into Conversations (its email channel). */}
+            <Route path="/admin/email-inbox">
+              <Redirect to="/admin/conversations?channel=email" replace />
+            </Route>
             <Route path="/admin/episodes" component={EpisodesPage} />
             <Route path="/admin/rules" component={RulesPage} />
             <Route

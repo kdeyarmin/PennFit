@@ -192,15 +192,11 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             label: "Conversations",
             icon: MessageSquareText,
             matchPrefix: "/admin/conversations",
+            // Email Inbox was a read-only duplicate of this list (email
+            // threads already live here); filter to channel=email for the old
+            // email-only view. /admin/email-inbox redirects here.
             hint: "Inbound SMS, MMS, and email threads",
             badgeKey: "awaitingReplyConversations",
-          },
-          {
-            href: "/admin/email-inbox",
-            label: "Email Inbox",
-            icon: Mail,
-            matchPrefix: "/admin/email-inbox",
-            hint: "Inbound patient emails — needs-response vs already-answered mailboxes",
           },
           {
             href: "/admin/cases",
