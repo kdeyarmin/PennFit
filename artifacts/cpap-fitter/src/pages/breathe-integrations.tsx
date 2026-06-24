@@ -505,11 +505,14 @@ export function BreatheIntegrations() {
         <div className="bx-shell">
           <div className="bx-price-cta bx-reveal">
             <span>
-              New to platforms like this? Start with the category, in plain
-              language.
+              See how the unified fleet stacks up against the system you run
+              today.
             </span>
+            <Link className="bx-btn bx-btn-primary" href="/breathe/compare">
+              Compare Breathe <ArrowRight size={16} />
+            </Link>
             <Link className="bx-btn bx-btn-ghost" href="/breathe/why">
-              DME Platform 101 <ArrowRight size={16} />
+              DME Platform 101
             </Link>
           </div>
         </div>

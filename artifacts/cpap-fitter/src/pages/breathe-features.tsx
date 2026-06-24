@@ -16,6 +16,7 @@ import {
   Gauge,
   Headphones,
   LineChart,
+  Lock,
   Mail,
   MessageSquare,
   Mic,
@@ -955,6 +956,15 @@ function Integrations() {
             </span>
           ))}
         </div>
+        <div className="bx-price-cta bx-reveal">
+          <span>
+            Coming from Brightree, Bonafide, or NikoHealth? Keep your patients
+            and your data — we migrate you with a CSV import.
+          </span>
+          <Link className="bx-btn bx-btn-primary" href="/breathe/compare">
+            See the side-by-side <ArrowRight size={16} />
+          </Link>
+        </div>
       </div>
     </section>
   );
@@ -1171,10 +1181,22 @@ function Footer() {
         </Link>
         <p className="bx-footer-note">
           Breathe is the AI-native operating platform for durable medical
-          equipment providers, built by CareMetric.ai. HIPAA-eligible
-          infrastructure; patient imagery is processed on-device and never
-          transmitted.
+          equipment providers, built by CareMetric.ai.
         </p>
+        <ul className="bx-footer-badges" aria-label="Security posture">
+          <li>
+            <ShieldCheck size={14} aria-hidden="true" />
+            HIPAA-eligible infrastructure
+          </li>
+          <li>
+            <ScanFace size={14} aria-hidden="true" />
+            On-device patient imaging
+          </li>
+          <li>
+            <Lock size={14} aria-hidden="true" />
+            Encrypted in transit
+          </li>
+        </ul>
         <div className="bx-footer-contact">
           <span className="bx-footer-contact-label">
             <Headphones size={13} aria-hidden="true" />

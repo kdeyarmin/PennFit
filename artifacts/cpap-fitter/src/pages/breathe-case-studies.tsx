@@ -223,8 +223,8 @@ function BreatheModeled() {
           <Link className="bx-btn bx-btn-primary" href="/breathe/roi">
             Size the return <LineChart size={16} />
           </Link>
-          <Link className="bx-btn bx-btn-ghost" href="/breathe/product">
-            See the platform <ArrowRight size={16} />
+          <Link className="bx-btn bx-btn-gold" href="/breathe/signup">
+            Become a founding partner <ArrowRight size={16} />
           </Link>
         </div>
       </div>
