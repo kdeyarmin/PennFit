@@ -1168,6 +1168,7 @@ const FOOTER_LINKS: { href: string; label: string }[] = [
   { href: "/breathe/roi", label: "ROI" },
   { href: "/breathe/pricing", label: "Pricing" },
   { href: "/breathe/security", label: "Security" },
+  { href: "/breathe/compliance", label: "Compliance" },
   { href: "/breathe/case-studies", label: "Case studies" },
   { href: "/breathe/faq", label: "FAQ" },
 ];
@@ -4915,6 +4916,15 @@ function Security() {
             </div>
           ))}
         </div>
+        <p className="bx-stats-note bx-reveal">
+          Security is how the data is protected; compliance is how the software
+          keeps you right with payers, Medicare, and the rules — preventing
+          take-backs, documenting the 4-hour rule, and fencing the AI away from
+          clinical and coverage decisions.{" "}
+          <Link href="/breathe/compliance">
+            See the compliance safeguards →
+          </Link>
+        </p>
       </div>
     </section>
   );
