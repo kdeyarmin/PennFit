@@ -4,11 +4,13 @@
 // (the server returns ONLY this provider's own patients).
 
 import { Link } from "wouter";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Activity, ChevronRight, Users } from "lucide-react";
+import { Activity, ChevronRight, Search, Users } from "lucide-react";
 
 import {
   getProviderRtmRoster,
+  filterRosterPatients,
   type RtmRosterPatient,
 } from "@/lib/provider/provider-api";
 import {
@@ -73,7 +75,9 @@ export function ProviderPatients({
     queryFn: () => getProviderRtmRoster(),
   });
 
+  const [search, setSearch] = useState("");
   const patients = query.data?.patients ?? [];
+  const visible = filterRosterPatients(patients, search);
 
   return (
     <ProviderShell providerName={providerName}>
@@ -99,40 +103,66 @@ export function ProviderPatients({
           </p>
         </Card>
       ) : (
-        <Card className="divide-y divide-slate-100">
-          {patients.map((p) => (
-            <Link
-              key={p.patientId}
-              href={`/provider/patients/${p.patientId}`}
-              className="block hover:bg-slate-50"
-            >
-              <div className="flex items-center gap-4 px-5 py-4">
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-700">
-                  <Activity className="h-5 w-5" aria-hidden="true" />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate font-medium text-slate-900">
-                    {p.patientName}
-                  </p>
-                  <p className="truncate text-sm text-slate-500">
-                    Avg usage {fmtUsage(p.avgUsageHours)} · {p.compliantNights}{" "}
-                    compliant of {p.nightsWithData} nights ·{" "}
-                    {fmtStale(p.staleDays)}
-                  </p>
-                </div>
-                <ComplianceBadge patient={p} />
-                <ChevronRight
-                  className="h-5 w-5 shrink-0 text-slate-400"
-                  aria-hidden="true"
-                />
-              </div>
-            </Link>
-          ))}
-        </Card>
+        <>
+          <div className="relative mb-4">
+            <Search
+              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+              aria-hidden="true"
+            />
+            <input
+              type="search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search patients by name…"
+              aria-label="Search patients by name"
+              data-testid="provider-patients-search"
+              className="w-full rounded-lg border border-slate-300 bg-white py-2.5 pl-9 pr-3.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+            />
+          </div>
+          {visible.length === 0 ? (
+            <Card className="px-6 py-12 text-center text-sm text-slate-500">
+              No patients match “{search.trim()}”.
+            </Card>
+          ) : (
+            <Card className="divide-y divide-slate-100">
+              {visible.map((p) => (
+                <Link
+                  key={p.patientId}
+                  href={`/provider/patients/${p.patientId}`}
+                  className="block hover:bg-slate-50"
+                >
+                  <div className="flex items-center gap-4 px-5 py-4">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-700">
+                      <Activity className="h-5 w-5" aria-hidden="true" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-medium text-slate-900">
+                        {p.patientName}
+                      </p>
+                      <p className="truncate text-sm text-slate-500">
+                        Avg usage {fmtUsage(p.avgUsageHours)} ·{" "}
+                        {p.compliantNights} compliant of {p.nightsWithData}{" "}
+                        nights · {fmtStale(p.staleDays)}
+                      </p>
+                    </div>
+                    <ComplianceBadge patient={p} />
+                    <ChevronRight
+                      className="h-5 w-5 shrink-0 text-slate-400"
+                      aria-hidden="true"
+                    />
+                  </div>
+                </Link>
+              ))}
+            </Card>
+          )}
+        </>
       )}
 
       {patients.length > 0 ? (
         <p className="mt-4 text-xs text-slate-400">
+          {search.trim()
+            ? `Showing ${visible.length} of ${patients.length} patients. `
+            : ""}
           Updated {formatDateTime(new Date().toISOString())}. Compliance =
           nights of ≥ 4 hours over the recent window.
         </p>

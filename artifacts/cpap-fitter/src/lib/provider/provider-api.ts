@@ -177,6 +177,22 @@ export const getProviderRtmRoster = (days?: number) =>
     `/patients${days ? `?days=${days}` : ""}`,
   );
 
+/**
+ * Client-side roster search: case-insensitive substring match on the
+ * patient's name. A blank/whitespace query returns the list unchanged.
+ * Pure (no `Date`, no fetch) so it's unit-tested directly and reused by
+ * the "My patients" page filter box. The roster is already fully loaded
+ * (server caps it at 200), so filtering in-memory avoids a round-trip.
+ */
+export function filterRosterPatients<T extends { patientName: string }>(
+  patients: readonly T[],
+  query: string,
+): T[] {
+  const needle = query.trim().toLowerCase();
+  if (needle === "") return [...patients];
+  return patients.filter((p) => p.patientName.toLowerCase().includes(needle));
+}
+
 export interface RtmCmsWindow {
   startDate: string;
   endDate: string;
