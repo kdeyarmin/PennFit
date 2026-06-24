@@ -20,6 +20,7 @@ import {
   Mail,
   MessageSquare,
   Mic,
+  Network,
   PhoneCall,
   Plug,
   Receipt,
@@ -154,6 +155,7 @@ const CAPABILITIES: Capability[] = [
       "AI-scrubbed 837P auto-submitted via Office Ally — or any clearinghouse",
       "835/ERA auto-posting and denials ranked by dollars recoverable × win odds",
       "Prior auth, A/R aging, timely-filing and capped-rental modifier rotation",
+      "Patient payment plans, card autopay and automated collections",
       "Payer profitability, collections forecast and patient statements",
     ],
     gold: true,
@@ -453,6 +455,21 @@ const ROLES: RoleBlock[] = [
           },
         ],
       },
+      {
+        icon: <CircleDollarSign size={20} />,
+        title: "Patient payment plans & automated collections",
+        body: "The patient-pay half runs on the same automation as the insurance side: card autopay and installment plans on high balances, an aged-A/R worklist that duns on a schedule, and bill-hold that keeps a patient from being invoiced until their claim clears.",
+        impacts: [
+          {
+            kind: "revenue",
+            text: "Plans and autopay convert high balances that otherwise become write-offs.",
+          },
+          {
+            kind: "time",
+            text: "Dunning and bill-hold run automatically instead of by spreadsheet and phone call.",
+          },
+        ],
+      },
     ],
   },
   {
@@ -619,6 +636,21 @@ const ROLES: RoleBlock[] = [
           {
             kind: "time",
             text: "No jumping between systems and no exports between them.",
+          },
+        ],
+      },
+      {
+        icon: <Network size={20} />,
+        title: "Multi-location, one rollup",
+        body: "Run multiple branches under one tenant: patients, staff, and orders scoped per location, with a rolled-up view of the whole operation and location-level performance side by side.",
+        impacts: [
+          {
+            kind: "time",
+            text: "No separate logins or spreadsheets to compare branch against branch.",
+          },
+          {
+            kind: "revenue",
+            text: "Spot the location-level gaps — capture, denials, margin — and fix them.",
           },
         ],
       },

@@ -1149,14 +1149,22 @@ const NAV_LINKS: { href: string; label: string }[] = [
 ];
 
 // The full set of marketing pages — used by the footer so ROI, Security,
-// and Features stay reachable + crawlable even though they're kept out of
-// the (deliberately short) top nav.
+// Features, and the deep-dive solution pages (AI voice, revenue cycle,
+// patient experience) stay reachable + crawlable even though they're kept
+// out of the (deliberately short) top nav.
 const FOOTER_LINKS: { href: string; label: string }[] = [
   { href: "/breathe/product", label: "Platform" },
   { href: "/breathe/integrations", label: "Integrations" },
   { href: "/breathe/why", label: "Why Breathe" },
   { href: "/breathe/compare", label: "Compare" },
   { href: "/breathe/features", label: "Features" },
+  { href: "/breathe/resupply-engine", label: "Resupply engine" },
+  { href: "/breathe/ai-voice", label: "AI voice agent" },
+  { href: "/breathe/communications", label: "Communications" },
+  { href: "/breathe/get-paid", label: "Get paid" },
+  { href: "/breathe/clinical", label: "Clinical & therapy" },
+  { href: "/breathe/patient-experience", label: "Patient experience" },
+  { href: "/breathe/analytics", label: "Analytics" },
   { href: "/breathe/roi", label: "ROI" },
   { href: "/breathe/pricing", label: "Pricing" },
   { href: "/breathe/security", label: "Security" },
@@ -1626,6 +1634,13 @@ function ResupplyEngine() {
             </article>
           ))}
         </div>
+        <p className="bx-stats-note bx-reveal">
+          Resupply is the most predictable recurring revenue in DME — the engine
+          is built to capture as much of it as your eligibility allows.{" "}
+          <Link href="/breathe/resupply-engine">
+            See how the resupply engine works →
+          </Link>
+        </p>
       </div>
     </section>
   );
@@ -1719,11 +1734,9 @@ function RevenueRecovery() {
         </div>
         <p className="bx-stats-note bx-reveal">
           Plus secondary &amp; COB rollover, capped-rental tracking, A/R aging,
-          timely-filing alerts, and payer-profitability — the full revenue cycle
-          on one record.{" "}
-          <Link href="/breathe/roi">
-            See what it recovers on your numbers →
-          </Link>
+          timely-filing alerts, patient payment plans &amp; collections, and
+          payer-profitability — the full revenue cycle on one record.{" "}
+          <Link href="/breathe/get-paid">See how you get paid →</Link>
         </p>
       </div>
     </section>
@@ -1811,6 +1824,14 @@ function AiWorkforce() {
             </article>
           ))}
         </div>
+        <p className="bx-stats-note bx-reveal">
+          Calls, texts, emails, and faxes all land in one inbox — with AI
+          drafting, triaging, and auto-replying so your team resolves instead of
+          re-keying.{" "}
+          <Link href="/breathe/communications">
+            See how patient communications work →
+          </Link>
+        </p>
       </div>
     </section>
   );
@@ -2690,6 +2711,13 @@ function AiBento() {
             </div>
           ))}
         </div>
+        <p className="bx-stats-note bx-reveal">
+          The voice agent is the one most teams feel first — answering calls and
+          placing reorders on your own line, around the clock.{" "}
+          <Link href="/breathe/ai-voice">
+            See how the AI voice agent works →
+          </Link>
+        </p>
       </div>
     </section>
   );
@@ -2945,7 +2973,9 @@ function Outcomes({ showClaimsEngine = true }: { showClaimsEngine?: boolean }) {
         <p className="bx-outcomes-foot">
           Illustrative ranges drawn from published DME and healthcare
           revenue-cycle benchmarks; actual results depend on your payer mix,
-          patient base, and current processes. Directional, not a guarantee.
+          patient base, and current processes. Directional, not a guarantee. On
+          your own numbers, every figure here is a live dashboard you can drill
+          into — <Link href="/breathe/analytics">see the analytics →</Link>
         </p>
       </div>
     </section>
@@ -3240,6 +3270,14 @@ function Capabilities() {
             </article>
           ))}
         </div>
+        <p className="bx-stats-note bx-reveal">
+          The storefront, fitter, portal, chatbot, and sleep coach are what your
+          patients actually touch — and a better experience is what keeps them
+          on therapy and reordering.{" "}
+          <Link href="/breathe/patient-experience">
+            See what your patients get →
+          </Link>
+        </p>
         <div className="bx-price-cta bx-reveal">
           <span>Want the full tour — every screen and automation?</span>
           <Link className="bx-btn bx-btn-primary" href="/breathe/product">
@@ -3308,6 +3346,12 @@ function UnifiedFleet() {
             Explore integrations <ArrowRight size={16} />
           </Link>
         </div>
+        <p className="bx-stats-note bx-reveal">
+          Unifying the data is half of it — the other half is acting on it:
+          at-risk alerts, RT interventions, coaching, and telehealth that keep
+          patients on therapy.{" "}
+          <Link href="/breathe/clinical">See the clinical toolkit →</Link>
+        </p>
       </div>
     </section>
   );

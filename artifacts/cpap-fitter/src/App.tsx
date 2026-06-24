@@ -606,6 +606,46 @@ const BreatheSwitchNikohealth = lazyWithRetry(() =>
   })),
 );
 
+// Breathe — deep-dive "solution" pages. Long-form pages for the marquee
+// revenue drivers (the AI voice agent, the full revenue cycle) and the
+// patient-experience story. Same dark chrome, mounted in TopRouter,
+// lazy-loaded off the patient-shop bundle.
+const BreatheAiVoice = lazyWithRetry(() =>
+  import("@/pages/breathe-ai-voice").then((m) => ({
+    default: m.BreatheAiVoice,
+  })),
+);
+const BreatheRevenueCycle = lazyWithRetry(() =>
+  import("@/pages/breathe-revenue-cycle").then((m) => ({
+    default: m.BreatheRevenueCycle,
+  })),
+);
+const BreathePatientExperience = lazyWithRetry(() =>
+  import("@/pages/breathe-patient-experience").then((m) => ({
+    default: m.BreathePatientExperience,
+  })),
+);
+const BreatheResupplyEngine = lazyWithRetry(() =>
+  import("@/pages/breathe-resupply-engine").then((m) => ({
+    default: m.BreatheResupplyEngine,
+  })),
+);
+const BreatheCommunications = lazyWithRetry(() =>
+  import("@/pages/breathe-communications").then((m) => ({
+    default: m.BreatheCommunications,
+  })),
+);
+const BreatheClinical = lazyWithRetry(() =>
+  import("@/pages/breathe-clinical").then((m) => ({
+    default: m.BreatheClinical,
+  })),
+);
+const BreatheAnalytics = lazyWithRetry(() =>
+  import("@/pages/breathe-analytics").then((m) => ({
+    default: m.BreatheAnalytics,
+  })),
+);
+
 const Reminders = lazyWithRetry(() =>
   import("@/pages/reminders").then((m) => ({ default: m.Reminders })),
 );
@@ -1271,6 +1311,22 @@ function TopRouter() {
         <Route path="/breathe/security" component={BreatheSecurity} />
         <Route path="/breathe/faq" component={BreatheFaq} />
         <Route path="/breathe/case-studies" component={BreatheCaseStudies} />
+        <Route path="/breathe/ai-voice" component={BreatheAiVoice} />
+        <Route path="/breathe/get-paid" component={BreatheRevenueCycle} />
+        <Route
+          path="/breathe/patient-experience"
+          component={BreathePatientExperience}
+        />
+        <Route
+          path="/breathe/resupply-engine"
+          component={BreatheResupplyEngine}
+        />
+        <Route
+          path="/breathe/communications"
+          component={BreatheCommunications}
+        />
+        <Route path="/breathe/clinical" component={BreatheClinical} />
+        <Route path="/breathe/analytics" component={BreatheAnalytics} />
         <Route
           path="/breathe/switch/brightree"
           component={BreatheSwitchBrightree}
