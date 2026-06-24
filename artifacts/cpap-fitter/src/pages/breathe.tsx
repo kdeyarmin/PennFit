@@ -1694,9 +1694,9 @@ function RevenueRecovery() {
           <p className="bx-lede">
             Most DME losses aren&apos;t missing patients — they&apos;re coverage
             you never found, denials you never worked, and auths that quietly
-            expired. Breathe&apos;s revenue-cycle AI runs all four worklists on
-            every patient record, so the dollars a legacy system writes off get
-            recovered automatically.
+            expired. Breathe brings all four onto one record — coverage
+            discovery, denial recovery, prior auth, and eligibility — so your
+            billing team finds and works the dollars a legacy system writes off.
           </p>
         </div>
         <div className="bx-pillars">
