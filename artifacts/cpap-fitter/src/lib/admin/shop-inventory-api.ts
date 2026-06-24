@@ -32,6 +32,14 @@ export interface InventoryProductRow {
    * Surfaced by the list endpoint; the patch responses omit it.
    */
   priceId?: string | null;
+  /**
+   * The product's `shop_sku` (catalog code, e.g. "AF20-S"). Surfaced by
+   * the admin LIST endpoint only — the backorder / substitution SKU
+   * pickers suggest from it. `null` for a product with no shop_sku
+   * (preview fixtures, mis-tagged Stripe product); absent on the patch
+   * responses, which don't re-read it.
+   */
+  sku?: string | null;
   priceCents: number | null;
   currency: string | null;
   stockCount: number | null;
@@ -76,6 +84,7 @@ export async function listShopInventory(): Promise<ListShopInventoryResponse> {
       id: string;
       name: string;
       category: string;
+      sku?: string | null;
       price?: {
         id?: string | null;
         unitAmount?: number | null;
@@ -92,6 +101,7 @@ export async function listShopInventory(): Promise<ListShopInventoryResponse> {
       id: p.id,
       name: p.name,
       category: p.category,
+      sku: p.sku ?? null,
       priceId: p.price?.id ?? null,
       priceCents: p.price?.unitAmount ?? p.price?.amount ?? null,
       currency: p.price?.currency ?? null,

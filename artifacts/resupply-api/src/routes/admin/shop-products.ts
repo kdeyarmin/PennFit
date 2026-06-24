@@ -1805,9 +1805,23 @@ router.get(
       res.status(502).json({ error: "stripe_list_failed" });
       return;
     }
+    // Surface each product's `shop_sku` alongside the public projection
+    // for the admin inventory editor (backorder / substitution flows key
+    // off the SKU). We read it from the RAW Stripe metadata here rather
+    // than widening the shared `ShopProductView` — the public storefront
+    // catalog has no need for internal SKUs, so the contract stays put.
+    const skuByProductId = new Map<string, string | null>(
+      list.data.map((d) => [
+        d.id,
+        typeof d.metadata?.shop_sku === "string" && d.metadata.shop_sku.length
+          ? d.metadata.shop_sku
+          : null,
+      ]),
+    );
     const products = list.data
       .map(projectProduct)
-      .filter((p): p is ShopProductView => p !== null);
+      .filter((p): p is ShopProductView => p !== null)
+      .map((p) => ({ ...p, sku: skuByProductId.get(p.id) ?? null }));
     res.json({ previewMode: false, products });
   },
 );

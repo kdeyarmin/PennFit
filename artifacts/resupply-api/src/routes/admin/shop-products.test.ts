@@ -1538,6 +1538,35 @@ describe("GET /admin/shop/products (session-scoped)", () => {
     expect(res.status).toBe(200);
     expect(res.body.previewMode).toBe(true);
   });
+
+  it("surfaces each product's shop_sku from Stripe metadata", async () => {
+    stubVerifiedAdmin();
+    stripeAccountRequestOptionsMock.mockResolvedValue({
+      stripeAccount: "acct_tenant",
+    });
+    // shop_sku lives in Stripe product metadata; the admin inventory
+    // editor needs it for the backorder / substitution SKU flows, so the
+    // list response carries it even though the shared ShopProductView
+    // projection (and the public catalog) does not.
+    stripeListMock.mockResolvedValue({
+      data: [
+        { id: "prod_1", metadata: { shop_sku: "AF20-S" } },
+        { id: "prod_2", metadata: {} },
+      ],
+    });
+    const res = await request(makeApp()).get(
+      "/resupply-api/admin/shop/products",
+    );
+    expect(res.status).toBe(200);
+    const products = res.body.products as Array<{
+      id: string;
+      sku: string | null;
+    }>;
+    expect(products.find((p) => p.id === "prod_1")?.sku).toBe("AF20-S");
+    // No shop_sku metadata → null (never undefined), so the client can
+    // treat "not in the catalog" uniformly.
+    expect(products.find((p) => p.id === "prod_2")?.sku).toBeNull();
+  });
 });
 
 describe("admin catalog mutations — connected-account routing", () => {

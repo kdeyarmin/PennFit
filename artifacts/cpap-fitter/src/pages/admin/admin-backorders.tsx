@@ -13,6 +13,7 @@ import { Spinner } from "@/components/admin/Spinner";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Button } from "@/components/admin/Button";
 import { Input } from "@/components/admin/Input";
+import { SkuComboboxInput } from "@/components/admin/SkuComboboxInput";
 import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 import {
   clearBackorder,
@@ -82,17 +83,17 @@ function BackordersPanel() {
       title={data ? `Active backorders (${activeCount})` : "Active backorders"}
     >
       <div className="flex flex-wrap gap-2 items-end mb-3">
-        <div>
+        <div className="w-40">
           <label className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">
             SKU
           </label>
-          <Input
-            ref={skuInputRef}
+          <SkuComboboxInput
+            inputRef={skuInputRef}
             value={sku}
-            onChange={(e) => setSku(e.target.value)}
+            onChange={setSku}
             placeholder="AF20-S"
             aria-label="SKU"
-            style={{ width: "10rem", fontFamily: "monospace" }}
+            testId="mark-sku"
           />
         </div>
         <div className="flex-1 min-w-[10rem]">
@@ -262,29 +263,29 @@ function SubstitutesPanel() {
   return (
     <Card title="Substitution catalog">
       <div className="flex flex-wrap gap-2 items-end mb-3">
-        <div>
+        <div className="w-32">
           <label className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">
             Primary SKU
           </label>
-          <Input
+          <SkuComboboxInput
             value={primary}
-            onChange={(e) => setPrimary(e.target.value)}
+            onChange={setPrimary}
             placeholder="AF20-S"
             aria-label="Primary SKU"
-            style={{ width: "8rem", fontFamily: "monospace" }}
+            testId="primary-sku"
           />
         </div>
         <ArrowRight className="h-4 w-4 text-muted-foreground self-center mt-4" />
-        <div>
+        <div className="w-32">
           <label className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">
             Alternative
           </label>
-          <Input
+          <SkuComboboxInput
             value={alternative}
-            onChange={(e) => setAlternative(e.target.value)}
+            onChange={setAlternative}
             placeholder="AF20-M"
             aria-label="Alternative SKU"
-            style={{ width: "8rem", fontFamily: "monospace" }}
+            testId="alt-sku"
           />
         </div>
         <div>
