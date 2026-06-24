@@ -32,6 +32,7 @@ export const BREATHE_SITEMAP_PATHS: readonly string[] = [
   "/breathe/ai-voice",
   "/breathe/communications",
   "/breathe/get-paid",
+  "/breathe/clinical",
   "/breathe/patient-experience",
   "/breathe/roi",
   "/breathe/pricing",

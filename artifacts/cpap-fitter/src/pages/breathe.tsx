@@ -1162,6 +1162,7 @@ const FOOTER_LINKS: { href: string; label: string }[] = [
   { href: "/breathe/ai-voice", label: "AI voice agent" },
   { href: "/breathe/communications", label: "Communications" },
   { href: "/breathe/get-paid", label: "Get paid" },
+  { href: "/breathe/clinical", label: "Clinical & therapy" },
   { href: "/breathe/patient-experience", label: "Patient experience" },
   { href: "/breathe/roi", label: "ROI" },
   { href: "/breathe/pricing", label: "Pricing" },
@@ -3342,6 +3343,12 @@ function UnifiedFleet() {
             Explore integrations <ArrowRight size={16} />
           </Link>
         </div>
+        <p className="bx-stats-note bx-reveal">
+          Unifying the data is half of it — the other half is acting on it:
+          at-risk alerts, RT interventions, coaching, and telehealth that keep
+          patients on therapy.{" "}
+          <Link href="/breathe/clinical">See the clinical toolkit →</Link>
+        </p>
       </div>
     </section>
   );
