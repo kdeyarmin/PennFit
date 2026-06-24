@@ -55,6 +55,13 @@ export function AdminClinicalOutreachPage() {
             communication preferences and quiet hours — opted-out patients come
             back skipped.
           </p>
+          <p className="text-xs mt-1" style={{ color: "hsl(var(--ink-3))" }}>
+            <span className="font-semibold">
+              Use this to send a batch of due check-ins.
+            </span>{" "}
+            Record one patient&apos;s intervention outcome in Interventions; run
+            a step-by-step plan in Adherence coaching.
+          </p>
         </div>
         {query.data && query.data.count > 0 && (
           <Button isLoading={batch.isPending} onClick={() => batch.mutate()}>

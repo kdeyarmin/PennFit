@@ -69,6 +69,13 @@ export function AdminCoachingPage() {
             plan layers a state machine on top of a compliance alert so
             surveyors can see "what did we do" — not just "what did we notice."
           </p>
+          <p className="text-xs mt-1" style={{ color: "hsl(var(--ink-3))" }}>
+            <span className="font-semibold">
+              Use this to open and manage a step-by-step recovery plan.
+            </span>{" "}
+            Record a single intervention&apos;s outcome in Interventions; send a
+            batch of due check-ins in Clinical outreach.
+          </p>
         </div>
         <label className="flex items-center gap-2 text-xs">
           <input
