@@ -7,14 +7,15 @@
 // pill. Selecting a row opens the triage modal which embeds the PDF
 // in an iframe and exposes the attach-to-patient / archive controls.
 //
-// MVP scope: patient + provider + prescription IDs are entered as
-// UUIDs (most CSRs will copy/paste from the patient-detail page in
-// another tab). A follow-up sprint can replace those with proper
-// autocomplete pickers. The state-machine validation lives on the
-// server (returns 400 with the issue), so the form is permissive on
-// purpose.
+// The triage form attaches patient / provider / prescription references
+// via SEARCH PICKERS (PatientSearchCombobox, ProviderNameAutocomplete,
+// and a patient-scoped prescription select) so CSRs no longer paste raw
+// UUIDs that no human knows. A reference already on the fax (a re-triage)
+// shows as an id chip with a "Change" affordance — leaving it untouched
+// preserves the attachment on save. The state-machine validation lives on
+// the server (returns 400 with the issue), so the form stays permissive.
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Link } from "wouter";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { listFeatureFlags } from "@/lib/admin/feature-flags-api";
@@ -28,11 +29,18 @@ import {
   Sparkles,
 } from "lucide-react";
 
+import {
+  useGetPatient,
+  type PatientListItem,
+} from "@workspace/api-client-react/admin";
+
 import { Card } from "@/components/admin/Card";
 import { Spinner } from "@/components/admin/Spinner";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Button } from "@/components/admin/Button";
-import { Input } from "@/components/admin/Input";
+import { Input, Select } from "@/components/admin/Input";
+import { PatientSearchCombobox } from "@/components/admin/PatientSearchCombobox";
+import { ProviderNameAutocomplete } from "@/components/admin/ProviderNameAutocomplete";
 import {
   autoFileInboundFax,
   inboundFaxMediaUrl,
@@ -500,6 +508,15 @@ function TriageModal({
   const [prescriptionId, setPrescriptionId] = useState(
     fax?.attachedPrescriptionId ?? "",
   );
+  // The freshly-picked patient (drives both the patient combobox's
+  // "selected" rendering and the patient-scoped prescription list). Null
+  // until the CSR picks one this session — a pre-existing attachment can't
+  // be hydrated to a name without a lookup, so it falls back to an id chip.
+  const [selectedPatient, setSelectedPatient] =
+    useState<PatientListItem | null>(null);
+  // Display text for the provider autocomplete; the saved value is the
+  // registry id in `providerId`, set only on an explicit pick.
+  const [providerLabel, setProviderLabel] = useState("");
   const [docType, setDocType] = useState(fax?.attachedDocumentType ?? "");
   const [notes, setNotes] = useState(fax?.notes ?? "");
   const [error, setError] = useState<string | null>(null);
@@ -660,27 +677,76 @@ function TriageModal({
                   }
                 />
               )}
-              <FormField
-                label="Patient ID"
-                value={patientId}
-                onChange={setPatientId}
-                placeholder="UUID — copy from /admin/patients"
-                invalid={!patientValid}
-              />
-              <FormField
-                label="Provider ID (optional)"
-                value={providerId}
-                onChange={setProviderId}
-                placeholder="UUID — copy from /admin/providers"
-                invalid={!providerValid}
-              />
-              <FormField
-                label="Prescription ID (optional)"
-                value={prescriptionId}
-                onChange={setPrescriptionId}
-                placeholder="UUID — copy from the patient's Rx row"
-                invalid={!rxValid}
-              />
+              <FilingField label="Patient">
+                {patientId && !selectedPatient ? (
+                  <ExistingAttachmentChip
+                    kind="patient"
+                    id={patientId}
+                    onClear={() => {
+                      setPatientId("");
+                      setPrescriptionId("");
+                    }}
+                  />
+                ) : (
+                  <PatientSearchCombobox
+                    value={selectedPatient}
+                    onChange={(p) => {
+                      setSelectedPatient(p);
+                      setPatientId(p?.id ?? "");
+                      // A prescription belongs to a patient — dropping or
+                      // changing the patient invalidates any Rx chosen for
+                      // the previous one.
+                      setPrescriptionId("");
+                    }}
+                    aria-label="Patient"
+                    testId="fax-patient"
+                  />
+                )}
+              </FilingField>
+              <FilingField label="Provider (optional)">
+                {providerId && !providerLabel ? (
+                  <ExistingAttachmentChip
+                    kind="provider"
+                    id={providerId}
+                    onClear={() => setProviderId("")}
+                  />
+                ) : (
+                  <ProviderNameAutocomplete
+                    value={providerLabel}
+                    onValueChange={(text) => {
+                      setProviderLabel(text);
+                      // Editing the name away from a picked provider drops
+                      // the id — we can only attach a registry provider.
+                      if (providerId) setProviderId("");
+                    }}
+                    onSelectProvider={(p) => {
+                      setProviderId(p.id);
+                      setProviderLabel(p.legalName);
+                    }}
+                    aria-label="Provider"
+                    placeholder="Search providers by name or NPI"
+                  />
+                )}
+              </FilingField>
+              <FilingField label="Prescription (optional)">
+                {prescriptionId && !patientId ? (
+                  <ExistingAttachmentChip
+                    kind="prescription"
+                    id={prescriptionId}
+                    onClear={() => setPrescriptionId("")}
+                  />
+                ) : !patientId ? (
+                  <p className="text-[11px] text-muted-foreground">
+                    Pick a patient first to choose one of their prescriptions.
+                  </p>
+                ) : (
+                  <PrescriptionPicker
+                    patientId={patientId}
+                    value={prescriptionId}
+                    onChange={setPrescriptionId}
+                  />
+                )}
+              </FilingField>
               <div>
                 <label
                   className="text-xs font-semibold block mb-1"
@@ -916,18 +982,14 @@ function OcrFields({
   );
 }
 
-function FormField({
+// Label + control wrapper for a triage filing field (matches the
+// document-category / notes field styling above).
+function FilingField({
   label,
-  value,
-  onChange,
-  placeholder,
-  invalid,
+  children,
 }: {
   label: string;
-  value: string;
-  onChange: (v: string) => void;
-  placeholder?: string;
-  invalid?: boolean;
+  children: ReactNode;
 }) {
   return (
     <div>
@@ -937,20 +999,93 @@ function FormField({
       >
         {label}
       </label>
-      <Input
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        aria-label={label}
-        style={{
-          borderColor: invalid ? "#dc2626" : undefined,
-        }}
-      />
-      {invalid && (
-        <p className="text-[10px] text-rose-700 mt-1">
-          Must be a UUID or empty.
-        </p>
-      )}
+      {children}
     </div>
+  );
+}
+
+// A filing reference already attached to the fax when it was opened (a
+// re-triage). We can't render a name for a bare id without a lookup, so
+// show the id with a "Change" affordance; clearing it reveals the search
+// picker so the CSR can re-point it. Leaving it untouched preserves the
+// attachment on save.
+export function ExistingAttachmentChip({
+  kind,
+  id,
+  onClear,
+}: {
+  kind: string;
+  id: string;
+  onClear: () => void;
+}) {
+  return (
+    <div
+      className="flex items-center justify-between gap-2 rounded border px-2 py-1.5"
+      style={{ borderColor: "hsl(var(--line-1))" }}
+    >
+      <span className="text-xs truncate">
+        <span className="text-muted-foreground">Attached {kind}: </span>
+        <code className="text-[11px]">{id}</code>
+      </span>
+      <Button intent="ghost" size="sm" onClick={onClear}>
+        Change
+      </Button>
+    </div>
+  );
+}
+
+// Patient-scoped prescription select. The list lives on the patient
+// detail (there is no standalone "prescriptions by patient" endpoint), so
+// we load it via useGetPatient once a patient is chosen and offer their
+// prescriptions by a human label (SKU · HCPCS · status) instead of a raw
+// UUID. Yields the prescription id (or "" for none).
+export function PrescriptionPicker({
+  patientId,
+  value,
+  onChange,
+}: {
+  patientId: string;
+  value: string;
+  onChange: (id: string) => void;
+}) {
+  const patient = useGetPatient(patientId, {
+    query: { enabled: patientId.length > 0, staleTime: 60_000 },
+  });
+  const prescriptions = patient.data?.prescriptions ?? [];
+
+  if (patient.isPending) {
+    return (
+      <p className="text-[11px] text-muted-foreground">
+        Loading this patient&apos;s prescriptions…
+      </p>
+    );
+  }
+  if (patient.isError) {
+    return (
+      <p className="text-[11px] text-rose-700">
+        Couldn&apos;t load prescriptions — save without one, or reopen to retry.
+      </p>
+    );
+  }
+  if (prescriptions.length === 0) {
+    return (
+      <p className="text-[11px] text-muted-foreground">
+        This patient has no prescriptions on file.
+      </p>
+    );
+  }
+  return (
+    <Select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      aria-label="Prescription"
+      emptyOptionLabel="— None —"
+      options={prescriptions.map((rx) => ({
+        value: rx.id,
+        label: [rx.itemSku, rx.hcpcsCode, rx.status]
+          .filter(Boolean)
+          .join(" · "),
+      }))}
+    />
   );
 }
