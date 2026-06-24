@@ -100,7 +100,12 @@ export function AgreementsGate() {
             </div>
             <div
               className="text-xs"
-              style={{ color: "hsl(var(--penn-gold-deep))" }}
+              // The deep gold (--penn-gold-deep, #7a5229) is tuned for light
+              // surfaces; on this navy (#0a1f44) header it is only 2.37:1 and
+              // fails WCAG AA (e2e axe a11y check). Use the brighter brand gold
+              // #c9a24a — the same token the logo badge above uses — which is
+              // ~6.8:1 on the navy.
+              style={{ color: "#c9a24a" }}
             >
               Finish onboarding
             </div>
