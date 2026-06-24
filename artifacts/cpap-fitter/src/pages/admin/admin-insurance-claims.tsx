@@ -39,6 +39,7 @@ import { ClaimAppealsSection } from "@/components/admin/ClaimAppealsSection";
 import { Input } from "@/components/admin/Input";
 import { PayerNameAutocomplete } from "@/components/admin/PayerNameAutocomplete";
 import { HcpcsCodeAutocomplete } from "@/components/admin/HcpcsCodeAutocomplete";
+import { consumeClaimParam } from "@/lib/admin/claim-deeplink";
 import { todayAppDateIso } from "@/lib/utils";
 import {
   createInsuranceClaim,
@@ -130,16 +131,13 @@ export function AdminInsuranceClaimsPage({ patientId }: { patientId: string }) {
   // deep-link here with the specific claim to work — then strip the param so
   // closing the drawer (or a refresh) doesn't force it back open.
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const claimParam = params.get("claim");
-    if (!claimParam) return;
-    setOpenClaimId(claimParam);
-    params.delete("claim");
-    const qs = params.toString();
+    const { claimId, nextSearch } = consumeClaimParam(window.location.search);
+    if (!claimId) return;
+    setOpenClaimId(claimId);
     window.history.replaceState(
       null,
       "",
-      window.location.pathname + (qs ? `?${qs}` : ""),
+      window.location.pathname + nextSearch,
     );
   }, []);
 
