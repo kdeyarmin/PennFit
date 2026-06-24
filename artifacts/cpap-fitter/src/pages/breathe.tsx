@@ -932,6 +932,131 @@ function SignupSection() {
   );
 }
 
+/* ───────────────────── Explore the platform (deep-dive index) ─────────────
+   The top nav is deliberately short (6 links), so the long-form deep-dive
+   pages would otherwise only be reachable from the footer. This homepage
+   index grid surfaces all of them from the main funnel — one card per pillar,
+   a one-line "what you'll find," each linking the dedicated page. Reuses the
+   .bx-cap card (the class is element-agnostic, so a <Link> picks up the same
+   styling + hover); the only new rule is the small .bx-cap-more arrow
+   affordance in breathe.css. */
+const EXPLORE: {
+  icon: React.ReactNode;
+  title: string;
+  blurb: string;
+  href: string;
+  gold?: boolean;
+}[] = [
+  {
+    icon: <RefreshCw size={20} />,
+    title: "Resupply engine",
+    gold: true,
+    blurb:
+      "The multi-channel cadence that turns due dates into reorders — text, email, chat, and AI calls that escalate until a patient responds.",
+    href: "/breathe/resupply-engine",
+  },
+  {
+    icon: <PhoneCall size={20} />,
+    title: "AI voice agent",
+    blurb:
+      "A 24/7 voice agent that places and answers resupply calls — with audit-grade transcripts and a post-call summary on every one.",
+    href: "/breathe/ai-voice",
+  },
+  {
+    icon: <MessageSquare size={20} />,
+    title: "Patient communications",
+    blurb:
+      "One inbox for SMS, MMS, email, and fax — with AI drafting, triage, and high-confidence auto-replies that give your team hours back.",
+    href: "/breathe/communications",
+  },
+  {
+    icon: <CircleDollarSign size={20} />,
+    title: "Revenue cycle",
+    gold: true,
+    blurb:
+      "Eligibility to ERA in one flow: claim scrubbing, auto-posting, ranked denials, patient-pay plans, and payer profitability.",
+    href: "/breathe/get-paid",
+  },
+  {
+    icon: <Stethoscope size={20} />,
+    title: "Clinical & therapy",
+    blurb:
+      "Catch patients slipping off therapy before they quit — adherence cohorts, alerts, coaching plans, and recall tracking.",
+    href: "/breathe/clinical",
+  },
+  {
+    icon: <LineChart size={20} />,
+    title: "Analytics & insight",
+    blurb:
+      "The owner's cockpit: revenue, margin, funnel, LTV/CAC, and KPI alerts that page you before a number slips.",
+    href: "/breathe/analytics",
+  },
+  {
+    icon: <Users size={20} />,
+    title: "Patient experience",
+    blurb:
+      "What your patients actually get — a branded storefront, virtual fitter, self-service portal, and AI help that keeps them on therapy.",
+    href: "/breathe/patient-experience",
+  },
+  {
+    icon: <ShieldCheck size={20} />,
+    title: "Compliance & audits",
+    blurb:
+      "Payer, therapy, and business safeguards built in — plus a one-step ADR packet for when the auditor asks.",
+    href: "/breathe/compliance",
+  },
+  {
+    icon: <Network size={20} />,
+    title: "Multi-location",
+    blurb:
+      "Run every branch on one platform — each its own record with its own NPI, a live rollup, and in-store pickup.",
+    href: "/breathe/multi-location",
+  },
+];
+
+function ExploreDeepDives() {
+  return (
+    <section className="bx-section" id="explore">
+      <div className="bx-shell">
+        <div className="bx-section-head center bx-reveal">
+          <span className="bx-eyebrow">
+            <Waypoints size={13} /> Go deeper
+          </span>
+          <h2 className="bx-h2">
+            Explore the platform, <em>one pillar at a time</em>
+          </h2>
+          <p className="bx-lede">
+            This page is the overview. Each pillar has its own deep dive — how
+            it actually works, everything it includes, and the outcome it
+            drives. Pick a thread and follow it all the way down.
+          </p>
+        </div>
+        <div className="bx-caps">
+          {EXPLORE.map((c) => (
+            <Link
+              className={`bx-cap bx-reveal${c.gold ? " gold" : ""}`}
+              href={c.href}
+              key={c.href}
+              style={{ textDecoration: "none", color: "inherit" }}
+            >
+              <div className="bx-cap-head">
+                <span className="bx-cap-ic">{c.icon}</span>
+                <div>
+                  <h3>{c.title}</h3>
+                  <p className="bx-cap-summary">{c.blurb}</p>
+                </div>
+              </div>
+              <span className="bx-cap-more">
+                Explore <ArrowRight size={15} />
+              </span>
+            </Link>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 /* Landing — the elevator pitch: hero, integrations, what it replaces, CTA. */
 export function BreatheHome() {
   useDocumentTitle(
@@ -961,6 +1086,7 @@ export function BreatheHome() {
       <BuiltInHouse />
       <Replaces />
       <Outcomes />
+      <ExploreDeepDives />
       <PricingHome />
       <FoundingPartner />
       <ClosingCta />
@@ -1169,6 +1295,7 @@ const FOOTER_LINKS: { href: string; label: string }[] = [
   { href: "/breathe/pricing", label: "Pricing" },
   { href: "/breathe/security", label: "Security" },
   { href: "/breathe/compliance", label: "Compliance" },
+  { href: "/breathe/multi-location", label: "Multi-location" },
   { href: "/breathe/case-studies", label: "Case studies" },
   { href: "/breathe/faq", label: "FAQ" },
 ];
