@@ -1169,6 +1169,7 @@ const FOOTER_LINKS: { href: string; label: string }[] = [
   { href: "/breathe/pricing", label: "Pricing" },
   { href: "/breathe/security", label: "Security" },
   { href: "/breathe/compliance", label: "Compliance" },
+  { href: "/breathe/multi-location", label: "Multi-location" },
   { href: "/breathe/case-studies", label: "Case studies" },
   { href: "/breathe/faq", label: "FAQ" },
 ];
