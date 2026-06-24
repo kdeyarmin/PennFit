@@ -220,7 +220,9 @@ describe("update_order_shipping_address", () => {
       },
     });
     // The persisted address carries the pinned country + uppercased state.
-    const writes = getSupabaseWritePayloads("shop_orders", "update");
+    const writes = getSupabaseWritePayloads("shop_orders", "update") as Array<{
+      shipping_address_json?: Record<string, unknown>;
+    }>;
     expect(writes[0]?.shipping_address_json).toMatchObject({
       line1: "456 New Address Ln",
       line2: "Suite 9",
