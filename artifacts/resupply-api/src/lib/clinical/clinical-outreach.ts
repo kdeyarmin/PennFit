@@ -61,7 +61,9 @@ export function readOutreachMessagingConfig(
     twilioAuthToken: env.TWILIO_AUTH_TOKEN ?? null,
     twilioPhoneNumber: env.TWILIO_PHONE_NUMBER ?? null,
     twilioMessagingServiceSid: env.TWILIO_MESSAGING_SERVICE_SID ?? null,
-    practiceName: env.RESUPPLY_PRACTICE_NAME ?? "PennPaps",
+    // Platform default (CareMetric Breathe), NOT the seed (Penn) tenant —
+    // a configured tenant's RESUPPLY_PRACTICE_NAME / org row wins.
+    practiceName: env.RESUPPLY_PRACTICE_NAME ?? "CareMetric Breathe",
   };
 }
 

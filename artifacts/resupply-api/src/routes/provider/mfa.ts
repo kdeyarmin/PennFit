@@ -72,7 +72,7 @@ const verifyBody = z
   .strict();
 
 function getIssuerLabel(): string {
-  return process.env.RESUPPLY_PRACTICE_NAME?.trim() || "PennPaps";
+  return process.env.RESUPPLY_PRACTICE_NAME?.trim() || "CareMetric Breathe";
 }
 
 router.get(

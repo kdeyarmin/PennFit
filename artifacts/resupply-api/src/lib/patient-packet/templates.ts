@@ -651,12 +651,16 @@ export function defaultPacketDocumentKeys(): string[] {
 }
 
 // Last-resort values when the dme_organization row hasn't been seeded
-// (dev / preview). The phone is the real support line — a placeholder
-// number must never render on a signed patient agreement.
+// (dev / preview, or a brand-new tenant before it fills in Company
+// Information). The NEUTRAL platform identity — never the seed (Penn)
+// tenant's name/contact, which would leak Penn onto another tenant's
+// signed agreement. A configured tenant always supplies its own via the
+// DB row, so this fallback never alters Penn's (or any seeded tenant's)
+// packets.
 export const FALLBACK_COMPANY: CompanyProfile = {
-  legalName: "PennPaps",
-  phone: "(814) 471-0627",
-  email: "info@pennpaps.com",
+  legalName: "CareMetric Breathe",
+  phone: "",
+  email: "support@cmbreathe.com",
   addressLine1: "",
   cityStateZip: "",
   npi: null,

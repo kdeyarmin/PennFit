@@ -266,7 +266,10 @@ export async function dispatchAlert(
   }
 
   // 4. Render. Caller variables win over the derived defaults.
-  const practiceName = process.env.RESUPPLY_PRACTICE_NAME?.trim() || "PennPaps";
+  // Platform default (CareMetric Breathe), NOT the seed (Penn) tenant —
+  // a configured tenant's RESUPPLY_PRACTICE_NAME / org row wins.
+  const practiceName =
+    process.env.RESUPPLY_PRACTICE_NAME?.trim() || "CareMetric Breathe";
   const variables: Record<string, string> = {
     first_name: patient.legal_first_name ?? "there",
     practice_name: practiceName,

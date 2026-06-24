@@ -454,7 +454,8 @@ export async function runLowStockAlerts(): Promise<LowStockAlertStats> {
       "low-stock-alerts: seed org unresolved — platform catalog skipped this tick (connected tenants unaffected)",
     );
   }
-  const practiceName = process.env.RESUPPLY_PRACTICE_NAME ?? "PennPaps";
+  const practiceName =
+    process.env.RESUPPLY_PRACTICE_NAME ?? "CareMetric Breathe";
 
   await forEachActiveOrg(
     async (orgId) => {

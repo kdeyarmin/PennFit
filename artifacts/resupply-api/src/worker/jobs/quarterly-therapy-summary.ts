@@ -192,7 +192,8 @@ async function quarterlySummarySweepForOrg(
 
   const cooldownThreshold = isoDaysAgo(RESEND_COOLDOWN_DAYS);
 
-  const practiceName = process.env.RESUPPLY_PRACTICE_NAME?.trim() || "PennPaps";
+  const practiceName =
+    process.env.RESUPPLY_PRACTICE_NAME?.trim() || "CareMetric Breathe";
 
   // Keyset-paged candidate walk. Skipped rows — most patients have NO
   // shop_customers row at all (skippedNoShopCustomer), plus opt-outs

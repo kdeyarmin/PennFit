@@ -46,6 +46,18 @@ Practical rules:
   In source, `PennBot`/`PennPilot` remain the canonical placeholders and
   are normalized at the I/O boundary by `applyPlatformBranding()` — so the
   large prompt knowledge bases don't need editing.
+  **New tenants never inherit the seed (Penn) brand.** Two enforcement
+  points: (1) `getTenantConfigValue` (`app-config/store.ts`) skips its
+  seed-org fallback for the brand keys in `NON_INHERITABLE_TENANT_KEYS` (the
+  two `RESUPPLY_ASSISTANT_*` names), so an un-seeded tenant resolves to the
+  CareMetric defaults instead of Penn's `PennBot`/`PennPilot`; and (2)
+  `getCompanyInfo(orgId)` for an explicit NON-seed tenant with no
+  `dme_organization` row returns the neutral platform identity
+  (`platformFallbackInfo()`), never the seed's env-folded
+  `RESUPPLY_PRACTICE_NAME`. Single global brand fallbacks that used to read
+  `... ?? "PennPaps"` now read `... ?? "CareMetric Breathe"` (the MFA TOTP
+  issuer, SMS/voice practice name, packet `FALLBACK_COMPANY`, etc.) — a
+  configured tenant's own value still wins, so the Penn tenant is unchanged.
 
 ## Start-of-session checklist
 

@@ -142,13 +142,13 @@ export function smsBody(firstName: string, kind: TriggerKind): string {
   // reducing carrier delivery rate.
   switch (kind) {
     case "leak_rising":
-      return `${head}, your CPAP leak rate has trended up - usually means a worn cushion. Reply YES to ship a replacement, or STOP to opt out. - Penn Home`;
+      return `${head}, your CPAP leak rate has trended up - usually means a worn cushion. Reply YES to ship a replacement, or STOP to opt out. - PennPaps`;
     case "usage_dropping":
-      return `${head}, we noticed your therapy hours dropped lately. Small adjustments help. Reply YES for a quick check-in call, or STOP to opt out. - Penn Home`;
+      return `${head}, we noticed your therapy hours dropped lately. Small adjustments help. Reply YES for a quick check-in call, or STOP to opt out. - PennPaps`;
     case "cushion_wear":
-      return `${head}, your AHI + leak rate are both up - usually a worn cushion. Reply YES to ship a fresh one, or STOP to opt out. - Penn Home`;
+      return `${head}, your AHI + leak rate are both up - usually a worn cushion. Reply YES to ship a fresh one, or STOP to opt out. - PennPaps`;
     case "humidifier_drop":
-      return `${head}, your tubing may be due for a refresh. Reply YES to ship a fresh hose, or STOP to opt out. - Penn Home`;
+      return `${head}, your tubing may be due for a refresh. Reply YES to ship a fresh hose, or STOP to opt out. - PennPaps`;
     case "ahi_elevated":
     case "non_adherent_30d":
     case "pressure_at_max":

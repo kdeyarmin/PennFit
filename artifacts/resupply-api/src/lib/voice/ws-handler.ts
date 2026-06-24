@@ -423,7 +423,9 @@ export async function handleVoiceWsConnection(
       generateAudio: !externalVoice,
       instructions: buildPromptOrFallback(
         {
-          practiceName: config.practiceName?.trim() || "PennPaps",
+          // Platform default (CareMetric Breathe), NOT the seed (Penn)
+          // tenant — the tenant's resolved practice name wins when present.
+          practiceName: config.practiceName?.trim() || "CareMetric Breathe",
           callerKind,
           // Inbound calls (the reorder IVR) set their own context + greeting
           // on the pending entry so the agent doesn't tell a caller who
@@ -734,7 +736,7 @@ export async function handleVoiceWsConnection(
     void runPostCallSummary({
       conversationId: pending.conversationId,
       twilioCallSid,
-      practiceName: config.practiceName ?? "PennPaps",
+      practiceName: config.practiceName ?? "CareMetric Breathe",
       endReason: reason,
       turns: turnHistory,
       orgId: pending.orgId,
@@ -1070,7 +1072,7 @@ export async function handleVoiceDiagnosticWsConnection(
     generateAudio: true,
     instructions: buildPromptOrFallback(
       {
-        practiceName: config.practiceName?.trim() || "PennPaps",
+        practiceName: config.practiceName?.trim() || "CareMetric Breathe",
         callContext: pending.callContext ?? DIAGNOSTIC_DEFAULT_CALL_CONTEXT,
         ...(pending.greeting ? { greeting: pending.greeting } : {}),
         // Honor the caller kind so an admin test call can hear the

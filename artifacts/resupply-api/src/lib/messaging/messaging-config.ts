@@ -54,13 +54,17 @@ export interface MessagingConfig {
   hasLinkHmacKey: boolean;
   /**
    * Practice name baked into outbound SMS + email templates. Falls
-   * back to "PennPaps" when unset so dev surfaces something
-   * presentable; production should always set this.
+   * back to the CareMetric Breathe platform name when unset so an
+   * unconfigured tenant never inherits the seed (Penn) tenant's brand;
+   * a configured tenant's RESUPPLY_PRACTICE_NAME / org row wins.
    */
   practiceName: string;
 }
 
-const DEFAULT_PRACTICE_NAME = "PennPaps";
+// The platform default (mirrors PLATFORM_NAME in company-info.ts). NOT the
+// seed tenant's "PennPaps" — that is tenant data and must never be the
+// global fallback.
+const DEFAULT_PRACTICE_NAME = "CareMetric Breathe";
 
 export function readSmsConfigOrNull(
   env: NodeJS.ProcessEnv = process.env,
@@ -94,8 +98,9 @@ export function readEmailConfigOrNull(
 ): EmailConfig | null {
   const sendgridApiKey = env.SENDGRID_API_KEY;
   // The From address now defaults to the platform constant
-  // (info@pennpaps.com) when SENDGRID_FROM_EMAIL is unset/blank, so it is
-  // no longer a precondition for enabling email — see ADR 018.
+  // (noreply@cmbreathe.com, DEFAULT_SENDGRID_FROM_EMAIL) when
+  // SENDGRID_FROM_EMAIL is unset/blank, so it is no longer a precondition
+  // for enabling email — see ADR 018.
   const sendgridFromEmail =
     env.SENDGRID_FROM_EMAIL?.trim() || DEFAULT_SENDGRID_FROM_EMAIL;
   const sendgridFromName = env.SENDGRID_FROM_NAME;

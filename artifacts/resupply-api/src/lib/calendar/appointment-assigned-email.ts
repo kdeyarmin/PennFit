@@ -110,7 +110,7 @@ function buildFields(input: AppointmentAssignedEmailInput) {
 
 function renderText(
   input: AppointmentAssignedEmailInput,
-  brandName = "PennPaps",
+  brandName = "CareMetric Breathe",
 ): string {
   const f = buildFields(input);
   const lines = [
@@ -134,7 +134,7 @@ function renderText(
 
 function renderHtml(
   input: AppointmentAssignedEmailInput,
-  brandName = "PennPaps",
+  brandName = "CareMetric Breathe",
 ): string {
   const f = buildFields(input);
   const locationRow = f.location

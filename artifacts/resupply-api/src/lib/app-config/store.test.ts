@@ -157,16 +157,27 @@ describe("getTenantConfigValue", () => {
   });
 
   it("falls back to the seed org's value when the tenant has no row", async () => {
-    // Tenant read → no row; seed read → the platform default value.
+    // Tenant read → no row; seed read → the platform default value. A
+    // platform-GLOBAL config key (not a tenant brand key) inherits the seed.
     stageSupabaseResponse("app_config", "select", { data: null });
     stageSupabaseResponse("app_config", "select", {
-      data: { value: "PennBot" },
+      data: { value: "whsec-seed" },
     });
+    const v = await getTenantConfigValue(TENANT_ORG, "DEEPGRAM_API_KEY");
+    expect(v).toBe("whsec-seed");
+  });
+
+  it("does NOT inherit the seed org's value for a tenant BRAND key", async () => {
+    // The seed org is the Penn tenant, whose assistant name is "PennBot".
+    // A new tenant with no row must NOT inherit it — it returns null so the
+    // caller resolves the CareMetric platform default instead of Penn's brand.
+    // Only the tenant row is read (no seed read), so stage a single response.
+    stageSupabaseResponse("app_config", "select", { data: null });
     const v = await getTenantConfigValue(
       TENANT_ORG,
       "RESUPPLY_ASSISTANT_STOREFRONT_NAME",
     );
-    expect(v).toBe("PennBot");
+    expect(v).toBeNull();
   });
 
   it("returns null when neither the tenant nor the seed org has a row", async () => {

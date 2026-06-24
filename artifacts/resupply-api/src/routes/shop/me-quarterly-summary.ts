@@ -85,7 +85,8 @@ router.get("/shop/me/quarterly-summary", requireSignedIn, async (req, res) => {
     patient,
     windowStart: startIso,
     windowEnd: endIso,
-    practiceName: process.env.RESUPPLY_PRACTICE_NAME?.trim() || "PennPaps",
+    practiceName:
+      process.env.RESUPPLY_PRACTICE_NAME?.trim() || "CareMetric Breathe",
     nights: (
       (nights ?? []) as Array<
         Database["resupply"]["Tables"]["patient_therapy_nights"]["Row"]

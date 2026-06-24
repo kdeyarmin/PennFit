@@ -238,7 +238,9 @@ describe("POST /sms/send-reminder", () => {
     expect(sendSmsMock).toHaveBeenCalledTimes(1);
     const call = sendSmsMock.mock.calls[0][0];
     expect(call.to).toBe("+12155551212");
-    expect(call.body).toContain("PennPaps");
+    // No tenant practice name configured in this test → the SMS carries the
+    // CareMetric Breathe platform default, not the seed (Penn) tenant brand.
+    expect(call.body).toContain("CareMetric Breathe");
     expect(call.statusCallbackUrl).toContain(
       `/resupply-api/sms/status-callback?conversationId=${CONVERSATION_ID}`,
     );

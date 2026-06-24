@@ -204,7 +204,8 @@ export async function runPacwareReadyToSyncDigest(
       skippedReason: "no_recipient",
     };
   }
-  const practiceName = process.env.RESUPPLY_PRACTICE_NAME ?? "PennPaps";
+  const practiceName =
+    process.env.RESUPPLY_PRACTICE_NAME ?? "CareMetric Breathe";
 
   let sentCount = 0;
   let readyCount = 0;

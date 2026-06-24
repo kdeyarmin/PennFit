@@ -280,8 +280,10 @@ describe("readPracticeName", () => {
     );
   });
 
-  it("defaults to PennPaps when env var is absent", () => {
-    expect(readPracticeName({})).toBe("PennPaps");
+  it("defaults to the CareMetric Breathe platform name when env var is absent", () => {
+    // NOT the seed (Penn) tenant's "PennPaps" — an unconfigured tenant must
+    // never inherit the seed brand.
+    expect(readPracticeName({})).toBe("CareMetric Breathe");
   });
 });
 
