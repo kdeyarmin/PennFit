@@ -39,7 +39,11 @@ import {
 } from "@workspace/resupply-ai";
 
 import { logger } from "../logger";
-import { applyCompanyIdentityToText, getCompanyInfo } from "../company-info";
+import {
+  applyCompanyIdentityToText,
+  applyPlatformBrandingForOrg,
+  getCompanyInfo,
+} from "../company-info";
 import { recordAiTokenUsage } from "../metering/usage.js";
 import {
   DEFAULT_ANTHROPIC_MODEL_CHAT,
@@ -213,11 +217,19 @@ export async function generateEmailReply(
 
   const userPrompt = buildUserPrompt(input);
   // Brand the knowledge base + email addendum (sign-off, "to PennPaps")
-  // for the sender's tenant. Omitting orgId falls back to the warm seed
-  // identity, so single-tenant is byte-identical.
-  const systemPrompt = applyCompanyIdentityToText(
-    getEmailSystemPromptBase(),
-    await getCompanyInfo(orgId),
+  // for the sender's tenant. Mirror the /api/chat boundary: apply the saved
+  // company identity (phone/email/brand) AND swap the platform assistant-name
+  // tokens (PennBot/PennPilot) per tenant via applyPlatformBrandingForOrg —
+  // the shared email KB is written with PennBot tokens, so without this a
+  // non-seed tenant's auto-reply would be grounded in / signed as the seed
+  // brand. Omitting orgId falls back to the seed identity, so single-tenant
+  // is byte-identical.
+  const systemPrompt = await applyPlatformBrandingForOrg(
+    applyCompanyIdentityToText(
+      getEmailSystemPromptBase(),
+      await getCompanyInfo(orgId),
+    ),
+    orgId,
   );
   const minConfidence = resolveMinConfidence(env);
 

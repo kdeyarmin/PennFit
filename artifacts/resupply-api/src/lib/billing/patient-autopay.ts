@@ -396,7 +396,18 @@ export async function revokeAutopayAuthorization(
   if (config) {
     try {
       const stripe = getStripeClient(config);
-      await stripe.paymentMethods.detach(row.stripe_payment_method_id);
+      // The saved PM lives on the tenant's CONNECTED account (the setup
+      // session + autopay-charge worker both route there via
+      // stripeAccountRequestOptions). Detach must target the SAME account,
+      // or Stripe 404s the PM on the platform account and the card stays
+      // attached/usable on the connected account after the patient removed
+      // it. Empty options for the platform account (seed / not-onboarded).
+      const accountOptions = await stripeAccountRequestOptions(orgId);
+      await stripe.paymentMethods.detach(
+        row.stripe_payment_method_id,
+        undefined,
+        accountOptions,
+      );
     } catch (err) {
       // Already-detached / unknown PM is fine — we still revoke locally.
       logger.info(

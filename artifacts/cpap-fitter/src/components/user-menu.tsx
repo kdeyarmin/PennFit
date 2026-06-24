@@ -14,6 +14,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { LogIn, LogOut, MessageSquare, Package, User } from "lucide-react";
 
+import { toast } from "@/hooks/use-toast";
 import { SignedIn, useShopIdentity } from "@/lib/identity";
 import { useShopMessagesUnread } from "@/hooks/use-shop-messages-unread";
 import { useCompanyContact } from "@/lib/contact";
@@ -161,9 +162,26 @@ function UserPill() {
             role="menuitem"
             onClick={() => {
               setOpen(false);
-              void signOut().finally(() => {
-                setLocation("/");
-              });
+              // Navigate home ONLY on a successful sign-out. The shop
+              // signOut() clears cart/wishlist/chat and revokes the server
+              // session; it re-throws if the server call fails. Navigating in
+              // `finally` regardless would strand the user on the home page
+              // looking signed-out while their session cookie is still valid
+              // (and their cart already cleared). On failure, stay put + warn.
+              void signOut().then(
+                () => {
+                  setLocation("/");
+                },
+                (err: unknown) => {
+                  console.error("sign-out failed", err);
+                  toast({
+                    variant: "destructive",
+                    title: "Sign-out failed",
+                    description:
+                      "You may still be signed in. Check your connection and try again.",
+                  });
+                },
+              );
             }}
             className="w-full flex items-center gap-2 px-3 py-2 rounded-md hover:bg-muted text-left"
             data-testid="user-menu-sign-out"
