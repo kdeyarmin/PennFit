@@ -297,8 +297,12 @@ describe("GET /admin/payer-modifier-rules/resolve", () => {
     expect(res.body.error).toBe("invalid_query");
   });
 
-  it("resolves the month-1 rental rotation from active rules", async () => {
+  it("resolves the month-1 capped-rental rotation (KX correctly excluded at month 1)", async () => {
     stubAdmin();
+    // Stale/copied rotation rows: the resolver no longer trusts these for the
+    // capped-rental month band + KX — it strips them and takes the band from
+    // the shared pickCappedRentalModifiers() instead. At month 1 the rotation
+    // is RR+KH and KX must NOT appear (KX is months-4+ when compliant).
     stageSupabaseResponse("payer_modifier_rules", "select", {
       data: [
         { condition: "always", modifiers_csv: "KX", priority: 10 },
@@ -322,8 +326,34 @@ describe("GET /admin/payer-modifier-rules/resolve", () => {
         rentalMonth: "1",
       });
     expect(res.status).toBe(200);
-    expect(res.body.modifiers).toEqual(["KX", "KH"]);
+    expect(res.body.modifiers).toEqual(["RR", "KH"]);
     expect(res.body.ruleCount).toBe(3);
     expect(res.body.context.rentalMonth).toBe(1);
+  });
+
+  it("resolves month-4+ as KJ (not the stale seed's KI), with KX when compliant", async () => {
+    stubAdmin();
+    // Even if a copied rule still says KI for months 4+, the prefill returns
+    // the CMS-correct KJ and adds KX because the request is marked compliant.
+    stageSupabaseResponse("payer_modifier_rules", "select", {
+      data: [
+        {
+          condition: "if_rental_month_ge_4",
+          modifiers_csv: "KI",
+          priority: 20,
+        },
+      ],
+    });
+    const res = await request(makeApp())
+      .get("/admin/payer-modifier-rules/resolve")
+      .query({
+        payerProfileId: PAYER_PROFILE_UUID,
+        hcpcs: HCPCS,
+        rentalMonth: "4",
+        compliant: "true",
+      });
+    expect(res.status).toBe(200);
+    expect(res.body.modifiers).toEqual(["RR", "KJ", "KX"]);
+    expect(res.body.modifiers).not.toContain("KI");
   });
 });

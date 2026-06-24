@@ -32,10 +32,77 @@ import {
   buildAbnScope,
   resolveModifiersFromRules,
 } from "./modifier-rules";
+import {
+  CAPPED_RENTAL_KX_HCPCS,
+  pickCappedRentalModifiers,
+} from "@workspace/resupply-domain";
 import { fetchUnitCostsBySku } from "./product-cost-lookup";
 import { pickFeeScheduleRowByModifiers } from "./fee-schedule-match";
 
 type SupabaseClient = OrgScopedClient;
+
+/** Modifiers the capped-rental rotation OWNS — the month band (KH/KI/KJ) plus
+ *  the adherence KX. For a capped-rental line these come ONLY from the shared
+ *  rotation, so any copy a (possibly stale, copied-to-a-commercial-payer) rule
+ *  or template contributed must be stripped before merging — otherwise a
+ *  leftover KI could ride alongside the correct KJ and trip the
+ *  capped_rental_month_exclusive validator. */
+const ROTATION_OWNED_MODIFIERS = new Set(["KH", "KI", "KJ", "KX"]);
+
+/**
+ * Capped-rental modifier rotation (RR + KH/KI/KJ, plus KX) for a claim line,
+ * or `[]` when the line isn't an adherence-gated capped-rental code or the
+ * rental month is unknown. This rotation is a CMS sequence the per-condition
+ * payer-rule engine cannot express (KJ on months 4+, and KX only when
+ * months>=4 AND adherence is documented — a conjunction), so both the manual
+ * claim builder and the auto-advance worker take it from the same shared
+ * pickCappedRentalModifiers(). Exported for direct testing.
+ *
+ * `isInitialDispense` covers the month-1 claim: resolveRuleContext leaves
+ * `rentalMonth` null when there are NO prior capped claims, which is precisely
+ * the first dispense — month 1, which must still carry RR+KH.
+ */
+export function cappedRentalRotationForLine(
+  hcpcsCode: string,
+  rentalMonth: number | null,
+  isCompliant: boolean,
+  isInitialDispense = false,
+): string[] {
+  if (!(CAPPED_RENTAL_KX_HCPCS as readonly string[]).includes(hcpcsCode)) {
+    return [];
+  }
+  const month = rentalMonth ?? (isInitialDispense ? 1 : null);
+  if (month === null) return [];
+  return pickCappedRentalModifiers(hcpcsCode, month, isCompliant);
+}
+
+/**
+ * Merge a capped-rental rotation with the line's base + payer-rule modifiers,
+ * deduped and capped at the EDI's 4-modifier limit. When the rotation is
+ * non-empty it OWNS the month band + KX (see ROTATION_OWNED_MODIFIERS), so any
+ * such modifier from the other sources is dropped before merging; everything
+ * else (RR dedupes, ABN GA, etc.) is preserved in first-seen order, rotation
+ * first so the canonical RR/KH/KI/KJ ordering leads.
+ */
+export function mergeLineModifiers(
+  cappedRotation: string[],
+  baseModifiers: string[],
+  extraModifiers: string[],
+): string[] {
+  const stripOwned = (mods: string[]): string[] =>
+    cappedRotation.length > 0
+      ? mods.filter((m) => !ROTATION_OWNED_MODIFIERS.has(m))
+      : mods;
+  const merged: string[] = [];
+  for (const m of [
+    ...cappedRotation,
+    ...stripOwned(baseModifiers),
+    ...stripOwned(extraModifiers),
+  ]) {
+    if (!merged.includes(m)) merged.push(m);
+  }
+  return merged.slice(0, 4);
+}
 
 export interface ProposedClaimLine {
   hcpcsCode: string;
@@ -357,13 +424,26 @@ export async function buildClaimFromFulfillment(
         lineItem.hcpcsCode,
         lineCtx,
       );
-      // Merge + dedupe modifiers while preserving order; the EDI
-      // builder accepts up to 4 modifiers per line.
-      const merged: string[] = [];
-      for (const m of [...lineItem.modifiers, ...extra]) {
-        if (!merged.includes(m)) merged.push(m);
-      }
-      lineItem.modifiers = merged.slice(0, 4);
+      // Capped-rental rotation (see cappedRentalRotationForLine): the manual
+      // path and the auto-advance worker share pickCappedRentalModifiers() so a
+      // hand-built claim and an auto-advanced one carry IDENTICAL, CMS-correct
+      // modifiers. The DB's coarse KH-months-1-3 / KI-months-4+ seed rows for
+      // these codes were wrong and are dropped in migration 0474. Pass
+      // isInitialDispense so a month-1 claim (no prior claims → rentalMonth
+      // null) still gets RR+KH. The merge then strips any stale month-band/KX a
+      // copied commercial-payer rule or applied template contributed, so we
+      // can't emit a conflicting pair like KJ+KI.
+      const cappedRotation = cappedRentalRotationForLine(
+        lineItem.hcpcsCode,
+        lineCtx.rentalMonth,
+        lineCtx.isCompliant,
+        lineCtx.isInitialDispense,
+      );
+      lineItem.modifiers = mergeLineModifiers(
+        cappedRotation,
+        lineItem.modifiers,
+        extra,
+      );
     }
 
     // 8b. Phase 12 (migration 0142): if the payer publishes a
