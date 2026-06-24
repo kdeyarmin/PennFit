@@ -1158,6 +1158,7 @@ const FOOTER_LINKS: { href: string; label: string }[] = [
   { href: "/breathe/why", label: "Why Breathe" },
   { href: "/breathe/compare", label: "Compare" },
   { href: "/breathe/features", label: "Features" },
+  { href: "/breathe/resupply-engine", label: "Resupply engine" },
   { href: "/breathe/ai-voice", label: "AI voice agent" },
   { href: "/breathe/get-paid", label: "Get paid" },
   { href: "/breathe/patient-experience", label: "Patient experience" },
@@ -1630,6 +1631,13 @@ function ResupplyEngine() {
             </article>
           ))}
         </div>
+        <p className="bx-stats-note bx-reveal">
+          Resupply is the most predictable recurring revenue in DME — the engine
+          is built to capture as much of it as your eligibility allows.{" "}
+          <Link href="/breathe/resupply-engine">
+            See how the resupply engine works →
+          </Link>
+        </p>
       </div>
     </section>
   );
