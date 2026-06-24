@@ -5528,3 +5528,136 @@
   color: var(--bx-text-dim);
   margin: 0;
 }
+
+/* ───────── Resupply escalation ladder (process infographic) ─────────
+   A vertical decision-flow graphic for /breathe/resupply-engine: each
+   channel rung shows the outbound touch + the "responds → order placed,
+   outreach stops" exit branch, with "no reply · wait ~3 days" connectors
+   between rungs and a final hand-off cap. Built from the same tokens as the
+   rest of the namespaced .bx-* system; no third-party charting (CSP). */
+.bx-ladder {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  max-width: 780px;
+  margin: 30px auto 0;
+}
+.bx-ladder-cap {
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--bx-mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--bx-text-dim);
+  padding: 9px 16px;
+  border-radius: 999px;
+  border: 1px solid var(--bx-line);
+  background: var(--bx-panel-2);
+  text-align: center;
+}
+.bx-ladder-cap.start {
+  color: var(--bx-cyan);
+  border-color: rgba(84, 200, 255, 0.3);
+  background: rgba(84, 200, 255, 0.07);
+}
+.bx-ladder-cap.end {
+  color: var(--bx-gold-soft);
+  border-color: rgba(246, 167, 34, 0.34);
+  background: rgba(246, 167, 34, 0.08);
+}
+.bx-ladder-step {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.bx-ladder-node {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid var(--bx-line);
+  background: var(--bx-panel);
+}
+.bx-ladder-node.gold {
+  border-color: rgba(246, 167, 34, 0.32);
+  background: rgba(246, 167, 34, 0.05);
+}
+.bx-ladder-ic {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  flex: none;
+  border-radius: 11px;
+  color: var(--bx-cyan);
+  background: rgba(84, 200, 255, 0.08);
+  border: 1px solid var(--bx-line);
+}
+.bx-ladder-node.gold .bx-ladder-ic {
+  color: var(--bx-gold-soft);
+  background: rgba(246, 167, 34, 0.12);
+  border-color: rgba(246, 167, 34, 0.34);
+}
+.bx-ladder-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.bx-ladder-meta b {
+  font-size: 14px;
+  font-weight: 650;
+  color: var(--bx-text);
+}
+.bx-ladder-meta i {
+  font-style: normal;
+  font-size: 12px;
+  color: var(--bx-text-faint);
+}
+.bx-ladder-exit {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--bx-mint);
+  padding: 8px 12px;
+  border-radius: 9px;
+  background: rgba(111, 240, 194, 0.08);
+  border: 1px solid rgba(111, 240, 194, 0.25);
+  max-width: 230px;
+}
+.bx-ladder-gap {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  align-self: center;
+  padding: 9px 0;
+  font-family: var(--bx-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--bx-text-faint);
+}
+.bx-ladder-gap svg {
+  color: var(--bx-text-faint);
+  opacity: 0.7;
+}
+@media (max-width: 640px) {
+  .bx-ladder-step {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 9px;
+  }
+  .bx-ladder-exit {
+    align-self: flex-start;
+    max-width: none;
+  }
+}
