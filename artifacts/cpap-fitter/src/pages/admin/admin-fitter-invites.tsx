@@ -20,6 +20,8 @@ import { Input, Label } from "@/components/admin/Input";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Spinner } from "@/components/admin/Spinner";
 import { FitterInviteButton } from "@/components/admin/FitterInviteButton";
+import { PatientSearchCombobox } from "@/components/admin/PatientSearchCombobox";
+import type { PatientListItem } from "@workspace/api-client-react/admin";
 import { formatDateTime } from "@/lib/admin/format";
 import { useDashboardIdentity } from "@/lib/admin/identity";
 import {
@@ -389,7 +391,7 @@ function AttachControls({
   onChanged: () => void;
 }) {
   const [mode, setMode] = useState<null | "existing" | "new">(null);
-  const [patientId, setPatientId] = useState("");
+  const [patient, setPatient] = useState<PatientListItem | null>(null);
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [dob, setDob] = useState("");
@@ -398,7 +400,7 @@ function AttachControls({
   const attach = useMutation({
     mutationFn: () => {
       if (mode === "existing") {
-        return attachFitterInvite(invite.id, { patientId: patientId.trim() });
+        return attachFitterInvite(invite.id, { patientId: patient!.id });
       }
       return attachFitterInvite(invite.id, {
         createPatient: {
@@ -441,18 +443,18 @@ function AttachControls({
       {mode === "existing" && (
         <div className="flex items-end gap-2 flex-wrap">
           <div className="space-y-1 grow">
-            <Label htmlFor={`pid-${invite.id}`}>Patient ID (UUID)</Label>
-            <Input
+            <Label htmlFor={`pid-${invite.id}`}>Patient</Label>
+            <PatientSearchCombobox
               id={`pid-${invite.id}`}
-              placeholder="Paste the patient's chart ID"
-              value={patientId}
-              onChange={(e) => setPatientId(e.target.value)}
+              value={patient}
+              onChange={setPatient}
+              testId={`fitter-attach-${invite.id}`}
             />
           </div>
           <Button
             size="sm"
             isLoading={attach.isPending}
-            disabled={!patientId.trim()}
+            disabled={!patient}
             onClick={() => attach.mutate()}
           >
             Attach
