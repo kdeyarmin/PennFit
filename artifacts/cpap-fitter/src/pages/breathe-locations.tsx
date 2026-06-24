@@ -86,12 +86,12 @@ const BRANCHES: Cap[] = [
   },
   {
     icon: <UserCog size={20} />,
-    title: "Staff scoped to their branch",
-    summary: "The right people see the right work.",
+    title: "Staff organized by branch",
+    summary: "Everyone's on the right team.",
     points: [
       "Assign each team member to the location they staff",
-      "Role-based permissions still apply on top of branch scope",
-      "Add a branch's team without exposing the rest of the org",
+      "Role-based permissions govern what each person can do",
+      "See each branch's team and headcount at a glance",
     ],
   },
   {
