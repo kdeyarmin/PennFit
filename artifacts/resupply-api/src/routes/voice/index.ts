@@ -14,7 +14,6 @@ import { Router, type IRouter } from "express";
 import alertTwimlRouter from "./alert-twiml";
 import checkinTwimlRouter from "./checkin-twiml";
 import connectionTestTwimlRouter from "./connection-test-twiml";
-import debugEventsRouter from "./debug-events";
 import inboundBreatheSalesRouter from "./inbound-breathe-sales";
 import inboundReorderRouter from "./inbound-reorder";
 import placeCallRouter from "./place-call";
@@ -24,10 +23,6 @@ import twimlConnectRouter from "./twiml-connect";
 import clickToDialTwimlRouter from "./click-to-dial-twiml";
 
 const router: IRouter = Router();
-// TEMP: /voice/debug-events?key=… — token-gated read of the in-memory
-// voice-session diagnostic buffer (sales line). Remove with the buffer once
-// the inbound-turn-taking issue is fixed.
-router.use(debugEventsRouter);
 router.use(placeCallRouter);
 router.use(twimlConnectRouter);
 router.use(statusCallbackRouter);

@@ -1228,6 +1228,11 @@ function PatientRouter() {
             />
             <Route path="/shop/orders" component={GuardedShopOrders} />
             <Route path="/shop/wishlist" component={ShopWishlist} />
+            {/* Push-notification deep links. The backend sends pushes
+                with url=/account/orders (shipping updates) and
+                /account/insights (smart triggers); both surfaces are
+                tabs on /account, not standalone routes, so redirect to
+                the hash form that hashToAccountTab() understands. */}
             <Route path="/account/insights">
               {() => <AccountHashRedirect hash="insights" />}
             </Route>
@@ -1236,17 +1241,6 @@ function PatientRouter() {
             </Route>
             <Route path="/account" component={GuardedAccount} />
             <Route path="/account/billing" component={GuardedAccountBilling} />
-            {/* Push-notification deep links. The backend sends pushes
-                with url=/account/orders (shipping updates) and
-                /account/insights (smart triggers); both surfaces are
-                tabs on /account, not standalone routes, so redirect to
-                the hash form that hashToAccountTab() understands. */}
-            <Route path="/account/orders">
-              <Redirect to="/account#orders" replace />
-            </Route>
-            <Route path="/account/insights">
-              <Redirect to="/account#insights" replace />
-            </Route>
             <Route path="/reminders" component={Reminders} />
             <Route path="/reminders/manage" component={RemindersManage} />
             <Route path="/patient-packet-sign" component={PatientPacketSign} />

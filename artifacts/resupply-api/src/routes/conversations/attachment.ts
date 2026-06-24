@@ -169,17 +169,24 @@ router.get(
       const response = await objectStorage.downloadObject(file, 300);
       res.status(response.status);
       response.headers.forEach((value, key) => res.setHeader(key, value));
-      // Inline disposition so <img src="..."> renders directly in
-      // the conversation view; clients that prefer a download can
-      // append ?download=1 (not implemented here — they can also
-      // right-click → Save).
+      // Default to inline disposition so <img src="..."> renders directly
+      // in the conversation view; clients that want a forced download
+      // append ?download=1 to get an `attachment` disposition (the browser
+      // saves rather than renders).
+      const forceDownload = req.query.download === "1";
+      const disposition = forceDownload ? "attachment" : "inline";
       if (row.filename) {
         const safeAscii = row.filename.replace(/[^\x20-\x7E]/g, "_");
         const encoded = encodeURIComponent(row.filename);
         res.setHeader(
           "Content-Disposition",
-          `inline; filename="${safeAscii}"; filename*=UTF-8''${encoded}`,
+          `${disposition}; filename="${safeAscii}"; filename*=UTF-8''${encoded}`,
         );
+      } else if (forceDownload) {
+        // No stored filename, but the caller still asked to download —
+        // an `attachment` with no filename* lets the browser fall back to
+        // its own name-from-URL heuristic instead of rendering inline.
+        res.setHeader("Content-Disposition", "attachment");
       }
       if (response.body) {
         const nodeStream = Readable.fromWeb(
