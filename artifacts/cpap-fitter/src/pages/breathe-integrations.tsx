@@ -426,6 +426,66 @@ function PayerBillingGrid() {
   );
 }
 
+const OPS_SYSTEMS: IntItem[] = [
+  {
+    mark: "Shipping & tracking",
+    tag: "Fulfillment",
+    sub: "Carrier labels & status",
+    points: [
+      "Shipping labels generated straight from the order",
+      "Carrier tracking flows back to the patient and the admin record",
+      "“Where's my order?” answers itself — fewer status calls",
+    ],
+  },
+  {
+    mark: "Slack",
+    tag: "Team alerts",
+    sub: "Where your team already works",
+    points: [
+      "New orders, denied claims, and at-risk patients posted to a channel",
+      "Configurable so each alert reaches the right people",
+      "Your team reacts fast without living in another dashboard",
+    ],
+    gold: true,
+  },
+  {
+    mark: "QuickBooks & CSV",
+    tag: "Finance & data",
+    sub: "Your numbers, exportable",
+    points: [
+      "GL-coded financial export for QuickBooks reconciliation",
+      "Patient roster, orders, claims & therapy data to spreadsheet on demand",
+      "An automatic data feed so your other systems stay in sync",
+    ],
+  },
+];
+
+function OpsGrid() {
+  return (
+    <section className="bx-section bx-section-tight" id="ops-systems">
+      <div className="bx-shell">
+        <div className="bx-section-head center bx-reveal">
+          <span className="bx-eyebrow">
+            <Plug size={13} /> Fulfillment, team & finance
+          </span>
+          <h2 className="bx-h2">The day-to-day tools, wired in too</h2>
+          <p className="bx-lede">
+            Beyond the device clouds and the clearinghouse, Breathe connects the
+            tools that run the rest of your day — shipping and tracking, the team
+            chat your staff already lives in, and the accounting your books are
+            kept in — so nothing has to be re-keyed between systems.
+          </p>
+        </div>
+        <div className="bx-intgrid">
+          {OPS_SYSTEMS.map((d) => (
+            <IntCard d={d} key={d.mark} />
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 /* ───────────────── FAQ ───────────────── */
 const INT_FAQ: { q: string; a: string }[] = [
   {
@@ -499,6 +559,7 @@ export function BreatheIntegrations() {
       <AiEarlyWarning />
       <DeviceCloudGrid />
       <PayerBillingGrid />
+      <OpsGrid />
       <IntegrationsFaq />
       <div className="bx-section bx-section-tight">
         <div className="bx-shell">

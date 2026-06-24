@@ -1149,14 +1149,18 @@ const NAV_LINKS: { href: string; label: string }[] = [
 ];
 
 // The full set of marketing pages — used by the footer so ROI, Security,
-// and Features stay reachable + crawlable even though they're kept out of
-// the (deliberately short) top nav.
+// Features, and the deep-dive solution pages (AI voice, revenue cycle,
+// patient experience) stay reachable + crawlable even though they're kept
+// out of the (deliberately short) top nav.
 const FOOTER_LINKS: { href: string; label: string }[] = [
   { href: "/breathe/product", label: "Platform" },
   { href: "/breathe/integrations", label: "Integrations" },
   { href: "/breathe/why", label: "Why Breathe" },
   { href: "/breathe/compare", label: "Compare" },
   { href: "/breathe/features", label: "Features" },
+  { href: "/breathe/ai-voice", label: "AI voice agent" },
+  { href: "/breathe/get-paid", label: "Get paid" },
+  { href: "/breathe/patient-experience", label: "Patient experience" },
   { href: "/breathe/roi", label: "ROI" },
   { href: "/breathe/pricing", label: "Pricing" },
   { href: "/breathe/security", label: "Security" },
@@ -1719,11 +1723,9 @@ function RevenueRecovery() {
         </div>
         <p className="bx-stats-note bx-reveal">
           Plus secondary &amp; COB rollover, capped-rental tracking, A/R aging,
-          timely-filing alerts, and payer-profitability — the full revenue cycle
-          on one record.{" "}
-          <Link href="/breathe/roi">
-            See what it recovers on your numbers →
-          </Link>
+          timely-filing alerts, patient payment plans &amp; collections, and
+          payer-profitability — the full revenue cycle on one record.{" "}
+          <Link href="/breathe/get-paid">See how you get paid →</Link>
         </p>
       </div>
     </section>
@@ -2690,6 +2692,13 @@ function AiBento() {
             </div>
           ))}
         </div>
+        <p className="bx-stats-note bx-reveal">
+          The voice agent is the one most teams feel first — answering calls and
+          placing reorders on your own line, around the clock.{" "}
+          <Link href="/breathe/ai-voice">
+            See how the AI voice agent works →
+          </Link>
+        </p>
       </div>
     </section>
   );
@@ -3240,6 +3249,14 @@ function Capabilities() {
             </article>
           ))}
         </div>
+        <p className="bx-stats-note bx-reveal">
+          The storefront, fitter, portal, chatbot, and sleep coach are what your
+          patients actually touch — and a better experience is what keeps them
+          on therapy and reordering.{" "}
+          <Link href="/breathe/patient-experience">
+            See what your patients get →
+          </Link>
+        </p>
         <div className="bx-price-cta bx-reveal">
           <span>Want the full tour — every screen and automation?</span>
           <Link className="bx-btn bx-btn-primary" href="/breathe/product">
