@@ -2,7 +2,21 @@
 
 import { describe, expect, it } from "vitest";
 
-import { pickPatientTab } from "./patient-detail";
+import {
+  pickPatientTab,
+  PATIENT_TABS,
+  PATIENT_TAB_GROUPS,
+} from "./patient-detail";
+
+describe("PATIENT_TAB_GROUPS", () => {
+  it("covers every tab exactly once (no missing or duplicated sections)", () => {
+    const grouped = PATIENT_TAB_GROUPS.flatMap((g) => g.tabs);
+    // No duplicates.
+    expect(new Set(grouped).size).toBe(grouped.length);
+    // Same set as the canonical tab list.
+    expect([...grouped].sort()).toEqual([...PATIENT_TABS].sort());
+  });
+});
 
 describe("pickPatientTab", () => {
   it("returns a known tab key unchanged (boards deep-link here)", () => {

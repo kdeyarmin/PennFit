@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -114,6 +114,69 @@ function initialTab(): Tab {
   }
 }
 
+// Display label per tab (count-bearing tabs append their count at render).
+const TAB_LABELS: Record<Tab, string> = {
+  timeline: "Timeline",
+  activity: "Activity",
+  address: "Address",
+  episodes: "Episodes",
+  conversations: "Conversations",
+  fulfillments: "Fulfillments",
+  prescriptions: "Prescriptions",
+  notes: "Notes",
+  followups: "Follow-ups",
+  onboarding: "Onboarding",
+  "fax-outreach": "Fax outreach",
+  documents: "Documents",
+  portal: "Portal",
+  "device-data": "Device data",
+  "sleep-studies": "Sleep studies",
+  insurance: "Insurance",
+  "prior-auths": "Prior auths",
+  billing: "Billing",
+  resupply: "Resupply",
+  equipment: "Equipment",
+  forms: "Forms",
+  packets: "Signatures",
+  "alert-overrides": "Alert overrides",
+};
+
+// The 25-section 360 grouped into ~6 labelled clusters so the tab strip is
+// scannable instead of a flat wall. Every Tab appears in exactly one group
+// (guarded by a drift test). The Billing & insurance group also carries the
+// two navigate-away buttons (Claims, Audit packet), rendered specially.
+export const PATIENT_TAB_GROUPS: ReadonlyArray<{
+  label: string;
+  tabs: ReadonlyArray<Tab>;
+}> = [
+  {
+    label: "Overview",
+    tabs: ["timeline", "activity", "address", "onboarding"],
+  },
+  {
+    label: "Comms",
+    tabs: [
+      "conversations",
+      "notes",
+      "followups",
+      "fax-outreach",
+      "alert-overrides",
+    ],
+  },
+  { label: "Clinical", tabs: ["device-data", "sleep-studies", "episodes"] },
+  {
+    label: "Resupply & orders",
+    tabs: ["resupply", "fulfillments", "prescriptions", "equipment"],
+  },
+  { label: "Documents", tabs: ["documents", "forms", "packets", "portal"] },
+  {
+    label: "Billing & insurance",
+    tabs: ["insurance", "prior-auths", "billing"],
+  },
+];
+
+export { PATIENT_TABS };
+
 /**
  * Admin detail page for a patient, presenting header info, action controls, settings, and a tabbed view of related data.
  *
@@ -158,6 +221,18 @@ export function PatientDetailPage({ id }: { id: string }) {
       </div>
     );
   }
+
+  // Count suffix for the count-bearing tabs (rendered in the grouped strip).
+  const tabCounts: Partial<Record<Tab, number>> = {
+    episodes: data.episodes.length,
+    conversations: data.conversations.length,
+    fulfillments: data.fulfillments.length,
+    prescriptions: data.prescriptions.length,
+  };
+  const tabLabel = (t: Tab) =>
+    tabCounts[t] !== undefined
+      ? `${TAB_LABELS[t]} (${tabCounts[t]})`
+      : TAB_LABELS[t];
 
   return (
     <div className="space-y-6 max-w-5xl">
@@ -313,147 +388,53 @@ export function PatientDetailPage({ id }: { id: string }) {
       <SettingsCard patient={data} onSaved={() => void refetch()} />
 
       <div
-        className="flex gap-1 border-b"
+        className="flex flex-wrap items-center gap-1 border-b pb-2"
         style={{ borderColor: "hsl(var(--line-1))" }}
         role="tablist"
         aria-label="Patient detail sections"
       >
-        <TabButton
-          active={tab === "timeline"}
-          onClick={() => setTab("timeline")}
-        >
-          Timeline
-        </TabButton>
-        <TabButton
-          active={tab === "activity"}
-          onClick={() => setTab("activity")}
-        >
-          Activity
-        </TabButton>
-        <TabButton active={tab === "address"} onClick={() => setTab("address")}>
-          Address
-        </TabButton>
-        <TabButton
-          active={tab === "episodes"}
-          onClick={() => setTab("episodes")}
-        >
-          Episodes ({data.episodes.length})
-        </TabButton>
-        <TabButton
-          active={tab === "conversations"}
-          onClick={() => setTab("conversations")}
-        >
-          Conversations ({data.conversations.length})
-        </TabButton>
-        <TabButton
-          active={tab === "fulfillments"}
-          onClick={() => setTab("fulfillments")}
-        >
-          Fulfillments ({data.fulfillments.length})
-        </TabButton>
-        <TabButton
-          active={tab === "prescriptions"}
-          onClick={() => setTab("prescriptions")}
-        >
-          Prescriptions ({data.prescriptions.length})
-        </TabButton>
-        <TabButton active={tab === "notes"} onClick={() => setTab("notes")}>
-          Notes
-        </TabButton>
-        <TabButton
-          active={tab === "followups"}
-          onClick={() => setTab("followups")}
-        >
-          Follow-ups
-        </TabButton>
-        <TabButton
-          active={tab === "onboarding"}
-          onClick={() => setTab("onboarding")}
-        >
-          Onboarding
-        </TabButton>
-        <TabButton
-          active={tab === "fax-outreach"}
-          onClick={() => setTab("fax-outreach")}
-        >
-          Fax outreach
-        </TabButton>
-        <TabButton
-          active={tab === "documents"}
-          onClick={() => setTab("documents")}
-        >
-          Documents
-        </TabButton>
-        <TabButton active={tab === "portal"} onClick={() => setTab("portal")}>
-          Portal
-        </TabButton>
-        <TabButton
-          active={tab === "device-data"}
-          onClick={() => setTab("device-data")}
-        >
-          Device data
-        </TabButton>
-        <TabButton
-          active={tab === "sleep-studies"}
-          onClick={() => setTab("sleep-studies")}
-        >
-          Sleep studies
-        </TabButton>
-        <TabButton
-          active={tab === "insurance"}
-          onClick={() => setTab("insurance")}
-        >
-          Insurance
-        </TabButton>
-        <TabButton
-          active={tab === "prior-auths"}
-          onClick={() => setTab("prior-auths")}
-        >
-          Prior auths
-        </TabButton>
-        <TabButton active={tab === "billing"} onClick={() => setTab("billing")}>
-          Billing
-        </TabButton>
-        <TabButton
-          active={tab === "resupply"}
-          onClick={() => setTab("resupply")}
-        >
-          Resupply
-        </TabButton>
-        <TabButton
-          active={false}
-          onClick={() => setLocation(`/admin/patients/${id}/insurance-claims`)}
-        >
-          Claims
-        </TabButton>
-        {auditPacketEnabled.data ? (
-          <TabButton
-            active={false}
-            onClick={() =>
-              setLocation(`/admin/audit-packet?patientId=${id}&scope=device`)
-            }
-          >
-            Audit packet
-          </TabButton>
-        ) : null}
-        <TabButton
-          active={tab === "equipment"}
-          onClick={() => setTab("equipment")}
-        >
-          Equipment
-        </TabButton>
-        <TabButton active={tab === "forms"} onClick={() => setTab("forms")}>
-          Forms
-        </TabButton>
-        <TabButton active={tab === "packets"} onClick={() => setTab("packets")}>
-          Signatures
-        </TabButton>
-        <TabButton
-          active={tab === "alert-overrides"}
-          onClick={() => setTab("alert-overrides")}
-        >
-          Alert overrides
-        </TabButton>
+        {PATIENT_TAB_GROUPS.map((group) => (
+          <Fragment key={group.label}>
+            {/* Full-width label forces each cluster onto its own line while
+                keeping the tabs as direct tablist children (a11y). */}
+            <span
+              className="w-full text-[10px] uppercase tracking-wider font-semibold mt-2 first:mt-0"
+              style={{ color: "hsl(var(--ink-3))" }}
+              aria-hidden="true"
+            >
+              {group.label}
+            </span>
+            {group.tabs.map((t) => (
+              <TabButton key={t} active={tab === t} onClick={() => setTab(t)}>
+                {tabLabel(t)}
+              </TabButton>
+            ))}
+            {group.label === "Billing & insurance" && (
+              <>
+                <TabButton
+                  active={false}
+                  onClick={() =>
+                    setLocation(`/admin/patients/${id}/insurance-claims`)
+                  }
+                >
+                  Claims
+                </TabButton>
+                {auditPacketEnabled.data ? (
+                  <TabButton
+                    active={false}
+                    onClick={() =>
+                      setLocation(
+                        `/admin/audit-packet?patientId=${id}&scope=device`,
+                      )
+                    }
+                  >
+                    Audit packet
+                  </TabButton>
+                ) : null}
+              </>
+            )}
+          </Fragment>
+        ))}
       </div>
 
       {/*
