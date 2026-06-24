@@ -3,6 +3,7 @@ import { Link } from "wouter";
 import {
   ArrowRight,
   BrainCircuit,
+  Check,
   Database,
   GitBranch,
   MessageSquare,
@@ -44,6 +45,13 @@ type SwitchConfig = {
   name: string;
   /** One-line framing shown in the page sub-header. */
   sub: string;
+  /**
+   * The competitor-specific "what teams moving from <name> most often want"
+   * list. Framed as the SWITCHER's goals (not unverifiable claims about the
+   * competitor's product), so each page speaks to that incumbent's audience
+   * without disparaging a named product.
+   */
+  wants: string[];
   /** The honest "what changes when you move" cards. */
   reasons: { icon: ReactNode; title: string; body: string }[];
 };
@@ -79,18 +87,33 @@ const SWITCH_PAGES: Record<string, SwitchConfig> = {
     slug: "brightree",
     name: "Brightree",
     sub: "Keep every patient, claim, and reorder — and trade a decades-old billing core for one AI-native platform that runs the whole resupply business. Here's what changes, line by line, and how the move works.",
+    wants: [
+      "A modern, single-screen workflow instead of swivel-chairing between separately-licensed modules",
+      "Resupply and patient outreach that are native to the platform — not layered on top of a billing core",
+      "AI that books reorders and scrubs claims built in, without paying for another add-on",
+    ],
     reasons: COMMON_REASONS,
   },
   bonafide: {
     slug: "bonafide",
     name: "Bonafide",
     sub: "Move your roster in with a CSV and run resupply, revenue cycle, clinical monitoring, and the storefront on one record — with the AI doing the repetitive work. Here's what changes, line by line, and how the move works.",
+    wants: [
+      "Billing/RCM, clinical monitoring, and a branded storefront on the same record as resupply",
+      "One platform to run instead of resupply in one tool and claims in another",
+      "A 24/7 AI voice agent and claim scrubbing working that same patient data",
+    ],
     reasons: COMMON_REASONS,
   },
   nikohealth: {
     slug: "nikohealth",
     name: "NikoHealth",
     sub: "Step up to an AI-native platform where the voice agent, claim scrubbing, and mask fitting are built in — not on the roadmap. Here's what changes, line by line, and how the move works.",
+    wants: [
+      "AI that's shipping today — voice agent, claim scrubbing, on-device mask fitting — not on a roadmap",
+      "A proven resupply engine with eligibility-aware, multi-channel outreach",
+      "Deep revenue-cycle worklists — denials by recoverable dollars, prior auth, secondary/COB — in the box",
+    ],
     reasons: COMMON_REASONS,
   },
 };
@@ -113,6 +136,24 @@ function SwitchPage({ cfg }: { cfg: SwitchConfig }) {
         }
         sub={cfg.sub}
       />
+
+      <section className="bx-section bx-section-tight">
+        <div className="bx-shell">
+          <div className="bx-switch-wants bx-reveal">
+            <h2 className="bx-switch-wants-title">
+              Most teams leaving {cfg.name} want the same three things
+            </h2>
+            <ul className="bx-switch-wants-list">
+              {cfg.wants.map((w) => (
+                <li key={w}>
+                  <Check size={16} aria-hidden="true" />
+                  {w}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </section>
 
       <section className="bx-section">
         <div className="bx-shell">

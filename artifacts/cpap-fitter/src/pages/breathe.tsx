@@ -806,11 +806,14 @@ function SignupSection() {
             <Sparkles size={13} /> Create your account
           </span>
           <h1 className="bx-pagehead-title">
-            Your own Breathe, in <span className="grad-em">minutes.</span>
+            Start capturing every resupply — in{" "}
+            <span className="grad-em">minutes.</span>
           </h1>
           <p className="bx-pagehead-sub">
-            Spin up your workspace and your admin login — just pick the plan
-            that fits. You&apos;ll confirm payment as you finish setting up.
+            Create your workspace and admin login and you&apos;re set up to
+            automate reorders, scrub claims clean before they file, and hand the
+            busywork to AI. Pick the plan that fits; you&apos;ll confirm payment
+            as you finish setting up.
           </p>
           <form className="bx-signup-form" onSubmit={onSubmit} noValidate>
             <input
