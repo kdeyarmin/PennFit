@@ -29,8 +29,10 @@
 // the BA, and a liability cap cross-referenced to the MSA. Do NOT attempt
 // to convert the BAA into a blanket "harmless for anything" waiver — that
 // would be non-compliant and a court would likely void the whole clause.
-// Two placeholders in the MSA (governing-law state and venue) must be set
-// by counsel before relying on it.
+// The contracting party is the legal entity CareMetric AI (LEGAL_ENTITY);
+// "the CareMetric Breathe platform" (PLATFORM_NAME) is the Service. Governing
+// law and venue are set to the Commonwealth of Pennsylvania and Cambria
+// County, PA. Counsel should still review before relying on these templates.
 
 export type AgreementType = "baa" | "platform_terms";
 
@@ -45,10 +47,19 @@ export interface AgreementDoc {
 
 const PLATFORM_NAME = "CareMetric Breathe";
 
+// The contracting legal entity — the PARTY to these agreements — as distinct
+// from PLATFORM_NAME, the product/service brand. The documents are executed
+// with the company (CareMetric AI) and refer to "the CareMetric Breathe
+// platform" as the Service; "CareMetric" is the defined short form used
+// throughout the operative clauses. If the registered entity carries a
+// corporate suffix (e.g. ", Inc." / ", LLC"), append it to LEGAL_ENTITY.
+const LEGAL_ENTITY = "CareMetric AI";
+const COMPANY = "CareMetric";
+
 const BAA_BODY = `BUSINESS ASSOCIATE AGREEMENT
 
 This Business Associate Agreement ("BAA") supplements the Master Services
-Agreement between ${PLATFORM_NAME} ("Business Associate") and the
+Agreement between ${LEGAL_ENTITY} ("Business Associate") and the
 organization accepting this BAA ("Covered Entity"). It governs the
 Business Associate's handling of Protected Health Information ("PHI") as
 defined under the Health Insurance Portability and Accountability Act of
@@ -151,19 +162,19 @@ const PLATFORM_TERMS_BODY = `MASTER SERVICES AGREEMENT / TERMS OF SERVICE
 These terms ("Agreement") govern the access to and use of the
 ${PLATFORM_NAME} platform, software, websites, APIs, AI features, and
 related services (collectively, the "Service") by your organization
-("Customer," "you," or "your"), provided by ${PLATFORM_NAME}
-("${PLATFORM_NAME}," "we," "us," or "our"). By accepting this Agreement or
+("Customer," "you," or "your"), provided by ${LEGAL_ENTITY}
+("${COMPANY}," "we," "us," or "our"). By accepting this Agreement or
 using the Service, you agree to be bound by it.
 
-1. ACCESS. ${PLATFORM_NAME} grants Customer a non-exclusive,
+1. ACCESS. ${COMPANY} grants Customer a non-exclusive,
 non-transferable, revocable right to access and use the Service for
 Customer's internal business operations during the subscription term,
 subject to this Agreement.
 
 2. YOUR DATA. Customer retains all rights to the data it submits
-("Customer Data"). Customer grants ${PLATFORM_NAME} the rights necessary
+("Customer Data"). Customer grants ${COMPANY} the rights necessary
 to host, process, transmit, and display Customer Data to provide and
-support the Service. ${PLATFORM_NAME} may collect and use aggregated and
+support the Service. ${COMPANY} may collect and use aggregated and
 de-identified data — which does not identify Customer or any individual —
 for any lawful business purpose, including operating, securing, and
 improving the Service. Handling of Protected Health Information is governed
@@ -185,7 +196,7 @@ entity), state licensure, DMEPOS/DME supplier requirements, payer rules,
 and telemarketing and SMS/text-messaging consent laws; (f) maintaining the
 confidentiality of its account credentials and for all activity under its
 account; and (g) reviewing and verifying all Service output before relying
-on it. Customer acknowledges that ${PLATFORM_NAME} is not a healthcare
+on it. Customer acknowledges that ${COMPANY} is not a healthcare
 provider, pharmacy, DME supplier, insurer, billing service, or law firm,
 and does not exercise professional judgment on Customer's behalf.
 
@@ -203,7 +214,7 @@ summaries). These features are probabilistic, may produce inaccurate,
 incomplete, or unexpected output, and are provided as productivity aids
 only — not as medical advice and not as a substitute for professional
 judgment. Customer is responsible for human review of all such output
-before it is sent, acted upon, or relied upon, and ${PLATFORM_NAME} makes
+before it is sent, acted upon, or relied upon, and ${COMPANY} makes
 no warranty as to the accuracy or suitability of any AI output.
 
 6. FEES. Fees, billing frequency, and any usage-based charges are as set
@@ -218,36 +229,36 @@ this Agreement.
 
 8. WARRANTIES AND DISCLAIMERS. THE SERVICE AND ALL OUTPUT ARE PROVIDED
 "AS IS" AND "AS AVAILABLE," WITH ALL FAULTS. TO THE FULLEST EXTENT
-PERMITTED BY LAW, ${PLATFORM_NAME} DISCLAIMS ALL WARRANTIES, WHETHER
+PERMITTED BY LAW, ${COMPANY} DISCLAIMS ALL WARRANTIES, WHETHER
 EXPRESS, IMPLIED, OR STATUTORY, INCLUDING THE IMPLIED WARRANTIES OF
 MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, AND
 NON-INFRINGEMENT, AND ANY WARRANTY THAT THE SERVICE WILL BE UNINTERRUPTED,
 ERROR-FREE, OR SECURE, OR WILL MEET CUSTOMER'S REQUIREMENTS OR PRODUCE
 ACCURATE OR COMPLETE RESULTS (INCLUDING MASK RECOMMENDATIONS, INSURANCE OR
 ELIGIBILITY RESULTS, BILLING OR CODING OUTPUT, OR THE DELIVERY OR TIMING OF
-ANY MESSAGE). ${PLATFORM_NAME} IS NOT RESPONSIBLE FOR THE ACTS, OMISSIONS,
+ANY MESSAGE). ${COMPANY} IS NOT RESPONSIBLE FOR THE ACTS, OMISSIONS,
 AVAILABILITY, OR ACCURACY OF ANY THIRD-PARTY SERVICE, CARRIER, PAYER, OR
 DATA SOURCE.
 
 9. LIMITATION OF LIABILITY. TO THE FULLEST EXTENT PERMITTED BY LAW:
-(a) IN NO EVENT WILL ${PLATFORM_NAME} BE LIABLE FOR ANY INDIRECT,
+(a) IN NO EVENT WILL ${COMPANY} BE LIABLE FOR ANY INDIRECT,
 INCIDENTAL, SPECIAL, CONSEQUENTIAL, EXEMPLARY, OR PUNITIVE DAMAGES, OR FOR
 ANY LOSS OF PROFITS, REVENUE, DATA, GOODWILL, OR BUSINESS, OR FOR THE COST
 OF SUBSTITUTE SERVICES, ARISING OUT OF OR RELATING TO THIS AGREEMENT OR THE
 SERVICE, REGARDLESS OF THE THEORY OF LIABILITY (CONTRACT, TORT, NEGLIGENCE,
 STRICT LIABILITY, OR OTHERWISE) AND EVEN IF ADVISED OF THE POSSIBILITY OF
-SUCH DAMAGES; AND (b) ${PLATFORM_NAME}'S TOTAL AGGREGATE LIABILITY ARISING
+SUCH DAMAGES; AND (b) ${COMPANY}'S TOTAL AGGREGATE LIABILITY ARISING
 OUT OF OR RELATING TO THIS AGREEMENT AND THE SERVICE WILL NOT EXCEED THE
-TOTAL PLATFORM FEES PAID BY CUSTOMER TO ${PLATFORM_NAME} FOR THE SERVICE
+TOTAL PLATFORM FEES PAID BY CUSTOMER TO ${COMPANY} FOR THE SERVICE
 IN THE TWELVE (12) MONTHS IMMEDIATELY PRECEDING THE EVENT GIVING RISE TO
 THE CLAIM. THE PARTIES AGREE THESE LIMITATIONS ARE AN ESSENTIAL BASIS OF
 THE BARGAIN AND APPLY EVEN IF A LIMITED REMEDY FAILS OF ITS ESSENTIAL
 PURPOSE. Some jurisdictions do not allow certain exclusions or
-limitations; in those jurisdictions ${PLATFORM_NAME}'s liability is limited
+limitations; in those jurisdictions ${COMPANY}'s liability is limited
 to the maximum extent permitted by law.
 
 10. INDEMNIFICATION. Customer will defend, indemnify, and hold harmless
-${PLATFORM_NAME} and its affiliates, officers, directors, employees, and
+${COMPANY} and its affiliates, officers, directors, employees, and
 agents from and against any third-party claims, damages, liabilities,
 penalties, fines, costs, and expenses (including reasonable attorneys'
 fees) arising out of or relating to: (a) Customer Data and any content or
@@ -262,27 +273,27 @@ other person arising from Customer's business or services.
 11. THIRD-PARTY SERVICES; FORCE MAJEURE. The Service integrates
 third-party services (including AI providers; telecom, SMS, voice, and fax
 carriers; payment processors; clearinghouses; and storage providers),
-which are governed by their own terms and for which ${PLATFORM_NAME} is not
-responsible or liable. ${PLATFORM_NAME} is not liable for any delay or
+which are governed by their own terms and for which ${COMPANY} is not
+responsible or liable. ${COMPANY} is not liable for any delay or
 failure to perform caused by events beyond its reasonable control,
 including acts of God, internet or utility failures, third-party service
 outages, labor disputes, or governmental action.
 
 12. TERM AND TERMINATION. Either party may terminate for material breach
-not cured within thirty (30) days of written notice. ${PLATFORM_NAME} may
+not cured within thirty (30) days of written notice. ${COMPANY} may
 suspend access immediately for non-payment or for use that violates law or
 this Agreement or that threatens the security or integrity of the Service.
 On termination your access ends and you may export Customer Data for a
 reasonable period.
 
 13. GOVERNING LAW; DISPUTE RESOLUTION. This Agreement is governed by the
-laws of the State of [GOVERNING-LAW STATE], without regard to its
+laws of the Commonwealth of Pennsylvania, without regard to its
 conflict-of-laws rules. The exclusive venue for any dispute is the state
-and federal courts located in [VENUE COUNTY/STATE], and each party
-consents to that jurisdiction. TO THE FULLEST EXTENT PERMITTED BY LAW,
-EACH PARTY WAIVES ANY RIGHT TO A JURY TRIAL. Any claim arising out of or
-relating to this Agreement must be brought within one (1) year after it
-accrues.
+courts located in Cambria County, Pennsylvania and the federal courts
+having jurisdiction over that county, and each party consents to that
+jurisdiction. TO THE FULLEST EXTENT PERMITTED BY LAW, EACH PARTY WAIVES
+ANY RIGHT TO A JURY TRIAL. Any claim arising out of or relating to this
+Agreement must be brought within one (1) year after it accrues.
 
 14. GENERAL. This Agreement, together with the Business Associate
 Agreement and any order, is the entire agreement between the parties on its
@@ -291,8 +302,8 @@ is held unenforceable, it will be modified to the minimum extent necessary
 to make it enforceable, or severed, and the remainder will stay in effect.
 The disclaimers, limitations of liability, indemnities, and
 confidentiality terms survive termination. No waiver is effective unless in
-writing. Customer may not assign this Agreement without ${PLATFORM_NAME}'s
-prior written consent; ${PLATFORM_NAME} may assign it to an affiliate or to
+writing. Customer may not assign this Agreement without ${COMPANY}'s
+prior written consent; ${COMPANY} may assign it to an affiliate or to
 a successor in connection with a merger, acquisition, or sale of assets.
 
 By accepting, the signatory represents that they are authorized to bind
