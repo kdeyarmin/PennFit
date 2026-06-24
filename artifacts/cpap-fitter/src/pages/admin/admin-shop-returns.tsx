@@ -37,6 +37,8 @@ import {
   refundReturn,
   rejectReturn,
   replaceReturn,
+  returnActionableSince,
+  waitingDays,
   type AdminReturn,
   type ReturnStatus,
 } from "@/lib/admin/shop-returns-api";
@@ -223,6 +225,32 @@ const STATUS_LABELS: Record<ReturnStatus, string> = {
   closed: "Closed",
 };
 
+// At-a-glance "how long has this been waiting on us" badge. Renders only
+// for admin-actionable states (requested / shipped_back / received); stays
+// hidden for `approved` (waiting on the customer) and terminal states. Tone
+// escalates with age so an aging queue is visible without sorting.
+function WaitingBadge({ item }: { item: AdminReturn }) {
+  const since = returnActionableSince(item);
+  if (!since) return null;
+  const days = waitingDays(since, Date.now());
+  const tone =
+    days >= 7
+      ? "border-rose-200 bg-rose-50 text-rose-700"
+      : days >= 3
+        ? "border-amber-200 bg-amber-50 text-amber-700"
+        : "border-slate-200 bg-slate-50 text-slate-600";
+  const label = days === 0 ? "today" : days === 1 ? "1 day" : `${days} days`;
+  return (
+    <span
+      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${tone}`}
+      data-testid={`shop-return-${item.id}-waiting`}
+      title="How long this return has been waiting on our team"
+    >
+      waiting {label}
+    </span>
+  );
+}
+
 /**
  * Render a single admin return card showing status, metadata, notes, and status-gated actions.
  *
@@ -344,6 +372,7 @@ function ReturnCard({ item }: { item: AdminReturn }) {
             <span className="text-xs text-slate-600">
               {REASON_LABELS[item.reason] ?? item.reason}
             </span>
+            <WaitingBadge item={item} />
           </div>
           <div className="text-sm font-mono text-slate-700">
             Order {item.sessionId.slice(-12)}

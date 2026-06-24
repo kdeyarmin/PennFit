@@ -58,6 +58,45 @@ export interface AdminReturnListResponse {
   nextCursor: string | null;
 }
 
+/**
+ * The timestamp at which a return entered its CURRENT admin-actionable
+ * state — i.e. how long it's been waiting on US, not on the customer.
+ * Returns null for states that aren't waiting on the admin: `approved`
+ * (waiting on the customer to ship the item back) and every terminal
+ * state. Used to surface an aging/"waiting N days" badge in the queue so
+ * the longest-waiting customers don't sink past the page fold.
+ */
+export function returnActionableSince(item: {
+  status: ReturnStatus;
+  createdAt: string;
+  shippedBackAt: string | null;
+  receivedAt: string | null;
+}): string | null {
+  switch (item.status) {
+    case "requested":
+      return item.createdAt;
+    case "shipped_back":
+      // Fall back to createdAt if the transition timestamp is somehow
+      // missing, so the badge still renders rather than disappearing.
+      return item.shippedBackAt ?? item.createdAt;
+    case "received":
+      return item.receivedAt ?? item.createdAt;
+    default:
+      return null;
+  }
+}
+
+/**
+ * Whole days between `sinceIso` and `nowMs`, floored, never negative.
+ * Returns 0 for an unparseable or future timestamp so the UI degrades to
+ * "today" rather than rendering NaN.
+ */
+export function waitingDays(sinceIso: string, nowMs: number): number {
+  const since = new Date(sinceIso).getTime();
+  if (!Number.isFinite(since)) return 0;
+  return Math.max(0, Math.floor((nowMs - since) / 86_400_000));
+}
+
 const BASE = "/resupply-api/admin/shop/returns";
 
 export async function listAdminShopReturns(params: {
