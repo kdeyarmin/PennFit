@@ -102,6 +102,29 @@ export interface QueueDetail extends QueueItem {
 export const getProviderQueueItem = (id: string) =>
   jsonFetch<QueueDetail>(`/queue/${encodeURIComponent(id)}`);
 
+/**
+ * The ids of the documents that are still awaiting signature — i.e. the
+ * ones eligible for the "select all / batch sign" control. Signed/declined
+ * rows are excluded (you can't re-sign them). Pure; unit-tested.
+ */
+export function pendingQueueIds(
+  requests: readonly { id: string; status: string }[],
+): string[] {
+  return requests.filter((r) => r.status === "pending").map((r) => r.id);
+}
+
+/**
+ * True when every pending document is already selected (and there's at
+ * least one) — drives the "Select all" ↔ "Clear selection" toggle label
+ * and the header checkbox state.
+ */
+export function allPendingSelected(
+  pendingIds: readonly string[],
+  checked: ReadonlySet<string>,
+): boolean {
+  return pendingIds.length > 0 && pendingIds.every((id) => checked.has(id));
+}
+
 export const signProviderDocument = (
   id: string,
   body: {

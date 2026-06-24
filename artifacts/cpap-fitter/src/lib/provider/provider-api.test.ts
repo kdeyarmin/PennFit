@@ -3,7 +3,11 @@
 
 import { describe, expect, it } from "vitest";
 
-import { filterRosterPatients } from "./provider-api";
+import {
+  filterRosterPatients,
+  pendingQueueIds,
+  allPendingSelected,
+} from "./provider-api";
 
 const roster = [
   { patientName: "Alice Anderson" },
@@ -48,5 +52,39 @@ describe("filterRosterPatients", () => {
     expect(filterRosterPatients(roster, "  bob  ")).toEqual([
       { patientName: "Bob Brown" },
     ]);
+  });
+});
+
+describe("pendingQueueIds", () => {
+  const requests = [
+    { id: "a", status: "pending" },
+    { id: "b", status: "signed" },
+    { id: "c", status: "pending" },
+    { id: "d", status: "declined" },
+  ];
+
+  it("returns only the ids of pending documents, in order", () => {
+    expect(pendingQueueIds(requests)).toEqual(["a", "c"]);
+  });
+
+  it("returns an empty array when nothing is pending", () => {
+    expect(pendingQueueIds([{ id: "x", status: "signed" }])).toEqual([]);
+    expect(pendingQueueIds([])).toEqual([]);
+  });
+});
+
+describe("allPendingSelected", () => {
+  it("is true only when every pending id is checked", () => {
+    expect(allPendingSelected(["a", "c"], new Set(["a", "c"]))).toBe(true);
+    expect(allPendingSelected(["a", "c"], new Set(["a", "c", "z"]))).toBe(true);
+  });
+
+  it("is false when some pending ids are unchecked", () => {
+    expect(allPendingSelected(["a", "c"], new Set(["a"]))).toBe(false);
+  });
+
+  it("is false when there are no pending ids (nothing to select)", () => {
+    expect(allPendingSelected([], new Set())).toBe(false);
+    expect(allPendingSelected([], new Set(["a"]))).toBe(false);
   });
 });

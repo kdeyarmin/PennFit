@@ -18,6 +18,8 @@ import {
 import {
   getProviderQueue,
   signProviderDocumentsBatch,
+  pendingQueueIds,
+  allPendingSelected,
   type QueueItem,
 } from "@/lib/provider/provider-api";
 import {
@@ -64,6 +66,8 @@ export function ProviderQueue({
   const selected = requests.filter(
     (r) => r.status === "pending" && checked.has(r.id),
   );
+  const pendingIds = pendingQueueIds(requests);
+  const allSelected = allPendingSelected(pendingIds, checked);
 
   const toggle = (id: string) =>
     setChecked((prev) => {
@@ -102,6 +106,20 @@ export function ProviderQueue({
             </button>
           ))}
         </div>
+        {pendingIds.length > 0 ? (
+          <button
+            type="button"
+            onClick={() =>
+              setChecked(allSelected ? new Set() : new Set(pendingIds))
+            }
+            data-testid="provider-queue-select-all"
+            className="text-sm font-medium text-blue-700 hover:underline"
+          >
+            {allSelected
+              ? "Clear selection"
+              : `Select all ${pendingIds.length}`}
+          </button>
+        ) : null}
         {selected.length > 0 && !batchOpen ? (
           <Button onClick={() => setBatchOpen(true)}>
             Sign {selected.length} selected
