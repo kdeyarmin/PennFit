@@ -1048,9 +1048,9 @@ export function PrescriptionPicker({
   value: string;
   onChange: (id: string) => void;
 }) {
-  const patient = useGetPatient(patientId, {
-    query: { enabled: patientId.length > 0, staleTime: 60_000 },
-  });
+  // Only rendered once a patient is chosen (the parent gates on
+  // patientId), so the id is always present — no `enabled` guard needed.
+  const patient = useGetPatient(patientId);
   const prescriptions = patient.data?.prescriptions ?? [];
 
   if (patient.isPending) {
