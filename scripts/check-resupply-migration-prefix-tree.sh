@@ -40,7 +40,13 @@
 # All three touch disjoint tables, so any apply order is equivalent. 0396 is
 # the same kind of already-lost race: one file corrects the platform-outreach
 # updated_at triggers while the other adds voice_calls.answered_by; they touch
-# unrelated tables, so either apply order is safe.
+# unrelated tables, so either apply order is safe. 0474 is the same again:
+# #1239's 0474_shop_orders_delivered_email_sent_at (ALTER shop_orders ADD
+# COLUMN) and #1242's 0474_drop_wrong_capped_rental_modifier_seed (DELETE/
+# UPDATE on payer_modifier_rules + claim_templates) touch unrelated tables —
+# and #1239 had ALREADY renumbered 0471/0472 -> 0474/0475 to dodge an earlier
+# collision before #1242 independently took 0474 too — so either apply order
+# is safe.
 #
 # Self-contained and side-effect free; exits 0 on a clean tree.
 
@@ -72,6 +78,7 @@ GRANDFATHERED="
 0338:2
 0370:3
 0396:2
+0474:2
 "
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
