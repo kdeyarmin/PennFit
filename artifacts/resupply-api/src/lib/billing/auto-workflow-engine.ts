@@ -128,7 +128,7 @@ async function runScrubPass(
     .limit(MAX_PER_PASS);
   for (const claim of claims ?? []) {
     try {
-      const score = await scoreAndPersist(claim.id);
+      const score = await scoreAndPersist(claim.id, supabase.orgId);
       if (!score) continue;
       if (score.probability < SCRUB_TRIGGER_THRESHOLD) continue;
       // Only fire LLM scrub when (a) probability >= threshold AND
@@ -141,7 +141,10 @@ async function runScrubPass(
       ) {
         continue;
       }
-      const output = await scrubClaim({ claimId: claim.id });
+      const output = await scrubClaim({
+        claimId: claim.id,
+        orgId: supabase.orgId,
+      });
       const { data: row } = await supabase
         .from("claim_scrub_results")
         .insert({
@@ -218,7 +221,10 @@ async function runDenialAnalysisPass(
     .limit(MAX_PER_PASS);
   for (const claim of denied ?? []) {
     try {
-      const output = await analyzeDenial({ claimId: claim.id });
+      const output = await analyzeDenial({
+        claimId: claim.id,
+        orgId: supabase.orgId,
+      });
       const { data: row } = await supabase
         .from("claim_denial_analyses")
         .insert({
@@ -304,8 +310,11 @@ export async function runStatementPass(
     const { data, error } = await supabase
       .from("patient_billing_statements")
       .select("patient_id")
+      // Order by the unique `id` (not patient_id, which repeats across a
+      // patient's statements) so offset paging has a total order and the
+      // cooldown set can't drop a patient at a page boundary.
       .gte("created_at", cooldownCutoff)
-      .order("patient_id", { ascending: true })
+      .order("id", { ascending: true })
       .range(from, from + SCAN_PAGE - 1);
     if (error) throw error;
     if (!data || data.length === 0) break;

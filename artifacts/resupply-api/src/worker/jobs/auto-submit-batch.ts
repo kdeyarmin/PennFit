@@ -56,7 +56,7 @@ export async function registerAutoSubmitBatchJob(boss: PgBoss): Promise<void> {
     // switch and claims are selected/submitted under each tenant's own
     // org (and its own clearinghouse). On a single-tenant deployment this
     // runs exactly once for the seed org, so behavior is unchanged.
-    await forEachActiveOrg(
+    const fanOut = await forEachActiveOrg(
       async (orgId) => {
         const enabled = await isFeatureEnabled(
           "billing.auto_submit_claims",
@@ -100,6 +100,17 @@ export async function registerAutoSubmitBatchJob(boss: PgBoss): Promise<void> {
       },
       { jobName: AUTO_SUBMIT_BATCH_JOB },
     );
+    // forEachActiveOrg never rejects (it isolates per-tenant failures), so
+    // without this a tick where EVERY tenant failed (e.g. a full DB/vendor
+    // outage) would look successful and pg-boss retry/backoff/DLQ would never
+    // fire. Fail the job only on a total wipeout — when at least one tenant
+    // succeeds, the failed ones retry on the next scheduled tick (guarded by
+    // their own per-claim submission idempotency) without aborting the rest.
+    if (fanOut.total > 0 && fanOut.succeeded === 0) {
+      throw new Error(
+        `${AUTO_SUBMIT_BATCH_JOB}: all ${fanOut.total} active tenant(s) failed this tick`,
+      );
+    }
   });
 
   const cron = process.env.CLAIMS_AUTOSUBMIT_CRON?.trim();

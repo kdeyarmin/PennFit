@@ -52,7 +52,7 @@ export async function registerPriorAuthAutoSubmitJob(
     // switch and PAs are selected/submitted under each tenant's own org and
     // payer endpoints. On a single-tenant deployment this runs exactly once
     // for the seed org, so behavior is unchanged.
-    await forEachActiveOrg(
+    const fanOut = await forEachActiveOrg(
       async (orgId) => {
         const enabled = await isFeatureEnabled(
           "billing.auto_submit_prior_auths",
@@ -155,6 +155,15 @@ export async function registerPriorAuthAutoSubmitJob(
       },
       { jobName: PRIOR_AUTH_AUTO_SUBMIT_JOB },
     );
+    // forEachActiveOrg never rejects, so fail the job on a total wipeout
+    // (every tenant failed — e.g. a full outage) to keep pg-boss
+    // retry/backoff/DLQ working; partial failures retry next tick (guarded
+    // by the per-PA davinci_pas_submissions dedup) without aborting the rest.
+    if (fanOut.total > 0 && fanOut.succeeded === 0) {
+      throw new Error(
+        `${PRIOR_AUTH_AUTO_SUBMIT_JOB}: all ${fanOut.total} active tenant(s) failed this tick`,
+      );
+    }
   });
 
   const cron = process.env.PRIOR_AUTH_AUTOSUBMIT_CRON?.trim();

@@ -66,6 +66,10 @@ export async function fetchCustomerActivity(
       .not("customer_id", "is", null)
       .order("created_at", { ascending: true })
       .order("customer_id", { ascending: true })
+      // `id` tiebreaker — (created_at, customer_id) is NOT unique (one
+      // customer can place two orders at the same timestamp), and offset
+      // paging needs a TOTAL order or boundary rows duplicate/skip.
+      .order("id", { ascending: true })
       .range(lo, hi),
   );
 

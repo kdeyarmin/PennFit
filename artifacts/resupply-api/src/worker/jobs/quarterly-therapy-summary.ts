@@ -284,13 +284,16 @@ async function quarterlySummarySweepForOrg(
         .eq("patient_id", patient.id)
         .gte("night_date", startIso)
         // Bound the window on BOTH ends (endIso was computed but unused) and
-        // order NEWEST-first so that if a multi-source patient's night rows
-        // exceed the cap, the cap drops the OLDEST nights, not the most
+        // order night_date DESC so that if a multi-source patient's rows
+        // exceed the cap, the cap sheds the OLDEST nights, not the most
         // recent — recent adherence is the clinically relevant part of the
-        // summary. buildQuarterlySummary only computes order-independent
-        // aggregates + per-date dedup, so descending order is safe.
+        // summary. buildQuarterlySummary's per-date dedup keeps the FIRST row
+        // seen for each night_date, so the secondary updated_at DESC sort
+        // makes that dedup deterministic and honors its documented intent —
+        // the most recently INGESTED row for a multi-source date wins.
         .lte("night_date", endIso)
         .order("night_date", { ascending: false })
+        .order("updated_at", { ascending: false })
         .limit(WINDOW_DAYS * 4);
       if (nightsErr) {
         logger.warn(

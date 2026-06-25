@@ -20,10 +20,11 @@ export async function registerAutoWorkflowJob(boss: PgBoss): Promise<void> {
     // Fan out per active tenant. Each pass scopes its work (and per-pass
     // feature-flag checks) to the tenant's own org. On a single-tenant
     // deployment this runs exactly once for the seed org — behavior
-    // unchanged. forEachActiveOrg isolates a failing tenant so it can't
-    // abort the others; a tenant throwing is logged + tallied there, so we
-    // no longer re-throw out of the whole tick.
-    await forEachActiveOrg(
+    // unchanged. forEachActiveOrg isolates a failing tenant so it can't abort
+    // the others; a tenant throwing is logged + tallied there. We re-throw
+    // ONLY when EVERY tenant failed (below), so a partial failure keeps the
+    // successful tenants while a total wipeout still surfaces to pg-boss.
+    const fanOut = await forEachActiveOrg(
       async (orgId) => {
         const stats = await runAutoWorkflowPass(orgId);
         if (
@@ -41,6 +42,11 @@ export async function registerAutoWorkflowJob(boss: PgBoss): Promise<void> {
       },
       { jobName: JOB },
     );
+    if (fanOut.total > 0 && fanOut.succeeded === 0) {
+      throw new Error(
+        `${JOB}: all ${fanOut.total} active tenant(s) failed this tick`,
+      );
+    }
   });
   await boss.schedule(JOB, CRON);
   logger.info({ cron: CRON }, "billing.auto-workflow scheduled");

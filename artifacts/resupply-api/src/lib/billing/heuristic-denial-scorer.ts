@@ -65,14 +65,20 @@ const W_SUBSCRIBER_ADDRESS_MISSING = 0.5;
 const MEDICARE_LIKE_LOBS = new Set(["medicare_part_b", "medicare_advantage"]);
 const CAPPED_RENTAL_HCPCS = new Set(["E0601", "E0470", "E0471", "E0562"]);
 
-export async function scoreClaim(claimId: string): Promise<DenialScore | null> {
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) {
+export async function scoreClaim(
+  claimId: string,
+  orgId?: string,
+): Promise<DenialScore | null> {
+  // Score the claim in its OWN tenant — the caller (auto-workflow fan-out)
+  // passes the org the claim was selected from. Defaults to the seed org so
+  // existing single-tenant callers are unchanged.
+  const resolvedOrgId = orgId?.trim() || (await resolveSeedOrgId());
+  if (!resolvedOrgId) {
     // No tenant context — no opinion (the scorer is advisory and the
     // caller already handles a null score as "unscored").
     return null;
   }
-  const supabase = getOrgScopedClient(orgId);
+  const supabase = getOrgScopedClient(resolvedOrgId);
   const factors: ScoringFactor[] = [];
 
   const { data: claim } = await supabase
@@ -317,11 +323,13 @@ function finalize(factors: ScoringFactor[]): DenialScore {
  */
 export async function scoreAndPersist(
   claimId: string,
+  orgId?: string,
 ): Promise<DenialScore | null> {
-  const score = await scoreClaim(claimId);
+  const score = await scoreClaim(claimId, orgId);
   if (!score) return null;
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) {
+  // Persist into the SAME tenant the claim was scored in (defaults to seed).
+  const resolvedOrgId = orgId?.trim() || (await resolveSeedOrgId());
+  if (!resolvedOrgId) {
     // Tenant context vanished between scoring and persist — the score
     // is advisory, so return it unpersisted rather than throwing.
     logger.warn(
@@ -330,7 +338,7 @@ export async function scoreAndPersist(
     );
     return score;
   }
-  const supabase = getOrgScopedClient(orgId);
+  const supabase = getOrgScopedClient(resolvedOrgId);
   const { error } = await supabase
     .from("insurance_claims")
     .update({

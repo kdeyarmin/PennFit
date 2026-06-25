@@ -193,6 +193,9 @@ export async function runEligibilityReverificationBatch(
         .select("insurance_coverage_id, requested_at")
         .in("insurance_coverage_id", idChunk)
         .order("requested_at", { ascending: false })
+        // `id` tiebreaker — requested_at is not unique per coverage, so add
+        // it to give offset paging a total order (no boundary dup/skip).
+        .order("id", { ascending: false })
         .range(from, from + SCAN_PAGE - 1);
       if (checksErr) throw checksErr;
       if (!checks || checks.length === 0) break;

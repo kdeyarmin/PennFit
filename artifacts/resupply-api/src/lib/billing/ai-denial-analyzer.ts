@@ -105,6 +105,12 @@ const SYSTEM_PROMPT = [
 
 export interface DenialAnalysisInput {
   claimId: string;
+  /**
+   * Tenant the claim belongs to. The auto-workflow fan-out passes the org
+   * the claim was selected from so the analysis reads/writes the RIGHT
+   * tenant's claim; omitted → seed org (single-tenant callers unchanged).
+   */
+  orgId?: string;
   /** Optional pointer to the ERA file this denial came from. */
   eraFileId?: string | null;
   model?: string;
@@ -157,7 +163,7 @@ export async function analyzeDenial(
     return errored("OPENAI_API_KEY not configured");
   }
 
-  const orgId = await resolveSeedOrgId();
+  const orgId = input.orgId?.trim() || (await resolveSeedOrgId());
   if (!orgId) {
     return errored("tenant context missing");
   }

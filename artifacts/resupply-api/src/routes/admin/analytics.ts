@@ -301,6 +301,10 @@ router.get(
           .gte("night_date", horizonCutoff)
           .order("patient_id", { ascending: true })
           .order("night_date", { ascending: true })
+          // (patient_id, night_date) is NOT unique — a patient can have
+          // multiple source rows for one night — so add the `id` tiebreaker
+          // to give offset paging a total order (no boundary dup/skip).
+          .order("id", { ascending: true })
           .range(from, to),
       );
       nightRows.push(...chunkRows);
@@ -771,6 +775,10 @@ router.get(
           .gte("night_date", horizonCutoff)
           .order("patient_id", { ascending: true })
           .order("night_date", { ascending: true })
+          // (patient_id, night_date) is NOT unique — a patient can have
+          // multiple source rows for one night — so add the `id` tiebreaker
+          // to give offset paging a total order (no boundary dup/skip).
+          .order("id", { ascending: true })
           .range(from, to),
       );
       nightRows.push(...chunkRows);
