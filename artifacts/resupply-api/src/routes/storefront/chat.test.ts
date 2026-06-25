@@ -158,7 +158,7 @@ describe("POST /chat", () => {
     const init = callArgs?.[1] as RequestInit;
     expect(url).toBe("https://api.openai.com/v1/chat/completions");
     const payload = JSON.parse(init.body as string);
-    expect(payload.model).toBe("gpt-4o-mini");
+    expect(payload.model).toBe("gpt-4.1-mini");
     expect(payload.messages[0].role).toBe("system");
     // The route applies applyPlatformBranding() to the system prompt, so
     // the in-source "PennBot" placeholder resolves to the tenant's

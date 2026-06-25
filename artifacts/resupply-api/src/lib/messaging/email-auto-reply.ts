@@ -10,7 +10,7 @@
 //
 // Provider selection mirrors the rest of the stack: Claude Sonnet 4.6
 // when `ANTHROPIC_API_KEY` is set (warmer patient-facing copy), else
-// `gpt-4o-mini`, else "offline".
+// `gpt-4.1-mini`, else "offline".
 //
 // Safety posture (why this is conservative by design):
 //   Email replies to a KNOWN patient are a bigger blast radius than the
@@ -53,7 +53,7 @@ import { buildChatSystemPromptBase } from "../storefront/chatbotKnowledge";
 import { redactPiiForOutbound } from "../storefront/chatbotPii";
 
 const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
-const OPENAI_DEFAULT_MODEL = "gpt-4o-mini";
+const OPENAI_DEFAULT_MODEL = "gpt-4.1-mini";
 // The patient already waited minutes-to-hours before replying; there is
 // no latency pressure, so favour a generous timeout over a flaky cut-off.
 const DEFAULT_TIMEOUT_MS = 20_000;

@@ -7,10 +7,10 @@
 //
 // Provider selection (May 2026 update):
 //   When ANTHROPIC_API_KEY is set, we use Claude Haiku 4.5 — same
-//   class of cost/latency as gpt-4o-mini, but the auto-generated SMS
+//   class of cost/latency as gpt-4.1-mini, but the auto-generated SMS
 //   reply text reads noticeably more like a human ("got it" vs
 //   "I have received your message"). When only OPENAI_API_KEY is
-//   configured, we fall back to gpt-4o-mini.
+//   configured, we fall back to gpt-4.1-mini.
 //
 // PHI containment:
 //   We send THREE strings to the model per call:
@@ -48,7 +48,7 @@ import { logger } from "../logger";
 import { recordAiTokenUsage } from "../metering/usage.js";
 
 const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
-const DEFAULT_MODEL = "gpt-4o-mini";
+const DEFAULT_MODEL = "gpt-4.1-mini";
 // 10s timeout (was 5s). SMS classification runs after the patient has
 // already taken hours to reply — the model has no latency pressure
 // from the patient's side. The previous 5s ceiling was tight enough
@@ -367,7 +367,7 @@ export function createAnthropicFallbackAdapter(
 /**
  * Factory that picks an adapter based on env. Prefers Anthropic
  * (Claude Haiku 4.5) when ANTHROPIC_API_KEY is set, otherwise uses
- * OpenAI (gpt-4o-mini). Returns null when neither is configured —
+ * OpenAI (gpt-4.1-mini). Returns null when neither is configured —
  * callers should route to a human-handoff path in that case.
  */
 export function createAiFallbackAdapter(

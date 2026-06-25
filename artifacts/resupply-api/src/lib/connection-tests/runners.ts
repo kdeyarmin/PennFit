@@ -571,7 +571,7 @@ async function runOpenAiChatTest(
           Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
-          model: "gpt-4o-mini",
+          model: "gpt-4.1-mini",
           max_tokens: 16,
           temperature: 0,
           messages: [{ role: "user", content: CHAT_TEST_PROMPT }],
@@ -609,7 +609,7 @@ async function runOpenAiChatTest(
       channel: "chat",
       detail: {
         provider: "openai",
-        model: json.model ?? "gpt-4o-mini",
+        model: json.model ?? "gpt-4.1-mini",
         reply: cap(reply, 120),
         latencyMs: deps.now().getTime() - startedAt,
       },
