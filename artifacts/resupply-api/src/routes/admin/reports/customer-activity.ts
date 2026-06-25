@@ -17,6 +17,7 @@ import { renderTablePdf } from "../../../lib/report-pdf";
 import { requirePermission } from "../../../middlewares/requireAdmin";
 import {
   bufferedRes,
+  collectReportRows,
   escapeCsv,
   parseRange,
   practiceName,
@@ -49,48 +50,74 @@ export async function fetchCustomerActivity(
   // customer who signs up + orders the same day counts as new,
   // even though they did place an order — but it matches operator
   // intuition for the "new-customer cohort" tile.
-  const { data: orders, error: ordersErr } = await supabase
-    .from("shop_orders")
-    .select("customer_id, created_at")
-    .gte("created_at", from.toISOString())
-    .lte("created_at", to.toISOString())
-    .not("customer_id", "is", null)
-    .limit(10_000);
-  if (ordersErr) throw ordersErr;
+  // PAGINATED — a plain `.limit(10_000)` is silently re-capped to the
+  // PostgREST server row limit (commonly 1000), so a busy tenant's per-day
+  // new/returning split would be computed over a truncated order set. Page
+  // past the cap.
+  const orders = await collectReportRows<{
+    customer_id: string | null;
+    created_at: string;
+  }>((lo, hi) =>
+    supabase
+      .from("shop_orders")
+      .select("customer_id, created_at")
+      .gte("created_at", from.toISOString())
+      .lte("created_at", to.toISOString())
+      .not("customer_id", "is", null)
+      .order("created_at", { ascending: true })
+      .order("customer_id", { ascending: true })
+      .range(lo, hi),
+  );
 
   // Collect unique customer IDs from orders in the range.
   const relevantCustomerIds = new Set<string>();
-  for (const o of orders ?? []) {
+  for (const o of orders) {
     if (o.customer_id) relevantCustomerIds.add(o.customer_id);
   }
 
   // Fetch earliest created_at for all customers relevant to this
   // report, regardless of whether they were created within [from,to].
   // This ensures we correctly classify returning customers who signed
-  // up before the report period.
-  const { data: allCustomers, error: customerErr } = await supabase
-    .from("shop_customers")
-    .select("customer_id, created_at")
-    .in("customer_id", Array.from(relevantCustomerIds))
-    .limit(10_000);
-  if (customerErr) throw customerErr;
-
+  // up before the report period. CHUNKED — a large `.in()` list would both
+  // exceed the URL length and the ~1000-row cap.
   const firstSeenByCustomer = new Map<string, string>();
-  for (const c of allCustomers ?? []) {
-    if (c.customer_id) firstSeenByCustomer.set(c.customer_id, c.created_at);
+  const relevantIdList = Array.from(relevantCustomerIds);
+  const CUSTOMER_ID_CHUNK = 300;
+  for (let i = 0; i < relevantIdList.length; i += CUSTOMER_ID_CHUNK) {
+    const idChunk = relevantIdList.slice(i, i + CUSTOMER_ID_CHUNK);
+    const chunkRows = await collectReportRows<{
+      customer_id: string | null;
+      created_at: string;
+    }>((lo, hi) =>
+      supabase
+        .from("shop_customers")
+        .select("customer_id, created_at")
+        .in("customer_id", idChunk)
+        .order("customer_id", { ascending: true })
+        .range(lo, hi),
+    );
+    for (const c of chunkRows) {
+      if (c.customer_id) firstSeenByCustomer.set(c.customer_id, c.created_at);
+    }
   }
 
   // New signups bucketed by day. shop_customers.created_at is the
   // first time we saw the email — opting in elsewhere (sign-up,
   // first cash-pay checkout) all funnel through the same row, so
   // a count by created_at is a clean "new customers per day".
-  const { data: signups, error: signupErr } = await supabase
-    .from("shop_customers")
-    .select("customer_id, created_at")
-    .gte("created_at", from.toISOString())
-    .lte("created_at", to.toISOString())
-    .limit(10_000);
-  if (signupErr) throw signupErr;
+  const signups = await collectReportRows<{
+    customer_id: string | null;
+    created_at: string;
+  }>((lo, hi) =>
+    supabase
+      .from("shop_customers")
+      .select("customer_id, created_at")
+      .gte("created_at", from.toISOString())
+      .lte("created_at", to.toISOString())
+      .order("created_at", { ascending: true })
+      .order("customer_id", { ascending: true })
+      .range(lo, hi),
+  );
 
   const byDay = new Map<
     string,

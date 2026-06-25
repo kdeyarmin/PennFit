@@ -18,6 +18,13 @@
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
+// PostgREST caps a single response at ~1000 rows. Any select that can match
+// more than that must be keyset/offset-paged or it silently truncates —
+// which for the contact audience would drop recipients, and for the
+// unsubscribe set below would let opted-out people through. Mirrors the
+// paging pattern in lib/bulk-campaigns/fetch-candidates.ts.
+const PAGE = 1000;
+
 export type PlatformAudienceKind =
   | "all_tenants"
   | "selected_tenants"
@@ -122,29 +129,39 @@ export async function resolvePlatformAudience(
     input.audienceKind === "all_contacts" ||
     input.audienceKind === "contacts_by_tag"
   ) {
-    let contactQuery = supabase
-      .schema("resupply")
-      .from("platform_contacts")
-      .select("id, email, name");
-    if (input.audienceKind === "contacts_by_tag") {
-      const tag = (input.tag ?? "").trim();
-      if (!tag) {
-        return {
-          recipients: [],
-          totals: { total: 0, pending: 0, suppressed: 0 },
-        };
-      }
-      contactQuery = contactQuery.contains("tags", [tag]);
+    const tag =
+      input.audienceKind === "contacts_by_tag" ? (input.tag ?? "").trim() : "";
+    if (input.audienceKind === "contacts_by_tag" && !tag) {
+      return {
+        recipients: [],
+        totals: { total: 0, pending: 0, suppressed: 0 },
+      };
     }
-    const { data: contacts, error: contactErr } = await contactQuery;
-    if (contactErr) throw contactErr;
-    for (const c of contacts ?? []) {
-      candidates.push({
-        kind: "contact",
-        ref: c.id as string,
-        email: c.email as string,
-        name: (c.name as string | null) ?? null,
-      });
+    // PAGINATED — an "all contacts" or large-tag campaign can exceed the
+    // ~1000-row cap; an unpaginated read would silently reach only the
+    // first page.
+    for (let from = 0; ; from += PAGE) {
+      let contactQuery = supabase
+        .schema("resupply")
+        .from("platform_contacts")
+        .select("id, email, name")
+        .order("id", { ascending: true })
+        .range(from, from + PAGE - 1);
+      if (tag) {
+        contactQuery = contactQuery.contains("tags", [tag]);
+      }
+      const { data: contacts, error: contactErr } = await contactQuery;
+      if (contactErr) throw contactErr;
+      if (!contacts || contacts.length === 0) break;
+      for (const c of contacts) {
+        candidates.push({
+          kind: "contact",
+          ref: c.id as string,
+          email: c.email as string,
+          name: (c.name as string | null) ?? null,
+        });
+      }
+      if (contacts.length < PAGE) break;
     }
   } else if (input.audienceKind === "manual_list") {
     for (const raw of input.emails ?? []) {
@@ -156,15 +173,24 @@ export async function resolvePlatformAudience(
 
   // Cross-audience unsubscribe honor: every email a contact has opted out
   // of is suppressed regardless of how it entered the audience.
-  const { data: unsub, error: unsubErr } = await supabase
-    .schema("resupply")
-    .from("platform_contacts")
-    .select("email")
-    .eq("unsubscribed", true);
-  if (unsubErr) throw unsubErr;
-  const unsubscribed = new Set(
-    (unsub ?? []).map((r) => (r.email as string).trim().toLowerCase()),
-  );
+  // PAGINATED — the suppression set MUST be complete; a truncated read here
+  // would let opted-out contacts past the ~1000th receive outreach.
+  const unsubscribed = new Set<string>();
+  for (let from = 0; ; from += PAGE) {
+    const { data: unsub, error: unsubErr } = await supabase
+      .schema("resupply")
+      .from("platform_contacts")
+      .select("id, email")
+      .eq("unsubscribed", true)
+      .order("id", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (unsubErr) throw unsubErr;
+    if (!unsub || unsub.length === 0) break;
+    for (const r of unsub) {
+      unsubscribed.add((r.email as string).trim().toLowerCase());
+    }
+    if (unsub.length < PAGE) break;
+  }
 
   const seen = new Set<string>();
   const recipients: ResolvedRecipient[] = [];

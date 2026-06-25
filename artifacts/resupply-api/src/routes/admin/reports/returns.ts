@@ -16,6 +16,7 @@ import { requirePermission } from "../../../middlewares/requireAdmin";
 import {
   bufferedRes,
   centsToDollars,
+  collectReportRows,
   escapeCsv,
   parseRange,
   practiceName,
@@ -52,16 +53,18 @@ export async function fetchReturns(
   to: Date,
 ): Promise<ReturnRow[]> {
   const supabase = getOrgScopedClient(orgId);
-  const { data, error } = await supabase
-    .from("shop_returns")
-    .select(
-      "id, order_id, customer_id, stripe_session_id, status, reason, resolution, refund_cents, stripe_refund_id, exchange_product_id, created_at, approved_at, received_at, resolved_at, closed_at",
-    )
-    .gte("created_at", from.toISOString())
-    .lte("created_at", to.toISOString())
-    .order("created_at", { ascending: false });
-  if (error) throw error;
-  return (data ?? []) as ReturnRow[];
+  return collectReportRows<ReturnRow>((lo, hi) =>
+    supabase
+      .from("shop_returns")
+      .select(
+        "id, order_id, customer_id, stripe_session_id, status, reason, resolution, refund_cents, stripe_refund_id, exchange_product_id, created_at, approved_at, received_at, resolved_at, closed_at",
+      )
+      .gte("created_at", from.toISOString())
+      .lte("created_at", to.toISOString())
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
+      .range(lo, hi),
+  ) as Promise<ReturnRow[]>;
 }
 
 export function writeReturnsCsv(res: CsvSink, rows: ReturnRow[]): void {

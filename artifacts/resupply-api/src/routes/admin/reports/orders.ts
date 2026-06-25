@@ -14,6 +14,7 @@ import { requirePermission } from "../../../middlewares/requireAdmin";
 import {
   bufferedRes,
   centsToDollars,
+  collectReportRows,
   escapeCsv,
   parseRange,
   practiceName,
@@ -48,16 +49,18 @@ export async function fetchOrders(
   to: Date,
 ): Promise<OrderRow[]> {
   const supabase = getOrgScopedClient(orgId);
-  const { data, error } = await supabase
-    .from("shop_orders")
-    .select(
-      "id, stripe_session_id, stripe_payment_intent_id, status, amount_total_cents, currency, customer_id, created_at, paid_at, shipped_at, delivered_at, tracking_carrier, tracking_number",
-    )
-    .gte("created_at", from.toISOString())
-    .lte("created_at", to.toISOString())
-    .order("created_at", { ascending: false });
-  if (error) throw error;
-  return (data ?? []) as OrderRow[];
+  return collectReportRows<OrderRow>((lo, hi) =>
+    supabase
+      .from("shop_orders")
+      .select(
+        "id, stripe_session_id, stripe_payment_intent_id, status, amount_total_cents, currency, customer_id, created_at, paid_at, shipped_at, delivered_at, tracking_carrier, tracking_number",
+      )
+      .gte("created_at", from.toISOString())
+      .lte("created_at", to.toISOString())
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
+      .range(lo, hi),
+  ) as Promise<OrderRow[]>;
 }
 
 export function writeOrdersCsv(res: CsvSink, orders: OrderRow[]): void {

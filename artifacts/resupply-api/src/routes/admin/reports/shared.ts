@@ -20,6 +20,30 @@ import { safeCsvCell } from "../../../lib/safe-csv-cell";
 export const DEFAULT_DAYS = 30;
 export const MAX_DAYS = 90;
 
+// PostgREST caps a single response at ~1000 rows. Every financial report
+// sums and exports EVERY row in range, so an unpaginated read silently
+// understates revenue/AR totals and drops transactions from the CSV/PDF/IIF/
+// QBO accounting exports the moment a tenant exceeds ~1000 records in the
+// (≤MAX_DAYS) window. Offset-page past the cap. `page(lo, hi)` must return a
+// query already `.order()`ed (stable paging) and `.range(lo, hi)`d.
+export const REPORT_PAGE = 1000;
+export async function collectReportRows<T>(
+  page: (
+    lo: number,
+    hi: number,
+  ) => PromiseLike<{ data: T[] | null; error: unknown }>,
+): Promise<T[]> {
+  const out: T[] = [];
+  for (let lo = 0; ; lo += REPORT_PAGE) {
+    const { data, error } = await page(lo, lo + REPORT_PAGE - 1);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    out.push(...data);
+    if (data.length < REPORT_PAGE) break;
+  }
+  return out;
+}
+
 export const REPORT_SLUGS = [
   "orders",
   "returns",

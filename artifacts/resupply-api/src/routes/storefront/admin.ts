@@ -284,49 +284,68 @@ router.get("/admin/analytics", async (req, res) => {
   ).toISOString();
 
   // PostgREST has no GROUP BY. We fetch the aggregation inputs and
-  // reduce JS-side. The dataset is admin-internal and bounded
-  // (low-thousands of orders / events at our scale); when this grows
-  // these become RPC functions exposing pre-aggregated views.
+  // reduce JS-side. These COUNT/GROUP over every matching order, so the
+  // input reads are PAGINATED — an unpaginated select silently truncates at
+  // the ~1000-row cap and every breakdown below would be understated once a
+  // tenant has >1000 lifetime orders (the total tile stays an exact
+  // head-count, which never transfers rows).
   // Tenant-scoped (migration 0463): every public.orders aggregation input is
   // filtered to the caller's org. `usage_events` has no org_id and stays a
   // platform-global funnel signal (it carries no PHI and no tenant dimension).
   const raw = supabase.raw();
-  const [totalRes, statusRes, masksRes, funnelRes, recentRes] =
+  const [totalRes, statusRows, maskRows, funnelRows, recentRows] =
     await Promise.all([
       raw
         .schema("public")
         .from("orders")
         .select("*", { count: "exact", head: true })
         .eq("org_id", orgId),
-      raw
-        .schema("public")
-        .from("orders")
-        .select("email_status")
-        .eq("org_id", orgId),
-      raw
-        .schema("public")
-        .from("orders")
-        .select("mask_name, mask_manufacturer")
-        .eq("org_id", orgId),
-      raw.schema("public").from("usage_events").select("step"),
-      raw
-        .schema("public")
-        .from("orders")
-        .select("created_at")
-        .eq("org_id", orgId)
-        .gte("created_at", sinceIso),
+      collectAllPublicRows<{ email_status: string | null }>((lo, hi) =>
+        raw
+          .schema("public")
+          .from("orders")
+          .select("email_status")
+          .eq("org_id", orgId)
+          .order("id", { ascending: true })
+          .range(lo, hi),
+      ),
+      collectAllPublicRows<{
+        mask_name: string;
+        mask_manufacturer: string;
+      }>((lo, hi) =>
+        raw
+          .schema("public")
+          .from("orders")
+          .select("mask_name, mask_manufacturer")
+          .eq("org_id", orgId)
+          .order("id", { ascending: true })
+          .range(lo, hi),
+      ),
+      collectAllPublicRows<{ step: string }>((lo, hi) =>
+        raw
+          .schema("public")
+          .from("usage_events")
+          .select("step")
+          .order("id", { ascending: true })
+          .range(lo, hi),
+      ),
+      collectAllPublicRows<{ created_at: string }>((lo, hi) =>
+        raw
+          .schema("public")
+          .from("orders")
+          .select("created_at")
+          .eq("org_id", orgId)
+          .gte("created_at", sinceIso)
+          .order("id", { ascending: true })
+          .range(lo, hi),
+      ),
     ]);
   if (totalRes.error) throw totalRes.error;
-  if (statusRes.error) throw statusRes.error;
-  if (masksRes.error) throw masksRes.error;
-  if (funnelRes.error) throw funnelRes.error;
-  if (recentRes.error) throw recentRes.error;
 
   // GROUP BY status COUNT(*).
-  const statusBreakdown = countBy(
-    statusRes.data ?? [],
-    (r) => r.email_status,
-  ).map(([status, count]) => ({ status, count }));
+  const statusBreakdown = countBy(statusRows, (r) => r.email_status).map(
+    ([status, count]) => ({ status, count }),
+  );
 
   // GROUP BY (mask_name, mask_manufacturer) COUNT(*) ORDER BY count DESC LIMIT 10.
   // Use a Map so we can preserve both grouping columns in the result
@@ -335,7 +354,7 @@ router.get("/admin/analytics", async (req, res) => {
     string,
     { maskName: string; maskManufacturer: string; count: number }
   >();
-  for (const r of masksRes.data ?? []) {
+  for (const r of maskRows) {
     const k = JSON.stringify([r.mask_name, r.mask_manufacturer]);
     const existing = maskCounts.get(k);
     if (existing) {
@@ -353,15 +372,14 @@ router.get("/admin/analytics", async (req, res) => {
     .slice(0, 10);
 
   // GROUP BY step COUNT(*).
-  const funnel = countBy(funnelRes.data ?? [], (r) => r.step).map(
-    ([step, count]) => ({ step, count }),
-  );
+  const funnel = countBy(funnelRows, (r) => r.step).map(([step, count]) => ({
+    step,
+    count,
+  }));
 
   // date_trunc('day', created_at)::date GROUP BY day ORDER BY day.
   // Truncate to YYYY-MM-DD by slicing the ISO string.
-  const ordersByDay = countBy(recentRes.data ?? [], (r) =>
-    r.created_at.slice(0, 10),
-  )
+  const ordersByDay = countBy(recentRows, (r) => r.created_at.slice(0, 10))
     .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
     .map(([day, count]) => ({ day, count }));
 
@@ -373,6 +391,27 @@ router.get("/admin/analytics", async (req, res) => {
     ordersByDay,
   });
 });
+
+// Offset-page a `.raw()` (untyped public-schema) select past PostgREST's
+// ~1000-row response cap. `page(lo, hi)` must return a query already
+// `.order()`ed (stable paging) and `.range(lo, hi)`d.
+const ANALYTICS_PAGE = 1000;
+async function collectAllPublicRows<T>(
+  page: (
+    lo: number,
+    hi: number,
+  ) => PromiseLike<{ data: T[] | null; error: unknown }>,
+): Promise<T[]> {
+  const out: T[] = [];
+  for (let lo = 0; ; lo += ANALYTICS_PAGE) {
+    const { data, error } = await page(lo, lo + ANALYTICS_PAGE - 1);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    out.push(...data);
+    if (data.length < ANALYTICS_PAGE) break;
+  }
+  return out;
+}
 
 function countBy<T, K extends string>(
   rows: ReadonlyArray<T>,

@@ -27,6 +27,7 @@ import { requirePermission } from "../../../middlewares/requireAdmin";
 import {
   bufferedRes,
   centsToDollars,
+  collectReportRows,
   escapeCsv,
   parseRange,
   practiceName,
@@ -60,16 +61,18 @@ export async function fetchPatientPayments(
   // Clamp on created_at (consistent with orders/returns); the QB
   // builder anchors each receipt on succeeded_at so the ledger date
   // reflects when the cash actually landed.
-  const { data, error } = await supabase
-    .from("patient_payments")
-    .select(
-      "id, patient_id, stripe_payment_intent_id, amount_cents, currency, status, source, succeeded_at, created_at",
-    )
-    .gte("created_at", from.toISOString())
-    .lte("created_at", to.toISOString())
-    .order("created_at", { ascending: false });
-  if (error) throw error;
-  return (data ?? []) as PatientPaymentRow[];
+  return collectReportRows<PatientPaymentRow>((lo, hi) =>
+    supabase
+      .from("patient_payments")
+      .select(
+        "id, patient_id, stripe_payment_intent_id, amount_cents, currency, status, source, succeeded_at, created_at",
+      )
+      .gte("created_at", from.toISOString())
+      .lte("created_at", to.toISOString())
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
+      .range(lo, hi),
+  ) as Promise<PatientPaymentRow[]>;
 }
 
 export function writePatientPaymentsCsv(
