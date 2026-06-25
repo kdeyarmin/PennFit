@@ -21,11 +21,12 @@
 
 import type PgBoss from "pg-boss";
 
-import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { submitPriorAuth } from "../../lib/billing/submit-prior-auth.js";
 import { isFeatureEnabled } from "../../lib/feature-flags.js";
 import { logger } from "../../lib/logger.js";
+import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import {
   createQueueWithDlq,
   VENDOR_SEND_QUEUE_OPTS,
@@ -47,106 +48,113 @@ export async function registerPriorAuthAutoSubmitJob(
     VENDOR_SEND_QUEUE_OPTS,
   );
   await boss.work(PRIOR_AUTH_AUTO_SUBMIT_JOB, async () => {
-    const enabled = await isFeatureEnabled("billing.auto_submit_prior_auths");
-    if (!enabled) {
-      logger.info(
-        { queue: PRIOR_AUTH_AUTO_SUBMIT_JOB },
-        "prior-auth-auto-submit: feature flag off — nothing transmitted",
-      );
-      return;
-    }
-
-    // Cron path operates on the seed org, like the claims auto-submit cron.
-    const orgId = await resolveSeedOrgId();
-    if (!orgId) {
-      logger.warn(
-        { queue: PRIOR_AUTH_AUTO_SUBMIT_JOB },
-        "prior-auth-auto-submit: no seed org resolved — skipping",
-      );
-      return;
-    }
-
-    const supabase = getOrgScopedClient(orgId);
-    const { data: drafts, error } = await supabase
-      .from("prior_authorizations")
-      .select("id, patient_id")
-      .eq("status", "draft")
-      .not("insurance_coverage_id", "is", null)
-      .order("created_at", { ascending: true })
-      .limit(MAX_PER_TICK);
-    if (error) throw error;
-
-    // Attempt each PA at most once. submitPriorAuth only advances the parent PA
-    // out of `draft` for an identifier-matched `responded` outcome — a
-    // `rejected`/`transport_failed` attempt (where PHI may already have reached
-    // the payer) leaves the PA in `draft`, so without this guard the next tick
-    // would re-select and re-transmit it every run. Exclude any candidate that
-    // already has a davinci_pas_submissions row; recovery for a failed transmit
-    // is a deliberate manual action via the admin "Submit" button.
-    const candidates: Array<{ id: string; patient_id: string }> = drafts ?? [];
-    let toSubmit = candidates;
-    let alreadyAttempted = 0;
-    if (candidates.length > 0) {
-      const { data: attempted, error: attemptedErr } = await supabase
-        .from("davinci_pas_submissions")
-        .select("prior_authorization_id")
-        .in(
-          "prior_authorization_id",
-          candidates.map((p) => p.id),
-        );
-      if (attemptedErr) throw attemptedErr;
-      const attemptedIds = new Set(
-        (attempted ?? []).map(
-          (r: { prior_authorization_id: string }) => r.prior_authorization_id,
-        ),
-      );
-      toSubmit = candidates.filter((p) => !attemptedIds.has(p.id));
-      alreadyAttempted = candidates.length - toSubmit.length;
-    }
-
-    let submitted = 0;
-    let skipped = 0;
-    let failed = 0;
-    for (const pa of toSubmit) {
-      try {
-        const result = await submitPriorAuth({
+    // Fan out per active tenant: the feature flag is a per-tenant kill
+    // switch and PAs are selected/submitted under each tenant's own org and
+    // payer endpoints. On a single-tenant deployment this runs exactly once
+    // for the seed org, so behavior is unchanged.
+    await forEachActiveOrg(
+      async (orgId) => {
+        const enabled = await isFeatureEnabled(
+          "billing.auto_submit_prior_auths",
           orgId,
-          patientId: pa.patient_id,
-          paId: pa.id,
-          actorEmail: SYSTEM_ACTOR_EMAIL,
-        });
-        if (!result.ok) {
-          // Not ready (no diagnosis/endpoint/creds/address) — left as a draft
-          // and retried next tick. No payer call, no submission row.
-          skipped += 1;
-        } else if (result.transportStatus === "responded") {
-          submitted += 1;
-        } else {
-          // Transmitted but the payer transport failed — counts as an attempt.
-          submitted += 1;
-        }
-      } catch (err) {
-        failed += 1;
-        logger.warn(
-          { event: "prior-auth-auto-submit.item_failed", paId: pa.id, err },
-          "prior-auth-auto-submit: a PA submission threw",
         );
-      }
-    }
+        if (!enabled) {
+          logger.info(
+            { queue: PRIOR_AUTH_AUTO_SUBMIT_JOB, orgId },
+            "prior-auth-auto-submit: feature flag off — nothing transmitted",
+          );
+          return;
+        }
 
-    if (submitted > 0 || failed > 0) {
-      logger.info(
-        {
-          event: "billing.prior-auth-auto-submit.completed",
-          candidates: candidates.length,
-          alreadyAttempted,
-          submitted,
-          skipped,
-          failed,
-        },
-        "billing.prior-auth-auto-submit: tick",
-      );
-    }
+        const supabase = getOrgScopedClient(orgId);
+        const { data: drafts, error } = await supabase
+          .from("prior_authorizations")
+          .select("id, patient_id")
+          .eq("status", "draft")
+          .not("insurance_coverage_id", "is", null)
+          .order("created_at", { ascending: true })
+          .limit(MAX_PER_TICK);
+        if (error) throw error;
+
+        // Attempt each PA at most once. submitPriorAuth only advances the
+        // parent PA out of `draft` for an identifier-matched `responded`
+        // outcome — a `rejected`/`transport_failed` attempt (where PHI may
+        // already have reached the payer) leaves the PA in `draft`, so
+        // without this guard the next tick would re-select and re-transmit it
+        // every run. Exclude any candidate that already has a
+        // davinci_pas_submissions row; recovery for a failed transmit is a
+        // deliberate manual action via the admin "Submit" button.
+        const candidates: Array<{ id: string; patient_id: string }> =
+          drafts ?? [];
+        let toSubmit = candidates;
+        let alreadyAttempted = 0;
+        if (candidates.length > 0) {
+          const { data: attempted, error: attemptedErr } = await supabase
+            .from("davinci_pas_submissions")
+            .select("prior_authorization_id")
+            .in(
+              "prior_authorization_id",
+              candidates.map((p) => p.id),
+            );
+          if (attemptedErr) throw attemptedErr;
+          const attemptedIds = new Set(
+            (attempted ?? []).map(
+              (r: { prior_authorization_id: string }) =>
+                r.prior_authorization_id,
+            ),
+          );
+          toSubmit = candidates.filter((p) => !attemptedIds.has(p.id));
+          alreadyAttempted = candidates.length - toSubmit.length;
+        }
+
+        let submitted = 0;
+        let skipped = 0;
+        let failed = 0;
+        for (const pa of toSubmit) {
+          try {
+            const result = await submitPriorAuth({
+              orgId,
+              patientId: pa.patient_id,
+              paId: pa.id,
+              actorEmail: SYSTEM_ACTOR_EMAIL,
+            });
+            if (!result.ok) {
+              // Not ready (no diagnosis/endpoint/creds/address) — left as a
+              // draft and retried next tick. No payer call, no submission row.
+              skipped += 1;
+            } else if (result.transportStatus === "responded") {
+              submitted += 1;
+            } else {
+              // Transmitted but the payer transport failed — counts as an
+              // attempt.
+              submitted += 1;
+            }
+          } catch (err) {
+            failed += 1;
+            logger.warn(
+              { event: "prior-auth-auto-submit.item_failed", paId: pa.id, err },
+              "prior-auth-auto-submit: a PA submission threw",
+            );
+          }
+        }
+
+        if (submitted > 0 || failed > 0) {
+          logger.info(
+            {
+              event: "billing.prior-auth-auto-submit.completed",
+              orgId,
+              candidates: candidates.length,
+              alreadyAttempted,
+              submitted,
+              skipped,
+              failed,
+            },
+            "billing.prior-auth-auto-submit: tick",
+          );
+        }
+      },
+      { jobName: PRIOR_AUTH_AUTO_SUBMIT_JOB },
+    );
   });
 
   const cron = process.env.PRIOR_AUTH_AUTOSUBMIT_CRON?.trim();

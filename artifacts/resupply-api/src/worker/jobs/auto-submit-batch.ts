@@ -29,6 +29,7 @@ import {
 } from "../../lib/billing/auto-submit-engine.js";
 import { isFeatureEnabled } from "../../lib/feature-flags.js";
 import { logger } from "../../lib/logger.js";
+import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import {
   createQueueWithDlq,
   VENDOR_SEND_QUEUE_OPTS,
@@ -51,37 +52,54 @@ function summarize(result: AutoSubmitRunResult): Record<string, number> {
 export async function registerAutoSubmitBatchJob(boss: PgBoss): Promise<void> {
   await createQueueWithDlq(boss, AUTO_SUBMIT_BATCH_JOB, VENDOR_SEND_QUEUE_OPTS);
   await boss.work(AUTO_SUBMIT_BATCH_JOB, async () => {
-    const enabled = await isFeatureEnabled("billing.auto_submit_claims");
-    if (!enabled) {
-      logger.info(
-        { queue: AUTO_SUBMIT_BATCH_JOB },
-        "auto-submit-batch: feature flag off — nothing transmitted",
-      );
-      return;
-    }
-    const result = await runAutoSubmitBatch({
-      submittedByEmail: SYSTEM_ACTOR_EMAIL,
-      submittedByUserId: null,
-      triggeredBy: "cron",
-    });
-    if (result.batchesAttempted > 0 || result.failures.length > 0) {
-      logger.info(
-        { event: "billing.auto-submit-batch.completed", ...summarize(result) },
-        "billing.auto-submit-batch: tick",
-      );
-      await logAudit({
-        action: "billing.auto_submit.run",
-        adminEmail: SYSTEM_ACTOR_EMAIL,
-        adminUserId: null,
-        targetTable: "office_ally_submissions",
-        targetId: null,
-        metadata: { trigger: "cron", ...summarize(result) },
-        ip: null,
-        userAgent: null,
-      }).catch((err) => {
-        logger.warn({ err }, "auto-submit-batch completion audit failed");
-      });
-    }
+    // Fan out per active tenant: the feature flag is a per-tenant kill
+    // switch and claims are selected/submitted under each tenant's own
+    // org (and its own clearinghouse). On a single-tenant deployment this
+    // runs exactly once for the seed org, so behavior is unchanged.
+    await forEachActiveOrg(
+      async (orgId) => {
+        const enabled = await isFeatureEnabled(
+          "billing.auto_submit_claims",
+          orgId,
+        );
+        if (!enabled) {
+          logger.info(
+            { queue: AUTO_SUBMIT_BATCH_JOB, orgId },
+            "auto-submit-batch: feature flag off — nothing transmitted",
+          );
+          return;
+        }
+        const result = await runAutoSubmitBatch({
+          submittedByEmail: SYSTEM_ACTOR_EMAIL,
+          submittedByUserId: null,
+          triggeredBy: "cron",
+          orgId,
+        });
+        if (result.batchesAttempted > 0 || result.failures.length > 0) {
+          logger.info(
+            {
+              event: "billing.auto-submit-batch.completed",
+              orgId,
+              ...summarize(result),
+            },
+            "billing.auto-submit-batch: tick",
+          );
+          await logAudit({
+            action: "billing.auto_submit.run",
+            adminEmail: SYSTEM_ACTOR_EMAIL,
+            adminUserId: null,
+            targetTable: "office_ally_submissions",
+            targetId: null,
+            metadata: { trigger: "cron", orgId, ...summarize(result) },
+            ip: null,
+            userAgent: null,
+          }).catch((err) => {
+            logger.warn({ err }, "auto-submit-batch completion audit failed");
+          });
+        }
+      },
+      { jobName: AUTO_SUBMIT_BATCH_JOB },
+    );
   });
 
   const cron = process.env.CLAIMS_AUTOSUBMIT_CRON?.trim();

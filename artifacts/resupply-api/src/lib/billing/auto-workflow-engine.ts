@@ -73,7 +73,16 @@ export interface AutoWorkflowStats {
   errors: number;
 }
 
-export async function runAutoWorkflowPass(): Promise<AutoWorkflowStats> {
+/**
+ * Run one auto-workflow pass for a single tenant. `orgId` defaults to the
+ * seed org when omitted (back-compat for direct callers / tests); the worker
+ * fans out per active tenant. Every pass scopes its reads/writes — and its
+ * per-pass feature-flag checks — to this org via the scoped client's
+ * `.orgId`, so one tenant's run never touches another tenant's claims.
+ */
+export async function runAutoWorkflowPass(
+  orgId?: string,
+): Promise<AutoWorkflowStats> {
   const stats: AutoWorkflowStats = {
     scrubsTriggered: 0,
     denialAnalysesTriggered: 0,
@@ -81,11 +90,11 @@ export async function runAutoWorkflowPass(): Promise<AutoWorkflowStats> {
     secondaryClaimsDrafted: 0,
     errors: 0,
   };
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) {
+  const resolvedOrgId = orgId?.trim() || (await resolveSeedOrgId());
+  if (!resolvedOrgId) {
     return stats;
   }
-  const supabase = getOrgScopedClient(orgId);
+  const supabase = getOrgScopedClient(resolvedOrgId);
   await runScrubPass(supabase, stats);
   await runDenialAnalysisPass(supabase, stats);
   await runStatementPass(supabase, stats);
