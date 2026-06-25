@@ -21,9 +21,15 @@
 // and gets unit-tested via the supabase-mock helper. Inlining it
 // inside ensureFulfillments would make that path hard to test.
 
-import type { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import type { OrgScopedClient } from "@workspace/resupply-db";
 
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+// Tenant-scoped client. shop_backorders + shop_sku_substitutes carry
+// org_id (migration 0341) and are keyed by plain SKU strings that
+// collide across tenants, so every read MUST go through the org-scoped
+// facade (`.from(...)` auto-appends `.eq("org_id", orgId)`). Passing the
+// bare service-role client (`.raw()`) here would let tenant A's
+// backorder/substitution config corrupt tenant B's shipment.
+type SupabaseClient = OrgScopedClient;
 
 export interface ResolveResult {
   /** The SKU the caller should actually persist on the fulfillment row. */
@@ -50,9 +56,10 @@ export async function resolveFulfillmentSku(
   supabase: SupabaseClient,
   primarySku: string,
 ): Promise<ResolveResult> {
-  // 1. Is primary backordered RIGHT NOW?
+  // 1. Is primary backordered RIGHT NOW? Org-scoped: `.from()` appends
+  // `.eq("org_id", orgId)` so a backorder row from another tenant for the
+  // same SKU string can never match.
   const { data: primaryBackorder, error: primaryErr } = await supabase
-    .schema("resupply")
     .from("shop_backorders")
     .select("id")
     .eq("sku", primarySku)
@@ -67,7 +74,6 @@ export async function resolveFulfillmentSku(
   // 2. Primary IS backordered. Walk the priority-ordered
   // alternatives and pick the first that isn't itself backordered.
   const { data: subs, error: subsErr } = await supabase
-    .schema("resupply")
     .from("shop_sku_substitutes")
     .select("alternative_sku, priority")
     .eq("primary_sku", primarySku)
@@ -76,7 +82,10 @@ export async function resolveFulfillmentSku(
     .limit(50);
   if (subsErr) throw subsErr;
 
-  const alternatives = subs ?? [];
+  const alternatives = (subs ?? []) as Array<{
+    alternative_sku: string;
+    priority: number;
+  }>;
   if (alternatives.length === 0) {
     return {
       sku: primarySku,
@@ -90,13 +99,14 @@ export async function resolveFulfillmentSku(
   // skip them in one pass.
   const altSkus = alternatives.map((a) => a.alternative_sku);
   const { data: backorderedAlts, error: altErr } = await supabase
-    .schema("resupply")
     .from("shop_backorders")
     .select("sku")
     .in("sku", altSkus)
     .is("cleared_at", null);
   if (altErr) throw altErr;
-  const blocked = new Set((backorderedAlts ?? []).map((r) => r.sku));
+  const blocked = new Set(
+    ((backorderedAlts ?? []) as Array<{ sku: string }>).map((r) => r.sku),
+  );
 
   const pick = alternatives.find((a) => !blocked.has(a.alternative_sku));
   if (!pick) {

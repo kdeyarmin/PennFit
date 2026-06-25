@@ -327,3 +327,59 @@ describe("team.ts — 409 conflict for already-active member", () => {
     expect(SRC).toContain("Use PATCH /admin/team/:id to change their role.");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Finding 9 — cross-tenant invite guard.
+//
+// The org-scoped `prior` read is null for an email that belongs to
+// ANOTHER tenant's admin, but resupply_auth.users / admin_users.email_lower
+// are GLOBALLY unique. Without a guard, inviteTeamMember would mutate that
+// other tenant's shared identity (role + reset token + setup email) and then
+// 23505 on the global UNIQUE(email_lower) → 500. The route must do a GLOBAL
+// (unscoped) existence check and 409 when the email is owned by a different
+// org.
+// ---------------------------------------------------------------------------
+describe("team.ts — cross-tenant invite guard", () => {
+  const inviteRoute = SRC.slice(
+    SRC.indexOf('"/admin/team/invite"'),
+    SRC.indexOf('"/admin/team/:id/resend"'),
+  );
+
+  it("does a GLOBAL (unscoped) admin_users lookup by email before inviting", () => {
+    // The guard reads through .raw() so it crosses the org boundary
+    // (the org-scoped facade would re-scope it to the caller's org).
+    expect(inviteRoute).toContain(".raw()");
+    expect(inviteRoute).toMatch(/from\("admin_users"\)[\s\S]*org_id/);
+    expect(inviteRoute).toContain('.eq("email_lower", email)');
+  });
+
+  it("rejects with 409 email_belongs_to_another_tenant when org_id differs", () => {
+    expect(inviteRoute).toContain("email_belongs_to_another_tenant");
+    expect(inviteRoute).toContain("foreignAdmin.org_id !== orgId");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Finding 17 — invite email brand is the inviting tenant's, not Penn.
+//
+// The invite + resend emails used to hardcode productName: "PennPaps" /
+// signatureName: "Penn Home Medical Supply" for EVERY tenant. They must be
+// resolved per-tenant via getCompanyInfo(orgId) so an unconfigured tenant
+// gets the neutral CareMetric Breathe identity, never the Penn seed brand.
+// ---------------------------------------------------------------------------
+describe("team.ts — per-tenant invite email branding", () => {
+  it("imports getCompanyInfo", () => {
+    expect(SRC).toContain('import { getCompanyInfo } from "../../lib/company-info"');
+  });
+
+  it("resolves the inviting tenant's brand from getCompanyInfo(orgId)", () => {
+    expect(SRC).toContain("await getCompanyInfo(orgId)");
+  });
+
+  it("passes the tenant brand to inviteTeamMember (no hardcoded Penn brand)", () => {
+    expect(SRC).toContain("productName: company.name");
+    expect(SRC).toContain("signatureName: company.legalName");
+    expect(SRC).not.toContain('productName: "PennPaps"');
+    expect(SRC).not.toContain('signatureName: "Penn Home Medical Supply"');
+  });
+});

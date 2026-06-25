@@ -632,6 +632,18 @@ router.post(
       res.status(400).json({ error: "price_not_recurring" });
       return;
     }
+    // Reject archived / inactive prices. The /cadence-options read endpoint
+    // deliberately lists only active recurring prices, so the UI never
+    // surfaces an inactive one. The mutating endpoint must trust the same
+    // narrow set — otherwise a patient who supplies an archived (e.g. cheaper
+    // legacy) recurring price id on the same product could pin their auto-ship
+    // billing onto it indefinitely. Storefront-catalog approval is implicit:
+    // an archived/non-approved price is `active: false` on the connected
+    // account.
+    if (!newPrice.active) {
+      res.status(400).json({ error: "price_inactive" });
+      return;
+    }
     const newProductId =
       typeof newPrice.product === "string"
         ? newPrice.product

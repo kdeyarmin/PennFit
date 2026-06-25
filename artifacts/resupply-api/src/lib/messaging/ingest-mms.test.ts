@@ -375,6 +375,100 @@ describe("ingestInboundMmsMedia", () => {
     expect(fetchedHosts.some((h: string) => h === "api.twilio.com")).toBe(true);
   });
 
+  it("rejects a media redirect that points off the host allowlist (SSRF)", async () => {
+    // The first hop (api.twilio.com) 307-redirects to an internal address.
+    // Manual per-hop re-validation must reject it — never fetch the internal
+    // host — so the attachment is dropped rather than persisted.
+    fetchSpy = mockFetch((url) => {
+      if (isTwilioMediaUrl(url)) {
+        return new Response(null, {
+          status: 307,
+          headers: { location: "https://169.254.169.254/latest/meta-data" },
+        });
+      }
+      // The internal host must never be fetched; if it is, this would
+      // wrongly succeed.
+      return new Response(pngBytes(16), {
+        status: 200,
+        headers: { "content-type": "image/png" },
+      });
+    });
+
+    const result = await ingestInboundMmsMedia(
+      {
+        messageId: MSG_ID,
+        rawWebhookBody: {
+          NumMedia: "1",
+          MediaUrl0:
+            "https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages/MMabc/Media/MEredir",
+          MediaContentType0: "image/png",
+        },
+        numMedia: 1,
+        twilioAccountSid: TWILIO_SID,
+        twilioAuthToken: TWILIO_TOKEN,
+      },
+      SILENT_LOGGER,
+    );
+
+    expect(result.succeeded).toBe(0);
+    expect(result.rejected).toBe(1);
+    expect(attachmentInserts()).toHaveLength(0);
+    // The internal redirect target must never have been fetched.
+    const fetchedHosts = (fetchSpy as ReturnType<typeof vi.fn>).mock.calls.map(
+      (c: unknown[]) => new URL(String(c[0])).hostname,
+    );
+    expect(fetchedHosts).not.toContain("169.254.169.254");
+  });
+
+  it("follows a media redirect to an allowlisted Twilio CDN / S3 host", async () => {
+    // Twilio's documented 307 to a signed CDN/S3 URL must be followed (the
+    // host is on the allowlist), and the auth header must NOT ride the
+    // cross-origin hop.
+    const cdnUrl =
+      "https://s3.amazonaws.com/com.twilio.prod.media/MEcdn?signed=1";
+    fetchSpy = mockFetch((url, init) => {
+      if (isTwilioMediaUrl(url)) {
+        return new Response(null, {
+          status: 307,
+          headers: { location: cdnUrl },
+        });
+      }
+      if (url === cdnUrl) {
+        // The cross-origin CDN hop must carry NO Authorization header.
+        const headers = (init?.headers ?? {}) as Record<string, string>;
+        if (headers.Authorization || headers.authorization) {
+          return new Response("auth leaked to CDN", { status: 400 });
+        }
+        return new Response(pngBytes(48), {
+          status: 200,
+          headers: { "content-type": "image/png" },
+        });
+      }
+      // GCS upload PUT.
+      return new Response("", { status: 200 });
+    });
+
+    const result = await ingestInboundMmsMedia(
+      {
+        messageId: MSG_ID,
+        rawWebhookBody: {
+          NumMedia: "1",
+          MediaUrl0:
+            "https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages/MMabc/Media/MEcdn",
+          MediaContentType0: "image/png",
+        },
+        numMedia: 1,
+        twilioAccountSid: TWILIO_SID,
+        twilioAuthToken: TWILIO_TOKEN,
+      },
+      SILENT_LOGGER,
+    );
+
+    expect(result.succeeded).toBe(1);
+    expect(result.rejected).toBe(0);
+    expect(attachmentInserts()).toHaveLength(1);
+  });
+
   describe("persistInboundAttachment (shared validate→upload→insert tail)", () => {
     const SAMPLE_MSG = "22222222-2222-4222-8222-222222222222";
 

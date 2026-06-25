@@ -43,6 +43,7 @@ import {
 import { getAuthDeps } from "../../lib/auth-deps";
 import { buildInviteHelpAttachments } from "../../lib/help-docs";
 import { logger } from "../../lib/logger";
+import { resolveBrandingByOrgId } from "../../lib/tenant-branding";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
@@ -361,11 +362,17 @@ router.post(
     const baseUrl = deps.publicBaseUrl.replace(/\/$/, "");
     const inviteLink = `${baseUrl}/reset-password?token=${encodeURIComponent(token.raw)}`;
 
+    // Brand the patient-facing invite with the INVITING tenant's own
+    // storefront/legal name (resolveBrandingByOrgId → "PennPaps"/"Penn Home
+    // Medical Supply" for the seed tenant, the neutral CareMetric Breathe
+    // identity for an unconfigured tenant) so a non-seed tenant's patient
+    // never sees the seed brand.
+    const brand = await resolveBrandingByOrgId(orgId);
     const attachments = await patientInviteAttachments();
     const rendered = renderPatientPortalInviteEmail(
       {
-        productName: "PennPaps",
-        signatureName: "Penn Home Medical Supply",
+        productName: brand.storefrontName,
+        signatureName: brand.legalName || brand.storefrontName,
         publicBaseUrl: baseUrl,
       },
       {
@@ -499,11 +506,14 @@ router.post(
     const baseUrl = deps.publicBaseUrl.replace(/\/$/, "");
     const inviteLink = `${baseUrl}/reset-password?token=${encodeURIComponent(token.raw)}`;
 
+    // Brand the resend with the inviting tenant's own identity (same
+    // resolver as the initial invite above) — never the seed brand.
+    const brand = await resolveBrandingByOrgId(orgId);
     const attachments = await patientInviteAttachments();
     const rendered = renderPatientPortalInviteEmail(
       {
-        productName: "PennPaps",
-        signatureName: "Penn Home Medical Supply",
+        productName: brand.storefrontName,
+        signatureName: brand.legalName || brand.storefrontName,
         publicBaseUrl: baseUrl,
       },
       {

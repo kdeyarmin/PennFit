@@ -115,6 +115,11 @@ router.post("/voice/status-callback", signatureMiddleware, async (req, res) => {
 
   if (TERMINAL_STATUSES.has(callStatus)) {
     let firstTerminalClose = false;
+    // The TRUE tenant of this call, read off the conversation row we flip —
+    // not the seed org. The competing close path (ws-handler) meters against
+    // the call's real tenant, so this path must too or a non-seed tenant's
+    // voice usage is misattributed to the seed whenever this race wins.
+    let callOrgId: string | null = null;
     try {
       // Twilio can re-deliver `completed/failed/busy/...` (retry on
       // 5xx, or duplicate after our 200 took >response timeout to
@@ -133,9 +138,13 @@ router.post("/voice/status-callback", signatureMiddleware, async (req, res) => {
         .update({ status: "closed", updated_at: new Date().toISOString() })
         .eq("id", conversationId)
         .neq("status", "closed")
-        .select("id");
+        .select("id, org_id");
       if (error) throw error;
       firstTerminalClose = !!flipped && flipped.length > 0;
+      const flippedOrgId = flipped?.[0]?.org_id;
+      if (typeof flippedOrgId === "string" && flippedOrgId.trim()) {
+        callOrgId = flippedOrgId;
+      }
     } catch (err) {
       logger.warn(
         {
@@ -176,7 +185,9 @@ router.post("/voice/status-callback", signatureMiddleware, async (req, res) => {
       // exactly-once across both paths (G12 aiVoiceEvents). Fire-and-forget
       // + fail-soft.
       void recordTenantUsage({
-        orgId,
+        // Meter against the call's real tenant (read off the flipped row),
+        // falling back to the seed org only when the row carried no org_id.
+        orgId: callOrgId ?? orgId,
         metricKey: "aiVoiceEvents",
         source: "voice.call.completed",
       });

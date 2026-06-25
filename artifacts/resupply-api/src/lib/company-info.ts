@@ -328,7 +328,7 @@ export async function getCompanyInfo(orgId?: string): Promise<CompanyInfo> {
     if (!explicitOrgId) {
       info = envFallbackInfo();
     } else {
-      let seedOrgId: string | null = null;
+      let seedOrgId: string | null;
       try {
         // Cached + side-effect-free, but guard so a degraded path can't throw.
         seedOrgId = await resolveSeedOrgId();

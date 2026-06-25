@@ -174,4 +174,60 @@ describe("POST /shop/me/chat", () => {
     expect(res.body.reply).toBe("Your most recent order has shipped.");
     expect(fetchMock).toHaveBeenCalled();
   });
+
+  it("normalizes the 'PennBot' assistant brand out of the system prompt for a non-seed tenant", async () => {
+    // The signed-in customer chat must not leak the seed tenant's bot brand
+    // ("PennBot") to another tenant's patients. The route wraps the prompt
+    // in applyPlatformBrandingForOrg, which rewrites "PennBot" → the tenant's
+    // configured storefront assistant name (CareMetric Assistant by default).
+    mockSignedIn.current = "cust_1";
+    process.env.ANTHROPIC_API_KEY = "sk-ant-test";
+    __resetLlmProviderCacheForTests();
+
+    let capturedSystem = "";
+    const fetchMock = vi.fn(
+      async (url: string | URL | Request, init?: RequestInit) => {
+        const bodyStr =
+          typeof init?.body === "string" ? init.body : String(init?.body ?? "");
+        try {
+          const parsed = JSON.parse(bodyStr) as { system?: unknown };
+          if (typeof parsed.system === "string") {
+            capturedSystem = parsed.system;
+          } else if (Array.isArray(parsed.system)) {
+            // The chatbot sends `system` as an array of text blocks (for
+            // prompt caching); concatenate the text for the assertion.
+            capturedSystem = (parsed.system as Array<{ text?: unknown }>)
+              .map((b) => (typeof b.text === "string" ? b.text : ""))
+              .join("");
+          }
+        } catch {
+          /* ignore */
+        }
+        return new Response(
+          JSON.stringify({
+            id: "msg_test",
+            type: "message",
+            role: "assistant",
+            model: "claude-sonnet-4-6",
+            content: [{ type: "text", text: "ok" }],
+            stop_reason: "end_turn",
+            usage: { input_tokens: 1, output_tokens: 1 },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await request(makeApp())
+      .post("/shop/me/chat")
+      .send({ messages: [{ role: "user", content: "who are you?" }] });
+
+    expect(res.status).toBe(200);
+    // The prompt the model is told to follow must NOT carry the seed bot
+    // brand; it should have been rewritten to the platform default.
+    expect(capturedSystem.length).toBeGreaterThan(0);
+    expect(capturedSystem).not.toContain("PennBot");
+    expect(capturedSystem).toContain("CareMetric Assistant");
+  });
 });

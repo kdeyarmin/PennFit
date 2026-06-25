@@ -35,9 +35,9 @@ import {
 } from "@workspace/resupply-telecom";
 
 import { createAdhocPaymentCheckoutSession } from "../../lib/billing/patient-payment";
+import { getCompanyInfo } from "../../lib/company-info";
 import { createTenantSendgridClient } from "../../lib/email/tenant-sender";
 import { logger } from "../../lib/logger";
-import { readPracticeName } from "../../lib/messaging/messaging-config";
 import { resolveTenantSmsClientOptions } from "../../lib/messaging/tenant-telecom";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -361,7 +361,11 @@ router.post(
       email: recipientEmail,
       phone: recipientPhone,
       firstName: patient.legal_first_name ?? null,
-      practiceName: readPracticeName(),
+      // Brand the patient-facing email/SMS with the SENDING tenant's own
+      // name (getCompanyInfo(orgId) → the tenant's own row, or the neutral
+      // CareMetric Breathe identity for an unconfigured tenant) — never the
+      // process-global RESUPPLY_PRACTICE_NAME, which carries the seed brand.
+      practiceName: (await getCompanyInfo(orgId)).name,
       amountCents: session.amountCents,
       memo: body.memo ?? null,
       link: session.url,

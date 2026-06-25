@@ -65,6 +65,9 @@ export interface Database {
           target_order_id: string | null;
           ip: string | null;
           occurred_at: string;
+          // Owning tenant (migration 0477). Nullable for back-compat with
+          // pre-0477 rows until backfilled to the seed org.
+          org_id: string | null;
         };
         Insert: Partial<Database["public"]["Tables"]["admin_audit_log"]["Row"]>;
         Update: Partial<Database["public"]["Tables"]["admin_audit_log"]["Row"]>;

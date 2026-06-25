@@ -363,26 +363,45 @@ async function doStartWorker(): Promise<void> {
       // Capture the full error with stack trace and any nested cause
       // so we can distinguish DB connectivity failures, schema
       // permission errors, and pg-boss internal errors at a glance.
+      //
+      // The error fields MUST be nested under an `err` key, not assigned
+      // at the top level: pino's redaction allowlist (lib/logger.ts) only
+      // matches `err.message` / `err.stack` / `err.cause.message` / ….
+      // Top-level `message`/`stack`/`cause` keys bypass redaction and emit
+      // verbatim — which would defeat the `database_url` masking two lines
+      // up (pg/pg-boss connection errors routinely embed host/user/DSN
+      // fragments in error.message). Under `err.*` the existing redact
+      // paths mask them.
       const serialized: Record<string, unknown> = {
         event: "pg_boss_start_failed",
         database_url: maskedDatabaseUrl,
         pg_boss_config: pgBossConfig,
       };
       if (err instanceof Error) {
-        serialized["name"] = err.name;
-        serialized["message"] = err.message;
-        serialized["stack"] = err.stack;
-        // Node.js Error.cause — present on pg-boss connection errors
-        // and any error thrown with `new Error(msg, { cause })`.
-        if ("cause" in err && err.cause != null) {
-          const cause = err.cause;
-          serialized["cause"] =
-            cause instanceof Error
-              ? { name: cause.name, message: cause.message, stack: cause.stack }
-              : String(cause);
-        }
+        const cause = "cause" in err ? err.cause : undefined;
+        serialized["err"] = {
+          // err.name is intentionally not redacted — it's the error class,
+          // not sensitive — and gives an at-a-glance failure category.
+          name: err.name,
+          message: err.message,
+          stack: err.stack,
+          // Node.js Error.cause — present on pg-boss connection errors
+          // and any error thrown with `new Error(msg, { cause })`.
+          ...(cause != null
+            ? {
+                cause:
+                  cause instanceof Error
+                    ? {
+                        name: cause.name,
+                        message: cause.message,
+                        stack: cause.stack,
+                      }
+                    : String(cause),
+              }
+            : {}),
+        };
       } else {
-        serialized["raw"] = String(err);
+        serialized["err"] = { name: "non_error", message: String(err) };
       }
       logger.fatal(
         serialized,

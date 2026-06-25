@@ -66,6 +66,7 @@ import {
   applyCompanyIdentityToText,
   applyPlatformBrandingForOrg,
   getCompanyInfo,
+  getCompanyInfoSync,
   type CompanyInfo,
 } from "../../lib/company-info.js";
 import { logger } from "../../lib/logger.js";
@@ -82,7 +83,6 @@ import {
   buildChatSystemPromptBase,
   MAX_CHAT_TURNS,
   MAX_USER_MESSAGE_CHARS,
-  offlineFallbackReply,
 } from "../../lib/storefront/chatbotKnowledge.js";
 import {
   CHAT_TOOLS,
@@ -148,14 +148,35 @@ function isTransientNetworkError(err: unknown): boolean {
 }
 
 // A function (not a constant) so the phone/email reflect the company
-// info at reply time. Pass the host tenant's `info` (getCompanyInfo
-// (orgId)) so a second tenant sees ITS contact details, not the seed's;
-// omitting it falls back to the warm seed identity.
-function degradedFallbackReply(info?: CompanyInfo): string {
-  return applyCompanyIdentityToText(
-    "I'm having trouble answering right now. Please try again in a minute, or reach our team at (814) 471-0627 (Mon-Fri 9-5 ET) or support@pennpaps.com — they can answer anything I can't.",
-    info,
-  );
+// info at reply time. Built DIRECTLY from the resolved CompanyInfo fields
+// (not via applyCompanyIdentityToText, which is a no-op unless
+// info.source === "database") so it is correct for EVERY source — including
+// the "fallback" identity an unconfigured non-seed tenant resolves to. That
+// way a freshly-onboarded tenant's degraded reply shows the CareMetric
+// platform contact (support@cmbreathe.com, blank phone), never literal Penn
+// contact details. The phone clause is omitted when the tenant has no
+// support phone (the platform fallback has none).
+function degradedFallbackReply(info: CompanyInfo = getCompanyInfoSync()): string {
+  const phone = info.supportPhoneDisplay?.trim();
+  const contact = phone
+    ? `${phone} (${info.supportHours}) or ${info.supportEmail}`
+    : info.supportEmail;
+  return `I'm having trouble answering right now. Please try again in a minute, or reach our team at ${contact} — they can answer anything I can't.`;
+}
+
+// Static fallback reply when no LLM key is configured. Built DIRECTLY from
+// the resolved CompanyInfo fields (the imported chatbotKnowledge
+// offlineFallbackReply only rewrites Penn contact details when
+// info.source === "database", so it would leak literal Penn phone/email to
+// an unconfigured non-seed tenant). The phone clause is omitted when the
+// tenant has no support phone (the platform fallback has none). Mirrors the
+// chatbotKnowledge copy for the seed/DB-configured tenant.
+function offlineFallbackReplyFor(info: CompanyInfo): string {
+  const phone = info.supportPhoneDisplay?.trim();
+  const reach = phone
+    ? `${phone} ${info.supportHours}, or ${info.supportEmail} any time`
+    : `${info.supportEmail} any time`;
+  return `Sorry — chat is offline at the moment. The fastest way to reach us is ${reach}. Our /faq and /insurance pages also cover most questions if you want to take a look.`;
 }
 
 const chatMessageSchema = z.object({
@@ -424,10 +445,12 @@ router.post("/chat", chatRateLimit, async (req, res) => {
   const degradedReply = degradedFallbackReply(companyInfo);
 
   if (!(await isFeatureEnabled("storefront.chatbot", orgId))) {
-    const offlineMessage = applyCompanyIdentityToText(
-      "The PennPaps chat assistant is currently offline. Please reach us by phone or email — we'll respond as soon as we can.",
-      companyInfo,
-    );
+    // Build from the resolved tenant identity directly (not the
+    // source==="database"-gated applyCompanyIdentityToText) so an
+    // unconfigured non-seed tenant names ITS brand, never the literal seed
+    // "PennPaps". For the seed tenant info.name is "PennPaps" so its copy is
+    // unchanged; for the platform fallback it is "CareMetric Breathe".
+    const offlineMessage = `The ${companyInfo.name} chat assistant is currently offline. Please reach us by phone or email — we'll respond as soon as we can.`;
     if (streaming) {
       startSseHeaders(res);
       writeSseEvent(res, { type: "chunk", text: offlineMessage });
@@ -453,7 +476,7 @@ router.post("/chat", chatRateLimit, async (req, res) => {
       writeSseEvent(res, {
         type: "chunk",
         text: await applyPlatformBrandingForOrg(
-          offlineFallbackReply(companyInfo),
+          offlineFallbackReplyFor(companyInfo),
           orgId,
         ),
       });
@@ -462,7 +485,7 @@ router.post("/chat", chatRateLimit, async (req, res) => {
     } else {
       res.json({
         reply: await applyPlatformBrandingForOrg(
-          offlineFallbackReply(companyInfo),
+          offlineFallbackReplyFor(companyInfo),
           orgId,
         ),
         offline: true,
@@ -577,7 +600,7 @@ router.post("/chat", chatRateLimit, async (req, res) => {
       writeSseEvent(res, {
         type: "chunk",
         text: await applyPlatformBrandingForOrg(
-          offlineFallbackReply(companyInfo),
+          offlineFallbackReplyFor(companyInfo),
           orgId,
         ),
       });
@@ -586,7 +609,7 @@ router.post("/chat", chatRateLimit, async (req, res) => {
     } else {
       res.json({
         reply: await applyPlatformBrandingForOrg(
-          offlineFallbackReply(companyInfo),
+          offlineFallbackReplyFor(companyInfo),
           orgId,
         ),
         offline: true,
@@ -1016,6 +1039,28 @@ async function handleStreaming(
     writeSseEvent(res, { type: "chunk", text });
   };
 
+  // Circuit breaker: the streaming path is the storefront hot path (the
+  // widget requests SSE by default), so it MUST consult and feed the same
+  // per-vendor breaker the JSON path does — otherwise a sustained OpenAI
+  // outage makes every streaming request pay the full DEFAULT_TIMEOUT_MS
+  // abort wait on the single event loop before degrading, which is exactly
+  // the latency pile-on the breaker exists to prevent. Fail-open: only
+  // short-circuits while the breaker is open; the half-open trial probes
+  // recovery.
+  const breaker = getLlmBreaker("openai");
+  if (!breaker.canAttempt()) {
+    logger.warn(
+      { event: "chat_openai_circuit_open", streaming: true },
+      "chat: openai circuit open — returning degraded fallback without calling upstream",
+    );
+    safeEvent({ type: "chunk", text: degradedReply });
+    safeEvent({ type: "done", degraded: true });
+    safeEnd();
+    clearTimeout(timer);
+    res.off("close", onClientClose);
+    return;
+  }
+
   try {
     for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
       const result = await runStreamingRound(
@@ -1024,6 +1069,16 @@ async function handleStreaming(
         ctrl.signal,
         writeChunk,
       );
+      // Feed the breaker the "did we reach the vendor" signal as soon as the
+      // round returns — degraded === false means the upstream fetch opened
+      // (even a 4xx is "reachable", matching handleJson's recordSuccess
+      // semantics); degraded === true means the fetch failed before/at stream
+      // open, a genuine reachability failure.
+      if (result.degraded) {
+        breaker.recordFailure();
+      } else {
+        breaker.recordSuccess();
+      }
       // Fold every round's tokens into the tenant's AI COGS rollup — each
       // round is a separately-billed completion. Absent orgId is a no-op.
       recordAiTokenUsage({

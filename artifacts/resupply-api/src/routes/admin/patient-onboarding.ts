@@ -311,12 +311,23 @@ router.post(
   requirePermission("patients.update"),
   adminSendDueLimiter,
   async (req, res) => {
+    // Scope the dispatch to the CALLER's tenant. Without an explicit
+    // orgId, runDueCheckins falls back to the seed org, so a non-seed
+    // tenant's "Run now" would scan + message the SEED (Penn) tenant's
+    // patients instead of its own. The cron passes an explicit orgId per
+    // active tenant; this route must do the same with req.orgId.
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const summary = await dispatchDueCheckins({
       actor: {
         kind: "admin",
         email: req.adminEmail ?? null,
         userId: req.adminUserId ?? null,
       },
+      orgId,
     });
     res.json(summary);
   },

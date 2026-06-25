@@ -64,7 +64,7 @@ describe("POST /chat", () => {
       .send({ messages: [{ role: "user", content: "hi again" }] });
     expect(second.status).toBe(200);
     expect(second.body.degraded).toBe(true);
-    expect(second.body.reply).toMatch(/\(814\) 471-0627/);
+    expect(second.body.reply).toMatch(/support@cmbreathe\.com/);
     // The vendor was never touched for the over-budget turn.
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
@@ -122,7 +122,7 @@ describe("POST /chat", () => {
       });
     expect(res.status).toBe(200);
     expect(res.body.offline).toBe(true);
-    expect(res.body.reply).toMatch(/\(814\) 471-0627/);
+    expect(res.body.reply).toMatch(/support@cmbreathe\.com/);
   });
 
   it("returns the model reply on a successful upstream call", async () => {
@@ -241,7 +241,7 @@ describe("POST /chat", () => {
       });
     expect(res.status).toBe(200);
     expect(res.body.degraded).toBe(true);
-    expect(res.body.reply).toMatch(/\(814\) 471-0627/);
+    expect(res.body.reply).toMatch(/support@cmbreathe\.com/);
   });
 
   it("returns the degraded fallback when upstream throws", async () => {
@@ -382,7 +382,7 @@ describe("POST /chat", () => {
       expect(res.status).toBe(200);
       const frames = parseSseFrames(res.text);
       expect(frames[0]).toMatchObject({ type: "chunk" });
-      expect((frames[0] as { text: string }).text).toMatch(/\(814\) 471-0627/);
+      expect((frames[0] as { text: string }).text).toMatch(/support@cmbreathe\.com/);
       expect(frames.at(-1)).toEqual({ type: "done", degraded: true });
     });
 
@@ -398,7 +398,7 @@ describe("POST /chat", () => {
       expect(res.status).toBe(200);
       const frames = parseSseFrames(res.text);
       expect(frames[0]).toMatchObject({ type: "chunk" });
-      expect((frames[0] as { text: string }).text).toMatch(/\(814\) 471-0627/);
+      expect((frames[0] as { text: string }).text).toMatch(/support@cmbreathe\.com/);
       expect(frames.at(-1)).toEqual({ type: "done", offline: true });
     });
 
@@ -419,7 +419,7 @@ describe("POST /chat", () => {
         });
       const frames = parseSseFrames(res.text);
       expect(frames[0]).toMatchObject({ type: "chunk" });
-      expect((frames[0] as { text: string }).text).toMatch(/\(814\) 471-0627/);
+      expect((frames[0] as { text: string }).text).toMatch(/support@cmbreathe\.com/);
       expect(frames.at(-1)).toEqual({ type: "done", degraded: true });
     });
 
@@ -514,6 +514,64 @@ describe("POST /chat", () => {
         });
       const frames = parseSseFrames(res.text);
       expect((frames.at(-1) as { degraded?: boolean }).degraded).toBe(true);
+    });
+
+    it("opens the circuit after repeated streaming failures and stops calling upstream", async () => {
+      // The streaming path (the storefront hot path) must consult AND feed the
+      // same per-vendor breaker the JSON path does — otherwise a sustained
+      // outage makes every SSE request pay the full abort timeout.
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 503,
+        body: null,
+        text: async () => "down",
+      });
+      __setChatFetchForTests(fetchMock as unknown as typeof fetch);
+
+      // Five consecutive failed streaming requests trip the breaker (threshold 5).
+      for (let i = 0; i < 5; i++) {
+        const res = await request(makeApp())
+          .post("/chat")
+          .set("Accept", "text/event-stream")
+          .send({ messages: [{ role: "user", content: "Hi" }] });
+        const frames = parseSseFrames(res.text);
+        expect((frames.at(-1) as { degraded?: boolean }).degraded).toBe(true);
+      }
+      const callsBeforeOpen = fetchMock.mock.calls.length;
+
+      // The next streaming request short-circuits: degraded fallback WITHOUT
+      // touching upstream.
+      const res = await request(makeApp())
+        .post("/chat")
+        .set("Accept", "text/event-stream")
+        .send({ messages: [{ role: "user", content: "Hi" }] });
+      const frames = parseSseFrames(res.text);
+      expect(frames[0]).toMatchObject({ type: "chunk" });
+      expect(frames.at(-1)).toEqual({ type: "done", degraded: true });
+      expect(fetchMock.mock.calls.length).toBe(callsBeforeOpen);
+    });
+
+    it("streaming degraded fallback shows the platform contact, never literal Penn details (unconfigured tenant)", async () => {
+      // Finding 19: the fallback strings must be built from the resolved
+      // CompanyInfo, not the source==='database'-gated rewrite — so an
+      // unconfigured tenant never sees Penn's phone/email/brand.
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 500,
+        body: null,
+        text: async () => "boom",
+      });
+      __setChatFetchForTests(fetchMock as unknown as typeof fetch);
+
+      const res = await request(makeApp())
+        .post("/chat")
+        .set("Accept", "text/event-stream")
+        .send({ messages: [{ role: "user", content: "Hi" }] });
+      const frames = parseSseFrames(res.text);
+      const text = (frames[0] as { text: string }).text;
+      expect(text).toMatch(/support@cmbreathe\.com/);
+      expect(text).not.toMatch(/471-0627/);
+      expect(text).not.toMatch(/pennpaps/i);
     });
   });
 

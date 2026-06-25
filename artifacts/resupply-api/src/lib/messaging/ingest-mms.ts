@@ -72,6 +72,92 @@ const MAX_MEDIA_PER_MESSAGE = 10;
 // typical) but we budget 5s for tail latency.
 const PER_MEDIA_TIMEOUT_MS = 5_000;
 
+// Cap on manually-followed redirects for the media fetch. Twilio's
+// api.twilio.com media endpoint issues a single 307 to a CDN URL; a
+// small cap covers that plus any benign second hop while bounding a
+// redirect loop.
+const MAX_MEDIA_REDIRECTS = 3;
+
+/**
+ * Per-hop host allowlist for the MMS media download. The FIRST hop is
+ * always `api.twilio.com` (the URL is reconstructed from validated SIDs),
+ * which 307-redirects to a signed CDN URL. We re-validate EVERY hop's host
+ * here so an allowlisted first host can't 3xx-redirect us into an internal /
+ * non-allowlisted address (an SSRF primitive) — matching the discipline of
+ * the inbound-fax path (lib/fax/ingest-inbound.ts isAllowedMediaHost).
+ *
+ * Twilio serves redirected media from its own CDN / S3-backed hosts. We
+ * allow `api.twilio.com` itself plus Twilio's media CDN hosts and the S3
+ * SERVICE hosts (path-style `s3.amazonaws.com` / `s3.<region>.amazonaws.com`
+ * and virtual-hosted-bucket `<bucket>.s3[.<region>].amazonaws.com`) — NOT the
+ * whole `*.amazonaws.com` surface (which would expose EC2/VPC internal
+ * endpoints as SSRF targets).
+ */
+function isAllowedTwilioMediaHost(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  if (host === "api.twilio.com") return true;
+  // Twilio media CDN hosts (e.g. media.twiliocdn.com, *.media.twiliocdn.com,
+  // *.twilio.com storage hosts).
+  if (host === "twilio.com" || host.endsWith(".twilio.com")) return true;
+  if (host === "twiliocdn.com" || host.endsWith(".twiliocdn.com")) return true;
+  // S3 only: path-style or virtual-hosted-style S3 service hosts.
+  if (host === "s3.amazonaws.com") return true;
+  if (/(^|\.)s3(\.[a-z0-9-]+)?\.amazonaws\.com$/.test(host)) return true;
+  return false;
+}
+
+/**
+ * Fetch `url`, following at most MAX_MEDIA_REDIRECTS redirects MANUALLY so
+ * every hop's host is re-validated against the allowlist. `redirect: "follow"`
+ * would validate only the first URL, letting an allowlisted host 3xx-redirect
+ * us to an internal/non-allowlisted address. The Twilio Basic-auth header is
+ * sent ONLY on the first (api.twilio.com) hop and explicitly dropped on any
+ * cross-origin redirect — the signed CDN URL needs no auth, and undici would
+ * strip it cross-origin anyway; doing it here makes the posture explicit.
+ * Returns the final non-redirect Response, or null if a hop is rejected or the
+ * cap is hit.
+ */
+async function fetchAllowlistedMmsMedia(
+  url: string,
+  authHeader: string,
+  signal: AbortSignal,
+): Promise<Response | null> {
+  let current = url;
+  let currentOrigin = new URL(url).origin;
+  for (let hop = 0; hop <= MAX_MEDIA_REDIRECTS; hop++) {
+    const sameOrigin = new URL(current).origin === currentOrigin;
+    const resp = await fetch(current, {
+      // Auth only on the original Twilio origin; never forwarded across a
+      // redirect to a different host.
+      headers: sameOrigin ? { Authorization: authHeader } : {},
+      redirect: "manual",
+      signal,
+    });
+    if (resp.status >= 300 && resp.status < 400) {
+      const location = resp.headers.get("location");
+      if (!location) return null;
+      let next: URL;
+      try {
+        next = new URL(location, current);
+      } catch {
+        return null;
+      }
+      if (
+        next.protocol !== "https:" ||
+        !isAllowedTwilioMediaHost(next.hostname)
+      ) {
+        return null;
+      }
+      current = next.toString();
+      // Once we leave api.twilio.com, the auth header must not ride along.
+      currentOrigin = new URL(url).origin;
+      continue;
+    }
+    return resp;
+  }
+  return null; // exceeded the redirect cap
+}
+
 // Overall ingestion budget. Twilio's webhook timeout is 15s — past
 // that they retry, which would create duplicate inbound message
 // rows guarded only by the partial unique index. We give ourselves
@@ -340,18 +426,27 @@ async function downloadOneMedia(
   }
   try {
     // Twilio media URL responds with a 307 redirect to a temporary
-    // signed URL on Twilio's CDN that does NOT require auth. Fetch
-    // follows redirects by default and (per the Fetch spec, as
-    // implemented by undici) strips Authorization on cross-origin
-    // redirects, so the Basic auth stays on the first hop and the
-    // CDN URL fetches anonymously. Without follow we'd get a 307
-    // response back and the resp.ok check below would drop every
-    // inbound MMS attachment silently.
-    const resp = await fetch(mediaUrl, {
-      headers: { Authorization: `Basic ${auth}` },
-      redirect: "follow",
-      signal: controller.signal,
-    });
+    // signed URL on Twilio's CDN that does NOT require auth. We follow
+    // redirects MANUALLY (fetchAllowlistedMmsMedia) so every hop's host
+    // is re-validated against the allowlist — `redirect: "follow"` would
+    // validate only the first URL, letting an allowlisted host
+    // 3xx-redirect us to an internal/non-allowlisted address (SSRF). The
+    // Basic auth stays on the first (api.twilio.com) hop and is dropped on
+    // the cross-origin CDN hop, which fetches anonymously.
+    const resp = await fetchAllowlistedMmsMedia(
+      mediaUrl,
+      `Basic ${auth}`,
+      controller.signal,
+    );
+    if (!resp) {
+      // A redirect pointed off-allowlist (or exceeded the cap) — treat the
+      // same as a rejected download.
+      logger.warn(
+        { twilio_media_sid: twilioMediaSid },
+        "mms_ingest_download_redirect_rejected",
+      );
+      return null;
+    }
     if (!resp.ok) {
       logger.warn(
         {

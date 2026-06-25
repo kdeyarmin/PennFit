@@ -36,8 +36,16 @@ vi.mock("../../middlewares/requireAdmin", () =>
   makeRequireAdminMock(mockAdmin),
 );
 
-// Email/SMS clients degrade to "not configured" in the test env, so
-// delivery returns delivered:false but the link is still returned.
+// Email client: by default degrades to "not configured" so delivery
+// returns delivered:false but the link still stands. A test can flip
+// `sendgridCapture.client` to a capturing fake to assert the rendered
+// patient-facing body (e.g. the per-tenant practice name).
+const { sendgridCapture } = vi.hoisted(() => ({
+  sendgridCapture: {
+    client: null as { sendEmail: (...args: unknown[]) => unknown } | null,
+    lastEmail: null as Record<string, unknown> | null,
+  },
+}));
 vi.mock("@workspace/resupply-email", async () => {
   const actual = await vi.importActual<
     typeof import("@workspace/resupply-email")
@@ -45,6 +53,7 @@ vi.mock("@workspace/resupply-email", async () => {
   return {
     ...actual,
     createSendgridClient: () => {
+      if (sendgridCapture.client) return sendgridCapture.client;
       throw new actual.EmailConfigError("no key in test");
     },
   };
@@ -96,6 +105,8 @@ function stagePatient(over: Record<string, unknown> = {}): void {
 
 beforeEach(() => {
   supabaseMock.reset();
+  sendgridCapture.client = null;
+  sendgridCapture.lastEmail = null;
   mockCreateSession.mockReset();
   mockCreateSession.mockResolvedValue({
     paymentId: PAYMENT_ID,
@@ -129,6 +140,37 @@ describe("POST /admin/patients/:id/payment-link", () => {
     expect(arg.patientId).toBe(PATIENT_ID);
     expect(arg.amountCents).toBe(4999);
     expect(arg.description).toBe("October copay");
+  });
+
+  it("brands the email with the SENDING tenant's name, not the seed (Penn) practice name", async () => {
+    // The mock admin's req.orgId is a NON-seed org (MOCK_ORG_ID !== the
+    // stubbed seed org id), and no dme_organization row is staged for it,
+    // so getCompanyInfo(orgId) resolves to the neutral CareMetric Breathe
+    // platform identity — NEVER the seed env-folded "Penn Home Medical
+    // Supply" that the global RESUPPLY_PRACTICE_NAME would have leaked.
+    process.env.RESUPPLY_PRACTICE_NAME = "Penn Home Medical Supply";
+    sendgridCapture.client = {
+      sendEmail: (email: Record<string, unknown>) => {
+        sendgridCapture.lastEmail = email;
+        return Promise.resolve(undefined);
+      },
+    };
+    stagePatient();
+    const res = await request(makeApp())
+      .post(`/resupply-api/admin/patients/${PATIENT_ID}/payment-link`)
+      .send({ channel: "email", amountCents: 4999 });
+    expect(res.status).toBe(201);
+    expect(res.body.delivered).toBe(true);
+
+    const email = sendgridCapture.lastEmail!;
+    const subject = String(email.subject ?? "");
+    const html = String(email.html ?? "");
+    const text = String(email.text ?? "");
+    expect(subject).toContain("CareMetric Breathe");
+    expect(html).toContain("CareMetric Breathe");
+    expect(html).not.toContain("Penn Home Medical Supply");
+    expect(text).not.toContain("Penn Home Medical Supply");
+    delete process.env.RESUPPLY_PRACTICE_NAME;
   });
 
   it("404s when the patient does not exist", async () => {

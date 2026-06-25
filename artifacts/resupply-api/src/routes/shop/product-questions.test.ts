@@ -31,6 +31,7 @@ vi.mock("../../middlewares/requireSignedIn", () =>
 );
 
 import productQuestionsRouter from "./product-questions";
+import { __resetTenantBrandingForTests } from "../../lib/tenant-branding";
 
 const PRODUCT_ID = "prod_abc123";
 
@@ -44,6 +45,7 @@ function makeApp(): Express {
 beforeEach(() => {
   mockSignedIn.current = null;
   supabaseMock.reset();
+  __resetTenantBrandingForTests();
 });
 
 describe("GET /shop/products/:productId/questions", () => {
@@ -119,5 +121,37 @@ describe("POST /shop/products/:productId/questions", () => {
     expect(v.asker_email).toBe("shopper@example.com");
     expect(v.product_id).toBe(PRODUCT_ID);
     expect(v.customer_id).toBe("user_1");
+  });
+
+  it("uses the tenant's storefront brand (not the seed 'PennPaps') as the empty-name fallback", async () => {
+    // Signed-in customer with no parsable display name. The stored public
+    // author label must fall back to the TENANT's storefront name, never
+    // the hard-coded seed brand. The org has no staged organizations row,
+    // so resolveBrandingByOrgId yields the neutral CareMetric Breathe brand.
+    mockSignedIn.current = {
+      customerId: "user_2",
+      email: "anon@example.com",
+      displayName: null,
+    };
+    stageSupabaseResponse("shop_product_questions", "insert", {
+      data: {
+        id: "q_2",
+        status: "pending",
+        created_at: new Date("2026-05-04T12:00:00Z").toISOString(),
+      },
+    });
+
+    const res = await request(makeApp())
+      .post(`/shop/products/${PRODUCT_ID}/questions`)
+      .send({ questionBody: "Is this latex free?" });
+
+    expect(res.status).toBe(201);
+    const inserts = getSupabaseWritePayloads(
+      "shop_product_questions",
+      "insert",
+    ) as Record<string, unknown>[];
+    const stored = String(inserts[0]!.asker_display_name ?? "");
+    expect(stored).toBe("CareMetric Breathe customer");
+    expect(stored).not.toContain("PennPaps");
   });
 });

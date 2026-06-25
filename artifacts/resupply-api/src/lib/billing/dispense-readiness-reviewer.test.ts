@@ -14,12 +14,16 @@ import { describe, expect, it, beforeEach } from "vitest";
 import {
   installSupabaseMock,
   stageSupabaseResponse,
+  getSupabaseFilterCalls,
 } from "../../test-helpers/supabase-mock";
 
 const supabaseMock = installSupabaseMock();
 
 import { reviewDispenseReadiness } from "./dispense-readiness-reviewer";
 
+// The caller's tenant. Every deterministic read must be org-scoped to
+// THIS org (req.orgId), not the seed org.
+const ORG_ID = "00000000-0000-4000-8000-0000000000bb";
 const PATIENT = "11111111-1111-4111-8111-111111111111";
 const COVERAGE = "22222222-2222-4222-8222-222222222222";
 const PAYER = "33333333-3333-4333-8333-333333333333";
@@ -140,6 +144,7 @@ describe("reviewDispenseReadiness", () => {
   it("returns errored when patient not found", async () => {
     stageSupabaseResponse("patients", "select", { data: null });
     const r = await reviewDispenseReadiness({
+      orgId: ORG_ID,
       patientId: PATIENT,
       hcpcsCode: "E0601",
     });
@@ -148,9 +153,39 @@ describe("reviewDispenseReadiness", () => {
     expect(r.findings[0]!.severity).toBe("error");
   });
 
+  it("scopes the patient lookup to the CALLER's org (not the seed org)", async () => {
+    // Regression: the reviewer used to hardcode resolveSeedOrgId(), so a
+    // non-seed tenant's review read the seed org — the patient lookup
+    // found no row and the review always "errored". The patient read must
+    // carry the caller's org_id.
+    stageSupabaseResponse("patients", "select", { data: null });
+    await reviewDispenseReadiness({
+      orgId: ORG_ID,
+      patientId: PATIENT,
+      hcpcsCode: "E0601",
+    });
+    const patientFilters = getSupabaseFilterCalls("patients", "select");
+    expect(
+      patientFilters.some(
+        (f) => f.verb === "eq" && f.args[0] === "org_id" && f.args[1] === ORG_ID,
+      ),
+    ).toBe(true);
+  });
+
+  it("returns errored when the caller has no tenant context", async () => {
+    const r = await reviewDispenseReadiness({
+      orgId: "",
+      patientId: PATIENT,
+      hcpcsCode: "E0601",
+    });
+    expect(r.overallVerdict).toBe("errored");
+    expect(r.findings[0]!.key).toBe("tenant_context");
+  });
+
   it("returns ready when every check passes", async () => {
     stageHappyPath();
     const r = await reviewDispenseReadiness({
+      orgId: ORG_ID,
       patientId: PATIENT,
       hcpcsCode: "E0601",
     });
@@ -181,6 +216,7 @@ describe("reviewDispenseReadiness", () => {
       ],
     });
     const r = await reviewDispenseReadiness({
+      orgId: ORG_ID,
       patientId: PATIENT,
       hcpcsCode: "E0601",
     });
@@ -202,6 +238,7 @@ describe("reviewDispenseReadiness", () => {
       ],
     });
     const r = await reviewDispenseReadiness({
+      orgId: ORG_ID,
       patientId: PATIENT,
       hcpcsCode: "E0601",
     });
@@ -213,6 +250,7 @@ describe("reviewDispenseReadiness", () => {
       address: { line1: "100 Main", city: "", state: "PA", zip: "16801" },
     });
     const r = await reviewDispenseReadiness({
+      orgId: ORG_ID,
       patientId: PATIENT,
       hcpcsCode: "E0601",
     });
@@ -224,6 +262,7 @@ describe("reviewDispenseReadiness", () => {
   it("flags missing phone + email as warnings, not errors", async () => {
     stageHappyPath({ phone_e164: null, email: null });
     const r = await reviewDispenseReadiness({
+      orgId: ORG_ID,
       patientId: PATIENT,
       hcpcsCode: "E0601",
     });
@@ -285,6 +324,7 @@ describe("reviewDispenseReadiness", () => {
     stageSupabaseResponse("patient_grievances", "select", { count: 0 });
     stageSupabaseResponse("csr_compliance_alerts", "select", { count: 0 });
     const r = await reviewDispenseReadiness({
+      orgId: ORG_ID,
       patientId: PATIENT,
       hcpcsCode: "E0601",
     });
@@ -341,6 +381,7 @@ describe("reviewDispenseReadiness", () => {
     stageSupabaseResponse("patient_grievances", "select", { count: 0 });
     stageSupabaseResponse("csr_compliance_alerts", "select", { count: 0 });
     const r = await reviewDispenseReadiness({
+      orgId: ORG_ID,
       patientId: PATIENT,
       hcpcsCode: "E0601",
     });
@@ -407,6 +448,7 @@ describe("reviewDispenseReadiness", () => {
     stageSupabaseResponse("patient_grievances", "select", { count: 0 });
     stageSupabaseResponse("csr_compliance_alerts", "select", { count: 0 });
     const r = await reviewDispenseReadiness({
+      orgId: ORG_ID,
       patientId: PATIENT,
       hcpcsCode: "E0601",
     });

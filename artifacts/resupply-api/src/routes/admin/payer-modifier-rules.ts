@@ -241,6 +241,20 @@ router.post(
       return;
     }
     const supabase = getOrgScopedClient(orgId);
+    // Verify the referenced payer profile belongs to THIS org before writing.
+    // The FK on payer_modifier_rules.payer_profile_id references
+    // payer_profiles(id) globally, so without this a tenant-B admin who learns
+    // a tenant-A payer_profile UUID could create a rule referencing a profile
+    // its org can't see (cross-tenant data-integrity gap).
+    const { data: payer } = await supabase
+      .from("payer_profiles")
+      .select("id")
+      .eq("id", b.payerProfileId)
+      .maybeSingle();
+    if (!payer) {
+      res.status(404).json({ error: "payer_profile_not_found" });
+      return;
+    }
     const { data, error } = await supabase
       .from("payer_modifier_rules")
       .insert({
@@ -316,6 +330,20 @@ router.patch(
       return;
     }
     const supabase = getOrgScopedClient(orgId);
+    // When repointing to a different payer profile, verify the new profile
+    // belongs to THIS org (org-scoped read) before the update — otherwise a
+    // tenant-B admin could repoint a rule onto a tenant-A payer_profile UUID.
+    if (b.payerProfileId !== undefined) {
+      const { data: payer } = await supabase
+        .from("payer_profiles")
+        .select("id")
+        .eq("id", b.payerProfileId)
+        .maybeSingle();
+      if (!payer) {
+        res.status(404).json({ error: "payer_profile_not_found" });
+        return;
+      }
+    }
     const { error } = await supabase
       .from("payer_modifier_rules")
       .update(update)

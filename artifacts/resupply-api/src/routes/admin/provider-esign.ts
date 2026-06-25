@@ -40,7 +40,10 @@ import {
   renderSignatureLogPdf,
   type SignatureLogItem,
 } from "../../lib/provider-portal/signature-log-pdf";
-import { resolveTenantBaseUrl } from "../../lib/tenant-branding";
+import {
+  resolveBrandingByOrgId,
+  resolveTenantBaseUrl,
+} from "../../lib/tenant-branding";
 import { requirePermission } from "../../middlewares/requireAdmin";
 import {
   adminReadRateLimiter,
@@ -231,10 +234,16 @@ async function inviteProviderUser(
   // the provider has never had a password, and the email should explain
   // what they're being invited to (reviewing + e-signing their
   // patients' documents).
+  // Brand the external clinician's invite with the inviting tenant's own
+  // identity (resolveBrandingByOrgId → the seed tenant's "PennPaps"/"Penn
+  // Home Medical Supply", the neutral CareMetric Breathe identity for an
+  // unconfigured tenant) so a non-seed tenant's provider never sees the
+  // seed brand.
+  const branding = await resolveBrandingByOrgId(orgId);
   const rendered = renderProviderPortalInviteEmail(
     {
-      productName: "PennPaps Provider Portal",
-      signatureName: "Penn Home Medical Supply",
+      productName: `${branding.storefrontName} Provider Portal`,
+      signatureName: branding.legalName || branding.storefrontName,
       publicBaseUrl: baseUrl,
     },
     {

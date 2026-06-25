@@ -9,7 +9,8 @@
 //
 // Privacy: question + answer bodies are public-shop content. We
 // never expose asker_email on the public surface. Display name is
-// rendered as "FirstName L." (or "PennPaps customer" fallback).
+// rendered as "FirstName L." (or a "<tenant storefront> customer"
+// fallback resolved per tenant — never the seed brand).
 //
 // Why we don't show pending questions publicly: we want the answer
 // to land alongside the question so other shoppers see useful Q&A
@@ -25,7 +26,10 @@ import {
 } from "@workspace/resupply-db";
 
 import { requestHost } from "../../lib/request-host";
-import { resolveOrgIdByHost } from "../../lib/tenant-branding";
+import {
+  resolveBrandingByOrgId,
+  resolveOrgIdByHost,
+} from "../../lib/tenant-branding";
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
 
 const router: IRouter = Router();
@@ -123,10 +127,6 @@ router.post(
     }
     const { questionBody } = bodyParsed.data;
 
-    // Public display name as "FirstName L." matches the shop_reviews
-    // convention. Fall back to "PennPaps customer" so the public
-    // surface never shows an empty author label.
-    const displayName = formatPublicDisplayName(req.shopCustomerDisplayName);
     const resolvedCustomerEmail = req.shopCustomerEmail?.trim();
     if (!resolvedCustomerEmail) {
       res.status(400).json({ error: "customer_email_required" });
@@ -139,6 +139,20 @@ router.post(
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
+
+    // Public display name as "FirstName L." matches the shop_reviews
+    // convention. When the customer has no parsable name, fall back to
+    // "<tenant storefront> customer" so a non-seed tenant's Q&A byline never
+    // shows the seed brand ("PennPaps customer"). resolveBrandingByOrgId
+    // returns the seed storefront name for the seed org (single-tenant copy
+    // unchanged) and the neutral CareMetric Breathe brand for an
+    // unconfigured tenant.
+    const storefrontName = (await resolveBrandingByOrgId(orgId)).storefrontName;
+    const displayName = formatPublicDisplayName(
+      req.shopCustomerDisplayName,
+      storefrontName,
+    );
+
     const supabase = getOrgScopedClient(orgId);
     const { data: row, error } = await supabase
       .from("shop_product_questions")
@@ -161,10 +175,14 @@ router.post(
   },
 );
 
-function formatPublicDisplayName(raw: string | null | undefined): string {
-  if (!raw) return "PennPaps customer";
+function formatPublicDisplayName(
+  raw: string | null | undefined,
+  storefrontName: string,
+): string {
+  const fallback = `${storefrontName} customer`;
+  if (!raw) return fallback;
   const parts = raw.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "PennPaps customer";
+  if (parts.length === 0) return fallback;
   const first = parts[0]!;
   const lastPart = parts.length > 1 ? parts[parts.length - 1] : undefined;
   const lastInitial = lastPart?.[0] ? `${lastPart[0]}.` : "";
