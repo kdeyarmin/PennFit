@@ -9,11 +9,13 @@
 // Running the suite locally:
 //   1. Install browser binaries once:
 //        pnpm exec playwright install chromium
-//   2. Start the dev server (it must be running on
-//      VITE_DEV_PORT, default 5173):
-//        pnpm --filter @workspace/cpap-fitter dev
-//   3. In another terminal:
+//   2. Run from the repo root:
 //        pnpm run test:e2e
+//
+// The config below starts the Vite dev server automatically when nothing is
+// already listening at BASE_URL. That keeps `pnpm run test:e2e` aligned with
+// the cpap-fitter Vite config, which intentionally requires PORT + BASE_PATH
+// in non-build modes.
 //
 // CI integration is wired in .github/workflows/ci.yml: the `smoke`
 // job runs storefront-loads.spec.ts against a `vite preview` build
@@ -35,6 +37,8 @@ const ADMIN_STORAGE_STATE = "e2e/.auth/admin.json";
 
 const PORT = Number(process.env["E2E_PORT"] ?? 5173);
 const BASE_URL = process.env["E2E_BASE_URL"] ?? `http://localhost:${PORT}`;
+const API_PROXY_TARGET =
+  process.env["API_PROXY_TARGET"] ?? "http://localhost:3000";
 
 // The admin (backend-backed) suite is opt-in: it needs a live API +
 // PostgREST stack and a seeded admin, which only the `e2e-admin` CI job
@@ -55,6 +59,18 @@ export default defineConfig({
   retries: process.env["CI"] ? 2 : 0,
   workers: process.env["CI"] ? 1 : undefined,
   reporter: process.env["CI"] ? "github" : "list",
+
+  webServer: {
+    command: "pnpm --filter @workspace/cpap-fitter dev",
+    url: BASE_URL,
+    reuseExistingServer: true,
+    timeout: 120_000,
+    env: {
+      PORT: String(PORT),
+      BASE_PATH: "/",
+      API_PROXY_TARGET,
+    },
+  },
 
   use: {
     baseURL: BASE_URL,
