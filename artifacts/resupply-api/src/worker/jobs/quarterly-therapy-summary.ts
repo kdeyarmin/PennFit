@@ -47,6 +47,7 @@ import { buildQuarterlySummary } from "../../lib/therapy-summary/build-quarterly
 import { sendQuarterlySummaryEmail } from "../../lib/order-emails/send-quarterly-summary-email";
 import { shouldSendEmail } from "../../lib/comm-prefs";
 import { logger } from "../../lib/logger";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import {
   createQueueWithDlq,
@@ -286,7 +287,7 @@ async function quarterlySummarySweepForOrg(
         .limit(WINDOW_DAYS * 4);
       if (nightsErr) {
         logger.warn(
-          { err: nightsErr.message, patientId: patient.id },
+          { err: redactDbErr(nightsErr), patientId: patient.id },
           "quarterly-summary: night read failed",
         );
         stats.failed += 1;
@@ -335,7 +336,7 @@ async function quarterlySummarySweepForOrg(
         .select("id");
       if (claimErr) {
         logger.warn(
-          { err: claimErr.message, patientId: patient.id },
+          { err: redactDbErr(claimErr), patientId: patient.id },
           "quarterly-summary: claim failed",
         );
         stats.failed += 1;
@@ -356,7 +357,7 @@ async function quarterlySummarySweepForOrg(
           .eq("id", patient.id);
         if (releaseErr) {
           logger.error(
-            { err: releaseErr.message, patientId: patient.id },
+            { err: redactDbErr(releaseErr), patientId: patient.id },
             "quarterly-summary: releaseClaim failed — patient timestamp stuck; summary will be skipped until next window",
           );
         }

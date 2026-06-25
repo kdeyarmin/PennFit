@@ -20,6 +20,7 @@ import { z } from "zod";
 import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { verifyMaskFitToken } from "../../lib/mask-fit-token";
 import { resolveOrgIdForSignedRecord } from "../../lib/storefront/signed-link-org";
 
@@ -96,7 +97,7 @@ router.post("/shop/orders/mask-fit", maskFitRateLimiter, async (req, res) => {
   });
   if (insertErr) {
     logger.warn(
-      { err: insertErr.message },
+      { err: redactDbErr(insertErr) },
       "shop/orders/mask-fit: insert failed",
     );
     res.status(500).json({ error: "insert_failed" });
