@@ -207,10 +207,18 @@ router.get(
         ),
       ]);
     } catch (err) {
-      res.status(500).json({
-        error: "query_failed",
-        message: err instanceof Error ? err.message : "query failed",
-      });
+      // pageAll throws the raw PostgREST error, which is a plain object
+      // ({ message, code, ... }) — NOT an Error instance — so an
+      // `instanceof Error` check would discard its message and always
+      // surface the generic string. Extract `.message` from any shape that
+      // carries one (matching the per-source `error.message` the unpaginated
+      // reads used to return), falling back to a generic string otherwise.
+      const rawMessage = (err as { message?: unknown } | null)?.message;
+      const message =
+        typeof rawMessage === "string" && rawMessage.length > 0
+          ? rawMessage
+          : "query failed";
+      res.status(500).json({ error: "query_failed", message });
       return;
     }
 
