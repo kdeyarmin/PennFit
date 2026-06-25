@@ -362,14 +362,22 @@ degrade when their API key is unset.
 
 | Surface                     | Primary                                        | Fallback                           | Key                                                |
 | --------------------------- | ---------------------------------------------- | ---------------------------------- | -------------------------------------------------- |
-| Voice agent (LLM brain)     | OpenAI `gpt-realtime`                          | n/a (offline if down)              | `OPENAI_API_KEY`                                   |
-| Voice agent (STT)           | `gpt-4o-mini-transcribe`                       | Deepgram Nova-3 (opt)              | `OPENAI_API_KEY`, `DEEPGRAM_API_KEY`               |
+| Voice agent (LLM brain)     | OpenAI `gpt-realtime-2` (GA)                   | n/a (offline if down)              | `OPENAI_API_KEY`                                   |
+| Voice agent (STT)           | `gpt-realtime-whisper` (GA)                    | Deepgram Nova-3 (opt)              | `OPENAI_API_KEY`, `DEEPGRAM_API_KEY`               |
 | Voice agent (TTS)           | ElevenLabs (when key set), else OpenAI `cedar` | OpenAI `cedar` (no ElevenLabs key) | `ELEVENLABS_API_KEY` (preferred), `OPENAI_API_KEY` |
 | Storefront chatbot          | Claude Sonnet 4.6                              | `gpt-4.1-mini`                     | `ANTHROPIC_API_KEY` (preferred), `OPENAI_API_KEY`  |
 | Admin assistant (PennPilot) | Claude Sonnet 4.6                              | `gpt-4.1-mini`                     | `ANTHROPIC_API_KEY` (preferred), `OPENAI_API_KEY`  |
 | Inbound email auto-reply    | Claude Sonnet 4.6                              | `gpt-4.1-mini`                     | `ANTHROPIC_API_KEY` (preferred), `OPENAI_API_KEY`  |
 | Sleep coach                 | Claude Sonnet 4.6                              | `gpt-4.1-mini`                     | `ANTHROPIC_API_KEY` (preferred), `OPENAI_API_KEY`  |
 | SMS intent classifier       | Claude Haiku 4.5                               | `gpt-4.1-mini`                     | `ANTHROPIC_API_KEY` (preferred), `OPENAI_API_KEY`  |
+
+The voice agent runs OpenAI's **GA** Realtime schema by default —
+`gpt-realtime-2` (brain) + `gpt-realtime-whisper` (input STT) on the nested
+session shape (µ-law as `audio/pcmu`). The legacy beta schema
+(`gpt-realtime` / `gpt-4o-mini-transcribe`, `OpenAI-Beta: realtime=v1`) is
+deprecated by OpenAI and kept only as the inert
+`OPENAI_REALTIME_SCHEMA=beta` rollback; see
+[`docs/runbooks/realtime-ga-migration.md`](./docs/runbooks/realtime-ga-migration.md).
 
 Provider selection happens in
 `artifacts/resupply-api/src/lib/llm-provider.ts:selectLlmProvider()` —
