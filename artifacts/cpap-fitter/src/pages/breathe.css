@@ -2544,8 +2544,8 @@
 }
 .bx-compare-scroll {
   overflow-x: auto;
-  /* Smooth, momentum-style horizontal swipe on touch + a snap to the
-     Breathe column so the table never rests mid-cell. */
+  /* Momentum-style horizontal swipe on touch so the off-screen competitor
+     columns are easy to reach on a phone. */
   -webkit-overflow-scrolling: touch;
 }
 /* Mobile-only affordance: the comparison table is wider than a phone, so the

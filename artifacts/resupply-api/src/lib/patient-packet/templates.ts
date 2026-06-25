@@ -106,6 +106,17 @@ export interface PacketDocumentTemplate {
 // should bump only the touched template.
 const V = "2026-06-06.v1";
 
+// Patient-facing "reach us at …" contact channel. Pairs phone + email when
+// both are set, and degrades to whichever exists when one is blank — so the
+// sentence stays grammatical for an unconfigured tenant (the platform
+// FALLBACK_COMPANY has an email but no phone). Output is identical to the
+// previous `${phone} or ${email}` whenever a phone is configured, which is
+// the case for every real tenant generating a signed agreement.
+function reachAt(c: CompanyProfile): string {
+  if (c.phone && c.email) return `${c.phone} or ${c.email}`;
+  return c.phone || c.email;
+}
+
 export const PACKET_TEMPLATES: PacketDocumentTemplate[] = [
   {
     key: "welcome_instructions",
@@ -120,7 +131,7 @@ export const PACKET_TEMPLATES: PacketDocumentTemplate[] = [
       {
         paragraphs: [
           `Welcome to ${c.legalName}. Thank you for trusting us with your sleep therapy. This packet contains the information and agreements we are required to review with every new patient. Please read each document carefully, ask us any questions, and sign electronically where indicated.`,
-          `Our patient care team is available to help you get the most out of your therapy. You can reach us at ${c.phone} or ${c.email}.`,
+          `Our patient care team is available to help you get the most out of your therapy. You can reach us at ${reachAt(c)}.`,
         ],
       },
       {
@@ -212,7 +223,7 @@ export const PACKET_TEMPLATES: PacketDocumentTemplate[] = [
           "You may request a correction of information you believe is inaccurate or incomplete.",
           "You may request restrictions on certain uses and disclosures and request confidential communications.",
           "You may request an accounting of certain disclosures and obtain a paper copy of this notice on request.",
-          `You may file a complaint with us at ${c.phone} or with the U.S. Department of Health & Human Services without fear of retaliation.`,
+          `You may file a complaint with us at ${c.phone || c.email} or with the U.S. Department of Health & Human Services without fear of retaliation.`,
         ],
       },
       {
@@ -258,7 +269,7 @@ export const PACKET_TEMPLATES: PacketDocumentTemplate[] = [
       {
         heading: "Concerns and grievances",
         paragraphs: [
-          `If you have a concern about your equipment or service, please contact us at ${c.phone} or ${c.email}. We will acknowledge your concern and work to resolve it promptly.`,
+          `If you have a concern about your equipment or service, please contact us at ${reachAt(c)}. We will acknowledge your concern and work to resolve it promptly.`,
         ],
       },
     ],
@@ -396,7 +407,7 @@ export const PACKET_TEMPLATES: PacketDocumentTemplate[] = [
         },
         {
           paragraphs: [
-            `This signed proof of delivery, together with the date of receipt I provide, serves as confirmation of delivery for my records and for billing my insurance, including Medicare. If any item listed was not received, I will contact ${c.legalName} at ${c.phone} before signing.`,
+            `This signed proof of delivery, together with the date of receipt I provide, serves as confirmation of delivery for my records and for billing my insurance, including Medicare. If any item listed was not received, I will contact ${c.legalName} at ${c.phone || c.email} before signing.`,
           ],
         },
       );
@@ -438,7 +449,7 @@ export const PACKET_TEMPLATES: PacketDocumentTemplate[] = [
       {
         heading: "Questions or changes",
         paragraphs: [
-          `If anything about my supply needs has changed — a different mask size, comfort issues, or a change in my insurance — I will contact ${c.legalName} at ${c.phone} or ${c.email} before my supplies ship.`,
+          `If anything about my supply needs has changed — a different mask size, comfort issues, or a change in my insurance — I will contact ${c.legalName} at ${reachAt(c)} before my supplies ship.`,
         ],
       },
     ],
@@ -500,7 +511,7 @@ export const PACKET_TEMPLATES: PacketDocumentTemplate[] = [
         heading: "What you need to do now",
         bullets: [
           "Read this notice carefully so you can make an informed decision about your care.",
-          `Ask us any questions — you can reach ${c.legalName} at ${c.phone} or ${c.email}.`,
+          `Ask us any questions — you can reach ${c.legalName} at ${reachAt(c)}.`,
           "Choose ONE option in the selection below. We cannot choose an option for you.",
         ],
       },
