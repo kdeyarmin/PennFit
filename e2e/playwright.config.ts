@@ -66,7 +66,14 @@ export default defineConfig({
     reuseExistingServer: true,
     timeout: 120_000,
     env: {
-      PORT: String(PORT),
+      PORT: (() => {
+        try {
+          const u = new URL(BASE_URL);
+          return u.port || String(PORT);
+        } catch {
+          return String(PORT);
+        }
+      })(),
       BASE_PATH: "/",
       API_PROXY_TARGET,
     },
