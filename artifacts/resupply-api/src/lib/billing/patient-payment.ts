@@ -752,9 +752,18 @@ export async function markPaymentStatus(
     await applySucceededPayment(supabase.raw(), input.paymentId);
     return;
   }
+  // Never move a payment OUT of the terminal 'succeeded' state. Stripe can
+  // deliver a `payment_intent.payment_failed` / `.canceled` event out of
+  // order, AFTER the `.succeeded` that already flipped the row and applied
+  // the ledger (apply_patient_payment) — without this guard that late event
+  // would rewrite a paid payment's status to 'failed', a misleading record
+  // that downstream status-keyed reads (and the patient's own view) would
+  // then trust. The succeeded branch above is already CAS-guarded; this is
+  // the symmetric guard for the failure/cancel branch.
   const { error: statusErr } = await supabase
     .from("patient_payments")
     .update(update)
-    .eq("id", input.paymentId);
+    .eq("id", input.paymentId)
+    .neq("status", "succeeded");
   if (statusErr) throw statusErr;
 }
