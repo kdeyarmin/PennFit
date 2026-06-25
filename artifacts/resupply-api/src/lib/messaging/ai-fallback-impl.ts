@@ -7,7 +7,7 @@
 //
 // Provider selection (May 2026 update):
 //   When ANTHROPIC_API_KEY is set, we use Claude Haiku 4.5 — same
-//   class of cost/latency as gpt-4o-mini, but the auto-generated SMS
+//   class of cost/latency as gpt-4.1-mini, but the auto-generated SMS
 //   reply text reads noticeably more like a human ("got it" vs
 //   "I have received your message"). When only OPENAI_API_KEY is
 //   configured, we fall back to gpt-4.1-mini.
