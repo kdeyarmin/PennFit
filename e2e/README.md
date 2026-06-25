@@ -20,18 +20,17 @@ This is no longer just a scaffold, but it is still not representative coverage o
    pnpm exec playwright install chromium
    ```
 
-2. Start the cpap-fitter dev server:
-
-   ```bash
-   pnpm --filter @workspace/cpap-fitter dev
-   ```
-
-3. In another terminal, run the suite:
+2. Run the suite from the repo root:
 
    ```bash
    pnpm run test:e2e
    pnpm run test:e2e:ui
    ```
+
+The Playwright config starts the cpap-fitter Vite dev server automatically
+when nothing is already listening at the target URL, using `PORT=5173`,
+`BASE_PATH=/`, and `API_PROXY_TARGET=http://localhost:3000` by default. If you
+already have a compatible server running, Playwright reuses it instead.
 
 The default base URL is `http://localhost:5173`. Override with:
 
