@@ -34,6 +34,7 @@ import {
 import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 import { COMPLIANT_MINUTES_PER_NIGHT } from "@workspace/resupply-domain";
 
+import { applyCompanyIdentityToText, getCompanyInfo } from "../company-info";
 import {
   DEFAULT_ANTHROPIC_MODEL_CHAT,
   getAnthropicClient,
@@ -186,6 +187,19 @@ export async function askSleepCoach(
     context,
   );
 
+  // Brand the prompt and the reply to the host tenant at the I/O boundary,
+  // mirroring the storefront chatbot and email auto-reply. The SYSTEM_PROMPT
+  // grounds the model in the canonical "PennPaps" placeholder; for a non-Penn
+  // tenant we rewrite it (and the model's output) to the tenant's own name so
+  // the coach never introduces itself with, or echoes, another tenant's brand.
+  // getCompanyInfo() resolves the seed org's identity when orgId is absent,
+  // and only degrades to the CareMetric platform identity when the org row
+  // can't be read or doesn't exist.
+  const companyInfo = await getCompanyInfo(input.orgId);
+  const systemPrompt = applyCompanyIdentityToText(SYSTEM_PROMPT, companyInfo);
+  const brandReply = (text: string): string =>
+    applyCompanyIdentityToText(text, companyInfo);
+
   // Prefer Claude (Sonnet 4.6) — its writing voice for empathetic
   // patient-facing copy is consistently warmer than gpt-4o-class
   // models, and clinical-adjacent reasoning is at least as good.
@@ -222,7 +236,7 @@ export async function askSleepCoach(
         system: [
           {
             type: "text",
-            text: SYSTEM_PROMPT,
+            text: systemPrompt,
             cache_control: { type: "ephemeral" },
           },
         ],
@@ -340,7 +354,9 @@ export async function askSleepCoach(
         "sleep-coach: anthropic reply",
       );
       return {
-        reply: text ? text.slice(0, 1500) : null,
+        // Brand first, THEN cap: a longer tenant name must not push the
+        // reply past the 1500-char limit.
+        reply: text ? brandReply(text).slice(0, 1500) : null,
         errorMessage: null,
         latencyMs,
       };
@@ -369,7 +385,7 @@ export async function askSleepCoach(
   // the model is forced to produce a text answer.
   const MAX_RETRIES = 1;
   const messages: OpenAiCoachMessage[] = [
-    { role: "system", content: SYSTEM_PROMPT },
+    { role: "system", content: systemPrompt },
     { role: "user", content: userMessage },
   ];
   const startedAt = Date.now();
@@ -537,7 +553,9 @@ export async function askSleepCoach(
     }
     const content = (message.content ?? "").trim();
     return {
-      reply: content ? content.slice(0, 1500) : null,
+      // Brand first, THEN cap (see the Anthropic path) so a longer tenant
+      // name can't exceed the 1500-char limit.
+      reply: content ? brandReply(content).slice(0, 1500) : null,
       errorMessage: null,
       latencyMs: Date.now() - startedAt,
     };

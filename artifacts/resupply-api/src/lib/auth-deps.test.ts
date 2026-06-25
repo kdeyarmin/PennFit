@@ -66,20 +66,70 @@ beforeEach(() => {
   supabaseMock.reset();
 });
 
-// ── admin not found → return null ─────────────────────────────────────────────
+// ── Cross-tenant regression guard ─────────────────────────────────────────────
+//
+// The staff MFA probe must resolve admin_mfa_secrets by
+// `staff_user_id = auth.users.id` directly — the SAME key
+// routes/admin/mfa.ts writes — with NO admin_users bridge and NO org
+// filter. A previous version bridged auth.users.id → admin_users.id
+// through the seed-org-scoped facade, which silently skipped the MFA
+// challenge at sign-in for every admin of a non-seed tenant (a
+// password-only bypass of their own MFA). These tests pin the fix.
 
-describe("consumeRecoveryCode: admin user lookup", () => {
-  it("returns null when no admin_users row matches the auth userId", async () => {
-    // admin_users select → no row
-    stageSupabaseResponse("admin_users", "select", { data: null });
+describe("staff MFA probe: keyed by auth.users.id, no org-scoped bridge", () => {
+  it("findActiveSecret challenges an admin of ANY tenant without an admin_users lookup", async () => {
+    // No admin_users row is staged on purpose: the probe must NOT consult
+    // it. The secret belongs to a non-seed-tenant admin.
+    stageSupabaseResponse("admin_mfa_secrets", "select", {
+      data: {
+        secret_base32: "JBSWY3DPEHPK3PXP",
+        last_used_counter: 4,
+        verified_at: "2026-01-01T00:00:00.000Z",
+      },
+      error: null,
+    });
 
-    const result = await consumeRecoveryCode("user-xyz", "hash-abc", null);
+    const secret = await findActiveSecret("non-seed-admin-auth-id");
 
-    expect(result).toBeNull();
-    // The recovery code table must NOT be touched.
-    expect(supabaseMock.callCount("admin_mfa_recovery_codes", "update")).toBe(
-      0,
-    );
+    expect(secret).toEqual({
+      secretBase32: "JBSWY3DPEHPK3PXP",
+      lastUsedCounter: 4,
+    });
+    // The bridge is gone: admin_users is never queried.
+    expect(supabaseMock.callCount("admin_users", "select")).toBe(0);
+    // And the secret lookup is filtered by the auth user id itself.
+    const filters = supabaseMock.filterCalls("admin_mfa_secrets", "select");
+    expect(
+      filters.some(
+        (f) =>
+          f.verb === "eq" &&
+          f.args[0] === "staff_user_id" &&
+          f.args[1] === "non-seed-admin-auth-id",
+      ),
+    ).toBe(true);
+  });
+
+  it("findAllActiveSecrets returns every device by auth.users.id, no bridge", async () => {
+    stageSupabaseResponse("admin_mfa_secrets", "select", {
+      data: [
+        {
+          id: "dev-1",
+          secret_base32: "JBSWY3DPEHPK3PXP",
+          last_used_counter: 1,
+        },
+        {
+          id: "dev-2",
+          secret_base32: "KRSXG5DJNZTW2ZLT",
+          last_used_counter: 2,
+        },
+      ],
+      error: null,
+    });
+
+    const secrets = await findAllActiveSecrets("non-seed-admin-auth-id");
+
+    expect(secrets).toHaveLength(2);
+    expect(supabaseMock.callCount("admin_users", "select")).toBe(0);
   });
 });
 
@@ -87,9 +137,6 @@ describe("consumeRecoveryCode: admin user lookup", () => {
 
 describe("consumeRecoveryCode: DB error propagation", () => {
   it("throws when the recovery-code UPDATE returns an error", async () => {
-    stageSupabaseResponse("admin_users", "select", {
-      data: { id: "admin-1" },
-    });
     const dbErr = new Error("deadlock detected");
     stageSupabaseResponse("admin_mfa_recovery_codes", "update", {
       data: null,
@@ -105,12 +152,14 @@ describe("consumeRecoveryCode: DB error propagation", () => {
 // ── UPDATE returns no row (code already spent or not found) → null ────────────
 
 describe("consumeRecoveryCode: code already used or not found", () => {
-  it("returns null when the UPDATE returns no row (used_at IS NOT NULL or wrong hash)", async () => {
-    stageSupabaseResponse("admin_users", "select", {
-      data: { id: "admin-2" },
-    });
-    // No row matched the WHERE clause (used_at IS NULL + code_hash + staff_user_id).
+  it("returns null when neither a staff nor a provider code matches", async () => {
+    // Staff update matches nothing (spent / wrong hash) …
     stageSupabaseResponse("admin_mfa_recovery_codes", "update", {
+      data: null,
+      error: null,
+    });
+    // … and the user is not a provider either.
+    stageSupabaseResponse("provider_portal_accounts", "select", {
       data: null,
       error: null,
     });
@@ -128,10 +177,7 @@ describe("consumeRecoveryCode: code already used or not found", () => {
 // ── Happy path: first consume succeeds ───────────────────────────────────────
 
 describe("consumeRecoveryCode: successful first use", () => {
-  it("returns { id } when the atomic UPDATE succeeds", async () => {
-    stageSupabaseResponse("admin_users", "select", {
-      data: { id: "admin-3" },
-    });
+  it("returns { id } when the atomic staff UPDATE succeeds — keyed by auth.users.id", async () => {
     stageSupabaseResponse("admin_mfa_recovery_codes", "update", {
       data: { id: "rc-row-42" },
       error: null,
@@ -147,12 +193,27 @@ describe("consumeRecoveryCode: successful first use", () => {
     expect(supabaseMock.callCount("admin_mfa_recovery_codes", "update")).toBe(
       1,
     );
+    // No admin_users bridge, and the provider table is not touched once
+    // the staff code is spent.
+    expect(supabaseMock.callCount("admin_users", "select")).toBe(0);
+    expect(
+      supabaseMock.callCount("provider_mfa_recovery_codes", "update"),
+    ).toBe(0);
+    const filters = supabaseMock.filterCalls(
+      "admin_mfa_recovery_codes",
+      "update",
+    );
+    expect(
+      filters.some(
+        (f) =>
+          f.verb === "eq" &&
+          f.args[0] === "staff_user_id" &&
+          f.args[1] === "user-abc",
+      ),
+    ).toBe(true);
   });
 
   it("passes used_ip=null when ip is null", async () => {
-    stageSupabaseResponse("admin_users", "select", {
-      data: { id: "admin-4" },
-    });
     stageSupabaseResponse("admin_mfa_recovery_codes", "update", {
       data: { id: "rc-row-99" },
       error: null,
@@ -172,9 +233,6 @@ describe("consumeRecoveryCode: successful first use", () => {
   });
 
   it("includes used_ip in the update payload when ip is provided", async () => {
-    stageSupabaseResponse("admin_users", "select", {
-      data: { id: "admin-5" },
-    });
     stageSupabaseResponse("admin_mfa_recovery_codes", "update", {
       data: { id: "rc-row-55" },
       error: null,
@@ -200,17 +258,20 @@ describe("consumeRecoveryCode: concurrent spend behavior", () => {
     // (In production this is enforced by Postgres; here we model it by staging
     // two sequential responses for the same scenario.)
 
-    // First call
-    stageSupabaseResponse("admin_users", "select", { data: { id: "admin-6" } });
+    // First call — staff code spends.
     stageSupabaseResponse("admin_mfa_recovery_codes", "update", {
       data: { id: "rc-row-77" },
       error: null,
     });
 
-    // Second call (same code, same user)
-    stageSupabaseResponse("admin_users", "select", { data: { id: "admin-6" } });
+    // Second call (same code, same user) — staff update now matches nothing,
+    // and the user is not a provider.
     stageSupabaseResponse("admin_mfa_recovery_codes", "update", {
       data: null, // already spent
+      error: null,
+    });
+    stageSupabaseResponse("provider_portal_accounts", "select", {
+      data: null,
       error: null,
     });
 
@@ -223,10 +284,7 @@ describe("consumeRecoveryCode: concurrent spend behavior", () => {
 });
 
 describe("provider MFA fallback for dual-linked auth users", () => {
-  it("falls through to provider_mfa_secrets when admin_mfa_secrets is empty", async () => {
-    stageSupabaseResponse("admin_users", "select", {
-      data: { id: "admin-7" },
-    });
+  it("falls through to provider_mfa_secrets when the staff table has no row", async () => {
     stageSupabaseResponse("admin_mfa_secrets", "select", {
       data: null,
       error: null,
@@ -251,10 +309,7 @@ describe("provider MFA fallback for dual-linked auth users", () => {
     });
   });
 
-  it("falls through to provider secrets for MFA verify when admin has zero devices", async () => {
-    stageSupabaseResponse("admin_users", "select", {
-      data: { id: "admin-8" },
-    });
+  it("falls through to provider secrets for MFA verify when the staff table is empty", async () => {
     stageSupabaseResponse("admin_mfa_secrets", "select", {
       data: [],
       error: null,

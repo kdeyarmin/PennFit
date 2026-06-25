@@ -211,27 +211,6 @@ export function getAuthDeps(): AuthDeps {
 }
 
 /**
- * Resolve the admin_users.id for an auth user, or null. `staff_user_id`
- * on admin_mfa_secrets references admin_users.id, not auth.users.id;
- * the sign-in handler passes auth.users.id, so we bridge here.
- */
-async function adminIdForAuthUser(
-  supabase: OrgScopedClient,
-  authUserId: string,
-): Promise<string | null> {
-  // admin_users is a tenant-scoped table (has org_id) — the facade
-  // `.from()` auto-applies the org filter.
-  const { data, error } = await supabase
-    .from("admin_users")
-    .select("id")
-    .eq("auth_user_id", authUserId)
-    .limit(1)
-    .maybeSingle();
-  if (error) throw error;
-  return (data?.id as string | undefined) ?? null;
-}
-
-/**
  * Resolve the provider_portal_accounts.id for an auth user, or null.
  * provider_mfa_secrets.account_id references the portal account.
  */
@@ -279,24 +258,33 @@ function makeMfaProbe(): MfaProbe {
       // secret" — used by sign-in to detect "does this user have
       // MFA at all?" The verify path uses findAllActiveSecrets to
       // try each device.
-      const adminId = await adminIdForAuthUser(supabase, userId);
-      if (adminId) {
-        const { data, error } = await supabase
-          .raw()
-          .schema("resupply")
-          .from("admin_mfa_secrets")
-          .select("secret_base32, verified_at, last_used_counter")
-          .eq("staff_user_id", adminId)
-          .not("verified_at", "is", null)
-          .limit(1)
-          .maybeSingle();
-        if (error) throw error;
-        if (data) {
-          return {
-            secretBase32: data.secret_base32,
-            lastUsedCounter: data.last_used_counter,
-          };
-        }
+      //
+      // Staff (admin/CSR) secrets are keyed by `staff_user_id =
+      // auth.users.id` — the SAME key every admin_mfa_secrets write in
+      // routes/admin/mfa.ts uses (enroll/begin, enroll/verify, the device
+      // list, disable). We query the GLOBAL table directly by that key via
+      // `.raw()` with NO org filter: this probe is mounted
+      // tenant-agnostically on every /auth router, so it must resolve
+      // secrets for an admin of ANY tenant. (The previous version bridged
+      // auth.users.id → admin_users.id through the org-scoped facade, which
+      // both pinned the lookup to the SEED org — silently skipping the MFA
+      // challenge for every non-seed-tenant admin — and keyed on the wrong
+      // column.)
+      const { data: adminData, error: adminError } = await supabase
+        .raw()
+        .schema("resupply")
+        .from("admin_mfa_secrets")
+        .select("secret_base32, verified_at, last_used_counter")
+        .eq("staff_user_id", userId)
+        .not("verified_at", "is", null)
+        .limit(1)
+        .maybeSingle();
+      if (adminError) throw adminError;
+      if (adminData) {
+        return {
+          secretBase32: adminData.secret_base32,
+          lastUsedCounter: adminData.last_used_counter,
+        };
       }
       // Provider fallback.
       const accountId = await providerAccountIdForAuthUser(supabase, userId);
@@ -319,25 +307,24 @@ function makeMfaProbe(): MfaProbe {
     },
     async findAllActiveSecrets(userId) {
       const supabase = await getScopedClient();
-      const adminId = await adminIdForAuthUser(supabase, userId);
-      if (adminId) {
-        const { data, error } = await supabase
-          .raw()
-          .schema("resupply")
-          .from("admin_mfa_secrets")
-          .select("id, secret_base32, last_used_counter")
-          .eq("staff_user_id", adminId)
-          .not("verified_at", "is", null)
-          .order("created_at", { ascending: true });
-        if (error) throw error;
-        const adminSecrets = (data ?? []).map((r) => ({
-          id: r.id,
-          secretBase32: r.secret_base32,
-          lastUsedCounter: r.last_used_counter,
-        }));
-        if (adminSecrets.length > 0) {
-          return adminSecrets;
-        }
+      // Staff secrets keyed by staff_user_id = auth.users.id (see
+      // findActiveSecret for the full rationale). Direct, un-scoped query.
+      const { data: adminData, error: adminError } = await supabase
+        .raw()
+        .schema("resupply")
+        .from("admin_mfa_secrets")
+        .select("id, secret_base32, last_used_counter")
+        .eq("staff_user_id", userId)
+        .not("verified_at", "is", null)
+        .order("created_at", { ascending: true });
+      if (adminError) throw adminError;
+      const adminSecrets = (adminData ?? []).map((r) => ({
+        id: r.id,
+        secretBase32: r.secret_base32,
+        lastUsedCounter: r.last_used_counter,
+      }));
+      if (adminSecrets.length > 0) {
+        return adminSecrets;
       }
       const accountId = await providerAccountIdForAuthUser(supabase, userId);
       if (!accountId) return [];
@@ -390,18 +377,18 @@ function makeMfaProbe(): MfaProbe {
         if (provErr) logBumpError("provider_mfa_secrets", provErr);
         return;
       }
-      // User-scoped fallback (single-device callers).
-      const adminId = await adminIdForAuthUser(supabase, userId);
-      if (adminId) {
-        const { error: adminErr } = await supabase
-          .raw()
-          .schema("resupply")
-          .from("admin_mfa_secrets")
-          .update({ last_used_counter: counter, last_used_at: nowIso })
-          .eq("staff_user_id", adminId);
-        if (adminErr) logBumpError("admin_mfa_secrets", adminErr);
-        return;
-      }
+      // User-scoped fallback (single-device callers). A user belongs to
+      // exactly one population, so we bump the admin row by its
+      // staff_user_id = auth.users.id key and, if the user is a provider,
+      // the provider row by account_id — the non-owning update simply
+      // matches no rows (a harmless no-op), exactly like the secretId path.
+      const { error: adminErr } = await supabase
+        .raw()
+        .schema("resupply")
+        .from("admin_mfa_secrets")
+        .update({ last_used_counter: counter, last_used_at: nowIso })
+        .eq("staff_user_id", userId);
+      if (adminErr) logBumpError("admin_mfa_secrets", adminErr);
       const accountId = await providerAccountIdForAuthUser(supabase, userId);
       if (!accountId) return;
       const { error: provErr } = await supabase
@@ -417,21 +404,20 @@ function makeMfaProbe(): MfaProbe {
       // Spendable rows only — used_at IS NULL. The unique index on
       // code_hash means at most one row matches; the owner filter
       // prevents a code minted for one account being spent by another.
-      const adminId = await adminIdForAuthUser(supabase, userId);
-      if (adminId) {
-        const { data, error } = await supabase
-          .raw()
-          .schema("resupply")
-          .from("admin_mfa_recovery_codes")
-          .select("id")
-          .eq("staff_user_id", adminId)
-          .eq("code_hash", codeHash)
-          .is("used_at", null)
-          .limit(1)
-          .maybeSingle();
-        if (error) throw error;
-        return data ? { id: data.id } : null;
-      }
+      // Staff recovery codes are keyed by staff_user_id = auth.users.id
+      // (see findActiveSecret); query directly, un-scoped.
+      const { data: adminData, error: adminError } = await supabase
+        .raw()
+        .schema("resupply")
+        .from("admin_mfa_recovery_codes")
+        .select("id")
+        .eq("staff_user_id", userId)
+        .eq("code_hash", codeHash)
+        .is("used_at", null)
+        .limit(1)
+        .maybeSingle();
+      if (adminError) throw adminError;
+      if (adminData) return { id: adminData.id };
       const accountId = await providerAccountIdForAuthUser(supabase, userId);
       if (!accountId) return null;
       const { data, error } = await supabase
@@ -494,22 +480,22 @@ function makeMfaProbe(): MfaProbe {
       // Atomic compare-and-set: the .is("used_at", null) clause is
       // part of the UPDATE WHERE, so Postgres only flips rows that
       // haven't been spent yet. Two concurrent submissions of the same
-      // valid code can't both succeed.
-      const adminId = await adminIdForAuthUser(supabase, userId);
-      if (adminId) {
-        const { data, error } = await supabase
-          .raw()
-          .schema("resupply")
-          .from("admin_mfa_recovery_codes")
-          .update({ used_at: usedAt, used_ip: ip ?? null })
-          .eq("staff_user_id", adminId)
-          .eq("code_hash", codeHash)
-          .is("used_at", null)
-          .select("id")
-          .maybeSingle();
-        if (error) throw error;
-        return data ? { id: data.id } : null;
-      }
+      // valid code can't both succeed. Staff codes keyed by
+      // staff_user_id = auth.users.id (see findActiveSecret); a provider
+      // user's code lives in provider_mfa_recovery_codes, reached via the
+      // fallback below.
+      const { data: adminData, error: adminError } = await supabase
+        .raw()
+        .schema("resupply")
+        .from("admin_mfa_recovery_codes")
+        .update({ used_at: usedAt, used_ip: ip ?? null })
+        .eq("staff_user_id", userId)
+        .eq("code_hash", codeHash)
+        .is("used_at", null)
+        .select("id")
+        .maybeSingle();
+      if (adminError) throw adminError;
+      if (adminData) return { id: adminData.id };
       const accountId = await providerAccountIdForAuthUser(supabase, userId);
       if (!accountId) return null;
       const { data, error } = await supabase
