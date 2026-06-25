@@ -893,12 +893,12 @@ router.get(
         .range(from, to),
     );
 
-    const episodes: RetentionEpisodeRow[] = (
-      data as EpisodeDbRow[]
-    ).map((r) => ({
-      patientId: r.patient_id,
-      createdAt: r.created_at,
-    }));
+    const episodes: RetentionEpisodeRow[] = (data as EpisodeDbRow[]).map(
+      (r) => ({
+        patientId: r.patient_id,
+        createdAt: r.created_at,
+      }),
+    );
     const result = aggregatePatientRetention({
       episodes,
       nowMs: Date.now(),

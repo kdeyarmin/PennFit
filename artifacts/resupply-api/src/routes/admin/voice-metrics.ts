@@ -52,7 +52,9 @@ router.get(
     for (let from = 0; ; from += PAGE) {
       const { data: page, error } = await supabase
         .from("voice_calls")
-        .select("status, direction, duration_seconds, initiated_at, answered_at")
+        .select(
+          "status, direction, duration_seconds, initiated_at, answered_at",
+        )
         .gte("created_at", cutoff)
         .order("id", { ascending: true })
         .range(from, from + PAGE - 1);

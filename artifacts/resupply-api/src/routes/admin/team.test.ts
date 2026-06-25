@@ -369,7 +369,9 @@ describe("team.ts — cross-tenant invite guard", () => {
 // ---------------------------------------------------------------------------
 describe("team.ts — per-tenant invite email branding", () => {
   it("imports getCompanyInfo", () => {
-    expect(SRC).toContain('import { getCompanyInfo } from "../../lib/company-info"');
+    expect(SRC).toContain(
+      'import { getCompanyInfo } from "../../lib/company-info"',
+    );
   });
 
   it("resolves the inviting tenant's brand from getCompanyInfo(orgId)", () => {

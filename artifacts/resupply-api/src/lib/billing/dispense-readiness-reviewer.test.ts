@@ -167,7 +167,8 @@ describe("reviewDispenseReadiness", () => {
     const patientFilters = getSupabaseFilterCalls("patients", "select");
     expect(
       patientFilters.some(
-        (f) => f.verb === "eq" && f.args[0] === "org_id" && f.args[1] === ORG_ID,
+        (f) =>
+          f.verb === "eq" && f.args[0] === "org_id" && f.args[1] === ORG_ID,
       ),
     ).toBe(true);
   });

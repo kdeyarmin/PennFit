@@ -382,7 +382,9 @@ describe("POST /chat", () => {
       expect(res.status).toBe(200);
       const frames = parseSseFrames(res.text);
       expect(frames[0]).toMatchObject({ type: "chunk" });
-      expect((frames[0] as { text: string }).text).toMatch(/support@cmbreathe\.com/);
+      expect((frames[0] as { text: string }).text).toMatch(
+        /support@cmbreathe\.com/,
+      );
       expect(frames.at(-1)).toEqual({ type: "done", degraded: true });
     });
 
@@ -398,7 +400,9 @@ describe("POST /chat", () => {
       expect(res.status).toBe(200);
       const frames = parseSseFrames(res.text);
       expect(frames[0]).toMatchObject({ type: "chunk" });
-      expect((frames[0] as { text: string }).text).toMatch(/support@cmbreathe\.com/);
+      expect((frames[0] as { text: string }).text).toMatch(
+        /support@cmbreathe\.com/,
+      );
       expect(frames.at(-1)).toEqual({ type: "done", offline: true });
     });
 
@@ -419,7 +423,9 @@ describe("POST /chat", () => {
         });
       const frames = parseSseFrames(res.text);
       expect(frames[0]).toMatchObject({ type: "chunk" });
-      expect((frames[0] as { text: string }).text).toMatch(/support@cmbreathe\.com/);
+      expect((frames[0] as { text: string }).text).toMatch(
+        /support@cmbreathe\.com/,
+      );
       expect(frames.at(-1)).toEqual({ type: "done", degraded: true });
     });
 

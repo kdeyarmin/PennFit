@@ -156,7 +156,9 @@ function isTransientNetworkError(err: unknown): boolean {
 // platform contact (support@cmbreathe.com, blank phone), never literal Penn
 // contact details. The phone clause is omitted when the tenant has no
 // support phone (the platform fallback has none).
-function degradedFallbackReply(info: CompanyInfo = getCompanyInfoSync()): string {
+function degradedFallbackReply(
+  info: CompanyInfo = getCompanyInfoSync(),
+): string {
   const phone = info.supportPhoneDisplay?.trim();
   const contact = phone
     ? `${phone} (${info.supportHours}) or ${info.supportEmail}`

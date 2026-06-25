@@ -34,10 +34,7 @@ beforeEach(() => {
 describe("resolveFulfillmentSku", () => {
   it("passes through when primary is not backordered", async () => {
     stageSupabaseResponse("shop_backorders", "select", { data: null });
-    const r = await resolveFulfillmentSku(
-      orgClient(),
-      "AF20-S",
-    );
+    const r = await resolveFulfillmentSku(orgClient(), "AF20-S");
     expect(r).toEqual({ sku: "AF20-S", substituted: false });
   });
 
@@ -46,10 +43,7 @@ describe("resolveFulfillmentSku", () => {
       data: { id: "bo_1" },
     });
     stageSupabaseResponse("shop_sku_substitutes", "select", { data: [] });
-    const r = await resolveFulfillmentSku(
-      orgClient(),
-      "AF20-S",
-    );
+    const r = await resolveFulfillmentSku(orgClient(), "AF20-S");
     expect(r.substituted).toBe(false);
     expect(r.noAlternative).toBe(true);
     expect(r.sku).toBe("AF20-S");
@@ -68,10 +62,7 @@ describe("resolveFulfillmentSku", () => {
     // The second .in() lookup finds no backordered alternatives.
     stageSupabaseResponse("shop_backorders", "select", { data: [] });
 
-    const r = await resolveFulfillmentSku(
-      orgClient(),
-      "AF20-S",
-    );
+    const r = await resolveFulfillmentSku(orgClient(), "AF20-S");
     expect(r.substituted).toBe(true);
     expect(r.sku).toBe("AF20-M");
     expect(r.substitutedFromSku).toBe("AF20-S");
@@ -92,10 +83,7 @@ describe("resolveFulfillmentSku", () => {
       data: [{ sku: "AF20-M" }],
     });
 
-    const r = await resolveFulfillmentSku(
-      orgClient(),
-      "AF20-S",
-    );
+    const r = await resolveFulfillmentSku(orgClient(), "AF20-S");
     expect(r.substituted).toBe(true);
     expect(r.sku).toBe("AF30-S");
   });
@@ -111,10 +99,7 @@ describe("resolveFulfillmentSku", () => {
       data: [{ sku: "AF20-M" }],
     });
 
-    const r = await resolveFulfillmentSku(
-      orgClient(),
-      "AF20-S",
-    );
+    const r = await resolveFulfillmentSku(orgClient(), "AF20-S");
     expect(r.substituted).toBe(false);
     expect(r.noAlternative).toBe(true);
   });
@@ -133,10 +118,14 @@ describe("resolveFulfillmentSku", () => {
     // The org-scoped facade must have appended `.eq("org_id", ORG_ID)`
     // to BOTH tenant-scoped reads — otherwise another tenant's backorder
     // / substitution config for the same SKU string would match.
-    const backorderFilters = getSupabaseFilterCalls("shop_backorders", "select");
+    const backorderFilters = getSupabaseFilterCalls(
+      "shop_backorders",
+      "select",
+    );
     expect(
       backorderFilters.some(
-        (f) => f.verb === "eq" && f.args[0] === "org_id" && f.args[1] === ORG_ID,
+        (f) =>
+          f.verb === "eq" && f.args[0] === "org_id" && f.args[1] === ORG_ID,
       ),
     ).toBe(true);
     const substituteFilters = getSupabaseFilterCalls(
@@ -145,7 +134,8 @@ describe("resolveFulfillmentSku", () => {
     );
     expect(
       substituteFilters.some(
-        (f) => f.verb === "eq" && f.args[0] === "org_id" && f.args[1] === ORG_ID,
+        (f) =>
+          f.verb === "eq" && f.args[0] === "org_id" && f.args[1] === ORG_ID,
       ),
     ).toBe(true);
   });

@@ -147,7 +147,9 @@ describe("resolveOrgIdByCalledNumber", () => {
     // `.or()` filter, could have added an OR condition matching another
     // tenant's id. normalizeE164 rejects it (not E.164), so no query runs and
     // it can never resolve to a foreign org_id.
-    state.responses = [{ data: { id: "22222222-2222-4222-8222-222222222222" }, error: null }];
+    state.responses = [
+      { data: { id: "22222222-2222-4222-8222-222222222222" }, error: null },
+    ];
     expect(
       await resolveOrgIdByCalledNumber(
         "x,id.eq.22222222-2222-4222-8222-222222222222",

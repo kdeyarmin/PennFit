@@ -592,7 +592,9 @@ describe("runCappedRentalAdvance — multi-tenant fan-out", () => {
     stageSupabaseResponse("capped_rental_cycles", "select", {
       error: { message: "db down", code: "PGRST500" },
     });
-    await expect(runCappedRentalAdvance()).rejects.toThrow(/tenant\(s\) failed/);
+    await expect(runCappedRentalAdvance()).rejects.toThrow(
+      /tenant\(s\) failed/,
+    );
   });
 
   it("sweeps ONLY the given org when an explicit orgId is passed (no fan-out)", async () => {
