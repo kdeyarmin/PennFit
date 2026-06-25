@@ -4313,6 +4313,51 @@
   background: rgba(255, 255, 255, 0.04);
 }
 
+/* ───────────────── Mobile touch targets ─────────────────
+   On a phone these are tapped with a thumb, not a cursor. Grow the
+   footer nav / contact links and the inline "see how …" CTA links to a
+   comfortable ≥44px hit area (WCAG 2.5.5 / Apple HIG) without changing
+   how they read on the desktop layout. */
+@media (max-width: 760px) {
+  .bx-footer-nav {
+    gap: 2px 24px;
+  }
+  .bx-footer-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 4px 2px;
+    font-size: 14px;
+  }
+  .bx-footer-contact-link {
+    min-height: 44px;
+    padding: 4px 0;
+  }
+  .bx-footer-admin-link {
+    min-height: 44px;
+    padding: 11px 18px;
+  }
+  /* Inline section CTAs ("See how you get paid →", "explore the
+     platform"): give the thumb more room top-and-bottom while keeping the
+     link inline in its sentence. */
+  .bx-linkbtn,
+  .bx-cap-more,
+  .bx-switchlink,
+  .bx-integrations-link,
+  .bx-addons-teaser-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 0;
+    min-height: 40px;
+  }
+  /* Inner-page "← Back to overview" — a discrete nav control, not prose. */
+  .bxf-back {
+    min-height: 44px;
+    margin-bottom: 14px;
+  }
+}
+
 /* ───────────────────────── Reveal animation ───────────────────────── */
 .bx-reveal {
   opacity: 0;
