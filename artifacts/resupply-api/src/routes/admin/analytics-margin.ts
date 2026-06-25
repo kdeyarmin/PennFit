@@ -91,16 +91,27 @@ router.get(
       return;
     }
     const supabase = getOrgScopedClient(orgId);
-    const { data: items, error } = await supabase
-      .from("shop_order_items")
-      .select("product_id, quantity, unit_amount_cents, unit_cost_cents")
-      .gte("paid_at", cutoffIso)
-      .limit(5000);
-    if (error) {
-      res.status(500).json({ error: "query_failed", message: error.message });
-      return;
+    // PAGINATED: a single PostgREST read caps at ~1000 rows regardless of
+    // `.limit()`, so a busy tenant's margin/COGS totals were silently
+    // computed over a truncated set. Keyset-page the full window (stable
+    // `id` order) so the aggregate covers every line item.
+    const PAGE = 1000;
+    const rows: Array<Record<string, unknown>> = [];
+    for (let from = 0; ; from += PAGE) {
+      const { data: items, error } = await supabase
+        .from("shop_order_items")
+        .select("product_id, quantity, unit_amount_cents, unit_cost_cents")
+        .gte("paid_at", cutoffIso)
+        .order("id", { ascending: true })
+        .range(from, from + PAGE - 1);
+      if (error) {
+        res.status(500).json({ error: "query_failed", message: error.message });
+        return;
+      }
+      if (!items || items.length === 0) break;
+      rows.push(...(items as Array<Record<string, unknown>>));
+      if (items.length < PAGE) break;
     }
-    const rows = (items ?? []) as Array<Record<string, unknown>>;
 
     const lines: MarginLine[] = rows.map((r) => {
       const quantity =

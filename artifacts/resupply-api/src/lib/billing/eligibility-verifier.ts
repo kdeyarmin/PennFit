@@ -276,8 +276,8 @@ export async function verifyEligibility(
           );
         }
       }
-      void publishEvent(
-        eligibilityCompletedEvent(
+      void publishEvent({
+        ...eligibilityCompletedEvent(
           {
             eligibilityCheckId: rtInserted.id,
             patientId: coverage.patient_id,
@@ -285,7 +285,8 @@ export async function verifyEligibility(
           },
           parsed,
         ),
-      );
+        orgId,
+      });
       // Operational only — no PHI (timing + outcome, no patient detail).
       logger.info(
         { event: "eligibility.realtime.resolved", latencyMs },

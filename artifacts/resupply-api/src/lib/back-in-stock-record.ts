@@ -23,6 +23,10 @@ export interface RecordBackInStockSignupInput {
   email: string;
   submitterIp: string | null;
   userAgent: string | null;
+  /** Tenant the signup belongs to (host-resolved by the route). Required so
+   *  a second tenant's signups are stored under — and later emailed from —
+   *  ITS org, not silently written into the seed (Penn) org. */
+  orgId: string;
 }
 
 export interface RecordBackInStockSignupResult {
@@ -35,13 +39,11 @@ export async function recordBackInStockSignup(
   input: RecordBackInStockSignupInput,
 ): Promise<RecordBackInStockSignupResult> {
   try {
-    // Resolve the tenant for the file-local worker pattern. A missing org
-    // degrades to the same "error" outcome the catch below returns.
-    const orgId = await resolveSeedOrgId();
-    if (!orgId) {
+    // The signup is scoped to the host-resolved tenant the route passed in.
+    if (!input.orgId) {
       return { status: "error", error: "tenant context missing" };
     }
-    const supabase = getOrgScopedClient(orgId);
+    const supabase = getOrgScopedClient(input.orgId);
     // The original SQL path used ON CONFLICT (product_id, email)
     // WHERE notified_at IS NULL DO NOTHING against a partial unique
     // index. PostgREST has no `DO NOTHING WHERE`, so we INSERT and
@@ -242,11 +244,9 @@ export async function dispatchBackInStockForProduct(
  *  wired in v1 but keeps the DB-access layer in one place. */
 export async function countPendingBackInStock(
   productId: string,
+  orgId: string,
 ): Promise<number> {
   try {
-    // Resolve the tenant for the file-local worker pattern. A missing org
-    // degrades to 0 (the same value the catch below returns).
-    const orgId = await resolveSeedOrgId();
     if (!orgId) return 0;
     const supabase = getOrgScopedClient(orgId);
     const { count, error } = await supabase

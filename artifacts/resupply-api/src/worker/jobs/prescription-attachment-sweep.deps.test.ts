@@ -53,21 +53,42 @@ describe("buildProductionSweepDeps — query widening guard (Task #50)", () => {
     vi.clearAllMocks();
   });
 
-  it("loadReferencedKeys SELECTs from BOTH prescriptions and message_attachments", async () => {
-    // Both writers resolve to empty arrays — the test cares about the
-    // table set the closure touches, not the data it returns.
+  it("loadReferencedKeys SELECTs prescriptions, message_attachments AND object_storage_acls", async () => {
+    // All three reference sources resolve to empty arrays — the test
+    // cares about the table set the closure touches, not the data it
+    // returns. object_storage_acls is the authoritative ownership
+    // registry that EVERY upload writer populates; without it the sweep
+    // would treat every non-prescription/non-MMS upload as an orphan and
+    // irreversibly delete referenced PHI.
     stageSupabaseResponse("prescriptions", "select", { data: [] });
     stageSupabaseResponse("message_attachments", "select", { data: [] });
+    stageSupabaseResponse("object_storage_acls", "select", { data: [] });
 
     const deps = buildProductionSweepDeps(new Date(), 24 * 3600 * 1000);
     const result = await deps.loadReferencedKeys();
     expect(result.size).toBe(0);
-    // Sanity: both writers must be queried — exactly two SELECTs.
+    // Sanity: all three reference sources must be queried.
     expect(getSupabaseCallCount("prescriptions", "select")).toBe(1);
     expect(getSupabaseCallCount("message_attachments", "select")).toBe(1);
+    expect(getSupabaseCallCount("object_storage_acls", "select")).toBe(1);
   });
 
-  it("isStillReferenced rechecks BOTH tables before authorising delete", async () => {
+  it("loadReferencedKeys treats an ACL-owned object as referenced", async () => {
+    // Only the ACL registry knows about this object (e.g. a POD photo or
+    // billing statement) — neither legacy column references it. The
+    // sweep MUST still see it as referenced so it isn't deleted.
+    stageSupabaseResponse("prescriptions", "select", { data: [] });
+    stageSupabaseResponse("message_attachments", "select", { data: [] });
+    stageSupabaseResponse("object_storage_acls", "select", {
+      data: [{ path: "uploads/pod-123" }],
+    });
+
+    const deps = buildProductionSweepDeps(new Date(), 24 * 3600 * 1000);
+    const result = await deps.loadReferencedKeys();
+    expect(result.has("/objects/uploads/pod-123")).toBe(true);
+  });
+
+  it("isStillReferenced rechecks all three sources before authorising delete", async () => {
     // The pre-delete recheck uses head:true count probes; the
     // PostgREST envelope is `{ data: null, count: N }`.
     stageSupabaseResponse("prescriptions", "select", {
@@ -78,15 +99,35 @@ describe("buildProductionSweepDeps — query widening guard (Task #50)", () => {
       data: null,
       count: 0,
     });
+    stageSupabaseResponse("object_storage_acls", "select", {
+      data: null,
+      count: 0,
+    });
 
     const deps = buildProductionSweepDeps(new Date(), 24 * 3600 * 1000);
     const ref = await deps.isStillReferenced("/objects/uploads/abc");
-    // Both probes returned count=0, so the recheck reports "not
-    // referenced" — but we still want to see both tables touched so
-    // a future refactor can't silently drop the message-attachments
-    // half of the union.
+    // All probes returned count=0, so the recheck reports "not
+    // referenced" — but we still want to see all three tables touched so
+    // a future refactor can't silently drop part of the union.
     expect(ref).toBe(false);
     expect(getSupabaseCallCount("prescriptions", "select")).toBe(1);
     expect(getSupabaseCallCount("message_attachments", "select")).toBe(1);
+    expect(getSupabaseCallCount("object_storage_acls", "select")).toBe(1);
+  });
+
+  it("isStillReferenced BLOCKS the delete when only an ACL row claims the key", async () => {
+    stageSupabaseResponse("prescriptions", "select", { data: null, count: 0 });
+    stageSupabaseResponse("message_attachments", "select", {
+      data: null,
+      count: 0,
+    });
+    stageSupabaseResponse("object_storage_acls", "select", {
+      data: null,
+      count: 1,
+    });
+
+    const deps = buildProductionSweepDeps(new Date(), 24 * 3600 * 1000);
+    const ref = await deps.isStillReferenced("/objects/uploads/abc");
+    expect(ref).toBe(true);
   });
 });

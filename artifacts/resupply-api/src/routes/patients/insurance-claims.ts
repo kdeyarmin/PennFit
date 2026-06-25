@@ -646,6 +646,7 @@ router.patch(
     // polling. Fire-and-forget — the publisher never throws.
     if (b.status && b.status !== current.status) {
       void publishEvent({
+        orgId: req.orgId,
         eventType: `claim.${b.status}`,
         payload: {
           claim_id: idParsed.data.claimId,

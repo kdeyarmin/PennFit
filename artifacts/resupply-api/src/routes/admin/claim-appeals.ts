@@ -265,6 +265,7 @@ router.post(
       logger.warn({ err }, "claim_appeal.generate audit write failed");
     });
     void publishEvent({
+      orgId: req.orgId,
       eventType: "claim_appeal.generated",
       payload: {
         appeal_letter_id: row.id,

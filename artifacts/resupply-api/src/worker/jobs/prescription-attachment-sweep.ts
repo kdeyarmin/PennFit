@@ -2,12 +2,29 @@
 //
 // Background
 // ----------
-// Two writers share the `/objects/uploads/` prefix in the private
-// bucket:
-//   * `prescriptions.attachment_object_key` — patient-uploaded
-//     prescription scans/photos.
-//   * `message_attachments.object_key` — inbound MMS / email media
-//     persisted by the SMS and SendGrid Inbound Parse webhooks.
+// MANY writers share the `/objects/uploads/<uuid>` prefix in the
+// private bucket — every upload mints its key via
+// `ObjectStorageService.getObjectEntityUploadURL()`, which hardcodes
+// the `uploads/<uuid>` path. Besides the two columns the sweep used to
+// treat as references (`prescriptions.attachment_object_key` and
+// `message_attachments.object_key`), at least a dozen other writers
+// persist `uploads/<uuid>` keys into their own tables/columns:
+// `patient_documents.object_key` (patient self-service + admin
+// uploads + billing chart copies), `shop_orders.pod_object_key`
+// (proof-of-delivery photos), billing statements, referral-review /
+// audit-packet / manual-document media, inbound fax media, and more.
+//
+// Treating only the two columns as references would make the sweep
+// delete every OTHER writer's object as a false orphan — irreversible
+// PHI loss. The reference set is therefore anchored on the
+// authoritative ownership registry: EVERY finalized upload calls
+// `trySetObjectEntityAclPolicy()`, which writes a row into the GLOBAL
+// `resupply.object_storage_acls` table keyed by (bucket, path). A true
+// orphan (signed PUT happened, but the finalize that sets the ACL never
+// ran) has NO ACL row. The sweep unions: the two legacy columns (for
+// pre-ACL-migration objects) PLUS every `object_storage_acls.path` for
+// the private bucket — so it only ever deletes objects no writer ever
+// claimed.
 //
 // Three of the four prescription-attachment lifecycle paths are
 // self-cleaning today (see docs/resupply/PHI-RETENTION.md):
@@ -28,13 +45,14 @@
 // ---------
 // Once per week (Sunday 03:13 UTC):
 //   1. List every object under `<entity-prefix>/uploads/` in the
-//      private bucket (a single prefix scan covers both writers
-//      since prescriptions + message_attachments share the same
-//      `/objects/uploads/` shape).
-//   2. SELECT every non-null `attachment_object_key` from
-//      `prescriptions` AND every `object_key` from
-//      `message_attachments`, union into one reference Set
-//      (column shape on both sides is `/objects/uploads/<uuid>`).
+//      private bucket (a single prefix scan covers all writers since
+//      every upload shares the same `/objects/uploads/` shape).
+//   2. Build the reference Set from THREE sources, unioned: every
+//      non-null `prescriptions.attachment_object_key`, every
+//      `message_attachments.object_key`, AND every
+//      `object_storage_acls.path` for the private bucket (the
+//      authoritative per-object ownership registry that EVERY writer
+//      populates at finalize). Column shape is `/objects/uploads/<uuid>`.
 //   3. For each bucket object, derive its expected
 //      `/objects/uploads/<uuid>` shape and look it up in the DB Set:
 //        - referenced → leave alone
@@ -421,6 +439,37 @@ export function buildProductionSweepDeps(
         }
         if (data.length < PAGE_SIZE) break;
       }
+      // THIRD reference source — the authoritative ownership registry.
+      // EVERY finalized upload (any writer: patient_documents, POD
+      // photos, billing statements, referral/audit/manual media,
+      // inbound fax + MMS, …), not just the two columns above, calls
+      // `trySetObjectEntityAclPolicy()` which writes a row into the
+      // GLOBAL `resupply.object_storage_acls` table keyed by
+      // `(bucket, path)` where `path` is the bucket-relative
+      // `uploads/<uuid>`. A true orphan (signed PUT happened but the
+      // finalize that sets the ACL never ran) has NO ACL row. Loading
+      // every ACL path for the private bucket here means the sweep only
+      // ever deletes objects that no writer ever claimed — without this,
+      // the two columns above are an INCOMPLETE reference set and the
+      // sweep irreversibly deletes referenced PHI from every other
+      // writer on its first run. We add `/objects/${path}` to match the
+      // `attachmentKeyForObjectName()` shape the candidate loop checks.
+      const bucket = getPrivateStorageBucket();
+      for (let from = 0; ; from += PAGE_SIZE) {
+        const { data, error } = await raw
+          .schema("resupply")
+          .from("object_storage_acls")
+          .select("path")
+          .eq("bucket", bucket)
+          .order("path", { ascending: true })
+          .range(from, from + PAGE_SIZE - 1);
+        if (error) throw error;
+        if (!data || data.length === 0) break;
+        for (const r of data) {
+          if (r.path) set.add(`/objects/${r.path}`);
+        }
+        if (data.length < PAGE_SIZE) break;
+      }
       return set;
     },
     isStillReferenced: async (attachmentKey) => {
@@ -434,9 +483,17 @@ export function buildProductionSweepDeps(
       // `.raw()` rather than the seed-scoped facade.
       const raw = getOrgScopedClient(orgId).raw();
       // Pre-delete recheck — same widening as loadReferencedKeys:
-      // either writer claiming the key counts as "still referenced".
-      // Two head:true count probes in parallel.
-      const [presRes, msgRes] = await Promise.all([
+      // either writer column OR an ownership ACL row claiming the key
+      // counts as "still referenced". The ACL probe (third) is the
+      // authoritative, writer-agnostic guard: any finalized upload of
+      // any type has an `object_storage_acls` row keyed by
+      // (bucket, `uploads/<uuid>`), so its presence blocks the delete.
+      // Three head:true count probes in parallel.
+      const aclPath = attachmentKey.startsWith("/objects/")
+        ? attachmentKey.slice("/objects/".length)
+        : attachmentKey;
+      const bucket = getPrivateStorageBucket();
+      const [presRes, msgRes, aclRes] = await Promise.all([
         raw
           .schema("resupply")
           .from("prescriptions")
@@ -447,10 +504,21 @@ export function buildProductionSweepDeps(
           .from("message_attachments")
           .select("*", { count: "exact", head: true })
           .eq("object_key", attachmentKey),
+        raw
+          .schema("resupply")
+          .from("object_storage_acls")
+          .select("*", { count: "exact", head: true })
+          .eq("bucket", bucket)
+          .eq("path", aclPath),
       ]);
       if (presRes.error) throw presRes.error;
       if (msgRes.error) throw msgRes.error;
-      return (presRes.count ?? 0) > 0 || (msgRes.count ?? 0) > 0;
+      if (aclRes.error) throw aclRes.error;
+      return (
+        (presRes.count ?? 0) > 0 ||
+        (msgRes.count ?? 0) > 0 ||
+        (aclRes.count ?? 0) > 0
+      );
     },
     deleteObject: async (bucketName, objectName) => {
       try {

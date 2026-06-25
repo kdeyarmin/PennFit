@@ -788,7 +788,11 @@ router.put(
         updated_by_email: req.adminEmail ?? null,
         updated_at: new Date().toISOString(),
       },
-      { onConflict: "key" },
+      // app_config's PK is the composite (org_id, key) since migration 0352
+      // — a bare ON CONFLICT (key) has no matching unique constraint and
+      // raises 42P10, so every save failed. Match the composite key (same
+      // as slack-test.ts / app-config.ts).
+      { onConflict: "org_id,key" },
     );
     if (error) throw error;
 

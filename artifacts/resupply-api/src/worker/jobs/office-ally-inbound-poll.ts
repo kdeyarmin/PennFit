@@ -905,8 +905,8 @@ export async function dispatch271(
   // subscribers can react the moment coverage detail lands, instead of
   // polling the eligibility worklist. IDs + flags only, no PHI in the
   // payload (member id, deductible amounts, etc. stay on the row).
-  void publishEvent(
-    eligibilityCompletedEvent(
+  void publishEvent({
+    ...eligibilityCompletedEvent(
       {
         eligibilityCheckId: check.id,
         patientId: check.patient_id,
@@ -914,7 +914,8 @@ export async function dispatch271(
       },
       parsed,
     ),
-  );
+    orgId: supabase.orgId,
+  });
 }
 
 /**
@@ -967,6 +968,7 @@ export async function dispatch277(
     }
     // IDs + coarse outcome only — no PHI in the webhook payload.
     void publishEvent({
+      orgId: supabase.orgId,
       eventType: "claim_status.completed",
       payload: {
         claim_status_check_id: check.id,

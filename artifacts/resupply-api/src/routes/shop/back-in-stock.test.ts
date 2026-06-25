@@ -10,6 +10,17 @@ vi.mock("../../lib/back-in-stock-record", () => ({
   recordBackInStockSignup: vi.fn(async () => ({ status: "inserted" as const })),
 }));
 
+// The route now host-resolves the tenant before recording the signup so a
+// second tenant's rows aren't written into the seed org. Stub the resolvers
+// (no host match → seed-org fallback) so the unit test exercises the happy
+// path without a live DB.
+vi.mock("@workspace/resupply-db", () => ({
+  resolveSeedOrgId: vi.fn(async () => "00000000-0000-4000-8000-000000000000"),
+}));
+vi.mock("../../lib/tenant-branding", () => ({
+  resolveOrgIdByHost: vi.fn(async () => null),
+}));
+
 import backInStockRouter, {
   _resetBackInStockRateBucketForTests,
 } from "./back-in-stock";
@@ -45,6 +56,9 @@ describe("POST /shop/back-in-stock", () => {
       expect.objectContaining({
         productId: "prod_ABC123",
         email: "patient@example.com",
+        // Host-resolved tenant (seed fallback here) is passed through so the
+        // signup is stored under the right org.
+        orgId: "00000000-0000-4000-8000-000000000000",
       }),
     );
   });

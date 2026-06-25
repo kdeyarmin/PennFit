@@ -42,16 +42,27 @@ router.get(
     }
     const supabase = getOrgScopedClient(orgId);
 
-    const { data, error } = await supabase
-      .from("voice_calls")
-      .select("status, direction, duration_seconds, initiated_at, answered_at")
-      .gte("created_at", cutoff)
-      .limit(50000);
-    if (error) throw error;
+    // PAGINATED: a single PostgREST read caps at ~1000 rows regardless of
+    // `.limit(50000)`, so the call-volume / answer-rate / handle-time
+    // stats were computed over a truncated set on any tenant with >1000
+    // calls in the window. Keyset-page the full window (stable `id` order).
+    const PAGE = 1000;
+    type VoiceRow = Database["resupply"]["Tables"]["voice_calls"]["Row"];
+    const data: VoiceRow[] = [];
+    for (let from = 0; ; from += PAGE) {
+      const { data: page, error } = await supabase
+        .from("voice_calls")
+        .select("status, direction, duration_seconds, initiated_at, answered_at")
+        .gte("created_at", cutoff)
+        .order("id", { ascending: true })
+        .range(from, from + PAGE - 1);
+      if (error) throw error;
+      if (!page || page.length === 0) break;
+      data.push(...(page as VoiceRow[]));
+      if (page.length < PAGE) break;
+    }
 
-    const rows: VoiceCallRow[] = (
-      (data ?? []) as Database["resupply"]["Tables"]["voice_calls"]["Row"][]
-    ).map((r) => ({
+    const rows: VoiceCallRow[] = data.map((r) => ({
       status: r.status,
       direction: r.direction,
       durationSeconds: r.duration_seconds,

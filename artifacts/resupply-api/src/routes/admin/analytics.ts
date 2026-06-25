@@ -877,19 +877,24 @@ router.get(
     }
     const supabase = getOrgScopedClient(orgId);
 
-    // Fulfilled episodes only — the real-shipment signal. Capped for
-    // safety on a very long lookback; a DME book that exceeds this in a
-    // year is a good problem to have and the rates stay representative.
-    const { data, error } = await supabase
-      .from("episodes")
-      .select("patient_id, created_at")
-      .eq("status", "fulfilled")
-      .gte("created_at", cutoff)
-      .limit(100000);
-    if (error) throw error;
+    // Fulfilled episodes only — the real-shipment signal. PAGINATED: a
+    // single PostgREST read caps at ~1000 rows, so a busy tenant or a
+    // long lookback would silently truncate the set and skew the
+    // retention/reorder rates. Keyset-page the full window instead.
+    const data = await collectAllRows<
+      Pick<EpisodeDbRow, "patient_id" | "created_at">
+    >((from, to) =>
+      supabase
+        .from("episodes")
+        .select("patient_id, created_at")
+        .eq("status", "fulfilled")
+        .gte("created_at", cutoff)
+        .order("id", { ascending: true })
+        .range(from, to),
+    );
 
     const episodes: RetentionEpisodeRow[] = (
-      (data ?? []) as EpisodeDbRow[]
+      data as EpisodeDbRow[]
     ).map((r) => ({
       patientId: r.patient_id,
       createdAt: r.created_at,

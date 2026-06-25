@@ -236,6 +236,7 @@ router.post(
       logger.warn({ err }, "era_file.ingest audit write failed");
     });
     void publishEvent({
+      orgId: req.orgId,
       eventType: "era.ingested",
       payload: {
         era_file_id: eraFileId,

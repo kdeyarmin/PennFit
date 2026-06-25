@@ -316,9 +316,30 @@ export async function getCompanyInfo(orgId?: string): Promise<CompanyInfo> {
         : new Error(String((err as unknown) ?? "unknown"));
     logger.warn(
       { event: "company_info_load_failed", err: normalized },
-      "company info load failed; falling back to environment defaults",
+      "company info load failed; falling back to defaults",
     );
-    info = envFallbackInfo();
+    // Degrade WITHOUT leaking the seed (Penn) brand to another tenant. The
+    // env-folded fallback (envFallbackInfo) carries the SEED tenant's
+    // practice name, so a non-seed tenant whose DB read times out/errors
+    // must fall back to the NEUTRAL platform identity, never Penn's brand —
+    // the same rule the happy path enforces. Only the default path (no
+    // explicit orgId) or the seed tenant itself may use the env fallback.
+    const explicitOrgId = orgId?.trim();
+    if (!explicitOrgId) {
+      info = envFallbackInfo();
+    } else {
+      let seedOrgId: string | null = null;
+      try {
+        // Cached + side-effect-free, but guard so a degraded path can't throw.
+        seedOrgId = await resolveSeedOrgId();
+      } catch {
+        seedOrgId = null;
+      }
+      info =
+        seedOrgId && explicitOrgId === seedOrgId
+          ? envFallbackInfo()
+          : platformFallbackInfo();
+    }
   }
   cacheByOrg.set(key, { info, expiresAt: now + CACHE_TTL_MS });
   return info;

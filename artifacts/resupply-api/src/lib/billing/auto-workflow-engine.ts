@@ -183,6 +183,7 @@ async function runScrubPass(
           );
         }
         void publishEvent({
+          orgId: supabase.orgId,
           eventType: "claim.auto_scrubbed",
           payload: {
             claim_id: claim.id,
@@ -265,6 +266,7 @@ async function runDenialAnalysisPass(
           );
         }
         void publishEvent({
+          orgId: supabase.orgId,
           eventType: "claim.denial_analyzed",
           payload: {
             claim_id: claim.id,
@@ -368,6 +370,7 @@ export async function runStatementPass(
         orgId: supabase.orgId,
       });
       void publishEvent({
+        orgId: supabase.orgId,
         eventType: "billing_statement.generated",
         payload: {
           statement_id: generated.statementId,
@@ -378,6 +381,7 @@ export async function runStatementPass(
         },
       });
       void publishEvent({
+        orgId: supabase.orgId,
         eventType: "billing_statement.due",
         payload: {
           statement_id: generated.statementId,
@@ -481,6 +485,7 @@ export async function runSecondaryClaimPass(
       if (result.status === "created") {
         stats.secondaryClaimsDrafted += 1;
         void publishEvent({
+          orgId: supabase.orgId,
           eventType: "claim.secondary_drafted",
           payload: {
             claim_id: result.secondaryClaimId,

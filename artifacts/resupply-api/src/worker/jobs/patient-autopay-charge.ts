@@ -54,8 +54,20 @@ import {
 
 export const PATIENT_AUTOPAY_CHARGE_JOB = "billing.patient-autopay-charge";
 
-/** Claim statuses that carry a settled patient-responsibility balance. */
-const OPEN_BALANCE_STATUSES = ["paid", "denied", "appealed", "closed"] as const;
+/** Claim statuses that carry a settled patient-responsibility balance.
+ *  MUST include "partially_paid": the ERA reconciler sets that status when
+ *  an insurance payment is posted but the claim isn't fully paid, leaving a
+ *  positive patient_responsibility_cents (era-reconciler.ts). Omitting it
+ *  meant autopay silently never collected partially-paid balances — every
+ *  other AR path (dunning-engine BILLABLE_CLAIM_STATUSES, statement
+ *  generation, the patient claims view) already includes it. */
+const OPEN_BALANCE_STATUSES = [
+  "partially_paid",
+  "paid",
+  "denied",
+  "appealed",
+  "closed",
+] as const;
 
 type Allocation = CreateCheckoutSessionInput["allocations"][number];
 

@@ -18,7 +18,14 @@ const supabaseMock = installSupabaseMock();
 
 import { buildProductionSweepDeps } from "./prescription-attachment-sweep.js";
 
-beforeEach(() => supabaseMock.reset());
+beforeEach(() => {
+  supabaseMock.reset();
+  // The reference loaders now consult object_storage_acls (the
+  // authoritative ownership registry) and read the private bucket name
+  // to scope that query; production always has it set (the job refuses
+  // to register without it).
+  process.env.SUPABASE_STORAGE_BUCKET_PRIVATE = "test-bucket";
+});
 
 describe("buildProductionSweepDeps — global (cross-tenant) reference reads", () => {
   it("loadReferencedKeys unions both writers' keys WITHOUT an org_id filter", async () => {
