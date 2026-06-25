@@ -134,7 +134,7 @@ async function runScrubPass(
         .insert({
           claim_id: claim.id,
           verdict: output.verdict,
-          model: "gpt-4o-mini",
+          model: "gpt-4.1-mini",
           prompt_version: SCRUB_PROMPT_VERSION,
           confidence: output.confidence,
           findings_json: {
@@ -210,7 +210,7 @@ async function runDenialAnalysisPass(
         .from("claim_denial_analyses")
         .insert({
           claim_id: claim.id,
-          model: "gpt-4o-mini",
+          model: "gpt-4.1-mini",
           prompt_version: "denial-1.0",
           confidence: output.confidence,
           root_cause_summary: output.rootCauseSummary,

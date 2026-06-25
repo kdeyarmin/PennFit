@@ -16,7 +16,7 @@
 //      gpt-4o-class models, which is what we want for chatbot + sleep
 //      coach.
 //   2. Else, if `OPENAI_API_KEY` is set, use OpenAI (default:
-//      gpt-4o-mini). Preserves existing behavior for deployments that
+//      gpt-4.1-mini). Preserves existing behavior for deployments that
 //      haven't onboarded Anthropic yet.
 //   3. Else, return `{ provider: "offline" }`. Callers should surface
 //      a static fallback reply with `offline: true`.

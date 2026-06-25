@@ -35,7 +35,7 @@ export async function runDenialAnalysis(
       .insert({
         claim_id: claimId,
         era_file_id: eraFileId,
-        model: "gpt-4o-mini",
+        model: "gpt-4.1-mini",
         prompt_version: "denial-1.0",
         confidence: output.confidence,
         root_cause_summary: output.rootCauseSummary,

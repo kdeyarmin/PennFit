@@ -100,7 +100,7 @@ export function __setAiFallbackAdapterForTests(
 function getAiAdapter(): AiFallbackAdapter | null {
   if (_aiAdapterOverride) return _aiAdapterOverride;
   // Prefers Claude Haiku when ANTHROPIC_API_KEY is set, otherwise
-  // falls back to OpenAI's gpt-4o-mini, otherwise returns null and
+  // falls back to OpenAI's gpt-4.1-mini, otherwise returns null and
   // the route routes to the human-handoff queue.
   try {
     return createAiFallbackAdapter();

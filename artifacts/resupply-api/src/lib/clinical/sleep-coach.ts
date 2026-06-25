@@ -9,7 +9,7 @@
 //   When ANTHROPIC_API_KEY is set, we use Claude Sonnet 4.6 — its
 //   writing voice for empathetic, evidence-grounded patient guidance
 //   is noticeably warmer than gpt-4o-class models. When only
-//   OPENAI_API_KEY is set, we fall back to gpt-4o-mini. When neither
+//   OPENAI_API_KEY is set, we fall back to gpt-4.1-mini. When neither
 //   is set, the route returns a degraded "coach offline" reply.
 //
 // PHI posture:
@@ -48,7 +48,7 @@ import {
 } from "../storefront/chatbotTools";
 
 const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
-const DEFAULT_OPENAI_MODEL = "gpt-4o-mini";
+const DEFAULT_OPENAI_MODEL = "gpt-4.1-mini";
 const DEFAULT_TIMEOUT_MS = 15_000;
 
 export const SLEEP_COACH_PROMPT_VERSION = "coach-2.0";

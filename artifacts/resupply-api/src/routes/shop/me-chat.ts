@@ -34,7 +34,7 @@
  *
  * Provider selection mirrors /api/chat and the sleep coach: when
  * `ANTHROPIC_API_KEY` is set we go Claude-first (Sonnet 4.6, warmer
- * patient-facing copy); otherwise we fall back to OpenAI gpt-4o-mini.
+ * patient-facing copy); otherwise we fall back to OpenAI gpt-4.1-mini.
  *
  * Failure modes mirror /api/chat:
  *   - Neither `ANTHROPIC_API_KEY` nor `OPENAI_API_KEY` set → friendly
@@ -117,7 +117,7 @@ const meChatLimiter = expressRateLimit({
 });
 
 const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
-const DEFAULT_MODEL = "gpt-4o-mini";
+const DEFAULT_MODEL = "gpt-4.1-mini";
 const DEFAULT_TIMEOUT_MS = 20_000;
 
 // A function (not a constant) so the phone/email reflect the company

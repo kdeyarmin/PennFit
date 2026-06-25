@@ -402,7 +402,7 @@ function demoScrubHistory(patientId: string, claimId: string) {
       {
         id: `${claimId}-scrub-1`,
         verdict: "needs_changes",
-        model: "gpt-4o-mini",
+        model: "gpt-4.1-mini",
         prompt_version: "demo-scrub-v1",
         confidence: 0.82,
         findings_json: {

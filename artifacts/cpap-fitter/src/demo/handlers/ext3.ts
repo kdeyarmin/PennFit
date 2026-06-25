@@ -199,7 +199,7 @@ function dispenseReview(over: Record<string, unknown>) {
       "Request a fresh ResMed AirView download to refresh compliance.",
       "Submit a prior-auth renewal before expiry.",
     ],
-    ai_model: "gpt-4o-mini",
+    ai_model: "gpt-4.1-mini",
     ai_prompt_version: "2026-05.v3",
     ai_confidence: 0.82,
     ai_latency_ms: 1240,
