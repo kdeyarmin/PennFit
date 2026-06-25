@@ -147,50 +147,85 @@ router.get(
     }
     const supabase = getOrgScopedClient(orgId);
 
-    const [itemsRes, reconRes, waitersRes] = await Promise.all([
-      supabase
-        .from("shop_order_items")
-        .select(
-          "product_id, quantity, unit_amount_cents, unit_cost_cents, paid_at",
-        )
-        .gte("paid_at", cutoffIso)
-        .order("paid_at", { ascending: false })
-        .limit(5000),
-      supabase
-        .from("inventory_reconciliation_lines")
-        .select("product_id, product_name, counted_qty, created_at")
-        .order("created_at", { ascending: false })
-        .limit(2000),
-      // Open waiters = back-in-stock signups not yet notified.
-      supabase
-        .from("shop_back_in_stock_notifications")
-        .select("product_id, notified_at")
-        .is("notified_at", null)
-        .limit(5000),
-    ]);
-    if (itemsRes.error) {
-      res
-        .status(500)
-        .json({ error: "query_failed", message: itemsRes.error.message });
-      return;
+    // PAGINATED: a single PostgREST read caps at ~1000 rows regardless of
+    // `.limit()`, so every aggregate below silently truncated on a busy
+    // tenant. Keyset-page each window. The sales + reconciliation rollups
+    // depend on NEWEST-FIRST order (first row per product is its latest
+    // cost/price/count), so those page by their timestamp DESC with `id`
+    // DESC as a stable tiebreak; the waiter count is order-independent.
+    const PAGE = 1000;
+    async function pageAll<T>(
+      build: (
+        from: number,
+        to: number,
+      ) => PromiseLike<{ data: T[] | null; error: unknown }>,
+    ): Promise<T[]> {
+      const out: T[] = [];
+      for (let from = 0; ; from += PAGE) {
+        const { data, error } = await build(from, from + PAGE - 1);
+        if (error) throw error;
+        if (!data || data.length === 0) break;
+        out.push(...data);
+        if (data.length < PAGE) break;
+      }
+      return out;
     }
-    if (reconRes.error) {
-      res
-        .status(500)
-        .json({ error: "query_failed", message: reconRes.error.message });
-      return;
-    }
-    if (waitersRes.error) {
-      res
-        .status(500)
-        .json({ error: "query_failed", message: waitersRes.error.message });
+
+    type Row = Record<string, unknown>;
+    let itemsData: Row[];
+    let reconData: Row[];
+    let waitersData: Row[];
+    try {
+      [itemsData, reconData, waitersData] = await Promise.all([
+        pageAll<Row>((from, to) =>
+          supabase
+            .from("shop_order_items")
+            .select(
+              "product_id, quantity, unit_amount_cents, unit_cost_cents, paid_at",
+            )
+            .gte("paid_at", cutoffIso)
+            .order("paid_at", { ascending: false })
+            .order("id", { ascending: false })
+            .range(from, to),
+        ),
+        pageAll<Row>((from, to) =>
+          supabase
+            .from("inventory_reconciliation_lines")
+            .select("product_id, product_name, counted_qty, created_at")
+            .order("created_at", { ascending: false })
+            .order("id", { ascending: false })
+            .range(from, to),
+        ),
+        // Open waiters = back-in-stock signups not yet notified.
+        pageAll<Row>((from, to) =>
+          supabase
+            .from("shop_back_in_stock_notifications")
+            .select("product_id, notified_at")
+            .is("notified_at", null)
+            .order("id", { ascending: true })
+            .range(from, to),
+        ),
+      ]);
+    } catch (err) {
+      // pageAll throws the raw PostgREST error, which is a plain object
+      // ({ message, code, ... }) — NOT an Error instance — so an
+      // `instanceof Error` check would discard its message and always
+      // surface the generic string. Extract `.message` from any shape that
+      // carries one (matching the per-source `error.message` the unpaginated
+      // reads used to return), falling back to a generic string otherwise.
+      const rawMessage = (err as { message?: unknown } | null)?.message;
+      const message =
+        typeof rawMessage === "string" && rawMessage.length > 0
+          ? rawMessage
+          : "query failed";
+      res.status(500).json({ error: "query_failed", message });
       return;
     }
 
     // Latest reconciliation count + name per product (rows are newest-first).
     const onHand = new Map<string, number>();
     const nameByProduct = new Map<string, string>();
-    for (const r of (reconRes.data ?? []) as Array<Record<string, unknown>>) {
+    for (const r of reconData as Array<Record<string, unknown>>) {
       const pid = typeof r.product_id === "string" ? r.product_id : "";
       if (pid === "") continue;
       if (!onHand.has(pid) && typeof r.counted_qty === "number")
@@ -201,7 +236,7 @@ router.get(
 
     // Open waiters per product.
     const waiting = new Map<string, number>();
-    for (const w of (waitersRes.data ?? []) as Array<Record<string, unknown>>) {
+    for (const w of waitersData as Array<Record<string, unknown>>) {
       const pid = typeof w.product_id === "string" ? w.product_id : "";
       if (pid === "") continue;
       waiting.set(pid, (waiting.get(pid) ?? 0) + 1);
@@ -217,7 +252,7 @@ router.get(
       unitPriceCents: number | null;
     }
     const byProduct = new Map<string, Acc>();
-    for (const r of (itemsRes.data ?? []) as Array<Record<string, unknown>>) {
+    for (const r of itemsData as Array<Record<string, unknown>>) {
       const pid = typeof r.product_id === "string" ? r.product_id : "";
       if (pid === "") continue;
       const qty =

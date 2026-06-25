@@ -61,6 +61,8 @@ import {
   __resetPendingSessionsForTests,
 } from "../../lib/voice/pending-sessions";
 import { invalidateFeatureFlagCache } from "../../lib/feature-flags";
+import { __resetCompanyInfoForTests } from "../../lib/company-info";
+import { __resetTenantBrandingForTests } from "../../lib/tenant-branding";
 
 // ── Environment management ────────────────────────────────────────────────────
 const VOICE_ENV_KEYS = [
@@ -114,6 +116,8 @@ beforeEach(() => {
   supabaseMock.reset();
   invalidateFeatureFlagCache();
   __resetPendingSessionsForTests();
+  __resetCompanyInfoForTests();
+  __resetTenantBrandingForTests();
   loggerMock.error.mockReset();
   loggerMock.warn.mockReset();
   loggerMock.info.mockReset();
@@ -324,6 +328,48 @@ describe("POST /voice/inbound-reorder — identified caller path", () => {
       "insert",
     ) as Array<Record<string, unknown>>;
     expect(inserts[0]).toMatchObject({ patient_id: null });
+  });
+});
+
+describe("POST /voice/inbound-reorder — per-tenant human-transfer number", () => {
+  beforeEach(() => setVoiceEnv());
+
+  it("dials the resolved tenant's own support number, not the hard-coded Penn line", async () => {
+    // The unidentified-caller path transfers to a human via <Dial>. The
+    // dialed number must come from THIS tenant's dme_organization
+    // (support_phone_e164), never the hard-coded seed (+18144710627).
+    stageSupabaseResponse("dme_organization", "select", {
+      data: {
+        legal_name: "Acme DME",
+        dba_name: "Acme",
+        support_phone_e164: "+19998887777",
+      },
+    });
+    stagePatientNotFound();
+
+    const res = await request(makeApp())
+      .post("/voice/inbound-reorder")
+      .type("form")
+      .send({ From: "+12155559999", CallSid: "CA_tenant_dial" });
+
+    expect(res.status).toBe(200);
+    expect(res.text).toContain("<Dial");
+    expect(res.text).toContain("+19998887777");
+    expect(res.text).not.toContain("+18144710627");
+  });
+
+  it("falls back to the platform support number when the tenant has none on file", async () => {
+    // No dme_organization row staged → getCompanyInfo degrades to the env
+    // fallback (blank support phone) → the route uses the platform constant.
+    stagePatientNotFound();
+
+    const res = await request(makeApp())
+      .post("/voice/inbound-reorder")
+      .type("form")
+      .send({ From: "+12155559999", CallSid: "CA_fallback_dial" });
+
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('<Dial timeout="20">+18144710627</Dial>');
   });
 });
 

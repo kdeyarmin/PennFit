@@ -405,7 +405,23 @@ router.post("/email/inbound-parse", inboundParseLimiter, async (req, res) => {
     .select("id")
     .limit(1)
     .maybeSingle();
-  if (insertMsgErr) throw insertMsgErr;
+  if (insertMsgErr) {
+    // The global SendGrid Message-ID unique index (migration 0473) is a
+    // cross-tenant idempotency backstop. The org-scoped pre-check above only
+    // sees THIS tenant's rows, so a Message-ID already stored for ANOTHER
+    // tenant (forwarded/CC'd mail, or a sender-controlled Message-ID) slips
+    // past it and trips the global index here. Treat that 23505 as a clean
+    // dedup — NOT a 500 that drops a legitimate inbound email.
+    if ((insertMsgErr as { code?: string }).code === "23505") {
+      req.log?.info?.(
+        { event: "email_inbound_duplicate_message_id" },
+        "email.inbound-parse: duplicate Message-ID at insert — replayed/cross-tenant webhook discarded",
+      );
+      res.status(200).json({ ok: true, deduped: true });
+      return;
+    }
+    throw insertMsgErr;
+  }
   const inboundMessageId = insertedMsg?.id ?? null;
   const { error: stampConvErr } = await supabase
     .from("conversations")

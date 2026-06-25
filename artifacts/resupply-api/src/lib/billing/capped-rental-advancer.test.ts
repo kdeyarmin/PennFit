@@ -38,6 +38,13 @@ import { runCappedRentalAdvance } from "./capped-rental-advancer";
 
 beforeEach(() => {
   supabaseMock.reset();
+  // runCappedRentalAdvance now fans out across active tenants via
+  // forEachActiveOrg → listActiveOrgIds(), which the mock resolves from
+  // the staged `organizations` select. Stage one active tenant so the
+  // single-org sweeps below run exactly as before the fan-out.
+  stageSupabaseResponse("organizations", "select", {
+    data: [{ id: "00000000-0000-4000-8000-000000000000" }],
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -536,5 +543,80 @@ describe("runCappedRentalAdvance — advance stats", () => {
     const stats = await runCappedRentalAdvance();
     expect(stats.scanned).toBe(0);
     expect(stats.advanced).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Multi-tenant fan-out
+// ---------------------------------------------------------------------------
+
+describe("runCappedRentalAdvance — multi-tenant fan-out", () => {
+  it("scans EVERY active tenant's cycles (not just the seed org)", async () => {
+    supabaseMock.reset();
+    // Two active tenants — each scans its own capped_rental_cycles.
+    stageSupabaseResponse("organizations", "select", {
+      data: [{ id: "org-a" }, { id: "org-b" }],
+    });
+    stageSupabaseResponse("capped_rental_cycles", "select", {
+      data: [],
+      error: null,
+    });
+    stageSupabaseResponse("capped_rental_cycles", "select", {
+      data: [],
+      error: null,
+    });
+
+    const stats = await runCappedRentalAdvance();
+    expect(stats.scanned).toBe(0);
+    // The cycles roster was read once per active tenant.
+    expect(supabaseMock.callCount("capped_rental_cycles", "select")).toBe(2);
+  });
+
+  it("no-ops when there are no active tenants", async () => {
+    supabaseMock.reset();
+    stageSupabaseResponse("organizations", "select", { data: [] });
+
+    const stats = await runCappedRentalAdvance();
+    expect(stats.scanned).toBe(0);
+    expect(supabaseMock.callCount("capped_rental_cycles", "select")).toBe(0);
+  });
+
+  it("re-throws after fan-out when a tenant's cycles read fails (pg-boss retry)", async () => {
+    supabaseMock.reset();
+    stageSupabaseResponse("organizations", "select", {
+      data: [{ id: "org-a" }],
+    });
+    // The cycles read errors in-band → advanceCappedRentalForOrg throws →
+    // forEachActiveOrg isolates it → runCappedRentalAdvance re-surfaces it
+    // so the pg-boss job fails (DLQ visibility), preserving fail-loud.
+    stageSupabaseResponse("capped_rental_cycles", "select", {
+      error: { message: "db down", code: "PGRST500" },
+    });
+    await expect(runCappedRentalAdvance()).rejects.toThrow(
+      /tenant\(s\) failed/,
+    );
+  });
+
+  it("sweeps ONLY the given org when an explicit orgId is passed (no fan-out)", async () => {
+    supabaseMock.reset();
+    // No `organizations` select staged — an explicit-orgId run must NOT
+    // consult the active-tenant directory. It scopes to just this org.
+    stageFullAdvance();
+
+    const stats = await runCappedRentalAdvance("org-explicit");
+    expect(stats.advanced).toBe(1);
+    // Directory was never read; cycles read exactly once (this org).
+    expect(supabaseMock.callCount("organizations", "select")).toBe(0);
+    expect(supabaseMock.callCount("capped_rental_cycles", "select")).toBe(1);
+  });
+
+  it("propagates the cycles-read error on an explicit-orgId run (fail-loud)", async () => {
+    supabaseMock.reset();
+    stageSupabaseResponse("capped_rental_cycles", "select", {
+      error: { message: "db down", code: "PGRST500" },
+    });
+    await expect(runCappedRentalAdvance("org-explicit")).rejects.toMatchObject({
+      code: "PGRST500",
+    });
   });
 });

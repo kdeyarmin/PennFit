@@ -95,6 +95,7 @@ vi.mock("../../lib/provider-portal/signature-log-pdf", () => ({
 }));
 
 import esignRouter from "./provider-esign";
+import { renderProviderPortalInviteEmail } from "@workspace/resupply-auth";
 
 const ADMIN: MockAdminCtx = {
   userId: "u_admin",
@@ -116,6 +117,7 @@ function makeApp(): Express {
 beforeEach(() => {
   mockAdmin.current = null;
   supabaseMock.reset();
+  vi.mocked(renderProviderPortalInviteEmail).mockClear();
   emailMock.mockReset();
   emailMock.mockResolvedValue(undefined);
   appendSignatureEventMock.mockReset();
@@ -246,6 +248,15 @@ describe("POST /admin/provider-portal/accounts/invite", () => {
     expect(acct.provider_id).toBe(PROVIDER);
     expect(acct.status).toBe("invited");
     expect(acct.auth_user_id).toBe("u-new");
+
+    // The invite is branded with the INVITING tenant's identity
+    // (resolveBrandingByOrgId), never the hardcoded seed brand. No
+    // organizations row is staged → the neutral CareMetric Breathe brand.
+    const ctx = vi.mocked(renderProviderPortalInviteEmail).mock.calls[0]![0];
+    expect(ctx.productName).toBe("CareMetric Breathe Provider Portal");
+    expect(ctx.signatureName).toBe("CareMetric Breathe");
+    expect(ctx.productName).not.toContain("PennPaps");
+    expect(ctx.signatureName).not.toContain("Penn Home Medical Supply");
   });
 
   it("resurrects a revoked CUSTOMER auth row (never touches the role)", async () => {

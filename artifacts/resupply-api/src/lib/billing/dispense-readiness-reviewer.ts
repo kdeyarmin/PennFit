@@ -31,7 +31,6 @@
 import {
   getOrgScopedClient,
   type OrgScopedClient,
-  resolveSeedOrgId,
 } from "@workspace/resupply-db";
 import {
   CMS_COMPLIANT_NIGHTS,
@@ -97,6 +96,14 @@ export interface AiSynthesis {
 }
 
 export interface ReviewInput {
+  /**
+   * Caller's tenant. EVERY deterministic read below is org-scoped to
+   * this org, so it MUST be the org of the route/caller (req.orgId) —
+   * not the seed org. Reading the seed org for a non-seed tenant both
+   * breaks the review (the patient lookup finds no row) and could
+   * synthesize another tenant's PHI on a patient-UUID collision.
+   */
+  orgId: string;
   patientId: string;
   hcpcsCode: string;
   fulfillmentId?: string | null;
@@ -166,7 +173,12 @@ const QUALIFYING_OSA_ICD10 = new Set([
 export async function reviewDispenseReadiness(
   input: ReviewInput,
 ): Promise<ReviewOutput> {
-  const orgId = await resolveSeedOrgId();
+  // Scope every deterministic read to the CALLER's tenant. Previously
+  // this hardcoded resolveSeedOrgId(), so a non-seed tenant's review ran
+  // against the seed (Penn) org — the patient lookup found no row (review
+  // always "errored") and, on a UUID collision, would read the seed
+  // tenant's PHI. The route passes req.orgId.
+  const orgId = input.orgId?.trim();
   if (!orgId) {
     const findings: ReadinessFinding[] = [
       {

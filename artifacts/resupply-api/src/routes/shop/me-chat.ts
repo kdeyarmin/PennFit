@@ -55,6 +55,7 @@ import {
 
 import {
   applyCompanyIdentityToText,
+  applyPlatformBrandingForOrg,
   getCompanyInfo,
   type CompanyInfo,
 } from "../../lib/company-info.js";
@@ -109,10 +110,22 @@ const meChatLimiter = expressRateLimit({
     }
     return ipKeyGenerator(req.ip ?? "0.0.0.0");
   },
-  message: {
-    reply:
-      "You're sending messages too quickly. Please wait a minute and try again, or call (814) 471-0627 for immediate help.",
-    rateLimited: true,
+  // Resolve the tenant's own support phone at SEND time rather than baking
+  // the seed (Penn) number into a module-level constant. A second tenant's
+  // rate-limited patient must be told to call THEIR support line, not the
+  // seed's. applyCompanyIdentityToText rewrites the literal "(814) 471-0627"
+  // to the tenant's supportPhoneDisplay only when a company row exists, so
+  // the seed/single-tenant copy is unchanged and a 429 never blocks on the
+  // DB read (any failure degrades to the warm seed identity).
+  handler: async (req: Request, res: Response) => {
+    const info = req.orgId ? await getCompanyInfo(req.orgId) : undefined;
+    res.status(429).json({
+      reply: applyCompanyIdentityToText(
+        "You're sending messages too quickly. Please wait a minute and try again, or call (814) 471-0627 for immediate help.",
+        info,
+      ),
+      rateLimited: true,
+    });
   },
 });
 
@@ -497,7 +510,15 @@ router.post(
       customerId,
       req.shopCustomerDisplayName ?? null,
     );
-    const systemPrompt = buildCustomerChatSystemPrompt(accountCtx, companyInfo);
+    // Normalize the platform/assistant brand tokens baked into the prompt
+    // knowledge base ("PennBot" → this tenant's storefront assistant name,
+    // "PennFit" → CareMetric Breathe) so a non-seed tenant's signed-in
+    // patient never sees the seed bot brand. No-op for the seed tenant
+    // whose configured assistant name is still "PennBot".
+    const systemPrompt = await applyPlatformBrandingForOrg(
+      buildCustomerChatSystemPrompt(accountCtx, companyInfo),
+      orgId,
+    );
 
     const supabase = getOrgScopedClient(orgId);
 

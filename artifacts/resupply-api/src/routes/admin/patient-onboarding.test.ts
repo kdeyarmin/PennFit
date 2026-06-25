@@ -315,6 +315,43 @@ describe("POST /admin/onboarding/send-due (dispatcher)", () => {
     expect(auditActions).toContain("patient.onboarding.complete");
   });
 
+  it("scopes the dispatch to the caller's tenant (passes req.orgId, not the seed org)", async () => {
+    // Multi-tenant guard: a non-seed tenant's "Run now" must sweep ITS
+    // OWN patients. The dispatcher's single-flight + seed-org fallback
+    // keys on opts.orgId, so the route must thread req.orgId through.
+    mockAdmin.current = { ...ADMIN, orgId: "org-tenant-b" };
+    const eightDaysAgo = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
+    stageSupabaseResponse("patient_onboarding_journeys", "select", {
+      data: [],
+    });
+    void eightDaysAgo;
+
+    const res = await request(makeApp())
+      .post("/admin/onboarding/send-due")
+      .send({});
+
+    expect(res.status).toBe(200);
+    // With no due journeys staged for this tenant, nothing is sent.
+    // The point is the org filter: the journeys scan ran org-scoped.
+    const filters = supabaseMock.filterCalls(
+      "patient_onboarding_journeys",
+      "select",
+    );
+    const orgFilter = filters.find(
+      (f) => f.verb === "eq" && f.args[0] === "org_id",
+    );
+    expect(orgFilter?.args[1]).toBe("org-tenant-b");
+  });
+
+  it("500s when the caller has no tenant context", async () => {
+    mockAdmin.current = { ...ADMIN, orgId: null };
+    const res = await request(makeApp())
+      .post("/admin/onboarding/send-due")
+      .send({});
+    expect(res.status).toBe(500);
+    expect(res.body.error).toBe("tenant_context_missing");
+  });
+
   it("skips rows without any contact channel", async () => {
     mockAdmin.current = ADMIN;
     const eightDaysAgo = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);

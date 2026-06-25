@@ -128,16 +128,31 @@ export async function applyCarrierTrackingEvent(
     return { matched: false, updated: false };
   }
   try {
-    // Tracking numbers are globally unique → unscoped lookup; update by row id.
+    // Unscoped lookup by tracking number. `tracking_number` carries NO
+    // uniqueness constraint, and the carrier push has no tenant context, so
+    // two tenants' orders CAN share a value (carriers reuse number formats;
+    // a manual entry can collide). A `.limit(1)` would silently act on
+    // whichever row PostgREST returned first — possibly the WRONG tenant's
+    // order. Fetch up to 2 and refuse to act when the match is ambiguous.
     const supabase = getOrgScopedClient(orgId).raw();
-    const { data: order, error } = await supabase
+    const { data: orders, error } = await supabase
       .schema("resupply")
       .from("shop_orders")
       .select("id, org_id, shipped_at, delivered_at")
       .eq("tracking_number", event.trackingNumber)
-      .limit(1)
-      .maybeSingle();
-    if (error || !order) return { matched: false, updated: false };
+      .limit(2);
+    if (error || !orders || orders.length === 0) {
+      return { matched: false, updated: false };
+    }
+    if (orders.length > 1) {
+      // PHI rule: counts/status only — never the tracking number.
+      log.warn?.(
+        { event: "carrier_tracking_ambiguous", match_count: orders.length },
+        "carrier-tracking: multiple orders share this tracking number; cannot disambiguate tenant — skipping",
+      );
+      return { matched: false, updated: false };
+    }
+    const order = orders[0];
 
     const nowIso = new Date().toISOString();
     if (event.status === "delivered") {

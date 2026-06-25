@@ -96,7 +96,16 @@ router.post(
     const note = `CMS DMEPOS ${state}${rural ? " rural" : ""}`;
     const payload = rows.map((r) => ({
       hcpcs_code: r.hcpcs,
-      modifier: r.modifier,
+      // The CMS grid is keyed by (HCPCS, Mod, Mod2). Persist BOTH modifiers
+      // as the comma-joined set pickFeeScheduleRowByModifiers subset-matches
+      // on — dropping Mod2 collapsed distinct fee rows that share Mod1 into
+      // the same (hcpcs, Mod1) key, producing ambiguous duplicates and
+      // mis-priced claims.
+      modifier:
+        [r.modifier, r.modifier2]
+          .filter((m): m is string => Boolean(m))
+          .map((m) => m.toUpperCase())
+          .join(",") || null,
       allowed_cents: r.allowedCents,
       notes: note,
     }));

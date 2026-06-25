@@ -21,6 +21,7 @@
 // fail soft (→ platform default / null) so a DB blip never blocks a send
 // and never routes to the WRONG tenant.
 
+import { normalizeE164 } from "@workspace/resupply-domain";
 import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { logger } from "../logger";
@@ -396,7 +397,16 @@ export async function resolveOrgIdByPatientPhone(
 export async function resolveOrgIdByCalledNumber(
   toNumber: string | undefined,
 ): Promise<string | null> {
-  const number = toNumber?.trim();
+  // Normalize to strict E.164 BEFORE the lookup. The inbound webhook schema
+  // validates `To` only as `min(1)` (NOT E.164), and stored sender numbers
+  // are E.164, so an un-normalized value would never match a real number —
+  // and, critically, it MUST NOT be interpolated raw into a PostgREST filter:
+  // a value carrying filter metacharacters (commas, dots, parentheses) could
+  // alter the OR expression against the GLOBAL organizations directory and
+  // misroute an inbound message to the wrong tenant. normalizeE164 strips
+  // everything outside `[+0-9]` and rejects non-conforming input, so the
+  // value we bind is always `+<digits>`.
+  const number = normalizeE164(toNumber);
   if (!number) return null;
   const now = Date.now();
   const cached = byNumber.get(number);
@@ -406,17 +416,30 @@ export async function resolveOrgIdByCalledNumber(
   try {
     const raw = await rawOrgClient();
     if (raw) {
-      // A number is registered as either an SMS or a voice sender; match
-      // on either column.
-      const { data, error } = await raw
+      // A number is registered as either an SMS or a voice sender. Match each
+      // column with a scoped equality lookup (the value is BOUND as an
+      // equality argument, never embedded in a filter expression) rather than
+      // an interpolated `.or()` string.
+      const { data: smsData, error: smsError } = await raw
         .schema("resupply")
         .from("organizations")
         .select("id")
-        .or(`sms_from_number.eq.${number},voice_from_number.eq.${number}`)
+        .eq("sms_from_number", number)
         .limit(1)
         .maybeSingle();
-      if (error) throw error;
-      value = (data as { id: string } | null)?.id ?? null;
+      if (smsError) throw smsError;
+      value = (smsData as { id: string } | null)?.id ?? null;
+      if (!value) {
+        const { data: voiceData, error: voiceError } = await raw
+          .schema("resupply")
+          .from("organizations")
+          .select("id")
+          .eq("voice_from_number", number)
+          .limit(1)
+          .maybeSingle();
+        if (voiceError) throw voiceError;
+        value = (voiceData as { id: string } | null)?.id ?? null;
+      }
     }
   } catch (err) {
     logger.warn(

@@ -54,6 +54,40 @@ function isoDaysAgo(days: number): string {
   return d.toISOString();
 }
 
+/** Per-page window. A single PostgREST read caps at ~1000 rows
+ *  regardless of `.limit()`, so we MUST page to read the full window. */
+const PAGE = 1000;
+
+/**
+ * Keyset-page a window-bounded read up to READ_CAP rows. Returns the
+ * accumulated rows plus the exact total the window matched (from the
+ * count header). Stops early once the count proves the window exceeds
+ * READ_CAP — the caller turns that into a 422 rather than aggregating a
+ * truncated set. Ordered by the stable unique `id` so offset pages don't
+ * shift between requests.
+ */
+async function pageWindow<T>(
+  build: (
+    from: number,
+    to: number,
+  ) => PromiseLike<{ data: T[] | null; error: unknown; count: number | null }>,
+): Promise<{ rows: T[]; total: number }> {
+  const rows: T[] = [];
+  let total = 0;
+  for (let from = 0; from < READ_CAP; from += PAGE) {
+    const { data, error, count } = await build(from, from + PAGE - 1);
+    if (error) throw error;
+    if (count != null) total = count;
+    if (!data || data.length === 0) break;
+    rows.push(...data);
+    // The window is too large to aggregate accurately — stop paging; the
+    // caller will reject with a 422 instead of returning wrong totals.
+    if (total > READ_CAP) break;
+    if (data.length < PAGE) break;
+  }
+  return { rows, total };
+}
+
 async function loadRevenueBySource(cutoff: string, orgId: string) {
   const supabase = getOrgScopedClient(orgId);
 
@@ -62,28 +96,35 @@ async function loadRevenueBySource(cutoff: string, orgId: string) {
   // intake orders (head-only — the rows hold PHI we never pull).
   const includeClinicalIntake = true;
 
-  const [shopRes, fulRes] = await Promise.all([
-    supabase
-      .from("shop_orders")
-      .select("status, amount_total_cents", { count: "exact" })
-      .gte("created_at", cutoff)
-      .order("created_at", { ascending: false })
-      .limit(READ_CAP),
-    supabase
-      .from("fulfillments")
-      .select("status, quantity", { count: "exact" })
-      .gte("created_at", cutoff)
-      .order("created_at", { ascending: false })
-      .limit(READ_CAP),
+  const [shop, ful] = await Promise.all([
+    pageWindow<ShopOrderRow>((from, to) =>
+      supabase
+        .from("shop_orders")
+        .select("status, amount_total_cents", { count: "exact" })
+        .gte("created_at", cutoff)
+        .order("id", { ascending: true })
+        .range(from, to),
+    ),
+    pageWindow<FulfillmentRow>((from, to) =>
+      supabase
+        .from("fulfillments")
+        .select("status, quantity", { count: "exact" })
+        .gte("created_at", cutoff)
+        .order("id", { ascending: true })
+        .range(from, to),
+    ),
   ]);
-  if (shopRes.error) throw shopRes.error;
-  if (fulRes.error) throw fulRes.error;
 
-  // Fail fast rather than silently undercount: if either capped read
-  // matched more rows than we pulled, the aggregate would be wrong.
-  if ((shopRes.count ?? 0) > READ_CAP || (fulRes.count ?? 0) > READ_CAP) {
+  // Fail fast rather than silently undercount: if either window matched
+  // more rows than the cap we are willing to pull, the aggregate would be
+  // incomplete. (Below the cap, pageWindow read EVERY row, so the totals
+  // are exact even on busy tenants — the prior single capped read
+  // silently truncated at ~1000.)
+  if (shop.total > READ_CAP || ful.total > READ_CAP) {
     throw new RevenueWindowTooLargeError(READ_CAP);
   }
+  const shopRes = { data: shop.rows };
+  const fulRes = { data: ful.rows };
 
   // Head-only count — public.orders holds PHI; we never pull its rows.
   let clinicalFormOrderCount = 0;

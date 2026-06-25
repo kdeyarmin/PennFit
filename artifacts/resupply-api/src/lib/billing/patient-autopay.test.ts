@@ -88,6 +88,32 @@ describe("selectChargeableAuthorizations", () => {
       selectChargeableAuthorizations([auth({ chargeAttempts: 2 })], TODAY, 2),
     ).toHaveLength(0);
   });
+
+  it("compares last-attempt in the practice-local date space (evening-UTC rollover)", () => {
+    // 2026-06-09 22:00 America/New_York = 2026-06-10 02:00 UTC. A naive
+    // UTC `.slice(0,10)` reads "2026-06-10" and, on the 2026-06-10 ET tick,
+    // would skip the patient even though no attempt happened on 06-10 in
+    // the practice's local calendar. With local-date comparison the attempt
+    // is correctly dated 2026-06-09, so the patient is eligible on 06-10.
+    expect(
+      selectChargeableAuthorizations(
+        [auth({ lastChargeAttemptAt: "2026-06-10T02:00:00.000Z" })],
+        "2026-06-10",
+        MAX_AUTOPAY_CHARGE_ATTEMPTS,
+        "America/New_York",
+      ),
+    ).toHaveLength(1);
+    // Same UTC instant, but on the SAME local day (06-09) it's still a
+    // once-per-day skip.
+    expect(
+      selectChargeableAuthorizations(
+        [auth({ lastChargeAttemptAt: "2026-06-10T02:00:00.000Z" })],
+        "2026-06-09",
+        MAX_AUTOPAY_CHARGE_ATTEMPTS,
+        "America/New_York",
+      ),
+    ).toHaveLength(0);
+  });
 });
 
 describe("toAutopayStatusView", () => {

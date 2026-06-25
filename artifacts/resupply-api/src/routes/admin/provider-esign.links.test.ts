@@ -62,8 +62,17 @@ vi.mock("../../middlewares/admin-rate-limit", () => ({
 const resolveTenantBaseUrlMock = vi.hoisted(() =>
   vi.fn(async (_orgId?: string): Promise<string | null> => null),
 );
+const resolveBrandingByOrgIdMock = vi.hoisted(() =>
+  vi.fn(async (_orgId?: string) => ({
+    storefrontName: "CareMetric Breathe",
+    legalName: "CareMetric Breathe",
+    tagline: "",
+    logoUrl: null,
+  })),
+);
 vi.mock("../../lib/tenant-branding", () => ({
   resolveTenantBaseUrl: resolveTenantBaseUrlMock,
+  resolveBrandingByOrgId: resolveBrandingByOrgIdMock,
 }));
 
 // ── Auth deps: capture the email payload, supply a platform base URL ──

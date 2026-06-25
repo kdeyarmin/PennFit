@@ -49,15 +49,28 @@ export async function runRecallBulkMatch(
   // We over-fetch by manufacturer and let recallMatchesAsset apply
   // the model + serial filters. The (manufacturer, model, status)
   // index makes this cheap.
-  const { data: candidates, error: candErr } = await supabase
-    .from("equipment_assets")
-    .select("id, patient_id, manufacturer, model, serial_number, recall_id")
-    .ilike("manufacturer", recall.manufacturer)
-    .in("status", ["active"]);
-  if (candErr) throw candErr;
+  // PAGINATED: a single PostgREST read caps at ~1000 rows, so on a
+  // manufacturer with >1000 active assets every candidate past the first
+  // page was silently never matched and never recalled (a patient-safety
+  // gap). Keyset-page the full candidate set (stable `id` order).
+  const PAGE = 1000;
+  const candidates: EquipmentAssetRow[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error: candErr } = await supabase
+      .from("equipment_assets")
+      .select("id, patient_id, manufacturer, model, serial_number, recall_id")
+      .ilike("manufacturer", recall.manufacturer)
+      .in("status", ["active"])
+      .order("id", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (candErr) throw candErr;
+    if (!data || data.length === 0) break;
+    candidates.push(...(data as EquipmentAssetRow[]));
+    if (data.length < PAGE) break;
+  }
 
   const serialMatch = (recall.serial_match ?? null) as RecallSerialMatch;
-  const matched = ((candidates ?? []) as EquipmentAssetRow[]).filter((a) =>
+  const matched = candidates.filter((a) =>
     recallMatchesAsset({
       asset: {
         manufacturer: a.manufacturer,

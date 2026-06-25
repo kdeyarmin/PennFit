@@ -1,3 +1,13 @@
+// Validate required env vars FIRST — before any other side-effecting import.
+// This must stay the literal first import: ES-module bodies run in
+// import-source order (with esbuild preserving that in the prod bundle), so a
+// dedicated first import is the only way to guarantee the aggregated env check
+// runs before `./app`'s module-eval side effects (the CORS-or-throw IIFE,
+// etc.). A bare `assertRequiredEnv()` statement lower down would run AFTER
+// those hoisted imports and defeat the "one error listing every missing var"
+// guarantee. See ./lib/assert-env-on-boot.ts.
+import "./lib/assert-env-on-boot";
+
 import { createServer, type IncomingMessage } from "node:http";
 import type { Socket } from "node:net";
 import { URL } from "node:url";
@@ -5,14 +15,6 @@ import { URL } from "node:url";
 import { WebSocketServer, type WebSocket } from "ws";
 
 import { setProjectionLogger } from "@workspace/resupply-db";
-
-import { assertRequiredEnv } from "./lib/env-check";
-
-// Fail fast on a misconfigured deploy. Runs before any other
-// side-effecting import so a missing var surfaces as a single clear
-// startup error listing every missing required variable, rather
-// than a confusing mid-request throw deep in a route handler.
-assertRequiredEnv();
 
 import app from "./app";
 import { applyAppConfigOverlayToEnv } from "./lib/app-config/store";

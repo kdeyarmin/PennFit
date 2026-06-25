@@ -152,6 +152,11 @@ describe("POST /admin/payer-fee-schedules — adminRateLimit integration (sensit
 
   it("passes through and creates fee schedule when not rate-limited", async () => {
     stubAdmin();
+    // Org-ownership check: the referenced payer profile must resolve under
+    // the caller's org (the org-scoped client appends .eq(org_id)).
+    stageSupabaseResponse("payer_profiles", "select", {
+      data: { id: PAYER_PROFILE_UUID },
+    });
     stageSupabaseResponse("payer_fee_schedules", "insert", {
       data: { id: FEE_SCHEDULE_UUID },
     });
@@ -160,6 +165,19 @@ describe("POST /admin/payer-fee-schedules — adminRateLimit integration (sensit
       .send(validCreateBody);
     expect(res.status).toBe(201);
     expect(res.body.id).toBe(FEE_SCHEDULE_UUID);
+  });
+
+  it("returns 404 when the referenced payer profile is not owned by the org", async () => {
+    stubAdmin();
+    // Org-scoped payer_profiles read returns no row (a cross-tenant or
+    // unknown payer_profile_id). No fee-schedule insert must occur.
+    stageSupabaseResponse("payer_profiles", "select", { data: null });
+    const res = await request(makeApp())
+      .post("/admin/payer-fee-schedules")
+      .send(validCreateBody);
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe("payer_profile_not_found");
+    expect(supabaseMock.callCount("payer_fee_schedules", "insert")).toBe(0);
   });
 
   it("returns 400 for invalid body", async () => {
@@ -232,6 +250,19 @@ describe("PATCH /admin/payer-fee-schedules/:id — adminRateLimit integration (s
       .send({ allowedCents: 3000 });
     expect(res.status).toBe(200);
     expect(res.body.ok).toBe(true);
+  });
+
+  it("returns 404 when repointing to a payer profile not owned by the org", async () => {
+    stubAdmin();
+    // A PATCH that changes payer_profile_id must verify the new profile is
+    // org-owned; an org-scoped read that finds no row → 404, no update.
+    stageSupabaseResponse("payer_profiles", "select", { data: null });
+    const res = await request(makeApp())
+      .patch(`/admin/payer-fee-schedules/${FEE_SCHEDULE_UUID}`)
+      .send({ payerProfileId: "66666666-ffff-4000-8000-000000000099" });
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe("payer_profile_not_found");
+    expect(supabaseMock.callCount("payer_fee_schedules", "update")).toBe(0);
   });
 
   it("both POST and PATCH use the 'sensitive' preset (financial parity)", () => {

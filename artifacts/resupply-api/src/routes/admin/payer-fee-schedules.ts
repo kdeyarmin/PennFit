@@ -224,6 +224,21 @@ router.post(
       return;
     }
     const supabase = getOrgScopedClient(orgId);
+    // Verify the referenced payer profile belongs to THIS org before writing.
+    // The org-scoped client tags the new row with org_id, but the FK on
+    // payer_fee_schedules.payer_profile_id references payer_profiles(id)
+    // globally, so without this check a tenant-B admin who learns a tenant-A
+    // payer_profile UUID could create a row referencing a profile its org
+    // can't see (cross-tenant data-integrity gap). Mirrors the import handler.
+    const { data: payer } = await supabase
+      .from("payer_profiles")
+      .select("id")
+      .eq("id", b.payerProfileId)
+      .maybeSingle();
+    if (!payer) {
+      res.status(404).json({ error: "payer_profile_not_found" });
+      return;
+    }
     const { data, error } = await supabase
       .from("payer_fee_schedules")
       .insert({
@@ -299,6 +314,20 @@ router.patch(
       return;
     }
     const supabase = getOrgScopedClient(orgId);
+    // When repointing to a different payer profile, verify the new profile
+    // belongs to THIS org (org-scoped read) before the update — otherwise a
+    // tenant-B admin could repoint a row onto a tenant-A payer_profile UUID.
+    if (b.payerProfileId !== undefined) {
+      const { data: payer } = await supabase
+        .from("payer_profiles")
+        .select("id")
+        .eq("id", b.payerProfileId)
+        .maybeSingle();
+      if (!payer) {
+        res.status(404).json({ error: "payer_profile_not_found" });
+        return;
+      }
+    }
     const { error } = await supabase
       .from("payer_fee_schedules")
       .update(update)

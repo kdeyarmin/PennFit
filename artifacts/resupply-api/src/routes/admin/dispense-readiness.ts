@@ -98,18 +98,22 @@ router.post(
       return;
     }
     const b = parsed.data;
+    // Resolve the tenant BEFORE the review so the deterministic checks
+    // read the CALLER's org (not the seed org) — and so the read-org and
+    // the persisted write-org below are the same tenant.
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const out = await reviewDispenseReadiness({
+      orgId,
       patientId: idParsed.data.id,
       hcpcsCode: b.hcpcsCode,
       fulfillmentId: b.fulfillmentId ?? null,
       payerProfileId: b.payerProfileId ?? null,
       insuranceCoverageId: b.insuranceCoverageId ?? null,
     });
-    const orgId = req.orgId;
-    if (!orgId) {
-      res.status(500).json({ error: "tenant_context_missing" });
-      return;
-    }
     const supabase = getOrgScopedClient(orgId);
     const insertRow: Database["resupply"]["Tables"]["dispense_readiness_reviews"]["Insert"] =
       {
@@ -164,6 +168,7 @@ router.post(
       logger.warn({ err }, "dispense_readiness.review audit write failed");
     });
     void publishEvent({
+      orgId: req.orgId,
       eventType: "dispense_readiness.reviewed",
       payload: {
         review_id: row.id,

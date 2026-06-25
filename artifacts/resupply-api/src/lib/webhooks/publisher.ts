@@ -31,14 +31,25 @@ export interface PublishEventInput {
    *  era.ingested, capped_rental.month_rolled, pa.approved). */
   eventType: string;
   payload: Record<string, unknown>;
-  /** Optional supabase client (lets tests inject a fake). */
+  /**
+   * Tenant the event belongs to. webhook_subscriptions and
+   * webhook_deliveries are tenant-scoped (org_id, migration 0341), so the
+   * subscription match and the delivery insert MUST be scoped to the
+   * originating tenant — otherwise an event about a non-seed tenant's data
+   * is matched only against seed-org subscriptions and never delivered.
+   * Pass `req.orgId` (routes) or `supabase.orgId` (workers/lib). Falls
+   * back to the seed org only when omitted (legacy callers).
+   */
+  orgId?: string;
+  /** Optional supabase client (lets tests inject a fake). When provided,
+   *  its org scoping wins and `orgId` is ignored. */
   supabase?: SupabaseClient;
 }
 
 export async function publishEvent(input: PublishEventInput): Promise<void> {
   let supabase = input.supabase;
   if (!supabase) {
-    const orgId = await resolveSeedOrgId();
+    const orgId = input.orgId ?? (await resolveSeedOrgId());
     if (!orgId) {
       // publishEvent never throws — a missing tenant degrades like the
       // subscription-read failure below: log + drop the event.

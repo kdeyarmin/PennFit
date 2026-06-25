@@ -33,10 +33,12 @@ router.get("/company-info", async (req, res) => {
         assistantStorefrontName: info.assistantStorefrontName,
         assistantAdminName: info.assistantAdminName,
       };
-  // Cacheable for 5 min. The response now varies by host (assistant names
-  // resolve per tenant), which the Cloudflare edge keys on already — each
-  // tenant's custom domain is a distinct cache scope, so `public` stays
-  // correct per-tenant.
+  // Cacheable for 5 min, but the body varies by HOST (tenant identity +
+  // assistant names resolve from resolveOrgIdByHost). A shared/edge cache
+  // keyed only on the URL path would serve one tenant's contact info to
+  // another tenant's storefront. `Vary` makes any conformant cache key on
+  // the host — byte-for-byte matching storefront-branding.ts.
+  res.set("Vary", "X-Forwarded-Host, Host");
   res.set("Cache-Control", "public, max-age=300");
   res.json({
     name: info.name,

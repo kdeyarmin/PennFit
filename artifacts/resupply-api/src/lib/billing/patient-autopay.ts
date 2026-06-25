@@ -22,6 +22,7 @@
 import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 import type Stripe from "stripe";
 
+import { localDateIso, practiceTimezone } from "../billing-date";
 import { logger } from "../logger";
 import {
   getStripeClient,
@@ -499,16 +500,26 @@ export function selectChargeableAuthorizations(
   rows: ChargeableAuthorization[],
   todayIso: string,
   maxAttempts: number = MAX_AUTOPAY_CHARGE_ATTEMPTS,
+  timezone: string = practiceTimezone(),
 ): ChargeableAuthorization[] {
   return rows.filter((r) => {
     if (!r.autopayEnabled) return false;
     if (!r.stripeCustomerId || !r.stripePaymentMethodId) return false;
     if (r.chargeAttempts >= maxAttempts) return false;
-    if (
-      r.lastChargeAttemptAt &&
-      r.lastChargeAttemptAt.slice(0, 10) >= todayIso
-    ) {
-      return false;
+    // Once per patient per PRACTICE-LOCAL day. `lastChargeAttemptAt` is a
+    // UTC ISO timestamp while `todayIso` is the practice-local date
+    // (practiceTodayIso). Comparing a raw `.slice(0,10)` UTC date against a
+    // local date is a category error: for an ET practice, any attempt that
+    // fires in the evening-UTC-rollover window (~8pm–midnight ET) gets a
+    // UTC date one calendar day ahead, so the next local day's tick skips
+    // the patient for a day. Convert both sides into the same local date
+    // space before comparing.
+    if (r.lastChargeAttemptAt) {
+      const lastLocalDate = localDateIso(
+        new Date(r.lastChargeAttemptAt),
+        timezone,
+      );
+      if (lastLocalDate >= todayIso) return false;
     }
     return true;
   });

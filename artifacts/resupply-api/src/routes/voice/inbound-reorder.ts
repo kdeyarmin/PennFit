@@ -36,6 +36,7 @@ import {
   requireTwilioSignature,
 } from "@workspace/resupply-telecom";
 
+import { getCompanyInfo } from "../../lib/company-info";
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
 import { resolveOrgIdByCalledNumber } from "../../lib/messaging/tenant-telecom";
@@ -152,6 +153,15 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
   const brand = (text: string): string =>
     text.split("PennPaps").join(brandName);
 
+  // Human-transfer dial target for THIS tenant. A non-seed tenant's caller
+  // must reach that tenant's own support line, not the seed (Penn) number.
+  // getCompanyInfo(orgId) returns the tenant's support_phone_e164 (or the
+  // neutral platform identity for an unconfigured tenant); fall back to the
+  // platform constant when the tenant has no support number on file so the
+  // seed/single-tenant deployment is unchanged.
+  const dialNumber =
+    (await getCompanyInfo(orgId)).supportPhoneE164 || SUPPORT_DIAL_E164;
+
   // 1. Identify the caller. A DB failure here must NOT be silently treated
   // as "unidentified" — that would mask an outage and mis-route the caller.
   // Surface it and ask the caller to retry (same posture as the session-
@@ -240,7 +250,7 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
           "<Response>",
           `<Say>${escapeXmlText(brand("Hi! Welcome to your PennPaps reorder line. "))}`,
           "Connecting you to our team now.</Say>",
-          `<Dial timeout="20">${SUPPORT_DIAL_E164}</Dial>`,
+          `<Dial timeout="20">${dialNumber}</Dial>`,
           "</Response>",
         ].join(""),
       );
@@ -396,7 +406,7 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
           "<Response>",
           "<Say>We couldn't match your phone number to an existing account.",
           "Connecting you to our team now.</Say>",
-          '<Dial timeout="20">+18144710627</Dial>',
+          `<Dial timeout="20">${dialNumber}</Dial>`,
           "</Response>",
         ].join(""),
       );

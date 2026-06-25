@@ -42,18 +42,7 @@ router.get(
     // distribution stats. The decided population gives stable history
     // without overweighting in-flight noise.
     const cutoff = new Date(Date.now() - 180 * 24 * 3600 * 1000).toISOString();
-    const { data: claims, error: claimsErr } = await db
-      .from("insurance_claims")
-      .select(
-        "id, payer_name, status, total_billed_cents, total_paid_cents, submitted_at, decision_at, paid_at, predicted_denial_probability",
-      )
-      .gte("decision_at", cutoff)
-      .in("status", [...DECISIONED_CLAIM_STATUSES])
-      .limit(20000);
-    // Throw — a swallowed error rendered the benchmarks as all-zero
-    // (same swallowed-`error` class as billing-dashboard).
-    if (claimsErr) throw claimsErr;
-    const claimList = (claims ?? []) as Array<{
+    type ClaimRow = {
       id: string;
       payer_name: string;
       status: string;
@@ -63,7 +52,30 @@ router.get(
       decision_at: string | null;
       paid_at: string | null;
       predicted_denial_probability: number | null;
-    }>;
+    };
+    // PAGINATED: a single PostgREST read caps at ~1000 rows regardless of
+    // `.limit(20000)`, so the DSO / denial-rate / paid-ratio stats were
+    // computed over a truncated population on any tenant with >1000
+    // decided claims in 180 days. Keyset-page the full set (stable `id`
+    // order). Throw on error — a swallowed error rendered the benchmarks
+    // as all-zero (same swallowed-`error` class as billing-dashboard).
+    const PAGE = 1000;
+    const claimList: ClaimRow[] = [];
+    for (let from = 0; ; from += PAGE) {
+      const { data: claims, error: claimsErr } = await db
+        .from("insurance_claims")
+        .select(
+          "id, payer_name, status, total_billed_cents, total_paid_cents, submitted_at, decision_at, paid_at, predicted_denial_probability",
+        )
+        .gte("decision_at", cutoff)
+        .in("status", [...DECISIONED_CLAIM_STATUSES])
+        .order("id", { ascending: true })
+        .range(from, from + PAGE - 1);
+      if (claimsErr) throw claimsErr;
+      if (!claims || claims.length === 0) break;
+      claimList.push(...(claims as ClaimRow[]));
+      if (claims.length < PAGE) break;
+    }
 
     // ── DSO (days from submit → paid). ────────────────────────────
     const dsoDays = claimList

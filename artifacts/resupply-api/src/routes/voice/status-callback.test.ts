@@ -140,6 +140,32 @@ describe("POST /voice/status-callback", () => {
     );
   });
 
+  it("meters aiVoiceEvents against the call's REAL tenant (org_id off the flipped row), not the seed org", async () => {
+    // The close UPDATE returns the conversation's own org_id. A non-seed
+    // tenant's voice call must be metered against THAT tenant, not the seed
+    // org the webhook resolved for the (tenant-agnostic) close.
+    const NON_SEED_ORG = "55555555-5555-4555-8555-555555555555";
+    stageSupabaseResponse("conversations", "update", {
+      data: [
+        { id: "11111111-1111-4111-8111-111111111111", org_id: NON_SEED_ORG },
+      ],
+      error: null,
+    });
+    const res = await request(makeApp())
+      .post(
+        "/resupply-api/voice/status-callback?conversationId=11111111-1111-4111-8111-111111111111",
+      )
+      .type("form")
+      .send({ CallSid: "CA1", CallStatus: "completed" });
+    expect(res.status).toBe(200);
+    expect(vi.mocked(recordTenantUsage)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orgId: NON_SEED_ORG,
+        metricKey: "aiVoiceEvents",
+      }),
+    );
+  });
+
   it("does not audit or meter a re-delivered (already-closed) callback", async () => {
     // Empty update return = the row was already closed (ws-handler or a
     // prior callback won) → not the first close, so neither the audit nor

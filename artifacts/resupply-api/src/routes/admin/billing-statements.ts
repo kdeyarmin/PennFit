@@ -285,6 +285,7 @@ router.post(
       logger.warn({ err }, "billing_statement.generate audit write failed");
     });
     void publishEvent({
+      orgId: req.orgId,
       eventType: "billing_statement.generated",
       payload: {
         statement_id: row.id,

@@ -72,7 +72,16 @@ function lastDeliveryUpdate(): Record<string, unknown> {
 }
 
 describe("runWebhookDispatcher", () => {
-  beforeEach(() => supabaseMock.reset());
+  beforeEach(() => {
+    supabaseMock.reset();
+    // The dispatcher fans out across active tenants via
+    // forEachActiveOrg → listActiveOrgIds, which reads `organizations`.
+    // Stage a single active tenant so the per-org body runs exactly once
+    // (matching the single set of webhook rows each test stages).
+    stageSupabaseResponse("organizations", "select", {
+      data: [{ id: "00000000-0000-4000-8000-000000000000" }],
+    });
+  });
 
   it("returns zero counts when nothing is due", async () => {
     stageSupabaseResponse("webhook_deliveries", "select", { data: [] });

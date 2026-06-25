@@ -72,6 +72,7 @@ export async function markAppealSent(
       );
     }
     void publishEvent({
+      orgId: supabase.orgId,
       eventType: "claim.appealed",
       payload: { claim_id: claim.id, patient_id: claim.patient_id },
     });

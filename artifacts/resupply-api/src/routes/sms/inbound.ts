@@ -583,7 +583,23 @@ router.post(
       .select("id")
       .limit(1)
       .maybeSingle();
-    if (insertMsgErr) throw insertMsgErr;
+    if (insertMsgErr) {
+      // The global twilio_message_sid unique index (migration 0018) is a
+      // cross-tenant idempotency backstop. The org-scoped pre-check above
+      // only sees THIS tenant's rows, so a sid already stored under another
+      // org trips the global index here. Treat that 23505 as a clean replay
+      // discard (empty TwiML) instead of a 500 — a 500 makes Twilio retry
+      // the webhook indefinitely.
+      if ((insertMsgErr as { code?: string }).code === "23505") {
+        logger.info(
+          { event: "sms_inbound_duplicate_sid" },
+          "sms.inbound: duplicate MessageSid at insert — replayed webhook discarded",
+        );
+        res.status(200).type("text/xml").send("<Response/>");
+        return;
+      }
+      throw insertMsgErr;
+    }
     const inboundMessageId = insertedMsg?.id ?? null;
     const { error: stampConvErr } = await supabase
       .from("conversations")

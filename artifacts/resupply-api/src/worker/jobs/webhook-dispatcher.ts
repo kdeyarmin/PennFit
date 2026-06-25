@@ -20,10 +20,10 @@ import type PgBoss from "pg-boss";
 import {
   type OrgScopedClient,
   getOrgScopedClient,
-  resolveSeedOrgId,
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { forEachActiveOrg } from "../lib/for-each-active-org";
 import {
   createQueueWithDlq,
   WEBHOOK_DISPATCH_QUEUE_OPTS,
@@ -66,7 +66,11 @@ export interface DispatchStats {
 }
 
 export async function runWebhookDispatcher(
-  opts: { fetchImpl?: typeof fetch } = {},
+  opts: {
+    fetchImpl?: typeof fetch;
+    /** Test seam — defaults to listActiveOrgIds via forEachActiveOrg. */
+    listOrgIds?: () => Promise<string[]>;
+  } = {},
 ): Promise<DispatchStats> {
   const fetchImpl = opts.fetchImpl ?? fetch;
   const stats: DispatchStats = {
@@ -75,9 +79,25 @@ export async function runWebhookDispatcher(
     retried: 0,
     exhausted: 0,
   };
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) return stats;
-  const supabase = getOrgScopedClient(orgId);
+  // Fan out across EVERY active tenant. webhook_deliveries and
+  // webhook_subscriptions are tenant-scoped (org_id, migration 0341); a
+  // seed-org-only pass would never deliver any non-seed tenant's queued
+  // webhooks — their `retry-now` route would return 202 ("dispatcher
+  // will attempt within ~60s") and then the row would sit 'queued'
+  // forever. Each tenant runs on its own org-scoped client, accumulating
+  // into the shared stats; forEachActiveOrg isolates per-tenant failures.
+  await forEachActiveOrg(
+    (orgId) => dispatchForOrg(getOrgScopedClient(orgId), fetchImpl, stats),
+    { jobName: JOB, listOrgIds: opts.listOrgIds },
+  );
+  return stats;
+}
+
+async function dispatchForOrg(
+  supabase: SupabaseClient,
+  fetchImpl: typeof fetch,
+  stats: DispatchStats,
+): Promise<void> {
   const nowIso = new Date().toISOString();
 
   // Step 1: find candidates. This SELECT is racy on its own — two
@@ -94,7 +114,7 @@ export async function runWebhookDispatcher(
   // turns the every-minute dispatcher into a silent no-op (queued
   // webhooks stall with zero failure signal until someone notices).
   if (candidatesErr) throw candidatesErr;
-  if (!candidates || candidates.length === 0) return stats;
+  if (!candidates || candidates.length === 0) return;
 
   // Step 2: atomic claim. Bump next_attempt_at on these rows IF
   // they're still queued AND still due. PostgREST runs this as a
@@ -126,8 +146,8 @@ export async function runWebhookDispatcher(
     .lte("next_attempt_at", nowIso)
     .select("id, subscription_id, event_type, event_payload, attempt_count");
   if (claimErr) throw claimErr;
-  if (!deliveries || deliveries.length === 0) return stats;
-  stats.scanned = deliveries.length;
+  if (!deliveries || deliveries.length === 0) return;
+  stats.scanned += deliveries.length;
 
   // Group by subscription_id so we resolve each subscription row
   // once per tick.
@@ -299,7 +319,6 @@ export async function runWebhookDispatcher(
       worker(),
     ),
   );
-  return stats;
 }
 
 function signBody(secret: string, body: string): string {

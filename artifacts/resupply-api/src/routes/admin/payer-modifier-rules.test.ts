@@ -128,6 +128,9 @@ describe("POST /admin/payer-modifier-rules — adminRateLimit removed", () => {
 
   it("does NOT return 429 when authenticated (no rate limiter present)", async () => {
     stubAdmin();
+    stageSupabaseResponse("payer_profiles", "select", {
+      data: { id: PAYER_PROFILE_UUID },
+    });
     stageSupabaseResponse("payer_modifier_rules", "insert", {
       data: { id: RULE_UUID },
     });
@@ -139,6 +142,11 @@ describe("POST /admin/payer-modifier-rules — adminRateLimit removed", () => {
 
   it("creates modifier rule and returns 201 with id", async () => {
     stubAdmin();
+    // Org-ownership check: the referenced payer profile must resolve under
+    // the caller's org (the org-scoped client appends .eq(org_id)).
+    stageSupabaseResponse("payer_profiles", "select", {
+      data: { id: PAYER_PROFILE_UUID },
+    });
     stageSupabaseResponse("payer_modifier_rules", "insert", {
       data: { id: RULE_UUID },
     });
@@ -147,6 +155,17 @@ describe("POST /admin/payer-modifier-rules — adminRateLimit removed", () => {
       .send(validCreateBody);
     expect(res.status).toBe(201);
     expect(res.body.id).toBe(RULE_UUID);
+  });
+
+  it("returns 404 when the referenced payer profile is not owned by the org", async () => {
+    stubAdmin();
+    stageSupabaseResponse("payer_profiles", "select", { data: null });
+    const res = await request(makeApp())
+      .post("/admin/payer-modifier-rules")
+      .send(validCreateBody);
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe("payer_profile_not_found");
+    expect(supabaseMock.callCount("payer_modifier_rules", "insert")).toBe(0);
   });
 
   it("returns 400 for missing required fields", async () => {
@@ -274,6 +293,19 @@ describe("PATCH /admin/payer-modifier-rules/:id — adminRateLimit removed", () 
       .send({ isActive: true }); // only one field
     expect(res.status).toBe(200);
     expect(res.body.ok).toBe(true);
+  });
+
+  it("returns 404 when repointing to a payer profile not owned by the org", async () => {
+    stubAdmin();
+    // A PATCH that changes payer_profile_id must verify the new profile is
+    // org-owned; an org-scoped read that finds no row → 404, no update.
+    stageSupabaseResponse("payer_profiles", "select", { data: null });
+    const res = await request(makeApp())
+      .patch(`/admin/payer-modifier-rules/${RULE_UUID}`)
+      .send({ payerProfileId: "77777777-aaaa-4000-8000-000000000099" });
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe("payer_profile_not_found");
+    expect(supabaseMock.callCount("payer_modifier_rules", "update")).toBe(0);
   });
 });
 

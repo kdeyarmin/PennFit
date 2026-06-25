@@ -18,7 +18,6 @@
 import {
   type Database,
   getOrgScopedClient,
-  resolveSeedOrgId,
   type OrgScopedClient,
 } from "@workspace/resupply-db";
 import {
@@ -30,6 +29,7 @@ import {
 
 import { logger } from "../logger";
 import { therapyNightSourceRank } from "../therapy-night-source-priority";
+import { forEachActiveOrg } from "../../worker/lib/for-each-active-org";
 
 type SupabaseClient = OrgScopedClient;
 
@@ -43,7 +43,16 @@ export interface AdvanceStats {
   byHcpcs: Record<string, number>;
 }
 
-export async function runCappedRentalAdvance(): Promise<AdvanceStats> {
+/**
+ * Advance due capped-rental cycles.
+ *
+ * @param orgId  Optional. When supplied (e.g. an admin "advance-now"
+ *   button scoped to req.orgId), advance ONLY that tenant. When omitted
+ *   (the daily cron), fan out across EVERY active tenant.
+ */
+export async function runCappedRentalAdvance(
+  orgId?: string,
+): Promise<AdvanceStats> {
   const stats: AdvanceStats = {
     scanned: 0,
     advanced: 0,
@@ -51,10 +60,42 @@ export async function runCappedRentalAdvance(): Promise<AdvanceStats> {
     errored: 0,
     byHcpcs: {},
   };
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) {
+  // Single-tenant path: an explicit caller (admin trigger) sweeps just its
+  // own org. Same fail-loud posture (the cycles-read throw propagates).
+  if (orgId) {
+    await advanceCappedRentalForOrg(orgId, stats);
     return stats;
   }
+  // Fan out across every active tenant — capped_rental_cycles is org-scoped
+  // and any active tenant can create cycles via the admin UI, so the daily
+  // advance must run once per tenant (every sibling billing cron already
+  // does). Single-tenant deploy: listActiveOrgIds() returns just the seed
+  // org, so behavior is unchanged. Per-tenant failures are isolated by
+  // forEachActiveOrg; the cycles-read throw inside advanceCappedRentalForOrg
+  // therefore fails ONE tenant's sweep, and we re-surface it after the
+  // fan-out (below) so the pg-boss job still fails for DLQ/monitor
+  // visibility — preserving the file's deliberate fail-loud posture.
+  const fan = await forEachActiveOrg(
+    async (id) => advanceCappedRentalForOrg(id, stats),
+    { jobName: "capped-rental.advance" },
+  );
+  if (fan.failedOrgIds.length > 0) {
+    throw new Error(
+      `capped-rental.advance: ${fan.failedOrgIds.length} tenant(s) failed this tick`,
+    );
+  }
+  return stats;
+}
+
+/**
+ * Advance every active capped-rental cycle for ONE tenant, accumulating
+ * into the shared `stats`. Builds an org-scoped client so every read /
+ * write is filtered to `orgId`.
+ */
+async function advanceCappedRentalForOrg(
+  orgId: string,
+  stats: AdvanceStats,
+): Promise<void> {
   const supabase = getOrgScopedClient(orgId);
   const { data: cycles, error: cyclesErr } = await supabase
     .from("capped_rental_cycles")
@@ -67,8 +108,9 @@ export async function runCappedRentalAdvance(): Promise<AdvanceStats> {
   // swallowed error here makes `cycles` null, the loop a no-op, and
   // the job report "completed { scanned: 0 }": monthly Medicare rental
   // claims silently stop being drafted with zero failure signal for as
-  // long as the error persists. Throwing fails the pg-boss job so the
-  // DLQ/monitor sees it.
+  // long as the error persists. Throwing surfaces this tenant as failed
+  // (forEachActiveOrg isolates it, runCappedRentalAdvance re-throws) so
+  // the DLQ/monitor sees it.
   if (cyclesErr) throw cyclesErr;
   for (const cycle of cycles ?? []) {
     stats.scanned += 1;
@@ -92,7 +134,6 @@ export async function runCappedRentalAdvance(): Promise<AdvanceStats> {
       );
     }
   }
-  return stats;
 }
 
 type Cycle = Pick<

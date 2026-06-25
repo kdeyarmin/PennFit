@@ -82,7 +82,7 @@ describe("verifyCarrierSignature", () => {
 describe("applyCarrierTrackingEvent", () => {
   it("stamps delivered_at + shipped_at and fires patient-packet auto-send", async () => {
     stageSupabaseResponse("shop_orders", "select", {
-      data: { id: "o1", shipped_at: null, delivered_at: null },
+      data: [{ id: "o1", shipped_at: null, delivered_at: null }],
     });
     stageSupabaseResponse("shop_orders", "update", { data: { id: "o1" } });
 
@@ -113,7 +113,7 @@ describe("applyCarrierTrackingEvent", () => {
 
   it("is a no-op when already delivered", async () => {
     stageSupabaseResponse("shop_orders", "select", {
-      data: { id: "o1", shipped_at: "t", delivered_at: "t" },
+      data: [{ id: "o1", shipped_at: "t", delivered_at: "t" }],
     });
     const r = await applyCarrierTrackingEvent({
       trackingNumber: "1Z",
@@ -127,7 +127,7 @@ describe("applyCarrierTrackingEvent", () => {
 
   it("stamps shipped_at on a shipped event (no auto-send)", async () => {
     stageSupabaseResponse("shop_orders", "select", {
-      data: { id: "o1", shipped_at: null, delivered_at: null },
+      data: [{ id: "o1", shipped_at: null, delivered_at: null }],
     });
     stageSupabaseResponse("shop_orders", "update", { data: { id: "o1" } });
     const r = await applyCarrierTrackingEvent({
@@ -145,5 +145,23 @@ describe("applyCarrierTrackingEvent", () => {
       status: "delivered",
     });
     expect(r).toEqual({ matched: false, updated: false });
+  });
+
+  it("refuses to act when the tracking number is ambiguous across tenants", async () => {
+    // Two orders (different tenants) share the tracking number — the global
+    // webhook cannot disambiguate, so it must NOT act on either.
+    stageSupabaseResponse("shop_orders", "select", {
+      data: [
+        { id: "o1", org_id: "org-a", shipped_at: null, delivered_at: null },
+        { id: "o2", org_id: "org-b", shipped_at: null, delivered_at: null },
+      ],
+    });
+    const r = await applyCarrierTrackingEvent({
+      trackingNumber: "dup",
+      status: "delivered",
+    });
+    expect(r).toEqual({ matched: false, updated: false });
+    expect(supabaseMock.callCount("shop_orders", "update")).toBe(0);
+    expect(autoSendMock).not.toHaveBeenCalled();
   });
 });

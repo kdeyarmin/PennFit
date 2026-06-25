@@ -54,6 +54,7 @@ import {
 } from "@workspace/resupply-auth";
 
 import { getAuthDeps } from "../../lib/auth-deps";
+import { getCompanyInfo } from "../../lib/company-info";
 import { buildInviteHelpAttachments } from "../../lib/help-docs";
 import { assertAssignableLocation } from "../../lib/locations/assignable";
 import { logger } from "../../lib/logger";
@@ -354,6 +355,39 @@ router.post(
       }
     }
 
+    // Cross-tenant guard. The `prior` read above is org-scoped, so it is
+    // null when this email already belongs to ANOTHER tenant's admin. But
+    // resupply_auth.users.email_lower (and admin_users.email_lower) are
+    // GLOBALLY unique, so proceeding would (a) let inviteTeamMember mutate
+    // that other tenant's shared identity row (role + a fresh reset token +
+    // a spurious setup email) and (b) then 23505 on the global
+    // UNIQUE(email_lower) at INSERT → 500. Refuse up front with a clean 409,
+    // mirroring the tenant-onboard cross-tenant guard. A row in THIS org is
+    // fine — that's the legitimate re-invite path handled by `prior` below.
+    const { data: foreignAdmin, error: foreignErr } = await supabase
+      .raw()
+      .schema("resupply")
+      .from("admin_users")
+      .select("id, org_id")
+      .eq("email_lower", email)
+      .limit(1)
+      .maybeSingle();
+    if (foreignErr) throw foreignErr;
+    if (foreignAdmin && foreignAdmin.org_id && foreignAdmin.org_id !== orgId) {
+      res.status(409).json({
+        error: "email_belongs_to_another_tenant",
+        message: `${email} is already a team member of another organization and can't be invited here.`,
+      });
+      return;
+    }
+
+    // Brand the invite email to the INVITING tenant. getCompanyInfo(orgId)
+    // returns the seed (Penn) tenant's row for Penn, a configured tenant's
+    // own brand otherwise, and the neutral CareMetric Breathe platform
+    // identity for an unconfigured tenant — never the Penn seed brand for a
+    // different tenant (CLAUDE.md brand-architecture rule).
+    const company = await getCompanyInfo(orgId);
+
     // Mint or refresh the auth row + send the invite email. The
     // coarse `auth.users.role` only cares about admin-vs-agent;
     // the granular role lands on admin_users.role below.
@@ -364,8 +398,8 @@ router.post(
       role: coarseAuthRoleFor(role),
       roleLabel: ROLE_EMAIL_LABEL[role],
       displayName: displayName ?? prior?.display_name ?? null,
-      productName: "PennPaps",
-      signatureName: "Penn Home Medical Supply",
+      productName: company.name,
+      signatureName: company.legalName,
       uiPathPrefix: "/admin",
       initialPassword: useInitialPassword
         ? (initialPassword as string)
@@ -488,14 +522,17 @@ router.post(
     }
 
     const deps = getAuthDeps();
+    // Brand the resent invite to the INVITING tenant (see the invite
+    // handler's getCompanyInfo note) — never the hardcoded Penn brand.
+    const company = await getCompanyInfo(orgId);
     // inviteTeamMember operates entirely on resupply_auth — pass raw.
     const invite = await inviteTeamMember(supabase.raw(), deps, {
       emailLower: row.email_lower,
       role: coarseAuthRoleFor(row.role as AdminRole),
       roleLabel: ROLE_EMAIL_LABEL[row.role as AdminRole],
       displayName: row.display_name,
-      productName: "PennPaps",
-      signatureName: "Penn Home Medical Supply",
+      productName: company.name,
+      signatureName: company.legalName,
       uiPathPrefix: "/admin",
       attachments: await staffInviteAttachments(row.role as AdminRole),
     });

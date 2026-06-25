@@ -149,6 +149,7 @@ router.get("/admin/orders", async (req, res) => {
       .schema("public")
       .from("admin_audit_log")
       .insert({
+        org_id: orgId,
         admin_email: req.adminEmail,
         admin_user_id: req.adminUserId,
         action,
@@ -230,6 +231,7 @@ router.get("/admin/orders/:id", async (req, res) => {
       .schema("public")
       .from("admin_audit_log")
       .insert({
+        org_id: orgId,
         admin_email: req.adminEmail,
         admin_user_id: req.adminUserId,
         action: "view_order_detail",
@@ -449,6 +451,10 @@ router.get("/admin/audit-log", async (req, res) => {
   }
   const supabase = getOrgScopedClient(orgId);
   const raw = supabase.raw();
+  // Tenant-scoped (migration 0477): admin_audit_log carries org_id, so filter
+  // to the caller's tenant. `.raw()` bypasses the org-scoped client's implicit
+  // filter, so the org_id predicate MUST be added by hand here — without it
+  // any tenant admin would read every other tenant's admin-action rows.
   const [rowsRes, countRes] = await Promise.all([
     raw
       .schema("public")
@@ -456,12 +462,14 @@ router.get("/admin/audit-log", async (req, res) => {
       .select(
         "id, admin_email, admin_user_id, action, target_order_id, ip, occurred_at",
       )
+      .eq("org_id", orgId)
       .order("occurred_at", { ascending: false })
       .range(offset, offset + pageSize - 1),
     raw
       .schema("public")
       .from("admin_audit_log")
-      .select("*", { count: "exact", head: true }),
+      .select("*", { count: "exact", head: true })
+      .eq("org_id", orgId),
   ]);
   if (rowsRes.error) throw rowsRes.error;
   if (countRes.error) throw countRes.error;
@@ -657,6 +665,7 @@ router.post("/admin/reminders/send-due", requireCsrf, async (req, res) => {
       .schema("public")
       .from("admin_audit_log")
       .insert({
+        org_id: orgId,
         admin_email: req.adminEmail ?? "system",
         admin_user_id: req.adminUserId ?? "system",
         action: `reminder.send_batch sent=${sent} failed=${failed}`,

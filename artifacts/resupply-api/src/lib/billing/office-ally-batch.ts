@@ -872,6 +872,7 @@ export async function executeOfficeAllyBatchSubmit(
         );
       }
       void publishEvent({
+        orgId,
         eventType: "claim.submitted",
         payload: {
           claim_id: claim.id,

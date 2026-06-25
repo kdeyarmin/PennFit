@@ -413,6 +413,31 @@ describe("POST /shop/me/subscriptions/:id/cadence", () => {
     expect(r.body.error).toBe("price_not_recurring");
   });
 
+  it("400 price_inactive when target price is archived/inactive", async () => {
+    stubSignedIn(USER_ID);
+    stageSupabaseResponse("shop_subscriptions", "select", {
+      data: activeSubRow(),
+    });
+    // An archived (active:false) recurring price on the same product — the
+    // /cadence-options read endpoint never surfaces it, so the mutation must
+    // reject it rather than let a patient pin billing onto a legacy price.
+    stripePricesRetrieveMock.mockResolvedValueOnce({
+      id: NEW_PRICE_ID,
+      type: "recurring",
+      recurring: { interval: "day", interval_count: 60 },
+      product: STRIPE_PRODUCT_ID,
+      active: false,
+    });
+    const r = await post(
+      makeApp(),
+      `/resupply-api/shop/me/subscriptions/${VALID_ID}/cadence`,
+    ).send({ priceId: NEW_PRICE_ID });
+    expect(r.status).toBe(400);
+    expect(r.body.error).toBe("price_inactive");
+    // The subscription must not be touched.
+    expect(stripeSubscriptionsUpdateMock).not.toHaveBeenCalled();
+  });
+
   it("400 price_product_mismatch when target price is on a different product", async () => {
     stubSignedIn(USER_ID);
     stageSupabaseResponse("shop_subscriptions", "select", {
@@ -423,6 +448,7 @@ describe("POST /shop/me/subscriptions/:id/cadence", () => {
       type: "recurring",
       recurring: { interval: "day", interval_count: 60 },
       product: "prod_other",
+      active: true,
     });
     const r = await post(
       makeApp(),
@@ -442,6 +468,7 @@ describe("POST /shop/me/subscriptions/:id/cadence", () => {
       type: "recurring",
       recurring: { interval: "day", interval_count: 60 },
       product: STRIPE_PRODUCT_ID,
+      active: true,
     });
     stripeSubscriptionsRetrieveMock.mockRejectedValueOnce(
       new Error("network blip"),
@@ -464,6 +491,7 @@ describe("POST /shop/me/subscriptions/:id/cadence", () => {
       type: "recurring",
       recurring: { interval: "day", interval_count: 60 },
       product: STRIPE_PRODUCT_ID,
+      active: true,
     });
     stripeSubscriptionsRetrieveMock.mockResolvedValueOnce({
       id: STRIPE_SUB_ID,

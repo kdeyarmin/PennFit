@@ -34,9 +34,11 @@ describe("countActivePatientsForBilling", () => {
     expect(await countActivePatientsForBilling("org-1")).toBe(0);
   });
 
-  it("returns 0 on a query error (fail-soft, never over-bills)", async () => {
+  it("THROWS on a query error so the caller skips (never zeroes the count)", async () => {
     state.rpcResult = { data: null, error: new Error("boom") };
-    expect(await countActivePatientsForBilling("org-1")).toBe(0);
+    await expect(countActivePatientsForBilling("org-1")).rejects.toThrow(
+      "boom",
+    );
   });
 
   it("returns 0 for a non-numeric result", async () => {

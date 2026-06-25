@@ -618,7 +618,7 @@ async function ensureFulfillments(
   let shipSku = args.itemSku;
   let substitutedFromSku: string | null = null;
   try {
-    const resolved = await resolveFulfillmentSku(supabase.raw(), args.itemSku);
+    const resolved = await resolveFulfillmentSku(supabase, args.itemSku);
     shipSku = resolved.sku;
     substitutedFromSku = resolved.substituted
       ? (resolved.substitutedFromSku ?? null)

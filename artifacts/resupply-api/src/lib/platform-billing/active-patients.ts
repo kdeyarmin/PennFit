@@ -1,7 +1,5 @@
 import { getOrgScopedClient } from "@workspace/resupply-db";
 
-import { logger } from "../logger";
-
 /**
  * Billing-grade active-patient count for a tenant — the quantity the founder
  * plans' per-active-patient charge bills on (migration 0426). A patient counts
@@ -10,31 +8,24 @@ import { logger } from "../logger";
  * lives in the `count_active_patients_for_billing` Postgres function (it spans
  * patients/prescriptions/messages/fulfillments with a 90-day window).
  *
- * Fail-soft: returns 0 on any error rather than throwing — it's called from
- * the monthly billing job and must never block a sync, and an undercount is
- * the safe direction (never over-bills on a transient DB hiccup).
+ * THROWS on a query error — it deliberately does NOT fall back to 0. A
+ * transient RPC failure that silently returned 0 would be written into
+ * `billable_active_patients` and then zero the per-active-patient Stripe line
+ * quantity (the item is only attached when the count is > 0), silently
+ * dropping the entire per-patient revenue line for the period with no failure
+ * signal. The sole caller (founder-active-patient-billing) catches per-tenant,
+ * counts the tenant as failed, and skips the write+sync so the prior quantity
+ * is preserved and retried on the next run.
  */
 export async function countActivePatientsForBilling(
   orgId: string,
 ): Promise<number> {
-  try {
-    const { data, error } = await getOrgScopedClient(orgId)
-      .raw()
-      .schema("resupply")
-      .rpc("count_active_patients_for_billing", { p_org_id: orgId });
-    if (error) throw error;
-    return typeof data === "number" && Number.isFinite(data) && data >= 0
-      ? Math.floor(data)
-      : 0;
-  } catch (err) {
-    logger.warn(
-      {
-        event: "active_patient_count_failed",
-        orgId,
-        err: err instanceof Error ? err : new Error(String(err)),
-      },
-      "billable active-patient count failed (treated as 0)",
-    );
-    return 0;
-  }
+  const { data, error } = await getOrgScopedClient(orgId)
+    .raw()
+    .schema("resupply")
+    .rpc("count_active_patients_for_billing", { p_org_id: orgId });
+  if (error) throw error;
+  return typeof data === "number" && Number.isFinite(data) && data >= 0
+    ? Math.floor(data)
+    : 0;
 }

@@ -124,12 +124,37 @@ describe("resolveOrgIdByCalledNumber", () => {
   });
 
   it("returns null for an unknown number", async () => {
-    state.responses = [{ data: null, error: null }];
+    state.responses = [
+      { data: null, error: null },
+      { data: null, error: null },
+    ];
     expect(await resolveOrgIdByCalledNumber("+15550000000")).toBeNull();
   });
 
   it("returns null for a blank number without querying", async () => {
     expect(await resolveOrgIdByCalledNumber("  ")).toBeNull();
+    expect(state.calls).toBe(0);
+  });
+
+  it("normalizes a NANP-format called number to E.164 before the lookup", async () => {
+    state.responses = [{ data: { id: ORG }, error: null }];
+    // 10-digit NANP → +1... ; the resolver normalizes before querying.
+    expect(await resolveOrgIdByCalledNumber("(555) 123-4567")).toBe(ORG);
+  });
+
+  it("rejects a To carrying PostgREST filter metacharacters (no cross-tenant query)", async () => {
+    // A `To` value with commas/dots that, if interpolated raw into the old
+    // `.or()` filter, could have added an OR condition matching another
+    // tenant's id. normalizeE164 rejects it (not E.164), so no query runs and
+    // it can never resolve to a foreign org_id.
+    state.responses = [
+      { data: { id: "22222222-2222-4222-8222-222222222222" }, error: null },
+    ];
+    expect(
+      await resolveOrgIdByCalledNumber(
+        "x,id.eq.22222222-2222-4222-8222-222222222222",
+      ),
+    ).toBeNull();
     expect(state.calls).toBe(0);
   });
 });

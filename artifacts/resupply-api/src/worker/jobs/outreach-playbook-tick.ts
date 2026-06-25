@@ -59,6 +59,7 @@ import {
   shouldSendEmail,
   shouldSendSms,
 } from "../../lib/comm-prefs.js";
+import { getCompanyInfo } from "../../lib/company-info.js";
 import { isFeatureEnabled } from "../../lib/feature-flags.js";
 import { applyTenantEmailSender } from "../../lib/email/apply-tenant-email-sender.js";
 import { applyTenantSmsFrom } from "../../lib/messaging/tenant-telecom.js";
@@ -292,6 +293,13 @@ async function outreachPlaybookSweepForOrg(
   }
 
   const cfg = readMessagingConfig();
+  // Brand the rendered patient-facing body/subject with THIS tenant's own
+  // name. cfg.practiceName comes from the process-global RESUPPLY_PRACTICE_NAME
+  // (the seed brand) — never use it in copy a non-seed tenant's patient sees.
+  // getCompanyInfo(orgId) returns the tenant's own row, or the neutral
+  // CareMetric Breathe identity for an unconfigured tenant; for the seed org
+  // it resolves to the seed brand, so single-tenant copy is unchanged.
+  const practiceName = (await getCompanyInfo(orgId)).name;
   const actor: SendActor = { kind: "system", jobId: null };
 
   for (const run of runRows) {
@@ -470,7 +478,7 @@ async function outreachPlaybookSweepForOrg(
 
     const rendered = renderPlaybookBody(step.body, {
       firstName: patientRow.legal_first_name,
-      practiceName: cfg.practiceName,
+      practiceName,
     });
 
     try {
@@ -570,7 +578,7 @@ async function outreachPlaybookSweepForOrg(
       }
       const subject = renderPlaybookBody(step.subject ?? "", {
         firstName: patientRow.legal_first_name,
-        practiceName: cfg.practiceName,
+        practiceName,
       });
       const outcome = await sendReminderEmail({
         supabase: supabase.raw(),

@@ -349,13 +349,29 @@ router.get(
     const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
 
-    const { data, error } = await supabase
-      .from("office_ally_submissions")
-      .select("status, submitted_at, ack_999_received_at, claim_count")
-      .gte("submitted_at", since)
-      .limit(5000);
-    if (error) throw error;
-    const rows = data ?? [];
+    // PAGINATED: a single PostgREST read caps at ~1000 rows regardless of
+    // `.limit(5000)`, so the operations-summary KPI tiles silently
+    // truncated on any tenant with >1000 submissions in 30 days. Keyset-
+    // page the full window (stable `id` order). Throw on error.
+    const PAGE = 1000;
+    const rows: Array<{
+      status: string;
+      submitted_at: string | null;
+      ack_999_received_at: string | null;
+      claim_count: number;
+    }> = [];
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await supabase
+        .from("office_ally_submissions")
+        .select("status, submitted_at, ack_999_received_at, claim_count")
+        .gte("submitted_at", since)
+        .order("id", { ascending: true })
+        .range(from, from + PAGE - 1);
+      if (error) throw error;
+      if (!data || data.length === 0) break;
+      rows.push(...(data as typeof rows));
+      if (data.length < PAGE) break;
+    }
 
     let accepted = 0;
     let rejected = 0;
@@ -372,7 +388,11 @@ router.get(
         rejected += 1;
       } else if (r.status === "transport_failed") {
         transportFailed += 1;
-      } else if (r.status === "uploaded" && r.submitted_at < oneHourAgo) {
+      } else if (
+        r.status === "uploaded" &&
+        r.submitted_at != null &&
+        r.submitted_at < oneHourAgo
+      ) {
         pendingAck += 1;
       }
       if (r.ack_999_received_at && r.submitted_at) {

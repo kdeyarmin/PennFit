@@ -23,7 +23,11 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
+import { resolveSeedOrgId } from "@workspace/resupply-db";
+
 import { recordBackInStockSignup } from "../../lib/back-in-stock-record";
+import { requestHost } from "../../lib/request-host";
+import { resolveOrgIdByHost } from "../../lib/tenant-branding";
 
 const router: IRouter = Router();
 
@@ -106,6 +110,17 @@ router.post("/shop/back-in-stock", async (req, res) => {
     return;
   }
 
+  // Resolve the tenant that owns THIS storefront host so the signup is
+  // stored under — and later emailed from — its own org, not silently
+  // written into the seed (Penn) org. Mirrors the sibling public shop
+  // routes; falls back to the seed org for the single-tenant deployment.
+  const orgId =
+    (await resolveOrgIdByHost(requestHost(req))) ?? (await resolveSeedOrgId());
+  if (!orgId) {
+    res.status(503).json({ error: "tenant_unavailable" });
+    return;
+  }
+
   const result = await recordBackInStockSignup({
     productId: data.productId,
     email: data.email,
@@ -114,6 +129,7 @@ router.post("/shop/back-in-stock", async (req, res) => {
       typeof req.headers["user-agent"] === "string"
         ? req.headers["user-agent"].slice(0, 500)
         : null,
+    orgId,
   });
 
   // Counts-only log — never the email.

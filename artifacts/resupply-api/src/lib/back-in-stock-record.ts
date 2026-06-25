@@ -23,6 +23,10 @@ export interface RecordBackInStockSignupInput {
   email: string;
   submitterIp: string | null;
   userAgent: string | null;
+  /** Tenant the signup belongs to (host-resolved by the route). Required so
+   *  a second tenant's signups are stored under — and later emailed from —
+   *  ITS org, not silently written into the seed (Penn) org. */
+  orgId: string;
 }
 
 export interface RecordBackInStockSignupResult {
@@ -35,17 +39,18 @@ export async function recordBackInStockSignup(
   input: RecordBackInStockSignupInput,
 ): Promise<RecordBackInStockSignupResult> {
   try {
-    // Resolve the tenant for the file-local worker pattern. A missing org
-    // degrades to the same "error" outcome the catch below returns.
-    const orgId = await resolveSeedOrgId();
-    if (!orgId) {
+    // The signup is scoped to the host-resolved tenant the route passed in.
+    if (!input.orgId) {
       return { status: "error", error: "tenant context missing" };
     }
-    const supabase = getOrgScopedClient(orgId);
-    // The original SQL path used ON CONFLICT (product_id, email)
-    // WHERE notified_at IS NULL DO NOTHING against a partial unique
-    // index. PostgREST has no `DO NOTHING WHERE`, so we INSERT and
-    // catch the 23505 unique-violation as the "duplicate" branch.
+    const supabase = getOrgScopedClient(input.orgId);
+    // The original SQL path used ON CONFLICT DO NOTHING against the
+    // pending-signup partial unique index. PostgREST has no
+    // `DO NOTHING WHERE`, so we INSERT and catch the 23505 unique-violation
+    // as the "duplicate" branch. The index is PER-TENANT
+    // (org_id, product_id, email) WHERE notified_at IS NULL (migration 0478),
+    // so a 23505 only fires for a SAME-tenant re-signup — two tenants sharing
+    // a Stripe product + email each get their own pending row.
     const { data: inserted, error } = await supabase
       .from("shop_back_in_stock_notifications")
       .insert({
@@ -59,9 +64,10 @@ export async function recordBackInStockSignup(
       .maybeSingle();
     if (error) {
       if ((error as { code?: string }).code === "23505") {
-        // Partial unique on (product_id, email) WHERE notified_at IS
-        // NULL fired — caller-visible "we have you on the list"
-        // messaging is identical to the inserted branch.
+        // Per-tenant partial unique (org_id, product_id, email)
+        // WHERE notified_at IS NULL fired — this tenant already has the
+        // email pending for this product. Caller-visible "we have you on the
+        // list" messaging is identical to the inserted branch.
         return { status: "duplicate" };
       }
       throw error;
@@ -242,11 +248,9 @@ export async function dispatchBackInStockForProduct(
  *  wired in v1 but keeps the DB-access layer in one place. */
 export async function countPendingBackInStock(
   productId: string,
+  orgId: string,
 ): Promise<number> {
   try {
-    // Resolve the tenant for the file-local worker pattern. A missing org
-    // degrades to 0 (the same value the catch below returns).
-    const orgId = await resolveSeedOrgId();
     if (!orgId) return 0;
     const supabase = getOrgScopedClient(orgId);
     const { count, error } = await supabase
