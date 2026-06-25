@@ -365,11 +365,11 @@ degrade when their API key is unset.
 | Voice agent (LLM brain)     | OpenAI `gpt-realtime`                          | n/a (offline if down)              | `OPENAI_API_KEY`                                   |
 | Voice agent (STT)           | `gpt-4o-mini-transcribe`                       | Deepgram Nova-3 (opt)              | `OPENAI_API_KEY`, `DEEPGRAM_API_KEY`               |
 | Voice agent (TTS)           | ElevenLabs (when key set), else OpenAI `cedar` | OpenAI `cedar` (no ElevenLabs key) | `ELEVENLABS_API_KEY` (preferred), `OPENAI_API_KEY` |
-| Storefront chatbot          | Claude Sonnet 4.6                              | `gpt-4.1-mini`                      | `ANTHROPIC_API_KEY` (preferred), `OPENAI_API_KEY`  |
-| Admin assistant (PennPilot) | Claude Sonnet 4.6                              | `gpt-4.1-mini`                      | `ANTHROPIC_API_KEY` (preferred), `OPENAI_API_KEY`  |
-| Inbound email auto-reply    | Claude Sonnet 4.6                              | `gpt-4.1-mini`                      | `ANTHROPIC_API_KEY` (preferred), `OPENAI_API_KEY`  |
-| Sleep coach                 | Claude Sonnet 4.6                              | `gpt-4.1-mini`                      | `ANTHROPIC_API_KEY` (preferred), `OPENAI_API_KEY`  |
-| SMS intent classifier       | Claude Haiku 4.5                               | `gpt-4.1-mini`                      | `ANTHROPIC_API_KEY` (preferred), `OPENAI_API_KEY`  |
+| Storefront chatbot          | Claude Sonnet 4.6                              | `gpt-4.1-mini`                     | `ANTHROPIC_API_KEY` (preferred), `OPENAI_API_KEY`  |
+| Admin assistant (PennPilot) | Claude Sonnet 4.6                              | `gpt-4.1-mini`                     | `ANTHROPIC_API_KEY` (preferred), `OPENAI_API_KEY`  |
+| Inbound email auto-reply    | Claude Sonnet 4.6                              | `gpt-4.1-mini`                     | `ANTHROPIC_API_KEY` (preferred), `OPENAI_API_KEY`  |
+| Sleep coach                 | Claude Sonnet 4.6                              | `gpt-4.1-mini`                     | `ANTHROPIC_API_KEY` (preferred), `OPENAI_API_KEY`  |
+| SMS intent classifier       | Claude Haiku 4.5                               | `gpt-4.1-mini`                     | `ANTHROPIC_API_KEY` (preferred), `OPENAI_API_KEY`  |
 
 Provider selection happens in
 `artifacts/resupply-api/src/lib/llm-provider.ts:selectLlmProvider()` —
