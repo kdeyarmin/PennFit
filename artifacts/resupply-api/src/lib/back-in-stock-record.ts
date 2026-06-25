@@ -44,10 +44,13 @@ export async function recordBackInStockSignup(
       return { status: "error", error: "tenant context missing" };
     }
     const supabase = getOrgScopedClient(input.orgId);
-    // The original SQL path used ON CONFLICT (product_id, email)
-    // WHERE notified_at IS NULL DO NOTHING against a partial unique
-    // index. PostgREST has no `DO NOTHING WHERE`, so we INSERT and
-    // catch the 23505 unique-violation as the "duplicate" branch.
+    // The original SQL path used ON CONFLICT DO NOTHING against the
+    // pending-signup partial unique index. PostgREST has no
+    // `DO NOTHING WHERE`, so we INSERT and catch the 23505 unique-violation
+    // as the "duplicate" branch. The index is PER-TENANT
+    // (org_id, product_id, email) WHERE notified_at IS NULL (migration 0478),
+    // so a 23505 only fires for a SAME-tenant re-signup — two tenants sharing
+    // a Stripe product + email each get their own pending row.
     const { data: inserted, error } = await supabase
       .from("shop_back_in_stock_notifications")
       .insert({
@@ -61,9 +64,10 @@ export async function recordBackInStockSignup(
       .maybeSingle();
     if (error) {
       if ((error as { code?: string }).code === "23505") {
-        // Partial unique on (product_id, email) WHERE notified_at IS
-        // NULL fired — caller-visible "we have you on the list"
-        // messaging is identical to the inserted branch.
+        // Per-tenant partial unique (org_id, product_id, email)
+        // WHERE notified_at IS NULL fired — this tenant already has the
+        // email pending for this product. Caller-visible "we have you on the
+        // list" messaging is identical to the inserted branch.
         return { status: "duplicate" };
       }
       throw error;
