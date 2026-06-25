@@ -519,7 +519,7 @@ function previewResult(content: string): string {
 // ── Provider plumbing ───────────────────────────────────────────────
 
 const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
-const DEFAULT_OPENAI_MODEL = "gpt-4o-mini";
+const DEFAULT_OPENAI_MODEL = "gpt-4.1-mini";
 const TIMEOUT_MS = 20_000;
 const PLAYGROUND_TEMPERATURE = 0.4;
 const PLAYGROUND_MAX_TOKENS = 700;

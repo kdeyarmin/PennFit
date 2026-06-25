@@ -42,7 +42,7 @@ import {
 import { logger } from "../logger";
 
 export const DISPENSE_PROMPT_VERSION = "dispense-readiness-1.0";
-const DEFAULT_MODEL = "gpt-4o-mini";
+const DEFAULT_MODEL = "gpt-4.1-mini";
 const DEFAULT_TIMEOUT_MS = 25_000;
 const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
 

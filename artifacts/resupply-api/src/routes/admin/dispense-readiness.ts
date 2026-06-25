@@ -128,7 +128,7 @@ router.post(
         checks_failed: out.counts.failed,
         ai_summary: out.ai.summary,
         ai_action_plan_json: out.ai.actionPlan as unknown as Json,
-        ai_model: "gpt-4o-mini",
+        ai_model: "gpt-4.1-mini",
         ai_prompt_version: DISPENSE_PROMPT_VERSION,
         ai_confidence: out.ai.confidence,
         ai_latency_ms: out.ai.latencyMs,

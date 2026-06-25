@@ -91,7 +91,7 @@ router.post(
           diagnosis_icd10: out.icd10,
           diagnosis_source: "ai_suggested",
           diagnosis_ai_confidence: out.confidence,
-          diagnosis_ai_model: "gpt-4o-mini",
+          diagnosis_ai_model: "gpt-4.1-mini",
           diagnosis_ai_suggested_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         })

@@ -19,7 +19,7 @@
  *   - SSE mode (`Accept: text/event-stream`): `data:{type:"chunk",...}`
  *     deltas + a terminal `data:{type:"done", offline?, degraded?}`.
  *   - Claude-first when ANTHROPIC_API_KEY is set, else OpenAI
- *     gpt-4o-mini, else a static offline reply (endpoint stays 200).
+ *     gpt-4.1-mini, else a static offline reply (endpoint stays 200).
  *   - Never logs request bodies, tool args, or tool results — only
  *     counts of turns, rounds, and reply chars.
  *
@@ -93,7 +93,7 @@ const assistantLimiter = expressRateLimit({
 });
 
 const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
-const DEFAULT_MODEL = "gpt-4o-mini";
+const DEFAULT_MODEL = "gpt-4.1-mini";
 const DEFAULT_TIMEOUT_MS = 20_000;
 
 const DEGRADED_FALLBACK_REPLY =

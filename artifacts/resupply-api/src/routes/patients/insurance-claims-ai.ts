@@ -128,7 +128,7 @@ router.post(
       {
         claim_id: claim.id,
         verdict: output.verdict,
-        model: "gpt-4o-mini",
+        model: "gpt-4.1-mini",
         prompt_version: SCRUB_PROMPT_VERSION,
         confidence: output.confidence,
         findings_json: {
@@ -376,7 +376,7 @@ router.post(
     const insertRow: Database["resupply"]["Tables"]["claim_denial_analyses"]["Insert"] =
       {
         claim_id: claim.id,
-        model: "gpt-4o-mini",
+        model: "gpt-4.1-mini",
         prompt_version: DENIAL_PROMPT_VERSION,
         confidence: output.confidence,
         root_cause_summary: output.rootCauseSummary,

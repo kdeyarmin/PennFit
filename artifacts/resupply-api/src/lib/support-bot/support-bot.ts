@@ -36,7 +36,7 @@ import {
 } from "../llm-provider";
 
 const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
-const OPENAI_DEFAULT_MODEL = "gpt-4o-mini";
+const OPENAI_DEFAULT_MODEL = "gpt-4.1-mini";
 const DEFAULT_TIMEOUT_MS = 20_000;
 const MAX_OUTPUT_TOKENS = 800;
 const MAX_SUBJECT_CHARS = 300;

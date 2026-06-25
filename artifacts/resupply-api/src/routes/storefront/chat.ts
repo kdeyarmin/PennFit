@@ -119,7 +119,7 @@ const chatRateLimit = rateLimit({
 });
 
 const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
-const DEFAULT_MODEL = "gpt-4o-mini";
+const DEFAULT_MODEL = "gpt-4.1-mini";
 const DEFAULT_TIMEOUT_MS = 15_000;
 
 // A transient OpenAI HTTP status worth one retry: explicit rate limit

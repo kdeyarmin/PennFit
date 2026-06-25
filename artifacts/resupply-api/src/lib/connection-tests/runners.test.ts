@@ -420,7 +420,7 @@ describe("runChatTest", () => {
     const fetchImpl = vi.fn().mockResolvedValue(
       new Response(
         JSON.stringify({
-          model: "gpt-4o-mini",
+          model: "gpt-4.1-mini",
           choices: [{ message: { content: "OK" } }],
         }),
         { status: 200, headers: { "content-type": "application/json" } },

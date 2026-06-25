@@ -821,7 +821,7 @@ function runChecks(): void {
       record(
         "ANTHROPIC_API_KEY",
         "warn",
-        "unset (chatbot/sleep-coach/SMS will use OpenAI gpt-4o-mini fallback — set for warmer Claude replies)",
+        "unset (chatbot/sleep-coach/SMS will use OpenAI gpt-4.1-mini fallback — set for warmer Claude replies)",
       );
     } else if (!anth.startsWith("sk-ant-")) {
       record("ANTHROPIC_API_KEY", "fail", 'must start with "sk-ant-"');

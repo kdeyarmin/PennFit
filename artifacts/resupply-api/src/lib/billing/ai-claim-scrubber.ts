@@ -49,7 +49,7 @@ import { aiPatchSchema, parseAiPatches, type AiPatch } from "./ai-patch";
 type SupabaseClient = OrgScopedClient;
 
 export const SCRUB_PROMPT_VERSION = "scrub-1.0";
-export const DEFAULT_SCRUB_MODEL = "gpt-4o-mini";
+export const DEFAULT_SCRUB_MODEL = "gpt-4.1-mini";
 const DEFAULT_TIMEOUT_MS = 20_000;
 const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
 
