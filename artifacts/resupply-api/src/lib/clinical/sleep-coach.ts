@@ -192,8 +192,9 @@ export async function askSleepCoach(
   // grounds the model in the canonical "PennPaps" placeholder; for a non-Penn
   // tenant we rewrite it (and the model's output) to the tenant's own name so
   // the coach never introduces itself with, or echoes, another tenant's brand.
-  // getCompanyInfo() degrades to the CareMetric platform identity when orgId
-  // is absent or its config can't be read.
+  // getCompanyInfo() resolves the seed org's identity when orgId is absent,
+  // and only degrades to the CareMetric platform identity when the org row
+  // can't be read or doesn't exist.
   const companyInfo = await getCompanyInfo(input.orgId);
   const systemPrompt = applyCompanyIdentityToText(SYSTEM_PROMPT, companyInfo);
   const brandReply = (text: string): string =>
@@ -353,7 +354,9 @@ export async function askSleepCoach(
         "sleep-coach: anthropic reply",
       );
       return {
-        reply: text ? brandReply(text.slice(0, 1500)) : null,
+        // Brand first, THEN cap: a longer tenant name must not push the
+        // reply past the 1500-char limit.
+        reply: text ? brandReply(text).slice(0, 1500) : null,
         errorMessage: null,
         latencyMs,
       };
@@ -550,7 +553,9 @@ export async function askSleepCoach(
     }
     const content = (message.content ?? "").trim();
     return {
-      reply: content ? brandReply(content.slice(0, 1500)) : null,
+      // Brand first, THEN cap (see the Anthropic path) so a longer tenant
+      // name can't exceed the 1500-char limit.
+      reply: content ? brandReply(content).slice(0, 1500) : null,
       errorMessage: null,
       latencyMs: Date.now() - startedAt,
     };
