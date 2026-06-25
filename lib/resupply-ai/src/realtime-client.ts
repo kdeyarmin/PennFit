@@ -38,19 +38,25 @@ import WebSocket from "ws";
 import type { OpenAiToolDescriptor, ToolName } from "./tools";
 
 const REALTIME_URL_BASE = "wss://api.openai.com/v1/realtime";
+// gpt-realtime — the legacy beta-schema model. NO LONGER THE DEFAULT:
+// OpenAI deprecated the beta `realtime=v1` schema, so a beta session now
+// connects then drops in ~1s. Kept only as the inert
+// `OPENAI_REALTIME_SCHEMA=beta` rollback — do not use it.
 export const DEFAULT_REALTIME_MODEL = "gpt-realtime";
 // gpt-realtime-2 (GA, May 2026) — GPT-5-class reasoning over speech, 128K
-// context, configurable reasoning effort. It requires OpenAI's *GA* nested
-// session schema (`session.type:"realtime"`, `audio.input/output`), so it
-// is opt-in behind `sessionSchema: "ga"` and validated on a preview before
-// becoming a default. See docs/runbooks/realtime-ga-migration.md.
+// context, configurable reasoning effort, on OpenAI's *GA* nested session
+// schema (`session.type:"realtime"`, `audio.input/output`). This is the
+// SHIPPED DEFAULT: voice-config resolves OPENAI_REALTIME_SCHEMA unset →
+// "ga" and ws-handler passes it through. See
+// docs/runbooks/realtime-ga-migration.md.
 export const DEFAULT_REALTIME_GA_MODEL = "gpt-realtime-2";
 // Input STT for the conversational session (drives turn-taking + the
-// model's own transcript). Default is the proven beta model.
+// model's own transcript). This is the beta-rollback STT; the shipped
+// default is gpt-realtime-whisper (below).
 export const DEFAULT_REALTIME_TRANSCRIBE_MODEL = "gpt-4o-mini-transcribe";
-// gpt-realtime-whisper — natively-streaming STT, the recommended GA
-// transcription model. Lower WER on phone audio → fewer "say that again?"
-// beats. Paired with the GA schema.
+// gpt-realtime-whisper — natively-streaming STT, the GA transcription model
+// and the SHIPPED DEFAULT. Lower WER on phone audio → fewer "say that
+// again?" beats. Paired with the GA schema.
 export const DEFAULT_REALTIME_GA_TRANSCRIBE_MODEL = "gpt-realtime-whisper";
 // `cedar` is the warmest of the current Realtime voices. In informal
 // listening tests against `marin`, `alloy`, and `verse`, callers
