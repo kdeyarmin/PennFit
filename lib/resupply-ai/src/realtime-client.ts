@@ -38,10 +38,12 @@ import WebSocket from "ws";
 import type { OpenAiToolDescriptor, ToolName } from "./tools";
 
 const REALTIME_URL_BASE = "wss://api.openai.com/v1/realtime";
-// gpt-realtime — the legacy beta-schema model. NO LONGER THE DEFAULT:
-// OpenAI deprecated the beta `realtime=v1` schema, so a beta session now
-// connects then drops in ~1s. Kept only as the inert
-// `OPENAI_REALTIME_SCHEMA=beta` rollback — do not use it.
+// gpt-realtime — the default model for the LEGACY BETA schema path only
+// (hence the constant name); it is NOT the voice-agent default — GA is
+// (gpt-realtime-2, below). OpenAI has deprecated the beta `realtime=v1`
+// schema, so a beta session now connects then drops in ~1s, and this
+// constant is reachable only via the inert `OPENAI_REALTIME_SCHEMA=beta`
+// rollback. Do not use it.
 export const DEFAULT_REALTIME_MODEL = "gpt-realtime";
 // gpt-realtime-2 (GA, May 2026) — GPT-5-class reasoning over speech, 128K
 // context, configurable reasoning effort, on OpenAI's *GA* nested session
