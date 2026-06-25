@@ -434,6 +434,9 @@ router.post(
         alertKey,
         channel,
         patientId: parsed.data.patientId,
+        // Scope the send to the acting admin's tenant so an alert is never
+        // dispatched against the seed org's patients / under the seed brand.
+        orgId: req.orgId,
         variables: parsed.data.variables,
       });
     } catch (err) {

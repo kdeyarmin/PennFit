@@ -29,6 +29,15 @@ import {
 
 const SYSTEM_ACTOR_EMAIL = "system:worker:eligibility-reverify";
 
+// PostgREST per-response row cap. The coverage scan must see the WHOLE panel
+// (selection ranks by priority, so a fixed top-N would hide the most-urgent
+// coverages past the cutoff) and the last-attempt lookup must be COMPLETE (a
+// missing attempt makes a recently-fired coverage look never-tried → a
+// wasteful duplicate 270). Both are paged past the cap. The actual
+// clearinghouse fires stay bounded by `cap` regardless.
+const SCAN_PAGE = 1000;
+const CHECKS_ID_CHUNK = 300;
+
 export interface BatchSelectOpts {
   cap: number;
   minHoursBetweenAttempts: number;
@@ -130,15 +139,24 @@ export async function runEligibilityReverificationBatch(
   };
 
   const todayIso = new Date().toISOString().slice(0, 10);
-  const { data, error } = await supabase
-    .from("insurance_coverages")
-    .select(
-      "id, patient_id, rank, payer_name, member_id, verified_at, termination_date",
-    )
-    .or(`termination_date.is.null,termination_date.gte.${todayIso}`)
-    .limit(2000);
-  if (error) throw error;
-  const rows = (data ?? []) as Array<Record<string, unknown>>;
+  // Scan the WHOLE active-coverage panel (paged) — selection ranks by
+  // priority, so bounding the scan to a fixed top-N would silently hide the
+  // most-urgent coverages past the cutoff and leave them stale forever.
+  const rows: Array<Record<string, unknown>> = [];
+  for (let from = 0; ; from += SCAN_PAGE) {
+    const { data, error } = await supabase
+      .from("insurance_coverages")
+      .select(
+        "id, patient_id, rank, payer_name, member_id, verified_at, termination_date",
+      )
+      .or(`termination_date.is.null,termination_date.gte.${todayIso}`)
+      .order("id", { ascending: true })
+      .range(from, from + SCAN_PAGE - 1);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    rows.push(...(data as Array<Record<string, unknown>>));
+    if (data.length < SCAN_PAGE) break;
+  }
   result.scanned = rows.length;
 
   const worklist = buildVerificationWorklist(
@@ -159,20 +177,37 @@ export async function runEligibilityReverificationBatch(
   if (candidates.length === 0) return result;
 
   // Most-recent attempt per coverage (any status — a still-pending 270
-  // counts so we don't re-fire it).
+  // counts so we don't re-fire it). CHUNKED + PAGED: a large candidate list
+  // would blow the `.in()` URL length and truncate at the row cap, and a
+  // missing attempt here makes a recently-fired coverage look never-tried,
+  // costing a duplicate 270. Ordering by requested_at desc + first-seen-wins
+  // keeps the most-recent attempt per coverage (coverages are disjoint
+  // across chunks, so chunk boundaries don't affect correctness).
   const candidateIds = candidates.map((i) => i.id);
   const lastAttempt = new Map<string, string>();
-  const { data: checks } = await supabase
-    .from("eligibility_checks")
-    .select("insurance_coverage_id, requested_at")
-    .in("insurance_coverage_id", candidateIds)
-    .order("requested_at", { ascending: false });
-  for (const c of (checks ?? []) as Array<{
-    insurance_coverage_id: string;
-    requested_at: string;
-  }>) {
-    if (!lastAttempt.has(c.insurance_coverage_id)) {
-      lastAttempt.set(c.insurance_coverage_id, c.requested_at);
+  for (let i = 0; i < candidateIds.length; i += CHECKS_ID_CHUNK) {
+    const idChunk = candidateIds.slice(i, i + CHECKS_ID_CHUNK);
+    for (let from = 0; ; from += SCAN_PAGE) {
+      const { data: checks, error: checksErr } = await supabase
+        .from("eligibility_checks")
+        .select("insurance_coverage_id, requested_at")
+        .in("insurance_coverage_id", idChunk)
+        .order("requested_at", { ascending: false })
+        // `id` tiebreaker — requested_at is not unique per coverage, so add
+        // it to give offset paging a total order (no boundary dup/skip).
+        .order("id", { ascending: false })
+        .range(from, from + SCAN_PAGE - 1);
+      if (checksErr) throw checksErr;
+      if (!checks || checks.length === 0) break;
+      for (const c of checks as Array<{
+        insurance_coverage_id: string;
+        requested_at: string;
+      }>) {
+        if (!lastAttempt.has(c.insurance_coverage_id)) {
+          lastAttempt.set(c.insurance_coverage_id, c.requested_at);
+        }
+      }
+      if (checks.length < SCAN_PAGE) break;
     }
   }
 

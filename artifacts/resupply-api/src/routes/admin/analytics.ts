@@ -50,6 +50,30 @@ const router: IRouter = Router();
 type EpisodeDbRow = Database["resupply"]["Tables"]["episodes"]["Row"];
 type PatientDbRow = Database["resupply"]["Tables"]["patients"]["Row"];
 
+// PostgREST caps a single response at ~1000 rows. A window like days=365 on
+// a busy DME can hold far more than 1000 episodes/patients/nights, so a
+// "window-bounded" select is NOT automatically under the cap — it silently
+// truncates and every count/sum below it is understated. Offset-page past
+// the cap. `page(from, to)` must return a query already `.order()`ed (for
+// stable paging) and `.range(from, to)`d.
+const PAGE = 1000;
+async function collectAllRows<T>(
+  page: (
+    from: number,
+    to: number,
+  ) => PromiseLike<{ data: T[] | null; error: unknown }>,
+): Promise<T[]> {
+  const out: T[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await page(from, from + PAGE - 1);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    out.push(...data);
+    if (data.length < PAGE) break;
+  }
+  return out;
+}
+
 const windowSchema = z.object({
   days: z.coerce.number().int().min(1).max(365).optional().default(30),
 });
@@ -71,13 +95,18 @@ router.get(
       return;
     }
     const supabase = getOrgScopedClient(orgId);
-    const { data, error } = await supabase
-      .from("episodes")
-      .select("status")
-      .gte("created_at", cutoff);
-    if (error) throw error;
-
-    const result = aggregateResupplyFunnel((data ?? []) as EpisodeRow[]);
+    // PAGINATED — a multi-month window on a busy tenant holds >1000
+    // episodes; an unpaginated read would truncate and understate the funnel.
+    const data = await collectAllRows<{ status: EpisodeDbRow["status"] }>(
+      (from, to) =>
+        supabase
+          .from("episodes")
+          .select("status")
+          .gte("created_at", cutoff)
+          .order("id", { ascending: true })
+          .range(from, to),
+    );
+    const result = aggregateResupplyFunnel(data as EpisodeRow[]);
     res.json({ windowDays: days, ...result });
   },
 );
@@ -107,24 +136,32 @@ router.get(
     }
     const supabase = getOrgScopedClient(orgId);
 
-    // The episode rollup is window-bounded only (no cap), so it stays a
-    // table read. The four formerly-capped aggregations (outreach
-    // conversations, inbound replies, fulfillment line items, paid-order
-    // AOV) are folded into resupply.resupply_kpi_window_aggregates
-    // (migration 0437) so they no longer silently truncate above the old
-    // `.limit(20000/50000)` caps. The active-patient COUNT stays exact —
-    // it is the orders-per-patient denominator. These three reads are
-    // independent, so fan them out concurrently.
+    // The episode rollup is a paginated table read (a multi-month window
+    // can exceed the ~1000-row cap on a busy tenant). The four formerly-
+    // capped aggregations (outreach conversations, inbound replies,
+    // fulfillment line items, paid-order AOV) are folded into
+    // resupply.resupply_kpi_window_aggregates (migration 0437) so they no
+    // longer silently truncate above the old `.limit(20000/50000)` caps. The
+    // active-patient COUNT stays exact — it is the orders-per-patient
+    // denominator. These three reads are independent, so fan them out
+    // concurrently.
     const [
-      { data: episodeRows, error: epErr },
+      episodeRows,
       { count: activePatientCount, error: patErr },
       { data: kpiAggRows, error: kpiAggErr },
     ] = await Promise.all([
-      // Episodes created in the window → confirmation/fulfillment + unique patients.
-      supabase
-        .from("episodes")
-        .select("status, patient_id")
-        .gte("created_at", cutoff),
+      // Episodes created in the window → confirmation/fulfillment + unique
+      // patients. PAGINATED — the window does NOT bound this under the
+      // ~1000-row cap on a busy tenant, so an unpaginated read would
+      // truncate and understate every per-episode KPI below.
+      collectAllRows<Pick<EpisodeDbRow, "status" | "patient_id">>((from, to) =>
+        supabase
+          .from("episodes")
+          .select("status, patient_id")
+          .gte("created_at", cutoff)
+          .order("id", { ascending: true })
+          .range(from, to),
+      ),
       // Active-patient count for the orders-per-patient denominator.
       supabase
         .from("patients")
@@ -138,16 +175,15 @@ router.get(
         p_cutoff: cutoff,
       }),
     ]);
-    if (epErr) throw epErr;
     if (patErr) throw patErr;
     if (kpiAggErr) throw kpiAggErr;
 
-    const episodes: EpisodeKpiRow[] = (
-      (episodeRows ?? []) as EpisodeDbRow[]
-    ).map((r) => ({
-      status: r.status,
-      patientId: r.patient_id,
-    }));
+    const episodes: EpisodeKpiRow[] = (episodeRows as EpisodeDbRow[]).map(
+      (r) => ({
+        status: r.status,
+        patientId: r.patient_id,
+      }),
+    );
 
     const agg = (
       (kpiAggRows ?? []) as Array<{
@@ -210,14 +246,21 @@ router.get(
     // would be expensive. The window bounds the cohort to recently
     // onboarded patients, which is exactly the segment the
     // adherence-trial dashboard is about anyway.
-    const { data: patientRows, error: pErr } = await supabase
-      .from("patients")
-      .select("id, insurance_payer, created_at")
-      .gte("created_at", cutoff)
-      .order("created_at", { ascending: true });
-    if (pErr) throw pErr;
+    // PAGINATED — a busy onboarding window can hold >1000 patients; an
+    // unpaginated read would truncate the cohort denominator and drop the
+    // excess patients from the adherence math entirely.
+    const patientRows = await collectAllRows<
+      Pick<PatientDbRow, "id" | "insurance_payer" | "created_at">
+    >((from, to) =>
+      supabase
+        .from("patients")
+        .select("id, insurance_payer, created_at")
+        .gte("created_at", cutoff)
+        .order("id", { ascending: true })
+        .range(from, to),
+    );
 
-    const patientIds = ((patientRows ?? []) as PatientDbRow[]).map((r) => r.id);
+    const patientIds = (patientRows as PatientDbRow[]).map((r) => r.id);
     if (patientIds.length === 0) {
       res.json({
         windowDays: days,
@@ -232,13 +275,40 @@ router.get(
     // that is irrelevant to the Medicare adherence-trial number.
     // PostgREST has no batch GROUP BY for our use case, so we
     // partition in JS.
+    // CHUNKED + PAGINATED — the cohort can be many hundreds of patients with
+    // up to ~90 nights each, so the join easily exceeds the ~1000-row cap
+    // (and a huge `.in()` list would blow the URL length). Chunk the id list,
+    // and offset-page each chunk so no night is silently dropped from the
+    // adherence math.
     const horizonCutoff = isoDaysAgo(days + 90);
-    const { data: nightRows, error: nErr } = await supabase
-      .from("patient_therapy_nights")
-      .select("patient_id, night_date, source, usage_minutes")
-      .in("patient_id", patientIds)
-      .gte("night_date", horizonCutoff);
-    if (nErr) throw nErr;
+    const NIGHT_ID_CHUNK = 300;
+    const nightRows: Array<{
+      patient_id: string;
+      night_date: string;
+      usage_minutes: number | null;
+    }> = [];
+    for (let i = 0; i < patientIds.length; i += NIGHT_ID_CHUNK) {
+      const idChunk = patientIds.slice(i, i + NIGHT_ID_CHUNK);
+      const chunkRows = await collectAllRows<{
+        patient_id: string;
+        night_date: string;
+        usage_minutes: number | null;
+      }>((from, to) =>
+        supabase
+          .from("patient_therapy_nights")
+          .select("patient_id, night_date, source, usage_minutes")
+          .in("patient_id", idChunk)
+          .gte("night_date", horizonCutoff)
+          .order("patient_id", { ascending: true })
+          .order("night_date", { ascending: true })
+          // (patient_id, night_date) is NOT unique — a patient can have
+          // multiple source rows for one night — so add the `id` tiebreaker
+          // to give offset paging a total order (no boundary dup/skip).
+          .order("id", { ascending: true })
+          .range(from, to),
+      );
+      nightRows.push(...chunkRows);
+    }
 
     const nightsByPatient = new Map<
       string,
@@ -597,12 +667,18 @@ router.get(
       return;
     }
     const supabase = getOrgScopedClient(orgId);
-    const { data, error } = await supabase
-      .from("episodes")
-      .select("status")
-      .gte("created_at", cutoff);
-    if (error) throw error;
-    const agg = aggregateResupplyFunnel((data ?? []) as EpisodeRow[]);
+    // PAGINATED — same ~1000-row cap as the JSON funnel above; the CSV must
+    // not truncate or the exported counts disagree with reality.
+    const data = await collectAllRows<{ status: EpisodeDbRow["status"] }>(
+      (from, to) =>
+        supabase
+          .from("episodes")
+          .select("status")
+          .gte("created_at", cutoff)
+          .order("id", { ascending: true })
+          .range(from, to),
+    );
+    const agg = aggregateResupplyFunnel(data as EpisodeRow[]);
 
     const filename = `resupply-funnel-${days}d-${new Date()
       .toISOString()
@@ -652,13 +728,20 @@ router.get(
       return;
     }
     const supabase = getOrgScopedClient(orgId);
-    const { data: patientRows, error: pErr } = await supabase
-      .from("patients")
-      .select("id, insurance_payer, created_at")
-      .gte("created_at", cutoff)
-      .order("created_at", { ascending: true });
-    if (pErr) throw pErr;
-    const patientIds = ((patientRows ?? []) as PatientDbRow[]).map((r) => r.id);
+    // PAGINATED — same cohort/night truncation guard as the JSON
+    // compliance-cohorts handler above (a >1000-patient window, or a cohort
+    // whose nights exceed the cap, would otherwise corrupt the CSV).
+    const patientRows = await collectAllRows<
+      Pick<PatientDbRow, "id" | "insurance_payer" | "created_at">
+    >((from, to) =>
+      supabase
+        .from("patients")
+        .select("id, insurance_payer, created_at")
+        .gte("created_at", cutoff)
+        .order("id", { ascending: true })
+        .range(from, to),
+    );
+    const patientIds = (patientRows as PatientDbRow[]).map((r) => r.id);
 
     const filename = `compliance-cohorts-${days}d-${new Date()
       .toISOString()
@@ -672,17 +755,39 @@ router.get(
       return;
     }
     const horizonCutoff = isoDaysAgo(days + 90);
-    const { data: nightRows, error: nErr } = await supabase
-      .from("patient_therapy_nights")
-      .select("patient_id, night_date, source, usage_minutes")
-      .in("patient_id", patientIds)
-      .gte("night_date", horizonCutoff);
-    if (nErr) throw nErr;
+    const NIGHT_ID_CHUNK = 300;
+    const nightRows: Array<{
+      patient_id: string;
+      night_date: string;
+      usage_minutes: number | null;
+    }> = [];
+    for (let i = 0; i < patientIds.length; i += NIGHT_ID_CHUNK) {
+      const idChunk = patientIds.slice(i, i + NIGHT_ID_CHUNK);
+      const chunkRows = await collectAllRows<{
+        patient_id: string;
+        night_date: string;
+        usage_minutes: number | null;
+      }>((from, to) =>
+        supabase
+          .from("patient_therapy_nights")
+          .select("patient_id, night_date, source, usage_minutes")
+          .in("patient_id", idChunk)
+          .gte("night_date", horizonCutoff)
+          .order("patient_id", { ascending: true })
+          .order("night_date", { ascending: true })
+          // (patient_id, night_date) is NOT unique — a patient can have
+          // multiple source rows for one night — so add the `id` tiebreaker
+          // to give offset paging a total order (no boundary dup/skip).
+          .order("id", { ascending: true })
+          .range(from, to),
+      );
+      nightRows.push(...chunkRows);
+    }
     const nightsByPatient = new Map<
       string,
       Array<{ date: string; usageMinutes: number | null }>
     >();
-    for (const row of nightRows ?? []) {
+    for (const row of nightRows) {
       const list = nightsByPatient.get(row.patient_id) ?? [];
       list.push({ date: row.night_date, usageMinutes: row.usage_minutes });
       nightsByPatient.set(row.patient_id, list);

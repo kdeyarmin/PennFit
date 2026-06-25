@@ -47,6 +47,7 @@ import {
 import { sendLifecycleTouchpointEmail } from "../../lib/order-emails/send-lifecycle-touchpoint-email";
 import { shouldSendEmail } from "../../lib/comm-prefs";
 import { logger } from "../../lib/logger";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import {
   createQueueWithDlq,
@@ -272,7 +273,7 @@ async function lifecycleTouchpointsSweepForOrg(
       .select("id");
     if (claimErr) {
       logger.warn(
-        { err: claimErr.message, patientId: row.id },
+        { err: redactDbErr(claimErr), patientId: row.id },
         "lifecycle-touchpoints: birthday claim failed",
       );
       stats.birthdayFailed += 1;
@@ -298,7 +299,7 @@ async function lifecycleTouchpointsSweepForOrg(
         if (rollbackErr) {
           logger.error(
             {
-              err: rollbackErr.message,
+              err: redactDbErr(rollbackErr),
               patientId: row.id,
               event: "lifecycle_touchpoints_birthday_stamp_rollback_failed",
             },
@@ -318,7 +319,7 @@ async function lifecycleTouchpointsSweepForOrg(
       if (rollbackErr) {
         logger.error(
           {
-            err: rollbackErr.message,
+            err: redactDbErr(rollbackErr),
             patientId: row.id,
             event: "lifecycle_touchpoints_birthday_stamp_rollback_failed",
           },
@@ -402,7 +403,7 @@ async function lifecycleTouchpointsSweepForOrg(
       .select("id");
     if (claimErr) {
       logger.warn(
-        { err: claimErr.message, patientId: row.patient_id },
+        { err: redactDbErr(claimErr), patientId: row.patient_id },
         "lifecycle-touchpoints: anniversary claim failed",
       );
       stats.anniversaryFailed += 1;
@@ -427,7 +428,7 @@ async function lifecycleTouchpointsSweepForOrg(
         if (rollbackErr) {
           logger.error(
             {
-              err: rollbackErr.message,
+              err: redactDbErr(rollbackErr),
               patientId: row.patient_id,
               event: "lifecycle_touchpoints_anniversary_stamp_rollback_failed",
             },
@@ -449,7 +450,7 @@ async function lifecycleTouchpointsSweepForOrg(
       if (rollbackErr) {
         logger.error(
           {
-            err: rollbackErr.message,
+            err: redactDbErr(rollbackErr),
             patientId: row.patient_id,
             event: "lifecycle_touchpoints_anniversary_stamp_rollback_failed",
           },

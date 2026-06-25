@@ -38,6 +38,7 @@ import {
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { publishEvent } from "../../lib/webhooks/publisher";
 import {
   adminReadRateLimiter,
@@ -441,7 +442,7 @@ router.post(
       .maybeSingle();
     if (patientErr) {
       logger.error(
-        { err: patientErr.message, patientId: idParsed.data.id },
+        { err: redactDbErr(patientErr), patientId: idParsed.data.id },
         "insurance_claims.create: patient lookup failed",
       );
       throw patientErr;
@@ -527,7 +528,7 @@ router.patch(
       .maybeSingle();
     if (currentErr) {
       logger.error(
-        { err: currentErr.message, claimId: idParsed.data.claimId },
+        { err: redactDbErr(currentErr), claimId: idParsed.data.claimId },
         "insurance_claims.patch: claim lookup failed",
       );
       throw currentErr;
@@ -698,7 +699,7 @@ router.post(
       .maybeSingle();
     if (claimErr) {
       logger.error(
-        { err: claimErr.message, claimId: idParsed.data.claimId },
+        { err: redactDbErr(claimErr), claimId: idParsed.data.claimId },
         "insurance_claims.lines.create: claim lookup failed",
       );
       throw claimErr;
@@ -793,7 +794,7 @@ router.patch(
       .maybeSingle();
     if (existingErr) {
       logger.error(
-        { err: existingErr.message, lineId: idParsed.data.lineId },
+        { err: redactDbErr(existingErr), lineId: idParsed.data.lineId },
         "insurance_claims.lines.patch: line lookup failed",
       );
       throw existingErr;
@@ -885,7 +886,7 @@ router.post(
       .maybeSingle();
     if (claimErr) {
       logger.error(
-        { err: claimErr.message, claimId: idParsed.data.claimId },
+        { err: redactDbErr(claimErr), claimId: idParsed.data.claimId },
         "insurance_claims.events.create: claim lookup failed",
       );
       throw claimErr;

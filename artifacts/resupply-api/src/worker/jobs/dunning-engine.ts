@@ -76,12 +76,17 @@ async function computeBalanceCents(
   supabase: Supabase,
   patientId: string,
 ): Promise<number> {
-  const { data: claims } = await supabase
+  // Surface read failures instead of treating them as a $0 balance — a
+  // swallowed error here would make an owing patient look paid and could
+  // wrongly RESOLVE their dunning run (collection silently stops). Fail the
+  // tick and retry rather than act on a phantom zero.
+  const { data: claims, error } = await supabase
     .from("insurance_claims")
     .select("patient_responsibility_cents")
     .eq("patient_id", patientId)
     .gt("patient_responsibility_cents", 0)
     .in("status", [...BILLABLE_CLAIM_STATUSES]);
+  if (error) throw error;
   return (
     (claims ?? []) as Array<{ patient_responsibility_cents: number }>
   ).reduce((s, c) => s + (c.patient_responsibility_cents ?? 0), 0);
@@ -91,20 +96,26 @@ async function patientGuards(
   supabase: Supabase,
   patientId: string,
 ): Promise<{ hasActivePlan: boolean; hasAutopay: boolean }> {
-  const [{ data: plan }, { data: ap }] = await Promise.all([
-    supabase
-      .from("patient_payment_plans")
-      .select("id")
-      .eq("patient_id", patientId)
-      .eq("status", "active")
-      .limit(1),
-    supabase
-      .from("patient_autopay_authorizations")
-      .select("autopay_enabled")
-      .eq("patient_id", patientId)
-      .eq("autopay_enabled", true)
-      .limit(1),
-  ]);
+  // Surface read failures: a swallowed error here would report "no active
+  // plan / no autopay" and let the engine dun a patient who is actually on a
+  // payment plan or autopay. Fail the tick instead.
+  const [{ data: plan, error: planErr }, { data: ap, error: apErr }] =
+    await Promise.all([
+      supabase
+        .from("patient_payment_plans")
+        .select("id")
+        .eq("patient_id", patientId)
+        .eq("status", "active")
+        .limit(1),
+      supabase
+        .from("patient_autopay_authorizations")
+        .select("autopay_enabled")
+        .eq("patient_id", patientId)
+        .eq("autopay_enabled", true)
+        .limit(1),
+    ]);
+  if (planErr) throw planErr;
+  if (apErr) throw apErr;
   return {
     hasActivePlan: (plan ?? []).length > 0,
     hasAutopay: (ap ?? []).length > 0,
@@ -187,13 +198,16 @@ export async function runDunningTickForOrg(
   // Practice-local business date for the ladder decision (see open-scan note).
   const todayIso = practiceTodayIso(now);
 
-  const { data: dueRows } = await supabase
+  const { data: dueRows, error: dueErr } = await supabase
     .from("patient_dunning_runs")
     .select("id, patient_id, current_step, next_action_at, opened_on")
     .eq("status", "active")
     .lte("next_action_at", now.toISOString())
     .order("next_action_at", { ascending: true })
     .limit(MAX_TICK);
+  // Surface the read failure instead of treating an errored fetch as "no due
+  // runs" (a silent no-op tick that hides a broken collections loop).
+  if (dueErr) throw dueErr;
   const runs = (dueRows ?? []) as Array<{
     id: string;
     patient_id: string;
@@ -257,12 +271,15 @@ export async function runDunningTickForOrg(
     }
 
     // decision.type === "send" — choose a consent-safe channel and deliver.
-    const { data: patient } = await supabase
+    const { data: patient, error: patientErr } = await supabase
       .from("patients")
       .select("email, phone_e164, communication_preferences")
       .eq("id", run.patient_id)
       .limit(1)
       .maybeSingle();
+    // Don't let a transient read error masquerade as "patient has no contact
+    // info" (which would wrongly skip the dunning send). Fail the tick.
+    if (patientErr) throw patientErr;
     const prefs = readStatementPrefs(
       (patient?.communication_preferences ?? null) as never,
     );

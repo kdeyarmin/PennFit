@@ -25,11 +25,7 @@ import {
   resolveSeedOrgId,
   type ResupplySupabaseClient,
 } from "@workspace/resupply-db";
-import {
-  createSendgridClient,
-  EmailApiError,
-  EmailConfigError,
-} from "@workspace/resupply-email";
+import { EmailApiError, EmailConfigError } from "@workspace/resupply-email";
 import {
   createTwilioClient,
   createTwilioSmsClient,
@@ -41,6 +37,8 @@ import {
   applyVariablesHtmlSafe,
 } from "@workspace/resupply-templates";
 
+import { getCompanyInfo } from "../company-info";
+import { createTenantSendgridClient } from "../email/tenant-sender.js";
 import { logger } from "../logger";
 import {
   readEmailConfigOrNull,
@@ -147,6 +145,16 @@ export interface DispatchAlertInput {
    * the caller does not override them.
    */
   variables?: Readonly<Record<string, string>>;
+  /**
+   * The tenant the patient belongs to. All lookups (alert/message/patient),
+   * the email From identity, the SMS/voice From number, and the rendered
+   * `practice_name` are scoped to this tenant. Omit / undefined falls back to
+   * the seed org, so single-tenant (Penn) behavior is unchanged. A caller
+   * that knows its tenant (admin route, a Stripe-trigger that matched a
+   * patient row) MUST pass it so a non-seed tenant's patient is never
+   * messaged under the seed's brand / From.
+   */
+  orgId?: string;
   /** Test seam — defaults to the shared service-role client. */
   supabase?: ResupplySupabaseClient;
 }
@@ -167,12 +175,13 @@ function isMissingRelationError(error: unknown): boolean {
 export async function dispatchAlert(
   input: DispatchAlertInput,
 ): Promise<DispatchAlertOutcome> {
-  // Resolve the tenant for the file-local worker pattern. When a caller
-  // injects a client (test seam), bind the scoped facade to it so the
-  // body uniformly uses `.from()`; otherwise resolve the seed org. A
-  // missing org degrades to `alert_not_found` (the same fail-closed
-  // "nothing to dispatch" outcome the route already maps to a 404).
-  const orgId = await resolveSeedOrgId();
+  // Resolve the recipient's tenant. A caller that knows its tenant passes
+  // `input.orgId`; otherwise fall back to the seed org (single-tenant
+  // behavior unchanged). When a caller injects a client (test seam), bind
+  // the scoped facade to it so the body uniformly uses `.from()`. A missing
+  // org degrades to `alert_not_found` (the same fail-closed "nothing to
+  // dispatch" outcome the route already maps to a 404).
+  const orgId = input.orgId?.trim() || (await resolveSeedOrgId());
   if (!orgId) return { status: "alert_not_found" };
   const supabase = getOrgScopedClient(orgId, input.supabase);
   const { alertKey, channel, patientId } = input;
@@ -266,10 +275,11 @@ export async function dispatchAlert(
   }
 
   // 4. Render. Caller variables win over the derived defaults.
-  // Platform default (CareMetric Breathe), NOT the seed (Penn) tenant —
-  // a configured tenant's RESUPPLY_PRACTICE_NAME / org row wins.
-  const practiceName =
-    process.env.RESUPPLY_PRACTICE_NAME?.trim() || "CareMetric Breathe";
+  // Brand `practice_name` with the recipient tenant's own identity. For the
+  // seed tenant this resolves to Penn's stored name (single-tenant copy
+  // unchanged); a non-seed tenant gets its own row or the neutral platform
+  // identity — never the seed's env-folded brand.
+  const practiceName = (await getCompanyInfo(orgId)).name;
   const variables: Record<string, string> = {
     first_name: patient.legal_first_name ?? "there",
     practice_name: practiceName,
@@ -304,11 +314,10 @@ export async function dispatchAlert(
     const cfg = readEmailConfigOrNull();
     if (!cfg) return { status: "messaging_not_configured" };
     try {
-      const sg = createSendgridClient({
-        apiKey: cfg.sendgridApiKey,
-        fromEmail: cfg.sendgridFromEmail,
-        fromName: cfg.sendgridFromName,
-      });
+      // Send under the tenant's own From identity (G6) when it has one,
+      // falling back to the platform default. The cfg gate above already
+      // confirmed SendGrid is configured.
+      const sg = await createTenantSendgridClient(orgId);
       // When the email message has no HTML body, wrap the (HTML-escaped)
       // plain-text body so an admin-typed `<` / `&` — or an unescaped
       // variable value — can't inject markup into the rendered email.

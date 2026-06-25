@@ -186,6 +186,23 @@ describe("executeAdminAssistantTool: suggest_feature", () => {
     expect(result.data.error).toBe("email_unconfigured");
   });
 
+  it("soft-fails (never throws) when the SendGrid client build fails unexpectedly", async () => {
+    // A non-EmailConfigError from createSendgridClient must NOT propagate —
+    // the tool contract is "every failure path returns { ok: false }" so the
+    // model can recover instead of the error unwinding the tool-round loop.
+    createSendgridImpl.current = () => {
+      throw new Error("unexpected boom");
+    };
+    const result = await executeAdminAssistantTool(
+      "suggest_feature",
+      validArgs,
+      ctxWith({ data: [{ email_lower: "owner@pennpaps.com" }], error: null }),
+    );
+    expect(result.ok).toBe(false);
+    expect(result.data.error).toBe("email_error");
+    expect(sendEmailMock).not.toHaveBeenCalled();
+  });
+
   it("soft-fails when every send throws", async () => {
     sendEmailMock.mockRejectedValueOnce(new Error("smtp down"));
     const result = await executeAdminAssistantTool(

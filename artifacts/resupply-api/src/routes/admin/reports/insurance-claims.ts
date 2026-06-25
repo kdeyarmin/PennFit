@@ -23,6 +23,7 @@ import { requirePermission } from "../../../middlewares/requireAdmin";
 import {
   bufferedRes,
   centsToDollars,
+  collectReportRows,
   escapeCsv,
   parseRange,
   practiceName,
@@ -62,16 +63,18 @@ export async function fetchInsuranceClaims(
   // reconcile against it, not the row's created_at. Operators
   // chasing aging windows ("denials in last 30 DOS days") expect the
   // range to clamp on DOS.
-  const { data, error } = await supabase
-    .from("insurance_claims")
-    .select(
-      "id, patient_id, payer_name, claim_number, date_of_service, status, total_billed_cents, total_allowed_cents, total_paid_cents, patient_responsibility_cents, submitted_at, decision_at, paid_at, created_at",
-    )
-    .gte("date_of_service", from.toISOString().slice(0, 10))
-    .lte("date_of_service", to.toISOString().slice(0, 10))
-    .order("date_of_service", { ascending: false });
-  if (error) throw error;
-  return (data ?? []) as InsuranceClaimRow[];
+  return collectReportRows<InsuranceClaimRow>((lo, hi) =>
+    supabase
+      .from("insurance_claims")
+      .select(
+        "id, patient_id, payer_name, claim_number, date_of_service, status, total_billed_cents, total_allowed_cents, total_paid_cents, patient_responsibility_cents, submitted_at, decision_at, paid_at, created_at",
+      )
+      .gte("date_of_service", from.toISOString().slice(0, 10))
+      .lte("date_of_service", to.toISOString().slice(0, 10))
+      .order("date_of_service", { ascending: false })
+      .order("id", { ascending: false })
+      .range(lo, hi),
+  ) as Promise<InsuranceClaimRow[]>;
 }
 
 export function writeInsuranceClaimsCsv(

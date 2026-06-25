@@ -164,6 +164,55 @@ describe("runEligibilityReverificationBatch", () => {
     expect(firedIds.sort()).toEqual(["never-1", "stale-1"]);
   });
 
+  it("scans the whole panel past the ~1000-row page cap (no starvation)", async () => {
+    // PostgREST returns at most ~1000 rows per response, so the old
+    // `.limit(2000)` scan never saw past the first page — every coverage
+    // beyond it went un-reverified forever. Page 1 is a full 1000 rows of
+    // recently-verified ("ok") coverages; the only DUE coverage sits on
+    // page 2. If the scan still stopped at one page it would never be fired.
+    const page1 = Array.from({ length: 1000 }, (_, i) => ({
+      id: `ok-${i}`,
+      patient_id: `pok-${i}`,
+      rank: "primary",
+      payer_name: "UHC",
+      member_id: null,
+      verified_at: daysAgoIso(1), // fresh → status "ok" → not a candidate
+      termination_date: null,
+    }));
+    stageCoverages(page1); // first page (full → triggers a second fetch)
+    stageCoverages([
+      {
+        id: "page2-due",
+        patient_id: "pp",
+        rank: "primary",
+        payer_name: "Aetna",
+        member_id: null,
+        verified_at: daysAgoIso(60), // stale → due
+        termination_date: null,
+      },
+    ]); // second page (short → scan stops)
+    stageAttempts([]);
+
+    const verify = vi.fn().mockResolvedValue({
+      eligibilityCheckId: "e1",
+      isaControlNumber: "000000001",
+      traceReference: "T1",
+      uploadOk: true,
+      errorMessage: null,
+    });
+
+    const result = await runEligibilityReverificationBatch(
+      { orgId: "org-1", cap: 10 },
+      { verify, throttleMs: 0 },
+    );
+
+    expect(result.scanned).toBe(1001); // both pages counted
+    expect(result.due).toBe(1);
+    expect(result.fired).toBe(1);
+    expect(verify).toHaveBeenCalledTimes(1);
+    expect(verify.mock.calls[0][0].insuranceCoverageId).toBe("page2-due");
+  });
+
   it("throttles out a coverage with a recent attempt", async () => {
     stageCoverages([
       {

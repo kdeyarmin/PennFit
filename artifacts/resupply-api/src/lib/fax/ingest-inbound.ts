@@ -36,6 +36,7 @@ import { autoMatchInboundFaxToPaperwork } from "../billing/bill-hold";
 import { isFeatureEnabled } from "../feature-flags";
 import { resolveOrgIdByFaxNumber } from "../messaging/tenant-telecom";
 import { ObjectStorageService } from "../object-storage/objectStorage";
+import { redactDbErr } from "../redact-db-err";
 import { openReferralReviewForFax } from "../referral-review/open-for-fax";
 
 import { autoFileSignedFax } from "./auto-file-signed";
@@ -207,7 +208,7 @@ export async function ingestInboundFax(
     }
     logger.warn(
       {
-        err: insertRes.error.message,
+        err: redactDbErr(insertRes.error),
         fax_id_first8: input.telnyxFaxId.slice(0, 8),
       },
       "fax_inbound_db_insert_failed",
@@ -541,7 +542,7 @@ async function tryPersistMedia(
     logger.warn(
       {
         fax_id_first8: input.telnyxFaxId.slice(0, 8),
-        err: patchErr.message,
+        err: redactDbErr(patchErr),
       },
       "fax_inbound_db_patch_failed",
     );

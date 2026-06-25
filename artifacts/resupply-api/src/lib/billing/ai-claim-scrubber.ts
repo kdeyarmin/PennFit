@@ -118,6 +118,12 @@ const SYSTEM_PROMPT = [
 export interface ScrubInput {
   /** UUID. */
   claimId: string;
+  /**
+   * Tenant the claim belongs to. The auto-workflow fan-out passes the org
+   * the claim was selected from so the scrub reads/writes the RIGHT tenant's
+   * claim; omitted → seed org (single-tenant callers unchanged).
+   */
+  orgId?: string;
   /** Override model id for the call. */
   model?: string;
   /** Override OpenAI API key (for tests). */
@@ -170,7 +176,7 @@ export async function scrubClaim(input: ScrubInput): Promise<ScrubOutput> {
     };
   }
 
-  const orgId = await resolveSeedOrgId();
+  const orgId = input.orgId?.trim() || (await resolveSeedOrgId());
   if (!orgId) {
     return errored("tenant context missing");
   }

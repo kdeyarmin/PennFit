@@ -302,7 +302,25 @@ export async function executeAdminAssistantTool(
         },
       };
     }
-    throw err;
+    // Contract: this tool NEVER throws — every failure path returns
+    // `{ ok: false }` so the model can recover gracefully instead of the
+    // error unwinding the tool-round loop into a generic "I'm having
+    // trouble" reply. An unexpected client-build failure is no exception.
+    logger.warn(
+      {
+        event: "admin_assistant_email_client_failed",
+        err:
+          err instanceof Error ? { name: err.name, message: err.message } : err,
+      },
+      "admin assistant: SendGrid client build failed; cannot send feature suggestion",
+    );
+    return {
+      ok: false,
+      data: {
+        error: "email_error",
+        message: "Email couldn't be sent right now.",
+      },
+    };
   }
 
   const { subject, text, html } = await buildSuggestionEmail(

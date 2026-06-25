@@ -47,6 +47,7 @@ import { buildQuarterlySummary } from "../../lib/therapy-summary/build-quarterly
 import { sendQuarterlySummaryEmail } from "../../lib/order-emails/send-quarterly-summary-email";
 import { shouldSendEmail } from "../../lib/comm-prefs";
 import { logger } from "../../lib/logger";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import {
   createQueueWithDlq,
@@ -282,11 +283,21 @@ async function quarterlySummarySweepForOrg(
         .select("night_date, usage_minutes, ahi, leak_rate_l_min")
         .eq("patient_id", patient.id)
         .gte("night_date", startIso)
-        .order("night_date", { ascending: true })
+        // Bound the window on BOTH ends (endIso was computed but unused) and
+        // order night_date DESC so that if a multi-source patient's rows
+        // exceed the cap, the cap sheds the OLDEST nights, not the most
+        // recent — recent adherence is the clinically relevant part of the
+        // summary. buildQuarterlySummary's per-date dedup keeps the FIRST row
+        // seen for each night_date, so the secondary updated_at DESC sort
+        // makes that dedup deterministic and honors its documented intent —
+        // the most recently INGESTED row for a multi-source date wins.
+        .lte("night_date", endIso)
+        .order("night_date", { ascending: false })
+        .order("updated_at", { ascending: false })
         .limit(WINDOW_DAYS * 4);
       if (nightsErr) {
         logger.warn(
-          { err: nightsErr.message, patientId: patient.id },
+          { err: redactDbErr(nightsErr), patientId: patient.id },
           "quarterly-summary: night read failed",
         );
         stats.failed += 1;
@@ -335,7 +346,7 @@ async function quarterlySummarySweepForOrg(
         .select("id");
       if (claimErr) {
         logger.warn(
-          { err: claimErr.message, patientId: patient.id },
+          { err: redactDbErr(claimErr), patientId: patient.id },
           "quarterly-summary: claim failed",
         );
         stats.failed += 1;
@@ -356,7 +367,7 @@ async function quarterlySummarySweepForOrg(
           .eq("id", patient.id);
         if (releaseErr) {
           logger.error(
-            { err: releaseErr.message, patientId: patient.id },
+            { err: redactDbErr(releaseErr), patientId: patient.id },
             "quarterly-summary: releaseClaim failed — patient timestamp stuck; summary will be skipped until next window",
           );
         }

@@ -468,7 +468,22 @@ export async function runMaintenanceNudgeSweep(
 }
 
 export async function registerMaintenanceNudgeJob(boss: PgBoss): Promise<void> {
-  await createQueueWithDlq(boss, NUDGE_JOB, VENDOR_SEND_QUEUE_OPTS);
+  // This job is a BULK sweep (many patients per run), not a single vendor
+  // send, so two overlap-safety overrides on top of the vendor preset:
+  //   * policy "singleton" — pg-boss runs at most one sweep at a time, so a
+  //     manual re-trigger (or a retry firing near the next cron tick) can't
+  //     run concurrently with an in-flight sweep and double-send.
+  //   * retryLimit 1 — the vendor preset's 5 retries would re-sweep the
+  //     whole roster up to 5×; a per-patient send error is already caught
+  //     inline (it never throws the sweep), so the only thing that retries
+  //     is a roster-level (e.g. DB) failure, where one retry is plenty and
+  //     more just risks re-sending to the tail processed before the failure.
+  // The 15-minute expiry of the vendor preset is kept (a large roster can
+  // take longer than the cron-scan preset's 5-minute window).
+  await createQueueWithDlq(boss, NUDGE_JOB, VENDOR_SEND_QUEUE_OPTS, {
+    policy: "singleton",
+    retryLimit: 1,
+  });
   await boss.work(NUDGE_JOB, async () => {
     try {
       const stats = await runMaintenanceNudgeSweep();
