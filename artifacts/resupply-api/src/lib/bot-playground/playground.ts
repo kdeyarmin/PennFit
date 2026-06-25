@@ -154,7 +154,9 @@ export const DEFAULT_ACCOUNT_CONTEXT: CustomerChatAccountContext = {
 };
 
 const DEFAULT_VOICE_CONFIG = {
-  practiceName: "Penn Home Medical",
+  // Neutral platform brand for the shared demo scenario — not the Penn
+  // tenant. An operator can type their own practice name in the playground.
+  practiceName: "CareMetric Breathe",
   callerName: "Avery",
   callContext:
     "Outbound resupply outreach; about 90 days since the last shipment.",
@@ -278,7 +280,7 @@ export const PLAYGROUND_SCENARIOS: readonly PlaygroundScenario[] = [
     firstUserMessage: "Hi, I wanted to check on the status of my order.",
     config: {
       voice: {
-        practiceName: "Penn Home Medical",
+        practiceName: "CareMetric Breathe",
         callerName: "Avery",
         callContext: "Inbound storefront (cash-pay) caller.",
         callerKind: "shop_customer",

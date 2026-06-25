@@ -133,7 +133,7 @@ function readSmsConfig(
     twilioPhoneNumber: env.TWILIO_PHONE_NUMBER,
     twilioMessagingServiceSid: env.TWILIO_MESSAGING_SERVICE_SID,
     publicBaseUrl,
-    practiceName: env.RESUPPLY_PRACTICE_NAME ?? "PennPaps",
+    practiceName: env.RESUPPLY_PRACTICE_NAME ?? "CareMetric Breathe",
   };
 }
 
@@ -250,7 +250,7 @@ async function setupDeadlineOutreachForOrg(
         days_remaining: num(r.days_remaining) ?? Number.POSITIVE_INFINITY,
         nights_needed: num(r.nights_needed) ?? 0,
       },
-      cfg?.practiceName ?? "PennPaps",
+      cfg?.practiceName ?? "CareMetric Breathe",
     );
     if (body) planned.push({ patientId: r.patient_id, body });
   }

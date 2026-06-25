@@ -165,7 +165,7 @@ function readSmsConfig(
     twilioPhoneNumber: env.TWILIO_PHONE_NUMBER,
     twilioMessagingServiceSid: env.TWILIO_MESSAGING_SERVICE_SID,
     publicBaseUrl,
-    practiceName: env.RESUPPLY_PRACTICE_NAME ?? "PennPaps",
+    practiceName: env.RESUPPLY_PRACTICE_NAME ?? "CareMetric Breathe",
   };
 }
 

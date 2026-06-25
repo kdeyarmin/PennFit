@@ -100,7 +100,7 @@ export function readReengageMessagingConfig(
     sendgridFromEmail:
       env.SENDGRID_FROM_EMAIL?.trim() || DEFAULT_SENDGRID_FROM_EMAIL,
     sendgridFromName: env.SENDGRID_FROM_NAME ?? null,
-    practiceName: env.RESUPPLY_PRACTICE_NAME ?? "PennPaps",
+    practiceName: env.RESUPPLY_PRACTICE_NAME ?? "CareMetric Breathe",
     publicBaseUrl:
       (env.RESUPPLY_VOICE_PUBLIC_BASE_URL ??
         (env.RAILWAY_PUBLIC_DOMAIN

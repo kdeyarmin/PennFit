@@ -364,6 +364,18 @@ interface TenantConfigEntry {
 // or an env-var name, so it's an unambiguous composite key.
 const tenantConfigCache = new Map<string, TenantConfigEntry>();
 
+// Per-tenant BRAND keys that must NOT inherit the seed org's value. The seed
+// org is the Penn Home Medical Supply tenant, whose AI-assistant names are
+// "PennBot"/"PennPilot" (seeded by migration 0349). Inheriting those onto a
+// new tenant would brand every other tenant's bots as Penn's. For these keys
+// an absent tenant row means "use the CareMetric platform default" (resolved
+// by the caller), never the seed tenant's brand. Platform-global config keys
+// (not in this set) still fall back to the seed org's value as the default.
+const NON_INHERITABLE_TENANT_KEYS = new Set<string>([
+  "RESUPPLY_ASSISTANT_STOREFRONT_NAME",
+  "RESUPPLY_ASSISTANT_ADMIN_NAME",
+]);
+
 async function readAppConfigValue(
   orgId: string,
   key: string,
@@ -400,8 +412,11 @@ export async function getTenantConfigValue(
   let value: string | null;
   try {
     value = await readAppConfigValue(orgId, key);
-    if (value === null) {
-      // No tenant row → fall back to the seed org's platform default.
+    if (value === null && !NON_INHERITABLE_TENANT_KEYS.has(key)) {
+      // No tenant row → fall back to the seed org's platform default. Skipped
+      // for tenant BRAND keys (see NON_INHERITABLE_TENANT_KEYS) so a new
+      // tenant never inherits the seed (Penn) tenant's PennBot/PennPilot
+      // names — those resolve to the CareMetric default in the caller.
       const seedOrgId = await resolveSeedOrgId();
       if (seedOrgId && seedOrgId !== orgId) {
         value = await readAppConfigValue(seedOrgId, key);
@@ -416,12 +431,17 @@ export async function getTenantConfigValue(
       },
       "per-tenant app_config read failed; degrading to seed/default",
     );
-    // Best-effort seed fallback on error.
-    try {
-      const seedOrgId = await resolveSeedOrgId();
-      value = seedOrgId ? await readAppConfigValue(seedOrgId, key) : null;
-    } catch {
+    // Best-effort seed fallback on error — but never for tenant BRAND keys,
+    // which must degrade to the CareMetric platform default, not Penn's.
+    if (NON_INHERITABLE_TENANT_KEYS.has(key)) {
       value = null;
+    } else {
+      try {
+        const seedOrgId = await resolveSeedOrgId();
+        value = seedOrgId ? await readAppConfigValue(seedOrgId, key) : null;
+      } catch {
+        value = null;
+      }
     }
   }
 

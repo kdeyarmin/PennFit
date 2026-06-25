@@ -86,7 +86,7 @@ const verifyBody = z
 /** Issuer string shown by authenticator apps. Env-overridable so a
  *  staging deploy doesn't shadow the prod app's entry. */
 function getIssuerLabel(): string {
-  return process.env.RESUPPLY_PRACTICE_NAME?.trim() || "PennPaps";
+  return process.env.RESUPPLY_PRACTICE_NAME?.trim() || "CareMetric Breathe";
 }
 
 /** MFA enforcement mode — env-var-gated so an org can flip the

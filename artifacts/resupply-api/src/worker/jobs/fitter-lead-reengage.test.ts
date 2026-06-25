@@ -394,14 +394,16 @@ describe("readReengageMessagingConfig", () => {
     expect(cfg.publicBaseUrl).toBe("https://test.example");
   });
 
-  it("falls back to 'PennPaps' when RESUPPLY_PRACTICE_NAME is not set", () => {
+  it("falls back to the CareMetric Breathe platform name when RESUPPLY_PRACTICE_NAME is not set", () => {
     const cfg = readReengageMessagingConfig({
       SENDGRID_API_KEY: "SG.x",
       SENDGRID_FROM_EMAIL: "f@x.com",
       SENDGRID_FROM_NAME: "X",
       RESUPPLY_VOICE_PUBLIC_BASE_URL: "https://x.example",
     });
-    expect(cfg.practiceName).toBe("PennPaps");
+    // NOT the seed (Penn) tenant's "PennPaps" — an unconfigured tenant must
+    // never inherit the seed brand.
+    expect(cfg.practiceName).toBe("CareMetric Breathe");
   });
 
   it("falls back to RAILWAY_PUBLIC_DOMAIN when RESUPPLY_VOICE_PUBLIC_BASE_URL is absent", () => {

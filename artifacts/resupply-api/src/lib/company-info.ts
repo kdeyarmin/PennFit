@@ -186,6 +186,33 @@ function envFallbackInfo(): CompanyInfo {
   };
 }
 
+// The NEUTRAL platform identity, with NO reading of the process-global
+// RESUPPLY_PRACTICE_NAME / RESUPPLY_ASSISTANT_* env (which the boot hydration
+// folds to the SEED tenant's brand). Used for an explicitly-addressed tenant
+// that has no dme_organization row yet: a brand-new tenant must fall back to
+// CareMetric Breathe, never inherit the seed (Penn) tenant's name/bots.
+function platformFallbackInfo(): CompanyInfo {
+  return {
+    name: DEFAULTS.name,
+    legalName: DEFAULTS.legalName,
+    phoneE164: DEFAULTS.phoneE164,
+    phoneDisplay: DEFAULTS.phoneDisplay,
+    supportPhoneE164: DEFAULTS.phoneE164,
+    supportPhoneDisplay: DEFAULTS.phoneDisplay,
+    supportEmail: DEFAULTS.supportEmail,
+    generalEmail: DEFAULTS.generalEmail,
+    billingEmail: DEFAULTS.generalEmail,
+    faxE164: null,
+    websiteUrl: null,
+    supportHours: DEFAULTS.supportHours,
+    address: null,
+    organizationalNpi: null,
+    assistantStorefrontName: DEFAULT_STOREFRONT_ASSISTANT_NAME,
+    assistantAdminName: DEFAULT_ADMIN_ASSISTANT_NAME,
+    source: "fallback",
+  };
+}
+
 class CompanyInfoLookupTimeout extends Error {
   constructor() {
     super("company_info_lookup_timeout");
@@ -267,10 +294,21 @@ export async function getCompanyInfo(orgId?: string): Promise<CompanyInfo> {
   if (hit && hit.expiresAt > now) return hit.info;
   let info: CompanyInfo;
   try {
-    const effectiveOrgId = orgId?.trim() || (await resolveSeedOrgId());
-    info = effectiveOrgId
-      ? ((await loadFromDb(effectiveOrgId)) ?? envFallbackInfo())
-      : envFallbackInfo();
+    const explicitOrgId = orgId?.trim();
+    const seedOrgId = await resolveSeedOrgId();
+    if (explicitOrgId && explicitOrgId !== seedOrgId) {
+      // A specific NON-seed tenant. Its own row, or the neutral platform
+      // identity — never the seed (Penn) tenant's env-folded brand. This is
+      // what stops a new/unconfigured tenant from inheriting "PennPaps".
+      info = (await loadFromDb(explicitOrgId)) ?? platformFallbackInfo();
+    } else {
+      // The seed tenant (explicit or default). Single-tenant behavior is
+      // unchanged: its DB row wins, else the env-folded practice name.
+      const effectiveOrgId = explicitOrgId || seedOrgId;
+      info = effectiveOrgId
+        ? ((await loadFromDb(effectiveOrgId)) ?? envFallbackInfo())
+        : envFallbackInfo();
+    }
   } catch (err) {
     const normalized =
       err instanceof Error

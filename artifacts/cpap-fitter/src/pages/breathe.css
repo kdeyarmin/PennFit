@@ -2544,6 +2544,48 @@
 }
 .bx-compare-scroll {
   overflow-x: auto;
+  /* Momentum-style horizontal swipe on touch so the off-screen competitor
+     columns are easy to reach on a phone. */
+  -webkit-overflow-scrolling: touch;
+}
+/* Mobile-only affordance: the comparison table is wider than a phone, so the
+   competitor columns sit off-screen to the right. Touch devices hide the
+   scrollbar, so without this hint a mobile visitor never discovers the
+   side-by-side. Hidden on wider screens where the whole table fits. */
+.bx-compare-swipe {
+  display: none;
+}
+@media (max-width: 760px) {
+  .bx-compare-swipe {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    margin: 0 0 12px;
+    font-size: 12.5px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    color: var(--bx-text-dim);
+    text-align: center;
+  }
+  .bx-compare-swipe span {
+    color: var(--bx-gold-soft);
+    animation: bx-swipe-nudge 1.6s ease-in-out infinite;
+  }
+}
+@keyframes bx-swipe-nudge {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(5px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bx-compare-swipe span {
+    animation: none;
+  }
 }
 .bx-compare th,
 .bx-compare td {
@@ -4269,6 +4311,51 @@
   color: var(--bx-text);
   border-color: var(--bx-line-strong, var(--bx-line));
   background: rgba(255, 255, 255, 0.04);
+}
+
+/* ───────────────── Mobile touch targets ─────────────────
+   On a phone these are tapped with a thumb, not a cursor. Grow the
+   footer nav / contact links and the inline "see how …" CTA links to a
+   comfortable ≥44px hit area (WCAG 2.5.5 / Apple HIG) without changing
+   how they read on the desktop layout. */
+@media (max-width: 760px) {
+  .bx-footer-nav {
+    gap: 2px 24px;
+  }
+  .bx-footer-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 4px 2px;
+    font-size: 14px;
+  }
+  .bx-footer-contact-link {
+    min-height: 44px;
+    padding: 4px 0;
+  }
+  .bx-footer-admin-link {
+    min-height: 44px;
+    padding: 11px 18px;
+  }
+  /* Inline section CTAs ("See how you get paid →", "explore the
+     platform"): give the thumb more room top-and-bottom while keeping the
+     link inline in its sentence. */
+  .bx-linkbtn,
+  .bx-cap-more,
+  .bx-switchlink,
+  .bx-integrations-link,
+  .bx-addons-teaser-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 0;
+    min-height: 40px;
+  }
+  /* Inner-page "← Back to overview" — a discrete nav control, not prose. */
+  .bxf-back {
+    min-height: 44px;
+    margin-bottom: 14px;
+  }
 }
 
 /* ───────────────────────── Reveal animation ───────────────────────── */

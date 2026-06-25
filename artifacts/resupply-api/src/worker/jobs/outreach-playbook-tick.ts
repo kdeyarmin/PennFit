@@ -120,7 +120,7 @@ function readMessagingConfig(env: NodeJS.ProcessEnv = process.env): {
   hmacKeyReady: boolean;
   practiceName: string;
 } {
-  const practiceName = env.RESUPPLY_PRACTICE_NAME ?? "PennPaps";
+  const practiceName = env.RESUPPLY_PRACTICE_NAME ?? "CareMetric Breathe";
   const publicBaseUrl = (
     env.RESUPPLY_VOICE_PUBLIC_BASE_URL ??
     (env.RAILWAY_PUBLIC_DOMAIN ? `https://${env.RAILWAY_PUBLIC_DOMAIN}` : "")

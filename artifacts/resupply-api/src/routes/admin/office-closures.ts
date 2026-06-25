@@ -264,7 +264,8 @@ router.get(
       .limit(500);
     if (error) throw error;
     const ics = buildClosuresIcal({
-      practiceName: process.env.RESUPPLY_PRACTICE_NAME?.trim() || "PennPaps",
+      practiceName:
+        process.env.RESUPPLY_PRACTICE_NAME?.trim() || "CareMetric Breathe",
       closures: ((data ?? []) as ClosureRow[]).map((r) => ({
         id: r.id,
         label: r.label,

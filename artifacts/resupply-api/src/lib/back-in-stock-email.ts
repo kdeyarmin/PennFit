@@ -37,10 +37,10 @@ export interface BackInStockEmailPayload {
    */
   orgId?: string;
   /**
-   * Tenant storefront brand to render in the copy. Defaults to "PennPaps"
-   * inside the renderers so the byte-for-byte fallback / __forTests output
-   * is unchanged when not provided; sendBackInStockEmail threads the
-   * resolved tenant brand here (G6).
+   * Tenant storefront brand to render in the copy. Defaults to the
+   * CareMetric Breathe platform brand inside the renderers (never the seed
+   * tenant's "PennPaps"); sendBackInStockEmail threads the resolved tenant
+   * brand here (G6) — for the Penn tenant that resolves to "PennPaps".
    */
   brandName?: string;
 }
@@ -83,7 +83,7 @@ function renderPriceBlockHtml(priceLabel: string | null): string {
 }
 
 function renderHtml(p: BackInStockEmailPayload): string {
-  const brandName = p.brandName ?? "PennPaps";
+  const brandName = p.brandName ?? "CareMetric Breathe";
   return `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f7f4ec;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f7f4ec;padding:24px 0;">
     <tr><td align="center">
@@ -101,7 +101,7 @@ function renderHtml(p: BackInStockEmailPayload): string {
           <a href="${escapeHtml(p.productUrl)}" style="display:inline-block;background:#c9a24a;color:#0a1f44;text-decoration:none;padding:13px 26px;border-radius:8px;font-weight:700;">View product</a>
         </td></tr>
         <tr><td style="padding-top:28px;border-top:1px solid #eee;color:#888;font-size:12px;line-height:1.4;">
-          You're receiving this because you signed up for a back-in-stock alert on pennpaps.com. We'll only email you once per signup.
+          You're receiving this because you signed up for a back-in-stock alert at ${escapeHtml(brandName)}. We'll only email you once per signup.
         </td></tr>
       </table>
     </td></tr>
@@ -109,7 +109,7 @@ function renderHtml(p: BackInStockEmailPayload): string {
 }
 
 function renderText(p: BackInStockEmailPayload): string {
-  const brandName = p.brandName ?? "PennPaps";
+  const brandName = p.brandName ?? "CareMetric Breathe";
   const lines = [
     `${p.productName} is back in stock at ${brandName}.`,
     "",
@@ -119,7 +119,7 @@ function renderText(p: BackInStockEmailPayload): string {
   if (p.priceLabel) lines.splice(1, 0, p.priceLabel);
   lines.push(
     "",
-    "You're receiving this because you signed up for a back-in-stock alert on pennpaps.com. We only email once per signup.",
+    `You're receiving this because you signed up for a back-in-stock alert at ${brandName}. We only email once per signup.`,
   );
   return lines.join("\n");
 }
