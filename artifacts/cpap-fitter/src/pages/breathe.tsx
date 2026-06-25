@@ -3726,6 +3726,11 @@ export function Comparison() {
           </p>
         </div>
 
+        <p className="bx-compare-swipe" aria-hidden="true">
+          Swipe the table to compare Brightree, Bonafide &amp; NikoHealth
+          <span aria-hidden="true"> →</span>
+        </p>
+
         <div className="bx-compare-wrap bx-reveal">
           <div className="bx-compare-scroll">
             <table className="bx-compare">

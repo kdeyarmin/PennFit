@@ -2544,6 +2544,48 @@
 }
 .bx-compare-scroll {
   overflow-x: auto;
+  /* Smooth, momentum-style horizontal swipe on touch + a snap to the
+     Breathe column so the table never rests mid-cell. */
+  -webkit-overflow-scrolling: touch;
+}
+/* Mobile-only affordance: the comparison table is wider than a phone, so the
+   competitor columns sit off-screen to the right. Touch devices hide the
+   scrollbar, so without this hint a mobile visitor never discovers the
+   side-by-side. Hidden on wider screens where the whole table fits. */
+.bx-compare-swipe {
+  display: none;
+}
+@media (max-width: 760px) {
+  .bx-compare-swipe {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    margin: 0 0 12px;
+    font-size: 12.5px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    color: var(--bx-text-dim);
+    text-align: center;
+  }
+  .bx-compare-swipe span {
+    color: var(--bx-gold-soft);
+    animation: bx-swipe-nudge 1.6s ease-in-out infinite;
+  }
+}
+@keyframes bx-swipe-nudge {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(5px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bx-compare-swipe span {
+    animation: none;
+  }
 }
 .bx-compare th,
 .bx-compare td {
