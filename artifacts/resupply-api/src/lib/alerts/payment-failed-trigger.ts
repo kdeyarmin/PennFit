@@ -150,6 +150,10 @@ export async function dispatchPaymentFailedAlertOrThrow(
     alertKey: "payment_failed",
     channel: "email",
     patientId: patient.id,
+    // Dispatch under the same tenant the patient was resolved in, so the
+    // notice carries that tenant's From identity / brand rather than the
+    // seed default.
+    orgId,
     variables: {
       amount: formatAmount(input.amountDueCents, input.currency),
       // No deep-link to a Stripe billing portal here — the patient

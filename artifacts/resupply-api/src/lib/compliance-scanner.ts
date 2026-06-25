@@ -95,6 +95,11 @@ export async function scanCompliance(
   const now = opts.asOf ?? new Date();
   const cap = opts.cap ?? DEFAULT_CAP;
   let supabase = opts.supabase;
+  // Tenant the scan runs for — threaded into the patient-facing check-in
+  // trigger so it sends under that tenant's From/brand. When a caller
+  // injects a client without an orgId (test seam), this stays undefined and
+  // the trigger falls back to the seed org (unchanged behavior).
+  let resolvedOrgId = opts.orgId;
   if (!supabase) {
     const orgId = opts.orgId ?? (await resolveSeedOrgId());
     if (!orgId) {
@@ -110,6 +115,7 @@ export async function scanCompliance(
         noResponseFlagged: 0,
       };
     }
+    resolvedOrgId = orgId;
     supabase = getOrgScopedClient(orgId);
   }
 
@@ -220,6 +226,7 @@ export async function scanCompliance(
       void maybeDispatchLowUsageCheckinAlert({
         patientId: j.patientId,
         nightsUsed: goodNights,
+        orgId: resolvedOrgId,
       });
     }
   }

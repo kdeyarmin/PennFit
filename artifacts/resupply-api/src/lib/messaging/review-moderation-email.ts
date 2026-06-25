@@ -31,12 +31,12 @@
 //   - Any internal moderation metadata (reviewer id, admin email).
 
 import {
-  createSendgridClient,
   EmailConfigError,
   type SendgridClient,
 } from "@workspace/resupply-email";
 
-import { readPracticeName } from "./messaging-config";
+import { createTenantSendgridClient } from "../email/tenant-sender.js";
+import { resolveBrandingByOrgId } from "../tenant-branding.js";
 
 export type ModerationEmailResult =
   | { sent: true; messageId: string }
@@ -44,8 +44,8 @@ export type ModerationEmailResult =
 
 /**
  * Optional dependency injection for unit tests. The route handler
- * always calls without args — production reads env vars off the
- * shared `createSendgridClient` factory.
+ * always calls without args — production builds a SendgridClient bound
+ * to the recipient tenant's own From identity (G6).
  */
 export interface SendModerationEmailDeps {
   /**
@@ -56,15 +56,20 @@ export interface SendModerationEmailDeps {
   clientFactory?: () => SendgridClient | null;
 }
 
-function defaultClientFactory(): SendgridClient | null {
+/**
+ * Resolve the SendGrid client for a recipient tenant, fail-soft. Mirrors
+ * review-request-email.ts: bind to the tenant's own From identity (G6),
+ * falling back to the platform default when the tenant has none / orgId is
+ * unset. Any config/build failure (incl. EmailConfigError) resolves to
+ * `null` rather than throwing — approving/rejecting a review must never
+ * block on email infrastructure.
+ */
+async function resolveClient(
+  orgId: string | undefined,
+): Promise<SendgridClient | null> {
   try {
-    return createSendgridClient();
+    return await createTenantSendgridClient(orgId);
   } catch (err) {
-    // EmailConfigError is the well-defined "no SENDGRID_API_KEY in
-    // env" path. Anything else here is genuinely unexpected — the
-    // factory does almost nothing besides reading env vars — but we
-    // still trap it so `try { client = factory() } catch {}` isn't
-    // needed at every call site.
     if (err instanceof EmailConfigError) return null;
     return null;
   }
@@ -76,6 +81,14 @@ export interface ApprovedEmailInput {
   productName: string;
   /** Browser URL of the product page (absolute, includes scheme). */
   productUrl: string;
+  /**
+   * Tenant the review (and recipient) belongs to. The email is sent under
+   * the tenant's own From identity (G6) and branded with the tenant's
+   * storefront name; omit / undefined keeps the platform default. For the
+   * seed tenant this resolves to PennPaps, so single-tenant copy is
+   * unchanged.
+   */
+  orgId?: string;
 }
 
 export interface RejectedEmailInput {
@@ -85,17 +98,22 @@ export interface RejectedEmailInput {
   moderationNote: string | null;
   /** Where the customer can edit + resubmit. Absolute URL. */
   editUrl: string;
+  /** Recipient tenant — see ApprovedEmailInput.orgId. */
+  orgId?: string;
 }
 
 export async function sendReviewApprovedEmail(
   input: ApprovedEmailInput,
   deps: SendModerationEmailDeps = {},
 ): Promise<ModerationEmailResult> {
-  const client = (deps.clientFactory ?? defaultClientFactory)();
+  const client = deps.clientFactory
+    ? deps.clientFactory()
+    : await resolveClient(input.orgId);
   if (!client) {
     return { sent: false, reason: "email_not_configured" };
   }
-  const practiceName = readPracticeName();
+  const practiceName = (await resolveBrandingByOrgId(input.orgId))
+    .storefrontName;
   const subject = `Your ${practiceName} review is live`;
   const safeProductName = escapeHtml(input.productName);
   const safeProductUrl = encodeURI(input.productUrl);
@@ -139,11 +157,14 @@ export async function sendReviewRejectedEmail(
   input: RejectedEmailInput,
   deps: SendModerationEmailDeps = {},
 ): Promise<ModerationEmailResult> {
-  const client = (deps.clientFactory ?? defaultClientFactory)();
+  const client = deps.clientFactory
+    ? deps.clientFactory()
+    : await resolveClient(input.orgId);
   if (!client) {
     return { sent: false, reason: "email_not_configured" };
   }
-  const practiceName = readPracticeName();
+  const practiceName = (await resolveBrandingByOrgId(input.orgId))
+    .storefrontName;
   const safeProductName = escapeHtml(input.productName);
   const safeEditUrl = encodeURI(input.editUrl);
   const subject = `An update on your ${practiceName} review`;

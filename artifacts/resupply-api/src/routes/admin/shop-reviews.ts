@@ -218,6 +218,7 @@ router.post(
         to: row.author_email,
         productName,
         productUrl,
+        orgId,
       });
       if (!result.sent) {
         req.log?.warn?.(
@@ -299,6 +300,7 @@ router.post(
         productName,
         moderationNote: row.moderation_note,
         editUrl,
+        orgId,
       });
       if (!result.sent) {
         req.log?.warn?.(

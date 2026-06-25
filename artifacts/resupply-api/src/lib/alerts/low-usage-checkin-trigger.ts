@@ -35,12 +35,18 @@ export interface LowUsageCheckinTriggerInput {
    * not a trailing window — fine for a soft nudge, not a clinical stat.
    */
   nightsUsed: number;
+  /**
+   * The tenant the patient belongs to (the scan's org). Threaded into
+   * dispatchAlert so the check-in carries that tenant's From/brand; omit /
+   * undefined falls back to the seed org (single-tenant behavior unchanged).
+   */
+  orgId?: string;
 }
 
 export async function maybeDispatchLowUsageCheckinAlert(
   input: LowUsageCheckinTriggerInput,
 ): Promise<void> {
-  const { patientId, nightsUsed } = input;
+  const { patientId, nightsUsed, orgId } = input;
   try {
     // Fail-closed flag gate — inert until an operator turns it on.
     if (!(await isFeatureEnabled("alerts.auto_dispatch"))) return;
@@ -58,6 +64,7 @@ export async function maybeDispatchLowUsageCheckinAlert(
       alertKey: "low_usage_checkin",
       channel: "email",
       patientId,
+      orgId,
       variables: {
         nights_used: String(nightsUsed),
         coach_phone: coachPhone,
