@@ -34,7 +34,6 @@
 // PHI posture: counts + ids only in the log lines.
 
 import {
-  type Database,
   type Json,
   getOrgScopedClient,
   resolveSeedOrgId,
@@ -64,6 +63,11 @@ const SCRUB_TRIGGER_THRESHOLD = 0.5;
 const STATEMENT_COOLDOWN_DAYS = 30;
 const DRAFT_LOOKBACK_HOURS = 24;
 const MAX_PER_PASS = 50;
+// PostgREST per-response row cap. Used to offset-page the statement-pass
+// candidate scan so it isn't bounded to a fixed top-N (which would starve
+// every open-balance patient past that cutoff — the cooldown skip doesn't
+// change WHICH rows are read).
+const SCAN_PAGE = 1000;
 
 export interface AutoWorkflowStats {
   scrubsTriggered: number;
@@ -280,7 +284,7 @@ async function runDenialAnalysisPass(
 
 // ── Pass 3: queue statements for closed-with-balance claims ─────────
 
-async function runStatementPass(
+export async function runStatementPass(
   supabase: SupabaseClient,
   stats: AutoWorkflowStats,
 ): Promise<void> {
@@ -290,39 +294,61 @@ async function runStatementPass(
   const cooldownCutoff = new Date(
     Date.now() - STATEMENT_COOLDOWN_DAYS * 24 * 3600 * 1000,
   ).toISOString();
-  const { data: candidates } = await supabase
-    .from("insurance_claims")
-    .select("patient_id, patient_responsibility_cents")
-    .in("status", ["partially_paid", "paid", "closed"])
-    .gt("patient_responsibility_cents", 0)
-    .order("decision_at", { ascending: false })
-    .limit(2000);
-  const patientIds = [
-    ...new Set<string>(
-      (candidates ?? []).map(
-        (c: Database["resupply"]["Tables"]["insurance_claims"]["Row"]) =>
-          c.patient_id,
-      ),
-    ),
-  ];
-  if (patientIds.length === 0) return;
 
-  // Look up which patients had a statement generated in the cooldown window.
-  const { data: recent } = await supabase
-    .from("patient_billing_statements")
-    .select("patient_id")
-    .in("patient_id", patientIds)
-    .gte("created_at", cooldownCutoff);
-  const onCooldown = new Set(
-    (recent ?? []).map(
-      (
-        r: Database["resupply"]["Tables"]["patient_billing_statements"]["Row"],
-      ) => r.patient_id,
-    ),
-  );
+  // The COMPLETE set of patients statemented inside the cooldown window.
+  // This MUST be complete — a truncated set would re-statement (spam) a
+  // patient already on cooldown — so page past the ~1000-row cap and throw
+  // on error (a partial set is worse than retrying next tick).
+  const onCooldown = new Set<string>();
+  for (let from = 0; ; from += SCAN_PAGE) {
+    const { data, error } = await supabase
+      .from("patient_billing_statements")
+      .select("patient_id")
+      .gte("created_at", cooldownCutoff)
+      .order("patient_id", { ascending: true })
+      .range(from, from + SCAN_PAGE - 1);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    for (const r of data as Array<{ patient_id: string }>) {
+      onCooldown.add(r.patient_id);
+    }
+    if (data.length < SCAN_PAGE) break;
+  }
 
-  for (const patientId of patientIds) {
-    if (onCooldown.has(patientId)) continue;
+  // Scan open-balance claims (most-recent decision first), collecting
+  // DISTINCT off-cooldown patients until we have a tickful (MAX_PER_PASS) or
+  // exhaust the candidates. This caps statement GENERATION per tick (the
+  // expensive PDF-render + publish work) the same way the other passes do,
+  // while the paging guarantees coverage across ticks: each statemented
+  // patient goes on cooldown and drops out of the pool, so the next tick
+  // surfaces the next batch — no patient is permanently starved the way a
+  // fixed `.limit(N)` would starve everyone past row N.
+  const due: string[] = [];
+  const seen = new Set<string>();
+  for (let from = 0; due.length < MAX_PER_PASS; from += SCAN_PAGE) {
+    const { data: claims, error } = await supabase
+      .from("insurance_claims")
+      .select("patient_id")
+      .in("status", ["partially_paid", "paid", "closed"])
+      .gt("patient_responsibility_cents", 0)
+      .order("decision_at", { ascending: false })
+      .order("id", { ascending: false })
+      .range(from, from + SCAN_PAGE - 1);
+    if (error) throw error;
+    if (!claims || claims.length === 0) break;
+    for (const c of claims as Array<{ patient_id: string }>) {
+      if (seen.has(c.patient_id)) continue;
+      seen.add(c.patient_id);
+      if (!onCooldown.has(c.patient_id)) {
+        due.push(c.patient_id);
+        if (due.length >= MAX_PER_PASS) break;
+      }
+    }
+    if (claims.length < SCAN_PAGE) break;
+  }
+  if (due.length === 0) return;
+
+  for (const patientId of due) {
     // Generate a complete statement before publishing. The statement row is
     // the cooldown marker, and it is safe for send queues because it has
     // real line items plus a rendered PDF copy.
