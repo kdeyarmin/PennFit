@@ -264,6 +264,8 @@ router.post(
       statementId: row.id,
       pdf: result.pdf,
       adminUserId: req.adminUserId ?? null,
+      // Persist under THIS tenant's scope, not the seed org.
+      supabase,
     });
 
     await logAudit({

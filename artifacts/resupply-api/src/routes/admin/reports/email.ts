@@ -106,7 +106,7 @@ async function buildReportArtifact(
     const fromIso = from.toISOString().slice(0, 10);
     const toIso = to.toISOString().slice(0, 10);
     if (format === "iif") {
-      const iif = await renderIifWithAccounts({
+      const iif = await renderIifWithAccounts(orgId, {
         from: fromIso,
         to: toIso,
         practiceName: practiceName(),

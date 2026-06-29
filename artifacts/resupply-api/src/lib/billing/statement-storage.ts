@@ -18,12 +18,7 @@
 // record counts / object keys only — never the amount, the patient
 // name, or the rendered text in a log line.
 
-import {
-  type Database,
-  type OrgScopedClient,
-  getOrgScopedClient,
-  resolveSeedOrgId,
-} from "@workspace/resupply-db";
+import { type Database, type OrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../logger";
 import { computeRetentionUntilAt } from "../patient-documents/retention";
@@ -63,14 +58,14 @@ export async function persistStatementPdfCopy(
     objectKey: null,
     chartDocumentId: null,
   };
-  let supabase = input.supabase;
-  if (!supabase) {
-    const orgId = await resolveSeedOrgId();
-    // Fail-soft: a missing tenant degrades to "nothing persisted" (the
-    // statement row + on-demand portal re-render still work), never a throw.
-    if (!orgId) return result;
-    supabase = getOrgScopedClient(orgId);
-  }
+  const supabase = input.supabase;
+  // Persistence is tenant-scoped (object_storage_acls, patient_documents,
+  // patient_billing_statements all carry org_id). Require the caller to
+  // inject its org-scoped client rather than silently falling back to the
+  // seed org — a missing client degrades to "nothing persisted" (the
+  // statement row + on-demand portal re-render still work), never a
+  // cross-tenant write.
+  if (!supabase) return result;
   const storage = input.storage ?? new ObjectStorageService();
 
   // 1. Upload the bytes to the private bucket and claim them for the

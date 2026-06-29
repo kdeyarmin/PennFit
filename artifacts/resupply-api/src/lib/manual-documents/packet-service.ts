@@ -9,12 +9,12 @@
 
 import type { OrgScopedClient } from "@workspace/resupply-db";
 
+import { getDocumentSupplierName } from "../company-info";
 import { isManualDocumentType } from "./catalog";
 import { renderManualDocumentPacketPdf } from "./packet-pdf";
 import {
   manualDocumentSupplierContact,
   buildManualDocumentPdfInput,
-  manualDocumentSupplierName,
   MANUAL_DOCUMENT_ROW_COLUMNS,
   type ManualDocumentRow,
 } from "./service";
@@ -117,11 +117,14 @@ export async function renderManualDocumentPacketToPdf(
   documents: ManualDocumentRow[],
   generatedOn: Date = new Date(),
 ): Promise<Buffer> {
+  // Scope tracking + supplier branding to the packet's OWN tenant (the
+  // org-scoped client's org), not the seed org.
+  const orgId = supabase.orgId;
   const inputs = [];
   for (const row of documents) {
-    inputs.push(await buildManualDocumentPdfInput(row, generatedOn));
+    inputs.push(await buildManualDocumentPdfInput(orgId, row, generatedOn));
   }
-  const supplierContact = await manualDocumentSupplierContact();
+  const supplierContact = await manualDocumentSupplierContact(orgId);
   return renderManualDocumentPacketPdf({
     title: packet.title,
     recipient: {
@@ -133,7 +136,7 @@ export async function renderManualDocumentPacketToPdf(
     documents: inputs,
     includeCoverSheet: packet.include_cover_sheet,
     supplierContact,
-    supplierName: manualDocumentSupplierName(),
+    supplierName: await getDocumentSupplierName(orgId),
     generatedOn,
   });
 }

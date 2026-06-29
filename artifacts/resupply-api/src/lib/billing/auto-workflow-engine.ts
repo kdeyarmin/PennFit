@@ -476,12 +476,12 @@ export async function runSecondaryClaimPass(
 
   const eligible = filterSecondaryEligible(rows, existing);
   if (eligible.length === 0) return;
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) return;
-  const scoped = getOrgScopedClient(orgId);
+  // Draft under the SAME tenant as the candidates (the passed-in
+  // org-scoped client), not the seed org — otherwise a non-seed tenant's
+  // secondary claims would be created against the seed (Penn) tenant.
   for (const item of eligible) {
     try {
-      const result = await generateSecondaryClaimDraft(scoped, item.claimId);
+      const result = await generateSecondaryClaimDraft(supabase, item.claimId);
       if (result.status === "created") {
         stats.secondaryClaimsDrafted += 1;
         void publishEvent({

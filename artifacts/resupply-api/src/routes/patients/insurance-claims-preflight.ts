@@ -50,7 +50,7 @@ router.get(
       res.status(404).json({ error: "claim_not_found" });
       return;
     }
-    const summary = await preflightClaim(parsed.data.claimId);
+    const summary = await preflightClaim(orgId, parsed.data.claimId);
     res.json({ preflight: summary });
   },
 );

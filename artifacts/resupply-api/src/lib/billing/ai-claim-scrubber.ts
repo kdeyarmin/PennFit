@@ -340,7 +340,7 @@ async function assembleClaimContext(
       .eq("status", "approved"),
   ]);
 
-  const preflight = await preflightClaim(claimId);
+  const preflight = await preflightClaim(supabase.orgId, claimId);
 
   return {
     claim: {

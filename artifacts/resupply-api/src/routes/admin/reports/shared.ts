@@ -162,9 +162,10 @@ export function centsToDollars(cents: number | null | undefined): number {
 // and remaps patient-pay rows (tagged with the default patient-pay
 // account) to the configured one. Defaults leave the output unchanged.
 export async function renderIifWithAccounts(
+  orgId: string,
   base: Omit<QuickbooksExportInput, "accounts">,
 ): Promise<string> {
-  const accounts = await loadGlAccounts();
+  const accounts = await loadGlAccounts(orgId);
   const rows =
     accounts.patientPay === GL_ACCOUNT_DEFAULTS.patientPay
       ? base.rows

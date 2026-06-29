@@ -15,6 +15,7 @@ import request from "supertest";
 
 import {
   makeRequireAdminMock,
+  MOCK_ORG_ID,
   type MockAdminCtx,
 } from "../../test-helpers/auth-mocks";
 import {
@@ -322,7 +323,7 @@ describe("POST /patients/:id/insurance-claims/:claimId/ai-scrub/apply", () => {
     expect(res.body.ok).toBe(true);
     expect(res.body.outcomes).toHaveLength(2);
     // Default = all indexes applied.
-    expect(applyAiPatchesMock).toHaveBeenCalledWith(CLAIM, [
+    expect(applyAiPatchesMock).toHaveBeenCalledWith(MOCK_ORG_ID, CLAIM, [
       { op: "set_modifier", value: "KX" },
       { op: "noop" },
     ]);
@@ -352,7 +353,9 @@ describe("POST /patients/:id/insurance-claims/:claimId/ai-scrub/apply", () => {
     await request(makeApp())
       .post(url)
       .send({ scrubResultId: SCRUB, patchIndexes: [2] });
-    expect(applyAiPatchesMock).toHaveBeenCalledWith(CLAIM, [{ op: "c" }]);
+    expect(applyAiPatchesMock).toHaveBeenCalledWith(MOCK_ORG_ID, CLAIM, [
+      { op: "c" },
+    ]);
   });
 });
 

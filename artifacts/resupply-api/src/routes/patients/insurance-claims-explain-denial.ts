@@ -58,6 +58,7 @@ router.post(
       return;
     }
     const result = await explainDenialToPatient({
+      orgId,
       claimId: parsed.data.claimId,
     });
     await logAudit({

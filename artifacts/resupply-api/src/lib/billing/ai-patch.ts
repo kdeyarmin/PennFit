@@ -34,7 +34,6 @@ import { z } from "zod";
 import {
   type Database,
   getOrgScopedClient,
-  resolveSeedOrgId,
   type OrgScopedClient,
 } from "@workspace/resupply-db";
 
@@ -177,10 +176,10 @@ export function parseAiPatches(raw: unknown): {
  * which ones landed and which didn't.
  */
 export async function applyAiPatches(
+  orgId: string,
   claimId: string,
   patches: AiPatch[],
 ): Promise<PatchApplyOutcome[]> {
-  const orgId = await resolveSeedOrgId();
   if (!orgId) {
     return patches.map((patch, i) => ({
       patchIndex: i,

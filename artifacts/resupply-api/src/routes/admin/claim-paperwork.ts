@@ -90,7 +90,28 @@ router.get(
       res.status(400).json({ error: "invalid_claim_id" });
       return;
     }
-    const rows = await listClaimRequirements(claimId.data);
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    // Verify the claim belongs to THIS tenant before exposing its paperwork
+    // ledger. listClaimRequirements reads by globally-unique claim_id with
+    // the UNSCOPED client, so without this org-scoped ownership gate a
+    // tenant could read another tenant's requirements by guessing an id.
+    const supabase = getOrgScopedClient(orgId);
+    const { data: claim, error: claimErr } = await supabase
+      .from("insurance_claims")
+      .select("id")
+      .eq("id", claimId.data)
+      .limit(1)
+      .maybeSingle();
+    if (claimErr) throw claimErr;
+    if (!claim) {
+      res.status(404).json({ error: "claim_not_found" });
+      return;
+    }
+    const rows = await listClaimRequirements(claimId.data, supabase.raw());
     res.json(holdSummary(rows));
   },
 );
@@ -117,7 +138,30 @@ router.post(
       });
       return;
     }
-    const rows = await listPatientRequirements(parsed.data.patientId);
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    // Verify the patient belongs to THIS tenant before exposing their
+    // paperwork ledger (listPatientRequirements reads by patient_id with the
+    // unscoped client).
+    const supabase = getOrgScopedClient(orgId);
+    const { data: patient, error: patientErr } = await supabase
+      .from("patients")
+      .select("id")
+      .eq("id", parsed.data.patientId)
+      .limit(1)
+      .maybeSingle();
+    if (patientErr) throw patientErr;
+    if (!patient) {
+      res.status(404).json({ error: "patient_not_found" });
+      return;
+    }
+    const rows = await listPatientRequirements(
+      parsed.data.patientId,
+      supabase.raw(),
+    );
     res.json(holdSummary(rows));
   },
 );
@@ -225,7 +269,28 @@ router.post(
       res.status(400).json({ error: "invalid_claim_id" });
       return;
     }
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    // Verify the claim belongs to THIS tenant before seeding/recomputing its
+    // paperwork set (the helper works by globally-unique claim_id with the
+    // unscoped client).
+    const supabase = getOrgScopedClient(orgId);
+    const { data: claim, error: claimErr } = await supabase
+      .from("insurance_claims")
+      .select("id")
+      .eq("id", claimId.data)
+      .limit(1)
+      .maybeSingle();
+    if (claimErr) throw claimErr;
+    if (!claim) {
+      res.status(404).json({ error: "claim_not_found" });
+      return;
+    }
     const result = await seedDefaultRequirementsForClaim(claimId.data, {
+      supabase: supabase.raw(),
       createdByEmail: req.adminEmail ?? null,
     });
     await audit(req, "bill_hold.requirements_seeded", claimId.data, {
@@ -366,8 +431,29 @@ router.post(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    // Verify the requirement belongs to THIS tenant before satisfying it
+    // (satisfyRequirement resolves by globally-unique id with the unscoped
+    // client — mirror the patch/remind handlers' ownership gate).
+    const supabase = getOrgScopedClient(orgId);
+    const { data: owned, error: ownErr } = await supabase
+      .from("claim_paperwork_requirements")
+      .select("id")
+      .eq("id", id.data)
+      .limit(1)
+      .maybeSingle();
+    if (ownErr) throw ownErr;
+    if (!owned) {
+      res.status(404).json({ error: "requirement_not_found" });
+      return;
+    }
     try {
       const { requirement, recompute } = await satisfyRequirement(id.data, {
+        supabase: supabase.raw(),
         via: parsed.data.via,
         actorEmail: req.adminEmail ?? null,
         documentId: parsed.data.documentId ?? null,
@@ -476,10 +562,26 @@ router.post(
       res.status(404).json({ error: "fax_not_found" });
       return;
     }
+    // Verify the requirement belongs to THIS tenant too — otherwise a tenant
+    // could link its own fax to another tenant's requirement id and satisfy
+    // their paperwork (satisfyRequirement resolves by globally-unique id with
+    // the unscoped client).
+    const { data: ownedReq, error: ownReqErr } = await supabase
+      .from("claim_paperwork_requirements")
+      .select("id")
+      .eq("id", parsed.data.requirementId)
+      .limit(1)
+      .maybeSingle();
+    if (ownReqErr) throw ownReqErr;
+    if (!ownedReq) {
+      res.status(404).json({ error: "requirement_not_found" });
+      return;
+    }
     try {
       const { requirement, recompute } = await satisfyRequirement(
         parsed.data.requirementId,
         {
+          supabase: supabase.raw(),
           via: "manual",
           actorEmail: req.adminEmail ?? null,
           inboundFaxId: faxId.data,

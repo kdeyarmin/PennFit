@@ -228,6 +228,8 @@ export async function generatePatientBillingStatement(
     statementId: row.id,
     pdf: result.pdf,
     adminUserId: input.adminUserId ?? null,
+    // Persist under THIS tenant's scope, not the seed org.
+    supabase,
   });
 
   if (

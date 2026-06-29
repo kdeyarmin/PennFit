@@ -101,6 +101,7 @@ beforeEach(() => {
 });
 
 const CLAIM_ID = "00000000-0000-4000-8000-000000000001";
+const ORG_ID = "00000000-0000-4000-8000-0000000000a1";
 
 // Helper: stage the two supabase calls that recomputeTotals makes after
 // every applyAiPatches invocation.
@@ -137,7 +138,7 @@ describe("applyAiPatches — set_prior_auth_number (appendPriorAuthNote)", () =>
     // recomputeTotals reads line items then updates header
     stageRecompute();
 
-    const outcomes = await applyAiPatches(CLAIM_ID, [
+    const outcomes = await applyAiPatches(ORG_ID, CLAIM_ID, [
       { kind: "set_prior_auth_number", authNumber: "PA-123" },
     ]);
 
@@ -168,7 +169,7 @@ describe("applyAiPatches — set_prior_auth_number (appendPriorAuthNote)", () =>
     });
     stageRecompute();
 
-    await applyAiPatches(CLAIM_ID, [
+    await applyAiPatches(ORG_ID, CLAIM_ID, [
       { kind: "set_prior_auth_number", authNumber: "PA-456" },
     ]);
 
@@ -190,7 +191,7 @@ describe("applyAiPatches — set_prior_auth_number (appendPriorAuthNote)", () =>
     // No update call should happen for the patch itself
     stageRecompute();
 
-    const outcomes = await applyAiPatches(CLAIM_ID, [
+    const outcomes = await applyAiPatches(ORG_ID, CLAIM_ID, [
       { kind: "set_prior_auth_number", authNumber: "PA-789" },
     ]);
 
@@ -211,7 +212,7 @@ describe("applyAiPatches — set_prior_auth_number (appendPriorAuthNote)", () =>
     });
     stageRecompute();
 
-    const outcomes = await applyAiPatches(CLAIM_ID, [
+    const outcomes = await applyAiPatches(ORG_ID, CLAIM_ID, [
       { kind: "set_prior_auth_number", authNumber: "PA-ERR" },
     ]);
 
@@ -250,7 +251,7 @@ describe("applyAiPatches — recomputeTotals uses extended charge (billed_cents 
       error: null,
     });
 
-    await applyAiPatches(CLAIM_ID, [
+    await applyAiPatches(ORG_ID, CLAIM_ID, [
       { kind: "set_claim_field", field: "denial_reason", value: "test" },
     ]);
 
@@ -291,7 +292,7 @@ describe("applyAiPatches — recomputeTotals uses extended charge (billed_cents 
       error: null,
     });
 
-    await applyAiPatches(CLAIM_ID, [
+    await applyAiPatches(ORG_ID, CLAIM_ID, [
       { kind: "set_claim_field", field: "denial_reason", value: null },
     ]);
 
@@ -327,7 +328,7 @@ describe("applyAiPatches — recomputeTotals uses extended charge (billed_cents 
       error: null,
     });
 
-    await applyAiPatches(CLAIM_ID, [
+    await applyAiPatches(ORG_ID, CLAIM_ID, [
       { kind: "set_claim_field", field: "denial_reason", value: null },
     ]);
 
