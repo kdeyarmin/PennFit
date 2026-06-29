@@ -6,7 +6,7 @@ import {
   type ReorderSuggestion,
 } from "@/lib/account-api";
 import { Button } from "@/components/ui/button";
-import { formatDateOnly } from "@/lib/utils";
+import { formatAppDate, formatDateOnly } from "@/lib/utils";
 
 /**
  * "Time to reorder?" section on /account. Renders only when the
@@ -78,7 +78,7 @@ export function ReorderSuggestionsSection() {
 
 function ReorderCard({ item }: { item: ReorderSuggestion }) {
   const overdue = item.status === "overdue";
-  const lastPaid = new Date(item.lastPaidAt).toLocaleDateString(undefined, {
+  const lastPaid = formatAppDate(item.lastPaidAt, {
     month: "short",
     day: "numeric",
     year: "numeric",

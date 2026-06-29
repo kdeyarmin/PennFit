@@ -12,6 +12,7 @@ import {
   openLossClaim,
   patchLossClaim,
 } from "@/lib/admin/loss-claims-api";
+import { formatAppDate } from "@/lib/utils";
 
 const STATUS_LABELS: Record<LossClaimStatus, string> = {
   open: "Open",
@@ -165,7 +166,7 @@ function ClaimRow({ claim, orderId }: { claim: LossClaim; orderId: string }) {
           )}
         </span>
         <span style={{ color: "#64748b" }}>
-          {new Date(claim.openedAt).toLocaleDateString()}
+          {formatAppDate(claim.openedAt)}
         </span>
       </div>
       {claim.resolutionNote && (

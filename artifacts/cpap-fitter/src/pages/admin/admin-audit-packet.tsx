@@ -25,6 +25,7 @@ import {
   getAuditPacketHistory,
   getAuditReadiness,
 } from "@/lib/admin/adr-api";
+import { formatAppDateTime } from "@/lib/utils";
 
 const SCOPES: AdrScope[] = ["device", "supplies", "both"];
 const GROUP_LABELS: Record<string, string> = {
@@ -356,7 +357,7 @@ export function AdminAuditPacketPage() {
                     className="flex items-center justify-between gap-3 text-sm"
                   >
                     <span style={{ color: "hsl(var(--ink-3))" }}>
-                      {new Date(p.generated_at).toLocaleString()} · {p.scope} ·{" "}
+                      {formatAppDateTime(p.generated_at)} · {p.scope} ·{" "}
                       {p.item_count} items
                       {p.page_count ? ` · ${p.page_count}p` : ""}
                     </span>

@@ -23,6 +23,7 @@ import {
   listAdminCustomerNotes,
   type AdminCustomerNote,
 } from "@/lib/admin/customer-notes-api";
+import { formatAppDateTime } from "@/lib/utils";
 
 interface Props {
   userId: string;
@@ -227,9 +228,7 @@ function NotesList({
           >
             <span>{n.authorEmail}</span>
             <span>·</span>
-            <span title={n.createdAt}>
-              {new Date(n.createdAt).toLocaleString()}
-            </span>
+            <span title={n.createdAt}>{formatAppDateTime(n.createdAt)}</span>
           </div>
           <div style={{ whiteSpace: "pre-wrap", fontSize: 13 }}>{n.body}</div>
         </li>

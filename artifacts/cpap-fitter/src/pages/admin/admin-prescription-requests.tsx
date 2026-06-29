@@ -57,6 +57,7 @@ import {
   listProviders,
   type ProviderListItem,
 } from "@/lib/admin/providers-api";
+import { formatAppDate, formatAppDateTime } from "@/lib/utils";
 
 const listKey = (patientId: string) =>
   ["admin", "prescription-requests", "patient", patientId] as const;
@@ -199,7 +200,7 @@ function PacketTable({
             }}
           >
             <td className="py-2 text-xs">
-              {new Date(r.createdAt).toLocaleString(undefined, {
+              {formatAppDateTime(r.createdAt, {
                 month: "short",
                 day: "numeric",
                 hour: "numeric",
@@ -217,10 +218,10 @@ function PacketTable({
               {r.sentToFaxE164 ?? r.returnFaxE164 ?? "—"}
             </td>
             <td className="py-2 text-xs" style={{ color: "hsl(var(--ink-3))" }}>
-              {r.sentAt ? new Date(r.sentAt).toLocaleDateString() : "—"}
+              {r.sentAt ? formatAppDate(r.sentAt) : "—"}
             </td>
             <td className="py-2 text-xs" style={{ color: "hsl(var(--ink-3))" }}>
-              {r.signedAt ? new Date(r.signedAt).toLocaleDateString() : "—"}
+              {r.signedAt ? formatAppDate(r.signedAt) : "—"}
             </td>
           </tr>
         ))}
@@ -1030,7 +1031,7 @@ function SummaryPane({ packet }: { packet: PrescriptionRequestDetail }) {
       className="space-y-2 text-sm overflow-y-auto"
       style={{ maxHeight: "60vh" }}
     >
-      <KV label="Created" value={new Date(packet.createdAt).toLocaleString()} />
+      <KV label="Created" value={formatAppDateTime(packet.createdAt)} />
       <KV label="Status" value={packet.status} />
       <KV
         label="Return fax"
@@ -1038,21 +1039,15 @@ function SummaryPane({ packet }: { packet: PrescriptionRequestDetail }) {
       />
       <KV
         label="Sent"
-        value={packet.sentAt ? new Date(packet.sentAt).toLocaleString() : "—"}
+        value={packet.sentAt ? formatAppDateTime(packet.sentAt) : "—"}
       />
       <KV
         label="Delivered"
-        value={
-          packet.deliveredAt
-            ? new Date(packet.deliveredAt).toLocaleString()
-            : "—"
-        }
+        value={packet.deliveredAt ? formatAppDateTime(packet.deliveredAt) : "—"}
       />
       <KV
         label="Signed"
-        value={
-          packet.signedAt ? new Date(packet.signedAt).toLocaleString() : "—"
-        }
+        value={packet.signedAt ? formatAppDateTime(packet.signedAt) : "—"}
       />
       <KV
         label="Length of need"

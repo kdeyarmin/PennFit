@@ -13,6 +13,7 @@ import {
   VideoCallRoom,
   buildSignalWsUrl,
 } from "@/components/video-call/VideoCallRoom";
+import { formatAppDateTime } from "@/lib/utils";
 
 interface SessionResponse {
   state: "ready" | "invalid" | "cancelled" | "completed" | "disabled";
@@ -179,7 +180,7 @@ export function VideoVisitPage() {
             {" "}
             It's scheduled for{" "}
             <strong>
-              {when.toLocaleString("en-US", {
+              {formatAppDateTime(when, {
                 weekday: "long",
                 month: "long",
                 day: "numeric",

@@ -32,6 +32,7 @@ import {
   type OaSubmission,
   type OaSubmissionLinkedClaim,
 } from "@/lib/admin/office-ally-api";
+import { formatAppDate, formatAppDateTime } from "@/lib/utils";
 
 export function AdminOfficeAllySubmissionDetailPage({
   submissionId,
@@ -183,20 +184,16 @@ function DetailSummary({ s }: { s: OaSubmission }) {
             {s.officeAllySessionId ?? "—"}
           </code>
         </Field>
-        <Field label="Submitted">
-          {new Date(s.submittedAt).toLocaleString()}
-        </Field>
+        <Field label="Submitted">{formatAppDateTime(s.submittedAt)}</Field>
         <Field label="Submitted by">{s.submittedByEmail}</Field>
-        <Field label="Updated">{new Date(s.updatedAt).toLocaleString()}</Field>
+        <Field label="Updated">{formatAppDateTime(s.updatedAt)}</Field>
         <Field label="999 ack file">
           <code className="font-mono text-[11px]">
             {s.ack999FileName ?? "—"}
           </code>
         </Field>
         <Field label="999 received">
-          {s.ack999ReceivedAt
-            ? new Date(s.ack999ReceivedAt).toLocaleString()
-            : "—"}
+          {s.ack999ReceivedAt ? formatAppDateTime(s.ack999ReceivedAt) : "—"}
         </Field>
         <Field label="277CA ack file">
           <code className="font-mono text-[11px]">
@@ -204,9 +201,7 @@ function DetailSummary({ s }: { s: OaSubmission }) {
           </code>
         </Field>
         <Field label="277CA received">
-          {s.ack277caReceivedAt
-            ? new Date(s.ack277caReceivedAt).toLocaleString()
-            : "—"}
+          {s.ack277caReceivedAt ? formatAppDateTime(s.ack277caReceivedAt) : "—"}
         </Field>
       </dl>
       {s.rejectionReason && (
@@ -303,7 +298,7 @@ function LineageRow({ s }: { s: OaSubmission }) {
         {s.fileName}
       </code>
       <span className="text-[11px]" style={{ color: "hsl(var(--ink-3))" }}>
-        {s.claimCount} claims · {new Date(s.submittedAt).toLocaleString()}
+        {s.claimCount} claims · {formatAppDateTime(s.submittedAt)}
       </span>
     </Link>
   );
@@ -487,7 +482,7 @@ function Ack277Cell({ ack }: { ack: OaSubmissionLinkedClaim["ack277ca"] }) {
         </p>
       )}
       <p className="text-[10px]" style={{ color: "hsl(var(--ink-3))" }}>
-        {new Date(ack.receivedAt).toLocaleDateString()}
+        {formatAppDate(ack.receivedAt)}
       </p>
     </div>
   );

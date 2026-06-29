@@ -26,6 +26,7 @@ import {
   type Backorder,
   type SkuSubstitute,
 } from "@/lib/admin/backorders-api";
+import { formatAppDate } from "@/lib/utils";
 
 export function AdminBackordersPage() {
   return (
@@ -196,8 +197,8 @@ function BackorderRow({
           }`}
         >
           {isActive
-            ? `since ${new Date(row.markedAt).toLocaleDateString()}`
-            : `cleared ${new Date(row.clearedAt!).toLocaleDateString()}`}
+            ? `since ${formatAppDate(row.markedAt)}`
+            : `cleared ${formatAppDate(row.clearedAt!)}`}
         </span>
       </td>
       <td className="py-1.5 text-xs text-muted-foreground">

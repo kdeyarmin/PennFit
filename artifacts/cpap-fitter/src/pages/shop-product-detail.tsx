@@ -85,6 +85,7 @@ import {
   type MyReview,
   type ShopProductView,
 } from "@/lib/shop-api";
+import { formatAppDate } from "@/lib/utils";
 
 const BODY_MIN = 20;
 const BODY_MAX = 2000;
@@ -1253,7 +1254,7 @@ function ReviewList({ items }: { items: ReviewItem[] }) {
                 </Badge>
               )}
               <time dateTime={r.createdAt} className="block mt-1">
-                {new Date(r.createdAt).toLocaleDateString(undefined, {
+                {formatAppDate(r.createdAt, {
                   year: "numeric",
                   month: "short",
                   day: "numeric",

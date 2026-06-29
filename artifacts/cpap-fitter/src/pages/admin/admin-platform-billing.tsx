@@ -27,7 +27,7 @@ import {
   type CatalogPlanEdit,
   type PlatformTenantBillingRow,
 } from "@/lib/admin/platform-billing-api";
-import { formatAppDateTime } from "@/lib/utils";
+import { formatAppDate, formatAppDateTime } from "@/lib/utils";
 
 const METRIC_LABELS: Record<string, string> = {
   activePatients: "Active patients",
@@ -289,11 +289,7 @@ function TenantEditor({
               Status {tenant.billing.subscription?.stripeStatus ?? "—"} ·
               Invoice {tenant.billing.subscription?.lastInvoiceStatus ?? "—"}
               {tenant.billing.subscription?.currentPeriodEnd
-                ? ` · Renews ${new Date(
-                    tenant.billing.subscription.currentPeriodEnd,
-                  ).toLocaleDateString(undefined, {
-                    timeZone: "America/New_York",
-                  })}`
+                ? ` · Renews ${formatAppDate(tenant.billing.subscription.currentPeriodEnd)}`
                 : ""}
             </div>
           </div>

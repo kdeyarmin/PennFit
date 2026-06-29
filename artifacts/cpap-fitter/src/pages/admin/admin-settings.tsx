@@ -25,6 +25,7 @@ import { useDemoMode } from "@/demo/DemoModeProvider";
 import { Spinner } from "@/components/admin/Spinner";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { PageHeader } from "@/components/admin/PageHeader";
+import { formatAppDateTime } from "@/lib/utils";
 
 interface SystemInfo {
   server: {
@@ -210,7 +211,7 @@ function Body({ data }: { data: SystemInfo }) {
       ? "Not tracked here — see deploy logs or the Supabase dashboard"
       : String(data.database.migrationCount);
   const lastMigration = data.database.lastMigrationAt
-    ? new Date(data.database.lastMigrationAt).toLocaleString()
+    ? formatAppDateTime(data.database.lastMigrationAt)
     : data.database.migrationCount === null
       ? "Not tracked here"
       : "never";

@@ -38,6 +38,7 @@ import {
   type SignatureTrackingStatus,
 } from "@/lib/admin/signature-tracking-api";
 import { sendErrorText } from "@/lib/admin/send-error";
+import { formatAppDate } from "@/lib/utils";
 
 type BadgeVariant =
   | "neutral"
@@ -94,15 +95,11 @@ function ageLabel(iso: string): string {
 }
 
 function fmtDate(iso: string | null): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime())
-    ? "—"
-    : d.toLocaleDateString(undefined, {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-      });
+  return formatAppDate(iso, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
 }
 
 export function AdminSignatureTrackingPage() {

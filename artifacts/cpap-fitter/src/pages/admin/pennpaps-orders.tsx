@@ -17,6 +17,7 @@ import { fetchAdminOrders } from "@/lib/admin/storefront-admin-api";
 import { CsrOrderRequestsPanel } from "@/components/admin/CsrOrderRequestsPanel";
 import { Search, ChevronLeft, ChevronRight } from "lucide-react";
 import { useDocumentTitle } from "@/hooks/admin/use-document-title";
+import { formatAppDateTime } from "@/lib/utils";
 
 const STATUS_LABEL: Record<string, string> = {
   pending: "Pending",
@@ -221,7 +222,7 @@ export function AdminOrders() {
                       </Badge>
                     </td>
                     <td className="py-3 px-4 text-muted-foreground whitespace-nowrap">
-                      {new Date(o.createdAt).toLocaleString()}
+                      {formatAppDateTime(o.createdAt)}
                     </td>
                   </tr>
                 ))}

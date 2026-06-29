@@ -20,6 +20,7 @@ import { Spinner } from "@/components/admin/Spinner";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Button } from "@/components/admin/Button";
 import { fetchRecentNps, type NpsRecentResponse } from "@/lib/admin/nps-api";
+import { formatAppDateTime } from "@/lib/utils";
 
 const WINDOW_OPTIONS = [7, 14, 30, 60] as const;
 
@@ -157,7 +158,7 @@ function NpsContent({ data }: { data: NpsRecentResponse }) {
                     {c.score}/10 · {BAND_LABEL[bandFor(c.score)]}
                   </span>
                   <span style={{ color: "hsl(var(--ink-3))" }}>
-                    {new Date(c.createdAt).toLocaleString()}
+                    {formatAppDateTime(c.createdAt)}
                   </span>
                 </div>
                 {c.comment && (

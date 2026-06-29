@@ -46,6 +46,7 @@ import {
 } from "@/lib/me-billing-api";
 import { submitInsuranceEstimate } from "@/lib/shop-api";
 import { useCompanyContact } from "@/lib/contact";
+import { formatAppDate } from "@/lib/utils";
 
 // Lightweight email-shape guard. Server still validates canonically.
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -542,9 +543,7 @@ function PersonalEstimatePanel({
             <CardDescription>
               Based on your actual plan benefits
               {personal.payerName ? ` with ${personal.payerName}` : ""}.
-              {personal.asOf && (
-                <> Verified {new Date(personal.asOf).toLocaleDateString()}.</>
-              )}
+              {personal.asOf && <> Verified {formatAppDate(personal.asOf)}.</>}
             </CardDescription>
           </div>
           {personal.isActive === false && (

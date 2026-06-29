@@ -19,6 +19,7 @@ import {
   provisionFaxNumber,
   setFaxNumber,
 } from "@/lib/admin/fax-settings-api";
+import { formatAppDate } from "@/lib/utils";
 
 const INPUT_STYLE: React.CSSProperties = {
   background: "hsl(var(--surface-1))",
@@ -118,7 +119,7 @@ export function AdminFaxSettingsPage() {
                 ? `Provisioned via Telnyx (order ${data.telnyxOrderId})`
                 : "Set manually (ported / pre-existing number)"}
               {data.provisionedAt
-                ? ` · ${new Date(data.provisionedAt).toLocaleDateString()}`
+                ? ` · ${formatAppDate(data.provisionedAt)}`
                 : ""}
             </p>
           </div>

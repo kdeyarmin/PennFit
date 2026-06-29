@@ -27,6 +27,7 @@ import {
   listAdminCustomerNotes,
   type AdminCustomerNote,
 } from "@/lib/admin/customer-notes-api";
+import { formatAppDate } from "@/lib/utils";
 
 interface Props {
   customerId: string;
@@ -244,7 +245,7 @@ function NotesSection({
                 className="text-[10px] mb-0.5"
                 style={{ color: "hsl(var(--ink-3))" }}
               >
-                {n.authorEmail} · {new Date(n.createdAt).toLocaleDateString()}
+                {n.authorEmail} · {formatAppDate(n.createdAt)}
               </p>
               <p
                 className="text-xs whitespace-pre-wrap break-words"

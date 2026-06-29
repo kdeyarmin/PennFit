@@ -46,6 +46,7 @@ import { ReturnNotesPanel } from "@/components/admin/ReturnNotesPanel";
 import { PageHeader } from "@/components/admin/PageHeader";
 import { ProductSearchCombobox } from "@/components/admin/ProductSearchCombobox";
 import type { InventoryProductRow } from "@/lib/admin/shop-inventory-api";
+import { formatAppDateTime } from "@/lib/utils";
 
 type Tab = ReturnStatus | "all" | "open" | "needs_action";
 
@@ -381,7 +382,7 @@ function ReturnCard({ item }: { item: AdminReturn }) {
           </div>
           <div className="text-xs text-slate-500">
             Customer {item.customerId.slice(-10)} · opened{" "}
-            {new Date(item.createdAt).toLocaleString()}
+            {formatAppDateTime(item.createdAt)}
           </div>
         </div>
         <div className="text-right text-xs text-slate-500 shrink-0">

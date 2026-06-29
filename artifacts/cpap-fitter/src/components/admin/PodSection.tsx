@@ -24,6 +24,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Camera, Loader2, RefreshCw, Trash2, Upload } from "lucide-react";
 
 import { csrfHeader } from "@/lib/csrf";
+import { formatAppDateTime } from "@/lib/utils";
 
 const BASE = "/resupply-api";
 
@@ -254,7 +255,7 @@ export function PodSection({ orderId, parentQueryKey }: PodSectionProps) {
         {hasPhoto && (
           <span className="text-[11px] text-muted-foreground">
             Uploaded{" "}
-            {meta.uploadedAt ? new Date(meta.uploadedAt).toLocaleString() : "—"}
+            {meta.uploadedAt ? formatAppDateTime(meta.uploadedAt) : "—"}
             {meta.signedName ? ` · ${meta.signedName}` : ""}
           </span>
         )}

@@ -29,6 +29,7 @@ import {
   testClearinghouse,
   updateClearinghouse,
 } from "@/lib/admin/clearinghouse-credentials-api";
+import { formatAppDateTime } from "@/lib/utils";
 
 interface FieldDef {
   key: keyof ClearinghouseBody;
@@ -262,7 +263,7 @@ export function AdminBillingConfigClearinghousePage() {
               className="text-sm self-center"
               style={{ color: "hsl(var(--ink-3))" }}
             >
-              Last polled: {new Date(existing.lastPolledAt).toLocaleString()}
+              Last polled: {formatAppDateTime(existing.lastPolledAt)}
             </div>
           )}
         </div>

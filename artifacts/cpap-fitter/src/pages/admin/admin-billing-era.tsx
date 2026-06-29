@@ -26,6 +26,7 @@ import {
   ingestEraFile,
   type EraIngestResponse,
 } from "@/lib/admin/billing-api";
+import { formatAppDateTime } from "@/lib/utils";
 
 const MAX_FILE_BYTES = 4 * 1024 * 1024;
 
@@ -284,7 +285,7 @@ export function AdminBillingEraPage() {
                       style={{ color: "hsl(var(--ink-3))" }}
                     >
                       <span className="block">
-                        {new Date(f.ingestedAt).toLocaleString()}
+                        {formatAppDateTime(f.ingestedAt)}
                       </span>
                       {f.ingestedByEmail && (
                         <span className="block">{f.ingestedByEmail}</span>

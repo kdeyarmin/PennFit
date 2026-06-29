@@ -20,6 +20,7 @@ import {
   releaseConversation,
   setConversationPriority,
 } from "@/lib/admin/conversation-assignment-api";
+import { formatAppDateTime } from "@/lib/utils";
 
 const PRIORITY_TONE: Record<Priority, string> = {
   urgent: "bg-rose-100 text-rose-900 border-rose-300",
@@ -308,7 +309,7 @@ function SlaIndicator({
             ? "text-amber-700"
             : "text-emerald-700"
       }`}
-      title={`SLA due ${due.toLocaleString()}`}
+      title={`SLA due ${formatAppDateTime(due)}`}
     >
       ⏱ {label}
     </span>

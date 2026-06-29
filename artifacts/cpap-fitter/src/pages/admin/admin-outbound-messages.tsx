@@ -20,6 +20,7 @@ import {
   type OutboundMessageItem,
   type OutboundResultFilter,
 } from "@/lib/admin/outbound-messages-api";
+import { formatAppDateTime } from "@/lib/utils";
 
 const PAGE_SIZE = 50;
 
@@ -248,7 +249,7 @@ function MessageRow({ row }: { row: OutboundMessageItem }) {
   return (
     <tr className="border-t border-slate-100 hover:bg-slate-50">
       <td className="px-3 py-2 text-xs text-slate-700 tabular-nums whitespace-nowrap">
-        {new Date(row.occurredAt).toLocaleString()}
+        {formatAppDateTime(row.occurredAt)}
       </td>
       <td className="px-3 py-2 text-xs uppercase tracking-wider text-slate-600">
         {row.channel ?? "—"}
@@ -264,7 +265,7 @@ function MessageRow({ row }: { row: OutboundMessageItem }) {
         className="px-3 py-2 text-xs text-slate-600"
         title={
           row.deliveredAt
-            ? `Delivered ${new Date(row.deliveredAt).toLocaleString()}`
+            ? `Delivered ${formatAppDateTime(row.deliveredAt)}`
             : undefined
         }
       >

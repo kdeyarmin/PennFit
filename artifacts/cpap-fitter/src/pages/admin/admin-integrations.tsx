@@ -31,6 +31,7 @@ import {
   triggerNightlySync,
   type IntegrationAdapterStatus,
 } from "@/lib/admin/integrations-status-api";
+import { formatAppDateTime } from "@/lib/utils";
 
 const queryKey = ["admin", "integrations", "status"] as const;
 
@@ -208,7 +209,7 @@ function AdapterRow({ adapter }: { adapter: IntegrationAdapterStatus }) {
       </td>
       <td className="py-2 text-xs">
         {adapter.lastFetchedAt
-          ? new Date(adapter.lastFetchedAt).toLocaleString()
+          ? formatAppDateTime(adapter.lastFetchedAt)
           : "never"}
       </td>
     </tr>

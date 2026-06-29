@@ -21,6 +21,7 @@ import {
   listAdminReturnNotes,
   type AdminReturnNote,
 } from "@/lib/admin/return-notes-api";
+import { formatAppDateTime } from "@/lib/utils";
 
 interface Props {
   returnId: string;
@@ -211,7 +212,7 @@ function NotesList({
               marginBottom: 3,
             }}
           >
-            {n.authorEmail} · {new Date(n.createdAt).toLocaleString()}
+            {n.authorEmail} · {formatAppDateTime(n.createdAt)}
           </div>
           <div style={{ whiteSpace: "pre-wrap", fontSize: 12 }}>{n.body}</div>
         </li>

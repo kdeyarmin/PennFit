@@ -38,6 +38,7 @@ import {
   type TodayComplianceAlert,
 } from "@/lib/admin/today-api";
 import { createCoachingPlan } from "@/lib/admin/coaching-plans-api";
+import { formatAppDateTime } from "@/lib/utils";
 
 const queryKey = ["admin", "today"] as const;
 
@@ -555,7 +556,7 @@ function AssignedAppointmentsCard({ data }: { data: TodayResponse }) {
 }
 
 function formatApptWhen(iso: string): string {
-  return new Date(iso).toLocaleString([], {
+  return formatAppDateTime(iso, {
     weekday: "short",
     month: "short",
     day: "numeric",

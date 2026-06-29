@@ -26,6 +26,7 @@ import {
 import { CheckCircle2, Package, Search } from "lucide-react";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import { useCompanyContact } from "@/lib/contact";
+import { formatAppDate } from "@/lib/utils";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const REF_RE = /^(PENN-)?[A-Za-z0-9]{4,12}$/;
@@ -270,9 +271,7 @@ function ResultCard({
           <span className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
             Submitted
           </span>
-          <span className="text-sm">
-            {new Date(result.createdAt).toLocaleDateString()}
-          </span>
+          <span className="text-sm">{formatAppDate(result.createdAt)}</span>
         </div>
       </div>
       <Button

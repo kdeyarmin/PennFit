@@ -54,6 +54,7 @@ import {
   type SignatureRequest,
   type SubjectType,
 } from "@/lib/admin/provider-esign-api";
+import { formatAppDateTime } from "@/lib/utils";
 
 const SUBJECT_OPTIONS: { value: SubjectType; label: string }[] = [
   { value: "prescription", label: "Prescription" },
@@ -81,7 +82,7 @@ function statusVariant(status: string) {
 
 function fmt(value: string | null | undefined): string {
   if (!value) return "—";
-  return new Date(value).toLocaleString("en-US", {
+  return formatAppDateTime(value, {
     month: "short",
     day: "numeric",
     year: "numeric",

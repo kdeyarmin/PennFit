@@ -26,6 +26,7 @@ import {
   type VerificationStatus,
   type VerificationWorkItem,
 } from "@/lib/admin/eligibility-verification-worklist-api";
+import { formatAppDate } from "@/lib/utils";
 
 const STALE_WINDOWS = [
   { value: 14, label: "14 days" },
@@ -245,7 +246,7 @@ function WorklistTable({ items }: { items: VerificationWorkItem[] }) {
                 <td className="px-3 py-2 text-xs text-slate-600 tabular-nums">
                   {c.verifiedAt ? (
                     <>
-                      {new Date(c.verifiedAt).toLocaleDateString()}
+                      {formatAppDate(c.verifiedAt)}
                       {c.daysSinceVerified != null && (
                         <span className="text-slate-400">
                           {" "}

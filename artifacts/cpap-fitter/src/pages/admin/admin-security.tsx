@@ -33,6 +33,7 @@ import {
   type MfaDevice,
   type MfaStatus,
 } from "@/lib/admin/mfa-api";
+import { formatAppDate, formatAppDateTime } from "@/lib/utils";
 const statusKey = ["admin", "mfa", "status"] as const;
 
 export function AdminSecurityPage() {
@@ -157,13 +158,9 @@ function EnrolledPanel({ data }: { data: MfaStatus }) {
       </div>
       <dl className="text-xs grid grid-cols-2 gap-x-4 gap-y-1">
         <dt className="text-muted-foreground">Enrolled on</dt>
-        <dd>
-          {data.verifiedAt ? new Date(data.verifiedAt).toLocaleString() : "—"}
-        </dd>
+        <dd>{data.verifiedAt ? formatAppDateTime(data.verifiedAt) : "—"}</dd>
         <dt className="text-muted-foreground">Last used</dt>
-        <dd>
-          {data.lastUsedAt ? new Date(data.lastUsedAt).toLocaleString() : "—"}
-        </dd>
+        <dd>{data.lastUsedAt ? formatAppDateTime(data.lastUsedAt) : "—"}</dd>
         <dt className="text-muted-foreground">Recovery codes left</dt>
         <dd>{data.recoveryCodesRemaining} of 10</dd>
       </dl>
@@ -544,9 +541,9 @@ function DeviceList({ devices, code }: { devices: MfaDevice[]; code: string }) {
             <div className="min-w-0">
               <div className="font-medium">{d.label ?? "Unnamed device"}</div>
               <div className="text-[10px] text-muted-foreground">
-                Added {new Date(d.createdAt).toLocaleDateString()}
+                Added {formatAppDate(d.createdAt)}
                 {d.lastUsedAt
-                  ? ` · last used ${new Date(d.lastUsedAt).toLocaleDateString()}`
+                  ? ` · last used ${formatAppDate(d.lastUsedAt)}`
                   : " · never used"}
               </div>
             </div>

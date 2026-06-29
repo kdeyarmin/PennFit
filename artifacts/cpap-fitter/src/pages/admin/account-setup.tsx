@@ -36,6 +36,7 @@ import {
   type AccountSetupItem,
   type AccountSetupResponse,
 } from "@/lib/admin/account-setup-api";
+import { formatAppDateTime } from "@/lib/utils";
 
 const STORAGE_KEY = "pennfit.account-setup.manual.v1";
 
@@ -163,7 +164,7 @@ function Body({
             </h2>
             <p className="text-xs text-slate-600">
               {data.environment ? `Environment: ${data.environment}. ` : ""}
-              Last checked {new Date(data.generatedAt).toLocaleString()}.
+              Last checked {formatAppDateTime(data.generatedAt)}.
             </p>
           </div>
           <button

@@ -41,7 +41,7 @@ import { Input } from "@/components/admin/Input";
 import { PayerNameAutocomplete } from "@/components/admin/PayerNameAutocomplete";
 import { HcpcsCodeAutocomplete } from "@/components/admin/HcpcsCodeAutocomplete";
 import { consumeClaimParam } from "@/lib/admin/claim-deeplink";
-import { todayAppDateIso } from "@/lib/utils";
+import { formatAppDateTime, todayAppDateIso } from "@/lib/utils";
 import {
   createInsuranceClaim,
   createInsuranceClaimEvent,
@@ -935,7 +935,7 @@ function ClaimDrawerContent({
                     {e.eventType.replace(/_/g, " ")}
                   </span>
                   <span style={{ color: "hsl(var(--ink-3))" }}>
-                    {new Date(e.occurredAt).toLocaleString()}
+                    {formatAppDateTime(e.occurredAt)}
                   </span>
                 </div>
                 {e.amountCents != null && (

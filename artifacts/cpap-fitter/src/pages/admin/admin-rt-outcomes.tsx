@@ -24,6 +24,7 @@ import {
   type RtEncounterType,
   type RtOutcomeRow,
 } from "@/lib/admin/rt-outcomes-api";
+import { formatAppDate } from "@/lib/utils";
 
 const WINDOWS: ReadonlyArray<{ days: number; label: string }> = [
   { days: 30, label: "30 days" },
@@ -49,7 +50,7 @@ function formatWhen(iso: string | null): string {
   if (diffDays <= 0) return "today";
   if (diffDays === 1) return "yesterday";
   if (diffDays < 30) return `${diffDays}d ago`;
-  return new Date(t).toLocaleDateString();
+  return formatAppDate(new Date(t));
 }
 
 export function AdminRtOutcomesPage() {

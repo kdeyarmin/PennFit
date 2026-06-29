@@ -24,6 +24,7 @@ import {
   type CoachingPlan,
   type CoachingStatus,
 } from "@/lib/admin/coaching-plans-api";
+import { formatAppDate } from "@/lib/utils";
 
 const STATUS_TONE: Record<CoachingStatus, string> = {
   open: "bg-amber-100 text-amber-900",
@@ -295,13 +296,9 @@ function PlanRow({
           : "—"}
       </td>
       <td className="py-1.5 text-xs">
-        {plan.latestOutreachAt
-          ? new Date(plan.latestOutreachAt).toLocaleDateString()
-          : "—"}
+        {plan.latestOutreachAt ? formatAppDate(plan.latestOutreachAt) : "—"}
       </td>
-      <td className="py-1.5 text-xs">
-        {new Date(plan.openedAt).toLocaleDateString()}
-      </td>
+      <td className="py-1.5 text-xs">{formatAppDate(plan.openedAt)}</td>
       <td className="py-1.5">
         {nexts.length === 0 ? (
           <span className="text-[10px] text-muted-foreground">closed</span>

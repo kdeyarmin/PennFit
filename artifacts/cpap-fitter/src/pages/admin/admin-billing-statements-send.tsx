@@ -29,6 +29,7 @@ import {
   type PendingStatement,
   type StatementBatchSummary,
 } from "@/lib/admin/statement-send-api";
+import { formatAppDate } from "@/lib/utils";
 
 const QUERY_KEY = ["admin", "pending-statements"] as const;
 const MAIL_QUEUE_KEY = ["admin", "mail-queue-statements"] as const;
@@ -271,7 +272,7 @@ function MailQueueRow({ item }: { item: MailQueueStatement }) {
         </Link>
       </span>
       <span className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
-        {new Date(item.createdAt).toLocaleDateString()}
+        {formatAppDate(item.createdAt)}
       </span>
     </div>
   );
@@ -327,7 +328,7 @@ function StatementRow({ item }: { item: PendingStatement }) {
       </span>
       <span className="flex items-center gap-3 text-sm">
         <span style={{ color: "hsl(var(--ink-3))" }}>
-          {new Date(item.createdAt).toLocaleDateString()}
+          {formatAppDate(item.createdAt)}
         </span>
         <Button
           size="sm"

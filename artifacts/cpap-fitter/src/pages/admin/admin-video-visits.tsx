@@ -32,6 +32,7 @@ import {
   type VideoVisit,
   type VideoVisitPurpose,
 } from "@/lib/admin/video-visits-api";
+import { formatAppDateTime } from "@/lib/utils";
 
 const PURPOSE_LABEL: Record<VideoVisitPurpose, string> = {
   setup: "Equipment setup",
@@ -75,10 +76,7 @@ function inviteLabel(v: VideoVisit): string {
 }
 
 function formatDateTime(iso: string | null): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleString("en-US", {
+  return formatAppDateTime(iso, {
     month: "short",
     day: "numeric",
     hour: "numeric",

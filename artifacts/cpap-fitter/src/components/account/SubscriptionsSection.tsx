@@ -56,6 +56,7 @@ import {
 } from "@/lib/account-api";
 import { formatMoneyCents } from "@/lib/shop-api";
 import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
+import { formatAppDate } from "@/lib/utils";
 
 type PendingAction = "cancel" | "pause" | "resume";
 
@@ -464,7 +465,7 @@ export function SubscriptionsSection({
                       <span className="inline-flex items-center gap-1">
                         <CalendarClock className="h-3 w-3" />
                         Next ship{" "}
-                        {nextShip.toLocaleDateString(undefined, {
+                        {formatAppDate(nextShip, {
                           year: "numeric",
                           month: "short",
                           day: "numeric",
@@ -475,7 +476,7 @@ export function SubscriptionsSection({
                       <span className="inline-flex items-center gap-1 text-[hsl(var(--penn-navy))]">
                         <XCircle className="h-3 w-3" />
                         Stops after{" "}
-                        {nextShip.toLocaleDateString(undefined, {
+                        {formatAppDate(nextShip, {
                           year: "numeric",
                           month: "short",
                           day: "numeric",

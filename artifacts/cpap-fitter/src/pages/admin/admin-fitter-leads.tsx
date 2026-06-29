@@ -33,6 +33,7 @@ import {
 } from "@/lib/admin/fitter-leads-api";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { PageHeader } from "@/components/admin/PageHeader";
+import { formatAppDate } from "@/lib/utils";
 
 const STAGE_STYLE: Record<
   FitterLeadJourneyStage,
@@ -115,7 +116,7 @@ function formatRelative(iso: string, nowMs: number): string {
   if (hr < 24) return `${hr}h ago`;
   const days = Math.floor(hr / 24);
   if (days < 30) return `${days}d ago`;
-  return new Date(iso).toLocaleDateString();
+  return formatAppDate(iso);
 }
 
 function formatFuture(iso: string, nowMs: number): string {

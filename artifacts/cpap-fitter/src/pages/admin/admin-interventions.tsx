@@ -26,6 +26,7 @@ import {
   type InterventionItem,
   type OutcomeStatus,
 } from "@/lib/admin/interventions-api";
+import { formatAppDate } from "@/lib/utils";
 
 const WINDOWS = [30, 60, 120, 365] as const;
 const QUERY_KEY = ["admin", "interventions"] as const;
@@ -42,10 +43,7 @@ const OUTCOME_VARIANT: Record<
 };
 
 function formatWhen(iso: string | null): string {
-  if (!iso) return "—";
-  const t = Date.parse(iso);
-  if (Number.isNaN(t)) return "—";
-  return new Date(t).toLocaleDateString();
+  return formatAppDate(iso);
 }
 
 export function AdminInterventionsPage() {

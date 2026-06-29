@@ -40,6 +40,7 @@ import {
   type ExclusionReason,
   type ReadyGroup,
 } from "@/lib/admin/billing-auto-submit-api";
+import { formatAppDate } from "@/lib/utils";
 
 const READY_QUERY_KEY = ["admin-billing-auto-submit-ready"] as const;
 const STATUS_QUERY_KEY = ["admin-billing-auto-submit-status"] as const;
@@ -494,7 +495,7 @@ function PayerGroupCard({
                   >
                     <Clock className="h-3 w-3" />
                     {c.eligibilityVerifiedAt
-                      ? new Date(c.eligibilityVerifiedAt).toLocaleDateString()
+                      ? formatAppDate(c.eligibilityVerifiedAt)
                       : "verified"}
                   </span>
                 </td>

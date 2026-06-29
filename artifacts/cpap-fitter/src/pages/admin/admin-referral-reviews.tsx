@@ -63,6 +63,7 @@ import {
   type QuickCheckResult,
 } from "@/lib/admin/billing-api";
 import { useUrlState } from "@/hooks/use-url-state";
+import { formatAppDateTime } from "@/lib/utils";
 
 type ListFilter = "open" | "accepted" | "dismissed" | "all";
 const LIST_FILTERS = new Set<ListFilter>([
@@ -532,7 +533,7 @@ export function AdminReferralReviewsPage() {
                     onClick={() => setSelectedId(r.id)}
                   >
                     <td className="py-2.5 pr-3 whitespace-nowrap">
-                      {new Date(r.createdAt).toLocaleString()}
+                      {formatAppDateTime(r.createdAt)}
                     </td>
                     <td className="py-2.5 pr-3 capitalize">{r.source}</td>
                     <td className="py-2.5 pr-3">

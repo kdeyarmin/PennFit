@@ -27,6 +27,7 @@ import {
 } from "@/lib/admin/office-closures-api";
 import { getOfficeHours, putOfficeHours } from "@/lib/admin/office-hours-api";
 import { listTemplates } from "@/lib/admin/message-templates-api";
+import { formatAppDateTime } from "@/lib/utils";
 
 const WEEKDAY_NAMES = [
   "Sunday",
@@ -79,8 +80,7 @@ function ActiveClosureBanner() {
     <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
       <div className="font-semibold mb-1">Closure in effect: {c.label}</div>
       <div className="text-xs">
-        From {new Date(c.startsAt).toLocaleString()} →{" "}
-        {new Date(c.endsAt).toLocaleString()}
+        From {formatAppDateTime(c.startsAt)} → {formatAppDateTime(c.endsAt)}
       </div>
       <div className="text-xs mt-2 italic">"{c.autoReplyMessage}"</div>
     </div>
@@ -315,12 +315,8 @@ function ClosureRow({
           "{row.autoReplyMessage}"
         </div>
       </td>
-      <td className="py-1.5 text-xs">
-        {new Date(row.startsAt).toLocaleString()}
-      </td>
-      <td className="py-1.5 text-xs">
-        {new Date(row.endsAt).toLocaleString()}
-      </td>
+      <td className="py-1.5 text-xs">{formatAppDateTime(row.startsAt)}</td>
+      <td className="py-1.5 text-xs">{formatAppDateTime(row.endsAt)}</td>
       <td className="py-1.5">
         <span
           className={`inline-block px-1.5 py-0.5 rounded text-[10px] uppercase font-semibold tracking-wider ${

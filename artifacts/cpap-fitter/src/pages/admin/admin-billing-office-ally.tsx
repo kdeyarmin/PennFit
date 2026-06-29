@@ -48,6 +48,7 @@ import {
   type OaSubmission,
   type OaSubmissionStatus,
 } from "@/lib/admin/office-ally-api";
+import { formatAppDate, formatAppDateTime } from "@/lib/utils";
 
 export function AdminBillingOfficeAllyPage() {
   return (
@@ -857,7 +858,7 @@ function SubmissionRow({
         )}
       </td>
       <td className="p-2 text-[11px]" style={{ color: "hsl(var(--ink-3))" }}>
-        {new Date(s.submittedAt).toLocaleString()}
+        {formatAppDateTime(s.submittedAt)}
         <br />
         by {s.submittedByEmail}
         {s.parentSubmissionId && (
@@ -903,14 +904,10 @@ function SubmissionRow({
         GS {s.gsControlNumber}
       </td>
       <td className="p-2 text-[11px]" style={{ color: "hsl(var(--ink-3))" }}>
-        {s.ack999ReceivedAt
-          ? new Date(s.ack999ReceivedAt).toLocaleDateString()
-          : "—"}
+        {s.ack999ReceivedAt ? formatAppDate(s.ack999ReceivedAt) : "—"}
       </td>
       <td className="p-2 text-[11px]" style={{ color: "hsl(var(--ink-3))" }}>
-        {s.ack277caReceivedAt
-          ? new Date(s.ack277caReceivedAt).toLocaleDateString()
-          : "—"}
+        {s.ack277caReceivedAt ? formatAppDate(s.ack277caReceivedAt) : "—"}
       </td>
       <td className="p-2">
         <div className="flex flex-col items-end gap-1">
@@ -1121,7 +1118,7 @@ function InboundFileRow({ f }: { f: InboundFile }) {
       data-testid={`oa-inbound-file-${f.id}`}
     >
       <td className="p-2 text-[11px]" style={{ color: "hsl(var(--ink-3))" }}>
-        {new Date(f.downloadedAt).toLocaleString()}
+        {formatAppDateTime(f.downloadedAt)}
       </td>
       <td
         className="p-2 font-mono text-[12px]"
@@ -1580,9 +1577,7 @@ function ClearinghouseCard({ c }: { c: ClearinghouseRow }) {
             style={{ color: "hsl(var(--ink-3))" }}
           >
             ETIN {c.etin} · last polled{" "}
-            {c.lastPolledAt
-              ? new Date(c.lastPolledAt).toLocaleString()
-              : "never"}
+            {c.lastPolledAt ? formatAppDateTime(c.lastPolledAt) : "never"}
           </p>
         </div>
         <div className="flex flex-col items-end gap-1">

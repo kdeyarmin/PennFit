@@ -16,6 +16,7 @@ import { useCart, type CartItem } from "@/hooks/use-cart";
 import { AccountApiError, type ShopRecentOrder } from "@/lib/account-api";
 import { reportLostShipment } from "@/lib/account/self-service-api";
 import { fetchOrderSummary, formatMoneyCents } from "@/lib/shop-api";
+import { formatAppDate } from "@/lib/utils";
 
 // sessionStorage breadcrumb shape. /shop/cart reads this once on
 // mount, renders the "Loaded from your order on …" banner, then
@@ -163,7 +164,7 @@ export function OrdersSection({
                   </span>
                 </p>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  {new Date(o.createdAt).toLocaleDateString(undefined, {
+                  {formatAppDate(o.createdAt, {
                     year: "numeric",
                     month: "short",
                     day: "numeric",

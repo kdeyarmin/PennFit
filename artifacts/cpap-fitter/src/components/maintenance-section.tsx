@@ -9,7 +9,7 @@ import {
   type MaintenanceDueBucket,
   type MaintenanceTask,
 } from "@/lib/account-api";
-import { formatDateOnly } from "@/lib/utils";
+import { formatAppDate, formatDateOnly } from "@/lib/utils";
 
 /**
  * "Hygiene maintenance" section on /account.
@@ -171,7 +171,7 @@ function MaintenanceRow({
         </div>
         <div className="text-[10px] text-muted-foreground mt-0.5">
           {task.lastCompletedAt
-            ? `Last: ${new Date(task.lastCompletedAt).toLocaleDateString()}`
+            ? `Last: ${formatAppDate(task.lastCompletedAt)}`
             : "Never done"}
         </div>
       </div>

@@ -8,6 +8,7 @@ import {
   fetchInsights,
   type CustomerInsight,
 } from "@/lib/account-api";
+import { formatAppDate } from "@/lib/utils";
 
 /**
  * "What we noticed" section on /account (Phase G.4).
@@ -130,7 +131,7 @@ function InsightCard({
   insight: CustomerInsight;
   onDismiss: () => void;
 }) {
-  const detected = new Date(insight.detectedAt).toLocaleDateString(undefined, {
+  const detected = formatAppDate(insight.detectedAt, {
     month: "short",
     day: "numeric",
   });

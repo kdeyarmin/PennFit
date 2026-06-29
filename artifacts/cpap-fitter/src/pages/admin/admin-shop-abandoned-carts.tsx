@@ -33,6 +33,7 @@ import {
 } from "@/lib/admin/abandoned-carts-api";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { PageHeader } from "@/components/admin/PageHeader";
+import { formatAppDate, formatAppDateTime } from "@/lib/utils";
 
 // Match the API constant — keep the two in sync if either changes.
 const COOLING_MS = 24 * 60 * 60 * 1000;
@@ -79,7 +80,7 @@ function formatRelative(iso: string, nowMs: number): string {
   if (hr < 24) return `${hr}h ago`;
   const days = Math.floor(hr / 24);
   if (days < 30) return `${days}d ago`;
-  return new Date(iso).toLocaleDateString();
+  return formatAppDate(iso);
 }
 
 export function AdminShopAbandonedCartsPage() {
@@ -320,13 +321,13 @@ export function AdminShopAbandonedCartsPage() {
                       {formatMoneyCents(r.subtotalCents, r.currency)}
                     </td>
                     <td className="px-3 py-2 align-top text-slate-600">
-                      <span title={new Date(r.updatedAt).toLocaleString()}>
+                      <span title={formatAppDateTime(r.updatedAt)}>
                         {formatRelative(r.updatedAt, nowMs)}
                       </span>
                     </td>
                     <td className="px-3 py-2 align-top text-slate-600">
                       {r.remindedAt ? (
-                        <span title={new Date(r.remindedAt).toLocaleString()}>
+                        <span title={formatAppDateTime(r.remindedAt)}>
                           {formatRelative(r.remindedAt, nowMs)}
                         </span>
                       ) : status === "cooling" ? (

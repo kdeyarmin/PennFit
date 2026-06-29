@@ -55,6 +55,7 @@ import {
   type RunFaxOcrResponse,
 } from "@/lib/admin/inbound-faxes-api";
 import { useUrlState } from "@/hooks/use-url-state";
+import { formatAppDateTime } from "@/lib/utils";
 
 // How each barcode auto-file outcome reads to a CSR, and how loud it
 // should be. `filed` is the only success; the rest explain why a fax was
@@ -389,7 +390,7 @@ function FaxTable({
       </thead>
       <tbody>
         {rows.map((r) => {
-          const received = new Date(r.receivedAt).toLocaleString(undefined, {
+          const received = formatAppDateTime(r.receivedAt, {
             month: "short",
             day: "numeric",
             hour: "numeric",

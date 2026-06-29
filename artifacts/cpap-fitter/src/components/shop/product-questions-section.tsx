@@ -20,6 +20,7 @@ import {
   submitProductQuestion,
   type ShopProductQuestion,
 } from "@/lib/product-questions-api";
+import { formatAppDate } from "@/lib/utils";
 
 interface Props {
   productId: string;
@@ -115,8 +116,7 @@ function QnaItem({ q }: { q: ShopProductQuestion }) {
             {q.questionBody}
           </p>
           <p className="text-[11px] text-muted-foreground mt-1">
-            Asked by {q.askerDisplayName} ·{" "}
-            {new Date(q.createdAt).toLocaleDateString()}
+            Asked by {q.askerDisplayName} · {formatAppDate(q.createdAt)}
           </p>
         </div>
       </div>
@@ -132,7 +132,7 @@ function QnaItem({ q }: { q: ShopProductQuestion }) {
             </p>
             {q.answeredAt && (
               <p className="text-[11px] text-muted-foreground mt-1">
-                {new Date(q.answeredAt).toLocaleDateString()}
+                {formatAppDate(q.answeredAt)}
               </p>
             )}
           </div>

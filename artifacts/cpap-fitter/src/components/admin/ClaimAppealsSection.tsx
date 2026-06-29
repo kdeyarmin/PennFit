@@ -26,6 +26,7 @@ import {
   markAppealDelivered,
   recordAppealOutcome,
 } from "@/lib/admin/claim-appeals-api";
+import { formatAppDate } from "@/lib/utils";
 
 const OUTCOME_TONE: Record<string, { bg: string; color: string }> = {
   overturned: { bg: "rgba(21,128,61,0.12)", color: "#15803d" },
@@ -263,10 +264,10 @@ function AppealLetterCard({
     >
       <div className="flex items-center justify-between gap-2 text-[12px]">
         <span style={{ color: "hsl(var(--ink-3))" }}>
-          {new Date(letter.created_at).toLocaleDateString()}
+          {formatAppDate(letter.created_at)}
           {letter.delivery_method ? ` · ${letter.delivery_method}` : ""}
           {letter.delivered_at
-            ? ` · delivered ${new Date(letter.delivered_at).toLocaleDateString()}`
+            ? ` · delivered ${formatAppDate(letter.delivered_at)}`
             : ""}
         </span>
         {outcomeTone && letter.outcome && (
@@ -279,7 +280,7 @@ function AppealLetterCard({
           >
             {letter.outcome}
             {letter.responded_at
-              ? ` · ${new Date(letter.responded_at).toLocaleDateString()}`
+              ? ` · ${formatAppDate(letter.responded_at)}`
               : ""}
           </span>
         )}

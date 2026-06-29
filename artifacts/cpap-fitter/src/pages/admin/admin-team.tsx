@@ -43,6 +43,7 @@ import {
 } from "@/lib/admin/admin-team-api";
 import { LOCATIONS_QUERY_KEY, listLocations } from "@/lib/admin/locations-api";
 import { useGetAdminMe } from "@workspace/api-client-react/admin";
+import { formatAppDate, formatAppDateTime } from "@/lib/utils";
 
 // Display labels for every DB-persisted role. Legacy values map onto
 // one of the 3 effective buckets so the UI shows a consistent
@@ -181,7 +182,7 @@ function relativeDaysAgo(iso: string, now: number = Date.now()): string {
   if (days <= 0) return "today";
   if (days === 1) return "yesterday";
   if (days < 30) return `${days} days ago`;
-  return new Date(iso).toLocaleDateString();
+  return formatAppDate(iso);
 }
 
 /** Shows the invite-expiry notifier stamps on pending invites so
@@ -200,7 +201,7 @@ function InviteNotifyBadges({ member }: { member: TeamMember }) {
       {member.expiredNoticeSentAt && (
         <span
           className="inline-flex items-center rounded-full border border-rose-300 bg-rose-50 px-2 py-0.5 text-[11px] font-semibold text-rose-900"
-          title={`Expiry notice emailed ${new Date(member.expiredNoticeSentAt).toLocaleString()}`}
+          title={`Expiry notice emailed ${formatAppDateTime(member.expiredNoticeSentAt)}`}
           data-testid={`team-member-${member.id}-expired-notice`}
         >
           Expiry notice emailed {relativeDaysAgo(member.expiredNoticeSentAt)}
@@ -209,7 +210,7 @@ function InviteNotifyBadges({ member }: { member: TeamMember }) {
       {member.expiryReminderSentAt && !member.expiredNoticeSentAt && (
         <span
           className="inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-900"
-          title={`Reminder emailed ${new Date(member.expiryReminderSentAt).toLocaleString()}`}
+          title={`Reminder emailed ${formatAppDateTime(member.expiryReminderSentAt)}`}
           data-testid={`team-member-${member.id}-expiry-reminder`}
         >
           Reminder emailed {relativeDaysAgo(member.expiryReminderSentAt)}
@@ -334,23 +335,15 @@ function MemberRow({
             <div className="text-xs text-slate-500 mt-0.5">{member.email}</div>
           )}
           <div className="text-[11px] text-slate-500 mt-1 space-x-2">
-            <span>
-              Invited {new Date(member.invitedAt).toLocaleDateString()}
-            </span>
+            <span>Invited {formatAppDate(member.invitedAt)}</span>
             {member.acceptedAt && (
-              <span>
-                · accepted {new Date(member.acceptedAt).toLocaleDateString()}
-              </span>
+              <span>· accepted {formatAppDate(member.acceptedAt)}</span>
             )}
             {member.lastLoginAt && (
-              <span>
-                · last login {new Date(member.lastLoginAt).toLocaleDateString()}
-              </span>
+              <span>· last login {formatAppDate(member.lastLoginAt)}</span>
             )}
             {member.revokedAt && (
-              <span>
-                · revoked {new Date(member.revokedAt).toLocaleDateString()}
-              </span>
+              <span>· revoked {formatAppDate(member.revokedAt)}</span>
             )}
           </div>
           <InviteNotifyBadges member={member} />

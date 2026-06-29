@@ -30,6 +30,7 @@ import {
 } from "@/lib/admin/shop-reviews-api";
 import { useUrlState } from "@/hooks/use-url-state";
 import { PageHeader } from "@/components/admin/PageHeader";
+import { formatAppDateTime } from "@/lib/utils";
 
 type Tab = ReviewStatus | "all";
 
@@ -319,9 +320,7 @@ function ReviewRow({
             {review.authorDisplayName}
           </div>
           <div className="font-mono">{review.authorEmail}</div>
-          <div className="mt-0.5">
-            {new Date(review.createdAt).toLocaleString()}
-          </div>
+          <div className="mt-0.5">{formatAppDateTime(review.createdAt)}</div>
           <div className="font-mono text-slate-400 mt-0.5">
             {review.productId}
           </div>
