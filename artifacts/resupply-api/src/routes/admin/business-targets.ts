@@ -208,7 +208,11 @@ router.put(
           created_by_email: req.adminEmail ?? null,
           updated_at: new Date().toISOString(),
         },
-        { onConflict: "metric_key,period" },
+        // Conflict on the per-tenant key (migration 0480). The org-scoped
+        // client forces org_id into the values, so without org_id in the
+        // conflict target the upsert would land on — and stamp this tenant's
+        // org_id onto — ANOTHER tenant's (metric_key, period) row.
+        { onConflict: "org_id,metric_key,period" },
       )
       .select(TARGET_SELECT)
       .single();
