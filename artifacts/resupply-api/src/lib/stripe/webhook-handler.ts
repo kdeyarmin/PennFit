@@ -362,14 +362,22 @@ export const stripeWebhookHandler: RequestHandler = async (
     // No connected account → this event rode the PLATFORM account. That
     // includes a non-seed tenant whose Connect account isn't charges-enabled
     // yet: its storefront Checkout runs on the platform account, so the event
-    // carries no `event.account`. Such a session still carries our own
-    // `metadata.org_id` (stamped at checkout creation in shop/checkout.ts +
-    // quick-checkout.ts); prefer it over the seed-org fallback so the paid
-    // order is attributed to — and mirrored under — the ORIGINATING tenant
-    // rather than being orphaned while a duplicate lands in the seed tenant's
-    // books. Trusted: the payload signature is verified and we set this
-    // metadata ourselves. Only checkout.session.* objects carry it; every
-    // other platform event has no org_id metadata and keeps the seed default.
+    // carries no `event.account`. Such objects still carry our own
+    // `metadata.org_id` — stamped at checkout creation on BOTH the Checkout
+    // Session and the Subscription (shop/checkout.ts + quick-checkout.ts);
+    // prefer it over the seed-org fallback so the paid order / subscription is
+    // attributed to — and mirrored under — the ORIGINATING tenant rather than
+    // being orphaned while a duplicate lands in the seed tenant's books.
+    //
+    // Safe to read on ANY platform event, not just checkout.session.*: the
+    // payload signature is verified and `org_id` is metadata WE set on our own
+    // objects — it is not attacker-supplied. Stripe never auto-populates it, so
+    // an event we didn't stamp has no `org_id` and keeps the seed default;
+    // there is no object type where reading it mis-attributes. (Invoice
+    // renewal events are a known narrow gap — Stripe invoices don't inherit
+    // subscription metadata — but the data-integrity state they'd touch,
+    // shop_subscriptions.status, is mirrored by the companion
+    // customer.subscription.updated event, which now resolves correctly.)
     const metaOrgId = (
       event.data.object as { metadata?: Record<string, string> | null } | null
     )?.metadata?.org_id;

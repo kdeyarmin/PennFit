@@ -464,6 +464,13 @@ router.post(
               metadata: {
                 customer_id: customerId,
                 source: "pennpaps-shop",
+                // Propagate the originating tenant onto the Subscription so
+                // customer.subscription.* events (which carry no
+                // event.account when checkout ran on the platform account)
+                // scope shop_subscriptions to the right org rather than the
+                // seed fallback. Session metadata doesn't cover these — they
+                // fire on the Subscription object. See checkout.ts.
+                ...(req.orgId ? { org_id: req.orgId } : {}),
               },
             },
           },

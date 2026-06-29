@@ -428,6 +428,15 @@ router.post(
               metadata: {
                 customer_id: req.userCustomerId!,
                 source: "pennpaps-shop",
+                // Propagate the originating tenant onto the Subscription
+                // too. A non-seed tenant whose Connect account isn't
+                // charges-enabled yet runs subscription checkout on the
+                // PLATFORM account, so customer.subscription.* events carry
+                // no event.account; without org_id on the subscription the
+                // webhook would scope shop_subscriptions to the seed org.
+                // Session metadata alone doesn't cover these — they fire on
+                // the Subscription object, not the Session.
+                ...(req.orgId ? { org_id: req.orgId } : {}),
               },
             },
             automatic_tax: { enabled: false },
