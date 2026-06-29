@@ -751,7 +751,9 @@ router.post(
     // Look up the order to grab the payment intent ID for Stripe.
     const { data: orderRow, error: orderErr } = await supabase
       .from("shop_orders")
-      .select("stripe_payment_intent_id, amount_total_cents")
+      .select(
+        "stripe_payment_intent_id, amount_total_cents, amount_refunded_cents",
+      )
       .eq("id", ret.order_id)
       .limit(1)
       .maybeSingle();
@@ -761,25 +763,36 @@ router.post(
       return;
     }
 
-    const refundCents =
-      parsed.data.amountCents ?? orderRow.amount_total_cents ?? 0;
+    // Refunds STACK: subtract anything already refunded on this order
+    // (prior partial admin refund, a Dashboard refund mirrored in by the
+    // charge.refunded webhook, etc.) so this return refund can never push
+    // the cumulative past the captured amount. Defaulting an omitted
+    // amount to the gross total — as before — would over-refund a
+    // partially-refunded order on the default path alone.
+    const alreadyRefundedCents = orderRow.amount_refunded_cents ?? 0;
+    const refundableCents =
+      typeof orderRow.amount_total_cents === "number"
+        ? orderRow.amount_total_cents - alreadyRefundedCents
+        : null;
+    const refundCents = parsed.data.amountCents ?? refundableCents ?? 0;
     if (!refundCents || refundCents <= 0) {
       res.status(400).json({ error: "missing_refund_amount" });
       return;
     }
-    // Cap the refund at the order total, mirroring the shop_orders
-    // refund gate (shop-orders.ts: "refund_exceeds_amount"). This
-    // money-out path previously had no upper bound, so an explicit
-    // oversized `amountCents` was sent straight to Stripe and only
-    // bounced there (surfaced as a 502). A clean 409 keeps the refund
-    // honest before we ever touch the payment processor.
-    if (
-      typeof orderRow.amount_total_cents === "number" &&
-      refundCents > orderRow.amount_total_cents
-    ) {
+    // Cap the refund at the REMAINING refundable amount (total minus prior
+    // refunds), mirroring the shop_orders refund gate (shop-orders.ts:
+    // "refund_exceeds_amount"). This money-out path previously capped only
+    // against the gross total and never read amount_refunded_cents, so a
+    // second refund could stack on a prior one and over-pay the customer;
+    // Stripe only bounced the excess once it crossed the captured PI total
+    // (surfaced as a 502). A clean 409 keeps the refund honest before we
+    // ever touch the payment processor.
+    if (refundableCents !== null && refundCents > refundableCents) {
       res.status(409).json({
         error: "refund_exceeds_amount",
         amountTotalCents: orderRow.amount_total_cents,
+        amountRefundedCents: alreadyRefundedCents,
+        refundableCents,
       });
       return;
     }

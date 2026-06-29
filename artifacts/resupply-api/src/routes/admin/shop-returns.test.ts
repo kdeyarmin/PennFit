@@ -388,6 +388,50 @@ describe("POST /admin/shop/returns/:id/refund — handler logic", () => {
     expect(res.status).toBe(400);
     expect(res.body.error).toBe("missing_refund_amount");
   });
+
+  it("409s when the refund would exceed the amount remaining after prior refunds", async () => {
+    stubAdmin();
+    stageSupabaseResponse("shop_returns", "select", {
+      data: receivedReturnRow(),
+    });
+    // $49.98 order with $30.00 already refunded → only $19.98 left.
+    stageSupabaseResponse("shop_orders", "select", {
+      data: shopOrderRow({ amount_refunded_cents: 3000 }),
+    });
+
+    const res = await request(makeApp())
+      .post(`/resupply-api/admin/shop/returns/${RETURN_ID}/refund`)
+      .send({ amountCents: 2500 }); // > 1998 remaining
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("refund_exceeds_amount");
+    expect(res.body.refundableCents).toBe(1998);
+    expect(res.body.amountRefundedCents).toBe(3000);
+    expect(stripeRefundsMock).not.toHaveBeenCalled();
+  });
+
+  it("defaults an omitted amount to the remaining refundable (not the gross total)", async () => {
+    stubAdmin();
+    stageSupabaseResponse("shop_returns", "select", {
+      data: receivedReturnRow(),
+    });
+    // $49.98 order, $30.00 already refunded → default refund is $19.98.
+    stageSupabaseResponse("shop_orders", "select", {
+      data: shopOrderRow({ amount_refunded_cents: 3000 }),
+    });
+    stripeRefundsMock.mockResolvedValue({ id: "re_test_partial" });
+    stageSupabaseResponse("shop_returns", "update", {
+      data: refundedReturnRow(),
+    });
+
+    const res = await request(makeApp())
+      .post(`/resupply-api/admin/shop/returns/${RETURN_ID}/refund`)
+      .send({}); // no amountCents → remaining refundable
+
+    expect(res.status).toBe(200);
+    expect(stripeRefundsMock).toHaveBeenCalledTimes(1);
+    expect(stripeRefundsMock.mock.calls[0]![0].amount).toBe(1998);
+  });
 });
 
 // ===========================================================================
