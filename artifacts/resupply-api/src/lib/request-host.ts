@@ -7,17 +7,39 @@
 
 import type { Request } from "express";
 
+type HostInput = Pick<Request, "headers"> & Partial<Pick<Request, "hostname">>;
+
 /**
- * The bare lowercase host for a request: the first `X-Forwarded-Host`
- * value if present (proxy-forwarded), else the `Host` header. Surrounding
- * whitespace and any `:port` suffix are stripped; an absent host yields "".
+ * The bare lowercase host for a request. Prefers Express's
+ * trust-proxy-aware `req.hostname`: `app.set("trust proxy", …)` installs the
+ * same Cloudflare/Railway CIDR predicate that governs `req.ip`, so Express
+ * honors `X-Forwarded-Host` ONLY when the request actually arrived through a
+ * trusted proxy hop. For legitimate proxied traffic this resolves to exactly
+ * the same value the raw header read produced; for a direct/forged
+ * connection it falls back to the real `Host` instead of a client-supplied
+ * `X-Forwarded-Host`.
  *
- * Stripping the port keeps host→tenant resolution consistent for callers
- * that don't subsequently run the value through `normalizeCustomDomain`
- * (which also strips it) — e.g. a `Host: example.com:443` must resolve the
+ * Why this matters: the host SELECTS THE TENANT (`resolveOrgIdByHost`) for
+ * every public/storefront route, so trusting a raw, client-settable
+ * `X-Forwarded-Host` would let a request file a lead/order under — or brand
+ * outbound mail as — an arbitrary victim tenant. Gating on the proxy chain
+ * (which the codebase already does for `req.ip`) closes that vector.
+ *
+ * Surrounding whitespace and any `:port` suffix are stripped; an absent host
+ * yields "". Stripping the port keeps host→tenant resolution consistent for
+ * callers that don't subsequently run the value through
+ * `normalizeCustomDomain` — e.g. `Host: example.com:443` must resolve the
  * same tenant as `example.com`.
  */
-export function requestHost(req: Pick<Request, "headers">): string {
+export function requestHost(req: HostInput): string {
+  // Express computes `hostname` from `X-Forwarded-Host` only when the
+  // connection peer is a trusted proxy (else from `Host`); it already
+  // strips the port. Callers in production always pass the full `req`.
+  const hostname = typeof req.hostname === "string" ? req.hostname : "";
+  if (hostname) return stripPort(hostname.trim().toLowerCase());
+
+  // Fallback for contexts without a computed hostname (e.g. unit tests that
+  // pass a bare `{ headers }`): the historical raw-header read.
   const fwd = req.headers["x-forwarded-host"];
   const raw = Array.isArray(fwd) ? fwd[0] : (fwd ?? req.headers.host);
   const first = (typeof raw === "string" ? raw : "").split(",")[0] ?? "";

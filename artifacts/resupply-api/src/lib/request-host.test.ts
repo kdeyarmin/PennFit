@@ -43,4 +43,24 @@ describe("requestHost", () => {
   it("returns '' when no host header is present", () => {
     expect(requestHost(req({}))).toBe("");
   });
+
+  it("prefers Express's trust-proxy-aware hostname over the raw header", () => {
+    // In production every caller passes the full `req`; `req.hostname` is
+    // populated from X-Forwarded-Host ONLY when the peer is a trusted proxy.
+    // A client-forged X-Forwarded-Host present on the request must NOT win
+    // over the framework-validated hostname.
+    const r = {
+      headers: { "x-forwarded-host": "attacker-victim-tenant.com" },
+      hostname: "Real.Tenant.COM",
+    } as Parameters<typeof requestHost>[0];
+    expect(requestHost(r)).toBe("real.tenant.com");
+  });
+
+  it("strips the port from the trust-proxy hostname too", () => {
+    const r = {
+      headers: {},
+      hostname: "shop.acme.com:8443",
+    } as Parameters<typeof requestHost>[0];
+    expect(requestHost(r)).toBe("shop.acme.com");
+  });
 });
