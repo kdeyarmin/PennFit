@@ -370,7 +370,7 @@ function Row({
         <div style={{ fontSize: 13, whiteSpace: "pre-wrap", marginBottom: 6 }}>
           {row.body}
         </div>
-        <Link href={subjectHref(row)}>
+        <Link href={subjectHref(row)} asChild>
           <a
             style={{
               fontSize: 12,

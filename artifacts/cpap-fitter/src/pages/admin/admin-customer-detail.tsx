@@ -683,7 +683,7 @@ function InAppConversationCard({
                 </span>
               )}
             </div>
-            <Link href={`/admin/conversations/${inApp.id}`}>
+            <Link href={`/admin/conversations/${inApp.id}`} asChild>
               <a
                 style={{
                   display: "inline-flex",
