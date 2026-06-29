@@ -7,11 +7,7 @@
 // so the existing batch runner stays untouched.
 
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  type Database,
-  getOrgScopedClient,
-  resolveSeedOrgId,
-} from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../logger";
 import { evaluateAll } from "./index";
@@ -33,16 +29,17 @@ export interface PatientEvalResult {
 /**
  * Evaluate recent therapy nights for a patient, create smart-trigger proposals, insert detected trigger events, and record audit entries for successful inserts.
  *
+ * @param orgId - The tenant the patient belongs to (the caller's req.orgId). Scoping to this org — not the seed org — is what keeps a non-seed tenant's nights/trigger events from being read/written against the seed tenant.
  * @param patientId - The ID of the patient to evaluate
  * @param actor - Audit actor information (may include `adminEmail`, `adminUserId`, `ip`, and `userAgent`)
  * @returns An object with counters: `proposed` (proposals processed), `inserted` (new rows inserted), and `skippedExisting` (proposals skipped due to existing records)
  * @throws The underlying database error when fetching nights or when an insert fails for reasons other than a unique-violation (Postgres code `23505`)
  */
 export async function evaluatePatientSmartTriggers(
+  orgId: string,
   patientId: string,
   actor: PatientEvalActor,
 ): Promise<PatientEvalResult> {
-  const orgId = await resolveSeedOrgId();
   if (!orgId) {
     // Tenant context missing — nothing to evaluate. Return the same
     // all-zero counters an empty-night-roster run produces.

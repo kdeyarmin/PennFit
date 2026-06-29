@@ -24,6 +24,14 @@ export type FitterLeadSource =
   | "insurance_quote";
 
 export interface RecordFitterLeadInput {
+  /**
+   * Tenant whose storefront captured the lead. Storefront routes resolve
+   * this by host (resolveOrgIdByHost) and pass it; the platform storefront
+   * (cmbreathe.com) leaves it undefined and the lead records under the seed
+   * org. Without it a non-seed tenant's lead would be filed under the seed
+   * tenant.
+   */
+  orgId?: string;
   email: string;
   marketingOptIn: boolean;
   submitterIp: string | null;
@@ -48,7 +56,7 @@ export async function recordFitterLead(
   input: RecordFitterLeadInput,
 ): Promise<RecordFitterLeadResult> {
   try {
-    const orgId = await resolveSeedOrgId();
+    const orgId = input.orgId ?? (await resolveSeedOrgId());
     if (!orgId) {
       return { id: null, error: "tenant context missing" };
     }

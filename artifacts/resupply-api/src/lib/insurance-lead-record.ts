@@ -17,6 +17,13 @@ import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 import { logger } from "./logger";
 
 export interface RecordInsuranceLeadInput {
+  /**
+   * Tenant whose storefront captured the lead (host-resolved by the
+   * route). Without it a non-seed tenant's insurance lead would be filed
+   * under — and chased by — the seed tenant. Undefined → seed (platform
+   * storefront / single-tenant).
+   */
+  orgId?: string;
   fullName: string;
   email: string;
   phone: string;
@@ -47,7 +54,7 @@ export async function recordInsuranceLead(
   input: RecordInsuranceLeadInput,
 ): Promise<RecordInsuranceLeadResult> {
   try {
-    const orgId = await resolveSeedOrgId();
+    const orgId = input.orgId ?? (await resolveSeedOrgId());
     if (!orgId) {
       return { id: null, error: "tenant context missing" };
     }
@@ -92,6 +99,7 @@ export async function recordInsuranceLead(
  * failed" as a mailbox-side issue.
  */
 export async function stampInsuranceLeadDelivery(
+  orgId: string | undefined,
   id: string | null,
   flags: {
     notificationDelivered: boolean;
@@ -100,9 +108,9 @@ export async function stampInsuranceLeadDelivery(
 ): Promise<void> {
   if (!id) return;
   try {
-    const orgId = await resolveSeedOrgId();
-    if (!orgId) return;
-    const supabase = getOrgScopedClient(orgId);
+    const resolvedOrgId = orgId ?? (await resolveSeedOrgId());
+    if (!resolvedOrgId) return;
+    const supabase = getOrgScopedClient(resolvedOrgId);
     const { error } = await supabase
       .from("insurance_leads")
       .update({

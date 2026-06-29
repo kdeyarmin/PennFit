@@ -176,10 +176,19 @@ router.post("/shop/insurance-estimates", async (req, res) => {
 
   const estimate = findPayerEstimate(data.payerSlug);
 
+  // Public route (no auth middleware populates req.orgId): resolve the
+  // tenant from the request host so the lead is filed under — and the
+  // estimate email sends under, and the learned-stats read pulls — the
+  // storefront's own tenant (migration 0382). Custom domain → that org;
+  // platform host / miss → seed org (single-tenant unchanged).
+  const hostOrgId = await resolveOrgIdByHost(requestHost(req));
+  const orgId = hostOrgId ?? undefined;
+
   // Persist the lead first so a SendGrid outage doesn't lose the
   // attribution. source='insurance_quote' so the abandoned-flow
   // re-engagement dispatcher can run a separate copy for this cohort.
   const persisted = await recordFitterLead({
+    orgId,
     email: data.email,
     marketingOptIn: data.marketingOptIn,
     submitterIp: ip === "unknown" ? null : ip,
@@ -201,14 +210,6 @@ router.post("/shop/insurance-estimates", async (req, res) => {
     },
     "shop/insurance-estimates: submission processed",
   );
-
-  // Public route (no auth middleware populates req.orgId): resolve the
-  // tenant from the request host so the estimate email sends under that
-  // tenant's From identity and brand (G6) and the learned-stats read pulls
-  // THAT tenant's stats (migration 0382). Custom domain → that org;
-  // platform host / miss → seed org (single-tenant unchanged).
-  const hostOrgId = await resolveOrgIdByHost(requestHost(req));
-  const orgId = hostOrgId ?? undefined;
 
   // Fire-and-forget the estimate email so SendGrid latency doesn't
   // hold the response. The patient sees the inline range result

@@ -122,11 +122,21 @@ router.post("/shop/insurance-leads", async (req, res) => {
     return;
   }
 
+  // Public, unauthenticated route — resolve the tenant by host so the lead is
+  // FILED under, and the patient confirmation goes out under (and branded
+  // with), the tenant the lead came in on. Apex / miss → seed org
+  // (single-tenant unchanged).
+  const orgId =
+    (await resolveOrgIdByHost(requestHost(req))) ??
+    (await resolveSeedOrgId()) ??
+    undefined;
+
   // DB persistence first (best-effort) so that even if SendGrid
   // throws/hangs after this point, the row is in the admin queue.
   // recordInsuranceLead never throws — it logs + returns id=null on
   // failure.
   const persisted = await recordInsuranceLead({
+    orgId,
     fullName: data.fullName,
     email: data.email,
     phone: data.phone,
@@ -143,13 +153,6 @@ router.post("/shop/insurance-leads", async (req, res) => {
         : null,
   });
 
-  // Public, unauthenticated route — resolve the tenant by host so the patient
-  // confirmation goes out under (and branded with) the tenant the lead came in
-  // on. Apex / miss → seed org (single-tenant unchanged).
-  const orgId =
-    (await resolveOrgIdByHost(requestHost(req))) ??
-    (await resolveSeedOrgId()) ??
-    undefined;
   const result = await sendInsuranceLeadEmails({
     fullName: data.fullName,
     email: data.email,
@@ -165,7 +168,7 @@ router.post("/shop/insurance-leads", async (req, res) => {
 
   // Stamp the SendGrid outcomes on the row we just inserted (no-op
   // if persistence failed and id is null).
-  await stampInsuranceLeadDelivery(persisted.id, {
+  await stampInsuranceLeadDelivery(orgId, persisted.id, {
     notificationDelivered: result.notificationDelivered,
     confirmationDelivered: result.confirmationDelivered,
   });

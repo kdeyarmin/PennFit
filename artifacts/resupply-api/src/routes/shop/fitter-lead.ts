@@ -21,6 +21,8 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { recordFitterLead } from "../../lib/fitter-lead-record";
+import { resolveOrgIdByHost } from "../../lib/tenant-branding";
+import { requestHost } from "../../lib/request-host";
 
 const router: IRouter = Router();
 
@@ -141,7 +143,14 @@ router.post("/shop/fitter-leads", async (req, res) => {
     return;
   }
 
+  // Public route (no auth middleware populates req.orgId): resolve the
+  // tenant by host so the lead is filed under the storefront's own tenant,
+  // not the seed org. Platform storefront (no host match) → undefined →
+  // helper falls back to seed.
+  const orgId = (await resolveOrgIdByHost(requestHost(req))) ?? undefined;
+
   const persisted = await recordFitterLead({
+    orgId,
     email: data.email,
     marketingOptIn: data.marketingOptIn,
     submitterIp: ip === "unknown" ? null : ip,

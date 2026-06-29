@@ -792,6 +792,11 @@ export const stripeWebhookHandler: RequestHandler = async (
         // the pre-queue behavior.
         {
           const alertPayload = {
+            // Dispatch under the tenant the webhook resolved (Stripe Connect
+            // account / event metadata → org), not the seed org, so a
+            // non-seed tenant's payment-failed alert resolves THAT tenant's
+            // customer/patient and brands with its identity.
+            orgId: webhookOrgId,
             stripeCustomerId:
               typeof invoice.customer === "string"
                 ? invoice.customer

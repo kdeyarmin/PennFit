@@ -27,6 +27,9 @@ import {
 export const PAYMENT_FAILED_ALERT_JOB = "alerts.payment-failed-dispatch";
 
 export interface PaymentFailedAlertJobData {
+  /** Tenant the invoice belongs to (set by the webhook from the resolved
+   *  Connect account / metadata). Scopes the alert to the right tenant. */
+  orgId?: string | null;
   stripeCustomerId: string | null;
   amountDueCents: number | null;
   currency: string | null;
@@ -46,6 +49,7 @@ export async function registerPaymentFailedAlertJob(
       const arr = Array.isArray(jobs) ? jobs : [jobs];
       for (const j of arr) {
         await dispatchPaymentFailedAlertOrThrow({
+          orgId: j.data.orgId ?? null,
           stripeCustomerId: j.data.stripeCustomerId,
           amountDueCents: j.data.amountDueCents,
           currency: j.data.currency,
