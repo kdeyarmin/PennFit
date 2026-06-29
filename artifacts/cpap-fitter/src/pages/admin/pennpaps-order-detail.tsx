@@ -20,6 +20,7 @@ import {
 } from "@/lib/admin/storefront-admin-api";
 import { ArrowLeft, AlertCircle, ClipboardCheck } from "lucide-react";
 import { useDocumentTitle } from "@/hooks/admin/use-document-title";
+import { formatAppDateTime } from "@/lib/utils";
 
 const STATUS_LABEL: Record<string, string> = {
   pending: "Pending send",
@@ -130,7 +131,7 @@ export function AdminOrderDetail() {
             {o.orderReference}
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Submitted {new Date(o.createdAt).toLocaleString()}
+            Submitted {formatAppDateTime(o.createdAt)}
           </p>
         </div>
         <div className="text-right">
@@ -142,7 +143,7 @@ export function AdminOrderDetail() {
           </Badge>
           {o.emailDeliveredAt && (
             <div className="text-xs text-muted-foreground mt-1">
-              Delivered {new Date(o.emailDeliveredAt).toLocaleString()}
+              Delivered {formatAppDateTime(o.emailDeliveredAt)}
             </div>
           )}
         </div>

@@ -319,7 +319,7 @@ async function deliveryFollowupSweepForOrg(
     //    Push misconfig must not block the email delivery state.
     if (claimed.customer_id) {
       try {
-        await sendPushToCustomer(claimed.customer_id, {
+        await sendPushToCustomer(orgId, claimed.customer_id, {
           title: "How is your CPAP setup?",
           body: "Tap to share feedback or start a return if anything is off.",
           url: "/account",

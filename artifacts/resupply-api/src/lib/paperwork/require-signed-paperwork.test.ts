@@ -27,6 +27,9 @@ import { evaluatePaperworkGateForCustomer } from "./require-signed-paperwork";
 const CUSTOMER = "user_alice";
 const AUTH_USER = "auth_alice";
 const PATIENT = "11111111-1111-4111-8111-111111111111";
+// The order's tenant, threaded in by the caller (req.orgId). The supabase mock
+// returns staged rows regardless of org; the value just has to be non-empty.
+const TEST_ORG = "22222222-2222-4222-8222-222222222222";
 
 beforeEach(() => {
   supabaseMock.reset();
@@ -42,7 +45,7 @@ function stagePatientResolution(): void {
 
 describe("evaluatePaperworkGateForCustomer", () => {
   it("is not required for a guest order (no customer)", async () => {
-    const decision = await evaluatePaperworkGateForCustomer(null);
+    const decision = await evaluatePaperworkGateForCustomer(TEST_ORG, null);
     expect(decision.required).toBe(false);
     expect(decision.satisfied).toBe(true);
     expect(decision.patientId).toBeNull();
@@ -52,7 +55,7 @@ describe("evaluatePaperworkGateForCustomer", () => {
     stageSupabaseResponse("shop_customers", "select", {
       data: { auth_user_id: null },
     });
-    const decision = await evaluatePaperworkGateForCustomer(CUSTOMER);
+    const decision = await evaluatePaperworkGateForCustomer(TEST_ORG, CUSTOMER);
     expect(decision.required).toBe(false);
     expect(decision.satisfied).toBe(true);
     expect(decision.patientId).toBeNull();
@@ -64,7 +67,7 @@ describe("evaluatePaperworkGateForCustomer", () => {
       data: { enabled: false },
     });
     stageSupabaseResponse("insurance_coverages", "select", { data: null });
-    const decision = await evaluatePaperworkGateForCustomer(CUSTOMER);
+    const decision = await evaluatePaperworkGateForCustomer(TEST_ORG, CUSTOMER);
     expect(decision.required).toBe(false);
     expect(decision.satisfied).toBe(true);
     expect(decision.patientId).toBe(PATIENT);
@@ -79,7 +82,7 @@ describe("evaluatePaperworkGateForCustomer", () => {
     stageSupabaseResponse("patient_form_acknowledgements", "select", {
       data: [],
     });
-    const decision = await evaluatePaperworkGateForCustomer(CUSTOMER);
+    const decision = await evaluatePaperworkGateForCustomer(TEST_ORG, CUSTOMER);
     expect(decision.required).toBe(true);
     expect(decision.satisfied).toBe(false);
     expect(decision.sources).toEqual(["global"]);
@@ -103,7 +106,7 @@ describe("evaluatePaperworkGateForCustomer", () => {
         { form_kind: "supplier_standards" },
       ],
     });
-    const decision = await evaluatePaperworkGateForCustomer(CUSTOMER);
+    const decision = await evaluatePaperworkGateForCustomer(TEST_ORG, CUSTOMER);
     expect(decision.required).toBe(true);
     expect(decision.satisfied).toBe(true);
     expect(decision.missingForms).toEqual([]);
@@ -123,7 +126,7 @@ describe("evaluatePaperworkGateForCustomer", () => {
     stageSupabaseResponse("patient_form_acknowledgements", "select", {
       data: [{ form_kind: "aob" }],
     });
-    const decision = await evaluatePaperworkGateForCustomer(CUSTOMER);
+    const decision = await evaluatePaperworkGateForCustomer(TEST_ORG, CUSTOMER);
     expect(decision.required).toBe(true);
     expect(decision.satisfied).toBe(false);
     expect(decision.sources).toEqual(["payer"]);
@@ -145,7 +148,7 @@ describe("evaluatePaperworkGateForCustomer", () => {
     stageSupabaseResponse("payer_profiles", "select", {
       data: { requires_signed_paperwork: false },
     });
-    const decision = await evaluatePaperworkGateForCustomer(CUSTOMER);
+    const decision = await evaluatePaperworkGateForCustomer(TEST_ORG, CUSTOMER);
     expect(decision.required).toBe(false);
     expect(decision.satisfied).toBe(true);
   });

@@ -12,6 +12,7 @@ import { LogOut, ShieldCheck } from "lucide-react";
 
 import { providerAuthHooks } from "@/lib/provider/provider-auth";
 import { useCompanyContact } from "@/lib/contact";
+import { formatAppDateTime } from "@/lib/utils";
 
 export function Button({
   variant = "primary",
@@ -208,7 +209,7 @@ export function ProviderAuthLayout({ children }: { children: ReactNode }) {
 
 export function formatDateTime(value: string | null | undefined): string {
   if (!value) return "—";
-  return new Date(value).toLocaleString("en-US", {
+  return formatAppDateTime(value, {
     month: "short",
     day: "numeric",
     year: "numeric",

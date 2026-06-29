@@ -54,7 +54,7 @@ import {
   type PatientPayment,
   type StatementDeliveryMethod,
 } from "@/lib/me-billing-api";
-import { formatDateOnly } from "@/lib/utils";
+import { formatAppDate, formatDateOnly } from "@/lib/utils";
 
 function paymentTone(status: PatientPayment["status"]): {
   color: string;
@@ -417,8 +417,7 @@ function AccountBillingInner() {
                     {formatMoneyCents(s.totalPatientResponsibilityCents)}
                   </p>
                   <p className="text-xs text-slate-500">
-                    {new Date(s.createdAt).toLocaleDateString()} ·{" "}
-                    {s.lineItemCount} claim
+                    {formatAppDate(s.createdAt)} · {s.lineItemCount} claim
                     {s.lineItemCount === 1 ? "" : "s"}
                     {s.deliveryMethod ? ` · sent via ${s.deliveryMethod}` : ""}
                   </p>
@@ -489,7 +488,7 @@ function AccountBillingInner() {
                       {formatMoneyCents(p.amount_cents)}
                     </p>
                     <p className="text-xs text-slate-500">
-                      {new Date(when).toLocaleDateString()}
+                      {formatAppDate(when)}
                       {p.note ? ` · ${p.note}` : ""}
                       {p.failure_reason ? ` · ${p.failure_reason}` : ""}
                     </p>
@@ -981,7 +980,7 @@ function ClaimDetailView({ claimId }: { claimId: string }) {
                 className="flex items-center justify-between gap-3 text-xs"
               >
                 <span className="text-slate-600">
-                  {new Date(e.occurredAt).toLocaleDateString()} ·{" "}
+                  {formatAppDate(e.occurredAt)} ·{" "}
                   <span className="capitalize">
                     {e.eventType.replace(/_/g, " ")}
                   </span>

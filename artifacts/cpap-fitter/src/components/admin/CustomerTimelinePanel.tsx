@@ -29,6 +29,7 @@ import {
   type CustomerEventKind,
   type CustomerTimelineEvent,
 } from "@/lib/admin/customer-timeline-api";
+import { formatAppDate, formatAppDateTime } from "@/lib/utils";
 
 interface Props {
   userId: string;
@@ -145,7 +146,7 @@ function TimelineRow({ event }: { event: CustomerTimelineEvent }) {
           fontSize: 12,
           whiteSpace: "nowrap",
         }}
-        title={new Date(event.at).toLocaleString()}
+        title={formatAppDateTime(event.at)}
       >
         {when}
       </span>
@@ -178,5 +179,5 @@ function formatWhen(iso: string): string {
   if (diffDays <= 0) return "today";
   if (diffDays === 1) return "yesterday";
   if (diffDays < 30) return `${diffDays}d ago`;
-  return new Date(t).toLocaleDateString();
+  return formatAppDate(new Date(t));
 }

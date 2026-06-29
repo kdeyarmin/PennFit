@@ -34,6 +34,7 @@ import {
   fetchVoiceMetrics,
   type VoiceMetrics,
 } from "@/lib/admin/voice-metrics-api";
+import { formatAppTime } from "@/lib/utils";
 
 export function AdminOperationsPage() {
   const status = useQuery({
@@ -467,7 +468,7 @@ function DispatcherCard({
     try {
       const r = await run();
       setResult(r);
-      setRanAt(new Date().toLocaleTimeString());
+      setRanAt(formatAppTime(new Date()));
       onRefresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));

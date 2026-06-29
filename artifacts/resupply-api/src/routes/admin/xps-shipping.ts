@@ -325,7 +325,7 @@ async function createAndResolveLabel(args: {
   if (order.fulfillmentMethod === "pickup") {
     return { ok: false, status: 409, error: "order_is_pickup" };
   }
-  const gate = await evaluatePaperworkGateForCustomer(order.customerId);
+  const gate = await evaluatePaperworkGateForCustomer(orgId, order.customerId);
   if (gate.required && !gate.satisfied) {
     return {
       ok: false,

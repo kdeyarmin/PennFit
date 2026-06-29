@@ -5,12 +5,19 @@
 
 import type { Logger } from "pino";
 
-import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { REFERRAL_REVIEW_EXTRACT_JOB } from "../../worker/jobs/referral-review-extract";
 import { getBoss } from "../../worker/index";
 
 export interface OpenReferralReviewForFaxInput {
+  /**
+   * Tenant that owns the inbound fax — the ingest already resolved it
+   * from the called number. Scoping the review insert to this org (not
+   * the seed org) is what keeps a non-seed tenant's referral from being
+   * filed under the seed tenant.
+   */
+  orgId: string;
   faxId: string;
   mediaObjectKey: string | null;
   mediaContentType: string | null;
@@ -21,7 +28,7 @@ export async function openReferralReviewForFax(
   input: OpenReferralReviewForFaxInput,
   logger: Logger,
 ): Promise<{ reviewId: string | null; enqueued: boolean }> {
-  const orgId = await resolveSeedOrgId();
+  const orgId = input.orgId;
   if (!orgId) return { reviewId: null, enqueued: false };
   const supabase = getOrgScopedClient(orgId);
   const { data: inserted, error } = await supabase

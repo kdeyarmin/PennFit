@@ -56,6 +56,11 @@ const PLATFORM_HOST = "pennfit.up.railway.app";
 
 function makeApp(): Express {
   const app = express();
+  // Production sets `trust proxy` (Cloudflare/Railway CIDRs) so req.hostname
+  // honors X-Forwarded-Host from the trusted edge. supertest connects over
+  // loopback, so trust it here to model the same path; without this,
+  // req.hostname would ignore the forwarded host and read the loopback Host.
+  app.set("trust proxy", true);
   app.get("/protected", requireSignedIn, (req, res) => {
     res.json({
       orgId: req.orgId ?? null,

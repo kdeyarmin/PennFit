@@ -45,6 +45,7 @@ import {
   type TherapyUsageGroup,
   type TherapyUsageReportResponse,
 } from "@/lib/admin/therapy-usage-report-api";
+import { formatAppDate } from "@/lib/utils";
 
 const GROUPINGS: Array<{
   value: TherapyReportGrouping;
@@ -83,7 +84,7 @@ function hours(value: number | null): string {
 
 function formatDate(iso: string): string {
   try {
-    return new Date(iso).toLocaleDateString(undefined, {
+    return formatAppDate(iso, {
       year: "numeric",
       month: "long",
       day: "numeric",

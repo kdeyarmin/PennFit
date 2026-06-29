@@ -210,7 +210,7 @@ export const allFinancialReport: ReportModule = {
         if (!orgId) return;
         const { from, to } = parseRange(req);
         const rows = await fetchCombinedFinancial(orgId, from, to);
-        const iif = await renderIifWithAccounts({
+        const iif = await renderIifWithAccounts(orgId, {
           from: from.toISOString().slice(0, 10),
           to: to.toISOString().slice(0, 10),
           practiceName: practiceName(),

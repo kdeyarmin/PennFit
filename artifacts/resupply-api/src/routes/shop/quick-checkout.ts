@@ -415,6 +415,11 @@ router.post(
           : "express",
       customer_id: customerId,
       ...(reorderSessionId ? { reorder_of_session: reorderSessionId } : {}),
+      // Stamp the originating tenant so the webhook attributes the paid order
+      // to the right org even when checkout ran on the platform account (a
+      // non-seed tenant pre-charges-enabled), where the event carries no
+      // event.account. See checkout.ts for the full rationale.
+      ...(req.orgId ? { org_id: req.orgId } : {}),
     };
 
     let session: Stripe.Checkout.Session;
@@ -459,6 +464,13 @@ router.post(
               metadata: {
                 customer_id: customerId,
                 source: "pennpaps-shop",
+                // Propagate the originating tenant onto the Subscription so
+                // customer.subscription.* events (which carry no
+                // event.account when checkout ran on the platform account)
+                // scope shop_subscriptions to the right org rather than the
+                // seed fallback. Session metadata doesn't cover these — they
+                // fire on the Subscription object. See checkout.ts.
+                ...(req.orgId ? { org_id: req.orgId } : {}),
               },
             },
           },

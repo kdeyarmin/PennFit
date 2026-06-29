@@ -58,8 +58,11 @@
 // helper resolves the episode internally (most-recent for the
 // patient). For patients with multiple overdue scripts the scan
 // enqueues one send per script, deduped by patient_id within the
-// scan window — admins get one ping per patient per cycle, not one
-// per SKU.
+// scan window — so a single scan sends one ping per patient, not one
+// per SKU. (Dedup is scoped to the scan run; the separate daily
+// escalation job keys on episode, so a patient with multiple
+// in-progress episodes can still receive an independent escalation
+// touch the same day.)
 
 import type PgBoss from "pg-boss";
 
@@ -85,6 +88,7 @@ import {
 } from "@workspace/resupply-reminders";
 import { hasLinkHmacKey } from "@workspace/resupply-secrets";
 
+import { getCompanyInfo } from "../../lib/company-info.js";
 import { logger } from "../../lib/logger.js";
 import { applyTenantEmailSender } from "../../lib/email/apply-tenant-email-sender.js";
 import { applyTenantSmsFrom } from "../../lib/messaging/tenant-telecom.js";
@@ -977,6 +981,38 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
       return;
     }
     const supabase = getOrgScopedClient(orgId);
+    // Quiet-hours backstop. The hourly scan checks this before enqueuing,
+    // but the daily escalation job enqueues SEND_SMS_JOB directly (it runs
+    // at 18:00 UTC = 08:00 HST, before a Hawaii patient's 9am local window).
+    // Re-check the recipient's local window here so an escalation text can't
+    // land in their quiet hours — mirroring SEND_VOICE_JOB. Deferring before
+    // the dedup claim creates no conversation and burns no dedup key, so the
+    // next scan/escalation tick re-enqueues until it lands in-hours. Fail
+    // open to ET on a bad/missing tz (isWithinQuietHours also guards an
+    // unrecognized value).
+    let smsTimezone = "America/New_York";
+    try {
+      const { data: tzRow } = await supabase
+        .from("patients")
+        .select("timezone")
+        .eq("id", j.data.patientId)
+        .limit(1)
+        .maybeSingle();
+      if (tzRow?.timezone) smsTimezone = tzRow.timezone;
+    } catch {
+      // Network blip — fall back to default tz.
+    }
+    if (isWithinQuietHours(new Date(), smsTimezone)) {
+      logger.debug(
+        {
+          event: "reminder_sms_deferred_quiet_hours",
+          job_id: j.id,
+          timezone: smsTimezone,
+        },
+        "reminders.send-sms: outside patient local business hours — deferring",
+      );
+      return;
+    }
     // Idempotency: short-circuit if another attempt already sent (or
     // is sending) for this (patient, episode, channel, day). See
     // tryClaimReminderDedupKey for posture.
@@ -995,8 +1031,15 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
         supabase: supabase.raw(),
         orgId,
         // Send under the tenant's own number / Messaging Service when it
-        // has one; falls back to the platform default otherwise (G7).
-        cfg: await applyTenantSmsFrom(orgId, cfg.sms),
+        // has one; falls back to the platform default otherwise (G7). Also
+        // brand the BODY with the tenant's own name — cfg.sms.practiceName is
+        // the process-global RESUPPLY_PRACTICE_NAME (seed brand); for the seed
+        // org getCompanyInfo(orgId).name resolves to the same value, so
+        // single-tenant copy is unchanged.
+        cfg: {
+          ...(await applyTenantSmsFrom(orgId, cfg.sms)),
+          practiceName: (await getCompanyInfo(orgId)).name,
+        },
         patientId: j.data.patientId,
         episodeId: j.data.episodeId,
         variant: j.data.variant,
@@ -1088,8 +1131,13 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
         supabase: supabase.raw(),
         orgId,
         // Send under the tenant's own From identity when configured (G6);
-        // falls back to the platform default when it isn't.
-        cfg: await applyTenantEmailSender(orgId, cfg.email),
+        // falls back to the platform default when it isn't. Also brand the
+        // BODY with the tenant's own name (see the SMS job above) — seed copy
+        // is unchanged since getCompanyInfo(seed).name === RESUPPLY_PRACTICE_NAME.
+        cfg: {
+          ...(await applyTenantEmailSender(orgId, cfg.email)),
+          practiceName: (await getCompanyInfo(orgId)).name,
+        },
         patientId: j.data.patientId,
         episodeId: j.data.episodeId,
         variant: j.data.variant,

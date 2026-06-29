@@ -328,7 +328,13 @@ router.get(
 function csvCell(v: string | number | null): string {
   if (v === null) return "";
   const s = String(v);
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  // Neutralise spreadsheet formula injection: a cell beginning with
+  // = + - @ (or tab/CR) executes as a formula in Excel/Sheets. This export
+  // carries patient-supplied free text (patientName), so prefix a guard
+  // apostrophe — matching every sibling CSV helper (patients/export-csv,
+  // admin/office-ally-submissions, the shared safeCsvCell).
+  const safe = /^[=+\-@\t\r]/.test(s) ? `'${s}` : s;
+  return /[",\r\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
 }
 
 router.get(

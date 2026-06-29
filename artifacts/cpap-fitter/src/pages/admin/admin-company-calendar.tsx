@@ -53,6 +53,7 @@ import {
 } from "@/lib/admin/office-closures-api";
 import { getOfficeHours } from "@/lib/admin/office-hours-api";
 import { listTemplates } from "@/lib/admin/message-templates-api";
+import { formatAppDateTime, formatAppTime } from "@/lib/utils";
 
 // ── Appointment-type metadata ────────────────────────────────────
 // Order matters: drives the legend + the <select> order. Keep the keys
@@ -179,7 +180,7 @@ function fmtLocalInput(d: Date): string {
 }
 
 function timeLabel(iso: string): string {
-  return new Date(iso).toLocaleTimeString([], {
+  return formatAppTime(iso, {
     hour: "numeric",
     minute: "2-digit",
   });
@@ -919,7 +920,7 @@ function UpcomingCard({
                   )}
                 </span>
                 <span className="shrink-0 text-xs text-muted-foreground">
-                  {new Date(ev.startsAt).toLocaleString([], {
+                  {formatAppDateTime(ev.startsAt, {
                     weekday: "short",
                     month: "short",
                     day: "numeric",

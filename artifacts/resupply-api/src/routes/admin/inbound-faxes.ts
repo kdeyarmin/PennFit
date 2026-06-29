@@ -505,12 +505,18 @@ router.post(
 
     // autoFileSignedFax records the outcome on the row + audits a
     // fax.auto_filed_signed event on success; it never throws.
-    const outcome = await autoFileSignedFax({
-      faxId: row.id,
-      bytes,
-      // Faxes are PDF by default; fall back to that if the type is unknown.
-      contentType: row.media_content_type ?? "application/pdf",
-    });
+    const outcome = await autoFileSignedFax(
+      {
+        faxId: row.id,
+        bytes,
+        // Faxes are PDF by default; fall back to that if the type is unknown.
+        contentType: row.media_content_type ?? "application/pdf",
+      },
+      // Scope the auto-file to THIS tenant, not the seed org — otherwise a
+      // non-seed tenant's manual re-file would record the outcome + chart
+      // copy + signature-tracking release under the seed tenant.
+      { supabase },
+    );
 
     await logAudit({
       action: "fax.inbound.manual_auto_file",

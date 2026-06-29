@@ -44,6 +44,7 @@ import {
 } from "../../lib/comm-prefs.js";
 import { claimDedupKey } from "../../lib/dedup-keys.js";
 import { recordOutboundMessageUsage } from "../../lib/metering/usage.js";
+import { getCompanyInfo } from "../../lib/company-info.js";
 import { isFeatureEnabled } from "../../lib/feature-flags.js";
 import { logger } from "../../lib/logger.js";
 import { applyTenantSmsFrom } from "../../lib/messaging/tenant-telecom.js";
@@ -241,6 +242,13 @@ async function setupDeadlineOutreachForOrg(
   // Compute the message plan for each patient (pure). This also lets the
   // job report `eligible` even when outreach is off (visibility for the
   // operator deciding whether to enable the flag).
+  // Brand the patient-facing copy with THIS tenant's own name. cfg.practiceName
+  // comes from the process-global RESUPPLY_PRACTICE_NAME (the seed brand) and
+  // must never appear in a non-seed tenant's patient SMS; getCompanyInfo(orgId)
+  // resolves the tenant's own name (the neutral CareMetric Breathe identity for
+  // an unconfigured tenant, the seed brand for the seed org — single-tenant
+  // copy is unchanged).
+  const practiceName = (await getCompanyInfo(orgId)).name;
   const planned: Array<{ patientId: string; body: string }> = [];
   for (const r of rows) {
     const body = planDeadlineOutreach(
@@ -250,7 +258,7 @@ async function setupDeadlineOutreachForOrg(
         days_remaining: num(r.days_remaining) ?? Number.POSITIVE_INFINITY,
         nights_needed: num(r.nights_needed) ?? 0,
       },
-      cfg?.practiceName ?? "CareMetric Breathe",
+      practiceName,
     );
     if (body) planned.push({ patientId: r.patient_id, body });
   }
@@ -364,6 +372,10 @@ async function maybeSendDeadlineSms(
   try {
     const outcome = await sendReminderSms({
       supabase: supabase.raw(),
+      // Scope the patient/episode/conversation reads+writes to the call's
+      // tenant. Without orgId, sendReminderSms falls back to the seed org and
+      // the non-seed patient lookup misses, silently dropping the SMS (G7).
+      orgId: supabase.orgId,
       cfg,
       patientId,
       body,

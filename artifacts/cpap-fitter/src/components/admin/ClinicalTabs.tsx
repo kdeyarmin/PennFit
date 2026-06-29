@@ -17,7 +17,7 @@ import { Button } from "@/components/admin/Button";
 import { Input } from "@/components/admin/Input";
 import { PayerNameAutocomplete } from "@/components/admin/PayerNameAutocomplete";
 import { HcpcsCodeAutocomplete } from "@/components/admin/HcpcsCodeAutocomplete";
-import { todayAppDateIso } from "@/lib/utils";
+import { formatAppDateTime, todayAppDateIso } from "@/lib/utils";
 import {
   createInsuranceCoverage,
   createPriorAuthorization,
@@ -462,7 +462,7 @@ function CoverageLatestCheck({ check }: { check: EligibilityCheck }) {
           )}
         </span>
         <span className="text-muted-foreground">
-          {new Date(check.requested_at).toLocaleString()}
+          {formatAppDateTime(check.requested_at)}
         </span>
       </div>
       <div className="mt-1 grid grid-cols-3 gap-3 text-muted-foreground">

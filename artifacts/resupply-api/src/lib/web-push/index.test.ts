@@ -35,6 +35,10 @@ import {
 
 const ORIGINAL_ENV = { ...process.env };
 
+// The caller's tenant, threaded into the push helpers. The supabase mock
+// returns staged rows regardless of org; the value just has to be non-empty.
+const TEST_ORG = "33333333-3333-4333-8333-333333333333";
+
 function setVapidEnv() {
   process.env.WEB_PUSH_VAPID_PUBLIC_KEY = "BKxxPubKey";
   process.env.WEB_PUSH_VAPID_PRIVATE_KEY = "PrivKey";
@@ -75,7 +79,7 @@ describe("sendPushToCustomer", () => {
     delete process.env.WEB_PUSH_VAPID_PUBLIC_KEY;
     const sdk = makeSdkStub({ behavior: () => Promise.resolve() });
     __setSdkForTesting(sdk);
-    const result = await sendPushToCustomer("cust_a", {
+    const result = await sendPushToCustomer(TEST_ORG, "cust_a", {
       title: "Hi",
       body: "There",
     });
@@ -90,7 +94,7 @@ describe("sendPushToCustomer", () => {
     });
     const sdk = makeSdkStub({ behavior: () => Promise.resolve() });
     __setSdkForTesting(sdk);
-    const result = await sendPushToCustomer("cust_a", {
+    const result = await sendPushToCustomer(TEST_ORG, "cust_a", {
       title: "Hi",
       body: "There",
     });
@@ -119,7 +123,7 @@ describe("sendPushToCustomer", () => {
     const sdk = makeSdkStub({ behavior: () => Promise.resolve() });
     __setSdkForTesting(sdk);
 
-    const result = await sendPushToCustomer("cust_a", {
+    const result = await sendPushToCustomer(TEST_ORG, "cust_a", {
       title: "Order shipped",
       body: "Mask + tubing on the way.",
       url: "/account/orders/abc",
@@ -162,7 +166,7 @@ describe("sendPushToCustomer", () => {
     });
     __setSdkForTesting(sdk);
 
-    const result = await sendPushToCustomer("cust_a", {
+    const result = await sendPushToCustomer(TEST_ORG, "cust_a", {
       title: "x",
       body: "y",
     });
@@ -192,7 +196,7 @@ describe("sendPushToCustomer", () => {
     });
     __setSdkForTesting(sdk);
 
-    const result = await sendPushToCustomer("cust_a", {
+    const result = await sendPushToCustomer(TEST_ORG, "cust_a", {
       title: "x",
       body: "y",
     });
@@ -219,7 +223,7 @@ describe("sendPushToCustomer", () => {
     });
     __setSdkForTesting(sdk);
 
-    const result = await sendPushToCustomer("cust_a", {
+    const result = await sendPushToCustomer(TEST_ORG, "cust_a", {
       title: "x",
       body: "y",
     });
@@ -266,7 +270,7 @@ describe("sendPushToCustomer", () => {
     };
     __setSdkForTesting(sdk);
 
-    const result = await sendPushToCustomer("cust_a", {
+    const result = await sendPushToCustomer(TEST_ORG, "cust_a", {
       title: "x",
       body: "y",
     });
@@ -280,10 +284,14 @@ describe("sendPushToCustomer", () => {
 describe("sendPushToCustomerByEmail", () => {
   it("returns {0,0,0} when VAPID is not configured", async () => {
     delete process.env.WEB_PUSH_VAPID_PUBLIC_KEY;
-    const result = await sendPushToCustomerByEmail("user@example.com", {
-      title: "Test",
-      body: "Body",
-    });
+    const result = await sendPushToCustomerByEmail(
+      TEST_ORG,
+      "user@example.com",
+      {
+        title: "Test",
+        body: "Body",
+      },
+    );
     expect(result).toEqual({ delivered: 0, expired: 0, transient: 0 });
     // Push being disabled means we never hit the DB at all.
     expect(getSupabaseCallCount("shop_customers", "select")).toBe(0);
@@ -299,11 +307,15 @@ describe("sendPushToCustomerByEmail", () => {
       data: [{ customer_id: "cust_a" }, { customer_id: "cust_b" }],
     });
 
-    const result = await sendPushToCustomerByEmail("shared@example.com", {
-      title: "Rx reminder",
-      body: "Tap to renew.",
-      tag: "rx_renewal:rx_1",
-    });
+    const result = await sendPushToCustomerByEmail(
+      TEST_ORG,
+      "shared@example.com",
+      {
+        title: "Rx reminder",
+        body: "Tap to renew.",
+        tag: "rx_renewal:rx_1",
+      },
+    );
 
     expect(result).toEqual({ delivered: 0, expired: 0, transient: 0 });
     // Push SDK must never be called when lookup is ambiguous.
@@ -318,10 +330,14 @@ describe("sendPushToCustomerByEmail", () => {
     // Empty customer lookup result.
     stageSupabaseResponse("shop_customers", "select", { data: [] });
 
-    const result = await sendPushToCustomerByEmail("nobody@example.com", {
-      title: "Test",
-      body: "Body",
-    });
+    const result = await sendPushToCustomerByEmail(
+      TEST_ORG,
+      "nobody@example.com",
+      {
+        title: "Test",
+        body: "Body",
+      },
+    );
 
     expect(result).toEqual({ delivered: 0, expired: 0, transient: 0 });
     expect(sdk.sendNotification).not.toHaveBeenCalled();
@@ -348,12 +364,16 @@ describe("sendPushToCustomerByEmail", () => {
       ],
     });
 
-    const result = await sendPushToCustomerByEmail("patient@example.com", {
-      title: "Rx expires in 5 days",
-      body: "Tap to coordinate a renewal.",
-      url: "/account",
-      tag: "rx_renewal:rx_1",
-    });
+    const result = await sendPushToCustomerByEmail(
+      TEST_ORG,
+      "patient@example.com",
+      {
+        title: "Rx expires in 5 days",
+        body: "Tap to coordinate a renewal.",
+        url: "/account",
+        tag: "rx_renewal:rx_1",
+      },
+    );
 
     expect(result).toEqual({ delivered: 1, expired: 0, transient: 0 });
     expect(sdk.sendNotification).toHaveBeenCalledTimes(1);

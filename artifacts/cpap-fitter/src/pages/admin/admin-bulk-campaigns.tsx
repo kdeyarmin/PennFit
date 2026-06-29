@@ -43,6 +43,7 @@ import {
   type SegmentDeviceClass,
   type TherapyCohort,
 } from "@/lib/admin/bulk-campaigns-api";
+import { formatAppDateTime } from "@/lib/utils";
 
 const listQueryKey = ["admin", "bulk-campaigns"] as const;
 
@@ -804,7 +805,7 @@ function CampaignDetailBody({
         <KV k="Category" v={CATEGORY_LABEL[data.category]} />
         <KV k="Template" v={data.templateKey} />
         <KV k="Throttle / min" v={String(data.throttlePerMinute)} />
-        <KV k="Created" v={new Date(data.createdAt).toLocaleString()} />
+        <KV k="Created" v={formatAppDateTime(data.createdAt)} />
       </dl>
 
       {data.complianceAttestation && (

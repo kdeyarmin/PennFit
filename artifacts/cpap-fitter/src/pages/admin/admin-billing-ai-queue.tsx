@@ -25,6 +25,7 @@ import {
   type AutoResubmitReadyItem,
   type ClaimQueueItem,
 } from "@/lib/admin/billing-api";
+import { formatAppDateTime } from "@/lib/utils";
 
 export function AdminBillingAiQueuePage() {
   const { data, isPending, isError, error, refetch } = useQuery({
@@ -151,9 +152,9 @@ function ClaimSection({
                   {c.denialReason
                     ? `Denial: ${c.denialReason}`
                     : c.latestScrubAt
-                      ? `Last scrub: ${new Date(c.latestScrubAt).toLocaleString()}`
+                      ? `Last scrub: ${formatAppDateTime(c.latestScrubAt)}`
                       : c.decisionAt
-                        ? `Decision: ${new Date(c.decisionAt).toLocaleString()}`
+                        ? `Decision: ${formatAppDateTime(c.decisionAt)}`
                         : `Claim ${c.id.slice(0, 8)}`}
                 </p>
               </div>

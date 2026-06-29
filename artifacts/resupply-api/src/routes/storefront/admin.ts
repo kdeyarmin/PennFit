@@ -19,7 +19,10 @@ import { Router } from "express";
 import { z } from "zod";
 
 import { permissionsForRole } from "@workspace/resupply-auth";
-import { getOrgScopedClient } from "@workspace/resupply-db";
+import {
+  escapePostgRESTContainsPattern,
+  getOrgScopedClient,
+} from "@workspace/resupply-db";
 
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit.js";
 import { requireCsrf } from "../../middlewares/csrf.js";
@@ -110,10 +113,13 @@ router.get("/admin/orders", async (req, res) => {
     .eq("org_id", orgId);
 
   if (q) {
-    // Escape LIKE metacharacters then run a 4-column ilike via .or().
-    // PostgREST treats `*` as the LIKE wildcard so we substitute back
-    // to `%` after escaping the user's literal `%`/`_`.
-    const pattern = `*${q.replace(/[\\%_*]/g, (c) => `\\${c}`)}*`;
+    // Build a 4-column contains-ilike via .or(). Use the shared helper
+    // (NOT an ad-hoc LIKE-only escape): it escapes the LIKE metacharacters
+    // `\ % _` AND quote-wraps the value when it contains `.or()` structural
+    // delimiters `, ( ) "`. Without the quote-wrap a comma/paren in `q`
+    // breaks out of the operand and injects extra OR predicates (and an
+    // unbalanced paren 400s PostgREST → route 500).
+    const pattern = escapePostgRESTContainsPattern(q);
     const orFilter = [
       `patient_first_name.ilike.${pattern}`,
       `patient_last_name.ilike.${pattern}`,

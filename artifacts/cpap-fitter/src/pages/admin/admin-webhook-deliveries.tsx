@@ -26,6 +26,7 @@ import {
   type WebhookDelivery,
   type WebhookDeliveryStatus,
 } from "@/lib/admin/webhook-deliveries-api";
+import { formatAppDateTime } from "@/lib/utils";
 
 type FilterValue = WebhookDeliveryStatus | "all";
 
@@ -179,7 +180,7 @@ function DeliveryRow({ delivery }: { delivery: WebhookDelivery }) {
   return (
     <tr className="border-t border-slate-100 hover:bg-slate-50 align-top">
       <td className="px-3 py-2 text-xs text-slate-700 tabular-nums whitespace-nowrap">
-        {new Date(delivery.createdAt).toLocaleString()}
+        {formatAppDateTime(delivery.createdAt)}
       </td>
       <td className="px-3 py-2">
         <div className="font-mono text-xs text-slate-900">

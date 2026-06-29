@@ -19,6 +19,7 @@ import {
   selectTenantPlan,
   updateOwnAddon,
 } from "@/lib/admin/platform-billing-api";
+import { formatAppDate } from "@/lib/utils";
 
 const LABELS: Record<string, string> = {
   seats: "Seats",
@@ -484,7 +485,7 @@ export function AdminBillingPackagePage() {
             <div className="text-slate-500">Billing period ends</div>
             <div className="font-medium text-slate-900">
               {sub?.currentPeriodEnd
-                ? new Date(sub.currentPeriodEnd).toLocaleDateString(undefined, {
+                ? formatAppDate(sub.currentPeriodEnd, {
                     timeZone: "America/New_York",
                   })
                 : "—"}
@@ -494,12 +495,9 @@ export function AdminBillingPackagePage() {
             <div className="text-slate-500">Last synced</div>
             <div className="font-medium text-slate-900">
               {sub?.stripeLastSyncedAt
-                ? new Date(sub.stripeLastSyncedAt).toLocaleDateString(
-                    undefined,
-                    {
-                      timeZone: "America/New_York",
-                    },
-                  )
+                ? formatAppDate(sub.stripeLastSyncedAt, {
+                    timeZone: "America/New_York",
+                  })
                 : "—"}
             </div>
           </div>

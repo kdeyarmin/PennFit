@@ -28,6 +28,7 @@ import {
   uploadPatientChartDocument,
   type AdminPatientDocument,
 } from "@/lib/admin/patient-documents-api";
+import { formatAppDate } from "@/lib/utils";
 
 /**
  * Format a byte count into a human-readable string.
@@ -306,7 +307,7 @@ export function DocumentsTab({ patientId }: { patientId: string }) {
                     </div>
                     <p className="text-xs text-muted-foreground mt-0.5">
                       {formatDocBytes(doc.sizeBytes)} ·{" "}
-                      {new Date(doc.createdAt).toLocaleDateString(undefined, {
+                      {formatAppDate(doc.createdAt, {
                         year: "numeric",
                         month: "short",
                         day: "numeric",
@@ -315,13 +316,10 @@ export function DocumentsTab({ patientId }: { patientId: string }) {
                         <span>
                           {" "}
                           · Reviewed{" "}
-                          {new Date(doc.reviewedAt).toLocaleDateString(
-                            undefined,
-                            {
-                              month: "short",
-                              day: "numeric",
-                            },
-                          )}
+                          {formatAppDate(doc.reviewedAt, {
+                            month: "short",
+                            day: "numeric",
+                          })}
                         </span>
                       )}
                     </p>

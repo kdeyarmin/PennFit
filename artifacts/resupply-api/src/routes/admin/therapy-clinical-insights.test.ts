@@ -255,4 +255,37 @@ describe("GET /admin/therapy-fleet/clinical-insights.csv", () => {
     expect(lines[1]).toContain("4.2");
     expect(lines[1]).toContain("20");
   });
+
+  it("neutralises spreadsheet formula injection in the patient name", async () => {
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("patient_smart_trigger_events", "select", {
+      data: [
+        {
+          id: "e1",
+          patient_id: P1,
+          kind: "ahi_rising",
+          detected_at: "2026-06-12T00:00:00Z",
+          window_start_date: "2026-05-30",
+          window_end_date: "2026-06-12",
+        },
+      ],
+    });
+    // A patient whose name begins with a formula trigger char.
+    stageSupabaseResponse("patients", "select", {
+      data: [
+        { id: P1, legal_first_name: "=cmd|'/c calc'!A0", legal_last_name: "X" },
+      ],
+    });
+    stageSupabaseRpcResponse("therapy_clinical_metrics", { data: [] });
+
+    const res = await request(makeApp()).get(
+      "/admin/therapy-fleet/clinical-insights.csv",
+    );
+    expect(res.status).toBe(200);
+    // The cell must be guarded with a leading apostrophe so Excel/Sheets
+    // never evaluate it as a formula — and the raw `,=cmd` (an unguarded
+    // formula directly after the field separator) must NOT appear.
+    expect(res.text).toContain(`'=cmd|'/c calc'!A0 X`);
+    expect(res.text).not.toMatch(/,=cmd/);
+  });
 });

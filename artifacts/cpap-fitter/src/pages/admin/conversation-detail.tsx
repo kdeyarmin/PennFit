@@ -53,6 +53,7 @@ import {
   draftUnavailableNote,
 } from "@/lib/admin/conversation-draft-reply-api";
 import { Sparkles } from "lucide-react";
+import { formatAppDateTime } from "@/lib/utils";
 
 // Conversation viewer. Renders the chronological message timeline as
 // channel-aware bubbles (admin/agent on the right, patient on the
@@ -1421,7 +1422,7 @@ function CoachingNoteRow({ note }: { note: CoachingNote }) {
           </span>
         </div>
         <span className="text-[10px] text-muted-foreground">
-          {new Date(note.createdAt).toLocaleString()}
+          {formatAppDateTime(note.createdAt)}
         </span>
       </div>
       <p className="text-sm whitespace-pre-wrap">{note.body}</p>
@@ -1615,7 +1616,7 @@ function TriagePanel({
           {isSnoozed ? (
             <>
               <span className="text-xs">
-                Snoozed until {new Date(snoozeIso!).toLocaleString()}
+                Snoozed until {formatAppDateTime(snoozeIso!)}
               </span>
               <Button
                 intent="ghost"

@@ -35,6 +35,7 @@ import { Pagination } from "@/components/admin/Pagination";
 import { EmptyState } from "@/components/admin/EmptyState";
 import { Spinner } from "@/components/admin/Spinner";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
+import { formatAppDate } from "@/lib/utils";
 
 const PAGE_SIZE = 25;
 
@@ -60,7 +61,7 @@ function formatRelative(iso: string | null, nowMs: number): string {
   if (hr < 24) return `${hr}h ago`;
   const days = Math.floor(hr / 24);
   if (days < 30) return `${days}d ago`;
-  return new Date(iso).toLocaleDateString();
+  return formatAppDate(iso);
 }
 
 const SORT_LABELS: Record<AdminCustomerListSortBy, string> = {

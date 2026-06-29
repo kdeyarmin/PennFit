@@ -114,6 +114,20 @@ export function AdminBillingCappedRentalsPage() {
     staleTime: 60_000,
   });
 
+  // The KPI tiles describe the ACTIVE-cycle population and must not change
+  // with the display filter — otherwise selecting Paused/Transferred/etc.
+  // collapses every tile to 0 even though active cycles exist. Fetch active
+  // cycles separately; when the filter already IS "active" this shares the
+  // main query's key, so React Query dedupes it (no extra request).
+  const activeCycles = useQuery({
+    queryKey: ["admin-capped-rentals", "active"],
+    queryFn: () =>
+      getJSON<{ cycles: CappedRentalCycle[] }>(
+        `/admin/capped-rental-cycles?status=active`,
+      ),
+    staleTime: 60_000,
+  });
+
   const advanceNow = useMutation({
     mutationFn: () =>
       postJSON<{ ok: boolean; stats: AdvanceStats }>(
@@ -125,7 +139,7 @@ export function AdminBillingCappedRentalsPage() {
   });
 
   const summary = useMemo(() => {
-    const list = cycles.data?.cycles ?? [];
+    const list = activeCycles.data?.cycles ?? [];
     let activeCount = 0;
     let nearTransfer = 0;
     let nextAdvanceDays: number[] = [];
@@ -145,7 +159,7 @@ export function AdminBillingCappedRentalsPage() {
       (d) => d > 0 && d <= 7,
     ).length;
     return { activeCount, nearTransfer, advanceableNow, nextWithinWeek };
-  }, [cycles.data]);
+  }, [activeCycles.data]);
 
   return (
     <div

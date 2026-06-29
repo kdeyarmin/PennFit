@@ -30,6 +30,7 @@ import { Spinner } from "@/components/admin/Spinner";
 import { Sparkline } from "@/components/admin/Sparkline";
 import type { SmartTriggerKind } from "@/lib/admin/smart-triggers-api";
 import { buildClinicalEvidenceSeries } from "@/lib/admin/clinical-evidence";
+import { formatAppDate } from "@/lib/utils";
 
 const BASE = "/resupply-api";
 
@@ -257,7 +258,7 @@ export function PatientResupplyTab({ patientId }: { patientId: string }) {
                       {isClinical ? (
                         <>review</>
                       ) : t.sentAt ? (
-                        <>sent {new Date(t.sentAt).toLocaleDateString()}</>
+                        <>sent {formatAppDate(t.sentAt)}</>
                       ) : (
                         <>queued</>
                       )}
@@ -314,7 +315,7 @@ export function PatientResupplyTab({ patientId }: { patientId: string }) {
                       className="text-[11px]"
                       style={{ color: "hsl(var(--ink-3))" }}
                     >
-                      {new Date(a.createdAt).toLocaleDateString()}
+                      {formatAppDate(a.createdAt)}
                     </span>
                   </div>
                   <p

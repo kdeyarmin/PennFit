@@ -248,6 +248,7 @@ router.post(
       if (p) patchesToApply.push(p);
     }
     const outcomes = await applyAiPatches(
+      orgId,
       idParsed.data.claimId,
       patchesToApply,
     );
@@ -529,7 +530,7 @@ router.post(
 
     // 1. Apply patches.
     const patches = (analysis.suggested_patches_json as AiPatch[] | null) ?? [];
-    const outcomes = await applyAiPatches(claim.id, patches);
+    const outcomes = await applyAiPatches(orgId, claim.id, patches);
     const appliedCount = outcomes.filter((o) => o.status === "applied").length;
 
     if (appliedCount === 0) {

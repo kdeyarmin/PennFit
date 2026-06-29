@@ -21,6 +21,7 @@ import {
   type ClinicalEncounter,
   type EncounterType,
 } from "@/lib/admin/clinical-encounters-api";
+import { formatAppDateTime } from "@/lib/utils";
 
 const ENCOUNTER_LABELS: Record<EncounterType, string> = {
   mask_fit: "Mask fit",
@@ -246,8 +247,7 @@ function EncounterRow({ encounter }: { encounter: ClinicalEncounter }) {
           {ENCOUNTER_LABELS[encounter.encounterType]}
         </span>
         <span className="text-xs text-muted-foreground">
-          {new Date(encounter.createdAt).toLocaleString()} ·{" "}
-          {encounter.authorEmail}
+          {formatAppDateTime(encounter.createdAt)} · {encounter.authorEmail}
         </span>
       </div>
       <dl className="mt-2 space-y-1">

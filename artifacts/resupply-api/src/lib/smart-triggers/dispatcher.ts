@@ -37,7 +37,11 @@ import {
   EmailApiError,
   EmailConfigError,
 } from "@workspace/resupply-email";
-import { applyCompanyIdentityToText, getCompanyInfo } from "../company-info.js";
+import { getCompanyInfo } from "../company-info.js";
+import {
+  resolveBrandingByOrgId,
+  resolveTenantBaseUrl,
+} from "../tenant-branding.js";
 import { createTenantSendgridClient } from "../email/tenant-sender.js";
 import {
   createTwilioSmsClient,
@@ -128,9 +132,23 @@ export type DispatcherOutcome =
  */
 export interface SmartTriggerRenderers {
   subjectForKind: (kind: TriggerKind) => string;
-  textBody: (greeting: string, kind: TriggerKind) => string;
-  htmlBody: (greeting: string, kind: TriggerKind) => string;
-  smsBody: (firstName: string, kind: TriggerKind) => string;
+  // `brand` (tenant practice name) + `accountUrl` (tenant storefront link) are
+  // resolved per-tenant and threaded in, so the body is never branded with the
+  // seed placeholders for a non-seed tenant.
+  textBody: (
+    greeting: string,
+    kind: TriggerKind,
+    brand: string,
+    accountUrl: string,
+  ) => string;
+  htmlBody: (
+    greeting: string,
+    kind: TriggerKind,
+    brand: string,
+    accountUrl: string,
+  ) => string;
+  // `brand` is the tenant's storefront name (SMS sign-off).
+  smsBody: (firstName: string, kind: TriggerKind, brand: string) => string;
   pushBody: (kind: TriggerKind) => string;
 }
 
@@ -186,12 +204,25 @@ export async function runSmartTriggerSendDue(
 
   const supabase = getOrgScopedClient(orgId);
 
-  // Brand the rendered body copy to the tenant at the I/O boundary: the
-  // renderers bake the seed tenant's "Penn Home Medical Supply" sign-off and
-  // a pennpaps.com link as placeholders. applyCompanyIdentityToText rewrites
-  // them to a DB-backed tenant's own brand/site (no-op for the seed tenant
-  // and for any unconfigured environment).
+  // Brand the rendered body copy to THIS tenant. The renderers are
+  // parameterized with the tenant's own practice name (email sign-off), its
+  // storefront name (SMS sign-off), and its own /account link — resolved here.
+  // (Previously the renderers baked in the seed "Penn Home Medical Supply" /
+  // pennpaps.com placeholders and relied on applyCompanyIdentityToText to
+  // rewrite them, which is a NO-OP for an unconfigured non-seed tenant — so a
+  // second tenant's patients saw the seed brand and a pennpaps.com link.) For
+  // the seed org these resolve to the same values, so single-tenant copy is
+  // unchanged.
   const companyInfo = await getCompanyInfo(orgId);
+  const emailBrand = companyInfo.legalName || companyInfo.name;
+  const smsBrand = (await resolveBrandingByOrgId(orgId)).storefrontName;
+  const platformBaseUrl = (
+    process.env.SHOP_PUBLIC_BASE_URL?.replace(/\/+$/, "") ||
+    "https://cmbreathe.com"
+  ).trim();
+  const tenantBaseUrl =
+    (await resolveTenantBaseUrl(orgId))?.replace(/\/+$/, "") || platformBaseUrl;
+  const accountUrl = `${tenantBaseUrl}/account`;
 
   let sg: ReturnType<typeof createSendgridClient> | null = null;
   let sms: ReturnType<typeof createTwilioSmsClient> | null = null;
@@ -449,17 +480,20 @@ export async function runSmartTriggerSendDue(
           () =>
             sg!.sendEmail({
               to: contact,
-              subject: applyCompanyIdentityToText(
-                renderers.subjectForKind(row.kind as TriggerKind),
-                companyInfo,
+              // Subject carries no brand placeholder; text/html are branded to
+              // the tenant via the resolved brand + accountUrl params.
+              subject: renderers.subjectForKind(row.kind as TriggerKind),
+              text: renderers.textBody(
+                greeting,
+                row.kind as TriggerKind,
+                emailBrand,
+                accountUrl,
               ),
-              text: applyCompanyIdentityToText(
-                renderers.textBody(greeting, row.kind as TriggerKind),
-                companyInfo,
-              ),
-              html: applyCompanyIdentityToText(
-                renderers.htmlBody(greeting, row.kind as TriggerKind),
-                companyInfo,
+              html: renderers.htmlBody(
+                greeting,
+                row.kind as TriggerKind,
+                emailBrand,
+                accountUrl,
               ),
               customArgs: {
                 kind: "smart_trigger",
@@ -487,9 +521,10 @@ export async function runSmartTriggerSendDue(
           () =>
             sms!.sendSms({
               to: contact,
-              body: applyCompanyIdentityToText(
-                renderers.smsBody(firstName, row.kind as TriggerKind),
-                companyInfo,
+              body: renderers.smsBody(
+                firstName,
+                row.kind as TriggerKind,
+                smsBrand,
               ),
             }),
           {
@@ -535,7 +570,7 @@ export async function runSmartTriggerSendDue(
       // Phase G.8 — best-effort push fan-out by email lookup. Never
       // rolls back the canonical email/SMS that already went out.
       if (patient?.email) {
-        void sendPushToCustomerByEmail(patient.email, {
+        void sendPushToCustomerByEmail(orgId, patient.email, {
           title: renderers.subjectForKind(row.kind as TriggerKind),
           body: renderers.pushBody(row.kind as TriggerKind),
           url: "/account/insights",

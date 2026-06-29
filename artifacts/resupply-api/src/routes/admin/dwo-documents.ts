@@ -13,6 +13,10 @@ import {
   type DwoPdfInput,
 } from "../../lib/billing/dwo-pdf";
 import { getDocumentSupplierName } from "../../lib/company-info";
+import {
+  ObjectNotFoundError,
+  ObjectStorageService,
+} from "../../lib/object-storage/objectStorage";
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -329,10 +333,17 @@ router.delete(
       return;
     }
     const supabase = getOrgScopedClient(orgId);
-    const { error: delErr } = await supabase
+    // Return the object-storage key so we can clean up the blob after the
+    // row is gone — otherwise a deleted DWO's signed-order PDF (PHI) would
+    // be orphaned in the bucket forever (the orphan sweep's keep-set does
+    // not cover dwo_documents). Mirrors the blob cleanup in
+    // patients/prescriptions-attachment.ts.
+    const { data: deletedRow, error: delErr } = await supabase
       .from("dwo_documents")
       .delete()
-      .eq("id", idParsed.data.id);
+      .eq("id", idParsed.data.id)
+      .select("document_object_key")
+      .maybeSingle();
     if (delErr) {
       logger.error(
         { err: delErr.message, id: idParsed.data.id },
@@ -340,6 +351,25 @@ router.delete(
       );
       res.status(500).json({ error: "delete_failed" });
       return;
+    }
+
+    const objectKey = deletedRow?.document_object_key ?? null;
+    if (objectKey) {
+      // Best-effort: a storage hiccup must not fail the delete the operator
+      // already requested. ObjectNotFoundError = already gone = success.
+      try {
+        const objectFile = await new ObjectStorageService().getObjectEntityFile(
+          objectKey,
+        );
+        await objectFile.delete();
+      } catch (err) {
+        if (!(err instanceof ObjectNotFoundError)) {
+          logger.warn(
+            { err, id: idParsed.data.id },
+            "dwo-documents.delete: blob cleanup failed (row deleted)",
+          );
+        }
+      }
     }
     res.json({ ok: true });
   },

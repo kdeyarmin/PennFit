@@ -11,7 +11,7 @@
 // PHI posture: same as the CSR-facing analyzer — initials + DOB year +
 // HCPCS / modifiers / amounts only.
 
-import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../logger";
 
@@ -56,6 +56,13 @@ const SYSTEM_PROMPT = [
 ].join("\n");
 
 export interface ExplainerInput {
+  /**
+   * Tenant the claim belongs to — passed by the route from req.orgId.
+   * Scoping the claim/line lookups to this org (not the seed org) is
+   * what keeps a non-seed tenant's denial explanation from reading the
+   * seed tenant's billing data.
+   */
+  orgId: string;
   claimId: string;
   model?: string;
   apiKey?: string;
@@ -80,7 +87,7 @@ export async function explainDenialToPatient(
   if (!apiKey) {
     return errored("OPENAI_API_KEY not configured");
   }
-  const orgId = await resolveSeedOrgId();
+  const orgId = input.orgId;
   if (!orgId) {
     return errored("tenant context missing");
   }

@@ -208,6 +208,7 @@ export interface SelectReadyOpts {
   supabase?: SupabaseClient;
   /** Injectable for tests (defaults to the real preflight). */
   preflight?: (
+    orgId: string,
     claimId: string,
   ) => Promise<{ readyToSubmit: boolean; errorCount: number }>;
   /** Stable clock for tests. */
@@ -356,7 +357,7 @@ export async function selectSubmissionReadyClaims(
   const readyRows: DraftClaimRow[] = [];
   for (const c of eligibilityOk) {
     if (readyRows.length >= maxClaims) break;
-    const summary = await preflight(c.id);
+    const summary = await preflight(supabase.orgId, c.id);
     if (summary.readyToSubmit) {
       readyRows.push(c);
     } else {

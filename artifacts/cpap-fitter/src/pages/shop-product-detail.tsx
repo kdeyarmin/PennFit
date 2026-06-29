@@ -85,6 +85,7 @@ import {
   type MyReview,
   type ShopProductView,
 } from "@/lib/shop-api";
+import { formatAppDate } from "@/lib/utils";
 
 const BODY_MIN = 20;
 const BODY_MAX = 2000;
@@ -114,6 +115,7 @@ export function ShopProductDetail({ productId }: { productId: string }) {
     null,
   );
   const [loadingMore, setLoadingMore] = useState(false);
+  const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
 
   // The signed-in caller's own review for this product, when present.
   const [mine, setMine] = useState<MyReview | null>(null);
@@ -292,6 +294,7 @@ export function ShopProductDetail({ productId }: { productId: string }) {
   const handleLoadMore = useCallback(async () => {
     if (!reviewPages?.nextCursor || loadingMore) return;
     setLoadingMore(true);
+    setLoadMoreError(null);
     try {
       const next = await fetchProductReviews(productId, {
         cursor: reviewPages.nextCursor,
@@ -309,6 +312,11 @@ export function ShopProductDetail({ productId }: { productId: string }) {
             }
           : next,
       );
+    } catch {
+      // A transient failure on a 2nd+ review page must not become an
+      // unhandled rejection or a button that silently does nothing — give
+      // the user a retry cue. The first page stays rendered.
+      setLoadMoreError("Couldn't load more reviews. Tap to try again.");
     } finally {
       setLoadingMore(false);
     }
@@ -379,6 +387,7 @@ export function ShopProductDetail({ productId }: { productId: string }) {
         productId={productId}
         reviews={reviewPages}
         loadingMore={loadingMore}
+        loadMoreError={loadMoreError}
         onLoadMore={handleLoadMore}
         mine={mine}
         mineLoaded={mineLoaded}
@@ -812,7 +821,7 @@ function Hero({
           {oneTimeOutOfStock ? (
             <Badge
               variant="outline"
-              className="border-slate-300 text-slate-500 bg-slate-100 font-semibold"
+              className="border-slate-300 text-slate-600 bg-slate-100 font-semibold"
               data-testid="pdp-stock-out"
             >
               Out of stock
@@ -1042,6 +1051,7 @@ function ReviewsSection({
   productId,
   reviews,
   loadingMore,
+  loadMoreError,
   onLoadMore,
   mine,
   mineLoaded,
@@ -1050,6 +1060,7 @@ function ReviewsSection({
   productId: string;
   reviews: ReviewListResponse;
   loadingMore: boolean;
+  loadMoreError?: string | null;
   onLoadMore: () => void;
   mine: MyReview | null;
   mineLoaded: boolean;
@@ -1122,6 +1133,15 @@ function ReviewsSection({
             ) : null}
             Show more reviews
           </Button>
+          {loadMoreError && (
+            <p
+              role="alert"
+              className="mt-2 text-xs text-destructive"
+              data-testid="pdp-reviews-load-more-error"
+            >
+              {loadMoreError}
+            </p>
+          )}
         </div>
       )}
     </section>
@@ -1234,7 +1254,7 @@ function ReviewList({ items }: { items: ReviewItem[] }) {
                 </Badge>
               )}
               <time dateTime={r.createdAt} className="block mt-1">
-                {new Date(r.createdAt).toLocaleDateString(undefined, {
+                {formatAppDate(r.createdAt, {
                   year: "numeric",
                   month: "short",
                   day: "numeric",

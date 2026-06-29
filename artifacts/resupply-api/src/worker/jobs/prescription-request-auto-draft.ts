@@ -133,6 +133,7 @@ async function prescriptionRequestAutoDraftForOrg(
     }
 
     const built = await buildPrescriptionRequestPacketFromRx({
+      orgId,
       patientId: rx.patient_id,
       prescriptionId: rx.id,
       createdByEmail: SYSTEM_ACTOR,

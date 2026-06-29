@@ -817,7 +817,7 @@ router.get(
     }
     let pdf: Buffer;
     try {
-      pdf = await renderManualDocumentRowToPdf(row);
+      pdf = await renderManualDocumentRowToPdf(orgId, row);
     } catch (err) {
       logger.warn({ err }, "manual_document.pdf render failed");
       res.status(500).json({ error: "render_failed" });
@@ -899,7 +899,7 @@ router.post(
       return;
     }
 
-    const pdf = await renderManualDocumentRowToPdf(row);
+    const pdf = await renderManualDocumentRowToPdf(orgId, row);
     const supplier = manualDocumentSupplierName();
     const text = [
       `Please find the attached document from ${supplier}.`,
@@ -1147,7 +1147,7 @@ router.post(
       return;
     }
 
-    const pdf = await renderManualDocumentRowToPdf(row);
+    const pdf = await renderManualDocumentRowToPdf(orgId, row);
 
     // Upload the rendered PDF to private object storage, owned by the
     // patient — same pattern as the inbound-fax / portal-upload paths.

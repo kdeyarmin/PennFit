@@ -29,6 +29,7 @@ import {
   type CaseRow,
   type CaseStatus,
 } from "@/lib/admin/cases-api";
+import { formatAppDate } from "@/lib/utils";
 
 const STATUSES: CaseStatus[] = ["open", "in_progress", "resolved", "closed"];
 const PRIORITIES: CasePriority[] = ["low", "normal", "high", "urgent"];
@@ -344,7 +345,7 @@ function CaseRowItem({
           </span>
         </span>
         <span className="text-xs text-slate-400 whitespace-nowrap">
-          {new Date(caseRow.createdAt).toLocaleDateString()}
+          {formatAppDate(caseRow.createdAt)}
         </span>
       </button>
       {expanded && <CaseDetail caseId={caseRow.id} status={caseRow.status} />}

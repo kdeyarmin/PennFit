@@ -504,6 +504,30 @@ describe("POST /shop/checkout — subscription mode (signed-in)", () => {
     expect(params.subscription_data.metadata.customer_id).toBe(CUSTOMER_A);
   });
 
+  it("stamps the resolved org_id onto the subscription metadata too, not just the session", async () => {
+    stubSignedIn();
+    stubStripeConfigured();
+    stubCartValid();
+
+    const res = await request(makeApp())
+      .post("/shop/checkout")
+      .send({
+        items: [{ priceId: PRICE_ID, quantity: 1, mode: "subscription" }],
+      });
+
+    expect(res.status).toBe(200);
+    const [params] = sessionCreateMock.mock.calls[0]!;
+    // The session carries the resolved tenant. The customer.subscription.*
+    // webhook carries no event.account when checkout ran on the platform
+    // account, so org_id MUST also live on the Subscription — otherwise
+    // shop_subscriptions gets scoped to the seed org. Assert the two agree
+    // rather than hard-coding the host-resolved value.
+    const sessionOrg = params.metadata.org_id;
+    expect(typeof sessionOrg).toBe("string");
+    expect(sessionOrg.length).toBeGreaterThan(0);
+    expect(params.subscription_data.metadata.org_id).toBe(sessionOrg);
+  });
+
   it("returns 503 stripe_customer_unavailable when the customer can't be attached", async () => {
     stubSignedIn();
     stubStripeConfigured();

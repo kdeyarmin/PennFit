@@ -16,6 +16,7 @@
 
 import React from "react";
 import { Ruler } from "lucide-react";
+import { formatAppDate } from "@/lib/utils";
 
 export interface FacialMeasurementsLike {
   noseWidth: number;
@@ -163,7 +164,7 @@ function formatCapturedAt(iso: string): string {
   if (diffMs < 2 * day) return "Captured yesterday";
   const days = Math.floor(diffMs / day);
   if (days < 30) return `Captured ${days} days ago`;
-  return `Captured ${d.toLocaleDateString(undefined, {
+  return `Captured ${formatAppDate(d, {
     year: "numeric",
     month: "short",
     day: "numeric",

@@ -28,7 +28,7 @@
 // need to remember the 404/410 mark-expired dance. Centralizing it
 // here keeps the dispatcher code straight-line and audit-correct.
 
-import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../logger";
 
@@ -131,6 +131,7 @@ export function __setSdkForTesting(sdk: WebPushSdk | null): void {
  * worker job context.
  */
 export async function sendPushToCustomer(
+  orgId: string,
   customerId: string,
   payload: PushPayload,
 ): Promise<DeliveryCounts> {
@@ -152,12 +153,14 @@ export async function sendPushToCustomer(
   }
   sdk.setVapidDetails(config.subject, config.publicKey, config.privateKey);
 
-  const orgId = await resolveSeedOrgId();
   if (!orgId) {
     // Same fail-soft posture as the not-configured branches above: no
     // tenant context → nothing to deliver to, return zero counts.
     return { delivered: 0, expired: 0, transient: 0 };
   }
+  // Scope to the CALLER'S tenant (threaded in), not the seed org — otherwise a
+  // non-seed tenant's customer push subscriptions are never found and nothing
+  // is delivered.
   const supabase = getOrgScopedClient(orgId);
   const { data: rowsData, error: rowsErr } = await supabase
     .from("shop_customer_push_subscriptions")
@@ -198,7 +201,7 @@ export async function sendPushToCustomer(
         const status = pushErrorStatus(err);
         if (status === 404 || status === 410) {
           expired += 1;
-          await markExpired(row.id);
+          await markExpired(orgId, row.id);
         } else {
           transient += 1;
           // Audit-safe: log status + customer + row id only. No body.
@@ -234,6 +237,7 @@ export async function sendPushToCustomer(
  * notification to the wrong device.
  */
 export async function sendPushToCustomerByEmail(
+  orgId: string,
   email: string,
   payload: PushPayload,
 ): Promise<DeliveryCounts> {
@@ -242,10 +246,10 @@ export async function sendPushToCustomerByEmail(
   if (!isPushConfigured()) {
     return { delivered: 0, expired: 0, transient: 0 };
   }
-  const orgId = await resolveSeedOrgId();
   if (!orgId) {
     return { delivered: 0, expired: 0, transient: 0 };
   }
+  // Scope the email→customer lookup to the caller's tenant (threaded in).
   const supabase = getOrgScopedClient(orgId);
   const { data: rowsData, error } = await supabase
     .from("shop_customers")
@@ -261,7 +265,7 @@ export async function sendPushToCustomerByEmail(
     logger.warn("web_push_customer_email_ambiguous");
     return { delivered: 0, expired: 0, transient: 0 };
   }
-  return sendPushToCustomer(rows[0]!.customer_id, payload);
+  return sendPushToCustomer(orgId, rows[0]!.customer_id, payload);
 }
 
 /**
@@ -276,9 +280,11 @@ function pushErrorStatus(err: unknown): number | null {
   return typeof e.statusCode === "number" ? e.statusCode : null;
 }
 
-async function markExpired(subscriptionId: string): Promise<void> {
+async function markExpired(
+  orgId: string,
+  subscriptionId: string,
+): Promise<void> {
   try {
-    const orgId = await resolveSeedOrgId();
     if (!orgId) throw new Error("tenant context missing");
     const supabase = getOrgScopedClient(orgId);
     const nowIso = new Date().toISOString();

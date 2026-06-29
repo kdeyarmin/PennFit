@@ -29,6 +29,7 @@ import {
   type AdminProductQuestionStatus,
 } from "@/lib/admin/product-questions-api";
 import { useUrlState } from "@/hooks/use-url-state";
+import { formatAppDateTime } from "@/lib/utils";
 
 const TABS: ReadonlyArray<{ id: AdminProductQuestionStatus; label: string }> = [
   { id: "pending", label: "Pending" },
@@ -210,7 +211,7 @@ function QuestionCard({ q }: { q: AdminProductQuestion }) {
         <p className="text-xs text-slate-500">
           <span className="font-mono">{q.productId}</span> ·{" "}
           {q.askerDisplayName} ({q.askerEmail}) ·{" "}
-          {new Date(q.createdAt).toLocaleString()}
+          {formatAppDateTime(q.createdAt)}
         </p>
         <span
           className={`text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-full ${

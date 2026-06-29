@@ -10,7 +10,7 @@
 // validator (a chosen pickup location must be an active row), and the
 // admin order projection (display the pickup address).
 
-import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 export interface PickupLocation {
   id: string;
@@ -55,8 +55,11 @@ function rowToPickupLocation(row: {
  * All active business locations, primary first then alphabetical. The
  * storefront presents these as in-store pickup choices.
  */
-export async function listActivePickupLocations(): Promise<PickupLocation[]> {
-  const orgId = await resolveSeedOrgId();
+export async function listActivePickupLocations(
+  orgId: string,
+): Promise<PickupLocation[]> {
+  // Scope to the caller's tenant (threaded in), not the seed org — otherwise a
+  // non-seed tenant's storefront would list the SEED tenant's store locations.
   if (!orgId) return [];
   const supabase = getOrgScopedClient(orgId);
   const { data, error } = await supabase
@@ -76,9 +79,9 @@ export async function listActivePickupLocations(): Promise<PickupLocation[]> {
  * checkout so a stale / tampered id can't be persisted onto an order.
  */
 export async function getActivePickupLocationById(
+  orgId: string,
   id: string,
 ): Promise<PickupLocation | null> {
-  const orgId = await resolveSeedOrgId();
   if (!orgId) return null;
   const supabase = getOrgScopedClient(orgId);
   const { data, error } = await supabase
@@ -100,11 +103,11 @@ export async function getActivePickupLocationById(
  * still want to show where it was picked up).
  */
 export async function getPickupLocationsByIds(
+  orgId: string,
   ids: readonly string[],
 ): Promise<Map<string, PickupLocation>> {
   const unique = Array.from(new Set(ids.filter((v) => v.length > 0)));
   if (unique.length === 0) return new Map();
-  const orgId = await resolveSeedOrgId();
   if (!orgId) return new Map();
   const supabase = getOrgScopedClient(orgId);
   const { data, error } = await supabase

@@ -47,6 +47,7 @@ import {
   formatPercent,
   type DirectorSummaryResponse,
 } from "@/lib/admin/billing-api";
+import { formatAppDate, formatAppDateTime } from "@/lib/utils";
 
 const WINDOW_LABEL: Record<
   DirectorSummaryResponse["denialRateTrend"][number]["window"],
@@ -621,9 +622,7 @@ export function AdminBillingHubPage() {
                 Snapshot taken
               </dt>
               <dd className="text-xs" style={{ color: "hsl(var(--ink-2))" }}>
-                {data?.generatedAt
-                  ? new Date(data.generatedAt).toLocaleString()
-                  : "—"}
+                {data?.generatedAt ? formatAppDateTime(data.generatedAt) : "—"}
               </dd>
             </div>
           </dl>
@@ -759,11 +758,11 @@ function QueueRow({
 }
 
 function formatDate(value: string | null | undefined): string {
-  if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
-  return date.toLocaleDateString(undefined, {
-    timeZone: "America/New_York",
+  // formatAppDate renders in the app timezone and anchors date-only
+  // ("YYYY-MM-DD") values at noon so the calendar day never shifts —
+  // the manual `new Date(value)` above rendered date-only values a day
+  // early in ET (UTC midnight → previous evening).
+  return formatAppDate(value, {
     year: "numeric",
     month: "short",
     day: "numeric",

@@ -19,7 +19,6 @@
 import {
   type Database,
   getOrgScopedClient,
-  resolveSeedOrgId,
   type OrgScopedClient,
 } from "@workspace/resupply-db";
 import {
@@ -100,9 +99,9 @@ export interface PreflightSummary {
  * data is missing — that's what gives the CSR a deterministic UI.
  */
 export async function preflightClaim(
+  orgId: string,
   claimId: string,
 ): Promise<PreflightSummary> {
-  const orgId = await resolveSeedOrgId();
   if (!orgId) {
     return {
       readyToSubmit: false,

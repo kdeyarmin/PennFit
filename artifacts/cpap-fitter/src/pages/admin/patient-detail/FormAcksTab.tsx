@@ -7,6 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Spinner } from "@/components/admin/Spinner";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { listPatientFormAcks } from "@/lib/admin/form-acks-api";
+import { formatAppDate } from "@/lib/utils";
 
 export function FormAcksTab({ patientId }: { patientId: string }) {
   const { data, isPending, isError, error, refetch } = useQuery({
@@ -67,9 +68,7 @@ export function FormAcksTab({ patientId }: { patientId: string }) {
               >
                 {a.source}
               </td>
-              <td className="py-2 text-xs">
-                {new Date(a.signedAt).toLocaleDateString()}
-              </td>
+              <td className="py-2 text-xs">{formatAppDate(a.signedAt)}</td>
             </tr>
           );
         })}

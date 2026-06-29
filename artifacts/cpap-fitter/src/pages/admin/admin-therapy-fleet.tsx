@@ -56,7 +56,7 @@ import {
   dismissSmartTrigger,
   snoozeSmartTrigger,
 } from "@/lib/admin/smart-triggers-api";
-import { appDateIsoOffset } from "@/lib/utils";
+import { appDateIsoOffset, formatAppDate } from "@/lib/utils";
 
 const ALERT_LABELS: Record<string, string> = {
   compliance_risk: "Compliance risk",
@@ -668,7 +668,7 @@ function ClinicalInsightsTable({
                   className="py-1.5 px-1 whitespace-nowrap text-[12px]"
                   style={{ color: "hsl(var(--ink-3))" }}
                 >
-                  {new Date(e.detectedAt).toLocaleDateString()}
+                  {formatAppDate(e.detectedAt)}
                 </td>
                 <td className="py-1.5 px-1 whitespace-nowrap text-right">
                   <div className="inline-flex items-center gap-1.5">

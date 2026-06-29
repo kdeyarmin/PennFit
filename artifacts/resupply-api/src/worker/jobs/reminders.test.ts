@@ -176,6 +176,15 @@ describe("isWithinQuietHours — source structural checks (PR change)", () => {
   it("passes the patient timezone field into isWithinQuietHours", () => {
     expect(SRC).toContain("isWithinQuietHours(asOf, row.timezone)");
   });
+
+  it("re-checks quiet hours inside the SMS send job (escalation backstop)", () => {
+    // The daily escalation job enqueues SEND_SMS_JOB directly (08:00 HST for
+    // a Hawaii patient), so the send handler must re-check the recipient's
+    // local window — not rely on the scan's pre-enqueue check. Pin both the
+    // deferral event and the timezone-driven check in the send path.
+    expect(SRC).toMatch(/event:\s*"reminder_sms_deferred_quiet_hours"/);
+    expect(SRC).toContain("isWithinQuietHours(new Date(), smsTimezone)");
+  });
 });
 
 // ---------------------------------------------------------------------------

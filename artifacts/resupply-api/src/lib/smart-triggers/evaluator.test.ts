@@ -17,6 +17,7 @@ import {
   installSupabaseMock,
   stageSupabaseResponse,
   getSupabaseWritePayloads,
+  getSupabaseFilterCalls,
 } from "../../test-helpers/supabase-mock";
 
 const supabaseMock = installSupabaseMock();
@@ -97,6 +98,32 @@ describe("runSmartTriggerEvaluator", () => {
     expect(
       getSupabaseWritePayloads("patient_smart_trigger_events", "insert"),
     ).toEqual([]);
+  });
+
+  it("fetches the MOST RECENT nights (descending), not the oldest", async () => {
+    // Regression: the cron used ascending+limit(60) and fed the rules the
+    // OLDEST 60 nights, so recency-based triggers never fired for patients
+    // on therapy >60 days. The per-patient pull must order night_date
+    // descending (matching evaluate-patient.ts).
+    stageSupabaseResponse("patient_therapy_nights", "select", {
+      data: [{ patient_id: "p_1" }],
+    });
+    stageSupabaseResponse("patient_therapy_nights", "select", {
+      data: [{ night_date: "2026-04-15" }],
+    });
+    evaluateAllMock.mockReturnValue([]);
+
+    await runSmartTriggerEvaluator(ACTOR);
+
+    const orderCalls = getSupabaseFilterCalls(
+      "patient_therapy_nights",
+      "select",
+    ).filter((c) => c.verb === "order" && c.args[0] === "night_date");
+    expect(orderCalls.length).toBeGreaterThan(0);
+    // Every night_date ordering in this job must be descending (most recent).
+    for (const c of orderCalls) {
+      expect(c.args[1]).toMatchObject({ ascending: false });
+    }
   });
 
   it("inserts a new event + audits when a rule fires", async () => {

@@ -7,6 +7,7 @@ import {
   fireEvent,
   cleanup,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
@@ -116,7 +117,13 @@ describe("AdminShopOrdersPage", () => {
     fireEvent.change(screen.getByLabelText("Refund reason"), {
       target: { value: "duplicate" },
     });
+    // Refund now requires confirming an intent dialog before the real
+    // Stripe refund fires (money-moving + irreversible).
     fireEvent.click(screen.getByRole("button", { name: /refund order/i }));
+    const dialog = await screen.findByRole("alertdialog");
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: /refund order/i }),
+    );
     await waitFor(() =>
       expect(refundShopOrder).toHaveBeenCalledWith("ord-12345678", {
         reason: "duplicate",

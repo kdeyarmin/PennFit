@@ -43,6 +43,7 @@ import {
   sendSlackTest,
   setConfigValue,
 } from "@/lib/admin/app-config-api";
+import { formatAppDateTime } from "@/lib/utils";
 
 /** Category label that gets the "Send test message" affordance. Must match
  *  CATEGORY_SLACK in the backend app-config catalog. */
@@ -747,7 +748,7 @@ function RecentActivity() {
                 style={{ color: "hsl(var(--ink-3))" }}
               >
                 {a.operatorEmail ?? "system"} ·{" "}
-                {new Date(a.occurredAt).toLocaleString()}
+                {formatAppDateTime(a.occurredAt)}
               </span>
             </li>
           ))}

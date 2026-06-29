@@ -40,6 +40,7 @@ import {
   sectionsToText,
   textToSections,
 } from "@/lib/admin/packet-template-text";
+import { formatAppDateTime } from "@/lib/utils";
 
 /** Read-only renderer for structured document sections (same shapes the
  *  patient signing UI renders). */
@@ -541,7 +542,7 @@ function TemplateHistoryPanel({
       ) : (
         <ul className="space-y-1.5">
           {revisions.map((rev) => {
-            const when = new Date(rev.created_at).toLocaleString(undefined, {
+            const when = formatAppDateTime(rev.created_at, {
               year: "numeric",
               month: "short",
               day: "numeric",

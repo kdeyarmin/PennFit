@@ -25,6 +25,7 @@ import { Label, Select } from "@/components/admin/Input";
 import { Button } from "@/components/admin/Button";
 import { useFilteredList } from "@/hooks/use-filtered-list";
 import { fullName, formatDateTime } from "@/lib/admin/format";
+import { formatAppDateTime } from "@/lib/utils";
 
 const PAGE_SIZE = 25;
 
@@ -394,7 +395,7 @@ function SlaCell({
       className={`text-[11px] font-semibold tabular-nums ${
         breached ? "text-rose-700" : soon ? "text-amber-700" : "text-slate-600"
       }`}
-      title={due.toLocaleString()}
+      title={formatAppDateTime(due)}
     >
       {label}
     </span>

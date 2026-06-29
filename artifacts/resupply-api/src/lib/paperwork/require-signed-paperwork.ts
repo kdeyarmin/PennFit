@@ -28,7 +28,7 @@
 // patient id (a UUID the caller already holds), and the caller logs
 // counts only.
 
-import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { isFeatureEnabled } from "../feature-flags";
 
@@ -176,20 +176,26 @@ async function loadRequiredFormStatuses(
  * transition when `required && !satisfied`.
  */
 export async function evaluatePaperworkGateForCustomer(
+  orgId: string,
   customerId: string | null,
 ): Promise<PaperworkGateDecision> {
   // Guest / non-clinical order — nothing to sign, never gated.
   if (!customerId) return NOT_REQUIRED;
 
-  const orgId = await resolveSeedOrgId();
+  // Scope to the ORDER'S tenant (threaded from the caller's req.orgId), NOT
+  // the seed org. Resolving the seed org here meant a non-seed tenant's
+  // customer→patient lookup missed, the gate returned NOT_REQUIRED, and the
+  // required-signed-paperwork ship gate was SILENTLY BYPASSED — orders could
+  // ship without signed intake forms. (fail-open multi-tenant bug.)
   if (!orgId) return NOT_REQUIRED;
   const supabase = getOrgScopedClient(orgId);
   const patientId = await resolvePatientIdForCustomer(supabase, customerId);
   if (!patientId) return NOT_REQUIRED;
 
-  // Determine whether a requirement applies (global flag and/or payer).
+  // Determine whether a requirement applies (global flag and/or payer). The
+  // feature flag is read for THIS tenant, not the seed org.
   const sources: PaperworkRequirementSource[] = [];
-  if (await isFeatureEnabled("orders.require_signed_paperwork")) {
+  if (await isFeatureEnabled("orders.require_signed_paperwork", orgId)) {
     sources.push("global");
   }
   if (await payerRequiresPaperwork(supabase, patientId)) {

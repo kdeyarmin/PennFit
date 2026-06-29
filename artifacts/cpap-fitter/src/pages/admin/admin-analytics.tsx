@@ -45,6 +45,7 @@ import {
   type StuckEpisode,
   type StuckEpisodeStage,
 } from "@/lib/admin/analytics-api";
+import { formatAppDate } from "@/lib/utils";
 
 export function AdminAnalyticsPage() {
   const [kpiDays, setKpiDays] = useState(30);
@@ -510,11 +511,9 @@ function StuckEpisodesTable({ episodes }: { episodes: StuckEpisode[] }) {
               )}
             </td>
             <td className="py-1.5 text-xs">{e.insurancePayer ?? "—"}</td>
+            <td className="py-1.5 text-xs">{formatAppDate(e.createdAt)}</td>
             <td className="py-1.5 text-xs">
-              {new Date(e.createdAt).toLocaleDateString()}
-            </td>
-            <td className="py-1.5 text-xs">
-              {e.expiresAt ? new Date(e.expiresAt).toLocaleDateString() : "—"}
+              {e.expiresAt ? formatAppDate(e.expiresAt) : "—"}
             </td>
             <td className="py-1.5 text-right">
               <a

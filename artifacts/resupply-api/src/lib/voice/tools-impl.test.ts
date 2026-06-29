@@ -100,6 +100,62 @@ describe("VoiceToolDispatcher — identity attempt cap", () => {
     expect(dispatcher.isIdentityVerified()).toBe(false);
   });
 
+  it("scopes patient DB access to the call's tenant (deps.orgId), not the seed org", async () => {
+    // Regression (G7): the dispatcher must scope patient reads/writes to the
+    // call's actual tenant. Before the fix db() always resolved the seed org,
+    // so a non-seed patient was filtered out and identity verification could
+    // never succeed for a second tenant. The mocked resolveSeedOrgId() returns
+    // "...0001"; deps.orgId here is a DISTINCT non-seed org, and the org-scoped
+    // facade must filter on THAT.
+    const NON_SEED_ORG = "22222222-2222-4222-8222-222222222222";
+    const eqCalls: Array<[string, unknown]> = [];
+    const stubRow: StubRow = {
+      date_of_birth: "1980-01-01",
+      legal_first_name: "Alex",
+    };
+    const recordingDb = {
+      schema: () => ({
+        from: () => {
+          const builder: Record<string, unknown> = {
+            select: () => builder,
+            update: () => builder,
+            eq: (col: string, val: unknown) => {
+              eqCalls.push([col, val]);
+              return builder;
+            },
+            limit: () => builder,
+            maybeSingle: () => Promise.resolve({ data: stubRow, error: null }),
+            then: (
+              onfulfilled: (v: unknown) => unknown,
+              onrejected?: (e: unknown) => unknown,
+            ) =>
+              Promise.resolve({ data: null, error: null }).then(
+                onfulfilled,
+                onrejected,
+              ),
+          };
+          return builder;
+        },
+      }),
+    } as unknown as never;
+
+    const dispatcher = createVoiceToolDispatcher({
+      ...baseDeps,
+      orgId: NON_SEED_ORG,
+      supabase: recordingDb,
+    });
+
+    await dispatcher.dispatch({
+      callId: "c1",
+      name: "verify_patient_identity",
+      args: { date_of_birth: "1980-01-01" },
+    });
+
+    const orgEq = eqCalls.find(([col]) => col === "org_id");
+    expect(orgEq).toBeDefined();
+    expect(orgEq?.[1]).toBe(NON_SEED_ORG);
+  });
+
   it("hard-locks after 3 failed attempts: a 4th verify is refused without hitting the DB", async () => {
     let dbCalls = 0;
     const stubRow: StubRow = {

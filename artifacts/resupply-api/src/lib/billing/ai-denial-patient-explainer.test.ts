@@ -22,6 +22,7 @@ const supabaseMock = installSupabaseMock();
 import { explainDenialToPatient } from "./ai-denial-patient-explainer";
 
 const originalKey = process.env.OPENAI_API_KEY;
+const ORG_ID = "00000000-0000-4000-8000-000000000001";
 
 beforeEach(() => {
   supabaseMock.reset();
@@ -38,7 +39,10 @@ afterEach(() => {
 
 describe("explainDenialToPatient", () => {
   it("returns errored fallback when OPENAI_API_KEY is unset", async () => {
-    const result = await explainDenialToPatient({ claimId: "claim_1" });
+    const result = await explainDenialToPatient({
+      orgId: ORG_ID,
+      claimId: "claim_1",
+    });
     expect(result.errorMessage).toContain("OPENAI_API_KEY");
     expect(result.subject).toContain("recent insurance claim");
     expect(result.tone).toBe("informational");
@@ -48,7 +52,10 @@ describe("explainDenialToPatient", () => {
   it("returns errored when claim is not found", async () => {
     process.env.OPENAI_API_KEY = "sk-test";
     stageSupabaseResponse("insurance_claims", "select", { data: null });
-    const result = await explainDenialToPatient({ claimId: "missing" });
+    const result = await explainDenialToPatient({
+      orgId: ORG_ID,
+      claimId: "missing",
+    });
     expect(result.errorMessage).toMatch(/not found|not denied/);
   });
 
@@ -64,7 +71,10 @@ describe("explainDenialToPatient", () => {
         denial_reason: null,
       },
     });
-    const result = await explainDenialToPatient({ claimId: "claim_1" });
+    const result = await explainDenialToPatient({
+      orgId: ORG_ID,
+      claimId: "claim_1",
+    });
     expect(result.errorMessage).toMatch(/not denied/);
   });
 
@@ -86,6 +96,7 @@ describe("explainDenialToPatient", () => {
         new Response("oops", { status: 500, statusText: "Server Error" }),
     );
     const result = await explainDenialToPatient({
+      orgId: ORG_ID,
       claimId: "claim_1",
       fetchImpl: fakeFetch as unknown as typeof fetch,
     });
@@ -121,6 +132,7 @@ describe("explainDenialToPatient", () => {
     });
     const fakeFetch = vi.fn(async () => new Response(okBody, { status: 200 }));
     const result = await explainDenialToPatient({
+      orgId: ORG_ID,
       claimId: "claim_1",
       fetchImpl: fakeFetch as unknown as typeof fetch,
     });
@@ -149,6 +161,7 @@ describe("explainDenialToPatient", () => {
     });
     const fakeFetch = vi.fn(async () => new Response(body, { status: 200 }));
     const result = await explainDenialToPatient({
+      orgId: ORG_ID,
       claimId: "claim_1",
       fetchImpl: fakeFetch as unknown as typeof fetch,
     });
@@ -184,6 +197,7 @@ describe("explainDenialToPatient", () => {
     });
     const fakeFetch = vi.fn(async () => new Response(body, { status: 200 }));
     const result = await explainDenialToPatient({
+      orgId: ORG_ID,
       claimId: "claim_1",
       fetchImpl: fakeFetch as unknown as typeof fetch,
     });

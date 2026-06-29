@@ -16,6 +16,7 @@ import {
   type SendReminderOutcome,
 } from "@workspace/resupply-reminders";
 
+import { getCompanyInfo } from "../../lib/company-info";
 import { logger } from "../../lib/logger";
 import { applyTenantEmailSender } from "../../lib/email/apply-tenant-email-sender";
 import { recordOutboundMessageUsage } from "../../lib/metering/usage";
@@ -74,8 +75,12 @@ router.post(
       outcome = await sendReminderEmail({
         // sendReminderEmail is a shared lib/resupply-reminders helper not
         // in this wave's file list; it's typed for the raw service-role
-        // client. Pass the unscoped client (`.raw()`) per cutover §B.
+        // client. Pass the unscoped client (`.raw()`) per cutover §B AND the
+        // tenant orgId, or the helper re-scopes the patient/episode reads to
+        // the seed org and a non-seed patient lookup misses (G7) — silently
+        // dropping the email. (The SMS sibling route already threads orgId.)
         supabase: supabase.raw(),
+        orgId,
         // Send under the tenant's own From identity when configured (G6);
         // falls back to the platform default when it isn't.
         cfg: await applyTenantEmailSender(orgId, {
@@ -83,7 +88,9 @@ router.post(
           sendgridFromEmail: cfg.email.sendgridFromEmail,
           sendgridFromName: cfg.email.sendgridFromName,
           publicBaseUrl: cfg.email.publicBaseUrl,
-          practiceName: cfg.practiceName,
+          // Tenant's own name, not the process-global seed practice name (G7).
+          // Seed copy is unchanged: getCompanyInfo(seed).name === the env value.
+          practiceName: (await getCompanyInfo(orgId)).name,
         }),
         patientId,
         episodeId,

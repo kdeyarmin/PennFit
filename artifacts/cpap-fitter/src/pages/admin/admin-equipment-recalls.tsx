@@ -27,6 +27,7 @@ import {
 
 import { Card } from "@/components/admin/Card";
 import { Spinner } from "@/components/admin/Spinner";
+import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Button } from "@/components/admin/Button";
 import { Input } from "@/components/admin/Input";
@@ -132,6 +133,7 @@ function RecallRow({
   const [matchError, setMatchError] = useState<string | null>(null);
   const [matchSummary, setMatchSummary] = useState<string | null>(null);
   const [showRoster, setShowRoster] = useState(false);
+  const [confirm, ConfirmDialogEl] = useConfirmDialog();
   const scan = useMutation({
     mutationFn: () => scanEquipmentRecall(recall.id),
     onSuccess: (r) => onScanResult(r),
@@ -147,6 +149,21 @@ function RecallRow({
     },
     onError: (e: Error) => setMatchError(e.message),
   });
+
+  async function handleMatch() {
+    // Queues real safety-recall notifications to the matched roster —
+    // confirm intent so a stray click can't blast the whole roster.
+    if (
+      !(await confirm({
+        title: "Match & notify affected patients?",
+        description:
+          "This flags every matched device and queues a recall notification to each affected patient. Patients already notified are skipped.",
+        confirmLabel: "Match & notify",
+      }))
+    )
+      return;
+    match.mutate();
+  }
 
   return (
     <li
@@ -228,7 +245,7 @@ function RecallRow({
             size="sm"
             disabled={recall.status === "closed" || match.isPending}
             isLoading={match.isPending}
-            onClick={() => match.mutate()}
+            onClick={() => void handleMatch()}
             title="Run the matcher, flag affected assets, and queue notifications"
           >
             <Send className="h-3 w-3 mr-1" />
@@ -252,6 +269,7 @@ function RecallRow({
           onClose={() => setShowRoster(false)}
         />
       )}
+      {ConfirmDialogEl}
     </li>
   );
 }

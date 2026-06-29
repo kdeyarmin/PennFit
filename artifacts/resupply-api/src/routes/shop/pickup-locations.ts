@@ -41,7 +41,7 @@ router.get(
       res.json({ enabled: false, locations: [] });
       return;
     }
-    const locations = await listActivePickupLocations();
+    const locations = await listActivePickupLocations(orgId ?? "");
     // Even with the flag on, pickup is only actually offerable when at
     // least one active location exists — report `enabled` accordingly so
     // the storefront doesn't render an empty picker.

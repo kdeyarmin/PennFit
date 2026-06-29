@@ -25,6 +25,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import express, { type Express } from "express";
 import request from "supertest";
 
+import { __resetRateLimitsForTests } from "../../middlewares/rate-limit";
+
 import {
   makeRequireAdminMock,
   type MockAdminCtx,
@@ -91,6 +93,7 @@ vi.mock("../../lib/tenant-branding.js", () => ({
 const sendPushToCustomerMock = vi.hoisted(() =>
   vi.fn<
     (
+      orgId: string,
       customerId: string,
       payload: {
         title: string;
@@ -181,6 +184,10 @@ beforeEach(() => {
   }));
   sendPushToCustomerMock.mockClear();
   mockAdmin.current = null;
+  // Reset per-route rate-limit buckets so tests don't accumulate against the
+  // admin refund limiter (max 10/hr/admin) across the file — no test asserts
+  // 429, so per-test isolation is the correct hygiene here.
+  __resetRateLimitsForTests();
 });
 
 afterEach(() => {
@@ -381,7 +388,7 @@ describe("POST /admin/shop/orders/:orderId/tracking", () => {
     // Phase G.2 — push fan-out fires after a successful email,
     // scoped to the linked customer.
     expect(sendPushToCustomerMock).toHaveBeenCalledTimes(1);
-    const [pushCustId, pushPayload] = sendPushToCustomerMock.mock.calls[0]!;
+    const [, pushCustId, pushPayload] = sendPushToCustomerMock.mock.calls[0]!;
     expect(pushCustId).toBe("user_alice");
     expect(pushPayload).toMatchObject({
       title: "Your PennPaps order shipped",
@@ -1037,6 +1044,53 @@ describe("POST /admin/shop/orders/:orderId/refund", () => {
     // Stripe Refund metadata so the audit trail survives outside our DB.
     expect(callArgs.metadata?.admin_email).toBe(ALLOWED_EMAIL);
     expect(callArgs.metadata?.shop_order_id).toBe(VALID_ID);
+  });
+
+  it("includes the already-refunded cumulative in the idempotency key", async () => {
+    // Regression: keying only on (order, amount) collapsed two SEPARATE
+    // equal-amount partial refunds into one Stripe Refund (silent
+    // under-refund). The key must incorporate the order's current
+    // amount_refunded_cents so a second $10 partial — after the first
+    // settled and bumped the cumulative — gets a fresh, non-colliding key.
+    stubVerifiedAdmin();
+    stageSupabaseResponse("shop_orders", "select", {
+      data: paidOrderRow({ amount_refunded_cents: 1000 }),
+    });
+    stripeRefundsCreateMock.mockResolvedValue({
+      id: "re_test_2",
+      amount: 1000,
+      status: "succeeded",
+    });
+    const res = await request(makeApp())
+      .post(`/resupply-api/admin/shop/orders/${VALID_ID}/refund`)
+      .send({ amountCents: 1000 });
+    expect(res.status).toBe(200);
+    // options (incl. idempotencyKey) is the 2nd arg to refunds.create.
+    const opts = stripeRefundsCreateMock.mock.calls[0]?.[1] as {
+      idempotencyKey?: string;
+    };
+    expect(opts.idempotencyKey).toBe(`refund-${VALID_ID}-1000-1000`);
+  });
+
+  it("returns 409 when the partial exceeds the remaining refundable (cumulative cap)", async () => {
+    // Regression: the route only checked amountCents against the FULL order
+    // total, so successive partials could over-refund. Now it caps against
+    // (total - already-refunded). $49.98 order with $40 already refunded
+    // leaves only $9.98; a $15.00 partial must be refused.
+    stubVerifiedAdmin();
+    stageSupabaseResponse("shop_orders", "select", {
+      data: paidOrderRow({
+        amount_total_cents: 4998,
+        amount_refunded_cents: 4000,
+      }),
+    });
+    const res = await request(makeApp())
+      .post(`/resupply-api/admin/shop/orders/${VALID_ID}/refund`)
+      .send({ amountCents: 1500 });
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("refund_exceeds_amount");
+    expect(res.body.refundableCents).toBe(998);
+    expect(stripeRefundsCreateMock).not.toHaveBeenCalled();
   });
 });
 

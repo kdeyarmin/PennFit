@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import express, { type Express, type Request } from "express";
+import express, { type Express, type Request, type Response } from "express";
 import compression from "compression";
 import cors from "cors";
 import pinoHttp from "pino-http";
@@ -15,14 +15,20 @@ import router from "./routes";
 import storefrontRouter from "./routes/storefront";
 import providerPortalRouter from "./routes/provider";
 import { getAuthDeps } from "./lib/auth-deps";
-import { PLATFORM_NAME } from "./lib/company-info";
+import {
+  PLATFORM_NAME,
+  getCompanyInfo,
+  getCompanyInfoSync,
+} from "./lib/company-info";
 import { isDeployedRuntime } from "./lib/deployed-runtime";
 import { logger } from "./lib/logger";
 import { providerPortalFeatureGate } from "./lib/provider-portal-feature-gate";
 import { RATE_LIMITS } from "./lib/rate-limits-config";
 import { getRequestId, requestContextMiddleware } from "./lib/request-context";
+import { requestHost } from "./lib/request-host";
 import {
   isVerifiedCustomDomainOrigin,
+  resolveOrgIdByHost,
   warmVerifiedCustomDomains,
 } from "./lib/tenant-branding";
 import { isPlatformSubdomainOrigin } from "./lib/tenant-domain";
@@ -506,10 +512,29 @@ const storefrontChatLimiter = expressRateLimit({
   standardHeaders: "draft-7",
   legacyHeaders: false,
   keyGenerator: (req: Request) => ipKeyGenerator(req.ip ?? "0.0.0.0"),
-  message: {
-    reply:
-      "You're sending messages too quickly. Please wait a minute and try again, or call (814) 471-0627 for immediate help.",
-    rateLimited: true,
+  // Build the 429 copy from the host-resolved tenant's own support contact,
+  // not a hardcoded seed (Penn) number. /api/chat is public (no auth sets
+  // req.orgId), so resolve the org by host exactly as routes/storefront/chat.ts
+  // does, then build the phone clause DIRECTLY from CompanyInfo fields —
+  // applyCompanyIdentityToText would be a no-op for an unconfigured non-seed
+  // tenant and leak the literal Penn number. Omit the clause when the tenant
+  // has no support phone; degrade to the warm seed identity on any miss.
+  handler: async (req: Request, res: Response) => {
+    let phone = "";
+    try {
+      const orgId =
+        req.orgId ?? (await resolveOrgIdByHost(requestHost(req))) ?? undefined;
+      const info = orgId ? await getCompanyInfo(orgId) : getCompanyInfoSync();
+      phone = info.supportPhoneDisplay?.trim() ?? "";
+    } catch {
+      // Host/company resolution hiccup — fall back to no phone clause rather
+      // than blocking the 429 response.
+    }
+    const callClause = phone ? ` or call ${phone} for immediate help` : "";
+    res.status(429).json({
+      reply: `You're sending messages too quickly. Please wait a minute and try again${callClause}.`,
+      rateLimited: true,
+    });
   },
 });
 app.use("/api/chat", storefrontChatLimiter);

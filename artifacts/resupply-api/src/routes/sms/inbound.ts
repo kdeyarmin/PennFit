@@ -65,6 +65,7 @@ import {
 
 import { smsAsksRefillAttestation } from "@workspace/resupply-reminders";
 
+import { getCompanyInfo } from "../../lib/company-info";
 import { logger } from "../../lib/logger";
 import {
   resolveOrgIdByCalledNumber,
@@ -295,6 +296,12 @@ router.post(
       return;
     }
     const supabase = getOrgScopedClient(orgId);
+    // Brand patient-facing auto-replies with the resolved tenant's own name,
+    // not the process-global seed practice name (G7). Used by the HELP body
+    // and dispatchIntent below. Seed copy is unchanged: getCompanyInfo(seed)
+    // .name === RESUPPLY_PRACTICE_NAME. (The earlier pre-resolution HELP/STOP
+    // path, before the tenant is known, still uses the platform-default cfg.)
+    const inboundPracticeName = (await getCompanyInfo(orgId)).name;
 
     // Direct phone lookup, scoped to the resolved tenant. We pull up to 2 rows
     // so we can detect ambiguous matches — multiple patients sharing one phone
@@ -417,7 +424,7 @@ router.post(
           .send(
             earlyRouted.intent === "stop"
               ? "<Response><Message>You've been unsubscribed and won't get further texts from us. Reply START to resume.</Message></Response>"
-              : `<Response><Message>${escapeXml(cfg.practiceName)} — automated CPAP refill reminders. Reply YES to confirm, NO to decline, EDIT to change your address, STOP to opt out. Standard message + data rates may apply.</Message></Response>`,
+              : `<Response><Message>${escapeXml(inboundPracticeName)} — automated CPAP refill reminders. Reply YES to confirm, NO to decline, EDIT to change your address, STOP to opt out. Standard message + data rates may apply.</Message></Response>`,
           );
         return;
       }
@@ -820,7 +827,7 @@ router.post(
         intent,
         conversationId,
         patientId,
-        practiceName: cfg.practiceName,
+        practiceName: inboundPracticeName,
         aiReply: agentReply,
         ip: req.ip ?? null,
         userAgent: req.get("user-agent") ?? null,

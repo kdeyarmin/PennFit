@@ -9,6 +9,7 @@ import {
   SkuConflictError,
   type ArchivedShopProductRow,
 } from "@/lib/admin/shop-inventory-api";
+import { formatAppDate } from "@/lib/utils";
 
 // Archived Shop Products page — the restore half of the retire/restore
 // lifecycle. Lists every archived SKU still carrying shop metadata and
@@ -22,7 +23,7 @@ const ARCHIVED_QUERY_KEY = ["shop-archived-products"] as const;
 function formatArchivedAt(epochSeconds: number | null): string {
   if (!epochSeconds) return "—";
   try {
-    return new Date(epochSeconds * 1000).toLocaleDateString();
+    return formatAppDate(new Date(epochSeconds * 1000));
   } catch {
     return "—";
   }

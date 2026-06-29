@@ -28,6 +28,7 @@ import {
   type SupportMessage,
   type SupportTicket,
 } from "@/lib/admin/support-api";
+import { formatAppDateTime } from "@/lib/utils";
 
 const TEXTAREA_CLASS =
   "w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2";
@@ -65,7 +66,7 @@ function MessageBubble({ m }: { m: SupportMessage }) {
           </span>
           {m.authorRole === "bot" && <Badge variant="info">AI</Badge>}
           <span className="text-[10px]" style={{ color: "hsl(var(--ink-3))" }}>
-            {new Date(m.createdAt).toLocaleString()}
+            {formatAppDateTime(m.createdAt)}
           </span>
         </div>
         <p
@@ -216,7 +217,7 @@ function TicketList({
                 className="text-[11px]"
                 style={{ color: "hsl(var(--ink-3))" }}
               >
-                {new Date(t.lastActivityAt).toLocaleString()}
+                {formatAppDateTime(t.lastActivityAt)}
               </div>
             </button>
           </li>

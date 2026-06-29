@@ -27,6 +27,7 @@ import {
   EmailConfigError,
 } from "@workspace/resupply-email";
 
+import { PLATFORM_NAME } from "../../lib/company-info";
 import { logger } from "../../lib/logger";
 import { notifyOpsDigest } from "../../lib/slack/notify";
 import { createQueueWithDlq, CRON_SCAN_QUEUE_OPTS } from "../lib/queue-options";
@@ -61,7 +62,7 @@ export function renderDlqDigest(depths: DlqDepth[]): {
   text: string;
 } {
   const total = depths.reduce((sum, d) => sum + d.count, 0);
-  const subject = `PennPaps worker alert — ${total} dead-lettered job${
+  const subject = `${PLATFORM_NAME} worker alert — ${total} dead-lettered job${
     total === 1 ? "" : "s"
   } need review`;
 

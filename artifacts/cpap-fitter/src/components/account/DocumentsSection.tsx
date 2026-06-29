@@ -22,6 +22,7 @@ import {
   type PatientDocumentType,
 } from "@/lib/account-api";
 import { LegalName } from "@/components/company-contact";
+import { formatAppDate } from "@/lib/utils";
 
 const DOCUMENT_ACCEPT =
   "application/pdf,image/png,image/jpeg,image/heic,image/heif,image/webp";
@@ -234,7 +235,7 @@ export function DocumentsSection() {
                     <span
                       className="inline-flex items-center gap-1 text-xs rounded-full px-2 py-0.5 shrink-0"
                       style={{ background: "#d1fae5", color: "#065f46" }}
-                      title={`Reviewed ${new Date(doc.reviewedAt).toLocaleDateString()}`}
+                      title={`Reviewed ${formatAppDate(doc.reviewedAt)}`}
                       data-testid={`account-doc-reviewed-${doc.id}`}
                     >
                       <CheckCircle2 className="h-3 w-3" /> Reviewed
@@ -255,7 +256,7 @@ export function DocumentsSection() {
                       doc.documentType as PatientDocumentType
                     ] ?? doc.documentType,
                     formatBytes(doc.sizeBytes),
-                    new Date(doc.createdAt).toLocaleDateString(undefined, {
+                    formatAppDate(doc.createdAt, {
                       year: "numeric",
                       month: "short",
                       day: "numeric",

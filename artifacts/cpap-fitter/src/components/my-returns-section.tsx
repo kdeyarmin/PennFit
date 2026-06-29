@@ -16,6 +16,7 @@ import {
   type MyReturnRow,
   type ShopReturnStatus,
 } from "@/lib/account-api";
+import { formatAppDate } from "@/lib/utils";
 
 /**
  * "Your returns" section on /account.
@@ -130,7 +131,7 @@ function StatusBadge({ status }: { status: ShopReturnStatus }) {
 }
 
 function ReturnRow({ row }: { row: MyReturnRow }) {
-  const created = new Date(row.createdAt).toLocaleDateString(undefined, {
+  const created = formatAppDate(row.createdAt, {
     month: "short",
     day: "numeric",
     year: "numeric",

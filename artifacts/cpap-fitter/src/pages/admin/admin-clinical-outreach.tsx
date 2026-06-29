@@ -17,6 +17,7 @@ import { Button } from "@/components/admin/Button";
 import { Badge } from "@/components/admin/Badge";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Spinner } from "@/components/admin/Spinner";
+import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 import {
   getOutreachEligible,
   runOutreachBatch,
@@ -27,6 +28,7 @@ const QUERY_KEY = ["admin", "clinical-outreach-eligible"] as const;
 
 export function AdminClinicalOutreachPage() {
   const qc = useQueryClient();
+  const [confirm, ConfirmDialogEl] = useConfirmDialog();
   const query = useQuery({
     queryKey: QUERY_KEY,
     queryFn: getOutreachEligible,
@@ -37,6 +39,22 @@ export function AdminClinicalOutreachPage() {
     mutationFn: () => runOutreachBatch(),
     onSuccess: () => void qc.invalidateQueries({ queryKey: QUERY_KEY }),
   });
+
+  async function handleSend() {
+    const count = query.data?.count ?? 0;
+    // Bulk patient outreach — confirm the audience size before blasting.
+    if (
+      !(await confirm({
+        title: "Send check-ins?",
+        description: `This sends a supportive check-in to ${count} due ${
+          count === 1 ? "patient" : "patients"
+        } now (opted-out patients and quiet hours are still skipped).`,
+        confirmLabel: "Send check-ins",
+      }))
+    )
+      return;
+    batch.mutate();
+  }
 
   return (
     <div
@@ -64,7 +82,7 @@ export function AdminClinicalOutreachPage() {
           </p>
         </div>
         {query.data && query.data.count > 0 && (
-          <Button isLoading={batch.isPending} onClick={() => batch.mutate()}>
+          <Button isLoading={batch.isPending} onClick={() => void handleSend()}>
             Send check-ins
           </Button>
         )}
@@ -116,6 +134,7 @@ export function AdminClinicalOutreachPage() {
           </Card>
         </>
       )}
+      {ConfirmDialogEl}
     </div>
   );
 }

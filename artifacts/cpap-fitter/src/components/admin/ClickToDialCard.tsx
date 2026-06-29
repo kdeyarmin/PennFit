@@ -29,6 +29,7 @@ import {
   OUTCOME_LABEL,
   type CallOutcome,
 } from "@/lib/admin/click-to-dial-api";
+import { formatAppDateTime } from "@/lib/utils";
 
 function errInfo(err: unknown): { code: string; message: string } {
   if (err instanceof ApiError) {
@@ -254,7 +255,7 @@ export function ClickToDialCard({
                     {OUTCOME_LABEL[d.outcome as CallOutcome] ?? d.outcome}
                   </span>
                   <span style={{ color: "hsl(var(--ink-3))" }}>
-                    {new Date(d.createdAt).toLocaleString()}
+                    {formatAppDateTime(d.createdAt)}
                   </span>
                   {d.note && (
                     <span

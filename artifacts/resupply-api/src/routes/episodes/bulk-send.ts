@@ -33,8 +33,10 @@ import {
 import { TwilioConfigError } from "@workspace/resupply-telecom";
 import { EmailConfigError } from "@workspace/resupply-email";
 
+import { getCompanyInfo } from "../../lib/company-info";
 import { logger } from "../../lib/logger";
 import { applyTenantEmailSender } from "../../lib/email/apply-tenant-email-sender";
+import { applyTenantSmsFrom } from "../../lib/messaging/tenant-telecom";
 import { recordOutboundMessageUsage } from "../../lib/metering/usage";
 import { readMessagingConfigOrNull } from "../../lib/messaging/messaging-config";
 import { adminWriteRateLimiter } from "../../middlewares/admin-rate-limit";
@@ -143,8 +145,14 @@ router.post(
 
     const results: ItemResult[] = [];
 
-    // Resolve the tenant's own From identity ONCE for the whole batch (G6);
-    // falls back to the platform default when the tenant has no override.
+    // Resolve the tenant's own brand + sender identities ONCE for the whole
+    // batch. practiceName brands the patient-facing body with the tenant's own
+    // name (not the process-global seed practice name); the From overrides
+    // route through the tenant's own address/number (G6/G7). All fall back to
+    // the platform default when the tenant has no override — and for the seed
+    // org getCompanyInfo(seed).name === RESUPPLY_PRACTICE_NAME, so single-tenant
+    // copy/sender is unchanged.
+    const tenantPracticeName = (await getCompanyInfo(orgId)).name;
     const emailCfg =
       channel === "email"
         ? await applyTenantEmailSender(orgId, {
@@ -152,7 +160,21 @@ router.post(
             sendgridFromEmail: cfg.email.sendgridFromEmail,
             sendgridFromName: cfg.email.sendgridFromName,
             publicBaseUrl: cfg.email.publicBaseUrl,
-            practiceName: cfg.practiceName,
+            practiceName: tenantPracticeName,
+          })
+        : null;
+    // The SMS branch previously built its cfg inline with the platform number
+    // and the seed practice name; route it through applyTenantSmsFrom for the
+    // tenant's own number (symmetric with email) and the tenant brand.
+    const smsCfg =
+      channel === "sms"
+        ? await applyTenantSmsFrom(orgId, {
+            twilioAccountSid: cfg.sms.twilioAccountSid,
+            twilioAuthToken: cfg.sms.twilioAuthToken,
+            twilioPhoneNumber: cfg.sms.twilioPhoneNumber,
+            twilioMessagingServiceSid: cfg.sms.twilioMessagingServiceSid,
+            publicBaseUrl: cfg.sms.publicBaseUrl,
+            practiceName: tenantPracticeName,
           })
         : null;
 
@@ -175,16 +197,13 @@ router.post(
             // sendReminderSms/sendReminderEmail are shared
             // lib/resupply-reminders helpers not in this wave's file
             // list; they're typed for the raw service-role client. Pass
-            // the unscoped client (`.raw()`) per cutover §B.
+            // the unscoped client (`.raw()`) per cutover §B AND the tenant
+            // orgId, or the helper re-scopes patient reads/writes to the
+            // seed org and the non-seed patient lookup misses (G7).
             supabase: supabase.raw(),
-            cfg: {
-              twilioAccountSid: cfg.sms.twilioAccountSid,
-              twilioAuthToken: cfg.sms.twilioAuthToken,
-              twilioPhoneNumber: cfg.sms.twilioPhoneNumber,
-              twilioMessagingServiceSid: cfg.sms.twilioMessagingServiceSid,
-              publicBaseUrl: cfg.sms.publicBaseUrl,
-              practiceName: cfg.practiceName,
-            },
+            orgId,
+            // Resolved once above: tenant From number + tenant brand.
+            cfg: smsCfg!,
             patientId,
             episodeId,
             actor,
@@ -192,6 +211,8 @@ router.post(
         } else {
           outcome = await sendReminderEmail({
             supabase: supabase.raw(),
+            // Tenant scope (G7) — see the SMS branch above.
+            orgId,
             // emailCfg is non-null on the email branch (resolved above).
             cfg: emailCfg!,
             patientId,

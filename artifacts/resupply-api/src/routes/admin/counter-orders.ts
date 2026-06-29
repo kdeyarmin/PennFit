@@ -231,7 +231,7 @@ router.post(
     let shippingAddress: SavedShippingAddress | null = null;
     if (isPickup) {
       const location = body.pickupLocationId
-        ? await getActivePickupLocationById(body.pickupLocationId)
+        ? await getActivePickupLocationById(orgId, body.pickupLocationId)
         : null;
       if (!location) {
         res.status(400).json({

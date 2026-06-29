@@ -14,6 +14,7 @@ const supabaseMock = installSupabaseMock();
 
 import { isNocHcpcs, preflightClaim } from "./claim-preflight";
 
+const ORG_ID = "00000000-0000-4000-8000-000000000001";
 const CLAIM_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const PATIENT_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const COVERAGE_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
@@ -36,7 +37,7 @@ describe("preflightClaim", () => {
 
   it("returns ready=false with one error when the claim doesn't exist", async () => {
     stageSupabaseResponse("insurance_claims", "select", { data: null });
-    const out = await preflightClaim(CLAIM_ID);
+    const out = await preflightClaim(ORG_ID, CLAIM_ID);
     expect(out.readyToSubmit).toBe(false);
     expect(out.errorCount).toBe(1);
     expect(out.items[0]!.key).toBe("claim_exists");
@@ -68,14 +69,14 @@ describe("preflightClaim", () => {
     stagePatientHappy();
     stageDiagnosisHappy();
     stageLineItemsHappy();
-    const out = await preflightClaim(CLAIM_ID);
+    const out = await preflightClaim(ORG_ID, CLAIM_ID);
     const statusItem = out.items.find((i) => i.key === "claim_status");
     expect(statusItem?.severity).toBe("error");
   });
 
   it("returns readyToSubmit=true for a fully populated draft", async () => {
     stageHappyPath();
-    const out = await preflightClaim(CLAIM_ID);
+    const out = await preflightClaim(ORG_ID, CLAIM_ID);
     expect(out.readyToSubmit).toBe(true);
     expect(out.errorCount).toBe(0);
   });
@@ -93,7 +94,7 @@ describe("preflightClaim", () => {
         ],
       },
     );
-    const out = await preflightClaim(CLAIM_ID);
+    const out = await preflightClaim(ORG_ID, CLAIM_ID);
     const item = out.items.find((i) => i.key === "bill_hold");
     expect(item?.severity).toBe("error");
     expect(item?.label).toBe("On bill hold — signed paperwork outstanding");
@@ -112,7 +113,7 @@ describe("preflightClaim", () => {
         requested_at: "2026-05-20T09:59:00.000Z",
       },
     });
-    const out = await preflightClaim(CLAIM_ID);
+    const out = await preflightClaim(ORG_ID, CLAIM_ID);
     const item = out.items.find((i) => i.key === "eligibility");
     expect(item?.severity).toBe("ok");
     expect(item?.label).toBe("Coverage active");
@@ -133,7 +134,7 @@ describe("preflightClaim", () => {
         requested_at: "2026-05-18T09:59:00.000Z",
       },
     });
-    const out = await preflightClaim(CLAIM_ID);
+    const out = await preflightClaim(ORG_ID, CLAIM_ID);
     const item = out.items.find((i) => i.key === "eligibility");
     expect(item?.severity).toBe("warning");
     expect(item?.label).toBe("Coverage shows inactive");
@@ -145,7 +146,7 @@ describe("preflightClaim", () => {
   it("warns when there is no recent eligibility check on file", async () => {
     stageHappyPath();
     // eligibility_checks unstaged → getCachedEligibility returns null
-    const out = await preflightClaim(CLAIM_ID);
+    const out = await preflightClaim(ORG_ID, CLAIM_ID);
     const item = out.items.find((i) => i.key === "eligibility");
     expect(item?.severity).toBe("warning");
     expect(item?.label).toBe("Eligibility not verified recently");
@@ -158,7 +159,7 @@ describe("preflightClaim", () => {
     stageSupabaseRpcResponse("billing_denial_risk", {
       data: [{ hcpcs_code: "E0601", decisions: "50", denials: "20" }],
     });
-    const out = await preflightClaim(CLAIM_ID);
+    const out = await preflightClaim(ORG_ID, CLAIM_ID);
     const risk = out.items.find((i) => i.key === "denial_risk:E0601");
     expect(risk?.severity).toBe("warning");
     expect(risk?.detail).toContain("40%");
@@ -169,7 +170,7 @@ describe("preflightClaim", () => {
 
   it("adds no denial-risk item when the history RPC returns nothing", async () => {
     stageHappyPath();
-    const out = await preflightClaim(CLAIM_ID);
+    const out = await preflightClaim(ORG_ID, CLAIM_ID);
     expect(out.items.some((i) => i.key.startsWith("denial_risk:"))).toBe(false);
   });
 
@@ -188,7 +189,7 @@ describe("preflightClaim", () => {
         },
       ],
     });
-    const out = await preflightClaim(CLAIM_ID);
+    const out = await preflightClaim(ORG_ID, CLAIM_ID);
     const item = out.items.find((i) => i.key === "same_or_similar");
     expect(item?.severity).toBe("warning");
     expect(item?.detail).toContain("reasonable useful lifetime");
@@ -207,7 +208,7 @@ describe("preflightClaim", () => {
         },
       ],
     });
-    const out = await preflightClaim(CLAIM_ID);
+    const out = await preflightClaim(ORG_ID, CLAIM_ID);
     expect(out.items.find((i) => i.key === "same_or_similar")).toBeUndefined();
   });
 
@@ -224,7 +225,7 @@ describe("preflightClaim", () => {
         },
       },
     );
-    const out = await preflightClaim(CLAIM_ID);
+    const out = await preflightClaim(ORG_ID, CLAIM_ID);
     const item = out.items.find((i) => i.key === "referring_provider");
     expect(item?.severity).toBe("error");
     expect(out.readyToSubmit).toBe(false);
@@ -243,7 +244,7 @@ describe("preflightClaim", () => {
         },
       },
     );
-    const out = await preflightClaim(CLAIM_ID);
+    const out = await preflightClaim(ORG_ID, CLAIM_ID);
     expect(
       out.items.find((i) => i.key === "referring_provider")?.severity,
     ).toBe("ok");
@@ -255,14 +256,14 @@ describe("preflightClaim", () => {
 
   it("flags missing rendering provider as a warning (not blocking)", async () => {
     stageHappyPath({ rendering_provider_id: null });
-    const out = await preflightClaim(CLAIM_ID);
+    const out = await preflightClaim(ORG_ID, CLAIM_ID);
     const item = out.items.find((i) => i.key === "rendering_provider");
     expect(item?.severity).toBe("warning");
   });
 
   it("flags missing patient address as an error with edit_address fix action", async () => {
     stageHappyPath({}, { addressOverride: null });
-    const out = await preflightClaim(CLAIM_ID);
+    const out = await preflightClaim(ORG_ID, CLAIM_ID);
     const item = out.items.find((i) => i.key === "patient_address");
     expect(item?.severity).toBe("error");
     expect(item?.fixAction).toEqual({
@@ -273,7 +274,7 @@ describe("preflightClaim", () => {
 
   it("flags missing diagnosis with an add_sleep_study fix action", async () => {
     stageHappyPath({}, { diagnosisOverride: null });
-    const out = await preflightClaim(CLAIM_ID);
+    const out = await preflightClaim(ORG_ID, CLAIM_ID);
     const item = out.items.find((i) => i.key === "diagnosis");
     expect(item?.severity).toBe("error");
     expect(item?.fixAction).toEqual({
@@ -284,14 +285,14 @@ describe("preflightClaim", () => {
 
   it("flags no line items as an error", async () => {
     stageHappyPath({}, { linesOverride: [] });
-    const out = await preflightClaim(CLAIM_ID);
+    const out = await preflightClaim(ORG_ID, CLAIM_ID);
     const item = out.items.find((i) => i.key === "line_items");
     expect(item?.severity).toBe("error");
   });
 
   it("flags totals mismatch as a warning", async () => {
     stageHappyPath({ total_billed_cents: 99 });
-    const out = await preflightClaim(CLAIM_ID);
+    const out = await preflightClaim(ORG_ID, CLAIM_ID);
     const item = out.items.find((i) => i.key === "totals");
     expect(item?.severity).toBe("warning");
   });
@@ -313,7 +314,7 @@ describe("preflightClaim", () => {
         ],
       },
     );
-    const out = await preflightClaim(CLAIM_ID);
+    const out = await preflightClaim(ORG_ID, CLAIM_ID);
     const item = out.items.find((i) => i.key === "totals");
     expect(item?.severity).toBe("ok");
   });
@@ -335,7 +336,7 @@ describe("preflightClaim", () => {
         ],
       },
     );
-    const out = await preflightClaim(CLAIM_ID);
+    const out = await preflightClaim(ORG_ID, CLAIM_ID);
     const item = out.items.find((i) => i.key === "totals");
     expect(item?.severity).toBe("warning");
   });
@@ -352,7 +353,7 @@ describe("preflightClaim", () => {
         },
       },
     );
-    const out = await preflightClaim(CLAIM_ID);
+    const out = await preflightClaim(ORG_ID, CLAIM_ID);
     const item = out.items.find((i) => i.key === "payer_profile");
     expect(item?.severity).toBe("warning");
   });
@@ -372,7 +373,7 @@ describe("preflightClaim", () => {
         },
       },
     );
-    const out = await preflightClaim(CLAIM_ID);
+    const out = await preflightClaim(ORG_ID, CLAIM_ID);
     const item = out.items.find((i) => i.key === "payer_enrollment");
     expect(item?.severity).toBe("warning");
   });
@@ -390,7 +391,7 @@ describe("preflightClaim", () => {
         },
       },
     );
-    const out = await preflightClaim(CLAIM_ID);
+    const out = await preflightClaim(ORG_ID, CLAIM_ID);
     const item = out.items.find((i) => i.key === "payer_enrollment");
     expect(item?.severity).toBe("error");
     expect(out.readyToSubmit).toBe(false);
@@ -410,7 +411,7 @@ describe("preflightClaim", () => {
         },
       },
     );
-    const out = await preflightClaim(CLAIM_ID);
+    const out = await preflightClaim(ORG_ID, CLAIM_ID);
     const item = out.items.find((i) => i.key === "payer_enrollment");
     expect(item?.severity).toBe("error");
   });
@@ -428,7 +429,7 @@ describe("preflightClaim", () => {
         },
       },
     );
-    const out = await preflightClaim(CLAIM_ID);
+    const out = await preflightClaim(ORG_ID, CLAIM_ID);
     const item = out.items.find((i) => i.key === "payer_enrollment");
     expect(item?.severity).toBe("ok");
   });
@@ -446,7 +447,7 @@ describe("preflightClaim", () => {
         },
       },
     );
-    const out = await preflightClaim(CLAIM_ID);
+    const out = await preflightClaim(ORG_ID, CLAIM_ID);
     const item = out.items.find((i) => i.key === "timely_filing");
     expect(item?.severity).toBe("error");
   });
@@ -464,7 +465,7 @@ describe("preflightClaim", () => {
         },
       },
     );
-    const out = await preflightClaim(CLAIM_ID);
+    const out = await preflightClaim(ORG_ID, CLAIM_ID);
     const item = out.items.find((i) => i.key === "timely_filing");
     expect(item?.severity).toBe("warning");
   });
@@ -484,7 +485,7 @@ describe("preflightClaim", () => {
         },
       },
     );
-    const out = await preflightClaim(CLAIM_ID);
+    const out = await preflightClaim(ORG_ID, CLAIM_ID);
     const item = out.items.find((i) => i.key === "payer_modifiers");
     expect(item?.severity).toBe("warning");
   });
@@ -502,7 +503,7 @@ describe("preflightClaim", () => {
         },
       },
     );
-    const out = await preflightClaim(CLAIM_ID);
+    const out = await preflightClaim(ORG_ID, CLAIM_ID);
     const item = out.items.find((i) => i.key === "payer_modifiers");
     expect(item?.severity).toBe("warning");
   });
@@ -520,7 +521,7 @@ describe("preflightClaim", () => {
         },
       },
     );
-    const out = await preflightClaim(CLAIM_ID);
+    const out = await preflightClaim(ORG_ID, CLAIM_ID);
     const item = out.items.find((i) => i.key === "payer_referring_provider");
     expect(item?.severity).toBe("error");
     expect(item?.fixAction).toEqual({
@@ -547,7 +548,7 @@ describe("preflightClaim", () => {
         ],
       },
     );
-    const out = await preflightClaim(CLAIM_ID);
+    const out = await preflightClaim(ORG_ID, CLAIM_ID);
     const item = out.items.find((i) => i.key === "modifier_combination");
     expect(item?.severity).toBe("error");
     expect(item?.detail).toContain("E0601");
@@ -562,7 +563,7 @@ describe("preflightClaim", () => {
   it("adds no modifier_combination item for a valid line (RR,KX)", async () => {
     // The default happy-path line carries the valid "RR,KX" combo.
     stageHappyPath();
-    const out = await preflightClaim(CLAIM_ID);
+    const out = await preflightClaim(ORG_ID, CLAIM_ID);
     expect(out.items.some((i) => i.key === "modifier_combination")).toBe(false);
     expect(out.readyToSubmit).toBe(true);
   });
@@ -584,7 +585,7 @@ describe("preflightClaim", () => {
         ],
       },
     );
-    const out = await preflightClaim(CLAIM_ID);
+    const out = await preflightClaim(ORG_ID, CLAIM_ID);
     const item = out.items.find((i) => i.key === "bilateral_modifier");
     expect(item?.severity).toBe("warning");
     expect(item?.detail).toContain("L1832");
@@ -607,7 +608,7 @@ describe("preflightClaim", () => {
         { hcpcs_code: "E0601", icd10_code: "G4733", policy: "LCD L33718" },
       ],
     });
-    const out = await preflightClaim(CLAIM_ID);
+    const out = await preflightClaim(ORG_ID, CLAIM_ID);
     const item = out.items.find((i) => i.key === "medical_necessity_dx");
     expect(item?.severity).toBe("warning");
     expect(item?.detail).toContain("E0601");
@@ -624,7 +625,7 @@ describe("preflightClaim", () => {
         { hcpcs_code: "E0601", icd10_code: "G4733", policy: "LCD L33718" },
       ],
     });
-    const out = await preflightClaim(CLAIM_ID);
+    const out = await preflightClaim(ORG_ID, CLAIM_ID);
     expect(out.items.some((i) => i.key === "medical_necessity_dx")).toBe(false);
     expect(out.readyToSubmit).toBe(true);
   });
@@ -653,7 +654,7 @@ describe("preflightClaim", () => {
         { hcpcs_code: "E0601", icd10_code: "G4733", policy: "LCD L33718" },
       ],
     });
-    await preflightClaim(CLAIM_ID);
+    await preflightClaim(ORG_ID, CLAIM_ID);
     const inCall = supabaseMock
       .filterCalls("hcpcs_coverage_diagnoses", "select")
       .find((f) => f.verb === "in");

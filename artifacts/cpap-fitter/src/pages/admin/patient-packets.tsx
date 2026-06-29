@@ -46,6 +46,7 @@ import {
   patientPacketReceiptLabel,
   patientPacketReceiptVariant,
 } from "@/components/admin/patient-packet-status";
+import { formatAppDate } from "@/lib/utils";
 
 type BadgeVariant =
   | "neutral"
@@ -74,15 +75,11 @@ const STATUS_LABEL: Record<PatientPacketStatus, string> = {
 };
 
 function fmtDate(iso: string | null): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime())
-    ? "—"
-    : d.toLocaleDateString(undefined, {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-      });
+  return formatAppDate(iso, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
 }
 
 /** Whole-day age of a timestamp ("today" / "3 days ago"); null when absent. */

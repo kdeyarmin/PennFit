@@ -5,7 +5,7 @@
 // resolves. Defaults mirror the historical hardcoded constants in
 // lib/quickbooks-export.ts so an unconfigured export is unchanged.
 
-import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 export const GL_ACCOUNT_KEYS = [
   "deposit",
@@ -63,9 +63,13 @@ export function resolveGlAccounts(
   return out;
 }
 
-/** Load + resolve the configured GL accounts (defaults when unset). */
-export async function loadGlAccounts(): Promise<ResolvedGlAccounts> {
-  const orgId = await resolveSeedOrgId();
+/** Load + resolve the configured GL accounts (defaults when unset).
+ *  Scoped to the caller's tenant — pass the report's req.orgId, not the
+ *  seed org, so a non-seed tenant's QuickBooks export uses ITS configured
+ *  account names rather than the seed tenant's. */
+export async function loadGlAccounts(
+  orgId: string,
+): Promise<ResolvedGlAccounts> {
   if (!orgId) {
     // No tenant context — fall back to the built-in defaults (the same
     // result as an empty mapping table), so an unconfigured export is

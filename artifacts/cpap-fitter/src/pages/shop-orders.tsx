@@ -65,6 +65,7 @@ import {
 } from "@/lib/shop-api";
 import { SignedIn } from "@/lib/identity";
 import { csrfHeader } from "@/lib/csrf";
+import { formatAppDate } from "@/lib/utils";
 
 type LoadState = "idle" | "loading" | "ready" | "error";
 
@@ -295,7 +296,7 @@ function OrderCard({
   // list is server-filtered to status='paid').
   const [canceled, setCanceled] = useState(false);
   const paidAt = order.paidAt ?? order.createdAt;
-  const dateLabel = new Date(paidAt).toLocaleDateString(undefined, {
+  const dateLabel = formatAppDate(paidAt, {
     year: "numeric",
     month: "short",
     day: "numeric",
@@ -810,7 +811,7 @@ function ReturnRequestControl({ order }: { order: OrderHistoryItem }) {
 function PickupSection({ order }: { order: OrderHistoryItem }) {
   const fmt = (iso: string | null) =>
     iso
-      ? new Date(iso).toLocaleDateString(undefined, {
+      ? formatAppDate(iso, {
           month: "short",
           day: "numeric",
           year: "numeric",
@@ -907,14 +908,14 @@ function ShipmentSection({
   }
 
   const shippedDate = order.shippedAt
-    ? new Date(order.shippedAt).toLocaleDateString(undefined, {
+    ? formatAppDate(order.shippedAt, {
         month: "short",
         day: "numeric",
         year: "numeric",
       })
     : null;
   const deliveredDate = order.deliveredAt
-    ? new Date(order.deliveredAt).toLocaleDateString(undefined, {
+    ? formatAppDate(order.deliveredAt, {
         month: "short",
         day: "numeric",
         year: "numeric",

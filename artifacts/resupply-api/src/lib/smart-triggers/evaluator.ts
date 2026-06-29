@@ -150,7 +150,13 @@ export async function runSmartTriggerEvaluator(
           "night_date, usage_minutes, ahi, leak_rate_l_min, pressure_p95_cmh2o",
         )
         .eq("patient_id", c.patientId)
-        .order("night_date", { ascending: true })
+        // MOST RECENT 60 nights — the rules are recency/trend based
+        // (last-7 AHI, last-30 adherence, front-vs-back-half windows), so
+        // ascending+limit would feed them the OLDEST 60 and never detect a
+        // change for a patient on therapy >60 days. Matches the sibling
+        // per-patient path in evaluate-patient.ts. `recentNights` re-sorts
+        // ascending internally, so no rule logic depends on this order.
+        .order("night_date", { ascending: false })
         .limit(60);
       if (nightsErr) throw nightsErr;
       const nights = nightRows ?? [];

@@ -219,9 +219,9 @@ describe("admin-billing-era — history table row fields", () => {
     expect(SRC).toContain("claimsDeniedCount");
   });
 
-  it("renders f.ingestedAt as a localised date string", () => {
+  it("renders f.ingestedAt as an app-timezone date-time string", () => {
     expect(SRC).toContain("f.ingestedAt");
-    expect(SRC).toContain("toLocaleString()");
+    expect(SRC).toContain("formatAppDateTime(f.ingestedAt)");
   });
 
   it("renders f.ingestedByEmail below the date when present", () => {

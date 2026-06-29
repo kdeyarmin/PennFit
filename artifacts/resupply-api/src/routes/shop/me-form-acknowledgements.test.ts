@@ -19,6 +19,7 @@ import {
   installSupabaseMock,
   stageSupabaseResponse,
 } from "../../test-helpers/supabase-mock";
+import type { CompanyInfo } from "../../lib/company-info";
 
 const supabaseMock = installSupabaseMock();
 
@@ -34,6 +35,46 @@ vi.mock("../../middlewares/requireSignedIn", () =>
   makeRequireSignedInMock(mockSignedIn),
 );
 
+// Control the resolved tenant identity (its `source` gates whether the legal
+// form bodies are served). Partial-mock so applyCompanyIdentityToText stays
+// real.
+const { mockCompanyInfo } = vi.hoisted(() => ({
+  mockCompanyInfo: { current: null as CompanyInfo | null },
+}));
+vi.mock("../../lib/company-info", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../lib/company-info")>();
+  return {
+    ...actual,
+    getCompanyInfo: async () => mockCompanyInfo.current,
+  };
+});
+
+function makeCompanyInfo(
+  source: CompanyInfo["source"],
+  legalName: string,
+): CompanyInfo {
+  return {
+    name: legalName,
+    legalName,
+    phoneE164: "",
+    phoneDisplay: "",
+    supportPhoneE164: "",
+    supportPhoneDisplay: "",
+    supportEmail: "support@example.test",
+    generalEmail: "support@example.test",
+    billingEmail: "support@example.test",
+    faxE164: null,
+    websiteUrl: null,
+    supportHours: "Mon-Fri 9-5 ET",
+    assistantStorefrontName: "Assistant",
+    assistantAdminName: "Copilot",
+    address: null,
+    organizationalNpi: null,
+    source,
+  };
+}
+
 import formAckRouter from "./me-form-acknowledgements";
 
 function makeApp(): Express {
@@ -46,6 +87,8 @@ function makeApp(): Express {
 beforeEach(() => {
   mockSignedIn.current = null;
   supabaseMock.reset();
+  // Default to a configured tenant (legal entity set) so the forms are served.
+  mockCompanyInfo.current = makeCompanyInfo("database", "Test DME LLC");
 });
 
 describe("GET /shop/me/form-acknowledgements", () => {
@@ -105,6 +148,24 @@ describe("GET /shop/me/form-acknowledgements", () => {
     expect(aob.lastSignedVersion).toBeNull();
     expect(aob.upToDate).toBe(false);
   });
+
+  it("gates the form bodies when the tenant's legal entity is unconfigured", async () => {
+    // An unconfigured non-seed tenant resolves to the neutral platform
+    // fallback identity. Serving the catalog's legal text would name the SEED
+    // company in this tenant's patient's HIPAA / billing authorization, so the
+    // route withholds the forms and signals practiceConfigured=false.
+    mockCompanyInfo.current = makeCompanyInfo("fallback", "CareMetric Breathe");
+    mockSignedIn.current = { customerId: "cust_1", email: "a@a.test" };
+    stageSupabaseResponse("patients", "select", { data: [{ id: "p_1" }] });
+    stageSupabaseResponse("patient_form_acknowledgements", "select", {
+      data: [],
+    });
+    const res = await request(makeApp()).get("/shop/me/form-acknowledgements");
+    expect(res.status).toBe(200);
+    expect(res.body.patientLinked).toBe(true);
+    expect(res.body.practiceConfigured).toBe(false);
+    expect(res.body.forms).toEqual([]);
+  });
 });
 
 describe("POST /shop/me/form-acknowledgements", () => {
@@ -151,6 +212,20 @@ describe("POST /shop/me/form-acknowledgements", () => {
       .send({ formKind: "hipaa_npp" });
     expect(res.status).toBe(201);
     expect(res.body).toEqual({ id: "ack_1", created: true });
+  });
+
+  it("409s when the tenant's legal entity is unconfigured", async () => {
+    // Defense-in-depth for the direct-API path: even though the GET withholds
+    // the form text for a fallback tenant, refuse to RECORD an acknowledgement
+    // of legal terms whose entity isn't the tenant's own.
+    mockCompanyInfo.current = makeCompanyInfo("fallback", "CareMetric Breathe");
+    mockSignedIn.current = { customerId: "cust_1", email: "a@a.test" };
+    stageSupabaseResponse("patients", "select", { data: [{ id: "p_1" }] });
+    const res = await request(makeApp())
+      .post("/shop/me/form-acknowledgements")
+      .send({ formKind: "hipaa_npp" });
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("practice_not_configured");
   });
 
   it("returns 200 idempotent on 23505 dupe", async () => {

@@ -229,7 +229,19 @@ export interface EscalationPlanInput {
 interface EpisodeProgress {
   channels: Set<string>;
   earliestMs: number;
-  latestMs: number;
+  /**
+   * Earliest touch on EACH channel, keyed by channel. The step-spacing gate
+   * anchors on the most recent of these values — i.e. the last time a NEW
+   * channel was first introduced — NOT the latest touch overall. The hourly
+   * first-touch scan independently re-pings a still-open episode on its
+   * first channel every ~48h (QUIET_PERIOD_MS); counting those re-pings as
+   * "the latest touch" kept resetting the spacing gate below the (default
+   * 72h) window, stalling the ladder so it never advanced past the first
+   * channel to email → voice → CSR. Keying on each channel's FIRST touch
+   * makes a same-channel re-ping a no-op for spacing while preserving the
+   * "wait delayMs between distinct steps" intent.
+   */
+  channelFirstMs: Map<string, number>;
   /** Number of voice conversations (dial attempts) for this episode. */
   voiceAttempts: number;
   /** True once any voice attempt reached a live person. */
@@ -313,13 +325,16 @@ export function planReminderEscalations(
     const e = byEpisode.get(c.episodeId) ?? {
       channels: new Set<string>(),
       earliestMs: Number.POSITIVE_INFINITY,
-      latestMs: Number.NEGATIVE_INFINITY,
+      channelFirstMs: new Map<string, number>(),
       voiceAttempts: 0,
       voiceConnected: false,
     };
     e.channels.add(c.channel);
     e.earliestMs = Math.min(e.earliestMs, c.createdAtMs);
-    e.latestMs = Math.max(e.latestMs, c.createdAtMs);
+    const channelFirst = e.channelFirstMs.get(c.channel);
+    if (channelFirst === undefined || c.createdAtMs < channelFirst) {
+      e.channelFirstMs.set(c.channel, c.createdAtMs);
+    }
     if (c.channel === "voice") {
       e.voiceAttempts += 1;
       if (c.voiceConnected) e.voiceConnected = true;
@@ -334,7 +349,17 @@ export function planReminderEscalations(
     if (!info) continue;
     const firstTouchAge = input.nowMs - info.earliestMs;
     if (firstTouchAge > input.maxMs) continue; // too old — stop nagging
-    const sinceLastTouch = input.nowMs - info.latestMs;
+    // Anchor step-spacing on the most recent time a NEW channel was first
+    // tried (the max of each channel's first touch), not the latest touch
+    // overall — otherwise the hourly scan's ~48h re-pings on the first
+    // channel keep resetting this gate and the ladder never advances. With
+    // a single touch per channel this equals the old latest-touch anchor,
+    // so non-re-pinged episodes are unaffected.
+    let lastStepMs = Number.NEGATIVE_INFINITY;
+    for (const ms of info.channelFirstMs.values()) {
+      if (ms > lastStepMs) lastStepMs = ms;
+    }
+    const sinceLastTouch = input.nowMs - lastStepMs;
     if (sinceLastTouch < input.delayMs) continue; // space the steps out
     // Only consider channels the patient can actually receive — an
     // unreachable channel (e.g. SMS for an email-only patient) would

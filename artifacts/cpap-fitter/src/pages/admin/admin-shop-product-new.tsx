@@ -7,6 +7,7 @@ import {
   PRODUCT_IMAGE_MAX_BYTES,
   PRODUCT_IMAGE_TYPES,
   PublicStorageUnavailableError,
+  parsePriceDraftToCents,
   RECURRING_INTERVALS,
   SHOP_CATEGORIES,
   SkuAlreadyExistsError,
@@ -230,11 +231,14 @@ export function AdminShopProductNewPage() {
     if (description.length < 2 || description.length > 2000) {
       return { ok: false, reason: "Description must be 2–2000 characters." };
     }
-    const dollars = parseFloat(form.unitAmountDollars);
-    if (!Number.isFinite(dollars) || dollars < 0.5 || dollars > 100_000) {
-      return { ok: false, reason: "Price must be between $0.50 and $100,000." };
+    // Use the repo's string-math parser (NOT parseFloat) so e.g. 19.999
+    // can't silently round to $20.00 and >2-decimal input is rejected —
+    // matching the inventory grid's PriceCell.
+    const priceParsed = parsePriceDraftToCents(form.unitAmountDollars);
+    if (!priceParsed.ok) {
+      return { ok: false, reason: priceParsed.reason };
     }
-    const unitAmountCents = Math.round(dollars * 100);
+    const unitAmountCents = priceParsed.cents;
 
     // Optional integer fields — empty string means "leave unset"
     // (server treats null as "skip the metadata key").

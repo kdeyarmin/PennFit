@@ -494,12 +494,16 @@ router.post(
     > | null = null;
     if (fetchStatus === "ok" && nightsPersisted > 0) {
       try {
-        smartTriggerResult = await evaluatePatientSmartTriggers(patientId, {
-          adminEmail: req.adminEmail ?? null,
-          adminUserId: req.adminUserId ?? null,
-          ip: req.ip ?? null,
-          userAgent: req.get("user-agent") ?? null,
-        });
+        smartTriggerResult = await evaluatePatientSmartTriggers(
+          orgId,
+          patientId,
+          {
+            adminEmail: req.adminEmail ?? null,
+            adminUserId: req.adminUserId ?? null,
+            ip: req.ip ?? null,
+            userAgent: req.get("user-agent") ?? null,
+          },
+        );
       } catch (err) {
         logger.warn(
           { err, patient_id: patientId },

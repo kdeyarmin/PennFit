@@ -63,6 +63,7 @@ import {
   type AdminCustomerProfile,
   type AdminCustomerStats,
 } from "@/lib/admin/customers-api";
+import { formatAppDate, formatAppDateTime } from "@/lib/utils";
 
 interface Props {
   userId: string;
@@ -505,7 +506,7 @@ function FacialMeasurementsAdminCard({
                 color: "hsl(var(--ink-2))",
               }}
             >
-              Captured {new Date(measurements.capturedAt).toLocaleDateString()}
+              Captured {formatAppDate(measurements.capturedAt)}
             </span>
           )}
         </div>
@@ -677,13 +678,11 @@ function InAppConversationCard({
               {inApp.lastMessageAt && (
                 <span>
                   Last activity:{" "}
-                  <strong>
-                    {new Date(inApp.lastMessageAt).toLocaleString()}
-                  </strong>
+                  <strong>{formatAppDateTime(inApp.lastMessageAt)}</strong>
                 </span>
               )}
             </div>
-            <Link href={`/admin/conversations/${inApp.id}`}>
+            <Link href={`/admin/conversations/${inApp.id}`} asChild>
               <a
                 style={{
                   display: "inline-flex",
@@ -781,7 +780,7 @@ function OrderRow({
             {order.amountTotalCents != null
               ? formatCents(order.amountTotalCents)
               : "—"}{" "}
-            · {new Date(order.createdAt).toLocaleDateString()}
+            · {formatAppDate(order.createdAt)}
           </span>
           <button
             type="button"
@@ -957,12 +956,12 @@ function StatsCard({ stats }: { stats: AdminCustomerStats }) {
           </DefItem>
           {stats.firstOrderAt && (
             <DefItem label="First order">
-              {new Date(stats.firstOrderAt).toLocaleDateString()}
+              {formatAppDate(stats.firstOrderAt)}
             </DefItem>
           )}
           {stats.lastOrderAt && (
             <DefItem label="Last order">
-              {new Date(stats.lastOrderAt).toLocaleDateString()}
+              {formatAppDate(stats.lastOrderAt)}
             </DefItem>
           )}
           {stats.pendingReviewsCount > 0 && (

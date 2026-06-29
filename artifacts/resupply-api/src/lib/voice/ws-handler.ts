@@ -339,8 +339,11 @@ export async function handleVoiceWsConnection(
   const callerKind = pending.callerKind ?? "patient";
   const dispatcher = createVoiceToolDispatcher({
     // The dispatcher (tools-impl) wraps the injected client in its own
-    // org-scoped facade, so hand it the raw service-role client.
+    // org-scoped facade, so hand it the raw service-role client AND the
+    // call's tenant (G7) — without orgId the facade would scope every
+    // patient read/write to the seed org regardless of the real tenant.
     supabase: supabase.raw(),
+    orgId,
     callerKind,
     conversationId: pending.conversationId,
     ...(pending.patientId ? { patientId: pending.patientId } : {}),

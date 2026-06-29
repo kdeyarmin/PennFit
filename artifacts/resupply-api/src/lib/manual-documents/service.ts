@@ -9,12 +9,12 @@
 import {
   getOrgScopedClient,
   type OrgScopedClient,
-  resolveSeedOrgId,
 } from "@workspace/resupply-db";
 
 import {
   getCompanyInfo,
   getCompanyInfoSync,
+  getDocumentSupplierName,
   getDocumentSupplierNameSync,
 } from "../company-info";
 import { getTrackingCodeForDocument } from "../signature-tracking/service";
@@ -78,9 +78,13 @@ function formatCompanyAddress(
   return parts.length > 0 ? parts.join("\n") : null;
 }
 
-/** Supplier contact/identifier block for official payer PDFs. */
-export async function manualDocumentSupplierContact(): Promise<ManualDocumentSupplierContact> {
-  const info = await getCompanyInfo();
+/** Supplier contact/identifier block for official payer PDFs. Scoped to
+ *  the document's tenant so a non-seed tenant's letterhead carries ITS
+ *  identity, not the seed tenant's. */
+export async function manualDocumentSupplierContact(
+  orgId: string,
+): Promise<ManualDocumentSupplierContact> {
+  const info = await getCompanyInfo(orgId);
   return {
     address: formatCompanyAddress(info.address),
     phone: info.phoneDisplay,
@@ -120,23 +124,25 @@ export async function loadManualDocumentRow(
  * same whether sent alone or inside a packet.
  */
 export async function buildManualDocumentPdfInput(
+  orgId: string,
   row: ManualDocumentRow,
   generatedOn: Date,
 ): Promise<ManualDocumentPdfInput> {
   // Best-effort: if the signature_tracking query fails (e.g. during a
   // migration window or a transient DB hiccup), render the PDF without
   // a barcode rather than failing the whole download. signature-tracking
-  // reads go through the org-scoped chokepoint; scoped to the seed org
-  // (single-tenant bridge) since the renderer carries no request tenant.
-  const sigOrgId = await resolveSeedOrgId();
-  const trackingCode = sigOrgId
+  // reads go through the org-scoped chokepoint; scope to the document's
+  // OWN tenant (threaded in), not the seed org — otherwise a non-seed
+  // tenant's tracking barcode is looked up in the seed tenant and never
+  // found.
+  const trackingCode = orgId
     ? await getTrackingCodeForDocument(
-        getOrgScopedClient(sigOrgId),
+        getOrgScopedClient(orgId),
         "manual_document",
         row.id,
       ).catch(() => null)
     : null;
-  const supplierContact = await manualDocumentSupplierContact();
+  const supplierContact = await manualDocumentSupplierContact(orgId);
   return {
     documentType: row.document_type,
     title: row.title,
@@ -149,7 +155,7 @@ export async function buildManualDocumentPdfInput(
     fields: (row.fields ?? null) as Record<string, unknown> | null,
     body: row.body,
     supplierContact,
-    supplierName: manualDocumentSupplierName(),
+    supplierName: await getDocumentSupplierName(orgId),
     generatedOn,
     trackingCode,
   };
@@ -160,9 +166,10 @@ export async function buildManualDocumentPdfInput(
  * email, fax, chart copy) byte-identical.
  */
 export async function renderManualDocumentRowToPdf(
+  orgId: string,
   row: ManualDocumentRow,
   generatedOn: Date = new Date(),
 ): Promise<Buffer> {
-  const input = await buildManualDocumentPdfInput(row, generatedOn);
+  const input = await buildManualDocumentPdfInput(orgId, row, generatedOn);
   return renderManualDocumentPdf(input);
 }

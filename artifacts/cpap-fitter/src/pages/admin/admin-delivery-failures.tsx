@@ -20,6 +20,7 @@ import {
   type MessageFailureEvent,
   type RecallFailureEvent,
 } from "@/lib/admin/delivery-failures-api";
+import { formatAppDateTime } from "@/lib/utils";
 
 type Tab = "messages" | "audit";
 
@@ -204,7 +205,7 @@ function MessageRow({ row }: { row: MessageFailureEvent }) {
   return (
     <tr className="border-t border-slate-100 hover:bg-slate-50">
       <td className="px-3 py-2 text-xs text-slate-700 tabular-nums whitespace-nowrap">
-        {new Date(row.occurredAt).toLocaleString()}
+        {formatAppDateTime(row.occurredAt)}
       </td>
       <td className="px-3 py-2 text-xs uppercase tracking-wider text-slate-600">
         {row.channel ?? "—"}
@@ -258,7 +259,7 @@ function RecallRow({ row }: { row: RecallFailureEvent }) {
   return (
     <tr className="border-t border-slate-100 hover:bg-slate-50">
       <td className="px-3 py-2 text-xs text-slate-700 tabular-nums whitespace-nowrap">
-        {new Date(row.occurredAt).toLocaleString()}
+        {formatAppDateTime(row.occurredAt)}
       </td>
       <td className="px-3 py-2 text-xs uppercase tracking-wider text-slate-600">
         {row.channel} · recall
@@ -355,7 +356,7 @@ function AuditRow({ row }: { row: AuditFailureEvent }) {
   return (
     <tr className="border-t border-slate-100">
       <td className="px-3 py-2 text-xs text-slate-700 tabular-nums whitespace-nowrap">
-        {new Date(row.occurredAt).toLocaleString()}
+        {formatAppDateTime(row.occurredAt)}
       </td>
       <td className="px-3 py-2 text-xs text-slate-900" title={row.action}>
         {humanizeAction(row.action)}

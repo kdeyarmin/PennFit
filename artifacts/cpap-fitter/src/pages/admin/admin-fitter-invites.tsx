@@ -15,6 +15,7 @@ import { ScanFace } from "lucide-react";
 
 import { Card } from "@/components/admin/Card";
 import { Button } from "@/components/admin/Button";
+import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 import { Badge } from "@/components/admin/Badge";
 import { Input, Label } from "@/components/admin/Input";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
@@ -151,6 +152,7 @@ function InviteCard({
   currentUserId: string | null;
   onChanged: () => void;
 }) {
+  const [confirm, ConfirmDialogEl] = useConfirmDialog();
   const resend = useMutation({
     mutationFn: () => resendFitterInvite(invite.id),
     onSuccess: onChanged,
@@ -159,6 +161,21 @@ function InviteCard({
     mutationFn: () => revokeFitterInvite(invite.id),
     onSuccess: onChanged,
   });
+
+  async function handleRevoke() {
+    // Invalidates the outstanding invite link for good — confirm intent.
+    if (
+      !(await confirm({
+        title: "Revoke this invite?",
+        description:
+          "The patient's invite link stops working immediately. You'd need to send a new invite to continue.",
+        confirmLabel: "Revoke invite",
+        destructive: true,
+      }))
+    )
+      return;
+    revoke.mutate();
+  }
 
   const isCompleted =
     invite.status === "completed" || invite.status === "attached";
@@ -228,12 +245,21 @@ function InviteCard({
               size="sm"
               intent="secondary"
               isLoading={revoke.isPending}
-              onClick={() => revoke.mutate()}
+              onClick={() => void handleRevoke()}
             >
               Revoke
             </Button>
           )}
         </div>
+        {revoke.error instanceof Error && (
+          <p
+            className="text-xs mt-1 w-full text-right"
+            style={{ color: "#b91c1c" }}
+            role="alert"
+          >
+            Couldn&apos;t revoke the invite — please try again.
+          </p>
+        )}
       </div>
 
       {isCompleted && (
@@ -251,6 +277,7 @@ function InviteCard({
           )}
         </div>
       )}
+      {ConfirmDialogEl}
     </Card>
   );
 }

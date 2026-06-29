@@ -61,18 +61,80 @@ type Status =
   | { kind: "ok" }
   | { kind: "error"; message: string };
 
+// Local email shape check, mirroring the sibling public forms
+// (insurance-estimate / quiz). Deliberately lenient — the server's Zod
+// schema is the authority; this is purely for inline UX before submit.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// The six required fields, validated client-side so the patient gets an
+// inline error instead of a generic banner after a server 400.
+type RequiredKey =
+  | "fullName"
+  | "dateOfBirth"
+  | "email"
+  | "phone"
+  | "insuranceCarrier"
+  | "memberId";
+
+function validate(form: FormState): Partial<Record<RequiredKey, string>> {
+  const errs: Partial<Record<RequiredKey, string>> = {};
+  if (!form.fullName.trim()) errs.fullName = "Please enter your full name.";
+  if (!form.dateOfBirth.trim())
+    errs.dateOfBirth = "Please enter your date of birth.";
+  if (!form.email.trim()) errs.email = "Please enter your email.";
+  else if (!EMAIL_RE.test(form.email.trim()))
+    errs.email = "Please enter a valid email address.";
+  if (!form.phone.trim()) errs.phone = "Please enter your phone number.";
+  if (!form.insuranceCarrier.trim())
+    errs.insuranceCarrier = "Please enter your insurance carrier.";
+  if (!form.memberId.trim()) errs.memberId = "Please enter your member ID.";
+  return errs;
+}
+
+function FieldError({ id, message }: { id: string; message?: string }) {
+  if (!message) return null;
+  return (
+    <p id={id} role="alert" className="text-xs text-destructive">
+      {message}
+    </p>
+  );
+}
+
 export function InsuranceLeadForm() {
   const c = useCompanyContact();
   const [form, setForm] = useState<FormState>(INITIAL);
   const [status, setStatus] = useState<Status>({ kind: "idle" });
+  const [fieldErrors, setFieldErrors] = useState<
+    Partial<Record<RequiredKey, string>>
+  >({});
 
   function set<K extends keyof FormState>(k: K, v: FormState[K]) {
     setForm((prev) => ({ ...prev, [k]: v }));
+    // Clear a field's error as soon as the patient edits it.
+    if (k in fieldErrors) {
+      setFieldErrors((prev) => {
+        const next = { ...prev };
+        delete next[k as RequiredKey];
+        return next;
+      });
+    }
   }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (status.kind === "submitting") return;
+    // Client-side gate: surface inline field errors instead of POSTing a
+    // known-bad form and bouncing off the server's 400 with a generic banner.
+    const errs = validate(form);
+    if (Object.keys(errs).length > 0) {
+      setFieldErrors(errs);
+      setStatus({
+        kind: "error",
+        message: "Please complete the highlighted fields before submitting.",
+      });
+      return;
+    }
+    setFieldErrors({});
     setStatus({ kind: "submitting" });
     try {
       await submitInsuranceLead({
@@ -156,12 +218,18 @@ export function InsuranceLeadForm() {
             id="lead-fullName"
             name="fullName"
             required
+            aria-required
+            aria-invalid={fieldErrors.fullName ? true : undefined}
+            aria-describedby={
+              fieldErrors.fullName ? "lead-fullName-error" : undefined
+            }
             autoComplete="name"
             value={form.fullName}
             onChange={(e) => set("fullName", e.target.value)}
             disabled={submitting}
             data-testid="lead-input-fullName"
           />
+          <FieldError id="lead-fullName-error" message={fieldErrors.fullName} />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="lead-dob">Date of birth</Label>
@@ -170,12 +238,18 @@ export function InsuranceLeadForm() {
             name="dateOfBirth"
             type="date"
             required
+            aria-required
+            aria-invalid={fieldErrors.dateOfBirth ? true : undefined}
+            aria-describedby={
+              fieldErrors.dateOfBirth ? "lead-dob-error" : undefined
+            }
             autoComplete="bday"
             value={form.dateOfBirth}
             onChange={(e) => set("dateOfBirth", e.target.value)}
             disabled={submitting}
             data-testid="lead-input-dob"
           />
+          <FieldError id="lead-dob-error" message={fieldErrors.dateOfBirth} />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="lead-email">Email</Label>
@@ -184,12 +258,18 @@ export function InsuranceLeadForm() {
             name="email"
             type="email"
             required
+            aria-required
+            aria-invalid={fieldErrors.email ? true : undefined}
+            aria-describedby={
+              fieldErrors.email ? "lead-email-error" : undefined
+            }
             autoComplete="email"
             value={form.email}
             onChange={(e) => set("email", e.target.value)}
             disabled={submitting}
             data-testid="lead-input-email"
           />
+          <FieldError id="lead-email-error" message={fieldErrors.email} />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="lead-phone">Phone</Label>
@@ -198,6 +278,11 @@ export function InsuranceLeadForm() {
             name="phone"
             type="tel"
             required
+            aria-required
+            aria-invalid={fieldErrors.phone ? true : undefined}
+            aria-describedby={
+              fieldErrors.phone ? "lead-phone-error" : undefined
+            }
             autoComplete="tel"
             placeholder="(555) 555-1212"
             value={form.phone}
@@ -205,6 +290,7 @@ export function InsuranceLeadForm() {
             disabled={submitting}
             data-testid="lead-input-phone"
           />
+          <FieldError id="lead-phone-error" message={fieldErrors.phone} />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="lead-carrier">Insurance carrier</Label>
@@ -212,11 +298,20 @@ export function InsuranceLeadForm() {
             id="lead-carrier"
             name="insuranceCarrier"
             required
+            aria-required
+            aria-invalid={fieldErrors.insuranceCarrier ? true : undefined}
+            aria-describedby={
+              fieldErrors.insuranceCarrier ? "lead-carrier-error" : undefined
+            }
             placeholder="Aetna, Medicare, Anthem BCBS…"
             value={form.insuranceCarrier}
             onChange={(e) => set("insuranceCarrier", e.target.value)}
             disabled={submitting}
             data-testid="lead-input-carrier"
+          />
+          <FieldError
+            id="lead-carrier-error"
+            message={fieldErrors.insuranceCarrier}
           />
         </div>
         <div className="space-y-1.5">
@@ -225,6 +320,11 @@ export function InsuranceLeadForm() {
             id="lead-memberId"
             name="memberId"
             required
+            aria-required
+            aria-invalid={fieldErrors.memberId ? true : undefined}
+            aria-describedby={
+              fieldErrors.memberId ? "lead-memberId-error" : undefined
+            }
             placeholder="From your insurance card"
             value={form.memberId}
             onChange={(e) => set("memberId", e.target.value)}
@@ -232,6 +332,7 @@ export function InsuranceLeadForm() {
             data-testid="lead-input-memberId"
             autoComplete="off"
           />
+          <FieldError id="lead-memberId-error" message={fieldErrors.memberId} />
         </div>
       </div>
 

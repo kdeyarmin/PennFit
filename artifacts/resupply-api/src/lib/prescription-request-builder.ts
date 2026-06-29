@@ -17,7 +17,6 @@ import {
   type Database,
   type Json,
   getOrgScopedClient,
-  resolveSeedOrgId,
 } from "@workspace/resupply-db";
 
 type SupabaseClient = ReturnType<typeof getOrgScopedClient>;
@@ -32,6 +31,14 @@ export type PacketInsert =
   Database["resupply"]["Tables"]["prescription_request_packets"]["Insert"];
 
 export interface BuildPacketInput {
+  /**
+   * Tenant the prescription belongs to. The builder scopes every
+   * lookup to this org — passing the caller's tenant (the worker's
+   * per-org loop, the admin's req.orgId) instead of the seed org is
+   * what keeps a non-seed tenant from silently reading the seed
+   * tenant's prescriptions (and always 404ing).
+   */
+  orgId: string;
   patientId: string;
   prescriptionId: string;
   /**
@@ -53,7 +60,7 @@ export interface BuildPacketInput {
 export async function buildPrescriptionRequestPacketFromRx(
   input: BuildPacketInput,
 ): Promise<BuildPacketOutcome> {
-  const orgId = await resolveSeedOrgId();
+  const orgId = input.orgId;
   if (!orgId) return { kind: "rx_not_found" };
   const supabase: SupabaseClient = getOrgScopedClient(orgId);
   const { data: rx } = await supabase

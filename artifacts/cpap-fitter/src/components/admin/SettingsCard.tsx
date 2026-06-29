@@ -32,6 +32,7 @@ import { Button } from "@/components/admin/Button";
 import { Card } from "@/components/admin/Card";
 import { Input, Label, Select } from "@/components/admin/Input";
 import { LOCATIONS_QUERY_KEY, listLocations } from "@/lib/admin/locations-api";
+import { formatAppDate } from "@/lib/utils";
 
 type ChannelChoice = "" | "sms" | "email" | "voice";
 type LineTypeChoice = "" | "mobile" | "landline" | "voip" | "unknown";
@@ -400,10 +401,7 @@ export function SettingsCard({
                 {patient.smsMarketingConsentAt && (
                   <span>
                     {" "}
-                    Last updated:{" "}
-                    {new Date(
-                      patient.smsMarketingConsentAt,
-                    ).toLocaleDateString()}
+                    Last updated: {formatAppDate(patient.smsMarketingConsentAt)}
                     {patient.smsMarketingConsentSource
                       ? ` (${patient.smsMarketingConsentSource})`
                       : ""}

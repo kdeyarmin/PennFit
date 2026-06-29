@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Shuffle } from "lucide-react";
 
 import { fetchSubstitutions } from "@/lib/account-api";
+import { formatAppDate } from "@/lib/utils";
 
 /**
  * "Recent substitutions" section on /account.
@@ -52,10 +53,10 @@ export function SubstitutionsSection() {
               </div>
               <div className="text-[10px] text-muted-foreground mt-0.5">
                 {s.deliveredAt
-                  ? `Delivered ${new Date(s.deliveredAt).toLocaleDateString()}`
+                  ? `Delivered ${formatAppDate(s.deliveredAt)}`
                   : s.shippedAt
-                    ? `Shipped ${new Date(s.shippedAt).toLocaleDateString()}`
-                    : `Confirmed ${new Date(s.createdAt).toLocaleDateString()}`}
+                    ? `Shipped ${formatAppDate(s.shippedAt)}`
+                    : `Confirmed ${formatAppDate(s.createdAt)}`}
               </div>
             </div>
             <span className="text-[10px] uppercase tracking-wider font-semibold rounded bg-amber-100 text-amber-900 px-1.5 py-0.5">

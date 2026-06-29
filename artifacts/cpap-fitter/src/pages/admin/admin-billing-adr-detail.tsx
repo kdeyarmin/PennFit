@@ -18,6 +18,7 @@ import { Spinner } from "@/components/admin/Spinner";
 import {
   type AdrDocument,
   type AdrOutcome,
+  type AdrPatientDocument,
   type AdrSlaStatus,
   type AdrStatus,
   getAdr,
@@ -82,7 +83,6 @@ export function AdminBillingAdrDetailPage({ id }: { id: string }) {
   }
 
   const { adr, documents, patientDocuments } = query.data;
-  const inputStyle = { borderColor: "hsl(var(--line-1))" };
 
   return (
     <div
@@ -141,54 +141,13 @@ export function AdminBillingAdrDetailPage({ id }: { id: string }) {
       <Card title={`Response checklist (${documents.length})`}>
         <div className="space-y-2">
           {documents.map((doc) => (
-            <div
+            <DocumentRow
               key={doc.id}
-              className="rounded border p-3 flex items-center justify-between gap-3 flex-wrap"
-              style={inputStyle}
-            >
-              <span className="flex items-center gap-2 text-sm">
-                <Badge variant={DOC_BADGE[doc.status]}>{doc.status}</Badge>
-                <span style={{ color: "hsl(var(--ink-1))" }}>{doc.label}</span>
-              </span>
-              <div className="flex items-center gap-2 text-xs">
-                <select
-                  className="rounded border px-2 py-1"
-                  style={inputStyle}
-                  value=""
-                  onChange={(e) => {
-                    if (!e.target.value) return;
-                    void updateAdrDocument(adr.id, doc.id, {
-                      status: "attached",
-                      documentId: e.target.value,
-                    }).then(invalidate);
-                  }}
-                >
-                  <option value="">Attach document…</option>
-                  {patientDocuments.map((pd) => (
-                    <option key={pd.id} value={pd.id}>
-                      {pd.filename ?? pd.document_type} ·{" "}
-                      {pd.created_at.slice(0, 10)}
-                    </option>
-                  ))}
-                </select>
-                <DocAction
-                  label="Waive"
-                  onClick={() =>
-                    void updateAdrDocument(adr.id, doc.id, {
-                      status: "waived",
-                    }).then(invalidate)
-                  }
-                />
-                <DocAction
-                  label="Reset"
-                  onClick={() =>
-                    void updateAdrDocument(adr.id, doc.id, {
-                      status: "outstanding",
-                    }).then(invalidate)
-                  }
-                />
-              </div>
-            </div>
+              adrId={adr.id}
+              doc={doc}
+              patientDocuments={patientDocuments}
+              onSaved={invalidate}
+            />
           ))}
         </div>
       </Card>
@@ -213,16 +172,90 @@ function Field({
   );
 }
 
-function DocAction({ label, onClick }: { label: string; onClick: () => void }) {
+function DocAction({
+  label,
+  onClick,
+  disabled,
+}: {
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+}) {
   return (
     <button
       type="button"
-      className="rounded border px-2 py-1"
+      className="rounded border px-2 py-1 disabled:opacity-50"
       style={{ borderColor: "hsl(var(--line-1))" }}
       onClick={onClick}
+      disabled={disabled}
     >
       {label}
     </button>
+  );
+}
+
+function DocumentRow({
+  adrId,
+  doc,
+  patientDocuments,
+  onSaved,
+}: {
+  adrId: string;
+  doc: AdrDocument;
+  patientDocuments: AdrPatientDocument[];
+  onSaved: () => void;
+}) {
+  const inputStyle = { borderColor: "hsl(var(--line-1))" };
+  const mutation = useMutation({
+    mutationFn: (body: Parameters<typeof updateAdrDocument>[2]) =>
+      updateAdrDocument(adrId, doc.id, body),
+    onSuccess: onSaved,
+  });
+
+  return (
+    <div
+      className="rounded border p-3 flex items-center justify-between gap-3 flex-wrap"
+      style={inputStyle}
+    >
+      <span className="flex items-center gap-2 text-sm">
+        <Badge variant={DOC_BADGE[doc.status]}>{doc.status}</Badge>
+        <span style={{ color: "hsl(var(--ink-1))" }}>{doc.label}</span>
+      </span>
+      <div className="flex items-center gap-2 text-xs">
+        <select
+          className="rounded border px-2 py-1 disabled:opacity-50"
+          style={inputStyle}
+          value=""
+          disabled={mutation.isPending}
+          onChange={(e) => {
+            if (!e.target.value) return;
+            mutation.mutate({ status: "attached", documentId: e.target.value });
+          }}
+        >
+          <option value="">Attach document…</option>
+          {patientDocuments.map((pd) => (
+            <option key={pd.id} value={pd.id}>
+              {pd.filename ?? pd.document_type} · {pd.created_at.slice(0, 10)}
+            </option>
+          ))}
+        </select>
+        <DocAction
+          label="Waive"
+          disabled={mutation.isPending}
+          onClick={() => mutation.mutate({ status: "waived" })}
+        />
+        <DocAction
+          label="Reset"
+          disabled={mutation.isPending}
+          onClick={() => mutation.mutate({ status: "outstanding" })}
+        />
+      </div>
+      {mutation.error instanceof Error && (
+        <p className="w-full text-xs" style={{ color: "#b91c1c" }} role="alert">
+          Couldn&apos;t update “{doc.label}” — please try again.
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -306,6 +339,15 @@ function StatusControls({
         {mutation.isSuccess ? (
           <span className="text-sm ml-2" style={{ color: "hsl(152 70% 24%)" }}>
             Saved.
+          </span>
+        ) : null}
+        {mutation.error instanceof Error ? (
+          <span
+            className="text-sm ml-2"
+            style={{ color: "#b91c1c" }}
+            role="alert"
+          >
+            Couldn&apos;t save — please try again.
           </span>
         ) : null}
       </div>

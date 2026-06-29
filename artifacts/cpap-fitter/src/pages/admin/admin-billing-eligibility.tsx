@@ -29,6 +29,7 @@ import {
   type EligibilityCheck,
   type EligibilityStatus,
 } from "@/lib/admin/billing-api";
+import { formatAppDateTime } from "@/lib/utils";
 
 const STATUS_FILTERS: ReadonlyArray<{
   value: "" | EligibilityStatus;
@@ -379,9 +380,7 @@ function EligibilityRow({ check }: { check: EligibilityCheck }) {
         )}
       </td>
       <td className="p-3 text-[12px]" style={{ color: "hsl(var(--ink-3))" }}>
-        <span className="block">
-          {new Date(check.requestedAt).toLocaleString()}
-        </span>
+        <span className="block">{formatAppDateTime(check.requestedAt)}</span>
       </td>
       <td className="p-3 text-right">
         <Link

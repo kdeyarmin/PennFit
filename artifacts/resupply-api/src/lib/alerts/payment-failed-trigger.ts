@@ -28,6 +28,14 @@ import { isFeatureEnabled } from "../feature-flags";
 import { dispatchAlert } from "./dispatch";
 
 export interface PaymentFailedTriggerInput {
+  /**
+   * Tenant the failed invoice belongs to — resolved by the Stripe webhook
+   * from the Connect account / event metadata. Without it the whole
+   * resolution chain (shop_customers → patients → dispatch) runs against
+   * the seed org, so a non-seed tenant's alert finds nothing (or messages
+   * the wrong tenant's patient). Undefined → seed (single-tenant / platform).
+   */
+  orgId?: string | null;
   /** Stripe customer id from the invoice (string form). */
   stripeCustomerId: string | null;
   /** Amount due in the smallest currency unit (cents). */
@@ -92,15 +100,17 @@ export async function dispatchPaymentFailedAlertOrThrow(
   const { stripeCustomerId, log } = input;
   if (!stripeCustomerId) return;
 
-  // Fail-closed flag gate — merging this code does NOT start sending
-  // until an operator turns the flag on.
-  if (!(await isFeatureEnabled("alerts.auto_dispatch"))) return;
-
-  // Resolve the tenant for the file-local worker pattern. A missing org
+  // Scope to the tenant the webhook resolved (threaded in); fall back to
+  // the seed org for single-tenant / platform invoices. A missing org
   // degrades the same way the rest of the chain does — return cleanly so
   // a patient is never messaged without a resolvable tenant context.
-  const orgId = await resolveSeedOrgId();
+  const orgId = input.orgId ?? (await resolveSeedOrgId());
   if (!orgId) return;
+
+  // Fail-closed flag gate (scoped to THIS tenant) — merging this code does
+  // NOT start sending until an operator turns the flag on.
+  if (!(await isFeatureEnabled("alerts.auto_dispatch", orgId))) return;
+
   const supabase = getOrgScopedClient(orgId);
 
   // Stripe customer → shop_customers.email_lower.

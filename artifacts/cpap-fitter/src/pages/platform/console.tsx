@@ -137,6 +137,7 @@ import { PlatformSystemInfoPage } from "@/pages/admin/admin-settings";
 // platform chunk and don't bloat the storefront bundle (same pattern as
 // the admin console barrel).
 import "@/admin.css";
+import { formatAppDate, formatAppDateTime } from "@/lib/utils";
 
 // Mirrors the DB CHECK `organizations_slug_format` and the server's
 // createTenantBody Zod (tenants.ts): a URL-safe lowercase label.
@@ -510,7 +511,7 @@ function TenantDirectory() {
             className="text-xs tabular-nums"
             style={{ color: "hsl(var(--ink-3))" }}
           >
-            {new Date(t.createdAt).toLocaleDateString()}
+            {formatAppDate(t.createdAt)}
           </span>
         ),
       },
@@ -1340,9 +1341,9 @@ function BillingActivityCard({ tenantId }: { tenantId?: string }) {
               <span
                 className="text-[11px] tabular-nums whitespace-nowrap"
                 style={{ color: "hsl(var(--ink-3))" }}
-                title={new Date(e.occurredAt).toLocaleString()}
+                title={formatAppDateTime(e.occurredAt)}
               >
-                {new Date(e.occurredAt).toLocaleDateString()}
+                {formatAppDate(e.occurredAt)}
               </span>
             </li>
           ))}
@@ -1872,8 +1873,8 @@ function PlatformDashboard() {
               </Card>
 
               <p className="text-[11px]" style={{ color: "hsl(var(--ink-3))" }}>
-                Generated {new Date(data.generatedAt).toLocaleString()} · all
-                times UTC-bucketed
+                Generated {formatAppDateTime(data.generatedAt)} · all times
+                UTC-bucketed
               </p>
             </>
           )}
@@ -2121,7 +2122,7 @@ function SupportMessageRow({ m }: { m: SupportMessage }) {
         </span>
         {m.authorRole === "bot" && <Badge variant="info">AI</Badge>}
         <span className="text-[10px]" style={{ color: "hsl(var(--ink-3))" }}>
-          {new Date(m.createdAt).toLocaleString()}
+          {formatAppDateTime(m.createdAt)}
         </span>
       </div>
       <p
@@ -2333,7 +2334,7 @@ function PlatformSupport() {
                       >
                         {(t.tenant?.name ?? t.tenant?.slug ?? "tenant") +
                           " · " +
-                          new Date(t.lastActivityAt).toLocaleDateString()}
+                          formatAppDate(t.lastActivityAt)}
                       </div>
                     </button>
                   </li>
@@ -2613,9 +2614,9 @@ function RecentFlagActivityCard({ tenantId }: { tenantId: string }) {
               <span
                 className="text-[11px] tabular-nums whitespace-nowrap"
                 style={{ color: "hsl(var(--ink-3))" }}
-                title={new Date(a.occurredAt).toLocaleString()}
+                title={formatAppDateTime(a.occurredAt)}
               >
-                {new Date(a.occurredAt).toLocaleDateString()}
+                {formatAppDate(a.occurredAt)}
               </span>
             </li>
           ))}
@@ -3149,9 +3150,7 @@ function TenantBillingCard({ tenantId }: { tenantId: string }) {
               {monthly != null ? `${formatMoney(monthly)}/mo` : "—"}
             </MetaItem>
             <MetaItem label="Renews">
-              {sub.currentPeriodEnd
-                ? new Date(sub.currentPeriodEnd).toLocaleDateString()
-                : "—"}
+              {sub.currentPeriodEnd ? formatAppDate(sub.currentPeriodEnd) : "—"}
             </MetaItem>
             <MetaItem label="Last invoice">
               {sub.lastInvoiceStatus
@@ -3377,9 +3376,7 @@ function TenantAdminsCard({ tenantId }: { tenantId: string }) {
                   style={{ color: "hsl(var(--ink-3))" }}
                   title="Last sign-in"
                 >
-                  {a.lastLoginAt
-                    ? new Date(a.lastLoginAt).toLocaleDateString()
-                    : "never"}
+                  {a.lastLoginAt ? formatAppDate(a.lastLoginAt) : "never"}
                 </span>
               </div>
             </li>
@@ -3610,12 +3607,10 @@ function TenantDetailPage() {
                 )}
               </MetaItem>
               <MetaItem label="Created">
-                {new Date(tenant.createdAt).toLocaleDateString()}
+                {formatAppDate(tenant.createdAt)}
               </MetaItem>
               <MetaItem label="Last updated">
-                {tenant.updatedAt
-                  ? new Date(tenant.updatedAt).toLocaleDateString()
-                  : "—"}
+                {tenant.updatedAt ? formatAppDate(tenant.updatedAt) : "—"}
               </MetaItem>
             </div>
           </Card>
@@ -4553,7 +4548,7 @@ function PlatformOperatorsPage() {
                       style={{ color: "hsl(var(--ink-3))" }}
                     >
                       granted by {op.grantedByEmail ?? "—"} ·{" "}
-                      {new Date(op.createdAt).toLocaleDateString()}
+                      {formatAppDate(op.createdAt)}
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">

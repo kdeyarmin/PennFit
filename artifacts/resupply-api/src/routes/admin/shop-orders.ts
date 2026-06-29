@@ -159,6 +159,10 @@ interface OrderRow {
   stripePaymentIntentId: string | null;
   status: string;
   amountTotalCents: number | null;
+  /** Cumulative cents already refunded on this order (NOT NULL DEFAULT 0,
+   *  bumped by the charge.refunded webhook). Used to enforce the cumulative
+   *  refund cap and to keep the per-refund Stripe idempotency key unique. */
+  amountRefundedCents: number;
   currency: string | null;
   customerId: string | null;
   createdAt: string;
@@ -178,7 +182,7 @@ interface OrderRow {
 }
 
 const ORDER_COLUMNS =
-  "id, stripe_session_id, stripe_payment_intent_id, status, amount_total_cents, currency, customer_id, created_at, paid_at, shipping_address_json, tracking_carrier, tracking_number, shipped_at, delivered_at, shipping_email_sent_at, customer_email, fulfillment_method, pickup_location_id, ready_for_pickup_at, picked_up_at, ready_for_pickup_email_sent_at";
+  "id, stripe_session_id, stripe_payment_intent_id, status, amount_total_cents, amount_refunded_cents, currency, customer_id, created_at, paid_at, shipping_address_json, tracking_carrier, tracking_number, shipped_at, delivered_at, shipping_email_sent_at, customer_email, fulfillment_method, pickup_location_id, ready_for_pickup_at, picked_up_at, ready_for_pickup_email_sent_at";
 
 function rowToOrderRow(row: {
   id: string;
@@ -186,6 +190,7 @@ function rowToOrderRow(row: {
   stripe_payment_intent_id: string | null;
   status: string;
   amount_total_cents: number | null;
+  amount_refunded_cents: number | null;
   currency: string | null;
   customer_id: string | null;
   created_at: string;
@@ -209,6 +214,7 @@ function rowToOrderRow(row: {
     stripePaymentIntentId: row.stripe_payment_intent_id,
     status: row.status,
     amountTotalCents: row.amount_total_cents,
+    amountRefundedCents: row.amount_refunded_cents ?? 0,
     currency: row.currency,
     customerId: row.customer_id,
     createdAt: row.created_at,
@@ -433,7 +439,7 @@ export async function sendShippingNotificationIfNew(args: {
     // only; the helper itself never logs the payload or endpoint URL.
     if (claimedRow.customer_id) {
       try {
-        const counts = await sendPushToCustomer(claimedRow.customer_id, {
+        const counts = await sendPushToCustomer(orgId, claimedRow.customer_id, {
           title: "Your PennPaps order shipped",
           body: `${claimedRow.tracking_carrier} · ${claimedRow.tracking_number}`,
           url: "/account/orders",
@@ -956,6 +962,7 @@ router.post(
     // BEFORE stamping shipped_at so a refused ship leaves the order
     // untouched. See lib/paperwork/require-signed-paperwork.ts.
     const paperworkGate = await evaluatePaperworkGateForCustomer(
+      orgId,
       existing.customerId,
     );
     if (paperworkGate.required && !paperworkGate.satisfied) {
@@ -1216,6 +1223,7 @@ router.post(
     // shipment. Same gate as the /tracking handler (global flag and/or
     // per-payer requirement); guest / non-clinical orders pass through.
     const paperworkGate = await evaluatePaperworkGateForCustomer(
+      orgId,
       existing.customerId,
     );
     if (paperworkGate.required && !paperworkGate.satisfied) {
@@ -1425,9 +1433,9 @@ async function sendReadyForPickupNotificationIfNew(args: {
     // Resolve the pickup location (by id, including a since-deactivated
     // branch) so the email can render where to collect.
     const location = claimedRow.pickup_location_id
-      ? (await getPickupLocationsByIds([claimedRow.pickup_location_id])).get(
-          claimedRow.pickup_location_id,
-        )
+      ? (
+          await getPickupLocationsByIds(orgId, [claimedRow.pickup_location_id])
+        ).get(claimedRow.pickup_location_id)
       : undefined;
     if (!location) {
       await releaseClaim();
@@ -1484,7 +1492,7 @@ async function sendReadyForPickupNotificationIfNew(args: {
     // Best-effort push fan-out — same news, separate channel.
     if (claimedRow.customer_id) {
       try {
-        await sendPushToCustomer(claimedRow.customer_id, {
+        await sendPushToCustomer(orgId, claimedRow.customer_id, {
           title: "Your PennPaps order is ready for pickup",
           body: `Ready to collect at ${location.name}`,
           url: "/account/orders",
@@ -1655,14 +1663,22 @@ router.post(
       res.status(409).json({ error: "order_no_payment_intent" });
       return;
     }
+    // Enforce the cumulative refund cap in the app, not just at Stripe: a
+    // partial refund request must not exceed what's left after prior refunds.
+    // (`amount_refunded_cents` is cumulative, bumped by the charge.refunded
+    // webhook.) Without this the route only checked amountCents against the
+    // FULL order total per-request, so successive partials could over-refund.
+    const alreadyRefundedCents = existing.amountRefundedCents;
     if (
       typeof amountCents === "number" &&
       typeof existing.amountTotalCents === "number" &&
-      amountCents > existing.amountTotalCents
+      amountCents > existing.amountTotalCents - alreadyRefundedCents
     ) {
       res.status(409).json({
         error: "refund_exceeds_amount",
         amountTotalCents: existing.amountTotalCents,
+        amountRefundedCents: alreadyRefundedCents,
+        refundableCents: existing.amountTotalCents - alreadyRefundedCents,
       });
       return;
     }
@@ -1677,12 +1693,16 @@ router.post(
     }
     const stripe = getStripeClient(config);
 
-    // Idempotency key scoped to order + amount so:
-    //   * double-clicks on the same partial refund return the same
-    //     Stripe Refund object without creating a duplicate charge.
-    //   * Two different partial refund amounts for the same order
-    //     each create a separate Stripe Refund (intentional).
-    const idempotencyKey = `refund-${orderId}-${amountCents ?? "full"}`;
+    // Idempotency key scoped to order + already-refunded cumulative + amount.
+    // Including `alreadyRefundedCents` is what makes two SEPARATE equal-amount
+    // partial refunds distinct: the first settles and bumps the cumulative
+    // (via the webhook), so the second legitimately gets a fresh key and is
+    // NOT collapsed by Stripe into the first Refund. Within a single
+    // not-yet-settled attempt the cumulative is unchanged, so genuine
+    // double-clicks still dedupe to one Refund.
+    const idempotencyKey = `refund-${orderId}-${alreadyRefundedCents}-${
+      amountCents ?? "full"
+    }`;
 
     // Capture the narrowed string into a const so the arrow-fn
     // callback below keeps the TS control-flow narrowing the

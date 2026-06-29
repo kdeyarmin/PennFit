@@ -61,6 +61,7 @@ vi.mock("@workspace/resupply-email", async () => {
 const sendPushToCustomerByEmailMock = vi.hoisted(() =>
   vi.fn<
     (
+      orgId: string,
       email: string,
       payload: {
         title: string;
@@ -232,7 +233,7 @@ describe("POST /admin/prescriptions/send-renewal-due", () => {
     // email send. Best-effort: the helper itself returns {0,0,0}
     // when no matching shop_customers row exists.
     expect(sendPushToCustomerByEmailMock).toHaveBeenCalledTimes(1);
-    const [pushEmail, pushPayload] =
+    const [, pushEmail, pushPayload] =
       sendPushToCustomerByEmailMock.mock.calls[0]!;
     expect(pushEmail).toBe("anna@example.com");
     expect(pushPayload.url).toBe("/account");

@@ -20,6 +20,7 @@ import {
   fetchAuditTrail,
   type AuditTrailFilters,
 } from "@/lib/admin/audit-trail-api";
+import { formatAppDateTime } from "@/lib/utils";
 
 const PAGE_SIZE = 100;
 
@@ -54,7 +55,7 @@ function toFilters(draft: DraftFilters, offset: number): AuditTrailFilters {
 function formatWhen(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString();
+  return formatAppDateTime(d);
 }
 
 export function AdminAuditTrailPage() {

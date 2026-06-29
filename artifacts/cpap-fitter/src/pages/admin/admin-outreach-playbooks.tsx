@@ -55,6 +55,7 @@ import {
   type PlaybookStepDraft,
   type PatientSearchHit,
 } from "@/lib/admin/outreach-playbooks-api";
+import { formatAppDateTime } from "@/lib/utils";
 
 const playbooksKey = ["admin", "outreach-playbooks"] as const;
 const runsKey = (status: string) =>
@@ -89,7 +90,7 @@ function channelChip(channel: PlaybookChannel, dayOffset: number) {
 
 function fmtDateTime(iso: string | null): string {
   if (!iso) return "—";
-  return new Date(iso).toLocaleString(undefined, {
+  return formatAppDateTime(iso, {
     month: "short",
     day: "numeric",
     hour: "numeric",

@@ -16,6 +16,7 @@ import { Layers } from "lucide-react";
 import { Card, KpiCard } from "@/components/admin/Card";
 import { Button } from "@/components/admin/Button";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
+import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 import { Spinner } from "@/components/admin/Spinner";
 import {
   getSecondaryEligible,
@@ -101,10 +102,27 @@ export function AdminSecondaryClaimsPage() {
 
 function EligibleRow({ item }: { item: SecondaryEligibleItem }) {
   const qc = useQueryClient();
+  const [confirm, ConfirmDialogEl] = useConfirmDialog();
   const generate = useMutation({
     mutationFn: () => generateSecondaryClaim(item.claimId),
     onSuccess: () => void qc.invalidateQueries({ queryKey: QUERY_KEY }),
   });
+
+  async function handleGenerate() {
+    // Creates a real secondary/COB draft claim — a double/wrong click
+    // yields duplicate drafts a biller may submit. Confirm intent.
+    if (
+      !(await confirm({
+        title: "Generate the secondary claim?",
+        description: `This creates a secondary/COB draft claim for the ${money(
+          item.patientResponsibilityCents,
+        )} remaining balance.`,
+        confirmLabel: "Generate",
+      }))
+    )
+      return;
+    generate.mutate();
+  }
 
   return (
     <div
@@ -143,7 +161,7 @@ function EligibleRow({ item }: { item: SecondaryEligibleItem }) {
         <Button
           size="sm"
           isLoading={generate.isPending}
-          onClick={() => generate.mutate()}
+          onClick={() => void handleGenerate()}
         >
           Generate secondary
         </Button>
@@ -153,6 +171,7 @@ function EligibleRow({ item }: { item: SecondaryEligibleItem }) {
           Couldn&apos;t generate the secondary claim.
         </p>
       )}
+      {ConfirmDialogEl}
     </div>
   );
 }

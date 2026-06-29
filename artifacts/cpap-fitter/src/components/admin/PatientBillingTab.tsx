@@ -37,7 +37,7 @@ import {
   verifyEligibility,
 } from "@/lib/admin/clinical-tabs-api";
 import { csrfHeader } from "@/lib/csrf";
-import { formatDateOnly } from "@/lib/utils";
+import { formatAppDateTime, formatDateOnly } from "@/lib/utils";
 
 const BASE = "/resupply-api";
 
@@ -559,7 +559,7 @@ export function PatientBillingTab({ patientId }: { patientId: string }) {
                     className="text-[11px]"
                     style={{ color: "hsl(var(--ink-3))" }}
                   >
-                    {new Date(c.requested_at).toLocaleString()}
+                    {formatAppDateTime(c.requested_at)}
                   </span>
                 </div>
                 {c.is_active != null && (
@@ -733,7 +733,7 @@ export function PatientBillingTab({ patientId }: { patientId: string }) {
                     className="ml-2 text-[11px]"
                     style={{ color: "hsl(var(--ink-3))" }}
                   >
-                    {new Date(s.created_at).toLocaleString()}
+                    {formatAppDateTime(s.created_at)}
                     {s.delivery_method && ` · ${s.delivery_method}`}
                   </span>
                 </div>
@@ -858,7 +858,7 @@ export function PatientBillingTab({ patientId }: { patientId: string }) {
                     className="ml-2 text-[11px]"
                     style={{ color: "hsl(var(--ink-3))" }}
                   >
-                    {new Date(p.created_at).toLocaleString()}
+                    {formatAppDateTime(p.created_at)}
                     {p.page_count != null && ` · ${p.page_count}pp`}
                     {` · by ${p.generated_by_email}`}
                   </span>

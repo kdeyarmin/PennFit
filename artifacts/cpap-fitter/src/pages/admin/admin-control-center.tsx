@@ -28,6 +28,7 @@ import {
   type FeatureFlag,
   type FeatureFlagActivity,
 } from "@/lib/admin/feature-flags-api";
+import { formatAppDate, formatAppDateTime } from "@/lib/utils";
 
 const QUERY_KEY = ["admin-feature-flags"] as const;
 const ACTIVITY_QUERY_KEY = ["admin-feature-flags-activity"] as const;
@@ -483,7 +484,7 @@ function Tile({
 function renderRelativeAge(when: Date): string {
   const deltaMs = Date.now() - when.getTime();
   if (Number.isNaN(deltaMs) || deltaMs < 0) {
-    return when.toLocaleString();
+    return formatAppDateTime(when);
   }
   const sec = Math.floor(deltaMs / 1000);
   if (sec < 60) return `${sec}s ago`;
@@ -493,7 +494,7 @@ function renderRelativeAge(when: Date): string {
   if (hr < 24) return `${hr}h ago`;
   const day = Math.floor(hr / 24);
   if (day < 7) return `${day}d ago`;
-  return when.toLocaleDateString();
+  return formatAppDate(when);
 }
 
 function FlagsList() {
@@ -625,7 +626,7 @@ function FlagRow({ flag }: { flag: FeatureFlag }) {
   };
 
   const updatedRelative = flag.updatedByEmail
-    ? `Last changed by ${flag.updatedByEmail} • ${new Date(flag.updatedAt).toLocaleString()}`
+    ? `Last changed by ${flag.updatedByEmail} • ${formatAppDateTime(flag.updatedAt)}`
     : "Default value";
   const highRisk = isHighRiskFlag(flag.key);
 
@@ -980,7 +981,7 @@ function ActivityRow({ row }: { row: FeatureFlagActivity }) {
       </span>
       <span
         className="ml-auto text-xs text-slate-500"
-        title={when.toLocaleString()}
+        title={formatAppDateTime(when)}
       >
         {renderRelativeAge(when)}
       </span>

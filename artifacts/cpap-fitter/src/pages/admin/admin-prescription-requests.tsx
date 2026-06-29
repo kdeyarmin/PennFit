@@ -57,6 +57,7 @@ import {
   listProviders,
   type ProviderListItem,
 } from "@/lib/admin/providers-api";
+import { formatAppDate, formatAppDateTime } from "@/lib/utils";
 
 const listKey = (patientId: string) =>
   ["admin", "prescription-requests", "patient", patientId] as const;
@@ -199,7 +200,7 @@ function PacketTable({
             }}
           >
             <td className="py-2 text-xs">
-              {new Date(r.createdAt).toLocaleString(undefined, {
+              {formatAppDateTime(r.createdAt, {
                 month: "short",
                 day: "numeric",
                 hour: "numeric",
@@ -217,10 +218,10 @@ function PacketTable({
               {r.sentToFaxE164 ?? r.returnFaxE164 ?? "—"}
             </td>
             <td className="py-2 text-xs" style={{ color: "hsl(var(--ink-3))" }}>
-              {r.sentAt ? new Date(r.sentAt).toLocaleDateString() : "—"}
+              {r.sentAt ? formatAppDate(r.sentAt) : "—"}
             </td>
             <td className="py-2 text-xs" style={{ color: "hsl(var(--ink-3))" }}>
-              {r.signedAt ? new Date(r.signedAt).toLocaleDateString() : "—"}
+              {r.signedAt ? formatAppDate(r.signedAt) : "—"}
             </td>
           </tr>
         ))}
@@ -528,6 +529,7 @@ function CreateModal({
                 value={l.hcpcs}
                 onChange={(e) => updateLine(idx, { hcpcs: e.target.value })}
                 placeholder="E0601"
+                aria-label={`Line ${idx + 1} HCPCS code`}
               />
               <Input
                 className="col-span-6"
@@ -536,6 +538,7 @@ function CreateModal({
                   updateLine(idx, { description: e.target.value })
                 }
                 placeholder="Description"
+                aria-label={`Line ${idx + 1} description`}
               />
               <Input
                 className="col-span-1"
@@ -546,6 +549,7 @@ function CreateModal({
                 onChange={(e) =>
                   updateLine(idx, { quantity: Number(e.target.value) || 1 })
                 }
+                aria-label={`Line ${idx + 1} quantity`}
               />
               <Input
                 className="col-span-2"
@@ -558,6 +562,7 @@ function CreateModal({
                   })
                 }
                 placeholder="days"
+                aria-label={`Line ${idx + 1} resupply cadence in days`}
               />
               <button
                 type="button"
@@ -595,6 +600,7 @@ function CreateModal({
           <select
             className="rounded border px-2 py-1 text-sm"
             style={{ borderColor: "hsl(var(--line-1))" }}
+            aria-label="Therapy mode"
             value={deviceClass}
             onChange={(e) =>
               setDeviceClass(e.target.value as PrescriptionDeviceClass | "none")
@@ -711,6 +717,7 @@ function CreateModal({
             style={{ borderColor: "hsl(var(--line-1))" }}
             rows={3}
             maxLength={2000}
+            aria-label="Clinical notes"
             value={clinicalNotes}
             onChange={(e) => setClinicalNotes(e.target.value)}
           />
@@ -1024,7 +1031,7 @@ function SummaryPane({ packet }: { packet: PrescriptionRequestDetail }) {
       className="space-y-2 text-sm overflow-y-auto"
       style={{ maxHeight: "60vh" }}
     >
-      <KV label="Created" value={new Date(packet.createdAt).toLocaleString()} />
+      <KV label="Created" value={formatAppDateTime(packet.createdAt)} />
       <KV label="Status" value={packet.status} />
       <KV
         label="Return fax"
@@ -1032,21 +1039,15 @@ function SummaryPane({ packet }: { packet: PrescriptionRequestDetail }) {
       />
       <KV
         label="Sent"
-        value={packet.sentAt ? new Date(packet.sentAt).toLocaleString() : "—"}
+        value={packet.sentAt ? formatAppDateTime(packet.sentAt) : "—"}
       />
       <KV
         label="Delivered"
-        value={
-          packet.deliveredAt
-            ? new Date(packet.deliveredAt).toLocaleString()
-            : "—"
-        }
+        value={packet.deliveredAt ? formatAppDateTime(packet.deliveredAt) : "—"}
       />
       <KV
         label="Signed"
-        value={
-          packet.signedAt ? new Date(packet.signedAt).toLocaleString() : "—"
-        }
+        value={packet.signedAt ? formatAppDateTime(packet.signedAt) : "—"}
       />
       <KV
         label="Length of need"

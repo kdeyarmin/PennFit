@@ -19,6 +19,7 @@ import { Input, Label, Select } from "@/components/admin/Input";
 import { Badge } from "@/components/admin/Badge";
 import { Pagination } from "@/components/admin/Pagination";
 import { useDocumentTitle } from "@/hooks/use-document-title";
+import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 import { formatAppDateTime } from "@/lib/utils";
 import {
   getShopOrder,
@@ -259,6 +260,7 @@ function OrderDetail({
   onChanged: () => void;
 }) {
   const qc = useQueryClient();
+  const [confirm, ConfirmDialogEl] = useConfirmDialog();
   const detailKey = ["admin-shop-order", orderId] as const;
   const detail = useQuery({
     queryKey: detailKey,
@@ -293,6 +295,22 @@ function OrderDetail({
       }),
     onSuccess: refetchAll,
   });
+  async function handleRefund() {
+    // Money-moving + irreversible — confirm intent before issuing a real
+    // Stripe refund (mirrors the returns page's refund guard).
+    if (
+      !(await confirm({
+        title: "Refund this order?",
+        description: `This issues a real Stripe refund of ${money(
+          detail.data?.amountTotalCents,
+        )} to the customer. This can't be undone.`,
+        confirmLabel: "Refund order",
+        destructive: true,
+      }))
+    )
+      return;
+    refundMut.mutate();
+  }
 
   return (
     <Card>
@@ -436,7 +454,7 @@ function OrderDetail({
                 intent="secondary"
                 disabled={refundMut.isPending}
                 isLoading={refundMut.isPending}
-                onClick={() => refundMut.mutate()}
+                onClick={() => void handleRefund()}
               >
                 Refund order
               </Button>
@@ -449,6 +467,7 @@ function OrderDetail({
           </div>
         </div>
       )}
+      {ConfirmDialogEl}
     </Card>
   );
 }

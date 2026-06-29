@@ -134,9 +134,16 @@ router.post("/shop/quiz-leads", async (req, res) => {
   // Compute the authoritative band server-side from the score.
   const computedBand = computeBand(data.score);
 
+  // Public route (no auth middleware populates req.orgId): resolve the
+  // tenant from the request host so the lead is filed under — and the
+  // results email sends under — the storefront's own tenant. Custom domain
+  // → that org; platform host / miss → seed org (single-tenant unchanged).
+  const orgId = (await resolveOrgIdByHost(requestHost(req))) ?? undefined;
+
   // Persist the row first so the lead is durable even if SendGrid
   // is unconfigured / down.
   const persisted = await recordFitterLead({
+    orgId,
     email: data.email,
     marketingOptIn: data.marketingOptIn,
     submitterIp: ip === "unknown" ? null : ip,
@@ -158,12 +165,6 @@ router.post("/shop/quiz-leads", async (req, res) => {
     },
     "shop/quiz-leads: submission processed",
   );
-
-  // Public route (no auth middleware populates req.orgId): resolve the
-  // tenant from the request host so the results email sends under that
-  // tenant's From identity and brand (G6). Custom domain → that org;
-  // platform host / miss → seed org (single-tenant unchanged).
-  const orgId = (await resolveOrgIdByHost(requestHost(req))) ?? undefined;
 
   // Transactional results email. Fire-and-forget against the
   // response so a SendGrid 5xx never blocks the 200. The patient

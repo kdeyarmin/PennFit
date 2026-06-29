@@ -57,6 +57,7 @@ import { ShippingEta } from "@/components/shop/shipping-eta";
 import { CartCrossSell } from "@/components/shop/cart-cross-sell";
 import { HsaFsaBadge } from "@/components/shop/hsa-fsa-badge";
 import { track } from "@/lib/track";
+import { formatAppDate } from "@/lib/utils";
 
 // sessionStorage key written by /account when the user clicks
 // "Buy this again". Reading + clearing it here is the only handshake
@@ -699,10 +700,11 @@ export function ShopCart() {
                 <div className="flex-1 min-w-0 text-sm">
                   <p className="font-semibold text-[hsl(var(--penn-navy))]">
                     Loaded from your order on{" "}
-                    {new Date(reorderSource.createdAt).toLocaleDateString(
-                      undefined,
-                      { year: "numeric", month: "short", day: "numeric" },
-                    )}
+                    {formatAppDate(reorderSource.createdAt, {
+                      year: "numeric",
+                      month: "short",
+                      day: "numeric",
+                    })}
                   </p>
                   <p className="text-muted-foreground mt-0.5">
                     Adjust quantities or remove anything you don't need before

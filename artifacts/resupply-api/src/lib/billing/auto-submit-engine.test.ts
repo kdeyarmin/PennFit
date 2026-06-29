@@ -234,7 +234,7 @@ describe("selectSubmissionReadyClaims (gate end-to-end)", () => {
       data: [{ id: "pa", legal_first_name: "John", legal_last_name: "Doe" }],
     });
 
-    const preflight = async (claimId: string) =>
+    const preflight = async (_orgId: string, claimId: string) =>
       claimId === "A"
         ? { readyToSubmit: true, errorCount: 0 }
         : { readyToSubmit: false, errorCount: 2 };
