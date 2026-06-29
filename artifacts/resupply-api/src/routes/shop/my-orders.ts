@@ -247,7 +247,10 @@ router.get("/shop/me/orders", requireSignedIn, async (req, res) => {
   const pickupLocationIds = trimmed
     .map((o) => o.pickup_location_id)
     .filter((v): v is string => typeof v === "string" && v.length > 0);
-  const pickupLocations = await getPickupLocationsByIds(pickupLocationIds);
+  const pickupLocations = await getPickupLocationsByIds(
+    orgId,
+    pickupLocationIds,
+  );
 
   // Group items by order_id for O(1) lookup during projection.
   const itemsByOrder = new Map<string, typeof itemRows>();

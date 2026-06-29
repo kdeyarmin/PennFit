@@ -439,7 +439,7 @@ export async function sendShippingNotificationIfNew(args: {
     // only; the helper itself never logs the payload or endpoint URL.
     if (claimedRow.customer_id) {
       try {
-        const counts = await sendPushToCustomer(claimedRow.customer_id, {
+        const counts = await sendPushToCustomer(orgId, claimedRow.customer_id, {
           title: "Your PennPaps order shipped",
           body: `${claimedRow.tracking_carrier} · ${claimedRow.tracking_number}`,
           url: "/account/orders",
@@ -1433,9 +1433,9 @@ async function sendReadyForPickupNotificationIfNew(args: {
     // Resolve the pickup location (by id, including a since-deactivated
     // branch) so the email can render where to collect.
     const location = claimedRow.pickup_location_id
-      ? (await getPickupLocationsByIds([claimedRow.pickup_location_id])).get(
-          claimedRow.pickup_location_id,
-        )
+      ? (
+          await getPickupLocationsByIds(orgId, [claimedRow.pickup_location_id])
+        ).get(claimedRow.pickup_location_id)
       : undefined;
     if (!location) {
       await releaseClaim();
@@ -1492,7 +1492,7 @@ async function sendReadyForPickupNotificationIfNew(args: {
     // Best-effort push fan-out — same news, separate channel.
     if (claimedRow.customer_id) {
       try {
-        await sendPushToCustomer(claimedRow.customer_id, {
+        await sendPushToCustomer(orgId, claimedRow.customer_id, {
           title: "Your PennPaps order is ready for pickup",
           body: `Ready to collect at ${location.name}`,
           url: "/account/orders",

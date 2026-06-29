@@ -468,7 +468,7 @@ async function tryNotifyCustomerOfReply(input: {
   // canonical signal, route it to whichever channels they've opted
   // into. PHI: same posture as the email — the push title and body
   // contain no PHI, just "you have a new message".
-  void sendPushToCustomer(row.customerId, {
+  void sendPushToCustomer(orgId, row.customerId, {
     title: `New message from ${brandName}`,
     body: "Customer service replied. Tap to read.",
     url: "/account/messages",

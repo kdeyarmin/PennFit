@@ -153,7 +153,7 @@ export async function sendRefundNotificationIfNew(args: {
     if (claimedRow.customer_id) {
       try {
         const brand = await resolveBrandingByOrgId(orgId);
-        const counts = await sendPushToCustomer(claimedRow.customer_id, {
+        const counts = await sendPushToCustomer(orgId, claimedRow.customer_id, {
           title: `Refund issued — ${brand.storefrontName}`,
           body: "A refund has been issued to your original payment method.",
           url: "/account/orders",

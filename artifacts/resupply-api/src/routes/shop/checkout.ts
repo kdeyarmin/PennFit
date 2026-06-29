@@ -205,7 +205,10 @@ router.post(
         return;
       }
       const location = parsed.data.pickupLocationId
-        ? await getActivePickupLocationById(parsed.data.pickupLocationId)
+        ? await getActivePickupLocationById(
+            req.orgId ?? "",
+            parsed.data.pickupLocationId,
+          )
         : null;
       if (!location) {
         res.status(400).json({

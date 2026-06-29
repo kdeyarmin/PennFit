@@ -245,7 +245,7 @@ describe("POST /conversations/:id/reply (in_app)", () => {
     // Phase G.2 — push fan-out runs alongside email; payload carries
     // no PHI and links to the in-app thread.
     expect(sendPushToCustomerMock).toHaveBeenCalledTimes(1);
-    const [pushCustId, pushPayload] = sendPushToCustomerMock.mock.calls[0]!;
+    const [, pushCustId, pushPayload] = sendPushToCustomerMock.mock.calls[0]!;
     expect(pushCustId).toBe("user_anna");
     expect(pushPayload.title).toBe("New message from PennPaps");
     expect(pushPayload.url).toBe("/account/messages");
@@ -292,7 +292,7 @@ describe("POST /conversations/:id/reply (in_app)", () => {
 
     // Push fan-out is independent of best-effort email delivery.
     expect(sendPushToCustomerMock).toHaveBeenCalledTimes(1);
-    const [pushCustId, pushPayload] = sendPushToCustomerMock.mock.calls[0]!;
+    const [, pushCustId, pushPayload] = sendPushToCustomerMock.mock.calls[0]!;
     expect(pushCustId).toBe("user_anna");
     expect(pushPayload.title).toBe("New message from PennPaps");
     expect(pushPayload.url).toBe("/account/messages");

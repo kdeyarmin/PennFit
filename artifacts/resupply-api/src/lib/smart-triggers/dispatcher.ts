@@ -570,7 +570,7 @@ export async function runSmartTriggerSendDue(
       // Phase G.8 — best-effort push fan-out by email lookup. Never
       // rolls back the canonical email/SMS that already went out.
       if (patient?.email) {
-        void sendPushToCustomerByEmail(patient.email, {
+        void sendPushToCustomerByEmail(orgId, patient.email, {
           title: renderers.subjectForKind(row.kind as TriggerKind),
           body: renderers.pushBody(row.kind as TriggerKind),
           url: "/account/insights",

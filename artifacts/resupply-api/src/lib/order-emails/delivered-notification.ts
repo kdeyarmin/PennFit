@@ -183,7 +183,7 @@ export async function sendDeliveredNotificationIfNew(args: {
     // Best-effort push fan-out. Same news, separate channel.
     if (claimedRow.customer_id) {
       try {
-        const counts = await sendPushToCustomer(claimedRow.customer_id, {
+        const counts = await sendPushToCustomer(orgId, claimedRow.customer_id, {
           title: `Your ${brand.storefrontName} order was delivered`,
           body: "Your order has arrived.",
           url: "/account/orders",

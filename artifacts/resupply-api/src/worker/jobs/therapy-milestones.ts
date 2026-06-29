@@ -626,7 +626,7 @@ async function therapyMilestonesSweepForOrg(
             : claimed.milestone_kind === "365_nights"
               ? "One year of CPAP therapy"
               : "Adherence target reached";
-        await sendPushToCustomerByEmail(patient.email, {
+        await sendPushToCustomerByEmail(orgId, patient.email, {
           title,
           body: "Tap to see your therapy summary.",
           url: "/account#therapy",

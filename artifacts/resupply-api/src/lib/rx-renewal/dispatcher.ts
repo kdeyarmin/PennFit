@@ -386,7 +386,7 @@ export async function runRxRenewalSendDue(
           },
           messageTemplateLookup,
         );
-        void sendPushToCustomerByEmail(pushEmail, {
+        void sendPushToCustomerByEmail(orgId, pushEmail, {
           title: pushRendered.bodyText,
           body: "Tap to coordinate a renewal with your physician.",
           url: "/account",

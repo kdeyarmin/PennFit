@@ -387,7 +387,7 @@ describe("POST /admin/shop/orders/:orderId/tracking", () => {
     // Phase G.2 — push fan-out fires after a successful email,
     // scoped to the linked customer.
     expect(sendPushToCustomerMock).toHaveBeenCalledTimes(1);
-    const [pushCustId, pushPayload] = sendPushToCustomerMock.mock.calls[0]!;
+    const [, pushCustId, pushPayload] = sendPushToCustomerMock.mock.calls[0]!;
     expect(pushCustId).toBe("user_alice");
     expect(pushPayload).toMatchObject({
       title: "Your PennPaps order shipped",

@@ -191,7 +191,7 @@ describe("POST /admin/smart-triggers/send-due (email — regression)", () => {
     // the helper itself returns {0,0,0} when no customer matches,
     // and the route logs and continues either way.
     expect(sendPushToCustomerByEmailMock).toHaveBeenCalledTimes(1);
-    const [pushEmail, pushPayload] =
+    const [, pushEmail, pushPayload] =
       sendPushToCustomerByEmailMock.mock.calls[0]!;
     expect(pushEmail).toBe("anna@example.com");
     expect(pushPayload.url).toBe("/account/insights");
