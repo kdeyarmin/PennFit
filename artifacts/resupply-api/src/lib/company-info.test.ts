@@ -249,11 +249,34 @@ describe("applyCompanyInfoToEnv", () => {
 });
 
 describe("applyCompanyIdentityToText", () => {
-  it("is a no-op until the org row exists", async () => {
+  it("is a no-op for an env-configured deployment (source=environment)", async () => {
+    // A single-tenant / env-configured deployment: the baked-in default text
+    // already reflects the deployment's own identity, so the rewrite is a
+    // deliberate no-op.
+    process.env.RESUPPLY_PRACTICE_NAME = "Env Practice";
     stageSupabaseResponse("dme_organization", "select", { data: null });
-    await getCompanyInfo();
+    await getCompanyInfo(); // warm the sync cache → source=environment
     const text = "Call (814) 471-0627 or email support@pennpaps.com";
     expect(applyCompanyIdentityToText(text)).toBe(text);
+  });
+
+  it("rewrites the Penn placeholders to the platform identity for an unconfigured (fallback) tenant", async () => {
+    // No env practice name + no row → the neutral CareMetric platform
+    // identity. The historical Penn placeholders MUST be rewritten (not left
+    // to leak the seed contact to another tenant): brand/email/site to the
+    // platform's, and the phone — which the platform doesn't have — removed.
+    stageSupabaseResponse("dme_organization", "select", { data: null });
+    const info = await getCompanyInfo();
+    expect(info.source).toBe("fallback");
+    const out = applyCompanyIdentityToText(
+      "Call (814) 471-0627 or email support@pennpaps.com or visit pennpaps.com — PennPaps",
+    );
+    expect(out).not.toContain("pennpaps.com");
+    expect(out).not.toContain("(814) 471-0627"); // platform has no phone
+    expect(out).not.toContain("PennPaps");
+    expect(out).toContain("support@cmbreathe.com");
+    expect(out).toContain("cmbreathe.com");
+    expect(out).toContain("CareMetric Breathe");
   });
 
   it("rewrites the historical brand/contact strings from the row", async () => {

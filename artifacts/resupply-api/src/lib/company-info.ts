@@ -203,7 +203,10 @@ function platformFallbackInfo(): CompanyInfo {
     generalEmail: DEFAULTS.generalEmail,
     billingEmail: DEFAULTS.generalEmail,
     faxE164: null,
-    websiteUrl: null,
+    // The platform's own site, so applyCompanyIdentityToText rewrites the
+    // historical "pennpaps.com" placeholder to "cmbreathe.com" for an
+    // unconfigured tenant rather than a broken substitution.
+    websiteUrl: "https://cmbreathe.com",
     supportHours: DEFAULTS.supportHours,
     address: null,
     organizationalNpi: null,
@@ -428,10 +431,27 @@ export function applyCompanyIdentityToText(
   text: string,
   info: CompanyInfo = getCompanyInfoSync(),
 ): string {
-  if (info.source !== "database") return text;
+  // Skip ONLY the env-folded identity: a single-tenant / env-configured
+  // deployment whose practice identity IS the baked-in default, so the source
+  // text is already correct and rewriting it would be a no-op at best. We DO
+  // rewrite for:
+  //   - "database": the tenant's saved identity (the original behavior), and
+  //   - "fallback": the neutral CareMetric platform identity an UNCONFIGURED
+  //     non-seed tenant resolves to. Without this, the historical Penn
+  //     placeholders baked into knowledge bases / templates would survive for
+  //     such a tenant (e.g. the chatbot could cite Penn's phone). The platform
+  //     fallback carries a real website (cmbreathe.com) and email, and no
+  //     phone — so the Penn phone is deleted rather than left to leak (see the
+  //     unconditional replace below).
+  if (info.source === "environment") return text;
   let out = text;
   for (const [needle, replacement] of identityReplacements(info)) {
-    if (replacement) out = out.split(needle).join(replacement);
+    // Apply EVERY replacement, including empty ones: when the resolved
+    // identity lacks a field (e.g. the platform fallback has no phone), the
+    // Penn placeholder must be REMOVED, not left in place — keeping it would
+    // leak the seed contact to another tenant. A configured identity has its
+    // fields populated, so this only deletes genuinely-absent values.
+    out = out.split(needle).join(replacement);
   }
   return out;
 }
