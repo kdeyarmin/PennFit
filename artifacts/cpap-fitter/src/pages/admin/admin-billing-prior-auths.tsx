@@ -33,17 +33,14 @@ import {
   type PriorAuthRow,
   type PriorAuthQueueResponse,
 } from "@/lib/admin/billing-api";
+import { formatAppDate } from "@/lib/utils";
 
 const EXPIRY_WINDOWS = [14, 30, 60, 90] as const;
 
 function formatDate(iso: string | null): string {
-  if (!iso) return "—";
-  // approved_through is a DATE (YYYY-MM-DD); avoid timezone shift.
-  if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) {
-    const [y, m, d] = iso.split("-");
-    return new Date(Number(y), Number(m) - 1, Number(d)).toLocaleDateString();
-  }
-  return new Date(iso).toLocaleDateString();
+  // approved_through is a DATE (YYYY-MM-DD); formatAppDate anchors
+  // date-only values at app-tz noon so the calendar day never shifts.
+  return formatAppDate(iso);
 }
 
 function dayBadge(days: number | null, tone: "danger" | "warning" | "muted") {
