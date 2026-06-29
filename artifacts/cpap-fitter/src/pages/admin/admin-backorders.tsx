@@ -121,6 +121,14 @@ function BackordersPanel() {
           {mark.error.message}
         </div>
       )}
+      {clear.error instanceof Error && (
+        <div
+          className="rounded border border-rose-200 bg-rose-50 p-2 text-xs text-rose-900 mb-3"
+          role="alert"
+        >
+          Couldn&apos;t clear that backorder — please try again.
+        </div>
+      )}
       {isPending ? (
         <Spinner />
       ) : isError ? (
@@ -316,6 +324,16 @@ function SubstitutesPanel() {
           {create.error.message}
         </div>
       )}
+      {(toggle.error instanceof Error || remove.error instanceof Error) && (
+        <div
+          className="rounded border border-rose-200 bg-rose-50 p-2 text-xs text-rose-900 mb-3"
+          role="alert"
+        >
+          {remove.error instanceof Error
+            ? "Couldn't delete that substitute — please try again."
+            : "Couldn't update that substitute — please try again."}
+        </div>
+      )}
       {isPending ? (
         <Spinner />
       ) : isError ? (
@@ -351,6 +369,7 @@ function SubstitutesPanel() {
               <SubstituteRow
                 key={s.id}
                 row={s}
+                togglePending={toggle.isPending}
                 onToggle={() => toggle.mutate({ id: s.id, active: !s.active })}
                 onDelete={async () => {
                   if (
@@ -377,10 +396,12 @@ function SubstitutesPanel() {
 function SubstituteRow({
   row,
   onToggle,
+  togglePending,
   onDelete,
 }: {
   row: SkuSubstitute;
   onToggle: () => void;
+  togglePending: boolean;
   onDelete: () => void;
 }) {
   return (
@@ -392,7 +413,9 @@ function SubstituteRow({
         <button
           type="button"
           onClick={onToggle}
-          className={`inline-block px-1.5 py-0.5 rounded text-[10px] uppercase font-semibold tracking-wider ${
+          disabled={togglePending}
+          aria-label={row.active ? "Pause substitute" : "Activate substitute"}
+          className={`inline-block px-1.5 py-0.5 rounded text-[10px] uppercase font-semibold tracking-wider disabled:opacity-50 ${
             row.active
               ? "bg-emerald-100 text-emerald-900"
               : "bg-slate-200 text-slate-700"

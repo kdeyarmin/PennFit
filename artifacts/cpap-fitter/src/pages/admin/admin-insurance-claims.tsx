@@ -33,6 +33,7 @@ import {
 
 import { Card } from "@/components/admin/Card";
 import { Spinner } from "@/components/admin/Spinner";
+import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Button } from "@/components/admin/Button";
 import { ClaimAppealsSection } from "@/components/admin/ClaimAppealsSection";
@@ -578,6 +579,8 @@ function ClaimDrawer({
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
+  const [confirm, ConfirmDialogEl] = useConfirmDialog();
+  const [transitionError, setTransitionError] = useState<string | null>(null);
   const { data, isPending, isError, error, refetch } = useQuery({
     queryKey: ["admin", "insurance-claim", patientId, claimId],
     queryFn: () => getInsuranceClaim(patientId, claimId),
@@ -595,7 +598,14 @@ function ClaimDrawer({
   const transitionMut = useMutation({
     mutationFn: (body: PatchInsuranceClaimRequest) =>
       patchInsuranceClaim(patientId, claimId, body),
-    onSuccess: invalidate,
+    onSuccess: () => {
+      setTransitionError(null);
+      invalidate();
+    },
+    // Without this a failed status change (e.g. "Mark paid") was silent —
+    // the admin assumed it succeeded. Surface it.
+    onError: (err: unknown) =>
+      setTransitionError(err instanceof Error ? err.message : String(err)),
   });
 
   const addLineMut = useMutation({
@@ -693,7 +703,18 @@ function ClaimDrawer({
               setLineNarrativeMut.mutate({ lineId, narrative })
             }
             onAddEvent={(body) => addEventMut.mutate(body)}
-            onSubmitToOfficeAlly={() => {
+            onSubmitToOfficeAlly={async () => {
+              // Transmits a REAL 837P claim to the clearinghouse — confirm
+              // intent (preflight is a validity check, not an intent gate).
+              if (
+                !(await confirm({
+                  title: "Submit this claim to Office Ally?",
+                  description:
+                    "This transmits a real 837P claim to the clearinghouse. Make sure the claim is correct.",
+                  confirmLabel: "Submit claim",
+                }))
+              )
+                return;
               setSubmitResult(null);
               submitMut.mutate();
             }}
@@ -701,6 +722,15 @@ function ClaimDrawer({
           />
         )}
       </div>
+      {transitionError && (
+        <div
+          className="absolute bottom-4 right-4 max-w-sm rounded border border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-800"
+          role="alert"
+        >
+          Couldn&apos;t update the claim status: {transitionError}
+        </div>
+      )}
+      {ConfirmDialogEl}
     </div>
   );
 }

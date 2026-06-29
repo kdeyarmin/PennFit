@@ -188,6 +188,11 @@ function InterventionRow({ item }: { item: InterventionItem }) {
           </select>
         </span>
       </div>
+      {update.isError && (
+        <p className="text-xs mt-2" style={{ color: "#b91c1c" }} role="alert">
+          Couldn&apos;t save the outcome — please try again.
+        </p>
+      )}
       {item.plan && (
         <p
           className="text-xs mt-2 whitespace-pre-wrap break-words"
