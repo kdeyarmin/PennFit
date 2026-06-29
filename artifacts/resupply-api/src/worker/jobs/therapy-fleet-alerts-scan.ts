@@ -43,6 +43,7 @@ import {
   isOutsideSmsSendWindow,
   shouldSendSms,
 } from "../../lib/comm-prefs.js";
+import { getCompanyInfo } from "../../lib/company-info.js";
 import { isFeatureEnabled } from "../../lib/feature-flags.js";
 import { recordOutboundMessageUsage } from "../../lib/metering/usage.js";
 import { logger } from "../../lib/logger.js";
@@ -515,8 +516,15 @@ async function maybeSendAdherenceSms(
     return false;
   }
 
+  // Brand the patient-facing copy with THIS tenant's own name. cfg.practiceName
+  // comes from the process-global RESUPPLY_PRACTICE_NAME (the seed brand) and
+  // must never appear in a non-seed tenant's patient SMS; getCompanyInfo(orgId)
+  // resolves the tenant's own name (the neutral CareMetric Breathe identity for
+  // an unconfigured tenant, the seed brand for the seed org — single-tenant
+  // copy is unchanged).
+  const practiceName = (await getCompanyInfo(supabase.orgId)).name;
   const body =
-    `It's ${cfg.practiceName}. We noticed your CPAP use has dipped recently — ` +
+    `It's ${practiceName}. We noticed your CPAP use has dipped recently — ` +
     `steady nightly use keeps your therapy working and your insurance ` +
     `coverage on track. We're here if you need help. Reply STOP to opt out.`;
 
@@ -524,6 +532,10 @@ async function maybeSendAdherenceSms(
   try {
     const outcome = await sendReminderSms({
       supabase: supabase.raw(),
+      // Scope the patient/episode/conversation reads+writes to the call's
+      // tenant. Without orgId, sendReminderSms falls back to the seed org and
+      // the non-seed patient lookup misses, silently dropping the SMS (G7).
+      orgId: supabase.orgId,
       cfg,
       patientId,
       body,

@@ -74,8 +74,12 @@ router.post(
       outcome = await sendReminderEmail({
         // sendReminderEmail is a shared lib/resupply-reminders helper not
         // in this wave's file list; it's typed for the raw service-role
-        // client. Pass the unscoped client (`.raw()`) per cutover §B.
+        // client. Pass the unscoped client (`.raw()`) per cutover §B AND the
+        // tenant orgId, or the helper re-scopes the patient/episode reads to
+        // the seed org and a non-seed patient lookup misses (G7) — silently
+        // dropping the email. (The SMS sibling route already threads orgId.)
         supabase: supabase.raw(),
+        orgId,
         // Send under the tenant's own From identity when configured (G6);
         // falls back to the platform default when it isn't.
         cfg: await applyTenantEmailSender(orgId, {

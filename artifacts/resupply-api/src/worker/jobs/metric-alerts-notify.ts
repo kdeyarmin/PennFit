@@ -20,6 +20,7 @@ import {
   EmailConfigError,
 } from "@workspace/resupply-email";
 
+import { PLATFORM_NAME } from "../../lib/company-info";
 import { logger } from "../../lib/logger";
 import { notifyOpsDigest } from "../../lib/slack/notify";
 import {
@@ -67,7 +68,7 @@ export function renderAlertDigest(alerts: NotifiableAlert[]): {
   text: string;
 } {
   const n = alerts.length;
-  const subject = `PennPaps KPI alert — ${n} metric${
+  const subject = `${PLATFORM_NAME} KPI alert — ${n} metric${
     n === 1 ? "" : "s"
   } need attention`;
 

@@ -371,6 +371,13 @@ router.post(
       fulfillment_method: fulfillmentMethod,
       ...(pickupLocationId ? { pickup_location_id: pickupLocationId } : {}),
       ...(req.userCustomerId ? { customer_id: req.userCustomerId } : {}),
+      // Stamp the originating tenant so the webhook can attribute the paid
+      // order to the right org. A non-seed tenant whose Connect account isn't
+      // charges-enabled yet runs checkout on the PLATFORM account, so the
+      // resulting event carries no `event.account`; without this the webhook
+      // would fall back to the seed org, orphan the pending row, and write the
+      // paid order into the seed tenant's books (multi-tenant mis-attribution).
+      ...(req.orgId ? { org_id: req.orgId } : {}),
     };
 
     let session;

@@ -358,6 +358,24 @@ export const stripeWebhookHandler: RequestHandler = async (
       return;
     }
     webhookOrgId = mappedOrgId;
+  } else {
+    // No connected account → this event rode the PLATFORM account. That
+    // includes a non-seed tenant whose Connect account isn't charges-enabled
+    // yet: its storefront Checkout runs on the platform account, so the event
+    // carries no `event.account`. Such a session still carries our own
+    // `metadata.org_id` (stamped at checkout creation in shop/checkout.ts +
+    // quick-checkout.ts); prefer it over the seed-org fallback so the paid
+    // order is attributed to — and mirrored under — the ORIGINATING tenant
+    // rather than being orphaned while a duplicate lands in the seed tenant's
+    // books. Trusted: the payload signature is verified and we set this
+    // metadata ourselves. Only checkout.session.* objects carry it; every
+    // other platform event has no org_id metadata and keeps the seed default.
+    const metaOrgId = (
+      event.data.object as { metadata?: Record<string, string> | null } | null
+    )?.metadata?.org_id;
+    if (typeof metaOrgId === "string" && metaOrgId.trim()) {
+      webhookOrgId = metaOrgId.trim();
+    }
   }
   if (webhookOrgId) enterWebhookOrg(webhookOrgId);
 

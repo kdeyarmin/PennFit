@@ -54,9 +54,9 @@ import {
 } from "@workspace/resupply-db";
 
 import {
-  applyCompanyIdentityToText,
   applyPlatformBrandingForOrg,
   getCompanyInfo,
+  getCompanyInfoSync,
   type CompanyInfo,
 } from "../../lib/company-info.js";
 import { logger } from "../../lib/logger.js";
@@ -110,20 +110,22 @@ const meChatLimiter = expressRateLimit({
     }
     return ipKeyGenerator(req.ip ?? "0.0.0.0");
   },
-  // Resolve the tenant's own support phone at SEND time rather than baking
-  // the seed (Penn) number into a module-level constant. A second tenant's
-  // rate-limited patient must be told to call THEIR support line, not the
-  // seed's. applyCompanyIdentityToText rewrites the literal "(814) 471-0627"
-  // to the tenant's supportPhoneDisplay only when a company row exists, so
-  // the seed/single-tenant copy is unchanged and a 429 never blocks on the
-  // DB read (any failure degrades to the warm seed identity).
+  // Resolve the tenant's own support contact at SEND time and build the copy
+  // DIRECTLY from the resolved CompanyInfo fields — NOT via
+  // applyCompanyIdentityToText, which is a no-op unless info.source ===
+  // "database" and would otherwise pass the literal seed (Penn) number
+  // through unchanged to an unconfigured non-seed tenant. The phone clause is
+  // omitted when the tenant has no support phone (the platform fallback has
+  // none); a missing orgId / DB hiccup degrades to the warm seed identity via
+  // getCompanyInfoSync(), so a 429 never blocks on the DB read.
   handler: async (req: Request, res: Response) => {
-    const info = req.orgId ? await getCompanyInfo(req.orgId) : undefined;
+    const info = req.orgId
+      ? await getCompanyInfo(req.orgId)
+      : getCompanyInfoSync();
+    const phone = info.supportPhoneDisplay?.trim();
+    const callClause = phone ? ` or call ${phone} for immediate help` : "";
     res.status(429).json({
-      reply: applyCompanyIdentityToText(
-        "You're sending messages too quickly. Please wait a minute and try again, or call (814) 471-0627 for immediate help.",
-        info,
-      ),
+      reply: `You're sending messages too quickly. Please wait a minute and try again${callClause}.`,
       rateLimited: true,
     });
   },
@@ -133,15 +135,23 @@ const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
 const DEFAULT_MODEL = "gpt-4.1-mini";
 const DEFAULT_TIMEOUT_MS = 20_000;
 
-// A function (not a constant) so the phone/email reflect the company
-// info at reply time. Pass the caller's tenant `info` (getCompanyInfo
-// (req.orgId)) so a second tenant sees ITS contact details, not the
-// seed's; omitting it falls back to the warm seed identity.
-function degradedFallbackReply(info?: CompanyInfo): string {
-  return applyCompanyIdentityToText(
-    "I'm having trouble answering right now. Please try again in a minute, or reach our team at (814) 471-0627 (Mon-Fri 9-5 ET) or support@pennpaps.com — they can answer anything I can't.",
-    info,
-  );
+// A function (not a constant) so the phone/email reflect the company info at
+// reply time. Built DIRECTLY from the resolved CompanyInfo fields (not via
+// applyCompanyIdentityToText, which is a no-op unless info.source ===
+// "database") so it is correct for EVERY source — including the "fallback"
+// identity an unconfigured non-seed tenant resolves to. That way a
+// freshly-onboarded tenant's degraded reply shows the CareMetric platform
+// contact (support@cmbreathe.com, blank phone), never literal Penn details.
+// The phone clause is omitted when the tenant has no support phone. Mirrors
+// routes/storefront/chat.ts:degradedFallbackReply.
+function degradedFallbackReply(
+  info: CompanyInfo = getCompanyInfoSync(),
+): string {
+  const phone = info.supportPhoneDisplay?.trim();
+  const contact = phone
+    ? `${phone} (${info.supportHours}) or ${info.supportEmail}`
+    : info.supportEmail;
+  return `I'm having trouble answering right now. Please try again in a minute, or reach our team at ${contact} — they can answer anything I can't.`;
 }
 
 const chatMessageSchema = z.object({

@@ -175,8 +175,11 @@ router.post(
             // sendReminderSms/sendReminderEmail are shared
             // lib/resupply-reminders helpers not in this wave's file
             // list; they're typed for the raw service-role client. Pass
-            // the unscoped client (`.raw()`) per cutover §B.
+            // the unscoped client (`.raw()`) per cutover §B AND the tenant
+            // orgId, or the helper re-scopes patient reads/writes to the
+            // seed org and the non-seed patient lookup misses (G7).
             supabase: supabase.raw(),
+            orgId,
             cfg: {
               twilioAccountSid: cfg.sms.twilioAccountSid,
               twilioAuthToken: cfg.sms.twilioAuthToken,
@@ -192,6 +195,8 @@ router.post(
         } else {
           outcome = await sendReminderEmail({
             supabase: supabase.raw(),
+            // Tenant scope (G7) — see the SMS branch above.
+            orgId,
             // emailCfg is non-null on the email branch (resolved above).
             cfg: emailCfg!,
             patientId,

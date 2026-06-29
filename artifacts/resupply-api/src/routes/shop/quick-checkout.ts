@@ -415,6 +415,11 @@ router.post(
           : "express",
       customer_id: customerId,
       ...(reorderSessionId ? { reorder_of_session: reorderSessionId } : {}),
+      // Stamp the originating tenant so the webhook attributes the paid order
+      // to the right org even when checkout ran on the platform account (a
+      // non-seed tenant pre-charges-enabled), where the event carries no
+      // event.account. See checkout.ts for the full rationale.
+      ...(req.orgId ? { org_id: req.orgId } : {}),
     };
 
     let session: Stripe.Checkout.Session;
