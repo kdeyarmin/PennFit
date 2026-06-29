@@ -1176,6 +1176,10 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             label: "Integrations",
             icon: Plug,
             matchPrefix: "/admin/integrations",
+            // GET /admin/integrations-status requires admin.tools.manage;
+            // gate the nav entry to match so a plain CSR doesn't open a page
+            // that 403s on load.
+            requiredPermission: "admin.tools.manage",
             hint: "Therapy-cloud vendor connections and nightly sync status",
           },
           {
@@ -1224,6 +1228,10 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             label: "Company information",
             icon: Building2,
             matchPrefix: "/admin/company-information",
+            // GET /admin/dme-organization requires admin.tools.manage; gate
+            // the nav entry to match so a plain CSR doesn't open a page that
+            // 403s on load.
+            requiredPermission: "admin.tools.manage",
             hint: "Company name, addresses, and contact info used on documents, the storefront, and messages",
           },
           {

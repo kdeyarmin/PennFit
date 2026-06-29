@@ -427,7 +427,17 @@ function MemberRow({
                 aria-label="Change role"
                 data-testid={`team-member-${member.id}-role-select`}
               >
-                {ROLE_OPTIONS.filter((r) => r !== "admin").map((r) => (
+                {/* Seed the current role into the options so a member on a
+                    legacy role (fitter/fulfillment/agent/…) renders as
+                    themselves rather than defaulting to the first option —
+                    which would both mislabel them and risk an accidental
+                    rewrite on change. */}
+                {Array.from(
+                  new Set<TeamRole>([
+                    member.role,
+                    ...ROLE_OPTIONS.filter((r) => r !== "admin"),
+                  ]),
+                ).map((r) => (
                   <option key={r} value={r}>
                     {ROLE_LABEL[r]}
                   </option>

@@ -545,7 +545,13 @@ export function AdminReferralReviewsPage() {
                       <StatusPill status={r.status} />
                     </td>
                     <td className="py-2.5 text-right">
-                      <Button size="sm" intent="ghost">
+                      {/* A real focusable button so keyboard users can open
+                          the review — the row onClick alone is mouse-only. */}
+                      <Button
+                        size="sm"
+                        intent="ghost"
+                        onClick={() => setSelectedId(r.id)}
+                      >
                         Review
                       </Button>
                     </td>

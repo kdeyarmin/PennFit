@@ -15,6 +15,7 @@ import { Card, KpiCard } from "@/components/admin/Card";
 import { Badge } from "@/components/admin/Badge";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Spinner } from "@/components/admin/Spinner";
+import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 import {
   type CollectionsRun,
   downloadDunningLetters,
@@ -39,6 +40,7 @@ const STEP_LABEL: Record<string, string> = {
 
 export function AdminBillingCollectionsPage() {
   const qc = useQueryClient();
+  const [confirm, ConfirmDialogEl] = useConfirmDialog();
   const query = useQuery({
     queryKey: ["admin", "collections-worklist"] as const,
     queryFn: getCollectionsWorklist,
@@ -159,13 +161,36 @@ export function AdminBillingCollectionsPage() {
                   key={run.id}
                   run={run}
                   busy={mutation.isPending}
-                  onAction={(action) => mutation.mutate({ id: run.id, action })}
+                  onAction={async (action) => {
+                    // Pause is reversible; Resolve (writes off / closes the
+                    // dunning run on a live balance) and Cancel are not —
+                    // confirm intent so a mis-tap can't silently stop
+                    // collecting a real outstanding balance.
+                    if (action !== "pause") {
+                      const isResolve = action === "resolve";
+                      if (
+                        !(await confirm({
+                          title: isResolve
+                            ? "Resolve this collections run?"
+                            : "Cancel this collections run?",
+                          description: `This stops dunning the ${dollars(
+                            run.opened_balance_cents,
+                          )} balance for this patient and can't be undone.`,
+                          confirmLabel: isResolve ? "Resolve" : "Cancel run",
+                          destructive: true,
+                        }))
+                      )
+                        return;
+                    }
+                    mutation.mutate({ id: run.id, action });
+                  }}
                 />
               ))}
             </div>
           </Card>
         </>
       )}
+      {ConfirmDialogEl}
     </div>
   );
 }
