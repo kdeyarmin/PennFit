@@ -17,6 +17,7 @@ import { Card, KpiCard } from "@/components/admin/Card";
 import { Button } from "@/components/admin/Button";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Spinner } from "@/components/admin/Spinner";
+import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 import {
   getMailQueueStatements,
   getPendingStatements,
@@ -41,6 +42,7 @@ function money(cents: number): string {
 
 export function AdminBillingStatementsSendPage() {
   const qc = useQueryClient();
+  const [confirm, ConfirmDialogEl] = useConfirmDialog();
   const query = useQuery({
     queryKey: QUERY_KEY,
     queryFn: getPendingStatements,
@@ -78,7 +80,23 @@ export function AdminBillingStatementsSendPage() {
           </p>
         </div>
         {query.data && query.data.count > 0 && (
-          <Button isLoading={batch.isPending} onClick={() => batch.mutate()}>
+          <Button
+            isLoading={batch.isPending}
+            onClick={async () => {
+              const count = query.data?.count ?? 0;
+              if (
+                !(await confirm({
+                  title: "Send all pending statements?",
+                  description: `This sends ${count} patient ${
+                    count === 1 ? "statement" : "statements"
+                  } now (unreachable patients come back skipped).`,
+                  confirmLabel: "Send all",
+                }))
+              )
+                return;
+              batch.mutate();
+            }}
+          >
             Send all pending
           </Button>
         )}
@@ -123,12 +141,14 @@ export function AdminBillingStatementsSendPage() {
       )}
 
       <MailQueueSection />
+      {ConfirmDialogEl}
     </div>
   );
 }
 
 function MailQueueSection() {
   const qc = useQueryClient();
+  const [confirm, ConfirmDialogEl] = useConfirmDialog();
   const query = useQuery({
     queryKey: MAIL_QUEUE_KEY,
     queryFn: getMailQueueStatements,
@@ -184,7 +204,21 @@ function MailQueueSection() {
             <Button
               size="sm"
               isLoading={markAll.isPending}
-              onClick={() => markAll.mutate()}
+              onClick={async () => {
+                // Recording the wrong set as mailed means patients are
+                // never billed (or double-billed) — confirm the count.
+                if (
+                  !(await confirm({
+                    title: "Mark this print batch as mailed?",
+                    description: `This records ${printBatchIds.length} statement${
+                      printBatchIds.length === 1 ? "" : "s"
+                    } (the oldest ${printCap}) as mailed. Only do this after the printed batch is actually in the mail.`,
+                    confirmLabel: "Mark mailed",
+                  }))
+                )
+                  return;
+                markAll.mutate();
+              }}
             >
               {query.data.count > query.data.printCap
                 ? `Mark printed batch as mailed (oldest ${query.data.printCap})`
@@ -209,6 +243,7 @@ function MailQueueSection() {
           </div>
         </div>
       )}
+      {ConfirmDialogEl}
     </Card>
   );
 }
@@ -303,6 +338,12 @@ function StatementRow({ item }: { item: PendingStatement }) {
           Send
         </Button>
       </span>
+      {send.error instanceof Error && (
+        <p className="w-full text-xs" style={{ color: "#b91c1c" }} role="alert">
+          Couldn&apos;t send this statement — you may not have permission, or
+          the messaging provider is unreachable.
+        </p>
+      )}
       {send.data && (
         <p className="w-full text-xs" style={{ color: "hsl(var(--ink-3))" }}>
           {send.data.outcome.kind === "sent"
