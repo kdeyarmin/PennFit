@@ -50,17 +50,33 @@ export function subjectForKind(kind: TriggerKind): string {
   }
 }
 
-export function textBody(greeting: string, kind: TriggerKind): string {
+/**
+ * Email body. `brand` (the tenant's own practice name) and `accountUrl` (the
+ * tenant's own storefront /account link) are resolved per-tenant by the caller
+ * and threaded in — NOT baked in as the seed "Penn Home Medical Supply" /
+ * pennpaps.com placeholders. Branding here (rather than rewriting the seed
+ * placeholders downstream with applyCompanyIdentityToText, which is a no-op for
+ * an unconfigured non-seed tenant) is what stops a second tenant's patients
+ * from seeing the seed brand + a pennpaps.com link. For the seed org brand ===
+ * "Penn Home Medical Supply" and accountUrl === https://pennpaps.com/account,
+ * so single-tenant copy is unchanged.
+ */
+export function textBody(
+  greeting: string,
+  kind: TriggerKind,
+  brand: string,
+  accountUrl: string,
+): string {
   const safeGreeting = greeting.replace(/[<>&]/g, "");
   switch (kind) {
     case "leak_rising":
-      return `${safeGreeting},\n\nYour mask leak rate has trended up over the last two weeks. The most common cause is a worn cushion seal — replacing it usually solves it overnight. If your insurance is on file, a replacement is already eligible.\n\nReply YES and we'll ship a fresh one. Or sign in at https://pennpaps.com/account to review options.\n\n— Penn Home Medical Supply\n`;
+      return `${safeGreeting},\n\nYour mask leak rate has trended up over the last two weeks. The most common cause is a worn cushion seal — replacing it usually solves it overnight. If your insurance is on file, a replacement is already eligible.\n\nReply YES and we'll ship a fresh one. Or sign in at ${accountUrl} to review options.\n\n— ${brand}\n`;
     case "usage_dropping":
-      return `${safeGreeting},\n\nWe noticed your therapy hours have dropped over the last couple of weeks. That's the most common point where patients quietly stop using CPAP — and it's also the one where small changes (mask refit, ramp tweak, humidifier nudge) make the biggest difference.\n\nReply to this email and we'll set up a quick call. No charge, no pressure.\n\n— Penn Home Medical Supply\n`;
+      return `${safeGreeting},\n\nWe noticed your therapy hours have dropped over the last couple of weeks. That's the most common point where patients quietly stop using CPAP — and it's also the one where small changes (mask refit, ramp tweak, humidifier nudge) make the biggest difference.\n\nReply to this email and we'll set up a quick call. No charge, no pressure.\n\n— ${brand}\n`;
     case "cushion_wear":
-      return `${safeGreeting},\n\nYour AHI and leak rate have both ticked up over the last two weeks — usually a sign your mask cushion is at the end of its life. A replacement cushion takes about 5 minutes to swap and typically clears both readings.\n\nReply YES to ship a fresh cushion (no charge if you're on insurance through us).\n\n— Penn Home Medical Supply\n`;
+      return `${safeGreeting},\n\nYour AHI and leak rate have both ticked up over the last two weeks — usually a sign your mask cushion is at the end of its life. A replacement cushion takes about 5 minutes to swap and typically clears both readings.\n\nReply YES to ship a fresh cushion (no charge if you're on insurance through us).\n\n— ${brand}\n`;
     case "humidifier_drop":
-      return `${safeGreeting},\n\nWith warmer weather your tubing may be due for a refresh — older tubing collects condensation and reduces airflow, which can make therapy feel less comfortable in the summer.\n\nReply YES and we'll ship a fresh hose.\n\n— Penn Home Medical Supply\n`;
+      return `${safeGreeting},\n\nWith warmer weather your tubing may be due for a refresh — older tubing collects condensation and reduces airflow, which can make therapy feel less comfortable in the summer.\n\nReply YES and we'll ship a fresh hose.\n\n— ${brand}\n`;
     case "ahi_elevated":
     case "non_adherent_30d":
     case "pressure_at_max":
@@ -70,10 +86,15 @@ export function textBody(greeting: string, kind: TriggerKind): string {
   }
 }
 
-export function htmlBody(greeting: string, kind: TriggerKind): string {
+export function htmlBody(
+  greeting: string,
+  kind: TriggerKind,
+  brand: string,
+  accountUrl: string,
+): string {
   const safeGreeting = greeting.replace(/[<>&]/g, "");
   const heading = subjectForKind(kind);
-  const paragraphs = textBody(safeGreeting, kind)
+  const paragraphs = textBody(safeGreeting, kind, brand, accountUrl)
     .split("\n\n")
     .map(
       (p) =>
@@ -133,22 +154,30 @@ export function pushBody(kind: TriggerKind): string {
  * carry the trigger reason and the CTA, not the long explanation
  * the email body uses.
  */
-export function smsBody(firstName: string, kind: TriggerKind): string {
+export function smsBody(
+  firstName: string,
+  kind: TriggerKind,
+  brand: string,
+): string {
   const head = firstName ? `Hi ${firstName}` : "Hi";
   // Plain ASCII only — em-dashes (U+2014) force Twilio UCS-2
   // encoding which drops the per-segment limit from 160 to 70
   // chars. A regression to non-ASCII would silently push these
   // sends into multi-segment territory, doubling cost and
   // reducing carrier delivery rate.
+  //
+  // `brand` is the tenant's own storefront name, threaded in by the caller
+  // (seed === "PennPaps", so single-tenant copy is unchanged); never the
+  // hardcoded seed brand, which would leak to a non-seed tenant's patients.
   switch (kind) {
     case "leak_rising":
-      return `${head}, your CPAP leak rate has trended up - usually means a worn cushion. Reply YES to ship a replacement, or STOP to opt out. - PennPaps`;
+      return `${head}, your CPAP leak rate has trended up - usually means a worn cushion. Reply YES to ship a replacement, or STOP to opt out. - ${brand}`;
     case "usage_dropping":
-      return `${head}, we noticed your therapy hours dropped lately. Small adjustments help. Reply YES for a quick check-in call, or STOP to opt out. - PennPaps`;
+      return `${head}, we noticed your therapy hours dropped lately. Small adjustments help. Reply YES for a quick check-in call, or STOP to opt out. - ${brand}`;
     case "cushion_wear":
-      return `${head}, your AHI + leak rate are both up - usually a worn cushion. Reply YES to ship a fresh one, or STOP to opt out. - PennPaps`;
+      return `${head}, your AHI + leak rate are both up - usually a worn cushion. Reply YES to ship a fresh one, or STOP to opt out. - ${brand}`;
     case "humidifier_drop":
-      return `${head}, your tubing may be due for a refresh. Reply YES to ship a fresh hose, or STOP to opt out. - PennPaps`;
+      return `${head}, your tubing may be due for a refresh. Reply YES to ship a fresh hose, or STOP to opt out. - ${brand}`;
     case "ahi_elevated":
     case "non_adherent_30d":
     case "pressure_at_max":
