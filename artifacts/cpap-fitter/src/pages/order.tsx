@@ -1008,6 +1008,7 @@ function Field({
     id?: string;
     "aria-invalid"?: boolean | "true" | "false";
     "aria-describedby"?: string;
+    "aria-required"?: boolean;
   };
   const child =
     !skipHtmlFor && isValidElement(children)
@@ -1015,6 +1016,9 @@ function Field({
           id:
             (children as React.ReactElement<ChildProps>).props.id ??
             generatedId,
+          // Forward the required state to assistive tech — the visual `*`
+          // alone never reaches a screen reader.
+          ...(required ? { "aria-required": true } : {}),
           ...(error
             ? {
                 "aria-invalid": true,
@@ -1034,7 +1038,11 @@ function Field({
     <div className={className}>
       <Label htmlFor={inputId} className="text-sm font-medium mb-1.5 block">
         {label}
-        {required && <span className="text-destructive ml-0.5">*</span>}
+        {required && (
+          <span className="text-destructive ml-0.5" aria-hidden="true">
+            *
+          </span>
+        )}
       </Label>
       {child}
       {error && (

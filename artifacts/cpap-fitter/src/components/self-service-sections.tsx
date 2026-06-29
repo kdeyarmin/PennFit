@@ -88,6 +88,11 @@ export function EsignFormsSection() {
           </li>
         ))}
       </ul>
+      {sign.isError && (
+        <p className="text-xs mt-3 text-destructive">
+          Couldn't record your acknowledgement. Please try again.
+        </p>
+      )}
     </section>
   );
 }
@@ -162,6 +167,11 @@ export function ReferralProgramSection() {
       <Button onClick={() => mint.mutate()} disabled={mint.isPending} size="sm">
         {mint.isPending ? "Generating…" : "Generate referral link"}
       </Button>
+      {mint.isError && (
+        <p className="text-xs mt-2 text-destructive">
+          Couldn't generate a referral link. Please try again.
+        </p>
+      )}
       {data.referrals.length > 0 && (
         <div className="mt-5">
           <p className="text-xs uppercase tracking-wider text-muted-foreground mb-2">
