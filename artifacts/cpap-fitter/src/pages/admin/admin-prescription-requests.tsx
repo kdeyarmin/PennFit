@@ -528,6 +528,7 @@ function CreateModal({
                 value={l.hcpcs}
                 onChange={(e) => updateLine(idx, { hcpcs: e.target.value })}
                 placeholder="E0601"
+                aria-label={`Line ${idx + 1} HCPCS code`}
               />
               <Input
                 className="col-span-6"
@@ -536,6 +537,7 @@ function CreateModal({
                   updateLine(idx, { description: e.target.value })
                 }
                 placeholder="Description"
+                aria-label={`Line ${idx + 1} description`}
               />
               <Input
                 className="col-span-1"
@@ -546,6 +548,7 @@ function CreateModal({
                 onChange={(e) =>
                   updateLine(idx, { quantity: Number(e.target.value) || 1 })
                 }
+                aria-label={`Line ${idx + 1} quantity`}
               />
               <Input
                 className="col-span-2"
@@ -558,6 +561,7 @@ function CreateModal({
                   })
                 }
                 placeholder="days"
+                aria-label={`Line ${idx + 1} resupply cadence in days`}
               />
               <button
                 type="button"
@@ -595,6 +599,7 @@ function CreateModal({
           <select
             className="rounded border px-2 py-1 text-sm"
             style={{ borderColor: "hsl(var(--line-1))" }}
+            aria-label="Therapy mode"
             value={deviceClass}
             onChange={(e) =>
               setDeviceClass(e.target.value as PrescriptionDeviceClass | "none")
@@ -711,6 +716,7 @@ function CreateModal({
             style={{ borderColor: "hsl(var(--line-1))" }}
             rows={3}
             maxLength={2000}
+            aria-label="Clinical notes"
             value={clinicalNotes}
             onChange={(e) => setClinicalNotes(e.target.value)}
           />
