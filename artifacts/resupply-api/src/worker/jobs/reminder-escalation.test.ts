@@ -134,6 +134,47 @@ describe("planReminderEscalations", () => {
     expect(actions).toEqual([]);
   });
 
+  it("same-channel re-pings do NOT reset the step-spacing anchor", () => {
+    // Regression: the hourly first-touch scan re-pings the SAME channel
+    // (sms here) every ~48h while an episode stays open. Those re-pings must
+    // not keep deferring the next ladder step — otherwise the anchor sticks
+    // below the 3-day window forever and the ladder never advances past the
+    // first channel to email → voice → CSR. With the first sms touch 10d ago
+    // and re-pings at 4d and 1d ago (all sms), the spacing anchor stays at
+    // the first sms touch, so the window is satisfied and we escalate to
+    // email. (Pre-fix this returned [] — a permanent stall.)
+    const actions = plan(
+      [{ id: "e1", patientId: "p1" }],
+      [
+        { episodeId: "e1", channel: "sms", createdAtMs: NOW - 10 * DAY },
+        { episodeId: "e1", channel: "sms", createdAtMs: NOW - 4 * DAY },
+        { episodeId: "e1", channel: "sms", createdAtMs: NOW - 1 * DAY },
+      ],
+    );
+    expect(actions[0]!.tier).toEqual({
+      kind: "send",
+      channel: "email",
+      variant: "final",
+    });
+  });
+
+  it("still defers when a genuinely new channel was tried recently", () => {
+    // Counterpart to the re-ping case: once a DISTINCT new channel (email)
+    // is introduced 1 day ago, the spacing anchor legitimately moves to it,
+    // so the next step (voice, in the voice-enabled ladder) waits the full
+    // window even though sms is old. This preserves the original
+    // "wait delayMs between distinct steps" behavior.
+    const actions = plan(
+      [{ id: "e1", patientId: "p1" }],
+      [
+        { episodeId: "e1", channel: "sms", createdAtMs: NOW - 10 * DAY },
+        { episodeId: "e1", channel: "sms", createdAtMs: NOW - 6 * DAY },
+        { episodeId: "e1", channel: "email", createdAtMs: NOW - 1 * DAY },
+      ],
+    );
+    expect(actions).toEqual([]);
+  });
+
   it("handles multiple episodes independently", () => {
     const actions = plan(
       [
