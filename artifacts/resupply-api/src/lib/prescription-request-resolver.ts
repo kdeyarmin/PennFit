@@ -18,7 +18,6 @@ import { getTrackingCodeForDocument } from "./signature-tracking/service";
 
 import {
   getOrgScopedClient,
-  resolveSeedOrgId,
   type OrgScopedClient,
 } from "@workspace/resupply-db";
 
@@ -43,10 +42,11 @@ export async function resolvePrescriptionRequestInputs(
     .maybeSingle();
   if (!packet) return { kind: "not_found" };
 
-  // signature-tracking reads go through the org-scoped chokepoint. This
-  // resolver runs from both an admin route and a public token route, so
-  // it scopes to the seed org (single-tenant bridge) for the code lookup.
-  const sigOrgId = await resolveSeedOrgId();
+  // signature-tracking reads go through the org-scoped chokepoint. Scope
+  // the code lookup to the SAME tenant as the packet (the caller's
+  // org-scoped client), not the seed org — otherwise a non-seed tenant's
+  // tracking barcode is looked up in the seed tenant and never found.
+  const sigOrgId = supabase.orgId;
   const sigClient = sigOrgId ? getOrgScopedClient(sigOrgId) : null;
 
   const [

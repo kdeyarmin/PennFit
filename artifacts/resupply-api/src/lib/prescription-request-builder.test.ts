@@ -81,6 +81,7 @@ describe("buildPrescriptionRequestPacketFromRx", () => {
   it("returns rx_not_found when the prescription doesn't resolve", async () => {
     setStub({ prescriptions: { data: null } });
     const result = await buildPrescriptionRequestPacketFromRx({
+      orgId: "00000000-0000-0000-0000-000000000001",
       patientId: "11111111-1111-1111-1111-111111111111",
       prescriptionId: "22222222-2222-2222-2222-222222222222",
       createdByEmail: "csr@example.com",
@@ -103,6 +104,7 @@ describe("buildPrescriptionRequestPacketFromRx", () => {
       },
     });
     const result = await buildPrescriptionRequestPacketFromRx({
+      orgId: "00000000-0000-0000-0000-000000000001",
       patientId: "p-1",
       prescriptionId: "rx-1",
       createdByEmail: "csr@example.com",
@@ -125,6 +127,7 @@ describe("buildPrescriptionRequestPacketFromRx", () => {
       },
     });
     const result = await buildPrescriptionRequestPacketFromRx({
+      orgId: "00000000-0000-0000-0000-000000000001",
       patientId: "p-1",
       prescriptionId: "rx-1",
       createdByEmail: "csr@example.com",
@@ -149,6 +152,7 @@ describe("buildPrescriptionRequestPacketFromRx", () => {
       providers: { data: { id: "prov-1", fax_e164: "+18005550100" } },
     });
     const result = await buildPrescriptionRequestPacketFromRx({
+      orgId: "00000000-0000-0000-0000-000000000001",
       patientId: "p-1",
       prescriptionId: "rx-1",
       createdByEmail: "csr@example.com",
@@ -182,6 +186,7 @@ describe("buildPrescriptionRequestPacketFromRx", () => {
       providers: { data: { id: "prov-1", fax_e164: null } },
     });
     const result = await buildPrescriptionRequestPacketFromRx({
+      orgId: "00000000-0000-0000-0000-000000000001",
       patientId: "p-1",
       prescriptionId: "rx-1",
       createdByEmail: "csr@example.com",
@@ -214,6 +219,7 @@ describe("buildPrescriptionRequestPacketFromRx", () => {
       providers: { data: { id: "prov-1", fax_e164: null } },
     });
     const result = await buildPrescriptionRequestPacketFromRx({
+      orgId: "00000000-0000-0000-0000-000000000001",
       patientId: "p-1",
       prescriptionId: "rx-1",
       createdByEmail: "csr@example.com",
@@ -240,6 +246,7 @@ describe("buildPrescriptionRequestPacketFromRx", () => {
       providers: { data: { id: "prov-1", fax_e164: null } },
     });
     const result = await buildPrescriptionRequestPacketFromRx({
+      orgId: "00000000-0000-0000-0000-000000000001",
       patientId: "p-1",
       prescriptionId: "rx-1",
       createdByEmail: "csr@example.com",

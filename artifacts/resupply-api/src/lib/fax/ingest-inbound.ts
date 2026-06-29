@@ -268,9 +268,10 @@ export async function ingestInboundFax(
   // `pending` and the admin "Re-run extraction" button recovers it.
   if (media.persisted && !barcodeFiled) {
     try {
-      if (await isFeatureEnabled("fax.referral_review")) {
+      if (await isFeatureEnabled("fax.referral_review", orgId)) {
         await openReferralReviewForFax(
           {
+            orgId,
             faxId: rowId,
             mediaObjectKey: media.objectKey,
             mediaContentType: media.contentType,

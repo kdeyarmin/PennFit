@@ -84,6 +84,7 @@ vi.mock("@workspace/resupply-telecom", async () => {
 const sendPushToCustomerByEmailMock = vi.hoisted(() =>
   vi.fn<
     (
+      orgId: string,
       email: string,
       payload: {
         title: string;

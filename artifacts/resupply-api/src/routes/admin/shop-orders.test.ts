@@ -93,6 +93,7 @@ vi.mock("../../lib/tenant-branding.js", () => ({
 const sendPushToCustomerMock = vi.hoisted(() =>
   vi.fn<
     (
+      orgId: string,
       customerId: string,
       payload: {
         title: string;
