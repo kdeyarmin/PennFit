@@ -91,6 +91,18 @@ function normalizeAddress(addr: string): string {
 export function createTrustProxyFn(): (addr: string, i: number) => boolean {
   const list = buildBlockList(process.env.RESUPPLY_TRUSTED_PROXY_CIDRS);
   return (addr: string, i: number): boolean => {
+    // Hop 0 (the immediate socket peer) is trusted unconditionally: on
+    // Railway the peer is always the platform's internal load balancer, never
+    // the client, so there is no client IP to validate here. This means
+    // Express will honor `X-Forwarded-Host` (and the tail of
+    // `X-Forwarded-For`) on EVERY request — so the trustworthiness of
+    // `req.hostname` for tenant resolution depends on the EDGE stripping any
+    // client-supplied `X-Forwarded-Host` before it reaches us (Cloudflare
+    // Transform Rule + Railway). See docs/runbooks/edge-header-hardening.md
+    // and the "Host-header → tenant spoofing" note in threat_model.md.
+    // Do NOT validate hop 0 against the proxy CIDRs below: the internal LB is
+    // not a Cloudflare CIDR, so that would break `req.ip` and custom-domain
+    // routing without actually being reachable by an external client.
     if (i === 0) return true;
     if (typeof addr !== "string" || addr.length === 0) return false;
     const normalized = normalizeAddress(addr);
