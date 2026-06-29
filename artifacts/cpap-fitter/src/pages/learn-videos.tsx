@@ -10,6 +10,7 @@ import { Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PlayCircle } from "lucide-react";
 import { useDocumentTitle } from "@/hooks/use-document-title";
+import { safeHref } from "@/lib/safe-url";
 
 interface VideoItem {
   id: string;
@@ -110,7 +111,7 @@ export function LearnVideos() {
                 return (
                   <a
                     key={video.id}
-                    href={video.videoUrl}
+                    href={safeHref(video.videoUrl) ?? "#"}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="block group"

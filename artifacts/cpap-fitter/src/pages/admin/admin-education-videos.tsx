@@ -12,6 +12,7 @@ import { Button } from "@/components/admin/Button";
 import { Badge } from "@/components/admin/Badge";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Spinner } from "@/components/admin/Spinner";
+import { safeHref } from "@/lib/safe-url";
 import {
   listEducationVideos,
   createEducationVideo,
@@ -184,7 +185,7 @@ function VideoRow({ video }: { video: AdminEducationVideo }) {
           </span>
         </span>
         <a
-          href={video.video_url}
+          href={safeHref(video.video_url) ?? "#"}
           target="_blank"
           rel="noopener noreferrer"
           className="text-xs underline decoration-dotted font-mono truncate"
