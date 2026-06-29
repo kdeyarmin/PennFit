@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { Card, CardContent } from "@/components/admin/ui-shims";
 import { Input } from "@/components/admin/ui-shims";
 import { Badge } from "@/components/admin/ui-shims";
@@ -36,6 +36,7 @@ const STATUS_TONE: Record<
 
 export function AdminOrders() {
   useDocumentTitle("Admin · Orders");
+  const [, setLocation] = useLocation();
   const [q, setQ] = useState("");
   const [debouncedQ, setDebouncedQ] = useState("");
   const [status, setStatus] = useState<string | undefined>(undefined);
@@ -185,6 +186,9 @@ export function AdminOrders() {
                   <tr
                     key={o.id}
                     className="border-t border-border/40 hover:bg-muted/30 cursor-pointer"
+                    onClick={() =>
+                      setLocation(`/admin/pennpaps/orders/${o.id}`)
+                    }
                   >
                     <td className="py-3 px-4 font-mono text-xs">
                       <Link
