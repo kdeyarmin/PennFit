@@ -30,6 +30,8 @@
 import type { DeviceSettings } from "@workspace/resupply-integrations";
 import { type getOrgScopedClient } from "@workspace/resupply-db";
 
+import { logger } from "../logger";
+
 type Supabase = ReturnType<typeof getOrgScopedClient>;
 type EquipmentDeviceClass =
   | "cpap"
@@ -46,7 +48,12 @@ export type SnapshotEquipmentLinkOutcome =
   | { kind: "no_serial" }
   | { kind: "inserted"; assetId: string }
   | { kind: "matched"; assetId: string }
-  | { kind: "transferred"; assetId: string; previousPatientId: string };
+  | { kind: "transferred"; assetId: string; previousPatientId: string }
+  // The insert tripped a serial unique-violation (23505) but no row is
+  // visible through the org-scoped re-lookup — a transient delete/race, or
+  // (pre-migration-0479) a cross-tenant collision where the row belongs to
+  // another tenant. Non-fatal: skip this asset rather than 500 the whole sync.
+  | { kind: "serial_conflict" };
 
 const MODE_TO_CLASS: Record<string, EquipmentDeviceClass> = {
   cpap: "cpap",
@@ -160,7 +167,27 @@ export async function linkEquipmentFromSnapshot(
         .limit(1)
         .maybeSingle();
       if (racedLookupErr) throw racedLookupErr;
-      if (!raced) throw error;
+      if (!raced) {
+        // 23505 on insert but the org-scoped re-lookup sees no row: the
+        // colliding asset isn't in this tenant's scope. Pre-migration-0479
+        // this was a cross-tenant serial collision (the serial unique index
+        // was global, not org-scoped); it can also be a transient race. Either
+        // way, re-throwing here surfaces a 500 for a condition the caller
+        // can't act on — skip this asset instead so one collision doesn't fail
+        // the entire equipment sync.
+        logger.warn(
+          {
+            event: "equipment_link_serial_conflict_unresolved",
+            manufacturer: inferredManufacturer,
+            // serial_number is a device identifier, not patient PHI, but keep
+            // it out of logs anyway — the manufacturer + patient id are enough
+            // to investigate without world-readable serials.
+            patientId,
+          },
+          "equipment auto-link: serial unique-violation with no in-tenant row — skipping (see migration 0479)",
+        );
+        return { kind: "serial_conflict" };
+      }
       if (raced.patient_id === patientId) {
         return { kind: "matched", assetId: raced.id };
       }
