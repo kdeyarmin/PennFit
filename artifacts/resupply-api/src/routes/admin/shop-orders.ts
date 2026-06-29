@@ -962,6 +962,7 @@ router.post(
     // BEFORE stamping shipped_at so a refused ship leaves the order
     // untouched. See lib/paperwork/require-signed-paperwork.ts.
     const paperworkGate = await evaluatePaperworkGateForCustomer(
+      orgId,
       existing.customerId,
     );
     if (paperworkGate.required && !paperworkGate.satisfied) {
@@ -1222,6 +1223,7 @@ router.post(
     // shipment. Same gate as the /tracking handler (global flag and/or
     // per-payer requirement); guest / non-clinical orders pass through.
     const paperworkGate = await evaluatePaperworkGateForCustomer(
+      orgId,
       existing.customerId,
     );
     if (paperworkGate.required && !paperworkGate.satisfied) {
