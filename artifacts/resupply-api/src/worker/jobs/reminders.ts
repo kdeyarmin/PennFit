@@ -88,6 +88,7 @@ import {
 } from "@workspace/resupply-reminders";
 import { hasLinkHmacKey } from "@workspace/resupply-secrets";
 
+import { getCompanyInfo } from "../../lib/company-info.js";
 import { logger } from "../../lib/logger.js";
 import { applyTenantEmailSender } from "../../lib/email/apply-tenant-email-sender.js";
 import { applyTenantSmsFrom } from "../../lib/messaging/tenant-telecom.js";
@@ -1030,8 +1031,15 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
         supabase: supabase.raw(),
         orgId,
         // Send under the tenant's own number / Messaging Service when it
-        // has one; falls back to the platform default otherwise (G7).
-        cfg: await applyTenantSmsFrom(orgId, cfg.sms),
+        // has one; falls back to the platform default otherwise (G7). Also
+        // brand the BODY with the tenant's own name — cfg.sms.practiceName is
+        // the process-global RESUPPLY_PRACTICE_NAME (seed brand); for the seed
+        // org getCompanyInfo(orgId).name resolves to the same value, so
+        // single-tenant copy is unchanged.
+        cfg: {
+          ...(await applyTenantSmsFrom(orgId, cfg.sms)),
+          practiceName: (await getCompanyInfo(orgId)).name,
+        },
         patientId: j.data.patientId,
         episodeId: j.data.episodeId,
         variant: j.data.variant,
@@ -1123,8 +1131,13 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
         supabase: supabase.raw(),
         orgId,
         // Send under the tenant's own From identity when configured (G6);
-        // falls back to the platform default when it isn't.
-        cfg: await applyTenantEmailSender(orgId, cfg.email),
+        // falls back to the platform default when it isn't. Also brand the
+        // BODY with the tenant's own name (see the SMS job above) — seed copy
+        // is unchanged since getCompanyInfo(seed).name === RESUPPLY_PRACTICE_NAME.
+        cfg: {
+          ...(await applyTenantEmailSender(orgId, cfg.email)),
+          practiceName: (await getCompanyInfo(orgId)).name,
+        },
         patientId: j.data.patientId,
         episodeId: j.data.episodeId,
         variant: j.data.variant,

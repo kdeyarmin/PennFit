@@ -34,6 +34,7 @@ import {
 import { TwilioConfigError } from "@workspace/resupply-telecom";
 import { EmailConfigError } from "@workspace/resupply-email";
 
+import { getCompanyInfo } from "../../lib/company-info";
 import { logger } from "../../lib/logger";
 import { applyTenantEmailSender } from "../../lib/email/apply-tenant-email-sender";
 import { createTenantSendgridClient } from "../../lib/email/tenant-sender";
@@ -153,6 +154,10 @@ router.post(
       return;
     }
 
+    // Brand the patient-facing reply copy with the tenant's own name, not the
+    // process-global seed practice name (G7). Seed copy is unchanged:
+    // getCompanyInfo(seed).name === RESUPPLY_PRACTICE_NAME.
+    const replyPracticeName = (await getCompanyInfo(orgId)).name;
     let outcome: ReplyInConversationOutcome;
     try {
       outcome = await replyInConversation({
@@ -164,13 +169,13 @@ router.post(
         // configured (G7); falls back to the platform default otherwise.
         smsCfg: await applyTenantSmsFrom(orgId, {
           ...cfg.sms,
-          practiceName: cfg.practiceName,
+          practiceName: replyPracticeName,
         }),
         // Reply under the tenant's own From identity when configured (G6);
         // falls back to the platform default when it isn't.
         emailCfg: await applyTenantEmailSender(orgId, {
           ...cfg.email,
-          practiceName: cfg.practiceName,
+          practiceName: replyPracticeName,
         }),
         conversationId,
         body,

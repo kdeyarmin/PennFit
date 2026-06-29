@@ -16,6 +16,7 @@ import {
   type SendReminderOutcome,
 } from "@workspace/resupply-reminders";
 
+import { getCompanyInfo } from "../../lib/company-info";
 import { logger } from "../../lib/logger";
 import { applyTenantEmailSender } from "../../lib/email/apply-tenant-email-sender";
 import { recordOutboundMessageUsage } from "../../lib/metering/usage";
@@ -87,7 +88,9 @@ router.post(
           sendgridFromEmail: cfg.email.sendgridFromEmail,
           sendgridFromName: cfg.email.sendgridFromName,
           publicBaseUrl: cfg.email.publicBaseUrl,
-          practiceName: cfg.practiceName,
+          // Tenant's own name, not the process-global seed practice name (G7).
+          // Seed copy is unchanged: getCompanyInfo(seed).name === the env value.
+          practiceName: (await getCompanyInfo(orgId)).name,
         }),
         patientId,
         episodeId,

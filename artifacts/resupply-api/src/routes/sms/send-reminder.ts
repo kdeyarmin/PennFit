@@ -26,6 +26,7 @@ import {
 } from "@workspace/resupply-reminders";
 import { TwilioConfigError } from "@workspace/resupply-telecom";
 
+import { getCompanyInfo } from "../../lib/company-info";
 import { logger } from "../../lib/logger";
 import { recordOutboundMessageUsage } from "../../lib/metering/usage";
 import { readMessagingConfigOrNull } from "../../lib/messaging/messaging-config";
@@ -97,7 +98,9 @@ router.post(
       twilioPhoneNumber: cfg.sms.twilioPhoneNumber,
       twilioMessagingServiceSid: cfg.sms.twilioMessagingServiceSid,
       publicBaseUrl: cfg.sms.publicBaseUrl,
-      practiceName: cfg.practiceName,
+      // Tenant's own name, not the process-global seed practice name (G7).
+      // Seed copy is unchanged: getCompanyInfo(seed).name === the env value.
+      practiceName: (await getCompanyInfo(orgId)).name,
     });
 
     let outcome: SendReminderOutcome;
