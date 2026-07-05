@@ -15,6 +15,12 @@ export async function resolveCompanyProfile(
 ): Promise<CompanyProfile> {
   try {
     const identity = await resolveBillingIdentity({ orgId: supabase.orgId });
+    // A "stub" identity means dme_organization was never seeded — the
+    // resolver's billingProvider.organizationName is then the literal
+    // sentinel string "STUB BILLING PROVIDER (CONFIGURE dme_organization)",
+    // which is truthy and would otherwise sail past the `!legalName` check
+    // below straight into a patient-facing email subject / signed document.
+    if (identity.source === "stub") return FALLBACK_COMPANY;
     const org = identity.organization;
     const bp = identity.billingProvider;
     const legalName = org?.legal_name ?? bp.organizationName;
