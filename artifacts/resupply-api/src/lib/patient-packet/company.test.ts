@@ -26,7 +26,10 @@ import {
 
 const supabaseMock = installSupabaseMock();
 
-import { getOrgScopedClient, __resetSeedOrgIdForTests } from "@workspace/resupply-db";
+import {
+  getOrgScopedClient,
+  __resetSeedOrgIdForTests,
+} from "@workspace/resupply-db";
 
 import { resolveCompanyProfile } from "./company";
 import { FALLBACK_COMPANY } from "./templates";
