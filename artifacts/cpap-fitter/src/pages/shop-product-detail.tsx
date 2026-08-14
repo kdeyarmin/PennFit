@@ -188,7 +188,7 @@ export function ShopProductDetail({ productId }: { productId: string }) {
         availability,
       },
     };
-    if (aggregate && aggregate.count > 0) {
+    if (aggregate && aggregate.count > 0 && aggregate.averageRating != null) {
       jsonLd.aggregateRating = {
         "@type": "AggregateRating",
         ratingValue: aggregate.averageRating.toFixed(2),

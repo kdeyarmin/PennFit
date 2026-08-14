@@ -42,8 +42,8 @@ export function AgreementsGate() {
     [data],
   );
   const current = pending[0];
-  const signedCount = (data?.agreements.length ?? 0) - pending.length;
-  const total = data?.agreements.length ?? 0;
+  const signedCount = (data?.agreements?.length ?? 0) - pending.length;
+  const total = data?.agreements?.length ?? 0;
 
   function onAccept() {
     if (!current) return;

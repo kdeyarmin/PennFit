@@ -4911,9 +4911,9 @@ function Pricing() {
   const { open: openDemoGate } = useDemoGate();
   const live = usePublicPricing();
   const [billing, setBilling] = useState<BillingMode>("monthly");
-  const cards = live ? liveToPlanCards(live.plans) : PLANS;
+  const cards = live?.plans ? liveToPlanCards(live.plans) : PLANS;
   const groups =
-    live && live.addons.length > 0
+    live && (live.addons?.length ?? 0) > 0
       ? liveToAddonGroups(live.addons)
       : ADDON_GROUPS;
   return (

@@ -147,7 +147,7 @@ export function AdminBillingAgingPage() {
             title="A/R aging by payer"
             subtitle="Sorted by total open dollars across all age buckets"
           >
-            {(data?.perPayer.length ?? 0) === 0 ? (
+            {(data?.perPayer?.length ?? 0) === 0 ? (
               <p
                 className="text-sm py-1"
                 style={{ color: "hsl(var(--ink-3))" }}

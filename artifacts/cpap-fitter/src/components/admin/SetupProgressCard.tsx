@@ -60,7 +60,7 @@ export function SetupProgressCard() {
   });
 
   // Established tenants (all required steps done): render nothing — never nag.
-  if (data?.summary.allRequiredDone) return null;
+  if (data?.summary?.allRequiredDone) return null;
 
   // The status probe failed: do NOT silently hide the entry point. Show the
   // always-available setup card (without the progress detail we couldn't

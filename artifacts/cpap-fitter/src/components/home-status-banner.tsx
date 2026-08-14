@@ -72,7 +72,7 @@ function SignedInBanner() {
   // no eligibility signal), skip rendering — a "you have no orders"
   // banner is just noise on home. We only show the banner when
   // there's signal worth hoisting above the marketing hero.
-  const eligibleNowCount = data.eligibility?.eligibleNow.length ?? 0;
+  const eligibleNowCount = data.eligibility?.eligibleNow?.length ?? 0;
   const hasSignal =
     data.nextShipment !== null ||
     data.latestOrder !== null ||

@@ -68,7 +68,7 @@ export function AdminShippingPage() {
 
   const [activeOrder, setActiveOrder] = useState<XpsQueueOrder | null>(null);
 
-  const configured = status.data?.availability.status === "configured";
+  const configured = status.data?.availability?.status === "configured";
 
   return (
     <div className="admin-root">

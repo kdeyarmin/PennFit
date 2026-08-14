@@ -187,7 +187,7 @@ export function PaymentPlansSection({ patientId }: { patientId: string }) {
             ? plans.error.message
             : "Failed to load."}
         </p>
-      ) : (plans.data?.plans.length ?? 0) === 0 ? (
+      ) : (plans.data?.plans?.length ?? 0) === 0 ? (
         <p className="text-sm py-1" style={{ color: "hsl(var(--ink-3))" }}>
           No payment plans on file.
         </p>

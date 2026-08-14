@@ -64,7 +64,7 @@ function PlanSelector({ currentPlanCode }: { currentPlanCode: string | null }) {
         queryKey: ["tenant-billing-package"],
       });
       const name =
-        plansQuery.data?.plans.find((p) => p.code === planCode)?.name ??
+        plansQuery.data?.plans?.find((p) => p.code === planCode)?.name ??
         planCode;
       toast({
         title: "Plan updated",
@@ -230,7 +230,7 @@ function AddonSelector({
         queryKey: ["tenant-billing-package"],
       });
       const name =
-        addonsQuery.data?.addons.find((a) => a.code === code)?.name ?? code;
+        addonsQuery.data?.addons?.find((a) => a.code === code)?.name ?? code;
       toast({
         title: quantity === 0 ? "Add-on removed" : "Add-on updated",
         description:
@@ -412,7 +412,7 @@ export function AdminBillingPackagePage() {
     );
   const sub = q.data.subscription;
   const allowances = {
-    ...(sub?.plan.allowances ?? {}),
+    ...(sub?.plan?.allowances ?? {}),
     ...(sub?.customAllowances ?? {}),
   };
   return (
@@ -433,29 +433,29 @@ export function AdminBillingPackagePage() {
               Current package
             </div>
             <h2 className="text-xl font-semibold text-slate-950">
-              {sub?.plan.name ?? "No package assigned"}
+              {sub?.plan?.name ?? "No package assigned"}
             </h2>
             <p className="mt-1 max-w-2xl text-sm text-slate-600">
-              {sub?.plan.description}
+              {sub?.plan?.description}
             </p>
           </div>
           <div className="text-right">
             <div className="text-2xl font-bold text-slate-950">
               {formatMoney(
-                sub?.customMonthlyPriceCents ?? sub?.plan.monthlyPriceCents,
+                sub?.customMonthlyPriceCents ?? sub?.plan?.monthlyPriceCents,
               )}
               /mo
             </div>
             <div className="text-sm text-slate-500">
               Onboarding{" "}
               {formatMoney(
-                sub?.customOnboardingFeeCents ?? sub?.plan.onboardingFeeCents,
+                sub?.customOnboardingFeeCents ?? sub?.plan?.onboardingFeeCents,
               )}
             </div>
           </div>
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
-          {(sub?.plan.features ?? []).map((f) => (
+          {(sub?.plan?.features ?? []).map((f) => (
             <span
               key={f}
               className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-800"
@@ -465,7 +465,7 @@ export function AdminBillingPackagePage() {
           ))}
         </div>
       </Card>
-      <PlanSelector currentPlanCode={sub?.plan.code ?? null} />
+      <PlanSelector currentPlanCode={sub?.plan?.code ?? null} />
       <Card className="p-5">
         <h2 className="font-semibold text-slate-950">Tenant billing status</h2>
         <div className="mt-3 grid gap-3 text-sm md:grid-cols-4">

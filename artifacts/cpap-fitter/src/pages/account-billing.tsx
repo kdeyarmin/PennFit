@@ -336,7 +336,7 @@ function AccountBillingInner() {
           )}
         </div>
 
-        {totalOpen > 0 && (balance.data?.claims.length ?? 0) > 0 && (
+        {totalOpen > 0 && (balance.data?.claims?.length ?? 0) > 0 && (
           <div className="mt-5 border-t pt-4">
             <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">
               Per-claim breakdown
@@ -400,7 +400,7 @@ function AccountBillingInner() {
               {statements.isFetching ? "Retrying…" : "Retry"}
             </Button>
           </div>
-        ) : (statements.data?.statements.length ?? 0) === 0 ? (
+        ) : (statements.data?.statements?.length ?? 0) === 0 ? (
           <p className="mt-4 text-sm text-slate-500">
             No statements yet. One is generated whenever there's a new
             patient-responsibility balance to settle.
@@ -469,7 +469,7 @@ function AccountBillingInner() {
               {payments.isFetching ? "Retrying…" : "Retry"}
             </Button>
           </div>
-        ) : (payments.data?.payments.length ?? 0) === 0 ? (
+        ) : (payments.data?.payments?.length ?? 0) === 0 ? (
           <p className="mt-4 text-sm text-slate-500">
             No payments on file yet.
           </p>
@@ -750,7 +750,7 @@ function ClaimsSection() {
             {claims.isFetching ? "Retrying…" : "Retry"}
           </Button>
         </div>
-      ) : (claims.data?.claims.length ?? 0) === 0 ? (
+      ) : (claims.data?.claims?.length ?? 0) === 0 ? (
         <p className="mt-4 text-sm text-slate-500">No claims on file yet.</p>
       ) : (
         <ul className="mt-4 divide-y">

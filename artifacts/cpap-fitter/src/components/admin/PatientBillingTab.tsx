@@ -362,13 +362,13 @@ export function PatientBillingTab({ patientId }: { patientId: string }) {
         <Tile
           icon={<FileText className="h-4 w-4" />}
           label="Claims on file"
-          value={(claims.data?.claims.length ?? 0).toLocaleString()}
+          value={(claims.data?.claims?.length ?? 0).toLocaleString()}
         />
         <Tile
           icon={<ShieldAlert className="h-4 w-4" />}
           label="Prior auths"
           value={(
-            priorAuths.data?.priorAuthorizations.length ?? 0
+            priorAuths.data?.priorAuthorizations?.length ?? 0
           ).toLocaleString()}
         />
       </div>
@@ -422,7 +422,7 @@ export function PatientBillingTab({ patientId }: { patientId: string }) {
               ? claims.error.message
               : "Failed to load claims."}
           </p>
-        ) : (claims.data?.claims.length ?? 0) === 0 ? (
+        ) : (claims.data?.claims?.length ?? 0) === 0 ? (
           <p className="text-sm py-1" style={{ color: "hsl(var(--ink-3))" }}>
             No claims on file.
           </p>
@@ -532,7 +532,7 @@ export function PatientBillingTab({ patientId }: { patientId: string }) {
               ? eligibility.error.message
               : "Failed to load eligibility checks."}
           </p>
-        ) : (eligibility.data?.checks.length ?? 0) === 0 ? (
+        ) : (eligibility.data?.checks?.length ?? 0) === 0 ? (
           <p className="text-sm py-1" style={{ color: "hsl(var(--ink-3))" }}>
             No eligibility checks on file yet.
           </p>
@@ -628,7 +628,7 @@ export function PatientBillingTab({ patientId }: { patientId: string }) {
               ? priorAuths.error.message
               : "Failed to load prior authorizations."}
           </p>
-        ) : (priorAuths.data?.priorAuthorizations.length ?? 0) === 0 ? (
+        ) : (priorAuths.data?.priorAuthorizations?.length ?? 0) === 0 ? (
           <p className="text-sm py-1" style={{ color: "hsl(var(--ink-3))" }}>
             No prior authorizations on file.
           </p>
@@ -700,7 +700,7 @@ export function PatientBillingTab({ patientId }: { patientId: string }) {
               ? statements.error.message
               : "Failed to load statements."}
           </p>
-        ) : (statements.data?.statements.length ?? 0) === 0 ? (
+        ) : (statements.data?.statements?.length ?? 0) === 0 ? (
           <div className="flex items-start gap-2 text-sm">
             <AlertTriangle
               className="h-4 w-4 mt-0.5 shrink-0"
@@ -833,7 +833,7 @@ export function PatientBillingTab({ patientId }: { patientId: string }) {
               ? packets.error.message
               : "Failed to load packets."}
           </p>
-        ) : (packets.data?.packets.length ?? 0) === 0 ? (
+        ) : (packets.data?.packets?.length ?? 0) === 0 ? (
           <p className="text-sm py-1" style={{ color: "hsl(var(--ink-3))" }}>
             No packets generated yet.
           </p>

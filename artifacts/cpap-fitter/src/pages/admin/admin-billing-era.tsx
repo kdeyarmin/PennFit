@@ -206,7 +206,7 @@ export function AdminBillingEraPage() {
       <Card title="Recent ERA files" subtitle="Last 200 uploads, newest first">
         {history.isPending ? (
           <Spinner label="Loading history…" />
-        ) : (history.data?.eraFiles.length ?? 0) === 0 ? (
+        ) : (history.data?.eraFiles?.length ?? 0) === 0 ? (
           <p className="text-sm py-1" style={{ color: "hsl(var(--ink-3))" }}>
             No ERA files ingested yet.
           </p>

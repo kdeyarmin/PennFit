@@ -75,7 +75,7 @@ export class SignalRooms {
   }
 
   getPeer(visitId: string, role: VideoRole): SignalPeer | null {
-    return this.rooms.get(visitId)?.peers[role] ?? null;
+    return this.rooms.get(visitId)?.peers?.[role] ?? null;
   }
 
   roomCount(): number {

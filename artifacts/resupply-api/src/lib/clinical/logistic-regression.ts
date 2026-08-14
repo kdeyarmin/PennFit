@@ -78,7 +78,7 @@ export function trainLogisticRegression(
   const iterations = opts.iterations ?? 500;
   const lr = opts.learningRate ?? 0.1;
   const l2 = opts.l2 ?? 0.0;
-  const dim = samples[0]?.x.length ?? 0;
+  const dim = samples[0]?.x?.length ?? 0;
   const rawX = samples.map((s) => s.x);
   const { means, stds } = standardizeParams(rawX);
   const X = rawX.map((x) => applyStandardize(x, means, stds));

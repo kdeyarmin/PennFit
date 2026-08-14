@@ -147,7 +147,7 @@ export function AdminRtOverviewPage() {
     return sortRtRows(filtered, sortKey, sortDir);
   }, [query.data, filter, sortKey, sortDir]);
 
-  const totalRows = query.data?.rows.length ?? 0;
+  const totalRows = query.data?.rows?.length ?? 0;
   const filterIsActive =
     filter.alertingOnly ||
     filter.staleOnly ||
@@ -199,21 +199,21 @@ export function AdminRtOverviewPage() {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <KpiCard
           label="Active"
-          value={query.data?.summary.totalActive ?? 0}
+          value={query.data?.summary?.totalActive ?? 0}
           hint={`with ≥1 night in last ${days}d`}
           isLoading={query.isLoading}
           tone="navy"
         />
         <KpiCard
           label="Alerting"
-          value={query.data?.summary.totalAlerting ?? 0}
+          value={query.data?.summary?.totalAlerting ?? 0}
           hint="undismissed smart-trigger events"
           isLoading={query.isLoading}
           tone="gold"
         />
         <KpiCard
           label="Stale"
-          value={query.data?.summary.totalStale ?? 0}
+          value={query.data?.summary?.totalStale ?? 0}
           hint="linked but no recent night"
           isLoading={query.isLoading}
           tone="navy"

@@ -467,7 +467,7 @@ export function AdminBillingVerifyPage() {
                   error={recentChecks.error}
                   onRetry={() => void recentChecks.refetch()}
                 />
-              ) : (recentChecks.data?.checks.length ?? 0) === 0 ? (
+              ) : (recentChecks.data?.checks?.length ?? 0) === 0 ? (
                 <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
                   No eligibility checks on file yet.
                 </p>

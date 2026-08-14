@@ -89,7 +89,7 @@ function PayerStatsCard() {
     staleTime: 60_000,
   });
   if (isError) return null;
-  if (!isPending && (data?.payers.length ?? 0) === 0) return null;
+  if (!isPending && (data?.payers?.length ?? 0) === 0) return null;
   return (
     <Card title="By payer (last 30 days)">
       {isPending ? (
@@ -315,24 +315,24 @@ function KpiRow() {
     >
       <KpiTile
         label="Submissions (30d)"
-        value={data?.counts.totalSubmissions}
+        value={data?.counts?.totalSubmissions}
         loading={isPending}
       />
       <KpiTile
         label="Claims (30d)"
-        value={data?.counts.totalClaims}
+        value={data?.counts?.totalClaims}
         loading={isPending}
       />
       <KpiTile
         label="Acceptance"
         value={
-          data?.rates.acceptanceRatePct == null
+          data?.rates?.acceptanceRatePct == null
             ? "—"
             : `${data.rates.acceptanceRatePct}%`
         }
         loading={isPending}
         tone={
-          data?.rates.acceptanceRatePct != null &&
+          data?.rates?.acceptanceRatePct != null &&
           data.rates.acceptanceRatePct < 90
             ? "alert"
             : "ok"
@@ -340,21 +340,21 @@ function KpiRow() {
       />
       <KpiTile
         label="Pending acks"
-        value={data?.counts.pendingAck}
+        value={data?.counts?.pendingAck}
         hint=">1h uploaded, no 999"
         loading={isPending}
         tone={
-          data?.counts.pendingAck != null && data.counts.pendingAck > 0
+          data?.counts?.pendingAck != null && data.counts.pendingAck > 0
             ? "warn"
             : "neutral"
         }
       />
       <KpiTile
         label="Transport failed"
-        value={data?.counts.transportFailed}
+        value={data?.counts?.transportFailed}
         loading={isPending}
         tone={
-          data?.counts.transportFailed != null &&
+          data?.counts?.transportFailed != null &&
           data.counts.transportFailed > 0
             ? "alert"
             : "neutral"
@@ -363,7 +363,7 @@ function KpiRow() {
       <KpiTile
         label="Avg min to 999"
         value={
-          data?.rates.avgMinutesToAck999 == null
+          data?.rates?.avgMinutesToAck999 == null
             ? "—"
             : `${data.rates.avgMinutesToAck999}m`
         }
@@ -642,7 +642,7 @@ function SubmissionsSection() {
           ↓ CSV (90d)
         </a>
         <p className="text-xs ml-auto" style={{ color: "hsl(var(--ink-3))" }}>
-          {data?.submissions.length ?? 0} shown
+          {data?.submissions?.length ?? 0} shown
         </p>
       </div>
 
@@ -661,7 +661,7 @@ function SubmissionsSection() {
 
       {isPending ? (
         <Spinner label="Loading submissions…" />
-      ) : (data?.submissions.length ?? 0) === 0 ? (
+      ) : (data?.submissions?.length ?? 0) === 0 ? (
         <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
           No submissions match.
         </p>
@@ -1053,7 +1053,7 @@ function InboundFilesSection() {
           ↑ Upload ack file
         </button>
         <p className="text-xs ml-auto" style={{ color: "hsl(var(--ink-3))" }}>
-          {data?.files.length ?? 0} shown
+          {data?.files?.length ?? 0} shown
         </p>
       </div>
       {uploadOpen && (
@@ -1067,7 +1067,7 @@ function InboundFilesSection() {
 
       {isPending ? (
         <Spinner label="Loading inbound files…" />
-      ) : (data?.files.length ?? 0) === 0 ? (
+      ) : (data?.files?.length ?? 0) === 0 ? (
         <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
           No inbound files. The poller runs every 15 minutes; use Poll now below
           to fetch on demand.
@@ -1493,7 +1493,7 @@ function ClearinghousesSection() {
 
       {isPending ? (
         <Spinner label="Loading clearinghouses…" />
-      ) : (data?.clearinghouses.length ?? 0) === 0 ? (
+      ) : (data?.clearinghouses?.length ?? 0) === 0 ? (
         <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
           No clearinghouse credentials configured. Add one via the{" "}
           <code className="font-mono text-[11px]">

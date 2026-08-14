@@ -551,7 +551,14 @@ export const stripeWebhookHandler: RequestHandler = async (
                 log,
               });
             } catch (enrollErr) {
-              log.warn(
+              // `log` is `req.log?.child?.(…)` and can be undefined (a request
+              // that never went through pino-http). Every other logging call in
+              // this handler is optional-chained; this one was not, so a
+              // failure here threw a TypeError INSIDE the try — which the outer
+              // catch turned into a 500, rolled back the event-dedup row, and
+              // made Stripe re-deliver the whole event, re-running markPaid and
+              // every other side effect on an already-paid order.
+              log?.warn?.(
                 {
                   err:
                     enrollErr instanceof Error

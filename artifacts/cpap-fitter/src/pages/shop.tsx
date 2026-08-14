@@ -797,20 +797,22 @@ function ProductCard({
             {product.name}
           </h3>
         </Link>
-        {aggregate && aggregate.count > 0 && (
-          <Link
-            href={`/shop/p/${encodeURIComponent(product.id)}`}
-            className="mt-2 inline-flex"
-            aria-label={`See ${aggregate.count} reviews — ${aggregate.averageRating.toFixed(1)} out of 5 stars`}
-          >
-            <StarRating
-              value={aggregate.averageRating}
-              count={aggregate.count}
-              size="sm"
-              testId={`shop-rating-${product.id}`}
-            />
-          </Link>
-        )}
+        {aggregate &&
+          aggregate.count > 0 &&
+          aggregate.averageRating != null && (
+            <Link
+              href={`/shop/p/${encodeURIComponent(product.id)}`}
+              className="mt-2 inline-flex"
+              aria-label={`See ${aggregate.count} reviews — ${aggregate.averageRating.toFixed(1)} out of 5 stars`}
+            >
+              <StarRating
+                value={aggregate.averageRating}
+                count={aggregate.count}
+                size="sm"
+                testId={`shop-rating-${product.id}`}
+              />
+            </Link>
+          )}
         {product.tagline && (
           <p className="text-sm text-muted-foreground mt-1">
             {product.tagline}

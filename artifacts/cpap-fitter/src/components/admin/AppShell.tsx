@@ -1823,7 +1823,7 @@ function SectionSubNav({
   });
 
   const active = pickActiveTarget(location, navGroupsForScope(productScope));
-  if (!active?.section.tabs) return null;
+  if (!active?.section?.tabs) return null;
   const tabs = visibleTabs(active.section, permissions);
   if (tabs.length <= 1) return null;
 

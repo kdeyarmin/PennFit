@@ -39,7 +39,7 @@ export function AdminBillingConfigDenialCodesPage() {
         </h1>
         <p className="text-sm" style={{ color: "hsl(var(--ink-2))" }}>
           CARC + RARC catalog seeded with the ~50 codes DME suppliers hit most
-          often. {data?.denialCodes.length ?? 0} match.
+          often. {data?.denialCodes?.length ?? 0} match.
         </p>
       </header>
 
@@ -92,7 +92,7 @@ export function AdminBillingConfigDenialCodesPage() {
       <Card>
         {isPending ? (
           <Spinner label="Loading denial codes…" />
-        ) : !isError && (data?.denialCodes.length ?? 0) === 0 ? (
+        ) : !isError && (data?.denialCodes?.length ?? 0) === 0 ? (
           <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
             No denial codes match.
           </p>

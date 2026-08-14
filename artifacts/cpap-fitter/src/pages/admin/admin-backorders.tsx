@@ -78,7 +78,7 @@ function BackordersPanel() {
   });
 
   const skuValid = /^[A-Za-z0-9_-]{1,64}$/.test(sku.trim());
-  const activeCount = data?.backorders.length ?? 0;
+  const activeCount = data?.backorders?.length ?? 0;
   return (
     <Card
       title={data ? `Active backorders (${activeCount})` : "Active backorders"}

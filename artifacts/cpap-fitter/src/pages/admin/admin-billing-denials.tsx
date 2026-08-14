@@ -67,7 +67,7 @@ export function AdminBillingDenialsPage() {
           value={
             denials.isPending
               ? "—"
-              : formatPercent(denials.data?.overall.denialRate ?? null)
+              : formatPercent(denials.data?.overall?.denialRate ?? null)
           }
           hint="Last 90 days, decisions only"
           isLoading={denials.isPending}
@@ -77,7 +77,7 @@ export function AdminBillingDenialsPage() {
           value={
             denials.isPending
               ? "—"
-              : (denials.data?.overall.decisions ?? 0).toLocaleString()
+              : (denials.data?.overall?.decisions ?? 0).toLocaleString()
           }
           hint="Paid + denied + appealed + closed"
           isLoading={denials.isPending}
@@ -87,7 +87,7 @@ export function AdminBillingDenialsPage() {
           value={
             denials.isPending
               ? "—"
-              : (denials.data?.overall.denials ?? 0).toLocaleString()
+              : (denials.data?.overall?.denials ?? 0).toLocaleString()
           }
           hint="Where to focus appeal effort"
           isLoading={denials.isPending}
@@ -100,7 +100,7 @@ export function AdminBillingDenialsPage() {
       >
         {denials.isPending ? (
           <Spinner label="Loading denial rate…" />
-        ) : (denials.data?.perPayer.length ?? 0) === 0 ? (
+        ) : (denials.data?.perPayer?.length ?? 0) === 0 ? (
           <p className="text-sm py-1" style={{ color: "hsl(var(--ink-3))" }}>
             No decisions in the last 90 days.
           </p>
@@ -177,7 +177,7 @@ export function AdminBillingDenialsPage() {
       >
         {dso.isPending ? (
           <Spinner label="Loading DSO…" />
-        ) : (dso.data?.payers.length ?? 0) === 0 ? (
+        ) : (dso.data?.payers?.length ?? 0) === 0 ? (
           <p className="text-sm py-1" style={{ color: "hsl(var(--ink-3))" }}>
             No paid claims in the last 180 days.
           </p>

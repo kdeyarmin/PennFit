@@ -183,7 +183,7 @@ export function AdminOrders() {
                     </td>
                   </tr>
                 )}
-                {data?.orders.map((o) => (
+                {data?.orders?.map((o) => (
                   <tr
                     key={o.id}
                     className="border-t border-border/40 hover:bg-muted/30 cursor-pointer"

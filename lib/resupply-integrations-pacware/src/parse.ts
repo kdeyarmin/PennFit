@@ -182,7 +182,7 @@ function buildParseResult<T>(
       const first = parsed.error.issues[0];
       errors.push({
         rowIndex: dataRowIndex,
-        field: first?.path.length ? first.path.join(".") : undefined,
+        field: first?.path?.length ? first.path.join(".") : undefined,
         message: first?.message ?? "invalid row",
       });
     }

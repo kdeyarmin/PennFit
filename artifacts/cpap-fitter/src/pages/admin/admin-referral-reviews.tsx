@@ -220,16 +220,16 @@ function formFromReview(review: ReferralReview): IntakeForm {
     };
   };
   return {
-    firstName: x?.patient.firstName ?? "",
-    lastName: x?.patient.lastName ?? "",
-    dob: x?.patient.dob ?? "",
-    phone: normalizePhone(x?.patient.phone ?? null),
-    email: x?.patient.email ?? "",
-    line1: x?.patient.address?.line1 ?? "",
-    line2: x?.patient.address?.line2 ?? "",
-    city: x?.patient.address?.city ?? "",
-    state: x?.patient.address?.state ?? "",
-    postalCode: x?.patient.address?.postalCode ?? "",
+    firstName: x?.patient?.firstName ?? "",
+    lastName: x?.patient?.lastName ?? "",
+    dob: x?.patient?.dob ?? "",
+    phone: normalizePhone(x?.patient?.phone ?? null),
+    email: x?.patient?.email ?? "",
+    line1: x?.patient?.address?.line1 ?? "",
+    line2: x?.patient?.address?.line2 ?? "",
+    city: x?.patient?.address?.city ?? "",
+    state: x?.patient?.address?.state ?? "",
+    postalCode: x?.patient?.address?.postalCode ?? "",
     insurance: ins(x?.insurance ?? null),
     secondaryInsurance: ins(x?.secondaryInsurance ?? null),
     documents: (x?.documents ?? []).map((d) => ({
@@ -537,8 +537,8 @@ export function AdminReferralReviewsPage() {
                     </td>
                     <td className="py-2.5 pr-3 capitalize">{r.source}</td>
                     <td className="py-2.5 pr-3">
-                      {r.extraction?.patient.firstName ||
-                      r.extraction?.patient.lastName
+                      {r.extraction?.patient?.firstName ||
+                      r.extraction?.patient?.lastName
                         ? `${r.extraction.patient.firstName ?? ""} ${r.extraction.patient.lastName ?? ""}`.trim()
                         : "—"}
                     </td>
@@ -829,9 +829,10 @@ function ReviewDetail({
   }
 
   const confidence = review.extraction?.confidence ?? null;
-  const includedDocCount = form?.documents.filter((d) => d.include).length ?? 0;
+  const includedDocCount =
+    form?.documents?.filter((d) => d.include).length ?? 0;
   const documentRangesValid =
-    form?.documents.every(isDocumentPageRangeValid) ?? true;
+    form?.documents?.every(isDocumentPageRangeValid) ?? true;
   const canAccept =
     !!form &&
     form.firstName.trim() !== "" &&
@@ -1726,7 +1727,7 @@ function VerifyInsurancePanel({ form }: { form: IntakeForm }) {
         </div>
       )}
 
-      {result && (
+      {result?.benefits && (
         <div
           className="mt-3 rounded-md border px-3 py-2 text-sm space-y-1"
           style={{

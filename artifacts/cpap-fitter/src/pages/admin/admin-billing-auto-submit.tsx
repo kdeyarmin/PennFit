@@ -200,7 +200,7 @@ export function AdminBillingAutoSubmitPage() {
         <SummaryPill
           icon={<AlertCircle className="h-4 w-4" />}
           label="Held back"
-          value={data?.excluded.length ?? 0}
+          value={data?.excluded?.length ?? 0}
           isLoading={readyQuery.isPending}
           tone="warning"
         />
