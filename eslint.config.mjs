@@ -246,6 +246,14 @@ export default [
   // reports zero violations today, so this is a ratchet, not a backlog.
   // Test files stay excluded: they intentionally float promises and assert on
   // rejections.
+  //
+  // MEMORY: type-checking the whole API + every lib in one ESLint process needs
+  // more than Node's default heap — CI died with "Ineffective mark-compacts
+  // near heap limit" at the ~2 GB default. `lint:resupply` therefore invokes
+  // eslint through `node --max-old-space-size=4096`. Measured: OOM at 2048,
+  // passes at 3072, comfortable at 4096 (~95s). If this pass is widened
+  // further (adding the SPA, say), re-measure — the cap, not the rule set, is
+  // the binding constraint.
   {
     files: ["artifacts/resupply-api/src/**/*.ts", "lib/resupply-*/src/**/*.ts"],
     ignores: ["**/*.test.ts", "**/test-helpers/**", "**/dist/**"],
