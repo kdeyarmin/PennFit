@@ -239,21 +239,40 @@ function FollowupsCard({ data }: { data: TodayResponse }) {
       ) : (
         <ul className="space-y-2">
           {items.map((f) => {
+            // `patient_id` / `customer_id` are BOTH nullable on the row, and a
+            // followup can carry a source whose id is unset. Interpolating a
+            // null straight into the href built a live link to
+            // `/admin/shop/customers/null` — the CSR clicks an overdue item and
+            // lands on a dead detail page. Only link when we actually have the
+            // id for the row's source; otherwise render the same text inert.
+            const subjectId =
+              f.source === "patient" ? f.patient_id : f.customer_id;
             const link =
-              f.source === "patient"
-                ? `/admin/patients/${f.patient_id}`
-                : `/admin/shop/customers/${f.customer_id}`;
+              subjectId === null
+                ? null
+                : f.source === "patient"
+                  ? `/admin/patients/${encodeURIComponent(subjectId)}`
+                  : `/admin/shop/customers/${encodeURIComponent(subjectId)}`;
+            const label = (
+              <>
+                <span className="font-medium">
+                  {relativeAge(f.due_at)} overdue
+                </span>
+                <span className="ml-2" style={{ color: "hsl(var(--ink-3))" }}>
+                  — {f.body.slice(0, 80)}
+                  {f.body.length > 80 ? "…" : ""}
+                </span>
+              </>
+            );
             return (
               <li key={f.id} className="text-sm">
-                <Link href={link} className="hover:underline">
-                  <span className="font-medium">
-                    {relativeAge(f.due_at)} overdue
-                  </span>
-                  <span className="ml-2" style={{ color: "hsl(var(--ink-3))" }}>
-                    — {f.body.slice(0, 80)}
-                    {f.body.length > 80 ? "…" : ""}
-                  </span>
-                </Link>
+                {link ? (
+                  <Link href={link} className="hover:underline">
+                    {label}
+                  </Link>
+                ) : (
+                  label
+                )}
               </li>
             );
           })}

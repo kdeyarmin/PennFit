@@ -118,16 +118,31 @@ const meChatLimiter = expressRateLimit({
   // omitted when the tenant has no support phone (the platform fallback has
   // none); a missing orgId / DB hiccup degrades to the warm seed identity via
   // getCompanyInfoSync(), so a 429 never blocks on the DB read.
-  handler: async (req: Request, res: Response) => {
-    const info = req.orgId
-      ? await getCompanyInfo(req.orgId)
-      : getCompanyInfoSync();
-    const phone = info.supportPhoneDisplay?.trim();
-    const callClause = phone ? ` or call ${phone} for immediate help` : "";
-    res.status(429).json({
-      reply: `You're sending messages too quickly. Please wait a minute and try again${callClause}.`,
-      rateLimited: true,
-    });
+  //
+  // The handler is SYNCHRONOUS and drives its await through a self-contained,
+  // `void`-ed IIFE with its own try/catch. express-rate-limit types `handler`
+  // as returning void and never awaits it, so an `async handler` that rejected
+  // would escape as an unhandledRejection — which index.ts's process-level trap
+  // deliberately escalates to a process EXIT. This shape makes rejection
+  // structurally impossible rather than depending on every future edit inside
+  // the body staying guarded.
+  handler: (req: Request, res: Response) => {
+    void (async () => {
+      let phone: string | undefined;
+      try {
+        const info = req.orgId
+          ? await getCompanyInfo(req.orgId)
+          : getCompanyInfoSync();
+        phone = info.supportPhoneDisplay?.trim();
+      } catch {
+        // Company-info hiccup — omit the phone clause rather than block the 429.
+      }
+      const callClause = phone ? ` or call ${phone} for immediate help` : "";
+      res.status(429).json({
+        reply: `You're sending messages too quickly. Please wait a minute and try again${callClause}.`,
+        rateLimited: true,
+      });
+    })();
   },
 });
 

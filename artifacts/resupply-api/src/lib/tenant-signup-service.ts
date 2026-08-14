@@ -478,7 +478,12 @@ export async function createSelfServeTenant(
     await assignSelfServePlan(raw, orgId, input.plan, emailLower);
   }
 
-  deps.audit({
+  // `void`: AuditWriter is declared `=> Promise<void> | void`. The current
+  // getAuthDeps() adapter is synchronous (it swallows its own failure), but the
+  // CONTRACT allows an async writer — and an unawaited rejection here would
+  // become an unhandledRejection, which index.ts escalates to a process exit.
+  // Matches the sibling callsite in routes/shop/me-account.ts.
+  void deps.audit({
     action: "auth.tenant_self_signup",
     adminEmail: emailLower,
     adminUserId: userId,
