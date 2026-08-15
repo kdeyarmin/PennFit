@@ -41,6 +41,7 @@ import {
 import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { getAuthDeps } from "../../lib/auth-deps";
+import { fireAndForgetAudit } from "../../lib/audit-fire-and-forget";
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
 
 const router: IRouter = Router();
@@ -153,11 +154,18 @@ router.post("/shop/me/account/close", requireSignedIn, async (req, res) => {
   //    through an already-issued cookie elsewhere.
   await deps.repo.revokeAllUserSessions(authUserId, new Date());
 
-  void deps.audit({
-    action: "auth.account_closed",
-    adminUserId: authUserId,
-    metadata: { customerId },
-  });
+  // Through the helper, not a bare `void`: `void p` silences
+  // no-floating-promises but leaves a rejection UNHANDLED, and index.ts exits
+  // the process on unhandledRejection. See lib/audit-fire-and-forget.ts.
+  fireAndForgetAudit(
+    deps.audit,
+    {
+      action: "auth.account_closed",
+      adminUserId: authUserId,
+      metadata: { customerId },
+    },
+    req.log,
+  );
 
   req.log?.info?.(
     { customerId },

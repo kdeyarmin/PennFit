@@ -37,6 +37,7 @@ import {
 } from "@workspace/resupply-auth";
 
 import { getAuthDeps } from "./auth-deps.js";
+import { fireAndForgetAudit } from "./audit-fire-and-forget.js";
 import { logger } from "./logger.js";
 
 const PRODUCT_NAME = "CareMetric Breathe";
@@ -478,12 +479,10 @@ export async function createSelfServeTenant(
     await assignSelfServePlan(raw, orgId, input.plan, emailLower);
   }
 
-  // `void`: AuditWriter is declared `=> Promise<void> | void`. The current
-  // getAuthDeps() adapter is synchronous (it swallows its own failure), but the
-  // CONTRACT allows an async writer — and an unawaited rejection here would
-  // become an unhandledRejection, which index.ts escalates to a process exit.
-  // Matches the sibling callsite in routes/shop/me-account.ts.
-  void deps.audit({
+  // Fire-and-forget, but through the helper: a bare `void deps.audit(...)`
+  // silences the lint rule WITHOUT handling a rejection, and the audit writer's
+  // declared type permits an async implementation. See audit-fire-and-forget.ts.
+  fireAndForgetAudit(deps.audit, {
     action: "auth.tenant_self_signup",
     adminEmail: emailLower,
     adminUserId: userId,
