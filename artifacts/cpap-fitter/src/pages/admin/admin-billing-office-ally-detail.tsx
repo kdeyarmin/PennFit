@@ -85,7 +85,7 @@ export function AdminOfficeAllySubmissionDetailPage({
             className="text-2xl font-semibold mt-1"
             style={{ color: "hsl(var(--ink-1))" }}
           >
-            {data?.submission.fileName ?? "Submission"}
+            {data?.submission?.fileName ?? "Submission"}
           </h1>
           <p
             className="text-[12px] font-mono mt-1"
@@ -94,7 +94,7 @@ export function AdminOfficeAllySubmissionDetailPage({
             id {submissionId}
           </p>
         </div>
-        {data?.submission.status === "transport_failed" &&
+        {data?.submission?.status === "transport_failed" &&
           (data.submission.attemptedClaimIds.length ?? 0) > 0 && (
             <div className="flex flex-col items-end gap-2">
               <a
@@ -129,7 +129,7 @@ export function AdminOfficeAllySubmissionDetailPage({
               )}
             </div>
           )}
-        {data && data.submission.status !== "transport_failed" && (
+        {data?.submission && data.submission.status !== "transport_failed" && (
           <a
             href={rawEdiDownloadHref(submissionId)}
             className="rounded border border-slate-300 px-3 py-1.5 text-sm font-semibold hover:bg-slate-50"
@@ -147,7 +147,8 @@ export function AdminOfficeAllySubmissionDetailPage({
       {data && (
         <>
           <DetailSummary s={data.submission} />
-          {(data.lineage.parent || data.lineage.children.length > 0) && (
+          {(data.lineage?.parent ||
+            (data.lineage?.children?.length ?? 0) > 0) && (
             <LineageCard
               parent={data.lineage.parent}
               children={data.lineage.children}

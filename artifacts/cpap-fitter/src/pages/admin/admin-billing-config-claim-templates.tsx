@@ -47,7 +47,7 @@ export function AdminBillingConfigClaimTemplatesPage() {
           Claim templates
         </h1>
         <p className="text-sm" style={{ color: "hsl(var(--ink-2))" }}>
-          Reusable HCPCS line patterns. {templates.data?.templates.length ?? 0}{" "}
+          Reusable HCPCS line patterns. {templates.data?.templates?.length ?? 0}{" "}
           on file.
         </p>
       </header>
@@ -59,7 +59,7 @@ export function AdminBillingConfigClaimTemplatesPage() {
         />
       ) : templates.isPending ? (
         <Spinner label="Loading templates…" />
-      ) : (templates.data?.templates.length ?? 0) === 0 ? (
+      ) : (templates.data?.templates?.length ?? 0) === 0 ? (
         <Card>
           <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
             No claim templates configured.

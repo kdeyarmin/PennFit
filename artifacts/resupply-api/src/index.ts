@@ -533,23 +533,63 @@ async function start(): Promise<void> {
   // public network (IPv4 `0.0.0.0`) and the IPv6-only private network
   // (`::`) — see docs/railway-hosting-review-2026-05-29.md (R3).
   const HOST = "::";
-  await new Promise<void>((resolve, reject) => {
-    httpServer.once("error", reject);
-    httpServer.listen(port, HOST, () => {
-      httpServer.off("error", reject);
-      const voiceConfigured = readVoiceConfigOrNull() !== null;
-      logger.info(
-        {
-          host: HOST,
-          port,
-          voice_configured: voiceConfigured,
-          voice_ws_path: VOICE_WS_PATH,
-        },
-        "resupply-api listening",
-      );
-      resolve();
+  // …but never let the absence of IPv6 take the whole site dark. On a host
+  // with the IPv6 stack compiled out or disabled (some hardened container
+  // runtimes, a locked-down CI sandbox, an IPv4-only self-host), binding
+  // `::` fails outright with EAFNOSUPPORT / EADDRNOTAVAIL / EINVAL and the
+  // process exits — the exact "one dependency blackholes every route"
+  // failure this file's header rails against, except here the storefront
+  // never even gets a chance to serve. Fall back to the IPv4 unspecified
+  // address so the site still comes up (a dual-stack host never reaches
+  // this path, so Railway's behaviour is unchanged). Any OTHER bind error
+  // (EADDRINUSE, EACCES) is a genuine misconfiguration and still fatal.
+  const IPV6_UNAVAILABLE_CODES = new Set([
+    "EAFNOSUPPORT",
+    "EADDRNOTAVAIL",
+    "EINVAL",
+  ]);
+  // NOTE: the `listening` handler is registered explicitly (not passed as
+  // `listen()`'s callback) so the error path can REMOVE it. `listen(port,
+  // host, cb)` attaches `cb` as a one-shot `listening` listener that a
+  // failed bind does NOT clear — leaving it attached makes the first
+  // attempt's callback fire on the SECOND (successful) bind, logging a
+  // phantom `host: "::"` line that tells operators we bound dual-stack
+  // when we actually fell back to IPv4.
+  const listenOn = (host: string): Promise<void> =>
+    new Promise<void>((resolve, reject) => {
+      const onError = (err: unknown) => {
+        httpServer.off("listening", onListening);
+        reject(err);
+      };
+      const onListening = () => {
+        httpServer.off("error", onError);
+        const voiceConfigured = readVoiceConfigOrNull() !== null;
+        logger.info(
+          {
+            host,
+            port,
+            voice_configured: voiceConfigured,
+            voice_ws_path: VOICE_WS_PATH,
+          },
+          "resupply-api listening",
+        );
+        resolve();
+      };
+      httpServer.once("error", onError);
+      httpServer.once("listening", onListening);
+      httpServer.listen(port, host);
     });
-  });
+  try {
+    await listenOn(HOST);
+  } catch (err) {
+    const code = err instanceof Error ? serializeErrCode(err) : undefined;
+    if (code === undefined || !IPV6_UNAVAILABLE_CODES.has(code)) throw err;
+    logger.warn(
+      { event: "http_listen_ipv6_unavailable", host: HOST, code, port },
+      'IPv6 bind unavailable on this host — falling back to "0.0.0.0" (IPv4-only)',
+    );
+    await listenOn("0.0.0.0");
+  }
 
   // Fold any super-admin System Configuration overrides
   // (resupply.app_config, migration 0211) into process.env so the

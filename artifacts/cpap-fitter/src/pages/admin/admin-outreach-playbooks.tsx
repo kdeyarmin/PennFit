@@ -120,7 +120,7 @@ export function AdminOutreachPlaybooksPage() {
     queryKey: callQueueKey,
     queryFn: listCallQueue,
   });
-  const dueCalls = callQueue.data?.tasks.length ?? 0;
+  const dueCalls = callQueue.data?.tasks?.length ?? 0;
 
   return (
     <div className="p-6 space-y-6 max-w-6xl">
@@ -344,7 +344,7 @@ function PlaybookEditorModal({
   );
   const [isActive, setIsActive] = useState(playbook?.isActive ?? true);
   const [steps, setSteps] = useState<PlaybookStepDraft[]>(
-    playbook?.steps.map((s) => ({
+    playbook?.steps?.map((s) => ({
       dayOffset: s.dayOffset,
       channel: s.channel,
       subject: s.subject,

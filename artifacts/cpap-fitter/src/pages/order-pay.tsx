@@ -194,7 +194,7 @@ export function OrderPay() {
       // After the Stripe redirect, poll until the webhook lands.
       refetchInterval: (query) => {
         if (!returnedFromCheckout) return false;
-        const status = query.state.data?.payment.status;
+        const status = query.state.data?.payment?.status;
         return status === "paid" || status === "refunded" ? false : 3000;
       },
     },
@@ -216,7 +216,7 @@ export function OrderPay() {
   const ackedCount = documents.filter((d) => acked[d.key]).length;
   const allAcked = ackedCount === documents.length;
   const signed = Boolean(data?.signed) || justSigned;
-  const paid = data?.payment.status === "paid";
+  const paid = data?.payment?.status === "paid";
 
   const canSign =
     !signed &&

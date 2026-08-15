@@ -83,7 +83,7 @@ export function Customer360Panel({ customerId, displayName, email }: Props) {
   const profile = c.customer;
   const recentOrder = c.orders[0] ?? null;
   const recentNotes = (notes.data?.notes ?? []).slice(0, NOTES_PREVIEW);
-  const totalNotes = notes.data?.notes.length ?? 0;
+  const totalNotes = notes.data?.notes?.length ?? 0;
 
   return (
     <Card

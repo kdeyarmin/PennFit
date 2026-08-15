@@ -232,16 +232,31 @@ export default [
   // voice summaries are deliberately `void`-ed with internal error
   // swallowing, and this rule keeps that contract honest).
   //
-  // Scoped to these two dirs (not the whole API) to keep the type-aware
-  // pass — which is slower and stricter — tractable; widening it is a
-  // follow-up. Test files are excluded: they intentionally float promises
-  // and assert on rejections.
+  // WIDENED (was: only voice/** + worker/**) to the whole API and every
+  // resupply lib. That scoping was documented here as "widening it is a
+  // follow-up", and the gap was real: `index.ts` installs an
+  // `unhandledRejection` trap that deliberately EXITS the process, so a single
+  // floating promise anywhere in a route or lib is not a swallowed warning —
+  // it is a full API restart for every user. Widening the rule found three
+  // such holes outside the old scope (a `deps.audit(...)` whose declared
+  // AuditWriter contract allows an async writer, and two `async` rate-limit
+  // handlers whose rejection express-rate-limit never awaits).
+  //
+  // Cost check before widening: the type-aware pass over the full surface
+  // reports zero violations today, so this is a ratchet, not a backlog.
+  // Test files stay excluded: they intentionally float promises and assert on
+  // rejections.
+  //
+  // MEMORY: type-checking the whole API + every lib in one ESLint process needs
+  // more than Node's default heap — CI died with "Ineffective mark-compacts
+  // near heap limit" at the ~2 GB default. `lint:resupply` therefore invokes
+  // eslint through `node --max-old-space-size=4096`. Measured: OOM at 2048,
+  // passes at 3072, comfortable at 4096 (~95s). If this pass is widened
+  // further (adding the SPA, say), re-measure — the cap, not the rule set, is
+  // the binding constraint.
   {
-    files: [
-      "artifacts/resupply-api/src/lib/voice/**/*.ts",
-      "artifacts/resupply-api/src/worker/**/*.ts",
-    ],
-    ignores: ["**/*.test.ts"],
+    files: ["artifacts/resupply-api/src/**/*.ts", "lib/resupply-*/src/**/*.ts"],
+    ignores: ["**/*.test.ts", "**/test-helpers/**", "**/dist/**"],
     languageOptions: {
       parserOptions: {
         projectService: true,

@@ -639,7 +639,7 @@ export function resolvePacketChoiceOption(
   optionKey: string,
 ): PacketDocumentChoiceOption | null {
   const choice = getPacketTemplate(documentKey)?.choice;
-  return choice?.options.find((o) => o.key === optionKey) ?? null;
+  return choice?.options?.find((o) => o.key === optionKey) ?? null;
 }
 
 const TEMPLATE_BY_KEY = new Map<string, PacketDocumentTemplate>(

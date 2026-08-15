@@ -504,7 +504,7 @@ export function AdminBotPlaygroundPage() {
                 }}
                 placeholder="Type a customer message and press Enter…"
                 rows={2}
-                maxLength={info.data?.limits.maxMessageChars ?? 2000}
+                maxLength={info.data?.limits?.maxMessageChars ?? 2000}
                 disabled={busy || info.data?.provider === "offline"}
                 data-testid="bot-playground-input"
                 className="flex-1 resize-none"

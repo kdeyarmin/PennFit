@@ -150,7 +150,7 @@ function ReturnsList({ tab }: { tab: Tab }) {
   });
 
   const rows = useMemo(
-    () => query.data?.pages.flatMap((p) => p.returns) ?? [],
+    () => query.data?.pages?.flatMap((p) => p.returns) ?? [],
     [query.data],
   );
 

@@ -248,7 +248,7 @@ function FindOrCapture({
                 error={listQuery.error}
                 title="Couldn't search patients."
               />
-            ) : (listQuery.data?.items.length ?? 0) === 0 ? (
+            ) : (listQuery.data?.items?.length ?? 0) === 0 ? (
               <p className="text-sm text-muted-foreground">
                 No matches. Capture a new walk-in below.
               </p>

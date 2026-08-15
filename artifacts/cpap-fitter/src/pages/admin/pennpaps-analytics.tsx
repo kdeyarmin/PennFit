@@ -103,7 +103,7 @@ export function AdminAnalytics() {
               {isLoading ? (
                 <Skeleton className="h-8 w-16" />
               ) : (
-                (data?.ordersByDay.reduce((sum, d) => sum + d.count, 0) ?? 0)
+                (data?.ordersByDay?.reduce((sum, d) => sum + d.count, 0) ?? 0)
               )}
             </div>
           </CardContent>

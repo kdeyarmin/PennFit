@@ -102,7 +102,7 @@ export function AdminAuditPacketPage() {
   }, [catalogQuery.data, scope]);
 
   const labelFor = (key: string): string =>
-    catalogQuery.data?.items.find((i) => i.key === key)?.label ?? key;
+    catalogQuery.data?.items?.find((i) => i.key === key)?.label ?? key;
 
   function toggle(key: string): void {
     setSelected((prev) => {
@@ -270,7 +270,7 @@ export function AdminAuditPacketPage() {
               <p className="text-sm" style={{ color: "hsl(var(--ink-1))" }}>
                 Downloaded a {result.pages}-page PDF.
               </p>
-              {result.missing.length > 0 ? (
+              {(result.missing?.length ?? 0) > 0 ? (
                 <div className="mt-2">
                   <p className="text-sm" style={{ color: "hsl(38 80% 28%)" }}>
                     {result.missing.length} selected item

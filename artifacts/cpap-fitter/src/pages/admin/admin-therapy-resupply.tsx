@@ -220,10 +220,10 @@ export function AdminTherapyResupplyPage() {
           />
           <KpiCard
             label="Masks due"
-            value={s?.byCategory.mask ?? 0}
+            value={s?.byCategory?.mask ?? 0}
             isLoading={summaryQ.isPending}
-            hint={`${s?.byCategory.cushion ?? 0} cushions · ${
-              s?.byCategory.filter ?? 0
+            hint={`${s?.byCategory?.cushion ?? 0} cushions · ${
+              s?.byCategory?.filter ?? 0
             } filters`}
           />
         </div>

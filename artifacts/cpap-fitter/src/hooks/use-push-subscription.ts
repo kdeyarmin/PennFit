@@ -79,7 +79,7 @@ export function usePushSubscription(): UsePushSubscription {
         // Already subscribed? Inspect the registered SW.
         const reg =
           await navigator.serviceWorker.getRegistration("/sw-push.js");
-        const existing = await reg?.pushManager.getSubscription();
+        const existing = await reg?.pushManager?.getSubscription();
         if (cancelled) return;
         setState(existing ? "on" : "off");
       } catch (err) {
@@ -142,7 +142,7 @@ export function usePushSubscription(): UsePushSubscription {
     setError(null);
     try {
       const reg = await navigator.serviceWorker.getRegistration("/sw-push.js");
-      const sub = await reg?.pushManager.getSubscription();
+      const sub = await reg?.pushManager?.getSubscription();
       const endpoint = sub?.endpoint;
       if (sub) await sub.unsubscribe();
       if (endpoint) {

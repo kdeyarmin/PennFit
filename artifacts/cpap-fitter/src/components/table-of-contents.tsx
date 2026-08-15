@@ -47,7 +47,7 @@ export function TableOfContents({
         const visible = entries
           .filter((e) => e.isIntersecting)
           .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
-        if (visible[0]?.target.id) {
+        if (visible[0]?.target?.id) {
           setActiveSlug(visible[0].target.id);
         }
       },

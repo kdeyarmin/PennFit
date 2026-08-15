@@ -146,7 +146,7 @@ export function AdminBillingHubPage() {
   const kpis = [
     {
       label: "Stale drafts",
-      value: data?.counts.staleDrafts ?? "—",
+      value: data?.counts?.staleDrafts ?? "—",
       hint: "Draft > 24h — submit or close",
       href: "/admin/billing/ai-queue",
       icon: ClipboardList,
@@ -155,8 +155,8 @@ export function AdminBillingHubPage() {
     {
       label: "Ready to bill",
       value:
-        data?.counts.fulfillmentsToBill ??
-        dashboard?.counts.fulfillmentsToBill ??
+        data?.counts?.fulfillmentsToBill ??
+        dashboard?.counts?.fulfillmentsToBill ??
         "—",
       hint: "Shipped fulfillments with no claim",
       href: "/admin/billing",
@@ -165,7 +165,7 @@ export function AdminBillingHubPage() {
     },
     {
       label: "Fresh denials",
-      value: data?.counts.freshDenials ?? "—",
+      value: data?.counts?.freshDenials ?? "—",
       hint: "Last 14 days — need a worker",
       href: "/admin/billing/ai-queue",
       icon: AlertTriangle,
@@ -173,7 +173,7 @@ export function AdminBillingHubPage() {
     },
     {
       label: "Submitted, no 999",
-      value: data?.counts.stuckSubmittedNoAck ?? "—",
+      value: data?.counts?.stuckSubmittedNoAck ?? "—",
       hint: "Submitted > 48h — chase the clearinghouse",
       href: "/admin/billing/aging",
       icon: Send,
@@ -181,7 +181,7 @@ export function AdminBillingHubPage() {
     },
     {
       label: "Auto-resubmit ready",
-      value: data?.counts.autoResubmitReady ?? "—",
+      value: data?.counts?.autoResubmitReady ?? "—",
       hint: "AI-confirmed, one-click resubmit",
       href: "/admin/billing/ai-queue",
       icon: Bot,
@@ -189,7 +189,7 @@ export function AdminBillingHubPage() {
     },
     {
       label: "Partial ERAs",
-      value: data?.counts.partialEras ?? "—",
+      value: data?.counts?.partialEras ?? "—",
       hint: "Need manual claim match",
       href: "/admin/billing/era",
       icon: Wallet,
@@ -197,7 +197,7 @@ export function AdminBillingHubPage() {
     },
     {
       label: "Patient $ open",
-      value: formatMoneyCents(data?.dollars.patientResponsibilityCents),
+      value: formatMoneyCents(data?.dollars?.patientResponsibilityCents),
       hint: "After payer adjudication — send statement",
       href: "/admin/billing/aging",
       icon: DollarSign,
@@ -256,7 +256,7 @@ export function AdminBillingHubPage() {
         title="Fulfillments ready to bill"
         subtitle="Shipped items that do not have an insurance claim yet"
         action={
-          (dashboard?.fulfillmentsToBill.length ?? 0) > 0 ? (
+          (dashboard?.fulfillmentsToBill?.length ?? 0) > 0 ? (
             <button
               type="button"
               onClick={() => void handleCreateAllClaims()}
@@ -266,14 +266,14 @@ export function AdminBillingHubPage() {
             >
               {isBatchCreating
                 ? "Creating claims…"
-                : `Create all claims (${dashboard?.fulfillmentsToBill.length ?? 0})`}
+                : `Create all claims (${dashboard?.fulfillmentsToBill?.length ?? 0})`}
             </button>
           ) : undefined
         }
       >
         {dashboardPending ? (
           <Spinner label="Loading fulfillments…" />
-        ) : (dashboard?.fulfillmentsToBill.length ?? 0) === 0 ? (
+        ) : (dashboard?.fulfillmentsToBill?.length ?? 0) === 0 ? (
           <p className="text-sm py-2" style={{ color: "hsl(var(--ink-3))" }}>
             No shipped fulfillments are waiting for claim creation.
           </p>
@@ -405,25 +405,25 @@ export function AdminBillingHubPage() {
                 icon={<AlertTriangle className="h-4 w-4" />}
                 label="Scrubber blocked"
                 hint="Need a human edit before submit"
-                count={data?.counts.scrubBlocking ?? 0}
+                count={data?.counts?.scrubBlocking ?? 0}
               />
               <QueueRow
                 icon={<Sparkles className="h-4 w-4" />}
                 label="Scrubber fixable"
                 hint="Suggested patches to apply"
-                count={data?.counts.scrubFixable ?? 0}
+                count={data?.counts?.scrubFixable ?? 0}
               />
               <QueueRow
                 icon={<ClipboardList className="h-4 w-4" />}
                 label="Denials awaiting analysis"
                 hint="Run the AI denial analyzer"
-                count={data?.counts.deniedNeedsAnalysis ?? 0}
+                count={data?.counts?.deniedNeedsAnalysis ?? 0}
               />
               <QueueRow
                 icon={<Bot className="h-4 w-4" />}
                 label="Auto-resubmit ready"
                 hint="Confidence ≥ threshold, one click"
-                count={data?.counts.autoResubmitReady ?? 0}
+                count={data?.counts?.autoResubmitReady ?? 0}
                 tone="gold"
               />
             </ul>
@@ -440,17 +440,17 @@ export function AdminBillingHubPage() {
             <ul className="space-y-3 text-sm">
               <DollarRow
                 label="Submitted, no 999 ack"
-                amount={data?.dollars.stuckSubmittedCents ?? 0}
+                amount={data?.dollars?.stuckSubmittedCents ?? 0}
                 hint="Clearinghouse hasn't echoed acceptance"
               />
               <DollarRow
                 label="Denied — last 14 days"
-                amount={data?.dollars.deniedFreshCents ?? 0}
+                amount={data?.dollars?.deniedFreshCents ?? 0}
                 hint="Reach out or appeal"
               />
               <DollarRow
                 label="Patient responsibility — open"
-                amount={data?.dollars.patientResponsibilityCents ?? 0}
+                amount={data?.dollars?.patientResponsibilityCents ?? 0}
                 hint="Eligible for statement / card-on-file"
               />
             </ul>
@@ -543,7 +543,7 @@ export function AdminBillingHubPage() {
         >
           {isPending ? (
             <Spinner label="Loading payers…" />
-          ) : (data?.topPayersByOpenDollars.length ?? 0) === 0 ? (
+          ) : (data?.topPayersByOpenDollars?.length ?? 0) === 0 ? (
             <p className="text-sm py-2" style={{ color: "hsl(var(--ink-3))" }}>
               No open patient balances right now.
             </p>
@@ -592,7 +592,7 @@ export function AdminBillingHubPage() {
                 className="text-xl font-semibold tabular-nums"
                 style={{ color: "hsl(var(--ink-1))" }}
               >
-                {data?.counts.webhooksQueued ?? 0}
+                {data?.counts?.webhooksQueued ?? 0}
               </dd>
             </div>
             <div>
@@ -606,12 +606,12 @@ export function AdminBillingHubPage() {
                 className="text-xl font-semibold tabular-nums"
                 style={{
                   color:
-                    (data?.counts.webhooksExhausted24h ?? 0) > 0
+                    (data?.counts?.webhooksExhausted24h ?? 0) > 0
                       ? "#b91c1c"
                       : "hsl(var(--ink-1))",
                 }}
               >
-                {data?.counts.webhooksExhausted24h ?? 0}
+                {data?.counts?.webhooksExhausted24h ?? 0}
               </dd>
             </div>
             <div>

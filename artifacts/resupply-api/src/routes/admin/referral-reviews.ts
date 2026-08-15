@@ -951,7 +951,7 @@ router.post(
       const rdi =
         typeof ss.rdi === "number" && Number.isFinite(ss.rdi) ? ss.rdi : null;
       const diagnosisIcd10 =
-        extraction?.diagnoses.find((d) => d.icd10)?.icd10 ?? null;
+        extraction?.diagnoses?.find((d) => d.icd10)?.icd10 ?? null;
       if (studyDate && studyType && ahi != null && ahi >= 0 && ahi <= 150) {
         const { error: ssErr } = await supabase.from("sleep_studies").insert({
           patient_id: patientId,

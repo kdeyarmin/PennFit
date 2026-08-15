@@ -482,7 +482,7 @@ function CreateCsrOrderModal({
   }
 
   const selectableTemplates =
-    templates.data?.templates.filter((t) => t.standalone) ?? [];
+    templates.data?.templates?.filter((t) => t.standalone) ?? [];
 
   return (
     <AdminModal

@@ -519,22 +519,32 @@ const storefrontChatLimiter = expressRateLimit({
   // applyCompanyIdentityToText would be a no-op for an unconfigured non-seed
   // tenant and leak the literal Penn number. Omit the clause when the tenant
   // has no support phone; degrade to the warm seed identity on any miss.
-  handler: async (req: Request, res: Response) => {
-    let phone = "";
-    try {
-      const orgId =
-        req.orgId ?? (await resolveOrgIdByHost(requestHost(req))) ?? undefined;
-      const info = orgId ? await getCompanyInfo(orgId) : getCompanyInfoSync();
-      phone = info.supportPhoneDisplay?.trim() ?? "";
-    } catch {
-      // Host/company resolution hiccup — fall back to no phone clause rather
-      // than blocking the 429 response.
-    }
-    const callClause = phone ? ` or call ${phone} for immediate help` : "";
-    res.status(429).json({
-      reply: `You're sending messages too quickly. Please wait a minute and try again${callClause}.`,
-      rateLimited: true,
-    });
+  //
+  // Synchronous handler + `void`-ed async IIFE: express-rate-limit types
+  // `handler` as returning void and never awaits it, so an `async handler`
+  // that rejected would escape as an unhandledRejection — which index.ts's
+  // process-level trap deliberately escalates to a process EXIT. The body is
+  // already fully try/caught; this shape makes that structural.
+  handler: (req: Request, res: Response) => {
+    void (async () => {
+      let phone = "";
+      try {
+        const orgId =
+          req.orgId ??
+          (await resolveOrgIdByHost(requestHost(req))) ??
+          undefined;
+        const info = orgId ? await getCompanyInfo(orgId) : getCompanyInfoSync();
+        phone = info.supportPhoneDisplay?.trim() ?? "";
+      } catch {
+        // Host/company resolution hiccup — fall back to no phone clause rather
+        // than blocking the 429 response.
+      }
+      const callClause = phone ? ` or call ${phone} for immediate help` : "";
+      res.status(429).json({
+        reply: `You're sending messages too quickly. Please wait a minute and try again${callClause}.`,
+        rateLimited: true,
+      });
+    })();
   },
 });
 app.use("/api/chat", storefrontChatLimiter);

@@ -120,7 +120,7 @@ export function AdminBillingConfigPayersPage() {
           </h1>
           <p className="text-sm" style={{ color: "hsl(var(--ink-2))" }}>
             The PA payer catalog backing every claim header.{" "}
-            {data?.payerProfiles.length ?? 0} match the current filters.
+            {data?.payerProfiles?.length ?? 0} match the current filters.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -190,7 +190,7 @@ export function AdminBillingConfigPayersPage() {
       <Card>
         {isPending ? (
           <Spinner label="Loading payers…" />
-        ) : (data?.payerProfiles.length ?? 0) === 0 ? (
+        ) : (data?.payerProfiles?.length ?? 0) === 0 ? (
           <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
             No payers match.
           </p>

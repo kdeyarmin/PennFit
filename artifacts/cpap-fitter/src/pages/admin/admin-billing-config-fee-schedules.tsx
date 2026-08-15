@@ -61,7 +61,7 @@ export function AdminBillingConfigFeeSchedulesPage() {
         </h1>
         <p className="text-sm" style={{ color: "hsl(var(--ink-2))" }}>
           Per-payer + HCPCS expected-allowed amounts.
-          {schedules.data?.feeSchedules.length != null && (
+          {schedules.data?.feeSchedules?.length != null && (
             <> {schedules.data.feeSchedules.length} row(s).</>
           )}
         </p>
@@ -122,7 +122,7 @@ export function AdminBillingConfigFeeSchedulesPage() {
       <Card>
         {schedules.isPending ? (
           <Spinner label="Loading fee schedules…" />
-        ) : (schedules.data?.feeSchedules.length ?? 0) === 0 ? (
+        ) : (schedules.data?.feeSchedules?.length ?? 0) === 0 ? (
           <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
             No fee schedule rows match.
           </p>

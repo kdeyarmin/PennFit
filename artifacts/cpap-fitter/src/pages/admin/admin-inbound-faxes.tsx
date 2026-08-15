@@ -314,7 +314,7 @@ export function AdminInboundFaxesPage() {
       {selectedId && (
         <TriageModal
           faxId={selectedId}
-          fax={data?.faxes.find((f) => f.id === selectedId) ?? null}
+          fax={data?.faxes?.find((f) => f.id === selectedId) ?? null}
           onClose={() => setSelectedId(null)}
           filter={filter}
         />

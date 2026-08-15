@@ -37,6 +37,7 @@ import {
 } from "@workspace/resupply-auth";
 
 import { getAuthDeps } from "./auth-deps.js";
+import { fireAndForgetAudit } from "./audit-fire-and-forget.js";
 import { logger } from "./logger.js";
 
 const PRODUCT_NAME = "CareMetric Breathe";
@@ -478,7 +479,10 @@ export async function createSelfServeTenant(
     await assignSelfServePlan(raw, orgId, input.plan, emailLower);
   }
 
-  deps.audit({
+  // Fire-and-forget, but through the helper: a bare `void deps.audit(...)`
+  // silences the lint rule WITHOUT handling a rejection, and the audit writer's
+  // declared type permits an async implementation. See audit-fire-and-forget.ts.
+  fireAndForgetAudit(deps.audit, {
     action: "auth.tenant_self_signup",
     adminEmail: emailLower,
     adminUserId: userId,

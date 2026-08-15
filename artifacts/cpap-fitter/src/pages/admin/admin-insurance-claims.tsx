@@ -637,7 +637,7 @@ function ClaimDrawer({
   const preflightQ = useQuery({
     queryKey: ["admin", "insurance-claim-preflight", patientId, claimId],
     queryFn: () => fetchInsuranceClaimPreflight(patientId, claimId),
-    enabled: data?.claim.status === "draft",
+    enabled: data?.claim?.status === "draft",
     staleTime: 15_000,
   });
 

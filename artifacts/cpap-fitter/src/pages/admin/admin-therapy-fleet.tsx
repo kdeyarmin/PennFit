@@ -351,17 +351,17 @@ export function AdminTherapyFleetPage() {
               value={overviewQ.isPending ? "—" : `${complianceRate}%`}
               tone="gold"
               isLoading={overviewQ.isPending}
-              hint={`${ov?.cohorts.compliant ?? 0} of ${withData} ≥21 nights ≥4h`}
+              hint={`${ov?.cohorts?.compliant ?? 0} of ${withData} ≥21 nights ≥4h`}
             />
             <KpiCard
               label="At risk"
-              value={ov?.cohorts.atRisk ?? 0}
+              value={ov?.cohorts?.atRisk ?? 0}
               isLoading={overviewQ.isPending}
               hint="10–20 qualifying nights — recoverable"
             />
             <KpiCard
               label="Non-compliant"
-              value={ov?.cohorts.nonCompliant ?? 0}
+              value={ov?.cohorts?.nonCompliant ?? 0}
               isLoading={overviewQ.isPending}
               hint="<10 qualifying nights"
             />
@@ -372,35 +372,35 @@ export function AdminTherapyFleetPage() {
               <Stat
                 icon={<AlertTriangle className="h-4 w-4" />}
                 label="Device silent"
-                value={ov?.cohorts.noRecentData ?? 0}
+                value={ov?.cohorts?.noRecentData ?? 0}
                 loading={overviewQ.isPending}
               />
               <Stat
                 icon={<Stethoscope className="h-4 w-4" />}
                 label="High AHI"
-                value={ov?.clinicalFlags.highAhi ?? 0}
+                value={ov?.clinicalFlags?.highAhi ?? 0}
                 loading={overviewQ.isPending}
               />
               <Stat
                 icon={<Wind className="h-4 w-4" />}
                 label="High leak"
-                value={ov?.clinicalFlags.highLeak ?? 0}
+                value={ov?.clinicalFlags?.highLeak ?? 0}
                 loading={overviewQ.isPending}
               />
               <Stat
                 icon={<Activity className="h-4 w-4" />}
                 label="Low usage"
-                value={ov?.clinicalFlags.lowUsage ?? 0}
+                value={ov?.clinicalFlags?.lowUsage ?? 0}
                 loading={overviewQ.isPending}
               />
               <Stat
                 label="Avg usage"
-                value={minutesToHours(ov?.averages.usageMinutes ?? null)}
+                value={minutesToHours(ov?.averages?.usageMinutes ?? null)}
                 loading={overviewQ.isPending}
               />
               <Stat
                 label="Avg AHI"
-                value={fmt(ov?.averages.ahi ?? null, 2)}
+                value={fmt(ov?.averages?.ahi ?? null, 2)}
                 loading={overviewQ.isPending}
               />
             </div>

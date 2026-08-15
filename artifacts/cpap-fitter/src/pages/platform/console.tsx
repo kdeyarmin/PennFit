@@ -995,7 +995,16 @@ function PlatformHealthCard() {
       </Card>
     );
   }
-  if (isError || !data) {
+  // Guard the SHAPE, not just the request. Everything below walks deep
+  // required chains (`data.readiness.checks`, `data.vendors.ai.anthropic`), so
+  // a 200 whose body is missing them — an unseeded demo endpoint, or a
+  // mid-deploy proxy serving the SPA shell instead of the API JSON — threw on
+  // `data.readiness.status` and took the WHOLE /platform console to the
+  // ErrorBoundary, not just this card. Degrade into the existing retry state
+  // instead; a malformed payload is operationally the same as a failed one.
+  const readiness = data?.readiness;
+  const vendors = data?.vendors;
+  if (isError || !data || !readiness?.checks || !vendors) {
     return (
       <Card title="Platform health">
         <EmptyState
@@ -1011,39 +1020,41 @@ function PlatformHealthCard() {
     );
   }
 
-  const ready = data.readiness.status === "ready";
-  const { db, queue } = data.readiness.checks;
-  const v = data.vendors;
+  const ready = readiness.status === "ready";
+  const { db, queue } = readiness.checks;
+  const v = vendors;
   const vendorGroups: Array<{
     label: string;
     items: Array<[string, boolean]>;
   }> = [
+    // Each flag is read through `?.` and coerced: a vendors payload missing a
+    // whole group renders that group as "not configured" rather than throwing.
     {
       label: "AI",
       items: [
-        ["Anthropic", v.ai.anthropic],
-        ["OpenAI", v.ai.openai],
-        ["ElevenLabs", v.ai.elevenlabs],
-        ["Deepgram", v.ai.deepgram],
+        ["Anthropic", v.ai?.anthropic === true],
+        ["OpenAI", v.ai?.openai === true],
+        ["ElevenLabs", v.ai?.elevenlabs === true],
+        ["Deepgram", v.ai?.deepgram === true],
       ],
     },
     {
       label: "Comms",
       items: [
-        ["SendGrid", v.comms.sendgrid],
-        ["Twilio voice", v.comms.twilioVoice],
-        ["Twilio SMS", v.comms.twilioSms],
-        ["Telnyx fax", v.comms.telnyxFax],
+        ["SendGrid", v.comms?.sendgrid === true],
+        ["Twilio voice", v.comms?.twilioVoice === true],
+        ["Twilio SMS", v.comms?.twilioSms === true],
+        ["Telnyx fax", v.comms?.telnyxFax === true],
       ],
     },
     {
       label: "Payments",
       items: [
-        ["Stripe", v.payments.stripe],
-        ["Platform billing", v.payments.platformBilling],
+        ["Stripe", v.payments?.stripe === true],
+        ["Platform billing", v.payments?.platformBilling === true],
       ],
     },
-    { label: "Storage", items: [["Object storage", v.storage]] },
+    { label: "Storage", items: [["Object storage", v.storage === true]] },
   ];
 
   return (
@@ -1453,8 +1464,8 @@ function CatalogCard() {
             style={{ borderColor: "hsl(var(--line-1))" }}
           >
             <div className="text-[11px]" style={{ color: "hsl(var(--ink-3))" }}>
-              {catalog.data?.addons.length ?? 0} add-on
-              {(catalog.data?.addons.length ?? 0) === 1 ? "" : "s"} in catalog.
+              {catalog.data?.addons?.length ?? 0} add-on
+              {(catalog.data?.addons?.length ?? 0) === 1 ? "" : "s"} in catalog.
               {resyncResult
                 ? ` Last re-sync: ${resyncResult.synced}/${resyncResult.total} synced` +
                   (resyncResult.failed
@@ -1518,7 +1529,11 @@ function FleetMarginCard() {
     >
       {isPending ? (
         <Spinner label="Loading margin…" />
-      ) : isError || !data ? (
+      ) : /* `data.fleet` is a deep required chain below — a 200 without it
+             (unseeded demo endpoint, mid-deploy proxy serving the SPA shell)
+             threw and took the whole console to the ErrorBoundary. Degrade
+             into this retry state instead. */
+      isError || !data || !data.fleet ? (
         <EmptyState
           title="Couldn't load margin."
           hint="A transient error — try again."
@@ -1757,10 +1772,13 @@ function PlatformDashboard() {
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <KpiCard
               label="Active tenants"
-              value={isPending ? "" : fmtCount(totals?.tenants.active)}
+              value={isPending ? "" : fmtCount(totals?.tenants?.active)}
               isLoading={isPending}
               hint={
-                totals
+                // Guard the NESTED object, not just `totals`: a payload with
+                // `totals` but no `totals.tenants` threw here and took the
+                // whole dashboard to the ErrorBoundary.
+                totals?.tenants
                   ? `${totals.tenants.total} total · ${totals.tenants.suspended} suspended` +
                     (win && win.newTenants > 0
                       ? ` · +${win.newTenants} new`
@@ -1811,7 +1829,14 @@ function PlatformDashboard() {
 
           <FleetMarginCard />
 
-          {isPending || !data ? (
+          {/* `data.window` / `data.series` / `data.window.delta` are deep
+              required chains below; a 200 missing any of them threw and took
+              the whole console down. Hold the loading card instead. */}
+          {isPending ||
+          !data ||
+          !data.window?.delta ||
+          !data.series ||
+          !data.tenants ? (
             <Card title="Fleet trends">
               <Spinner label="Loading analytics…" />
             </Card>
@@ -2046,7 +2071,7 @@ function GlobalIntegrations() {
               ))}
             </Card>
           ))}
-          {data?.webhookReference?.endpoints.length ? (
+          {data?.webhookReference?.endpoints?.length ? (
             <Card title="Telephony webhook URLs">
               <p
                 className="text-xs mb-2"
@@ -2490,7 +2515,7 @@ function TenantFeatureFlagsCard({ tenantId }: { tenantId: string }) {
     return [...m.entries()];
   }, [data, query]);
 
-  const hasFlags = (data?.flags.length ?? 0) > 0;
+  const hasFlags = (data?.flags?.length ?? 0) > 0;
 
   return (
     <Card
@@ -3050,8 +3075,8 @@ function TenantBillingCard({ tenantId }: { tenantId: string }) {
     queryKey: ["platform-billing", "catalog"],
     queryFn: fetchPlatformBillingCatalog,
   });
-  const row = data?.tenants.find((t) => t.id === tenantId);
-  const sub = row?.billing.subscription ?? null;
+  const row = data?.tenants?.find((t) => t.id === tenantId);
+  const sub = row?.billing?.subscription ?? null;
   const monthly = sub
     ? (sub.customMonthlyPriceCents ?? sub.plan.monthlyPriceCents)
     : null;
@@ -3066,9 +3091,9 @@ function TenantBillingCard({ tenantId }: { tenantId: string }) {
       ...sub.plan.allowances,
       ...sub.customAllowances,
     };
-    const usageMetrics = row?.billing.usage.metrics ?? {};
+    const usageMetrics = row?.billing?.usage?.metrics ?? {};
     const unitByMetric = new Map<string, string | null>();
-    for (const a of row?.billing.addons ?? []) {
+    for (const a of row?.billing?.addons ?? []) {
       if (a.addon.usageMetric) {
         unitByMetric.set(a.addon.usageMetric, a.addon.unitLabel);
       }
@@ -3158,7 +3183,7 @@ function TenantBillingCard({ tenantId }: { tenantId: string }) {
                 : "—"}
             </MetaItem>
             <MetaItem label="Add-ons">
-              {row?.billing.addons.length ?? 0}
+              {row?.billing?.addons?.length ?? 0}
             </MetaItem>
           </div>
           {meterRows.length > 0 && (
@@ -3171,7 +3196,7 @@ function TenantBillingCard({ tenantId }: { tenantId: string }) {
                 style={{ color: "hsl(var(--ink-2))" }}
               >
                 Metering &amp; usage
-                {row?.billing.usage.month
+                {row?.billing?.usage?.month
                   ? ` · ${row.billing.usage.month}`
                   : ""}
               </div>
@@ -3229,7 +3254,7 @@ function TenantBillingCard({ tenantId }: { tenantId: string }) {
           />
           <TenantAddonManager
             tenantId={tenantId}
-            currentAddons={row?.billing.addons ?? []}
+            currentAddons={row?.billing?.addons ?? []}
             catalogAddons={catalog.data?.addons ?? []}
           />
           <TenantUsageRecorder
@@ -3266,7 +3291,10 @@ function TenantActivityCard({ tenantId }: { tenantId: string }) {
             </Button>
           }
         />
-      ) : data ? (
+      ) : /* Shape guard, not just presence: everything below walks
+             data.window.delta / data.series, so a payload missing either
+             would throw out of this card into the ErrorBoundary. */
+      data && data.window?.delta && data.series ? (
         <>
           <TrendRow
             label="Revenue (GMV)"
@@ -3619,7 +3647,7 @@ function TenantDetailPage() {
             <KpiCard
               label="Patients"
               value={
-                usage.isPending ? "" : fmtCount(usage.data?.usage.patients)
+                usage.isPending ? "" : fmtCount(usage.data?.usage?.patients)
               }
               isLoading={usage.isPending}
               hint="all-time"
@@ -3627,14 +3655,16 @@ function TenantDetailPage() {
             <KpiCard
               label="Orders"
               tone="gold"
-              value={usage.isPending ? "" : fmtCount(usage.data?.usage.orders)}
+              value={usage.isPending ? "" : fmtCount(usage.data?.usage?.orders)}
               isLoading={usage.isPending}
               hint="all-time"
             />
             <KpiCard
               label="Conversations"
               value={
-                usage.isPending ? "" : fmtCount(usage.data?.usage.conversations)
+                usage.isPending
+                  ? ""
+                  : fmtCount(usage.data?.usage?.conversations)
               }
               isLoading={usage.isPending}
               hint="all-time"
@@ -3938,7 +3968,7 @@ function SidebarContent({
       queryKey: ["platform-support", "awaiting_platform"],
       queryFn: () => listPlatformSupportTickets("awaiting_platform"),
       staleTime: 60_000,
-    }).data?.tickets.length ?? 0;
+    }).data?.tickets?.length ?? 0;
 
   return (
     <>

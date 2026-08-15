@@ -1084,7 +1084,7 @@ export function AdminPlatformBillingPage() {
     const sub = row.tenant.billing.subscription;
     return (
       sum +
-      (sub?.customMonthlyPriceCents ?? sub?.plan.monthlyPriceCents ?? 0) +
+      (sub?.customMonthlyPriceCents ?? sub?.plan?.monthlyPriceCents ?? 0) +
       row.addonsTotal
     );
   }, 0);

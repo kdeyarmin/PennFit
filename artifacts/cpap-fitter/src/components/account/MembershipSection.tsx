@@ -44,7 +44,14 @@ export function MembershipSection() {
     let cancelled = false;
     void getMembershipOptions()
       .then((res) => {
-        if (!cancelled) setTiers(res.tiers);
+        // Guard the SHAPE, not just the request. A 200 whose body lacks
+        // `tiers` (an unseeded demo endpoint, or a mid-deploy proxy serving
+        // the SPA shell instead of the API JSON) would otherwise set
+        // `tiers` to undefined — and the `tiers === null` check below only
+        // short-circuits on null, so `tiers.length` threw and took the
+        // whole /account page to the ErrorBoundary. Treat a non-array as
+        // "no tiers configured", the same fail-soft posture as the catch.
+        if (!cancelled) setTiers(Array.isArray(res?.tiers) ? res.tiers : []);
       })
       .catch(() => {
         if (!cancelled) setTiers([]); // treat a fetch error as "unavailable"

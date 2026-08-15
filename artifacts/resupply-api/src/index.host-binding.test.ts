@@ -32,10 +32,46 @@ describe('index.ts — explicit "::" host binding (R3)', () => {
     expect(CODE).toMatch(/const HOST\s*=\s*"::"/);
   });
 
-  it("passes HOST as the second argument to httpServer.listen (not a bare port call)", () => {
+  it("passes a host as the second argument to httpServer.listen (not a bare port call)", () => {
     // Previously `httpServer.listen(port, callback)` omitted the host;
-    // the fix adds HOST as the explicit second argument.
-    expect(CODE).toMatch(/httpServer\.listen\s*\(\s*port\s*,\s*HOST/);
+    // the fix adds the host as the explicit second argument. The bind is
+    // now routed through a `listenOn(host)` helper so the IPv4 fallback
+    // below can reuse it, so assert on the helper's parameter.
+    expect(CODE).toMatch(/httpServer\.listen\s*\(\s*port\s*,\s*host\s*\)/);
+  });
+
+  it("registers the `listening` handler separately so a failed bind can remove it", () => {
+    // `listen(port, host, cb)` attaches cb as a one-shot `listening`
+    // listener that a FAILED bind does not clear. Left attached, the
+    // failed `::` attempt's callback fires on the successful IPv4 bind
+    // and logs a phantom `host: "::"` line. The error path must detach it.
+    expect(CODE).toMatch(/httpServer\.once\("listening", onListening\)/);
+    expect(CODE).toMatch(/httpServer\.off\("listening", onListening\)/);
+  });
+
+  it("attempts the HOST ('::') bind FIRST", () => {
+    // The dual-stack address stays the primary bind; the IPv4 fallback
+    // must never become the first thing we try.
+    expect(CODE).toMatch(/listenOn\(HOST\)/);
+    const primaryIdx = CODE.indexOf("listenOn(HOST)");
+    const fallbackIdx = CODE.indexOf('listenOn("0.0.0.0")');
+    expect(primaryIdx).toBeGreaterThan(-1);
+    expect(fallbackIdx).toBeGreaterThan(primaryIdx);
+  });
+
+  it("falls back to IPv4 ONLY for IPv6-unavailable bind errors", () => {
+    // A host with no IPv6 stack fails `::` with EAFNOSUPPORT /
+    // EADDRNOTAVAIL / EINVAL. Those must degrade to 0.0.0.0 rather than
+    // exit the process (an IPv6-less kernel must not blackhole the site).
+    // Every OTHER bind error (EADDRINUSE, EACCES) is a real
+    // misconfiguration and must stay fatal — so the fallback is gated on
+    // an explicit code allowlist, never a bare catch-all.
+    expect(CODE).toContain("EAFNOSUPPORT");
+    expect(CODE).toContain("EADDRNOTAVAIL");
+    expect(CODE).toMatch(/IPV6_UNAVAILABLE_CODES\.has\(code\)/);
+    expect(CODE).toMatch(
+      /if\s*\(code === undefined \|\| !IPV6_UNAVAILABLE_CODES\.has\(code\)\)\s*throw err;/,
+    );
   });
 
   it("does NOT use httpServer.listen with only port and a callback (old form)", () => {
@@ -46,18 +82,28 @@ describe('index.ts — explicit "::" host binding (R3)', () => {
     expect(CODE).not.toMatch(/httpServer\.listen\s*\(\s*port\s*,\s*\(/);
   });
 
-  it("includes host: HOST in the structured log at server startup", () => {
+  it("includes the bound host in the structured log at server startup", () => {
     // The startup log object must carry `host` so operators can confirm
-    // the bind address in production logs without reading source code.
-    expect(CODE).toContain("host: HOST");
+    // the bind address in production logs without reading source code —
+    // and it must log the address actually bound, so an IPv4 fallback is
+    // visible rather than being reported as "::".
+    expect(CODE).toMatch(/logger\.info\(\s*\{\s*\n?\s*host,/);
   });
 
-  it('"resupply-api listening" log appears AFTER the listen call, confirming the server is up', () => {
-    const listenIdx = CODE.indexOf("httpServer.listen");
+  it('"resupply-api listening" is logged from the listening handler, not unconditionally', () => {
+    // The invariant is causal, not textual: the line must only be emitted once
+    // the socket is actually bound. It now lives inside `onListening`, which is
+    // declared ABOVE the `listen()` call and wired to the server's `listening`
+    // event — so assert containment rather than source order (the old
+    // positional check silently encoded the previous layout).
     const listeningMsgIdx = CODE.indexOf("resupply-api listening");
-    expect(listenIdx).toBeGreaterThan(-1);
-    expect(listeningMsgIdx).toBeGreaterThan(-1);
-    expect(listeningMsgIdx).toBeGreaterThan(listenIdx);
+    const handlerIdx = CODE.indexOf("const onListening = () => {");
+    const handlerEndIdx = CODE.indexOf('httpServer.once("error", onError)');
+    expect(handlerIdx).toBeGreaterThan(-1);
+    expect(listeningMsgIdx).toBeGreaterThan(handlerIdx);
+    expect(listeningMsgIdx).toBeLessThan(handlerEndIdx);
+    // …and that handler is only ever invoked by the `listening` event.
+    expect(CODE).toMatch(/httpServer\.once\("listening", onListening\)/);
   });
 
   it("HOST is declared in the start() function scope, not at module level", () => {
@@ -80,14 +126,14 @@ describe('index.ts — explicit "::" host binding (R3)', () => {
     expect(CODE).toMatch(/const HOST\s*=\s*"::"/);
   });
 
-  it("host: HOST log field appears in the same logger.info block as the port field", () => {
+  it("host log field appears in the same logger.info block as the port field", () => {
     // Both host and port must be in the same structured log object so
     // the bind address and port are always co-located in the log line.
-    const portFieldIdx = CODE.indexOf("port,");
-    const hostFieldIdx = CODE.indexOf("host: HOST");
+    const hostFieldIdx = CODE.indexOf("host,\n");
+    expect(hostFieldIdx).toBeGreaterThan(-1);
+    const portFieldIdx = CODE.indexOf("port,", hostFieldIdx);
     // They must appear close together — within 200 chars (the log object).
     expect(portFieldIdx).toBeGreaterThan(-1);
-    expect(hostFieldIdx).toBeGreaterThan(-1);
-    expect(Math.abs(hostFieldIdx - portFieldIdx)).toBeLessThan(200);
+    expect(portFieldIdx - hostFieldIdx).toBeLessThan(200);
   });
 });

@@ -196,13 +196,13 @@ export function AdminBillingEligibilityPage() {
         <SummaryPill
           icon={<ClipboardCheck className="h-4 w-4" />}
           label="Total in window"
-          value={data?.counts.total ?? 0}
+          value={data?.counts?.total ?? 0}
           isLoading={isPending}
         />
         <SummaryPill
           icon={<CheckCircle2 className="h-4 w-4" />}
           label="Active coverage"
-          value={data?.counts.activeCoverage ?? 0}
+          value={data?.counts?.activeCoverage ?? 0}
           isLoading={isPending}
           tone="success"
         />
@@ -210,9 +210,9 @@ export function AdminBillingEligibilityPage() {
           icon={<AlertCircle className="h-4 w-4" />}
           label="Inactive / rejected"
           value={
-            (data?.counts.inactiveCoverage ?? 0) +
-            (data?.counts.byStatus.rejected ?? 0) +
-            (data?.counts.byStatus.transport_failed ?? 0)
+            (data?.counts?.inactiveCoverage ?? 0) +
+            (data?.counts?.byStatus?.rejected ?? 0) +
+            (data?.counts?.byStatus?.transport_failed ?? 0)
           }
           isLoading={isPending}
           tone="danger"
@@ -220,7 +220,7 @@ export function AdminBillingEligibilityPage() {
         <SummaryPill
           icon={<ShieldAlert className="h-4 w-4" />}
           label="Prior-auth required"
-          value={data?.counts.priorAuthFlagged ?? 0}
+          value={data?.counts?.priorAuthFlagged ?? 0}
           isLoading={isPending}
           tone="warning"
         />

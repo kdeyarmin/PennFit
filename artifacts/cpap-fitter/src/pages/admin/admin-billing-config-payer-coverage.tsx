@@ -87,7 +87,7 @@ export function AdminBillingConfigPayerCoveragePage() {
           <Card>
             {overrides.isPending ? (
               <Spinner label="Loading overrides…" />
-            ) : (overrides.data?.overrides.length ?? 0) === 0 ? (
+            ) : (overrides.data?.overrides?.length ?? 0) === 0 ? (
               <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
                 No overrides for this payer — the national Medicare-LCD coverage
                 applies.

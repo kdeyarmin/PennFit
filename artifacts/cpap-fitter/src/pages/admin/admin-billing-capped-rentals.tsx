@@ -276,7 +276,7 @@ export function AdminBillingCappedRentalsPage() {
       <Card title="Cycles">
         {cycles.isPending ? (
           <Spinner label="Loading cycles…" />
-        ) : (cycles.data?.cycles.length ?? 0) === 0 ? (
+        ) : (cycles.data?.cycles?.length ?? 0) === 0 ? (
           <p className="text-sm py-1" style={{ color: "hsl(var(--ink-3))" }}>
             No cycles match the current filter.
           </p>

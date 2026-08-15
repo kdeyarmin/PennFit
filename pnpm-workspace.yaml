@@ -124,8 +124,18 @@ overrides:
   "picomatch@>=4.0.0 <4.0.4": ^4.0.4
   "brace-expansion@<1.1.13": ^1.1.13
   "brace-expansion@>=2.0.0 <2.0.3": ^2.0.3
+  # brace-expansion picked up a v5 line (via the newer glob/minimatch chain);
+  # <5.0.9 carries the same ReDoS advisory the 1.x/2.x pins above cover.
+  "brace-expansion@>=5.0.0 <5.0.9": ^5.0.9
   uuid: ^14.0.0
-  postcss: ^8.5.10
+  # postcss <=8.5.17: path traversal via sourceMappingURL auto-loading leads to
+  # arbitrary .map file disclosure (GHSA-r28c-9q8g-f849). Reached only through
+  # the vite/vitest/@tailwindcss-vite dev chain, but the audit gate is repo-wide.
+  postcss: ^8.5.18
+  # nanoid <3.3.18: custom generators can loop indefinitely when size is zero,
+  # plus the earlier <3.3.16 advisory. Only the v3 line is in the graph (pulled
+  # by postcss); the range form keeps a future v5 consumer from being downgraded.
+  "nanoid@<3.3.18": ^3.3.18
   yaml: ^2.8.3
   http-proxy-agent: ^7.0.2
   vitest>vite: ^8.0.16
@@ -137,24 +147,25 @@ overrides:
   # (pnpm 11 no longer reads the package.json field). esbuild and uuid
   # are intentionally omitted here — pnpm-workspace.yaml already pins
   # them to stricter versions above (esbuild ^0.28.1, uuid ^14.0.0).
-  ip-address: ">=10.1.1"
+  ip-address: ">=10.3.1"
   # (a former `fast-xml-builder` override was removed 2026-06: no package
   # by that name — or `fast-xml-parser` — exists anywhere in the graph,
   # so the pin protected nothing. Re-add a CORRECTLY-NAMED override if a
   # dependency ever pulls an XML parser with an advisory.)
   qs: ">=6.15.2"
-  # axios <1.16.1 is vulnerable to Proxy-Authorization header injection via
-  # prototype pollution (patch bypass for null-prototype objects). Pin the
+  # axios <1.18.0 carries the Proxy-Authorization header-injection chain
+  # (prototype pollution, plus the follow-up patch bypasses). Pin the
   # @sendgrid/client transitive to the patched version.
-  "axios@<1.16.1": ^1.16.1
+  "axios@<1.18.0": ^1.18.0
   # @babel/core <=7.29.0 is vulnerable to arbitrary file read via
   # sourceMappingURL comment (GHSA). Pin the eslint-plugin-react-hooks
   # transitive to the patched version.
   "@babel/core@<7.29.6": ^7.29.6
   # undici >=7.23.0 <7.28.0 is vulnerable to TLS certificate validation
   # bypass via dropped requestTls in the SOCKS5 ProxyAgent
-  # (GHSA-vmh5-mc38-953g). undici is a direct (production) dependency of
-  # artifacts/resupply-api — already bumped to ^7.28.0 in its manifest —
+  # (GHSA-vmh5-mc38-953g) and <7.29.0 the follow-up advisory. undici is a
+  # direct (production) dependency of artifacts/resupply-api — kept in step at
+  # ^7.29.0 in its manifest —
   # AND is pulled transitively via jsdom/vitest; this range override
   # forces every remaining transitive copy onto the patched version too.
-  "undici@>=7.23.0 <7.28.0": ^7.28.0
+  "undici@>=7.23.0 <7.29.0": ^7.29.0
