@@ -17,6 +17,7 @@ import billingStatementSendRouter from "./admin/billing-statement-send.js";
 import billingCollectionsForecastRouter from "./admin/billing-collections-forecast.js";
 import maskFitWorklistRouter from "./admin/mask-fit-worklist.js";
 import fitSessionsRouter from "./admin/fit-sessions.js";
+import adminReferralsRouter from "./admin/referrals.js";
 import maskCatalogRouter from "./admin/mask-catalog.js";
 import formularyRouter from "./admin/formulary.js";
 import cmnDocumentsRouter from "./admin/cmn-documents.js";
@@ -503,6 +504,11 @@ router.use(maskFitWorklistRouter);
 // allowlist, so nesting it there would 403 fitter-only tenants out of
 // their own product.
 router.use(fitSessionsRouter);
+// /admin/referrals/* — the DME's inbound queue from the provider referral
+// portal, plus the provider-link management that authorizes a referring
+// clinician to send here at all. Top-level for the same product-scope
+// reason as fit-sessions above.
+router.use(adminReferralsRouter);
 // /admin/fitter/catalog/* — the Mask Intelligence Catalog + the clinical
 // review queue for estimated fit geometry.
 router.use(maskCatalogRouter);
