@@ -6764,6 +6764,191 @@ export interface Database {
         >;
         Relationships: [];
       };
+
+      // Migration 0487: the AUTHORIZATION edge between the cross-org
+      // provider directory and a tenant. A DME invites a provider; without
+      // an active link that provider cannot direct a referral at this
+      // tenant, which is what stops a global directory from becoming a way
+      // to push unsolicited PHI into any workspace.
+      provider_dme_links: {
+        Row: {
+          id: string;
+          org_id: string | null;
+          provider_id: string;
+          status: "active" | "suspended" | "revoked";
+          display_name: string | null;
+          default_location_id: string | null;
+          invited_by_email: string | null;
+          invited_at: string;
+          revoked_at: string | null;
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["provider_dme_links"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["provider_dme_links"]["Row"]
+        >;
+        Relationships: [];
+      };
+
+      // Migration 0487: one patient handed from a referring provider to a
+      // DME. Org-scoped to the RECEIVING DME; the provider reads their own
+      // across tenants by provider_id.
+      //
+      // PHI: carries demographics and insurance identifiers typed by the
+      // provider BEFORE a chart exists — that is the point, the DME does
+      // not have the patient yet. `patient_id` stays null until the DME
+      // accepts and matches or creates a chart.
+      referrals: {
+        Row: {
+          id: string;
+          org_id: string | null;
+          provider_id: string;
+          created_by_account_id: string | null;
+          created_by_email: string | null;
+          routed_to_location_id: string | null;
+          patient_id: string | null;
+          patient_first_name: string;
+          patient_last_name: string;
+          patient_dob: string | null;
+          patient_email: string | null;
+          patient_phone_e164: string | null;
+          patient_sex: string | null;
+          patient_address: Json | null;
+          insurance_payer_name: string | null;
+          insurance_member_id: string | null;
+          insurance_group_number: string | null;
+          fitter_invite_id: string | null;
+          fit_session_id: string | null;
+          entry_point: "remote_link" | "in_office" | "kiosk_qr";
+          fitting_sent_at: string | null;
+          fitting_completed_at: string | null;
+          approved_mask_model_id: string | null;
+          approved_variant_id: string | null;
+          approval_is_override: boolean;
+          approval_note: string | null;
+          approved_at: string | null;
+          therapy_mode: "pap" | "niv";
+          prescribed_pressure_cm_h2o: number | null;
+          diagnosis_code: string | null;
+          clinical_notes: string | null;
+          signature_request_id: string | null;
+          signed_at: string | null;
+          status:
+            | "draft"
+            | "awaiting_fitting"
+            | "fitting_complete"
+            | "awaiting_signature"
+            | "signed"
+            | "submitted"
+            | "accepted"
+            | "in_progress"
+            | "dispensed"
+            | "declined"
+            | "cancelled";
+          submitted_at: string | null;
+          accepted_at: string | null;
+          accepted_by_email: string | null;
+          declined_at: string | null;
+          declined_reason: string | null;
+          dispensed_at: string | null;
+          cancelled_at: string | null;
+          adherence_updates_authorized: boolean;
+          provider_unread_count: number;
+          dme_unread_count: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["referrals"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["referrals"]["Row"]>;
+        Relationships: [];
+      };
+
+      // Migration 0487: paperwork pointers. Bytes live in Supabase
+      // Storage with per-object ACL in object_storage_acls, exactly like
+      // POD photos and MMS media — only the pointer is here.
+      referral_documents: {
+        Row: {
+          id: string;
+          org_id: string | null;
+          referral_id: string;
+          doc_type:
+            | "prescription"
+            | "sleep_study"
+            | "demographics"
+            | "insurance"
+            | "chart_note"
+            | "face_sheet"
+            | "other";
+          file_name: string;
+          storage_object_path: string;
+          content_type: string;
+          size_bytes: number;
+          uploaded_by_kind: "provider" | "staff";
+          uploaded_by_email: string | null;
+          notes: string | null;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["referral_documents"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["referral_documents"]["Row"]
+        >;
+        Relationships: [];
+      };
+
+      // Migration 0487: the clinician-to-DME thread that replaces the
+      // phone call. Its own table rather than `conversations`, which
+      // models a PATIENT channel with consent and opt-out semantics that
+      // do not apply between two clinical parties. `body` is PHI.
+      referral_messages: {
+        Row: {
+          id: string;
+          org_id: string | null;
+          referral_id: string;
+          author_kind: "provider" | "staff";
+          author_email: string | null;
+          author_name: string | null;
+          body: string;
+          read_at: string | null;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["referral_messages"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["referral_messages"]["Row"]
+        >;
+        Relationships: [];
+      };
+
+      // Migration 0487: the status timeline both sides read — what makes
+      // "check referral status without a phone call" real. A feature-owned
+      // domain table, NOT the retired resupply.audit_log. `detail` carries
+      // ids, codes, and counts only, never free-text PHI.
+      referral_events: {
+        Row: {
+          id: string;
+          org_id: string | null;
+          referral_id: string;
+          event_type: string;
+          actor_kind: "provider" | "staff" | "patient" | "system";
+          actor_email: string | null;
+          detail: Json | null;
+          occurred_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["referral_events"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["referral_events"]["Row"]
+        >;
+        Relationships: [];
+      };
     };
     Views: {
       // Mig 0155 — per-touch aggregate metrics for the admin
