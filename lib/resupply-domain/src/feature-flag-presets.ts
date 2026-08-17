@@ -44,6 +44,12 @@ const FITTER = [
   "fitter_supply_campaign.dispatcher",
   "fitter_first_day_nudge.dispatcher",
   "fitter_reengage.dispatcher",
+  // The clinical fit report (PDF). Staff-only and purely additive — it
+  // reads a fit session that already exists and renders it. Every plan
+  // that includes the fitter should be able to print one, so unlike the
+  // rest of the clinical-fitting flags it is a preset default rather than
+  // a deliberate opt-in.
+  "fitter.clinical_report",
 ] as const;
 
 /** Resupply reminders — the Launch-tier core. */
@@ -144,6 +150,14 @@ const SCALE_AUTOMATION = [
  *     departure: free-text email otherwise goes to a human).
  *   * `voice.breathe_sales` — the platform's own sales-outreach agent, not a
  *     tenant-facing feature.
+ *   * `fitter.clinical_assessment` and the four flags that depend on it —
+ *     the clinical fitting core (migration 0485). These stay off until a
+ *     respiratory therapist has signed off the mask geometry that tenant
+ *     actually stocks: the seeded catalog's size bands are estimates, and
+ *     turning the engine on before review would put estimated geometry
+ *     behind patient-facing recommendations. Enabling them is a clinical
+ *     decision, so it must be a deliberate one — not a side effect of
+ *     picking a billing plan.
  *
  * Listed here (rather than merely omitted) so the drift test can assert the
  * full enum is accounted for and a newly-added flag can't silently fall
@@ -152,6 +166,11 @@ const SCALE_AUTOMATION = [
 export const DELIBERATELY_OFF_FLAGS = [
   "email.auto_reply",
   "voice.breathe_sales",
+  "fitter.clinical_assessment",
+  "fitter.multiframe_capture",
+  "fitter.fit_profile_v2",
+  "fitter.magnet_screening",
+  "fitter.confidence_gating",
 ] as const;
 
 const uniq = (keys: readonly string[]): readonly string[] => [...new Set(keys)];

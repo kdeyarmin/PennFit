@@ -82,6 +82,16 @@ import type { AdminRole } from "@workspace/resupply-db";
  *                              (management-gated; off front-line CSRs)
  *   bulk_campaigns.send     — send bulk messaging campaigns
  *   fit_session.override    — override a recommended mask/size
+ *   formulary.manage        — configure the Mask Intelligence Catalog
+ *                              and the tenant's mask formulary: edit
+ *                              mask records, sign off estimated fit
+ *                              geometry, write/publish formulary rules,
+ *                              and manage safety-screen versions. A
+ *                              clinical-configuration permission, NOT a
+ *                              commercial one — signing off fit geometry
+ *                              is what lifts the confidence cap on an
+ *                              estimated size band, so it sits with the
+ *                              clinician tier rather than with CSRs.
  *   inventory.read          — view shop stock counts (Pacware
  *                              mirror)
  *   conversations.manage    — triage admin inbox: snooze, tag, claim
@@ -134,6 +144,7 @@ export type Permission =
   | "metrics.read"
   | "bulk_campaigns.send"
   | "fit_session.override"
+  | "formulary.manage"
   | "inventory.read"
   | "conversations.manage"
   | "admin.tools.manage"
@@ -168,6 +179,7 @@ const ALL_PERMISSIONS: ReadonlyArray<Permission> = [
   "metrics.read",
   "bulk_campaigns.send",
   "fit_session.override",
+  "formulary.manage",
   "inventory.read",
   "conversations.manage",
   "admin.tools.manage",
@@ -270,6 +282,7 @@ const EFFECTIVE_ROLE_PERMISSIONS: Record<
     "metrics.read",
     "bulk_campaigns.send",
     "fit_session.override",
+    "formulary.manage",
     "inventory.read",
     "conversations.manage",
     "admin.tools.manage",
@@ -319,6 +332,10 @@ const EFFECTIVE_ROLE_PERMISSIONS: Record<
     "clinical.read",
     "clinical.note.write",
     "clinical.intervention.write",
+    // An RT is the person who signs off estimated mask fit geometry and
+    // curates the formulary, so the clinical-configuration permission
+    // belongs here rather than only with supervisors.
+    "formulary.manage",
   ]),
 
   // Revenue-cycle staff (db role `biller`). Scoped to the Billing area:

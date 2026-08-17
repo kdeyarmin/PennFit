@@ -4,6 +4,7 @@ import companyInfoRouter from "./company-info.js";
 import platformPricingRouter from "./platform-pricing.js";
 import storefrontBrandingRouter from "./storefront-branding.js";
 import recommendRouter from "./recommend.js";
+import fitAssessRouter from "./fit-assess.js";
 import ordersRouter from "./orders.js";
 import trackOrderRouter from "./track-order.js";
 import adminRouter from "./admin.js";
@@ -41,6 +42,11 @@ router.use(platformPricingRouter);
 // so a tenant on a verified custom domain sees their own identity.
 router.use(storefrontBrandingRouter);
 router.use(recommendRouter);
+// /api/fit/assess + /api/fit/catalog — the clinical fitting assessment.
+// Invitation-gated like /api/recommend, and additionally gated per tenant
+// on the `fitter.clinical_assessment` feature flag, so /api/recommend
+// above stays the path for everyone who has not opted in.
+router.use(fitAssessRouter);
 router.use(ordersRouter);
 router.use(trackOrderRouter);
 router.use(adminRouter);

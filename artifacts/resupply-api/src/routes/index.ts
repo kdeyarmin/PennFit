@@ -16,6 +16,9 @@ import secondaryClaimsRouter from "./admin/secondary-claims.js";
 import billingStatementSendRouter from "./admin/billing-statement-send.js";
 import billingCollectionsForecastRouter from "./admin/billing-collections-forecast.js";
 import maskFitWorklistRouter from "./admin/mask-fit-worklist.js";
+import fitSessionsRouter from "./admin/fit-sessions.js";
+import maskCatalogRouter from "./admin/mask-catalog.js";
+import formularyRouter from "./admin/formulary.js";
 import cmnDocumentsRouter from "./admin/cmn-documents.js";
 import clinicalOutreachRouter from "./admin/clinical-outreach.js";
 import educationVideosAdminRouter from "./admin/education-videos.js";
@@ -494,6 +497,18 @@ router.use(billingStatementSendRouter);
 router.use(billingCollectionsForecastRouter);
 // /admin/clinical/mask-fit/* — RT mask-fit triage worklist (RT #22a s2).
 router.use(maskFitWorklistRouter);
+// /admin/fit-sessions/* — the clinical fitting record, RT review queue,
+// and the downloadable fit report. Deliberately NOT under
+// /admin/clinical/: that prefix is not on the mask_fitter product-scope
+// allowlist, so nesting it there would 403 fitter-only tenants out of
+// their own product.
+router.use(fitSessionsRouter);
+// /admin/fitter/catalog/* — the Mask Intelligence Catalog + the clinical
+// review queue for estimated fit geometry.
+router.use(maskCatalogRouter);
+// /admin/fitter/formulary/* — the multi-axis provider formulary, its
+// dry-run simulator, and the publish pre-flight.
+router.use(formularyRouter);
 // /admin/.../cmn-documents + /admin/billing/cmn-* — CMN/DIF structured
 // forms (Biller #29).
 router.use(cmnDocumentsRouter);

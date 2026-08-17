@@ -1,0 +1,328 @@
+// Hand-rolled fetch wrappers for the clinical fitting admin surfaces:
+// the Mask Intelligence Catalog, the provider formulary, and the fit
+// session / RT review queue. Auth rides on the `pf_session` cookie via
+// `adminJsonFetch`, which also attaches the CSRF header on mutations.
+
+import { adminJsonFetch } from "../admin-json-fetch";
+
+// ── Mask catalog ─────────────────────────────────────────────────────
+
+export type InterfaceType =
+  | "nasal"
+  | "nasal_pillow"
+  | "nasal_cradle"
+  | "hybrid"
+  | "full_face"
+  | "total_face"
+  | "oral";
+
+export interface MaskModel {
+  id: string;
+  isPlatformRow: boolean;
+  slug: string;
+  manufacturer: string;
+  modelName: string;
+  productLine: string | null;
+  interfaceType: InterfaceType;
+  serviceLine: "adult" | "pediatric" | "both";
+  therapyModes: string[];
+  vented: "vented" | "non_vented" | "both";
+  hasMagneticComponents: boolean;
+  magneticComponentNotes: string | null;
+  pressureMinCmH2O: number | null;
+  pressureMaxCmH2O: number | null;
+  minimalContact: boolean;
+  avoidsNasalBridge: boolean;
+  facialHairTolerance: string | null;
+  sideSleepingTolerance: string | null;
+  claustrophobiaTolerance: string | null;
+  glassesCompatible: boolean | null;
+  cushionMaterial: string | null;
+  weightGrams: number | null;
+  description: string | null;
+  status: "current" | "discontinued" | "pre_release";
+  fitDataSource: "manufacturer" | "measured" | "estimated";
+  needsClinicalReview: boolean;
+  catalogVersion: number;
+}
+
+export interface MaskSizeVariant {
+  id: string;
+  component: string;
+  sizeCode: string;
+  sizeLabel: string;
+  sortOrder: number;
+  noseWidthMinMm: number | null;
+  noseWidthMaxMm: number | null;
+  noseToChinMinMm: number | null;
+  noseToChinMaxMm: number | null;
+  mouthWidthMinMm: number | null;
+  mouthWidthMaxMm: number | null;
+  isDefault: boolean;
+  hcpcsCode: string | null;
+  fitDataSource: string;
+  needsClinicalReview: boolean;
+}
+
+export interface CatalogFilters {
+  manufacturer?: string;
+  interfaceType?: InterfaceType;
+  serviceLine?: "adult" | "pediatric" | "both";
+  status?: "current" | "discontinued" | "pre_release";
+  needsReview?: boolean;
+  search?: string;
+  limit?: number;
+  offset?: number;
+}
+
+function qs(params: Record<string, unknown>): string {
+  const search = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v === undefined || v === null || v === "") continue;
+    search.set(k, String(v));
+  }
+  const s = search.toString();
+  return s ? `?${s}` : "";
+}
+
+export function fetchMaskCatalog(
+  filters: CatalogFilters = {},
+): Promise<{ models: MaskModel[]; limit: number; offset: number }> {
+  return adminJsonFetch(`/admin/fitter/catalog${qs({ ...filters })}`);
+}
+
+export function fetchMaskModel(id: string): Promise<{
+  model: MaskModel;
+  variants: MaskSizeVariant[];
+  components: unknown[];
+  contraindications: Array<{
+    factor: string;
+    severity: "exclude" | "caution";
+    rationale: string;
+  }>;
+}> {
+  return adminJsonFetch(`/admin/fitter/catalog/${encodeURIComponent(id)}`);
+}
+
+export function updateMaskModel(
+  id: string,
+  patch: Record<string, unknown>,
+): Promise<{ ok: true }> {
+  return adminJsonFetch(`/admin/fitter/catalog/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  });
+}
+
+export function updateVariantBands(
+  variantId: string,
+  patch: Record<string, unknown>,
+): Promise<{ ok: true }> {
+  return adminJsonFetch(
+    `/admin/fitter/catalog/variants/${encodeURIComponent(variantId)}`,
+    { method: "PATCH", body: JSON.stringify(patch) },
+  );
+}
+
+/**
+ * Clinical sign-off on one size's millimetre bands.
+ *
+ * This is the write that lifts the engine's confidence cap: until a
+ * variant is approved it can never drive a high-confidence automated
+ * recommendation, however well it scores.
+ */
+export function reviewVariant(
+  variantId: string,
+  approved: boolean,
+  note?: string,
+): Promise<{ ok: true; approved: boolean }> {
+  return adminJsonFetch(
+    `/admin/fitter/catalog/variants/${encodeURIComponent(variantId)}/review`,
+    { method: "POST", body: JSON.stringify({ approved, note }) },
+  );
+}
+
+// ── Formulary ────────────────────────────────────────────────────────
+
+export interface FormularyRule {
+  id: string;
+  locationId: string | null;
+  payerProfileId: string | null;
+  contractRef: string | null;
+  serviceLine: "adult" | "pediatric" | null;
+  therapyMode: "pap" | "niv" | null;
+  targetKind:
+    | "manufacturer"
+    | "interface_type"
+    | "mask_model"
+    | "size_variant"
+    | "all";
+  targetManufacturer: string | null;
+  targetInterfaceType: string | null;
+  targetMaskModelId: string | null;
+  targetSizeVariantId: string | null;
+  effect: "allow" | "deny" | "prefer" | "deprioritize";
+  preferenceRank: number | null;
+  reasonCode: string | null;
+  reasonNote: string | null;
+  effectiveFrom: string | null;
+  effectiveTo: string | null;
+  createdByEmail: string | null;
+  createdAt: string;
+}
+
+export interface Formulary {
+  id: string;
+  name: string;
+  status: string;
+  defaultPosture: "open" | "closed";
+  version: number;
+  publishedAt: string | null;
+  publishedByEmail: string | null;
+  notes: string | null;
+}
+
+export function fetchFormulary(): Promise<{
+  formulary: Formulary | null;
+  rules: FormularyRule[];
+}> {
+  return adminJsonFetch("/admin/fitter/formulary");
+}
+
+export function updateFormulary(
+  patch: Partial<Pick<Formulary, "name" | "defaultPosture" | "notes">>,
+): Promise<{ ok: true }> {
+  return adminJsonFetch("/admin/fitter/formulary", {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  });
+}
+
+export function createFormularyRule(
+  rule: Record<string, unknown>,
+): Promise<{ id: string }> {
+  return adminJsonFetch("/admin/fitter/formulary/rules", {
+    method: "POST",
+    body: JSON.stringify(rule),
+  });
+}
+
+export function deleteFormularyRule(id: string): Promise<{ ok: true }> {
+  return adminJsonFetch(
+    `/admin/fitter/formulary/rules/${encodeURIComponent(id)}`,
+    { method: "DELETE" },
+  );
+}
+
+export interface SimulationResult {
+  formulary: { name: string; version: number; defaultPosture: string };
+  panel: Array<{
+    label: string;
+    allowedCount: number;
+    deniedCount: number;
+    preferred: Array<{ mask: string; rank: number | null }>;
+    denied: Array<{
+      mask: string;
+      reasonCode: string | null;
+      ruleIds: string[];
+    }>;
+  }>;
+}
+
+/**
+ * Dry-run the formulary against a synthetic panel of faces.
+ *
+ * Multi-axis precedence is not something an operator can evaluate by
+ * reading a rule list, so this is the difference between a configurable
+ * formulary and an unusable one.
+ */
+export function simulateFormulary(
+  context: Record<string, unknown> = {},
+): Promise<SimulationResult> {
+  return adminJsonFetch("/admin/fitter/formulary/simulate", {
+    method: "POST",
+    body: JSON.stringify(context),
+  });
+}
+
+export function publishFormulary(): Promise<{ ok: true; version: number }> {
+  return adminJsonFetch("/admin/fitter/formulary/publish", { method: "POST" });
+}
+
+// ── Fit sessions ─────────────────────────────────────────────────────
+
+export type FitOutcome =
+  | "high_confidence"
+  | "moderate_confidence"
+  | "low_confidence"
+  | "contraindicated"
+  | "outside_validated_range";
+
+export interface FitSessionSummary {
+  id: string;
+  createdAt: string;
+  patientId: string | null;
+  status: string;
+  outcome: FitOutcome | null;
+  recommendationConfidence: number | null;
+  measurementConfidenceBand: "high" | "moderate" | "low" | null;
+  scanQualityGrade: "good" | "marginal" | "poor" | null;
+  reviewStatus: string;
+  reviewedByEmail: string | null;
+  reviewedAt: string | null;
+  population: string;
+  serviceLine: string;
+  degraded: boolean;
+  recommendedMask: string | null;
+}
+
+export function fetchFitSessions(
+  filters: {
+    reviewStatus?: string;
+    outcome?: FitOutcome;
+    patientId?: string;
+    limit?: number;
+    offset?: number;
+  } = {},
+): Promise<{ sessions: FitSessionSummary[]; limit: number; offset: number }> {
+  return adminJsonFetch(`/admin/fit-sessions${qs(filters)}`);
+}
+
+export function fetchFitSession(id: string): Promise<Record<string, unknown>> {
+  return adminJsonFetch(`/admin/fit-sessions/${encodeURIComponent(id)}`);
+}
+
+export function approveFitSession(
+  id: string,
+  note?: string,
+): Promise<{ ok: true }> {
+  return adminJsonFetch(
+    `/admin/fit-sessions/${encodeURIComponent(id)}/approve`,
+    { method: "POST", body: JSON.stringify({ note }) },
+  );
+}
+
+export function overrideFitSession(
+  id: string,
+  body: { maskModelId: string; variantId?: string | null; reason: string },
+): Promise<{ ok: true }> {
+  return adminJsonFetch(
+    `/admin/fit-sessions/${encodeURIComponent(id)}/override`,
+    { method: "POST", body: JSON.stringify(body) },
+  );
+}
+
+export function requestRescan(
+  id: string,
+  reason: string,
+): Promise<{ ok: true }> {
+  return adminJsonFetch(
+    `/admin/fit-sessions/${encodeURIComponent(id)}/request-rescan`,
+    { method: "POST", body: JSON.stringify({ reason }) },
+  );
+}
+
+/** Absolute path to the report PDF, for a plain download link. */
+export function fitReportUrl(id: string): string {
+  return `/resupply-api/admin/fit-sessions/${encodeURIComponent(id)}/report.pdf`;
+}

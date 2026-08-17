@@ -566,6 +566,9 @@ const storefrontRecommendLimiter = expressRateLimit({
   },
 });
 app.use("/api/recommend", storefrontRecommendLimiter);
+// /api/fit/* is the clinical assessment path: the same scoring engine plus
+// a catalog read and a session write, so it needs at least the same cap.
+app.use("/api/fit", storefrontRecommendLimiter);
 
 // Reminder subscription + manage routes have different abuse shapes,
 // so they get separate limiters with different keys + budgets:

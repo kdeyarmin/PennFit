@@ -204,6 +204,19 @@ const MASK_FITTER_ALLOWED_PREFIXES: readonly string[] = [
   "/admin/agreements", // onboarding accept screen (also exempted upstream)
   "/admin/fitter-invites", // THE product: send links, review results/sizes
   "/admin/fitter-leads", // fitter funnel / prospects
+  // The clinical fitting core. These ARE the product for a fitter-only
+  // tenant — the RT review queue, the downloadable fit report, the mask
+  // catalog they fit against, and their own formulary.
+  //
+  // Note the paths: the review queue lives at /admin/fit-sessions rather
+  // than the more natural-looking /admin/clinical/fit-sessions precisely
+  // so it can be allowlisted here. "/admin/clinical/" is deliberately NOT
+  // on this list — it fronts order-joined worklists a fitter-only tenant
+  // has no data for — so co-locating the queue there would 403 exactly
+  // the customers this plan exists to serve.
+  "/admin/fit-sessions",
+  "/admin/fitter/catalog",
+  "/admin/fitter/formulary",
   // Tenant self-service subscription billing — the SIX exact endpoints the
   // /admin/billing/package page calls (platform-billing-api.ts). NOT the
   // operational claims worklists that also live under /admin/billing/.

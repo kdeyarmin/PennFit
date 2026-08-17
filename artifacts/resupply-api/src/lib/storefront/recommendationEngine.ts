@@ -121,6 +121,25 @@ export interface RecommendationResult {
  * commercial stocking preference must not inflate the number a patient
  * reads as "how well this mask suits me".
  */
+/**
+ * DEPRECATED — superseded by tenant formulary rules.
+ *
+ * This hardcoded, platform-wide brand preference is exactly the
+ * "commercial signal baked into the engine" that the tiered clinical
+ * engine in `lib/fitting/` removes. There, provider preference is tenant
+ * DATA (`resupply.formulary_rules`, seeded for Penn Home Medical Supply by
+ * migration 0482), it is evaluated at tier 5 — strictly below safety,
+ * therapy compatibility, facial fit, and patient characteristics — and it
+ * is bounded so it can only re-order near-ties.
+ *
+ * It survives here because this module is the LEGACY path: it still serves
+ * `/api/recommend` for tenants that have not enabled
+ * `fitter.clinical_assessment`, plus the chatbot tools. Deleting it would
+ * silently change what those tenants' patients see, which is a worse
+ * outcome than a documented deprecation. `assess()` never reads it.
+ *
+ * Remove once every tenant is on the clinical assessment path.
+ */
 const MANUFACTURER_BOOST: Record<string, number> = {
   "React Health": 1.15,
 };
