@@ -654,10 +654,21 @@ router.post("/api/provider/referrals/:id/submit", ...gate, async (req, res) => {
   // rather than letting an incomplete referral land in their queue is the
   // whole point — an incomplete referral is a phone call, which is the
   // thing this portal exists to remove.
+  //
+  // The SIGNATURE is the one of these that is not merely administrative.
+  // A referral order names a specific mask and size and is what the DME
+  // dispenses and bills against; unsigned, it is a suggestion the DME
+  // cannot act on. The lifecycle models this explicitly
+  // (awaiting_signature → signed → submitted) and the SPA only offers
+  // "Send to the DME" after signing — but the UI is not the gate, so
+  // enforce it here too rather than trusting the client to walk the
+  // states in order. A tenant that genuinely does not require signed
+  // orders should get a setting, not an unguarded endpoint.
   const missing: string[] = [];
   if (!found.row.patient_dob) missing.push("the patient's date of birth");
   if (!found.row.insurance_payer_name) missing.push("the insurance payer");
   if (!found.row.approved_mask_model_id) missing.push("an approved mask");
+  if (!found.row.signed_at) missing.push("your signature on the order");
 
   const supabase = getOrgScopedClient(found.orgId);
   const { data: docs } = (await supabase

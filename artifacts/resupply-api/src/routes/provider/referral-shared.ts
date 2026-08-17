@@ -19,6 +19,28 @@ import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 
+/** Matches a canonical UUID; deliberately not version-specific. */
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Narrow a row's `org_id` to a usable tenant id, or null.
+ *
+ * In this tree the tenant comes off the ROW rather than the request, so
+ * every `getOrgScopedClient` call is only as trustworthy as the value
+ * pulled out of that row. `String(null)` yields the string "null", which
+ * the client accepts without complaint and then scopes every query to a
+ * tenant that cannot exist — the query returns empty and the caller sees
+ * "no data" rather than an error. That is a far worse failure than a 500.
+ *
+ * The columns involved are all NOT NULL, so this should never fire. It
+ * exists because the cost is one comparison and the thing it guards is
+ * which tenant's PHI a request touches.
+ */
+export function asOrgId(value: unknown): string | null {
+  return typeof value === "string" && UUID_RE.test(value) ? value : null;
+}
+
 export interface ReferralRow {
   id: string;
   org_id: string;
@@ -107,7 +129,17 @@ export async function loadReferralForProvider(
       .maybeSingle();
     if (error || !data) return null;
     const row = data as unknown as ReferralRow;
-    return { orgId: String(row.org_id), row };
+    const orgId = asOrgId(row.org_id);
+    if (!orgId) {
+      // Same reasoning as the create path: refuse rather than scope a
+      // PHI read to a tenant id we cannot vouch for.
+      logger.error(
+        { event: "referral_missing_org", referralId },
+        "referral row has no usable org_id",
+      );
+      return null;
+    }
+    return { orgId, row };
   } catch (err) {
     logger.warn(
       { err: err instanceof Error ? err : new Error(String(err)) },

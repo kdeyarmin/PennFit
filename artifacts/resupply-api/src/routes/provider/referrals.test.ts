@@ -402,3 +402,56 @@ describe("documents", () => {
     expect(del!.filters).toContain("uploaded_by_kind=provider");
   });
 });
+
+// Copilot review on #1263: `String(link.org_id)` yields the string "null"
+// when org_id is missing, and getOrgScopedClient accepts it — every query
+// then scopes to a tenant that cannot exist and returns EMPTY rather than
+// erroring. The column is NOT NULL so this is unreachable today, but it is
+// the line that decides which tenant a referral is written to, so it fails
+// loudly instead.
+describe("tenant id is never fabricated from a bad row", () => {
+  it('500s rather than scoping to the string "null"', async () => {
+    db.link = {
+      id: LINK_ID,
+      org_id: null,
+      default_location_id: null,
+      status: "active",
+    };
+    const res = await request(makeApp())
+      .post("/api/provider/referrals")
+      .send({
+        dmeLinkId: LINK_ID,
+        patient: { firstName: "Jane", lastName: "Doe" },
+      });
+    expect(res.status).toBe(500);
+    expect(res.body.error).toBe("tenant_context_missing");
+    // Nothing may be written anywhere.
+    expect(db.queries.some((x) => x.op === "insert")).toBe(false);
+    expect(db.queries.some((x) => x.scopedTo === "null")).toBe(false);
+  });
+
+  it("rejects a non-uuid org_id just as firmly", async () => {
+    db.link = {
+      id: LINK_ID,
+      org_id: "not-a-uuid",
+      default_location_id: null,
+      status: "active",
+    };
+    const res = await request(makeApp())
+      .post("/api/provider/referrals")
+      .send({
+        dmeLinkId: LINK_ID,
+        patient: { firstName: "Jane", lastName: "Doe" },
+      });
+    expect(res.status).toBe(500);
+    expect(db.queries.some((x) => x.scopedTo === "not-a-uuid")).toBe(false);
+  });
+
+  it("treats a referral row with an unusable org_id as not found", async () => {
+    db.referral = { ...db.referral!, org_id: null };
+    const res = await request(makeApp()).get(
+      `/api/provider/referrals/${REFERRAL_ID}`,
+    );
+    expect(res.status).toBe(404);
+  });
+});

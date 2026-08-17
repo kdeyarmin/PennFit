@@ -58,9 +58,9 @@ vi.mock("@workspace/resupply-db", () => {
     };
     for (const m of ["select", "order", "range", "limit", "in", "eq"]) {
       chain[m] = (a?: unknown, b?: unknown) => {
-        if (m === "eq" || m === "in") filters.push(`${m}:${String(a)}`);
+        if (m === "eq") filters.push(`${String(a)}=${String(b)}`);
+        if (m === "in") filters.push(`${String(a)} in ${JSON.stringify(b)}`);
         if (m === "select" && typeof a === "string") record("select");
-        void b;
         return chain;
       };
     }
@@ -85,12 +85,14 @@ vi.mock("@workspace/resupply-db", () => {
     };
     chain.update = (payload: unknown) => {
       const upd: Record<string, unknown> = {};
-      for (const m of ["eq", "in"]) {
-        upd[m] = (a?: unknown) => {
-          filters.push(`${m}:${String(a)}`);
-          return upd;
-        };
-      }
+      upd.eq = (a?: unknown, b?: unknown) => {
+        filters.push(`${String(a)}=${String(b)}`);
+        return upd;
+      };
+      upd.in = (a?: unknown, b?: unknown) => {
+        filters.push(`${String(a)} in ${JSON.stringify(b)}`);
+        return upd;
+      };
       upd.not = (c: string, o: string, v: unknown) => {
         filters.push(`not:${c}:${o}:${String(v)}`);
         return upd;
@@ -285,8 +287,9 @@ describe("status transitions", () => {
       (q) => q.table === "referrals" && q.op === "update",
     );
     // Two staff clicking at once must not race it backwards, so the
-    // permitted prior states are part of the update's own filter.
-    expect(update!.filters).toContain("in:status");
+    // permitted prior states are part of the update's own filter — and
+    // in_progress may only be reached from accepted.
+    expect(update!.filters).toContain('status in ["accepted"]');
   });
 
   it("409s when the guarded update matched nothing", async () => {
@@ -332,5 +335,38 @@ describe("messages", () => {
       .detail;
     expect(detail).toEqual({ chars: 39 });
     expect(JSON.stringify(event!.payload)).not.toContain("Jane");
+  });
+});
+
+// Copilot review on #1263: accept did its status check in a prior READ and
+// then updated on `id` alone, so two staff clicking Accept together both
+// passed the read and both wrote — two accepted events, last-writer-wins on
+// who is recorded as having taken it. Decline and status already guarded in
+// the WHERE; accept was the odd one out.
+describe("accept is race-safe", () => {
+  it("constrains the update to status='submitted'", async () => {
+    await request(makeApp())
+      .post(`/admin/referrals/${REFERRAL_ID}/accept`)
+      .send({});
+    const update = db.queries.find(
+      (q) => q.table === "referrals" && q.op === "update",
+    );
+    expect(update!.filters).toContain("status=submitted");
+  });
+
+  it("409s when the guarded update matched nothing, and writes no events", async () => {
+    // The row read as 'submitted' but someone else took it first.
+    db.updateReturns = [];
+    const res = await request(makeApp())
+      .post(`/admin/referrals/${REFERRAL_ID}/accept`)
+      .send({});
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("not_pending");
+    // The loser must not leave an accepted event behind.
+    expect(
+      db.queries.some(
+        (q) => q.table === "referral_events" && q.op === "insert",
+      ),
+    ).toBe(false);
   });
 });

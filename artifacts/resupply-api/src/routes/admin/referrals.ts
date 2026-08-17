@@ -479,12 +479,31 @@ router.post(
       patch.routed_to_location_id = body.data.locationId;
     }
 
-    const { error } = await supabase
+    // Guard the transition in the UPDATE itself, not just in the read
+    // above. The read-then-write window is real: two staff opening the
+    // queue and clicking Accept together would both pass the read, both
+    // write, and produce two `referral.accepted` events with
+    // last-writer-wins on who is recorded as having taken it. Constraining
+    // on `status = 'submitted'` makes exactly one of them win, and the
+    // loser gets the same 409 as if they had been slower to click.
+    const { data: accepted, error } = (await supabase
       .from("referrals")
       .update(patch)
-      .eq("id", id.data);
+      .eq("id", id.data)
+      .eq("status", "submitted")
+      .select("id")) as {
+      data: Row[] | null;
+      error: { message: string } | null;
+    };
     if (error) {
       res.status(500).json({ error: "update_failed" });
+      return;
+    }
+    if (!accepted || accepted.length === 0) {
+      res.status(409).json({
+        error: "not_pending",
+        message: "Someone else has already picked this referral up.",
+      });
       return;
     }
 

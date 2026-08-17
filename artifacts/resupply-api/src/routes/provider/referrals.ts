@@ -62,6 +62,7 @@ import {
 } from "../../middlewares/requireProvider";
 import { providerPortalRateLimiter } from "./shared";
 import {
+  asOrgId,
   loadReferralForProvider,
   mapReferralDetail,
   mapReferralSummary,
@@ -366,7 +367,21 @@ router.post("/api/provider/referrals", ...gate, async (req, res) => {
       return;
     }
 
-    const targetOrgId = String((link as Record<string, unknown>).org_id);
+    // `String(null)` is the string "null", which `getOrgScopedClient`
+    // would happily accept and then scope every query to a tenant that
+    // does not exist — silently returning empty rather than failing. The
+    // column is NOT NULL so this is unreachable today, but this is THE
+    // line that decides which tenant a referral is written to, and a
+    // silent mis-scope is the worst way for it to go wrong.
+    const targetOrgId = asOrgId((link as Record<string, unknown>).org_id);
+    if (!targetOrgId) {
+      logger.error(
+        { event: "referral_link_missing_org", dmeLinkId: body.data.dmeLinkId },
+        "provider_dme_links row has no usable org_id",
+      );
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const supabase = getOrgScopedClient(targetOrgId);
     const p = body.data.patient;
     const ins = body.data.insurance ?? {};
