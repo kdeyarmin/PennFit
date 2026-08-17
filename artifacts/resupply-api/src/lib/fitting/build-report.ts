@@ -117,7 +117,15 @@ export async function buildFitReport(
         supabase
           .from("fit_session_safety_responses")
           .select("question_key, subject, answer")
-          .eq("fit_session_id", fitSessionId),
+          .eq("fit_session_id", fitSessionId)
+          // Deterministic order. PostgREST makes no ordering promise
+          // without one, so two renderings of the SAME clinical record
+          // could list the safety answers differently — and this report
+          // is a document a clinician signs and a payer may later read.
+          // Two versions of a signed record that disagree on ordering is
+          // an avoidable credibility problem.
+          .order("subject", { ascending: true })
+          .order("question_key", { ascending: true }),
       ),
       rows(
         supabase
@@ -237,7 +245,7 @@ export async function buildFitReport(
     provenance: {
       rulesEngineVersion: String(data.rules_engine_version ?? "unknown"),
       catalogSnapshotVersion: numOrNull(data.catalog_snapshot_version),
-      formularyName: null,
+      formularyName: str(data.formulary_name),
       formularyVersion: numOrNull(data.formulary_version),
       formularyRulesMatched: (data.formulary_rules_matched ??
         null) as FitReport["provenance"]["formularyRulesMatched"],

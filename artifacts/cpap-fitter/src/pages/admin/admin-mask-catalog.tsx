@@ -272,7 +272,14 @@ export function AdminMaskCatalogPage() {
                                       Sign off
                                     </Button>
                                   ) : (
-                                    <span className="text-emerald-700">
+                                    <span
+                                      className="text-emerald-700"
+                                      title={
+                                        v.reviewedByEmail
+                                          ? `Signed off by ${v.reviewedByEmail}`
+                                          : undefined
+                                      }
+                                    >
                                       Approved
                                     </span>
                                   )}
@@ -285,7 +292,9 @@ export function AdminMaskCatalogPage() {
                       <p className="text-xs text-muted-foreground mt-2">
                         Signing off a size confirms its measurement range is
                         clinically sound. Until then the engine caps any
-                        recommendation using it at moderate confidence.
+                        recommendation using it at moderate confidence. Sign-off
+                        applies to your organization only — it does not change
+                        what any other provider on the platform sees.
                       </p>
                     </>
                   ) : null}

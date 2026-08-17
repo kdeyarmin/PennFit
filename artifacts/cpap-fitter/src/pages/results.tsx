@@ -37,6 +37,13 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { MaskRecommendationCard } from "@/components/mask-recommendation-card";
 import { ComfortGuarantee } from "@/components/comfort-guarantee";
 import { BrandName } from "@/components/company-contact";
+import {
+  requestFitAssessment,
+  isWithheld,
+  toLegacyMaskType,
+  type FitAssessment,
+} from "@/lib/fit-assess-api";
+import { ClinicalResults, FitWithheld } from "@/components/clinical-results";
 
 export function Results() {
   useDocumentTitle("Your mask matches");
@@ -95,12 +102,14 @@ export function Results() {
     name: string;
     modelNumber: string;
     manufacturer: string;
+    size?: string | null;
   }) => {
     setChosenMask({
       maskId: mask.maskId,
       name: mask.name,
       modelNumber: mask.modelNumber,
       manufacturer: mask.manufacturer,
+      size: mask.size ?? null,
     });
     track("mask_chosen", { mask: mask.modelNumber });
     setLocation("/order");
@@ -177,16 +186,104 @@ export function Results() {
       : undefined,
   );
 
+  // ── Clinical assessment path ──────────────────────────────────────
+  //
+  // When the tenant has `fitter.clinical_assessment` on, /api/fit/assess
+  // answers instead: it fits against that DME's own catalog and formulary,
+  // returns a per-size recommendation, and can DECLINE to name a mask when
+  // the evidence doesn't support one. Every other case — flag off, network
+  // failure, unresolvable tenant — falls through to /api/recommend below,
+  // so a tenant that never turns the flag on sees no change at all.
+  const [assessment, setAssessment] = useState<FitAssessment | null>(null);
+  const [clinicalState, setClinicalState] = useState<
+    "probing" | "clinical" | "legacy"
+  >("probing");
+  const hasProbedClinical = useRef(false);
+
+  useEffect(() => {
+    if (hasProbedClinical.current) return;
+    if (!measurements) return;
+    // No invite token means the legacy route would 403 too; let its own
+    // error handling say so rather than duplicating the message here.
+    if (!inviteToken) {
+      hasProbedClinical.current = true;
+      setClinicalState("legacy");
+      return;
+    }
+    hasProbedClinical.current = true;
+    const controller = new AbortController();
+    requestFitAssessment({
+      inviteToken,
+      measurements,
+      answers: { ...fullAnswers },
+      signal: controller.signal,
+    })
+      .then((result) => {
+        if (controller.signal.aborted) return;
+        if (result.kind === "assessment") {
+          setAssessment(result.assessment);
+          setClinicalState("clinical");
+          track("fit_assessment_completed", {
+            outcome: result.assessment.outcome,
+            degraded: result.assessment.provenance.degraded,
+          });
+          return;
+        }
+        // A required safety screen is real, but the screening UI rides
+        // `fitter.magnet_screening` and lives in the questionnaire flow.
+        // Until a tenant enables both, treat it like any other reason to
+        // use the legacy path rather than stranding the patient here.
+        setClinicalState("legacy");
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setClinicalState("legacy");
+      });
+    return () => controller.abort();
+  }, [measurements, inviteToken, fullAnswers]);
+
   // Fire the campaign-enrollment ping the first time `data` arrives
   // with at least one recommendation. Gated by emailConsent so a
   // patient who somehow reached /results without opting in (the
   // /consent gate normally prevents this) doesn't accidentally
   // enroll. Errors are swallowed — best-effort by design.
+  // The completion and staff-transmission pings need "the top mask" from
+  // whichever engine answered. Deriving it once keeps both effects, and
+  // the invite record they feed, identical across the two paths — the
+  // clinical path must not quietly stop populating the staff worklist.
+  const topPick = React.useMemo(() => {
+    if (assessment?.primary) {
+      const c = assessment.primary;
+      return {
+        maskId: c.maskSlug,
+        name: c.name,
+        type: toLegacyMaskType(c.interfaceType),
+        ranked: [c, ...assessment.alternatives].map((a) => ({
+          maskId: a.maskSlug,
+          name: a.name,
+          type: toLegacyMaskType(a.interfaceType),
+          confidence: a.confidence,
+        })),
+      };
+    }
+    const top = data?.topRecommendations[0];
+    if (!top || !data) return null;
+    return {
+      maskId: top.maskId,
+      name: top.name,
+      type: top.type,
+      ranked: data.topRecommendations.map((m) => ({
+        maskId: m.maskId,
+        name: m.name,
+        type: m.type,
+        confidence: m.confidence,
+      })),
+    };
+  }, [assessment, data]);
+
   useEffect(() => {
     if (hasPingedComplete.current) return;
-    if (!data) return;
     if (!email || !emailConsent) return;
-    const top = data.topRecommendations[0];
+    const top = topPick;
     if (!top) return;
     hasPingedComplete.current = true;
     submitFitterComplete({
@@ -200,7 +297,7 @@ export function Results() {
       // the ops-side trace.
       console.warn("fitter-complete enrollment failed (continuing)", err);
     });
-  }, [data, email, emailConsent]);
+  }, [topPick, email, emailConsent]);
 
   // Staff-invite transmission. When the patient reached /results via a
   // staff invite link (/fitter-invite), transmit the COMPLETE fitting
@@ -213,29 +310,22 @@ export function Results() {
   const hasTransmittedInvite = useRef(false);
   useEffect(() => {
     if (hasTransmittedInvite.current) return;
-    if (!inviteToken || !measurements || !data) return;
-    const top = data.topRecommendations[0];
-    if (!top) return;
+    if (!inviteToken || !measurements || !topPick) return;
     hasTransmittedInvite.current = true;
     submitFitterInviteComplete({
       token: inviteToken,
       measurements,
       answers: fullAnswers,
       recommendation: {
-        maskId: top.maskId,
-        name: top.name,
-        type: top.type,
-        top: data.topRecommendations.map((m) => ({
-          maskId: m.maskId,
-          name: m.name,
-          type: m.type,
-          confidence: m.confidence,
-        })),
+        maskId: topPick.maskId,
+        name: topPick.name,
+        type: topPick.type,
+        top: topPick.ranked,
       },
     }).catch((err) => {
       console.warn("fitter-invite transmission failed (continuing)", err);
     });
-  }, [inviteToken, measurements, data, fullAnswers]);
+  }, [inviteToken, measurements, topPick, fullAnswers]);
 
   const { data: catalog } = useListMasks();
   const catalogById = React.useMemo(() => {
@@ -255,6 +345,11 @@ export function Results() {
 
   useEffect(() => {
     if (!measurements) return;
+    // Wait for the clinical probe to resolve. Firing both would double
+    // every fitting's request volume and could show the patient the
+    // legacy answer first, then swap it — a worse experience than a
+    // slightly longer skeleton.
+    if (clinicalState !== "legacy") return;
     if (!hasRequested.current) {
       hasRequested.current = true;
       // P4 — the questionnaire intentionally lets the user skip questions
@@ -265,9 +360,25 @@ export function Results() {
       // sentinels for the two enum fields.
       mutate({ data: { measurements, answers: fullAnswers } });
     }
-  }, [measurements, fullAnswers, mutate]);
+  }, [measurements, fullAnswers, mutate, clinicalState]);
 
   if (!measurements) return null;
+
+  // The engine declined to name a mask. This is confidence gating doing
+  // its job, not a failure: showing a "best guess" here is exactly what
+  // the tiered engine exists to prevent, so the patient gets the reason
+  // and a route to a human instead.
+  if (assessment && isWithheld(assessment.outcome)) {
+    return (
+      <FitWithheld
+        assessment={assessment}
+        onRetake={() => {
+          track("results_retake_requested", { outcome: assessment.outcome });
+          setLocation("/capture");
+        }}
+      />
+    );
+  }
 
   // Error must be checked BEFORE the loading fallback — otherwise a failed
   // request (where `data` is undefined) would render skeletons forever.
@@ -318,7 +429,54 @@ export function Results() {
     );
   }
 
-  if (isPending || !data) {
+  // The clinical path answered with a recommendation. It carries a size,
+  // per-alternative ranking reasons, and formulary provenance that the
+  // legacy card cannot express, so it gets its own renderer.
+  if (assessment?.primary) {
+    return (
+      <div className="container max-w-4xl mx-auto px-4 py-12 animate-shimmer-in space-y-8">
+        <div className="text-center space-y-3">
+          <div className="flex justify-center">
+            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full glass-panel text-emerald-700 font-medium border border-emerald-200/70 shadow-sm">
+              <CheckCircle2 className="w-4 h-4" />
+              <span>Fitting complete</span>
+            </div>
+          </div>
+          <h1 className="text-display text-3xl md:text-5xl font-bold tracking-tight text-gradient-brand leading-[1.05]">
+            Your Recommended Mask
+          </h1>
+          <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
+            Matched against <BrandName />
+            &apos;s mask catalog using your facial measurements, your answers,
+            and your provider&apos;s clinical rules.
+          </p>
+        </div>
+        <ClinicalResults
+          assessment={assessment}
+          onChoose={(c) =>
+            handleChooseMask({
+              maskId: c.maskSlug,
+              name: c.name,
+              manufacturer: c.manufacturer,
+              modelNumber:
+                c.cushion?.manufacturerPartNumber ??
+                c.frame?.manufacturerPartNumber ??
+                c.maskSlug,
+              size: c.cushion?.sizeLabel ?? c.frame?.sizeLabel ?? null,
+            })
+          }
+          onRetake={() => {
+            track("results_retake_requested", {
+              outcome: assessment.outcome,
+            });
+            setLocation("/capture");
+          }}
+        />
+      </div>
+    );
+  }
+
+  if (clinicalState === "probing" || isPending || !data) {
     return (
       <div className="container max-w-4xl mx-auto px-4 py-12 space-y-8">
         <div className="text-center space-y-4">

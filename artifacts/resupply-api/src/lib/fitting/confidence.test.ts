@@ -73,6 +73,7 @@ function candidate(over: Partial<FitCandidate> = {}): FitCandidate {
       component: "cushion",
       sizeCode: "M",
       sizeLabel: "Medium",
+      manufacturerPartNumber: null,
       bandMargin: 0.8,
       fitDataSource: "manufacturer",
       needsClinicalReview: false,

@@ -11,16 +11,22 @@ import { ClipboardCheck, Download } from "lucide-react";
 import { Card } from "@/components/admin/Card";
 import { Button } from "@/components/admin/Button";
 import { Badge } from "@/components/admin/Badge";
+import { Input, Label } from "@/components/admin/Input";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Spinner } from "@/components/admin/Spinner";
 import { formatDateTime } from "@/lib/admin/format";
 import {
   approveFitSession,
   fetchFitSessions,
+  fetchMaskCatalog,
+  fetchMaskModel,
   fitReportUrl,
+  overrideFitSession,
   requestRescan,
+  rescanNotifyMessage,
   type FitOutcome,
   type FitSessionSummary,
+  type RescanResult,
 } from "@/lib/admin/fitting-api";
 
 const QUERY_KEY = ["admin", "fit-sessions"] as const;
@@ -67,6 +73,8 @@ export function AdminFitSessionsPage() {
   const [reviewStatus, setReviewStatus] = useState("pending_review");
   const [rescanFor, setRescanFor] = useState<string | null>(null);
   const [rescanReason, setRescanReason] = useState("");
+  const [rescanOutcome, setRescanOutcome] = useState<RescanResult | null>(null);
+  const [overrideFor, setOverrideFor] = useState<string | null>(null);
 
   const sessions = useQuery({
     queryKey: [...QUERY_KEY, reviewStatus],
@@ -82,9 +90,30 @@ export function AdminFitSessionsPage() {
   const rescan = useMutation({
     mutationFn: ({ id, reason }: { id: string; reason: string }) =>
       requestRescan(id, reason),
-    onSuccess: () => {
-      setRescanFor(null);
+    // Keep the panel open on success: whether the patient was actually
+    // reached is the outcome a clinician needs to see, and closing the
+    // panel would hide the fallback link on every failure path.
+    onSuccess: (result) => {
       setRescanReason("");
+      setRescanOutcome(result);
+      queryClient.invalidateQueries({ queryKey: QUERY_KEY });
+    },
+  });
+
+  const override = useMutation({
+    mutationFn: (input: {
+      id: string;
+      maskModelId: string;
+      variantId: string | null;
+      reason: string;
+    }) =>
+      overrideFitSession(input.id, {
+        maskModelId: input.maskModelId,
+        variantId: input.variantId,
+        reason: input.reason,
+      }),
+    onSuccess: () => {
+      setOverrideFor(null);
       queryClient.invalidateQueries({ queryKey: QUERY_KEY });
     },
   });
@@ -206,15 +235,37 @@ export function AdminFitSessionsPage() {
                       <>
                         <Button
                           onClick={() => approve.mutate(s.id)}
-                          disabled={approve.isPending}
+                          // Approving means "the engine's pick is
+                          // right". A withheld outcome has no pick, and
+                          // the route 409s — so the button is disabled
+                          // rather than offering a dead action.
+                          disabled={approve.isPending || !s.recommendedMask}
+                          title={
+                            s.recommendedMask
+                              ? undefined
+                              : "There is no automated recommendation to approve — record an override with the mask you fitted instead."
+                          }
                         >
                           Approve
                         </Button>
                         <Button
                           intent="secondary"
-                          onClick={() =>
-                            setRescanFor(rescanFor === s.id ? null : s.id)
-                          }
+                          onClick={() => {
+                            setOverrideFor(overrideFor === s.id ? null : s.id);
+                            setRescanFor(null);
+                          }}
+                          aria-expanded={overrideFor === s.id}
+                        >
+                          Override
+                        </Button>
+                        <Button
+                          intent="secondary"
+                          onClick={() => {
+                            setRescanFor(rescanFor === s.id ? null : s.id);
+                            setRescanOutcome(null);
+                            setOverrideFor(null);
+                          }}
+                          aria-expanded={rescanFor === s.id}
                         >
                           Request rescan
                         </Button>
@@ -222,6 +273,23 @@ export function AdminFitSessionsPage() {
                     ) : null}
                   </div>
                 </div>
+
+                {overrideFor === s.id ? (
+                  <OverridePanel
+                    sessionId={s.id}
+                    pending={override.isPending}
+                    error={override.error}
+                    onCancel={() => setOverrideFor(null)}
+                    onSubmit={(maskModelId, variantId, reason) =>
+                      override.mutate({
+                        id: s.id,
+                        maskModelId,
+                        variantId,
+                        reason,
+                      })
+                    }
+                  />
+                ) : null}
 
                 {rescanFor === s.id ? (
                   <div className="border-t pt-3 space-y-2">
@@ -231,6 +299,11 @@ export function AdminFitSessionsPage() {
                     >
                       Why does this need a new scan?
                     </label>
+                    <p className="text-xs text-muted-foreground">
+                      Sending this re-issues the patient&apos;s fitting link
+                      over the channel their invite used. Your note is recorded
+                      on the session — it is not sent to the patient.
+                    </p>
                     <textarea
                       id={`rescan-${s.id}`}
                       className="w-full text-sm border rounded p-2"
@@ -239,6 +312,29 @@ export function AdminFitSessionsPage() {
                       onChange={(e) => setRescanReason(e.target.value)}
                       placeholder="e.g. the frame was badly backlit and the chin was cropped"
                     />
+                    {rescan.isError ? (
+                      <ErrorPanel
+                        title="Couldn't request a rescan"
+                        error={rescan.error}
+                      />
+                    ) : null}
+                    {rescanOutcome ? (
+                      <div
+                        className={`text-sm rounded border px-3 py-2 ${
+                          rescanOutcome.patientNotified
+                            ? "bg-emerald-50 text-emerald-900 border-emerald-200"
+                            : "bg-amber-50 text-amber-900 border-amber-200"
+                        }`}
+                        role="status"
+                      >
+                        <p>{rescanNotifyMessage(rescanOutcome)}</p>
+                        {rescanOutcome.inviteLink ? (
+                          <p className="mt-1 break-all font-mono text-xs">
+                            {rescanOutcome.inviteLink}
+                          </p>
+                        ) : null}
+                      </div>
+                    ) : null}
                     <div className="flex gap-2">
                       <Button
                         onClick={() =>
@@ -252,9 +348,12 @@ export function AdminFitSessionsPage() {
                       </Button>
                       <Button
                         intent="secondary"
-                        onClick={() => setRescanFor(null)}
+                        onClick={() => {
+                          setRescanFor(null);
+                          setRescanOutcome(null);
+                        }}
                       >
-                        Cancel
+                        {rescanOutcome ? "Done" : "Cancel"}
                       </Button>
                     </div>
                   </div>
@@ -263,6 +362,160 @@ export function AdminFitSessionsPage() {
             </Card>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Record that the clinician dispensed something other than what the
+ * engine recommended.
+ *
+ * This is the single most important control on the page, and it was the
+ * one the UI didn't offer: the route existed, but there was no way to
+ * reach it, so a clinician who fitted a different mask had no way to say
+ * so. The engine's own closed loop depends on this — an override is how
+ * it learns its recommendation was wrong.
+ *
+ * The mask picker searches the tenant's catalog rather than accepting a
+ * raw UUID, and the size list comes from that model's own variants, so
+ * an override can only name a mask and size that actually exist for this
+ * organization.
+ */
+function OverridePanel({
+  sessionId,
+  pending,
+  error,
+  onCancel,
+  onSubmit,
+}: {
+  sessionId: string;
+  pending: boolean;
+  error: unknown;
+  onCancel: () => void;
+  onSubmit: (
+    maskModelId: string,
+    variantId: string | null,
+    reason: string,
+  ) => void;
+}) {
+  const [search, setSearch] = useState("");
+  const [maskModelId, setMaskModelId] = useState("");
+  const [variantId, setVariantId] = useState("");
+  const [reason, setReason] = useState("");
+
+  const catalog = useQuery({
+    queryKey: ["admin", "mask-catalog", "override-picker", search],
+    queryFn: () =>
+      fetchMaskCatalog({
+        search: search || undefined,
+        status: "current",
+        limit: 50,
+      }),
+  });
+
+  const model = useQuery({
+    queryKey: ["admin", "mask-catalog", "detail", maskModelId],
+    queryFn: () => fetchMaskModel(maskModelId),
+    enabled: Boolean(maskModelId),
+  });
+
+  const variants = (model.data?.variants ?? []).filter(
+    (v) => v.component !== "frame",
+  );
+
+  return (
+    <div className="border-t pt-3 space-y-3">
+      <div>
+        <Label htmlFor={`override-search-${sessionId}`}>
+          Which mask was actually fitted?
+        </Label>
+        <Input
+          id={`override-search-${sessionId}`}
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search by model — AirFit, DreamWear, Evora…"
+        />
+      </div>
+
+      {catalog.isLoading ? <Spinner /> : null}
+      {catalog.isError ? (
+        <ErrorPanel title="Couldn't load the catalog" error={catalog.error} />
+      ) : null}
+
+      <div className="flex flex-wrap gap-3">
+        <div>
+          <Label htmlFor={`override-model-${sessionId}`}>Mask</Label>
+          <select
+            id={`override-model-${sessionId}`}
+            className="border rounded h-9 px-2 text-sm min-w-[260px]"
+            value={maskModelId}
+            onChange={(e) => {
+              setMaskModelId(e.target.value);
+              setVariantId("");
+            }}
+          >
+            <option value="">Select a mask…</option>
+            {(catalog.data?.models ?? []).map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.manufacturer} {m.modelName}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <Label htmlFor={`override-size-${sessionId}`}>Size</Label>
+          <select
+            id={`override-size-${sessionId}`}
+            className="border rounded h-9 px-2 text-sm"
+            value={variantId}
+            onChange={(e) => setVariantId(e.target.value)}
+            disabled={!maskModelId || model.isLoading}
+          >
+            <option value="">
+              {maskModelId ? "Not recorded" : "Pick a mask first"}
+            </option>
+            {variants.map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.sizeLabel}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <div>
+        <Label htmlFor={`override-reason-${sessionId}`}>
+          Why was a different mask fitted?
+        </Label>
+        <textarea
+          id={`override-reason-${sessionId}`}
+          className="w-full text-sm border rounded p-2"
+          rows={2}
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          placeholder="e.g. patient could not tolerate the nasal cushion; switched to a full face at their request"
+        />
+        <p className="text-xs text-muted-foreground mt-1">
+          This reason is printed on the fit report and is what the engine learns
+          from. At least a sentence, please.
+        </p>
+      </div>
+
+      {error ? (
+        <ErrorPanel title="Couldn't save the override" error={error} />
+      ) : null}
+
+      <div className="flex gap-2">
+        <Button
+          onClick={() => onSubmit(maskModelId, variantId || null, reason)}
+          disabled={!maskModelId || reason.trim().length < 10 || pending}
+        >
+          Record override
+        </Button>
+        <Button intent="secondary" onClick={onCancel}>
+          Cancel
+        </Button>
       </div>
     </div>
   );

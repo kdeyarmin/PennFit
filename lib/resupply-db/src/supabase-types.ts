@@ -6543,6 +6543,33 @@ export interface Database {
         Relationships: [];
       };
 
+      // Migration 0482: TENANT-scoped clinical sign-off on a SHARED size
+      // variant's millimetre bands. `mask_size_variants.needs_clinical_
+      // review` is a platform flag that a tenant must never clear —
+      // doing so would lift the engine's confidence cap for every other
+      // tenant. A row here records "this DME's RT has reviewed this size"
+      // and is read only for that org.
+      mask_variant_reviews: {
+        Row: {
+          id: string;
+          org_id: string | null;
+          size_variant_id: string;
+          approved: boolean;
+          reviewed_by_email: string | null;
+          reviewed_at: string;
+          note: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["mask_variant_reviews"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["mask_variant_reviews"]["Row"]
+        >;
+        Relationships: [];
+      };
+
       // Migration 0483: the clinical record of one fitting. PHI —
       // measurements and profile answers. `measurements` and
       // `measurement_frames` hold NUMBERS ONLY; no image ever reaches
@@ -6599,6 +6626,7 @@ export interface Database {
           rules_engine_version: string;
           formulary_id: string | null;
           formulary_version: number | null;
+          formulary_name: string | null;
           formulary_rules_matched: Json | null;
           catalog_snapshot_version: number | null;
           fit_adjustments_applied: Json | null;

@@ -320,6 +320,42 @@ CREATE INDEX IF NOT EXISTS "mask_availability_org_model_idx"
 --> statement-breakpoint
 
 -- ---------------------------------------------------------------
+-- mask_variant_reviews — TENANT-scoped clinical sign-off on geometry.
+-- ---------------------------------------------------------------
+-- `mask_size_variants.needs_clinical_review` is a PLATFORM flag on a
+-- SHARED row: it says "these millimetre bands are estimates that nobody
+-- has checked yet." It must not be cleared by a tenant, because one
+-- tenant's respiratory therapist signing off a shared variant would lift
+-- the engine's confidence cap for every other tenant on the platform —
+-- silently, and on a clinical-safety control.
+--
+-- So sign-off is recorded HERE instead, per tenant. The engine treats a
+-- variant as reviewed only when the platform flag is clear OR this tenant
+-- has an approved row, which means each DME's RT signs off the products
+-- that DME actually stocks and affects nobody else.
+CREATE TABLE IF NOT EXISTS "resupply"."mask_variant_reviews" (
+  "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+  "org_id" uuid NOT NULL REFERENCES "resupply"."organizations"("id"),
+  "size_variant_id" uuid NOT NULL
+    REFERENCES "resupply"."mask_size_variants"("id") ON DELETE CASCADE,
+  "approved" boolean NOT NULL DEFAULT true,
+  "reviewed_by_email" text,
+  "reviewed_at" timestamp with time zone NOT NULL DEFAULT now(),
+  "note" text,
+  "created_at" timestamp with time zone NOT NULL DEFAULT now(),
+  "updated_at" timestamp with time zone NOT NULL DEFAULT now()
+);
+--> statement-breakpoint
+
+CREATE UNIQUE INDEX IF NOT EXISTS "mask_variant_reviews_org_variant_idx"
+  ON "resupply"."mask_variant_reviews" ("org_id", "size_variant_id");
+--> statement-breakpoint
+
+CREATE INDEX IF NOT EXISTS "mask_variant_reviews_org_approved_idx"
+  ON "resupply"."mask_variant_reviews" ("org_id", "approved");
+--> statement-breakpoint
+
+-- ---------------------------------------------------------------
 -- Seed: one open, active formulary per tenant.
 -- ---------------------------------------------------------------
 -- Every tenant gets a stampable formulary version from day one, and the

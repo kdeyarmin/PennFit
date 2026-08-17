@@ -61,7 +61,14 @@ export interface MaskSizeVariant {
   isDefault: boolean;
   hcpcsCode: string | null;
   fitDataSource: string;
+  /**
+   * Tenant-effective: true when the shared platform flag is set AND this
+   * organization has not signed the size off. Sign-off is recorded per
+   * organization, so clearing it here never affects another DME.
+   */
   needsClinicalReview: boolean;
+  reviewedByEmail: string | null;
+  reviewedAt: string | null;
 }
 
 export interface CatalogFilters {
@@ -100,6 +107,12 @@ export function fetchMaskModel(id: string): Promise<{
     severity: "exclude" | "caution";
     rationale: string;
   }>;
+  /**
+   * False for a shared platform mask: its facts and measurement ranges
+   * are the same data every other organization fits against, so only
+   * sign-off is available here.
+   */
+  editable: boolean;
 }> {
   return adminJsonFetch(`/admin/fitter/catalog/${encodeURIComponent(id)}`);
 }
@@ -312,14 +325,49 @@ export function overrideFitSession(
   );
 }
 
+export interface RescanResult {
+  ok: true;
+  /** Whether a message actually reached the patient. */
+  patientNotified: boolean;
+  /** Why not, when it didn't. */
+  notifyReason:
+    | null
+    | "no_invite"
+    | "invite_revoked"
+    | "no_contact"
+    | "no_channel_config"
+    | "send_failed";
+  /** A usable link when automated delivery had nowhere to send it. */
+  inviteLink: string | null;
+}
+
 export function requestRescan(
   id: string,
   reason: string,
-): Promise<{ ok: true }> {
+): Promise<RescanResult> {
   return adminJsonFetch(
     `/admin/fit-sessions/${encodeURIComponent(id)}/request-rescan`,
     { method: "POST", body: JSON.stringify({ reason }) },
   );
+}
+
+/** Human wording for a rescan that could not be delivered automatically. */
+export function rescanNotifyMessage(result: RescanResult): string {
+  if (result.patientNotified) {
+    return "The patient has been sent a link to scan again.";
+  }
+  switch (result.notifyReason) {
+    case "no_invite":
+      return "Session flagged for rescan. This fitting wasn't started from an invite, so there is nobody to notify automatically — reach out directly.";
+    case "invite_revoked":
+      return "Session flagged for rescan. The original invite was revoked, so nothing was sent. Create a new fitter invite for this patient.";
+    case "no_contact":
+      return "Session flagged for rescan, but the invite has no email or phone on file. Use the link below.";
+    case "no_channel_config":
+      return "Session flagged for rescan, but this channel isn't configured for your organization. Use the link below.";
+    default:
+      return "Session flagged for rescan, but the message could not be sent. Use the link below, or try again.";
+  }
 }
 
 /** Absolute path to the report PDF, for a plain download link. */

@@ -323,6 +323,27 @@ router.post("/fit/assess", async (req, res) => {
     return;
   }
 
+  // STATEFUL invite check. The HMAC above only proves an invite was once
+  // issued; it says nothing about whether it still stands. Unlike
+  // /api/recommend — which is stateless and writes nothing — this endpoint
+  // PERSISTS a PHI-bearing session, so accepting a revoked or expired token
+  // would keep recording patient data after staff explicitly stopped it
+  // (easily reachable from a tab left open when the revoke happened).
+  // /shop/fitter-invite/resolve already enforces this; so must we.
+  const invite = await loadInvite(orgId, verification.inviteId);
+  if (!invite) {
+    res.json({ valid: false, reason: "invite_not_found" });
+    return;
+  }
+  if (invite.status === "revoked") {
+    res.json({ valid: false, reason: "revoked" });
+    return;
+  }
+  if (invite.expiresAt && Date.parse(invite.expiresAt) < Date.now()) {
+    res.json({ valid: false, reason: "expired" });
+    return;
+  }
+
   const [enabled, gating, magnets] = await Promise.all([
     isFeatureEnabled("fitter.clinical_assessment", orgId).catch(() => false),
     isFeatureEnabled("fitter.confidence_gating", orgId).catch(() => false),
@@ -342,15 +363,59 @@ router.post("/fit/assess", async (req, res) => {
     (r) => ({ questionKey: r.questionKey, answer: r.answer }),
   );
 
+  // When magnet screening is enabled, an absent or partial screen must NOT
+  // silently resolve to "no risk". `resolveSafetyFlags` only disqualifies on
+  // questions it actually has answers for, so an omitted screen would let a
+  // magnetic mask through with the feature nominally ON — the exact failure
+  // the screen exists to prevent. Withhold instead.
+  if (magnets && context.safetyScreen) {
+    const screen = context.safetyScreen;
+    const answered = new Set(safetyResponses.map((r) => r.questionKey));
+    const missing = screen.questions
+      .map((q) => q.questionKey)
+      .filter((k) => !answered.has(k));
+    const versionMatches = body.safety?.screenVersion === screen.version;
+    if (!body.safety || !versionMatches || missing.length > 0) {
+      res.json({
+        valid: false,
+        reason: "safety_screen_required",
+        safetyScreen: {
+          slug: screen.slug,
+          version: screen.version,
+          title: screen.title,
+          introCopy: screen.introCopy,
+          attestationCopy: screen.attestationCopy,
+          questions: screen.questions.map((q) => ({
+            questionKey: q.questionKey,
+            prompt: q.prompt,
+            helpText: q.helpText,
+            subject: q.subject,
+            sortOrder: q.sortOrder,
+          })),
+        },
+        missingQuestionKeys: missing,
+        staleVersion: Boolean(body.safety) && !versionMatches,
+      });
+      return;
+    }
+  }
+
   const assessment = assess({
     measurements,
     profile,
     scan: body.scan ?? NEUTRAL_SCAN,
     catalog: context.catalog,
     formulary: context.formulary,
+    // The formulary resolver advertises five scope axes, so the live path
+    // has to actually supply them — a rule scoped to a location or payer
+    // that can never fire is worse than no rule, because the operator sees
+    // it saved and assumes it works. Location and payer come from the
+    // patient's chart when the invite is attached to one; both stay null
+    // for an unattached prospect, and `ruleApplies` correctly declines to
+    // fire scoped rules on unknown values rather than guessing.
     context: {
-      locationId: null,
-      payerProfileId: null,
+      locationId: invite.locationId,
+      payerProfileId: invite.payerProfileId,
       contractRef: null,
       population: profile.population,
       therapyMode: profile.therapyMode,
@@ -374,6 +439,8 @@ router.post("/fit/assess", async (req, res) => {
   const sessionId = await persistSession({
     orgId,
     inviteId: verification.inviteId,
+    patientId: invite.patientId,
+    locationId: invite.locationId,
     entryPoint: body.entryPoint ?? "remote_link",
     measurements,
     profile,
@@ -419,7 +486,13 @@ router.get("/fit/catalog", async (req, res) => {
   }
 
   const context = await loadFittingContext(orgId);
-  res.set("Cache-Control", "public, max-age=60");
+  // The body varies by the tenant behind the invite token and can include a
+  // tenant's PRIVATE mask models and formulary metadata. Both custom domains
+  // sit behind Cloudflare, so `public` here would let an edge cache serve
+  // tenant A's catalog to tenant B. Private + no-store; the 60s in-process
+  // cache in catalog-store already absorbs the real load.
+  res.set("Cache-Control", "private, no-store");
+  res.set("Vary", "x-fitter-invite-token");
   res.json({
     total: context.catalog.length,
     degraded: context.degraded,
@@ -445,14 +518,109 @@ router.get("/fit/catalog", async (req, res) => {
       description: m.description,
       sizes: m.variants
         .filter((v) => v.component !== "frame")
-        .map((v) => ({ code: v.sizeCode, label: v.sizeLabel })),
+        .map((v) => ({
+          code: v.sizeCode,
+          label: v.sizeLabel,
+          partNumber: v.manufacturerPartNumber,
+        })),
     })),
   });
 });
 
+interface InviteContext {
+  patientId: string | null;
+  locationId: string | null;
+  payerProfileId: string | null;
+  status: string;
+  expiresAt: string | null;
+}
+
+/**
+ * Load the invite row behind a verified token.
+ *
+ * Supplies three things the stateless HMAC cannot: whether the invite is
+ * still live, which chart it belongs to, and the location/payer that scope
+ * the tenant's formulary rules. Returns null on any failure so the caller
+ * fails soft rather than 500ing a patient mid-fitting.
+ */
+async function loadInvite(
+  orgId: string,
+  inviteId: string,
+): Promise<InviteContext | null> {
+  try {
+    const supabase = getOrgScopedClient(orgId);
+    const { data, error } = (await supabase
+      .from("fitter_invites")
+      .select("patient_id, status, expires_at")
+      .eq("id", inviteId)
+      .limit(1)
+      .maybeSingle()) as {
+      data: Record<string, unknown> | null;
+      error: { message: string } | null;
+    };
+    if (error || !data) return null;
+
+    // The patient's own chart carries the branch and the payer the
+    // formulary is scoped by. Best-effort: an unattached prospect simply
+    // resolves both to null.
+    let locationId: string | null = null;
+    let payerProfileId: string | null = null;
+    const patientId = (data.patient_id as string | null) ?? null;
+    if (patientId) {
+      const { data: patient } = (await supabase
+        .from("patients")
+        .select("location_id")
+        .eq("id", patientId)
+        .limit(1)
+        .maybeSingle()) as { data: Record<string, unknown> | null };
+      locationId = (patient?.location_id as string | null) ?? null;
+
+      // insurance_coverages stores a free-text `payer_name`, not a
+      // payer_profiles id, so the payer axis has to be resolved by name.
+      // EXACT (case-insensitive) equality only: a fuzzy match here would
+      // silently apply another payer's formulary rules to a patient, which
+      // is worse than not applying any. A miss leaves this null, and
+      // `ruleApplies` then correctly declines to fire payer-scoped rules
+      // rather than guessing.
+      const { data: coverage } = (await supabase
+        .from("insurance_coverages")
+        .select("payer_name")
+        .eq("patient_id", patientId)
+        .eq("rank", "primary")
+        .limit(1)
+        .maybeSingle()) as { data: Record<string, unknown> | null };
+      const payerName = (coverage?.payer_name as string | null) ?? null;
+      if (payerName && payerName.trim()) {
+        const { data: profile } = (await supabase
+          .raw()
+          .schema("resupply")
+          .from("payer_profiles")
+          .select("id")
+          .ilike("display_name", payerName.trim())
+          .limit(1)
+          .maybeSingle()) as { data: Record<string, unknown> | null };
+        payerProfileId = (profile?.id as string | null) ?? null;
+      }
+    }
+
+    return {
+      patientId,
+      locationId,
+      payerProfileId,
+      status: String(data.status ?? "sent"),
+      expiresAt: (data.expires_at as string | null) ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
+
 interface PersistInput {
   orgId: string;
   inviteId: string;
+  /** From the invite, when staff raised it against an existing chart. */
+  patientId: string | null;
+  locationId: string | null;
   entryPoint: "remote_link" | "in_office" | "kiosk_qr";
   measurements: FitMeasurements;
   profile: ReturnType<typeof buildProfile>;
@@ -480,6 +648,11 @@ async function persistSession(input: PersistInput): Promise<string | null> {
       .from("fit_sessions")
       .insert({
         fitter_invite_id: input.inviteId,
+        // Carry the invite's chart link onto the session. Without this the
+        // RT review queue shows "no patient" and the clinical PDF prints
+        // "Not attached to a chart" for fittings that ARE chart-linked.
+        patient_id: input.patientId,
+        location_id: input.locationId,
         entry_point: input.entryPoint,
         population: input.profile.population,
         service_line: input.profile.therapyMode,
@@ -516,6 +689,7 @@ async function persistSession(input: PersistInput): Promise<string | null> {
         rules_engine_version: RULES_ENGINE_VERSION,
         formulary_id: input.assessment.provenance.formularyId,
         formulary_version: input.assessment.provenance.formularyVersion,
+        formulary_name: input.assessment.provenance.formularyName,
         formulary_rules_matched:
           input.assessment.provenance.formularyRulesMatched,
         catalog_snapshot_version:

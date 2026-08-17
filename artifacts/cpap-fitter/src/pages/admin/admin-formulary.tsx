@@ -23,6 +23,7 @@ import {
   createFormularyRule,
   deleteFormularyRule,
   fetchFormulary,
+  fetchMaskCatalog,
   publishFormulary,
   simulateFormulary,
   updateFormulary,
@@ -86,10 +87,14 @@ export function AdminFormularyPage() {
   const [showSimulation, setShowSimulation] = useState(false);
   const [publishError, setPublishError] = useState<string | null>(null);
 
+  const [ruleError, setRuleError] = useState<string | null>(null);
+  const [modelSearch, setModelSearch] = useState("");
+
   const [draft, setDraft] = useState({
     targetKind: "manufacturer" as (typeof TARGET_KINDS)[number]["value"],
     targetManufacturer: "",
     targetInterfaceType: "",
+    targetMaskModelId: "",
     effect: "prefer" as FormularyRule["effect"],
     preferenceRank: 1,
     serviceLine: "" as "" | "adult" | "pediatric",
@@ -105,6 +110,20 @@ export function AdminFormularyPage() {
     queryKey: [...QUERY_KEY, "simulate"],
     queryFn: () => simulateFormulary({}),
     enabled: showSimulation,
+  });
+
+  // Backing list for the "One mask model" target. Without it that option
+  // was unusable — the rule needs a catalog UUID and there was nowhere to
+  // get one short of reading the database by hand.
+  const models = useQuery({
+    queryKey: ["admin", "mask-catalog", "formulary-picker", modelSearch],
+    queryFn: () =>
+      fetchMaskCatalog({
+        search: modelSearch || undefined,
+        status: "current",
+        limit: 50,
+      }),
+    enabled: draft.targetKind === "mask_model",
   });
 
   const invalidate = () => {
@@ -123,6 +142,8 @@ export function AdminFormularyPage() {
           draft.targetKind === "interface_type"
             ? draft.targetInterfaceType
             : null,
+        targetMaskModelId:
+          draft.targetKind === "mask_model" ? draft.targetMaskModelId : null,
         effect: draft.effect,
         preferenceRank: draft.effect === "prefer" ? draft.preferenceRank : null,
         serviceLine: draft.serviceLine || null,
@@ -131,7 +152,22 @@ export function AdminFormularyPage() {
         reasonCode: draft.reasonCode.trim() || null,
         reasonNote: draft.reasonNote.trim() || null,
       }),
-    onSuccess: invalidate,
+    onSuccess: () => {
+      setRuleError(null);
+      invalidate();
+    },
+    onError: (err: unknown) => {
+      // Saving now runs the same starvation pre-flight as publishing,
+      // because a saved rule is live immediately. Say so plainly.
+      const body = (err as { body?: { error?: string; message?: string } })
+        ?.body;
+      setRuleError(
+        body?.error === "formulary_would_exclude_all"
+          ? (body.message ??
+              "This rule would leave some patients with no dispensable mask.")
+          : "Couldn't save the rule. Try again.",
+      );
+    },
   });
 
   const removeRule = useMutation({
@@ -142,7 +178,22 @@ export function AdminFormularyPage() {
   const setPosture = useMutation({
     mutationFn: (posture: "open" | "closed") =>
       updateFormulary({ defaultPosture: posture }),
-    onSuccess: invalidate,
+    onSuccess: () => {
+      setPublishError(null);
+      invalidate();
+    },
+    onError: (err: unknown) => {
+      // Closing a formulary with no allow rules denies everything. The
+      // route refuses; explain why rather than failing generically.
+      const body = (err as { body?: { error?: string; message?: string } })
+        ?.body;
+      setPublishError(
+        body?.error === "formulary_would_exclude_all"
+          ? (body.message ??
+              "A closed formulary needs allow rules before it can be closed.")
+          : "Couldn't change the formulary posture. Try again.",
+      );
+    },
   });
 
   const publish = useMutation({
@@ -322,6 +373,40 @@ export function AdminFormularyPage() {
               </div>
             ) : null}
 
+            {draft.targetKind === "mask_model" ? (
+              <>
+                <div>
+                  <Label htmlFor="rule-model-search">Find a mask</Label>
+                  <Input
+                    id="rule-model-search"
+                    value={modelSearch}
+                    onChange={(e) => setModelSearch(e.target.value)}
+                    placeholder="AirFit, DreamWear, Evora…"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="rule-model">Mask model</Label>
+                  <select
+                    id="rule-model"
+                    className="border rounded h-9 px-2 text-sm w-full"
+                    value={draft.targetMaskModelId}
+                    onChange={(e) =>
+                      setDraft({ ...draft, targetMaskModelId: e.target.value })
+                    }
+                  >
+                    <option value="">
+                      {models.isLoading ? "Loading…" : "Choose…"}
+                    </option>
+                    {(models.data?.models ?? []).map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.manufacturer} {m.modelName}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </>
+            ) : null}
+
             {draft.effect === "prefer" ? (
               <div>
                 <Label htmlFor="rule-rank">Preference rank (1 = first)</Label>
@@ -406,6 +491,15 @@ export function AdminFormularyPage() {
             </div>
           </div>
 
+          {ruleError ? (
+            <div
+              className="text-sm rounded border px-3 py-2 mb-3 bg-amber-50 text-amber-900 border-amber-200"
+              role="alert"
+            >
+              {ruleError}
+            </div>
+          ) : null}
+
           <Button
             onClick={() => addRule.mutate()}
             disabled={
@@ -413,7 +507,9 @@ export function AdminFormularyPage() {
               (draft.targetKind === "manufacturer" &&
                 draft.targetManufacturer.trim() === "") ||
               (draft.targetKind === "interface_type" &&
-                draft.targetInterfaceType === "")
+                draft.targetInterfaceType === "") ||
+              (draft.targetKind === "mask_model" &&
+                draft.targetMaskModelId === "")
             }
           >
             Add rule

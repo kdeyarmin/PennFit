@@ -91,6 +91,8 @@ export interface SizeVariant {
   faceWidthMax: number | null;
   isDefault: boolean;
   hcpcsCode: string | null;
+  /** Manufacturer part number for THIS size — what actually gets ordered. */
+  manufacturerPartNumber: string | null;
   status: "current" | "discontinued";
   fitDataSource: FitDataSource;
   needsClinicalReview: boolean;
@@ -323,6 +325,12 @@ export interface SizeChoice {
   component: SizeVariant["component"];
   sizeCode: string;
   sizeLabel: string;
+  /**
+   * Manufacturer part number for this exact size. Carried through to the
+   * order so the recommended SIZE reaches fulfilment — the previous flow
+   * ranked a mask, then dropped which size it had chosen.
+   */
+  manufacturerPartNumber: string | null;
   /** How far inside its band the measurement sits, 0..1. */
   bandMargin: number;
   fitDataSource: FitDataSource;

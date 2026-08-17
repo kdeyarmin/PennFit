@@ -45,6 +45,7 @@ function variant(over: Partial<SizeVariant> = {}): SizeVariant {
     component: "cushion",
     sizeCode: "M",
     sizeLabel: "Medium",
+    manufacturerPartNumber: null,
     sortOrder: 0,
     noseWidthMin: 30,
     noseWidthMax: 38,

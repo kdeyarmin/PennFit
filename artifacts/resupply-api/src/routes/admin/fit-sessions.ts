@@ -37,6 +37,7 @@ import {
 } from "../../middlewares/requireAdmin";
 import { buildFitReport } from "../../lib/fitting/build-report";
 import { renderFitReportPdf } from "../../lib/fitting/fit-report-pdf";
+import { sendRescanRequest } from "../../lib/fitting/rescan-notify";
 import { isFeatureEnabled } from "../../lib/feature-flags";
 
 const router: IRouter = Router();
@@ -225,7 +226,11 @@ router.get(
       );
       res.end(pdf);
 
-      await recordEvent(orgId, id.data, "report.generated", req, {
+      // This route is triggered by a human taking a copy, so the event is a
+      // DOWNLOAD. `report.generated` would imply the PDF was produced ahead
+      // of time, and would make the counter below count the wrong thing on
+      // a report that is rendered fresh on every request.
+      await recordEvent(orgId, id.data, "report.downloaded", req, {
         outcome: report.session.outcome,
       });
       await getOrgScopedClient(orgId)
@@ -233,8 +238,8 @@ router.get(
         .update({
           report_generated_at: new Date().toISOString(),
           report_count:
-            (report.auditTrail.filter((e) => e.eventType === "report.generated")
-              .length ?? 0) + 1,
+            report.auditTrail.filter((e) => e.eventType === "report.downloaded")
+              .length + 1,
         })
         .eq("id", id.data);
     } catch (err) {
@@ -270,7 +275,35 @@ router.post(
       return;
     }
 
-    const { error } = await getOrgScopedClient(orgId)
+    // You cannot approve a recommendation that does not exist. Every
+    // low-confidence, contraindicated, and outside-range session is stored
+    // with a NULL primary recommendation precisely BECAUSE the engine
+    // declined to name a mask — rubber-stamping one would produce an
+    // "approved" clinical report with no mask or size on it, which is the
+    // opposite of what the exception states exist for. Those sessions go
+    // through override (a clinician picks a mask, with a reason) or rescan.
+    const supabase = getOrgScopedClient(orgId);
+    const { data: existing } = (await supabase
+      .from("fit_sessions")
+      .select("primary_recommendation, outcome")
+      .eq("id", id.data)
+      .limit(1)
+      .maybeSingle()) as { data: Record<string, unknown> | null };
+    if (!existing) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    if (!existing.primary_recommendation) {
+      res.status(409).json({
+        error: "no_recommendation_to_approve",
+        outcome: existing.outcome,
+        message:
+          "This fitting produced no automated recommendation, so there is nothing to approve. Override it with a mask you have chosen, or request a new scan.",
+      });
+      return;
+    }
+
+    const { error } = await supabase
       .from("fit_sessions")
       .update({
         review_status: "approved",
@@ -320,10 +353,53 @@ router.post(
       return;
     }
 
+    // Validate BOTH references against what this tenant can actually see.
+    // The catalog FKs are global (platform rows have a NULL org_id), so an
+    // unvalidated UUID lets a caller pin another tenant's private model —
+    // or pair a real mask with an unrelated size — onto a clinical
+    // disposition, producing a corrupt record whose override name will not
+    // even resolve in the report.
+    const supabase = getOrgScopedClient(orgId);
+    const { data: model } = (await supabase
+      .raw()
+      .schema("resupply")
+      .from("mask_models")
+      .select("id")
+      .or(`org_id.is.null,org_id.eq.${orgId}`)
+      .eq("id", body.data.maskModelId)
+      .limit(1)
+      .maybeSingle()) as { data: Record<string, unknown> | null };
+    if (!model) {
+      res.status(400).json({
+        error: "unknown_mask_model",
+        message: "That mask is not in this organization's catalog.",
+      });
+      return;
+    }
+    if (body.data.variantId) {
+      const { data: variant } = (await supabase
+        .raw()
+        .schema("resupply")
+        .from("mask_size_variants")
+        .select("id")
+        .eq("id", body.data.variantId)
+        // The size must belong to the mask being dispensed.
+        .eq("mask_model_id", body.data.maskModelId)
+        .limit(1)
+        .maybeSingle()) as { data: Record<string, unknown> | null };
+      if (!variant) {
+        res.status(400).json({
+          error: "variant_model_mismatch",
+          message: "That size does not belong to the selected mask.",
+        });
+        return;
+      }
+    }
+
     // The reason is mandatory at the schema level AND at the database
     // level (a CHECK on fit_sessions). A recommendation silently replaced
     // is exactly what the report exists to prevent.
-    const { error } = await getOrgScopedClient(orgId)
+    const { error } = await supabase
       .from("fit_sessions")
       .update({
         review_status: "overridden",
@@ -380,10 +456,27 @@ router.post(
       return;
     }
 
+    // Actually ask the patient. Flagging the session alone reads to staff
+    // as "the patient has been asked" while nothing has left the
+    // building, and the fitting then dies in a queue nobody outside this
+    // console can see. Delivery is best-effort but its OUTCOME is
+    // reported: a clinician needs to know the difference between "asked"
+    // and "we have no way to reach them".
+    const delivery = await sendRescanRequest(orgId, id.data);
+
     await recordEvent(orgId, id.data, "rescan.requested", req, {
       reasonLength: body.data.reason.length,
+      notified: delivery.delivered,
+      notifyReason: delivery.reason,
     });
-    res.json({ ok: true });
+    res.json({
+      ok: true,
+      patientNotified: delivery.delivered,
+      notifyReason: delivery.reason,
+      // Handed back so staff can read the link out or paste it into a
+      // channel of their own when automated delivery had nowhere to go.
+      inviteLink: delivery.delivered ? null : delivery.link,
+    });
   },
 );
 

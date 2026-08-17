@@ -350,12 +350,19 @@ function draw(doc: PDFKit.PDFDocument, r: FitReport): void {
   // ── Provenance ──
   section(doc, "Provenance");
   field(doc, "Rules engine version", r.provenance.rulesEngineVersion);
+  // "None configured" is a CLAIM about how the recommendation was made, so
+  // it may only be printed when a formulary genuinely did not apply. A
+  // recorded version means one did, even if its name wasn't snapshotted on
+  // an older session — fall back to the version rather than asserting the
+  // patient was fitted against an unrestricted catalog.
   field(
     doc,
     "Formulary",
     r.provenance.formularyName
-      ? `${r.provenance.formularyName} v${r.provenance.formularyVersion ?? "?"}`
-      : "None configured (unrestricted)",
+      ? `${r.provenance.formularyName} (version ${r.provenance.formularyVersion ?? "unrecorded"})`
+      : r.provenance.formularyVersion !== null
+        ? `Version ${r.provenance.formularyVersion} (name not recorded)`
+        : "None configured (unrestricted)",
   );
   field(
     doc,

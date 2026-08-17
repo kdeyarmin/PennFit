@@ -125,6 +125,11 @@ CREATE TABLE IF NOT EXISTS "resupply"."fit_sessions" (
   "rules_engine_version" text NOT NULL,
   "formulary_id" uuid REFERENCES "resupply"."formularies"("id"),
   "formulary_version" integer,
+  -- Snapshotted, not joined. A formulary can be renamed, and the FK is
+  -- ON DELETE-less by design, but a report reprinted a year later has to
+  -- name the formulary AS IT WAS when the recommendation ran — resolving
+  -- it live would quietly rewrite history.
+  "formulary_name" text,
   -- The rule ids that actually fired, per candidate.
   "formulary_rules_matched" jsonb,
   "catalog_snapshot_version" integer,

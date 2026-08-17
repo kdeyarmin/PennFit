@@ -118,6 +118,7 @@ export function staticCatalogAsMasks(
         nostrilWidthMax: null,
         isDefault: i === Math.floor(sizes.length / 2),
         hcpcsCode: null,
+        manufacturerPartNumber: null,
         status: "current",
         fitDataSource: "estimated",
         needsClinicalReview: true,
@@ -192,6 +193,7 @@ export function invalidateFittingContext(orgId?: string): void {
 
 type ModelRow = {
   id: string;
+  org_id: string | null;
   slug: string;
   manufacturer: string;
   model_name: string;
@@ -293,61 +295,140 @@ async function loadFromDb(orgId: string): Promise<FittingContext> {
   // every platform row. The tenant boundary is preserved by the explicit
   // `org_id.is.null,org_id.eq.<tenant>` filter below — a tenant can see the
   // shared catalog and its own additions, never another tenant's.
-  const [models, variants, contras, formularyRows, availabilityRows, screen] =
-    await Promise.all([
-      withTimeout(
-        supabase
-          .raw()
-          .schema("resupply")
-          .from("mask_models")
-          .select(
-            "id, slug, manufacturer, model_name, product_line, interface_type, service_line, therapy_modes, vented, has_magnetic_components, magnet_free_variant_slug, pressure_min_cm_h2o, pressure_max_cm_h2o, supports_supplemental_oxygen, minimal_contact, avoids_nasal_bridge, hose_position, facial_hair_tolerance, side_sleeping_tolerance, claustrophobia_tolerance, glasses_compatible, cushion_material, headgear_style, weight_grams, description, image_url, status, fit_data_source, needs_clinical_review, catalog_version",
-          )
-          .or(`org_id.is.null,org_id.eq.${orgId}`)
-          .neq("status", "pre_release")
-          .limit(2000),
-      ),
-      withTimeout(
-        supabase
-          .raw()
-          .schema("resupply")
-          .from("mask_size_variants")
-          .select("*")
-          .eq("status", "current")
-          .limit(5000),
-      ),
-      withTimeout(
-        supabase
-          .raw()
-          .schema("resupply")
-          .from("mask_contraindications")
-          .select("mask_model_id, factor, severity, rationale")
-          .limit(5000),
-      ),
-      withTimeout(
-        supabase
-          .from("formularies")
-          .select("id, name, version, default_posture")
-          .eq("status", "active")
-          .limit(1)
-          .maybeSingle(),
-      ),
-      withTimeout(
-        supabase
-          .from("mask_availability")
-          .select("mask_model_id, availability, margin_rank")
-          .limit(5000),
-      ),
-      loadSafetyScreen(orgId),
-    ]);
+  const [
+    models,
+    variants,
+    contras,
+    formularyRows,
+    availabilityRows,
+    variantReviews,
+    screen,
+  ] = await Promise.all([
+    withTimeout(
+      supabase
+        .raw()
+        .schema("resupply")
+        .from("mask_models")
+        .select(
+          "id, org_id, slug, manufacturer, model_name, product_line, interface_type, service_line, therapy_modes, vented, has_magnetic_components, magnet_free_variant_slug, pressure_min_cm_h2o, pressure_max_cm_h2o, supports_supplemental_oxygen, minimal_contact, avoids_nasal_bridge, hose_position, facial_hair_tolerance, side_sleeping_tolerance, claustrophobia_tolerance, glasses_compatible, cushion_material, headgear_style, weight_grams, description, image_url, status, fit_data_source, needs_clinical_review, catalog_version",
+        )
+        .or(`org_id.is.null,org_id.eq.${orgId}`)
+        .neq("status", "pre_release")
+        .limit(2000),
+    ),
+    withTimeout(
+      supabase
+        .raw()
+        .schema("resupply")
+        .from("mask_size_variants")
+        .select("*")
+        .eq("status", "current")
+        .limit(5000),
+    ),
+    withTimeout(
+      supabase
+        .raw()
+        .schema("resupply")
+        .from("mask_contraindications")
+        .select("mask_model_id, factor, severity, rationale")
+        .limit(5000),
+    ),
+    withTimeout(
+      supabase
+        .from("formularies")
+        .select("id, name, version, default_posture")
+        .eq("status", "active")
+        .limit(1)
+        .maybeSingle(),
+    ),
+    withTimeout(
+      supabase
+        .from("mask_availability")
+        .select("mask_model_id, availability, margin_rank")
+        .limit(5000),
+    ),
+    // THIS tenant's clinical sign-off on the shared size bands. The
+    // platform `needs_clinical_review` flag is never cleared by a
+    // tenant (0482 header explains why); an approved row here is what
+    // lifts the confidence cap, and only for this org.
+    withTimeout(
+      supabase
+        .from("mask_variant_reviews")
+        .select("size_variant_id, approved")
+        .eq("approved", true)
+        .limit(20000),
+    ),
+    loadSafetyScreen(orgId),
+  ]);
 
-  if (models.error) throw models.error;
-  const modelRows = (models.data ?? []) as ModelRow[];
+  // FAIL CLOSED on ANY of these, not just the models query.
+  //
+  // PostgREST reports failures as `{ error }` on a RESOLVED promise, so a
+  // failed sub-query silently becomes an empty array. That is harmless for
+  // most data and actively dangerous for two of these: an empty
+  // contraindications result deletes every hard clinical exclusion, and an
+  // empty formulary result turns a closed formulary into an open one. Both
+  // would produce a confident-looking recommendation from missing safety
+  // data while still reporting `degraded: false`.
+  //
+  // Throwing here routes the caller into the documented degraded path
+  // (static catalog, open formulary, `degraded: true` stamped on the
+  // session and printed on the report), which is a visibly worse answer
+  // rather than an invisibly wrong one.
+  //
+  // `mask_variant_reviews` is deliberately NOT in this list. Its failure
+  // mode is asymmetric: losing it leaves every variant flagged as
+  // unreviewed, which caps confidence and routes to a human — strictly
+  // more cautious, never less. Tearing the whole context down to the
+  // static catalog over a safe-direction failure would be the worse
+  // trade.
+  for (const [label, result] of [
+    ["mask_models", models],
+    ["mask_size_variants", variants],
+    ["mask_contraindications", contras],
+    ["formularies", formularyRows],
+    ["mask_availability", availabilityRows],
+  ] as const) {
+    const err = (result as { error?: { message?: string } | null }).error;
+    if (err) {
+      throw new Error(
+        `fitting catalog load failed on ${label}: ${err.message ?? "unknown"}`,
+      );
+    }
+  }
+
+  const allModelRows = (models.data ?? []) as ModelRow[];
+
+  // A tenant may add a private model that SHADOWS a platform slug (0481
+  // allows exactly that, via two partial unique indexes). Keep the tenant's
+  // row and drop the platform one, or the engine ranks the same logical
+  // mask twice while slug-keyed lookups — availability, the non-magnetic
+  // alternative search — collapse them back into one arbitrarily.
+  const modelRows: ModelRow[] = [];
+  const bySlugPreferringTenant = new Map<string, ModelRow>();
+  for (const row of allModelRows) {
+    const existing = bySlugPreferringTenant.get(row.slug);
+    if (!existing || (existing.org_id === null && row.org_id !== null)) {
+      bySlugPreferringTenant.set(row.slug, row);
+    }
+  }
+  modelRows.push(...bySlugPreferringTenant.values());
+
   if (modelRows.length === 0) {
     // An empty catalog is a configuration state, not an error, but it is
     // also not something to recommend from. Fall back rather than return
     // zero candidates and call it "contraindicated".
     throw new Error("mask catalog is empty");
+  }
+
+  // Size variants carry a PLATFORM `needs_clinical_review` flag meaning
+  // "nobody has checked these millimetre bands." A tenant clears it for
+  // itself by signing off in the catalog admin page, which writes a
+  // tenant-scoped `mask_variant_reviews` row rather than mutating the
+  // shared variant. So the flag the engine acts on is the AND of the two.
+  const approvedVariantIds = new Set<string>();
+  for (const r of asRows(variantReviews)) {
+    approvedVariantIds.add(String(r.size_variant_id));
   }
 
   const variantsByModel = new Map<string, SizeVariant[]>();
@@ -372,9 +453,13 @@ async function loadFromDb(orgId: string): Promise<FittingContext> {
       faceWidthMax: num(v.face_width_max_mm as never),
       isDefault: Boolean(v.is_default),
       hcpcsCode: (v.hcpcs_code as string | null) ?? null,
+      manufacturerPartNumber:
+        (v.manufacturer_part_number as string | null) ?? null,
       status: (v.status as SizeVariant["status"]) ?? "current",
       fitDataSource: v.fit_data_source as SizeVariant["fitDataSource"],
-      needsClinicalReview: Boolean(v.needs_clinical_review),
+      needsClinicalReview:
+        Boolean(v.needs_clinical_review) &&
+        !approvedVariantIds.has(String(v.id)),
     } as SizeVariant);
     variantsByModel.set(modelId, list);
   }

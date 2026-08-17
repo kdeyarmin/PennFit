@@ -38,14 +38,59 @@ vi.mock("../../lib/feature-flags.js", () => ({
   isFeatureEnabled: vi.fn(async (key: string) => featureFlags.enabled.has(key)),
 }));
 
-// The org-scoped client is only used for persistence here. Every call
-// resolves to an error shape so we exercise the "session write failed but
-// the patient still gets their answer" path by default.
-vi.mock("@workspace/resupply-db", () => ({
-  getOrgScopedClient: vi.fn(() => {
-    throw new Error("no database in tests");
-  }),
+// The org-scoped client backs two things here: the STATEFUL invite check
+// (which must see a live invite) and session persistence (which is
+// deliberately allowed to fail, so the default exercises the "session
+// write failed but the patient still gets their answer" path).
+//
+// `db.invite` is what the fitter_invites read returns — set it to a
+// revoked or expired row to exercise those branches.
+const db = vi.hoisted(() => ({
+  invite: {
+    patient_id: null as string | null,
+    status: "sent",
+    expires_at: null as string | null,
+  } as Record<string, unknown> | null,
 }));
+
+vi.mock("@workspace/resupply-db", () => {
+  // A minimal chainable PostgREST stand-in. Reads on `fitter_invites`
+  // resolve to `db.invite`; every other table resolves empty, and every
+  // write rejects — which is exactly the persistence-failure path.
+  const builder = (table: string) => {
+    const chain: Record<string, unknown> = {};
+    const self = () => chain;
+    for (const method of ["select", "eq", "limit", "order", "ilike", "neq"]) {
+      chain[method] = () => self();
+    }
+    chain.maybeSingle = async () =>
+      table === "fitter_invites"
+        ? { data: db.invite, error: null }
+        : { data: null, error: null };
+    chain.single = async () => {
+      throw new Error("no database in tests");
+    };
+    chain.insert = () => ({
+      select: () => ({
+        single: async () => {
+          throw new Error("no database in tests");
+        },
+      }),
+      then: (resolve: (v: unknown) => unknown) =>
+        resolve({ data: null, error: { message: "no database in tests" } }),
+    });
+    chain.update = () => ({
+      eq: async () => ({ data: null, error: { message: "no db" } }),
+    });
+    return chain;
+  };
+  return {
+    getOrgScopedClient: vi.fn(() => ({
+      from: (table: string) => builder(table),
+      raw: () => ({ schema: () => ({ from: (t: string) => builder(t) }) }),
+    })),
+  };
+});
 
 const catalogStore = vi.hoisted(() => ({ degraded: false }));
 vi.mock("../../lib/fitting/catalog-store.js", async () => {
@@ -92,6 +137,7 @@ afterEach(() => {
     "fitter.clinical_assessment",
     "fitter.confidence_gating",
   ]);
+  db.invite = { patient_id: null, status: "sent", expires_at: null };
 });
 
 const INVITE_ID = "11111111-1111-1111-1111-111111111111";
@@ -310,5 +356,62 @@ describe("GET /fit/catalog", () => {
     ]) {
       expect(keys.has(forbidden)).toBe(false);
     }
+  });
+});
+
+// The HMAC gate only proves an invite was ONCE issued. Unlike
+// /api/recommend — which is stateless and writes nothing — this endpoint
+// persists a PHI-bearing session, so it must also confirm the invite
+// still stands. A tab left open when staff revoked the invite is the
+// realistic path to "we kept recording patient data after being told to
+// stop".
+describe("POST /fit/assess — stateful invite checks", () => {
+  it("declines a revoked invite even with a validly-signed token", async () => {
+    db.invite = { patient_id: null, status: "revoked", expires_at: null };
+    const res = await post({
+      measurements: VALID_MEASUREMENTS,
+      profile: VALID_PROFILE,
+    });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ valid: false, reason: "revoked" });
+    expect(res.body.primary).toBeUndefined();
+  });
+
+  it("declines an expired invite", async () => {
+    db.invite = {
+      patient_id: null,
+      status: "sent",
+      expires_at: new Date(Date.now() - 60_000).toISOString(),
+    };
+    const res = await post({
+      measurements: VALID_MEASUREMENTS,
+      profile: VALID_PROFILE,
+    });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ valid: false, reason: "expired" });
+  });
+
+  it("declines when the invite row no longer exists", async () => {
+    db.invite = null;
+    const res = await post({
+      measurements: VALID_MEASUREMENTS,
+      profile: VALID_PROFILE,
+    });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ valid: false, reason: "invite_not_found" });
+  });
+
+  it("accepts an invite that is live and not yet expired", async () => {
+    db.invite = {
+      patient_id: null,
+      status: "sent",
+      expires_at: new Date(Date.now() + 3_600_000).toISOString(),
+    };
+    const res = await post({
+      measurements: VALID_MEASUREMENTS,
+      profile: VALID_PROFILE,
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.outcome).toBeTruthy();
   });
 });
