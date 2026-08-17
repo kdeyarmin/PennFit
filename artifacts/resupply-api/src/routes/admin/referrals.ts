@@ -1,14 +1,31 @@
-// /admin/referrals — the DME's side of the provider referral portal.
+// /admin/provider-referrals — the DME's side of the provider referral
+// portal.
 //
-//   GET   /admin/referrals              — the inbound queue
-//   GET   /admin/referrals/:id          — one referral, with timeline + thread
-//   POST  /admin/referrals/:id/accept   — take it, optionally onto a chart
-//   POST  /admin/referrals/:id/decline  — send it back, with a reason
-//   POST  /admin/referrals/:id/status   — in_progress / dispensed
-//   POST  /admin/referrals/:id/messages — reply to the provider
-//   GET   /admin/referrals/providers    — linked referring providers
-//   POST  /admin/referrals/providers    — authorize one to refer here
-//   PATCH /admin/referrals/providers/:id — suspend / revoke / re-point
+//   GET   /admin/provider-referrals              — the inbound queue
+//   GET   /admin/provider-referrals/:id          — one referral + timeline
+//   POST  /admin/provider-referrals/:id/accept   — take it, onto a chart
+//   POST  /admin/provider-referrals/:id/decline  — send it back, with a reason
+//   POST  /admin/provider-referrals/:id/status   — in_progress / dispensed
+//   POST  /admin/provider-referrals/:id/messages — reply to the provider
+//   GET   /admin/provider-referrals/providers    — linked referring providers
+//   POST  /admin/provider-referrals/providers    — authorize one to refer here
+//   PATCH /admin/provider-referrals/providers/:id — suspend / revoke
+//
+// WHY NOT THE OBVIOUS `/admin/referrals`
+// --------------------------------------
+// That namespace is already occupied, and taking it broke two live
+// endpoints. `GET /admin/referrals/scorecard` (referral-source CRM, 0431)
+// and `POST /admin/referrals/scan-attribution` (patient-to-patient
+// attribution, 0107) both live under it, and this router mounts several
+// hundred lines EARLIER in routes/index.ts — so a parameterised
+// `/admin/referrals/:id` here swallowed `/scorecard` and 400'd it on the
+// uuid parse, for every tenant.
+//
+// The same collision bit the product-scope allowlist, which matches by
+// substring: allowlisting `/admin/referrals` for fitter-only tenants also
+// exposed the unrelated attribution sweep. A distinct prefix fixes both
+// at once, which is why this is `provider-referrals` rather than a
+// carefully-ordered `/admin/referrals`.
 //
 // THIS SIDE IS THE ORDINARY ONE. Unlike the provider tree — where a
 // referral's tenant comes off the row because the provider is a cross-org
@@ -24,7 +41,7 @@
 // landing in a tenant's queue — so it is gated on `provider_portal.manage`
 // rather than a general clinical permission.
 //
-// PATH CHOICE: top-level /admin/referrals rather than under
+// PATH CHOICE: top-level rather than under
 // /admin/clinical/, matching the reasoning in fit-sessions.ts —
 // /admin/clinical/* is not on the mask_fitter product-scope allowlist, and
 // a fitter-only DME receiving referrals is exactly the customer this
@@ -136,13 +153,15 @@ function rowsOf(result: unknown): Row[] {
   return Array.isArray(r?.data) ? (r.data as Row[]) : [];
 }
 
-// Registered BEFORE /admin/referrals/:id on purpose: Express matches in
-// declaration order, so with these last, a GET of /admin/referrals/providers
-// would bind :id="providers" and 400 on the uuid parse.
+// Registered BEFORE the `/:id` route on purpose: Express matches in
+// declaration order, so with these last, a GET of
+// /admin/provider-referrals/providers would bind :id="providers" and 400
+// on the uuid parse. (The same class of bug this whole router hit against
+// the pre-existing /admin/referrals namespace — see the header.)
 // ── Referring-provider links ─────────────────────────────────────────
 
 router.get(
-  "/admin/referrals/providers",
+  "/admin/provider-referrals/providers",
   requireAdmin,
   requirePermission("provider_portal.manage"),
   adminRateLimit({ name: "referrals.providers_list", preset: "query" }),
@@ -183,7 +202,7 @@ router.get(
 );
 
 router.post(
-  "/admin/referrals/providers",
+  "/admin/provider-referrals/providers",
   requireAdmin,
   requirePermission("provider_portal.manage"),
   adminRateLimit({ name: "referrals.providers_create", preset: "sensitive" }),
@@ -243,7 +262,7 @@ router.post(
 );
 
 router.patch(
-  "/admin/referrals/providers/:id",
+  "/admin/provider-referrals/providers/:id",
   requireAdmin,
   requirePermission("provider_portal.manage"),
   adminRateLimit({ name: "referrals.providers_update", preset: "mutation" }),
@@ -290,7 +309,7 @@ router.patch(
 // ── Queue ────────────────────────────────────────────────────────────
 
 router.get(
-  "/admin/referrals",
+  "/admin/provider-referrals",
   requireAdmin,
   requirePermission("clinical.read"),
   adminRateLimit({ name: "referrals.list", preset: "query" }),
@@ -338,7 +357,7 @@ router.get(
 );
 
 router.get(
-  "/admin/referrals/:id",
+  "/admin/provider-referrals/:id",
   requireAdmin,
   requirePermission("clinical.read"),
   adminRateLimit({ name: "referrals.detail", preset: "query" }),
@@ -411,7 +430,7 @@ router.get(
 // ── Accept / decline / progress ──────────────────────────────────────
 
 router.post(
-  "/admin/referrals/:id/accept",
+  "/admin/provider-referrals/:id/accept",
   requireAdmin,
   requirePermission("clinical.intervention.write"),
   adminRateLimit({ name: "referrals.accept", preset: "mutation" }),
@@ -533,7 +552,7 @@ router.post(
 );
 
 router.post(
-  "/admin/referrals/:id/decline",
+  "/admin/provider-referrals/:id/decline",
   requireAdmin,
   requirePermission("clinical.intervention.write"),
   adminRateLimit({ name: "referrals.decline", preset: "mutation" }),
@@ -607,7 +626,7 @@ router.post(
 );
 
 router.post(
-  "/admin/referrals/:id/status",
+  "/admin/provider-referrals/:id/status",
   requireAdmin,
   requirePermission("clinical.intervention.write"),
   adminRateLimit({ name: "referrals.status", preset: "mutation" }),
@@ -678,7 +697,7 @@ router.post(
 );
 
 router.post(
-  "/admin/referrals/:id/messages",
+  "/admin/provider-referrals/:id/messages",
   requireAdmin,
   requirePermission("clinical.intervention.write"),
   adminRateLimit({ name: "referrals.message", preset: "mutation" }),

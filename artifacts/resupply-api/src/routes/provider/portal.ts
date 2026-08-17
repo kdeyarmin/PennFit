@@ -25,6 +25,7 @@ import {
   requireProviderMfaEnrolled,
 } from "../../middlewares/requireProvider";
 import { providerPortalRateLimiter } from "./shared";
+import { asOrgId } from "./referral-shared.js";
 
 const router: IRouter = Router();
 
@@ -171,6 +172,13 @@ router.get(
       return;
     }
     const supabase = getOrgScopedClient(orgId);
+    // The LIST stays scoped to the host tenant — a provider on Penn's
+    // portal browses Penn's documents. That is a deliberate invariant
+    // (portal.test.ts asserts it by name against a second tenant), and it
+    // is separate from authorization, which is the `provider_id` filter
+    // below. Only the single-request lookup is row-owned, because a
+    // referral order is reached by direct link from the referral page
+    // rather than by browsing this list — see loadOwnRequest.
     // provider_signature_requests is a BLOCKED TENANT table — raw client
     // + MANUAL org_id filter.
     let query = supabase
@@ -207,27 +215,63 @@ router.get(
 
 const idParam = z.object({ id: z.string().uuid() });
 
-/** Load a request that belongs to the signed-in provider, or null. */
+/**
+ * Load a signature request that belongs to the signed-in provider.
+ *
+ * ROW-OWNED, not host-scoped — read this before adding an org filter back.
+ *
+ * This used to require the request to live in the tenant resolved from
+ * the request's HOST. That was fine while every signable document was
+ * staged by the same DME whose domain the provider signed in on. Referral
+ * orders (migration 0487) break that assumption: a physician refers to
+ * several DMEs, the order is created under the DESTINATION tenant, and the
+ * provider reaches it from whichever portal domain they happen to be on —
+ * so a host filter 404'd exactly the cross-tenant case the referral portal
+ * exists to serve.
+ *
+ * The authorization is `provider_id`, taken from the authenticated session
+ * and never from the request: a provider may sign the documents addressed
+ * to them, wherever those were staged. The row's own `org_id` then decides
+ * which tenant every downstream write lands in, which is why it is
+ * returned alongside the row rather than being assumed by the caller.
+ *
+ * For the pre-existing single-tenant e-sign flow this is behaviourally
+ * identical — the request was already in the host's tenant, so the same
+ * row matches either way.
+ */
 async function loadOwnRequest(
-  orgId: string,
   providerId: string,
   id: string,
-): Promise<Record<string, unknown> | null> {
-  // provider_signature_requests is a BLOCKED TENANT table — raw client
-  // + MANUAL org_id filter.
-  const supabase = getOrgScopedClient(orgId);
-  const { data, error } = await supabase
+): Promise<{ orgId: string; row: Record<string, unknown> } | null> {
+  const seedOrgId = await resolveSeedOrgId();
+  if (!seedOrgId) return null;
+  // raw-org-scope-exempt: resolving which tenant staged a request is by
+  // definition a cross-tenant read. It is constrained to the signed-in
+  // provider's own requests by `provider_id`; a caller supplies only the
+  // request id, and another provider's request simply does not match.
+  const { data, error } = await getOrgScopedClient(seedOrgId)
     .raw()
     .schema("resupply")
     .from("provider_signature_requests")
     .select("*")
     .eq("id", id)
     .eq("provider_id", providerId)
-    .eq("org_id", orgId)
     .limit(1)
     .maybeSingle();
   if (error) throw error;
-  return data ?? null;
+  if (!data) return null;
+  const row = data as Record<string, unknown>;
+  const orgId = asOrgId(row.org_id);
+  if (!orgId) {
+    // Same reasoning as the referral loader: refuse rather than scope a
+    // signature write to a tenant id we cannot vouch for.
+    logger.error(
+      { event: "signature_request_missing_org", requestId: id },
+      "provider_signature_requests row has no usable org_id",
+    );
+    return null;
+  }
+  return { orgId, row };
 }
 
 router.get(
@@ -242,16 +286,15 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const orgId = await resolveTenantOrgId(req);
-    if (!orgId) {
-      res.status(500).json({ error: "tenant_context_missing" });
-      return;
-    }
-    const row = await loadOwnRequest(orgId, account.providerId, params.data.id);
-    if (!row) {
+    // The request's OWN tenant, not the host's — a referral order is
+    // staged under the destination DME, which need not be the domain the
+    // provider signed in on.
+    const found = await loadOwnRequest(account.providerId, params.data.id);
+    if (!found) {
       res.status(404).json({ error: "not_found" });
       return;
     }
+    const { orgId, row } = found;
     // Record a view (best-effort; never block the read).
     if (row.status === "pending") {
       await appendSignatureEvent(orgId, {
@@ -488,16 +531,15 @@ router.post(
       });
       return;
     }
-    const orgId = await resolveTenantOrgId(req);
-    if (!orgId) {
-      res.status(500).json({ error: "tenant_context_missing" });
-      return;
-    }
-    const row = await loadOwnRequest(orgId, account.providerId, params.data.id);
-    if (!row) {
+    // The request's OWN tenant, not the host's — a referral order is
+    // staged under the destination DME, which need not be the domain the
+    // provider signed in on.
+    const found = await loadOwnRequest(account.providerId, params.data.id);
+    if (!found) {
       res.status(404).json({ error: "not_found" });
       return;
     }
+    const { orgId, row } = found;
     if (row.status !== "pending") {
       res.status(409).json({
         error: "not_pending",
@@ -667,16 +709,15 @@ router.post(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
-    const orgId = await resolveTenantOrgId(req);
-    if (!orgId) {
-      res.status(500).json({ error: "tenant_context_missing" });
-      return;
-    }
-    const row = await loadOwnRequest(orgId, account.providerId, params.data.id);
-    if (!row) {
+    // The request's OWN tenant, not the host's — a referral order is
+    // staged under the destination DME, which need not be the domain the
+    // provider signed in on.
+    const found = await loadOwnRequest(account.providerId, params.data.id);
+    if (!found) {
       res.status(404).json({ error: "not_found" });
       return;
     }
+    const { orgId, row } = found;
     if (row.status !== "pending") {
       res.status(409).json({ error: "not_pending" });
       return;

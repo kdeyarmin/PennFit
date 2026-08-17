@@ -1276,7 +1276,10 @@ function AdminConsole() {
             />
             {/* Inbound referrals from the provider portal. Top-level for
                 the same product-scope reason as fit-sessions above. */}
-            <Route path="/admin/referrals" component={AdminReferralsPage} />
+            <Route
+              path="/admin/provider-referrals"
+              component={AdminReferralsPage}
+            />
             <Route
               path="/admin/fitter/catalog"
               component={AdminMaskCatalogPage}

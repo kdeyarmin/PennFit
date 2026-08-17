@@ -1,9 +1,9 @@
-// Route tests for routes/admin/referrals.ts — the DME's inbound queue.
+// Route tests for routes/admin/provider-referrals.ts — the DME's inbound queue.
 //
 // Three things are worth locking down here, and only three:
 //
-//   1. ROUTE ORDER. `/admin/referrals/providers` is a literal path that
-//      sits under the same prefix as `/admin/referrals/:id`. Express
+//   1. ROUTE ORDER. `/admin/provider-referrals/providers` is a literal path that
+//      sits under the same prefix as `/admin/provider-referrals/:id`. Express
 //      matches in declaration order, so if the literal ever drifts below
 //      the parameterised route it binds `:id="providers"` and 400s on the
 //      uuid parse. That is a silent break of a working page, and it is
@@ -179,8 +179,10 @@ beforeEach(() => {
 });
 
 describe("route ordering", () => {
-  it("serves /admin/referrals/providers as a literal, not as :id", async () => {
-    const res = await request(makeApp()).get("/admin/referrals/providers");
+  it("serves /admin/provider-referrals/providers as a literal, not as :id", async () => {
+    const res = await request(makeApp()).get(
+      "/admin/provider-referrals/providers",
+    );
     // If `:id` had matched first, the uuid parse would 400 with
     // "invalid_id" instead of returning the link list.
     expect(res.status).toBe(200);
@@ -188,7 +190,9 @@ describe("route ordering", () => {
   });
 
   it("still rejects a genuinely malformed referral id", async () => {
-    const res = await request(makeApp()).get("/admin/referrals/not-a-uuid");
+    const res = await request(makeApp()).get(
+      "/admin/provider-referrals/not-a-uuid",
+    );
     expect(res.status).toBe(400);
     expect(res.body.error).toBe("invalid_id");
   });
@@ -196,7 +200,7 @@ describe("route ordering", () => {
 
 describe("drafts are invisible to the DME", () => {
   it("filters the queue to submitted referrals only", async () => {
-    await request(makeApp()).get("/admin/referrals?open=true");
+    await request(makeApp()).get("/admin/provider-referrals?open=true");
     const listed = db.queries.find(
       (q) => q.table === "referrals" && q.op === "read",
     );
@@ -205,7 +209,7 @@ describe("drafts are invisible to the DME", () => {
   });
 
   it("filters the detail read the same way", async () => {
-    await request(makeApp()).get(`/admin/referrals/${REFERRAL_ID}`);
+    await request(makeApp()).get(`/admin/provider-referrals/${REFERRAL_ID}`);
     const read = db.queries.find(
       (q) => q.table === "referrals" && q.op === "read",
     );
@@ -216,7 +220,7 @@ describe("drafts are invisible to the DME", () => {
 describe("accept", () => {
   it("takes a submitted referral and stamps who took it", async () => {
     const res = await request(makeApp())
-      .post(`/admin/referrals/${REFERRAL_ID}/accept`)
+      .post(`/admin/provider-referrals/${REFERRAL_ID}/accept`)
       .send({});
     expect(res.status).toBe(200);
     expect(res.body.status).toBe("accepted");
@@ -232,7 +236,7 @@ describe("accept", () => {
   it("409s rather than re-accepting one already in progress", async () => {
     db.referral = { ...db.referral!, status: "in_progress" };
     const res = await request(makeApp())
-      .post(`/admin/referrals/${REFERRAL_ID}/accept`)
+      .post(`/admin/provider-referrals/${REFERRAL_ID}/accept`)
       .send({});
     expect(res.status).toBe(409);
     expect(res.body.error).toBe("not_pending");
@@ -241,7 +245,7 @@ describe("accept", () => {
   it("404s on a draft that was never submitted", async () => {
     db.referral = { ...db.referral!, submitted_at: null };
     const res = await request(makeApp())
-      .post(`/admin/referrals/${REFERRAL_ID}/accept`)
+      .post(`/admin/provider-referrals/${REFERRAL_ID}/accept`)
       .send({});
     expect(res.status).toBe(404);
   });
@@ -250,7 +254,7 @@ describe("accept", () => {
 describe("decline", () => {
   it("requires a reason the provider can actually read", async () => {
     const res = await request(makeApp())
-      .post(`/admin/referrals/${REFERRAL_ID}/decline`)
+      .post(`/admin/provider-referrals/${REFERRAL_ID}/decline`)
       .send({ reason: "no" });
     expect(res.status).toBe(400);
     expect(db.queries.some((q) => q.op === "update")).toBe(false);
@@ -258,7 +262,7 @@ describe("decline", () => {
 
   it("stores the reason AND posts it to the thread", async () => {
     const res = await request(makeApp())
-      .post(`/admin/referrals/${REFERRAL_ID}/decline`)
+      .post(`/admin/provider-referrals/${REFERRAL_ID}/decline`)
       .send({ reason: "We are out of network for this payer." });
     expect(res.status).toBe(200);
     const update = db.queries.find(
@@ -281,7 +285,7 @@ describe("decline", () => {
 describe("status transitions", () => {
   it("guards the allowed from-states in the WHERE, not after a read", async () => {
     await request(makeApp())
-      .post(`/admin/referrals/${REFERRAL_ID}/status`)
+      .post(`/admin/provider-referrals/${REFERRAL_ID}/status`)
       .send({ status: "in_progress" });
     const update = db.queries.find(
       (q) => q.table === "referrals" && q.op === "update",
@@ -295,7 +299,7 @@ describe("status transitions", () => {
   it("409s when the guarded update matched nothing", async () => {
     db.updateReturns = [];
     const res = await request(makeApp())
-      .post(`/admin/referrals/${REFERRAL_ID}/status`)
+      .post(`/admin/provider-referrals/${REFERRAL_ID}/status`)
       .send({ status: "dispensed" });
     expect(res.status).toBe(409);
     expect(res.body.error).toBe("invalid_transition");
@@ -303,7 +307,7 @@ describe("status transitions", () => {
 
   it("stamps dispensed_at only when dispensing", async () => {
     await request(makeApp())
-      .post(`/admin/referrals/${REFERRAL_ID}/status`)
+      .post(`/admin/provider-referrals/${REFERRAL_ID}/status`)
       .send({ status: "in_progress" });
     const update = db.queries.find(
       (q) => q.table === "referrals" && q.op === "update",
@@ -315,7 +319,7 @@ describe("status transitions", () => {
 describe("messages", () => {
   it("bumps the PROVIDER's badge, never the DME's own", async () => {
     await request(makeApp())
-      .post(`/admin/referrals/${REFERRAL_ID}/messages`)
+      .post(`/admin/provider-referrals/${REFERRAL_ID}/messages`)
       .send({ body: "Received, we'll reach out to the patient today." });
     const update = db.queries.find(
       (q) => q.table === "referrals" && q.op === "update",
@@ -326,7 +330,7 @@ describe("messages", () => {
 
   it("records the event without the message body", async () => {
     await request(makeApp())
-      .post(`/admin/referrals/${REFERRAL_ID}/messages`)
+      .post(`/admin/provider-referrals/${REFERRAL_ID}/messages`)
       .send({ body: "Patient Jane Doe called about her mask." });
     const event = db.queries.find(
       (q) => q.table === "referral_events" && q.op === "insert",
@@ -346,7 +350,7 @@ describe("messages", () => {
 describe("accept is race-safe", () => {
   it("constrains the update to status='submitted'", async () => {
     await request(makeApp())
-      .post(`/admin/referrals/${REFERRAL_ID}/accept`)
+      .post(`/admin/provider-referrals/${REFERRAL_ID}/accept`)
       .send({});
     const update = db.queries.find(
       (q) => q.table === "referrals" && q.op === "update",
@@ -358,7 +362,7 @@ describe("accept is race-safe", () => {
     // The row read as 'submitted' but someone else took it first.
     db.updateReturns = [];
     const res = await request(makeApp())
-      .post(`/admin/referrals/${REFERRAL_ID}/accept`)
+      .post(`/admin/provider-referrals/${REFERRAL_ID}/accept`)
       .send({});
     expect(res.status).toBe(409);
     expect(res.body.error).toBe("not_pending");

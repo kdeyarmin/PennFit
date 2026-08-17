@@ -1,4 +1,7 @@
-// Client for /admin/referrals/* — the DME's inbound referral queue.
+// Client for /admin/provider-referrals/* — the DME's inbound referral
+// queue. The path is `provider-referrals` because `/admin/referrals` is
+// already taken by the referral-source CRM and attribution routes; see the
+// header of routes/admin/referrals.ts.
 
 import { adminJsonFetch } from "../admin-json-fetch";
 
@@ -104,57 +107,69 @@ export function fetchInboundReferrals(filters: {
   if (filters.status) params.set("status", filters.status);
   if (filters.open) params.set("open", "true");
   const qs = params.toString();
-  return adminJsonFetch(`/admin/referrals${qs ? `?${qs}` : ""}`);
+  return adminJsonFetch(`/admin/provider-referrals${qs ? `?${qs}` : ""}`);
 }
 
 export function fetchInboundReferral(
   id: string,
 ): Promise<InboundReferralDetail> {
-  return adminJsonFetch(`/admin/referrals/${encodeURIComponent(id)}`);
+  return adminJsonFetch(`/admin/provider-referrals/${encodeURIComponent(id)}`);
 }
 
 export function acceptReferral(
   id: string,
   input: { patientId?: string | null; note?: string } = {},
 ): Promise<{ ok: true; status: string }> {
-  return adminJsonFetch(`/admin/referrals/${encodeURIComponent(id)}/accept`, {
-    method: "POST",
-    body: JSON.stringify(input),
-  });
+  return adminJsonFetch(
+    `/admin/provider-referrals/${encodeURIComponent(id)}/accept`,
+    {
+      method: "POST",
+      body: JSON.stringify(input),
+    },
+  );
 }
 
 export function declineReferral(
   id: string,
   reason: string,
 ): Promise<{ ok: true; status: string }> {
-  return adminJsonFetch(`/admin/referrals/${encodeURIComponent(id)}/decline`, {
-    method: "POST",
-    body: JSON.stringify({ reason }),
-  });
+  return adminJsonFetch(
+    `/admin/provider-referrals/${encodeURIComponent(id)}/decline`,
+    {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    },
+  );
 }
 
 export function setReferralStatus(
   id: string,
   status: "in_progress" | "dispensed",
 ): Promise<{ ok: true; status: string }> {
-  return adminJsonFetch(`/admin/referrals/${encodeURIComponent(id)}/status`, {
-    method: "POST",
-    body: JSON.stringify({ status }),
-  });
+  return adminJsonFetch(
+    `/admin/provider-referrals/${encodeURIComponent(id)}/status`,
+    {
+      method: "POST",
+      body: JSON.stringify({ status }),
+    },
+  );
 }
 
 export function replyToReferral(
   id: string,
   body: string,
 ): Promise<{ ok: true }> {
-  return adminJsonFetch(`/admin/referrals/${encodeURIComponent(id)}/messages`, {
-    method: "POST",
-    body: JSON.stringify({ body }),
-  });
+  return adminJsonFetch(
+    `/admin/provider-referrals/${encodeURIComponent(id)}/messages`,
+    {
+      method: "POST",
+      body: JSON.stringify({ body }),
+    },
+  );
 }
 
 export function fetchProviderLinks(): Promise<{ links: ProviderLink[] }> {
-  return adminJsonFetch("/admin/referrals/providers");
+  return adminJsonFetch("/admin/provider-referrals/providers");
 }
 
 export function updateProviderLink(
@@ -162,7 +177,7 @@ export function updateProviderLink(
   patch: { status?: "active" | "suspended" | "revoked" },
 ): Promise<{ ok: true }> {
   return adminJsonFetch(
-    `/admin/referrals/providers/${encodeURIComponent(id)}`,
+    `/admin/provider-referrals/providers/${encodeURIComponent(id)}`,
     { method: "PATCH", body: JSON.stringify(patch) },
   );
 }

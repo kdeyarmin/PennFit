@@ -470,10 +470,10 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             hint: "Fittings the engine declined to be confident about — approve, override, or send back for a rescan",
           },
           {
-            href: "/admin/referrals",
+            href: "/admin/provider-referrals",
             label: "Referrals",
             icon: Inbox,
-            matchPrefix: "/admin/referrals",
+            matchPrefix: "/admin/provider-referrals",
             requiredPermission: "clinical.read",
             hint: "Patients sent to you by referring clinicians, fitting and mask approval already done",
           },
@@ -1408,8 +1408,8 @@ const MASK_FITTER_NAV_GROUPS: ReadonlyArray<NavGroup> = [
       {
         label: "Referrals",
         icon: Inbox,
-        href: "/admin/referrals",
-        matchPrefix: "/admin/referrals",
+        href: "/admin/provider-referrals",
+        matchPrefix: "/admin/provider-referrals",
         hint: "Patients referred to you, with their fitting already done",
       },
       {

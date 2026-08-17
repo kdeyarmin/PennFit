@@ -220,7 +220,12 @@ const MASK_FITTER_ALLOWED_PREFIXES: readonly string[] = [
   // Inbound referrals from the provider portal. A fitter-only DME that
   // receives referrals is exactly the customer the portal exists for, so
   // omitting this would 403 them out of their own inbound queue.
-  "/admin/referrals",
+  //
+  // Deliberately NOT "/admin/referrals": this list is matched by
+  // SUBSTRING, so that prefix would also have allowed the unrelated
+  // pre-existing "/admin/referrals/scan-attribution" sweep (patient-to-
+  // patient attribution) through the fitter-only gate.
+  "/admin/provider-referrals",
   // Tenant self-service subscription billing — the SIX exact endpoints the
   // /admin/billing/package page calls (platform-billing-api.ts). NOT the
   // operational claims worklists that also live under /admin/billing/.
