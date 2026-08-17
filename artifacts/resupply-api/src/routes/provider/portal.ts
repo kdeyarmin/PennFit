@@ -66,6 +66,9 @@ const SUBJECT_LABELS: Record<string, string> = {
   dwo: "Detailed Written Order",
   swo: "Standard Written Order",
   document: "Document",
+  // Migration 0487. Signing a referral order runs through THIS queue
+  // rather than a second signing path, so there stays one audit trail.
+  referral: "Referral order",
 };
 
 /** Fixed ESIGN attestation, interpolated with the signer's details. */
@@ -381,7 +384,69 @@ async function executeSignature(opts: {
     occurredAt: new Date(nowIso),
   });
 
+  // A signed REFERRAL order has to move the referral too, or the provider
+  // signs and the referral sits in `awaiting_signature` forever. Resolved
+  // from the request's own subject rather than passed in, so every signing
+  // path — single and batch — advances it identically.
+  await advanceSignedReferral(opts.orgId, opts.requestId, nowIso);
+
   return { ok: true, signedAt: nowIso };
+}
+
+/**
+ * Move a referral to `signed` when its order has just been signed.
+ *
+ * Best-effort and never throws: the signature itself is the legally
+ * meaningful act and is already committed with its hash-chained event by
+ * the time this runs. A failure here leaves the referral one status
+ * behind, which the provider can see and re-drive, rather than
+ * jeopardising a completed signature.
+ */
+async function advanceSignedReferral(
+  orgId: string,
+  requestId: string,
+  signedAtIso: string,
+): Promise<void> {
+  try {
+    const supabase = getOrgScopedClient(orgId);
+    // provider_signature_requests is a BLOCKED TENANT table — raw client
+    // + MANUAL org_id filter.
+    const { data: request } = await supabase
+      .raw()
+      .schema("resupply")
+      .from("provider_signature_requests")
+      .select("subject_type, subject_id")
+      .eq("id", requestId)
+      .eq("org_id", orgId)
+      .limit(1)
+      .maybeSingle();
+    const row = request as {
+      subject_type?: string;
+      subject_id?: string;
+    } | null;
+    if (!row || row.subject_type !== "referral" || !row.subject_id) return;
+
+    await supabase
+      .from("referrals")
+      .update({
+        signed_at: signedAtIso,
+        status: "signed",
+        updated_at: signedAtIso,
+      })
+      .eq("id", row.subject_id)
+      .eq("status", "awaiting_signature");
+
+    const { recordReferralEvent } = await import("./referral-shared.js");
+    await recordReferralEvent(orgId, row.subject_id, "signature.signed", {
+      actorKind: "provider",
+      detail: {},
+    });
+  } catch (err) {
+    logger.warn(
+      { err: err instanceof Error ? err : new Error(String(err)), requestId },
+      "referral status did not advance after signature",
+    );
+  }
 }
 
 async function loadProviderNpi(
