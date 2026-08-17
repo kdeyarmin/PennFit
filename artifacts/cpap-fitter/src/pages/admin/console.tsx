@@ -281,6 +281,11 @@ const AdminFitSessionsPage = lazyWithRetry(() =>
     default: m.AdminFitSessionsPage,
   })),
 );
+const AdminReferralsPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-referrals").then((m) => ({
+    default: m.AdminReferralsPage,
+  })),
+);
 const AdminMaskCatalogPage = lazyWithRetry(() =>
   import("@/pages/admin/admin-mask-catalog").then((m) => ({
     default: m.AdminMaskCatalogPage,
@@ -1269,6 +1274,9 @@ function AdminConsole() {
               path="/admin/fit-sessions"
               component={AdminFitSessionsPage}
             />
+            {/* Inbound referrals from the provider portal. Top-level for
+                the same product-scope reason as fit-sessions above. */}
+            <Route path="/admin/referrals" component={AdminReferralsPage} />
             <Route
               path="/admin/fitter/catalog"
               component={AdminMaskCatalogPage}
