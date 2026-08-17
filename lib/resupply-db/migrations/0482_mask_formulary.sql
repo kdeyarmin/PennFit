@@ -290,14 +290,29 @@ CREATE TABLE IF NOT EXISTS "resupply"."mask_availability" (
 );
 --> statement-breakpoint
 
--- One availability row per (tenant, location, model, variant). NULLS NOT
--- DISTINCT so the org-wide (location_id NULL) and model-level
--- (size_variant_id NULL) rows are genuinely unique rather than
--- duplicable. Leads with org_id per the 0476-0480 lesson.
+-- One availability row per (tenant, location, model, variant).
+--
+-- The two nullable columns carry meaning — `location_id` NULL is the
+-- org-wide row and `size_variant_id` NULL is the model-level row — so a
+-- plain unique index would NOT dedupe them: SQL treats each NULL as
+-- distinct, and a tenant could accumulate any number of "org-wide, all
+-- sizes" rows for one mask.
+--
+-- Postgres 15 added `NULLS NOT DISTINCT` for exactly this, but the
+-- documented floor for this codebase is Postgres 14 (see the service-boot
+-- contract in CLAUDE.md) and no other migration requires 15+. A COALESCE
+-- expression index onto the nil UUID has identical semantics and works on
+-- every supported version; the nil UUID can never collide with a real
+-- value because both columns are foreign keys to gen_random_uuid() PKs.
+--
+-- Leads with org_id per the 0476-0480 lesson.
 CREATE UNIQUE INDEX IF NOT EXISTS "mask_availability_scope_idx"
-  ON "resupply"."mask_availability"
-     ("org_id", "location_id", "mask_model_id", "size_variant_id")
-  NULLS NOT DISTINCT;
+  ON "resupply"."mask_availability" (
+    "org_id",
+    COALESCE("location_id", '00000000-0000-0000-0000-000000000000'::uuid),
+    "mask_model_id",
+    COALESCE("size_variant_id", '00000000-0000-0000-0000-000000000000'::uuid)
+  );
 --> statement-breakpoint
 
 CREATE INDEX IF NOT EXISTS "mask_availability_org_model_idx"
