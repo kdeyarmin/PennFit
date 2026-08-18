@@ -52,9 +52,12 @@ import { FitterCompare } from "./breathe-mask-fitting";
  *    inside VGM Total Sleep Services). "Leave X behind" would be wrong copy:
  *    there is no patient roster to migrate, so the framing is "you already
  *    believe in AI fitting — here is the same moment done deeper, on the
- *    platform that runs the rest of the program." Renders `FitterCompare`
- *    from the mask-fitting deep-dive instead of the platform table, so the
- *    fitting claims live in exactly one place.
+ *    platform that runs the rest of the program." Leads with `FitterCompare`
+ *    (imported from the mask-fitting deep-dive, so the fitting claims live in
+ *    exactly one place) and then still shows the platform `Comparison` — the
+ *    fitting argument first, the "and it runs the rest of the business"
+ *    argument second. It also skips `WhyDifferent` / `Onboarding`, which are
+ *    migration copy with nothing to migrate here.
  */
 
 type SwitchConfig = {
@@ -139,7 +142,7 @@ const SWITCH_PAGES: Record<string, SwitchConfig> = {
     name: "SleepGlad",
     sub: "You already believe a phone camera beats a tape measure and a drawer of sample masks — that argument is over, and you won. The question now is what happens after the recommendation: what the engine does with the awkward cases, what you can prove a year later, and whether the fitting is a tool you license or a step in the business you already run.",
     wants: [
-      "The fitting moment to stay fast and self-serve — nobody wants to go back to in-office fittings",
+      "The fitting moment to stay fast and self-serve — nobody wants to go back to staff-run fittings and a drawer of sample masks",
       "A recommendation they can defend clinically, not just a mask name from a black box",
       "The result to land where the work actually happens — the order, the claim, and the reorder cadence",
     ],

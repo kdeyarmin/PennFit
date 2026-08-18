@@ -29,6 +29,7 @@ export const BREATHE_SITEMAP_PATHS: readonly string[] = [
   "/breathe/compare",
   "/breathe/features",
   "/breathe/resupply-engine",
+  "/breathe/mask-fitting",
   "/breathe/ai-voice",
   "/breathe/communications",
   "/breathe/get-paid",
@@ -45,6 +46,7 @@ export const BREATHE_SITEMAP_PATHS: readonly string[] = [
   "/breathe/switch/brightree",
   "/breathe/switch/bonafide",
   "/breathe/switch/nikohealth",
+  "/breathe/switch/sleepglad",
   "/breathe/signup",
 ];
 

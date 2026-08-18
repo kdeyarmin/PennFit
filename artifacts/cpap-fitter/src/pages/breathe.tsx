@@ -3753,17 +3753,22 @@ const COMPARE_ROWS: CompareRow[] = [
   },
 ];
 
+// The mark is an icon, and lucide-react hides an unlabelled icon from
+// assistive tech — so without the visually-hidden text a screen reader reads
+// an empty cell on every row and the table conveys nothing.
 function CompareMark({ v }: { v: Cell }) {
   if (v === "yes")
     return (
       <span className="bx-yes">
-        <Check size={18} strokeWidth={2.6} />
+        <Check size={18} strokeWidth={2.6} aria-hidden="true" />
+        <span className="bx-sr-only">Yes</span>
       </span>
     );
   if (v === "partial") return <span className="bx-partial">partial</span>;
   return (
     <span className="bx-no">
-      <Minus size={17} />
+      <Minus size={17} aria-hidden="true" />
+      <span className="bx-sr-only">No</span>
     </span>
   );
 }
@@ -4372,12 +4377,12 @@ const PLANS: {
     lockMonths: 12,
     setup: "No setup fee · 25 fittings/mo, then $2 each",
     blurb:
-      "The clinical fitter on its own — text a link or scan a QR at the counter, get a mask, a size, and the reasoning back. No in-office fittings, no wasted sample masks.",
+      "The fitter on its own — text a link, or hand over a QR code at your counter, and get a mask, a size, and the reasoning back. Nobody on your team runs a fitting, and no sample masks get opened just to be thrown away. The clinical console — catalog sign-off, formulary rules and fit reports — comes with a full plan.",
     highlights: [
       "On-device AI facial measurement — the image never leaves the phone",
       "Text, email, or hand over a QR code at your counter",
-      "Safety & therapy compatibility screened as hard filters, not score penalties",
-      "Millimetre size bands, your own formulary, and a printable fit report",
+      "Mask, size and the reasoning back in your fitter worklist",
+      "Fitter leads and your own storefront branding",
       "25 completed fittings/month, then $2 each",
     ],
   },

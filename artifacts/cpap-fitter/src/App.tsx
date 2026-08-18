@@ -607,7 +607,7 @@ const BreatheSwitchNikohealth = lazyWithRetry(() =>
 );
 // Point-solution comparison (not a platform migration): teams shopping a
 // stand-alone AI mask fitter against ours. Same lazy chunk as the switch
-// pages; renders the fitting head-to-head instead of the platform table.
+// pages; leads with the fitting head-to-head, then the platform table.
 const BreatheVsSleepGlad = lazyWithRetry(() =>
   import("@/pages/breathe-switch").then((m) => ({
     default: m.BreatheVsSleepGlad,

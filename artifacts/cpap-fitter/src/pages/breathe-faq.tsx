@@ -221,11 +221,11 @@ const FAQ_GROUPS: FaqGroup[] = [
       },
       {
         q: "What happens if the scan is poor or the answer is uncertain?",
-        a: "It says so. A blurry or badly-lit scan caps confidence no matter how good the geometric match looks, an incomplete questionnaire caps it too rather than guessing, and a low-confidence fitting routes to a human on your team instead of shipping a guess. A fitter that always answers confidently isn't confident — it's just always answering.",
+        a: "It says so. A single unverified frame is scored as moderate rather than perfect — without cross-frame agreement there's no evidence the measurement is stable — an incomplete questionnaire caps confidence too rather than guessing, a size band no clinician has signed off can never reach high confidence, and anything low routes to a human on your team instead of shipping a guess. A fitter that always answers confidently isn't confident; it's just always answering. (Per-scan blur and lighting signals tighten this further; that capture work is built and not yet switched on.)",
       },
       {
         q: "How are magnetic mask components handled?",
-        a: "As a hard filter, not a warning. The screening covers implanted devices — pacemakers, defibrillators, neurostimulators, aneurysm clips, cochlear and metallic ocular implants — and it screens the household as well as the patient, because the risk is proximity and it isn't only the patient who sleeps in that bed. Masks with magnetic headgear clips are removed from consideration entirely, and when the same model has a magnet-free version, that version is offered first so the patient keeps the mask they wanted.",
+        a: "As a hard filter, not a warning. The screening covers implanted devices — pacemakers, defibrillators, neurostimulators, aneurysm clips, cochlear and metallic ocular implants — and it covers the household as well as the patient, because the risk is proximity and it isn't only the patient who sleeps in that bed. Where an implant is declared, every magnetic-clip mask is removed from consideration entirely, and when the same model has a magnet-free version that version is offered first so the patient keeps the mask they wanted. Today your team records those answers on the chart; putting the questions to the patient inside the fitting flow is the next step.",
       },
       {
         q: "Can I control which masks it recommends?",

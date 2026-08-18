@@ -593,7 +593,7 @@ const ROLES: RoleBlock[] = [
         impacts: [
           {
             kind: "time",
-            text: "Self-serve fitting at home removes in-person fittings from staff's day.",
+            text: "The patient runs the fitting themselves — at home or on your own counter — so it leaves staff's day either way.",
           },
           {
             kind: "revenue",

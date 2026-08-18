@@ -415,22 +415,25 @@ const SAFEGUARDS: {
     summary:
       "The recall that made this a headline is a checkbox in most systems. Here it is a filter.",
     points: [
-      "Screens for pacemakers, defibrillators, neurostimulators, aneurysm clips, cochlear implants and metallic ocular implants",
-      "Screens the household too — the risk is proximity, and it is not only the patient who sleeps in that bed",
-      "Masks with magnetic headgear clips are removed from the list, never merely down-ranked",
+      "Covers pacemakers, defibrillators, neurostimulators, aneurysm clips, cochlear implants and metallic ocular implants",
+      "Covers the household too — the risk is proximity, and it is not only the patient who sleeps in that bed",
+      "A declared implant removes every magnetic-clip mask from the list — it is never merely down-ranked",
       "When the same model has a magnet-free version, that version is offered first — the patient keeps the mask they wanted",
+      "Your team answers the screening on the chart today; asking the patient inside the fitting flow is the next step",
     ],
     gold: true,
   },
   {
     icon: <FileCheck2 size={20} />,
     title: "Rules that carry a version",
-    summary: "A manufacturer revises a warning. You don't wait for a release.",
+    summary:
+      "So a report you reprint next year shows the rules that actually ran that day.",
     points: [
-      "Exclusion rules are data, not code — revising one writes a new version, not a deploy",
+      "Exclusion rules are versioned data, not logic buried in a release",
       "A fit report cites the exact rule version that ran, by name",
-      "Reprint a report a year later and it shows the rules that actually applied that day",
+      "Reprint it a year later and it shows the rules that applied that day — not today's",
       "Which is the difference between a record and a re-computation",
+      "Publishing a revised version is a step we run for you today, not yet a button in your console",
     ],
   },
   {
@@ -439,10 +442,11 @@ const SAFEGUARDS: {
     summary:
       "A fitter that always answers confidently is not confident — it is just always answering.",
     points: [
-      "A blurry or badly-lit scan caps confidence no matter how good the geometric match looks",
-      "An incomplete questionnaire caps it too, rather than guessing the missing answers",
-      "Low confidence routes to a human on your team instead of shipping a guess",
+      "A single unverified frame is treated as moderate, never as perfect — without cross-frame agreement there is no evidence the measurement is stable, so it isn't scored as if there were",
+      "An incomplete questionnaire caps confidence too, rather than guessing the missing answers",
       "A size band no clinician has signed off can never produce a high-confidence result",
+      "Low confidence routes to a human on your team instead of shipping a guess",
+      "Per-scan blur and lighting signals tighten this further — that capture work is built and not yet switched on",
     ],
   },
 ];
@@ -530,7 +534,7 @@ const DEPTH: {
     points: [
       "Scan quality, measurements, questionnaire, safety screening, the recommendation and its alternatives",
       "The masks that were excluded and the named rule that excluded each one",
-      "Clinical review, dispensing, and the evidence each size band was signed off against",
+      "Clinical review, dispensing, and the evidence each size band was signed off against — and where a signer named none, the report says so rather than inventing one",
       "Every step written to an append-only session history — nothing rewrites the past",
     ],
   },
@@ -668,7 +672,7 @@ const MEASURED = [
   "How often your team accepted the recommendation, and the reasons they overrode it",
   "Scan quality, so you can see whether the problem is the engine or the lighting",
   "The confidence mix, and how long a flagged fitting waited for a human",
-  "All of it split by where the fitting started — counter, text, or re-fit outreach",
+  "All of it split by where the fitting started — at your counter, or from a link you sent",
 ];
 
 function Measured() {
@@ -817,7 +821,8 @@ const FIT_ROWS: {
     other: "no",
   },
   {
-    label: "Size bands signed off by your clinician, with a citation",
+    label: "Size bands signed off by your own clinician",
+    sub: "against evidence the report then prints",
     breathe: "yes",
     other: "no",
   },
@@ -844,17 +849,22 @@ const FIT_ROWS: {
   },
 ];
 
+// The mark is an icon, and lucide-react hides an unlabelled icon from
+// assistive tech — so without the visually-hidden text a screen reader reads
+// an empty cell on every row and the table conveys nothing.
 function FitMark({ v }: { v: Cell }) {
   if (v === "yes")
     return (
       <span className="bx-yes">
-        <Check size={18} strokeWidth={2.6} />
+        <Check size={18} strokeWidth={2.6} aria-hidden="true" />
+        <span className="bx-sr-only">Yes</span>
       </span>
     );
   if (v === "partial") return <span className="bx-partial">partial</span>;
   return (
     <span className="bx-no">
-      <Minus size={17} />
+      <Minus size={17} aria-hidden="true" />
+      <span className="bx-sr-only">No</span>
     </span>
   );
 }
@@ -991,8 +1001,8 @@ function Activation() {
             </li>
             <li>
               <Check size={16} aria-hidden="true" />
-              Batch sign-off for a whole model&apos;s size run, and the citation
-              prints on every fit report afterwards
+              Batch sign-off for a whole model&apos;s size run, and the evidence
+              you name prints on every fit report afterwards
             </li>
             <li>
               <Check size={16} aria-hidden="true" />

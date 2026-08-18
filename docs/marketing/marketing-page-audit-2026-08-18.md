@@ -21,7 +21,7 @@ Companions:
 **The marketing site was selling a convenience feature that had quietly
 become a clinical instrument.**
 
-Between the last marketing pass and today, migrations `0481`–`0496` and four
+Between the last marketing pass and today, migrations `0481`–`0496` and five
 PRs (#1262, #1263, #1265, #1266, #1267) shipped the Mask Intelligence
 Catalog, a six-tier fitting engine, versioned safety screening, formulary
 scoping, confidence gating, a stamped clinical fit report, a provider
@@ -103,7 +103,39 @@ Hiding it and having them discover it in onboarding would read as a bug.
 
 ---
 
-## 5. Still open
+## 5. Correction pass — claims that outran the wiring
+
+Automated review of the first draft caught something worth recording, because
+it is the exact failure mode this document exists to prevent. Several claims
+described the fitting engine's **design** rather than what is **wired
+end to end** today. All were corrected before merge; the underlying product
+gaps are listed here so they are not rediscovered from scratch.
+
+| Claim as first written                                     | What the code actually does                                                                                                                                                                                                                   | Fix                                                                                                           |
+| ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| "A blurry or badly-lit scan caps confidence"               | `results.tsx` never sends `scan`, so `fit-assess.ts` substitutes `NEUTRAL_SCAN` (`measurementConfidence: 0.7`) on every fitting. Per-scan blur/lighting is not measured — and 0.7 sits below `highScan` 0.75.                                 | Reworded to the true conservative default: a single unverified frame is scored moderate, never perfect.       |
+| Magnetic screening "screens the patient and household"     | The rule set, household scope and hard filter are all real, but when `fitter.magnet_screening` is on the API returns `safety_screen_required` and `results.tsx` falls back to the legacy engine — the questions are never put to the patient. | Reworded to "covers", with an explicit note that the answers come from the chart today.                       |
+| "Revising a rule writes a new version, not a deploy"       | `safety_screen_versions` has a read path (`catalog-store.ts`) and a seed migration. No admin route or console UI authors, publishes or retires a version.                                                                                     | Reworded; publishing a revision is stated as a step we run, not a console button.                             |
+| Outcomes "split by counter, text, or re-fit outreach"      | `fit_sessions.entry_point` is constrained to `remote_link` / `in_office` / `kiosk_qr` (0483). A re-fit campaign link is recorded as an ordinary remote link.                                                                                  | Re-fit segment dropped from the claim.                                                                        |
+| "Every sign-off records a citation"                        | `sourceKind` / `sourceRef` are `.optional()` on the sign-off route; the console offers "Not recorded" and the report prints "source not recorded".                                                                                            | Reworded — and the honest version is the better story: it refuses to invent a citation.                       |
+| The `$119` standalone plan listing formulary + fit reports | `MASK_FITTER_ALLOWED_ROUTE_PREFIXES` omits `/admin/fitter/catalog`, `/admin/fitter/formulary`, `/admin/fit-sessions` and `/admin/control-center`, so that scope cannot reach any of them.                                                     | Plan highlights cut to what the scope actually reaches; the clinical console is named as a full-plan feature. |
+
+One real accessibility defect was also fixed, in **both** tables: the
+comparison marks conveyed yes/no through a Lucide icon alone, and
+`lucide-react` gives an unlabelled icon `aria-hidden="true"` — so a screen
+reader met an empty cell on every row. `CompareMark` (pre-existing, on
+`/breathe/compare` and every switch page) and the new `FitMark` now carry
+visually-hidden "Yes"/"No" text. Note that axe reported **zero** violations on
+both pages before this fix — an empty table cell is valid HTML, so automated
+scanning could not see it.
+
+**Product gaps left open** (each is real feature work, not copy): wire capture
+quality into the assessment request; render and resubmit the safety screen in
+the patient flow; add a re-fit `entry_point`; build a console surface for
+safety-rule versions; and decide whether the standalone fitter scope should
+reach the catalog sign-off queue.
+
+## 6. Still open
 
 - **Social proof.** Unchanged from the June audit: no testimonials, logos, or
   case studies, because we will not fabricate customers. Pre-launch item.
