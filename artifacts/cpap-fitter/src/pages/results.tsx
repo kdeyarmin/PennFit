@@ -696,6 +696,7 @@ export function Results() {
               details={catalogById.get(mask.maskId)}
               isTopPick={idx === 0}
               onChoose={() => handleChooseMask(mask)}
+              measurements={measurements}
               cashPay={
                 shopProduct
                   ? {
