@@ -115,6 +115,34 @@ export type FitAssessResult =
   | { kind: "not_enabled" }
   | { kind: "unavailable"; reason: string };
 
+/**
+ * Scalar scan-quality signals, mirroring the route's `scanSchema` exactly.
+ *
+ * Typed structurally rather than as `Record<string, unknown>` because the
+ * server schema is `.strict()` — an unexpected key 400s the whole
+ * assessment, so the compiler should be the one to catch it.
+ */
+export interface ScanSignalsRequest {
+  frameCount: number;
+  quality: {
+    lighting?: number;
+    distance?: number;
+    pose?: number;
+    occlusion?: number;
+    motion?: number;
+    framing?: number;
+  };
+  agreement: {
+    noseWidth?: number;
+    noseHeight?: number;
+    noseToChin?: number;
+    mouthWidth?: number;
+    faceWidthAtCheekbones?: number;
+  };
+  measurementConfidence: number;
+  band: "high" | "moderate" | "low";
+}
+
 export interface FitAssessRequest {
   inviteToken: string;
   measurements: FacialMeasurements;
@@ -122,8 +150,13 @@ export interface FitAssessRequest {
   answers?: Record<string, unknown>;
   /** The expanded Patient Fit Profile, when `fitter.fit_profile_v2` is on. */
   profile?: Record<string, unknown>;
-  /** Multi-frame capture signals, when `fitter.multiframe_capture` is on. */
-  scan?: Record<string, unknown>;
+  /**
+   * Per-frame scan quality. Omitting it makes the route fall back to its
+   * neutral default (`measurementConfidence` 0.7), which sits below the
+   * high-confidence scan floor — so an omitted scan silently caps every
+   * fitting at moderate.
+   */
+  scan?: ScanSignalsRequest;
   safety?: {
     screenVersion: string;
     attestedAt?: string;

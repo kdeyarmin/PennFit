@@ -259,7 +259,10 @@ describe("multi-frame aggregation", () => {
       frame({ noseWidth: 34.1 }, { quality: poor }),
       frame({ noseWidth: 34 }, { quality: poor }),
     ]);
-    expect(result.band).not.toBe("high");
+    // A frame that failed its own quality gates is reported as `low`,
+    // not merely "not high" — the score alone cannot get there, because a
+    // single frame's fixed agreement term floors it around 0.35.
+    expect(result.band).toBe("low");
   });
 
   it("returns an empty, low-confidence result for no frames", () => {

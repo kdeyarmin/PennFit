@@ -100,6 +100,57 @@ const base = {
   gatingEnabled: true,
 };
 
+describe("the capture's own verdict on the frame", () => {
+  // The client aggregation flags `band: "low"` when a contributing frame
+  // failed its quality gates outright. The weighted score cannot always
+  // reach that conclusion on its own — a single frame's fixed agreement
+  // term floors `measurementConfidence` around 0.35 — so a too-dark or
+  // too-soft frame lands near 0.55 and would otherwise read as moderate.
+  const UNUSABLE_FRAME: ScanSignals = {
+    ...GOOD_SCAN,
+    measurementConfidence: 0.56,
+    band: "low",
+  };
+
+  it("caps a low-band scan at low_confidence even when the score would allow more", () => {
+    const withoutBand = resolveConfidence({
+      ...base,
+      top: candidate(),
+      scan: { ...UNUSABLE_FRAME, band: "moderate" },
+    });
+    expect(withoutBand.outcome).not.toBe("low_confidence");
+
+    const withBand = resolveConfidence({
+      ...base,
+      top: candidate(),
+      scan: UNUSABLE_FRAME,
+    });
+    expect(withBand.outcome).toBe("low_confidence");
+    expect(withBand.requiresReview).toBe(true);
+  });
+
+  it("never upgrades on the band — a low band cannot raise a poor score", () => {
+    const result = resolveConfidence({
+      ...base,
+      top: candidate(),
+      scan: { ...POOR_SCAN, band: "high" },
+    });
+    expect(result.outcome).toBe("low_confidence");
+  });
+
+  it("leaves the band inert when gating is off", () => {
+    const result = resolveConfidence({
+      ...base,
+      top: candidate(),
+      scan: UNUSABLE_FRAME,
+      gatingEnabled: false,
+    });
+    // Gating off never withholds — the pre-existing behaviour for tenants
+    // who have not opted in, preserved exactly.
+    expect(result.outcome).toBe("moderate_confidence");
+  });
+});
+
 describe("the five exception states are each reachable", () => {
   it("high_confidence — strong match, good scan, reviewed geometry", () => {
     expect(resolveConfidence({ ...base, top: candidate() }).outcome).toBe(

@@ -43,7 +43,12 @@ import {
   toLegacyMaskType,
   type FitAssessment,
   type FitCandidate,
+  type SafetyScreenPrompt,
 } from "@/lib/fit-assess-api";
+import {
+  SafetyScreen,
+  type SafetyScreenSubmission,
+} from "@/components/safety-screen";
 import { ClinicalResults, FitWithheld } from "@/components/clinical-results";
 import { rememberFitCheckoutContext } from "@/lib/fit-checkout-context";
 
@@ -55,6 +60,7 @@ export function Results() {
   // useEffect+redirect dance needed.
   const {
     measurements,
+    scanSignals,
     answers,
     reset,
     setChosenMask,
@@ -219,9 +225,99 @@ export function Results() {
   // so a tenant that never turns the flag on sees no change at all.
   const [assessment, setAssessment] = useState<FitAssessment | null>(null);
   const [clinicalState, setClinicalState] = useState<
-    "probing" | "clinical" | "legacy"
+    "probing" | "clinical" | "legacy" | "safety_screen"
   >("probing");
   const hasProbedClinical = useRef(false);
+  // The magnetic-component screen, when the tenant runs it. Held here
+  // rather than in the assessment because it is a PRE-condition of one:
+  // the route will not assess until it is answered.
+  const [safetyScreen, setSafetyScreen] = useState<SafetyScreenPrompt | null>(
+    null,
+  );
+  const [safetySubmitting, setSafetySubmitting] = useState(false);
+  const [safetyError, setSafetyError] = useState<string | null>(null);
+  // Kept so a re-ask (a screen revised mid-session) can be re-submitted
+  // without making the patient answer from scratch where the keys match.
+  const safetyAnswersRef = useRef<SafetyScreenSubmission | null>(null);
+
+  /**
+   * Ask for an assessment, carrying the safety answers when we have them.
+   *
+   * The critical branch is `safety_screen`: the route is telling us it
+   * will not assess until the magnetic-component questions are answered.
+   * Falling through to the legacy engine there — which is what this page
+   * used to do — hands the patient a recommendation from an engine with
+   * NO safety filter, so an implant patient could be sent a mask with
+   * magnetic clips. Show the screen instead, and keep showing it until it
+   * is answered.
+   */
+  const runAssessment = React.useCallback(
+    async (safety: SafetyScreenSubmission | null, signal?: AbortSignal) => {
+      if (!measurements || !inviteToken) return;
+      const result = await requestFitAssessment({
+        inviteToken,
+        measurements,
+        answers: { ...fullAnswers },
+        // Real per-frame quality from /measure. Omitted only when the
+        // probe failed, in which case the route applies its neutral
+        // default.
+        ...(scanSignals ? { scan: scanSignals } : {}),
+        ...(safety ? { safety } : {}),
+        // Set from the referral link's `entry` param; omitted for an
+        // ordinary invite, where the server's `remote_link` default is
+        // correct.
+        ...(entryPoint ? { entryPoint } : {}),
+        ...(signal ? { signal } : {}),
+      });
+      if (signal?.aborted) return;
+
+      if (result.kind === "assessment") {
+        setAssessment(result.assessment);
+        setSafetyScreen(null);
+        setClinicalState("clinical");
+        track("fit_assessment_completed", {
+          outcome: result.assessment.outcome,
+          degraded: result.assessment.provenance.degraded,
+        });
+        return;
+      }
+
+      if (result.kind === "safety_screen") {
+        // Never fall through to the legacy engine from here.
+        setSafetyScreen(result.screen);
+        setSafetyError(
+          safety
+            ? "Those answers were for an earlier version of this form. Please confirm them once more."
+            : null,
+        );
+        setClinicalState("safety_screen");
+        track("fit_safety_screen_shown", { version: result.screen.version });
+        return;
+      }
+
+      // Flag off, unresolvable tenant, network failure — the legacy
+      // engine is the correct fallback for all of these, because none of
+      // them means "this tenant screens for magnets".
+      setClinicalState("legacy");
+    },
+    [measurements, inviteToken, fullAnswers, scanSignals, entryPoint],
+  );
+
+  const handleSafetySubmit = React.useCallback(
+    (submission: SafetyScreenSubmission) => {
+      safetyAnswersRef.current = submission;
+      setSafetySubmitting(true);
+      setSafetyError(null);
+      void runAssessment(submission)
+        .catch(() => {
+          setSafetyError(
+            "We couldn't check that just now. Please try again in a moment.",
+          );
+        })
+        .finally(() => setSafetySubmitting(false));
+    },
+    [runAssessment],
+  );
 
   useEffect(() => {
     if (hasProbedClinical.current) return;
@@ -235,38 +331,13 @@ export function Results() {
     }
     hasProbedClinical.current = true;
     const controller = new AbortController();
-    requestFitAssessment({
-      inviteToken,
-      measurements,
-      answers: { ...fullAnswers },
-      // Set from the referral link's `entry` param; omitted for an
-      // ordinary invite, where the server's `remote_link` default is
-      // correct.
-      ...(entryPoint ? { entryPoint } : {}),
-      signal: controller.signal,
-    })
-      .then((result) => {
-        if (controller.signal.aborted) return;
-        if (result.kind === "assessment") {
-          setAssessment(result.assessment);
-          setClinicalState("clinical");
-          track("fit_assessment_completed", {
-            outcome: result.assessment.outcome,
-            degraded: result.assessment.provenance.degraded,
-          });
-          return;
-        }
-        // A required safety screen is real, but the screening UI rides
-        // `fitter.magnet_screening` and lives in the questionnaire flow.
-        // Until a tenant enables both, treat it like any other reason to
-        // use the legacy path rather than stranding the patient here.
-        setClinicalState("legacy");
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) setClinicalState("legacy");
-      });
+    void runAssessment(null, controller.signal);
     return () => controller.abort();
-  }, [measurements, inviteToken, fullAnswers, entryPoint]);
+    // `runAssessment` is stable for the life of the page (it only reads
+    // refs and state setters), and re-running this probe on every render
+    // would re-POST the assessment.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [measurements, scanSignals, inviteToken, fullAnswers, entryPoint]);
 
   const { data: catalog } = useListMasks();
   const catalogById = React.useMemo(() => {
@@ -469,6 +540,24 @@ export function Results() {
           setLocation("/capture");
         }}
       />
+    );
+  }
+
+  // The safety screen outranks every other branch below, including the
+  // legacy engine's loading and error states. The route has told us it
+  // will not assess this patient until the magnetic-component questions
+  // are answered, and the legacy engine has no safety filter — so
+  // rendering anything else here is exactly the hole this closes.
+  if (clinicalState === "safety_screen" && safetyScreen) {
+    return (
+      <div className="container max-w-2xl mx-auto px-4 py-12 animate-shimmer-in">
+        <SafetyScreen
+          screen={safetyScreen}
+          onSubmit={handleSafetySubmit}
+          submitting={safetySubmitting}
+          error={safetyError}
+        />
+      </div>
     );
   }
 

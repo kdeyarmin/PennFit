@@ -191,6 +191,22 @@ export function resolveConfidence(input: ConfidenceInput): ConfidenceResult {
     outcome = "low_confidence";
   }
 
+  // Honour the capture's own verdict on the frame.
+  //
+  // The client's aggregation sets `band: "low"` when a contributing frame
+  // failed its quality gates outright — too dark, too soft, head turned
+  // past the pose window. The weighted score alone does not always reach
+  // that conclusion, because a single frame's fixed agreement term puts a
+  // floor under `measurementConfidence` no matter how bad the pixels were.
+  // Without this, a frame the capture step itself judged unusable could
+  // still land a moderate recommendation.
+  //
+  // Only ever downgrades, and only when gating is on. Requests that send
+  // no scan are unaffected: the neutral default's band is "moderate".
+  if (gatingEnabled && scan.band === "low" && outcome !== "low_confidence") {
+    outcome = "low_confidence";
+  }
+
   // With gating off we never withhold a recommendation — that is the
   // pre-existing behaviour, preserved exactly for tenants who haven't
   // opted in yet.

@@ -463,17 +463,27 @@ export function aggregateFrames(frames: FrameMeasurement[]): AggregateResult {
         ? "moderate"
         : "low";
 
-  // Two hard caps, both saying the same thing: a number is only as good as
-  // the evidence behind it.
+  // Hard caps, all saying the same thing: a number is only as good as the
+  // evidence behind it.
   //
   //   * One frame carries no cross-frame agreement at all, so however
   //     clean it looks we have not actually verified the measurement is
   //     stable. Cap at moderate.
   //   * If any contributing frame failed its own quality gates, the
-  //     aggregate cannot be high either — three consistent readings off
-  //     three equally bad frames are consistently wrong.
+  //     aggregate is `low`, not merely "not high" — three consistent
+  //     readings off three equally bad frames are consistently wrong, and
+  //     a frame the quality checks judged unusable must not be reported
+  //     as a moderate one.
+  //
+  // That second cap has to be a floor rather than a score adjustment,
+  // because the score cannot express it: a single frame's agreement term
+  // is fixed at 0.7, which puts a ~0.35 floor under `measurementConfidence`
+  // however bad the pixels were. Without the cap, a too-dark, too-soft
+  // frame still lands around 0.55 and reads as "moderate".
   const anyUnacceptable = frames.some((f) => !f.quality.acceptable);
-  if (band === "high" && (frames.length < 2 || anyUnacceptable)) {
+  if (anyUnacceptable) {
+    band = "low";
+  } else if (band === "high" && frames.length < 2) {
     band = "moderate";
   }
 
