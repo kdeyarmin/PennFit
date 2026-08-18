@@ -39,6 +39,20 @@ import {
   signFitterInviteToken,
 } from "../fitter-invite-token.js";
 
+/**
+ * Why we are asking for another scan. Changes only the copy — the
+ * delivery mechanics, guards and link are identical.
+ *
+ * Keeping these in one place matters more than it looks: the difference
+ * between "your scan wasn't clear" and "you told us this mask leaks" is
+ * the difference between a message that reads as our problem and one
+ * that reads as blaming the patient for a fit we recommended.
+ */
+export type RescanReason =
+  | "poor_scan"
+  | "reported_bad_fit"
+  | "mask_discontinued";
+
 export interface RescanDelivery {
   delivered: boolean;
   /** Machine-readable why-not, for the clinician-facing message. */
@@ -85,6 +99,35 @@ export async function sendRescanRequest(
       .maybeSingle()) as { data: Record<string, unknown> | null };
     const inviteId = (session?.fitter_invite_id as string | null) ?? null;
     if (!inviteId) return { delivered: false, reason: "no_invite", link: null };
+    return await sendRescanForInvite(orgId, inviteId, "poor_scan");
+  } catch (err) {
+    logger.warn(
+      { err: err instanceof Error ? err : new Error(String(err)), orgId },
+      "rescan notification failed to send",
+    );
+    return { delivered: false, reason: "send_failed", link: null };
+  }
+}
+
+/**
+ * Send a fresh scan link against an EXISTING invite row.
+ *
+ * Split out from `sendRescanRequest` so callers that reach a patient by
+ * some route other than a fit session — the proactive re-fit campaign,
+ * which starts from a survey answer or a discontinued mask — get exactly
+ * the same delivery behaviour, link minting and fail-soft contract
+ * instead of a second, subtly different copy of it.
+ *
+ * Never throws. An in-office invite legitimately has no email or phone,
+ * and reports `no_contact` rather than being treated as a failure.
+ */
+export async function sendRescanForInvite(
+  orgId: string,
+  inviteId: string,
+  reason: RescanReason = "poor_scan",
+): Promise<RescanDelivery> {
+  try {
+    const supabase = getOrgScopedClient(orgId);
 
     const { data: invite } = (await supabase
       .from("fitter_invites")
@@ -119,7 +162,9 @@ export async function sendRescanRequest(
     const brandName = (await resolveBrandingByOrgId(orgId)).storefrontName;
     const channel = String(invite.channel ?? "email");
 
-    if (channel === "sms") {
+    // An in-office invite was handed over at the counter and carries no
+    // address at all; there is genuinely nobody to send to.
+    if (channel === "sms" || channel === "in_office") {
       const phone = (invite.recipient_phone_e164 as string | null) ?? null;
       if (!phone) return { delivered: false, reason: "no_contact", link };
       let twilio;
@@ -135,10 +180,7 @@ export async function sendRescanRequest(
       }
       await twilio.sendSms({
         to: phone,
-        body:
-          `Hi ${greeting}, ${brandName} here. Your care team would like one ` +
-          `more mask-fitting scan to make sure we get your fit right — it ` +
-          `takes about two minutes: ${link}`,
+        body: smsBody(reason, greeting, brandName, link),
       });
       return { delivered: true, reason: null, link };
     }
@@ -158,9 +200,9 @@ export async function sendRescanRequest(
     await sendgrid.sendEmail({
       to: email,
       // No PHI in the subject — provider inbox subjects aren't encrypted.
-      subject: `One more scan for your mask fitting with ${safeBrand}`,
-      html: renderRescanHtml(greeting, link, safeBrand),
-      text: renderRescanText(greeting, link, safeBrand),
+      subject: emailSubject(reason, safeBrand),
+      html: renderRescanHtml(greeting, link, safeBrand, reason),
+      text: renderRescanText(greeting, link, safeBrand, reason),
     });
     return { delivered: true, reason: null, link };
   } catch (err) {
@@ -170,6 +212,74 @@ export async function sendRescanRequest(
     );
     return { delivered: false, reason: "send_failed", link: null };
   }
+}
+
+/**
+ * The one paragraph that differs by reason, as plain sentences reused by
+ * both the HTML and text renderers so the two can never drift apart.
+ *
+ * `reported_bad_fit` deliberately owns the problem ("the mask we
+ * recommended isn't sealing") rather than putting it on the patient.
+ * They already did the work of telling us; the reply should not read as
+ * though they wore it wrong.
+ */
+function reasonCopy(reason: RescanReason): {
+  subject: (brand: string) => string;
+  lead: string;
+  sms: (greeting: string, brand: string, link: string) => string;
+} {
+  switch (reason) {
+    case "reported_bad_fit":
+      return {
+        subject: (brand) => `Let's get your mask fit right — ${brand}`,
+        lead:
+          "You told us the mask we recommended isn't sealing properly. " +
+          "That's on us to fix, and the quickest way is a fresh scan so we " +
+          "can look again with your current measurements.",
+        sms: (greeting, brand, link) =>
+          `Hi ${greeting}, ${brand} here. You told us your mask isn't ` +
+          `sealing right — let's fix that. A fresh two-minute scan and ` +
+          `we'll look again: ${link}`,
+      };
+    case "mask_discontinued":
+      return {
+        subject: (brand) => `A newer mask option for you — ${brand}`,
+        lead:
+          "The mask you're using has been discontinued by its manufacturer, " +
+          "so supplies for it will get harder to find over time. A fresh " +
+          "scan lets us match you to a current model before that becomes a " +
+          "problem.",
+        sms: (greeting, brand, link) =>
+          `Hi ${greeting}, ${brand} here. Your mask model is being ` +
+          `discontinued, so let's find your best current option — a ` +
+          `two-minute scan: ${link}`,
+      };
+    default:
+      return {
+        subject: (brand) => `One more scan for your mask fitting with ${brand}`,
+        lead:
+          "Your care team would like one more scan before recommending a " +
+          "mask — the first one didn't give us a clear enough measurement " +
+          "to be confident in the fit.",
+        sms: (greeting, brand, link) =>
+          `Hi ${greeting}, ${brand} here. Your care team would like one ` +
+          `more mask-fitting scan to make sure we get your fit right — it ` +
+          `takes about two minutes: ${link}`,
+      };
+  }
+}
+
+function emailSubject(reason: RescanReason, brandName: string): string {
+  return reasonCopy(reason).subject(brandName);
+}
+
+function smsBody(
+  reason: RescanReason,
+  greeting: string,
+  brandName: string,
+  link: string,
+): string {
+  return reasonCopy(reason).sms(greeting, brandName, link);
 }
 
 function escapeHtml(s: string): string {
@@ -184,13 +294,12 @@ function renderRescanHtml(
   greeting: string,
   link: string,
   brandName: string,
+  reason: RescanReason,
 ): string {
   return `<!doctype html><html><body style="font-family:Arial,Helvetica,sans-serif;color:#1f2937;line-height:1.5">
   <p>Hi ${escapeHtml(greeting)},</p>
-  <p>Thanks for completing your mask fitting with
-  <strong>${escapeHtml(brandName)}</strong>. Your care team would like one more
-  scan before recommending a mask — the first one didn't give us a clear
-  enough measurement to be confident in the fit.</p>
+  <p><strong>${escapeHtml(brandName)}</strong> here.
+  ${escapeHtml(reasonCopy(reason).lead)}</p>
   <p>It takes about two minutes and runs entirely on your own phone or
   computer. Somewhere with good, even lighting helps a lot.</p>
   <p style="margin:24px 0">
@@ -207,14 +316,12 @@ function renderRescanText(
   greeting: string,
   link: string,
   brandName: string,
+  reason: RescanReason,
 ): string {
   return [
     `Hi ${greeting},`,
     "",
-    `Thanks for completing your mask fitting with ${brandName}. Your care`,
-    "team would like one more scan before recommending a mask — the first",
-    "one didn't give us a clear enough measurement to be confident in the",
-    "fit.",
+    `${brandName} here. ${reasonCopy(reason).lead}`,
     "",
     "It takes about two minutes and runs entirely on your own phone or",
     "computer. Somewhere with good, even lighting helps a lot.",

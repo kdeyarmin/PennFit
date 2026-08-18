@@ -119,6 +119,9 @@ export const FEATURE_FLAG_KEYS = [
   "fitter.magnet_screening",
   "fitter.confidence_gating",
   "fitter.clinical_report",
+  // Proactive re-fit outreach to patients already on service (0490).
+  // Seeded OFF — unsolicited patient contact is the tenant's call.
+  "fitter.refit_campaign",
 ] as const;
 
 export type FeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];

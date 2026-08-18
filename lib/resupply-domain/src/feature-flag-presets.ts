@@ -171,6 +171,7 @@ export const DELIBERATELY_OFF_FLAGS = [
   "fitter.fit_profile_v2",
   "fitter.magnet_screening",
   "fitter.confidence_gating",
+  "fitter.refit_campaign",
 ] as const;
 
 const uniq = (keys: readonly string[]): readonly string[] => [...new Set(keys)];
