@@ -29,6 +29,7 @@ import {
   KeyRound,
   LineChart,
   Lock,
+  LogIn,
   Mail,
   Menu,
   MessageSquare,
@@ -1328,6 +1329,21 @@ function Nav() {
               {l.label}
             </Link>
           ))}
+          {/*
+            Sign in lives in the top nav, not buried in the footer. Everyone
+            who already HAS an account (tenant admins and platform
+            super-admins alike) signs in through /admin/sign-in — the footer's
+            "Super admin login" is a separate, deeper entry point for the
+            cross-tenant console itself.
+          */}
+          <Link
+            className="bx-nav-signin"
+            href="/admin/sign-in"
+            data-testid="breathe-nav-sign-in"
+          >
+            <LogIn size={15} aria-hidden="true" />
+            Sign in
+          </Link>
           <Link
             className="bx-btn bx-btn-ghost bx-btn-sm"
             href="/breathe/signup"
@@ -1368,6 +1384,15 @@ function Nav() {
                 {l.label}
               </Link>
             ))}
+            <Link
+              href="/admin/sign-in"
+              className="bx-btn bx-btn-ghost bx-nav-mobile-demo"
+              onClick={() => setOpen(false)}
+              data-testid="breathe-nav-mobile-sign-in"
+            >
+              <LogIn size={16} aria-hidden="true" />
+              Sign in
+            </Link>
             <button
               type="button"
               className="bx-btn bx-btn-primary bx-nav-mobile-demo"

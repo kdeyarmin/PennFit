@@ -700,12 +700,20 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 © {new Date().getFullYear()} {branding.legalName}. Licensed DME
                 provider.
               </div>
+              {/*
+                Staff sign-in is the ONLY route into the admin console from a
+                tenant storefront, so it gets a bordered pill rather than the
+                near-invisible 11px caps it used to wear — staff kept failing
+                to find it. Still visually quieter than any patient-facing
+                CTA, which is the right hierarchy for a footer link most
+                visitors should ignore.
+              */}
               <Link
                 href="/admin/sign-in"
-                className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.18em] text-muted-foreground/80 hover:text-[hsl(var(--penn-navy))] transition-colors"
+                className="inline-flex items-center gap-1.5 rounded-full border border-border/70 px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:border-[hsl(var(--penn-navy))] hover:text-[hsl(var(--penn-navy))] transition-colors"
                 data-testid="footer-staff-signin"
               >
-                <ShieldCheck className="h-3 w-3" aria-hidden="true" />
+                <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
                 Staff sign-in
               </Link>
             </div>

@@ -23,9 +23,12 @@ vi.mock("../middlewares/admin-rate-limit", () => ({
     next: import("express").NextFunction,
   ) => next(),
 }));
-const { flagState } = vi.hoisted(() => ({ flagState: { enabled: false } }));
+const { flagState } = vi.hoisted(() => ({
+  flagState: { enabled: false, disabled: [] as string[] },
+}));
 vi.mock("../lib/feature-flags", () => ({
   isFeatureEnabled: async () => flagState.enabled,
+  listDisabledFeatures: async () => flagState.disabled,
 }));
 const { scopeState } = vi.hoisted(() => ({
   scopeState: { scope: "full" as "full" | "mask_fitter" },
@@ -48,6 +51,7 @@ function makeApp(): Express {
 beforeEach(() => {
   mockAdmin.current = null;
   flagState.enabled = false;
+  flagState.disabled = [];
   scopeState.scope = "full";
 });
 
@@ -106,5 +110,35 @@ describe("GET /me — location", () => {
     scopeState.scope = "mask_fitter";
     const fitter = await request(makeApp()).get("/me");
     expect(fitter.body.productScope).toBe("mask_fitter");
+  });
+});
+
+// App modules (migration 0488). The SPA subtracts these from the sidebar,
+// so /me is the only place the console learns what to hide.
+describe("GET /me — disabled features", () => {
+  it("reports an empty list when nothing is switched off", async () => {
+    mockAdmin.current = {
+      userId: "u_1",
+      email: "owner@penn.example.com",
+      role: "admin",
+    };
+    const res = await request(makeApp()).get("/me");
+    expect(res.status).toBe(200);
+    expect(res.body.disabledFeatures).toEqual([]);
+  });
+
+  it("passes the tenant's switched-off keys through verbatim", async () => {
+    flagState.disabled = ["module.billing", "module.storefront"];
+    mockAdmin.current = {
+      userId: "u_1",
+      email: "owner@penn.example.com",
+      role: "admin",
+    };
+    const res = await request(makeApp()).get("/me");
+    expect(res.status).toBe(200);
+    expect(res.body.disabledFeatures).toEqual([
+      "module.billing",
+      "module.storefront",
+    ]);
   });
 });

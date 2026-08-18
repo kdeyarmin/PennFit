@@ -7,6 +7,7 @@
 // flag can't silently default to "off for every tenant" without a decision.
 import {
   DELIBERATELY_OFF_FLAGS,
+  isPresetExemptFlag,
   PLAN_FEATURE_FLAG_PRESETS,
 } from "@workspace/resupply-domain";
 import { describe, expect, it } from "vitest";
@@ -33,10 +34,40 @@ describe("plan presets vs FEATURE_FLAG_KEYS", () => {
       ...DELIBERATELY_OFF_FLAGS,
       ...Object.values(PLAN_FEATURE_FLAG_PRESETS).flat(),
     ]);
-    const orphaned = FEATURE_FLAG_KEYS.filter((k) => !accounted.has(k));
+    const orphaned = FEATURE_FLAG_KEYS.filter(
+      (k) => !accounted.has(k) && !isPresetExemptFlag(k),
+    );
     expect(
       orphaned,
       `flag(s) not assigned to any plan and not on DELIBERATELY_OFF: ${orphaned.join(", ")}`,
     ).toEqual([]);
+  });
+
+  it("keeps preset-exempt flags out of every plan bundle", () => {
+    // A preset turns OFF everything it does not list, so a `module.*` key
+    // that leaked into a bundle would flip a tenant's navigation choices
+    // on plan change — and one that leaked into SOME bundles but not
+    // others would flip them on upgrade. Neither belongs to a plan.
+    const listed = new Set<string>([
+      ...DELIBERATELY_OFF_FLAGS,
+      ...Object.values(PLAN_FEATURE_FLAG_PRESETS).flat(),
+    ]);
+    const leaked = [...listed].filter((k) => isPresetExemptFlag(k));
+    expect(
+      leaked,
+      `preset-exempt flag(s) referenced by a plan preset: ${leaked.join(", ")}`,
+    ).toEqual([]);
+  });
+
+  it("actually exempts the app-module family (guards the prefix itself)", () => {
+    // Belt and braces: if the prefix list ever drifted from the key
+    // naming, the two tests above would both pass vacuously.
+    const modules = FEATURE_FLAG_KEYS.filter((k) => k.startsWith("module."));
+    expect(modules.length).toBeGreaterThan(5);
+    for (const k of modules) expect(isPresetExemptFlag(k)).toBe(true);
+    // And nothing outside the family is swept up.
+    for (const k of FEATURE_FLAG_KEYS.filter((k) => !k.startsWith("module."))) {
+      expect(isPresetExemptFlag(k), k).toBe(false);
+    }
   });
 });
