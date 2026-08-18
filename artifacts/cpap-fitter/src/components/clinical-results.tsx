@@ -34,16 +34,34 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { getMaskImage, formatMaskType } from "@/lib/mask-images";
 import type { FitAssessment, FitCandidate } from "@/lib/fit-assess-api";
 
+/**
+ * The optional "buy without insurance" CTA for one candidate. Shaped
+ * like the legacy results card's `cashPay` so both engines offer the
+ * same thing — before this existed, turning `fitter.clinical_assessment`
+ * on silently took the cash-pay button away from every patient.
+ */
+export interface ClinicalCashPay {
+  priceLabel: string;
+  onAddToCart: () => void;
+}
+
 export interface ClinicalResultsProps {
   assessment: FitAssessment;
   onChoose: (candidate: FitCandidate) => void;
   onRetake: () => void;
+  /**
+   * Resolve the cash-pay offer for a candidate, or undefined when this
+   * mask isn't sold in the shop / checkout is off. Undefined by default,
+   * which renders exactly what this component rendered before.
+   */
+  cashPayFor?: (candidate: FitCandidate) => ClinicalCashPay | undefined;
 }
 
 export function ClinicalResults({
   assessment,
   onChoose,
   onRetake,
+  cashPayFor,
 }: ClinicalResultsProps) {
   const primary = assessment.primary;
   if (!primary) return null;
@@ -77,6 +95,7 @@ export function ClinicalResults({
         isPrimary
         confidencePct={confidencePct}
         onChoose={() => onChoose(primary)}
+        cashPay={cashPayFor?.(primary)}
       />
 
       {assessment.alternatives.length > 0 ? (
@@ -97,6 +116,7 @@ export function ClinicalResults({
               isPrimary={false}
               confidencePct={Math.round(c.confidence * 100)}
               onChoose={() => onChoose(c)}
+              cashPay={cashPayFor?.(c)}
             />
           ))}
         </div>
@@ -137,11 +157,13 @@ function CandidateCard({
   isPrimary,
   confidencePct,
   onChoose,
+  cashPay,
 }: {
   candidate: FitCandidate;
   isPrimary: boolean;
   confidencePct: number;
   onChoose: () => void;
+  cashPay?: ClinicalCashPay | undefined;
 }) {
   const size = candidate.cushion ?? candidate.frame;
   return (
@@ -239,10 +261,19 @@ function CandidateCard({
             </p>
           ) : null}
 
-          <div className="pt-1">
+          <div className="pt-1 flex flex-wrap items-center gap-2">
             <Button onClick={onChoose} data-testid="clinical-choose">
               Choose this mask
             </Button>
+            {cashPay ? (
+              <Button
+                variant="outline"
+                onClick={cashPay.onAddToCart}
+                data-testid="clinical-cashpay"
+              >
+                Buy without insurance — {cashPay.priceLabel}
+              </Button>
+            ) : null}
           </div>
         </div>
       </div>

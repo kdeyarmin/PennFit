@@ -71,6 +71,7 @@ import { registerMetricAlertsNotifyJob } from "./jobs/metric-alerts-notify.js";
 import { registerDlqMonitorJob } from "./jobs/dlq-monitor.js";
 import { registerDeliveryFailureMonitorJob } from "./jobs/delivery-failure-monitor.js";
 import { registerOwnerDigestJob } from "./jobs/owner-digest.js";
+import { registerRefitCampaignJob } from "./jobs/refit-campaign.js";
 import { registerTherapyFleetAlertsJob } from "./jobs/therapy-fleet-alerts-scan.js";
 import { registerSetupDeadlineOutreachJob } from "./jobs/therapy-setup-deadline-outreach.js";
 import { registerResupplyAutoDraftJob } from "./jobs/resupply-auto-draft.js";
@@ -869,6 +870,17 @@ async function doStartWorker(): Promise<void> {
     "registerTherapyFleetAlertsJob",
     registrationFailures,
     () => registerTherapyFleetAlertsJob(boss),
+  );
+
+  // Daily re-fit outreach (18:40 UTC): offers a fresh fitting to patients
+  // who reported a leaking or uncomfortable fit on the post-delivery
+  // survey, and to patients wearing a discontinued mask. One message per
+  // patient per quarter. Gated by BOTH
+  // RESUPPLY_REFIT_CAMPAIGN_ENABLED=1 (boot) and the fitter.refit_campaign
+  // runtime flag (seeded OFF, migration 0490) — this contacts patients
+  // who did not ask to be contacted, so starting it is a tenant decision.
+  await safeRegister("registerRefitCampaignJob", registrationFailures, () =>
+    registerRefitCampaignJob(boss),
   );
 
   // Daily CPAP setup-deadline outreach (05:05 UTC, BEFORE the 05:15

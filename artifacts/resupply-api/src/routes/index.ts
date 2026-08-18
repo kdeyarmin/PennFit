@@ -71,6 +71,7 @@ import analyticsRevenueBySourceRouter from "./admin/analytics-revenue-by-source.
 import analyticsChannelEngagementRouter from "./admin/analytics-channel-engagement.js";
 import inventoryTurnoverRouter from "./admin/inventory-turnover.js";
 import ltvCacRouter from "./admin/ltv-cac.js";
+import fitterOutcomesRouter from "./admin/analytics-fitter-outcomes.js";
 import rtOverviewRouter from "./admin/rt-overview.js";
 import productivityRouter from "./admin/productivity.js";
 import staffingLiveRouter from "./admin/staffing-live.js";
@@ -974,6 +975,10 @@ router.use(inventoryTurnoverRouter);
 // CAC cohort economics by acquisition channel (Owner #3). cost.read to
 // view, cost.write to record attribution.
 router.use(ltvCacRouter);
+
+// /admin/analytics/fitter-outcomes — refit rate, recommendation
+// acceptance, scan quality and confidence mix for the mask fitter.
+router.use(fitterOutcomesRouter);
 // /admin/rt-overview — respiratory-therapist at-a-glance board.
 // Reads patient_therapy_links + patient_therapy_nights +
 // patient_smart_trigger_events for the daily clinical review.

@@ -27,6 +27,24 @@ import { getLinkHmacKey } from "@workspace/resupply-secrets";
  *  always resend (which mints a fresh token + extends the window). */
 export const FITTER_INVITE_TTL_MS = 30 * 86_400_000;
 
+/**
+ * 12 hours, for an invite handed over in the office as a QR code.
+ *
+ * The threat is different from a mailed link: the QR is displayed on a
+ * staff screen in a semi-public space, where it can be photographed by
+ * someone it wasn't meant for. A stolen token doesn't grant access to
+ * anything — it is bound to one invite id and the only thing it can do is
+ * submit measurements for that one fitting — but a fitting completed by
+ * the wrong person is still a false clinical record, so the window should
+ * close with the visit.
+ *
+ * 12 hours rather than one: a patient who scans at the counter and gets
+ * interrupted should be able to finish in the car or that evening without
+ * being stranded. Past that, staff resend by email or SMS, which mints a
+ * fresh token anyway.
+ */
+export const FITTER_INVITE_IN_OFFICE_TTL_MS = 12 * 3_600_000;
+
 function base64urlEncode(buf: Buffer): string {
   return buf
     .toString("base64")
@@ -49,12 +67,18 @@ function base64urlDecode(s: string): Buffer | null {
 /**
  * Mint an invite token bound to a fitter_invites row id. Exported so
  * the admin create/resend routes can build the public link.
+ *
+ * `ttlMs` defaults to the mailed-link window; pass
+ * `FITTER_INVITE_IN_OFFICE_TTL_MS` for a QR handed over at the counter.
+ * The expiry is inside the signed payload, so a token cannot be extended
+ * after the fact — a longer window means minting a new one.
  */
 export function signFitterInviteToken(
   inviteId: string,
   now: Date = new Date(),
+  ttlMs: number = FITTER_INVITE_TTL_MS,
 ): string {
-  const expiresSec = Math.floor((now.getTime() + FITTER_INVITE_TTL_MS) / 1000);
+  const expiresSec = Math.floor((now.getTime() + ttlMs) / 1000);
   const payload = `fi|${inviteId}|${expiresSec}`;
   const payloadEncoded = base64urlEncode(Buffer.from(payload, "utf8"));
   const sig = createHmac("sha256", getLinkHmacKey())

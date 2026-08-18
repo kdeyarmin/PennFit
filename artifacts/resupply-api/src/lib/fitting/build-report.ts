@@ -20,6 +20,7 @@ import {
   profileAsQA,
   type FitReport,
   type FitReportEvent,
+  type GeometrySignOff,
 } from "./fit-report.js";
 import type {
   ExclusionRecord,
@@ -110,45 +111,57 @@ export async function buildFitReport(
     return null;
   }
 
-  const [company, safetyRows, eventRows, patientRow, catalogNames] =
-    await Promise.all([
-      getCompanyInfo(orgId).catch(() => null),
-      rows(
-        supabase
-          .from("fit_session_safety_responses")
-          .select("question_key, subject, answer")
-          .eq("fit_session_id", fitSessionId)
-          // Deterministic order. PostgREST makes no ordering promise
-          // without one, so two renderings of the SAME clinical record
-          // could list the safety answers differently — and this report
-          // is a document a clinician signs and a payer may later read.
-          // Two versions of a signed record that disagree on ordering is
-          // an avoidable credibility problem.
-          .order("subject", { ascending: true })
-          .order("question_key", { ascending: true }),
-      ),
-      rows(
-        supabase
-          .from("fit_session_events")
-          .select("event_type, actor_kind, actor_email, detail, occurred_at")
-          .eq("fit_session_id", fitSessionId)
-          .order("occurred_at", { ascending: true }),
-      ),
-      data.patient_id
-        ? single(
-            supabase
-              .from("patients")
-              .select("first_name, last_name, date_of_birth")
-              .eq("id", String(data.patient_id))
-              .limit(1)
-              .maybeSingle(),
-          )
-        : Promise.resolve(null),
-      resolveMaskNames(orgId, [
-        str(data.override_mask_model_id),
-        str(data.ordered_mask_model_id),
-      ]),
-    ]);
+  const [
+    company,
+    safetyRows,
+    eventRows,
+    patientRow,
+    catalogNames,
+    geometrySignOff,
+  ] = await Promise.all([
+    getCompanyInfo(orgId).catch(() => null),
+    rows(
+      supabase
+        .from("fit_session_safety_responses")
+        .select("question_key, subject, answer")
+        .eq("fit_session_id", fitSessionId)
+        // Deterministic order. PostgREST makes no ordering promise
+        // without one, so two renderings of the SAME clinical record
+        // could list the safety answers differently — and this report
+        // is a document a clinician signs and a payer may later read.
+        // Two versions of a signed record that disagree on ordering is
+        // an avoidable credibility problem.
+        .order("subject", { ascending: true })
+        .order("question_key", { ascending: true }),
+    ),
+    rows(
+      supabase
+        .from("fit_session_events")
+        .select("event_type, actor_kind, actor_email, detail, occurred_at")
+        .eq("fit_session_id", fitSessionId)
+        .order("occurred_at", { ascending: true }),
+    ),
+    data.patient_id
+      ? single(
+          supabase
+            .from("patients")
+            .select("first_name, last_name, date_of_birth")
+            .eq("id", String(data.patient_id))
+            .limit(1)
+            .maybeSingle(),
+        )
+      : Promise.resolve(null),
+    resolveMaskNames(orgId, [
+      str(data.override_mask_model_id),
+      str(data.ordered_mask_model_id),
+    ]),
+    // The evidence behind the millimetre bands this fitting used.
+    resolveGeometrySignOff(orgId, [
+      str(data.primary_cushion_variant_id),
+      str(data.primary_frame_variant_id),
+      str(data.override_variant_id),
+    ]),
+  ]);
 
   const profile = (data.profile_answers ?? null) as Partial<FitProfile> | null;
   const outcome = (data.outcome ?? null) as FitOutcome | null;
@@ -250,6 +263,7 @@ export async function buildFitReport(
       formularyRulesMatched: (data.formulary_rules_matched ??
         null) as FitReport["provenance"]["formularyRulesMatched"],
       degraded: Boolean(data.degraded),
+      geometrySignOff,
     },
     review: {
       status: String(data.review_status ?? "not_required"),
@@ -282,6 +296,75 @@ export async function buildFitReport(
  * Filtered explicitly to the platform catalog plus this tenant's own
  * additions, exactly as `catalog-store.ts` does.
  */
+/**
+ * Look up this tenant's clinical sign-off for the size variants a fitting
+ * used, with the size label for each.
+ *
+ * Sign-off is TENANT-scoped by design (0482): one DME's RT approving a
+ * band must not speak for another's. So this reads the requesting org's
+ * review rows only — a shared catalog row reviewed by someone else
+ * correctly shows nothing here.
+ *
+ * Best-effort like `resolveMaskNames`: this is evidence printed ON a
+ * report, and failing to fetch it must degrade the section, never fail
+ * the document a clinician is trying to produce.
+ */
+async function resolveGeometrySignOff(
+  orgId: string,
+  variantIds: Array<string | null>,
+): Promise<GeometrySignOff[]> {
+  const wanted = [
+    ...new Set(variantIds.filter((v): v is string => Boolean(v))),
+  ];
+  if (wanted.length === 0) return [];
+  try {
+    const supabase = getOrgScopedClient(orgId);
+    const [reviewRes, variantRes] = await Promise.all([
+      supabase
+        .from("mask_variant_reviews")
+        .select(
+          "size_variant_id, approved, reviewed_by_email, reviewed_at, source_kind, source_ref",
+        )
+        .in("size_variant_id", wanted),
+      supabase
+        .raw()
+        .schema("resupply")
+        .from("mask_size_variants")
+        .select("id, component, size_label")
+        .in("id", wanted),
+    ]);
+    const variants = new Map<string, Row>();
+    for (const v of (variantRes as { data: Row[] | null }).data ?? []) {
+      variants.set(String(v.id), v);
+    }
+    const out: GeometrySignOff[] = [];
+    for (const r of (reviewRes as { data: Row[] | null }).data ?? []) {
+      // A rejected review is not evidence FOR the band; omit it rather
+      // than print a sign-off that says the opposite of what it means.
+      if (r.approved !== true) continue;
+      const variant = variants.get(String(r.size_variant_id));
+      out.push({
+        component: str(variant?.component) ?? "size",
+        sizeLabel: str(variant?.size_label),
+        reviewedByEmail: str(r.reviewed_by_email),
+        reviewedAt: str(r.reviewed_at),
+        sourceKind: str(r.source_kind),
+        sourceRef: str(r.source_ref),
+      });
+    }
+    // Cushion before frame, then by label, so two renderings of the same
+    // signed record never disagree on ordering.
+    out.sort(
+      (a, b) =>
+        a.component.localeCompare(b.component) ||
+        (a.sizeLabel ?? "").localeCompare(b.sizeLabel ?? ""),
+    );
+    return out;
+  } catch {
+    return [];
+  }
+}
+
 async function resolveMaskNames(
   orgId: string,
   ids: Array<string | null>,

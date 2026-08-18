@@ -32,6 +32,7 @@ import {
   releaseFitterInvite,
   resendFitterInvite,
   revokeFitterInvite,
+  type FitterInviteChannel,
   type FitterInviteRow,
   type FitterInviteStatus,
 } from "@/lib/admin/fitter-invites-api";
@@ -50,6 +51,14 @@ const STATUS_FILTERS: { value: FilterValue; label: string }[] = [
   { value: "revoked", label: "Revoked" },
   { value: "expired", label: "Expired" },
 ];
+
+/** Human wording for the delivery channel. "in_office" would otherwise
+ *  render raw, and a QR handover reads nothing like a send. */
+const CHANNEL_LABEL: Record<FitterInviteChannel, string> = {
+  email: "email",
+  sms: "SMS",
+  in_office: "in office",
+};
 
 const STATUS_VARIANT: Record<
   FitterInviteStatus,
@@ -195,7 +204,7 @@ function InviteCard({
             <Badge variant={STATUS_VARIANT[invite.status]}>
               {invite.status}
             </Badge>
-            <Badge variant="muted">{invite.channel}</Badge>
+            <Badge variant="muted">{CHANNEL_LABEL[invite.channel]}</Badge>
             {invite.auto_matched && <Badge variant="info">auto-matched</Badge>}
             <span
               className="font-medium"

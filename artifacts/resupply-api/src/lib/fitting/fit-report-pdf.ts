@@ -32,6 +32,19 @@ const OUTCOME_LABEL: Record<string, string> = {
     "Outside the validated range — no automated recommendation",
 };
 
+/**
+ * Human wording for a sign-off's evidence class (migration 0491). An
+ * unrecognised value prints as-is rather than being dropped — a reader
+ * challenging the geometry is better served by a raw token than by
+ * silence.
+ */
+const SOURCE_KIND_LABELS: Record<string, string> = {
+  manufacturer_fit_guide: "the manufacturer's fitting guide",
+  manufacturer_spec_sheet: "the manufacturer's spec sheet",
+  physical_measurement: "a physically measured sample",
+  clinical_judgment: "clinical judgement (no document cited)",
+};
+
 export function renderFitReportPdf(report: FitReport): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: "LETTER", margin: MARGIN });
@@ -371,6 +384,44 @@ function draw(doc: PDFKit.PDFDocument, r: FitReport): void {
       ? "Not recorded"
       : `v${r.provenance.catalogSnapshotVersion}`,
   );
+
+  // ── Evidence behind the millimetre bands (migration 0491) ──
+  //
+  // The rest of this section says which RULES ran. This says what the
+  // GEOMETRY those rules matched against was checked against, which is
+  // the part a payer or an auditor can actually challenge.
+  //
+  // The empty case is printed, not skipped. A report that simply omits
+  // the line reads as "nothing to say"; the seeded bands are explicitly
+  // estimates, so a fitting that ran on unreviewed geometry is a fact the
+  // reader needs, not an absence.
+  if (r.provenance.geometrySignOff.length === 0) {
+    field(
+      doc,
+      "Size band sign-off",
+      "Not signed off — measured against the catalog's estimated ranges",
+    );
+  } else {
+    for (const g of r.provenance.geometrySignOff) {
+      const who = g.reviewedByEmail ?? "a clinician";
+      const when = g.reviewedAt ? ` on ${g.reviewedAt}` : "";
+      const against = [
+        g.sourceKind
+          ? (SOURCE_KIND_LABELS[g.sourceKind] ?? g.sourceKind)
+          : null,
+        g.sourceRef,
+      ]
+        .filter(Boolean)
+        .join(" — ");
+      field(
+        doc,
+        `Size band sign-off (${g.component}${g.sizeLabel ? ` ${g.sizeLabel}` : ""})`,
+        against
+          ? `Verified against ${against}; approved by ${who}${when}`
+          : `Approved by ${who}${when} (source not recorded)`,
+      );
+    }
+  }
 
   // ── Audit history ──
   if (r.auditTrail.length > 0) {

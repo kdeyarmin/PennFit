@@ -146,6 +146,9 @@ export const FEATURE_FLAG_KEYS = [
   "module.automation",
   "module.integrations",
   "module.support",
+  // Proactive re-fit outreach to patients already on service (0490).
+  // Seeded OFF — unsolicited patient contact is the tenant's call.
+  "fitter.refit_campaign",
 ] as const;
 
 export type FeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];

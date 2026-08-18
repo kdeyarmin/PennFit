@@ -149,6 +149,84 @@ describe("POST /admin/fitter-invites", () => {
     expect(res.status).toBe(400);
     expect(res.body.error).toBe("invalid_body");
   });
+
+  // ── In-office handover (migration 0489) ──────────────────────────
+  //
+  // The patient is at the counter. Nothing is sent, no contact details
+  // are required, and the link is short-lived because the QR sits on a
+  // staff screen in a semi-public space.
+
+  it("creates an in-office invite with no contact details at all", async () => {
+    stageSupabaseResponse("fitter_invites", "insert", {
+      data: { id: INVITE_ID },
+    });
+    const res = await request(makeApp())
+      .post("/resupply-api/admin/fitter-invites")
+      .send({ channel: "in_office" });
+
+    expect(res.status).toBe(201);
+    expect(res.body.channel).toBe("in_office");
+    // Reported delivered: the handover IS the delivery, so the caller's
+    // success check stays uniform across channels.
+    expect(res.body.delivered).toBe(true);
+    expect(res.body.deliveryError).toBeNull();
+    expect(res.body.inviteLink).toContain(
+      "https://pennpaps.example.com/fitter-invite?t=",
+    );
+
+    const row = getSupabaseWritePayloads(
+      "fitter_invites",
+      "insert",
+    )[0] as Record<string, unknown>;
+    expect(row.channel).toBe("in_office");
+    expect(row.recipient_email).toBeNull();
+    expect(row.recipient_phone_e164).toBeNull();
+    expect(row.status).toBe("sent");
+  });
+
+  it("expires an in-office link with the visit, not in a month", async () => {
+    stageSupabaseResponse("fitter_invites", "insert", {
+      data: { id: INVITE_ID },
+    });
+    const res = await request(makeApp())
+      .post("/resupply-api/admin/fitter-invites")
+      .send({ channel: "in_office" });
+
+    expect(res.status).toBe(201);
+    const ttlMs = new Date(res.body.expiresAt).getTime() - Date.now();
+    // 12h window; assert the ORDER OF MAGNITUDE rather than the exact
+    // constant, so retuning the window doesn't break the test but
+    // accidentally handing out a 30-day QR does.
+    expect(ttlMs).toBeGreaterThan(60 * 60_000);
+    expect(ttlMs).toBeLessThan(24 * 3_600_000);
+
+    // The stored expiry must agree with the token that was handed out —
+    // a row claiming a window the token doesn't honour would strand the
+    // patient with a link the worklist says is still live.
+    const row = getSupabaseWritePayloads(
+      "fitter_invites",
+      "insert",
+    )[0] as Record<string, unknown>;
+    expect(row.expires_at).toBe(res.body.expiresAt);
+  });
+
+  it("still keeps a typed name on an in-office invite", async () => {
+    // A walk-in has no chart yet; the name is the only thing making the
+    // fitting identifiable in the holding area afterwards.
+    stageSupabaseResponse("fitter_invites", "insert", {
+      data: { id: INVITE_ID },
+    });
+    const res = await request(makeApp())
+      .post("/resupply-api/admin/fitter-invites")
+      .send({ channel: "in_office", name: "Jordan Lee" });
+
+    expect(res.status).toBe(201);
+    const row = getSupabaseWritePayloads(
+      "fitter_invites",
+      "insert",
+    )[0] as Record<string, unknown>;
+    expect(row.recipient_name).toBe("Jordan Lee");
+  });
 });
 
 describe("POST /admin/fitter-invites/:id/attach", () => {

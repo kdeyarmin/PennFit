@@ -441,7 +441,15 @@ router.post("/fit/assess", async (req, res) => {
     inviteId: verification.inviteId,
     patientId: invite.patientId,
     locationId: invite.locationId,
-    entryPoint: body.entryPoint ?? "remote_link",
+    // The INVITE decides how the fitting started, not the client. An
+    // in-office invite is one staff deliberately raised as a counter
+    // handover, which is a fact the server already knows; `body.entryPoint`
+    // is a self-reported hint from the patient's own browser and would let
+    // remote fittings be miscounted as in-office in the outcome reporting.
+    entryPoint:
+      invite.channel === "in_office"
+        ? "in_office"
+        : (body.entryPoint ?? "remote_link"),
     measurements,
     profile,
     scan: body.scan ?? NEUTRAL_SCAN,
@@ -533,6 +541,9 @@ interface InviteContext {
   payerProfileId: string | null;
   status: string;
   expiresAt: string | null;
+  /** How the invite was raised (migration 0489). Authoritative over the
+   *  client's `entryPoint` hint — see where it's resolved below. */
+  channel: string | null;
 }
 
 /**
@@ -551,7 +562,7 @@ async function loadInvite(
     const supabase = getOrgScopedClient(orgId);
     const { data, error } = (await supabase
       .from("fitter_invites")
-      .select("patient_id, status, expires_at")
+      .select("patient_id, status, expires_at, channel")
       .eq("id", inviteId)
       .limit(1)
       .maybeSingle()) as {
@@ -609,6 +620,7 @@ async function loadInvite(
       payerProfileId,
       status: String(data.status ?? "sent"),
       expiresAt: (data.expires_at as string | null) ?? null,
+      channel: (data.channel as string | null) ?? null,
     };
   } catch {
     return null;
@@ -682,6 +694,23 @@ async function persistSession(input: PersistInput): Promise<string | null> {
         safety_attested_at: input.safety?.attestedAt ?? null,
         safety_snapshot: input.safety?.snapshot ?? null,
         primary_recommendation: input.assessment.primary,
+        // Dual-write the STRUCTURED recommendation alongside the JSON blob.
+        //
+        // Without these the loop never closes: `classifyDecision` in the
+        // outcome report bails on a null primary before it ever looks at
+        // the clinician's decision, so every fitting read as "undecided"
+        // and the acceptance rate was permanently null — even though the
+        // RT override route has always written override_mask_model_id.
+        // The JSON carries the same ids, but a jsonb blob can't be joined,
+        // filtered or FK-checked, which is why 0483 declared the columns.
+        //
+        // Null on a contraindicated / low-confidence / out-of-range
+        // outcome, where there is deliberately no primary to record.
+        primary_mask_model_id: input.assessment.primary?.maskId ?? null,
+        primary_cushion_variant_id:
+          input.assessment.primary?.cushion?.variantId ?? null,
+        primary_frame_variant_id:
+          input.assessment.primary?.frame?.variantId ?? null,
         alternatives: input.assessment.alternatives,
         excluded: input.assessment.excluded,
         recommendation_confidence: input.assessment.recommendationConfidence,

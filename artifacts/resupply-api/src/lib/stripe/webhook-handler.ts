@@ -103,6 +103,7 @@ export {
   syncCustomerAfterCheckout,
 } from "./webhook-handlers/checkout-session";
 import { persistStripeDispute } from "./dispute-persist";
+import { linkFitSessionToOrder, readFitOrderLink } from "../fitting/order-link";
 
 /**
  * Try to record this event in stripe_webhook_events. Resolves to one
@@ -474,6 +475,33 @@ export const stripeWebhookHandler: RequestHandler = async (
                     : String(itemsErr),
               },
               "stripe webhook: shop_order_items upsert failed (non-fatal)",
+            );
+          }
+
+          // Link the paid order back to the fitting that produced it, when
+          // the checkout came from the mask fitter. Best-effort in the same
+          // sense as the line-item mirror above: the order is already paid,
+          // and losing an attribution row must never fail the webhook or
+          // put Stripe into a retry loop. Idempotent, so a re-delivery or
+          // the async_payment_succeeded shadow event is a no-op.
+          try {
+            const fitLink = readFitOrderLink(session.metadata);
+            if (fitLink) {
+              const linkOrgId = await resolveWebhookOrgId();
+              if (linkOrgId) {
+                await linkFitSessionToOrder(linkOrgId, {
+                  link: fitLink,
+                  shopOrderId: paidRow.id,
+                });
+              }
+            }
+          } catch (linkErr) {
+            log?.warn?.(
+              {
+                err:
+                  linkErr instanceof Error ? linkErr.message : String(linkErr),
+              },
+              "stripe webhook: fit-session order link failed (non-fatal)",
             );
           }
         }

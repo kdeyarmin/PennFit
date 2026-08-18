@@ -38,6 +38,10 @@ import {
   removeFromWishlist,
 } from "@/lib/wishlist";
 import {
+  clearFitCheckoutContext,
+  readFitCheckoutContext,
+} from "@/lib/fit-checkout-context";
+import {
   fetchPickupLocations,
   fetchShopProducts,
   formatMoneyCents,
@@ -507,6 +511,7 @@ export function ShopCart() {
       flow: "standard",
     });
     setCheckingOut(true);
+    const fitLink = readFitCheckoutContext();
     try {
       const { url } = await startCheckout(
         items.map((i) => ({
@@ -524,10 +529,18 @@ export function ShopCart() {
               ? "subscription"
               : "one_time",
         })),
-        isPickup
-          ? { fulfillmentMethod: "pickup", pickupLocationId }
-          : { fulfillmentMethod: "ship" },
+        {
+          ...(isPickup
+            ? ({ fulfillmentMethod: "pickup", pickupLocationId } as const)
+            : ({ fulfillmentMethod: "ship" } as const)),
+          // Attribution for a basket that started in the mask fitter.
+          // Null for every ordinary resupply checkout, which is most of
+          // them — see lib/fit-checkout-context.ts.
+          ...(fitLink ?? {}),
+        },
       );
+      // The Session now carries the link; keep it off the NEXT order.
+      if (fitLink) clearFitCheckoutContext();
       window.location.assign(url);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -564,8 +577,20 @@ export function ShopCart() {
       flow: "express",
     });
     setExpressCheckingOut(true);
+    const fitLink = readFitCheckoutContext();
     try {
       const { url } = await startQuickCheckout({
+        ...(fitLink
+          ? {
+              fitSessionId: fitLink.fitSessionId,
+              ...(fitLink.orderedMaskSlug
+                ? { orderedMaskSlug: fitLink.orderedMaskSlug }
+                : {}),
+              ...(fitLink.orderedVariantId
+                ? { orderedVariantId: fitLink.orderedVariantId }
+                : {}),
+            }
+          : {}),
         items: items.map((i) => ({
           priceId:
             i.mode === "subscription" && i.recurringPriceId
@@ -578,6 +603,7 @@ export function ShopCart() {
               : "one_time",
         })),
       });
+      if (fitLink) clearFitCheckoutContext();
       window.location.assign(url);
     } catch (err: unknown) {
       const msg =

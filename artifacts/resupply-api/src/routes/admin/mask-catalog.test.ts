@@ -34,6 +34,15 @@ const db = vi.hoisted(() => ({
   variantRow: {} as Record<string, unknown>,
   modelOwnerOrgId: null as string | null,
   modelCatalogVersion: 3,
+  /**
+   * Rows a set-wise `mask_size_variants` read resolves to. Only the batch
+   * review route reads this way; every other query in this file goes
+   * through maybeSingle(), so the default empty array leaves them alone.
+   */
+  batchVariantRows: [] as Array<{
+    id: string;
+    mask_models: { org_id: string | null };
+  }>,
 }));
 
 vi.mock("@workspace/resupply-db", () => {
@@ -78,7 +87,10 @@ vi.mock("@workspace/resupply-db", () => {
       return { data: null, error: null };
     };
     chain.then = (resolve: (v: unknown) => unknown) =>
-      resolve({ data: [], error: null });
+      resolve({
+        data: table === "mask_size_variants" ? db.batchVariantRows : [],
+        error: null,
+      });
     chain.update = (payload: unknown) => {
       db.writes.push({ table, op: "update", payload });
       const upd: Record<string, unknown> = {};
@@ -127,6 +139,9 @@ vi.mock("../../middlewares/requireAdmin", () => ({
 }));
 vi.mock("../../middlewares/admin-rate-limit", () => ({
   adminRateLimit: () => (_r: unknown, _s: unknown, next: () => void) => next(),
+  // Pre-auth IP bucket, mounted ahead of requireAdmin on the review
+  // routes. Pass-through here — the limiting itself is upstream config.
+  adminWriteRateLimiter: (_r: unknown, _s: unknown, next: () => void) => next(),
 }));
 vi.mock("../../lib/fitting/catalog-store", () => ({
   invalidateFittingContext: vi.fn(),
@@ -143,6 +158,7 @@ function makeApp(): Express {
 
 beforeEach(() => {
   db.writes = [];
+  db.batchVariantRows = [];
   db.variantOwnerOrgId = null;
   db.modelOwnerOrgId = null;
   db.modelCatalogVersion = 3;
@@ -286,5 +302,172 @@ describe("PATCH /admin/fitter/catalog/:id — ownership and versioning", () => {
     expect(res.status).toBe(200);
     expect(res.body.catalogVersion).toBe(3);
     expect(db.writes[0].payload).not.toHaveProperty("catalog_version");
+  });
+});
+
+// ── Batch sign-off + provenance (migration 0491) ──────────────────────
+//
+// The batch route is the same consequential write as the single route —
+// it lifts the engine's confidence cap on every id it touches — so it
+// carries the same tenant-isolation obligation. The additional obligation
+// is that it must be ALL-OR-NOTHING: a reviewer told "42 signed off" has
+// to be able to read that as 42, not "42 of the 47 you selected".
+
+const VARIANT_ID_2 = "66666666-6666-4666-8666-666666666666";
+
+describe("POST /admin/fitter/catalog/variants/review-batch", () => {
+  it("signs off every id in one tenant-scoped write", async () => {
+    db.batchVariantRows = [
+      { id: VARIANT_ID, mask_models: { org_id: null } },
+      { id: VARIANT_ID_2, mask_models: { org_id: ORG_ID } },
+    ];
+
+    const res = await request(makeApp())
+      .post("/admin/fitter/catalog/variants/review-batch")
+      .send({
+        variantIds: [VARIANT_ID, VARIANT_ID_2],
+        approved: true,
+        sourceKind: "manufacturer_fit_guide",
+        sourceRef: "AirFit N20 fitting template rev C",
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true, approved: true, count: 2 });
+
+    // Same isolation rule as the single route: the shared geometry row is
+    // never touched.
+    expect(
+      db.writes.filter((w) => w.table === "mask_size_variants"),
+    ).toHaveLength(0);
+
+    const reviews = db.writes.filter((w) => w.table === "mask_variant_reviews");
+    expect(reviews).toHaveLength(1);
+    expect(reviews[0]?.op).toBe("upsert(org-scoped)");
+
+    const rows = reviews[0]?.payload as Array<Record<string, unknown>>;
+    expect(rows).toHaveLength(2);
+    expect(rows.map((r) => r.size_variant_id)).toEqual([
+      VARIANT_ID,
+      VARIANT_ID_2,
+    ]);
+    // Provenance rides on every row, so the fit report can cite the
+    // evidence rather than just assert that someone approved it.
+    for (const row of rows) {
+      expect(row.approved).toBe(true);
+      expect(row.source_kind).toBe("manufacturer_fit_guide");
+      expect(row.source_ref).toBe("AirFit N20 fitting template rev C");
+      expect(row.reviewed_by_email).toBe("rt@example.test");
+    }
+  });
+
+  it("refuses the whole batch when any id is not visible to the tenant", async () => {
+    // VARIANT_ID_2 belongs to a different DME's private catalog. Signing
+    // off a partial set here would report a count the reviewer cannot
+    // trust, so nothing is written at all.
+    db.batchVariantRows = [
+      { id: VARIANT_ID, mask_models: { org_id: null } },
+      { id: VARIANT_ID_2, mask_models: { org_id: OTHER_ORG_ID } },
+    ];
+
+    const res = await request(makeApp())
+      .post("/admin/fitter/catalog/variants/review-batch")
+      .send({ variantIds: [VARIANT_ID, VARIANT_ID_2], approved: true });
+
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe("not_found");
+    expect(
+      db.writes.filter((w) => w.table === "mask_variant_reviews"),
+    ).toHaveLength(0);
+  });
+
+  it("refuses ids that resolved to no row at all", async () => {
+    // A stale id the reader simply didn't return is as unsafe as one
+    // owned by someone else — both mean we'd be recording an opinion
+    // about something we never confirmed exists.
+    db.batchVariantRows = [{ id: VARIANT_ID, mask_models: { org_id: null } }];
+
+    const res = await request(makeApp())
+      .post("/admin/fitter/catalog/variants/review-batch")
+      .send({ variantIds: [VARIANT_ID, VARIANT_ID_2], approved: true });
+
+    expect(res.status).toBe(404);
+    expect(res.body.unknownCount).toBe(1);
+    expect(
+      db.writes.filter((w) => w.table === "mask_variant_reviews"),
+    ).toHaveLength(0);
+  });
+
+  it("de-duplicates repeated ids so the reported count is honest", async () => {
+    db.batchVariantRows = [{ id: VARIANT_ID, mask_models: { org_id: null } }];
+
+    const res = await request(makeApp())
+      .post("/admin/fitter/catalog/variants/review-batch")
+      .send({ variantIds: [VARIANT_ID, VARIANT_ID], approved: true });
+
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBe(1);
+    const rows = db.writes.find((w) => w.table === "mask_variant_reviews")
+      ?.payload as Array<unknown>;
+    expect(rows).toHaveLength(1);
+  });
+
+  it("rejects an unknown source kind rather than storing it", async () => {
+    // The column carries a CHECK constraint; failing at the boundary
+    // gives a 400 instead of a 500 from Postgres.
+    db.batchVariantRows = [{ id: VARIANT_ID, mask_models: { org_id: null } }];
+
+    const res = await request(makeApp())
+      .post("/admin/fitter/catalog/variants/review-batch")
+      .send({
+        variantIds: [VARIANT_ID],
+        approved: true,
+        sourceKind: "vibes",
+      });
+
+    expect(res.status).toBe(400);
+    expect(
+      db.writes.filter((w) => w.table === "mask_variant_reviews"),
+    ).toHaveLength(0);
+  });
+
+  it("rejects an empty id list", async () => {
+    const res = await request(makeApp())
+      .post("/admin/fitter/catalog/variants/review-batch")
+      .send({ variantIds: [], approved: true });
+
+    expect(res.status).toBe(400);
+  });
+});
+
+describe("POST /admin/fitter/catalog/variants/:id/review — provenance", () => {
+  it("stores the cited source alongside the approval", async () => {
+    const res = await request(makeApp())
+      .post(`/admin/fitter/catalog/variants/${VARIANT_ID}/review`)
+      .send({
+        approved: true,
+        sourceKind: "physical_measurement",
+        sourceRef: "measured sample, 2026-08-18",
+      });
+
+    expect(res.status).toBe(200);
+    const row = db.writes.find((w) => w.table === "mask_variant_reviews")
+      ?.payload as Record<string, unknown>;
+    expect(row.source_kind).toBe("physical_measurement");
+    expect(row.source_ref).toBe("measured sample, 2026-08-18");
+  });
+
+  it("stores nulls when no source is cited rather than inventing one", async () => {
+    // An RT working a long queue must never be blocked from recording a
+    // legitimate approval by a citation field, so the source is optional —
+    // and its absence has to read as absence.
+    const res = await request(makeApp())
+      .post(`/admin/fitter/catalog/variants/${VARIANT_ID}/review`)
+      .send({ approved: true });
+
+    expect(res.status).toBe(200);
+    const row = db.writes.find((w) => w.table === "mask_variant_reviews")
+      ?.payload as Record<string, unknown>;
+    expect(row.source_kind).toBeNull();
+    expect(row.source_ref).toBeNull();
   });
 });

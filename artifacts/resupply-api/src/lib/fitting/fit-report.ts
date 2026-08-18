@@ -27,6 +27,19 @@ import type {
   FitProfile,
 } from "./types.js";
 
+/** One reviewed size band, and the evidence behind it. */
+export interface GeometrySignOff {
+  /** "cushion" / "frame" — which part of the mask this size is. */
+  component: string;
+  sizeLabel: string | null;
+  reviewedByEmail: string | null;
+  reviewedAt: string | null;
+  /** Class of evidence; null on sign-offs predating migration 0491. */
+  sourceKind: string | null;
+  /** The pointer itself — document + revision, URL, or how it was measured. */
+  sourceRef: string | null;
+}
+
 export interface FitReportHeader {
   practiceName: string;
   locationName: string | null;
@@ -115,6 +128,18 @@ export interface FitReport {
     formularyVersion: number | null;
     formularyRulesMatched: Json | null;
     degraded: boolean;
+    /**
+     * Clinical sign-off on the millimetre bands this fitting was measured
+     * against, for the sizes it actually used (migration 0491).
+     *
+     * This is the evidence behind the geometry. Without it the report
+     * asserts a size was right; with it a later reader — an RT, an
+     * auditor, a payer — can see WHAT the band was checked against and by
+     * whom. Empty when the catalog rows carry no tenant sign-off, which
+     * is itself worth printing: it means the fitting ran on the seeded
+     * estimates.
+     */
+    geometrySignOff: GeometrySignOff[];
   };
   review: FitReportReview;
   dispensing: FitReportDispensing;

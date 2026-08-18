@@ -7,6 +7,13 @@
 // therapist works through this list the fitter will never issue a
 // confident automated recommendation off estimated geometry. The
 // "Needs review" filter is therefore the default view.
+//
+// A sign-off also records WHAT it was checked against (migration 0491).
+// The source is captured once per model — a reviewer opens one
+// manufacturer fitting guide and works that model's whole size run
+// against it — and then applies to every sign-off made from this panel,
+// individually or in bulk. That is what makes the fit report's provenance
+// section evidence rather than an assertion.
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -15,15 +22,19 @@ import { Library } from "lucide-react";
 import { Card } from "@/components/admin/Card";
 import { Button } from "@/components/admin/Button";
 import { Badge } from "@/components/admin/Badge";
-import { Input, Label } from "@/components/admin/Input";
+import { Input, Label, Select } from "@/components/admin/Input";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Spinner } from "@/components/admin/Spinner";
 import {
   fetchMaskCatalog,
   fetchMaskModel,
   reviewVariant,
+  reviewVariantsBatch,
+  REVIEW_SOURCE_KINDS,
   type InterfaceType,
   type MaskModel,
+  type ReviewProvenance,
+  type ReviewSourceKind,
 } from "@/lib/admin/fitting-api";
 
 const QUERY_KEY = ["admin", "mask-catalog"] as const;
@@ -41,6 +52,35 @@ const INTERFACE_LABELS: Record<InterfaceType, string> = {
 function mm(min: number | null, max: number | null): string {
   if (min === null || max === null) return "—";
   return `${min}–${max} mm`;
+}
+
+const SOURCE_KIND_LABELS = new Map(
+  REVIEW_SOURCE_KINDS.map((k) => [k.value, k.label] as const),
+);
+
+/**
+ * Who signed a size off and what they checked it against.
+ *
+ * Sign-offs recorded before migration 0491 carry no source. That reads as
+ * "source not recorded", never as an invented citation — the whole point of
+ * the column is that a reader can tell evidence from assertion.
+ */
+function signOffTitle(v: {
+  reviewedByEmail: string | null;
+  reviewSourceKind: ReviewSourceKind | null;
+  reviewSourceRef: string | null;
+}): string | undefined {
+  if (!v.reviewedByEmail && !v.reviewSourceKind && !v.reviewSourceRef) {
+    return undefined;
+  }
+  const who = v.reviewedByEmail
+    ? `Signed off by ${v.reviewedByEmail}`
+    : "Signed off";
+  const kind = v.reviewSourceKind
+    ? (SOURCE_KIND_LABELS.get(v.reviewSourceKind) ?? v.reviewSourceKind)
+    : null;
+  const against = [kind, v.reviewSourceRef].filter(Boolean).join(" — ");
+  return against ? `${who} against ${against}` : `${who} (source not recorded)`;
 }
 
 export function AdminMaskCatalogPage() {
@@ -67,15 +107,44 @@ export function AdminMaskCatalogPage() {
     enabled: Boolean(expanded),
   });
 
+  // Sign-off provenance, held at page level and reset when the reviewer
+  // opens a different model — a citation is only true of the model it was
+  // read for, so carrying it across models would launder one mask's
+  // evidence onto another.
+  const [sourceKind, setSourceKind] = useState<ReviewSourceKind | "">("");
+  const [sourceRef, setSourceRef] = useState("");
+
+  function openModel(id: string | null) {
+    setExpanded(id);
+    setSourceKind("");
+    setSourceRef("");
+  }
+
+  const provenance: ReviewProvenance = {
+    ...(sourceKind ? { sourceKind } : {}),
+    ...(sourceRef.trim() ? { sourceRef: sourceRef.trim() } : {}),
+  };
+
   const review = useMutation({
     mutationFn: ({ id, approved }: { id: string; approved: boolean }) =>
-      reviewVariant(id, approved),
+      reviewVariant(id, approved, provenance),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: QUERY_KEY });
+    },
+  });
+
+  const reviewAll = useMutation({
+    mutationFn: (variantIds: string[]) =>
+      reviewVariantsBatch(variantIds, true, provenance),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: QUERY_KEY });
     },
   });
 
   const models: MaskModel[] = catalog.data?.models ?? [];
+  const pendingVariantIds = (detail.data?.variants ?? [])
+    .filter((v) => v.needsClinicalReview)
+    .map((v) => v.id);
 
   return (
     <div className="admin-root space-y-4">
@@ -189,7 +258,7 @@ export function AdminMaskCatalogPage() {
                 </div>
                 <Button
                   intent="secondary"
-                  onClick={() => setExpanded(expanded === m.id ? null : m.id)}
+                  onClick={() => openModel(expanded === m.id ? null : m.id)}
                   aria-expanded={expanded === m.id}
                 >
                   {expanded === m.id ? "Hide sizes" : "Review sizes"}
@@ -219,6 +288,67 @@ export function AdminMaskCatalogPage() {
                               </li>
                             ))}
                           </ul>
+                        </div>
+                      ) : null}
+
+                      {pendingVariantIds.length > 0 ? (
+                        <div
+                          className="mb-3 rounded-md border p-3"
+                          style={{ borderColor: "hsl(var(--line-2))" }}
+                        >
+                          <p className="text-sm font-medium">Sign-off source</p>
+                          <p className="text-xs text-muted-foreground mb-2">
+                            What are you checking these ranges against? Recorded
+                            with every sign-off you make below and printed on
+                            the fit report, so a later reader can see the
+                            evidence rather than take the approval on trust.
+                          </p>
+                          <div className="flex flex-wrap gap-3 items-end">
+                            <div className="min-w-[220px]">
+                              <Label htmlFor="review-source-kind">Source</Label>
+                              <Select
+                                id="review-source-kind"
+                                emptyOptionLabel="Not recorded"
+                                options={REVIEW_SOURCE_KINDS.map((k) => ({
+                                  value: k.value,
+                                  label: k.label,
+                                }))}
+                                value={sourceKind}
+                                onChange={(e) =>
+                                  setSourceKind(
+                                    e.target.value as ReviewSourceKind | "",
+                                  )
+                                }
+                              />
+                            </div>
+                            <div className="flex-1 min-w-[240px]">
+                              <Label htmlFor="review-source-ref">
+                                Reference
+                              </Label>
+                              <Input
+                                id="review-source-ref"
+                                placeholder="e.g. AirFit N20 fitting template rev C"
+                                value={sourceRef}
+                                onChange={(e) => setSourceRef(e.target.value)}
+                              />
+                            </div>
+                            <Button
+                              onClick={() =>
+                                reviewAll.mutate(pendingVariantIds)
+                              }
+                              disabled={reviewAll.isPending}
+                            >
+                              {reviewAll.isPending
+                                ? "Signing off…"
+                                : `Sign off all ${pendingVariantIds.length} remaining`}
+                            </Button>
+                          </div>
+                          {reviewAll.isError ? (
+                            <p className="text-xs text-destructive mt-2">
+                              Could not sign these off. Nothing was changed —
+                              try again.
+                            </p>
+                          ) : null}
                         </div>
                       ) : null}
 
@@ -274,11 +404,7 @@ export function AdminMaskCatalogPage() {
                                   ) : (
                                     <span
                                       className="text-emerald-700"
-                                      title={
-                                        v.reviewedByEmail
-                                          ? `Signed off by ${v.reviewedByEmail}`
-                                          : undefined
-                                      }
+                                      title={signOffTitle(v)}
                                     >
                                       Approved
                                     </span>
@@ -294,7 +420,8 @@ export function AdminMaskCatalogPage() {
                         clinically sound. Until then the engine caps any
                         recommendation using it at moderate confidence. Sign-off
                         applies to your organization only — it does not change
-                        what any other provider on the platform sees.
+                        what any other provider on the platform sees. Hover an
+                        approved size to see who signed it off and against what.
                       </p>
                     </>
                   ) : null}

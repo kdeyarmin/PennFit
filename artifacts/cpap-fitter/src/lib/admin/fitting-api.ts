@@ -69,6 +69,35 @@ export interface MaskSizeVariant {
   needsClinicalReview: boolean;
   reviewedByEmail: string | null;
   reviewedAt: string | null;
+  /** What the reviewer checked the bands against (migration 0491). Null on
+   *  sign-offs recorded before provenance capture existed. */
+  reviewSourceKind: ReviewSourceKind | null;
+  reviewSourceRef: string | null;
+}
+
+/** Class of evidence behind a sign-off. `clinical_judgment` exists so a
+ *  reviewer going on experience can say so rather than overclaim a
+ *  citation they do not have. */
+export type ReviewSourceKind =
+  | "manufacturer_fit_guide"
+  | "manufacturer_spec_sheet"
+  | "physical_measurement"
+  | "clinical_judgment";
+
+export const REVIEW_SOURCE_KINDS: ReadonlyArray<{
+  value: ReviewSourceKind;
+  label: string;
+}> = [
+  { value: "manufacturer_fit_guide", label: "Manufacturer fitting guide" },
+  { value: "manufacturer_spec_sheet", label: "Manufacturer spec sheet" },
+  { value: "physical_measurement", label: "Measured a physical sample" },
+  { value: "clinical_judgment", label: "Clinical judgement (no document)" },
+];
+
+export interface ReviewProvenance {
+  note?: string;
+  sourceKind?: ReviewSourceKind;
+  sourceRef?: string;
 }
 
 export interface CatalogFilters {
@@ -147,12 +176,30 @@ export function updateVariantBands(
 export function reviewVariant(
   variantId: string,
   approved: boolean,
-  note?: string,
+  provenance: ReviewProvenance = {},
 ): Promise<{ ok: true; approved: boolean }> {
   return adminJsonFetch(
     `/admin/fitter/catalog/variants/${encodeURIComponent(variantId)}/review`,
-    { method: "POST", body: JSON.stringify({ approved, note }) },
+    { method: "POST", body: JSON.stringify({ approved, ...provenance }) },
   );
+}
+
+/**
+ * Sign off several sizes at once — in practice a whole model's size run.
+ *
+ * The server applies this all-or-nothing: if any id is not visible to this
+ * organization the request is refused rather than partially applied, so a
+ * reported count of 42 always means 42.
+ */
+export function reviewVariantsBatch(
+  variantIds: string[],
+  approved: boolean,
+  provenance: ReviewProvenance = {},
+): Promise<{ ok: true; approved: boolean; count: number }> {
+  return adminJsonFetch("/admin/fitter/catalog/variants/review-batch", {
+    method: "POST",
+    body: JSON.stringify({ variantIds, approved, ...provenance }),
+  });
 }
 
 // ── Formulary ────────────────────────────────────────────────────────
@@ -336,6 +383,7 @@ export interface RescanResult {
     | "invite_revoked"
     | "no_contact"
     | "no_channel_config"
+    | "in_office_handoff"
     | "send_failed";
   /** A usable link when automated delivery had nowhere to send it. */
   inviteLink: string | null;
@@ -361,6 +409,8 @@ export function rescanNotifyMessage(result: RescanResult): string {
       return "Session flagged for rescan. This fitting wasn't started from an invite, so there is nobody to notify automatically — reach out directly.";
     case "invite_revoked":
       return "Session flagged for rescan. The original invite was revoked, so nothing was sent. Create a new fitter invite for this patient.";
+    case "in_office_handoff":
+      return "Session flagged for rescan. This fitting was started in the office, so nothing was sent automatically — share the link below with the patient.";
     case "no_contact":
       return "Session flagged for rescan, but the invite has no email or phone on file. Use the link below.";
     case "no_channel_config":

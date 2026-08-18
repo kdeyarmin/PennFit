@@ -22,6 +22,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 
 import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
+import { markFitSessionDispensed } from "../fitting/order-link.js";
 import { autoSendPatientPacketOnDelivery } from "../patient-packet/auto-send-on-delivery";
 import { sendDeliveredNotificationIfNew } from "../order-emails/delivered-notification";
 import { logger } from "../logger";
@@ -209,6 +210,12 @@ export async function applyCarrierTrackingEvent(
         );
         void notifyErr;
       }
+      // (c) Stamp the dispense on the fitting this order came from, if any.
+      // Delivered — not paid — is what "dispensed" means: a mask in a
+      // warehouse has not been dispensed, and counting payments would
+      // flatter the rate by everything still in transit. No-ops for an
+      // ordinary shop order with no linked fitting.
+      await markFitSessionDispensed(orderOrgId, order.id);
       return { matched: true, updated: true };
     }
 

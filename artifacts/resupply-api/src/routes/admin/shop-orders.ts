@@ -54,6 +54,7 @@ import {
 type ShopOrderUpdate = Database["resupply"]["Tables"]["shop_orders"]["Update"];
 
 import { logAudit } from "@workspace/resupply-audit";
+import { markFitSessionDispensed } from "../../lib/fitting/order-link";
 import { requirePermission } from "../../middlewares/requireAdmin";
 import { rateLimit } from "../../middlewares/rate-limit";
 import { withMetrics } from "../../lib/observability";
@@ -1132,6 +1133,12 @@ router.post(
       { orderId, adminEmail: req.adminEmail },
       "admin/shop/orders: marked delivered",
     );
+
+    // Stamp the dispense on the fitting this order came from, if any.
+    // Mirrors the carrier-webhook path; both are guarded on
+    // `dispensed_at IS NULL`, so whichever marks delivery first counts and
+    // the other is a no-op. Never fatal to the delivery transition.
+    await markFitSessionDispensed(orgId, orderId);
 
     // Best-effort: when the auto-send flag is on and this order's
     // customer is linked to a patient, email them their new-patient
