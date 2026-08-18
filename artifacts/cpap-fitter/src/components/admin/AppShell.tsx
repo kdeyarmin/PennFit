@@ -509,6 +509,14 @@ export const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             hint: "What you dispense, by location, payer, contract, service line, and therapy mode",
           },
           {
+            href: "/admin/fitter/safety-screens",
+            label: "Safety screening",
+            icon: ShieldAlert,
+            matchPrefix: "/admin/fitter/safety-screens",
+            requiredPermission: "clinical.read",
+            hint: "The questions a patient answers before the fitter will recommend a mask — versioned, so a fit report always shows the ones that actually ran",
+          },
+          {
             href: "/admin/clinical/mask-fit",
             label: "Mask-fit feedback",
             icon: Wind,
@@ -1483,6 +1491,13 @@ export const MASK_FITTER_NAV_GROUPS: ReadonlyArray<NavGroup> = [
         matchPrefix: "/admin/fitter/formulary",
         hint: "Which of those masks you actually dispense",
       },
+      {
+        label: "Safety screening",
+        icon: ShieldAlert,
+        href: "/admin/fitter/safety-screens",
+        matchPrefix: "/admin/fitter/safety-screens",
+        hint: "The questions asked before a mask is recommended — revise them yourself when a manufacturer updates a warning",
+      },
     ],
   },
   {
@@ -1552,6 +1567,7 @@ export const MASK_FITTER_ALLOWED_ROUTE_PREFIXES: readonly string[] = [
   "/admin/fit-sessions",
   "/admin/fitter/catalog",
   "/admin/fitter/formulary",
+  "/admin/fitter/safety-screens",
   "/admin/provider-referrals",
   // Control Center. The clinical fitter ships behind `fitter.*` flags that
   // the tenant flips themselves after their RT signs off the size bands —

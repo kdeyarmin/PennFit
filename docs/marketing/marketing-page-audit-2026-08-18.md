@@ -129,11 +129,27 @@ visually-hidden "Yes"/"No" text. Note that axe reported **zero** violations on
 both pages before this fix — an empty table cell is valid HTML, so automated
 scanning could not see it.
 
-**Product gaps left open** (each is real feature work, not copy): wire capture
-quality into the assessment request; render and resubmit the safety screen in
-the patient flow; add a re-fit `entry_point`; build a console surface for
-safety-rule versions; and decide whether the standalone fitter scope should
-reach the catalog sign-off queue.
+## 5a. Update — the gaps were closed, and the copy was restored
+
+The five product gaps above were built in the same pass, so five of the six
+softened claims went back to their stronger form. Recorded here because the
+sequence matters: the copy was corrected first and restored only once the
+code actually backed it.
+
+| Gap                                                  | What shipped                                                                                                                                                                                                                                                  | Copy now                                                                  |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| Scan quality never measured                          | `frame-sampling.ts` + `scan-signals.ts` join the existing (orphaned) checks to the route. `aggregateFrames` now reports `band: "low"` for a frame that failed its own gates, and `resolveConfidence` honours it.                                              | "A blurry or badly-lit scan cannot produce a confident answer" — restored |
+| Safety screen never shown                            | `safety-screen.tsx` renders the questions the route demands; `results.tsx` shows it ahead of every other branch and resubmits the attested answers instead of falling through to the legacy engine.                                                           | "The questions are put to the patient" — restored                         |
+| No re-fit attribution                                | Migration `0497` adds the `refit_campaign` entry point; `sendRescanForInvite` derives it from the rescan reason.                                                                                                                                              | The re-fit segment — restored                                             |
+| No console for safety-rule versions                  | `/admin/fitter/safety-screens` + `routes/admin/safety-screens.ts`: clone the active set to a draft, edit, publish (retiring the incumbent), or retire back to the platform set. Migration `0498` adds the per-org one-active index that makes publish atomic. | "You publish a revised version yourself" — restored                       |
+| Standalone plan could not reach its clinical console | The SPA route guard had drifted from the server allowlist; Control Center added for both, scoped to the tenant's own `fitter.*` flags.                                                                                                                        | Catalog / formulary / fit reports back in the plan — restored             |
+
+**Deliberately still qualified:** sign-off provenance. `sourceKind` /
+`sourceRef` remain optional, and the report still prints "source not
+recorded" rather than inventing a citation. Making provenance mandatory is a
+clinical-workflow decision (it would block a reviewer who checked a physical
+template they cannot cite), not an engineering one — so the copy continues to
+describe it accurately rather than the code being bent to match the copy.
 
 ## 6. Still open
 

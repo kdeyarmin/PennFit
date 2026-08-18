@@ -419,21 +419,20 @@ const SAFEGUARDS: {
       "Covers the household too — the risk is proximity, and it is not only the patient who sleeps in that bed",
       "A declared implant removes every magnetic-clip mask from the list — it is never merely down-ranked",
       "When the same model has a magnet-free version, that version is offered first — the patient keeps the mask they wanted",
-      "Your team answers the screening on the chart today; asking the patient inside the fitting flow is the next step",
+      "The questions are put to the patient inside the fitting, and the engine refuses to recommend anything until they are answered",
     ],
     gold: true,
   },
   {
     icon: <FileCheck2 size={20} />,
     title: "Rules that carry a version",
-    summary:
-      "So a report you reprint next year shows the rules that actually ran that day.",
+    summary: "A manufacturer revises a warning. You don't wait for a release.",
     points: [
       "Exclusion rules are versioned data, not logic buried in a release",
       "A fit report cites the exact rule version that ran, by name",
       "Reprint it a year later and it shows the rules that applied that day — not today's",
       "Which is the difference between a record and a re-computation",
-      "Publishing a revised version is a step we run for you today, not yet a button in your console",
+      "You publish a revised version yourself — clone the active set, change the question, publish. No release, no ticket",
     ],
   },
   {
@@ -442,11 +441,12 @@ const SAFEGUARDS: {
     summary:
       "A fitter that always answers confidently is not confident — it is just always answering.",
     points: [
-      "A single unverified frame is treated as moderate, never as perfect — without cross-frame agreement there is no evidence the measurement is stable, so it isn't scored as if there were",
+      "Lighting, focus, head pose and framing are scored on the actual frame — a blurry or badly-lit scan cannot produce a confident answer however well the mask matches",
+      "A single unverified frame is treated as moderate, never as perfect — without cross-frame agreement there is no evidence the measurement is stable",
       "An incomplete questionnaire caps confidence too, rather than guessing the missing answers",
       "A size band no clinician has signed off can never produce a high-confidence result",
       "Low confidence routes to a human on your team instead of shipping a guess",
-      "Per-scan blur and lighting signals tighten this further — that capture work is built and not yet switched on",
+      "A frame the capture checks judge unusable — too dark, too soft, head turned too far — is reported as such, and caps the result no matter how well the geometry scored",
     ],
   },
 ];
@@ -672,7 +672,7 @@ const MEASURED = [
   "How often your team accepted the recommendation, and the reasons they overrode it",
   "Scan quality, so you can see whether the problem is the engine or the lighting",
   "The confidence mix, and how long a flagged fitting waited for a human",
-  "All of it split by where the fitting started — at your counter, or from a link you sent",
+  "All of it split by where the fitting started — your counter, a link you sent, or re-fit outreach to a patient already on service",
 ];
 
 function Measured() {

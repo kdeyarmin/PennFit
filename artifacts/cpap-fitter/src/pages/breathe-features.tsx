@@ -206,7 +206,8 @@ const CAPABILITIES: Capability[] = [
       "Magnetic-implant screening that covers the household, and offers the magnet-free version of the same mask first",
       "Millimetre size bands your own clinician signs off, with the evidence recorded on every fit report",
       "A fit report naming every mask ruled out and the rule that ruled it out",
-      "A fitter-outcomes dashboard: refit rate, acceptance, override reasons and scan quality on your own patients",
+      "A fitter-outcomes dashboard: refit rate, acceptance, override reasons and scan quality on your own patients — split by counter, link, or re-fit outreach",
+      "Revise the safety questions yourself when a manufacturer updates a warning — versioned, no release required",
     ],
   },
   {

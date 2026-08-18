@@ -19,6 +19,7 @@ import maskFitWorklistRouter from "./admin/mask-fit-worklist.js";
 import fitSessionsRouter from "./admin/fit-sessions.js";
 import adminReferralsRouter from "./admin/referrals.js";
 import maskCatalogRouter from "./admin/mask-catalog.js";
+import safetyScreensRouter from "./admin/safety-screens.js";
 import formularyRouter from "./admin/formulary.js";
 import cmnDocumentsRouter from "./admin/cmn-documents.js";
 import clinicalOutreachRouter from "./admin/clinical-outreach.js";
@@ -513,6 +514,7 @@ router.use(adminReferralsRouter);
 // /admin/fitter/catalog/* — the Mask Intelligence Catalog + the clinical
 // review queue for estimated fit geometry.
 router.use(maskCatalogRouter);
+router.use(safetyScreensRouter);
 // /admin/fitter/formulary/* — the multi-axis provider formulary, its
 // dry-run simulator, and the publish pre-flight.
 router.use(formularyRouter);

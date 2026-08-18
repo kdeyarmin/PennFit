@@ -4377,12 +4377,12 @@ const PLANS: {
     lockMonths: 12,
     setup: "No setup fee · 25 fittings/mo, then $2 each",
     blurb:
-      "The fitter on its own — text a link, or hand over a QR code at your counter, and get a mask, a size, and the reasoning back. Nobody on your team runs a fitting, and no sample masks get opened just to be thrown away. The clinical console — catalog sign-off, formulary rules and fit reports — comes with a full plan.",
+      "The clinical fitter on its own — text a link, or hand over a QR code at your counter, and get a mask, a size, and the reasoning back. Nobody on your team runs a fitting, and no sample masks get opened just to be thrown away.",
     highlights: [
       "On-device AI facial measurement — the image never leaves the phone",
       "Text, email, or hand over a QR code at your counter",
-      "Mask, size and the reasoning back in your fitter worklist",
-      "Fitter leads and your own storefront branding",
+      "Safety & therapy compatibility screened as hard filters, not score penalties",
+      "Your own mask catalog, formulary, safety questions and fit reports",
       "25 completed fittings/month, then $2 each",
     ],
   },
