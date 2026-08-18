@@ -426,12 +426,31 @@ jobs:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ hashFiles('pnpm-lock.yaml') }}
 
-      - name: Install Playwright browsers (chromium only)
-        # apt-backed, so bounded: runners have hung here indefinitely
-        # while siblings on the SAME run finished it in ~60-85s. Left
-        # unbounded, one stall burns the 6-hour default as a pending check.
+      # Split from the system-deps step below on purpose. This half is the
+      # browser binary itself: fetched from Playwright's CDN, fast, and
+      # REQUIRED — without it there is nothing to run tests in.
+      - name: Install Playwright browser (chromium only)
         timeout-minutes: 8
-        run: pnpm exec playwright install --with-deps chromium
+        run: pnpm exec playwright install chromium
+
+      # This half shells out to apt, and it is the part that stalls.
+      # Bounding it (the previous `--with-deps` + timeout-minutes: 8) turned
+      # an indefinite hang into a fast failure, but still a failure: on
+      # 2026-08-18 an Ubuntu mirror serving at ~45 kB/s failed four
+      # Playwright jobs at this step, on commits where no test had executed
+      # and one of which touched only a markdown file.
+      #
+      # ubuntu-latest already ships every library Playwright needs — those
+      # logs showed each one "already the newest version", with only fonts
+      # (for non-Latin rendering) still being fetched. So this is a top-up,
+      # not a prerequisite, and a slow mirror should not be able to redden a
+      # check. If a library genuinely IS missing, chromium fails to launch
+      # and the test step reports that, which is a clearer signal than an
+      # apt transcript.
+      - name: Install Playwright system dependencies (best effort)
+        timeout-minutes: 5
+        continue-on-error: true
+        run: pnpm exec playwright install-deps chromium
 
       # Serve the built SPA in the background. `vite preview` exits
       # the process when the parent shell exits, so we don't need an
@@ -512,12 +531,31 @@ jobs:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ hashFiles('pnpm-lock.yaml') }}
 
-      - name: Install Playwright browsers (chromium only)
-        # apt-backed, so bounded: runners have hung here indefinitely
-        # while siblings on the SAME run finished it in ~60-85s. Left
-        # unbounded, one stall burns the 6-hour default as a pending check.
+      # Split from the system-deps step below on purpose. This half is the
+      # browser binary itself: fetched from Playwright's CDN, fast, and
+      # REQUIRED — without it there is nothing to run tests in.
+      - name: Install Playwright browser (chromium only)
         timeout-minutes: 8
-        run: pnpm exec playwright install --with-deps chromium
+        run: pnpm exec playwright install chromium
+
+      # This half shells out to apt, and it is the part that stalls.
+      # Bounding it (the previous `--with-deps` + timeout-minutes: 8) turned
+      # an indefinite hang into a fast failure, but still a failure: on
+      # 2026-08-18 an Ubuntu mirror serving at ~45 kB/s failed four
+      # Playwright jobs at this step, on commits where no test had executed
+      # and one of which touched only a markdown file.
+      #
+      # ubuntu-latest already ships every library Playwright needs — those
+      # logs showed each one "already the newest version", with only fonts
+      # (for non-Latin rendering) still being fetched. So this is a top-up,
+      # not a prerequisite, and a slow mirror should not be able to redden a
+      # check. If a library genuinely IS missing, chromium fails to launch
+      # and the test step reports that, which is a clearer signal than an
+      # apt transcript.
+      - name: Install Playwright system dependencies (best effort)
+        timeout-minutes: 5
+        continue-on-error: true
+        run: pnpm exec playwright install-deps chromium
 
       # vite.config.ts requires PORT + BASE_PATH at config-resolution
       # time (the !isBuild guard fires for `vite preview` because
@@ -595,12 +633,31 @@ jobs:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ hashFiles('pnpm-lock.yaml') }}
 
-      - name: Install Playwright browsers (chromium only)
-        # apt-backed, so bounded: runners have hung here indefinitely
-        # while siblings on the SAME run finished it in ~60-85s. Left
-        # unbounded, one stall burns the 6-hour default as a pending check.
+      # Split from the system-deps step below on purpose. This half is the
+      # browser binary itself: fetched from Playwright's CDN, fast, and
+      # REQUIRED — without it there is nothing to run tests in.
+      - name: Install Playwright browser (chromium only)
         timeout-minutes: 8
-        run: pnpm exec playwright install --with-deps chromium
+        run: pnpm exec playwright install chromium
+
+      # This half shells out to apt, and it is the part that stalls.
+      # Bounding it (the previous `--with-deps` + timeout-minutes: 8) turned
+      # an indefinite hang into a fast failure, but still a failure: on
+      # 2026-08-18 an Ubuntu mirror serving at ~45 kB/s failed four
+      # Playwright jobs at this step, on commits where no test had executed
+      # and one of which touched only a markdown file.
+      #
+      # ubuntu-latest already ships every library Playwright needs — those
+      # logs showed each one "already the newest version", with only fonts
+      # (for non-Latin rendering) still being fetched. So this is a top-up,
+      # not a prerequisite, and a slow mirror should not be able to redden a
+      # check. If a library genuinely IS missing, chromium fails to launch
+      # and the test step reports that, which is a clearer signal than an
+      # apt transcript.
+      - name: Install Playwright system dependencies (best effort)
+        timeout-minutes: 5
+        continue-on-error: true
+        run: pnpm exec playwright install-deps chromium
 
       # `vite dev` (not preview) so modules are served unbundled and the
       # spec's @mediapipe/tasks-vision module stub can take effect. The
@@ -836,12 +893,31 @@ jobs:
           done
           echo "::warning::API /readyz not ready within 45s; proceeding (the admin sign-in test will surface any dependency failure)"
 
-      - name: Install Playwright browsers (chromium only)
-        # apt-backed, so bounded: runners have hung here indefinitely
-        # while siblings on the SAME run finished it in ~60-85s. Left
-        # unbounded, one stall burns the 6-hour default as a pending check.
+      # Split from the system-deps step below on purpose. This half is the
+      # browser binary itself: fetched from Playwright's CDN, fast, and
+      # REQUIRED — without it there is nothing to run tests in.
+      - name: Install Playwright browser (chromium only)
         timeout-minutes: 8
-        run: pnpm exec playwright install --with-deps chromium
+        run: pnpm exec playwright install chromium
+
+      # This half shells out to apt, and it is the part that stalls.
+      # Bounding it (the previous `--with-deps` + timeout-minutes: 8) turned
+      # an indefinite hang into a fast failure, but still a failure: on
+      # 2026-08-18 an Ubuntu mirror serving at ~45 kB/s failed four
+      # Playwright jobs at this step, on commits where no test had executed
+      # and one of which touched only a markdown file.
+      #
+      # ubuntu-latest already ships every library Playwright needs — those
+      # logs showed each one "already the newest version", with only fonts
+      # (for non-Latin rendering) still being fetched. So this is a top-up,
+      # not a prerequisite, and a slow mirror should not be able to redden a
+      # check. If a library genuinely IS missing, chromium fails to launch
+      # and the test step reports that, which is a clearer signal than an
+      # apt transcript.
+      - name: Install Playwright system dependencies (best effort)
+        timeout-minutes: 5
+        continue-on-error: true
+        run: pnpm exec playwright install-deps chromium
 
       - name: Run admin e2e (authenticated)
         env:
