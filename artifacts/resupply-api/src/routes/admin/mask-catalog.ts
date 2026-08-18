@@ -5,6 +5,7 @@
 //   PATCH /admin/fitter/catalog/:id              — edit model facts
 //   PATCH /admin/fitter/catalog/variants/:id     — edit one size's mm bands
 //   POST  /admin/fitter/catalog/variants/:id/review — RT sign-off
+//   POST  /admin/fitter/catalog/variants/review-batch — RT sign-off, many
 //
 // WHY THE REVIEW ENDPOINT MATTERS MOST
 // -----------------------------------
@@ -134,10 +135,42 @@ const bandPatch = z
   })
   .strict();
 
-const reviewBody = z
+/**
+ * Provenance for a sign-off (migration 0488).
+ *
+ * `clinical_judgment` is deliberately offered: a reviewer going on
+ * experience rather than a document should be able to say so, instead of
+ * being pushed into overclaiming a citation they don't have.
+ */
+const SOURCE_KINDS = [
+  "manufacturer_fit_guide",
+  "manufacturer_spec_sheet",
+  "physical_measurement",
+  "clinical_judgment",
+] as const;
+
+const reviewFields = {
+  approved: z.boolean(),
+  note: z.string().trim().max(2000).optional(),
+  sourceKind: z.enum(SOURCE_KINDS).optional(),
+  sourceRef: z.string().trim().max(500).optional(),
+};
+
+const reviewBody = z.object(reviewFields).strict();
+
+/**
+ * Batch sign-off. The catalog seeds ~250 estimated size bands and a
+ * reviewer works through them a model at a time, so one-at-a-time is the
+ * difference between a queue that gets cleared and one that doesn't.
+ *
+ * The cap is 200 — comfortably more than any single model's size run,
+ * and small enough that the per-id ownership check below stays a bounded
+ * amount of work.
+ */
+const reviewBatchBody = z
   .object({
-    approved: z.boolean(),
-    note: z.string().trim().max(2000).optional(),
+    ...reviewFields,
+    variantIds: z.array(z.string().trim().uuid()).min(1).max(200),
   })
   .strict();
 
@@ -330,7 +363,9 @@ router.get(
       // size and when — for this DME only.
       client
         .from("mask_variant_reviews")
-        .select("size_variant_id, approved, reviewed_by_email, reviewed_at")
+        .select(
+          "size_variant_id, approved, reviewed_by_email, reviewed_at, source_kind, source_ref",
+        )
         .limit(20000),
     ]);
 
@@ -700,17 +735,11 @@ router.post(
     // other DME's confidence ceiling on the same shared geometry.
     // `org_id` is forced on by the org-scoped facade — see `tag()` in
     // lib/resupply-db/src/org-scoped-client.ts.
-    const { error } = (await client.from("mask_variant_reviews").upsert(
-      {
-        size_variant_id: id.data,
-        approved: body.data.approved,
-        reviewed_by_email: req.adminEmail ?? null,
-        reviewed_at: new Date().toISOString(),
-        note: body.data.note ?? null,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "org_id,size_variant_id" },
-    )) as unknown as { error: { message: string } | null };
+    const { error } = (await client
+      .from("mask_variant_reviews")
+      .upsert(reviewRow(id.data, body.data, req.adminEmail ?? null), {
+        onConflict: "org_id,size_variant_id",
+      })) as unknown as { error: { message: string } | null };
     if (error) {
       res.status(500).json({ error: "update_failed", message: error.message });
       return;
@@ -719,6 +748,110 @@ router.post(
     res.json({ ok: true, approved: body.data.approved });
   },
 );
+
+/**
+ * Sign off several size bands at once — in practice, a whole model's size
+ * run in one action.
+ *
+ * Identical in consequence to the single-variant route above (it lifts the
+ * engine's confidence cap on every id it touches), so it carries the same
+ * `formulary.manage` gate and the same tenant-scoped write. The only
+ * difference is that the ownership check is done set-wise: every id must
+ * resolve to a variant this tenant can see, and if ANY does not the whole
+ * request is refused rather than partially applied. A reviewer who is told
+ * "42 signed off" needs that to mean 42, not "42 of the 47 you selected".
+ */
+router.post(
+  "/admin/fitter/catalog/variants/review-batch",
+  requireAdmin,
+  requirePermission("formulary.manage"),
+  adminRateLimit({
+    name: "mask_catalog.variant_review_batch",
+    preset: "mutation",
+  }),
+  async (req, res) => {
+    const orgId = tenant(req);
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const body = reviewBatchBody.safeParse(req.body);
+    if (!body.success) {
+      res.status(400).json({ error: "invalid_body" });
+      return;
+    }
+    const ids = [...new Set(body.data.variantIds)];
+
+    const client = getOrgScopedClient(orgId);
+
+    const { data: rows, error: readError } = (await client
+      .raw()
+      .schema("resupply")
+      .from("mask_size_variants")
+      .select("id, mask_models!inner(org_id)")
+      .in("id", ids)) as {
+      data: Array<{
+        id: string;
+        mask_models?: { org_id: string | null };
+      }> | null;
+      error: { message: string } | null;
+    };
+    if (readError) {
+      res
+        .status(500)
+        .json({ error: "query_failed", message: readError.message });
+      return;
+    }
+
+    const visible = new Set(
+      (rows ?? [])
+        .filter((r) => {
+          const owner = r.mask_models?.org_id;
+          return owner === null || owner === undefined || owner === orgId;
+        })
+        .map((r) => String(r.id)),
+    );
+    const unknown = ids.filter((id) => !visible.has(id));
+    if (unknown.length > 0) {
+      res
+        .status(404)
+        .json({ error: "not_found", unknownCount: unknown.length });
+      return;
+    }
+
+    const reviewedByEmail = req.adminEmail ?? null;
+    const { error } = (await client.from("mask_variant_reviews").upsert(
+      ids.map((id) => reviewRow(id, body.data, reviewedByEmail)),
+      { onConflict: "org_id,size_variant_id" },
+    )) as unknown as { error: { message: string } | null };
+    if (error) {
+      res.status(500).json({ error: "update_failed", message: error.message });
+      return;
+    }
+    invalidateFittingContext(orgId);
+    res.json({ ok: true, approved: body.data.approved, count: ids.length });
+  },
+);
+
+/** One `mask_variant_reviews` row. `org_id` is forced on by the org-scoped
+ *  facade — see `tag()` in lib/resupply-db/src/org-scoped-client.ts. */
+function reviewRow(
+  sizeVariantId: string,
+  body: z.infer<typeof reviewBody>,
+  reviewedByEmail: string | null,
+): Record<string, unknown> {
+  const now = new Date().toISOString();
+  return {
+    size_variant_id: sizeVariantId,
+    approved: body.approved,
+    reviewed_by_email: reviewedByEmail,
+    reviewed_at: now,
+    note: body.note ?? null,
+    source_kind: body.sourceKind ?? null,
+    source_ref: body.sourceRef ?? null,
+    updated_at: now,
+  };
+}
 
 /**
  * @param pendingReview tenant-effective review state — true when this
@@ -801,6 +934,10 @@ function mapVariant(row: Row, review?: Row) {
       row.needs_clinical_review === true && review?.approved !== true,
     reviewedByEmail: review?.reviewed_by_email ?? null,
     reviewedAt: review?.reviewed_at ?? null,
+    // Provenance (0488). NULL on sign-offs recorded before the columns
+    // existed — the UI shows "source not recorded" rather than inventing one.
+    reviewSourceKind: review?.source_kind ?? null,
+    reviewSourceRef: review?.source_ref ?? null,
   };
 }
 
