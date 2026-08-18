@@ -21,12 +21,26 @@ vi.mock("../../lib/feature-flags", () => ({
 }));
 
 const claimOutcome = vi.hoisted(() => ({ value: "claimed" as string }));
+const releaseDedup = vi.hoisted(() =>
+  vi.fn(async (_supabase: unknown, _key: string) => ({ released: true })),
+);
 vi.mock("../../lib/dedup-keys", () => ({
   claimDedupKey: vi.fn(async () => ({ outcome: claimOutcome.value })),
+  releaseDedupKey: releaseDedup,
 }));
 
 const sendRescan = vi.hoisted(() =>
-  vi.fn(async () => ({ delivered: true, reason: null, link: "https://x/y" })),
+  vi.fn(
+    async (
+      _orgId: string,
+      _inviteId: string,
+      _reason: string,
+    ): Promise<{
+      delivered: boolean;
+      reason: string | null;
+      link: string | null;
+    }> => ({ delivered: true, reason: null, link: "https://x/y" }),
+  ),
 );
 vi.mock("../../lib/fitting/rescan-notify", () => ({
   sendRescanForInvite: sendRescan,
@@ -42,10 +56,20 @@ const INVITE = "22222222-2222-4222-8222-222222222222";
 const SAVED_ENV = { ...process.env };
 
 /** A patient who has told us their mask leaks and can be contacted. */
-function stageHappyPath(prefs?: Record<string, unknown>) {
+function stageHappyPath(
+  prefs?: Record<string, unknown>,
+  opts: { inviteInsertFails?: boolean } = {},
+) {
   stageSupabaseResponse("organizations", "select", { data: [{ id: ORG }] });
   stageSupabaseResponse("mask_fit_outcomes", "select", {
-    data: [{ order_id: ORDER, fit_outcome: "leaking" }],
+    data: [
+      {
+        order_id: ORDER,
+        fit_outcome: "leaking",
+        status: "new",
+        created_at: "2026-05-01T00:00:00Z",
+      },
+    ],
   });
   stageSupabaseResponse("shop_orders", "select", {
     data: [{ id: ORDER, patient_id: PATIENT }],
@@ -70,7 +94,13 @@ function stageHappyPath(prefs?: Record<string, unknown>) {
       },
     },
   });
-  stageSupabaseResponse("fitter_invites", "insert", { data: { id: INVITE } });
+  stageSupabaseResponse(
+    "fitter_invites",
+    "insert",
+    opts.inviteInsertFails
+      ? { error: { message: "boom" } }
+      : { data: { id: INVITE } },
+  );
 }
 
 beforeEach(() => {
@@ -78,6 +108,12 @@ beforeEach(() => {
   featureEnabled.value = true;
   claimOutcome.value = "claimed";
   sendRescan.mockClear();
+  sendRescan.mockResolvedValue({
+    delivered: true,
+    reason: null,
+    link: "https://x/y",
+  });
+  releaseDedup.mockClear();
   process.env.RESUPPLY_REFIT_CAMPAIGN_ENABLED = "1";
   // Pin inside the 9am-8pm patient-local window (17:00 UTC = 1pm ET), so
   // these tests don't pass or fail by the wall-clock hour of the CI run.
@@ -135,7 +171,14 @@ describe("runRefitCampaignScan — refusals", () => {
   it("skips a survey answer that cannot be tied to a chart", async () => {
     stageSupabaseResponse("organizations", "select", { data: [{ id: ORG }] });
     stageSupabaseResponse("mask_fit_outcomes", "select", {
-      data: [{ order_id: ORDER, fit_outcome: "leaking" }],
+      data: [
+        {
+          order_id: ORDER,
+          fit_outcome: "leaking",
+          status: "new",
+          created_at: "2026-05-01T00:00:00Z",
+        },
+      ],
     });
     // The order exists but carries no patient — there is nobody to write to.
     stageSupabaseResponse("shop_orders", "select", {
@@ -146,6 +189,127 @@ describe("runRefitCampaignScan — refusals", () => {
     await runRefitCampaignScan();
 
     expect(sendRescan).not.toHaveBeenCalled();
+  });
+});
+
+describe("runRefitCampaignScan — whose survey answer still counts", () => {
+  function stageOutcomes(rows: Array<Record<string, unknown>>) {
+    stageSupabaseResponse("organizations", "select", { data: [{ id: ORG }] });
+    stageSupabaseResponse("mask_fit_outcomes", "select", { data: rows });
+    stageSupabaseResponse("shop_orders", "select", {
+      data: [{ id: ORDER, patient_id: PATIENT }],
+    });
+    stageSupabaseResponse("mask_models", "select", { data: [] });
+    stageSupabaseResponse("patients", "select", {
+      data: {
+        id: PATIENT,
+        email: "p@example.com",
+        phone_e164: "+12155551234",
+        legal_first_name: "Jordan",
+        legal_last_name: "Lee",
+        timezone: "America/New_York",
+      },
+    });
+    stageSupabaseResponse("shop_customers", "select", {
+      data: { communication_preferences: { smsTransactional: true } },
+    });
+    stageSupabaseResponse("fitter_invites", "insert", { data: { id: INVITE } });
+  }
+
+  it("ignores a bad answer the patient has since replaced with 'good'", async () => {
+    // 0201 allows re-answering. Messaging someone whose fit is now fine
+    // reads as not having listened the first time.
+    stageOutcomes([
+      {
+        order_id: ORDER,
+        fit_outcome: "good",
+        status: "new",
+        created_at: "2026-05-20T00:00:00Z",
+      },
+      {
+        order_id: ORDER,
+        fit_outcome: "leaking",
+        status: "new",
+        created_at: "2026-05-01T00:00:00Z",
+      },
+    ]);
+
+    await runRefitCampaignScan();
+
+    expect(sendRescan).not.toHaveBeenCalled();
+  });
+
+  it("leaves an answer staff have already actioned alone", async () => {
+    // Staff picked it up; a second automated message talks over them.
+    stageOutcomes([
+      {
+        order_id: ORDER,
+        fit_outcome: "leaking",
+        status: "actioned",
+        created_at: "2026-05-01T00:00:00Z",
+      },
+    ]);
+
+    await runRefitCampaignScan();
+
+    expect(sendRescan).not.toHaveBeenCalled();
+  });
+
+  it("still acts on a bad answer that is the latest and unactioned", async () => {
+    stageOutcomes([
+      {
+        order_id: ORDER,
+        fit_outcome: "leaking",
+        status: "reviewed",
+        created_at: "2026-05-20T00:00:00Z",
+      },
+      {
+        order_id: ORDER,
+        fit_outcome: "good",
+        status: "new",
+        created_at: "2026-05-01T00:00:00Z",
+      },
+    ]);
+
+    await runRefitCampaignScan();
+
+    expect(sendRescan).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("runRefitCampaignScan — the cooldown tracks messages actually sent", () => {
+  it("gives the quarterly slot back when delivery fails", async () => {
+    // The cap promises "we messaged this patient". A vendor outage that
+    // burned it would suppress them for a quarter having heard nothing.
+    stageHappyPath();
+    sendRescan.mockResolvedValue({
+      delivered: false,
+      reason: "no_channel_config",
+      link: null,
+    });
+
+    await runRefitCampaignScan();
+
+    expect(releaseDedup).toHaveBeenCalledTimes(1);
+    expect(releaseDedup.mock.calls[0]?.[1]).toBe(`refit-campaign:${PATIENT}`);
+  });
+
+  it("gives the slot back when the invite row can't be created", async () => {
+    stageHappyPath({ smsTransactional: true }, { inviteInsertFails: true });
+
+    await runRefitCampaignScan();
+
+    expect(sendRescan).not.toHaveBeenCalled();
+    expect(releaseDedup).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the slot when the message actually went out", async () => {
+    stageHappyPath();
+
+    await runRefitCampaignScan();
+
+    expect(sendRescan).toHaveBeenCalledTimes(1);
+    expect(releaseDedup).not.toHaveBeenCalled();
   });
 });
 
@@ -191,7 +355,14 @@ describe("runRefitCampaignScan — sending", () => {
     // the bad fit — the thing they are feeling tonight — not two.
     stageSupabaseResponse("organizations", "select", { data: [{ id: ORG }] });
     stageSupabaseResponse("mask_fit_outcomes", "select", {
-      data: [{ order_id: ORDER, fit_outcome: "uncomfortable" }],
+      data: [
+        {
+          order_id: ORDER,
+          fit_outcome: "uncomfortable",
+          status: "new",
+          created_at: "2026-05-01T00:00:00Z",
+        },
+      ],
     });
     stageSupabaseResponse("shop_orders", "select", {
       data: [{ id: ORDER, patient_id: PATIENT }],

@@ -54,7 +54,7 @@ import {
   type OrgScopedClient,
 } from "@workspace/resupply-db";
 
-import { claimDedupKey } from "../../lib/dedup-keys.js";
+import { claimDedupKey, releaseDedupKey } from "../../lib/dedup-keys.js";
 import {
   isInDndWindow,
   isOutsideSmsSendWindow,
@@ -89,8 +89,24 @@ const COOLDOWN_DAYS = 90;
  */
 const BAD_FIT_LOOKBACK_DAYS = 120;
 
-/** Bound the work per tenant per night. */
-const MAX_CANDIDATES_PER_ORG = 200;
+/**
+ * How many offers to actually send per tenant per night.
+ *
+ * Deliberately a cap on OFFERS, not on rows fetched. Capping the query
+ * meant the scan saw the same newest N rows every night; after the first
+ * run those patients were all cooldown-held, so the job spun on a set it
+ * could no longer act on and patients further down the window were never
+ * reached at all.
+ */
+const MAX_OFFERS_PER_ORG = 200;
+
+/**
+ * How many rows to consider to find those offers. Wider than the offer
+ * cap because most candidates on any given night are already held by
+ * their cooldown, and a re-answered or already-actioned survey drops out
+ * entirely.
+ */
+const CANDIDATE_SCAN_LIMIT = 2000;
 
 interface Candidate {
   patientId: string;
@@ -109,11 +125,15 @@ export async function registerRefitCampaignJob(boss: PgBoss): Promise<void> {
   await boss.work(REFIT_CAMPAIGN_JOB, async () => {
     await runRefitCampaignScan();
   });
-  // 18:40 UTC — afternoon across every US timezone. A daily cron outside
-  // the 9am-8pm send window pairs badly with the per-patient quiet-hours
-  // gate: the same patients would be skipped at the same local hour
-  // forever.
-  await boss.schedule(REFIT_CAMPAIGN_JOB, "40 18 * * *");
+  // 19:20 UTC. The window has to hold at BOTH ends of the country, and
+  // the binding constraint is Hawaii, not the mainland: at the previous
+  // 18:40 UTC it was 08:40 in Pacific/Honolulu, i.e. before the hard
+  // 9am-8pm patient-local gate opened. Because this is a fixed daily
+  // cron, an SMS-only Hawaii patient was rejected at the same local hour
+  // every single day and could never be reached — the exact permanent
+  // skip `isOutsideSmsSendWindow` warns about. 19:20 UTC is 09:20 HST and
+  // 15:20 ET, inside the window everywhere.
+  await boss.schedule(REFIT_CAMPAIGN_JOB, "20 19 * * *");
   logger.info(
     { queue: REFIT_CAMPAIGN_JOB },
     "refit campaign worker registered",
@@ -138,6 +158,7 @@ async function runForOrg(orgId: string): Promise<void> {
   let sent = 0;
   let skipped = 0;
   for (const candidate of candidates) {
+    if (sent >= MAX_OFFERS_PER_ORG) break;
     const outcome = await offerRefit(supabase, orgId, candidate);
     if (outcome === "sent") sent += 1;
     else skipped += 1;
@@ -177,7 +198,10 @@ async function findCandidates(
     if (!byPatient.has(c.patientId)) byPatient.set(c.patientId, c);
   }
 
-  return [...byPatient.values()].slice(0, MAX_CANDIDATES_PER_ORG);
+  // Not sliced to the offer cap here — `runForOrg` stops once it has made
+  // that many OFFERS, so patients held by an existing cooldown fall
+  // through to the next eligible one instead of consuming the budget.
+  return [...byPatient.values()];
 }
 
 /** Patients who told us on the post-delivery survey that it doesn't fit. */
@@ -189,14 +213,23 @@ async function findReportedBadFits(
     Date.now() - BAD_FIT_LOOKBACK_DAYS * 86_400_000,
   ).toISOString();
 
+  // Every verdict, not just the bad ones. 0201 explicitly allows a patient
+  // to re-answer, so a later "good" has to be able to cancel an earlier
+  // "leaking" — filtering to bad answers in SQL would hide exactly the row
+  // that says the problem is over, and we would message someone whose fit
+  // is now fine.
   const { data, error } = (await supabase
     .from("mask_fit_outcomes")
-    .select("order_id, fit_outcome, created_at")
-    .in("fit_outcome", ["leaking", "uncomfortable"])
+    .select("order_id, fit_outcome, status, created_at")
     .gte("created_at", since)
     .order("created_at", { ascending: false })
-    .limit(MAX_CANDIDATES_PER_ORG)) as {
-    data: Array<{ order_id: string }> | null;
+    .limit(CANDIDATE_SCAN_LIMIT)) as {
+    data: Array<{
+      order_id: string;
+      fit_outcome: string;
+      status: string;
+      created_at: string;
+    }> | null;
     error: { message: string } | null;
   };
   if (error) {
@@ -207,7 +240,25 @@ async function findReportedBadFits(
     return [];
   }
 
-  const orderIds = [...new Set((data ?? []).map((r) => r.order_id))];
+  // Rows arrive newest-first, so the first one seen per order IS the
+  // latest. Anything already `actioned` is staff's — they have picked this
+  // up, and a second automated message would talk over them.
+  const latestByOrder = new Map<string, { verdict: string; status: string }>();
+  for (const r of data ?? []) {
+    if (!latestByOrder.has(r.order_id)) {
+      latestByOrder.set(r.order_id, {
+        verdict: r.fit_outcome,
+        status: r.status,
+      });
+    }
+  }
+  const orderIds = [...latestByOrder.entries()]
+    .filter(
+      ([, v]) =>
+        (v.verdict === "leaking" || v.verdict === "uncomfortable") &&
+        v.status !== "actioned",
+    )
+    .map(([orderId]) => orderId);
   if (orderIds.length === 0) return [];
 
   const { data: orders } = (await supabase
@@ -228,6 +279,14 @@ async function findReportedBadFits(
 }
 
 /** Patients whose fitted mask the manufacturer has discontinued. */
+/**
+ * Patients whose CURRENT mask is discontinued.
+ *
+ * Note this branch is inert until `fit_sessions.ordered_mask_model_id` and
+ * `dispensed_at` are actually written — nothing populates them today, so
+ * it finds nothing rather than finding the wrong people. It is written to
+ * be correct when those writes land.
+ */
 async function findDiscontinuedMasks(
   supabase: OrgScopedClient,
   orgId: string,
@@ -253,23 +312,40 @@ async function findDiscontinuedMasks(
   const modelIds = (models ?? []).map((m) => m.id);
   if (modelIds.length === 0) return [];
 
+  // Deliberately NOT filtered to the discontinued models in SQL. Asking
+  // only for sessions on a discontinued mask returns a patient's OLD
+  // fitting even when they have since been moved onto a current model —
+  // and telling someone their working mask is obsolete is worse than
+  // saying nothing. Fetch dispensed sessions newest-first, keep each
+  // patient's most recent, and judge that one.
   const { data: sessions } = (await supabase
     .from("fit_sessions")
     .select("patient_id, ordered_mask_model_id, dispensed_at")
-    .in("ordered_mask_model_id", modelIds)
     .not("patient_id", "is", null)
     // Only masks actually handed over. A recommendation that never got
     // dispensed is not something the patient is wearing.
     .not("dispensed_at", "is", null)
     .order("dispensed_at", { ascending: false })
-    .limit(MAX_CANDIDATES_PER_ORG)) as {
-    data: Array<{ patient_id: string | null }> | null;
+    .limit(CANDIDATE_SCAN_LIMIT)) as {
+    data: Array<{
+      patient_id: string | null;
+      ordered_mask_model_id: string | null;
+    }> | null;
   };
 
-  const out: Candidate[] = [];
+  const discontinued = new Set(modelIds);
+  const currentMaskByPatient = new Map<string, string | null>();
   for (const s of sessions ?? []) {
-    if (s.patient_id) {
-      out.push({ patientId: s.patient_id, reason: "mask_discontinued" });
+    if (!s.patient_id) continue;
+    if (!currentMaskByPatient.has(s.patient_id)) {
+      currentMaskByPatient.set(s.patient_id, s.ordered_mask_model_id);
+    }
+  }
+
+  const out: Candidate[] = [];
+  for (const [patientId, maskModelId] of currentMaskByPatient) {
+    if (maskModelId && discontinued.has(maskModelId)) {
+      out.push({ patientId, reason: "mask_discontinued" });
     }
   }
   return out;
@@ -348,6 +424,29 @@ async function offerRefit(
   );
   if (claim.outcome !== "claimed") return "skipped";
 
+  // Everything past this point can fail AFTER the cap is claimed. The cap
+  // is a promise about messages we sent, so any failure here has to give
+  // the slot back — otherwise a Twilio outage or a bad insert silently
+  // suppresses this patient for a quarter with nothing having reached
+  // them, which is the exact failure the pre-claim ordering above exists
+  // to avoid.
+  const release = async (why: string): Promise<OfferOutcome> => {
+    const { released } = await releaseDedupKey(supabase.raw(), capKey);
+    logger.warn(
+      {
+        event: "refit_campaign.offer_failed",
+        orgId,
+        patientId,
+        why,
+        capReleased: released,
+      },
+      released
+        ? "refit campaign: offer failed, cooldown released"
+        : "refit campaign: offer failed AND cooldown could not be released — this patient is suppressed until it expires",
+    );
+    return "skipped";
+  };
+
   const inviteId = await createInvite(supabase, orgId, {
     patientId,
     email: smsOk ? null : email,
@@ -358,20 +457,11 @@ async function offerRefit(
       .trim(),
     channel: smsOk ? "sms" : "email",
   });
-  if (!inviteId) return "skipped";
+  if (!inviteId) return await release("invite_insert_failed");
 
   const delivery = await sendRescanForInvite(orgId, inviteId, reason);
   if (!delivery.delivered) {
-    logger.warn(
-      {
-        event: "refit_campaign.send_failed",
-        orgId,
-        inviteId,
-        reason: delivery.reason,
-      },
-      "refit campaign: offer could not be delivered",
-    );
-    return "skipped";
+    return await release(delivery.reason ?? "send_failed");
   }
   return "sent";
 }

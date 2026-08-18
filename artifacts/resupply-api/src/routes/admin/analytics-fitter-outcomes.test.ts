@@ -16,7 +16,12 @@ import {
 } from "../../test-helpers/supabase-mock";
 
 const ORG_ID = "22222222-2222-4222-8222-222222222222";
-const MASK_A = "11111111-1111-4111-8111-111111111111";
+// `mask_fit_outcomes.mask_id` holds the recommendation engine's string id
+// (see data/maskCatalog.ts), NOT a uuid — the catalog's matching column is
+// `mask_models.slug`. Using a realistic value here is the point: the
+// earlier uuid fixture made a broken id-vs-slug join look correct.
+const MASK_A = "resmed-airfit-f20";
+const MASK_MODEL_UUID = "11111111-1111-4111-8111-111111111111";
 
 vi.mock("../../middlewares/requireAdmin", () => ({
   requireAdmin: (
@@ -152,7 +157,14 @@ describe("GET /admin/analytics/fitter-outcomes", () => {
       })),
     });
     stageSupabaseResponse("mask_models", "select", {
-      data: [{ id: MASK_A, manufacturer: "ResMed", model_name: "AirFit N20" }],
+      data: [
+        {
+          id: MASK_MODEL_UUID,
+          slug: MASK_A,
+          manufacturer: "ResMed",
+          model_name: "AirFit N20",
+        },
+      ],
     });
 
     const res = await request(makeApp()).get(
@@ -162,6 +174,31 @@ describe("GET /admin/analytics/fitter-outcomes", () => {
     expect(res.status).toBe(200);
     expect(res.body.report.refit.byMask).toHaveLength(1);
     expect(res.body.report.refit.byMask[0].maskLabel).toBe("ResMed AirFit N20");
+  });
+
+  it("keeps reading past a full page instead of stopping at the cap", async () => {
+    // PostgREST returns at most max_rows (1000) per request. Treating a
+    // full page as the complete window would compute every rate from the
+    // newest 1000 rows while reporting the period as complete.
+    const fullPage = Array.from({ length: 1000 }, (_, i) =>
+      sessionRow({
+        id: `s${i}`,
+      }),
+    );
+    stageSupabaseResponse("fit_sessions", "select", { data: fullPage });
+    stageSupabaseResponse("fit_sessions", "select", {
+      data: [sessionRow({ id: "s-last" })],
+    });
+    stageSupabaseResponse("mask_fit_outcomes", "select", { data: [] });
+    stageSupabaseResponse("mask_models", "select", { data: [] });
+
+    const res = await request(makeApp()).get(
+      "/admin/analytics/fitter-outcomes",
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body.report.sessions.total).toBe(1001);
+    expect(res.body.truncated.sessions).toBe(false);
   });
 
   it("400s on an out-of-range window", async () => {

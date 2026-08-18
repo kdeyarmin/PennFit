@@ -383,6 +383,7 @@ export interface RescanResult {
     | "invite_revoked"
     | "no_contact"
     | "no_channel_config"
+    | "in_office_handoff"
     | "send_failed";
   /** A usable link when automated delivery had nowhere to send it. */
   inviteLink: string | null;
@@ -408,6 +409,8 @@ export function rescanNotifyMessage(result: RescanResult): string {
       return "Session flagged for rescan. This fitting wasn't started from an invite, so there is nobody to notify automatically — reach out directly.";
     case "invite_revoked":
       return "Session flagged for rescan. The original invite was revoked, so nothing was sent. Create a new fitter invite for this patient.";
+    case "in_office_handoff":
+      return "Session flagged for rescan. This fitting was started in the office, so nothing was sent automatically — share the link below with the patient.";
     case "no_contact":
       return "Session flagged for rescan, but the invite has no email or phone on file. Use the link below.";
     case "no_channel_config":

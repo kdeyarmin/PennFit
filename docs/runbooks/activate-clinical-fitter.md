@@ -146,6 +146,30 @@ downloadable PDF that makes every step above auditable.
 
 ---
 
+## C. The re-fit campaign is gated twice — flag alone does nothing
+
+`fitter.refit_campaign` (migration `0490`, seeded OFF) offers a fresh fitting
+to patients who reported a leaking or uncomfortable fit, and to patients on a
+discontinued mask. Unlike the flags above it needs **two** switches:
+
+1. **`RESUPPLY_REFIT_CAMPAIGN_ENABLED=1`** on Railway (Service → Variables).
+   This registers the worker at boot; without it the job never starts and the
+   flag has nothing to enable. Takes effect on the next deploy.
+2. **`fitter.refit_campaign`** ON in Control Center, per tenant.
+
+Flipping only the flag is the failure everyone hits: the toggle reads as ON
+and nothing is ever sent, with no error anywhere. Set the variable first,
+confirm the deploy, then flip the flag.
+
+- **Precondition:** the tenant's SMS and/or email sender is configured, and
+  patient consent for those channels is in order — this contacts patients who
+  did not ask to be contacted.
+- **Check:** after a nightly run (19:20 UTC), look for a
+  `refit_campaign.tick` log line with a non-zero `sent`.
+- **Rollback:** flip the flag OFF; sending stops within ~5s, no deploy needed.
+
+---
+
 ## Recommended order
 
 1. **A** — clear the review queue for the models you dispense. Everything

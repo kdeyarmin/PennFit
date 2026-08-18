@@ -48,12 +48,58 @@ import { requirePermission } from "../../middlewares/requireAdmin";
 const router: IRouter = Router();
 
 /**
- * Row caps. Both are reported back when hit rather than silently
- * truncating — a capped read that renders as a clean rate is a lie about
- * the denominator, which is the whole thing this page is for.
+ * Row caps, and why they are enforced by PAGING rather than one big limit.
+ *
+ * PostgREST is configured with `max_rows = 1000` (supabase/config.toml),
+ * so a single request asking for 20,000 rows silently returns 1,000 and
+ * reports no error. A `rows.length >= 20_000` truncation check against
+ * that never fires — the page would compute every rate from the newest
+ * 1,000 rows while telling the reader the period was complete. That is
+ * precisely the lie about the denominator this page exists to avoid, so
+ * these reads walk the window a page at a time and only report truncation
+ * when the real ceiling is reached.
  */
+const PAGE_SIZE = 1000;
 const SESSION_ROW_CAP = 20_000;
 const OUTCOME_ROW_CAP = 20_000;
+
+interface PagedRead {
+  rows: Array<Record<string, unknown>>;
+  truncated: boolean;
+  error: { message: string } | null;
+}
+
+/**
+ * Read up to `cap` rows in `PAGE_SIZE` pages, newest first.
+ *
+ * `truncated` means the cap stopped us, not that the window was empty —
+ * the caller surfaces it so a partial period never renders as a complete
+ * one.
+ */
+async function readPaged(
+  makeQuery: () => {
+    range: (
+      from: number,
+      to: number,
+    ) => PromiseLike<{
+      data: Array<Record<string, unknown>> | null;
+      error: { message: string } | null;
+    }>;
+  },
+  cap: number,
+): Promise<PagedRead> {
+  const rows: Array<Record<string, unknown>> = [];
+  for (let offset = 0; offset < cap; offset += PAGE_SIZE) {
+    const size = Math.min(PAGE_SIZE, cap - offset);
+    const { data, error } = await makeQuery().range(offset, offset + size - 1);
+    if (error) return { rows, truncated: false, error };
+    const page = data ?? [];
+    rows.push(...page);
+    // A short page means the window is exhausted.
+    if (page.length < size) return { rows, truncated: false, error: null };
+  }
+  return { rows, truncated: true, error: null };
+}
 
 const query = z
   .object({
@@ -103,20 +149,26 @@ router.get(
     const supabase = getOrgScopedClient(orgId);
 
     const [sessionsRes, outcomesRes] = await Promise.all([
-      supabase
-        .from("fit_sessions")
-        .select(
-          "id, created_at, entry_point, outcome, scan_quality_grade, degraded, primary_mask_model_id, override_mask_model_id, override_reason, ordered_mask_model_id, reviewed_at, dispensed_at",
-        )
-        .gte("created_at", since)
-        .order("created_at", { ascending: false })
-        .limit(SESSION_ROW_CAP),
-      supabase
-        .from("mask_fit_outcomes")
-        .select("mask_id, fit_outcome, created_at")
-        .gte("created_at", since)
-        .order("created_at", { ascending: false })
-        .limit(OUTCOME_ROW_CAP),
+      readPaged(
+        () =>
+          supabase
+            .from("fit_sessions")
+            .select(
+              "id, created_at, entry_point, outcome, scan_quality_grade, degraded, primary_mask_model_id, override_mask_model_id, override_reason, ordered_mask_model_id, reviewed_at, dispensed_at",
+            )
+            .gte("created_at", since)
+            .order("created_at", { ascending: false }) as never,
+        SESSION_ROW_CAP,
+      ),
+      readPaged(
+        () =>
+          supabase
+            .from("mask_fit_outcomes")
+            .select("mask_id, fit_outcome, created_at")
+            .gte("created_at", since)
+            .order("created_at", { ascending: false }) as never,
+        OUTCOME_ROW_CAP,
+      ),
     ]);
 
     if (sessionsRes.error) {
@@ -132,12 +184,8 @@ router.get(
       return;
     }
 
-    const sessionRows = (sessionsRes.data ?? []) as Array<
-      Record<string, unknown>
-    >;
-    const outcomeRows = (outcomesRes.data ?? []) as Array<
-      Record<string, unknown>
-    >;
+    const sessionRows = sessionsRes.rows;
+    const outcomeRows = outcomesRes.rows;
 
     const sessions: FitSessionInput[] = sessionRows.map((r) => {
       const entryPoint = str(r.entry_point) as FitEntryPoint | null;
@@ -175,10 +223,17 @@ router.get(
 
     const report = buildFitterOutcomesReport(sessions, outcomes);
 
-    // `mask_fit_outcomes.mask_id` is a free-text SKU/catalog id, so a
-    // display name has to be resolved separately. Best-effort: an
-    // unresolvable id keeps showing its raw value rather than blanking a
-    // row out of the table.
+    // Resolve display names by SLUG, not by id.
+    //
+    // `mask_fit_outcomes.mask_id` is text holding the recommendation
+    // engine's identifier — "resmed-airfit-f20" — while `mask_models.id`
+    // is a uuid. The matching column is `mask_models.slug`. Querying `id`
+    // with slug values matched nothing on real data, so the per-mask table
+    // silently showed raw slugs for every row.
+    //
+    // Still best-effort: an unresolvable id keeps showing its raw value
+    // rather than dropping the row, since the rate is the point and the
+    // label is the decoration.
     const maskIds = report.refit.byMask.map((m) => m.maskId);
     const labels = new Map<string, string>();
     if (maskIds.length > 0) {
@@ -186,26 +241,26 @@ router.get(
         .raw()
         .schema("resupply")
         .from("mask_models")
-        .select("id, manufacturer, model_name")
-        .in("id", maskIds)) as {
+        .select("slug, manufacturer, model_name")
+        .in("slug", maskIds)) as {
         data: Array<Record<string, unknown>> | null;
       };
       for (const row of data ?? []) {
-        const id = str(row.id);
-        if (!id) continue;
+        const slug = str(row.slug);
+        if (!slug) continue;
         const name = [str(row.manufacturer), str(row.model_name)]
           .filter(Boolean)
           .join(" ")
           .trim();
-        if (name) labels.set(id, name);
+        if (name) labels.set(slug, name);
       }
     }
 
     res.json({
       window: { days, since },
       truncated: {
-        sessions: sessionRows.length >= SESSION_ROW_CAP,
-        outcomes: outcomeRows.length >= OUTCOME_ROW_CAP,
+        sessions: sessionsRes.truncated,
+        outcomes: outcomesRes.truncated,
       },
       report: {
         ...report,

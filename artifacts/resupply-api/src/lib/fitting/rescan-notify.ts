@@ -62,6 +62,7 @@ export interface RescanDelivery {
     | "invite_revoked"
     | "no_contact"
     | "no_channel_config"
+    | "in_office_handoff"
     | "send_failed";
   /** The link, so staff can read it to the patient when sending failed. */
   link: string | null;
@@ -144,15 +145,34 @@ export async function sendRescanForInvite(
 
     // A fresh token, which also extends the expiry — the original may
     // well have aged out by the time a clinician reviewed the session.
-    const token = signFitterInviteToken(String(invite.id));
+    const token = signFitterInviteToken(
+      String(invite.id),
+      new Date(),
+      FITTER_INVITE_TTL_MS,
+    );
     const link = `${publicBaseUrl()}/fitter-invite?t=${encodeURIComponent(token)}`;
 
+    // The mailed-link window, deliberately, even for an invite that began
+    // as an in-office QR.
+    //
+    // The 12-hour in-office window exists because a QR is DISPLAYED on a
+    // staff screen in a semi-public space where it can be photographed by
+    // someone it wasn't meant for. A rescan link is not displayed — it is
+    // sent to the patient's own phone or inbox, which is the same exposure
+    // as any other mailed invite, and the patient has left the building.
+    // Holding them to 12 hours here would expire the link before most
+    // people check their messages.
+    //
+    // Stated explicitly because the widening is otherwise invisible: the
+    // row keeps channel='in_office' while carrying a 30-day token, so
+    // anything that later infers a window from the channel would be wrong.
+    const rescanTtlMs = FITTER_INVITE_TTL_MS;
     await supabase
       .from("fitter_invites")
       .update({
         status: "sent",
         sent_at: new Date().toISOString(),
-        expires_at: new Date(Date.now() + FITTER_INVITE_TTL_MS).toISOString(),
+        expires_at: new Date(Date.now() + rescanTtlMs).toISOString(),
         updated_at: new Date().toISOString(),
       })
       .eq("id", String(invite.id));
@@ -162,10 +182,27 @@ export async function sendRescanForInvite(
     const brandName = (await resolveBrandingByOrgId(orgId)).storefrontName;
     const channel = String(invite.channel ?? "email");
 
-    // An in-office invite was handed over at the counter and carries no
-    // address at all; there is genuinely nobody to send to.
-    if (channel === "sms" || channel === "in_office") {
-      const phone = (invite.recipient_phone_e164 as string | null) ?? null;
+    // An in-office invite is handed back, never sent.
+    //
+    // "Nothing is sent" is the contract staff chose when they picked the
+    // counter handover, and it does NOT follow that the row has no
+    // address: the create route resolves the chart's email and phone
+    // before it looks at the channel, so a patient-linked in-office invite
+    // carries both. Auto-picking SMS from that would message a patient
+    // over a channel nobody selected, on the strength of a contact detail
+    // that is only present incidentally.
+    //
+    // So the clinician gets the fresh link back and decides. The result
+    // shape already carries it and the console already renders "use the
+    // link below", so this is the affordance that exists — it just needs
+    // its own reason rather than borrowing "no_contact", which would claim
+    // we had nowhere to send when we simply declined to choose.
+    if (channel === "in_office") {
+      return { delivered: false, reason: "in_office_handoff", link };
+    }
+
+    const phone = (invite.recipient_phone_e164 as string | null) ?? null;
+    if (channel === "sms") {
       if (!phone) return { delivered: false, reason: "no_contact", link };
       let twilio;
       try {

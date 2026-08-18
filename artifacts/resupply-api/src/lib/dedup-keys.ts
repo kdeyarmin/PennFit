@@ -22,6 +22,32 @@ export type DedupClaimOutcome =
   | { outcome: "held" }
   | { outcome: "error"; error: { code?: string; message: string } };
 
+/**
+ * Give a claimed key back.
+ *
+ * A frequency cap is a promise about messages we SENT. When the claim
+ * succeeds but the send afterwards doesn't — no invite row, vendor
+ * outage, missing credentials — leaving the row in place silently
+ * suppresses that recipient for the whole cooldown despite nothing having
+ * reached them. Callers that claim ahead of a fallible send must release
+ * on every failure path.
+ *
+ * Best-effort by design: a failed release is logged by the caller and
+ * leaves the cooldown in place, which is the safe direction (a missed
+ * message beats a duplicate one).
+ */
+export async function releaseDedupKey(
+  supabase: Supabase,
+  key: string,
+): Promise<{ released: boolean }> {
+  const { error } = await supabase
+    .schema("resupply")
+    .from("worker_dedup_keys")
+    .delete()
+    .eq("key", key);
+  return { released: !error };
+}
+
 export async function claimDedupKey(
   supabase: Supabase,
   key: string,
