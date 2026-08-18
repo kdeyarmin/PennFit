@@ -956,7 +956,9 @@ function ChartDetails({
   onChange: () => void;
 }) {
   const [dob, setDob] = useState(referral.patient.dob ?? "");
-  const [payerName, setPayerName] = useState(referral.insurance.payerName ?? "");
+  const [payerName, setPayerName] = useState(
+    referral.insurance.payerName ?? "",
+  );
   const [memberId, setMemberId] = useState(referral.insurance.memberId ?? "");
   const [saved, setSaved] = useState(false);
 
@@ -992,8 +994,7 @@ function ChartDetails({
       <h2 className="font-semibold text-slate-900">Patient and insurance</h2>
       {missing.length > 0 ? (
         <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">
-          The DME needs the {missing.join(" and the ")} before this can be
-          sent.
+          The DME needs the {missing.join(" and the ")} before this can be sent.
         </p>
       ) : (
         <p className="mt-1 text-sm text-slate-500">

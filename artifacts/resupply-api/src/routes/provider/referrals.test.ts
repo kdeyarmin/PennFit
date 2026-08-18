@@ -453,9 +453,9 @@ describe("documents", () => {
     expect(res.status).toBe(400);
     expect(res.body.error).toBe("object_invalid_content_type");
     expect(storage.deleted).toBe(1);
-    expect(
-      db.queries.some((x) => x.table === "referral_documents"),
-    ).toBe(false);
+    expect(db.queries.some((x) => x.table === "referral_documents")).toBe(
+      false,
+    );
   });
 
   it("refuses a content type the DME would never be able to open", async () => {

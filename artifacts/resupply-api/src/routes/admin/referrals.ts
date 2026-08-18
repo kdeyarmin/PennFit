@@ -512,9 +512,7 @@ router.get(
       }
       detail.approval = {
         ...detail.approval,
-        maskName: model
-          ? `${model.manufacturer} ${model.model_name}`
-          : null,
+        maskName: model ? `${model.manufacturer} ${model.model_name}` : null,
         interfaceType: model ? String(model.interface_type) : null,
         sizeLabel,
       };

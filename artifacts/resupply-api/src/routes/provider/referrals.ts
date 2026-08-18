@@ -802,8 +802,7 @@ router.post(
     if (!ALLOWED_DOCUMENT_CONTENT_TYPES.has(body.data.contentType)) {
       res.status(400).json({
         error: "invalid_body",
-        message:
-          "Attach a PDF or a photo. Other file types can't be accepted.",
+        message: "Attach a PDF or a photo. Other file types can't be accepted.",
       });
       return;
     }
