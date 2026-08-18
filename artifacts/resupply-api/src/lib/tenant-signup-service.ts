@@ -25,7 +25,10 @@
 //     logged; failures log only a shape.
 
 import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
-import { resolvePlanFlagPreset } from "@workspace/resupply-domain";
+import {
+  isPresetExemptFlag,
+  resolvePlanFlagPreset,
+} from "@workspace/resupply-domain";
 import {
   hashPassword,
   issueToken,
@@ -150,7 +153,13 @@ async function provisionFeatureFlags(
     return {
       org_id: newOrgId,
       key,
-      enabled: preset ? preset.has(key) : (f as { enabled: boolean }).enabled,
+      // Preset-exempt keys (`module.*`) keep the seed catalog's value —
+      // a plan bundle doesn't list them, and "not listed" means OFF, which
+      // would hand a brand-new tenant an empty sidebar.
+      enabled:
+        preset && !isPresetExemptFlag(key)
+          ? preset.has(key)
+          : (f as { enabled: boolean }).enabled,
       description: (f as { description: string | null }).description,
       category: (f as { category: string | null }).category,
     };

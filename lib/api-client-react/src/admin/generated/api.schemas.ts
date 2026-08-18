@@ -137,6 +137,19 @@ configured, NODE_ENV=development) returns `admin`.
    * would 403.
    */
   productScope?: "full" | "mask_fitter" | "locked";
+  /**
+   * Feature-flag keys this tenant has switched OFF, including the coarse
+   * `module.*` app-module switches (migration 0488). The admin SPA
+   * subtracts these from the sidebar — a disabled module's section
+   * disappears and a deep link into it renders a "turned off" notice —
+   * so an operator only navigates the parts of the product they use.
+   *
+   * Presentational only: every route behind those entries is still gated
+   * server-side. Absent/empty means nothing is hidden, which is also
+   * what the server reports when it cannot read the flag table, so a
+   * database blip shows the full console rather than an empty one.
+   */
+  disabledFeatures?: string[];
 }
 
 /**

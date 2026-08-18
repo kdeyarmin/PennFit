@@ -63,6 +63,8 @@ import {
   useTenantUsage,
   useTenantActivitySeries,
   useTenantAdmins,
+  getTenantAdminsQueryKey,
+  useCreateTenantAdmin,
   useTenantFeatureFlags,
   useTenantFeatureFlagActivity,
   useToggleTenantFeatureFlag,
@@ -70,6 +72,7 @@ import {
   type PlatformOperator,
   type PlatformTenant,
   type TenantFeatureFlag,
+  type CreateTenantAdminResponse,
 } from "@workspace/api-client-react/admin";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -3411,7 +3414,265 @@ function TenantAdminsCard({ tenantId }: { tenantId: string }) {
           ))}
         </ul>
       )}
+      <AddTenantAdminForm tenantId={tenantId} />
     </Card>
+  );
+}
+
+// Set up an admin account for a tenant by hand.
+//
+// Before this, the only way to give a tenant its first login was the
+// `tenant:onboard` CLI — i.e. shell access to a deploy. That left the
+// single most ordinary onboarding step in the product ("create this
+// customer's account") impossible from the console a super-admin is
+// already sitting in.
+//
+// Two paths, and the choice is a real one rather than a convenience:
+//   * Email invite — the new admin sets their own password from a
+//     7-day link. Correct default; we never handle their credential.
+//   * Set a password — the account is live immediately and NO email is
+//     sent, for onboarding calls where the operator reads the password
+//     out, and for tenants whose sending domain isn't authenticated yet
+//     (an invite to an unauthenticated domain lands in spam, which on
+//     day one is indistinguishable from a broken product).
+function AddTenantAdminForm({ tenantId }: { tenantId: string }) {
+  const queryClient = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [email, setEmail] = useState("");
+  const [displayName, setDisplayName] = useState("");
+  const [role, setRole] = useState("admin");
+  const [setPasswordMode, setSetPasswordMode] = useState(false);
+  const [password, setPassword] = useState("");
+  const [result, setResult] = useState<CreateTenantAdminResponse | null>(null);
+  const create = useCreateTenantAdmin(tenantId);
+
+  const emailValid = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim());
+  const passwordTooShort = setPasswordMode && password.length < 12;
+  const canSubmit = emailValid && !passwordTooShort && !create.isPending;
+
+  function errorMessage(err: unknown): string {
+    if (err instanceof ApiError) {
+      const data = err.data as { error?: string; message?: string } | undefined;
+      // The server's 409/422 messages are written for this screen — show
+      // them verbatim rather than flattening every failure to "try again",
+      // because each one has a different fix.
+      if (data?.message) return data.message;
+      if (data?.error === "invalid_admin")
+        return "Check the email address and role.";
+      if (err.status === 404) return "This tenant no longer exists.";
+    }
+    return "Couldn't create the account. Try again.";
+  }
+
+  function reset() {
+    setEmail("");
+    setDisplayName("");
+    setRole("admin");
+    setSetPasswordMode(false);
+    setPassword("");
+  }
+
+  function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!canSubmit) return;
+    setResult(null);
+    create.mutate(
+      {
+        email: email.trim().toLowerCase(),
+        role,
+        displayName: displayName.trim() || null,
+        initialPassword: setPasswordMode ? password : null,
+      },
+      {
+        onSuccess: (res) => {
+          setResult(res);
+          reset();
+          void queryClient.invalidateQueries({
+            queryKey: getTenantAdminsQueryKey(tenantId),
+          });
+        },
+      },
+    );
+  }
+
+  if (!open) {
+    return (
+      <div
+        className="pt-3 mt-3 border-t"
+        style={{ borderColor: "hsl(var(--line-1))" }}
+      >
+        {result && <AddTenantAdminResult result={result} />}
+        <Button
+          intent="secondary"
+          size="sm"
+          onClick={() => {
+            setResult(null);
+            setOpen(true);
+          }}
+          data-testid="platform-add-tenant-admin"
+        >
+          Set up an admin account
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <form
+      onSubmit={onSubmit}
+      className="pt-3 mt-3 border-t space-y-3"
+      style={{ borderColor: "hsl(var(--line-1))" }}
+      data-testid="platform-add-tenant-admin-form"
+    >
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div>
+          <Label htmlFor="tenant-admin-email">Email</Label>
+          <Input
+            id="tenant-admin-email"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="owner@acmesleep.com"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            aria-invalid={email.length > 0 && !emailValid}
+          />
+        </div>
+        <div>
+          <Label htmlFor="tenant-admin-name">Name (optional)</Label>
+          <Input
+            id="tenant-admin-name"
+            value={displayName}
+            onChange={(e) => setDisplayName(e.target.value)}
+            placeholder="Dana Alvarez"
+          />
+        </div>
+      </div>
+      <div>
+        <Label htmlFor="tenant-admin-role">Role</Label>
+        <select
+          id="tenant-admin-role"
+          value={role}
+          onChange={(e) => setRole(e.target.value)}
+          className="w-full rounded-md border px-3 py-2 text-sm"
+          style={{
+            borderColor: "hsl(var(--line-1))",
+            color: "hsl(var(--ink-1))",
+          }}
+        >
+          <option value="admin">
+            Super admin — full access to their console
+          </option>
+          <option value="supervisor">Supervisor</option>
+          <option value="csr">Customer service rep</option>
+          <option value="biller">Biller</option>
+          <option value="rt">Respiratory therapist</option>
+        </select>
+        <p className="text-xs mt-1" style={{ color: "hsl(var(--ink-3))" }}>
+          A tenant&apos;s first account should be a super admin — they invite
+          the rest of their team themselves.
+        </p>
+      </div>
+      <label className="flex items-start gap-2 text-sm">
+        <input
+          type="checkbox"
+          className="mt-0.5"
+          checked={setPasswordMode}
+          onChange={(e) => setSetPasswordMode(e.target.checked)}
+          data-testid="platform-add-tenant-admin-set-password"
+        />
+        <span>
+          <span className="font-medium">Set their password for me</span>
+          <span
+            className="block text-xs"
+            style={{ color: "hsl(var(--ink-3))" }}
+          >
+            No email is sent — the account works immediately and you tell them
+            the password directly. Use this on an onboarding call, or when the
+            tenant&apos;s sending domain isn&apos;t authenticated yet.
+          </span>
+        </span>
+      </label>
+      {setPasswordMode && (
+        <div>
+          <Label htmlFor="tenant-admin-password">Initial password</Label>
+          <Input
+            id="tenant-admin-password"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="At least 12 characters"
+            autoComplete="new-password"
+            aria-invalid={passwordTooShort}
+          />
+          {passwordTooShort && (
+            <p className="text-xs mt-1" style={{ color: "hsl(354 75% 38%)" }}>
+              Use at least 12 characters.
+            </p>
+          )}
+        </div>
+      )}
+      {create.isError && (
+        <p className="text-xs" style={{ color: "hsl(354 75% 38%)" }}>
+          {errorMessage(create.error)}
+        </p>
+      )}
+      <div className="flex justify-end gap-2">
+        <Button
+          type="button"
+          intent="secondary"
+          size="sm"
+          onClick={() => {
+            setOpen(false);
+            reset();
+          }}
+        >
+          Cancel
+        </Button>
+        <Button
+          type="submit"
+          size="sm"
+          disabled={!canSubmit}
+          isLoading={create.isPending}
+        >
+          {setPasswordMode ? "Create account" : "Send invite"}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+// What happened, in terms the operator can act on. The invite link is
+// only ever present when the email did NOT send — showing it otherwise
+// would put a live account-takeover credential on screen for no reason.
+function AddTenantAdminResult({
+  result,
+}: {
+  result: CreateTenantAdminResponse;
+}) {
+  return (
+    <div
+      className="mb-3 text-xs"
+      data-testid="platform-add-tenant-admin-result"
+    >
+      <p style={{ color: "hsl(152 70% 24%)" }}>
+        {result.signInReady
+          ? `${result.admin.email} can sign in now. Share the password you set — we did not email it.`
+          : result.emailSent
+            ? `Invite sent to ${result.admin.email}. The link expires in 7 days.`
+            : `Account created for ${result.admin.email}, but the invite email could not be sent.`}
+      </p>
+      {result.inviteLink && (
+        <div className="mt-2">
+          <p style={{ color: "hsl(var(--ink-3))" }}>
+            Send them this set-password link instead — it expires in 7 days and
+            works once:
+          </p>
+          <CopyableId value={result.inviteLink} />
+        </div>
+      )}
+    </div>
   );
 }
 

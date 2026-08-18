@@ -220,6 +220,29 @@ export const PLAN_FEATURE_FLAG_PRESETS: Record<
 };
 
 /**
+ * Flag-key prefixes the plan presets do not govern.
+ *
+ * `module.*` (migration 0488) answers "which parts of the console does
+ * this tenant want to see?" — a navigation preference the tenant sets for
+ * itself, not an entitlement their plan grants. Feeding those keys through
+ * the preset machinery would be actively destructive in both directions:
+ * a preset apply would silently re-show every section an operator
+ * deliberately hid, and — because a preset turns OFF everything it does
+ * not list — a plan bundle that forgot to enumerate them would empty a
+ * tenant's sidebar entirely at onboarding.
+ *
+ * So preset consumers skip these keys: they are neither turned on nor
+ * turned off by a bundle, and they keep whatever value the tenant (or the
+ * seed catalog) already had.
+ */
+export const PRESET_EXEMPT_FLAG_PREFIXES = ["module."] as const;
+
+/** True for a flag the plan presets deliberately do not govern. */
+export function isPresetExemptFlag(key: string): boolean {
+  return PRESET_EXEMPT_FLAG_PREFIXES.some((prefix) => key.startsWith(prefix));
+}
+
+/**
  * Resolve the default-ON flag set for a plan code as a Set for O(1) lookup.
  *
  * Returns `null` for an unknown / empty plan code — the caller should then

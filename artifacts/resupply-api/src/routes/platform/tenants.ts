@@ -22,6 +22,7 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
+import { inviteTeamMember } from "@workspace/resupply-auth";
 import {
   getOrgScopedClient,
   resolveSeedOrgId,
@@ -33,8 +34,13 @@ import {
   type FeatureFlagKey,
   invalidateFeatureFlagCache,
 } from "../../lib/feature-flags";
+import { getAuthDeps } from "../../lib/auth-deps";
+import { getCompanyInfo } from "../../lib/company-info";
 import { logger } from "../../lib/logger";
-import { invalidateBrandingCache } from "../../lib/tenant-branding";
+import {
+  invalidateBrandingCache,
+  resolveTenantBaseUrl,
+} from "../../lib/tenant-branding";
 import {
   adminReadRateLimiter,
   adminWriteRateLimiter,
@@ -812,13 +818,330 @@ router.get(
   },
 );
 
+// ── POST /platform/tenants/:id/admins ───────────────────────────────
+//
+// Set up an admin account for a tenant by hand.
+//
+// Until now the only way to give a tenant its first login was the
+// `tenant:onboard` CLI — which means shell access to a Railway box. That
+// is a fine belt-and-braces path, but it made the most ordinary
+// onboarding step in the product ("create this customer's account")
+// impossible from the console a super-admin is already sitting in, and
+// impossible at all for an operator without deploy credentials.
+//
+// Two modes, mirroring POST /admin/team/invite (the in-tenant version of
+// this route), so the two behave identically and share `inviteTeamMember`:
+//
+//   * EMAIL INVITE (default) — mints the auth row, issues a 7-day
+//     set-password token, and emails it, branded to the TARGET tenant.
+//     The new admin sets their own password; we never see it.
+//   * INITIAL PASSWORD — provisions the account active + email-verified
+//     with the given password and sends nothing. For onboarding calls
+//     where the operator reads the credential to the customer directly,
+//     and for tenants whose sending domain isn't authenticated yet (an
+//     invite email to an unauthenticated domain lands in spam, which
+//     looks exactly like "the product is broken" on day one).
+//
+// When the invite email can't be delivered we return the raw
+// `inviteLink` so the operator can pass it along out of band, rather
+// than leaving a half-created account with no way in.
+//
+// PHI posture: admin_users rows are staff metadata (email, role, status)
+// — no patient data crosses this surface, unlike the deliberately
+// aggregate-only tenant usage endpoints above.
+const createTenantAdminBody = z
+  .object({
+    email: z.string().trim().toLowerCase().email(),
+    // Granular role, matching admin_users.role. Defaults to the tenant
+    // owner role, since that's what this route exists to create.
+    role: z
+      .enum([
+        "admin",
+        "supervisor",
+        "csr",
+        "fitter",
+        "fulfillment",
+        "compliance_officer",
+        "agent",
+        "rt",
+        "biller",
+      ])
+      .default("admin"),
+    displayName: z.string().trim().min(1).max(120).nullable().optional(),
+    // Same floor as sign-in / change-password, so an operator-set
+    // password is never weaker than a user-set one. `inviteTeamMember`
+    // re-validates against the shared policy and throws if it fails.
+    initialPassword: z.string().min(12).max(1024).nullable().optional(),
+  })
+  .strict();
+
+router.post(
+  "/platform/tenants/:id/admins",
+  adminWriteRateLimiter,
+  requirePlatformAdmin,
+  async (req: Request, res: Response): Promise<void> => {
+    const params = tenantIdParam.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: "invalid_tenant_id" });
+      return;
+    }
+    const parsed = createTenantAdminBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "invalid_admin",
+        details: parsed.error.flatten(),
+      });
+      return;
+    }
+    const orgId = params.data.id;
+    const { email, role, displayName } = parsed.data;
+    const initialPassword = parsed.data.initialPassword ?? undefined;
+    const useInitialPassword = typeof initialPassword === "string";
+
+    const seedOrgId = await resolveSeedOrgId();
+    if (!seedOrgId) {
+      res.status(503).json({ error: "tenant_directory_unavailable" });
+      return;
+    }
+
+    // 404 an unknown tenant before touching any auth state — creating an
+    // orphan auth user for a typo'd org id would be worse than a 404.
+    const { data: org, error: orgErr } = await getOrgScopedClient(seedOrgId)
+      .raw()
+      .schema("resupply")
+      .from("organizations")
+      .select("id, name")
+      .eq("id", orgId)
+      .limit(1)
+      .maybeSingle();
+    if (orgErr) {
+      logger.error(
+        { event: "platform_tenant_admin_org_read_failed", err: orgErr },
+        "platform: tenant admin create org read failed",
+      );
+      res.status(500).json({ error: "tenant_read_failed" });
+      return;
+    }
+    if (!org) {
+      res.status(404).json({ error: "tenant_not_found" });
+      return;
+    }
+
+    const supabase = getOrgScopedClient(orgId);
+    const raw = supabase.raw();
+
+    // `resupply_auth.users.email_lower` and `admin_users.email_lower` are
+    // GLOBALLY unique, so an email already claimed by another tenant
+    // cannot be added here: inviteTeamMember would mutate that other
+    // tenant's identity row (role change + a fresh reset token + a
+    // spurious email) and then 23505 on insert. Refuse up front, same as
+    // the in-tenant invite route and the onboard CLI do.
+    const { data: existingAdmin, error: existingErr } = await raw
+      .schema("resupply")
+      .from("admin_users")
+      .select("id, org_id, role, status, auth_user_id, display_name")
+      .eq("email_lower", email)
+      .limit(1)
+      .maybeSingle();
+    if (existingErr) {
+      logger.error(
+        { event: "platform_tenant_admin_lookup_failed", err: existingErr },
+        "platform: tenant admin lookup failed",
+      );
+      res.status(500).json({ error: "admin_lookup_failed" });
+      return;
+    }
+    const prior = existingAdmin as {
+      id: string;
+      org_id: string | null;
+      role: string;
+      status: string;
+      auth_user_id: string | null;
+      display_name: string | null;
+    } | null;
+    if (prior && prior.org_id && prior.org_id !== orgId) {
+      res.status(409).json({
+        error: "email_belongs_to_another_tenant",
+        message: `${email} is already a team member of another organization. Remove them there first, or use a different address.`,
+      });
+      return;
+    }
+    if (prior && prior.status === "active") {
+      res.status(409).json({
+        error: "already_active_member",
+        message: `${email} is already an active member of this tenant. Change their role from the tenant's own Team page.`,
+        adminId: prior.id,
+      });
+      return;
+    }
+
+    // Brand the invite to the TARGET tenant, not the platform: the person
+    // receiving it is signing in to THEIR company's console, and a
+    // CareMetric-branded email for a Penn login reads as a phish.
+    // getCompanyInfo falls back to the neutral platform identity for a
+    // tenant with no dme_organization row — never the seed tenant's brand.
+    const company = await getCompanyInfo(orgId);
+    // Land the set-password link on the tenant's own verified domain when
+    // it has one, so the link host matches the brand in the email.
+    const tenantBaseUrl = await resolveTenantBaseUrl(orgId);
+
+    let invite: Awaited<ReturnType<typeof inviteTeamMember>>;
+    try {
+      invite = await inviteTeamMember(raw, getAuthDeps(), {
+        emailLower: email,
+        // Only `admin` is a super-admin; everything else buckets to the
+        // coarse `agent` auth role. The granular value lands on
+        // admin_users.role below and is what RBAC actually reads.
+        role: role === "admin" ? "admin" : "agent",
+        roleLabel: role === "admin" ? "Super admin" : "Team member",
+        displayName: displayName ?? prior?.display_name ?? null,
+        productName: company.name,
+        signatureName: company.legalName,
+        uiPathPrefix: "/admin",
+        publicBaseUrl: tenantBaseUrl ?? undefined,
+        initialPassword,
+      });
+    } catch (err) {
+      // The one caller-fixable failure here is a rejected password
+      // (inviteTeamMember re-validates against the shared policy).
+      const message = err instanceof Error ? err.message : "";
+      if (message.startsWith("initialPassword:")) {
+        res.status(422).json({
+          error: "weak_initial_password",
+          message: message.replace(/^initialPassword:\s*/, ""),
+        });
+        return;
+      }
+      logger.error(
+        { event: "platform_tenant_admin_invite_failed", err, orgId },
+        "platform: tenant admin invite failed",
+      );
+      res.status(500).json({ error: "admin_invite_failed" });
+      return;
+    }
+
+    // An initial-password account is sign-in-ready right now, so mirror
+    // that on admin_users; an emailed invite stays pending until the
+    // recipient sets their password.
+    const nowIso = new Date().toISOString();
+    const status = useInitialPassword ? "active" : "pending";
+    const acceptedAt = useInitialPassword ? nowIso : null;
+    const ADMIN_SELECT =
+      "id, email_lower, role, status, display_name, last_login_at, invited_at";
+
+    let row: AdminUserRow | null;
+    if (prior) {
+      const { data, error } = await raw
+        .schema("resupply")
+        .from("admin_users")
+        .update({
+          org_id: orgId,
+          role,
+          status,
+          auth_user_id: invite.authUserId,
+          display_name: displayName ?? prior.display_name,
+          invited_at: nowIso,
+          accepted_at: acceptedAt,
+          revoked_at: null,
+          revoked_by: null,
+          updated_at: nowIso,
+        })
+        .eq("id", prior.id)
+        .select(ADMIN_SELECT)
+        .limit(1)
+        .maybeSingle();
+      if (error) {
+        logger.error(
+          { event: "platform_tenant_admin_update_failed", err: error, orgId },
+          "platform: tenant admin update failed",
+        );
+        res.status(500).json({ error: "admin_write_failed" });
+        return;
+      }
+      row = data as AdminUserRow | null;
+    } else {
+      const { data, error } = await raw
+        .schema("resupply")
+        .from("admin_users")
+        .insert({
+          org_id: orgId,
+          email_lower: email,
+          role,
+          status,
+          auth_user_id: invite.authUserId,
+          display_name: displayName ?? null,
+          invited_at: nowIso,
+          accepted_at: acceptedAt,
+          updated_at: nowIso,
+        })
+        .select(ADMIN_SELECT)
+        .limit(1)
+        .maybeSingle();
+      if (error) {
+        logger.error(
+          { event: "platform_tenant_admin_insert_failed", err: error, orgId },
+          "platform: tenant admin insert failed",
+        );
+        res.status(500).json({ error: "admin_write_failed" });
+        return;
+      }
+      row = data as AdminUserRow | null;
+    }
+    if (!row) {
+      res.status(500).json({ error: "admin_write_failed" });
+      return;
+    }
+
+    await logAudit({
+      action: "platform.tenant.admin_created",
+      adminEmail: req.platformAdminEmail ?? "platform-admin",
+      adminUserId: req.platformAdminUserId ?? null,
+      targetTable: "admin_users",
+      targetId: row.id,
+      // Never log the password itself — only WHICH path was taken, so an
+      // operator reviewing the trail can tell an out-of-band credential
+      // hand-off from an emailed invite.
+      metadata: {
+        orgId,
+        role,
+        credential: useInitialPassword
+          ? "operator_set_password"
+          : "email_invite",
+        emailSent: invite.emailSent,
+      },
+      ip: null,
+      userAgent: null,
+    }).catch((err) => {
+      logger.warn({ err }, "platform: tenant admin create audit write failed");
+    });
+
+    res.status(prior ? 200 : 201).json({
+      tenantId: orgId,
+      admin: {
+        id: row.id,
+        email: row.email_lower,
+        role: row.role,
+        status: row.status,
+        displayName: row.display_name,
+        lastLoginAt: row.last_login_at,
+        invitedAt: row.invited_at,
+      },
+      emailSent: invite.emailSent,
+      // Only present when the email did NOT go out — otherwise the link
+      // lives only in the recipient's inbox, which is where an
+      // account-takeover credential belongs.
+      inviteLink: invite.emailSent ? null : invite.inviteLink,
+      signInReady: invite.signInReady,
+    });
+  },
+);
+
 /**
  * Create a new tenant SHELL: the `organizations` row + its feature-flag
- * provisioning. The first ADMIN is intentionally NOT created here — that
- * path (auth user + set-password link) stays the `tenant:onboard` CLI,
- * which an operator runs to invite the tenant's owner. So this gives the
- * platform console a "create the tenant" button; the admin invite is a
- * deliberate, separate step.
+ * provisioning. The tenant's first ADMIN is created separately, via
+ * `POST /platform/tenants/:id/admins` below (or the `tenant:onboard`
+ * CLI) — two steps on purpose, so "make the org" and "hand someone the
+ * keys to it" are distinct, separately-audited actions.
  */
 router.post(
   "/platform/tenants",

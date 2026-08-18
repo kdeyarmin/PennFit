@@ -77,6 +77,11 @@ const EXCLUDED_EXACT = new Set([
   "/forgot-password",
   "/reset-password",
   "/verify-email",
+  // "Where do I log in?" aliases. Both 302 to the real sign-in page for
+  // the host being browsed, so indexing them would list two duplicates
+  // of a page already in the sitemap under its canonical /sign-in URL.
+  "/login",
+  "/signin",
   // NOTE: all of /breathe/* (the landing page and its split-out
   // sub-pages, including /breathe/features) is excluded via the
   // "/breathe" prefix in EXCLUDED_PREFIXES above — no per-route exact

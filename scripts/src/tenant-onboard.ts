@@ -77,7 +77,10 @@ import {
   getSupabaseServiceRoleClient,
   SEED_ORG_SLUG,
 } from "@workspace/resupply-db";
-import { resolvePlanFlagPreset } from "@workspace/resupply-domain";
+import {
+  isPresetExemptFlag,
+  resolvePlanFlagPreset,
+} from "@workspace/resupply-domain";
 import {
   createSendgridClient,
   EmailConfigError,
@@ -375,7 +378,12 @@ async function provisionFeatureFlags(
   const rows = seedFlags.map((f) => ({
     org_id: orgId,
     key: f.key,
-    enabled: preset ? preset.has(f.key) : f.enabled,
+    // `module.*` keys are preset-exempt: they're the tenant's own
+    // navigation choices, not a plan entitlement. A preset turns off
+    // everything it doesn't list, so applying one to them would onboard
+    // every new tenant with an empty console sidebar.
+    enabled:
+      preset && !isPresetExemptFlag(f.key) ? preset.has(f.key) : f.enabled,
     description: f.description,
     category: f.category,
   }));
