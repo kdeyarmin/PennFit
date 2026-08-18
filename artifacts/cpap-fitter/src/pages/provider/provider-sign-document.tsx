@@ -9,6 +9,7 @@ import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { ArrowLeft, FileSignature, CheckCircle2 } from "lucide-react";
 
+import { safeReturnTo } from "@/lib/provider/safe-return";
 import {
   SignaturePad,
   type SignaturePadHandle,
@@ -30,6 +31,30 @@ import {
 const inputClass =
   "w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100";
 
+/**
+ * The labelled order snapshot a referral signature request carries.
+ *
+ * Written at signature-request time so the clinician attests to what the
+ * order said THEN, not to whatever the referral says when the page is
+ * opened. Returns null for the other subject types, which have no such
+ * snapshot and fall back to the raw detail dump.
+ */
+function orderSummaryOf(
+  detail: unknown,
+): Array<{ label: string; value: string }> | null {
+  if (!detail || typeof detail !== "object") return null;
+  const raw = (detail as Record<string, unknown>).orderSummary;
+  if (!Array.isArray(raw) || raw.length === 0) return null;
+  const lines = raw.filter(
+    (l): l is { label: string; value: string } =>
+      Boolean(l) &&
+      typeof l === "object" &&
+      typeof (l as { label?: unknown }).label === "string" &&
+      typeof (l as { value?: unknown }).value === "string",
+  );
+  return lines.length > 0 ? lines : null;
+}
+
 export function ProviderSignDocument({
   id,
   providerName,
@@ -38,6 +63,7 @@ export function ProviderSignDocument({
   providerName?: string | null;
 }) {
   const [, setLocation] = useLocation();
+  const returnTo = safeReturnTo(window.location.search);
   const [signerName, setSignerName] = useState("");
   const [signerTitle, setSignerTitle] = useState("");
   const sigRef = useRef<SignaturePadHandle | null>(null);
@@ -77,6 +103,10 @@ export function ProviderSignDocument({
   });
 
   if (done) {
+    // With a return target the signature is a STEP, not the end: say what
+    // still has to happen rather than claiming the practice was notified,
+    // which for a referral is simply untrue at this point.
+    const continueTo = returnTo;
     return (
       <ProviderShell providerName={providerName}>
         <Card className="mx-auto max-w-lg p-8 text-center">
@@ -88,12 +118,17 @@ export function ProviderSignDocument({
             {done === "signed" ? "Signature recorded" : "Document declined"}
           </h1>
           <p className="mt-1 text-sm text-slate-500">
-            {done === "signed"
-              ? "Thank you. The practice has been notified."
-              : "The practice has been notified of your decision."}
+            {done === "declined"
+              ? "The practice has been notified of your decision."
+              : continueTo
+                ? "The order is signed. It still has to be sent — carry on where you left off."
+                : "Thank you. The practice has been notified."}
           </p>
-          <Button className="mt-6" onClick={() => setLocation("/provider")}>
-            Back to my documents
+          <Button
+            className="mt-6"
+            onClick={() => setLocation(continueTo ?? "/provider")}
+          >
+            {continueTo ? "Back to the referral" : "Back to my documents"}
           </Button>
         </Card>
       </ProviderShell>
@@ -153,7 +188,27 @@ export function ProviderSignDocument({
                 </div>
               ) : null}
             </dl>
-            {query.data.detail && Object.keys(query.data.detail).length > 0 ? (
+            {/* A signable order has to be READABLE before it is attested
+                to. Requests that carry an `orderSummary` (referral orders
+                — see routes/provider/referral-workflow.ts) render it as
+                labelled lines; anything else keeps the raw dump, which is
+                the historical behaviour for the other subject types. */}
+            {orderSummaryOf(query.data.detail) ? (
+              <dl className="mt-4 divide-y divide-slate-200 rounded-lg border border-slate-200">
+                {orderSummaryOf(query.data.detail)!.map((line) => (
+                  <div
+                    key={line.label}
+                    className="flex justify-between gap-4 px-3.5 py-2.5 text-sm"
+                  >
+                    <dt className="text-slate-500">{line.label}</dt>
+                    <dd className="text-right font-medium text-slate-900">
+                      {line.value}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            ) : query.data.detail &&
+              Object.keys(query.data.detail).length > 0 ? (
               <pre className="mt-4 overflow-x-auto rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
                 {JSON.stringify(query.data.detail, null, 2)}
               </pre>

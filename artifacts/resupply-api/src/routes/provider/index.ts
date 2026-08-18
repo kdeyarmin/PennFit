@@ -9,11 +9,17 @@ import { Router, type IRouter } from "express";
 import portalRouter from "./portal.js";
 import mfaRouter from "./mfa.js";
 import rtmRouter from "./rtm.js";
+import referralsRouter from "./referrals.js";
+import referralWorkflowRouter from "./referral-workflow.js";
 
 const router: IRouter = Router();
 
 router.use(portalRouter);
 router.use(mfaRouter);
 router.use(rtmRouter);
+// Referral routes before the workflow router only for readability; the
+// two mount disjoint paths, so the order carries no meaning.
+router.use(referralsRouter);
+router.use(referralWorkflowRouter);
 
 export default router;

@@ -59,6 +59,7 @@ export function Results() {
     email,
     emailConsent,
     inviteToken,
+    entryPoint,
   } = useFitterStore();
   const [showMeasurements, setShowMeasurements] = useState(false);
 
@@ -216,6 +217,10 @@ export function Results() {
       inviteToken,
       measurements,
       answers: { ...fullAnswers },
+      // Set from the referral link's `entry` param; omitted for an
+      // ordinary invite, where the server's `remote_link` default is
+      // correct.
+      ...(entryPoint ? { entryPoint } : {}),
       signal: controller.signal,
     })
       .then((result) => {
@@ -239,7 +244,7 @@ export function Results() {
         if (!controller.signal.aborted) setClinicalState("legacy");
       });
     return () => controller.abort();
-  }, [measurements, inviteToken, fullAnswers]);
+  }, [measurements, inviteToken, fullAnswers, entryPoint]);
 
   // Fire the campaign-enrollment ping the first time `data` arrives
   // with at least one recommendation. Gated by emailConsent so a
