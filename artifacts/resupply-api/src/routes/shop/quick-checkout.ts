@@ -42,6 +42,11 @@ import {
   readStripeConfigOrNull,
 } from "../../lib/stripe/config";
 import { isFeatureEnabled } from "../../lib/feature-flags";
+import {
+  FIT_ORDERED_MASK_METADATA_KEY,
+  FIT_ORDERED_VARIANT_METADATA_KEY,
+  FIT_SESSION_METADATA_KEY,
+} from "../../lib/fitting/order-link";
 import { getOrCreateStripeCustomer } from "../../lib/stripe/customer";
 import { stripeAccountRequestOptions } from "../../lib/stripe/connect";
 import { validateCartItems } from "../../lib/stripe/validate-cart";
@@ -87,6 +92,21 @@ const body = z
       .max(200)
       .default("/shop/checkout-success"),
     cancelPath: z.string().startsWith("/").max(200).default("/account"),
+    /**
+     * Fitting attribution, mirroring /shop/checkout. Express checkout is
+     * reachable from the same cart, so a fitting-sourced basket would
+     * otherwise lose its link purely because the buyer has a saved card.
+     * `.strict()` above means these must be declared to be accepted at all.
+     */
+    fitSessionId: z.string().uuid().optional(),
+    orderedMaskSlug: z
+      .string()
+      .trim()
+      .min(1)
+      .max(120)
+      .regex(/^[a-z0-9-]+$/)
+      .optional(),
+    orderedVariantId: z.string().uuid().optional(),
   })
   .strict()
   .refine(
@@ -420,6 +440,17 @@ router.post(
       // non-seed tenant pre-charges-enabled), where the event carries no
       // event.account. See checkout.ts for the full rationale.
       ...(req.orgId ? { org_id: req.orgId } : {}),
+      // Fitting attribution, read back by the webhook. Absent for an
+      // ordinary express reorder.
+      ...(parsed.data.fitSessionId
+        ? { [FIT_SESSION_METADATA_KEY]: parsed.data.fitSessionId }
+        : {}),
+      ...(parsed.data.orderedMaskSlug
+        ? { [FIT_ORDERED_MASK_METADATA_KEY]: parsed.data.orderedMaskSlug }
+        : {}),
+      ...(parsed.data.orderedVariantId
+        ? { [FIT_ORDERED_VARIANT_METADATA_KEY]: parsed.data.orderedVariantId }
+        : {}),
     };
 
     let session: Stripe.Checkout.Session;

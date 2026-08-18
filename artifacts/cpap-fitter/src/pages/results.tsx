@@ -42,8 +42,10 @@ import {
   isWithheld,
   toLegacyMaskType,
   type FitAssessment,
+  type FitCandidate,
 } from "@/lib/fit-assess-api";
 import { ClinicalResults, FitWithheld } from "@/components/clinical-results";
+import { rememberFitCheckoutContext } from "@/lib/fit-checkout-context";
 
 export function Results() {
   useDocumentTitle("Your mask matches");
@@ -158,6 +160,16 @@ export function Results() {
   const handleCashPayAdd = (
     mask: { maskId: string; modelNumber: string },
     product: ShopProductView,
+    /**
+     * Present only on the clinical path, where the order can be linked
+     * back to the fitting that produced it. The LEGACY path records no
+     * fit session, so there is genuinely nothing to attribute.
+     */
+    fitLink?: {
+      fitSessionId: string;
+      orderedMaskSlug: string;
+      orderedVariantId: string | null;
+    },
   ) => {
     const added = addItem({
       productId: product.id,
@@ -173,6 +185,16 @@ export function Results() {
       stockCount: product.stockCount,
     });
     if (!added.ok) return; // sold out between load and click — leave the page as-is
+    // Hand the fitting off to checkout. Written only on success so a
+    // rejected add (sold out) doesn't leave a link pointing at an order
+    // that was never placed.
+    if (fitLink) {
+      rememberFitCheckoutContext({
+        fitSessionId: fitLink.fitSessionId,
+        orderedMaskSlug: fitLink.orderedMaskSlug,
+        orderedVariantId: fitLink.orderedVariantId,
+      });
+    }
     track("mask_cashpay_added", { mask: mask.modelNumber });
     setLocation("/shop/cart");
   };
@@ -245,6 +267,51 @@ export function Results() {
       });
     return () => controller.abort();
   }, [measurements, inviteToken, fullAnswers, entryPoint]);
+
+  // Cash-pay on the CLINICAL path.
+  //
+  // The legacy card matches a shop SKU by manufacturer model number.
+  // A clinical candidate's equivalent is the part number of the size
+  // that was actually recommended — cushion first, then frame — which is
+  // the same resolution `handleChooseMask` uses for the order. Falling
+  // back to the mask slug matches nothing and simply hides the CTA,
+  // which is the right failure: a mask we can't price is a mask we
+  // can't sell.
+  //
+  // This also carries the fit-session link into the cart, which is the
+  // only way a paid order ever gets attributed back to the fitting that
+  // produced it.
+  //
+  // Deliberately a plain function, not a memo: it is called once per
+  // candidate per render and does a Map lookup, and `ClinicalResults` is
+  // not memoized, so a stable identity would buy nothing.
+  const clinicalCashPayFor = (c: FitCandidate) => {
+    const partNumber =
+      c.cushion?.manufacturerPartNumber ?? c.frame?.manufacturerPartNumber;
+    if (!partNumber) return undefined;
+    const product = shopByModelNumber?.get(partNumber);
+    if (!product) return undefined;
+    const fitSessionId = assessment?.fitSessionId;
+    return {
+      priceLabel: formatMoneyCents(
+        product.price.unitAmount,
+        product.price.currency,
+      ),
+      onAddToCart: () =>
+        handleCashPayAdd(
+          { maskId: c.maskId, modelNumber: partNumber },
+          product,
+          fitSessionId
+            ? {
+                fitSessionId,
+                orderedMaskSlug: c.maskSlug,
+                orderedVariantId:
+                  c.cushion?.variantId ?? c.frame?.variantId ?? null,
+              }
+            : undefined,
+        ),
+    };
+  };
 
   // Fire the campaign-enrollment ping the first time `data` arrives
   // with at least one recommendation. Gated by emailConsent so a
@@ -458,6 +525,7 @@ export function Results() {
         </div>
         <ClinicalResults
           assessment={assessment}
+          cashPayFor={clinicalCashPayFor}
           onChoose={(c) =>
             handleChooseMask({
               maskId: c.maskSlug,

@@ -243,6 +243,16 @@ export async function startCheckout(
     fulfillmentMethod?: "ship" | "pickup";
     /** Active location id — required when fulfillmentMethod === "pickup". */
     pickupLocationId?: string | null;
+    /**
+     * Set when this basket came from a mask fitting, so the paid order
+     * can be linked back to the session that produced it. Absent for an
+     * ordinary shop checkout — see lib/fit-checkout-context.ts.
+     */
+    fitSessionId?: string | null;
+    /** The mask the patient chose, as the fitting engine's slug. */
+    orderedMaskSlug?: string | null;
+    /** Variant of the recommended size the patient chose. */
+    orderedVariantId?: string | null;
   },
 ): Promise<{ url: string; sessionId: string }> {
   // Per-attempt idempotency key — re-clicking "Checkout" within a
@@ -265,6 +275,13 @@ export async function startCheckout(
         : {}),
       ...(options?.pickupLocationId
         ? { pickupLocationId: options.pickupLocationId }
+        : {}),
+      ...(options?.fitSessionId ? { fitSessionId: options.fitSessionId } : {}),
+      ...(options?.orderedMaskSlug
+        ? { orderedMaskSlug: options.orderedMaskSlug }
+        : {}),
+      ...(options?.orderedVariantId
+        ? { orderedVariantId: options.orderedVariantId }
         : {}),
     }),
   });

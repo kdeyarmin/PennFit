@@ -111,12 +111,14 @@ export function AdminAnalyticsFitterOutcomesPage() {
           {report.dispensing.dispensed === 0 && report.sessions.total > 0 ? (
             <Card>
               <p className="p-4 text-sm">
-                <strong>Dispensing isn&apos;t being recorded yet.</strong> An
-                order placed from a fitting is not yet linked back to the
-                fitting that produced it, so the dispense rate stays empty.
-                Acceptance is measured from clinician review — a fitting counts
-                only once someone approves or overrides it, so it fills in as
-                the review queue is worked rather than all at once.
+                <strong>Nothing has been dispensed in this period yet.</strong>{" "}
+                A fitting counts as dispensed when the cash-pay order it
+                produced is marked <em>delivered</em> — not when it is paid — so
+                this fills in behind shipping rather than at checkout. Fittings
+                that go to insurance through &ldquo;Choose this mask&rdquo; are
+                not cash-pay orders and never count here. Acceptance is
+                separate: it is measured from clinician review, so it fills in
+                as the review queue is worked.
               </p>
             </Card>
           ) : null}

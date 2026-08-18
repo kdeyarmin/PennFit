@@ -170,6 +170,29 @@ confirm the deploy, then flip the flag.
 
 ---
 
+## D. What makes the outcome KPIs fill in
+
+`/admin/analytics/fitter-outcomes` reads columns that only certain actions
+write, so two of its tiles stay empty until the matching workflow is
+actually being used. This is not a bug to chase:
+
+| Tile                        | Fills in when                                                                                                                                                                                          |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Recommendation accepted** | A clinician approves or overrides a fitting in the review queue. Until someone works the queue every fitting is _undecided_, which is honest — nobody has judged it.                                   |
+| **Dispensed**               | A cash-pay order that came from a fitting is marked **delivered** (carrier webhook, or the admin "mark delivered" action). Payment alone does not count: a mask in a warehouse has not been dispensed. |
+
+Two consequences worth stating plainly, because they look like data loss:
+
+- **Insurance fittings never count as dispensed.** "Choose this mask" creates
+  an order request, not a shop order, and the link column is a foreign key to
+  `shop_orders`. Dispensing measures the cash-pay path only.
+- **A fitting only links to an order placed from the fitter's own
+  "Buy without insurance" button**, within 24 hours, in the same browser. A
+  patient who browses the shop separately and buys the same mask is a
+  different journey and is deliberately not attributed to the fitting.
+
+---
+
 ## Recommended order
 
 1. **A** — clear the review queue for the models you dispense. Everything
