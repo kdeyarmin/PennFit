@@ -2391,6 +2391,15 @@ export function AppShell({
     () => new Set(adminMe?.disabledFeatures ?? []),
     [adminMe?.disabledFeatures],
   );
+  // NOTE: module filtering applies to whichever nav the product scope
+  // selected, and only NAV_GROUPS carries `requiredFeature` tags — the
+  // curated MASK_FITTER / LOCKED navs deliberately carry none, so their
+  // entries survive regardless of which modules a tenant has off. That is
+  // intentional, not an oversight: those navs are already scoped to ~6
+  // entries, and neither includes Control Center, so a fitter-only tenant
+  // has no in-app way to undo a module their platform admin switched off.
+  // Subtracting from an already-minimal nav could strand them with no
+  // route back. Modules are a decluttering tool for the FULL console.
   const fullNavGroups = navGroupsForScope(productScope);
   const scopedNavGroups = useMemo(
     () => filterNavGroupsByFeature(fullNavGroups, disabledFeatures),

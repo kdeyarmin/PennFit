@@ -124,8 +124,11 @@ export const APP_MODULES: ReadonlyArray<AppModule> = [
   },
   {
     key: "module.support",
-    label: "Support",
-    hides: "Support tickets and help resources.",
+    label: "Support tickets",
+    // Deliberately NOT "and help resources". Help & Resources is the
+    // in-app documentation — including how to turn a module back on —
+    // so it stays visible for the same reason Control Center does.
+    hides: "The in-app support ticket surface.",
     group: "System",
   },
 ];

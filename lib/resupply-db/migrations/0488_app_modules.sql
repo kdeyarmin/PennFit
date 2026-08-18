@@ -132,8 +132,10 @@ CROSS JOIN (VALUES
    'App Modules'),
   ('module.support',
    true,
-   'Support — the in-app support ticket surface and help resources. OFF '
-     || 'hides the whole Support section.',
+   'Support tickets — the in-app support request surface. OFF hides the '
+     || 'Support entry. Help & Resources (the in-app documentation) is '
+     || 'deliberately NOT hidden: it is where an operator looks up how to '
+     || 'turn a module back on.',
    'App Modules')
 ) AS v("key", "enabled", "description", "category")
 ON CONFLICT ("org_id", "key") DO NOTHING;

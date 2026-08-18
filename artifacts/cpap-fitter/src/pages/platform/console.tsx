@@ -3487,6 +3487,12 @@ function AddTenantAdminForm({ tenantId }: { tenantId: string }) {
         onSuccess: (res) => {
           setResult(res);
           reset();
+          // Close the form. The result panel — which carries the
+          // set-password link when the invite email did NOT send — only
+          // renders in the collapsed state, so leaving the form open
+          // showed a cleared form and swallowed the one credential that
+          // makes an undeliverable invite recoverable.
+          setOpen(false);
           void queryClient.invalidateQueries({
             queryKey: getTenantAdminsQueryKey(tenantId),
           });

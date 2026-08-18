@@ -177,3 +177,33 @@ describe("platform console tenant detail + sidebar", () => {
     expect(SRC).toContain("<CatalogCard />");
   });
 });
+
+// Manual tenant-admin setup (super admin creates a tenant's login).
+describe("platform console tenant-admin setup", () => {
+  it("wires the add-admin form to the platform endpoint", () => {
+    expect(SRC).toContain("function AddTenantAdminForm");
+    expect(SRC).toContain("useCreateTenantAdmin");
+    expect(SRC).toContain("<AddTenantAdminForm tenantId={tenantId} />");
+  });
+
+  it("collapses the form on success so the result panel can render", () => {
+    // AddTenantAdminResult — which carries the set-password link when the
+    // invite email did not send — renders only in the collapsed (!open)
+    // branch. Leaving the form open on success showed a cleared form and
+    // swallowed the one credential that makes an undeliverable invite
+    // recoverable, so the close is load-bearing, not cosmetic.
+    const onSuccess = SRC.slice(
+      SRC.indexOf(
+        "onSuccess: (res) => {",
+        SRC.indexOf("function AddTenantAdminForm"),
+      ),
+    ).slice(0, 600);
+    expect(onSuccess).toContain("setResult(res)");
+    expect(onSuccess).toContain("setOpen(false)");
+  });
+
+  it("shows the invite link only when the email did not send", () => {
+    expect(SRC).toContain("function AddTenantAdminResult");
+    expect(SRC).toContain("result.inviteLink &&");
+  });
+});

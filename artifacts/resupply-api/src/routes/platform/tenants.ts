@@ -23,6 +23,7 @@ import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
 import { inviteTeamMember } from "@workspace/resupply-auth";
+import { createSendgridClient } from "@workspace/resupply-email";
 import {
   getOrgScopedClient,
   resolveSeedOrgId,
@@ -849,6 +850,64 @@ router.get(
 // PHI posture: admin_users rows are staff metadata (email, role, status)
 // — no patient data crosses this surface, unlike the deliberately
 // aggregate-only tenant usage endpoints above.
+/**
+ * Undo a just-minted identity when the roster write that was supposed to
+ * bind it to a tenant fails.
+ *
+ * Why this is not merely tidy-up: `requireAdmin` resolves a signed-in
+ * user's tenant from `admin_users.org_id`, and its NO-ROW branch is a
+ * deliberate legacy fallback — it keeps the coarse `auth.users.role` and
+ * resolves `orgId` to the SEED org. So an identity created here with
+ * role='admin' and no roster row is not an inert orphan: the moment its
+ * owner signs in (immediately, on the initial-password path) they are a
+ * super-admin of the seed tenant. A 500 from this endpoint would hand
+ * someone cross-tenant access to the wrong organization.
+ *
+ * PostgREST gives us no cross-table transaction, so we compensate:
+ * revoke the identity and expire any live invite token. Best-effort by
+ * necessity — a failure here is logged loudly, because it is the one
+ * path that leaves the dangerous state behind.
+ */
+async function revokeOrphanedIdentity(
+  raw: ReturnType<ReturnType<typeof getOrgScopedClient>["raw"]>,
+  authUserId: string,
+  emailLower: string,
+): Promise<void> {
+  const nowIso = new Date().toISOString();
+  try {
+    // Status first — this is what actually stops a sign-in. requireAdmin
+    // rejects any cookie whose user row is not active.
+    const { error: revokeErr } = await raw
+      .schema("resupply_auth")
+      .from("users")
+      .update({ status: "revoked", updated_at: nowIso })
+      .eq("id", authUserId);
+    if (revokeErr) throw revokeErr;
+    // Then burn any outstanding set-password link so the emailed one
+    // (if it went out) can't be redeemed later. Expiring in place is the
+    // repo's existing idiom for this (see team-invite.ts), so a redeemed
+    // attempt gets the same clean "expired" error as a superseded link.
+    await raw
+      .schema("resupply_auth")
+      .from("email_tokens")
+      .update({ expires_at: nowIso })
+      .eq("user_id", authUserId)
+      .eq("purpose", "password_reset")
+      .is("consumed_at", null)
+      .gt("expires_at", nowIso);
+  } catch (err) {
+    logger.error(
+      {
+        event: "platform_tenant_admin_orphan_rollback_failed",
+        err,
+        authUserId,
+        emailLower,
+      },
+      "platform: could not revoke an identity left without a tenant roster row — it may resolve to the seed org on sign-in; revoke it by hand",
+    );
+  }
+}
+
 const createTenantAdminBody = z
   .object({
     email: z.string().trim().toLowerCase().email(),
@@ -966,6 +1025,43 @@ router.post(
       });
       return;
     }
+    // Has this person already accepted? `admin_users.status` is NOT the
+    // answer: /auth/reset-password marks the AUTH identity verified and
+    // active when an invite is redeemed, and never touches the roster row,
+    // so an accepted member can still sit at status='pending' here (and
+    // requireAdmin doesn't read that column either). Checking only the
+    // roster status would let this endpoint re-invite a fully active
+    // admin — silently changing their coarse and granular roles and
+    // minting a fresh live password-reset link for their account. Mirror
+    // the in-tenant invite route and ask the identity itself.
+    if (prior?.auth_user_id) {
+      const { data: auth, error: authErr } = await raw
+        .schema("resupply_auth")
+        .from("users")
+        .select("email_verified_at")
+        .eq("id", prior.auth_user_id)
+        .limit(1)
+        .maybeSingle();
+      if (authErr) {
+        logger.error(
+          { event: "platform_tenant_admin_auth_lookup_failed", err: authErr },
+          "platform: tenant admin auth lookup failed",
+        );
+        res.status(500).json({ error: "admin_lookup_failed" });
+        return;
+      }
+      if (
+        (auth as { email_verified_at?: string | null } | null)
+          ?.email_verified_at
+      ) {
+        res.status(409).json({
+          error: "already_active_member",
+          message: `${email} has already activated their account for this tenant. Change their role from the tenant's own Team page.`,
+          adminId: prior.id,
+        });
+        return;
+      }
+    }
     if (prior && prior.status === "active") {
       res.status(409).json({
         error: "already_active_member",
@@ -985,9 +1081,42 @@ router.post(
     // it has one, so the link host matches the brand in the email.
     const tenantBaseUrl = await resolveTenantBaseUrl(orgId);
 
+    // Send through a STRICT sender rather than the shared auth one.
+    //
+    // `getAuthDeps().email` swallows EmailConfigError (no SendGrid
+    // configured) and EmailApiError (SendGrid rejected the message) and
+    // resolves normally — correct for the auth flows it was built for,
+    // where a failed notification must not fail the request. But
+    // `inviteTeamMember` treats any non-throwing send as delivered, so
+    // this endpoint would report `emailSent: true` and withhold
+    // `inviteLink` in precisely the case the link exists for: a tenant
+    // being onboarded before SendGrid is wired up. The operator would be
+    // told the invite went out, and the account would be unreachable.
+    //
+    // Letting the error propagate makes inviteTeamMember's own catch
+    // record `emailSent: false`; it does not fail the invite, so the
+    // identity is still created and we hand back the link.
+    const deps = {
+      ...getAuthDeps(),
+      email: async (
+        input: Parameters<ReturnType<typeof getAuthDeps>["email"]>[0],
+      ) => {
+        const client = createSendgridClient();
+        await client.sendEmail({
+          to: input.to,
+          subject: input.subject,
+          html: input.html,
+          text: input.text,
+          ...(input.attachments && input.attachments.length > 0
+            ? { attachments: input.attachments }
+            : {}),
+        });
+      },
+    };
+
     let invite: Awaited<ReturnType<typeof inviteTeamMember>>;
     try {
-      invite = await inviteTeamMember(raw, getAuthDeps(), {
+      invite = await inviteTeamMember(raw, deps, {
         emailLower: email,
         // Only `admin` is a super-admin; everything else buckets to the
         // coarse `agent` auth role. The granular value lands on
@@ -1082,10 +1211,21 @@ router.post(
           { event: "platform_tenant_admin_insert_failed", err: error, orgId },
           "platform: tenant admin insert failed",
         );
+        // No roster row means no tenant binding — see
+        // revokeOrphanedIdentity for why that is an escalation, not a
+        // no-op. Only the INSERT path needs this: on the update path a
+        // roster row already existed, so a failed update leaves the
+        // prior binding intact rather than none at all.
+        await revokeOrphanedIdentity(raw, invite.authUserId, email);
         res.status(500).json({ error: "admin_write_failed" });
         return;
       }
       row = data as AdminUserRow | null;
+      if (!row) {
+        await revokeOrphanedIdentity(raw, invite.authUserId, email);
+        res.status(500).json({ error: "admin_write_failed" });
+        return;
+      }
     }
     if (!row) {
       res.status(500).json({ error: "admin_write_failed" });

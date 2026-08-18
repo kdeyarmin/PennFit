@@ -30,6 +30,7 @@ import {
 } from "@/lib/admin/feature-flags-api";
 import { formatAppDate, formatAppDateTime } from "@/lib/utils";
 import { APP_MODULES, isAppModuleKey } from "@/lib/admin/app-modules";
+import { getGetAdminMeQueryKey } from "@workspace/api-client-react/admin";
 
 const QUERY_KEY = ["admin-feature-flags"] as const;
 const ACTIVITY_QUERY_KEY = ["admin-feature-flags-activity"] as const;
@@ -722,6 +723,14 @@ function FlagRow({
       // Without this invalidation the panel stays stale until the
       // user manually reloads the page.
       void queryClient.invalidateQueries({ queryKey: ACTIVITY_QUERY_KEY });
+      // The sidebar reads its disabled-module set from /admin/me, a
+      // DIFFERENT query — and the app-wide defaults are staleTime 60s
+      // with refetchOnWindowFocus off, so without this the operator
+      // flips a module and the navigation keeps its old shape for up to
+      // a minute with no way to hurry it but a reload. That reads as
+      // "the switch is broken", which is a bad first impression for the
+      // one feature whose entire point is visible.
+      void queryClient.invalidateQueries({ queryKey: getGetAdminMeQueryKey() });
     },
   });
 

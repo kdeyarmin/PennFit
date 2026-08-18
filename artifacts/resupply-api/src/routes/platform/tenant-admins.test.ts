@@ -22,9 +22,10 @@ import {
 
 const supabaseMock = installSupabaseMock();
 
-const { mockPlatformAdmin, inviteMock } = vi.hoisted(() => ({
+const { mockPlatformAdmin, inviteMock, sendgridMock } = vi.hoisted(() => ({
   mockPlatformAdmin: { current: null } as MockPlatformAdminRef,
   inviteMock: vi.fn(),
+  sendgridMock: vi.fn(),
 }));
 
 vi.mock("../../middlewares/requirePlatformAdmin", () =>
@@ -35,7 +36,16 @@ vi.mock("@workspace/resupply-auth", async (orig) => ({
   inviteTeamMember: inviteMock,
 }));
 vi.mock("../../lib/auth-deps", () => ({
-  getAuthDeps: () => ({ publicBaseUrl: "https://cmbreathe.com" }),
+  getAuthDeps: () => ({
+    publicBaseUrl: "https://cmbreathe.com",
+    // The shared auth sender SWALLOWS delivery failures. The route
+    // deliberately replaces it; this stand-in mirrors that swallowing so a
+    // test that reached for it by mistake would be obvious.
+    email: async () => undefined,
+  }),
+}));
+vi.mock("@workspace/resupply-email", () => ({
+  createSendgridClient: sendgridMock,
 }));
 vi.mock("../../lib/company-info", () => ({
   getCompanyInfo: async () => ({
@@ -83,6 +93,10 @@ function stageAdminRow(overrides: Record<string, unknown> = {}) {
 beforeEach(() => {
   supabaseMock.reset();
   mockPlatformAdmin.current = null;
+  sendgridMock.mockReset();
+  sendgridMock.mockReturnValue({
+    sendEmail: vi.fn().mockResolvedValue(undefined),
+  });
   inviteMock.mockReset();
   inviteMock.mockResolvedValue({
     authUserId: "auth-1",
@@ -337,5 +351,138 @@ describe("POST /platform/tenants/:id/admins", () => {
       .send({ email: "owner@acmesleep.com", role: "superuser" });
     expect(res.status).toBe(400);
     expect(inviteMock).not.toHaveBeenCalled();
+  });
+});
+
+// ── Regressions from the 2026-08-18 review ───────────────────────────
+
+describe("POST /platform/tenants/:id/admins — delivery + rollback", () => {
+  beforeEach(() => {
+    mockPlatformAdmin.current = { userId: "u1", email: "ops@cm" };
+  });
+
+  it("passes a sender that PROPAGATES delivery failure", async () => {
+    // The shared auth sender swallows EmailConfigError / EmailApiError and
+    // resolves, which would make inviteTeamMember report emailSent=true
+    // with no email sent — withholding the invite link in exactly the
+    // un-configured-SendGrid case it exists for. Assert the route hands
+    // inviteTeamMember a sender that throws instead.
+    inviteMock.mockImplementation(
+      async (_raw, deps: { email: (i: unknown) => Promise<void> }) => {
+        let threw = false;
+        try {
+          await deps.email({
+            to: "x@y.com",
+            subject: "s",
+            html: "h",
+            text: "t",
+          });
+        } catch {
+          threw = true;
+        }
+        return {
+          authUserId: "auth-1",
+          emailSent: !threw,
+          inviteLink: "https://acmesleep.com/admin/reset-password?token=raw",
+          signInReady: false,
+        };
+      },
+    );
+    sendgridMock.mockImplementation(() => {
+      throw new Error("SENDGRID_API_KEY is not set");
+    });
+    stageTenantFound();
+    stageSupabaseResponse("admin_users", "select", { data: null });
+    stageSupabaseResponse("admin_users", "insert", { data: stageAdminRow() });
+
+    const res = await request(makeApp())
+      .post(`/platform/tenants/${TENANT}/admins`)
+      .send({ email: "owner@acmesleep.com" });
+
+    expect(res.status).toBe(201);
+    expect(res.body.emailSent).toBe(false);
+    // The whole point: the operator gets a usable link back.
+    expect(res.body.inviteLink).toContain("/admin/reset-password?token=");
+  });
+
+  it("revokes the identity when the roster write fails", async () => {
+    // requireAdmin's no-roster-row branch keeps the coarse auth role and
+    // falls back to the SEED org — so an identity created without its
+    // admin_users row is a super-admin of the wrong tenant, not an inert
+    // orphan. A 500 here must not leave one behind.
+    stageTenantFound();
+    stageSupabaseResponse("admin_users", "select", { data: null });
+    stageSupabaseResponse("admin_users", "insert", {
+      error: { message: "insert exploded", code: "XX000" },
+    });
+
+    const res = await request(makeApp())
+      .post(`/platform/tenants/${TENANT}/admins`)
+      .send({ email: "owner@acmesleep.com" });
+
+    expect(res.status).toBe(500);
+    expect(res.body.error).toBe("admin_write_failed");
+    const updates = supabaseMock.writePayloads("users", "update");
+    expect(
+      updates.some(
+        (payload) =>
+          (payload as { status?: string } | undefined)?.status === "revoked",
+      ),
+      "expected the orphaned identity to be revoked",
+    ).toBe(true);
+  });
+
+  it("refuses to re-invite someone whose identity is already verified", async () => {
+    // admin_users.status is NOT the acceptance signal — reset-password
+    // verifies the AUTH row and never touches the roster. Trusting the
+    // roster status would mint a fresh live reset token for an active
+    // admin and silently rewrite their role.
+    stageTenantFound();
+    stageSupabaseResponse("admin_users", "select", {
+      data: {
+        id: "admin-1",
+        org_id: TENANT,
+        role: "admin",
+        status: "pending",
+        auth_user_id: "auth-1",
+        display_name: null,
+      },
+    });
+    stageSupabaseResponse("users", "select", {
+      data: { email_verified_at: "2026-08-01T00:00:00Z" },
+    });
+
+    const res = await request(makeApp())
+      .post(`/platform/tenants/${TENANT}/admins`)
+      .send({ email: "owner@acmesleep.com" });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("already_active_member");
+    expect(inviteMock).not.toHaveBeenCalled();
+  });
+
+  it("still allows a re-invite when the identity was never verified", async () => {
+    stageTenantFound();
+    stageSupabaseResponse("admin_users", "select", {
+      data: {
+        id: "admin-1",
+        org_id: TENANT,
+        role: "admin",
+        status: "pending",
+        auth_user_id: "auth-1",
+        display_name: "Dana",
+      },
+    });
+    stageSupabaseResponse("users", "select", {
+      data: { email_verified_at: null },
+    });
+    stageSupabaseResponse("admin_users", "update", { data: stageAdminRow() });
+
+    const res = await request(makeApp())
+      .post(`/platform/tenants/${TENANT}/admins`)
+      .send({ email: "owner@acmesleep.com" });
+
+    expect(res.status).toBe(200);
+    expect(inviteMock).toHaveBeenCalledTimes(1);
   });
 });
