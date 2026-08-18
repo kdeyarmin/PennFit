@@ -41,6 +41,8 @@ const db = vi.hoisted(() => ({
   referral: null as Record<string, unknown> | null,
   /** Rows the `referral_documents` read returns. */
   documents: [{ doc_type: "prescription" }] as Record<string, unknown>[],
+  /** Whether the destination DME still accepts this provider's referrals. */
+  stillAuthorized: true,
 }));
 
 vi.mock("@workspace/resupply-db", () => {
@@ -116,6 +118,9 @@ vi.mock("./shared", () => ({
     next(),
 }));
 // The loader is covered by referrals.test.ts; here it just resolves.
+// `providerMayReferTo` is stubbed off `db.stillAuthorized` so the submit
+// gate's re-check can be exercised both ways without standing up a
+// provider_dme_links fixture.
 vi.mock("./referral-shared.js", async () => {
   const actual =
     await vi.importActual<typeof import("./referral-shared")>(
@@ -126,6 +131,7 @@ vi.mock("./referral-shared.js", async () => {
     loadReferralForProvider: vi.fn(async () =>
       db.referral ? { orgId: TARGET_ORG, row: db.referral } : null,
     ),
+    providerMayReferTo: vi.fn(async () => db.stillAuthorized),
     recordReferralEvent: vi.fn(async () => {
       db.queries.push({ table: "referral_events", op: "insert" });
     }),
@@ -145,6 +151,7 @@ beforeEach(() => {
   db.queries = [];
   db.referral = completeReferral();
   db.documents = [{ doc_type: "prescription" }];
+  db.stillAuthorized = true;
 });
 
 function submit() {
@@ -202,6 +209,20 @@ describe("submit — the gate on what reaches the DME", () => {
     expect(res.body.missing).toHaveLength(5);
     // The message reads as a sentence, not a token dump.
     expect(res.body.message).toMatch(/still needs .+ and .+\.$/);
+  });
+
+  // The DME's admin UI promises that revoking a provider "stops any new
+  // referrals from them immediately". That is only true if the check runs
+  // at the moment of delivery — a draft started before the revocation
+  // must not still land in their queue afterwards.
+  it("refuses to deliver once the DME has revoked the provider", async () => {
+    db.stillAuthorized = false;
+    const res = await submit();
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe("destination_not_authorized");
+    expect(
+      db.queries.some((q) => q.table === "referrals" && q.op === "update"),
+    ).toBe(false);
   });
 
   it("refuses a second submission", async () => {

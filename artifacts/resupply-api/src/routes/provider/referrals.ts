@@ -7,6 +7,7 @@
 //   PATCH  /api/provider/referrals/:id            — edit while still a draft
 //   POST   /api/provider/referrals/:id/cancel     — withdraw it
 //   POST   /api/provider/referrals/:id/messages   — message the DME
+//   POST   /api/provider/referrals/:id/documents/upload-url — presigned PUT
 //   POST   /api/provider/referrals/:id/documents  — attach paperwork
 //   DELETE /api/provider/referrals/:id/documents/:docId
 //
@@ -56,6 +57,11 @@ import { z } from "zod";
 import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { ObjectAlreadyOwnedError } from "../../lib/object-storage/objectAcl";
+import {
+  ObjectNotFoundError,
+  ObjectStorageService,
+} from "../../lib/object-storage/objectStorage";
 import {
   requireProvider,
   requireProviderMfaEnrolled,
@@ -67,6 +73,7 @@ import {
   mapReferralDetail,
   mapReferralSummary,
   recordReferralEvent,
+  streamReferralDocument,
   type ReferralRow,
 } from "./referral-shared.js";
 
@@ -144,6 +151,34 @@ const messageBody = z
   .object({ body: z.string().trim().min(1).max(8000) })
   .strict();
 
+/** 25 MB — a scanned multi-page sleep study is the worst case here. */
+const MAX_DOCUMENT_BYTES = 26_214_400;
+
+/**
+ * What a referring practice actually sends: a scan or an export.
+ *
+ * Deliberately narrow. Anything that a browser would render as active
+ * content (HTML, SVG, JS) is a stored-XSS vector the moment the DME opens
+ * it from their own console, so the allowlist is documents and photos
+ * only — the same posture as the prescription-attachment endpoint.
+ */
+const ALLOWED_DOCUMENT_CONTENT_TYPES = new Set([
+  "application/pdf",
+  "image/png",
+  "image/jpeg",
+  "image/heic",
+  "image/heif",
+  "image/webp",
+  "image/tiff",
+]);
+
+const documentUploadUrlBody = z
+  .object({
+    contentType: z.string().trim().min(1).max(120),
+    sizeBytes: z.number().int().min(1).max(MAX_DOCUMENT_BYTES),
+  })
+  .strict();
+
 const documentBody = z
   .object({
     docType: z.enum([
@@ -162,18 +197,29 @@ const documentBody = z
       .number()
       .int()
       .min(1)
-      .max(26_214_400, "Attachments are capped at 25 MB."),
+      .max(MAX_DOCUMENT_BYTES, "Attachments are capped at 25 MB."),
     notes: z.string().trim().max(1000).nullable().optional(),
   })
   .strict();
 
-/** Statuses a provider may still edit or withdraw. */
+/**
+ * Statuses a provider may still EDIT.
+ *
+ * Deliberately stops before signing. A signature attests to the order as
+ * it stood at that moment, so allowing patient identity, insurance, or
+ * therapy fields to change afterwards would let a provider sign one order
+ * and submit a different one under the same signature. Once an order is
+ * raised for signature the referral is frozen; to change it, withdraw the
+ * signature request (re-approving a mask reissues it) or withdraw the
+ * referral.
+ *
+ * Withdrawal is separate and stays available at every live status — see
+ * the cancel route.
+ */
 const PROVIDER_EDITABLE = new Set([
   "draft",
   "awaiting_fitting",
   "fitting_complete",
-  "awaiting_signature",
-  "signed",
 ]);
 
 const gate = [
@@ -383,6 +429,29 @@ router.post("/api/provider/referrals", ...gate, async (req, res) => {
       return;
     }
     const supabase = getOrgScopedClient(targetOrgId);
+
+    // A provider linked to several DMEs sees each one's default location.
+    // Nothing stops them submitting DME B's location id while selecting
+    // DME A, which would produce a referral owned by one tenant and routed
+    // to another tenant's branch. The org-scoped client constrains the
+    // lookup, so a foreign id simply misses.
+    const requestedLocation = body.data.routedToLocationId ?? null;
+    if (requestedLocation) {
+      const { data: location } = (await supabase
+        .from("locations")
+        .select("id")
+        .eq("id", requestedLocation)
+        .limit(1)
+        .maybeSingle()) as { data: Record<string, unknown> | null };
+      if (!location) {
+        res.status(400).json({
+          error: "unknown_location",
+          message: "That location doesn't belong to the supplier you chose.",
+        });
+        return;
+      }
+    }
+
     const p = body.data.patient;
     const ins = body.data.insurance ?? {};
     const clin = body.data.clinical ?? {};
@@ -394,7 +463,7 @@ router.post("/api/provider/referrals", ...gate, async (req, res) => {
         created_by_account_id: account.id,
         created_by_email: account.emailLower,
         routed_to_location_id:
-          body.data.routedToLocationId ??
+          requestedLocation ??
           ((link as Record<string, unknown>).default_location_id as
             | string
             | null) ??
@@ -536,15 +605,20 @@ router.patch("/api/provider/referrals/:id", ...gate, async (req, res) => {
     res.status(404).json({ error: "not_found" });
     return;
   }
-  // Once the DME has it, the provider edits by message rather than by
-  // silently rewriting a record the receiving side is already working.
+  // Two different reasons to refuse, and they deserve different words.
   if (!PROVIDER_EDITABLE.has(found.row.status)) {
+    const signed = Boolean(found.row.signed_at);
+    const atSignature = found.row.status === "awaiting_signature" || signed;
     res.status(409).json({
       error: "not_editable",
-      message:
-        "This referral has already gone to the DME. Send them a message " +
-        "with the change instead — editing it now would leave them working " +
-        "from something different to what you sent.",
+      message: atSignature
+        ? "This order has been raised for signature, so its details are " +
+          "locked — a signature has to mean the order as it stood when you " +
+          "signed it. Re-approve a mask to reissue the order, or withdraw " +
+          "the referral."
+        : "This referral has already gone to the DME. Send them a message " +
+          "with the change instead — editing it now would leave them " +
+          "working from something different to what you sent.",
     });
     return;
   }
@@ -700,6 +774,70 @@ router.post(
 );
 
 // ── Documents ────────────────────────────────────────────────────────
+//
+// Two steps, matching the POD and prescription-attachment flows: the
+// provider asks for a presigned PUT, uploads the bytes straight to
+// storage, then tells us where they landed. The finalize step re-reads
+// the bucket rather than trusting what the client declared — the
+// presigned URL is a bearer capability, and the referral it hangs off is
+// the DME's evidence that a prescription exists.
+
+const objectStorage = new ObjectStorageService();
+
+router.post(
+  "/api/provider/referrals/:id/documents/upload-url",
+  ...gate,
+  async (req, res) => {
+    const account = req.providerAccount;
+    if (!account) {
+      res.status(401).json({ error: "session_required" });
+      return;
+    }
+    const id = uuid.safeParse(req.params.id);
+    const body = documentUploadUrlBody.safeParse(req.body);
+    if (!id.success || !body.success) {
+      res.status(400).json({ error: "invalid_body" });
+      return;
+    }
+    if (!ALLOWED_DOCUMENT_CONTENT_TYPES.has(body.data.contentType)) {
+      res.status(400).json({
+        error: "invalid_body",
+        message:
+          "Attach a PDF or a photo. Other file types can't be accepted.",
+      });
+      return;
+    }
+    // Ownership check BEFORE issuing the capability: a presigned URL is a
+    // bearer token, so it is not handed out for a referral the caller
+    // doesn't own.
+    const found = await loadReferralForProvider(account.providerId, id.data);
+    if (!found) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    if (!PROVIDER_EDITABLE.has(String(found.row.status))) {
+      res.status(409).json({
+        error: "not_editable",
+        message:
+          "This referral is signed or already with the DME, so paperwork " +
+          "can't be changed. Send them a message instead.",
+      });
+      return;
+    }
+
+    try {
+      const uploadURL = await objectStorage.getObjectEntityUploadURL();
+      const objectPath = objectStorage.normalizeObjectEntityPath(uploadURL);
+      res.json({ uploadURL, objectPath });
+    } catch (err) {
+      logger.error(
+        { err, referral_id: id.data },
+        "referral_document_upload_url_failed",
+      );
+      res.status(500).json({ error: "upload_url_failed" });
+    }
+  },
+);
 
 router.post(
   "/api/provider/referrals/:id/documents",
@@ -729,6 +867,76 @@ router.post(
       res.status(404).json({ error: "not_found" });
       return;
     }
+    if (!PROVIDER_EDITABLE.has(String(found.row.status))) {
+      res.status(409).json({
+        error: "not_editable",
+        message:
+          "This referral is signed or already with the DME, so paperwork " +
+          "can't be changed. Send them a message instead.",
+      });
+      return;
+    }
+
+    // Claim the object, then re-read bucket truth. Declared size and type
+    // came from the client and are advisory; the bytes that actually
+    // landed are what the DME will open.
+    let normalizedPath: string;
+    try {
+      normalizedPath = await objectStorage.trySetObjectEntityAclPolicy(
+        body.data.storageObjectPath,
+        { owner: account.providerId, visibility: "private" },
+      );
+    } catch (err) {
+      if (err instanceof ObjectNotFoundError) {
+        res.status(400).json({ error: "object_missing" });
+        return;
+      }
+      if (err instanceof ObjectAlreadyOwnedError) {
+        res.status(403).json({ error: "object_already_claimed" });
+        return;
+      }
+      logger.warn(
+        { err, referral_id: id.data },
+        "referral_document_acl_failed",
+      );
+      res.status(500).json({ error: "attach_failed" });
+      return;
+    }
+
+    let actualSize: number;
+    let actualContentType: string;
+    try {
+      const objectFile =
+        await objectStorage.getObjectEntityFile(normalizedPath);
+      const [meta] = await objectFile.getMetadata();
+      actualSize =
+        typeof meta.size === "string"
+          ? Number.parseInt(meta.size, 10)
+          : Number(meta.size ?? 0);
+      actualContentType =
+        typeof meta.contentType === "string" ? meta.contentType : "";
+      if (
+        !Number.isFinite(actualSize) ||
+        actualSize <= 0 ||
+        actualSize > MAX_DOCUMENT_BYTES
+      ) {
+        await objectFile.delete().catch(() => undefined);
+        res.status(400).json({ error: "object_too_large" });
+        return;
+      }
+      if (!ALLOWED_DOCUMENT_CONTENT_TYPES.has(actualContentType)) {
+        await objectFile.delete().catch(() => undefined);
+        res.status(400).json({ error: "object_invalid_content_type" });
+        return;
+      }
+    } catch (err) {
+      logger.error(
+        { err, referral_id: id.data },
+        "referral_document_metadata_check_failed",
+      );
+      res.status(500).json({ error: "attach_failed" });
+      return;
+    }
 
     const { error } = await getOrgScopedClient(found.orgId)
       .from("referral_documents")
@@ -736,9 +944,9 @@ router.post(
         referral_id: id.data,
         doc_type: body.data.docType,
         file_name: body.data.fileName,
-        storage_object_path: body.data.storageObjectPath,
-        content_type: body.data.contentType,
-        size_bytes: body.data.sizeBytes,
+        storage_object_path: normalizedPath,
+        content_type: actualContentType,
+        size_bytes: actualSize,
         uploaded_by_kind: "provider",
         uploaded_by_email: account.emailLower,
         notes: body.data.notes ?? null,
@@ -777,6 +985,19 @@ router.delete(
       res.status(404).json({ error: "not_found" });
       return;
     }
+    // Same freeze as attaching: once the order is signed, the paperwork
+    // it was signed against is part of the record. Pulling the
+    // prescription out from under a signed order is exactly what the DME
+    // must be able to rely on not happening.
+    if (!PROVIDER_EDITABLE.has(String(found.row.status))) {
+      res.status(409).json({
+        error: "not_editable",
+        message:
+          "This referral is signed or already with the DME, so paperwork " +
+          "can't be removed.",
+      });
+      return;
+    }
     // A provider removes their own attachments; a DME's upload is the
     // DME's record and is not theirs to delete.
     const { error } = await getOrgScopedClient(found.orgId)
@@ -799,13 +1020,56 @@ router.delete(
 );
 
 /**
- * Append to the thread and bump the OTHER side's unread counter.
+ * Stream one attachment back.
  *
- * The counter lives on `referrals` so each side's list can show a badge
- * without aggregating the message table on every page load. Best-effort
- * on the counter: a missed badge is a cosmetic problem, a lost message
- * is not, so the message insert is what decides the return value.
+ * Both sides need this or the document exchange is write-only — a DME
+ * that can see "prescription.pdf" but not open it still has to phone the
+ * practice, which is the thing this portal exists to remove. The
+ * authorization is the same one every route in this file uses: the
+ * referral must belong to the authenticated provider, and the object key
+ * is read off the row rather than accepted from the caller.
  */
+router.get(
+  "/api/provider/referrals/:id/documents/:docId/content",
+  ...gate,
+  async (req, res) => {
+    const account = req.providerAccount;
+    if (!account) {
+      res.status(401).json({ error: "session_required" });
+      return;
+    }
+    const id = uuid.safeParse(req.params.id);
+    const docId = uuid.safeParse(req.params.docId);
+    if (!id.success || !docId.success) {
+      res.status(400).json({ error: "invalid_id" });
+      return;
+    }
+    const found = await loadReferralForProvider(account.providerId, id.data);
+    if (!found) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const { data: doc } = (await getOrgScopedClient(found.orgId)
+      .from("referral_documents")
+      .select("id, file_name, content_type, storage_object_path")
+      .eq("id", docId.data)
+      .eq("referral_id", id.data)
+      .limit(1)
+      .maybeSingle()) as { data: Record<string, unknown> | null };
+    if (!doc || typeof doc.storage_object_path !== "string") {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    await streamReferralDocument(res, {
+      objectPath: doc.storage_object_path,
+      contentType:
+        typeof doc.content_type === "string" ? doc.content_type : null,
+      fileName: typeof doc.file_name === "string" ? doc.file_name : "document",
+      referralId: id.data,
+    });
+  },
+);
+
 export async function postMessage(
   orgId: string,
   referralId: string,

@@ -55,6 +55,7 @@ import {
 import { providerPortalRateLimiter } from "./shared";
 import {
   loadReferralForProvider,
+  providerMayReferTo,
   recordReferralEvent,
 } from "./referral-shared.js";
 
@@ -178,7 +179,15 @@ router.post(
       const baseUrl =
         (await resolveTenantBaseUrl(found.orgId).catch(() => null)) ??
         "https://cmbreathe.com";
-      const link = `${baseUrl.replace(/\/$/, "")}/fitter-invite?t=${encodeURIComponent(token)}`;
+      // Carry the entry point through to the fitter. Without it
+      // /api/fit/assess defaults every persisted session to
+      // `remote_link`, which would systematically mislabel in-office and
+      // kiosk fittings and quietly defeat the by-channel outcome
+      // comparison this feature is explicitly built to enable.
+      const link =
+        `${baseUrl.replace(/\/$/, "")}/fitter-invite` +
+        `?t=${encodeURIComponent(token)}` +
+        `&entry=${encodeURIComponent(entryPoint)}`;
 
       await supabase
         .from("referrals")
@@ -269,15 +278,27 @@ router.get("/api/provider/referrals/:id/fitting", ...gate, async (req, res) => {
   // The fitting may have completed since the referral row was last
   // touched, so resolve the session by invite rather than trusting the
   // cached `fit_session_id`.
+  //
+  // TWO FITTING PATHS, AND BOTH HAVE TO RESOLVE.
+  // `fitter.clinical_assessment` is seeded OFF, so on most tenants today
+  // the patient completes through the LEGACY /api/recommend flow, which
+  // fills the invite's own recommendation columns and creates no
+  // `fit_sessions` row at all. Reading only `fit_session_id` therefore
+  // reported "pending" forever on the default configuration and the
+  // provider could never reach approval.
   let sessionId = found.row.fit_session_id ?? null;
+  let legacyInvite: Record<string, unknown> | null = null;
   if (!sessionId && found.row.fitter_invite_id) {
     const { data: invite } = (await supabase
       .from("fitter_invites")
-      .select("fit_session_id")
+      .select(
+        "fit_session_id, status, completed_at, recommended_mask_id, recommended_mask_name, recommended_mask_type, recommendations",
+      )
       .eq("id", found.row.fitter_invite_id)
       .limit(1)
       .maybeSingle()) as { data: Record<string, unknown> | null };
     sessionId = (invite?.fit_session_id as string | null) ?? null;
+    if (!sessionId && invite?.recommended_mask_id) legacyInvite = invite;
     if (sessionId) {
       await supabase
         .from("referrals")
@@ -296,6 +317,56 @@ router.get("/api/provider/referrals/:id/fitting", ...gate, async (req, res) => {
         detail: {},
       });
     }
+  }
+
+  // The legacy completion, surfaced but LABELLED. The provider gets
+  // something to approve rather than a permanently-pending referral, and
+  // `source: "legacy"` tells both the SPA and the DME that this record is
+  // thinner than a clinical session: no size, no alternatives, no
+  // formulary provenance, no safety screening. Presenting it as
+  // equivalent would be the actually-misleading option.
+  if (!sessionId && legacyInvite) {
+    const ranked = Array.isArray(legacyInvite.recommendations)
+      ? (legacyInvite.recommendations as Array<Record<string, unknown>>)
+      : [];
+    res.json({
+      status: "complete",
+      source: "legacy",
+      session: {
+        id: null,
+        outcome: null,
+        recommendationConfidence: null,
+        scanQualityGrade: null,
+        measurementConfidenceBand: null,
+        primary: {
+          maskId: String(legacyInvite.recommended_mask_id),
+          maskSlug: String(legacyInvite.recommended_mask_id),
+          name: (legacyInvite.recommended_mask_name as string) ?? null,
+          interfaceType: (legacyInvite.recommended_mask_type as string) ?? null,
+          cushion: null,
+          frame: null,
+          reasons: [],
+          cautions: [],
+        },
+        alternatives: ranked.slice(1).map((r) => ({
+          maskId: String(r.maskId ?? ""),
+          maskSlug: String(r.maskId ?? ""),
+          name: (r.name as string) ?? null,
+          interfaceType: (r.type as string) ?? null,
+          confidence: typeof r.confidence === "number" ? r.confidence : null,
+          cushion: null,
+          rankedBelowBecause: null,
+        })),
+        excluded: [],
+        safetyFlags: [],
+        degraded: false,
+        rulesEngineVersion: null,
+        formularyName: null,
+        formularyVersion: null,
+        completedAt: (legacyInvite.completed_at as string) ?? null,
+      },
+    });
+    return;
   }
 
   if (!sessionId) {
@@ -319,6 +390,7 @@ router.get("/api/provider/referrals/:id/fitting", ...gate, async (req, res) => {
 
   res.json({
     status: "complete",
+    source: "clinical",
     session: {
       id: String(session.id),
       outcome: session.outcome,
@@ -358,6 +430,24 @@ router.post(
     const found = await loadReferralForProvider(account.providerId, id.data);
     if (!found) {
       res.status(404).json({ error: "not_found" });
+      return;
+    }
+    // Changing the approved mask after signing would swap the equipment
+    // out from under the signature just as surely as a PATCH would.
+    if (found.row.signed_at) {
+      res.status(409).json({
+        error: "already_signed",
+        message:
+          "This order is already signed. Withdraw the referral and start " +
+          "a new one to order a different mask.",
+      });
+      return;
+    }
+    if (found.row.submitted_at) {
+      res.status(409).json({
+        error: "already_submitted",
+        message: "This referral is already with the DME.",
+      });
       return;
     }
 
@@ -552,6 +642,75 @@ router.post(
         }
       }
 
+      // Resolve what is actually being ordered, in words.
+      //
+      // The signing screen renders `detail` and nothing else — it does not
+      // load the referral. So anything the clinician needs to see before
+      // attesting has to be IN here, and it has to be a snapshot: an order
+      // is signed as it stood at the moment of signing, not as whatever
+      // the referral says later.
+      const { data: model } = (await supabase
+        .raw()
+        .schema("resupply")
+        .from("mask_models")
+        .select("manufacturer, model_name, interface_type")
+        .eq("id", found.row.approved_mask_model_id)
+        .limit(1)
+        .maybeSingle()) as { data: Record<string, unknown> | null };
+      let sizeLabel: string | null = null;
+      if (found.row.approved_variant_id) {
+        const { data: variant } = (await supabase
+          .raw()
+          .schema("resupply")
+          .from("mask_size_variants")
+          .select("size_label, component")
+          .eq("id", found.row.approved_variant_id)
+          .limit(1)
+          .maybeSingle()) as { data: Record<string, unknown> | null };
+        sizeLabel = variant ? String(variant.size_label) : null;
+      }
+
+      const pressure = found.row.prescribed_pressure_cm_h2o;
+      const orderSummary: Array<{ label: string; value: string }> = [
+        { label: "Patient", value: patientName },
+        ...(found.row.patient_dob
+          ? [{ label: "Date of birth", value: String(found.row.patient_dob) }]
+          : []),
+        {
+          label: "Mask",
+          value: model
+            ? `${model.manufacturer} ${model.model_name}`
+            : "Unresolved — do not sign",
+        },
+        { label: "Size", value: sizeLabel ?? "Not specified" },
+        {
+          label: "Therapy",
+          value: String(found.row.therapy_mode ?? "pap").toUpperCase(),
+        },
+        ...(pressure != null
+          ? [{ label: "Prescribed pressure", value: `${pressure} cmH₂O` }]
+          : []),
+        ...(found.row.diagnosis_code
+          ? [{ label: "Diagnosis", value: String(found.row.diagnosis_code) }]
+          : []),
+        {
+          label: "Referred to",
+          value: found.row.organizations?.name ?? "the receiving supplier",
+        },
+      ];
+
+      // A mask that cannot be resolved must not reach an attestation — the
+      // clinician would be signing for equipment nobody can name.
+      if (!model) {
+        res.status(409).json({
+          error: "unresolved_mask",
+          message:
+            "The approved mask could not be found in the catalog, so the " +
+            "order cannot be prepared for signature. Re-approve a mask.",
+        });
+        return;
+      }
+
       // provider_signature_requests is a BLOCKED TENANT table — raw
       // client + MANUAL org_id on the inserted row, matching how
       // routes/admin/provider-esign.ts creates one.
@@ -569,12 +728,13 @@ router.post(
           title: `Referral order — ${patientName}`,
           patient_name_snapshot: patientName,
           detail: {
-            // Ids and codes only. The signing screen renders the human
-            // detail by loading the referral itself.
             referralId: id.data,
             maskModelId: found.row.approved_mask_model_id,
             variantId: found.row.approved_variant_id ?? null,
             therapyMode: found.row.therapy_mode ?? "pap",
+            // The human-readable snapshot the signing screen renders.
+            // `orderSummary` is the contract with provider-sign-document.tsx.
+            orderSummary,
           },
           status: "pending",
           created_by_email: account.emailLower,
@@ -646,6 +806,21 @@ router.post("/api/provider/referrals/:id/submit", ...gate, async (req, res) => {
     res.status(409).json({
       error: "already_submitted",
       message: "This referral is already with the DME.",
+    });
+    return;
+  }
+
+  // Authorization is re-checked HERE, not just at create time. A DME can
+  // revoke a provider after a draft was started, and the admin UI
+  // promises revoking "stops any new referrals from them immediately" —
+  // which is only true if the check runs at the moment of delivery.
+  if (!(await providerMayReferTo(account.providerId, found.orgId))) {
+    res.status(403).json({
+      error: "destination_not_authorized",
+      message:
+        "This supplier is no longer accepting referrals from you, so this " +
+        "one can't be sent. Contact them, or start a referral to a " +
+        "different supplier.",
     });
     return;
   }

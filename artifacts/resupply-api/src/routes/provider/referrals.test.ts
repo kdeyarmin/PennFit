@@ -179,6 +179,47 @@ vi.mock("./shared", () => ({
     next(),
 }));
 
+// Object storage stands in for the bucket. `storage.meta` is what the
+// finalize handler re-reads — the point of that step is that the DB row
+// records the bytes that ACTUALLY landed, not what the client declared,
+// so the tests drive the two apart deliberately.
+vi.mock("../../lib/object-storage/objectStorage", () => {
+  class ObjectNotFoundError extends Error {}
+  return {
+    ObjectNotFoundError,
+    ObjectStorageService: class {
+      async getObjectEntityUploadURL() {
+        return "https://storage.test/signed/upload";
+      }
+      normalizeObjectEntityPath() {
+        return "/objects/uploads/abc";
+      }
+      async trySetObjectEntityAclPolicy() {
+        return "/objects/uploads/abc";
+      }
+      async getObjectEntityFile() {
+        return {
+          getMetadata: async () => [storage.meta],
+          delete: async () => {
+            storage.deleted += 1;
+          },
+        };
+      }
+    },
+  };
+});
+vi.mock("../../lib/object-storage/objectAcl", () => ({
+  ObjectAlreadyOwnedError: class extends Error {},
+}));
+
+const storage = vi.hoisted(() => ({
+  meta: { size: "20000", contentType: "application/pdf" } as {
+    size: string;
+    contentType: string;
+  },
+  deleted: 0,
+}));
+
 import referralsRouter from "./referrals";
 
 function makeApp(): Express {
@@ -357,17 +398,26 @@ describe("messages", () => {
 });
 
 describe("documents", () => {
-  it("records the type and size, never the file name", async () => {
-    // "Smith, John Rx.pdf" is a routine file name and is PHI.
-    await request(makeApp())
+  const attach = (body: Record<string, unknown> = {}) =>
+    request(makeApp())
       .post(`/api/provider/referrals/${REFERRAL_ID}/documents`)
       .send({
         docType: "prescription",
         fileName: "Doe, Jane Rx.pdf",
-        storageObjectPath: "referrals/x/rx.pdf",
+        storageObjectPath: "/objects/uploads/abc",
         contentType: "application/pdf",
         sizeBytes: 20_000,
+        ...body,
       });
+
+  beforeEach(() => {
+    storage.meta = { size: "20000", contentType: "application/pdf" };
+    storage.deleted = 0;
+  });
+
+  it("records the type and size, never the file name", async () => {
+    // "Smith, John Rx.pdf" is a routine file name and is PHI.
+    await attach();
     const event = db.queries.find(
       (x) => x.table === "referral_events" && x.op === "insert",
     );
@@ -378,16 +428,72 @@ describe("documents", () => {
   });
 
   it("caps attachments at 25 MB", async () => {
-    const res = await request(makeApp())
-      .post(`/api/provider/referrals/${REFERRAL_ID}/documents`)
-      .send({
-        docType: "sleep_study",
-        fileName: "study.pdf",
-        storageObjectPath: "referrals/x/study.pdf",
-        contentType: "application/pdf",
-        sizeBytes: 40_000_000,
-      });
+    const res = await attach({ docType: "sleep_study", sizeBytes: 40_000_000 });
     expect(res.status).toBe(400);
+  });
+
+  // The presigned PUT is a bearer capability and the client declares its
+  // own size and type. What the row records has to be what the DME will
+  // actually open, so the finalize step re-reads the bucket.
+  it("persists the bucket's real size and type, not the client's claim", async () => {
+    storage.meta = { size: "31337", contentType: "image/png" };
+    await attach({ sizeBytes: 20_000, contentType: "application/pdf" });
+    const insert = db.queries.find(
+      (x) => x.table === "referral_documents" && x.op === "insert",
+    );
+    expect(insert!.payload).toMatchObject({
+      size_bytes: 31337,
+      content_type: "image/png",
+    });
+  });
+
+  it("deletes the object and refuses when the bytes are a script", async () => {
+    storage.meta = { size: "500", contentType: "text/html" };
+    const res = await attach();
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("object_invalid_content_type");
+    expect(storage.deleted).toBe(1);
+    expect(
+      db.queries.some((x) => x.table === "referral_documents"),
+    ).toBe(false);
+  });
+
+  it("refuses a content type the DME would never be able to open", async () => {
+    const res = await request(makeApp())
+      .post(`/api/provider/referrals/${REFERRAL_ID}/documents/upload-url`)
+      .send({ contentType: "text/html", sizeBytes: 500 });
+    expect(res.status).toBe(400);
+  });
+
+  it("hands out an upload URL only for a referral this provider owns", async () => {
+    db.referral = null;
+    const res = await request(makeApp())
+      .post(`/api/provider/referrals/${REFERRAL_ID}/documents/upload-url`)
+      .send({ contentType: "application/pdf", sizeBytes: 500 });
+    expect(res.status).toBe(404);
+  });
+
+  // Once signed, the paperwork the order was signed against is part of
+  // the record — the DME has to be able to rely on the prescription not
+  // being swapped out from under a signed order.
+  it("freezes attachments once the order is signed", async () => {
+    db.referral = { ...db.referral!, status: "signed" };
+    const res = await attach();
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("not_editable");
+  });
+
+  it("freezes removals once the order is signed", async () => {
+    db.referral = { ...db.referral!, status: "submitted" };
+    const res = await request(makeApp()).delete(
+      `/api/provider/referrals/${REFERRAL_ID}/documents/77777777-7777-4777-8777-777777777777`,
+    );
+    expect(res.status).toBe(409);
+    expect(
+      db.queries.some(
+        (x) => x.table === "referral_documents" && x.op === "delete",
+      ),
+    ).toBe(false);
   });
 
   it("lets a provider remove only their OWN attachment", async () => {
@@ -400,6 +506,18 @@ describe("documents", () => {
     );
     // A DME's upload is the DME's record, not the provider's to delete.
     expect(del!.filters).toContain("uploaded_by_kind=provider");
+  });
+
+  it("scopes an attachment read to the referral, not just the doc id", async () => {
+    const docId = "77777777-7777-4777-8777-777777777777";
+    await request(makeApp()).get(
+      `/api/provider/referrals/${REFERRAL_ID}/documents/${docId}/content`,
+    );
+    const read = db.queries.find(
+      (x) => x.table === "referral_documents" && x.op === "read",
+    );
+    expect(read!.filters).toContain(`referral_id=${REFERRAL_ID}`);
+    expect(read!.filters).toContain(`id=${docId}`);
   });
 });
 

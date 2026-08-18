@@ -72,8 +72,16 @@ vi.mock("@workspace/resupply-db", () => {
       record("read");
       if (table === "referrals") return { data: db.referral, error: null };
       if (table === "providers") {
+        // Real column names from the global registry. The table has
+        // `legal_name`, NOT first_name/last_name — a mock that invents
+        // columns hides a select() that PostgREST would 400 on, which
+        // would have turned every invite into a 404 unknown_provider.
         return {
-          data: { id: "p", first_name: "A", last_name: "B" },
+          data: {
+            id: "33333333-3333-4333-8333-333333333333",
+            legal_name: "Dr Alex Rivera",
+            npi: "1234567893",
+          },
           error: null,
         };
       }
@@ -248,6 +256,99 @@ describe("accept", () => {
       .post(`/admin/provider-referrals/${REFERRAL_ID}/accept`)
       .send({});
     expect(res.status).toBe(404);
+  });
+});
+
+// The link is what stands between the global provider directory and
+// unsolicited PHI landing in this tenant's queue, so creating one has to
+// actually work — and it validates the id against a table whose columns
+// the mock above now mirrors exactly.
+describe("authorizing a referring provider", () => {
+  const PROVIDER_ID = "33333333-3333-4333-8333-333333333333";
+
+  it("upserts an active link keyed on (org_id, provider_id)", async () => {
+    const res = await request(makeApp())
+      .post("/admin/provider-referrals/providers")
+      .send({ providerId: PROVIDER_ID });
+    expect(res.status).toBe(201);
+    const upsert = db.queries.find(
+      (q) => q.table === "provider_dme_links" && q.op === "upsert",
+    );
+    expect(upsert).toBeDefined();
+    expect(upsert!.payload).toMatchObject({
+      provider_id: PROVIDER_ID,
+      status: "active",
+      revoked_at: null,
+      invited_by_email: "csr@example.test",
+    });
+  });
+
+  it("defaults the label to the registry name so the list isn't UUIDs", async () => {
+    await request(makeApp())
+      .post("/admin/provider-referrals/providers")
+      .send({ providerId: PROVIDER_ID });
+    const upsert = db.queries.find(
+      (q) => q.table === "provider_dme_links" && q.op === "upsert",
+    );
+    expect(upsert!.payload).toMatchObject({ display_name: "Dr Alex Rivera" });
+  });
+
+  it("lets the operator's own label win over the registry name", async () => {
+    await request(makeApp())
+      .post("/admin/provider-referrals/providers")
+      .send({ providerId: PROVIDER_ID, displayName: "Riverside Sleep" });
+    const upsert = db.queries.find(
+      (q) => q.table === "provider_dme_links" && q.op === "upsert",
+    );
+    expect(upsert!.payload).toMatchObject({ display_name: "Riverside Sleep" });
+  });
+
+  it("rejects an id that isn't a uuid before touching the directory", async () => {
+    const res = await request(makeApp())
+      .post("/admin/provider-referrals/providers")
+      .send({ providerId: "not-a-uuid" });
+    expect(res.status).toBe(400);
+    expect(db.queries.some((q) => q.table === "providers")).toBe(false);
+  });
+});
+
+describe("attachment download", () => {
+  const DOC_ID = "55555555-5555-4555-8555-555555555555";
+  const fetchDoc = () =>
+    request(makeApp()).get(
+      `/admin/provider-referrals/${REFERRAL_ID}/documents/${DOC_ID}/content`,
+    );
+
+  it("scopes the document lookup to the referral, not just the doc id", async () => {
+    await fetchDoc();
+    const lookup = db.queries.find(
+      (q) => q.table === "referral_documents" && q.op === "read",
+    );
+    expect(lookup).toBeDefined();
+    // Without the referral filter, any doc id in the tenant would be
+    // reachable through any referral — a cross-patient read.
+    expect(lookup!.filters).toContain(`referral_id=${REFERRAL_ID}`);
+    expect(lookup!.filters).toContain(`id=${DOC_ID}`);
+  });
+
+  it("only reaches attachments on a referral that was actually sent", async () => {
+    await fetchDoc();
+    const referralRead = db.queries.find(
+      (q) => q.table === "referrals" && q.op === "read",
+    );
+    // Same draft-invisibility filter the queue and detail reads carry: a
+    // referral still being written is not the DME's to open.
+    expect(referralRead!.filters).toContain("not:submitted_at:is:null");
+    expect(referralRead!.filters).toContain(`id=${REFERRAL_ID}`);
+  });
+
+  it("404s when the referral does not resolve", async () => {
+    db.referral = null;
+    const res = await fetchDoc();
+    expect(res.status).toBe(404);
+    expect(db.queries.some((q) => q.table === "referral_documents")).toBe(
+      false,
+    );
   });
 });
 

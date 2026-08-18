@@ -348,6 +348,120 @@ export function sendReferralMessage(
   });
 }
 
+// ── Paperwork ────────────────────────────────────────────────────────
+
+export type ReferralDocType =
+  | "prescription"
+  | "sleep_study"
+  | "demographics"
+  | "insurance"
+  | "chart_note"
+  | "face_sheet"
+  | "other";
+
+/** What the DME can't send a referral without. */
+export const REQUIRED_DOC_TYPE: ReferralDocType = "prescription";
+
+export const DOC_TYPE_LABEL: Record<ReferralDocType, string> = {
+  prescription: "Prescription",
+  sleep_study: "Sleep study",
+  demographics: "Demographics",
+  insurance: "Insurance card",
+  chart_note: "Chart note",
+  face_sheet: "Face sheet",
+  other: "Other",
+};
+
+/** Mirrors ALLOWED_DOCUMENT_CONTENT_TYPES on the server. */
+export const ACCEPTED_DOC_MIME = [
+  "application/pdf",
+  "image/png",
+  "image/jpeg",
+  "image/heic",
+  "image/heif",
+  "image/webp",
+  "image/tiff",
+];
+
+export const MAX_DOC_BYTES = 26_214_400;
+
+/**
+ * Upload one attachment: presigned PUT, then tell the API where it went.
+ *
+ * The bytes go straight from the browser to storage and never transit the
+ * API process — the same three-step shape the admin console's POD and
+ * prescription uploads use. The server re-reads the object's real size
+ * and type on the finalize call, so nothing here is load-bearing for
+ * safety; it just fails fast and locally when a file is obviously wrong.
+ */
+export async function uploadReferralDocument(
+  id: string,
+  file: File,
+  docType: ReferralDocType,
+): Promise<{ ok: true }> {
+  if (file.size > MAX_DOC_BYTES) {
+    throw new ProviderApiError(
+      400,
+      "too_large",
+      "That file is over 25 MB. Try a smaller scan.",
+    );
+  }
+  if (!ACCEPTED_DOC_MIME.includes(file.type)) {
+    throw new ProviderApiError(
+      400,
+      "invalid_type",
+      "Attach a PDF or a photo. Other file types can't be accepted.",
+    );
+  }
+
+  const { uploadURL, objectPath } = await providerJson<{
+    uploadURL: string;
+    objectPath: string;
+  }>(`/referrals/${encodeURIComponent(id)}/documents/upload-url`, {
+    method: "POST",
+    body: JSON.stringify({ contentType: file.type, sizeBytes: file.size }),
+  });
+
+  const put = await fetch(uploadURL, {
+    method: "PUT",
+    headers: { "Content-Type": file.type },
+    body: file,
+  });
+  if (!put.ok) {
+    throw new ProviderApiError(
+      put.status,
+      "upload_failed",
+      "The file didn't finish uploading. Please try again.",
+    );
+  }
+
+  return providerJson(`/referrals/${encodeURIComponent(id)}/documents`, {
+    method: "POST",
+    body: JSON.stringify({
+      docType,
+      fileName: file.name,
+      storageObjectPath: objectPath,
+      contentType: file.type,
+      sizeBytes: file.size,
+    }),
+  });
+}
+
+export function removeReferralDocument(
+  id: string,
+  docId: string,
+): Promise<{ ok: true }> {
+  return providerJson(
+    `/referrals/${encodeURIComponent(id)}/documents/${encodeURIComponent(docId)}`,
+    { method: "DELETE" },
+  );
+}
+
+/** Where the browser fetches an attachment's bytes from. */
+export function referralDocumentUrl(id: string, docId: string): string {
+  return `/api/provider/referrals/${encodeURIComponent(id)}/documents/${encodeURIComponent(docId)}/content`;
+}
+
 // ── Display helpers ──────────────────────────────────────────────────
 
 /**

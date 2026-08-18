@@ -15,9 +15,15 @@
 //
 // PHI: everything below handles patient demographics. Nothing here logs.
 
+import { Readable } from "node:stream";
+
 import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import {
+  ObjectNotFoundError,
+  ObjectStorageService,
+} from "../../lib/object-storage/objectStorage";
 
 /** Matches a canonical UUID; deliberately not version-specific. */
 const UUID_RE =
@@ -229,6 +235,11 @@ export function mapReferralDetail(
       isOverride: Boolean(row.approval_is_override),
       note: row.approval_note ?? null,
       approvedAt: row.approved_at ?? null,
+      // Filled in by whichever side resolves the catalog — ids alone are
+      // not something a warehouse can pick from.
+      maskName: null as string | null,
+      interfaceType: null as string | null,
+      sizeLabel: null as string | null,
     },
     signature: {
       requestId: row.signature_request_id ?? null,
@@ -264,6 +275,43 @@ export function mapReferralDetail(
       createdAt: d.created_at,
     })),
   };
+}
+
+/**
+ * Is this provider still authorized to send referrals to this tenant?
+ *
+ * Authorization is not a create-time question. A DME can revoke or
+ * suspend a provider at any point, and the admin UI tells them that
+ * "revoking stops any new referrals from them immediately" — which is
+ * only true if the check runs again at the moment something is actually
+ * delivered, rather than only when the draft was started.
+ *
+ * raw-org-scope-exempt: the link table spans tenants by design, and this
+ * is constrained to the authenticated provider plus one explicit org.
+ */
+export async function providerMayReferTo(
+  providerId: string,
+  orgId: string,
+): Promise<boolean> {
+  try {
+    const seedOrgId = await resolveSeedOrgId();
+    if (!seedOrgId) return false;
+    const { data, error } = await getOrgScopedClient(seedOrgId)
+      .raw()
+      .schema("resupply")
+      .from("provider_dme_links")
+      .select("id")
+      .eq("provider_id", providerId)
+      .eq("org_id", orgId)
+      .eq("status", "active")
+      .limit(1)
+      .maybeSingle();
+    if (error) return false;
+    return Boolean(data);
+  } catch {
+    // Fail CLOSED: an unverifiable authorization is not an authorization.
+    return false;
+  }
 }
 
 /**
@@ -303,5 +351,88 @@ export async function recordReferralEvent(
       },
       "referral event write failed",
     );
+  }
+}
+
+// ── Attachment streaming ─────────────────────────────────────────────
+
+const objectStorage = new ObjectStorageService();
+
+/**
+ * Stream one referral attachment back to whichever side asked for it.
+ *
+ * Both sides need this or the document exchange is write-only: a DME that
+ * can see "prescription.pdf" listed but not open it still has to phone
+ * the practice, which is the thing this portal exists to remove.
+ *
+ * AUTHORIZATION IS THE CALLER'S JOB. `downloadObject` does not enforce
+ * per-object ACLs (see its docstring), so every caller must already have
+ * proven the requester may see this referral — the provider side by
+ * matching the row's `provider_id` to the session, the DME side by
+ * reading through its own org-scoped client. The object key is read off
+ * the document row, never accepted from the request.
+ */
+export async function streamReferralDocument(
+  res: {
+    status: (code: number) => unknown;
+    setHeader: (name: string, value: string) => unknown;
+    json: (body: unknown) => unknown;
+    end: () => unknown;
+  },
+  input: {
+    objectPath: string;
+    contentType: string | null;
+    fileName: string;
+    referralId: string;
+  },
+): Promise<void> {
+  let file;
+  try {
+    file = await objectStorage.getObjectEntityFile(input.objectPath);
+  } catch (err) {
+    if (err instanceof ObjectNotFoundError) {
+      res.status(404);
+      res.json({ error: "not_found" });
+      return;
+    }
+    logger.error(
+      { err, referral_id: input.referralId },
+      "referral_document_lookup_failed",
+    );
+    res.status(500);
+    res.json({ error: "download_failed" });
+    return;
+  }
+
+  try {
+    const response = await objectStorage.downloadObject(file, 0);
+    res.status(response.status);
+    response.headers.forEach((value, key) => res.setHeader(key, value));
+    if (input.contentType) res.setHeader("Content-Type", input.contentType);
+    // `attachment`, not `inline`: these bytes came from outside the
+    // deployment, so they are never rendered in the app's own origin.
+    // Quotes, backslashes, and newlines are stripped so a crafted file
+    // name cannot break out of the header value.
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${input.fileName.replace(/[\\"\r\n]/g, "")}"`,
+    );
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    if (response.body) {
+      const nodeStream = Readable.fromWeb(
+        response.body as unknown as ReadableStream<Uint8Array>,
+      );
+      nodeStream.pipe(res as unknown as NodeJS.WritableStream);
+    } else {
+      res.end();
+    }
+  } catch (err) {
+    logger.error(
+      { err, referral_id: input.referralId },
+      "referral_document_stream_failed",
+    );
+    res.status(500);
+    res.json({ error: "download_failed" });
   }
 }

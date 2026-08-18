@@ -43,6 +43,13 @@ interface FitterState {
    * the patient's chart. Null for the normal public storefront flow.
    */
   inviteToken: string | null;
+  /**
+   * How the patient was put in front of the fitter — set from the `entry`
+   * query param on a referral fitting link. Without it every persisted
+   * session would record `remote_link`, silently mislabelling in-office
+   * and kiosk fittings and defeating any by-channel outcome comparison.
+   */
+  entryPoint: "remote_link" | "in_office" | "kiosk_qr" | null;
 }
 
 interface FitterContextType extends FitterState {
@@ -152,6 +159,15 @@ export function FitterProvider({ children }: { children: ReactNode }) {
   // Staff-invite token. Persisted in sessionStorage so it survives the
   // multi-page fitter flow (and a mid-flow refresh) and is still
   // available on /results to transmit the completed fitting.
+  const [entryPoint] = useState<
+    "remote_link" | "in_office" | "kiosk_qr" | null
+  >(() => {
+    if (typeof window === "undefined") return null;
+    const raw = new URLSearchParams(window.location.search).get("entry");
+    return raw === "in_office" || raw === "kiosk_qr" || raw === "remote_link"
+      ? raw
+      : null;
+  });
   const [inviteToken, setInviteTokenState] = useState<string | null>(() => {
     try {
       return sessionStorage.getItem("fitter_invite_token");
@@ -271,6 +287,7 @@ export function FitterProvider({ children }: { children: ReactNode }) {
         email,
         emailConsent,
         inviteToken,
+        entryPoint,
         storagePersisted,
         setMeasurements,
         updateAnswers,

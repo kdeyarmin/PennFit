@@ -60,6 +60,10 @@ export interface InboundReferralDetail extends InboundReferral {
     isOverride: boolean;
     note: string | null;
     approvedAt: string | null;
+    /** Resolved server-side — ids alone are not pickable. */
+    maskName: string | null;
+    interfaceType: string | null;
+    sizeLabel: string | null;
   };
   signature: { requestId: string | null; signedAt: string | null };
   createdByEmail: string | null;
@@ -168,8 +172,41 @@ export function replyToReferral(
   );
 }
 
+/**
+ * Authorize a referring provider to send referrals to this organization.
+ *
+ * Without this there is no way to create the FIRST link, and since
+ * referral creation requires an active one, every provider's destination
+ * picker would be permanently empty on a fresh tenant.
+ */
+export function createProviderLink(input: {
+  providerId: string;
+  displayName?: string | null;
+  defaultLocationId?: string | null;
+  notes?: string | null;
+}): Promise<{ ok: true }> {
+  return adminJsonFetch("/admin/provider-referrals/providers", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
 export function fetchProviderLinks(): Promise<{ links: ProviderLink[] }> {
   return adminJsonFetch("/admin/provider-referrals/providers");
+}
+
+/**
+ * Where the browser fetches a referral attachment's bytes from.
+ *
+ * A plain URL rather than a fetch wrapper: the response is a file
+ * download, so it goes on an `<a href>` and rides the same session
+ * cookie the rest of the console uses.
+ */
+export function inboundDocumentUrl(
+  referralId: string,
+  documentId: string,
+): string {
+  return `/resupply-api/admin/provider-referrals/${encodeURIComponent(referralId)}/documents/${encodeURIComponent(documentId)}/content`;
 }
 
 export function updateProviderLink(

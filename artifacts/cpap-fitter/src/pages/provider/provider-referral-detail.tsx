@@ -12,34 +12,44 @@
 // kiosk need no contact details at all, which is what makes them the
 // answer for a patient sitting in front of you with no email on file.
 
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { Link } from "wouter";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
   Check,
   Copy,
+  Download,
   FileSignature,
   MessageSquare,
   Monitor,
+  Paperclip,
   QrCode as QrCodeIcon,
   Send,
   Smartphone,
+  Trash2,
 } from "lucide-react";
 
 import { QrCode } from "@/components/QrCode";
 import {
+  ACCEPTED_DOC_MIME,
   approveMask,
   cancelReferral,
+  DOC_TYPE_LABEL,
   getFitting,
   getReferral,
   REFERRAL_STATUS_LABEL,
+  referralDocumentUrl,
+  removeReferralDocument,
   requestSignature,
   sendFitting,
   sendReferralMessage,
   submitReferral,
+  updateReferral,
+  uploadReferralDocument,
   type EntryPoint,
   type ReferralDetail,
+  type ReferralDocType,
   type ReferralFitting,
 } from "@/lib/provider/referral-api";
 import {
@@ -53,6 +63,8 @@ import {
 
 const inputClass =
   "w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100";
+
+const labelClass = "block text-sm font-medium text-slate-700";
 
 export function ProviderReferralDetail({
   id,
@@ -128,8 +140,9 @@ export function ProviderReferralDetail({
         </>
       ) : null}
 
+      {!closed ? <ChartDetails referral={r} onChange={invalidate} /> : null}
+      <Documents referral={r} onChange={invalidate} />
       <Thread referral={r} onChange={invalidate} />
-      <Documents referral={r} />
       <Timeline referral={r} />
 
       {!closed ? (
@@ -768,15 +781,66 @@ function Thread({
   );
 }
 
-function Documents({ referral }: { referral: ReferralDetail }) {
+/**
+ * Paperwork: attach, download, remove.
+ *
+ * A prescription is what the DME cannot dispense without, so it is
+ * called out by name rather than left to be discovered at submit time —
+ * "you can't send this yet" is a far worse place to learn it than here.
+ * Attachments freeze once the order is signed (the server enforces it);
+ * the UI stops offering the controls at the same point so the freeze
+ * never shows up as an error.
+ */
+function Documents({
+  referral,
+  onChange,
+}: {
+  referral: ReferralDetail;
+  onChange: () => void;
+}) {
+  const fileRef = useRef<HTMLInputElement | null>(null);
+  const [docType, setDocType] = useState<ReferralDocType>("prescription");
+  const [error, setError] = useState<string | null>(null);
+
+  const editable =
+    referral.status === "draft" ||
+    referral.status === "awaiting_fitting" ||
+    referral.status === "fitting_complete";
+
+  const upload = useMutation({
+    mutationFn: (file: File) =>
+      uploadReferralDocument(referral.id, file, docType),
+    onSuccess: () => {
+      setError(null);
+      if (fileRef.current) fileRef.current.value = "";
+      onChange();
+    },
+    onError: (err: Error) => setError(err.message),
+  });
+
+  const remove = useMutation({
+    mutationFn: (docId: string) => removeReferralDocument(referral.id, docId),
+    onSuccess: onChange,
+    onError: (err: Error) => setError(err.message),
+  });
+
+  const hasRx = referral.documents.some((d) => d.docType === "prescription");
+
   return (
     <Card className="mb-4 p-5">
-      <h2 className="font-semibold text-slate-900">Paperwork</h2>
-      {referral.documents.length === 0 ? (
-        <p className="mt-2 text-sm text-slate-500">
-          Nothing attached yet. A prescription is required before this can go to
-          the DME.
+      <h2 className="flex items-center gap-2 font-semibold text-slate-900">
+        <Paperclip className="h-4 w-4" aria-hidden="true" />
+        Paperwork
+      </h2>
+
+      {!hasRx ? (
+        <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          A prescription has to be attached before this can go to the DME.
         </p>
+      ) : null}
+
+      {referral.documents.length === 0 ? (
+        <p className="mt-2 text-sm text-slate-500">Nothing attached yet.</p>
       ) : (
         <ul className="mt-3 space-y-2">
           {referral.documents.map((d) => (
@@ -789,15 +853,219 @@ function Documents({ referral }: { referral: ReferralDetail }) {
                   {d.fileName}
                 </span>
                 <span className="text-xs text-slate-500">
-                  {d.docType.replace(/_/g, " ")} ·{" "}
-                  {Math.round(d.sizeBytes / 1024)} KB ·{" "}
+                  {DOC_TYPE_LABEL[d.docType as ReferralDocType] ??
+                    d.docType.replace(/_/g, " ")}{" "}
+                  · {Math.round(d.sizeBytes / 1024)} KB ·{" "}
                   {d.uploadedByKind === "provider" ? "you" : "the DME"}
                 </span>
+              </span>
+              <span className="flex shrink-0 items-center gap-1">
+                <a
+                  href={referralDocumentUrl(referral.id, d.id)}
+                  className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-50"
+                >
+                  <Download className="h-3.5 w-3.5" aria-hidden="true" />
+                  Download
+                </a>
+                {editable && d.uploadedByKind === "provider" ? (
+                  <button
+                    type="button"
+                    onClick={() => remove.mutate(d.id)}
+                    disabled={remove.isPending}
+                    className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-slate-500 hover:bg-slate-100 hover:text-rose-700 disabled:opacity-50"
+                    aria-label={`Remove ${d.fileName}`}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                    Remove
+                  </button>
+                ) : null}
               </span>
             </li>
           ))}
         </ul>
       )}
+
+      {error ? (
+        <div className="mt-3">
+          <ErrorNote>{error}</ErrorNote>
+        </div>
+      ) : null}
+
+      {editable ? (
+        <div className="mt-4 flex flex-wrap items-end gap-2 border-t border-slate-200 pt-4">
+          <div>
+            <label className={labelClass} htmlFor="referral-doc-type">
+              Attach
+            </label>
+            <select
+              id="referral-doc-type"
+              className={inputClass}
+              value={docType}
+              onChange={(e) => setDocType(e.target.value as ReferralDocType)}
+            >
+              {(
+                Object.keys(DOC_TYPE_LABEL) as Array<
+                  keyof typeof DOC_TYPE_LABEL
+                >
+              ).map((k) => (
+                <option key={k} value={k}>
+                  {DOC_TYPE_LABEL[k]}
+                </option>
+              ))}
+            </select>
+          </div>
+          <input
+            ref={fileRef}
+            type="file"
+            accept={ACCEPTED_DOC_MIME.join(",")}
+            aria-label="Choose a file to attach"
+            className="text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:text-sm file:font-medium"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) upload.mutate(file);
+            }}
+            disabled={upload.isPending}
+          />
+          {upload.isPending ? <Spinner label="Uploading…" /> : null}
+        </div>
+      ) : (
+        <p className="mt-3 text-xs text-slate-500">
+          The order is signed, so its paperwork is locked. Send a message if
+          something needs to change.
+        </p>
+      )}
+    </Card>
+  );
+}
+
+/**
+ * The two fields the DME cannot process a referral without, collected
+ * here rather than on the create form.
+ *
+ * The create form is deliberately a 30-second job so a physician can
+ * start a fitting mid-visit. That leaves date of birth and the payer to
+ * be filled in before sending, and this is where. The submit gate names
+ * exactly these, so surfacing them next to the send button is what turns
+ * a 409 into something the provider can just fix.
+ */
+function ChartDetails({
+  referral,
+  onChange,
+}: {
+  referral: ReferralDetail;
+  onChange: () => void;
+}) {
+  const [dob, setDob] = useState(referral.patient.dob ?? "");
+  const [payerName, setPayerName] = useState(referral.insurance.payerName ?? "");
+  const [memberId, setMemberId] = useState(referral.insurance.memberId ?? "");
+  const [saved, setSaved] = useState(false);
+
+  const editable =
+    referral.status === "draft" ||
+    referral.status === "awaiting_fitting" ||
+    referral.status === "fitting_complete";
+
+  const save = useMutation({
+    mutationFn: () =>
+      updateReferral(referral.id, {
+        patient: { dob: dob || null },
+        insurance: {
+          payerName: payerName.trim() || null,
+          memberId: memberId.trim() || null,
+        },
+      } as Parameters<typeof updateReferral>[1]),
+    onSuccess: () => {
+      setSaved(true);
+      onChange();
+    },
+  });
+
+  const missing: string[] = [];
+  if (!referral.patient.dob) missing.push("date of birth");
+  if (!referral.insurance.payerName) missing.push("insurance payer");
+
+  // Nothing missing and nothing editable — don't take up the space.
+  if (!editable && missing.length === 0) return null;
+
+  return (
+    <Card className="mb-4 p-5">
+      <h2 className="font-semibold text-slate-900">Patient and insurance</h2>
+      {missing.length > 0 ? (
+        <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          The DME needs the {missing.join(" and the ")} before this can be
+          sent.
+        </p>
+      ) : (
+        <p className="mt-1 text-sm text-slate-500">
+          Everything the DME needs is here.
+        </p>
+      )}
+
+      {editable ? (
+        <form
+          className="mt-4 space-y-4"
+          onSubmit={(e: FormEvent) => {
+            e.preventDefault();
+            setSaved(false);
+            save.mutate();
+          }}
+        >
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div>
+              <label className={labelClass} htmlFor="referral-detail-dob">
+                Date of birth
+              </label>
+              <input
+                id="referral-detail-dob"
+                type="date"
+                className={inputClass}
+                value={dob}
+                onChange={(e) => setDob(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className={labelClass} htmlFor="referral-detail-payer">
+                Insurance payer
+              </label>
+              <input
+                id="referral-detail-payer"
+                className={inputClass}
+                value={payerName}
+                onChange={(e) => setPayerName(e.target.value)}
+                placeholder="e.g. Aetna"
+              />
+            </div>
+            <div>
+              <label className={labelClass} htmlFor="referral-detail-member">
+                Member ID (optional)
+              </label>
+              <input
+                id="referral-detail-member"
+                className={inputClass}
+                value={memberId}
+                onChange={(e) => setMemberId(e.target.value)}
+              />
+            </div>
+          </div>
+          {save.isError ? (
+            <ErrorNote>
+              {save.error instanceof Error
+                ? save.error.message
+                : "Couldn't save that."}
+            </ErrorNote>
+          ) : null}
+          <div className="flex items-center gap-3">
+            <Button type="submit" disabled={save.isPending}>
+              {save.isPending ? "Saving…" : "Save"}
+            </Button>
+            {saved && !save.isPending ? (
+              <span className="inline-flex items-center gap-1 text-sm text-emerald-700">
+                <Check className="h-4 w-4" aria-hidden="true" /> Saved
+              </span>
+            ) : null}
+          </div>
+        </form>
+      ) : null}
     </Card>
   );
 }

@@ -12,7 +12,7 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Inbox, MessageSquare, UserCheck } from "lucide-react";
+import { Download, Inbox, MessageSquare, UserCheck } from "lucide-react";
 
 import { Card } from "@/components/admin/Card";
 import { Button } from "@/components/admin/Button";
@@ -22,17 +22,25 @@ import { Spinner } from "@/components/admin/Spinner";
 import { formatDateTime } from "@/lib/admin/format";
 import {
   acceptReferral,
+  createProviderLink,
   declineReferral,
   fetchInboundReferral,
   fetchInboundReferrals,
   fetchProviderLinks,
+  inboundDocumentUrl,
   INBOUND_STATUS_LABEL,
   replyToReferral,
   setReferralStatus,
   updateProviderLink,
   type InboundReferral,
+  type InboundReferralDetail,
   type ReferralStatus,
 } from "@/lib/admin/referrals-api";
+import {
+  listProviders,
+  type ProviderListItem,
+} from "@/lib/admin/providers-api";
+import { searchPatients } from "@/lib/admin/outreach-playbooks-api";
 
 const QUERY_KEY = ["admin", "referrals"] as const;
 
@@ -44,6 +52,11 @@ const FILTERS: Array<{ key: string; label: string; status?: ReferralStatus }> =
     { key: "in_progress", label: "In progress", status: "in_progress" },
     { key: "dispensed", label: "Dispensed", status: "dispensed" },
     { key: "declined", label: "Declined", status: "declined" },
+    // A provider can withdraw a referral the DME is already working. That
+    // drops it out of the open queue, so without this filter staff would
+    // simply never learn it was withdrawn and could keep going toward
+    // dispense.
+    { key: "cancelled", label: "Withdrawn", status: "cancelled" },
   ];
 
 export function AdminReferralsPage() {
@@ -200,9 +213,14 @@ function ReferralPanel({ id, onChange }: { id: string; onChange: () => void }) {
   const [declining, setDeclining] = useState(false);
   const [reason, setReason] = useState("");
   const [reply, setReply] = useState("");
+  const [chartId, setChartId] = useState<string | null>(null);
 
   const accept = useMutation({
-    mutationFn: () => acceptReferral(id),
+    // Accepting onto a chart is the whole point of matching: everything
+    // downstream — orders, resupply, messaging — hangs off `patient_id`,
+    // and a referral accepted unmatched has to be reconciled by hand
+    // later. Optional, though: a genuinely new patient has no chart yet.
+    mutationFn: () => acceptReferral(id, { patientId: chartId }),
     onSuccess: refresh,
   });
   const decline = useMutation({
@@ -260,7 +278,14 @@ function ReferralPanel({ id, onChange }: { id: string; onChange: () => void }) {
       {d.approval.approvedAt ? (
         <div className="rounded border p-3 text-sm">
           <p className="font-medium">
-            Provider approved a mask
+            {d.approval.maskName ?? "Approved mask (not resolvable)"}
+            {d.approval.sizeLabel ? ` · size ${d.approval.sizeLabel}` : ""}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {d.approval.interfaceType
+              ? `${d.approval.interfaceType.replace(/_/g, " ")} · `
+              : ""}
+            approved by the referring provider
             {d.approval.isOverride
               ? " — different to what the fitting recommended"
               : ""}
@@ -281,11 +306,17 @@ function ReferralPanel({ id, onChange }: { id: string; onChange: () => void }) {
       {d.documents.length > 0 ? (
         <div className="text-sm">
           <p className="font-medium mb-1">Paperwork</p>
-          <ul className="space-y-1 text-muted-foreground">
+          <ul className="space-y-1">
             {d.documents.map((doc) => (
-              <li key={doc.id}>
-                {doc.fileName}{" "}
-                <span className="text-xs">
+              <li key={doc.id} className="flex items-center gap-2">
+                <a
+                  href={inboundDocumentUrl(d.id, doc.id)}
+                  className="inline-flex items-center gap-1.5 underline underline-offset-2"
+                >
+                  <Download size={14} aria-hidden="true" />
+                  {doc.fileName}
+                </a>
+                <span className="text-xs text-muted-foreground">
                   ({doc.docType.replace(/_/g, " ")})
                 </span>
               </li>
@@ -294,11 +325,23 @@ function ReferralPanel({ id, onChange }: { id: string; onChange: () => void }) {
         </div>
       ) : null}
 
+      {d.status === "submitted" ? (
+        <ChartMatch
+          referral={d}
+          selectedPatientId={chartId}
+          onSelect={setChartId}
+        />
+      ) : d.patient.chartId ? (
+        <p className="text-sm text-muted-foreground">
+          Working on an existing chart.
+        </p>
+      ) : null}
+
       <div className="flex flex-wrap gap-2">
         {d.status === "submitted" ? (
           <>
             <Button onClick={() => accept.mutate()} disabled={accept.isPending}>
-              Accept
+              {chartId ? "Accept onto this chart" : "Accept"}
             </Button>
             <Button intent="secondary" onClick={() => setDeclining((v) => !v)}>
               Decline
@@ -434,6 +477,12 @@ function ProviderLinks() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: key }),
   });
 
+  const linkedIds = new Set(
+    (links.data?.links ?? [])
+      .filter((l) => l.status === "active")
+      .map((l) => l.providerId),
+  );
+
   return (
     <Card>
       <div className="p-4">
@@ -443,6 +492,14 @@ function ProviderLinks() {
           one stops any new referrals from them immediately; ones already in
           your queue are unaffected.
         </p>
+
+        <AuthorizeProviderForm
+          linkedProviderIds={linkedIds}
+          onAuthorized={() => {
+            void queryClient.invalidateQueries({ queryKey: key });
+          }}
+        />
+
         {links.isLoading ? <Spinner /> : null}
         {links.isError ? (
           <ErrorPanel title="Couldn't load providers" error={links.error} />
@@ -488,6 +545,239 @@ function ProviderLinks() {
         </ul>
       </div>
     </Card>
+  );
+}
+
+/**
+ * Match an inbound referral to an existing chart before accepting it.
+ *
+ * The referral arrives with demographics typed by the referring practice
+ * and no `patient_id` — the sender has no visibility of this tenant's
+ * charts. Matching at accept time is what keeps a returning patient from
+ * ending up with a second record: everything downstream (orders,
+ * resupply, messaging) hangs off `patient_id`, so an unmatched accept is
+ * reconciliation work later.
+ *
+ * Optional on purpose. A genuinely new patient has no chart to match, and
+ * blocking accept on one would just teach staff to create a chart before
+ * they have consent to.
+ */
+function ChartMatch({
+  referral,
+  selectedPatientId,
+  onSelect,
+}: {
+  referral: InboundReferralDetail;
+  selectedPatientId: string | null;
+  onSelect: (id: string | null) => void;
+}) {
+  const [term, setTerm] = useState(referral.patient.lastName ?? "");
+  const [submitted, setSubmitted] = useState("");
+
+  const results = useQuery({
+    queryKey: [...QUERY_KEY, "chart-search", submitted],
+    queryFn: () => searchPatients(submitted),
+    enabled: submitted.trim().length > 1,
+  });
+
+  const hits = results.data ?? [];
+  const chosen = hits.find((p) => p.id === selectedPatientId) ?? null;
+
+  return (
+    <div className="rounded border p-3 text-sm space-y-2">
+      <p className="font-medium">Match to a chart (optional)</p>
+      <p className="text-xs text-muted-foreground">
+        {referral.patient.firstName} {referral.patient.lastName}
+        {referral.patient.dob ? `, DOB ${referral.patient.dob}` : ""} — search
+        your charts to link them, or accept without matching and link later.
+      </p>
+
+      {selectedPatientId ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="success">
+            {chosen
+              ? `${chosen.firstName} ${chosen.lastName}`
+              : "Chart selected"}
+          </Badge>
+          <Button intent="ghost" onClick={() => onSelect(null)}>
+            Clear
+          </Button>
+        </div>
+      ) : (
+        <form
+          className="flex flex-wrap gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            setSubmitted(term.trim());
+          }}
+        >
+          <input
+            value={term}
+            onChange={(e) => setTerm(e.target.value)}
+            placeholder="Name, phone, or PacWare ID"
+            aria-label="Search charts"
+            className="flex-1 min-w-[12rem] rounded border px-3 py-1.5 text-sm"
+          />
+          <Button intent="secondary" type="submit">
+            Search
+          </Button>
+        </form>
+      )}
+
+      {results.isError ? (
+        <ErrorPanel title="Chart search failed" error={results.error} />
+      ) : null}
+      {!selectedPatientId && submitted && !results.isLoading ? (
+        hits.length === 0 ? (
+          <p className="text-xs text-muted-foreground">
+            No chart matches. Accept without matching and a chart can be linked
+            once one exists.
+          </p>
+        ) : (
+          <ul className="space-y-1">
+            {hits.map((p) => (
+              <li key={p.id}>
+                <button
+                  type="button"
+                  onClick={() => onSelect(p.id)}
+                  className="w-full rounded border px-3 py-1.5 text-left hover:bg-muted"
+                >
+                  {p.firstName} {p.lastName}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Authorize a provider from the practice registry to refer here.
+ *
+ * This is the ONLY way a link gets created, and a link is what stands
+ * between the global provider directory and unsolicited PHI in this
+ * queue — so it is a deliberate search-then-authorize, not a free-text
+ * field. Search runs against `/admin/providers`, the same registry the
+ * Providers page manages; a clinician who isn't in it yet has to be added
+ * there first (with an NPI), which is the point: you can't grant referral
+ * rights to someone you haven't identified.
+ */
+function AuthorizeProviderForm({
+  linkedProviderIds,
+  onAuthorized,
+}: {
+  linkedProviderIds: Set<string>;
+  onAuthorized: () => void;
+}) {
+  const [term, setTerm] = useState("");
+  const [submitted, setSubmitted] = useState("");
+  const [justAdded, setJustAdded] = useState<string | null>(null);
+
+  const results = useQuery({
+    queryKey: [...QUERY_KEY, "provider-directory", submitted],
+    queryFn: () => listProviders(submitted, { limit: 8 }),
+    enabled: submitted.trim().length > 0,
+  });
+
+  const authorize = useMutation({
+    mutationFn: (p: ProviderListItem) =>
+      createProviderLink({ providerId: p.id, displayName: p.legalName }),
+    onSuccess: (_data, p) => {
+      setJustAdded(p.legalName);
+      onAuthorized();
+    },
+  });
+
+  const found = results.data?.providers ?? [];
+
+  return (
+    <div className="mb-4 rounded border bg-muted/30 p-3">
+      <form
+        className="flex flex-wrap items-end gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          setJustAdded(null);
+          setSubmitted(term.trim());
+        }}
+      >
+        <div className="flex-1 min-w-[16rem]">
+          <label
+            htmlFor="referral-provider-search"
+            className="block text-sm font-medium mb-1"
+          >
+            Authorize a provider to refer here
+          </label>
+          <input
+            id="referral-provider-search"
+            value={term}
+            onChange={(e) => setTerm(e.target.value)}
+            placeholder="Provider name or 10-digit NPI"
+            className="w-full rounded border px-3 py-2 text-sm"
+          />
+        </div>
+        <Button type="submit" disabled={term.trim().length === 0}>
+          Search
+        </Button>
+      </form>
+
+      {authorize.isError ? (
+        <ErrorPanel
+          title="Couldn't authorize that provider"
+          error={authorize.error}
+        />
+      ) : null}
+      {justAdded ? (
+        <p className="mt-2 text-sm text-emerald-700">
+          {justAdded} can now send you referrals.
+        </p>
+      ) : null}
+
+      {results.isLoading ? <Spinner /> : null}
+      {results.isError ? (
+        <ErrorPanel title="Provider search failed" error={results.error} />
+      ) : null}
+      {submitted && !results.isLoading && found.length === 0 ? (
+        <p className="mt-2 text-sm text-muted-foreground">
+          No provider in your registry matches that. Add them under Providers
+          first — a referral link needs a verified NPI.
+        </p>
+      ) : null}
+
+      {found.length > 0 ? (
+        <ul className="mt-2 space-y-1">
+          {found.map((p) => {
+            const already = linkedProviderIds.has(p.id);
+            return (
+              <li
+                key={p.id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded border bg-background px-3 py-2"
+              >
+                <div>
+                  <p className="text-sm font-medium">{p.legalName}</p>
+                  <p className="text-xs text-muted-foreground">
+                    NPI {p.npi}
+                    {p.practiceName ? ` · ${p.practiceName}` : ""}
+                  </p>
+                </div>
+                {already ? (
+                  <Badge variant="success">Already authorized</Badge>
+                ) : (
+                  <Button
+                    intent="secondary"
+                    onClick={() => authorize.mutate(p)}
+                    disabled={authorize.isPending}
+                  >
+                    Allow referrals
+                  </Button>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
+    </div>
   );
 }
 

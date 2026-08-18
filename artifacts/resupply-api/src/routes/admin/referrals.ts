@@ -67,6 +67,7 @@ import {
   mapReferralDetail,
   mapReferralSummary,
   recordReferralEvent,
+  streamReferralDocument,
   type ReferralRow,
 } from "../provider/referral-shared.js";
 
@@ -153,6 +154,46 @@ function rowsOf(result: unknown): Row[] {
   return Array.isArray(r?.data) ? (r.data as Row[]) : [];
 }
 
+/**
+ * Registry names for a set of provider ids, best-effort.
+ *
+ * `providers` is the GLOBAL NPI directory — no `org_id`, shared across
+ * tenants — so this is a raw read of reference data, the same shape the
+ * link-create handler below uses to validate an id.
+ * raw-org-scope-exempt: resupply.providers is platform reference data
+ * with no org_id column; it holds no tenant PHI (name/NPI/practice only).
+ *
+ * A failure here costs a label, not the request: the caller falls back to
+ * whatever `display_name` the operator set, so the list still renders.
+ */
+async function resolveProviderNames(
+  supabase: ReturnType<typeof getOrgScopedClient>,
+  providerIds: string[],
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  const ids = [...new Set(providerIds.filter((id) => id.length > 0))];
+  if (ids.length === 0) return out;
+  try {
+    const { data } = (await supabase
+      .raw()
+      .schema("resupply")
+      .from("providers")
+      .select("id, legal_name")
+      .in("id", ids)
+      .limit(ids.length)) as { data: Row[] | null };
+    for (const row of data ?? []) {
+      const name = typeof row.legal_name === "string" ? row.legal_name : "";
+      if (name.trim()) out.set(String(row.id), name);
+    }
+  } catch (err) {
+    logger.warn(
+      { err, count: ids.length },
+      "referrals: provider name lookup failed",
+    );
+  }
+  return out;
+}
+
 // Registered BEFORE the `/:id` route on purpose: Express matches in
 // declaration order, so with these last, a GET of
 // /admin/provider-referrals/providers would bind :id="providers" and 400
@@ -171,7 +212,8 @@ router.get(
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
-    const { data, error } = (await getOrgScopedClient(orgId)
+    const supabase = getOrgScopedClient(orgId);
+    const { data, error } = (await supabase
       .from("provider_dme_links")
       .select(
         "id, provider_id, status, display_name, default_location_id, invited_by_email, invited_at, revoked_at, notes",
@@ -185,12 +227,24 @@ router.get(
       res.status(500).json({ error: "query_failed" });
       return;
     }
+    const rows = data ?? [];
+
+    // Resolve the referring clinician's registry name so the access list
+    // reads as people rather than as UUIDs. `display_name` is the
+    // operator's own label and wins when set; the registry name is the
+    // fallback. Both can be absent on an old row, hence the null.
+    const providerNames = await resolveProviderNames(
+      supabase,
+      rows.map((r) => String(r.provider_id)),
+    );
+
     res.json({
-      links: (data ?? []).map((r) => ({
+      links: rows.map((r) => ({
         id: String(r.id),
         providerId: String(r.provider_id),
         status: r.status,
-        displayName: r.display_name ?? null,
+        displayName:
+          r.display_name ?? providerNames.get(String(r.provider_id)) ?? null,
         defaultLocationId: r.default_location_id ?? null,
         invitedByEmail: r.invited_by_email ?? null,
         invitedAt: r.invited_at,
@@ -222,11 +276,13 @@ router.post(
     // `providers` is the GLOBAL NPI directory (no org_id), so this is a
     // raw read of reference data — confirming the id names a real
     // provider before granting them the right to send PHI here.
+    // raw-org-scope-exempt: resupply.providers is platform reference data
+    // with no org_id column; it holds no tenant PHI (name/NPI/practice only).
     const { data: provider } = (await supabase
       .raw()
       .schema("resupply")
       .from("providers")
-      .select("id, first_name, last_name, npi")
+      .select("id, legal_name, npi")
       .eq("id", body.data.providerId)
       .limit(1)
       .maybeSingle()) as { data: Row | null };
@@ -234,6 +290,13 @@ router.post(
       res.status(404).json({ error: "unknown_provider" });
       return;
     }
+
+    // Default the operator's label to the registry name so the access
+    // list never shows a bare UUID for a link created here.
+    const registryName =
+      typeof provider.legal_name === "string" && provider.legal_name.trim()
+        ? provider.legal_name.trim()
+        : null;
 
     const nowIso = new Date().toISOString();
     // Re-inviting a previously revoked provider reactivates the existing
@@ -243,7 +306,7 @@ router.post(
       {
         provider_id: body.data.providerId,
         status: "active",
-        display_name: body.data.displayName ?? null,
+        display_name: body.data.displayName ?? registryName,
         default_location_id: body.data.defaultLocationId ?? null,
         notes: body.data.notes ?? null,
         invited_by_email: req.adminEmail ?? null,
@@ -417,13 +480,109 @@ router.get(
         .eq("id", id.data);
     }
 
-    res.json(
-      mapReferralDetail(row as unknown as ReferralRow, {
-        events: rowsOf(events),
-        messages: rowsOf(messages),
-        documents: rowsOf(documents),
-      }),
-    );
+    // Resolve the approved mask into words. The referral stores ids, and
+    // "a mask was approved" is not something a warehouse can pick from —
+    // the DME needs to know WHAT to dispense before accepting.
+    const detail = mapReferralDetail(row as unknown as ReferralRow, {
+      events: rowsOf(events),
+      messages: rowsOf(messages),
+      documents: rowsOf(documents),
+    });
+    if (row.approved_mask_model_id) {
+      const { data: model } = (await supabase
+        .raw()
+        .schema("resupply")
+        .from("mask_models")
+        .select("manufacturer, model_name, interface_type")
+        .or(`org_id.is.null,org_id.eq.${orgId}`)
+        .eq("id", String(row.approved_mask_model_id))
+        .limit(1)
+        .maybeSingle()) as { data: Row | null };
+      let sizeLabel: string | null = null;
+      if (row.approved_variant_id) {
+        const { data: variant } = (await supabase
+          .raw()
+          .schema("resupply")
+          .from("mask_size_variants")
+          .select("size_label")
+          .eq("id", String(row.approved_variant_id))
+          .limit(1)
+          .maybeSingle()) as { data: Row | null };
+        sizeLabel = variant ? String(variant.size_label) : null;
+      }
+      detail.approval = {
+        ...detail.approval,
+        maskName: model
+          ? `${model.manufacturer} ${model.model_name}`
+          : null,
+        interfaceType: model ? String(model.interface_type) : null,
+        sizeLabel,
+      };
+    }
+
+    res.json(detail);
+  },
+);
+
+/**
+ * Stream one of the referral's attachments to the DME.
+ *
+ * The counterpart of the provider-side content route. Without it the
+ * paperwork exchange is write-only from the DME's point of view: they can
+ * see that a prescription is attached but have to call the practice to
+ * read it, which is precisely what the portal removes.
+ *
+ * Scope: the referral must be submitted and belong to this tenant (the
+ * org-scoped client enforces the second), and the object key is read off
+ * the row — never taken from the request.
+ */
+router.get(
+  "/admin/provider-referrals/:id/documents/:docId/content",
+  requireAdmin,
+  requirePermission("provider_portal.manage"),
+  adminRateLimit({ name: "referrals.document_content", preset: "query" }),
+  async (req, res) => {
+    const orgId = tenant(req);
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const id = uuid.safeParse(req.params.id);
+    const docId = uuid.safeParse(req.params.docId);
+    if (!id.success || !docId.success) {
+      res.status(400).json({ error: "invalid_id" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+    const { data: referral } = (await supabase
+      .from("referrals")
+      .select("id")
+      .eq("id", id.data)
+      .not("submitted_at", "is", null)
+      .limit(1)
+      .maybeSingle()) as { data: Row | null };
+    if (!referral) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const { data: doc } = (await supabase
+      .from("referral_documents")
+      .select("id, file_name, content_type, storage_object_path")
+      .eq("id", docId.data)
+      .eq("referral_id", id.data)
+      .limit(1)
+      .maybeSingle()) as { data: Row | null };
+    if (!doc || typeof doc.storage_object_path !== "string") {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    await streamReferralDocument(res, {
+      objectPath: doc.storage_object_path,
+      contentType:
+        typeof doc.content_type === "string" ? doc.content_type : null,
+      fileName: typeof doc.file_name === "string" ? doc.file_name : "document",
+      referralId: id.data,
+    });
   },
 );
 
