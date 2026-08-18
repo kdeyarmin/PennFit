@@ -218,9 +218,10 @@ export function buildFitterOutcomesReport(
   const byEntryPoint = Object.fromEntries(
     ENTRY_POINTS.map((k) => [k, 0]),
   ) as Record<FitEntryPoint, number>;
-  const byOutcome = Object.fromEntries(
-    OUTCOMES.map((k) => [k, 0]),
-  ) as Record<FitSessionOutcome, number>;
+  const byOutcome = Object.fromEntries(OUTCOMES.map((k) => [k, 0])) as Record<
+    FitSessionOutcome,
+    number
+  >;
   const byScanQuality = Object.fromEntries(
     SCAN_GRADES.map((k) => [k, 0]),
   ) as Record<ScanQualityGrade, number>;
@@ -284,7 +285,12 @@ export function buildFitterOutcomesReport(
   let unattributed = 0;
   const perMask = new Map<
     string,
-    { label: string | null; good: number; leaking: number; uncomfortable: number }
+    {
+      label: string | null;
+      good: number;
+      leaking: number;
+      uncomfortable: number;
+    }
   >();
 
   for (const o of outcomes) {

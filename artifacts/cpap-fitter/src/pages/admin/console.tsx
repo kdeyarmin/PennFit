@@ -226,6 +226,11 @@ const AdminAnalyticsRevenueBySourcePage = lazyWithRetry(() =>
     default: m.AdminAnalyticsRevenueBySourcePage,
   })),
 );
+const AdminAnalyticsFitterOutcomesPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-analytics-fitter-outcomes").then((m) => ({
+    default: m.AdminAnalyticsFitterOutcomesPage,
+  })),
+);
 const AdminAnalyticsChannelEngagementPage = lazyWithRetry(() =>
   import("@/pages/admin/admin-analytics-channel-engagement").then((m) => ({
     default: m.AdminAnalyticsChannelEngagementPage,
@@ -1228,6 +1233,10 @@ function AdminConsole() {
             <Route
               path="/admin/analytics/revenue-by-source"
               component={AdminAnalyticsRevenueBySourcePage}
+            />
+            <Route
+              path="/admin/analytics/fitter-outcomes"
+              component={AdminAnalyticsFitterOutcomesPage}
             />
             <Route
               path="/admin/analytics/channel-engagement"

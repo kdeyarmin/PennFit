@@ -1025,6 +1025,16 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             hint: "Order volume + cash revenue by channel (storefront / resupply / clinical form)",
           },
           {
+            href: "/admin/analytics/fitter-outcomes",
+            label: "Fitter outcomes",
+            icon: Activity,
+            matchPrefix: "/admin/analytics/fitter-outcomes",
+            // clinical.read to match the server gate — refit rates and
+            // override reasons are clinical outcome data, not a sales report.
+            requiredPermission: "clinical.read",
+            hint: "Refit rate, whether clinicians accept the engine's pick, and scan quality",
+          },
+          {
             href: "/admin/analytics/channel-engagement",
             label: "Channel engagement",
             icon: Activity,

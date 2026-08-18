@@ -273,3 +273,16 @@ export {
   type AutoApprovalDecision,
   type AutoApprovalInput,
 } from "./return-window";
+
+export {
+  buildFitterOutcomesReport,
+  type FitEntryPoint,
+  type FitSessionInput,
+  type FitSessionOutcome,
+  type FitterOutcomesOptions,
+  type FitterOutcomesReport,
+  type MaskFitOutcomeInput,
+  type MaskFitVerdict,
+  type MaskRefitRate,
+  type ScanQualityGrade,
+} from "./fitter-outcomes";
