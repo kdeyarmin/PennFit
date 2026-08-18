@@ -85,6 +85,126 @@ const approveBody = z
   })
   .strict();
 
+/**
+ * Did a patient actually get fitted?
+ *
+ * Checked because nothing else in the chain asks. Approval only cares
+ * that the mask exists in the destination catalog, so a provider holding
+ * any mask UUID could approve, sign, and submit a referral that had never
+ * been near the fitter — while the DME's queue tells staff, in as many
+ * words, that the fitting is already done.
+ *
+ * Either engine counts: a `fit_sessions` row from the clinical path, or a
+ * completed legacy `fitter_invites` row for tenants with
+ * `fitter.clinical_assessment` off. What does NOT count is an invite that
+ * was merely sent.
+ */
+async function hasCompletedFitting(
+  supabase: ReturnType<typeof getOrgScopedClient>,
+  row: Record<string, unknown>,
+): Promise<boolean> {
+  if (row.fit_session_id) return true;
+  if (!row.fitter_invite_id) return false;
+  const { data: invite } = (await supabase
+    .from("fitter_invites")
+    .select("fit_session_id, completed_at, recommended_mask_id")
+    .eq("id", String(row.fitter_invite_id))
+    .limit(1)
+    .maybeSingle()) as { data: Record<string, unknown> | null };
+  if (!invite) return false;
+  if (invite.fit_session_id) return true;
+  return Boolean(invite.completed_at && invite.recommended_mask_id);
+}
+
+/**
+ * Map legacy catalog slugs onto the destination tenant's `mask_models.id`.
+ *
+ * Scoped `org_id IS NULL OR org_id = :orgId` — platform rows plus that
+ * tenant's private additions — so the ids handed back are ones the
+ * approval route will accept and the DME can actually dispense.
+ *
+ * raw-org-scope-exempt: `mask_models` is platform reference data with a
+ * NULLABLE org_id (NULL = platform row), so it cannot be reached through
+ * the plain org-scoped path; the `.or()` below is the org filter.
+ */
+async function resolveLegacySlugs(
+  supabase: ReturnType<typeof getOrgScopedClient>,
+  orgId: string,
+  slugs: string[],
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  const unique = [...new Set(slugs)];
+  if (unique.length === 0) return out;
+  try {
+    const { data } = (await supabase
+      .raw()
+      .schema("resupply")
+      .from("mask_models")
+      .select("id, slug")
+      .or(`org_id.is.null,org_id.eq.${orgId}`)
+      .in("slug", unique)
+      .limit(unique.length)) as {
+      data: Array<Record<string, unknown>> | null;
+    };
+    for (const row of data ?? []) {
+      if (row.slug && row.id) out.set(String(row.slug), String(row.id));
+    }
+  } catch (err) {
+    logger.warn(
+      { err, count: unique.length },
+      "referral legacy slug resolution failed",
+    );
+  }
+  return out;
+}
+
+/**
+ * Everything the receiving DME needs before this order is worth anything,
+ * as plain-language phrases.
+ *
+ * ONE list, deliberately shared by the signature route and the submit
+ * route. They used to disagree: signing required only an approved mask,
+ * while submitting required date of birth, payer and a prescription —
+ * and because signing FREEZES the chart-details form and the document
+ * uploader, a provider who signed early was stuck. Submit said
+ * "incomplete", every control that could have fixed it was read-only,
+ * and the only way out was withdrawing and starting over.
+ *
+ * The rule that resolves it: you cannot sign an order you would not be
+ * allowed to send. Both callers ask the same question, so the two gates
+ * cannot drift apart again.
+ *
+ * `requireSignature` is false for the signature route itself — the
+ * signature is what that call is about to create.
+ */
+export async function missingForOrder(
+  supabase: ReturnType<typeof getOrgScopedClient>,
+  referralId: string,
+  row: Record<string, unknown>,
+  opts: { requireSignature: boolean },
+): Promise<string[]> {
+  const missing: string[] = [];
+  if (!row.patient_dob) missing.push("the patient's date of birth");
+  if (!row.insurance_payer_name) missing.push("the insurance payer");
+  if (!(await hasCompletedFitting(supabase, row))) {
+    missing.push("a completed mask fitting");
+  }
+  if (!row.approved_mask_model_id) missing.push("an approved mask");
+
+  const { data: docs } = (await supabase
+    .from("referral_documents")
+    .select("doc_type")
+    .eq("referral_id", referralId)
+    .limit(100)) as { data: Record<string, unknown>[] | null };
+  const docTypes = new Set((docs ?? []).map((d) => String(d.doc_type)));
+  if (!docTypes.has("prescription")) missing.push("a prescription");
+
+  if (opts.requireSignature && !row.signed_at) {
+    missing.push("your signature on the order");
+  }
+  return missing;
+}
+
 // ── Fitting ──────────────────────────────────────────────────────────
 
 router.post(
@@ -329,6 +449,52 @@ router.get("/api/provider/referrals/:id/fitting", ...gate, async (req, res) => {
     const ranked = Array.isArray(legacyInvite.recommendations)
       ? (legacyInvite.recommendations as Array<Record<string, unknown>>)
       : [];
+
+    // The legacy column holds a catalog SLUG (`fitter_invites.recommended_mask_id`
+    // is written from the static engine's `rec.maskId`, e.g.
+    // "resmed-airfit-f20"), but `approveBody.maskModelId` is a uuid and
+    // the SPA sends whatever we return straight back. Handing the slug
+    // over unresolved made every legacy approval 400 `invalid_body` —
+    // and since `fitter.clinical_assessment` ships OFF, that is the
+    // default path, which made the whole legacy fallback inert.
+    //
+    // Resolve slugs to the tenant-visible catalog id, and DROP anything
+    // that doesn't resolve: an option the provider cannot approve is
+    // worse than one absent option, because it looks actionable.
+    const slugs = [
+      String(legacyInvite.recommended_mask_id),
+      ...ranked.map((r) => String(r.maskId ?? "")),
+    ].filter((v) => v.length > 0);
+    const byId = await resolveLegacySlugs(supabase, found.orgId, slugs);
+
+    const primarySlug = String(legacyInvite.recommended_mask_id);
+    const primaryId = byId.get(primarySlug) ?? null;
+    if (!primaryId) {
+      // Nothing approvable — say so plainly rather than returning a
+      // "complete" fitting whose recommendation cannot be acted on.
+      res.json({
+        status: "complete",
+        source: "legacy",
+        session: {
+          id: null,
+          outcome: "outside_validated_range",
+          recommendationConfidence: null,
+          scanQualityGrade: null,
+          measurementConfidenceBand: null,
+          primary: null,
+          alternatives: [],
+          excluded: [],
+          safetyFlags: [],
+          degraded: false,
+          rulesEngineVersion: null,
+          formularyName: null,
+          formularyVersion: null,
+          completedAt: (legacyInvite.completed_at as string) ?? null,
+        },
+      });
+      return;
+    }
+
     res.json({
       status: "complete",
       source: "legacy",
@@ -339,8 +505,8 @@ router.get("/api/provider/referrals/:id/fitting", ...gate, async (req, res) => {
         scanQualityGrade: null,
         measurementConfidenceBand: null,
         primary: {
-          maskId: String(legacyInvite.recommended_mask_id),
-          maskSlug: String(legacyInvite.recommended_mask_id),
+          maskId: primaryId,
+          maskSlug: primarySlug,
           name: (legacyInvite.recommended_mask_name as string) ?? null,
           interfaceType: (legacyInvite.recommended_mask_type as string) ?? null,
           cushion: null,
@@ -348,15 +514,24 @@ router.get("/api/provider/referrals/:id/fitting", ...gate, async (req, res) => {
           reasons: [],
           cautions: [],
         },
-        alternatives: ranked.slice(1).map((r) => ({
-          maskId: String(r.maskId ?? ""),
-          maskSlug: String(r.maskId ?? ""),
-          name: (r.name as string) ?? null,
-          interfaceType: (r.type as string) ?? null,
-          confidence: typeof r.confidence === "number" ? r.confidence : null,
-          cushion: null,
-          rankedBelowBecause: null,
-        })),
+        alternatives: ranked
+          .slice(1)
+          .map((r) => {
+            const slug = String(r.maskId ?? "");
+            const resolved = byId.get(slug);
+            if (!resolved) return null;
+            return {
+              maskId: resolved,
+              maskSlug: slug,
+              name: (r.name as string) ?? null,
+              interfaceType: (r.type as string) ?? null,
+              confidence:
+                typeof r.confidence === "number" ? r.confidence : null,
+              cushion: null,
+              rankedBelowBecause: null,
+            };
+          })
+          .filter((a): a is NonNullable<typeof a> => a !== null),
         excluded: [],
         safetyFlags: [],
         degraded: false,
@@ -603,18 +778,29 @@ router.post(
       });
       return;
     }
-    // Signing an order that names no mask would be signing a blank.
-    if (!found.row.approved_mask_model_id) {
+
+    const supabase = getOrgScopedClient(found.orgId);
+
+    // The order has to be COMPLETE before it is signed, not merely before
+    // it is sent. Signing freezes the chart-details form and the document
+    // uploader, so a signature collected over a half-filled order leaves
+    // the provider unable to finish it and unable to send it — the only
+    // exit being to withdraw and start again. Asking the same question
+    // the submit gate asks, one step earlier, removes that trap entirely.
+    const missing = await missingForOrder(
+      supabase,
+      id.data,
+      found.row as unknown as Record<string, unknown>,
+      { requireSignature: false },
+    );
+    if (missing.length > 0) {
       res.status(409).json({
-        error: "no_approved_mask",
-        message:
-          "Approve a mask before signing — the order has to say what is " +
-          "being ordered.",
+        error: "incomplete",
+        missing,
+        message: `Before this order can be signed it still needs ${listPhrase(missing)}.`,
       });
       return;
     }
-
-    const supabase = getOrgScopedClient(found.orgId);
     const patientName =
       `${found.row.patient_first_name} ${found.row.patient_last_name}`.trim();
 
@@ -749,15 +935,38 @@ router.post(
         return;
       }
 
+      // The link write is NOT best-effort. If it fails the request exists
+      // and is signable, but the referral still has no
+      // `signature_request_id` and its old status — so `advanceSignedReferral`
+      // (which only moves `awaiting_signature`) can never advance it, and
+      // a retry mints a SECOND signable order for the same referral. Void
+      // the orphan rather than reporting a success that isn't one.
       const nowIso = new Date().toISOString();
-      await supabase
+      const { error: linkErr } = (await supabase
         .from("referrals")
         .update({
           signature_request_id: inserted.id,
           status: "awaiting_signature",
           updated_at: nowIso,
         })
-        .eq("id", id.data);
+        .eq("id", id.data)) as unknown as {
+        error: { message: string } | null;
+      };
+      if (linkErr) {
+        await supabase
+          .raw()
+          .schema("resupply")
+          .from("provider_signature_requests")
+          .update({ status: "void", updated_at: nowIso })
+          .eq("id", inserted.id)
+          .eq("org_id", found.orgId);
+        logger.error(
+          { err: linkErr, referral_id: id.data },
+          "referral_signature_link_failed",
+        );
+        res.status(500).json({ error: "update_failed" });
+        return;
+      }
 
       await recordReferralEvent(found.orgId, id.data, "signature.requested", {
         actorKind: "provider",
@@ -839,20 +1048,13 @@ router.post("/api/provider/referrals/:id/submit", ...gate, async (req, res) => {
   // enforce it here too rather than trusting the client to walk the
   // states in order. A tenant that genuinely does not require signed
   // orders should get a setting, not an unguarded endpoint.
-  const missing: string[] = [];
-  if (!found.row.patient_dob) missing.push("the patient's date of birth");
-  if (!found.row.insurance_payer_name) missing.push("the insurance payer");
-  if (!found.row.approved_mask_model_id) missing.push("an approved mask");
-  if (!found.row.signed_at) missing.push("your signature on the order");
-
   const supabase = getOrgScopedClient(found.orgId);
-  const { data: docs } = (await supabase
-    .from("referral_documents")
-    .select("doc_type")
-    .eq("referral_id", id.data)
-    .limit(100)) as { data: Record<string, unknown>[] | null };
-  const docTypes = new Set((docs ?? []).map((d) => String(d.doc_type)));
-  if (!docTypes.has("prescription")) missing.push("a prescription");
+  const missing = await missingForOrder(
+    supabase,
+    id.data,
+    found.row as unknown as Record<string, unknown>,
+    { requireSignature: true },
+  );
 
   if (missing.length > 0) {
     res.status(409).json({
@@ -879,7 +1081,7 @@ router.post("/api/provider/referrals/:id/submit", ...gate, async (req, res) => {
   await recordReferralEvent(found.orgId, id.data, "referral.submitted", {
     actorKind: "provider",
     actorEmail: account.emailLower,
-    detail: { documentCount: docTypes.size },
+    detail: {},
   });
 
   res.json({ ok: true, status: "submitted" });

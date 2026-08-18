@@ -312,6 +312,33 @@ describe("authorizing a referring provider", () => {
   });
 });
 
+// referral_messages carries a plain referral_id foreign key with no
+// composite tenant constraint, so a handler that trusts the id from the
+// URL lets staff in one tenant hang rows off another tenant's referral.
+describe("child rows never attach to another tenant's referral", () => {
+  it("resolves the parent under this tenant before posting a message", async () => {
+    await request(makeApp())
+      .post(`/admin/provider-referrals/${REFERRAL_ID}/messages`)
+      .send({ body: "Received, we'll fit them Tuesday." });
+    const parentRead = db.queries.find(
+      (q) => q.table === "referrals" && q.op === "read",
+    );
+    expect(parentRead).toBeDefined();
+    expect(parentRead!.filters).toContain("not:submitted_at:is:null");
+    expect(parentRead!.filters).toContain(`id=${REFERRAL_ID}`);
+  });
+
+  it("404s and writes nothing when the referral is not this tenant's", async () => {
+    db.referral = null;
+    const res = await request(makeApp())
+      .post(`/admin/provider-referrals/${REFERRAL_ID}/messages`)
+      .send({ body: "Wrong tenant." });
+    expect(res.status).toBe(404);
+    expect(db.queries.some((q) => q.table === "referral_messages")).toBe(false);
+    expect(db.queries.some((q) => q.table === "referral_events")).toBe(false);
+  });
+});
+
 describe("attachment download", () => {
   const DOC_ID = "55555555-5555-4555-8555-555555555555";
   const fetchDoc = () =>

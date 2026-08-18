@@ -106,10 +106,14 @@ export interface ProviderLink {
 export function fetchInboundReferrals(filters: {
   status?: ReferralStatus;
   open?: boolean;
-}): Promise<{ referrals: InboundReferral[] }> {
+  limit?: number;
+  offset?: number;
+}): Promise<{ referrals: InboundReferral[]; limit: number; offset: number }> {
   const params = new URLSearchParams();
   if (filters.status) params.set("status", filters.status);
   if (filters.open) params.set("open", "true");
+  if (filters.limit != null) params.set("limit", String(filters.limit));
+  if (filters.offset != null) params.set("offset", String(filters.offset));
   const qs = params.toString();
   return adminJsonFetch(`/admin/provider-referrals${qs ? `?${qs}` : ""}`);
 }

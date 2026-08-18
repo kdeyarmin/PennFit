@@ -53,6 +53,8 @@ const db = vi.hoisted(() => ({
     updated_at: "2026-08-01T00:00:00.000Z",
   } as Record<string, unknown> | null,
   insertedId: "44444444-4444-4444-8444-444444444444",
+  /** Rows a guarded UPDATE ... .select() returns; [] = no transition. */
+  updateReturns: [{ id: "44444444-4444-4444-8444-444444444444" }] as unknown[],
 }));
 
 vi.mock("@workspace/resupply-db", () => {
@@ -85,6 +87,12 @@ vi.mock("@workspace/resupply-db", () => {
       record("read");
       if (table === "provider_dme_links") return { data: db.link, error: null };
       if (table === "referrals") return { data: db.referral, error: null };
+      if (table === "referral_documents") {
+        return {
+          data: { id: "doc", storage_object_path: "/objects/uploads/abc" },
+          error: null,
+        };
+      }
       return { data: null, error: null };
     };
     chain.single = async () => {
@@ -119,6 +127,15 @@ vi.mock("@workspace/resupply-db", () => {
           return upd;
         };
       }
+      // Guarded updates read their own rows back so a zero-row match can
+      // become a 409 rather than a silent success.
+      upd.select = () => {
+        record("update", payload);
+        return {
+          then: (resolve: (v: unknown) => unknown) =>
+            resolve({ data: db.updateReturns, error: null }),
+        };
+      };
       upd.then = (resolve: (v: unknown) => unknown) => {
         record("update", payload);
         return resolve({ data: null, error: null });
@@ -231,6 +248,7 @@ function makeApp(): Express {
 
 beforeEach(() => {
   db.queries = [];
+  db.updateReturns = [{ id: REFERRAL_ID }];
   db.link = {
     id: LINK_ID,
     org_id: TARGET_ORG,
@@ -372,7 +390,20 @@ describe("editing", () => {
 });
 
 describe("messages", () => {
+  // Every DME-side query filters `submitted_at IS NOT NULL`, so a message
+  // on a draft is written, counted, and unreadable — while the composer
+  // promised it reached their team.
+  it("refuses a message before the referral has been sent", async () => {
+    const res = await request(makeApp())
+      .post(`/api/provider/referrals/${REFERRAL_ID}/messages`)
+      .send({ body: "Any update?" });
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("not_submitted");
+    expect(db.queries.some((x) => x.table === "referral_messages")).toBe(false);
+  });
+
   it("bumps the DME's badge, never the provider's own", async () => {
+    db.referral = { ...db.referral!, submitted_at: "2026-08-02T00:00:00.000Z" };
     await request(makeApp())
       .post(`/api/provider/referrals/${REFERRAL_ID}/messages`)
       .send({ body: "Please call the patient — she works nights." });
@@ -384,6 +415,7 @@ describe("messages", () => {
   });
 
   it("records a character count, never the body", async () => {
+    db.referral = { ...db.referral!, submitted_at: "2026-08-02T00:00:00.000Z" };
     await request(makeApp())
       .post(`/api/provider/referrals/${REFERRAL_ID}/messages`)
       .send({ body: "Jane Doe has a healed nasal fracture." });
@@ -394,6 +426,71 @@ describe("messages", () => {
     expect((event!.payload as { detail: { chars: number } }).detail.chars).toBe(
       37,
     );
+  });
+});
+
+describe("editing guards", () => {
+  const FOREIGN_LOCATION = "88888888-8888-4888-8888-888888888888";
+
+  // A provider linked to several DMEs is handed each one's default
+  // location by /destinations, so nothing stops them aiming DME B's
+  // branch at DME A's referral. Create closed this; PATCH is the second
+  // door onto the same field and was left open.
+  it("rejects a location the destination tenant does not own", async () => {
+    const res = await request(makeApp())
+      .patch(`/api/provider/referrals/${REFERRAL_ID}`)
+      .send({ routedToLocationId: FOREIGN_LOCATION });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("unknown_location");
+    expect(
+      db.queries.some((x) => x.table === "referrals" && x.op === "update"),
+    ).toBe(false);
+  });
+
+  it("constrains the edit to editable statuses in the UPDATE itself", async () => {
+    await request(makeApp())
+      .patch(`/api/provider/referrals/${REFERRAL_ID}`)
+      .send({ insurance: { payerName: "Aetna" } });
+    const update = db.queries.find(
+      (x) => x.table === "referrals" && x.op === "update",
+    );
+    // Guarding only in the read leaves a window: raising the order for
+    // signature between read and write would otherwise let this land.
+    expect(
+      update!.filters.some(
+        (f) => f.startsWith("status=") && f.includes("draft"),
+      ),
+    ).toBe(true);
+  });
+
+  it("409s when the guarded edit matched nothing", async () => {
+    db.updateReturns = [];
+    const res = await request(makeApp())
+      .patch(`/api/provider/referrals/${REFERRAL_ID}`)
+      .send({ insurance: { payerName: "Aetna" } });
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("not_editable");
+  });
+});
+
+describe("withdrawal", () => {
+  it("voids a pending signature request so it can't still be signed", async () => {
+    db.referral = {
+      ...db.referral!,
+      status: "awaiting_signature",
+      signature_request_id: "99999999-9999-4999-8999-999999999999",
+    };
+    await request(makeApp())
+      .post(`/api/provider/referrals/${REFERRAL_ID}/cancel`)
+      .send({});
+    const voided = db.queries.find(
+      (x) => x.table === "provider_signature_requests" && x.op === "update",
+    );
+    expect(voided).toBeDefined();
+    expect(voided!.payload).toMatchObject({ status: "void" });
+    // Only a request still awaiting signature is voided — a signed one is
+    // a record, not a loose end.
+    expect(voided!.filters).toContain("status=pending");
   });
 });
 
@@ -494,6 +591,22 @@ describe("documents", () => {
         (x) => x.table === "referral_documents" && x.op === "delete",
       ),
     ).toBe(false);
+  });
+
+  // The weekly orphan sweep treats every object_storage_acls path as a
+  // live reference, so dropping only the DB row retains the bytes
+  // FOREVER while the UI reports the file removed.
+  it("deletes the stored bytes, not just the row", async () => {
+    const docId = "77777777-7777-4777-8777-777777777777";
+    await request(makeApp()).delete(
+      `/api/provider/referrals/${REFERRAL_ID}/documents/${docId}`,
+    );
+    expect(storage.deleted).toBe(1);
+    expect(
+      db.queries.some(
+        (x) => x.table === "object_storage_acls" && x.op === "delete",
+      ),
+    ).toBe(true);
   });
 
   it("lets a provider remove only their OWN attachment", async () => {

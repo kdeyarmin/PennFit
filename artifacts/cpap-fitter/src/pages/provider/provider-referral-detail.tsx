@@ -632,8 +632,16 @@ function SignAndSendStep({
     onSuccess: (res) => {
       onChange();
       // The order is signed in the queue the provider already knows,
-      // rather than in a second signing UI built just for referrals.
-      window.location.assign(`/provider/sign/${res.signatureRequestId}`);
+      // rather than in a second signing UI built just for referrals —
+      // but it has to come BACK. Signing does not send anything; the
+      // provider still has to return and press "Send to the DME". Without
+      // a return target the signing screen says the practice has been
+      // notified and offers only "Back to my documents", which is how a
+      // signed referral ends up sitting unsubmitted forever.
+      const back = encodeURIComponent(`/provider/referrals/${referral.id}`);
+      window.location.assign(
+        `/provider/sign/${res.signatureRequestId}?return=${back}`,
+      );
     },
   });
   const submit = useMutation({
@@ -643,7 +651,19 @@ function SignAndSendStep({
 
   const signed = Boolean(referral.signature.signedAt);
   const sent = Boolean(referral.submittedAt);
-  const canSign = Boolean(referral.approval.approvedAt) && !signed;
+
+  // The server refuses to raise an order for signature until everything
+  // the DME needs is present, because signing freezes the forms that
+  // would supply it. Mirror that here so it reads as a sequence rather
+  // than a rejection — the server stays the gate, this is the affordance.
+  const outstanding: string[] = [];
+  if (!referral.patient.dob) outstanding.push("date of birth");
+  if (!referral.insurance.payerName) outstanding.push("the insurance payer");
+  if (!referral.approval.approvedAt) outstanding.push("an approved mask");
+  if (!referral.documents.some((d) => d.docType === "prescription")) {
+    outstanding.push("a prescription");
+  }
+  const canSign = outstanding.length === 0 && !signed;
 
   return (
     <Card className="mb-4 p-5">
@@ -677,8 +697,9 @@ function SignAndSendStep({
               </Button>
               {!canSign ? (
                 <p className="text-xs text-slate-500">
-                  Approve a mask first — the order has to say what is being
-                  ordered.
+                  Still needed before this can be signed:{" "}
+                  {outstanding.join(", ")}. Signing locks the order, so these
+                  have to be right first.
                 </p>
               ) : null}
             </>
@@ -719,6 +740,10 @@ function Thread({
   onChange: () => void;
 }) {
   const [body, setBody] = useState("");
+  // Every DME-side query filters on `submitted_at`, so a message written
+  // before the referral is sent is stored, counted, and unreadable. The
+  // server refuses it; this keeps the UI from promising otherwise.
+  const sent = Boolean(referral.submittedAt);
   const send = useMutation({
     mutationFn: () => sendReferralMessage(referral.id, body.trim()),
     onSuccess: () => {
@@ -738,7 +763,12 @@ function Thread({
         <MessageSquare className="h-4 w-4" aria-hidden="true" />
         Messages with {referral.dmeName ?? "the DME"}
       </h2>
-      {referral.messages.length === 0 ? (
+      {!sent ? (
+        <p className="mt-2 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">
+          The thread opens once you send the referral — until then there is no
+          one at {referral.dmeName ?? "the supplier"} it could reach.
+        </p>
+      ) : referral.messages.length === 0 ? (
         <p className="mt-2 text-sm text-slate-500">
           No messages yet. Anything you send here reaches their team directly —
           no phone call, no fax.
@@ -765,18 +795,20 @@ function Thread({
           ))}
         </ul>
       )}
-      <form className="mt-3 flex gap-2" onSubmit={submit}>
-        <input
-          className={inputClass}
-          value={body}
-          onChange={(e) => setBody(e.target.value)}
-          placeholder="Send a message…"
-          aria-label="Message the DME"
-        />
-        <Button type="submit" disabled={!body.trim() || send.isPending}>
-          Send
-        </Button>
-      </form>
+      {sent ? (
+        <form className="mt-3 flex gap-2" onSubmit={submit}>
+          <input
+            className={inputClass}
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+            placeholder="Send a message…"
+            aria-label="Message the DME"
+          />
+          <Button type="submit" disabled={!body.trim() || send.isPending}>
+            Send
+          </Button>
+        </form>
+      ) : null}
     </Card>
   );
 }

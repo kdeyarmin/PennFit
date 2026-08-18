@@ -27,6 +27,9 @@ function completeReferral(): Record<string, unknown> {
     patient_dob: "1970-01-01",
     insurance_payer_name: "Aetna",
     approved_mask_model_id: "55555555-5555-4555-8555-555555555555",
+    // A referral that never went near the fitter is not complete, however
+    // filled-in it otherwise looks — see the "no fitting" case below.
+    fit_session_id: "66666666-6666-4666-8666-666666666666",
     signed_at: "2026-08-17T00:00:00.000Z",
     submitted_at: null,
     provider_unread_count: 0,
@@ -188,6 +191,24 @@ describe("submit — the gate on what reaches the DME", () => {
     expect(res.body.missing).toContain("an approved mask");
   });
 
+  // Approval only checks the mask exists in the destination catalog, so
+  // without this a provider holding any mask UUID could sign and submit a
+  // referral that had never been near the fitter — while the DME's queue
+  // tells staff the fitting is already done.
+  it("refuses a referral that was never fitted", async () => {
+    db.referral = {
+      ...completeReferral(),
+      fit_session_id: null,
+      fitter_invite_id: null,
+    };
+    const res = await submit();
+    expect(res.status).toBe(409);
+    expect(res.body.missing).toContain("a completed mask fitting");
+    expect(
+      db.queries.some((q) => q.table === "referrals" && q.op === "update"),
+    ).toBe(false);
+  });
+
   it("refuses without a prescription on file", async () => {
     db.documents = [{ doc_type: "sleep_study" }];
     const res = await submit();
@@ -201,12 +222,14 @@ describe("submit — the gate on what reaches the DME", () => {
       patient_dob: null,
       insurance_payer_name: null,
       approved_mask_model_id: null,
+      fit_session_id: null,
+      fitter_invite_id: null,
       signed_at: null,
     };
     db.documents = [];
     const res = await submit();
     expect(res.status).toBe(409);
-    expect(res.body.missing).toHaveLength(5);
+    expect(res.body.missing).toHaveLength(6);
     // The message reads as a sentence, not a token dump.
     expect(res.body.message).toMatch(/still needs .+ and .+\.$/);
   });
@@ -245,6 +268,11 @@ describe("submit — the gate on what reaches the DME", () => {
 });
 
 describe("signature request", () => {
+  const sign = () =>
+    request(makeApp())
+      .post(`/api/provider/referrals/${REFERRAL_ID}/signature`)
+      .send({});
+
   it("refuses to raise an order that names no mask", async () => {
     // Unsigned, so the already-signed guard doesn't short-circuit first.
     db.referral = {
@@ -252,11 +280,53 @@ describe("signature request", () => {
       signed_at: null,
       approved_mask_model_id: null,
     };
-    const res = await request(makeApp())
-      .post(`/api/provider/referrals/${REFERRAL_ID}/signature`)
-      .send({});
+    const res = await sign();
     expect(res.status).toBe(409);
-    expect(res.body.error).toBe("no_approved_mask");
+    expect(res.body.error).toBe("incomplete");
+    expect(res.body.missing).toContain("an approved mask");
+  });
+
+  // THE DEADLOCK. Signing freezes the chart-details form and the document
+  // uploader, so a signature collected over a half-filled order left the
+  // provider unable to finish it AND unable to send it — submit answered
+  // "incomplete" while every control that could have fixed it was
+  // read-only. Asking the same question one step earlier is what makes
+  // the state unreachable.
+  it("refuses to sign an order that could not then be sent", async () => {
+    db.referral = {
+      ...completeReferral(),
+      signed_at: null,
+      patient_dob: null,
+      insurance_payer_name: null,
+    };
+    db.documents = [];
+    const res = await sign();
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("incomplete");
+    expect(res.body.missing).toEqual(
+      expect.arrayContaining([
+        "the patient's date of birth",
+        "the insurance payer",
+        "a prescription",
+      ]),
+    );
+    // Crucially it does NOT ask for the signature it is about to create.
+    expect(res.body.missing).not.toContain("your signature on the order");
+    expect(
+      db.queries.some((q) => q.table === "provider_signature_requests"),
+    ).toBe(false);
+  });
+
+  it("refuses to sign when no fitting ever happened", async () => {
+    db.referral = {
+      ...completeReferral(),
+      signed_at: null,
+      fit_session_id: null,
+      fitter_invite_id: null,
+    };
+    const res = await sign();
+    expect(res.status).toBe(409);
+    expect(res.body.missing).toContain("a completed mask fitting");
   });
 
   it("refuses to re-sign an already-signed order", async () => {

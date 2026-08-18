@@ -228,6 +228,32 @@ const gate = [
   providerPortalRateLimiter,
 ];
 
+/**
+ * Is this location one the DESTINATION tenant owns?
+ *
+ * A provider linked to several DMEs sees each one's default location, so
+ * nothing stops them submitting DME B's location id while addressing DME
+ * A — producing a referral owned by one tenant and routed to another
+ * tenant's branch, which the plain location foreign key cannot catch.
+ *
+ * Shared by create and PATCH deliberately. It lived only on the create
+ * path at first, and I described it in review as covering both; it did
+ * not, and editing a draft reopened exactly the hole create had closed.
+ * One helper, two callers, so they cannot drift again.
+ */
+async function locationBelongsToOrg(
+  supabase: ReturnType<typeof getOrgScopedClient>,
+  locationId: string,
+): Promise<boolean> {
+  const { data } = (await supabase
+    .from("locations")
+    .select("id")
+    .eq("id", locationId)
+    .limit(1)
+    .maybeSingle()) as { data: Record<string, unknown> | null };
+  return Boolean(data);
+}
+
 // ── Destinations ─────────────────────────────────────────────────────
 
 router.get(
@@ -436,20 +462,15 @@ router.post("/api/provider/referrals", ...gate, async (req, res) => {
     // to another tenant's branch. The org-scoped client constrains the
     // lookup, so a foreign id simply misses.
     const requestedLocation = body.data.routedToLocationId ?? null;
-    if (requestedLocation) {
-      const { data: location } = (await supabase
-        .from("locations")
-        .select("id")
-        .eq("id", requestedLocation)
-        .limit(1)
-        .maybeSingle()) as { data: Record<string, unknown> | null };
-      if (!location) {
-        res.status(400).json({
-          error: "unknown_location",
-          message: "That location doesn't belong to the supplier you chose.",
-        });
-        return;
-      }
+    if (
+      requestedLocation &&
+      !(await locationBelongsToOrg(supabase, requestedLocation))
+    ) {
+      res.status(400).json({
+        error: "unknown_location",
+        message: "That location doesn't belong to the supplier you chose.",
+      });
+      return;
     }
 
     const p = body.data.patient;
@@ -623,10 +644,25 @@ router.patch("/api/provider/referrals/:id", ...gate, async (req, res) => {
     return;
   }
 
+  const supabase = getOrgScopedClient(found.orgId);
+  const b = body.data;
+
+  // Same check the create path runs — see locationBelongsToOrg. Editing a
+  // draft is a second door onto the same field.
+  if (
+    b.routedToLocationId &&
+    !(await locationBelongsToOrg(supabase, b.routedToLocationId))
+  ) {
+    res.status(400).json({
+      error: "unknown_location",
+      message: "That location doesn't belong to the supplier you chose.",
+    });
+    return;
+  }
+
   const patch: Record<string, unknown> = {
     updated_at: new Date().toISOString(),
   };
-  const b = body.data;
   if (b.routedToLocationId !== undefined) {
     patch.routed_to_location_id = b.routedToLocationId;
   }
@@ -661,12 +697,34 @@ router.patch("/api/provider/referrals/:id", ...gate, async (req, res) => {
     if (c.clinicalNotes !== undefined) patch.clinical_notes = c.clinicalNotes;
   }
 
-  const { error } = await getOrgScopedClient(found.orgId)
+  // Guard the lifecycle in the WHERE, not only in the read above. The
+  // read-then-write window is real: raising the order for signature
+  // snapshots it and flips the status to `awaiting_signature`, and a
+  // PATCH already in flight would otherwise land afterwards — changing
+  // patient, insurance or therapy fields underneath a signature that
+  // attests to the earlier values. That is precisely what the editable
+  // allowlist exists to prevent, so it belongs in the predicate too.
+  const { data: updated, error } = (await supabase
     .from("referrals")
     .update(patch)
-    .eq("id", id.data);
+    .eq("id", id.data)
+    .in("status", [...PROVIDER_EDITABLE])
+    .select("id")) as {
+    data: Array<Record<string, unknown>> | null;
+    error: { message: string } | null;
+  };
   if (error) {
     res.status(500).json({ error: "update_failed" });
+    return;
+  }
+  if (!updated || updated.length === 0) {
+    res.status(409).json({
+      error: "not_editable",
+      message:
+        "This referral moved on while you were editing it — most likely " +
+        "the order was raised for signature. Reload it to see where it " +
+        "got to.",
+    });
     return;
   }
   res.json({ ok: true });
@@ -718,6 +776,33 @@ router.post("/api/provider/referrals/:id/cancel", ...gate, async (req, res) => {
     res.status(500).json({ error: "update_failed" });
     return;
   }
+  // A withdrawn order must stop being signable. The signature request
+  // lives in the provider's ordinary signing queue and is reachable by
+  // direct link, so leaving it `pending` means a clinician can still put
+  // a legally meaningful signature on an order nobody is going to fill —
+  // and `advanceSignedReferral` cannot move a cancelled referral, so it
+  // would just sit there signed and orphaned. Best-effort: the referral
+  // is already withdrawn, and failing the whole call over the follow-up
+  // would be worse than a stale request we can void again later.
+  if (found.row.signature_request_id) {
+    const { error: voidErr } = (await getOrgScopedClient(found.orgId)
+      .raw()
+      .schema("resupply")
+      .from("provider_signature_requests")
+      .update({ status: "void", updated_at: new Date().toISOString() })
+      .eq("id", String(found.row.signature_request_id))
+      .eq("org_id", found.orgId)
+      .eq("status", "pending")) as unknown as {
+      error: { message: string } | null;
+    };
+    if (voidErr) {
+      logger.warn(
+        { err: voidErr, referral_id: id.data },
+        "referral_cancel_signature_void_failed",
+      );
+    }
+  }
+
   await recordReferralEvent(found.orgId, id.data, "referral.cancelled", {
     actorKind: "provider",
     actorEmail: account.emailLower,
@@ -757,6 +842,25 @@ router.post(
     const found = await loadReferralForProvider(account.providerId, id.data);
     if (!found) {
       res.status(404).json({ error: "not_found" });
+      return;
+    }
+    // There is nobody on the other end yet. Every DME-side query filters
+    // `submitted_at IS NOT NULL`, so a message on a draft is written,
+    // counted, and unreadable — while the composer tells the provider it
+    // "reaches their team directly". A provider can then sit waiting on a
+    // reply to something the recipient cannot see, and the referral never
+    // gets sent.
+    //
+    // Refusing keeps the draft-invisibility invariant intact rather than
+    // punching a hole in it for a side channel nobody asked for.
+    if (!found.row.submitted_at) {
+      res.status(409).json({
+        error: "not_submitted",
+        message:
+          "This referral hasn't been sent yet, so there's no one at the " +
+          "supplier to receive a message. Send it first — the thread " +
+          "opens then.",
+      });
       return;
     }
     const ok = await postMessage(found.orgId, id.data, {
@@ -997,9 +1101,21 @@ router.delete(
       });
       return;
     }
+    // Read the object key BEFORE dropping the row — afterwards there is
+    // nothing left pointing at the bytes.
+    const supabase = getOrgScopedClient(found.orgId);
+    const { data: doc } = (await supabase
+      .from("referral_documents")
+      .select("id, storage_object_path")
+      .eq("id", docId.data)
+      .eq("referral_id", id.data)
+      .eq("uploaded_by_kind", "provider")
+      .limit(1)
+      .maybeSingle()) as { data: Record<string, unknown> | null };
+
     // A provider removes their own attachments; a DME's upload is the
     // DME's record and is not theirs to delete.
-    const { error } = await getOrgScopedClient(found.orgId)
+    const { error } = await supabase
       .from("referral_documents")
       .delete()
       .eq("id", docId.data)
@@ -1008,6 +1124,42 @@ router.delete(
     if (error) {
       res.status(500).json({ error: "delete_failed" });
       return;
+    }
+
+    // Then the bytes. This is NOT optional housekeeping: the weekly
+    // orphan sweep (worker/jobs/prescription-attachment-sweep.ts) treats
+    // every `object_storage_acls.path` as an authoritative live
+    // reference, so an object whose ACL row survives is never collected.
+    // Dropping only the DB row would retain the prescription and
+    // sleep-study bytes indefinitely while the UI reports them removed.
+    //
+    // Best-effort and bytes-first, matching the POD and prescription
+    // delete handlers: the row is already gone, and failing the request
+    // now would tell the provider the removal didn't happen when it did.
+    if (typeof doc?.storage_object_path === "string") {
+      const objectPath = doc.storage_object_path;
+      try {
+        const objectFile = await objectStorage.getObjectEntityFile(objectPath);
+        await objectFile.delete({ ignoreNotFound: true });
+      } catch (err) {
+        logger.warn(
+          { err, referral_id: id.data },
+          "referral_document_bytes_delete_failed",
+        );
+      }
+      try {
+        await supabase
+          .raw()
+          .schema("resupply")
+          .from("object_storage_acls")
+          .delete()
+          .eq("path", objectPath);
+      } catch (err) {
+        logger.warn(
+          { err, referral_id: id.data },
+          "referral_document_acl_delete_failed",
+        );
+      }
     }
     await recordReferralEvent(found.orgId, id.data, "document.removed", {
       actorKind: "provider",

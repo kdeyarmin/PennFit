@@ -9,6 +9,7 @@ import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { ArrowLeft, FileSignature, CheckCircle2 } from "lucide-react";
 
+import { safeReturnTo } from "@/lib/provider/safe-return";
 import {
   SignaturePad,
   type SignaturePadHandle,
@@ -62,6 +63,7 @@ export function ProviderSignDocument({
   providerName?: string | null;
 }) {
   const [, setLocation] = useLocation();
+  const returnTo = safeReturnTo(window.location.search);
   const [signerName, setSignerName] = useState("");
   const [signerTitle, setSignerTitle] = useState("");
   const sigRef = useRef<SignaturePadHandle | null>(null);
@@ -101,6 +103,10 @@ export function ProviderSignDocument({
   });
 
   if (done) {
+    // With a return target the signature is a STEP, not the end: say what
+    // still has to happen rather than claiming the practice was notified,
+    // which for a referral is simply untrue at this point.
+    const continueTo = returnTo;
     return (
       <ProviderShell providerName={providerName}>
         <Card className="mx-auto max-w-lg p-8 text-center">
@@ -112,12 +118,17 @@ export function ProviderSignDocument({
             {done === "signed" ? "Signature recorded" : "Document declined"}
           </h1>
           <p className="mt-1 text-sm text-slate-500">
-            {done === "signed"
-              ? "Thank you. The practice has been notified."
-              : "The practice has been notified of your decision."}
+            {done === "declined"
+              ? "The practice has been notified of your decision."
+              : continueTo
+                ? "The order is signed. It still has to be sent — carry on where you left off."
+                : "Thank you. The practice has been notified."}
           </p>
-          <Button className="mt-6" onClick={() => setLocation("/provider")}>
-            Back to my documents
+          <Button
+            className="mt-6"
+            onClick={() => setLocation(continueTo ?? "/provider")}
+          >
+            {continueTo ? "Back to the referral" : "Back to my documents"}
           </Button>
         </Card>
       </ProviderShell>

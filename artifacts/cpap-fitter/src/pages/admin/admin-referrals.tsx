@@ -10,8 +10,13 @@
 // reason. Both are one click plus, in the decline case, a sentence the
 // provider will actually read.
 
-import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { Download, Inbox, MessageSquare, UserCheck } from "lucide-react";
 
 import { Card } from "@/components/admin/Card";
@@ -44,6 +49,9 @@ import { searchPatients } from "@/lib/admin/outreach-playbooks-api";
 
 const QUERY_KEY = ["admin", "referrals"] as const;
 
+/** Matches the API's own default page size. */
+const PAGE_SIZE = 50;
+
 const FILTERS: Array<{ key: string; label: string; status?: ReferralStatus }> =
   [
     { key: "open", label: "Needs action" },
@@ -66,19 +74,32 @@ export function AdminReferralsPage() {
   const [showProviders, setShowProviders] = useState(false);
 
   const active = FILTERS.find((f) => f.key === filter);
-  const referrals = useQuery({
+  // The API caps a page at 50. Without an offset the tail of a busy
+  // queue is simply unreachable, and an unreachable referral is an
+  // unacknowledged patient — so pages accumulate rather than replace.
+  const referrals = useInfiniteQuery({
     queryKey: [...QUERY_KEY, filter],
-    queryFn: () =>
-      fetchInboundReferrals(
-        active?.status ? { status: active.status } : { open: true },
-      ),
+    initialPageParam: 0,
+    queryFn: ({ pageParam }) =>
+      fetchInboundReferrals({
+        ...(active?.status ? { status: active.status } : { open: true }),
+        limit: PAGE_SIZE,
+        offset: pageParam as number,
+      }),
+    getNextPageParam: (last, all) =>
+      last.referrals.length < PAGE_SIZE
+        ? undefined
+        : all.reduce((n, p) => n + p.referrals.length, 0),
   });
 
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: QUERY_KEY });
   };
 
-  const rows: InboundReferral[] = referrals.data?.referrals ?? [];
+  const rows: InboundReferral[] = useMemo(
+    () => (referrals.data?.pages ?? []).flatMap((p) => p.referrals),
+    [referrals.data],
+  );
 
   return (
     <div className="admin-root space-y-4">
@@ -194,6 +215,20 @@ export function AdminReferralsPage() {
           </Card>
         ))}
       </div>
+
+      {referrals.hasNextPage ? (
+        <div className="flex justify-center">
+          <Button
+            intent="secondary"
+            onClick={() => void referrals.fetchNextPage()}
+            disabled={referrals.isFetchingNextPage}
+          >
+            {referrals.isFetchingNextPage
+              ? "Loading…"
+              : `Load more (${rows.length} so far)`}
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 }

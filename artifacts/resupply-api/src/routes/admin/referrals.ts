@@ -155,6 +155,37 @@ function rowsOf(result: unknown): Row[] {
 }
 
 /**
+ * Resolve a referral this tenant is actually allowed to touch.
+ *
+ * Every handler below that writes to a CHILD table has to call this
+ * first. `referral_messages` and `referral_events` carry an ordinary
+ * `referral_id` foreign key with no composite tenant constraint, so
+ * inserting against an id taken straight from the URL lets staff in one
+ * tenant attach rows to another tenant's referral: the child row is
+ * stamped with THIS org while pointing at a row owned by someone else.
+ * It is then invisible from both sides and quietly references another
+ * tenant's PHI.
+ *
+ * The org-scoped client plus the submitted-at filter is the whole guard
+ * — the same pair the queue and detail reads use. Returns null for
+ * "doesn't exist", "belongs to another tenant", and "still a draft"
+ * alike, so a caller cannot tell them apart.
+ */
+async function loadSubmittedReferral(
+  supabase: ReturnType<typeof getOrgScopedClient>,
+  referralId: string,
+): Promise<Row | null> {
+  const { data } = (await supabase
+    .from("referrals")
+    .select("id, status, submitted_at")
+    .eq("id", referralId)
+    .not("submitted_at", "is", null)
+    .limit(1)
+    .maybeSingle()) as { data: Row | null };
+  return data ?? null;
+}
+
+/**
  * Registry names for a set of provider ids, best-effort.
  *
  * `providers` is the GLOBAL NPI directory — no `org_id`, shared across
@@ -537,7 +568,15 @@ router.get(
 router.get(
   "/admin/provider-referrals/:id/documents/:docId/content",
   requireAdmin,
-  requirePermission("provider_portal.manage"),
+  // `clinical.read`, matching the detail route that RENDERS this list —
+  // not `provider_portal.manage`. The clinician role holds clinical.read
+  // and clinical.intervention.write but not provider_portal.manage, so
+  // gating the download on the latter let a clinician accept a referral
+  // and see "prescription.pdf" listed while 403ing on opening it. The
+  // access-control permission belongs on the /providers link endpoints,
+  // which decide who may send PHI here; reading a document on a referral
+  // you can already read is a clinical action.
+  requirePermission("clinical.read"),
   adminRateLimit({ name: "referrals.document_content", preset: "query" }),
   async (req, res) => {
     const orgId = tenant(req);
@@ -870,6 +909,17 @@ router.post(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
+    // Resolve the parent under THIS tenant before writing to a child
+    // table — see loadSubmittedReferral. Without it, a referral id from
+    // another tenant would get an org-A message row hung off a org-B
+    // referral.
+    const supabase = getOrgScopedClient(orgId);
+    const referral = await loadSubmittedReferral(supabase, id.data);
+    if (!referral) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+
     const ok = await postStaffMessage(
       orgId,
       id.data,
