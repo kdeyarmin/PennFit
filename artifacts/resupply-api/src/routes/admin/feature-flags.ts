@@ -21,7 +21,10 @@ import { z } from "zod";
 import { logAudit } from "@workspace/resupply-audit";
 import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
-import { resolvePlanFlagPreset } from "@workspace/resupply-domain";
+import {
+  isPresetExemptFlag,
+  resolvePlanFlagPreset,
+} from "@workspace/resupply-domain";
 
 import {
   FEATURE_FLAG_KEYS,
@@ -310,11 +313,17 @@ router.post(
       .eq("org_id", orgId);
     if (error) throw error;
 
-    // Only manageable (in-catalog) flags that actually have a row.
+    // Only manageable (in-catalog) flags that actually have a row —
+    // minus the keys presets deliberately don't govern. A preset turns
+    // OFF everything it doesn't list, so leaving `module.*` in here would
+    // make "apply my plan's recommended bundle" wipe out the tenant's own
+    // choices about which parts of the console they navigate.
     const current = new Map<string, boolean>();
     for (const r of data ?? []) {
       const row = r as { key: string; enabled: boolean };
-      if (MANAGEABLE_KEYS.has(row.key)) current.set(row.key, row.enabled);
+      if (!MANAGEABLE_KEYS.has(row.key)) continue;
+      if (isPresetExemptFlag(row.key)) continue;
+      current.set(row.key, row.enabled);
     }
 
     const changes: { key: string; from: boolean; to: boolean }[] = [];

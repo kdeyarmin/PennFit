@@ -29,6 +29,8 @@ import {
   type FeatureFlagActivity,
 } from "@/lib/admin/feature-flags-api";
 import { formatAppDate, formatAppDateTime } from "@/lib/utils";
+import { APP_MODULES, isAppModuleKey } from "@/lib/admin/app-modules";
+import { getGetAdminMeQueryKey } from "@workspace/api-client-react/admin";
 
 const QUERY_KEY = ["admin-feature-flags"] as const;
 const ACTIVITY_QUERY_KEY = ["admin-feature-flags-activity"] as const;
@@ -51,6 +53,7 @@ export function AdminControlCenterPage() {
         description="On/off switches for major features. Flipping a switch takes effect within a few seconds — no deploy required. Use these during incidents, vendor outages, or when you need to pause a campaign without canceling it."
       />
       <SummaryTiles />
+      <AppModulesCard />
       <PresetCard />
       <FlagsList />
       <ActivityPanel />
@@ -497,6 +500,115 @@ function renderRelativeAge(when: Date): string {
   return formatAppDate(when);
 }
 
+// ─────────────────────────────────────────────────────────────────
+// App Modules — "which parts of this product do we actually use?"
+//
+// This is a different question from every other switch on the page. The
+// rest are incident controls: pause the dispatcher, stop auto-submitting
+// claims, take voice offline — flipped when something is wrong, flipped
+// back when it's fixed. A module switch is a setup decision that a
+// tenant makes once ("we're cash-pay, we will never open a claims
+// worklist") and it pays off on every page load afterwards, because
+// turning one off REMOVES that part of the console from the sidebar.
+//
+// So it gets its own card, at the top, grouped by where each module
+// lives in the console rather than alphabetically by category — the
+// order an operator thinks in when deciding what to hide. The rows come
+// from the same query as the list below (no extra request) and reuse
+// FlagRow, so optimistic toggling, error handling, and the
+// needs-redeploy badge all behave identically.
+// ─────────────────────────────────────────────────────────────────
+
+function AppModulesCard() {
+  const query = useQuery({
+    queryKey: QUERY_KEY,
+    queryFn: listFeatureFlags,
+  });
+
+  const grouped = useMemo(() => {
+    const byKey = new Map(
+      (query.data?.flags ?? []).map((f) => [f.key, f] as const),
+    );
+    // Walk APP_MODULES (not the server rows) so the order and grouping are
+    // this build's, and a module the API hasn't seeded yet simply doesn't
+    // render rather than appearing in an arbitrary spot.
+    const out: Array<{
+      group: string;
+      rows: Array<{ flag: FeatureFlag; label: string; hides: string }>;
+    }> = [];
+    for (const mod of APP_MODULES) {
+      const flag = byKey.get(mod.key);
+      if (!flag) continue;
+      let bucket = out.find((g) => g.group === mod.group);
+      if (!bucket) {
+        bucket = { group: mod.group, rows: [] };
+        out.push(bucket);
+      }
+      bucket.rows.push({ flag, label: mod.label, hides: mod.hides });
+    }
+    return out;
+  }, [query.data]);
+
+  const offCount = useMemo(
+    () =>
+      grouped.reduce(
+        (sum, g) => sum + g.rows.filter((r) => !r.flag.enabled).length,
+        0,
+      ),
+    [grouped],
+  );
+
+  if (query.isPending) return <Spinner />;
+  // A load failure is already surfaced by FlagsList below (same query,
+  // same error) — repeating the panel here would just be noise.
+  if (query.isError || grouped.length === 0) return null;
+
+  return (
+    <section
+      className="rounded-lg border border-slate-200 bg-white"
+      data-testid="control-center-app-modules"
+    >
+      <div className="border-b border-slate-200 px-4 py-3">
+        <h2 className="text-sm font-semibold text-slate-900">
+          Parts of the app
+        </h2>
+        <p className="mt-1 text-sm text-slate-600">
+          Switch off anything your company doesn&apos;t use and it disappears
+          from the sidebar, so your team only navigates the parts they actually
+          work in. Nothing is deleted — switch it back on and every page returns
+          exactly as it was.
+        </p>
+        {offCount > 0 && (
+          <p
+            className="mt-1 text-xs font-semibold text-amber-700"
+            data-testid="control-center-app-modules-off-count"
+          >
+            {offCount} {offCount === 1 ? "part is" : "parts are"} currently
+            hidden from the sidebar.
+          </p>
+        )}
+      </div>
+      {grouped.map((group) => (
+        <div key={group.group}>
+          <h3 className="bg-slate-50 px-4 py-1.5 text-xs font-semibold uppercase tracking-wider text-slate-600">
+            {group.group}
+          </h3>
+          <div className="divide-y divide-slate-200">
+            {group.rows.map((row) => (
+              <FlagRow
+                key={row.flag.key}
+                flag={row.flag}
+                title={row.label}
+                subtitle={row.hides}
+              />
+            ))}
+          </div>
+        </div>
+      ))}
+    </section>
+  );
+}
+
 function FlagsList() {
   const query = useQuery({
     queryKey: QUERY_KEY,
@@ -506,6 +618,10 @@ function FlagsList() {
   const grouped = useMemo(() => {
     const byCategory = new Map<string, FeatureFlag[]>();
     for (const f of query.data?.flags ?? []) {
+      // App modules get their own card above, grouped by where they live
+      // in the console instead of alphabetically by category. Listing
+      // them twice would make the page longer AND less clear.
+      if (isAppModuleKey(f.key)) continue;
       const list = byCategory.get(f.category) ?? [];
       list.push(f);
       byCategory.set(f.category, list);
@@ -554,7 +670,18 @@ function FlagsList() {
   );
 }
 
-function FlagRow({ flag }: { flag: FeatureFlag }) {
+function FlagRow({
+  flag,
+  title,
+  subtitle,
+}: {
+  flag: FeatureFlag;
+  /** Overrides the humanized key. Used by the App Modules card, where
+   *  "Billing & claims" reads better than "Module billing". */
+  title?: string;
+  /** Overrides the server-supplied description line. */
+  subtitle?: string;
+}) {
   const queryClient = useQueryClient();
   // Confirmation modal state for high-risk disables. `null` = modal
   // closed. A non-null value means "the admin clicked the switch to
@@ -596,6 +723,14 @@ function FlagRow({ flag }: { flag: FeatureFlag }) {
       // Without this invalidation the panel stays stale until the
       // user manually reloads the page.
       void queryClient.invalidateQueries({ queryKey: ACTIVITY_QUERY_KEY });
+      // The sidebar reads its disabled-module set from /admin/me, a
+      // DIFFERENT query — and the app-wide defaults are staleTime 60s
+      // with refetchOnWindowFocus off, so without this the operator
+      // flips a module and the navigation keeps its old shape for up to
+      // a minute with no way to hurry it but a reload. That reads as
+      // "the switch is broken", which is a bad first impression for the
+      // one feature whose entire point is visible.
+      void queryClient.invalidateQueries({ queryKey: getGetAdminMeQueryKey() });
     },
   });
 
@@ -641,7 +776,7 @@ function FlagRow({ flag }: { flag: FeatureFlag }) {
             className="text-sm font-semibold text-slate-900"
             title={flag.key}
           >
-            {humanizeAction(flag.key)}
+            {title ?? humanizeAction(flag.key)}
           </span>
           {!flag.enabled && (
             <span className="rounded bg-amber-100 text-amber-800 px-1.5 py-0.5 text-xs font-semibold">
@@ -667,7 +802,9 @@ function FlagRow({ flag }: { flag: FeatureFlag }) {
             </span>
           )}
         </div>
-        <p className="mt-1 text-sm text-slate-700">{flag.description}</p>
+        <p className="mt-1 text-sm text-slate-700">
+          {subtitle ?? flag.description}
+        </p>
         <p className="mt-1 text-xs text-slate-500">{updatedRelative}</p>
         {!manageable && (
           <p

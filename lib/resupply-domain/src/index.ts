@@ -7,6 +7,8 @@ export {
   PLAN_FEATURE_FLAG_PRESETS,
   DELIBERATELY_OFF_FLAGS,
   resolvePlanFlagPreset,
+  isPresetExemptFlag,
+  PRESET_EXEMPT_FLAG_PREFIXES,
   type BillingPlanCode,
 } from "./feature-flag-presets";
 

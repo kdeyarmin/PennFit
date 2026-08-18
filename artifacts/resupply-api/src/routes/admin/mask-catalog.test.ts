@@ -305,7 +305,7 @@ describe("PATCH /admin/fitter/catalog/:id — ownership and versioning", () => {
   });
 });
 
-// ── Batch sign-off + provenance (migration 0488) ──────────────────────
+// ── Batch sign-off + provenance (migration 0491) ──────────────────────
 //
 // The batch route is the same consequential write as the single route —
 // it lifts the engine's confidence cap on every id it touches — so it

@@ -46,7 +46,7 @@ Procedure, per model you dispense:
 3. Fill in **Sign-off source** — the class of evidence and a reference
    (e.g. "AirFit N20 fitting template rev C"). This is recorded on every
    sign-off you then make and printed on the fit report, which is what
-   makes the report evidence rather than an assertion (migration `0488`).
+   makes the report evidence rather than an assertion (migration `0491`).
 4. Check each size's millimetre bands against the guide. Correct any that
    are wrong **before** signing off — a sign-off approves the numbers as
    they stand.

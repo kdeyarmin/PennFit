@@ -69,7 +69,7 @@ export interface MaskSizeVariant {
   needsClinicalReview: boolean;
   reviewedByEmail: string | null;
   reviewedAt: string | null;
-  /** What the reviewer checked the bands against (migration 0488). Null on
+  /** What the reviewer checked the bands against (migration 0491). Null on
    *  sign-offs recorded before provenance capture existed. */
   reviewSourceKind: ReviewSourceKind | null;
   reviewSourceRef: string | null;

@@ -8,7 +8,7 @@
 // confident automated recommendation off estimated geometry. The
 // "Needs review" filter is therefore the default view.
 //
-// A sign-off also records WHAT it was checked against (migration 0488).
+// A sign-off also records WHAT it was checked against (migration 0491).
 // The source is captured once per model — a reviewer opens one
 // manufacturer fitting guide and works that model's whole size run
 // against it — and then applies to every sign-off made from this panel,
@@ -61,7 +61,7 @@ const SOURCE_KIND_LABELS = new Map(
 /**
  * Who signed a size off and what they checked it against.
  *
- * Sign-offs recorded before migration 0488 carry no source. That reads as
+ * Sign-offs recorded before migration 0491 carry no source. That reads as
  * "source not recorded", never as an invented citation — the whole point of
  * the column is that a reader can tell evidence from assertion.
  */

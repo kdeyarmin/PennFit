@@ -255,3 +255,37 @@ describe("admin-control-center ActivityPanel — retained behaviour", () => {
     expect(SRC).toContain("function ActivityRow(");
   });
 });
+
+describe("app modules card", () => {
+  it("renders the modules card above the generic flag list", () => {
+    const cardIdx = SRC.indexOf("<AppModulesCard />");
+    const listIdx = SRC.indexOf("<FlagsList />");
+    expect(cardIdx).toBeGreaterThan(-1);
+    expect(listIdx).toBeGreaterThan(-1);
+    expect(cardIdx).toBeLessThan(listIdx);
+  });
+
+  it("does not repeat module rows in the generic flag list", () => {
+    expect(SRC).toContain("isAppModuleKey(f.key)");
+  });
+
+  it("invalidates /admin/me after a toggle so the sidebar re-renders", () => {
+    // The sidebar reads its disabled-module set from a DIFFERENT query
+    // (/admin/me), and the app-wide defaults are staleTime 60s with
+    // refetchOnWindowFocus off. Without this invalidation an operator
+    // flips a module and the navigation keeps its old shape for up to a
+    // minute — which reads as a broken switch.
+    expect(SRC).toContain(
+      'import { getGetAdminMeQueryKey } from "@workspace/api-client-react/admin";',
+    );
+    // Inside the toggle mutation's onSettled, alongside the other two
+    // invalidations — not merely imported somewhere in the file.
+    const settledIdx = SRC.indexOf("onSettled: () => {");
+    const closeIdx = SRC.indexOf("\n    },", settledIdx);
+    expect(settledIdx).toBeGreaterThan(-1);
+    expect(closeIdx).toBeGreaterThan(settledIdx);
+    expect(SRC.slice(settledIdx, closeIdx)).toContain(
+      "queryKey: getGetAdminMeQueryKey()",
+    );
+  });
+});

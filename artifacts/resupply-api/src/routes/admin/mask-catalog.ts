@@ -139,7 +139,7 @@ const bandPatch = z
   .strict();
 
 /**
- * Provenance for a sign-off (migration 0488).
+ * Provenance for a sign-off (migration 0491).
  *
  * `clinical_judgment` is deliberately offered: a reviewer going on
  * experience rather than a document should be able to say so, instead of
@@ -939,7 +939,7 @@ function mapVariant(row: Row, review?: Row) {
       row.needs_clinical_review === true && review?.approved !== true,
     reviewedByEmail: review?.reviewed_by_email ?? null,
     reviewedAt: review?.reviewed_at ?? null,
-    // Provenance (0488). NULL on sign-offs recorded before the columns
+    // Provenance (0491). NULL on sign-offs recorded before the columns
     // existed — the UI shows "source not recorded" rather than inventing one.
     reviewSourceKind: review?.source_kind ?? null,
     reviewSourceRef: review?.source_ref ?? null,
