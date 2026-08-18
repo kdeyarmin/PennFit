@@ -1,119 +1,109 @@
-// The sign-off source pre-fill, as pure logic.
+// Sign-off provenance decisions for the mask-catalog review queue.
 //
-// Context: migration 0499 made the first bands `fit_data_source =
-// 'manufacturer'`, each carrying the citation 0495 requires. The pre-fill
-// previously mapped only 'measured' -> physical_measurement, so a
-// manufacturer-sourced model seeded the REFERENCE and left the CLASS
-// blank — and the class is the half that makes provenance aggregatable.
+// Exercises the REAL implementation (admin-mask-catalog.prefill.ts), which
+// the page imports — an earlier version of this file re-implemented the
+// logic and would have kept passing while the component drifted.
 //
-// It also decides which job the panel says the reviewer is doing:
-// confirming a published value reads very differently from auditing an
-// estimate, and getting that backwards would be worse than saying nothing.
+// Two behaviours are load-bearing:
+//
+//   * what the panel TELLS the reviewer they are doing. Confirming a
+//     published value and auditing an estimate are different tasks, and a
+//     'measured' or mixed queue is neither;
+//   * what it PRE-FILLS. The reference saves typing; the evidence class
+//     must not be guessed, because a wrong class prints on every sign-off
+//     and on the fit report after it.
 
 import { describe, expect, it } from "vitest";
 
-type Variant = {
-  needsClinicalReview: boolean;
-  fitDataSource: "manufacturer" | "measured" | "estimated";
-  fitDataSourceRef: string | null;
-};
-
-/** Mirrors the component's derived flag. */
-function pendingAllManufacturer(variants: Variant[]): boolean {
-  const pending = variants.filter((v) => v.needsClinicalReview);
-  return (
-    pending.length > 0 &&
-    pending.every((v) => v.fitDataSource === "manufacturer")
-  );
-}
-
-/** Mirrors the component's pre-fill decision. */
-function prefill(
-  variants: Variant[],
-): { kind: string | null; ref: string | null } | null {
-  const pending = variants.filter((v) => v.needsClinicalReview);
-  if (pending.length === 0) return null;
-  if (pending.some((v) => v.fitDataSource === "estimated")) return null;
-  const refs = new Set(pending.map((v) => v.fitDataSourceRef));
-  const kinds = new Set(pending.map((v) => v.fitDataSource));
-  if (refs.size !== 1 || kinds.size !== 1) return null;
-  const [ref] = refs;
-  if (!ref) return null;
-  const kind = [...kinds][0];
-  return {
-    kind:
-      kind === "measured"
-        ? "physical_measurement"
-        : kind === "manufacturer"
-          ? "manufacturer_fit_guide"
-          : null,
-    ref: String(ref),
-  };
-}
+import {
+  pendingSourceKind,
+  prefillFromPending,
+  type PendingBand,
+} from "./admin-mask-catalog.prefill";
 
 const REF = "Fisher & Paykel … REF 620198 REV C 2020-08";
-const mfr = (ref: string | null = REF): Variant => ({
-  needsClinicalReview: true,
-  fitDataSource: "manufacturer",
-  fitDataSourceRef: ref,
-});
-const est = (): Variant => ({
-  needsClinicalReview: true,
-  fitDataSource: "estimated",
-  fitDataSourceRef: null,
+
+const band = (
+  fitDataSource: PendingBand["fitDataSource"],
+  fitDataSourceRef: string | null = null,
+  needsClinicalReview = true,
+): PendingBand => ({ needsClinicalReview, fitDataSource, fitDataSourceRef });
+
+const mfr = (ref: string | null = REF) => band("manufacturer", ref);
+const measured = (ref: string | null = "Calipers, 2026-08-14") =>
+  band("measured", ref);
+const est = () => band("estimated", null);
+
+describe("which job the reviewer is told they are doing", () => {
+  it("says manufacturer when every pending band is manufacturer-sourced", () => {
+    expect(pendingSourceKind([mfr(), mfr()])).toBe("manufacturer");
+  });
+
+  it("says measured for a physically-measured queue", () => {
+    // Previously this fell into the "these are estimates" branch, which
+    // is simply untrue of a measured band.
+    expect(pendingSourceKind([measured(), measured()])).toBe("measured");
+  });
+
+  it("says mixed when the pending bands disagree", () => {
+    // One citation cannot describe a queue like this, so the panel has to
+    // send the reviewer to the per-row Source column.
+    expect(pendingSourceKind([mfr(), est()])).toBe("mixed");
+    expect(pendingSourceKind([mfr(), measured()])).toBe("mixed");
+  });
+
+  it("says estimated for an estimated queue", () => {
+    expect(pendingSourceKind([est(), est()])).toBe("estimated");
+  });
+
+  it("ignores bands that are already signed off", () => {
+    const signedOff = band("estimated", null, false);
+    expect(pendingSourceKind([mfr(), signedOff])).toBe("manufacturer");
+  });
+
+  it("does not claim a source when nothing is pending", () => {
+    expect(pendingSourceKind([])).toBe("estimated");
+    expect(pendingSourceKind([band("manufacturer", REF, false)])).toBe(
+      "estimated",
+    );
+  });
 });
 
-describe("pre-filling the sign-off source", () => {
-  it("fills both the class and the reference for a manufacturer-sourced model", () => {
-    expect(prefill([mfr(), mfr(), mfr()])).toEqual({
-      kind: "manufacturer_fit_guide",
+describe("what the sign-off form is pre-filled with", () => {
+  it("seeds the reference but NOT the class for manufacturer bands", () => {
+    // `fit_data_source` names the publisher, not the document type, and
+    // the schema separates a fit guide from a spec sheet. Guessing would
+    // print the wrong evidence class on every sign-off.
+    expect(prefillFromPending([mfr(), mfr()])).toEqual({
+      kind: null,
       ref: REF,
     });
   });
 
-  it("fills physical_measurement for a measured model", () => {
-    const measured: Variant = {
-      needsClinicalReview: true,
-      fitDataSource: "measured",
-      fitDataSourceRef: "Calipers, 2026-08-14",
-    };
-    expect(prefill([measured])).toEqual({
+  it("seeds physical_measurement for a measured band", () => {
+    // The one unambiguous mapping: a physical measurement is a physical
+    // measurement, whatever was measured.
+    expect(prefillFromPending([measured()])).toEqual({
       kind: "physical_measurement",
       ref: "Calipers, 2026-08-14",
     });
   });
 
-  it("fills nothing for estimated bands — there is no citation to offer", () => {
-    expect(prefill([est(), est()])).toBeNull();
-    expect(prefill([mfr(), est()])).toBeNull();
+  it("seeds nothing when any pending band is an estimate", () => {
+    expect(prefillFromPending([est()])).toBeNull();
+    expect(prefillFromPending([mfr(), est()])).toBeNull();
   });
 
-  it("fills nothing when the pending bands disagree on their source", () => {
-    // Two different documents cannot be summarised as one citation, and
-    // picking either would misattribute the other.
-    expect(prefill([mfr("Doc A"), mfr("Doc B")])).toBeNull();
+  it("seeds nothing when the pending bands cite different documents", () => {
+    expect(prefillFromPending([mfr("Doc A"), mfr("Doc B")])).toBeNull();
   });
 
-  it("fills nothing when the source is named but blank", () => {
-    expect(prefill([mfr(null)])).toBeNull();
-  });
-});
-
-describe("which job the reviewer is told they are doing", () => {
-  it("says confirm when every pending band is manufacturer-sourced", () => {
-    expect(pendingAllManufacturer([mfr(), mfr()])).toBe(true);
+  it("seeds nothing when the source is named but blank", () => {
+    expect(prefillFromPending([mfr(null)])).toBeNull();
   });
 
-  it("says audit when any pending band is still an estimate", () => {
-    // The mixed case has to read as audit: one estimate among sourced
-    // bands is exactly the row that needs looking at.
-    expect(pendingAllManufacturer([mfr(), est()])).toBe(false);
-  });
-
-  it("says audit when there is nothing pending at all", () => {
-    expect(pendingAllManufacturer([])).toBe(false);
-    expect(
-      pendingAllManufacturer([{ ...mfr(), needsClinicalReview: false }]),
-    ).toBe(false);
+  it("seeds nothing when there is nothing pending", () => {
+    expect(prefillFromPending([])).toBeNull();
+    expect(prefillFromPending([band("manufacturer", REF, false)])).toBeNull();
   });
 });

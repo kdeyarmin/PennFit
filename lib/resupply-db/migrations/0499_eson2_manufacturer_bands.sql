@@ -79,6 +79,18 @@ SET "nose_width_min_mm"  = b."nw_min",
     "nose_width_max_mm"  = b."nw_max",
     "nose_height_min_mm" = b."nh_min",
     "nose_height_max_mm" = b."nh_max",
+    -- `fit_data_source` is ROW-level, so every non-NULL band on the row
+    -- inherits the citation below. The 0486 seed also estimated
+    -- nose-to-chin and mouth width for these rows, and REF 620198 says
+    -- nothing about either — leaving them would attribute an estimate to
+    -- a document that does not contain it, and `scoreVariant` averages
+    -- every non-NULL dimension, so a signed-off row could still be
+    -- scoring on uncited numbers. Nasal sizing in the cited table is nose
+    -- height and width; the rest is cleared rather than mislabelled.
+    "nose_to_chin_min_mm" = NULL,
+    "nose_to_chin_max_mm" = NULL,
+    "mouth_width_min_mm"  = NULL,
+    "mouth_width_max_mm"  = NULL,
     "fit_data_source"     = 'manufacturer',
     "fit_data_source_ref" =
       'Fisher & Paykel Mask Family Seal Size Measurements, REF 620198 REV C 2020-08 (nasal mask table)',
@@ -96,6 +108,36 @@ WHERE v."mask_model_id" = m."id"
   -- Platform rows only. A tenant that added its own Eson 2 row owns that
   -- data and must not have it rewritten by a platform migration.
   AND m."org_id" IS NULL;
+--> statement-breakpoint
+
+-- Any existing sign-off attested to the OLD numbers.
+--
+-- `mask_variant_reviews` is keyed on `size_variant_id`, and this migration
+-- rewrites the variant IN PLACE, so the UUID is unchanged and a tenant's
+-- prior approval would carry straight over to materially different bands.
+-- `catalog-store.ts` treats an approved row as clearing
+-- `needs_clinical_review`, so that approval would ALSO lift the
+-- high-confidence cap — for geometry nobody has looked at. Exactly the
+-- outcome the review queue exists to prevent.
+--
+-- Deleted rather than flagged: the attestation named millimetre ranges
+-- that no longer exist on the row, so keeping it would preserve a record
+-- that points at nothing. The affected tenants return to the queue and
+-- re-confirm, which is now a confirm-a-sourced-value job rather than an
+-- audit.
+--
+-- In practice this is expected to delete nothing — the fitter flags ship
+-- OFF and no tenant has worked the queue yet — but correctness here must
+-- not depend on that being true.
+DELETE FROM "resupply"."mask_variant_reviews" r
+USING "resupply"."mask_size_variants" v,
+      "resupply"."mask_models" m
+WHERE r."size_variant_id" = v."id"
+  AND v."mask_model_id" = m."id"
+  AND m."slug" = 'fisher-paykel-eson2'
+  AND m."org_id" IS NULL
+  AND v."component" = 'cushion'
+  AND v."size_code" IN ('S', 'M', 'L');
 --> statement-breakpoint
 
 -- Bump the catalog version so anything caching resolved geometry re-reads.

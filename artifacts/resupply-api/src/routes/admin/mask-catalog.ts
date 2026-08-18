@@ -80,6 +80,7 @@ const listQuery = z
     serviceLine: z.enum(["adult", "pediatric", "both"]).optional(),
     status: z.enum(["current", "discontinued", "pre_release"]).optional(),
     needsReview: z.coerce.boolean().optional(),
+    dispensedOnly: z.coerce.boolean().optional(),
     search: z.string().trim().max(120).optional(),
     limit: z.coerce.number().int().min(1).max(300).default(100),
     offset: z.coerce.number().int().min(0).default(0),
@@ -230,6 +231,46 @@ router.get(
       }
     }
 
+    // "Only what we dispense". Resolved BEFORE the catalog read so a
+    // model-targeted formulary can narrow the query itself; a
+    // manufacturer-level allow is applied to the returned rows below.
+    let dispensed: Awaited<ReturnType<typeof dispensedModelIds>> | null = null;
+    if (q.dispensedOnly) {
+      dispensed = await dispensedModelIds(orgId);
+      if (dispensed.error) {
+        res
+          .status(500)
+          .json({ error: "query_failed", message: dispensed.error.message });
+        return;
+      }
+      // Narrow by id only when there is no manufacturer-level allow to
+      // honour — combining them here would drop the manufacturer's other
+      // models before they are ever read.
+      if (dispensed.modelIds && dispensed.manufacturers.length === 0) {
+        if (dispensed.modelIds.length === 0) {
+          res.json({
+            models: [],
+            limit: q.limit,
+            offset: q.offset,
+            dispensingConfigured: true,
+          });
+          return;
+        }
+        pendingModelIds = pendingModelIds
+          ? pendingModelIds.filter((id) => dispensed!.modelIds!.includes(id))
+          : dispensed.modelIds;
+        if (pendingModelIds.length === 0) {
+          res.json({
+            models: [],
+            limit: q.limit,
+            offset: q.offset,
+            dispensingConfigured: true,
+          });
+          return;
+        }
+      }
+    }
+
     // Reference catalog: platform rows (org_id NULL) plus this tenant's own.
     let query = getOrgScopedClient(orgId)
       .raw()
@@ -267,12 +308,25 @@ router.get(
             return pending.error ? null : new Set(pending.modelIds);
           })();
 
+    let rows = data ?? [];
+    if (q.dispensedOnly && dispensed?.modelIds) {
+      const ids = new Set(dispensed.modelIds);
+      const makers = new Set(dispensed.manufacturers);
+      rows = rows.filter(
+        (row) =>
+          ids.has(String(row.id)) || makers.has(String(row.manufacturer)),
+      );
+    }
+
     res.json({
-      models: (data ?? []).map((row) =>
-        mapModel(row, pendingSet?.has(String(row.id))),
-      ),
+      models: rows.map((row) => mapModel(row, pendingSet?.has(String(row.id)))),
       limit: q.limit,
       offset: q.offset,
+      // False means the tenant has configured neither a formulary nor
+      // stock, so `dispensedOnly` could not narrow anything. The console
+      // uses this to explain an unfiltered list instead of silently
+      // ignoring the toggle.
+      dispensingConfigured: dispensed ? dispensed.modelIds !== null : undefined,
     });
   },
 );
@@ -288,6 +342,91 @@ router.get(
  * `mask_variant_reviews` is org-scoped. Both sets are small (~250 seeded
  * variants), so the cost is a rounding error on an admin page load.
  */
+/**
+ * The models this tenant actually dispenses.
+ *
+ * Why the sign-off queue needs this: the catalog ships ~290 estimated
+ * size bands across ~86 models, and the activation runbook is explicit
+ * that "a tenant only needs the models it actually dispenses". Until now
+ * the console had no way to express that, so every reviewer faced the
+ * whole platform catalog — which is the difference between an afternoon
+ * and a project, and therefore the difference between the clinical
+ * fitter being switched on and not.
+ *
+ * Two independent org-scoped signals count as "we dispense this", because
+ * a tenant may have configured either one and neither is mandatory:
+ *
+ *   1. a formulary rule that ALLOWS or PREFERS the model — targeted at
+ *      the model itself, or at its manufacturer;
+ *   2. stock: a `mask_availability` row that is anything other than
+ *      explicitly not carried.
+ *
+ * Deliberately NOT included: 'deny' rules (the opposite signal) and
+ * 'not_stocked' / 'out' availability. A denied model is one a reviewer
+ * has the least reason to spend time on.
+ *
+ * Returns `null` for `modelIds` when the tenant has configured NEITHER
+ * signal. That is not the same as "dispenses nothing" — it is "we cannot
+ * tell" — and the caller must fall back to the whole catalog rather than
+ * showing a brand-new tenant an empty queue they will read as a broken
+ * page.
+ */
+async function dispensedModelIds(orgId: string): Promise<{
+  modelIds: string[] | null;
+  manufacturers: string[];
+  error: { message: string } | null;
+}> {
+  const supabase = getOrgScopedClient(orgId);
+  const [rules, availability] = await Promise.all([
+    supabase
+      .from("formulary_rules")
+      .select("target_kind, target_mask_model_id, target_manufacturer, effect")
+      .in("effect", ["allow", "prefer"])
+      .limit(20000),
+    supabase
+      .from("mask_availability")
+      .select("mask_model_id, availability")
+      .in("availability", ["in_stock", "low", "special_order"])
+      .limit(20000),
+  ]);
+
+  const rulesResult = rules as unknown as {
+    data: Row[] | null;
+    error: { message: string } | null;
+  };
+  const availabilityResult = availability as unknown as {
+    data: Row[] | null;
+    error: { message: string } | null;
+  };
+  const error = rulesResult.error ?? availabilityResult.error;
+  if (error) return { modelIds: null, manufacturers: [], error };
+
+  const modelIds = new Set<string>();
+  const manufacturers = new Set<string>();
+  for (const r of rulesResult.data ?? []) {
+    if (r.target_mask_model_id) {
+      modelIds.add(String(r.target_mask_model_id));
+    } else if (r.target_manufacturer) {
+      // A manufacturer-level allow means every model from that maker, so
+      // it is resolved by the caller against the rows it is already
+      // reading rather than by a second catalog query here.
+      manufacturers.add(String(r.target_manufacturer));
+    }
+  }
+  for (const a of availabilityResult.data ?? []) {
+    if (a.mask_model_id) modelIds.add(String(a.mask_model_id));
+  }
+
+  if (modelIds.size === 0 && manufacturers.size === 0) {
+    return { modelIds: null, manufacturers: [], error: null };
+  }
+  return {
+    modelIds: [...modelIds],
+    manufacturers: [...manufacturers],
+    error: null,
+  };
+}
+
 async function pendingReviewModelIds(orgId: string): Promise<{
   modelIds: string[];
   error: { message: string } | null;
