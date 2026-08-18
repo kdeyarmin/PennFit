@@ -103,6 +103,9 @@ vi.mock("../../middlewares/requireAdmin", () => ({
 }));
 vi.mock("../../middlewares/admin-rate-limit", () => ({
   adminRateLimit: () => (_r: unknown, _s: unknown, next: () => void) => next(),
+  // Pre-auth IP buckets, mounted AHEAD of requireAdmin on every route in
+  // this file. Pass-through here — the limiting itself is upstream config.
+  adminReadRateLimiter: (_r: unknown, _s: unknown, next: () => void) => next(),
   adminWriteRateLimiter: (_r: unknown, _s: unknown, next: () => void) => next(),
 }));
 const invalidate = vi.hoisted(() => vi.fn());

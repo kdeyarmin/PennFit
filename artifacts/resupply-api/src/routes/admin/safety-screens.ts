@@ -55,6 +55,7 @@ import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import {
   adminRateLimit,
+  adminReadRateLimiter,
   adminWriteRateLimiter,
 } from "../../middlewares/admin-rate-limit";
 import {
@@ -234,6 +235,10 @@ async function ownedVersion(
 // ── List ───────────────────────────────────────────────────────────────
 router.get(
   "/admin/fitter/safety-screens",
+  // Pre-auth IP bucket FIRST: `requireAdmin` does a DB-backed session
+  // lookup, so a limiter placed only after it leaves that read exposed to
+  // an unauthenticated flood. The per-actor budget layers on top.
+  adminReadRateLimiter,
   requireAdmin,
   requirePermission("clinical.read"),
   adminRateLimit({ name: "safety_screens.list", preset: "query" }),
@@ -293,9 +298,11 @@ router.get(
 // ── Create a draft ─────────────────────────────────────────────────────
 router.post(
   "/admin/fitter/safety-screens",
+  // Pre-auth IP bucket FIRST — see the GET above for why.
+  adminWriteRateLimiter,
   requireAdmin,
   requirePermission("formulary.manage"),
-  adminWriteRateLimiter,
+  adminRateLimit({ name: "safety_screens.create", preset: "mutation" }),
   async (req, res) => {
     const orgId = tenant(req);
     if (!orgId) {
@@ -398,9 +405,11 @@ router.post(
 // ── Edit a draft's copy ────────────────────────────────────────────────
 router.patch(
   "/admin/fitter/safety-screens/:id",
+  // Pre-auth IP bucket FIRST — see the GET above for why.
+  adminWriteRateLimiter,
   requireAdmin,
   requirePermission("formulary.manage"),
-  adminWriteRateLimiter,
+  adminRateLimit({ name: "safety_screens.update", preset: "mutation" }),
   async (req, res) => {
     const orgId = tenant(req);
     if (!orgId) {
@@ -460,9 +469,11 @@ router.patch(
 // ── Replace a draft's questions ────────────────────────────────────────
 router.put(
   "/admin/fitter/safety-screens/:id/questions",
+  // Pre-auth IP bucket FIRST — see the GET above for why.
+  adminWriteRateLimiter,
   requireAdmin,
   requirePermission("formulary.manage"),
-  adminWriteRateLimiter,
+  adminRateLimit({ name: "safety_screens.questions", preset: "mutation" }),
   async (req, res) => {
     const orgId = tenant(req);
     if (!orgId) {
@@ -540,9 +551,11 @@ router.put(
 // ── Publish ────────────────────────────────────────────────────────────
 router.post(
   "/admin/fitter/safety-screens/:id/publish",
+  // Pre-auth IP bucket FIRST — see the GET above for why.
+  adminWriteRateLimiter,
   requireAdmin,
   requirePermission("formulary.manage"),
-  adminWriteRateLimiter,
+  adminRateLimit({ name: "safety_screens.publish", preset: "mutation" }),
   async (req, res) => {
     const orgId = tenant(req);
     if (!orgId) {
@@ -622,9 +635,11 @@ router.post(
 // ── Retire ─────────────────────────────────────────────────────────────
 router.post(
   "/admin/fitter/safety-screens/:id/retire",
+  // Pre-auth IP bucket FIRST — see the GET above for why.
+  adminWriteRateLimiter,
   requireAdmin,
   requirePermission("formulary.manage"),
-  adminWriteRateLimiter,
+  adminRateLimit({ name: "safety_screens.retire", preset: "mutation" }),
   async (req, res) => {
     const orgId = tenant(req);
     if (!orgId) {
@@ -672,9 +687,11 @@ router.post(
 // ── Discard a draft ────────────────────────────────────────────────────
 router.delete(
   "/admin/fitter/safety-screens/:id",
+  // Pre-auth IP bucket FIRST — see the GET above for why.
+  adminWriteRateLimiter,
   requireAdmin,
   requirePermission("formulary.manage"),
-  adminWriteRateLimiter,
+  adminRateLimit({ name: "safety_screens.delete", preset: "mutation" }),
   async (req, res) => {
     const orgId = tenant(req);
     if (!orgId) {
