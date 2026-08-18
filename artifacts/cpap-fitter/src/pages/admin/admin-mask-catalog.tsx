@@ -36,6 +36,10 @@ import {
   type ReviewProvenance,
   type ReviewSourceKind,
 } from "@/lib/admin/fitting-api";
+import {
+  pendingSourceKind as resolvePendingSourceKind,
+  prefillFromPending,
+} from "./admin-mask-catalog.prefill";
 
 const QUERY_KEY = ["admin", "mask-catalog"] as const;
 
@@ -86,15 +90,17 @@ function signOffTitle(v: {
 export function AdminMaskCatalogPage() {
   const queryClient = useQueryClient();
   const [needsReview, setNeedsReview] = useState(true);
+  const [dispensedOnly, setDispensedOnly] = useState(true);
   const [search, setSearch] = useState("");
   const [interfaceType, setInterfaceType] = useState<InterfaceType | "">("");
   const [expanded, setExpanded] = useState<string | null>(null);
 
   const catalog = useQuery({
-    queryKey: [...QUERY_KEY, needsReview, search, interfaceType],
+    queryKey: [...QUERY_KEY, needsReview, dispensedOnly, search, interfaceType],
     queryFn: () =>
       fetchMaskCatalog({
         needsReview: needsReview || undefined,
+        dispensedOnly: dispensedOnly || undefined,
         search: search || undefined,
         interfaceType: interfaceType || undefined,
         limit: 200,
@@ -144,16 +150,10 @@ export function AdminMaskCatalogPage() {
       (v) => v.needsClinicalReview,
     );
     if (pending.length === 0) return;
-    if (pending.some((v) => v.fitDataSource === "estimated")) return;
-    const refs = new Set(pending.map((v) => v.fitDataSourceRef));
-    const kinds = new Set(pending.map((v) => v.fitDataSource));
-    if (refs.size !== 1 || kinds.size !== 1) return;
-    const [ref] = refs;
-    if (!ref) return;
-    if ([...kinds][0] === "measured") {
-      setSourceKind("physical_measurement");
-    }
-    setSourceRef(String(ref));
+    const seed = prefillFromPending(pending);
+    if (!seed) return;
+    if (seed.kind) setSourceKind(seed.kind);
+    setSourceRef(seed.ref);
     setSourcePrefilled(true);
     // Deliberately not exhaustive: this must fire once per opened model,
     // from the fetched detail, and never re-fire against user edits.
@@ -182,9 +182,14 @@ export function AdminMaskCatalogPage() {
   });
 
   const models: MaskModel[] = catalog.data?.models ?? [];
-  const pendingVariantIds = (detail.data?.variants ?? [])
-    .filter((v) => v.needsClinicalReview)
-    .map((v) => v.id);
+  const pendingVariants = (detail.data?.variants ?? []).filter(
+    (v) => v.needsClinicalReview,
+  );
+  const pendingVariantIds = pendingVariants.map((v) => v.id);
+  // Whether this model's queue is "confirm a published value" or "audit an
+  // estimate" — two different jobs, and the reviewer should know which one
+  // they are doing before they start reading millimetres.
+  const pendingSourceKind = resolvePendingSourceKind(pendingVariants);
 
   return (
     <div className="admin-root space-y-4">
@@ -238,8 +243,31 @@ export function AdminMaskCatalogPage() {
           >
             {needsReview ? "Showing: needs review" : "Showing: all masks"}
           </Button>
+          <Button
+            intent={dispensedOnly ? "primary" : "secondary"}
+            onClick={() => setDispensedOnly((v) => !v)}
+            aria-pressed={dispensedOnly}
+          >
+            {dispensedOnly ? "Only what you dispense" : "Whole catalog"}
+          </Button>
         </div>
       </Card>
+
+      {dispensedOnly && catalog.data?.dispensingConfigured === false ? (
+        <Card>
+          <p className="p-4 text-sm text-muted-foreground">
+            Showing the whole catalog: this organization has no formulary rules
+            and no stocked masks recorded, so there is nothing to narrow to yet.
+            Set up your{" "}
+            <a className="underline" href="/admin/fitter/formulary">
+              formulary
+            </a>{" "}
+            and the review queue will collapse to the masks you actually
+            dispense — which is the difference between signing off a handful of
+            models and working through the whole platform catalog.
+          </p>
+        </Card>
+      ) : null}
 
       {catalog.isError ? (
         <ErrorPanel
@@ -253,9 +281,11 @@ export function AdminMaskCatalogPage() {
       {!catalog.isLoading && models.length === 0 ? (
         <Card>
           <p className="p-4 text-sm text-muted-foreground">
-            {needsReview
-              ? "Nothing left in the review queue — every size band has been signed off."
-              : "No masks matched those filters."}
+            {needsReview && dispensedOnly
+              ? "Nothing left to review among the masks you dispense. Switch to the whole catalog to see the rest."
+              : needsReview
+                ? "Nothing left in the review queue — every size band has been signed off."
+                : "No masks matched those filters."}
           </p>
         </Card>
       ) : null}
@@ -337,6 +367,45 @@ export function AdminMaskCatalogPage() {
                           style={{ borderColor: "hsl(var(--line-2))" }}
                         >
                           <p className="text-sm font-medium">Sign-off source</p>
+                          {pendingSourceKind === "manufacturer" ? (
+                            <p className="text-xs mb-2">
+                              <strong>
+                                These ranges are already manufacturer-sourced.
+                              </strong>{" "}
+                              You are confirming a published value, not auditing
+                              an estimate — check them against the document
+                              named below and sign off. The reference is
+                              pre-filled from the catalog; pick the evidence
+                              class you actually checked.
+                            </p>
+                          ) : pendingSourceKind === "measured" ? (
+                            <p className="text-xs mb-2">
+                              <strong>
+                                These ranges were physically measured.
+                              </strong>{" "}
+                              Confirm them against the measurement noted below,
+                              or re-measure if you want your own reading behind
+                              the sign-off.
+                            </p>
+                          ) : pendingSourceKind === "mixed" ? (
+                            <p className="text-xs mb-2">
+                              <strong>
+                                These sizes do not share one source.
+                              </strong>{" "}
+                              Some are estimates and some came from a document
+                              or a measurement — check the Source column per
+                              row, because one citation will not describe all of
+                              them.
+                            </p>
+                          ) : (
+                            <p className="text-xs mb-2">
+                              <strong>These ranges are estimates.</strong> They
+                              were reasoned from the mask&apos;s geometry, not
+                              taken from a published table, so they need
+                              checking against a real source before the engine
+                              will issue a confident recommendation from them.
+                            </p>
+                          )}
                           <p className="text-xs text-muted-foreground mb-2">
                             What are you checking these ranges against? Recorded
                             with every sign-off you make below and printed on
@@ -423,6 +492,7 @@ export function AdminMaskCatalogPage() {
                               <th className="py-1 pr-3">Size</th>
                               <th className="py-1 pr-3">Component</th>
                               <th className="py-1 pr-3">Nose width</th>
+                              <th className="py-1 pr-3">Nose height</th>
                               <th className="py-1 pr-3">Nose to chin</th>
                               <th className="py-1 pr-3">Mouth width</th>
                               <th className="py-1 pr-3">HCPCS</th>
@@ -439,6 +509,9 @@ export function AdminMaskCatalogPage() {
                                 <td className="py-1.5 pr-3">{v.component}</td>
                                 <td className="py-1.5 pr-3">
                                   {mm(v.noseWidthMinMm, v.noseWidthMaxMm)}
+                                </td>
+                                <td className="py-1.5 pr-3">
+                                  {mm(v.noseHeightMinMm, v.noseHeightMaxMm)}
                                 </td>
                                 <td className="py-1.5 pr-3">
                                   {mm(v.noseToChinMinMm, v.noseToChinMaxMm)}

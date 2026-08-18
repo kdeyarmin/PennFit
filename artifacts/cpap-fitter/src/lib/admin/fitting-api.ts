@@ -59,6 +59,10 @@ export interface MaskSizeVariant {
   sortOrder: number;
   noseWidthMinMm: number | null;
   noseWidthMaxMm: number | null;
+  // Returned by the route since 0481 but absent from this type until the
+  // 0499 import made it the first model with real values.
+  noseHeightMinMm: number | null;
+  noseHeightMaxMm: number | null;
   noseToChinMinMm: number | null;
   noseToChinMaxMm: number | null;
   mouthWidthMinMm: number | null;
@@ -117,6 +121,12 @@ export interface CatalogFilters {
   serviceLine?: "adult" | "pediatric" | "both";
   status?: "current" | "discontinued" | "pre_release";
   needsReview?: boolean;
+  /**
+   * Narrow to models this tenant actually dispenses — resolved from its
+   * formulary (allow / prefer) and its stocked availability. The response's
+   * `dispensingConfigured` reports whether either signal existed.
+   */
+  dispensedOnly?: boolean;
   search?: string;
   limit?: number;
   offset?: number;
@@ -132,9 +142,17 @@ function qs(params: Record<string, unknown>): string {
   return s ? `?${s}` : "";
 }
 
-export function fetchMaskCatalog(
-  filters: CatalogFilters = {},
-): Promise<{ models: MaskModel[]; limit: number; offset: number }> {
+export function fetchMaskCatalog(filters: CatalogFilters = {}): Promise<{
+  models: MaskModel[];
+  limit: number;
+  offset: number;
+  /**
+   * Only present when `dispensedOnly` was requested. False means the
+   * tenant has configured neither a formulary nor stock, so the filter
+   * could not narrow anything and the list is unfiltered.
+   */
+  dispensingConfigured?: boolean;
+}> {
   return adminJsonFetch(`/admin/fitter/catalog${qs({ ...filters })}`);
 }
 
