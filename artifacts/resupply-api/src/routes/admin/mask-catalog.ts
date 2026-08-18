@@ -49,7 +49,10 @@ import { z } from "zod";
 
 import { getOrgScopedClient } from "@workspace/resupply-db";
 
-import { adminRateLimit } from "../../middlewares/admin-rate-limit";
+import {
+  adminRateLimit,
+  adminWriteRateLimiter,
+} from "../../middlewares/admin-rate-limit";
 import {
   requireAdmin,
   requirePermission,
@@ -684,6 +687,10 @@ function numOrNull(value: unknown): number | null {
 
 router.post(
   "/admin/fitter/catalog/variants/:id/review",
+  // Pre-auth IP bucket FIRST: `requireAdmin` does a DB-backed session
+  // lookup, so a limiter placed only after it leaves that read exposed to
+  // an unauthenticated flood. The tighter per-actor budget layers on top.
+  adminWriteRateLimiter,
   requireAdmin,
   requirePermission("formulary.manage"),
   adminRateLimit({ name: "mask_catalog.variant_review", preset: "mutation" }),
@@ -763,6 +770,7 @@ router.post(
  */
 router.post(
   "/admin/fitter/catalog/variants/review-batch",
+  adminWriteRateLimiter,
   requireAdmin,
   requirePermission("formulary.manage"),
   adminRateLimit({ name: "mask_catalog.review_batch", preset: "mutation" }),

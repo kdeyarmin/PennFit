@@ -139,6 +139,9 @@ vi.mock("../../middlewares/requireAdmin", () => ({
 }));
 vi.mock("../../middlewares/admin-rate-limit", () => ({
   adminRateLimit: () => (_r: unknown, _s: unknown, next: () => void) => next(),
+  // Pre-auth IP bucket, mounted ahead of requireAdmin on the review
+  // routes. Pass-through here — the limiting itself is upstream config.
+  adminWriteRateLimiter: (_r: unknown, _s: unknown, next: () => void) => next(),
 }));
 vi.mock("../../lib/fitting/catalog-store", () => ({
   invalidateFittingContext: vi.fn(),

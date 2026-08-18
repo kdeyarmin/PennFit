@@ -441,7 +441,15 @@ router.post("/fit/assess", async (req, res) => {
     inviteId: verification.inviteId,
     patientId: invite.patientId,
     locationId: invite.locationId,
-    entryPoint: body.entryPoint ?? "remote_link",
+    // The INVITE decides how the fitting started, not the client. An
+    // in-office invite is one staff deliberately raised as a counter
+    // handover, which is a fact the server already knows; `body.entryPoint`
+    // is a self-reported hint from the patient's own browser and would let
+    // remote fittings be miscounted as in-office in the outcome reporting.
+    entryPoint:
+      invite.channel === "in_office"
+        ? "in_office"
+        : (body.entryPoint ?? "remote_link"),
     measurements,
     profile,
     scan: body.scan ?? NEUTRAL_SCAN,
@@ -533,6 +541,9 @@ interface InviteContext {
   payerProfileId: string | null;
   status: string;
   expiresAt: string | null;
+  /** How the invite was raised (migration 0489). Authoritative over the
+   *  client's `entryPoint` hint — see where it's resolved below. */
+  channel: string | null;
 }
 
 /**
@@ -551,7 +562,7 @@ async function loadInvite(
     const supabase = getOrgScopedClient(orgId);
     const { data, error } = (await supabase
       .from("fitter_invites")
-      .select("patient_id, status, expires_at")
+      .select("patient_id, status, expires_at, channel")
       .eq("id", inviteId)
       .limit(1)
       .maybeSingle()) as {
@@ -609,6 +620,7 @@ async function loadInvite(
       payerProfileId,
       status: String(data.status ?? "sent"),
       expiresAt: (data.expires_at as string | null) ?? null,
+      channel: (data.channel as string | null) ?? null,
     };
   } catch {
     return null;
