@@ -150,8 +150,14 @@ export function AdminMaskCatalogPage() {
     if (refs.size !== 1 || kinds.size !== 1) return;
     const [ref] = refs;
     if (!ref) return;
-    if ([...kinds][0] === "measured") {
+    const kind = [...kinds][0];
+    if (kind === "measured") {
       setSourceKind("physical_measurement");
+    } else if (kind === "manufacturer") {
+      // The band came from a published manufacturer document, and
+      // `fitDataSourceRef` names it. Default to the fit-guide class; a
+      // reviewer who actually checked a spec sheet can change it.
+      setSourceKind("manufacturer_fit_guide");
     }
     setSourceRef(String(ref));
     setSourcePrefilled(true);
@@ -182,9 +188,16 @@ export function AdminMaskCatalogPage() {
   });
 
   const models: MaskModel[] = catalog.data?.models ?? [];
-  const pendingVariantIds = (detail.data?.variants ?? [])
-    .filter((v) => v.needsClinicalReview)
-    .map((v) => v.id);
+  const pendingVariants = (detail.data?.variants ?? []).filter(
+    (v) => v.needsClinicalReview,
+  );
+  const pendingVariantIds = pendingVariants.map((v) => v.id);
+  // Whether this model's queue is "confirm a published value" or "audit an
+  // estimate" — two different jobs, and the reviewer should know which one
+  // they are doing before they start reading millimetres.
+  const pendingAllManufacturer =
+    pendingVariants.length > 0 &&
+    pendingVariants.every((v) => v.fitDataSource === "manufacturer");
 
   return (
     <div className="admin-root space-y-4">
@@ -337,6 +350,26 @@ export function AdminMaskCatalogPage() {
                           style={{ borderColor: "hsl(var(--line-2))" }}
                         >
                           <p className="text-sm font-medium">Sign-off source</p>
+                          {pendingAllManufacturer ? (
+                            <p className="text-xs mb-2">
+                              <strong>
+                                These ranges are already manufacturer-sourced.
+                              </strong>{" "}
+                              You are confirming a published value, not auditing
+                              an estimate — check them against the document
+                              named below and sign off. The citation is
+                              pre-filled from the catalog; change it if you
+                              checked something else.
+                            </p>
+                          ) : (
+                            <p className="text-xs mb-2">
+                              <strong>These ranges are estimates.</strong> They
+                              were reasoned from the mask&apos;s geometry, not
+                              taken from a published table, so they need
+                              checking against a real source before the engine
+                              will issue a confident recommendation from them.
+                            </p>
+                          )}
                           <p className="text-xs text-muted-foreground mb-2">
                             What are you checking these ranges against? Recorded
                             with every sign-off you make below and printed on
