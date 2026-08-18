@@ -689,7 +689,7 @@ router.patch(
         : (existing as Row).fit_data_source_ref;
     if (
       endSource !== "estimated" &&
-      (endRef === null || endRef === undefined)
+      (endRef == null || String(endRef).trim() === "")
     ) {
       res.status(422).json({
         error: "source_ref_required",

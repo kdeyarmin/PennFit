@@ -13,8 +13,12 @@
 -- These two columns close that, and the CHECK constraint is the point of
 -- the whole migration: it makes claiming manufacturer or measured
 -- provenance WITHOUT a citation structurally impossible, rather than a
--- policy someone has to remember. Every existing row is 'estimated', so
--- the constraint validates instantly against the current catalog.
+-- policy someone has to remember. "Without a citation" includes an empty
+-- or whitespace-only string — the HTTP layer already rejects blanks, but
+-- platform-band corrections are expected to arrive through MIGRATIONS,
+-- which bypass that layer entirely, so the constraint BTRIMs before it
+-- judges. Every existing row is 'estimated', so it validates instantly
+-- against the current catalog.
 --
 -- What this deliberately does NOT do
 -- ---------------------------------
@@ -53,14 +57,14 @@ BEGIN
       ADD CONSTRAINT "mask_size_variants_source_ref_required_check"
       CHECK (
         "fit_data_source" = 'estimated'
-        OR "fit_data_source_ref" IS NOT NULL
+        OR NULLIF(BTRIM("fit_data_source_ref"), '') IS NOT NULL
       );
   END IF;
 END $$;
 --> statement-breakpoint
 
 COMMENT ON COLUMN "resupply"."mask_size_variants"."fit_data_source_ref" IS
-  'What this band was sourced from: document title + revision, URL, or how it was physically measured. Required whenever fit_data_source is not ''estimated''; NULL on an estimated band means "nothing to cite", never "unrecorded".';
+  'What this band was sourced from: document title + revision, URL, or how it was physically measured. Required (non-blank) whenever fit_data_source is not ''estimated''; NULL on an estimated band means "nothing to cite", never "unrecorded".';
 --> statement-breakpoint
 
 COMMENT ON COLUMN "resupply"."mask_size_variants"."fit_data_source_date" IS

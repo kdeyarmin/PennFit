@@ -17,7 +17,6 @@ import { OPEN_FORMULARY } from "./formulary";
 import type {
   CatalogMask,
   ExclusionRecord,
-  FitCandidate,
   FitContext,
   FitEngineInput,
   FitMeasurements,
@@ -330,6 +329,118 @@ describe("same-model magnet-free swap", () => {
   });
 });
 
+describe("review findings — labeling stays honest", () => {
+  it("a mis-seeded pointer at a magnetic twin never labels it magnet-free", () => {
+    // Copilot's finding: tiers.ts used to stamp magnetFreeVariantOf from
+    // the raw pointer. With no safety screen fired, both masks survive as
+    // candidates, and the mis-seeded twin would have been described to
+    // the patient as having "magnet-free headgear clips".
+    const badTwin = mask({
+      slug: "f20-nm",
+      modelName: "Not Actually Magnet Free",
+      hasMagneticComponents: true,
+    });
+    const result = assess(input({ catalog: [MAGNETIC, badTwin, OTHER] }));
+
+    for (const c of [result.primary, ...result.alternatives]) {
+      if (!c) continue;
+      expect(c.magnetFreeVariantOf ?? null).toBeNull();
+      expect(c.rankedBelowBecause ?? "").not.toContain("magnet-free");
+    }
+  });
+
+  it("a pointer on a non-magnetic parent never marks its twin", () => {
+    const nonMagParent = mask({
+      slug: "f20",
+      modelName: "AirFit F20",
+      hasMagneticComponents: false,
+      magnetFreeVariantSlug: "f20-nm",
+    });
+    const result = assess(input({ catalog: [nonMagParent, TWIN, OTHER] }));
+    for (const c of [result.primary, ...result.alternatives]) {
+      if (!c) continue;
+      expect(c.magnetFreeVariantOf ?? null).toBeNull();
+    }
+  });
+
+  it("never claims a mask was ruled out when nothing was excluded", () => {
+    // Codex's finding: the twin can reach the alternatives through
+    // ordinary ranking while its parent was never excluded — no implant
+    // answer was ever given. "A mask we had to rule out because of the
+    // implanted-device answers" would be a false clinical statement.
+    const best = mask({ slug: "best-ff", modelName: "Best Full Face" });
+    const result = assess(
+      input({
+        catalog: [best, MAGNETIC, TWIN, OTHER],
+        fitAdjustments: { "best-ff": 1.15, f20: 0.9, "f20-nm": 1.1 },
+      }),
+    );
+
+    expect(result.primary?.maskSlug).toBe("best-ff");
+    const twinAlt = result.alternatives.find((a) => a.maskSlug === "f20-nm");
+    expect(twinAlt).toBeDefined();
+    expect(twinAlt?.rankedBelowBecause ?? "").not.toContain("rule out");
+    expect(twinAlt?.rankedBelowBecause ?? "").not.toContain("magnet-free");
+  });
+
+  it("annotates only the twins the patient will actually see", () => {
+    // Codex's finding: with several magnetic exclusions, pickAlternatives
+    // returns at most one excluded mask's twin, so an exclusion record
+    // must not promise "your options below" for a twin that was capped
+    // out of the rendered list.
+    const catalog: CatalogMask[] = [];
+    for (const n of ["a", "b", "c"]) {
+      catalog.push(
+        mask({
+          slug: `mag-${n}`,
+          modelName: `Magnetic ${n.toUpperCase()}`,
+          hasMagneticComponents: true,
+          magnetFreeVariantSlug: `mag-${n}-nm`,
+        }),
+        mask({
+          slug: `mag-${n}-nm`,
+          modelName: `Magnet Free ${n.toUpperCase()}`,
+        }),
+      );
+    }
+    catalog.push(OTHER);
+
+    const result = assess(
+      input({
+        catalog,
+        safetyScreen: MAGNET_SCREEN,
+        safetyResponses: IMPLANT_YES,
+      }),
+    );
+
+    const rendered = new Set(
+      [
+        result.primary?.maskSlug,
+        ...result.alternatives.map((a) => a.maskSlug),
+      ].filter(Boolean),
+    );
+    for (const ex of result.excluded) {
+      if (ex.code !== "magnetic_component_contraindicated") continue;
+      const twinSlug = `${ex.maskSlug}-nm`;
+      if (rendered.has(twinSlug)) {
+        expect(ex.magnetFreeAlternativeSlug).toBe(twinSlug);
+        expect(ex.patientReason).toContain("options below");
+      } else {
+        expect(ex.magnetFreeAlternativeSlug ?? null).toBeNull();
+        expect(ex.patientReason).not.toContain("options below");
+      }
+    }
+    // The cap must actually bite in this construction — at least one
+    // excluded parent's twin is not rendered, or the test proves nothing.
+    const unrendered = result.excluded.filter(
+      (ex) =>
+        ex.code === "magnetic_component_contraindicated" &&
+        !rendered.has(`${ex.maskSlug}-nm`),
+    );
+    expect(unrendered.length).toBeGreaterThan(0);
+  });
+});
+
 describe("annotateMagnetFreeSwaps", () => {
   const record: ExclusionRecord = {
     maskSlug: "f20",
@@ -339,14 +450,13 @@ describe("annotateMagnetFreeSwaps", () => {
     patientReason: "This mask uses magnets in the headgear.",
     clinicianReason: "Magnetic headgear clips excluded.",
   };
-  const survivor = { maskSlug: "f20-nm" } as FitCandidate;
 
   it("leaves non-magnet exclusions untouched", () => {
     const other: ExclusionRecord = { ...record, code: "service_line_mismatch" };
     const [out] = annotateMagnetFreeSwaps(
       [other],
       [MAGNETIC, TWIN],
-      new Map([["f20-nm", survivor]]),
+      new Set(["f20-nm"]),
     );
     expect(out).toBe(other);
   });
@@ -355,7 +465,19 @@ describe("annotateMagnetFreeSwaps", () => {
     const [out] = annotateMagnetFreeSwaps(
       [record],
       [mask({ slug: "f20", hasMagneticComponents: true })],
-      new Map([["f20-nm", survivor]]),
+      new Set(["f20-nm"]),
+    );
+    expect(out?.magnetFreeAlternativeSlug ?? null).toBeNull();
+  });
+
+  it("is a no-op when the twin is not in the rendered result", () => {
+    // The twin cleared every filter but pickAlternatives capped it out.
+    // "We've included it in your options below" about a mask that is not
+    // below would be a false statement on the results page.
+    const [out] = annotateMagnetFreeSwaps(
+      [record],
+      [MAGNETIC, TWIN],
+      new Set<string>(),
     );
     expect(out?.magnetFreeAlternativeSlug ?? null).toBeNull();
   });
@@ -366,12 +488,12 @@ describe("annotateMagnetFreeSwaps", () => {
     // round-tripping one must not throw or invent a swap.
     const legacy = JSON.parse(JSON.stringify(record)) as ExclusionRecord;
     expect(() =>
-      annotateMagnetFreeSwaps([legacy], [MAGNETIC, TWIN], new Map()),
+      annotateMagnetFreeSwaps([legacy], [MAGNETIC, TWIN], new Set<string>()),
     ).not.toThrow();
     const [out] = annotateMagnetFreeSwaps(
       [legacy],
       [MAGNETIC, TWIN],
-      new Map(),
+      new Set<string>(),
     );
     expect(out?.magnetFreeAlternativeSlug ?? null).toBeNull();
   });

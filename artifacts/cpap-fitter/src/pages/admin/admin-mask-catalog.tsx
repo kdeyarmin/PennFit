@@ -125,29 +125,34 @@ export function AdminMaskCatalogPage() {
   // Seed the reviewer's citation from the catalog's own platform-sourced
   // provenance (0495), so a sourced band becomes a CONFIRMATION rather
   // than a fresh transcription. Rules, in order of what they protect:
-  //   * never from an 'estimated' band — there is nothing to cite, and a
-  //     pre-filled box invites accepting a citation nobody made;
-  //   * only when every sourced pending variant agrees on ONE ref — a
-  //     mixed model is exactly where a wrong auto-citation does damage;
+  //   * only when EVERY pending variant is non-estimated and they agree
+  //     on ONE ref. The "Sign off all" button submits every pending id
+  //     with this provenance, so a partially sourced model must not
+  //     pre-fill — it would record the citation against estimated bands
+  //     the cited source never supported, and approve them with it;
+  //   * the evidence CLASS is only pre-filled for 'measured' (which maps
+  //     unambiguously to a physical measurement). 'manufacturer' says a
+  //     manufacturer document, not WHICH kind — the 0491 schema splits
+  //     fit guide from spec sheet on purpose, and guessing "fit guide"
+  //     would misstate on the fit report what the RT actually reviewed.
+  //     The reviewer picks the class; only the reference is seeded;
   //   * only while the reviewer has not typed — their words always win.
   const detailModelId = detail.data?.model.id;
   useEffect(() => {
     if (!detailModelId || sourceKind !== "" || sourceRef !== "") return;
-    const sourced = (detail.data?.variants ?? []).filter(
-      (v) => v.needsClinicalReview && v.fitDataSource !== "estimated",
+    const pending = (detail.data?.variants ?? []).filter(
+      (v) => v.needsClinicalReview,
     );
-    if (sourced.length === 0) return;
-    const refs = new Set(
-      sourced.map((v) => v.fitDataSourceRef).filter(Boolean),
-    );
-    const kinds = new Set(sourced.map((v) => v.fitDataSource));
+    if (pending.length === 0) return;
+    if (pending.some((v) => v.fitDataSource === "estimated")) return;
+    const refs = new Set(pending.map((v) => v.fitDataSourceRef));
+    const kinds = new Set(pending.map((v) => v.fitDataSource));
     if (refs.size !== 1 || kinds.size !== 1) return;
     const [ref] = refs;
-    const kind =
-      [...kinds][0] === "manufacturer"
-        ? "manufacturer_fit_guide"
-        : "physical_measurement";
-    setSourceKind(kind);
+    if (!ref) return;
+    if ([...kinds][0] === "measured") {
+      setSourceKind("physical_measurement");
+    }
     setSourceRef(String(ref));
     setSourcePrefilled(true);
     // Deliberately not exhaustive: this must fire once per opened model,
@@ -356,8 +361,10 @@ export function AdminMaskCatalogPage() {
                           ) : null}
                           {sourcePrefilled ? (
                             <p className="text-xs text-muted-foreground mb-2">
-                              Pre-filled from the catalog&apos;s own recorded
-                              source — change it if you checked something else.
+                              Reference pre-filled from the catalog&apos;s own
+                              recorded source — pick the evidence class, and
+                              change the reference if you checked something
+                              else.
                             </p>
                           ) : null}
                           <div className="flex flex-wrap gap-3 items-end">

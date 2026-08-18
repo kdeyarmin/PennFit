@@ -53,14 +53,29 @@ function categoryOf(c: FitCandidate): string {
 function rankedBelowBecause(
   candidate: FitCandidate,
   primary: FitCandidate,
+  /** Slugs the tier-1 magnet screen actually removed this session. */
+  magnetExcluded: ReadonlySet<string>,
 ): string {
   // Before any score talk: if this IS the recommended mask minus the
   // magnets, say so. "Ranked below because its fit score is 0.04 lower"
   // is true and useless next to "same mask, magnet-free headgear".
-  if (candidate.magnetFreeVariantOf) {
-    return candidate.magnetFreeVariantOf === primary.maskSlug
-      ? "The same mask as the one recommended above, with magnet-free headgear clips instead of magnetic ones."
-      : "The magnet-free version of a mask we had to rule out because of the implanted-device answers.";
+  if (candidate.magnetFreeVariantOf === primary.maskSlug) {
+    return "The same mask as the one recommended above, with magnet-free headgear clips instead of magnetic ones.";
+  }
+  // "A mask we had to rule out" is a claim about THIS session, so it is
+  // gated on the parent actually sitting in the magnet-excluded set. A
+  // twin can reach the alternatives through ordinary category selection
+  // while its parent was never excluded at all — no implant answer given,
+  // the twin simply outranked its parent — and saying the parent was
+  // ruled out for implanted-device answers the patient never gave would
+  // put a false clinical statement on the results page and the fit
+  // report. Outside that case, fall through to the ordinary ranking
+  // explanations.
+  if (
+    candidate.magnetFreeVariantOf &&
+    magnetExcluded.has(candidate.magnetFreeVariantOf)
+  ) {
+    return "The magnet-free version of a mask we had to rule out because of the implanted-device answers.";
   }
   if (candidate.outsideFormulary && !primary.outsideFormulary) {
     return (
@@ -100,17 +115,21 @@ function rankedBelowBecause(
 /**
  * Name the manufacturer's magnet-free SKU on a magnet exclusion.
  *
- * Only when that SKU actually survived every other filter. Telling a
- * patient "there is a magnet-free version of this mask" and then not
- * offering it is worse than saying nothing at all. Runs as a post-pass
- * because tier 1 writes the exclusion before it knows what survives.
+ * Only when that SKU is actually in the RENDERED result — the primary or
+ * an alternative the patient will see — not merely a survivor of the
+ * filters. pickAlternatives caps the list at four and takes at most one
+ * excluded mask's twin, so with several magnetic exclusions a twin can
+ * clear every filter and still not be shown; telling the patient "we've
+ * included it in your options below" about a mask that is not below is a
+ * false statement on the results page. Runs as a post-pass AFTER the
+ * primary and alternatives are chosen, for exactly that reason.
  *
  * Exported for direct unit testing.
  */
 export function annotateMagnetFreeSwaps(
   excluded: ExclusionRecord[],
   catalog: readonly CatalogMask[],
-  survivors: ReadonlyMap<string, FitCandidate>,
+  rendered: ReadonlySet<string>,
 ): ExclusionRecord[] {
   const bySlug = new Map(catalog.map((m) => [m.slug, m]));
   return excluded.map((ex) => {
@@ -121,7 +140,7 @@ export function annotateMagnetFreeSwaps(
     // Re-check the twin is actually magnet-free. A mis-seeded pointer at
     // another magnetic mask must be inert, never a safety claim.
     if (!twin || twin.hasMagneticComponents) return ex;
-    if (!survivors.has(twinSlug)) return ex;
+    if (!rendered.has(twinSlug)) return ex;
     return {
       ...ex,
       magnetFreeAlternativeSlug: twinSlug,
@@ -140,6 +159,8 @@ function pickAlternatives(
   magnetFreeTwinOf: ReadonlyMap<string, string>,
   /** Slugs the tier-1 magnet filter removed, best-ranked first. */
   magnetExcludedSlugs: readonly string[],
+  /** Same slugs as a set, for the wording gate in rankedBelowBecause. */
+  magnetExcludedSet: ReadonlySet<string>,
 ): FitCandidate[] {
   const rest = ranked.filter((c) => c.maskSlug !== primary.maskSlug);
   const chosen: FitCandidate[] = [];
@@ -189,7 +210,7 @@ function pickAlternatives(
 
   return chosen.slice(0, 4).map((c) => ({
     ...c,
-    rankedBelowBecause: rankedBelowBecause(c, primary),
+    rankedBelowBecause: rankedBelowBecause(c, primary, magnetExcludedSet),
   }));
 }
 
@@ -209,17 +230,10 @@ export function assess(input: FitEngineInput): FitAssessment {
       magnetFreeTwinOf.set(m.slug, twinSlug);
     }
   }
-  const survivorsBySlug = new Map(
-    tiers.candidates.map((c) => [c.maskSlug, c] as const),
-  );
   const magnetExcludedSlugs = tiers.excluded
     .filter((e) => e.code === "magnetic_component_contraindicated")
     .map((e) => e.maskSlug);
-  const excluded = annotateMagnetFreeSwaps(
-    tiers.excluded,
-    input.catalog,
-    survivorsBySlug,
-  );
+  const magnetExcludedSet = new Set(magnetExcludedSlugs);
 
   const top = tiers.candidates[0] ?? null;
   const confidence = resolveConfidence({
@@ -256,7 +270,25 @@ export function assess(input: FitEngineInput): FitAssessment {
           magneticSlugs,
           magnetFreeTwinOf,
           magnetExcludedSlugs,
+          magnetExcludedSet,
         );
+
+  // Annotate the exclusion records only now, against what the patient
+  // will actually SEE — the primary plus the chosen alternatives — so
+  // "we've included it in your options below" is never said about a twin
+  // pickAlternatives capped out. (On the withheld path the clinical
+  // reference list stands in for the options and is annotated the same
+  // way — those masks ARE shown, just unbadged.)
+  const renderedSlugs = new Set<string>(
+    [primary?.maskSlug, ...alternatives.map((a) => a.maskSlug)].filter(
+      (slug): slug is string => Boolean(slug),
+    ),
+  );
+  const excluded = annotateMagnetFreeSwaps(
+    tiers.excluded,
+    input.catalog,
+    renderedSlugs,
+  );
 
   const catalogSnapshotVersion = input.catalog.reduce(
     (max, m) => Math.max(max, m.catalogVersion),
