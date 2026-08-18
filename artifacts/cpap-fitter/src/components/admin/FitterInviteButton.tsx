@@ -11,6 +11,12 @@
 //     detail action bar.
 //   * prospect mode (no patientId) — the CSR types an email/phone +
 //     name. Used on the Fitter Invites worklist for new prospects.
+//
+// Either mode can pick the "in office" channel (migration 0489), which
+// sends nothing: the patient is at the counter, so the link is shown as
+// a QR code they scan with their own phone. That needs no email or phone
+// at all — a walk-in prospect often has neither on file yet — and the
+// token expires with the visit rather than in a month.
 
 import { useEffect, useState } from "react";
 
@@ -18,6 +24,7 @@ import { ApiError } from "@workspace/api-client-react/admin";
 
 import { Button } from "@/components/admin/Button";
 import { Input, Label, Select } from "@/components/admin/Input";
+import { QrCode } from "@/components/QrCode";
 import {
   createFitterInvite,
   type CreateFitterInviteBody,
@@ -94,6 +101,8 @@ function FitterInviteModal({
   const [result, setResult] = useState<{
     delivered: boolean;
     inviteLink: string;
+    channel: FitterInviteChannel;
+    expiresAt: string;
   } | null>(null);
   const [copied, setCopied] = useState(false);
 
@@ -119,7 +128,13 @@ function FitterInviteModal({
     const body: CreateFitterInviteBody = { channel };
     if (patientId) body.patientId = patientId;
 
-    if (prospectMode) {
+    // In-office needs no contact details at all — the handover is the
+    // delivery. Any name typed is still worth keeping so the fitting is
+    // identifiable in the worklist.
+    if (channel === "in_office") {
+      if (name.trim()) body.name = name.trim();
+      if (email.trim()) body.email = email.trim().toLowerCase();
+    } else if (prospectMode) {
       if (channel === "email") {
         const trimmed = email.trim().toLowerCase();
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
@@ -151,7 +166,12 @@ function FitterInviteModal({
     setPending(true);
     try {
       const res = await createFitterInvite(body);
-      setResult({ delivered: res.delivered, inviteLink: res.inviteLink });
+      setResult({
+        delivered: res.delivered,
+        inviteLink: res.inviteLink,
+        channel,
+        expiresAt: res.expiresAt,
+      });
       onSent();
     } catch (err) {
       setError(describeError(err));
@@ -194,12 +214,38 @@ function FitterInviteModal({
         {result ? (
           <div className="space-y-4">
             <p className="text-sm" style={{ color: "hsl(var(--ink-1))" }}>
-              {result.delivered
-                ? "Invite sent."
-                : "Invite created, but automatic delivery isn't configured. Share the link below directly."}
+              {result.channel === "in_office"
+                ? "Ready — have the patient scan this with their phone camera."
+                : result.delivered
+                  ? "Invite sent."
+                  : "Invite created, but automatic delivery isn't configured. Share the link below directly."}
             </p>
+
+            {result.channel === "in_office" && (
+              <div className="flex flex-col items-center gap-2">
+                {/* Rendered locally by the `qrcode` package — the link is
+                    never sent anywhere to become an image. */}
+                <QrCode
+                  value={result.inviteLink}
+                  size={200}
+                  ariaLabel="QR code linking to the mask fitter"
+                />
+                <p
+                  className="text-xs text-center"
+                  style={{ color: "hsl(var(--ink-3))" }}
+                >
+                  Expires {formatExpiry(result.expiresAt)}. After that, create a
+                  new invite or send one by email or text.
+                </p>
+              </div>
+            )}
+
             <div className="space-y-1">
-              <Label htmlFor="invite-link">Invite link</Label>
+              <Label htmlFor="invite-link">
+                {result.channel === "in_office"
+                  ? "Or open on a shared device"
+                  : "Invite link"}
+              </Label>
               <div className="flex gap-2">
                 <Input
                   id="invite-link"
@@ -242,31 +288,40 @@ function FitterInviteModal({
                 options={[
                   { value: "email", label: "Email" },
                   { value: "sms", label: "Text message (SMS)" },
+                  { value: "in_office", label: "In office (QR code)" },
                 ]}
               />
             </div>
 
-            {(prospectMode || channel === "email") && (
-              <div className="space-y-1">
-                <Label htmlFor="invite-email">
-                  Email{" "}
-                  {!prospectMode && (
-                    <span style={{ color: "hsl(var(--ink-3))" }}>
-                      (optional — overrides chart)
-                    </span>
-                  )}
-                </Label>
-                <Input
-                  id="invite-email"
-                  type="email"
-                  placeholder="patient@example.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                />
-              </div>
+            {channel === "in_office" && (
+              <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+                Nothing is sent. You&apos;ll get a QR code to show the patient
+                so they can scan it with their own phone and start right here.
+              </p>
             )}
 
-            {(prospectMode || channel === "sms") && (
+            {channel !== "in_office" &&
+              (prospectMode || channel === "email") && (
+                <div className="space-y-1">
+                  <Label htmlFor="invite-email">
+                    Email{" "}
+                    {!prospectMode && (
+                      <span style={{ color: "hsl(var(--ink-3))" }}>
+                        (optional — overrides chart)
+                      </span>
+                    )}
+                  </Label>
+                  <Input
+                    id="invite-email"
+                    type="email"
+                    placeholder="patient@example.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                  />
+                </div>
+              )}
+
+            {channel !== "in_office" && (prospectMode || channel === "sms") && (
               <div className="space-y-1">
                 <Label htmlFor="invite-phone">
                   Phone{" "}
@@ -286,7 +341,7 @@ function FitterInviteModal({
               </div>
             )}
 
-            {prospectMode && (
+            {(prospectMode || channel === "in_office") && (
               <div className="space-y-1">
                 <Label htmlFor="invite-name">
                   Name{" "}
@@ -301,7 +356,7 @@ function FitterInviteModal({
               </div>
             )}
 
-            {channelMissingContact && (
+            {channel !== "in_office" && channelMissingContact && (
               <p className="text-xs" style={{ color: "#991b1b" }}>
                 No {channel === "email" ? "email" : "phone"} on file — enter one
                 above or pick the other channel.
@@ -323,7 +378,7 @@ function FitterInviteModal({
                 Cancel
               </Button>
               <Button type="submit" isLoading={pending} disabled={pending}>
-                Send invite
+                {channel === "in_office" ? "Show QR code" : "Send invite"}
               </Button>
             </div>
           </form>
@@ -331,6 +386,24 @@ function FitterInviteModal({
       </div>
     </div>
   );
+}
+
+/**
+ * Human expiry for the QR panel. Same-day windows are the normal case for
+ * an in-office invite, so a bare time reads better than a full date; the
+ * date is only added when the window actually crosses midnight.
+ */
+function formatExpiry(iso: string): string {
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return "soon";
+  const sameDay = at.toDateString() === new Date().toDateString();
+  const time = at.toLocaleTimeString(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  return sameDay
+    ? `at ${time}`
+    : `${at.toLocaleDateString(undefined, { month: "short", day: "numeric" })} at ${time}`;
 }
 
 function describeError(err: unknown): string {

@@ -6,7 +6,12 @@
 import { ApiError } from "@workspace/api-client-react/admin";
 import { csrfHeader } from "../csrf";
 
-export type FitterInviteChannel = "email" | "sms";
+/**
+ * How the invite reaches the patient. "in_office" (migration 0489) sends
+ * nothing — the signed link comes back in the response and is shown at
+ * the counter as a QR code the patient scans with their own phone.
+ */
+export type FitterInviteChannel = "email" | "sms" | "in_office";
 
 export type FitterInviteStatus =
   | "sent"
@@ -32,6 +37,9 @@ export interface CreateFitterInviteResponse {
   delivered: boolean;
   deliveryError: string | null;
   inviteLink: string;
+  /** When the link stops working. Much sooner for an in-office QR than a
+   *  mailed link — worth showing so staff know the window. */
+  expiresAt: string;
 }
 
 export interface FacialMeasurementsLike {

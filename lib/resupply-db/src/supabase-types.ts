@@ -1310,6 +1310,8 @@ export interface Database {
         Relationships: [];
       };
       // Mig 0243 — staff-initiated AI mask-fitter invitations.
+      // Mig 0489 — "in_office": handed over at the counter as a QR code,
+      // never delivered, so recipient_email/phone may both be null.
       fitter_invites: {
         Row: {
           org_id: string | null;
@@ -1318,7 +1320,7 @@ export interface Database {
           recipient_email: string | null;
           recipient_phone_e164: string | null;
           recipient_name: string | null;
-          channel: "email" | "sms";
+          channel: "email" | "sms" | "in_office";
           status:
             | "sent"
             | "opened"

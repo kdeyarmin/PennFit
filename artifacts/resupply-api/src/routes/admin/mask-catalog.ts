@@ -765,10 +765,7 @@ router.post(
   "/admin/fitter/catalog/variants/review-batch",
   requireAdmin,
   requirePermission("formulary.manage"),
-  adminRateLimit({
-    name: "mask_catalog.variant_review_batch",
-    preset: "mutation",
-  }),
+  adminRateLimit({ name: "mask_catalog.review_batch", preset: "mutation" }),
   async (req, res) => {
     const orgId = tenant(req);
     if (!orgId) {
