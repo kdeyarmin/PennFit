@@ -60,7 +60,12 @@ interface FitterState {
    * session would record `remote_link`, silently mislabelling in-office
    * and kiosk fittings and defeating any by-channel outcome comparison.
    */
-  entryPoint: "remote_link" | "in_office" | "kiosk_qr" | null;
+  entryPoint:
+    | "remote_link"
+    | "in_office"
+    | "kiosk_qr"
+    | "refit_campaign"
+    | null;
 }
 
 interface FitterContextType extends FitterState {
@@ -202,11 +207,14 @@ export function FitterProvider({ children }: { children: ReactNode }) {
   // multi-page fitter flow (and a mid-flow refresh) and is still
   // available on /results to transmit the completed fitting.
   const [entryPoint] = useState<
-    "remote_link" | "in_office" | "kiosk_qr" | null
+    "remote_link" | "in_office" | "kiosk_qr" | "refit_campaign" | null
   >(() => {
     if (typeof window === "undefined") return null;
     const raw = new URLSearchParams(window.location.search).get("entry");
-    return raw === "in_office" || raw === "kiosk_qr" || raw === "remote_link"
+    return raw === "in_office" ||
+      raw === "kiosk_qr" ||
+      raw === "remote_link" ||
+      raw === "refit_campaign"
       ? raw
       : null;
   });

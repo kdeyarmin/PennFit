@@ -8,7 +8,11 @@
 
 import { adminJsonFetch } from "../admin-json-fetch";
 
-export type FitEntryPoint = "remote_link" | "in_office" | "kiosk_qr";
+export type FitEntryPoint =
+  | "remote_link"
+  | "in_office"
+  | "kiosk_qr"
+  | "refit_campaign";
 
 export type FitSessionOutcome =
   | "high_confidence"

@@ -162,7 +162,7 @@ export interface FitAssessRequest {
     attestedAt?: string;
     responses: Array<{ questionKey: string; answer: "yes" | "no" | "unsure" }>;
   };
-  entryPoint?: "remote_link" | "in_office" | "kiosk_qr";
+  entryPoint?: "remote_link" | "in_office" | "kiosk_qr" | "refit_campaign";
   signal?: AbortSignal;
 }
 

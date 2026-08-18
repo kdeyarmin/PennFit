@@ -218,7 +218,9 @@ const assessBodySchema = z
     profile: profileSchema.optional(),
     scan: scanSchema.optional(),
     safety: safetySchema.optional(),
-    entryPoint: z.enum(["remote_link", "in_office", "kiosk_qr"]).optional(),
+    entryPoint: z
+      .enum(["remote_link", "in_office", "kiosk_qr", "refit_campaign"])
+      .optional(),
   })
   .strict();
 
@@ -633,7 +635,7 @@ interface PersistInput {
   /** From the invite, when staff raised it against an existing chart. */
   patientId: string | null;
   locationId: string | null;
-  entryPoint: "remote_link" | "in_office" | "kiosk_qr";
+  entryPoint: "remote_link" | "in_office" | "kiosk_qr" | "refit_campaign";
   measurements: FitMeasurements;
   profile: ReturnType<typeof buildProfile>;
   scan: ScanSignals;

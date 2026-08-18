@@ -18,7 +18,7 @@ export interface InboundReferral {
   status: ReferralStatus;
   patientName: string;
   patientDob: string | null;
-  entryPoint: "remote_link" | "in_office" | "kiosk_qr";
+  entryPoint: "remote_link" | "in_office" | "kiosk_qr" | "refit_campaign";
   therapyMode: "pap" | "niv";
   fitSessionId: string | null;
   approvedMaskModelId: string | null;

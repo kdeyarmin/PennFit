@@ -235,6 +235,13 @@ const MASK_FITTER_ALLOWED_PREFIXES: readonly string[] = [
   "/admin/billing/addons",
   "/admin/billing/preview",
   "/admin/billing/usage-events",
+  // Control Center's backing API. The clinical fitter ships behind
+  // `fitter.*` flags the tenant flips themselves once their RT has signed
+  // off the size bands they dispense — without this they would have to ask
+  // us to enable the product they bought. Flags are per-org config for
+  // their OWN org, and a flag for a module this scope cannot reach is
+  // inert, so this grants no operational surface.
+  "/admin/feature-flags",
   "/admin/storefront-branding", // brand the fitting link
   "/admin/mfa", // account security: the MFA banner runs on every admin page
   "/admin/team", // manage their own staff seats

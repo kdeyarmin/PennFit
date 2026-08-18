@@ -30,7 +30,10 @@ import {
 } from "@/lib/admin/feature-flags-api";
 import { formatAppDate, formatAppDateTime } from "@/lib/utils";
 import { APP_MODULES, isAppModuleKey } from "@/lib/admin/app-modules";
-import { getGetAdminMeQueryKey } from "@workspace/api-client-react/admin";
+import {
+  getGetAdminMeQueryKey,
+  useGetAdminMe,
+} from "@workspace/api-client-react/admin";
 
 const QUERY_KEY = ["admin-feature-flags"] as const;
 const ACTIVITY_QUERY_KEY = ["admin-feature-flags-activity"] as const;
@@ -614,6 +617,14 @@ function FlagsList() {
     queryKey: QUERY_KEY,
     queryFn: listFeatureFlags,
   });
+  // A standalone Virtual Mask Fitter tenant reaches this page for exactly
+  // one reason: to switch the clinical fitting engine on after their
+  // clinician has signed off the size bands they dispense. Showing them
+  // the whole platform's flag catalog would list toggles for modules
+  // their plan does not include and their console cannot reach — inert
+  // switches that read as features they own. Narrow it to theirs.
+  const { data: adminMe } = useGetAdminMe();
+  const fitterOnly = adminMe?.productScope === "mask_fitter";
 
   const grouped = useMemo(() => {
     const byCategory = new Map<string, FeatureFlag[]>();
@@ -622,6 +633,7 @@ function FlagsList() {
       // in the console instead of alphabetically by category. Listing
       // them twice would make the page longer AND less clear.
       if (isAppModuleKey(f.key)) continue;
+      if (fitterOnly && !f.key.startsWith("fitter.")) continue;
       const list = byCategory.get(f.category) ?? [];
       list.push(f);
       byCategory.set(f.category, list);
@@ -629,7 +641,7 @@ function FlagsList() {
     return Array.from(byCategory.entries()).sort(([a], [b]) =>
       a.localeCompare(b),
     );
-  }, [query.data]);
+  }, [query.data, fitterOnly]);
 
   if (query.isPending) {
     return <Spinner />;
