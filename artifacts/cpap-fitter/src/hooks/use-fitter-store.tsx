@@ -9,6 +9,14 @@ export interface ChosenMask {
   name: string;
   modelNumber: string;
   manufacturer: string;
+  /**
+   * The size the fitting actually recommended, e.g. "Medium". Optional
+   * because the legacy `/api/recommend` path ranks masks without ever
+   * resolving a size — the clinical path (`/api/fit/assess`) does, and
+   * losing it between the results page and the order was a real gap: a
+   * mask ordered in the wrong size fits no better than the wrong mask.
+   */
+  size?: string | null;
 }
 
 interface FitterState {

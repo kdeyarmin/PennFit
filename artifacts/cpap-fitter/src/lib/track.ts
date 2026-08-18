@@ -77,6 +77,7 @@ export type TrackStep =
   | "fitter_lead_submit_failed"
   | "fitter_invite_opened"
   | "fitter_invite_started"
+  | "fit_assessment_completed"
   | "web_vital";
 
 type MetadataForStep<T extends TrackStep> = T extends "capture_blocked"
@@ -92,47 +93,49 @@ type MetadataForStep<T extends TrackStep> = T extends "capture_blocked"
       runtimeReady?: boolean;
     }
   : T extends "results_retake_requested"
-    ? { topConfidencePct: number }
-    : T extends "chat_opened"
-      ? { path: string }
-      : T extends "chat_sent"
-        ? { path: string; chars: number; suggested?: boolean }
-        : T extends "chat_replied"
-          ? {
-              path: string;
-              meta?: "offline" | "degraded" | "rate-limited" | "unavailable";
-              durationMs: number;
-            }
-          : T extends "chat_feedback"
-            ? { path: string; kind: "up" | "down" }
-            : T extends "fitter_lead_submit_failed"
-              ? {
-                  // Low-cardinality bucket for graphing. "http_4xx" /
-                  // "http_5xx" come from the parsed status; "network"
-                  // covers fetch rejections (offline, DNS, connection
-                  // reset); "other" is the catch-all for anything we
-                  // couldn't categorise. Keeps the failure dashboard
-                  // queryable without us storing arbitrary error text.
-                  category: "http_4xx" | "http_5xx" | "network" | "other";
-                  // The raw status when the fetch resolved; null when
-                  // we never reached an HTTP response.
-                  httpStatus: number | null;
-                  // First 64 chars of the thrown Error.message. Used
-                  // for incident drilldown only — the categories above
-                  // are what dashboards group on. Truncated so an
-                  // arbitrarily long server-side error string can't
-                  // blow the 500-char track() payload cap.
-                  errorCode: string;
-                }
-              : T extends "web_vital"
+    ? { topConfidencePct?: number; outcome?: string }
+    : T extends "fit_assessment_completed"
+      ? { outcome: string; degraded: boolean }
+      : T extends "chat_opened"
+        ? { path: string }
+        : T extends "chat_sent"
+          ? { path: string; chars: number; suggested?: boolean }
+          : T extends "chat_replied"
+            ? {
+                path: string;
+                meta?: "offline" | "degraded" | "rate-limited" | "unavailable";
+                durationMs: number;
+              }
+            : T extends "chat_feedback"
+              ? { path: string; kind: "up" | "down" }
+              : T extends "fitter_lead_submit_failed"
                 ? {
-                    name: "LCP" | "CLS" | "INP" | "FCP" | "TTFB";
-                    value: number;
-                    rating: "good" | "needs-improvement" | "poor";
-                    navigationType: string;
-                    path: string;
+                    // Low-cardinality bucket for graphing. "http_4xx" /
+                    // "http_5xx" come from the parsed status; "network"
+                    // covers fetch rejections (offline, DNS, connection
+                    // reset); "other" is the catch-all for anything we
+                    // couldn't categorise. Keeps the failure dashboard
+                    // queryable without us storing arbitrary error text.
+                    category: "http_4xx" | "http_5xx" | "network" | "other";
+                    // The raw status when the fetch resolved; null when
+                    // we never reached an HTTP response.
+                    httpStatus: number | null;
+                    // First 64 chars of the thrown Error.message. Used
+                    // for incident drilldown only — the categories above
+                    // are what dashboards group on. Truncated so an
+                    // arbitrarily long server-side error string can't
+                    // blow the 500-char track() payload cap.
+                    errorCode: string;
                   }
-                : Record<string, unknown>;
+                : T extends "web_vital"
+                  ? {
+                      name: "LCP" | "CLS" | "INP" | "FCP" | "TTFB";
+                      value: number;
+                      rating: "good" | "needs-improvement" | "poor";
+                      navigationType: string;
+                      path: string;
+                    }
+                  : Record<string, unknown>;
 
 export function track<T extends TrackStep>(
   step: T,

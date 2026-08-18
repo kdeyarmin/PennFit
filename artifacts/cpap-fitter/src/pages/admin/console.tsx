@@ -276,6 +276,21 @@ const AdminMaskFitWorklistPage = lazyWithRetry(() =>
     default: m.AdminMaskFitWorklistPage,
   })),
 );
+const AdminFitSessionsPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-fit-sessions").then((m) => ({
+    default: m.AdminFitSessionsPage,
+  })),
+);
+const AdminMaskCatalogPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-mask-catalog").then((m) => ({
+    default: m.AdminMaskCatalogPage,
+  })),
+);
+const AdminFormularyPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-formulary").then((m) => ({
+    default: m.AdminFormularyPage,
+  })),
+);
 const AdminClinicalOutreachPage = lazyWithRetry(() =>
   import("@/pages/admin/admin-clinical-outreach").then((m) => ({
     default: m.AdminClinicalOutreachPage,
@@ -1245,6 +1260,22 @@ function AdminConsole() {
             <Route
               path="/admin/clinical/mask-fit"
               component={AdminMaskFitWorklistPage}
+            />
+            {/* The clinical fitting core. Deliberately NOT nested under
+                /admin/clinical/: that prefix is not on the mask_fitter
+                product-scope allowlist, so a fitter-only tenant would be
+                403'd out of its own product. */}
+            <Route
+              path="/admin/fit-sessions"
+              component={AdminFitSessionsPage}
+            />
+            <Route
+              path="/admin/fitter/catalog"
+              component={AdminMaskCatalogPage}
+            />
+            <Route
+              path="/admin/fitter/formulary"
+              component={AdminFormularyPage}
             />
             <Route
               path="/admin/clinical/outreach"

@@ -392,6 +392,56 @@ async function provisionFeatureFlags(
 }
 
 /**
+ * Give the tenant its own default mask formulary.
+ *
+ * Migration 0482 seeds one per org, but a migration only covers the orgs
+ * that existed when it ran. A tenant onboarded afterwards would have NO
+ * active formulary, and the fitting engine's fallback for that is an
+ * implicit open formulary with a null id and version 0 — so every fit
+ * report that tenant produced would cite a formulary the operator cannot
+ * find, edit, or version. That defeats the provenance the report exists
+ * to provide.
+ *
+ * 'open' posture with zero rules is exactly the pre-formulary behaviour
+ * (every catalog mask is dispensable), so this changes nothing about what
+ * gets recommended — it only makes the provenance real.
+ *
+ * Idempotent: skips when the tenant already has one.
+ */
+async function provisionDefaultFormulary(
+  supabase: OnboardClient,
+  orgId: string,
+): Promise<{ created: boolean }> {
+  const { data: existing, error: readErr } = await supabase
+    .schema("resupply")
+    .from("formularies")
+    .select("id")
+    .eq("org_id", orgId)
+    .limit(1)
+    .maybeSingle();
+  if (readErr) throw readErr;
+  if (existing) return { created: false };
+
+  const { error } = await supabase
+    .schema("resupply")
+    .from("formularies")
+    .insert({
+      org_id: orgId,
+      name: "Default formulary",
+      status: "active",
+      default_posture: "open",
+      is_default: true,
+      version: 1,
+      notes:
+        "Created by tenant:onboard. Open posture with no rules behaves " +
+        "exactly like the pre-formulary engine: every catalog mask is " +
+        "dispensable. Add rules to shape it.",
+    });
+  if (error) throw error;
+  return { created: true };
+}
+
+/**
  * Assign the tenant a billing plan by code (migration 0362 catalog). Use
  * `--plan=mask_fitter` to stand a tenant up as a fitter-only DME — its
  * product scope (migration 0419) then gates the console down to the AI mask
@@ -514,6 +564,9 @@ async function main(): Promise<void> {
   //        With a --plan, apply that plan's preset bundle (only its flags
   //        default ON); otherwise copy the seed tenant's state verbatim. ─
   const flagsResult = await provisionFeatureFlags(supabase, orgId, a.plan);
+
+  // ── 1b-ii. Give the tenant its own default mask formulary. ─────────
+  const formularyResult = await provisionDefaultFormulary(supabase, orgId);
 
   // ── 1c. Optionally assign a billing plan (e.g. mask_fitter). ────────
   const planResult = await provisionBillingPlan(supabase, orgId, a.plan);
@@ -679,6 +732,11 @@ async function main(): Promise<void> {
           : flagsResult.preset
             ? `${flagsResult.enabled}/${flagsResult.provisioned} ON via '${flagsResult.preset}' preset bundle`
             : `${flagsResult.provisioned} provisioned from seed catalog (no --plan; verbatim copy)`
+      }\n` +
+      `  mask formulary    = ${
+        formularyResult.created
+          ? "'Default formulary' created (open posture, no rules)"
+          : "already present (left as-is)"
       }\n` +
       `  billing plan      = ${planResult}\n` +
       `  admin auth user   = ${emailLower} (${userAction}) role=admin\n` +

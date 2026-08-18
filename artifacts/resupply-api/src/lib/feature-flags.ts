@@ -110,6 +110,15 @@ export const FEATURE_FLAG_KEYS = [
   "slack.notifications",
   "slack.interactivity",
   "slack.digests",
+  // Clinical fitting core (migration 0485). Every patient-visible one is
+  // seeded OFF; `fitter.clinical_assessment` is the master switch the
+  // others depend on.
+  "fitter.clinical_assessment",
+  "fitter.multiframe_capture",
+  "fitter.fit_profile_v2",
+  "fitter.magnet_screening",
+  "fitter.confidence_gating",
+  "fitter.clinical_report",
 ] as const;
 
 export type FeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];
