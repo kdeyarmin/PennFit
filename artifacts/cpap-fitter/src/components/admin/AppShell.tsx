@@ -168,7 +168,11 @@ import { clearAllDrafts } from "@/lib/admin/use-draft-autosave";
  *   5. ANALYTICS & REPORTS — exports, financial, performance, customer/clinical
  *   6. SYSTEM     — automation, operations health, settings, setup & advanced
  */
-const NAV_GROUPS: ReadonlyArray<NavGroup> = [
+// Exported so the app-module invariant test can assert against the REAL
+// nav data — that switching every module off still leaves the console's
+// escape hatches (Home, Settings, Team, Control Center, the plan page)
+// reachable — instead of string-matching this file's source.
+export const NAV_GROUPS: ReadonlyArray<NavGroup> = [
   {
     label: "Workspace",
     items: [

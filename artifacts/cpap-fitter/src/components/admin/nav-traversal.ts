@@ -325,10 +325,22 @@ export function filterNavGroupsByFeature(
  * explain itself instead of rendering a page the operator deliberately
  * removed.
  *
- * Longest-prefix wins, matching `pickActiveTarget`: a tab's own key beats
- * its section's, which beats its group's. Returns the FIRST key found on
- * that winning chain from most specific outward, so `/admin/billing/adr`
- * reports its own gate if it has one and the Billing group's otherwise.
+ * Two rules, and the second one matters more than it looks:
+ *
+ *   1. Longest prefix wins, matching `pickActiveTarget`. A tab gated on
+ *      its own key is hidden even while its group is on, and the key
+ *      reported is the most specific one on that chain (tab, then
+ *      section, then group) — the switch the operator has to find.
+ *
+ *   2. A route reachable through ANY surviving entry at that specificity
+ *      is NOT hidden. Some pages are deliberately listed twice:
+ *      /admin/billing/package sits under Billing > Tools (which
+ *      `module.billing` hides) AND under Settings (which nothing hides),
+ *      precisely so a cash-pay tenant can still manage its subscription.
+ *      Reporting the first matching target would blank that page behind
+ *      a "turned off" notice while the sidebar still linked to it —
+ *      making "we don't bill insurance" mean "I can't find where to pay
+ *      you", which is the exact failure the duplicate exists to prevent.
  */
 export function featureHidingLocation(
   location: string,
@@ -336,42 +348,58 @@ export function featureHidingLocation(
   disabledFeatures: ReadonlySet<string>,
 ): string | null {
   if (disabledFeatures.size === 0) return null;
-  let best: { key: string; specificity: number } | null = null;
+
+  // The disabled key gating a target, most specific first — or undefined
+  // when nothing on its chain is switched off.
+  const gatedBy = (
+    keys: ReadonlyArray<string | undefined>,
+  ): string | undefined =>
+    keys.find((key): key is string => !!key && disabledFeatures.has(key));
+
+  let bestSpecificity = -1;
+  // Every gating key seen at `bestSpecificity`, plus whether ANY target at
+  // that specificity was reachable.
+  let bestKey: string | null = null;
+  let bestHasSurvivor = false;
+
+  const consider = (
+    prefix: string,
+    keys: ReadonlyArray<string | undefined>,
+  ): void => {
+    if (!linkMatchesLocation(location, prefix)) return;
+    const specificity = prefix.length;
+    if (specificity < bestSpecificity) return;
+    const hit = gatedBy(keys);
+    if (specificity > bestSpecificity) {
+      // A strictly more specific target supersedes everything seen so far.
+      bestSpecificity = specificity;
+      bestKey = hit ?? null;
+      bestHasSurvivor = !hit;
+      return;
+    }
+    // Tie at the current specificity: a survivor keeps the route open.
+    if (!hit) bestHasSurvivor = true;
+    else if (!bestKey) bestKey = hit;
+  };
+
   for (const group of groups) {
     for (const section of group.items) {
-      const targets: Array<{
-        prefix: string;
-        keys: Array<string | undefined>;
-      }> =
-        section.tabs && section.tabs.length > 0
-          ? section.tabs.map((tab) => ({
-              prefix: tab.matchPrefix ?? tab.href,
-              keys: [
-                tab.requiredFeature,
-                section.requiredFeature,
-                group.requiredFeature,
-              ],
-            }))
-          : section.href
-            ? [
-                {
-                  prefix: section.matchPrefix ?? section.href,
-                  keys: [section.requiredFeature, group.requiredFeature],
-                },
-              ]
-            : [];
-      for (const target of targets) {
-        if (!linkMatchesLocation(location, target.prefix)) continue;
-        const hit = target.keys.find(
-          (key): key is string => !!key && disabledFeatures.has(key),
-        );
-        if (!hit) continue;
-        const specificity = target.prefix.length;
-        if (!best || specificity > best.specificity) {
-          best = { key: hit, specificity };
+      if (section.tabs && section.tabs.length > 0) {
+        for (const tab of section.tabs) {
+          consider(tab.matchPrefix ?? tab.href, [
+            tab.requiredFeature,
+            section.requiredFeature,
+            group.requiredFeature,
+          ]);
         }
+      } else if (section.href) {
+        consider(section.matchPrefix ?? section.href, [
+          section.requiredFeature,
+          group.requiredFeature,
+        ]);
       }
     }
   }
-  return best?.key ?? null;
+
+  return bestHasSurvivor ? null : bestKey;
 }

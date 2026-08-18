@@ -1,17 +1,12 @@
-// Drift guard: the SPA's app-module catalog, the API's flag allow-list,
-// and the seed migration must describe the same set of `module.*` keys.
+// App modules: the SPA catalog must match what the migrations seed, and
+// switching every module off must never cost an operator the way back.
 //
-// Each half fails silently on its own, which is why this is a test and
-// not a comment:
-//   * A key in APP_MODULES but not seeded → the Control Center card
-//     silently omits the row (AppModulesCard skips unseeded keys), so a
-//     module advertised in code is un-toggleable in the product.
-//   * A key seeded but missing from APP_MODULES → it drops out of the
-//     card into the generic flag list, loses its plain-English label,
-//     and `appModuleLabel` renders the raw key in the "turned off"
-//     notice.
-//   * A key in either place but missing from FEATURE_FLAG_KEYS → the
-//     PATCH route rejects the toggle as `unknown_flag`. Dead switch.
+// Both halves guard silent failures. A module declared here but not
+// seeded simply doesn't render in the Control Center card, so a switch
+// advertised in code is missing from the product. And a module that
+// swallowed Control Center or the plan page would let a tenant hide the
+// very screen that turns it back on — recoverable only by an operator
+// with database access.
 
 import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -20,21 +15,30 @@ import { dirname, join } from "node:path";
 import { describe, it, expect } from "vitest";
 
 import { APP_MODULES } from "./app-modules";
+import { NAV_GROUPS } from "@/components/admin/AppShell";
+import {
+  filterNavGroupsByFeature,
+  featureHidingLocation,
+  sectionLandingHref,
+  sectionVisible,
+} from "@/components/admin/nav-traversal";
 
 const here = dirname(fileURLToPath(import.meta.url));
 // artifacts/cpap-fitter/src/lib/admin -> repo root
 const REPO_ROOT = join(here, "..", "..", "..", "..", "..");
 const MIGRATIONS_DIR = join(REPO_ROOT, "lib", "resupply-db", "migrations");
-const API_FLAGS = join(
-  REPO_ROOT,
-  "artifacts",
-  "resupply-api",
-  "src",
-  "lib",
-  "feature-flags.ts",
-);
 
-/** `module.*` keys seeded by any migration's feature_flags INSERT. */
+/**
+ * `module.*` keys seeded by any migration's feature_flags INSERT.
+ *
+ * Reads the migration SQL as DATA, the same way the API's
+ * feature-flags.catalog.test.ts does — the migrations are the source of
+ * truth for what exists in the database and there is no importable
+ * representation of them. The API side of the chain (FEATURE_FLAG_KEYS ↔
+ * seeded keys, in both directions) is already covered by that test, so
+ * matching APP_MODULES against the same seed set pins all three together
+ * transitively without a second copy of the check.
+ */
 function seededModuleKeys(): Set<string> {
   const keys = new Set<string>();
   for (const file of readdirSync(MIGRATIONS_DIR).filter((f) =>
@@ -51,26 +55,11 @@ function seededModuleKeys(): Set<string> {
   return keys;
 }
 
-/** `module.*` entries of FEATURE_FLAG_KEYS, read as source text so this
- *  test doesn't have to import across artifact boundaries. */
-function apiCatalogModuleKeys(): Set<string> {
-  const src = readFileSync(API_FLAGS, "utf8");
-  const start = src.indexOf("export const FEATURE_FLAG_KEYS");
-  expect(start).toBeGreaterThan(-1);
-  const end = src.indexOf("] as const;", start);
-  expect(end).toBeGreaterThan(start);
-  const block = src.slice(start, end);
-  return new Set(
-    Array.from(block.matchAll(/"(module\.[a-z0-9_]+)"/g), (m) => m[1]!),
-  );
-}
-
 const sorted = (s: Iterable<string>) => Array.from(s).sort();
 
-describe("app modules stay in lockstep across SPA, API, and migrations", () => {
+describe("app modules match what the migrations seed", () => {
   const declared = new Set(APP_MODULES.map((m) => m.key));
   const seeded = seededModuleKeys();
-  const catalog = apiCatalogModuleKeys();
 
   it("found a non-trivial set of seeded module keys (sanity)", () => {
     expect(seeded.size).toBeGreaterThan(5);
@@ -82,14 +71,6 @@ describe("app modules stay in lockstep across SPA, API, and migrations", () => {
 
   it("every seeded module is declared in APP_MODULES", () => {
     expect(sorted([...seeded].filter((k) => !declared.has(k)))).toEqual([]);
-  });
-
-  it("every declared module is toggleable via the API allow-list", () => {
-    expect(sorted([...declared].filter((k) => !catalog.has(k)))).toEqual([]);
-  });
-
-  it("the API allow-list carries no module the SPA doesn't know", () => {
-    expect(sorted([...catalog].filter((k) => !declared.has(k)))).toEqual([]);
   });
 
   it("declares no duplicate keys", () => {
@@ -107,34 +88,38 @@ describe("app modules stay in lockstep across SPA, API, and migrations", () => {
 });
 
 describe("modules never hide the way back", () => {
-  // The console surfaces an operator needs to run the business — and to
-  // find the switch that turns a module back ON — must never themselves
-  // be behind a module. A `module.*` key covering Control Center would
-  // let a tenant lock itself out of its own settings with one click, with
-  // no in-app way to recover.
-  const APPSHELL_SRC = readFileSync(
-    join(
-      REPO_ROOT,
-      "artifacts",
-      "cpap-fitter",
-      "src",
-      "components",
-      "admin",
-      "AppShell.tsx",
-    ),
-    "utf8",
-  );
-  // Scope to the full-console nav. The scoped-down MASK_FITTER / LOCKED
-  // navs are separate arrays that carry no module tags at all (a paywalled
-  // or fitter-only tenant already has a curated nav), so matching against
-  // the whole file would count their entries too.
-  const NAV_START = APPSHELL_SRC.indexOf("const NAV_GROUPS");
-  const NAV_END = APPSHELL_SRC.indexOf("const MASK_FITTER_NAV_GROUPS");
-  expect(NAV_START).toBeGreaterThan(-1);
-  expect(NAV_END).toBeGreaterThan(NAV_START);
-  const APPSHELL = APPSHELL_SRC.slice(NAV_START, NAV_END);
+  // The worst case, run against the real nav: a tenant switches off
+  // EVERY module at once.
+  const ALL_OFF = new Set(APP_MODULES.map((m) => m.key));
+  const survivors = filterNavGroupsByFeature(NAV_GROUPS, ALL_OFF);
+  const superAdmin = new Set([
+    "admin.tools.manage",
+    "system.config.manage",
+    "orders.create",
+    "patients.update",
+    "billing.manage",
+    "cases.read",
+    "reports.read",
+  ]);
 
-  const PROTECTED_HREFS = [
+  /** Every href still reachable from the sidebar in that worst case. */
+  const reachable = new Set<string>();
+  for (const group of survivors) {
+    for (const section of group.items) {
+      if (!sectionVisible(section, superAdmin)) continue;
+      if (section.tabs && section.tabs.length > 0) {
+        for (const tab of section.tabs) reachable.add(tab.href);
+      } else if (section.href) {
+        reachable.add(section.href);
+      }
+    }
+  }
+
+  // How an operator runs the business, and — crucially — how they get
+  // back to the switch that turns a module on again. A module key
+  // covering any of these would let a tenant lock itself out of its own
+  // console with one click.
+  const PROTECTED = [
     "/admin", // dashboard
     "/admin/patients",
     "/admin/settings",
@@ -145,26 +130,53 @@ describe("modules never hide the way back", () => {
     "/admin/billing/package", // how a tenant pays us
   ];
 
-  for (const href of PROTECTED_HREFS) {
-    it(`leaves ${href} reachable with every module off`, () => {
-      const idx = APPSHELL.indexOf(`href: "${href}",`);
-      expect(idx, `${href} missing from NAV_GROUPS`).toBeGreaterThan(-1);
-      // The entry's own object literal — up to the closing brace of the
-      // entry — must not carry a requiredFeature.
-      const block = APPSHELL.slice(idx, APPSHELL.indexOf("},", idx));
-      expect(block).not.toContain("requiredFeature");
+  for (const href of PROTECTED) {
+    it(`keeps ${href} in the sidebar with every module off`, () => {
+      expect(reachable.has(href)).toBe(true);
+    });
+
+    it(`never shows a "turned off" notice for ${href}`, () => {
+      // Belt and braces: the sidebar could keep an entry while the
+      // deep-link guard still blanked the page behind it.
+      expect(featureHidingLocation(href, NAV_GROUPS, ALL_OFF)).toBeNull();
     });
   }
 
-  it("keeps Plan & billing outside the Billing module", () => {
-    // /admin/billing/package appears twice: inside Billing > Tools (which
-    // the module hides) and under Settings (which it must not). The
-    // Settings copy is what keeps a cash-pay tenant able to manage their
-    // subscription.
-    const occurrences =
-      APPSHELL.split('href: "/admin/billing/package",').length - 1;
-    expect(occurrences).toBe(2);
-    expect(APPSHELL).toContain('label: "Plan & billing",');
-    expect(APPSHELL).toContain('label: "Package & usage",');
+  it("lands every surviving section on a page that still exists", () => {
+    // A section whose landing tab was filtered away would link into a
+    // "turned off" notice from the sidebar itself.
+    for (const group of survivors) {
+      for (const section of group.items) {
+        const href = sectionLandingHref(section, superAdmin);
+        expect(href, `${group.label} > ${section.label}`).not.toBe("#");
+        expect(
+          featureHidingLocation(href, NAV_GROUPS, ALL_OFF),
+          `${group.label} > ${section.label} lands on a hidden page`,
+        ).toBeNull();
+      }
+    }
+  });
+
+  it("still actually removes things (guards against a no-op filter)", () => {
+    // If filterNavGroupsByFeature silently stopped filtering, every test
+    // above would pass vacuously.
+    expect(survivors.length).toBeLessThan(NAV_GROUPS.length);
+    expect(reachable.has("/admin/billing/verify")).toBe(false);
+    expect(reachable.has("/admin/front-desk")).toBe(false);
+  });
+
+  it("keeps the plan page reachable from outside the Billing module", () => {
+    // /admin/billing/package sits in Billing > Tools (hidden with the
+    // module) AND in Settings (never hidden). Losing the second copy is
+    // what would make "we don't bill insurance" also mean "I can't find
+    // where to pay you", so assert the surviving one is the Settings one.
+    const owners = survivors
+      .flatMap((g) => g.items.map((s) => ({ group: g.label, section: s })))
+      .filter((e) =>
+        e.section.tabs?.some((t) => t.href === "/admin/billing/package"),
+      );
+    expect(owners.map((o) => `${o.group} > ${o.section.label}`)).toEqual([
+      "System > Settings",
+    ]);
   });
 });

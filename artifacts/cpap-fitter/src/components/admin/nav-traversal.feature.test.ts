@@ -49,6 +49,11 @@ const GROUPS: ReadonlyArray<NavGroup> = [
         tabs: [
           { href: "/admin/billing/verify", label: "Verify", icon: Home },
           {
+            href: "/admin/billing/package",
+            label: "Package & usage",
+            icon: Home,
+          },
+          {
             href: "/admin/billing/adr",
             label: "ADR",
             icon: Home,
@@ -66,6 +71,14 @@ const GROUPS: ReadonlyArray<NavGroup> = [
         icon: Home,
         tabs: [
           { href: "/admin/operations", label: "Operations", icon: Home },
+          // Deliberately duplicated from the Billing group below — the
+          // real nav does this for /admin/billing/package so a tenant
+          // that hides Billing can still reach its own subscription.
+          {
+            href: "/admin/billing/package",
+            label: "Plan & billing",
+            icon: Home,
+          },
           {
             href: "/admin/pacware",
             label: "PacWare",
@@ -117,7 +130,11 @@ describe("filterNavGroupsByFeature", () => {
     const ops = out
       .find((g) => g.label === "System")
       ?.items.find((i) => i.label === "Operations");
-    expect(ops?.tabs?.map((t) => t.href)).toEqual(["/admin/operations"]);
+    // PacWare (module.integrations) is gone; the two ungated tabs remain.
+    expect(ops?.tabs?.map((t) => t.href)).toEqual([
+      "/admin/operations",
+      "/admin/billing/package",
+    ]);
   });
 
   it("removes a section left with no tabs at all", () => {
@@ -253,6 +270,87 @@ describe("featureHidingLocation", () => {
         new Set(["module.front_desk"]),
       ),
     ).toBe("module.front_desk");
+  });
+
+  it("keeps a route alive when a DUPLICATE entry survives the filter", () => {
+    // /admin/billing/package is listed twice on purpose. Hiding the
+    // Billing group must not blank the copy that Settings still links to
+    // — otherwise the sidebar shows "Plan & billing" and clicking it says
+    // the feature is turned off, which is the exact stranding the
+    // duplicate exists to prevent.
+    expect(
+      featureHidingLocation(
+        "/admin/billing/package",
+        GROUPS,
+        new Set(["module.billing"]),
+      ),
+    ).toBe(null);
+    // Its Billing-group sibling, which has no duplicate, still hides.
+    expect(
+      featureHidingLocation(
+        "/admin/billing/verify",
+        GROUPS,
+        new Set(["module.billing"]),
+      ),
+    ).toBe("module.billing");
+  });
+
+  it("hides a duplicated route only when EVERY copy is hidden", () => {
+    expect(
+      featureHidingLocation(
+        "/admin/billing/package",
+        GROUPS,
+        new Set(["module.billing", "module.integrations"]),
+      ),
+    ).toBe(null);
+    // Both the System > Operations section and the Billing group gone →
+    // no surviving copy, so the route is genuinely unreachable.
+    const bothGone = new Set(["module.billing", "module.ops_all"]);
+    const groupsWithGatedOps = GROUPS.map((g) =>
+      g.label === "System"
+        ? {
+            ...g,
+            requiredFeature: "module.ops_all",
+          }
+        : g,
+    );
+    expect(
+      featureHidingLocation(
+        "/admin/billing/package",
+        groupsWithGatedOps,
+        bothGone,
+      ),
+    ).toBe("module.billing");
+  });
+
+  it("still prefers a more specific gate over a surviving broader one", () => {
+    // The Billing Hub landing (/admin/billing) survives here, but the ADR
+    // tab has its own gate — a survivor at a SHORTER prefix must not
+    // reopen a page that is specifically switched off.
+    const withHub = GROUPS.map((g) =>
+      g.label === "Billing"
+        ? {
+            ...g,
+            requiredFeature: undefined,
+            items: [
+              {
+                label: "Hub",
+                icon: Home,
+                href: "/admin/billing",
+                matchPrefix: "/admin/billing",
+              },
+              ...g.items,
+            ],
+          }
+        : g,
+    );
+    expect(
+      featureHidingLocation(
+        "/admin/billing/adr",
+        withHub,
+        new Set(["billing.adr_queue"]),
+      ),
+    ).toBe("billing.adr_queue");
   });
 
   it("does not let the bare /admin prefix swallow unrelated routes", () => {
