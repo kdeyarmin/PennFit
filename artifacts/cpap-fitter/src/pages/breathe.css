@@ -1774,6 +1774,13 @@
   height: auto;
   aspect-ratio: 16 / 10;
 }
+/* A captured UI fragment rather than a full screen — the fit-range diagram
+   is ~3.4:1, so it must keep its own aspect ratio instead of the 16:10 the
+   full-screen shots reserve. Selector matches `.bx-shotcard-frame img`'s
+   specificity plus one class so it wins without !important. */
+.bx-shotcard-frame img.bx-shot-natural {
+  aspect-ratio: auto;
+}
 .bx-shotcard figcaption {
   margin-top: 14px;
   font-size: 14px;

@@ -285,6 +285,35 @@ function Engine() {
           </span>
         </div>
 
+        {/* The ladder above is the mechanism; this is what the patient
+            actually receives from it. A real capture of the /results fit
+            diagram — every number in it was produced by the engine, not
+            drawn for the page. Reproduce with e2e/capture-screens.mjs. */}
+        <figure className="bx-shotcard bx-reveal" style={{ marginTop: 46 }}>
+          <div className="bx-shotcard-frame">
+            <div className="bx-shotcard-bar">
+              <i />
+              <i />
+              <i />
+            </div>
+            <img
+              className="bx-shot-natural"
+              src="/breathe/screens/fitter-range-diagram.png"
+              width={1581}
+              height={471}
+              loading="lazy"
+              decoding="async"
+              alt="Fit diagram from a patient's results page. Three rows — nose width, nose to chin, and mouth width — each showing the patient's measurement as a marker on the mask's documented size range. All three sit inside the range."
+            />
+          </div>
+          <figcaption>
+            What the patient is shown, on every recommendation: their own
+            measurement plotted against the size range the manufacturer
+            documents for that mask. A fit you can check, not a score you have
+            to trust.
+          </figcaption>
+        </figure>
+
         <p className="bx-stats-note bx-reveal">
           <Sparkles
             size={14}
