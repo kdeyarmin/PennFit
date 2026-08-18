@@ -879,6 +879,17 @@ export function runTiers(input: FitEngineInput): RankedResult {
   const formularyRulesMatched: Record<string, string[]> = {};
   const candidates: FitCandidate[] = [];
 
+  // Reverse index of the catalog's magnet-free pointers: twin slug -> the
+  // magnetic model it is the manufacturer's magnet-free version of. Built
+  // once here rather than looked up per candidate, and read only — a mask
+  // that nothing points at simply never appears in the map.
+  const magnetFreeVariantOf = new Map<string, string>();
+  for (const m of input.catalog) {
+    if (m.magnetFreeVariantSlug) {
+      magnetFreeVariantOf.set(m.magnetFreeVariantSlug, m.slug);
+    }
+  }
+
   for (const mask of therapy.survivors) {
     const fit = scoreFacialFit(mask, input.measurements);
     const factors = scorePatientFactors(mask, input.profile);
@@ -943,6 +954,7 @@ export function runTiers(input: FitEngineInput): RankedResult {
           ? "Not on your provider's formulary."
           : `Excluded by your provider's formulary${decision.denyReasonCode ? ` (${decision.denyReasonCode})` : ""}.`,
       availability: availability?.availability ?? null,
+      magnetFreeVariantOf: magnetFreeVariantOf.get(mask.slug) ?? null,
       rankedBelowBecause: null,
     });
   }

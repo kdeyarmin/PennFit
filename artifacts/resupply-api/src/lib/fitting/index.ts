@@ -14,7 +14,13 @@
 import { resolveConfidence } from "./confidence.js";
 import { runTiers } from "./tiers.js";
 import { RULES_ENGINE_VERSION } from "./versions.js";
-import type { FitAssessment, FitCandidate, FitEngineInput } from "./types.js";
+import type {
+  CatalogMask,
+  ExclusionRecord,
+  FitAssessment,
+  FitCandidate,
+  FitEngineInput,
+} from "./types.js";
 
 export const FIT_DISCLAIMER =
   "This is a sizing guide based on facial measurements and the answers you gave us — not a clinical fitting. " +
@@ -48,6 +54,14 @@ function rankedBelowBecause(
   candidate: FitCandidate,
   primary: FitCandidate,
 ): string {
+  // Before any score talk: if this IS the recommended mask minus the
+  // magnets, say so. "Ranked below because its fit score is 0.04 lower"
+  // is true and useless next to "same mask, magnet-free headgear".
+  if (candidate.magnetFreeVariantOf) {
+    return candidate.magnetFreeVariantOf === primary.maskSlug
+      ? "The same mask as the one recommended above, with magnet-free headgear clips instead of magnetic ones."
+      : "The magnet-free version of a mask we had to rule out because of the implanted-device answers.";
+  }
   if (candidate.outsideFormulary && !primary.outsideFormulary) {
     return (
       candidate.outsideFormularyReason ??
@@ -83,10 +97,49 @@ function rankedBelowBecause(
  * Deduplicated, order preserved, capped at four so the results page stays
  * a decision rather than a catalog.
  */
+/**
+ * Name the manufacturer's magnet-free SKU on a magnet exclusion.
+ *
+ * Only when that SKU actually survived every other filter. Telling a
+ * patient "there is a magnet-free version of this mask" and then not
+ * offering it is worse than saying nothing at all. Runs as a post-pass
+ * because tier 1 writes the exclusion before it knows what survives.
+ *
+ * Exported for direct unit testing.
+ */
+export function annotateMagnetFreeSwaps(
+  excluded: ExclusionRecord[],
+  catalog: readonly CatalogMask[],
+  survivors: ReadonlyMap<string, FitCandidate>,
+): ExclusionRecord[] {
+  const bySlug = new Map(catalog.map((m) => [m.slug, m]));
+  return excluded.map((ex) => {
+    if (ex.code !== "magnetic_component_contraindicated") return ex;
+    const twinSlug = bySlug.get(ex.maskSlug)?.magnetFreeVariantSlug;
+    if (!twinSlug) return ex;
+    const twin = bySlug.get(twinSlug);
+    // Re-check the twin is actually magnet-free. A mis-seeded pointer at
+    // another magnetic mask must be inert, never a safety claim.
+    if (!twin || twin.hasMagneticComponents) return ex;
+    if (!survivors.has(twinSlug)) return ex;
+    return {
+      ...ex,
+      magnetFreeAlternativeSlug: twinSlug,
+      magnetFreeAlternativeName: twin.modelName,
+      patientReason: `${ex.patientReason} ${twin.manufacturer} makes this same mask in a magnet-free version, and we've included it in your options below.`,
+      clinicianReason: `${ex.clinicianReason} A magnet-free SKU of the same model (${twinSlug}) survived every filter and is offered as an alternative.`,
+    };
+  });
+}
+
 function pickAlternatives(
   ranked: FitCandidate[],
   primary: FitCandidate,
   magneticSlugs: Set<string>,
+  /** Magnetic parent slug -> its magnet-free twin's slug. */
+  magnetFreeTwinOf: ReadonlyMap<string, string>,
+  /** Slugs the tier-1 magnet filter removed, best-ranked first. */
+  magnetExcludedSlugs: readonly string[],
 ): FitCandidate[] {
   const rest = ranked.filter((c) => c.maskSlug !== primary.maskSlug);
   const chosen: FitCandidate[] = [];
@@ -96,12 +149,34 @@ function pickAlternatives(
     chosen.push(c);
   };
 
+  // The same mask minus the magnets beats every other alternative: identical
+  // cushion, identical size band, nothing new to learn. Take it first.
+  const primaryTwin = magnetFreeTwinOf.get(primary.maskSlug);
+  if (primaryTwin) {
+    take(rest.find((c) => c.maskSlug === primaryTwin));
+  }
+
+  // At most ONE twin of a mask the magnet filter removed. Capped so a
+  // patient who screened positive against several magnetic masks still
+  // gets a different-category option below rather than a list of near
+  // duplicates.
+  for (const excludedSlug of magnetExcludedSlugs) {
+    const twin = magnetFreeTwinOf.get(excludedSlug);
+    const found = twin ? rest.find((c) => c.maskSlug === twin) : undefined;
+    if (found) {
+      take(found);
+      break;
+    }
+  }
+
   const primaryCategory = categoryOf(primary);
   take(rest.find((c) => categoryOf(c) === primaryCategory));
   take(rest.find((c) => categoryOf(c) !== primaryCategory));
 
   // A non-magnetic option matters even when the safety screen came back
-  // clear: patients acquire implants, and household members change.
+  // clear: patients acquire implants, and household members change. Kept
+  // alongside the same-model swap above — this answers a different
+  // question, and fires for magnetic masks that have no magnet-free twin.
   if (magneticSlugs.has(primary.maskSlug)) {
     take(rest.find((c) => !magneticSlugs.has(c.maskSlug)));
   }
@@ -122,6 +197,28 @@ export function assess(input: FitEngineInput): FitAssessment {
   const tiers = runTiers(input);
   const magneticSlugs = new Set(
     input.catalog.filter((m) => m.hasMagneticComponents).map((m) => m.slug),
+  );
+  // Magnetic parent -> its magnet-free twin. Only pointers whose target is
+  // genuinely magnet-free are kept, so a mis-seeded row is inert here too.
+  const magnetFreeTwinOf = new Map<string, string>();
+  for (const m of input.catalog) {
+    const twinSlug = m.magnetFreeVariantSlug;
+    if (!twinSlug) continue;
+    const twin = input.catalog.find((x) => x.slug === twinSlug);
+    if (twin && !twin.hasMagneticComponents) {
+      magnetFreeTwinOf.set(m.slug, twinSlug);
+    }
+  }
+  const survivorsBySlug = new Map(
+    tiers.candidates.map((c) => [c.maskSlug, c] as const),
+  );
+  const magnetExcludedSlugs = tiers.excluded
+    .filter((e) => e.code === "magnetic_component_contraindicated")
+    .map((e) => e.maskSlug);
+  const excluded = annotateMagnetFreeSwaps(
+    tiers.excluded,
+    input.catalog,
+    survivorsBySlug,
   );
 
   const top = tiers.candidates[0] ?? null;
@@ -153,7 +250,13 @@ export function assess(input: FitEngineInput): FitAssessment {
           rankedBelowBecause:
             "Shown for clinical reference only — not an automated recommendation.",
         }))
-      : pickAlternatives(tiers.candidates, primary, magneticSlugs);
+      : pickAlternatives(
+          tiers.candidates,
+          primary,
+          magneticSlugs,
+          magnetFreeTwinOf,
+          magnetExcludedSlugs,
+        );
 
   const catalogSnapshotVersion = input.catalog.reduce(
     (max, m) => Math.max(max, m.catalogVersion),
@@ -164,7 +267,7 @@ export function assess(input: FitEngineInput): FitAssessment {
     outcome: confidence.outcome,
     primary,
     alternatives,
-    excluded: tiers.excluded,
+    excluded,
     recommendationConfidence: confidence.confidence,
     safetyFlags: tiers.safetyFlags,
     guidance: confidence.guidance,

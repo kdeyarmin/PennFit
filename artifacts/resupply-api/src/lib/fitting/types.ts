@@ -318,6 +318,16 @@ export interface ExclusionRecord {
   patientReason: string;
   /** Fuller detail for the clinician and the fit report. */
   clinicianReason: string;
+  /**
+   * The same model's magnet-free SKU, when the manufacturer ships one AND
+   * it survived every other filter. Only ever set on a magnet exclusion:
+   * naming a swap we did not actually offer is worse than saying nothing.
+   *
+   * Optional, not required — `fit_sessions.excluded` is jsonb and rows
+   * written before this existed carry neither key. Read them as `?? null`.
+   */
+  magnetFreeAlternativeSlug?: string | null;
+  magnetFreeAlternativeName?: string | null;
 }
 
 export interface SizeChoice {
@@ -363,6 +373,13 @@ export interface FitCandidate {
   availability: MaskAvailability["availability"] | null;
   /** Why this ranked below the primary. Empty on the primary itself. */
   rankedBelowBecause: string | null;
+  /**
+   * Slug of the magnetic model this SKU is the manufacturer's magnet-free
+   * version of. Lets the results page label it as the same mask rather
+   * than an unrelated third option. Optional for the same jsonb-back-compat
+   * reason as `ExclusionRecord` above.
+   */
+  magnetFreeVariantOf?: string | null;
 }
 
 export type FitOutcome =
