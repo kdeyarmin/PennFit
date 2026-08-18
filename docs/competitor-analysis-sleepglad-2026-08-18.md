@@ -206,6 +206,40 @@ contraindication is a hard filter, not a score penalty**.
 
 ---
 
+## 7. Update — shipped in this pass
+
+The four gaps in §5 were acted on the same day, and §4's activation blocker
+was cleared enough to be workable. What changed:
+
+| Gap                                       | Outcome               | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ----------------------------------------- | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| §4 Activation blocked on the review queue | **Shipped (tooling)** | Batch sign-off for a whole model's size run, plus **provenance** on every sign-off (migration `0488`): `source_kind` + `source_ref`, so the fit report can cite the manufacturer chart a band was verified against instead of just asserting that someone approved it. Runbook: [`docs/runbooks/activate-clinical-fitter.md`](./runbooks/activate-clinical-fitter.md). **No flag was flipped** — that is the owner's decision, and clearing the queue for the models a tenant dispenses is still a prerequisite. |
+| §5.1 In-office "Scan Now"                 | **Shipped**           | `in_office` invite channel (migration `0489`): nothing is sent, the signed link is handed over as a QR the patient scans. No email or phone required. 12-hour token rather than 30 days, because the QR sits on a staff screen in a semi-public space.                                                                                                                                                                                                                                                           |
+| §5.2 Refit rate as a KPI                  | **Shipped**           | `/admin/analytics/fitter-outcomes` — refit rate, recommendation acceptance and override reasons, scan quality, confidence mix, time-to-review, split by entry point. Read-side only; every column already existed. Internal-first: publishing a competing accuracy claim is a separate business decision, and this is the data it would need.                                                                                                                                                                    |
+| §5.3 Established-patient re-fit           | **Shipped, OFF**      | Daily scan offering a fresh fitting to patients who reported a leaking or uncomfortable fit, and to patients on a discontinued mask (migration `0490`, flag seeded OFF). One message per patient per quarter.                                                                                                                                                                                                                                                                                                    |
+| §5.4 Visual fit preview                   | **Shipped**           | A to-scale diagram of the patient's own measurements against the mask's published fit range, on `/results` — not a mask rendered onto a model of their face. See §5.4 for why.                                                                                                                                                                                                                                                                                                                                   |
+
+Two things were deliberately **not** built, and both are worth knowing before
+someone re-opens them:
+
+- **Scan-failure reason codes are not in the KPI page.** The SPA emits them,
+  but they land in `public.usage_events`, which has no `org_id` — reading it
+  into a tenant-scoped report would show one DME another DME's scan failures.
+  Scan health comes from the org-scoped `fit_sessions.scan_quality_grade`
+  instead.
+- **A mask dropping out of the formulary is not a re-fit trigger.** It needs
+  per-patient formulary resolution against payer, location and contract, and
+  0482's semantics say a payer-scoped rule must not fire when the payer is
+  unknown. Getting it wrong means telling a patient their working mask is
+  unavailable when it isn't. It needs its own design pass.
+
+Still open from §5, unchanged: **pediatric and NIV service lines** (the axes
+are carried through 0482/0483, but each needs its own clinical validation)
+and **higher-fidelity multi-angle capture** (built, behind
+`fitter.multiframe_capture`, still OFF).
+
+---
+
 ### Sources
 
 - <https://www.sleepglad.com/> · `/supplier-providers` · `/formulary-list` ·
