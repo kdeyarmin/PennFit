@@ -1,6 +1,6 @@
 ---
 name: pennfit-migrations
-description: How to safely write, review, test, and ship PennFit database migrations — the repo's #1 footgun area (multiple production incidents). Covers the hand-written-SQL + content-hash ledger model, the frozen `_journal.json`, the immutability rule (never edit a shipped migration), the prefix moratorium, idempotency, transaction opt-out, the `RUN_DB_MIGRATIONS` deploy gate, and the one-time ledger baseline. Use whenever adding/editing/reviewing a `lib/resupply-db/migrations/*.sql` file, making a schema change (CREATE/ALTER TABLE, index, enum, backfill), diagnosing a failed deploy-time migration, or baselining/adopting the ledger.
+description: How to safely write, review, test, and ship PennFit database migrations — the repo's #1 footgun area (multiple production incidents). Covers the hand-written-SQL + content-hash ledger model, the frozen `_journal.json`, the immutability rule (never edit a shipped migration), the prefix moratorium, idempotency (including why a destructive statement makes a migration un-editable), transaction opt-out, the `RUN_DB_MIGRATIONS` deploy gate, the one-time ledger baseline, and the rule that a clinical reference-data import never clears `needs_clinical_review`. Use whenever adding/editing/reviewing a `lib/resupply-db/migrations/*.sql` file, making a schema change (CREATE/ALTER TABLE, index, enum, backfill), importing clinical reference data (mask size bands, safety rules) from a vendor document, diagnosing a failed deploy-time migration, or baselining/adopting the ledger.
 ---
 
 # PennFit migration safety
@@ -74,6 +74,18 @@ migration must be safe to run more than once:
 slug/id-targeted `UPDATE`s, and guarded `DO $$ ... $$` blocks for
 constraints/enum values that lack an `IF NOT EXISTS`.
 
+**"Idempotent" is not the same as "safe to re-apply later."** A `DELETE`
+or a destructive `UPDATE` re-run from the *same* state is a no-op, so it
+looks idempotent — but an M1 edit re-applies it months later against a
+database that has moved on, and it then destroys rows created since.
+`0499_eson2_manufacturer_bands.sql` is the live example: it deletes stale
+`mask_variant_reviews` for the variants it rewrites, which is correct on
+first apply and would wipe every clinician sign-off recorded since on a
+re-apply. **A migration containing a destructive statement is effectively
+un-editable** — not even a comment fix, because the hash covers comments
+too. Get it right the first time, and prefer a targeted `WHERE` (bounded
+by id/slug *and* a timestamp or a status column) over a broad one.
+
 ### M5 — Statement splitting + transaction opt-out
 - Statements are split on the literal line `--> statement-breakpoint`. The
   split is naive — **do not put that literal inside a function body or
@@ -94,6 +106,43 @@ ledger is `migrations.resupply_migrations`. The migrator pre-creates the
 legacy `drizzle` history schema into `migrations` on first run). **Any new schema
 must be added to Supabase Studio → Project Settings → API → "Exposed
 schemas"** or every PostgREST query against it 503s at runtime.
+
+### M7 — An import never certifies its own clinical data
+A migration that loads clinical reference data (mask size bands, safety
+rules, therapy thresholds) **must leave `needs_clinical_review = TRUE`**
+and must never set a review/approval row on a tenant's behalf. Vendor
+documents are not pre-verified inputs, and clearing the flag centrally
+lifts the confidence ceiling for every tenant at once — none of whom
+looked.
+
+**The evidence is concrete, not hypothetical.** Fisher & Paykel's REF
+620198 (the source for `0499`) prints, in its nasal table:
+
+> Greater than 5.2 cm **(2.95 inches)**
+
+5.2 cm is **2.05** inches; the row directly above converts the same value
+correctly, and the error survives all three revisions across five years.
+Transcribing the inch column would have put the M/L nose-height boundary
+at 74.9 mm instead of 52.0 — and since `PLAUSIBILITY_BOUNDS` caps nose
+height at 70 mm, the Large band would have started *above* the largest
+measurement the scanner will accept. Large becomes unreachable: not
+mis-recommended, silently absent. A human reading the table next to the
+diagram catches that in seconds; no importer will.
+
+Two corollaries when writing an import:
+- **Invalidate prior sign-offs for anything you rewrite in place.**
+  `mask_variant_reviews` is keyed on `size_variant_id`, so an in-place
+  `UPDATE` keeps the UUID and a tenant's old approval carries over to new
+  geometry — and `catalog-store.ts` treats an approved row as clearing
+  `needs_clinical_review`. (Then re-read M4: that `DELETE` is what makes
+  the migration un-editable.)
+- **Don't attribute what the source doesn't contain.** `fit_data_source`
+  is row-level, so every non-NULL band on the row inherits the citation.
+  `NULL` out dimensions the cited document is silent on rather than
+  letting `scoreVariant` average uncited estimates under a real citation.
+
+Background — what each manufacturer actually publishes, and why only one
+model is imported: [`docs/mask-sizing-data-sources-2026-08-18.md`](../../../docs/mask-sizing-data-sources-2026-08-18.md).
 
 ## Adding a migration — the procedure
 
@@ -166,3 +215,5 @@ its hash again and re-triggers the re-apply.
 - `docs/runbooks/adopt-migration-ledger.md` — one-time ledger adoption.
 - `docs/migration-state-investigation-2026-05-08.md` — why the journal is
   frozen and a code-only fix is unsafe.
+- `docs/mask-sizing-data-sources-2026-08-18.md` — what manufacturers
+  publish, the REF 620198 conversion error, and the M7 reasoning.

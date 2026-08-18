@@ -1,6 +1,6 @@
 ---
 name: pennfit-rules
-description: PennFit-specific invariants and "hard rules" to check when writing, reviewing, or committing changes in this repo — PHI/image logging, Supabase-only data path, admin theme scoping, no column encryption, no password pepper, no compliance/audit_log machinery, single email From address, and the decoupled service-boot contract. Use when editing code under artifacts/ or lib/, reviewing a diff or PR, or before committing. These are correctness invariants, not style — a violation is a real bug.
+description: PennFit-specific invariants and "hard rules" to check when writing, reviewing, or committing changes in this repo — PHI/image logging, Supabase-only data path, admin theme scoping, no column encryption, no password pepper, no compliance/audit_log machinery, single email From address, the decoupled service-boot contract, and the rule that only a per-tenant RT sign-off clears `needs_clinical_review`. Use when editing code under artifacts/ or lib/, reviewing a diff or PR, or before committing. These are correctness invariants, not style — a violation is a real bug.
 ---
 
 # PennFit hard-rules reviewer
@@ -127,6 +127,45 @@ panel render transparent). Re-point shadcn tokens by overriding the **raw**
 `--background` / `--foreground` / … variables under `.admin-root`.
 Enforced by `artifacts/cpap-fitter/src/admin.scope.test.ts`.
 
+### R8 — Only an RT sign-off clears `needs_clinical_review`
+The clinical fitter caps recommendation confidence until a licensed
+reviewer signs off a mask's size bands **for that tenant**. The mechanism
+matters: the platform column `mask_size_variants.needs_clinical_review`
+is **never written to `false` by anything**. A tenant clears it for
+itself by writing a tenant-scoped `mask_variant_reviews` row, and
+`catalog-store.ts` ANDs the two:
+
+```ts
+needsClinicalReview:
+  Boolean(v.needs_clinical_review) && !approvedVariantIds.has(String(v.id)),
+```
+
+So the rule is absolute rather than a matter of which route does it: **any
+statement setting that column `false` is a bug**, wherever it appears —
+a data-import migration, a "trusted" manufacturer source, an admin
+toggle. Flipping the shared column lifts the ceiling for every tenant at
+once, none of whom looked.
+
+The source documents are not clean inputs — F&P's REF 620198 prints
+"Greater than 5.2 cm (2.95 inches)" when 5.2 cm is 2.05 inches, in every
+revision. Trusting the sheet would have written a Large band starting
+above `PLAUSIBILITY_BOUNDS`, i.e. unreachable.
+
+Watch for, on any diff touching the fitter:
+- Any write of `needs_clinical_review = false` (there is no legitimate
+  one), or a read that drops the `approvedVariantIds` half of the AND.
+- An in-place rewrite of a `mask_size_variants` row that leaves its
+  `mask_variant_reviews` approval in place (the UUID is unchanged, so the
+  stale approval silently certifies new geometry).
+- A `fit_data_source` / `fit_data_source_ref` set on a row that still
+  carries dimensions the cited document is silent on — `fit_data_source`
+  is row-level and `scoreVariant` averages every non-NULL band, so the
+  citation would cover numbers it does not support.
+
+See `.claude/skills/pennfit-migrations/SKILL.md` **M7** for the
+import-side rule, and `docs/mask-sizing-data-sources-2026-08-18.md` for
+what each manufacturer actually publishes.
+
 ## Step 3 — convention invariants (also worth checking)
 
 - **Supabase is the only runtime data path.** Read/write through
@@ -148,7 +187,7 @@ Enforced by `artifacts/cpap-fitter/src/admin.scope.test.ts`.
 
 ## Step 4 — report
 
-For each finding give: the rule (R1–R7 or convention), `file:line`, why it
+For each finding give: the rule (R1–R8 or convention), `file:line`, why it
 violates the invariant, and the minimal fix. If a sweep hit is actually the
 rule's own allowed location (e.g. the SendGrid client *inside*
 `lib/resupply-email`), note it as a false positive and move on. When asked
