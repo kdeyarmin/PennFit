@@ -157,7 +157,14 @@ router.get(
               "id, created_at, entry_point, outcome, scan_quality_grade, degraded, primary_mask_model_id, override_mask_model_id, override_reason, ordered_mask_model_id, reviewed_at, dispensed_at",
             )
             .gte("created_at", since)
-            .order("created_at", { ascending: false }) as never,
+            .order("created_at", { ascending: false })
+            // `created_at` is not unique, and offset pagination on a
+            // non-unique key can double-count or drop rows at page
+            // boundaries as ties reorder between requests. The id
+            // tiebreak makes the sort total, so every page boundary is
+            // stable — on a report whose whole premise is not lying
+            // about the denominator.
+            .order("id", { ascending: false }) as never,
         SESSION_ROW_CAP,
       ),
       readPaged(
@@ -166,7 +173,9 @@ router.get(
             .from("mask_fit_outcomes")
             .select("mask_id, fit_outcome, created_at")
             .gte("created_at", since)
-            .order("created_at", { ascending: false }) as never,
+            .order("created_at", { ascending: false })
+            // Same total-order tiebreak as the sessions read above.
+            .order("id", { ascending: false }) as never,
         OUTCOME_ROW_CAP,
       ),
     ]);
@@ -241,18 +250,35 @@ router.get(
         .raw()
         .schema("resupply")
         .from("mask_models")
-        .select("slug, manufacturer, model_name")
+        .select("slug, manufacturer, model_name, org_id")
+        // Platform rows plus THIS tenant's private models — the same
+        // scoping every other mask_models reader uses. Without it a
+        // tenant that shadows a platform slug with its own model leaks
+        // that model's name into another tenant's report, and `.in()`
+        // returns two rows for one slug so which name wins is arbitrary.
+        .or(`org_id.is.null,org_id.eq.${orgId}`)
         .in("slug", maskIds)) as {
         data: Array<Record<string, unknown>> | null;
       };
+      // A tenant's own model wins over the platform row of the same slug,
+      // matching catalog-store's resolution so the report names the mask
+      // the engine actually ranked.
+      const tenantOwned = new Set<string>();
       for (const row of data ?? []) {
         const slug = str(row.slug);
         if (!slug) continue;
+        const isTenantRow = row.org_id != null;
+        // A platform row never overwrites a tenant row already recorded.
+        // Two platform rows for one slug cannot happen — 0481 has a unique
+        // index on slug where org_id IS NULL.
+        if (!isTenantRow && tenantOwned.has(slug)) continue;
         const name = [str(row.manufacturer), str(row.model_name)]
           .filter(Boolean)
           .join(" ")
           .trim();
-        if (name) labels.set(slug, name);
+        if (!name) continue;
+        if (isTenantRow) tenantOwned.add(slug);
+        labels.set(slug, name);
       }
     }
 

@@ -105,8 +105,16 @@ const MAX_OFFERS_PER_ORG = 200;
  * cap because most candidates on any given night are already held by
  * their cooldown, and a re-answered or already-actioned survey drops out
  * entirely.
+ *
+ * Capped at 1000 because that is PostgREST's `max_rows`: a larger
+ * `.limit()` is silently truncated to 1000 with no error, so the previous
+ * value of 2000 promised headroom the read never had. Rows arrive
+ * newest-first and the reducers keep the latest per order / per patient,
+ * so hitting the cap fails safe (older candidates wait for the next
+ * nightly run rather than being messaged twice) — but the constant should
+ * state the ceiling that actually applies.
  */
-const CANDIDATE_SCAN_LIMIT = 2000;
+const CANDIDATE_SCAN_LIMIT = 1000;
 
 interface Candidate {
   patientId: string;

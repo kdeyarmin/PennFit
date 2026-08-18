@@ -176,6 +176,55 @@ describe("GET /admin/analytics/fitter-outcomes", () => {
     expect(res.body.report.refit.byMask[0].maskLabel).toBe("ResMed AirFit N20");
   });
 
+  it("org-scopes the mask label lookup and prefers the tenant's own model", async () => {
+    // The label query was the one mask_models read in the repo without
+    // `.or('org_id.is.null,org_id.eq.<orgId>')`. Without it, a tenant
+    // shadowing a platform slug with a private model leaked that model's
+    // name into every other tenant's report. The scoped read can still
+    // return two rows for one slug — the platform row and THIS tenant's —
+    // and the tenant's must win regardless of response order.
+    stageSupabaseResponse("fit_sessions", "select", { data: [] });
+    stageSupabaseResponse("mask_fit_outcomes", "select", {
+      data: Array.from({ length: 10 }, () => ({
+        mask_id: MASK_A,
+        fit_outcome: "leaking",
+      })),
+    });
+    stageSupabaseResponse("mask_models", "select", {
+      data: [
+        {
+          id: "33333333-3333-4333-8333-333333333333",
+          slug: MASK_A,
+          manufacturer: "ResMed",
+          model_name: "Tenant Custom F20",
+          org_id: ORG_ID,
+        },
+        {
+          id: MASK_MODEL_UUID,
+          slug: MASK_A,
+          manufacturer: "ResMed",
+          model_name: "AirFit F20",
+          org_id: null,
+        },
+      ],
+    });
+
+    const res = await request(makeApp()).get(
+      "/admin/analytics/fitter-outcomes",
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body.report.refit.byMask[0].maskLabel).toBe(
+      "ResMed Tenant Custom F20",
+    );
+
+    const orFilters = supabaseMock
+      .filterCalls("mask_models", "select")
+      .filter((f) => f.verb === "or");
+    expect(orFilters).toHaveLength(1);
+    expect(orFilters[0]!.args[0]).toBe(`org_id.is.null,org_id.eq.${ORG_ID}`);
+  });
+
   it("keeps reading past a full page instead of stopping at the cap", async () => {
     // PostgREST returns at most max_rows (1000) per request. Treating a
     // full page as the complete window would compute every rate from the
