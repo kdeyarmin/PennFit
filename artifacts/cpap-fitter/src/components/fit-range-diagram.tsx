@@ -1,6 +1,6 @@
 // To-scale fit diagram — shows the comparison the engine actually made.
 //
-// One row per facial dimension: the mask's published fit range as a band,
+// One row per facial dimension: the mask's on-file fit range as a band,
 // the patient's own measurement as a marker on it. That is the whole
 // recommendation, made visible. See lib/fit-range-diagram.ts for why this
 // rather than a mask rendered onto a model of the patient's face.
@@ -87,8 +87,12 @@ export function FitRangeDiagram({ rows }: { rows: FitRangeRow[] }) {
               aria-hidden="true"
             />
             <span>
-              Every measurement sits inside this mask&apos;s published fit
-              range.
+              {/* "On file", not "published": the ranges behind this diagram
+                  are the catalog's own sizing data, much of it estimated
+                  pending clinical review — claiming the manufacturer
+                  published them would overstate the provenance. */}
+              Every measurement sits inside the sizing range we have on file for
+              this mask.
             </span>
           </>
         ) : (
@@ -102,9 +106,9 @@ export function FitRangeDiagram({ rows }: { rows: FitRangeRow[] }) {
               {outOfRange === 1
                 ? "One measurement sits outside"
                 : `${outOfRange} measurements sit outside`}{" "}
-              this mask&apos;s published range. It can still work — ranges are
-              guidance, not limits — but try the alternatives too, and tell us
-              if the seal isn&apos;t right.
+              the sizing range we have on file for this mask. It can still work
+              — ranges are guidance, not limits — but try the alternatives too,
+              and tell us if the seal isn&apos;t right.
             </span>
           </>
         )}

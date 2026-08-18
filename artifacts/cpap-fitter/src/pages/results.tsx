@@ -268,15 +268,41 @@ export function Results() {
     return () => controller.abort();
   }, [measurements, inviteToken, fullAnswers, entryPoint]);
 
+  const { data: catalog } = useListMasks();
+  const catalogById = React.useMemo(() => {
+    const map = new Map<string, NonNullable<typeof catalog>["masks"][number]>();
+    // Defensive: `catalog?.masks.forEach` only short-circuits on a
+    // null/undefined `catalog`. If a transient failure on /api/masks
+    // (e.g. mid-deploy, the proxy serves the SPA shell instead of the
+    // resupply-api JSON) lands `catalog` as a string or `{}`, the
+    // unguarded `.masks.forEach` crashes the page and trips the
+    // ErrorBoundary. Guard both hops.
+    if (!catalog || !Array.isArray(catalog.masks)) return map;
+    catalog.masks.forEach((m) => map.set(m.id, m));
+    return map;
+  }, [catalog]);
+
   // Cash-pay on the CLINICAL path.
   //
-  // The legacy card matches a shop SKU by manufacturer model number.
-  // A clinical candidate's equivalent is the part number of the size
-  // that was actually recommended — cushion first, then frame — which is
-  // the same resolution `handleChooseMask` uses for the order. Falling
-  // back to the mask slug matches nothing and simply hides the CTA,
-  // which is the right failure: a mask we can't price is a mask we
-  // can't sell.
+  // Two different identifier spaces meet here, and conflating them is
+  // what broke this. `shopByModelNumber` is keyed on the TENANT's own
+  // SKU — `model_number` in the Stripe product's metadata, e.g.
+  // "PHM-RM-F20". `mask_size_variants.manufacturer_part_number` is the
+  // MANUFACTURER's part number. They are not the same string, and every
+  // variant the 0486 seed writes leaves the part number NULL besides, so
+  // resolving on it alone matched nothing: the CTA never rendered on the
+  // clinical path, and because this resolver is the only caller that
+  // supplies `fitLink`, `fit_checkout_context` was never written either
+  // — so `fit_sessions.shop_order_id` and `dispensed_at` stayed NULL and
+  // the fitter-outcome dispense rate was structurally zero.
+  //
+  // So try the part number first (correct when a tenant does key its shop
+  // on manufacturer part numbers), then fall back to the legacy catalog's
+  // `modelNumber` for the same slug. 0481 deliberately keeps the slug
+  // space identical across both catalogs, which is what makes that
+  // fallback exact rather than a guess. A mask in neither still hides the
+  // CTA, which remains the right failure: a mask we can't price is a mask
+  // we can't sell.
   //
   // This also carries the fit-session link into the cart, which is the
   // only way a paid order ever gets attributed back to the fitting that
@@ -288,8 +314,16 @@ export function Results() {
   const clinicalCashPayFor = (c: FitCandidate) => {
     const partNumber =
       c.cushion?.manufacturerPartNumber ?? c.frame?.manufacturerPartNumber;
-    if (!partNumber) return undefined;
-    const product = shopByModelNumber?.get(partNumber);
+    const legacyModelNumber = catalogById.get(c.maskSlug)?.modelNumber;
+    const shopKey =
+      (partNumber && shopByModelNumber?.has(partNumber)
+        ? partNumber
+        : undefined) ??
+      (legacyModelNumber && shopByModelNumber?.has(legacyModelNumber)
+        ? legacyModelNumber
+        : undefined);
+    if (!shopKey) return undefined;
+    const product = shopByModelNumber?.get(shopKey);
     if (!product) return undefined;
     const fitSessionId = assessment?.fitSessionId;
     return {
@@ -299,7 +333,7 @@ export function Results() {
       ),
       onAddToCart: () =>
         handleCashPayAdd(
-          { maskId: c.maskId, modelNumber: partNumber },
+          { maskId: c.maskId, modelNumber: shopKey },
           product,
           fitSessionId
             ? {
@@ -398,20 +432,6 @@ export function Results() {
       console.warn("fitter-invite transmission failed (continuing)", err);
     });
   }, [inviteToken, measurements, topPick, fullAnswers]);
-
-  const { data: catalog } = useListMasks();
-  const catalogById = React.useMemo(() => {
-    const map = new Map<string, NonNullable<typeof catalog>["masks"][number]>();
-    // Defensive: `catalog?.masks.forEach` only short-circuits on a
-    // null/undefined `catalog`. If a transient failure on /api/masks
-    // (e.g. mid-deploy, the proxy serves the SPA shell instead of the
-    // resupply-api JSON) lands `catalog` as a string or `{}`, the
-    // unguarded `.masks.forEach` crashes the page and trips the
-    // ErrorBoundary. Guard both hops.
-    if (!catalog || !Array.isArray(catalog.masks)) return map;
-    catalog.masks.forEach((m) => map.set(m.id, m));
-    return map;
-  }, [catalog]);
 
   const hasRequested = useRef(false);
 

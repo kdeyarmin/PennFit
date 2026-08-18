@@ -6349,6 +6349,10 @@ export interface Database {
           manufacturer_part_number: string | null;
           status: "current" | "discontinued";
           fit_data_source: "manufacturer" | "measured" | "estimated";
+          // 0495: citation behind a non-estimated band. NULL on an
+          // estimated band means "nothing to cite", never "unrecorded".
+          fit_data_source_ref: string | null;
+          fit_data_source_date: string | null;
           needs_clinical_review: boolean;
           created_at: string;
           updated_at: string;

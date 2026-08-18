@@ -17,6 +17,8 @@ const ORG_ID = "44444444-4444-4444-8444-444444444444";
 const db = vi.hoisted(() => ({
   /** slug → mask_models row, or undefined for "no such mask". */
   masks: new Map<string, { id: string }>(),
+  /** Known mask_size_variants ids — an FK target, so existence is the test. */
+  variants: new Set<string>(),
   /** Updates seen by `fit_sessions`, in order. */
   updates: [] as Array<{ patch: Record<string, unknown>; filters: string[] }>,
   /** What the guarded update returns: a row = it matched, null = no-op. */
@@ -36,6 +38,22 @@ vi.mock("@workspace/resupply-db", () => {
     };
     chain.maybeSingle = async () => ({
       data: db.masks.get(slug) ?? null,
+      error: null,
+    });
+    return chain;
+  };
+
+  const variantBuilder = () => {
+    let id = "";
+    const chain: Record<string, unknown> = {};
+    const self = () => chain;
+    for (const m of ["select", "limit"]) chain[m] = () => self();
+    chain.eq = (_col: string, v: string) => {
+      id = v;
+      return self();
+    };
+    chain.maybeSingle = async () => ({
+      data: db.variants.has(id) ? { id } : null,
       error: null,
     });
     return chain;
@@ -73,7 +91,12 @@ vi.mock("@workspace/resupply-db", () => {
   return {
     getOrgScopedClient: vi.fn(() => ({
       from: () => sessionBuilder(),
-      raw: () => ({ schema: () => ({ from: () => maskBuilder() }) }),
+      raw: () => ({
+        schema: () => ({
+          from: (table: string) =>
+            table === "mask_size_variants" ? variantBuilder() : maskBuilder(),
+        }),
+      }),
     })),
   };
 });
@@ -89,6 +112,7 @@ import {
 
 beforeEach(() => {
   db.masks = new Map([["resmed-airfit-f20", { id: MODEL_ID }]]);
+  db.variants = new Set([VARIANT_ID]);
   db.updates = [];
   db.updateMatches = true;
   db.updateError = null;
@@ -174,6 +198,27 @@ describe("linkFitSessionToOrder", () => {
     expect(result).toEqual({ linked: true });
     expect(db.updates[0]?.patch).toMatchObject({ shop_order_id: ORDER_ID });
     expect(db.updates[0]?.patch).not.toHaveProperty("ordered_mask_model_id");
+  });
+
+  it("links the order even when the variant id resolves to nothing", async () => {
+    // Sharper than the slug case: ordered_variant_id is an FK, and the
+    // value rides in from the client's checkout context via Stripe
+    // metadata. Before this resolution existed, a well-formed uuid that
+    // wasn't a real variant failed the FK and errored the WHOLE update —
+    // losing shop_order_id, and with it dispensed_at, forever.
+    const result = await linkFitSessionToOrder(ORG_ID, {
+      link: {
+        ...link,
+        orderedVariantId: "99999999-9999-4999-8999-999999999999",
+      },
+      shopOrderId: ORDER_ID,
+    });
+    expect(result).toEqual({ linked: true });
+    expect(db.updates[0]?.patch).toMatchObject({
+      shop_order_id: ORDER_ID,
+      ordered_mask_model_id: MODEL_ID,
+    });
+    expect(db.updates[0]?.patch).not.toHaveProperty("ordered_variant_id");
   });
 
   it("reports failure instead of throwing when the write errors", async () => {

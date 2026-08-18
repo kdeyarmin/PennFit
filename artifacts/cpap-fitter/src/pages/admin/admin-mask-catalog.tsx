@@ -15,7 +15,7 @@
 // individually or in bulk. That is what makes the fit report's provenance
 // section evidence rather than an assertion.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Library } from "lucide-react";
 
@@ -113,12 +113,52 @@ export function AdminMaskCatalogPage() {
   // evidence onto another.
   const [sourceKind, setSourceKind] = useState<ReviewSourceKind | "">("");
   const [sourceRef, setSourceRef] = useState("");
+  const [sourcePrefilled, setSourcePrefilled] = useState(false);
 
   function openModel(id: string | null) {
     setExpanded(id);
     setSourceKind("");
     setSourceRef("");
+    setSourcePrefilled(false);
   }
+
+  // Seed the reviewer's citation from the catalog's own platform-sourced
+  // provenance (0495), so a sourced band becomes a CONFIRMATION rather
+  // than a fresh transcription. Rules, in order of what they protect:
+  //   * only when EVERY pending variant is non-estimated and they agree
+  //     on ONE ref. The "Sign off all" button submits every pending id
+  //     with this provenance, so a partially sourced model must not
+  //     pre-fill — it would record the citation against estimated bands
+  //     the cited source never supported, and approve them with it;
+  //   * the evidence CLASS is only pre-filled for 'measured' (which maps
+  //     unambiguously to a physical measurement). 'manufacturer' says a
+  //     manufacturer document, not WHICH kind — the 0491 schema splits
+  //     fit guide from spec sheet on purpose, and guessing "fit guide"
+  //     would misstate on the fit report what the RT actually reviewed.
+  //     The reviewer picks the class; only the reference is seeded;
+  //   * only while the reviewer has not typed — their words always win.
+  const detailModelId = detail.data?.model.id;
+  useEffect(() => {
+    if (!detailModelId || sourceKind !== "" || sourceRef !== "") return;
+    const pending = (detail.data?.variants ?? []).filter(
+      (v) => v.needsClinicalReview,
+    );
+    if (pending.length === 0) return;
+    if (pending.some((v) => v.fitDataSource === "estimated")) return;
+    const refs = new Set(pending.map((v) => v.fitDataSourceRef));
+    const kinds = new Set(pending.map((v) => v.fitDataSource));
+    if (refs.size !== 1 || kinds.size !== 1) return;
+    const [ref] = refs;
+    if (!ref) return;
+    if ([...kinds][0] === "measured") {
+      setSourceKind("physical_measurement");
+    }
+    setSourceRef(String(ref));
+    setSourcePrefilled(true);
+    // Deliberately not exhaustive: this must fire once per opened model,
+    // from the fetched detail, and never re-fire against user edits.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detailModelId]);
 
   const provenance: ReviewProvenance = {
     ...(sourceKind ? { sourceKind } : {}),
@@ -303,6 +343,30 @@ export function AdminMaskCatalogPage() {
                             the fit report, so a later reader can see the
                             evidence rather than take the approval on trust.
                           </p>
+                          {detail.data.model.fittingInstructionsUrl ? (
+                            <p className="text-xs mb-2">
+                              <a
+                                href={detail.data.model.fittingInstructionsUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="underline"
+                              >
+                                Open the manufacturer&apos;s fitting
+                                documentation
+                                {detail.data.model.fittingInstructionsVersion
+                                  ? ` (${detail.data.model.fittingInstructionsVersion})`
+                                  : ""}
+                              </a>
+                            </p>
+                          ) : null}
+                          {sourcePrefilled ? (
+                            <p className="text-xs text-muted-foreground mb-2">
+                              Reference pre-filled from the catalog&apos;s own
+                              recorded source — pick the evidence class, and
+                              change the reference if you checked something
+                              else.
+                            </p>
+                          ) : null}
                           <div className="flex flex-wrap gap-3 items-end">
                             <div className="min-w-[220px]">
                               <Label htmlFor="review-source-kind">Source</Label>
@@ -357,7 +421,7 @@ export function AdminMaskCatalogPage() {
                           <thead>
                             <tr className="text-left border-b">
                               <th className="py-1 pr-3">Size</th>
-                              <th className="py-1 pr-3">Part</th>
+                              <th className="py-1 pr-3">Component</th>
                               <th className="py-1 pr-3">Nose width</th>
                               <th className="py-1 pr-3">Nose to chin</th>
                               <th className="py-1 pr-3">Mouth width</th>
@@ -385,7 +449,13 @@ export function AdminMaskCatalogPage() {
                                 <td className="py-1.5 pr-3">
                                   {v.hcpcsCode ?? "—"}
                                 </td>
-                                <td className="py-1.5 pr-3">
+                                <td
+                                  className="py-1.5 pr-3"
+                                  // The citation behind a non-estimated band
+                                  // (0495), surfaced where the reviewer is
+                                  // already looking.
+                                  title={v.fitDataSourceRef ?? undefined}
+                                >
                                   {v.fitDataSource}
                                 </td>
                                 <td className="py-1.5">

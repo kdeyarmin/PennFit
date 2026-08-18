@@ -247,6 +247,51 @@ and **higher-fidelity multi-angle capture** (built, behind
 
 ---
 
+## 8. Update — second pass (same day, PR #1267)
+
+An independent re-run of the research confirmed §1–§6 and turned up one
+finding this document missed, because it sat _under_ a feature rather than
+beside one. Chasing SleepGlad's "automated magnetic clip contraindication
+documentation" into our own catalog showed the tier-1 magnet safety filter
+was running on wrong data in both directions:
+
+- **Eight magnetic masks were seeded non-magnetic** — ResMed AirFit F30
+  and N10 (both on the FDA Class I recall list), AirFit F40 (magnets per
+  ResMed's own IFU), and Philips Amara View, DreamWear FF (+ Gel), Wisp
+  and Wisp Youth (all named in Philips' 6 Sep 2022 field safety notice).
+  With `fitter.magnet_screening` on, an implant patient was correctly kept
+  off the F20 family and could then be handed an F30 or a Wisp.
+- **One magnet-free mask was seeded magnetic** — the F&P Evora Full, when
+  Fisher & Paykel market their entire range as magnet-free: excluding it
+  removed a safe option from exactly the patients who need it.
+
+Fixed in migration `0492`. In the same pass, migration `0493` closed the
+gap SleepGlad's formulary exposes with its "AirFit F20 Non-Magnetic" /
+"AirFit F30i Non-Magnetic" entries: `magnet_free_variant_slug` had existed
+since 0481 with zero rows populating it and nothing reading it. The twins
+are now seeded as their own model rows and the engine offers the
+same-model magnet-free swap first, naming it on the exclusion record only
+when it actually survived every filter.
+
+Also in this pass: catalog parity additions (`0494` — Inogen Aurora,
+Rain8 AmeriFlex, AirFit X30i; Genadyne deliberately skipped, unverifiable),
+platform band provenance with a citation-or-estimated CHECK (`0495`),
+fitting-documentation links + sign-off pre-fill (`0496` + catalog UI), and
+a re-verification of §7's four shipped gap-closures which found and fixed
+the clinical cash-pay resolver matching on an identifier space the shop
+isn't keyed on — the reason the §7 outcome-loop closure never actually
+produced a linked order.
+
+**Coverage, stated honestly:** every size band in the catalog remains
+`estimated` / `needs_clinical_review = true` — nothing in this pass
+upgraded a band, because manufacturers publish printable 1:1 templates,
+not millimetre ranges, and a transcribed number is not a reviewed one.
+What changed is that when sourced data does land, it must carry a citation
+(`0495`'s CHECK), and five ResMed models now link straight to their
+manufacturer documentation from the sign-off queue.
+
+---
+
 ### Sources
 
 - <https://www.sleepglad.com/> · `/supplier-providers` · `/formulary-list` ·

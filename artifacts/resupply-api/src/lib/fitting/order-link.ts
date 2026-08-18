@@ -103,6 +103,26 @@ export async function linkFitSessionToOrder(
       orderedMaskModelId = data?.id ?? null;
     }
 
+    // The variant id needs the same defensive resolution as the slug —
+    // for a sharper reason: `ordered_variant_id` is an FK, and the value
+    // arrives from the client's checkout context via Stripe metadata. A
+    // well-formed uuid that doesn't exist as a variant row would fail the
+    // FK and error the WHOLE update, losing `shop_order_id` — and with it
+    // any chance of `dispensed_at` — over a field that is decoration by
+    // comparison. Resolve it; drop it from the patch when unknown.
+    let orderedVariantId: string | null = null;
+    if (input.link.orderedVariantId) {
+      const { data } = (await supabase
+        .raw()
+        .schema("resupply")
+        .from("mask_size_variants")
+        .select("id")
+        .eq("id", input.link.orderedVariantId)
+        .limit(1)
+        .maybeSingle()) as { data: { id?: string } | null };
+      orderedVariantId = data?.id ?? null;
+    }
+
     const { data: updated, error } = (await supabase
       .from("fit_sessions")
       .update({
@@ -114,9 +134,7 @@ export async function linkFitSessionToOrder(
         ...(orderedMaskModelId
           ? { ordered_mask_model_id: orderedMaskModelId }
           : {}),
-        ...(input.link.orderedVariantId
-          ? { ordered_variant_id: input.link.orderedVariantId }
-          : {}),
+        ...(orderedVariantId ? { ordered_variant_id: orderedVariantId } : {}),
         updated_at: new Date().toISOString(),
       })
       .eq("id", input.link.fitSessionId)

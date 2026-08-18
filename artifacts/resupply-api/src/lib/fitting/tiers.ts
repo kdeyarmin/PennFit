@@ -879,6 +879,28 @@ export function runTiers(input: FitEngineInput): RankedResult {
   const formularyRulesMatched: Record<string, string[]> = {};
   const candidates: FitCandidate[] = [];
 
+  // Reverse index of the catalog's magnet-free pointers: twin slug -> the
+  // magnetic model it is the manufacturer's magnet-free version of. Built
+  // once here rather than looked up per candidate, and read only — a mask
+  // that nothing points at simply never appears in the map.
+  //
+  // Validated, not copied: a pointer only lands in the map when the parent
+  // is genuinely magnetic AND the twin exists AND the twin is genuinely
+  // magnet-free. This field feeds PATIENT-FACING copy ("magnet-free
+  // headgear clips") in rankedBelowBecause, so an unvalidated pointer
+  // would turn a catalog mis-seed into a clinical safety misstatement.
+  // A bad pointer must be inert, never a claim.
+  const catalogBySlug = new Map(input.catalog.map((m) => [m.slug, m]));
+  const magnetFreeVariantOf = new Map<string, string>();
+  for (const m of input.catalog) {
+    const twinSlug = m.magnetFreeVariantSlug;
+    if (!twinSlug || !m.hasMagneticComponents) continue;
+    const twin = catalogBySlug.get(twinSlug);
+    if (twin && !twin.hasMagneticComponents) {
+      magnetFreeVariantOf.set(twinSlug, m.slug);
+    }
+  }
+
   for (const mask of therapy.survivors) {
     const fit = scoreFacialFit(mask, input.measurements);
     const factors = scorePatientFactors(mask, input.profile);
@@ -943,6 +965,7 @@ export function runTiers(input: FitEngineInput): RankedResult {
           ? "Not on your provider's formulary."
           : `Excluded by your provider's formulary${decision.denyReasonCode ? ` (${decision.denyReasonCode})` : ""}.`,
       availability: availability?.availability ?? null,
+      magnetFreeVariantOf: magnetFreeVariantOf.get(mask.slug) ?? null,
       rankedBelowBecause: null,
     });
   }
