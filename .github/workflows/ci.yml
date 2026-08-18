@@ -26,6 +26,12 @@ jobs:
   lint-typecheck:
     name: Lint + Typecheck
     runs-on: ubuntu-latest
+    # Every job carries a timeout. GitHub's default is SIX HOURS, so a step
+    # that hangs (rather than fails) leaves a required check pending for the
+    # rest of the day instead of going red in minutes. Values are ~5x the
+    # observed run time, so a genuinely slow run is never killed; they exist
+    # to catch a hang, not to police duration.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
 
@@ -47,6 +53,7 @@ jobs:
   drift:
     name: Schema + codegen + architecture drift
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     env:
       # Codegen scripts read DATABASE_URL at import time. A syntactic
       # URL is enough — the drift checks run statically and don't open
@@ -115,6 +122,10 @@ jobs:
       # checker's own self-test into CI; the checker now also hard-fails
       # if rg is absent rather than passing empty).
       - name: Install ripgrep
+        # apt-backed, so bounded: runners have hung here indefinitely
+        # while siblings on the SAME run finished it in ~60-85s. Left
+        # unbounded, one stall burns the 6-hour default as a pending check.
+        timeout-minutes: 5
         run: sudo apt-get update && sudo apt-get install -y ripgrep
 
       - name: Architecture drift
@@ -188,6 +199,7 @@ jobs:
   test:
     name: Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 25
 
     # The vitest suites mock the DB layer with fluent stubs, so the bulk
     # of the tests need no real Postgres and run here. The DB-backed
@@ -233,6 +245,7 @@ jobs:
   migrations:
     name: Migration replay (Postgres)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     # Runs the DB-backed migration suites against a real Postgres:
     #   * migrate.test.ts            — full 0000..latest from-scratch
@@ -297,6 +310,7 @@ jobs:
   integration:
     name: Integration (PostgREST)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     # Runs the DB-backed Supabase integration test(s) — the worker
     # `*.integration.test.ts` suite (invite-password-expiry-notify and the
@@ -372,6 +386,7 @@ jobs:
   a11y:
     name: A11y (Playwright + axe)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     # Independent from the rest of CI: builds the SPA, serves it via
     # vite preview, and runs e2e/tests/a11y.spec.ts against the major
@@ -412,6 +427,10 @@ jobs:
           key: ${{ runner.os }}-playwright-${{ hashFiles('pnpm-lock.yaml') }}
 
       - name: Install Playwright browsers (chromium only)
+        # apt-backed, so bounded: runners have hung here indefinitely
+        # while siblings on the SAME run finished it in ~60-85s. Left
+        # unbounded, one stall burns the 6-hour default as a pending check.
+        timeout-minutes: 8
         run: pnpm exec playwright install --with-deps chromium
 
       # Serve the built SPA in the background. `vite preview` exits
@@ -460,6 +479,7 @@ jobs:
   smoke:
     name: Smoke (Playwright)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     # Required check (NOT continue-on-error): a smoke-test failure
     # means the SPA build is broken — anyone visiting the site would
@@ -493,6 +513,10 @@ jobs:
           key: ${{ runner.os }}-playwright-${{ hashFiles('pnpm-lock.yaml') }}
 
       - name: Install Playwright browsers (chromium only)
+        # apt-backed, so bounded: runners have hung here indefinitely
+        # while siblings on the SAME run finished it in ~60-85s. Left
+        # unbounded, one stall burns the 6-hour default as a pending check.
+        timeout-minutes: 8
         run: pnpm exec playwright install --with-deps chromium
 
       # vite.config.ts requires PORT + BASE_PATH at config-resolution
@@ -533,6 +557,7 @@ jobs:
   e2e-dev:
     name: E2E (Playwright, dev server)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     # results-page-resilience.spec.ts is a regression test that REQUIRES
     # the Vite *dev* server: it stubs @mediapipe/tasks-vision by
@@ -571,6 +596,10 @@ jobs:
           key: ${{ runner.os }}-playwright-${{ hashFiles('pnpm-lock.yaml') }}
 
       - name: Install Playwright browsers (chromium only)
+        # apt-backed, so bounded: runners have hung here indefinitely
+        # while siblings on the SAME run finished it in ~60-85s. Left
+        # unbounded, one stall burns the 6-hour default as a pending check.
+        timeout-minutes: 8
         run: pnpm exec playwright install --with-deps chromium
 
       # `vite dev` (not preview) so modules are served unbundled and the
@@ -610,6 +639,7 @@ jobs:
   railway-build:
     name: Railway prod build (Node 24)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     # Builds the production deploy artifacts the way Railway does — which
     # NOTHING else in CI exercises: the other jobs only typecheck/test or
@@ -661,6 +691,7 @@ jobs:
   e2e-admin:
     name: E2E (admin · backend-backed)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     # Backend-backed admin e2e: stands up the FULL runtime stack —
     # Postgres + standalone PostgREST (the service-role data path) + the
@@ -806,6 +837,10 @@ jobs:
           echo "::warning::API /readyz not ready within 45s; proceeding (the admin sign-in test will surface any dependency failure)"
 
       - name: Install Playwright browsers (chromium only)
+        # apt-backed, so bounded: runners have hung here indefinitely
+        # while siblings on the SAME run finished it in ~60-85s. Left
+        # unbounded, one stall burns the 6-hour default as a pending check.
+        timeout-minutes: 8
         run: pnpm exec playwright install --with-deps chromium
 
       - name: Run admin e2e (authenticated)
@@ -825,6 +860,7 @@ jobs:
   audit:
     name: Dependency audit (high)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     # Surfaces known high-severity transitive CVEs in the dependency
     # tree. This is a PHI-adjacent app, so a vulnerable transitive dep
