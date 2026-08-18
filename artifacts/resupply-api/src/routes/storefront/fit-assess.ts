@@ -694,6 +694,23 @@ async function persistSession(input: PersistInput): Promise<string | null> {
         safety_attested_at: input.safety?.attestedAt ?? null,
         safety_snapshot: input.safety?.snapshot ?? null,
         primary_recommendation: input.assessment.primary,
+        // Dual-write the STRUCTURED recommendation alongside the JSON blob.
+        //
+        // Without these the loop never closes: `classifyDecision` in the
+        // outcome report bails on a null primary before it ever looks at
+        // the clinician's decision, so every fitting read as "undecided"
+        // and the acceptance rate was permanently null — even though the
+        // RT override route has always written override_mask_model_id.
+        // The JSON carries the same ids, but a jsonb blob can't be joined,
+        // filtered or FK-checked, which is why 0483 declared the columns.
+        //
+        // Null on a contraindicated / low-confidence / out-of-range
+        // outcome, where there is deliberately no primary to record.
+        primary_mask_model_id: input.assessment.primary?.maskId ?? null,
+        primary_cushion_variant_id:
+          input.assessment.primary?.cushion?.variantId ?? null,
+        primary_frame_variant_id:
+          input.assessment.primary?.frame?.variantId ?? null,
         alternatives: input.assessment.alternatives,
         excluded: input.assessment.excluded,
         recommendation_confidence: input.assessment.recommendationConfidence,

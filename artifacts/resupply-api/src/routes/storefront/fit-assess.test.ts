@@ -51,6 +51,14 @@ const db = vi.hoisted(() => ({
     status: "sent",
     expires_at: null as string | null,
   } as Record<string, unknown> | null,
+  /** Every insert the route attempts, so a test can assert the payload. */
+  inserts: [] as Array<{ table: string; payload: unknown }>,
+  /**
+   * Whether the fit_sessions write SUCCEEDS. Default false, which keeps
+   * the existing "persistence failed but the patient still got their
+   * answer" tests exercising that path unchanged.
+   */
+  persistOk: false,
 }));
 
 vi.mock("@workspace/resupply-db", () => {
@@ -70,15 +78,31 @@ vi.mock("@workspace/resupply-db", () => {
     chain.single = async () => {
       throw new Error("no database in tests");
     };
-    chain.insert = () => ({
-      select: () => ({
-        single: async () => {
-          throw new Error("no database in tests");
-        },
-      }),
-      then: (resolve: (v: unknown) => unknown) =>
-        resolve({ data: null, error: { message: "no database in tests" } }),
-    });
+    chain.insert = (payload: unknown) => {
+      db.inserts.push({ table, payload });
+      const ok = db.persistOk;
+      const row = { id: "11111111-1111-4111-8111-111111111111" };
+      return {
+        select: () => ({
+          single: async () => {
+            if (!ok) throw new Error("no database in tests");
+            return { data: row, error: null };
+          },
+          limit: () => ({
+            maybeSingle: async () =>
+              ok
+                ? { data: row, error: null }
+                : { data: null, error: { message: "no database in tests" } },
+          }),
+        }),
+        then: (resolve: (v: unknown) => unknown) =>
+          resolve(
+            ok
+              ? { data: row, error: null }
+              : { data: null, error: { message: "no database in tests" } },
+          ),
+      };
+    };
     chain.update = () => ({
       eq: async () => ({ data: null, error: { message: "no db" } }),
     });
@@ -138,6 +162,8 @@ afterEach(() => {
     "fitter.confidence_gating",
   ]);
   db.invite = { patient_id: null, status: "sent", expires_at: null };
+  db.inserts = [];
+  db.persistOk = false;
 });
 
 const INVITE_ID = "11111111-1111-1111-1111-111111111111";
@@ -413,5 +439,78 @@ describe("POST /fit/assess — stateful invite checks", () => {
     });
     expect(res.status).toBe(200);
     expect(res.body.outcome).toBeTruthy();
+  });
+});
+
+// ── Structured recommendation fields (0483 columns, dual-written) ──────
+//
+// The recommendation also lives in `primary_recommendation` as jsonb, but
+// a blob can't be joined or FK-checked. `classifyDecision` in the outcome
+// report bails on a null `primary_mask_model_id` BEFORE it looks at the
+// clinician's decision, so leaving these unset made every fitting read as
+// "undecided" and pinned the acceptance rate at null forever.
+
+describe("POST /api/fit/assess — structured recommendation columns", () => {
+  it("writes the mask model and size variant ids, not just the JSON blob", async () => {
+    db.persistOk = true;
+    // Confidence gating turns a marginal scan into "no recommendation",
+    // which is a different (also-tested) path. Off here so the engine
+    // actually produces a primary to record.
+    featureFlags.enabled = new Set(["fitter.clinical_assessment"]);
+
+    const res = await request(makeApp())
+      .post("/fit/assess")
+      .set("x-fitter-invite-token", signFitterInviteToken(INVITE_ID))
+      .send({ measurements: VALID_MEASUREMENTS, profile: {} });
+
+    expect(res.status).toBe(200);
+    const session = db.inserts.find((i) => i.table === "fit_sessions");
+    expect(session).toBeDefined();
+    const row = session!.payload as Record<string, unknown>;
+
+    // The engine produced a primary, so the structured column must carry
+    // the same catalog id the blob does.
+    const primary = row.primary_recommendation as { maskId?: string } | null;
+    expect(primary?.maskId).toBeTruthy();
+    expect(row.primary_mask_model_id).toBe(primary?.maskId);
+
+    // At least one of cushion/frame is chosen for a real recommendation;
+    // both keys must be present so the column is explicitly null rather
+    // than missing when a mask has no separate frame.
+    expect(row).toHaveProperty("primary_cushion_variant_id");
+    expect(row).toHaveProperty("primary_frame_variant_id");
+  });
+
+  it("leaves the ids null when there is deliberately no primary", async () => {
+    // A contraindicated / out-of-range outcome has no recommendation to
+    // record, and must not invent one.
+    db.persistOk = true;
+
+    const res = await request(makeApp())
+      .post("/fit/assess")
+      .set("x-fitter-invite-token", signFitterInviteToken(INVITE_ID))
+      .send({
+        measurements: VALID_MEASUREMENTS,
+        profile: {},
+        safety: {
+          screenVersion: "magnetic_implant@v1",
+          attestedAt: new Date().toISOString(),
+          responses: [],
+        },
+      });
+
+    expect(res.status).toBe(200);
+    const row = db.inserts.find((i) => i.table === "fit_sessions")!
+      .payload as Record<string, unknown>;
+    const primary = row.primary_recommendation as { maskId?: string } | null;
+    if (primary == null) {
+      expect(row.primary_mask_model_id).toBeNull();
+      expect(row.primary_cushion_variant_id).toBeNull();
+      expect(row.primary_frame_variant_id).toBeNull();
+    } else {
+      // Engine still produced one — the invariant we care about is that
+      // the column tracks the blob either way.
+      expect(row.primary_mask_model_id).toBe(primary.maskId);
+    }
   });
 });

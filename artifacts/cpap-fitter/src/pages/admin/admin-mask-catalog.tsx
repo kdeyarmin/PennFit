@@ -299,9 +299,9 @@ export function AdminMaskCatalogPage() {
                           <p className="text-sm font-medium">Sign-off source</p>
                           <p className="text-xs text-muted-foreground mb-2">
                             What are you checking these ranges against? Recorded
-                            with every sign-off you make below and kept with the
-                            review, so a later reader can see the evidence
-                            rather than take the approval on trust.
+                            with every sign-off you make below and printed on
+                            the fit report, so a later reader can see the
+                            evidence rather than take the approval on trust.
                           </p>
                           <div className="flex flex-wrap gap-3 items-end">
                             <div className="min-w-[220px]">

@@ -108,18 +108,15 @@ export function AdminAnalyticsFitterOutcomesPage() {
 
       {report ? (
         <>
-          {report.acceptance.decided === 0 && report.sessions.total > 0 ? (
+          {report.dispensing.dispensed === 0 && report.sessions.total > 0 ? (
             <Card>
               <p className="p-4 text-sm">
-                <strong>
-                  Acceptance and dispensing aren&apos;t being recorded yet.
-                </strong>{" "}
-                These read from structured fields on the fitting record
-                (recommended mask, ordered mask, dispensed date) that nothing
-                writes today — the recommendation is currently stored only as
-                free-form detail. Until an order or dispense is linked back to
-                the fitting that produced it, those two tiles will stay empty.
-                Refit rate, scan quality and confidence below are unaffected.
+                <strong>Dispensing isn&apos;t being recorded yet.</strong> An
+                order placed from a fitting is not yet linked back to the
+                fitting that produced it, so the dispense rate stays empty.
+                Acceptance is measured from clinician review — a fitting counts
+                only once someone approves or overrides it, so it fills in as
+                the review queue is worked rather than all at once.
               </p>
             </Card>
           ) : null}
@@ -150,7 +147,7 @@ export function AdminAnalyticsFitterOutcomesPage() {
               value={pct(report.acceptance.acceptanceRate)}
               caption={
                 report.acceptance.decided === 0
-                  ? "Not captured yet — see the note below"
+                  ? "No fitting reviewed or ordered yet"
                   : `${report.acceptance.accepted} of ${report.acceptance.decided} decided · ${report.acceptance.undecided} still open`
               }
             />
