@@ -159,8 +159,14 @@ describe it accurately rather than the code being bent to match the copy.
   Once the fitter-outcomes dashboard has real volume behind it, an
   instrumented, methodology-stated number becomes possible — and would be
   much stronger than a vendor claim.
-- **Screenshots of the fitting flow.** The home page leads with real captured
-  console screens; the new page is text and diagrams. A captured `/results`
-  fit diagram would be the highest-value image on the site.
+- ~~**Screenshots of the fitting flow.**~~ **Done.** A real `/results` fit
+  diagram now sits in the Engine section of `/breathe/mask-fitting`
+  (`/breathe/screens/fitter-range-diagram.png`), captured against the full
+  stack — Postgres + PostgREST + the built API — so every number in it came
+  out of the engine reading the real catalog bands. Reproducible via
+  `e2e/capture-screens.mjs` with `FIT_INVITE_TOKEN` set; the fitter is
+  invitation-only, so it cannot be reached by URL alone.
+  The remaining screenshot gap is the **capture/measure** steps, which need
+  a real face on camera and so cannot be produced synthetically.
 - **Pediatric and NIV service lines.** The data axes are carried, but each
   needs its own clinical validation, so neither is claimed anywhere.
