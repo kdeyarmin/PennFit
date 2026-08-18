@@ -44,6 +44,11 @@ export interface MaskModel {
   fitDataSource: "manufacturer" | "measured" | "estimated";
   needsClinicalReview: boolean;
   catalogVersion: number;
+  /** The same model's magnet-free SKU, when the manufacturer ships one. */
+  magnetFreeVariantSlug: string | null;
+  /** Manufacturer fitting documentation, when captured (0481/0496). */
+  fittingInstructionsUrl: string | null;
+  fittingInstructionsVersion: string | null;
 }
 
 export interface MaskSizeVariant {
@@ -60,7 +65,13 @@ export interface MaskSizeVariant {
   mouthWidthMaxMm: number | null;
   isDefault: boolean;
   hcpcsCode: string | null;
+  manufacturerPartNumber: string | null;
   fitDataSource: string;
+  /** Platform-band provenance (0495): what a non-estimated band cites.
+   *  Null on an estimated band means "nothing to cite", never
+   *  "unrecorded". */
+  fitDataSourceRef: string | null;
+  fitDataSourceDate: string | null;
   /**
    * Tenant-effective: true when the shared platform flag is set AND this
    * organization has not signed the size off. Sign-off is recorded per

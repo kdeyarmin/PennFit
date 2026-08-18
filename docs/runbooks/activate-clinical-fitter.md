@@ -28,8 +28,9 @@ no deploy. There are no env-var gates in this subsystem.
 **Who:** a respiratory therapist or clinical supervisor (the queue is
 gated on `formulary.manage`, not a generic tools permission).
 **Where:** `/admin/fitter/catalog`.
-**Effort:** the seed ships ~250 size variants; a tenant only needs the
-models it actually dispenses.
+**Effort:** the seed ships ~290 size variants (0486's ~250, plus the
+magnet-free twins from `0493` and the Inogen / Rain8 / X30i additions
+from `0494`); a tenant only needs the models it actually dispenses.
 
 Why this is a hard prerequisite, in the codebase's own words: the 0486
 seed bands are "clinically-reasoned estimates rather than published
@@ -42,14 +43,25 @@ Procedure, per model you dispense:
 
 1. Filter to **Showing: needs review** (the default view) and open a
    model's sizes.
-2. Open that manufacturer's fitting guide / spec sheet.
+2. Open that manufacturer's fitting guide / spec sheet. Where the
+   catalog carries a `fitting_instructions_url` (migration `0496`), the
+   sign-off panel renders it as **"Open the manufacturer's fitting
+   documentation"** — one click instead of a search.
 3. Fill in **Sign-off source** — the class of evidence and a reference
    (e.g. "AirFit N20 fitting template rev C"). This is recorded on every
    sign-off you then make and printed on the fit report, which is what
    makes the report evidence rather than an assertion (migration `0491`).
-4. Check each size's millimetre bands against the guide. Correct any that
-   are wrong **before** signing off — a sign-off approves the numbers as
-   they stand.
+   When the catalog's own band provenance (`0495`) names a single source
+   for the model's pending sizes, the form arrives **pre-filled** from it
+   — confirm it, or change it to what you actually checked.
+4. Check each size's millimetre bands against the guide. A band you
+   believe is **wrong** should be **left unsigned** — an unsigned band
+   caps confidence, which is the correct outcome for a number you don't
+   trust. Platform bands are read-only from the tenant console
+   (`platform_row_read_only`); corrections to the shared catalog go
+   through a platform migration, so report the discrepancy rather than
+   signing it off. (Only a tenant-private mask's bands are editable
+   here.)
 5. **Sign off all N remaining** for the model, or size by size.
 
 Notes:
@@ -61,6 +73,11 @@ Notes:
   experience should pick "Clinical judgement (no document)" rather than
   overclaim a citation. Never leave it blank to save time — a blank reads
   as "source not recorded" forever.
+- The `0494` additions (Inogen Aurora, Rain8 AmeriFlex, AirFit X30i)
+  carry class-generic estimated bands, and for the **Aurora** models the
+  S/M/L size run itself is an assumption Inogen has not published —
+  verify each size actually exists in the manufacturer's materials before
+  signing it off.
 - **Check:** filter to needs-review and confirm the models you dispense
   are gone from the queue.
 
@@ -77,6 +94,13 @@ Everything below is inert without it.
 
 - **Precondition:** step A complete for the models you dispense, **and**
   an active formulary published at `/admin/fitter/formulary`.
+- **Closed formulary?** Add the magnet-free twins (`0493`:
+  `resmed-airfit-f20-non-magnetic`, `resmed-airfit-f30i-non-magnetic`) to
+  your allow list. A rule targeting the magnetic parent does **not**
+  cover its twin — inheritance was deliberately rejected so an explicit
+  `deny` can never be silently widened — and without the allow rule the
+  safe SKU sorts behind every allowed mask for exactly the patient who
+  needs it.
 - **Check:** run a fitting (`/admin/fitter-invites` → complete the link
   yourself) and confirm a `fit_sessions` row appears at
   `/admin/fit-sessions` carrying a formulary version.
@@ -96,6 +120,12 @@ answer. Requires B1.
 - **Confirm** the catalog's `has_magnetic_components` is right for the
   models you stock; the exclusion keys off that column. A mask wrongly
   marked magnet-free is the one failure mode that matters here.
+  (Migration `0492` corrected eight false negatives against the FDA
+  recall list and Philips' 2022 safety notice — re-verify anything you
+  stock that isn't from ResMed, Philips or F&P.)
+- **Confirm** `magnet_free_variant_slug` is right for the magnetic models
+  you stock: it is what lets the engine offer the same mask magnet-free
+  instead of pushing the patient to a different model entirely (`0493`).
 - **Check:** run a fitting answering "yes" to an implanted device and
   confirm magnetic masks are excluded, with the exclusion visible in the
   fit report's "Ruled out" section.

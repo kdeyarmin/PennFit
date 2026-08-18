@@ -173,6 +173,8 @@ beforeEach(() => {
     mouth_width_max_mm: null,
     face_width_min_mm: null,
     face_width_max_mm: null,
+    fit_data_source: "estimated",
+    fit_data_source_ref: null,
   };
 });
 
@@ -272,6 +274,61 @@ describe("PATCH /admin/fitter/catalog/variants/:id — shared-row protection", (
       .patch(`/admin/fitter/catalog/variants/${VARIANT_ID}`)
       .send({ noseWidthMinMm: 45, noseWidthMaxMm: 55 });
     expect(res.status).toBe(200);
+  });
+
+  it("refuses a manufacturer-provenance claim without a citation", async () => {
+    // Mirrors the 0495 CHECK, but as a 422 the operator can act on
+    // instead of a constraint error. `fit_data_source='manufacturer'`
+    // means "the manufacturer published this number" — a claim that is
+    // uncheckable without saying WHERE.
+    db.variantOwnerOrgId = ORG_ID;
+    const res = await request(makeApp())
+      .patch(`/admin/fitter/catalog/variants/${VARIANT_ID}`)
+      .send({ fitDataSource: "manufacturer" });
+    expect(res.status).toBe(422);
+    expect(res.body.error).toBe("source_ref_required");
+    expect(db.writes).toHaveLength(0);
+  });
+
+  it("accepts the same claim when the citation arrives with it", async () => {
+    db.variantOwnerOrgId = ORG_ID;
+    const res = await request(makeApp())
+      .patch(`/admin/fitter/catalog/variants/${VARIANT_ID}`)
+      .send({
+        fitDataSource: "manufacturer",
+        fitDataSourceRef: "AirFit N20 fitting template rev C",
+      });
+    expect(res.status).toBe(200);
+    expect(db.writes[0].payload).toMatchObject({
+      fit_data_source: "manufacturer",
+      fit_data_source_ref: "AirFit N20 fitting template rev C",
+    });
+  });
+
+  it("accepts a provenance claim whose citation is already stored", async () => {
+    db.variantOwnerOrgId = ORG_ID;
+    db.variantRow = {
+      ...db.variantRow,
+      fit_data_source_ref: "Measured from a verified 1:1 template print",
+    };
+    const res = await request(makeApp())
+      .patch(`/admin/fitter/catalog/variants/${VARIANT_ID}`)
+      .send({ fitDataSource: "measured" });
+    expect(res.status).toBe(200);
+  });
+
+  it("refuses clearing the citation out from under a sourced band", async () => {
+    db.variantOwnerOrgId = ORG_ID;
+    db.variantRow = {
+      ...db.variantRow,
+      fit_data_source: "manufacturer",
+      fit_data_source_ref: "AirFit N20 fitting template rev C",
+    };
+    const res = await request(makeApp())
+      .patch(`/admin/fitter/catalog/variants/${VARIANT_ID}`)
+      .send({ fitDataSourceRef: null });
+    expect(res.status).toBe(422);
+    expect(res.body.error).toBe("source_ref_required");
   });
 });
 

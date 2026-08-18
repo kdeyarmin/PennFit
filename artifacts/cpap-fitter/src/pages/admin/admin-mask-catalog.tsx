@@ -15,7 +15,7 @@
 // individually or in bulk. That is what makes the fit report's provenance
 // section evidence rather than an assertion.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Library } from "lucide-react";
 
@@ -113,12 +113,47 @@ export function AdminMaskCatalogPage() {
   // evidence onto another.
   const [sourceKind, setSourceKind] = useState<ReviewSourceKind | "">("");
   const [sourceRef, setSourceRef] = useState("");
+  const [sourcePrefilled, setSourcePrefilled] = useState(false);
 
   function openModel(id: string | null) {
     setExpanded(id);
     setSourceKind("");
     setSourceRef("");
+    setSourcePrefilled(false);
   }
+
+  // Seed the reviewer's citation from the catalog's own platform-sourced
+  // provenance (0495), so a sourced band becomes a CONFIRMATION rather
+  // than a fresh transcription. Rules, in order of what they protect:
+  //   * never from an 'estimated' band — there is nothing to cite, and a
+  //     pre-filled box invites accepting a citation nobody made;
+  //   * only when every sourced pending variant agrees on ONE ref — a
+  //     mixed model is exactly where a wrong auto-citation does damage;
+  //   * only while the reviewer has not typed — their words always win.
+  const detailModelId = detail.data?.model.id;
+  useEffect(() => {
+    if (!detailModelId || sourceKind !== "" || sourceRef !== "") return;
+    const sourced = (detail.data?.variants ?? []).filter(
+      (v) => v.needsClinicalReview && v.fitDataSource !== "estimated",
+    );
+    if (sourced.length === 0) return;
+    const refs = new Set(
+      sourced.map((v) => v.fitDataSourceRef).filter(Boolean),
+    );
+    const kinds = new Set(sourced.map((v) => v.fitDataSource));
+    if (refs.size !== 1 || kinds.size !== 1) return;
+    const [ref] = refs;
+    const kind =
+      [...kinds][0] === "manufacturer"
+        ? "manufacturer_fit_guide"
+        : "physical_measurement";
+    setSourceKind(kind);
+    setSourceRef(String(ref));
+    setSourcePrefilled(true);
+    // Deliberately not exhaustive: this must fire once per opened model,
+    // from the fetched detail, and never re-fire against user edits.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detailModelId]);
 
   const provenance: ReviewProvenance = {
     ...(sourceKind ? { sourceKind } : {}),
@@ -303,6 +338,28 @@ export function AdminMaskCatalogPage() {
                             the fit report, so a later reader can see the
                             evidence rather than take the approval on trust.
                           </p>
+                          {detail.data.model.fittingInstructionsUrl ? (
+                            <p className="text-xs mb-2">
+                              <a
+                                href={detail.data.model.fittingInstructionsUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="underline"
+                              >
+                                Open the manufacturer&apos;s fitting
+                                documentation
+                                {detail.data.model.fittingInstructionsVersion
+                                  ? ` (${detail.data.model.fittingInstructionsVersion})`
+                                  : ""}
+                              </a>
+                            </p>
+                          ) : null}
+                          {sourcePrefilled ? (
+                            <p className="text-xs text-muted-foreground mb-2">
+                              Pre-filled from the catalog&apos;s own recorded
+                              source — change it if you checked something else.
+                            </p>
+                          ) : null}
                           <div className="flex flex-wrap gap-3 items-end">
                             <div className="min-w-[220px]">
                               <Label htmlFor="review-source-kind">Source</Label>
@@ -357,7 +414,7 @@ export function AdminMaskCatalogPage() {
                           <thead>
                             <tr className="text-left border-b">
                               <th className="py-1 pr-3">Size</th>
-                              <th className="py-1 pr-3">Part</th>
+                              <th className="py-1 pr-3">Component</th>
                               <th className="py-1 pr-3">Nose width</th>
                               <th className="py-1 pr-3">Nose to chin</th>
                               <th className="py-1 pr-3">Mouth width</th>
@@ -385,7 +442,13 @@ export function AdminMaskCatalogPage() {
                                 <td className="py-1.5 pr-3">
                                   {v.hcpcsCode ?? "—"}
                                 </td>
-                                <td className="py-1.5 pr-3">
+                                <td
+                                  className="py-1.5 pr-3"
+                                  // The citation behind a non-estimated band
+                                  // (0495), surfaced where the reviewer is
+                                  // already looking.
+                                  title={v.fitDataSourceRef ?? undefined}
+                                >
                                   {v.fitDataSource}
                                 </td>
                                 <td className="py-1.5">

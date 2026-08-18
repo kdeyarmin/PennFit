@@ -135,6 +135,12 @@ const bandPatch = z
     faceWidthMinMm: z.number().min(0).max(300).nullable().optional(),
     faceWidthMaxMm: z.number().min(0).max(300).nullable().optional(),
     fitDataSource: z.enum(["manufacturer", "measured", "estimated"]).optional(),
+    // Provenance for the band itself (migration 0495). Required by a DB
+    // CHECK whenever fitDataSource is not 'estimated'; the handler
+    // enforces it up front so the operator gets a 422 with a reason
+    // instead of a constraint error.
+    fitDataSourceRef: z.string().trim().min(1).max(500).nullable().optional(),
+    fitDataSourceDate: z.string().date().nullable().optional(),
   })
   .strict();
 
@@ -583,7 +589,7 @@ router.patch(
     const { data: existing, error: readError } = (await supabase
       .from("mask_size_variants")
       .select(
-        "id, mask_model_id, nose_width_min_mm, nose_width_max_mm, nose_height_min_mm, nose_height_max_mm, nose_to_chin_min_mm, nose_to_chin_max_mm, mouth_width_min_mm, mouth_width_max_mm, face_width_min_mm, face_width_max_mm, mask_models!inner(org_id)",
+        "id, mask_model_id, nose_width_min_mm, nose_width_max_mm, nose_height_min_mm, nose_height_max_mm, nose_to_chin_min_mm, nose_to_chin_max_mm, mouth_width_min_mm, mouth_width_max_mm, face_width_min_mm, face_width_max_mm, fit_data_source, fit_data_source_ref, mask_models!inner(org_id)",
       )
       .eq("id", id.data)
       .limit(1)
@@ -628,6 +634,8 @@ router.patch(
       faceWidthMinMm: "face_width_min_mm",
       faceWidthMaxMm: "face_width_max_mm",
       fitDataSource: "fit_data_source",
+      fitDataSourceRef: "fit_data_source_ref",
+      fitDataSourceDate: "fit_data_source_date",
     };
     for (const [key, column] of Object.entries(map)) {
       const value = (b as Record<string, unknown>)[key];
@@ -663,6 +671,35 @@ router.patch(
         });
         return;
       }
+    }
+
+    // Claiming manufacturer or measured provenance requires a citation —
+    // the 0495 CHECK enforces it in the database, and this pre-check turns
+    // the constraint violation into an actionable 422. Evaluate the state
+    // the row will END UP in, same as the band validation above: the ref
+    // may already be stored, or may be arriving (or being cleared) in this
+    // very patch.
+    const endSource =
+      "fit_data_source" in patch
+        ? patch.fit_data_source
+        : (existing as Row).fit_data_source;
+    const endRef =
+      "fit_data_source_ref" in patch
+        ? patch.fit_data_source_ref
+        : (existing as Row).fit_data_source_ref;
+    if (
+      endSource !== "estimated" &&
+      (endRef === null || endRef === undefined)
+    ) {
+      res.status(422).json({
+        error: "source_ref_required",
+        message:
+          "A band marked as manufacturer or measured data must cite its " +
+          "source (document title + revision, URL, or how it was " +
+          "measured). Keep fitDataSource as 'estimated' if there is " +
+          "nothing to cite.",
+      });
+      return;
     }
 
     const { error } = (await supabase
@@ -933,8 +970,13 @@ function mapVariant(row: Row, review?: Row) {
     faceWidthMaxMm: row.face_width_max_mm,
     isDefault: row.is_default,
     hcpcsCode: row.hcpcs_code,
+    manufacturerPartNumber: row.manufacturer_part_number ?? null,
     status: row.status,
     fitDataSource: row.fit_data_source,
+    // Platform-band provenance (0495). NULL on an estimated band means
+    // "nothing to cite", never "unrecorded".
+    fitDataSourceRef: row.fit_data_source_ref ?? null,
+    fitDataSourceDate: row.fit_data_source_date ?? null,
     needsClinicalReview:
       row.needs_clinical_review === true && review?.approved !== true,
     reviewedByEmail: review?.reviewed_by_email ?? null,
