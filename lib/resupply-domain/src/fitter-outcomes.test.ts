@@ -198,6 +198,25 @@ describe("buildFitterOutcomesReport — session mix", () => {
     expect(r.sessions.byEntryPoint.kiosk_qr).toBe(0);
   });
 
+  it("separates re-fit outreach from the invitations it is compared against", () => {
+    // The campaign (migration 0490) exists to answer one question: does
+    // re-approaching a patient already on service produce better fits
+    // than leaving them alone? Before `refit_campaign` was an entry
+    // point, those fittings fell through to the `remote_link` default
+    // and were counted alongside ordinary text/email invitations, so the
+    // comparison could not be made at all.
+    const r = buildFitterOutcomesReport(
+      [
+        session({ entryPoint: "refit_campaign" }),
+        session({ entryPoint: "refit_campaign" }),
+        session({ entryPoint: "remote_link" }),
+      ],
+      [],
+    );
+    expect(r.sessions.byEntryPoint.refit_campaign).toBe(2);
+    expect(r.sessions.byEntryPoint.remote_link).toBe(1);
+  });
+
   it("counts an unrecorded outcome separately from a low-confidence one", () => {
     const r = buildFitterOutcomesReport(
       [session({ outcome: null }), session({ outcome: "low_confidence" })],

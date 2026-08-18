@@ -217,6 +217,7 @@ const MASK_FITTER_ALLOWED_PREFIXES: readonly string[] = [
   "/admin/fit-sessions",
   "/admin/fitter/catalog",
   "/admin/fitter/formulary",
+  "/admin/fitter/safety-screens",
   // Inbound referrals from the provider portal. A fitter-only DME that
   // receives referrals is exactly the customer the portal exists for, so
   // omitting this would 403 them out of their own inbound queue.
@@ -235,6 +236,13 @@ const MASK_FITTER_ALLOWED_PREFIXES: readonly string[] = [
   "/admin/billing/addons",
   "/admin/billing/preview",
   "/admin/billing/usage-events",
+  // Control Center's backing API. The clinical fitter ships behind
+  // `fitter.*` flags the tenant flips themselves once their RT has signed
+  // off the size bands they dispense — without this they would have to ask
+  // us to enable the product they bought. Flags are per-org config for
+  // their OWN org, and a flag for a module this scope cannot reach is
+  // inert, so this grants no operational surface.
+  "/admin/feature-flags",
   "/admin/storefront-branding", // brand the fitting link
   "/admin/mfa", // account security: the MFA banner runs on every admin page
   "/admin/team", // manage their own staff seats

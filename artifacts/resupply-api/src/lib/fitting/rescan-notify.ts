@@ -150,7 +150,25 @@ export async function sendRescanForInvite(
       new Date(),
       FITTER_INVITE_TTL_MS,
     );
-    const link = `${publicBaseUrl()}/fitter-invite?t=${encodeURIComponent(token)}`;
+    // Tag the link with where this fitting is coming FROM, so the
+    // outcomes report can separate re-fit outreach from the ordinary
+    // invitations it is meant to be compared against. Derived from the
+    // reason rather than passed in, because the reason already carries
+    // the distinction:
+    //
+    //   poor_scan          a clinician re-asking for a better photo of a
+    //                      fitting that already happened. Not a new entry
+    //                      point — leave it to the `remote_link` default.
+    //   reported_bad_fit   the established-patient re-fit campaign
+    //   mask_discontinued  (migration 0490), which is.
+    //
+    // The SPA reads `entry` off the link and posts it with the
+    // assessment; an unrecognised value is ignored there, so an older
+    // client simply records the default.
+    const entryPoint = reason === "poor_scan" ? null : "refit_campaign";
+    const link =
+      `${publicBaseUrl()}/fitter-invite?t=${encodeURIComponent(token)}` +
+      (entryPoint ? `&entry=${encodeURIComponent(entryPoint)}` : "");
 
     // The mailed-link window, deliberately, even for an invite that began
     // as an in-office QR.

@@ -40,7 +40,12 @@ export type FitSessionOutcome =
   | "contraindicated"
   | "outside_validated_range";
 
-export type FitEntryPoint = "remote_link" | "in_office" | "kiosk_qr";
+export type FitEntryPoint =
+  | "remote_link"
+  | "in_office"
+  | "kiosk_qr"
+  /** The established-patient re-fit campaign (migration 0490). */
+  | "refit_campaign";
 
 export type ScanQualityGrade = "good" | "marginal" | "poor";
 
@@ -149,7 +154,12 @@ export interface FitterOutcomesReport {
   };
 }
 
-const ENTRY_POINTS: FitEntryPoint[] = ["remote_link", "in_office", "kiosk_qr"];
+const ENTRY_POINTS: FitEntryPoint[] = [
+  "remote_link",
+  "in_office",
+  "kiosk_qr",
+  "refit_campaign",
+];
 const OUTCOMES: FitSessionOutcome[] = [
   "high_confidence",
   "moderate_confidence",

@@ -19,6 +19,7 @@ import {
   PhoneCall,
   Receipt,
   RefreshCw,
+  ScanFace,
   ShieldCheck,
   Sparkles,
   Stethoscope,
@@ -180,11 +181,59 @@ const FAQ_GROUPS: FaqGroup[] = [
       },
       {
         q: "What happens to the mask-fitter photos?",
-        a: "The virtual mask fitter does all of its facial measurement on-device, in the patient's own browser. Only the numeric measurements are used to recommend a mask — the camera image itself never leaves the device and is never transmitted, logged, or stored. It's privacy by design, not privacy by policy.",
+        a: "Nothing happens to them, because we never receive them. The fitter does all of its facial measurement on-device, in the patient's own browser, and only the numeric measurements are transmitted — the camera image never leaves the phone and is never uploaded, logged, or stored. Note the difference from tools that upload the photo and then delete it server-side: “we deleted it” is a policy you have to trust, “we never received it” is how the software is built.",
       },
       {
         q: "Who can see patient data inside the platform?",
         a: "Access is role-based with granular permissions, so each teammate sees only what their job requires, and admin accounts can be protected with two-factor sign-in. You control the locations, roles, and permissions for your own team.",
+      },
+    ],
+  },
+  {
+    id: "fitting",
+    icon: <ScanFace size={13} />,
+    eyebrow: "Mask fitting",
+    title: "Mask fitting",
+    lede: "How the fitting engine decides, what it does with the awkward cases, and what you can prove afterwards.",
+    items: [
+      {
+        q: "How is this different from a stand-alone AI mask fitter?",
+        a: (
+          <>
+            The fitting moment itself is comparable — a phone camera, a short
+            questionnaire, a mask and a size back in about two minutes. The
+            differences are underneath it: the image never leaves the
+            patient&apos;s phone, safety and therapy compatibility remove a mask
+            from consideration rather than docking its score, sizes resolve to
+            published millimetre bands your own clinician signs off, and every
+            fitting prints a report naming what was ruled out and why. And the
+            result lands on the record that already runs resupply, billing, and
+            the storefront, so it becomes an order without an export.{" "}
+            <Link href="/breathe/mask-fitting">
+              See the engine and the head-to-head →
+            </Link>
+          </>
+        ),
+      },
+      {
+        q: "What is your fitting accuracy?",
+        a: "We don't publish one, and we'd be suspicious of anyone who does without saying how it was measured. What we ship instead is the instrument: a fitter-outcomes dashboard that reports refit rate, how often your team accepted the recommendation, the reasons they overrode it, scan quality, and confidence mix — on your own patients, split by where the fitting started. You get to hold us to your number rather than ours.",
+      },
+      {
+        q: "What happens if the scan is poor or the answer is uncertain?",
+        a: "It says so. Lighting, focus, head pose and framing are scored on the actual frame, so a blurry or badly-lit scan cannot produce a confident answer however well the mask matches; a single unverified frame is scored as moderate rather than perfect, because without cross-frame agreement there's no evidence the measurement is stable; an incomplete questionnaire caps confidence too rather than guessing; a size band no clinician has signed off can never reach high confidence; and anything low routes to a human on your team instead of shipping a guess. A fitter that always answers confidently isn't confident; it's just always answering.",
+      },
+      {
+        q: "How are magnetic mask components handled?",
+        a: "As a hard filter, not a warning. The screening covers implanted devices — pacemakers, defibrillators, neurostimulators, aneurysm clips, cochlear and metallic ocular implants — and it covers the household as well as the patient, because the risk is proximity and it isn't only the patient who sleeps in that bed. Where an implant is declared, every magnetic-clip mask is removed from consideration entirely, and when the same model has a magnet-free version that version is offered first so the patient keeps the mask they wanted. The questions are put to the patient inside the fitting, and the engine will not recommend anything until they are answered.",
+      },
+      {
+        q: "Can I control which masks it recommends?",
+        a: "Yes — scoped the way contracts actually work. Formulary rules apply by contract, payer, location, therapy mode and service line, and resolve by specificity so the most specific rule wins. Two deliberate limits: a payer-specific exclusion does not fire when the payer is unknown (we never deny on an assumption), and formulary preference is bounded so it can re-order two near-equal masks but never promote a poor clinical match. The confidence number the patient sees excludes formulary, stock, and margin entirely.",
+      },
+      {
+        q: "Does a patient have to be at home to be fitted?",
+        a: "No. Staff can start a fitting for a patient standing at the counter and hand over a QR code on screen — nothing is sent, and no email address or mobile number is needed. You can also text or email a link for an at-home fitting, or run re-fit outreach to patients already on service whose mask is leaking or has been discontinued.",
       },
     ],
   },

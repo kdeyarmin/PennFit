@@ -15,6 +15,7 @@ import {
   BadgeCheck,
   Bot,
   BrainCircuit,
+  Building2,
   CalendarClock,
   Check,
   ChevronDown,
@@ -957,6 +958,14 @@ const EXPLORE: {
     href: "/breathe/resupply-engine",
   },
   {
+    icon: <ScanFace size={20} />,
+    title: "Clinical mask fitting",
+    gold: true,
+    blurb:
+      "The fitting moment, built like a clinical instrument — safety as a hard filter, millimetre size bands, and an image that never leaves the patient's phone.",
+    href: "/breathe/mask-fitting",
+  },
+  {
     icon: <PhoneCall size={20} />,
     title: "AI voice agent",
     blurb:
@@ -1162,10 +1171,13 @@ export function BreatheCompare() {
 
 /* Cross-links to the per-competitor "Switch from X" migration pages, shown
    under the comparison table where switch intent is highest. */
-const SWITCH_LINKS: { href: string; name: string }[] = [
+const SWITCH_LINKS: { href: string; name: string; label?: string }[] = [
   { href: "/breathe/switch/brightree", name: "Brightree" },
   { href: "/breathe/switch/bonafide", name: "Bonafide" },
   { href: "/breathe/switch/nikohealth", name: "NikoHealth" },
+  // Not a migration — a point-solution fitter that runs BESIDE a DME suite,
+  // so "Switch from" would be the wrong verb. See breathe-switch.tsx.
+  { href: "/breathe/switch/sleepglad", name: "SleepGlad", label: "SleepGlad" },
 ];
 
 function SwitchLinks() {
@@ -1178,7 +1190,8 @@ function SwitchLinks() {
         <div className="bx-switchlinks-row">
           {SWITCH_LINKS.map((s) => (
             <Link className="bx-switchlink" href={s.href} key={s.href}>
-              Switch from {s.name} <ArrowRight size={14} />
+              {s.label ? `${s.label} vs. Breathe` : `Switch from ${s.name}`}{" "}
+              <ArrowRight size={14} />
             </Link>
           ))}
         </div>
@@ -1286,6 +1299,8 @@ const FOOTER_LINKS: { href: string; label: string }[] = [
   { href: "/breathe/compare", label: "Compare" },
   { href: "/breathe/features", label: "Features" },
   { href: "/breathe/resupply-engine", label: "Resupply engine" },
+  { href: "/breathe/mask-fitting", label: "Mask fitting" },
+  { href: "/breathe/switch/sleepglad", label: "SleepGlad vs. Breathe" },
   { href: "/breathe/ai-voice", label: "AI voice agent" },
   { href: "/breathe/communications", label: "Communications" },
   { href: "/breathe/get-paid", label: "Get paid" },
@@ -1995,6 +2010,7 @@ const REPLACED = [
   "Resupply software",
   "Billing / RCM suite",
   "Patient CRM",
+  "AI mask-fitting tool",
   "Telehealth app",
   "Document & e-sign",
   "Therapy dashboards",
@@ -2709,8 +2725,8 @@ const FEATURES: Feature[] = [
   },
   {
     icon: <ScanFace size={22} />,
-    title: "Virtual Mask Fitter",
-    body: "Patients fit themselves at home from their phone camera — no staff time on in-person fittings and no sample masks opened just to be thrown away. AI facial measurements pick the perfect mask and size more accurately than eyeballing it, and images never leave the browser.",
+    title: "Clinical Mask Fitter",
+    body: "Patients fit themselves from their own phone — at home, or on a QR code at your counter. A six-tier engine screens safety and therapy compatibility as hard filters before anything is ranked, sizes to published millimetre bands, and prints a report naming what it ruled out and why. The image never leaves the browser.",
     tag: "AI",
     gold: true,
   },
@@ -2728,6 +2744,11 @@ const FEATURES: Feature[] = [
     icon: <Workflow size={22} />,
     title: "Automation & Rules",
     body: "Smart triggers and routing rules fire the right outreach the moment an event happens, while KPI alerts and goal tracking keep leadership ahead of every number.",
+  },
+  {
+    icon: <Building2 size={22} />,
+    title: "Referral & Provider Portal",
+    body: "Your referring physicians get a portal of their own: a queue of your patients they can review and batch-sign in one pass, with the fitting attached, documents shared, and questions answered in a thread instead of a voicemail. Two-factor sign-in, so it is a verified prescriber and not a shared link.",
   },
   {
     icon: <FileStack size={22} />,
@@ -2807,8 +2828,8 @@ const AI_CELLS: Ai[] = [
   },
   {
     icon: <ScanFace size={20} />,
-    title: "Virtual mask fitter",
-    body: "Patients self-fit at home — perfect mask and size, no wasted sample masks. Measurements are computed in the browser; the image never leaves the phone.",
+    title: "Clinical mask fitter",
+    body: "Safety and therapy compatibility are hard filters, not score penalties — no stock level or margin can outrank a contraindication. Measurements are computed in the browser; the image never leaves the phone.",
   },
   {
     icon: <Bot size={20} />,
@@ -3344,13 +3365,13 @@ const CAPABILITIES: Capability[] = [
   },
   {
     icon: <ScanFace size={20} />,
-    title: "Virtual mask fitter",
-    summary: "Patients fit themselves at home — staff never run a fitting.",
+    title: "Clinical mask fitter",
+    summary: "A fitting your RT would sign — in the time a text takes.",
     points: [
-      "Self-serve on-device AI fitting from the patient's own phone",
-      "Precise facial measurements pick the perfect mask & size",
-      "No staff time spent on in-person fittings",
-      "No sample masks opened, tried on & thrown away",
+      "On-device AI fitting from the patient's phone, or a QR code at your counter",
+      "Safety & therapy compatibility filter first — margin never outranks a contraindication",
+      "Millimetre size bands, shown to the patient against their own measurement",
+      "A fit report naming every mask ruled out and the rule that ruled it out",
     ],
     gold: true,
   },
@@ -3645,8 +3666,20 @@ const COMPARE_ROWS: CompareRow[] = [
   },
   {
     label: "On-device AI mask fitting",
+    sub: "the image never leaves the patient's phone",
     breathe: "yes",
     cols: ["no", "no", "no"],
+  },
+  {
+    label: "Clinical fit report with exclusion reasoning",
+    sub: "what was ruled out, and the rule that ruled it out",
+    breathe: "yes",
+    cols: ["no", "no", "no"],
+  },
+  {
+    label: "Physician referral portal with batch signing",
+    breathe: "yes",
+    cols: ["partial", "partial", "partial"],
   },
   {
     label: "Multi-channel resupply (SMS · email · voice)",
@@ -3720,17 +3753,22 @@ const COMPARE_ROWS: CompareRow[] = [
   },
 ];
 
+// The mark is an icon, and lucide-react hides an unlabelled icon from
+// assistive tech — so without the visually-hidden text a screen reader reads
+// an empty cell on every row and the table conveys nothing.
 function CompareMark({ v }: { v: Cell }) {
   if (v === "yes")
     return (
       <span className="bx-yes">
-        <Check size={18} strokeWidth={2.6} />
+        <Check size={18} strokeWidth={2.6} aria-hidden="true" />
+        <span className="bx-sr-only">Yes</span>
       </span>
     );
   if (v === "partial") return <span className="bx-partial">partial</span>;
   return (
     <span className="bx-no">
-      <Minus size={17} />
+      <Minus size={17} aria-hidden="true" />
+      <span className="bx-sr-only">No</span>
     </span>
   );
 }
@@ -3825,6 +3863,12 @@ export function Comparison() {
             Not available
           </span>
         </div>
+        <p className="bx-compare-swipe" style={{ marginTop: 18 }}>
+          <Link href="/breathe/mask-fitting#vs">
+            Comparing stand-alone AI mask fitters instead? See the fitting
+            head-to-head <ArrowRight size={13} style={{ verticalAlign: -2 }} />
+          </Link>
+        </p>
         <p className="bx-compare-foot">
           Comparison reflects publicly described capabilities of each product as
           of 2026 and is provided for illustration. All marks are property of
@@ -4333,12 +4377,12 @@ const PLANS: {
     lockMonths: 12,
     setup: "No setup fee · 25 fittings/mo, then $2 each",
     blurb:
-      "Standalone AI mask fitter — text a patient a link, get the perfect mask & size back. No in-office fittings, no wasted sample masks.",
+      "The clinical fitter on its own — text a link, or hand over a QR code at your counter, and get a mask, a size, and the reasoning back. Nobody on your team runs a fitting, and no sample masks get opened just to be thrown away.",
     highlights: [
-      "AI virtual mask fitter — on-device facial measurement",
-      "Text or email a fitting link to any patient or prospect",
-      "Perfect mask type + size back in your fitter worklist",
-      "Photos never leave the patient's phone — only measurements",
+      "On-device AI facial measurement — the image never leaves the phone",
+      "Text, email, or hand over a QR code at your counter",
+      "Safety & therapy compatibility screened as hard filters, not score penalties",
+      "Your own mask catalog, formulary, safety questions and fit reports",
       "25 completed fittings/month, then $2 each",
     ],
   },

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { useFitterStore } from "@/hooks/use-fitter-store";
+import { buildScanSignals } from "@/lib/scan-signals";
 import { Progress } from "@/components/ui/progress";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -292,10 +293,34 @@ export function Measure() {
             );
           }
 
+          // Assess the frame these measurements came from. Scalars only
+          // — the image itself never leaves this function, and nothing
+          // image-derived beyond these numbers is stored or transmitted.
+          // Never allowed to throw: a probe failure must not cost the
+          // patient their recommendation, so fall back to "no signals"
+          // and let the server apply its neutral default.
+          let scanSignals = null;
+          try {
+            scanSignals = buildScanSignals({
+              image: img,
+              landmarks,
+              irisWidthPx: irisLeftPix,
+              values: {
+                noseWidth: measurements.noseWidth,
+                noseHeight: measurements.noseHeight,
+                noseToChin: measurements.noseToChin,
+                mouthWidth: measurements.mouthWidth,
+                faceWidthAtCheekbones: measurements.faceWidthAtCheekbones,
+              },
+            });
+          } catch {
+            scanSignals = null;
+          }
+
           if (!isMountedRef.current) return;
           setProgress(100);
           setStatus("Analysis complete.");
-          setMeasurements(measurements);
+          setMeasurements(measurements, scanSignals);
           track("measurements_extracted");
 
           // Auto-advance after a short delay so users can register the

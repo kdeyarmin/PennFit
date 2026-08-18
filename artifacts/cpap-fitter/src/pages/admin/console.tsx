@@ -296,6 +296,11 @@ const AdminMaskCatalogPage = lazyWithRetry(() =>
     default: m.AdminMaskCatalogPage,
   })),
 );
+const AdminSafetyScreensPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-safety-screens").then((m) => ({
+    default: m.AdminSafetyScreensPage,
+  })),
+);
 const AdminFormularyPage = lazyWithRetry(() =>
   import("@/pages/admin/admin-formulary").then((m) => ({
     default: m.AdminFormularyPage,
@@ -1296,6 +1301,10 @@ function AdminConsole() {
             <Route
               path="/admin/fitter/formulary"
               component={AdminFormularyPage}
+            />
+            <Route
+              path="/admin/fitter/safety-screens"
+              component={AdminSafetyScreensPage}
             />
             <Route
               path="/admin/clinical/outreach"

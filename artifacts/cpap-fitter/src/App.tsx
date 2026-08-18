@@ -605,6 +605,14 @@ const BreatheSwitchNikohealth = lazyWithRetry(() =>
     default: m.BreatheSwitchNikohealth,
   })),
 );
+// Point-solution comparison (not a platform migration): teams shopping a
+// stand-alone AI mask fitter against ours. Same lazy chunk as the switch
+// pages; leads with the fitting head-to-head, then the platform table.
+const BreatheVsSleepGlad = lazyWithRetry(() =>
+  import("@/pages/breathe-switch").then((m) => ({
+    default: m.BreatheVsSleepGlad,
+  })),
+);
 
 // Breathe — deep-dive "solution" pages. Long-form pages for the marquee
 // revenue drivers (the AI voice agent, the full revenue cycle) and the
@@ -653,6 +661,11 @@ const BreatheCompliance = lazyWithRetry(() =>
 const BreatheLocations = lazyWithRetry(() =>
   import("@/pages/breathe-locations").then((m) => ({
     default: m.BreatheLocations,
+  })),
+);
+const BreatheMaskFitting = lazyWithRetry(() =>
+  import("@/pages/breathe-mask-fitting").then((m) => ({
+    default: m.BreatheMaskFitting,
   })),
 );
 
@@ -1353,6 +1366,7 @@ function TopRouter() {
         <Route path="/breathe/analytics" component={BreatheAnalytics} />
         <Route path="/breathe/compliance" component={BreatheCompliance} />
         <Route path="/breathe/multi-location" component={BreatheLocations} />
+        <Route path="/breathe/mask-fitting" component={BreatheMaskFitting} />
         <Route
           path="/breathe/switch/brightree"
           component={BreatheSwitchBrightree}
@@ -1360,6 +1374,10 @@ function TopRouter() {
         <Route
           path="/breathe/switch/bonafide"
           component={BreatheSwitchBonafide}
+        />
+        <Route
+          path="/breathe/switch/sleepglad"
+          component={BreatheVsSleepGlad}
         />
         <Route
           path="/breathe/switch/nikohealth"

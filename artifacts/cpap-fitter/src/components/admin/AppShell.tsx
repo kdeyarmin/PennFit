@@ -509,6 +509,14 @@ export const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             hint: "What you dispense, by location, payer, contract, service line, and therapy mode",
           },
           {
+            href: "/admin/fitter/safety-screens",
+            label: "Safety screening",
+            icon: ShieldAlert,
+            matchPrefix: "/admin/fitter/safety-screens",
+            requiredPermission: "clinical.read",
+            hint: "The questions a patient answers before the fitter will recommend a mask — versioned, so a fit report always shows the ones that actually ran",
+          },
+          {
             href: "/admin/clinical/mask-fit",
             label: "Mask-fit feedback",
             icon: Wind,
@@ -1437,7 +1445,7 @@ export const NAV_GROUPS: ReadonlyArray<NavGroup> = [
 // independently 403s them, so this is purely the matching UX, not the
 // security boundary. The SPA route guard (useMaskFitterRouteGuard) redirects
 // any URL outside these prefixes back to the fitter worklist.
-const MASK_FITTER_NAV_GROUPS: ReadonlyArray<NavGroup> = [
+export const MASK_FITTER_NAV_GROUPS: ReadonlyArray<NavGroup> = [
   {
     label: "Mask Fitter",
     items: [
@@ -1483,6 +1491,13 @@ const MASK_FITTER_NAV_GROUPS: ReadonlyArray<NavGroup> = [
         matchPrefix: "/admin/fitter/formulary",
         hint: "Which of those masks you actually dispense",
       },
+      {
+        label: "Safety screening",
+        icon: ShieldAlert,
+        href: "/admin/fitter/safety-screens",
+        matchPrefix: "/admin/fitter/safety-screens",
+        hint: "The questions asked before a mask is recommended — revise them yourself when a manufacturer updates a warning",
+      },
     ],
   },
   {
@@ -1504,6 +1519,13 @@ const MASK_FITTER_NAV_GROUPS: ReadonlyArray<NavGroup> = [
         href: "/admin/billing/package",
         matchPrefix: "/admin/billing/package",
         hint: "Manage your Virtual Mask Fitter subscription and usage",
+      },
+      {
+        label: "Control Center",
+        icon: SlidersHorizontal,
+        href: "/admin/control-center",
+        matchPrefix: "/admin/control-center",
+        hint: "Turn the clinical fitting engine on once your clinician has signed off your size bands",
       },
       {
         label: "Settings",
@@ -1531,9 +1553,28 @@ const MASK_FITTER_NAV_GROUPS: ReadonlyArray<NavGroup> = [
  *  so account-essential pages reached from Settings (team, MFA) are listed
  *  here too. The billing entry is the subscription page specifically — the
  *  operational claims worklists under /admin/billing/ stay blocked. */
-const MASK_FITTER_ALLOWED_ROUTE_PREFIXES: readonly string[] = [
+export const MASK_FITTER_ALLOWED_ROUTE_PREFIXES: readonly string[] = [
   "/admin/fitter-invites",
   "/admin/fitter-leads",
+  // The clinical fitting core. These were already in MASK_FITTER_NAV_GROUPS
+  // above and already allowed by the server, but were missing here — so the
+  // sidebar rendered the links and the route guard bounced every one of
+  // them straight back to Fitter Invites. A fitter-only tenant therefore
+  // could not sign off a size band, edit their formulary, or open the fit
+  // review queue: the exact things the plan is sold on.
+  // `maskFitterNavIsReachable` below pins this list against the nav so the
+  // two cannot drift apart again.
+  "/admin/fit-sessions",
+  "/admin/fitter/catalog",
+  "/admin/fitter/formulary",
+  "/admin/fitter/safety-screens",
+  "/admin/provider-referrals",
+  // Control Center. The clinical fitter ships behind `fitter.*` flags that
+  // the tenant flips themselves after their RT signs off the size bands —
+  // without this they would have to ask us to turn on the product they
+  // bought. The page is filtered to their own fitter flags (see
+  // FlagsList), and every module they cannot reach stays unreachable.
+  "/admin/control-center",
   "/admin/storefront-branding",
   "/admin/settings",
   "/admin/security",

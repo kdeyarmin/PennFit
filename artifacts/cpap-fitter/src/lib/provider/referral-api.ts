@@ -63,7 +63,11 @@ export type ReferralStatus =
   | "declined"
   | "cancelled";
 
-export type EntryPoint = "remote_link" | "in_office" | "kiosk_qr";
+export type EntryPoint =
+  | "remote_link"
+  | "in_office"
+  | "kiosk_qr"
+  | "refit_campaign";
 
 export interface ReferralDestination {
   dmeLinkId: string;

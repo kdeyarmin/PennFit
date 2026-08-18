@@ -49,6 +49,7 @@ const ENTRY_LABEL: Record<string, string> = {
   remote_link: "Remote link",
   in_office: "In office",
   kiosk_qr: "Kiosk QR",
+  refit_campaign: "Re-fit outreach",
 };
 
 /** A percentage, or an em dash when there is no denominator yet. */

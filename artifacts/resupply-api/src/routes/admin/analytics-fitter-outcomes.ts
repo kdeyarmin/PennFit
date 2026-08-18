@@ -111,6 +111,7 @@ const ENTRY_POINTS = new Set<FitEntryPoint>([
   "remote_link",
   "in_office",
   "kiosk_qr",
+  "refit_campaign",
 ]);
 const OUTCOMES = new Set<FitSessionOutcome>([
   "high_confidence",

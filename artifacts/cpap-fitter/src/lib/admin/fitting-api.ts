@@ -435,3 +435,117 @@ export function rescanNotifyMessage(result: RescanResult): string {
 export function fitReportUrl(id: string): string {
   return `/resupply-api/admin/fit-sessions/${encodeURIComponent(id)}/report.pdf`;
 }
+
+// ── Safety screens ───────────────────────────────────────────────────
+//
+// The versioned question sets the fitter asks before it will recommend a
+// mask. `org_id IS NULL` rows are the PLATFORM-published set every tenant
+// falls back to; a tenant authors its own by cloning that to a draft,
+// editing it, and publishing. See routes/admin/safety-screens.ts for why
+// a published set is immutable.
+
+export interface SafetyScreenQuestion {
+  id: string;
+  questionKey: string;
+  prompt: string;
+  helpText: string | null;
+  subject: "patient" | "household";
+  sortOrder: number;
+  riskFlag: string;
+  disqualifiesAttribute: "has_magnetic_components" | null;
+  severity: "exclude" | "warn";
+  unsureBehavesAs: "exclude" | "warn" | "ignore";
+}
+
+export interface SafetyScreenVersion {
+  id: string;
+  /** Platform-published: visible to this tenant, editable by nobody here. */
+  isPlatform: boolean;
+  slug: string;
+  version: string;
+  scope: string;
+  manufacturer: string | null;
+  status: "draft" | "active" | "retired";
+  title: string;
+  introCopy: string | null;
+  attestationCopy: string;
+  sourceUrl: string | null;
+  sourceVersionDate: string | null;
+  effectiveFrom: string | null;
+  retiredOn: string | null;
+  updatedAt: string | null;
+  questions: SafetyScreenQuestion[];
+}
+
+export interface SafetyScreensResponse {
+  activeVersionId: string | null;
+  /** True when no tenant-authored set is active, so the platform's applies. */
+  usingPlatformDefault: boolean;
+  versions: SafetyScreenVersion[];
+}
+
+export function listSafetyScreens(): Promise<SafetyScreensResponse> {
+  return adminJsonFetch("/admin/fitter/safety-screens");
+}
+
+/** Start a draft, cloned from whatever set is currently active. */
+export function createSafetyScreenDraft(input: {
+  version: string;
+  title?: string;
+  manufacturer?: string | null;
+  sourceUrl?: string | null;
+  sourceVersionDate?: string | null;
+}): Promise<{ id: string; clonedFrom: string | null }> {
+  return adminJsonFetch("/admin/fitter/safety-screens", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function updateSafetyScreenDraft(
+  id: string,
+  patch: Record<string, unknown>,
+): Promise<{ ok: true }> {
+  return adminJsonFetch(
+    `/admin/fitter/safety-screens/${encodeURIComponent(id)}`,
+    { method: "PATCH", body: JSON.stringify(patch) },
+  );
+}
+
+/** Replace a draft's questions wholesale — the server does not merge. */
+export function replaceSafetyScreenQuestions(
+  id: string,
+  questions: Array<Omit<SafetyScreenQuestion, "id">>,
+): Promise<{ ok: true; count: number }> {
+  return adminJsonFetch(
+    `/admin/fitter/safety-screens/${encodeURIComponent(id)}/questions`,
+    { method: "PUT", body: JSON.stringify({ questions }) },
+  );
+}
+
+/** Make a draft the active set, retiring the tenant's previous one. */
+export function publishSafetyScreen(
+  id: string,
+): Promise<{ ok: true; version: string }> {
+  return adminJsonFetch(
+    `/admin/fitter/safety-screens/${encodeURIComponent(id)}/publish`,
+    { method: "POST", body: JSON.stringify({}) },
+  );
+}
+
+/** Stand down a tenant set; screening reverts to the platform's questions. */
+export function retireSafetyScreen(
+  id: string,
+): Promise<{ ok: true; revertedToPlatformDefault: boolean }> {
+  return adminJsonFetch(
+    `/admin/fitter/safety-screens/${encodeURIComponent(id)}/retire`,
+    { method: "POST", body: JSON.stringify({}) },
+  );
+}
+
+export function deleteSafetyScreenDraft(id: string): Promise<{ ok: true }> {
+  return adminJsonFetch(
+    `/admin/fitter/safety-screens/${encodeURIComponent(id)}`,
+    { method: "DELETE" },
+  );
+}
