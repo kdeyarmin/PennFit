@@ -443,16 +443,17 @@ export function Measure() {
           </Button>
           {/* An escape hatch, mirroring the camera-error screen. Without
               it a device that can never pass extraction (no WebGL, broken
-              runtime) traps the patient in a retake loop with no exit. */}
-          <Link href="/shop">
-            <Button
-              variant="outline"
-              className="rounded-full glass-panel border-0 px-6"
-              data-testid="measure-error-fallback-shop"
-            >
-              Skip for now — browse the shop
-            </Button>
-          </Link>
+              runtime) traps the patient in a retake loop with no exit.
+              asChild so the Button styling lands on the link itself — a
+              <button> inside an <a> is invalid HTML. */}
+          <Button
+            asChild
+            variant="outline"
+            className="rounded-full glass-panel border-0 px-6"
+            data-testid="measure-error-fallback-shop"
+          >
+            <Link href="/shop">Skip for now — browse the shop</Link>
+          </Button>
         </div>
       </div>
     );
