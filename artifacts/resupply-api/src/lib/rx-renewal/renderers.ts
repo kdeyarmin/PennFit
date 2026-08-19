@@ -5,9 +5,16 @@
 // same body templates. Future A/B testing of subject lines / CTAs
 // lands here as a single edit that both surfaces pick up.
 //
+// Branding: the sign-off/sender tag is a caller-supplied parameter
+// resolved from the tenant (getCompanyInfo(orgId) in the dispatcher),
+// defaulting to the neutral PLATFORM identity — never the seed
+// tenant's. Same contract as lib/calendar/appointment-assigned-email.
+//
 // PHI: no patient identifiers, no SKU, no diagnosis. Greeting +
 // first name are sanitized by the caller; days-until-expiry is a
 // non-PHI integer used in the headline.
+
+const PLATFORM_BRAND = "CareMetric Breathe";
 
 export function rxRenewalSubject(daysUntilExpiry: number): string {
   return daysUntilExpiry === 0
@@ -18,19 +25,22 @@ export function rxRenewalSubject(daysUntilExpiry: number): string {
 export function rxRenewalText(
   greeting: string,
   daysUntilExpiry: number,
+  signoffName = PLATFORM_BRAND,
 ): string {
   const headline =
     daysUntilExpiry === 0
       ? `Your CPAP prescription has just expired.`
       : `Your CPAP prescription expires in ${daysUntilExpiry} day${daysUntilExpiry === 1 ? "" : "s"}.`;
-  return `${greeting},\n\n${headline}\n\nWe need a fresh prescription on file before your next supply order ships. The fastest path is to ask your prescribing physician's office for a renewal — most clinics turn this around in 1-2 business days.\n\nIf you'd rather have us request the renewal directly from your physician, reply to this email with your physician's name + practice and we'll handle the outreach.\n\n— Penn Home Medical Supply\n`;
+  return `${greeting},\n\n${headline}\n\nWe need a fresh prescription on file before your next supply order ships. The fastest path is to ask your prescribing physician's office for a renewal — most clinics turn this around in 1-2 business days.\n\nIf you'd rather have us request the renewal directly from your physician, reply to this email with your physician's name + practice and we'll handle the outreach.\n\n— ${signoffName}\n`;
 }
 
 export function rxRenewalHtml(
   greeting: string,
   daysUntilExpiry: number,
+  signoffName = PLATFORM_BRAND,
 ): string {
   const safeGreeting = greeting.replace(/[<>&]/g, "");
+  const safeSignoff = signoffName.replace(/[<>&]/g, "");
   const headline =
     daysUntilExpiry === 0
       ? `Your CPAP prescription has just expired.`
@@ -43,7 +53,7 @@ export function rxRenewalHtml(
       <p style="margin:0 0 12px;color:#0a1f44;font-size:14px;line-height:1.55;">${headline}</p>
       <p style="margin:0 0 12px;color:#0a1f44;font-size:14px;line-height:1.55;">We need a fresh prescription on file before your next supply order ships. The fastest path is to ask your prescribing physician's office for a renewal — most clinics turn this around in 1-2 business days.</p>
       <p style="margin:0 0 12px;color:#0a1f44;font-size:14px;line-height:1.55;">If you'd rather have us request the renewal directly from your physician, reply to this email with your physician's name + practice and we'll handle the outreach.</p>
-      <p style="margin:24px 0 0;color:#6b7280;font-size:12px;">Penn Home Medical Supply</p>
+      <p style="margin:24px 0 0;color:#6b7280;font-size:12px;">${safeSignoff}</p>
     </td></tr>
   </table>
 </body></html>`;
@@ -56,10 +66,10 @@ export function rxRenewalHtml(
  * drop the limit to 70/segment, so we deliberately use plain ASCII
  * (regular hyphen, no em-dash).
  *
- * The " - Penn Home" sender tag used by smart-trigger SMS bodies is
- * intentionally omitted here: the renewal body is longer and adding
- * the tag would push 11-char names over 160 chars. Twilio's sender
- * number is already registered, so recipients can identify the sender.
+ * The sender tag is the tenant's storefront brand (caller-resolved,
+ * platform default when unset). It is short by convention — a long
+ * tenant name can push an 11-char first name past one segment, which
+ * is an accepted trade for tenant-correct branding.
  *
  * Reply-mode hint matches the email's "reply to delegate to us"
  * path: patients can text back the physician's name and our
@@ -73,6 +83,7 @@ export function rxRenewalHtml(
 export function rxRenewalSms(
   firstName: string,
   daysUntilExpiry: number,
+  senderTag = PLATFORM_BRAND,
 ): string {
   const head = firstName ? `Hi ${firstName}` : "Hi";
   const status =
@@ -83,7 +94,7 @@ export function rxRenewalSms(
         : `your CPAP Rx expires in ${daysUntilExpiry} days`;
   return (
     `${head}, ${status}. Ask your doctor to renew or text us ` +
-    `their name + practice. Reply STOP to opt out. - Penn Home`
+    `their name + practice. Reply STOP to opt out. - ${senderTag}`
   );
 }
 

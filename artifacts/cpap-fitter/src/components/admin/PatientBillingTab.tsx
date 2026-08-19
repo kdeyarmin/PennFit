@@ -33,26 +33,15 @@ import { PatientBillingNotesPanel } from "@/components/admin/PatientBillingNotes
 import { PaymentPlansSection } from "@/components/admin/PaymentPlansSection";
 import { Spinner } from "@/components/admin/Spinner";
 import {
+  listInsuranceClaims,
   listInsuranceCoverages,
+  listPriorAuthorizations,
   verifyEligibility,
 } from "@/lib/admin/clinical-tabs-api";
 import { csrfHeader } from "@/lib/csrf";
 import { formatAppDateTime, formatDateOnly } from "@/lib/utils";
 
 const BASE = "/resupply-api";
-
-interface ClaimRow {
-  id: string;
-  payer_name: string;
-  status: string;
-  total_billed_cents: number | null;
-  total_paid_cents: number | null;
-  patient_responsibility_cents: number | null;
-  date_of_service: string | null;
-  submitted_at: string | null;
-  decision_at: string | null;
-  denial_reason: string | null;
-}
 
 interface EligibilityRow {
   id: string;
@@ -67,16 +56,6 @@ interface EligibilityRow {
   requires_prior_auth: boolean | null;
   error_message: string | null;
   requested_at: string;
-}
-
-interface PaRow {
-  id: string;
-  payerName: string;
-  hcpcsCode: string;
-  status: string;
-  authNumber: string | null;
-  approvedThrough: string | null;
-  submittedAt: string | null;
 }
 
 interface StatementRow {
@@ -132,10 +111,7 @@ export function PatientBillingTab({ patientId }: { patientId: string }) {
 
   const claims = useQuery({
     queryKey: ["patient-claims", patientId],
-    queryFn: () =>
-      getJSON<{ claims: ClaimRow[] }>(
-        `/admin/patients/${patientId}/insurance-claims`,
-      ),
+    queryFn: () => listInsuranceClaims(patientId),
     staleTime: 30_000,
   });
   const eligibility = useQuery({
@@ -148,10 +124,7 @@ export function PatientBillingTab({ patientId }: { patientId: string }) {
   });
   const priorAuths = useQuery({
     queryKey: ["patient-prior-auths", patientId],
-    queryFn: () =>
-      getJSON<{ priorAuthorizations: PaRow[] }>(
-        `/admin/patients/${patientId}/prior-authorizations`,
-      ),
+    queryFn: () => listPriorAuthorizations(patientId),
     staleTime: 30_000,
   });
   const statements = useQuery({
@@ -187,12 +160,12 @@ export function PatientBillingTab({ patientId }: { patientId: string }) {
   // Sum patient responsibility across paid/denied/closed/appealed
   // claims (the only statuses that contribute to a current balance).
   const openBalanceCents = useMemo(() => {
-    const list = claims.data?.claims ?? [];
+    const list = claims.data?.insuranceClaims ?? [];
     return list.reduce((acc, c) => {
       if (!["paid", "denied", "appealed", "closed"].includes(c.status)) {
         return acc;
       }
-      return acc + (c.patient_responsibility_cents ?? 0);
+      return acc + (c.patientResponsibilityCents ?? 0);
     }, 0);
   }, [claims.data]);
 
@@ -362,7 +335,7 @@ export function PatientBillingTab({ patientId }: { patientId: string }) {
         <Tile
           icon={<FileText className="h-4 w-4" />}
           label="Claims on file"
-          value={(claims.data?.claims?.length ?? 0).toLocaleString()}
+          value={(claims.data?.insuranceClaims?.length ?? 0).toLocaleString()}
         />
         <Tile
           icon={<ShieldAlert className="h-4 w-4" />}
@@ -422,7 +395,7 @@ export function PatientBillingTab({ patientId }: { patientId: string }) {
               ? claims.error.message
               : "Failed to load claims."}
           </p>
-        ) : (claims.data?.claims?.length ?? 0) === 0 ? (
+        ) : (claims.data?.insuranceClaims?.length ?? 0) === 0 ? (
           <p className="text-sm py-1" style={{ color: "hsl(var(--ink-3))" }}>
             No claims on file.
           </p>
@@ -431,19 +404,19 @@ export function PatientBillingTab({ patientId }: { patientId: string }) {
             className="divide-y -mt-1 -mb-1"
             style={{ borderColor: "hsl(var(--line-1))" }}
           >
-            {(claims.data?.claims ?? []).slice(0, 10).map((c) => (
+            {(claims.data?.insuranceClaims ?? []).slice(0, 10).map((c) => (
               <li key={c.id} className="py-2 text-sm">
                 <div className="flex items-center justify-between gap-3">
                   <span
                     className="font-medium"
                     style={{ color: "hsl(var(--ink-1))" }}
                   >
-                    {c.payer_name}
+                    {c.payerName}
                   </span>
                   <span className="inline-flex items-center gap-3 text-[11px]">
                     <ClaimStatusBadge status={c.status} />
                     <span className="tabular-nums font-semibold">
-                      {formatMoney(c.total_billed_cents)}
+                      {formatMoney(c.totalBilledCents)}
                     </span>
                   </span>
                 </div>
@@ -451,26 +424,23 @@ export function PatientBillingTab({ patientId }: { patientId: string }) {
                   className="text-[11px]"
                   style={{ color: "hsl(var(--ink-3))" }}
                 >
-                  DOS{" "}
-                  {c.date_of_service ? formatDateOnly(c.date_of_service) : "—"}
-                  {c.patient_responsibility_cents != null &&
-                  c.patient_responsibility_cents > 0 ? (
+                  DOS {c.dateOfService ? formatDateOnly(c.dateOfService) : "—"}
+                  {c.patientResponsibilityCents != null &&
+                  c.patientResponsibilityCents > 0 ? (
                     <>
                       {" · patient owes "}
                       <span
                         className="font-semibold"
                         style={{ color: "#b45309" }}
                       >
-                        {formatMoney(c.patient_responsibility_cents)}
+                        {formatMoney(c.patientResponsibilityCents)}
                       </span>
                     </>
                   ) : null}
-                  {c.denial_reason && (
+                  {c.denialReason && (
                     <>
                       {" · "}
-                      <span style={{ color: "#b91c1c" }}>
-                        {c.denial_reason}
-                      </span>
+                      <span style={{ color: "#b91c1c" }}>{c.denialReason}</span>
                     </>
                   )}
                 </p>

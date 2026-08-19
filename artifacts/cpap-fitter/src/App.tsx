@@ -39,6 +39,9 @@ const HowItWorks = lazyWithRetry(() =>
 const Faq = lazyWithRetry(() =>
   import("@/pages/faq").then((m) => ({ default: m.Faq })),
 );
+const Contact = lazyWithRetry(() =>
+  import("@/pages/contact").then((m) => ({ default: m.Contact })),
+);
 const Learn = lazyWithRetry(() =>
   import("@/pages/learn").then((m) => ({ default: m.Learn })),
 );
@@ -1090,6 +1093,7 @@ function PatientRouter() {
             />
             <Route path="/how-it-works" component={HowItWorks} />
             <Route path="/faq" component={Faq} />
+            <Route path="/contact" component={Contact} />
             {/* Help Center — specific /help/* guides registered before the
               /help hub so wouter's <Switch> matches them first. */}
             <Route path="/help/find-your-mask" component={HelpFindYourMask} />

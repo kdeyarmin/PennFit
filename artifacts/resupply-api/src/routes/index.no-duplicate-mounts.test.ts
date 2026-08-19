@@ -63,4 +63,66 @@ describe("routes/index.ts router mounts", () => {
     );
     expect(duplicateImports).toEqual([]);
   });
+
+  // The two checks above catch the SAME router mounted twice, but not two
+  // DIFFERENT routers claiming the same method+path — Express first-match-
+  // wins, so the later mount is permanently shadowed dead code. That shape
+  // shipped in June 2026: admin/resupply-funnel.ts registered
+  // `GET /admin/analytics/resupply-funnel`, already claimed by
+  // admin/analytics.ts mounted ~100 lines earlier, so its handler (with a
+  // different query contract) could never execute. Scan every route file
+  // bare-mounted from routes/index.ts — they all share the /resupply-api
+  // namespace and carry their own absolute paths — and fail on any
+  // method+path registered twice. Param NAMES are normalized (`:id` ⇄
+  // `:patientId`) because Express matches params by position, so two
+  // routes differing only in param name still collide.
+  it("registers each method+path at most once across bare-mounted routers", () => {
+    const importPathByName = new Map<string, string>();
+    const importRe =
+      /^import\s+([A-Za-z_][A-Za-z0-9_]*)\s+from\s+"(\.\/[^"]+)\.js"/gm;
+    for (const m of code.matchAll(importRe)) {
+      importPathByName.set(m[1]!, m[2]!);
+    }
+
+    const bareMounted = new Set<string>();
+    const mountRe = /router\.use\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)/g;
+    for (const m of code.matchAll(mountRe)) bareMounted.add(m[1]!);
+
+    const registrations = new Map<string, string[]>();
+    const regRe =
+      /\brouter\s*\.\s*(get|post|put|patch|delete|all)\s*\(\s*\n?\s*"([^"]+)"/g;
+    for (const name of bareMounted) {
+      const rel = importPathByName.get(name);
+      if (!rel) continue;
+      let src: string;
+      try {
+        src = readFileSync(path.join(__dirname, `${rel}.ts`), "utf8");
+      } catch {
+        continue; // compiled-only import — typecheck owns missing files
+      }
+      const body = stripComments(src);
+      for (const m of body.matchAll(regRe)) {
+        const normalizedPath = m[2]!.replace(/:[A-Za-z0-9_]+/g, ":p");
+        const key = `${m[1]!.toUpperCase()} ${normalizedPath}`;
+        const locs = registrations.get(key) ?? [];
+        locs.push(`${rel}.ts (${m[2]!})`);
+        registrations.set(key, locs);
+      }
+    }
+
+    // Sanity floor: the flat tree is ~260 routers / ~800 paths. If the
+    // scan ever collapses (regex drift, import-shape change), fail loudly
+    // instead of green-lighting an empty scan.
+    expect(registrations.size).toBeGreaterThan(500);
+
+    const duplicates = Array.from(registrations.entries()).filter(
+      ([, locs]) => locs.length > 1,
+    );
+    expect(
+      duplicates,
+      `Each method+path may be registered by exactly one bare-mounted ` +
+        `router — Express first-match-wins silently shadows the rest. ` +
+        `Duplicates: ${JSON.stringify(duplicates, null, 2)}`,
+    ).toEqual([]);
+  });
 });

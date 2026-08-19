@@ -18,6 +18,7 @@ import {
   createSendgridClient,
   EmailConfigError,
 } from "@workspace/resupply-email";
+import { getCompanyInfo } from "../company-info.js";
 import { createTenantSendgridClient } from "../email/tenant-sender.js";
 import {
   createTwilioSmsClient,
@@ -99,6 +100,10 @@ export async function runRxRenewalSendDue(
     };
   }
   const supabase = getOrgScopedClient(orgId);
+  // Resolve the tenant's identity ONCE per sweep so every message in the
+  // batch signs off as the tenant, never the seed brand (fail-soft: an
+  // unconfigured tenant resolves to the neutral platform identity).
+  const company = await getCompanyInfo(orgId);
   const now = new Date();
   const cutoffIso = new Date(
     now.getTime() + RENEWAL_WINDOW_DAYS * 24 * 60 * 60 * 1000,
@@ -289,6 +294,11 @@ export async function runRxRenewalSendDue(
       first_name: firstName,
       days_until_expiry: String(daysUntilExpiry),
       greeting,
+      // Tenant identity for custom template copy: the storefront brand
+      // (short, SMS-friendly) and the registered legal name (email
+      // sign-offs). Same values the fallback renderers receive below.
+      brand_name: company.name,
+      brand_legal_name: company.legalName,
     };
 
     try {
@@ -306,8 +316,16 @@ export async function runRxRenewalSendDue(
           },
           {
             subject: rxRenewalSubject(daysUntilExpiry),
-            bodyHtml: rxRenewalHtml(greeting, daysUntilExpiry),
-            bodyText: rxRenewalText(greeting, daysUntilExpiry),
+            bodyHtml: rxRenewalHtml(
+              greeting,
+              daysUntilExpiry,
+              company.legalName,
+            ),
+            bodyText: rxRenewalText(
+              greeting,
+              daysUntilExpiry,
+              company.legalName,
+            ),
           },
           messageTemplateLookup,
         );
@@ -334,7 +352,7 @@ export async function runRxRenewalSendDue(
           {
             subject: null,
             bodyHtml: null,
-            bodyText: rxRenewalSms(firstName, daysUntilExpiry),
+            bodyText: rxRenewalSms(firstName, daysUntilExpiry, company.name),
           },
           messageTemplateLookup,
         );

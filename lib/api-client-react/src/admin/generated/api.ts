@@ -21,7 +21,6 @@ import type {
 
 import type {
   AdminIdentity,
-  AuditPage,
   AuthError,
   BulkPatientStatusRequest,
   BulkPatientStatusResponse,
@@ -54,7 +53,6 @@ import type {
   HealthStatus,
   ImportPatientsCsvRequest,
   ImportPatientsCsvResponse,
-  ListAuditParams,
   ListConversationsParams,
   ListEpisodeCountsParams,
   ListEpisodesParams,
@@ -2315,107 +2313,6 @@ export const useBulkSendEpisodes = <
 > => {
   return useMutation(getBulkSendEpisodesMutationOptions(options));
 };
-
-/**
- * Paginated audit-log viewer. Filters: action prefix, targetTable,
-date floor (`since`). Sorted by occurredAt DESC. The `metadata`
-column is the plaintext jsonb context written through
-@workspace/resupply-audit's sanitiser (PHI-key denylist + size +
-depth caps), so it is safe to surface as-is; the dashboard
-renders only an allowlisted set of keys for defence-in-depth.
-
- * @summary Paginated audit log viewer
- */
-export const getListAuditUrl = (params?: ListAuditParams) => {
-  const normalizedParams = new URLSearchParams();
-
-  Object.entries(params || {}).forEach(([key, value]) => {
-    if (value !== undefined) {
-      normalizedParams.append(key, value === null ? "null" : value.toString());
-    }
-  });
-
-  const stringifiedParams = normalizedParams.toString();
-
-  return stringifiedParams.length > 0
-    ? `/resupply-api/audit?${stringifiedParams}`
-    : `/resupply-api/audit`;
-};
-
-export const listAudit = async (
-  params?: ListAuditParams,
-  options?: RequestInit,
-): Promise<AuditPage> => {
-  return customFetch<AuditPage>(getListAuditUrl(params), {
-    ...options,
-    method: "GET",
-  });
-};
-
-export const getListAuditQueryKey = (params?: ListAuditParams) => {
-  return [`/resupply-api/audit`, ...(params ? [params] : [])] as const;
-};
-
-export const getListAuditQueryOptions = <
-  TData = Awaited<ReturnType<typeof listAudit>>,
-  TError = ErrorType<ConsoleValidationError | AuthError>,
->(
-  params?: ListAuditParams,
-  options?: {
-    query?: UseQueryOptions<
-      Awaited<ReturnType<typeof listAudit>>,
-      TError,
-      TData
-    >;
-    request?: SecondParameter<typeof customFetch>;
-  },
-) => {
-  const { query: queryOptions, request: requestOptions } = options ?? {};
-
-  const queryKey = queryOptions?.queryKey ?? getListAuditQueryKey(params);
-
-  const queryFn: QueryFunction<Awaited<ReturnType<typeof listAudit>>> = ({
-    signal,
-  }) => listAudit(params, { signal, ...requestOptions });
-
-  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
-    Awaited<ReturnType<typeof listAudit>>,
-    TError,
-    TData
-  > & { queryKey: QueryKey };
-};
-
-export type ListAuditQueryResult = NonNullable<
-  Awaited<ReturnType<typeof listAudit>>
->;
-export type ListAuditQueryError = ErrorType<ConsoleValidationError | AuthError>;
-
-/**
- * @summary Paginated audit log viewer
- */
-
-export function useListAudit<
-  TData = Awaited<ReturnType<typeof listAudit>>,
-  TError = ErrorType<ConsoleValidationError | AuthError>,
->(
-  params?: ListAuditParams,
-  options?: {
-    query?: UseQueryOptions<
-      Awaited<ReturnType<typeof listAudit>>,
-      TError,
-      TData
-    >;
-    request?: SecondParameter<typeof customFetch>;
-  },
-): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getListAuditQueryOptions(params, options);
-
-  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
-    queryKey: QueryKey;
-  };
-
-  return { ...query, queryKey: queryOptions.queryKey };
-}
 
 /**
  * Posts an admin-authored reply on the in-flight conversation

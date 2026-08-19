@@ -73,6 +73,37 @@ export const WEBHOOK_EVENT_CATALOG: readonly WebhookEventDefinition[] = [
     carriesPatientId: true,
   },
   {
+    // Clearinghouse FRONT-END rejection (277CA) — the claim bounced
+    // before payer adjudication. Distinct from `claim.denied` (a payer
+    // adjudication): a rejected claim is re-workable back to submitted.
+    type: "claim.rejected",
+    description:
+      "Claim rejected at the clearinghouse front end (277CA) before " +
+      "payer adjudication.",
+    publisher: "routes/patients/insurance-claims.ts PATCH",
+    payloadFields: {
+      claim_id: "uuid",
+      patient_id: "uuid",
+      from_status: "string",
+      to_status: "string",
+    },
+    carriesPatientId: true,
+  },
+  {
+    type: "claim.partially_paid",
+    description:
+      "Claim moved to partially_paid — the payer paid some but not all " +
+      "of the billed amount.",
+    publisher: "routes/patients/insurance-claims.ts PATCH",
+    payloadFields: {
+      claim_id: "uuid",
+      patient_id: "uuid",
+      from_status: "string",
+      to_status: "string",
+    },
+    carriesPatientId: true,
+  },
+  {
     type: "claim.appealed",
     description: "Claim transitioned to appealed status.",
     publisher: "routes/patients/insurance-claims.ts PATCH",

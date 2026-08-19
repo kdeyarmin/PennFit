@@ -95,7 +95,6 @@ import patientFitOverridesRouter from "./admin/patient-fit-overrides.js";
 import referralsAttributeRouter from "./admin/referrals-attribute.js";
 import referralSourcesRouter from "./admin/referral-sources.js";
 import patientMaintenanceLogRouter from "./admin/patient-maintenance-log.js";
-import resupplyFunnelRouter from "./admin/resupply-funnel.js";
 import acquisitionFunnelRouter from "./admin/acquisition-funnel.js";
 import therapyUsageReportRouter from "./admin/therapy-usage-report.js";
 import patientTherapyNightsManualRouter from "./admin/patient-therapy-nights-manual.js";
@@ -1050,9 +1049,6 @@ router.use(referralSourcesRouter);
 // /admin/patients/:id/maintenance-log — CSR view of the patient's
 // hygiene checklist completion history.
 router.use(patientMaintenanceLogRouter);
-// /admin/analytics/resupply-funnel — episode-stage rollup with
-// confirm + fulfillment rates over a configurable window.
-router.use(resupplyFunnelRouter);
 // /admin/analytics/acquisition-funnel — storefront/fitter funnel
 // drop-off from the anonymous usage_events stream (Growth #G1).
 router.use(acquisitionFunnelRouter);
