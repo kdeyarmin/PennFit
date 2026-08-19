@@ -23,6 +23,7 @@ import { z } from "zod";
 
 import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
+import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
 import { verifyFitterInviteToken } from "../../lib/fitter-invite-token";
 import { recordTenantUsage } from "../../lib/metering/usage";
@@ -148,10 +149,22 @@ router.get("/shop/fitter-invite/resolve", resolveLimiter, async (req, res) => {
   // counter with staff who already know who they are, and the fields
   // stay on the row server-side so a later rescan can still reach them.
   const inOffice = invite.channel === "in_office";
+
+  // Tell the SPA which questionnaire this tenant runs. The v2 Patient
+  // Fit Profile is a per-tenant flag, and the questionnaire renders
+  // BEFORE the /results page ever probes the clinical route — so this
+  // resolve response (the one call that already knows the tenant) is
+  // where the flag has to travel. Fail-soft to the legacy questionnaire.
+  const fitProfileV2 = await isFeatureEnabled(
+    "fitter.fit_profile_v2",
+    orgId,
+  ).catch(() => false);
+
   res.json({
     valid: true,
     email: inOffice ? null : invite.recipient_email,
     name: inOffice ? null : invite.recipient_name,
+    fitProfileV2,
   });
 });
 

@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { ArrowLeft, CheckCircle2, Lightbulb } from "lucide-react";
 import type { QuestionnaireAnswers } from "@workspace/api-client-react/storefront";
+import { QuestionnaireV2 } from "@/pages/questionnaire-v2";
 
 const PAGE_TITLE = "A few quick questions";
 
@@ -141,6 +142,15 @@ const questions: Question[] = [
 ];
 
 export function Questionnaire() {
+  // Tenants that enabled `fitter.fit_profile_v2` (resolved with the
+  // invite and stashed in the store) get the chaptered v2 Patient Fit
+  // Profile; everyone else keeps this legacy 11-question flow unchanged.
+  const { fitProfileV2 } = useFitterStore();
+  if (fitProfileV2) return <QuestionnaireV2 />;
+  return <QuestionnaireV1 />;
+}
+
+function QuestionnaireV1() {
   useDocumentTitle(PAGE_TITLE);
   const [, setLocation] = useLocation();
   // The route-level <ProtectedRoute> in App.tsx already guarantees that

@@ -177,15 +177,16 @@ export function Capture() {
   // and drove drop-off; the iris-calibrated math is robust to small
   // motion. Disabled-button gating still prevents a press before the
   // camera/runtime is ready.
-  const blockers = getCaptureBlockers(hasPermission, videoReady);
-  const captureReady = isCaptureReady(blockers) && visionHealth === "ready";
+  const blockers = getCaptureBlockers(
+    hasPermission,
+    videoReady,
+    visionHealth === "ready",
+  );
+  const captureReady = isCaptureReady(blockers);
   const handleCapture = () => {
     if (capturing) return;
     if (!captureReady) {
-      track("capture_blocked", {
-        ...blockers,
-        runtimeReady: visionHealth === "ready",
-      });
+      track("capture_blocked", blockers);
       return;
     }
     setCapturing(true);

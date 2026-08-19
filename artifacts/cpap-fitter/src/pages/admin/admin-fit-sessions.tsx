@@ -78,8 +78,13 @@ export function AdminFitSessionsPage() {
 
   const sessions = useQuery({
     queryKey: [...QUERY_KEY, reviewStatus],
+    // Same page size on every filter. "All" used to ask for 100 while the
+    // named filters silently fell back to the server default of 50 — an
+    // invisible inconsistency in how much of the queue each view showed.
     queryFn: () =>
-      fetchFitSessions(reviewStatus ? { reviewStatus } : { limit: 100 }),
+      fetchFitSessions(
+        reviewStatus ? { reviewStatus, limit: 100 } : { limit: 100 },
+      ),
   });
 
   const approve = useMutation({
@@ -219,6 +224,28 @@ export function AdminFitSessionsPage() {
                           : ""}
                       </p>
                     ) : null}
+                    {s.supersededBySessionId ? (
+                      // A rescan request that the patient has since
+                      // answered. Without this note the row read as
+                      // eternally open work — nothing ever moves a
+                      // session out of rescan_requested; the NEW session
+                      // is where the fitting continued.
+                      <p
+                        className="text-xs text-emerald-700"
+                        data-testid={`fit-session-superseded-${s.id}`}
+                      >
+                        Rescan completed — continued in a{" "}
+                        <a
+                          className="underline"
+                          href={fitReportUrl(s.supersededBySessionId)}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          newer fitting
+                        </a>
+                        .
+                      </p>
+                    ) : null}
                   </div>
 
                   <div className="flex flex-wrap gap-2">
@@ -301,9 +328,9 @@ export function AdminFitSessionsPage() {
                     </label>
                     <p className="text-xs text-muted-foreground">
                       Sending this re-issues the patient&apos;s fitting link
-                      over the channel their invite used. Your note is for this
-                      screen only — it is not sent to the patient and is not
-                      stored on the session.
+                      over the channel their invite used. Your note is recorded
+                      on the session and printed on the fit report — it is not
+                      sent to the patient.
                     </p>
                     <textarea
                       id={`rescan-${s.id}`}

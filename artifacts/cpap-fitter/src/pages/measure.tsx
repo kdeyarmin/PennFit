@@ -78,8 +78,13 @@ const FAIL_HINTS: Record<ExtractionFailReason, string[]> = {
 export function Measure() {
   useDocumentTitle("Analyzing your measurements");
   const [, setLocation] = useLocation();
-  const { capturedImage, measurements, setMeasurements, setCapturedImage } =
-    useFitterStore();
+  const {
+    capturedImage,
+    measurements,
+    scanSignals,
+    setMeasurements,
+    setCapturedImage,
+  } = useFitterStore();
   const [progress, setProgress] = useState(0);
   const [status, setStatus] = useState(
     "Initializing secure on-device processor…",
@@ -538,6 +543,34 @@ export function Measure() {
               aria-valuemin={0}
               aria-valuemax={100}
             />
+            {progress === 100 &&
+            typeof scanSignals?.quality.distance === "number" &&
+            scanSignals.quality.distance < 0.6 ? (
+              // The photo passed extraction but was taken far enough away
+              // that the distance check scored it poorly — which quietly
+              // caps confidence downstream. Say so NOW, while retaking is
+              // one tap, instead of letting the fitting end in a vague
+              // "we need a better scan".
+              <div
+                className="flex items-start gap-2.5 text-xs rounded-xl callout-gold p-3"
+                data-testid="measure-distance-hint"
+              >
+                <AlertCircle className="w-4 h-4 mt-0.5 text-[hsl(var(--penn-navy))] shrink-0" />
+                <span className="text-foreground/85 leading-relaxed">
+                  This photo was taken a little far from the camera. You can
+                  continue, but{" "}
+                  <button
+                    type="button"
+                    className="underline font-medium"
+                    onClick={() => setLocation("/capture")}
+                    data-testid="measure-distance-retake"
+                  >
+                    retaking it about an arm&apos;s length away
+                  </button>{" "}
+                  usually gives a more confident match.
+                </span>
+              </div>
+            ) : null}
             {progress === 100 && measurements ? (
               <MeasurementsReadout measurements={measurements} />
             ) : (

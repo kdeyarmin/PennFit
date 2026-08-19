@@ -279,6 +279,7 @@ export async function buildFitReport(
       overrideTo:
         catalogNames.get(str(data.override_mask_model_id) ?? "") ?? null,
       overrideReason: str(data.override_reason),
+      rescanReason: str(data.rescan_reason),
     },
     dispensing: {
       orderedMask:

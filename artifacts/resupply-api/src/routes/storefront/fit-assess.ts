@@ -299,7 +299,7 @@ router.post("/fit/assess", assessLimiter, async (req, res) => {
   }
 
   const body = parsed.data;
-  const profile = buildProfile(body.answers ?? null, body.profile ?? null);
+  let profile = buildProfile(body.answers ?? null, body.profile ?? null);
   const bounds =
     profile.population === "pediatric" ? PEDIATRIC_BOUNDS : ADULT_BOUNDS;
 
@@ -359,6 +359,14 @@ router.post("/fit/assess", assessLimiter, async (req, res) => {
   if (invite.expiresAt && Date.parse(invite.expiresAt) < Date.now()) {
     res.json({ valid: false, reason: "expired" });
     return;
+  }
+
+  // The chart outranks the client's self-reported population. Population
+  // selects the plausibility windows, the tier-1 service-line filter, and
+  // the stored column — for a chart-linked fitting all of that should
+  // follow the patient's date of birth, not a browser-supplied hint.
+  if (invite.chartPopulation && invite.chartPopulation !== profile.population) {
+    profile = { ...profile, population: invite.chartPopulation };
   }
 
   const [enabled, gating, magnets] = await Promise.all([
@@ -631,6 +639,12 @@ interface InviteContext {
   /** How the invite was raised (migration 0489). Authoritative over the
    *  client's `entryPoint` hint — see where it's resolved below. */
   channel: string | null;
+  /** The chart's own adult/pediatric classification, from date_of_birth.
+   *  Authoritative over the client's self-reported `population` when the
+   *  invite is chart-linked: population selects the plausibility windows,
+   *  the tier-1 service-line filter, and the stored column, and none of
+   *  those should follow a browser-supplied hint when the chart knows. */
+  chartPopulation: "adult" | "pediatric" | null;
 }
 
 /**
@@ -663,15 +677,21 @@ async function loadInvite(
     // resolves both to null.
     let locationId: string | null = null;
     let payerProfileId: string | null = null;
+    let chartPopulation: "adult" | "pediatric" | null = null;
     const patientId = (data.patient_id as string | null) ?? null;
     if (patientId) {
       const { data: patient } = (await supabase
         .from("patients")
-        .select("location_id")
+        .select("location_id, date_of_birth")
         .eq("id", patientId)
         .limit(1)
         .maybeSingle()) as { data: Record<string, unknown> | null };
       locationId = (patient?.location_id as string | null) ?? null;
+      const dob = Date.parse(String(patient?.date_of_birth ?? ""));
+      if (Number.isFinite(dob)) {
+        const ageYears = (Date.now() - dob) / (365.25 * 86_400_000);
+        chartPopulation = ageYears < 18 ? "pediatric" : "adult";
+      }
 
       // insurance_coverages stores a free-text `payer_name`, not a
       // payer_profiles id, so the payer axis has to be resolved by name.
@@ -712,6 +732,7 @@ async function loadInvite(
       status: String(data.status ?? "sent"),
       expiresAt: (data.expires_at as string | null) ?? null,
       channel: (data.channel as string | null) ?? null,
+      chartPopulation,
     };
   } catch {
     return null;

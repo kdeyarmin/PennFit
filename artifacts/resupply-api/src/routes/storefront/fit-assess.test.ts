@@ -341,6 +341,44 @@ describe("POST /fit/assess — happy path and degradation", () => {
     expect(res.body.outcome).toBeTruthy();
   });
 
+  it("accepts the exact shape the v2 questionnaire's toProfilePayload emits", async () => {
+    // Pins the wire contract between the SPA's fit-profile module and the
+    // .strict() profile schema here — an unknown key on either side 400s
+    // the whole assessment, so drift must fail THIS test, not a patient.
+    const res = await post({
+      measurements: VALID_MEASUREMENTS,
+      profile: {
+        version: "fit_profile_v2",
+        population: "adult",
+        therapyMode: "pap",
+        therapyDevice: "cpap",
+        pressureCmH2O: 12,
+        supplementalOxygen: null,
+        mouthBreather: true,
+        nasalObstruction: "none",
+        frequentCongestion: false,
+        dryMouth: null,
+        sleepPositions: ["side"],
+        claustrophobia: "none",
+        minimalContactPreference: "minimal",
+        facialHair: "none",
+        dentures: false,
+        skinIrritation: "none",
+        sensitiveSkin: false,
+        wearsGlasses: null,
+        priorMaskExperience: "nasal",
+        priorMaskSize: "M",
+        priorLeakLocations: ["bridge_of_nose"],
+        priorMaskSatisfaction: 2,
+        headgearDifficulty: null,
+        handDexterity: "normal",
+        visionOrCognitiveLimitation: null,
+      },
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.outcome).toBeTruthy();
+  });
+
   it("keeps internal ranking and formulary terms out of the browser payload", async () => {
     // The STORED record keeps them; the response must not. `rankScore`
     // bakes in formulary preference and inventory margin rank, and

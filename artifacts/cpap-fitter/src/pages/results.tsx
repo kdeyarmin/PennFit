@@ -49,6 +49,7 @@ import {
   SafetyScreen,
   type SafetyScreenSubmission,
 } from "@/components/safety-screen";
+import { toProfilePayload } from "@/lib/fit-profile";
 import { ClinicalResults, FitWithheld } from "@/components/clinical-results";
 import { rememberFitCheckoutContext } from "@/lib/fit-checkout-context";
 
@@ -62,6 +63,8 @@ export function Results() {
     measurements,
     scanSignals,
     answers,
+    fitAnswers,
+    fitProfileV2,
     reset,
     setChosenMask,
     email,
@@ -94,6 +97,18 @@ export function Results() {
   useEffect(() => {
     track("results_viewed");
   }, []);
+
+  // The v2 Patient Fit Profile payload, when the tenant runs the v2
+  // questionnaire and the patient answered it. Sent ALONGSIDE the legacy
+  // answers: the route's buildProfile merges the v2 block over the
+  // legacy mapping, so an in-flight patient can finish on either path.
+  const profilePayload = React.useMemo(
+    () =>
+      fitProfileV2 && Object.keys(fitAnswers).length > 0
+        ? toProfilePayload(fitAnswers)
+        : null,
+    [fitProfileV2, fitAnswers],
+  );
 
   // Best-effort campaign-enrollment ping. Fires once when the
   // recommendation lands, telling the backend "this lead saw a
@@ -261,6 +276,9 @@ export function Results() {
         inviteToken,
         measurements,
         answers: { ...fullAnswers },
+        // The v2 Patient Fit Profile, when the tenant runs it. The
+        // route merges it over the legacy answers.
+        ...(profilePayload ? { profile: profilePayload } : {}),
         // Real per-frame quality from /measure. Omitted only when the
         // probe failed, in which case the route applies its neutral
         // default.
@@ -327,7 +345,14 @@ export function Results() {
       // them means "this tenant screens for magnets".
       setClinicalState("legacy");
     },
-    [measurements, inviteToken, fullAnswers, scanSignals, entryPoint],
+    [
+      measurements,
+      inviteToken,
+      fullAnswers,
+      profilePayload,
+      scanSignals,
+      entryPoint,
+    ],
   );
 
   const handleSafetySubmit = React.useCallback(

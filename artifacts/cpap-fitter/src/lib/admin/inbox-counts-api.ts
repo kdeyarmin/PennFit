@@ -13,6 +13,8 @@ export interface AdminInboxCounts {
   newPatientDocuments: number;
   /** Inbound faxes that have landed in the queue but no CSR has triaged. */
   newInboundFaxes: number;
+  /** Fit sessions waiting on a clinician (review_status = pending_review). */
+  pendingFitReviews: number;
   /**
    * Confirmed resupply episodes waiting on a PacWare CSV export.
    * Always 0 unless the operator opted into auto-sync notices

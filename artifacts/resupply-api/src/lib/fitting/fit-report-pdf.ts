@@ -349,6 +349,9 @@ function draw(doc: PDFKit.PDFDocument, r: FitReport): void {
       `${r.review.overrideFrom ?? "recommended mask"} → ${r.review.overrideTo}`,
     );
   }
+  if (r.review.rescanReason) {
+    field(doc, "Rescan reason", r.review.rescanReason);
+  }
   if (r.review.overrideReason) {
     field(doc, "Override reason", r.review.overrideReason);
   }

@@ -4,6 +4,7 @@ import type {
   QuestionnaireAnswers,
 } from "@workspace/api-client-react/storefront";
 import type { ScanSignalsPayload } from "@/lib/scan-signals";
+import type { FitAnswers } from "@/lib/fit-profile";
 
 export interface ChosenMask {
   maskId: string;
@@ -33,6 +34,17 @@ interface FitterState {
    */
   scanSignals: ScanSignalsPayload | null;
   answers: Partial<QuestionnaireAnswers>;
+  /**
+   * The v2 Patient Fit Profile answers, when the tenant runs the v2
+   * questionnaire (`fitProfileV2`). `undefined`/missing = not yet asked;
+   * `null` = the patient explicitly said "I'm not sure". The v1 `answers`
+   * above are kept in sync via `toLegacyAnswers` so every legacy consumer
+   * (the /api/recommend fallback, the invite completion payload, the
+   * campaign ping) keeps working unchanged.
+   */
+  fitAnswers: FitAnswers;
+  /** Whether this tenant's invite resolved with the v2 questionnaire on. */
+  fitProfileV2: boolean;
   capturedImage: string | null; // Data URL for display purposes only. Never uploaded.
   chosenMask: ChosenMask | null;
   /**
@@ -82,6 +94,8 @@ interface FitterContextType extends FitterState {
     scanSignals?: ScanSignalsPayload | null,
   ) => void;
   updateAnswers: (answers: Partial<QuestionnaireAnswers>) => void;
+  updateFitAnswers: (answers: FitAnswers) => void;
+  setFitProfileV2: (on: boolean) => void;
   setCapturedImage: (image: string | null) => void;
   setChosenMask: (mask: ChosenMask | null) => void;
   setEmailConsent: (email: string, consent: boolean) => void;
@@ -184,6 +198,25 @@ export function FitterProvider({ children }: { children: ReactNode }) {
     }
   });
 
+  // The v2 Patient Fit Profile answers + the flag that turns the v2
+  // questionnaire on. Both survive a mid-flow refresh like everything
+  // else in this store.
+  const [fitAnswers, setFitAnswers] = useState<FitAnswers>(() => {
+    try {
+      const stored = sessionStorage.getItem("fitter_fit_answers");
+      return stored ? (JSON.parse(stored) as FitAnswers) : {};
+    } catch {
+      return {};
+    }
+  });
+  const [fitProfileV2, setFitProfileV2State] = useState<boolean>(() => {
+    try {
+      return sessionStorage.getItem("fitter_profile_v2") === "1";
+    } catch {
+      return false;
+    }
+  });
+
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
 
   // Email + marketing-consent gate. Persisted in sessionStorage so a
@@ -248,6 +281,28 @@ export function FitterProvider({ children }: { children: ReactNode }) {
       }
       return updated;
     });
+  };
+
+  const updateFitAnswers = (newAnswers: FitAnswers) => {
+    setFitAnswers((prev) => {
+      const updated = { ...prev, ...newAnswers };
+      try {
+        sessionStorage.setItem("fitter_fit_answers", JSON.stringify(updated));
+      } catch (e) {
+        console.error("Failed to save fit answers to sessionStorage", e);
+      }
+      return updated;
+    });
+  };
+
+  const setFitProfileV2 = (on: boolean) => {
+    setFitProfileV2State(on);
+    try {
+      if (on) sessionStorage.setItem("fitter_profile_v2", "1");
+      else sessionStorage.removeItem("fitter_profile_v2");
+    } catch (e) {
+      console.error("Failed to persist fit profile flag", e);
+    }
   };
 
   const setChosenMask = (mask: ChosenMask | null) => {
@@ -324,6 +379,8 @@ export function FitterProvider({ children }: { children: ReactNode }) {
     setMeasurementsState(null);
     setScanSignalsState(null);
     setAnswers({});
+    setFitAnswers({});
+    setFitProfileV2State(false);
     setCapturedImage(null);
     setChosenMaskState(null);
     setEmail(null);
@@ -332,6 +389,8 @@ export function FitterProvider({ children }: { children: ReactNode }) {
     try {
       sessionStorage.removeItem("fitter_measurements");
       sessionStorage.removeItem("fitter_answers");
+      sessionStorage.removeItem("fitter_fit_answers");
+      sessionStorage.removeItem("fitter_profile_v2");
       sessionStorage.removeItem("fitter_chosen_mask");
       sessionStorage.removeItem("fitter_email");
       sessionStorage.removeItem("fitter_email_consent");
@@ -349,6 +408,8 @@ export function FitterProvider({ children }: { children: ReactNode }) {
         measurements,
         scanSignals,
         answers,
+        fitAnswers,
+        fitProfileV2,
         capturedImage,
         chosenMask,
         email,
@@ -358,6 +419,8 @@ export function FitterProvider({ children }: { children: ReactNode }) {
         storagePersisted,
         setMeasurements,
         updateAnswers,
+        updateFitAnswers,
+        setFitProfileV2,
         setCapturedImage,
         setChosenMask,
         setEmailConsent,

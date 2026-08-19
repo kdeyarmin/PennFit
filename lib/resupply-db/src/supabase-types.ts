@@ -6650,6 +6650,7 @@ export interface Database {
           override_mask_model_id: string | null;
           override_variant_id: string | null;
           override_reason: string | null;
+          rescan_reason: string | null;
           ordered_mask_model_id: string | null;
           ordered_variant_id: string | null;
           shop_order_id: string | null;

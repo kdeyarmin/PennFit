@@ -103,6 +103,53 @@ describe("review-queue permissions (real roleHasPermission)", () => {
   });
 });
 
+describe("GET /admin/fit-sessions — rescan supersession", () => {
+  it("marks a rescan_requested row whose invite has a newer session", async () => {
+    mockAdmin.current = RT;
+    const OLD = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const NEW = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    const INVITE = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+    // The list page.
+    stageSupabaseResponse("fit_sessions", "select", {
+      data: [
+        {
+          id: OLD,
+          created_at: "2026-08-01T00:00:00.000Z",
+          patient_id: null,
+          fitter_invite_id: INVITE,
+          status: "rescan_required",
+          outcome: "low_confidence",
+          review_status: "rescan_requested",
+          population: "adult",
+          service_line: "pap",
+          degraded: false,
+          primary_recommendation: null,
+        },
+      ],
+    });
+    // The sibling lookup that resolves supersession.
+    stageSupabaseResponse("fit_sessions", "select", {
+      data: [
+        {
+          id: NEW,
+          fitter_invite_id: INVITE,
+          created_at: "2026-08-05T00:00:00.000Z",
+        },
+        {
+          id: OLD,
+          fitter_invite_id: INVITE,
+          created_at: "2026-08-01T00:00:00.000Z",
+        },
+      ],
+    });
+    const res = await request(makeApp()).get(
+      "/admin/fit-sessions?reviewStatus=rescan_requested",
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.sessions[0].supersededBySessionId).toBe(NEW);
+  });
+});
+
 describe("POST /admin/fit-sessions/:id/approve — state guards", () => {
   it("refuses to approve over an existing override", async () => {
     // An overridden session already carries a decision plus the override

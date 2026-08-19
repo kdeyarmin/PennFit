@@ -364,6 +364,8 @@ export interface FitSessionSummary {
   serviceLine: string;
   degraded: boolean;
   recommendedMask: string | null;
+  /** For a superseded rescan request: the newer session that answered it. */
+  supersededBySessionId: string | null;
 }
 
 export function fetchFitSessions(

@@ -30,6 +30,12 @@ vi.mock("../../lib/storefront/signed-link-org", () => ({
   resolveOrgIdForSignedRecord: vi.fn(async () => SEED_ORG),
 }));
 
+// Resolve reports the tenant's v2 fit-profile flag; default everything off.
+const featureFlags = vi.hoisted(() => ({ enabled: new Set<string>() }));
+vi.mock("../../lib/feature-flags", () => ({
+  isFeatureEnabled: vi.fn(async (key: string) => featureFlags.enabled.has(key)),
+}));
+
 import fitterInviteRouter from "./fitter-invite";
 import { signFitterInviteToken } from "../../lib/fitter-invite-token";
 import { resolveOrgIdForSignedRecord } from "../../lib/storefront/signed-link-org";
@@ -62,6 +68,7 @@ const recommendation = {
 
 beforeEach(() => {
   supabaseMock.reset();
+  featureFlags.enabled = new Set();
   process.env.RESUPPLY_LINK_HMAC_KEY = "test-link-hmac-key-value-1234567890";
 });
 
@@ -86,12 +93,34 @@ describe("GET /shop/fitter-invite/resolve", () => {
       valid: true,
       email: "p@example.com",
       name: "Pat Q",
+      // The v2 fit-profile flag rides on resolve (the one call that knows
+      // the tenant before the questionnaire renders); off by default.
+      fitProfileV2: false,
     });
     // The tenant was resolved from the token's invite, not a fixed seed.
     expect(vi.mocked(resolveOrgIdForSignedRecord)).toHaveBeenCalledWith(
       "fitter_invites",
       INVITE_ID,
     );
+  });
+
+  it("carries fitProfileV2:true when the tenant enables the flag", async () => {
+    featureFlags.enabled = new Set(["fitter.fit_profile_v2"]);
+    const token = signFitterInviteToken(INVITE_ID);
+    stageSupabaseResponse("fitter_invites", "select", {
+      data: {
+        id: INVITE_ID,
+        status: "opened",
+        recipient_email: "p@example.com",
+        recipient_name: "Pat Q",
+        expires_at: new Date(Date.now() + 86_400_000).toISOString(),
+      },
+    });
+    const res = await request(makeApp()).get(
+      `/resupply-api/shop/fitter-invite/resolve?t=${encodeURIComponent(token)}`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.fitProfileV2).toBe(true);
   });
 
   it("returns valid:false for a bad signature", async () => {

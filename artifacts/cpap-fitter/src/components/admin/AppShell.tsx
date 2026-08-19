@@ -482,6 +482,7 @@ export const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             icon: ClipboardCheck,
             matchPrefix: "/admin/fit-sessions",
             requiredPermission: "clinical.read",
+            badgeKey: "pendingFitReviews",
             hint: "Fittings the engine declined to be confident about — approve, override, or send back for a rescan",
           },
           {
@@ -1468,7 +1469,15 @@ export const MASK_FITTER_NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: ClipboardCheck,
         href: "/admin/fit-sessions",
         matchPrefix: "/admin/fit-sessions",
+        badgeKey: "pendingFitReviews",
         hint: "Fittings that need a clinician's eye before they go out",
+      },
+      {
+        label: "Fitter Outcomes",
+        icon: Activity,
+        href: "/admin/analytics/fitter-outcomes",
+        matchPrefix: "/admin/analytics/fitter-outcomes",
+        hint: "Acceptance, override, and dispense rates — how the fitter is actually performing",
       },
       {
         label: "Referrals",
@@ -1568,6 +1577,7 @@ export const MASK_FITTER_ALLOWED_ROUTE_PREFIXES: readonly string[] = [
   "/admin/fitter/catalog",
   "/admin/fitter/formulary",
   "/admin/fitter/safety-screens",
+  "/admin/analytics/fitter-outcomes",
   "/admin/provider-referrals",
   // Control Center. The clinical fitter ships behind `fitter.*` flags that
   // the tenant flips themselves after their RT signs off the size bands —
