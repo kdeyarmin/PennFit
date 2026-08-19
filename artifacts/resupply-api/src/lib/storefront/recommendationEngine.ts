@@ -121,6 +121,25 @@ export interface RecommendationResult {
  * commercial stocking preference must not inflate the number a patient
  * reads as "how well this mask suits me".
  */
+/**
+ * DEPRECATED — superseded by tenant formulary rules.
+ *
+ * This hardcoded, platform-wide brand preference is exactly the
+ * "commercial signal baked into the engine" that the tiered clinical
+ * engine in `lib/fitting/` removes. There, provider preference is tenant
+ * DATA (`resupply.formulary_rules`, seeded for Penn Home Medical Supply by
+ * migration 0482), it is evaluated at tier 5 — strictly below safety,
+ * therapy compatibility, facial fit, and patient characteristics — and it
+ * is bounded so it can only re-order near-ties.
+ *
+ * It survives here because this module is the LEGACY path: it still serves
+ * `/api/recommend` for tenants that have not enabled
+ * `fitter.clinical_assessment`, plus the chatbot tools. Deleting it would
+ * silently change what those tenants' patients see, which is a worse
+ * outcome than a documented deprecation. `assess()` never reads it.
+ *
+ * Remove once every tenant is on the clinical assessment path.
+ */
 const MANUFACTURER_BOOST: Record<string, number> = {
   "React Health": 1.15,
 };
@@ -419,7 +438,14 @@ export function recommendSize(
   const idx = Math.min(rawIdx, sizes.length - 1);
   return {
     size: sizes[idx],
-    rationale: `Estimated size ${sizes[idx]} from your ${axisLabel} (${value} mm) within the mask's ${min}–${max} mm range. Final fit confirmed at PennPaps.`,
+    // Tenant-neutral on purpose. This is shared platform code with no
+    // `orgId` in scope, and the /api/recommend route does not run the
+    // I/O-boundary rename (`applyCompanyIdentityToText`) that patient
+    // SMS/email/PDF copy goes through — so a hardcoded brand here reaches
+    // EVERY tenant's patients verbatim. It used to read "confirmed at
+    // PennPaps", which was wrong for every tenant but one. "your provider"
+    // is accurate for all of them, Penn included, and needs no plumbing.
+    rationale: `Estimated size ${sizes[idx]} from your ${axisLabel} (${value} mm) within the mask's ${min}–${max} mm range. Final fit confirmed with your provider.`,
   };
 }
 

@@ -269,6 +269,14 @@ export interface QuickCheckoutInput {
   reorderSessionId?: string;
   successPath?: string;
   cancelPath?: string;
+  /**
+   * Fitting attribution, mirroring /shop/checkout. Express checkout is
+   * reachable from the same cart, so a fitting-sourced basket must not
+   * lose its link just because the buyer has a saved card.
+   */
+  fitSessionId?: string;
+  orderedMaskSlug?: string;
+  orderedVariantId?: string;
 }
 
 /**

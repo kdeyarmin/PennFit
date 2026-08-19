@@ -1310,6 +1310,8 @@ export interface Database {
         Relationships: [];
       };
       // Mig 0243 — staff-initiated AI mask-fitter invitations.
+      // Mig 0489 — "in_office": handed over at the counter as a QR code,
+      // never delivered, so recipient_email/phone may both be null.
       fitter_invites: {
         Row: {
           org_id: string | null;
@@ -1318,7 +1320,7 @@ export interface Database {
           recipient_email: string | null;
           recipient_phone_e164: string | null;
           recipient_name: string | null;
-          channel: "email" | "sms";
+          channel: "email" | "sms" | "in_office";
           status:
             | "sent"
             | "opened"
@@ -1347,6 +1349,10 @@ export interface Database {
           claimed_by_user_id: string | null;
           claimed_by_email: string | null;
           claimed_at: string | null;
+          // Mig 0483 — the clinical fit session this invite produced.
+          // The legacy jsonb columns above keep being written alongside
+          // it so the existing admin surfaces don't regress.
+          fit_session_id: string | null;
         };
         Insert: Partial<
           Database["resupply"]["Tables"]["fitter_invites"]["Row"]
@@ -5648,6 +5654,12 @@ export interface Database {
           submitter_ip: string | null;
           user_agent: string | null;
           created_at: string;
+          // Mig 0483 — structured catalog references alongside the
+          // legacy text `mask_id` (0203), which keeps being dual-written
+          // so computeFitAdjustments() carries on working untouched.
+          fit_session_id: string | null;
+          mask_model_id: string | null;
+          size_variant_id: string | null;
         };
         Insert: Partial<
           Database["resupply"]["Tables"]["mask_fit_outcomes"]["Row"]
@@ -6233,6 +6245,713 @@ export interface Database {
         >;
         Update: Partial<
           Database["resupply"]["Tables"]["dme_ownership_disclosures"]["Row"]
+        >;
+        Relationships: [];
+      };
+
+      // ── Mask Intelligence Catalog (migrations 0481-0486) ───────────
+      // The catalog tables are PLATFORM reference data, following the
+      // resupply.hcpcs_codes precedent (0171): a mask's manufacturer
+      // facts are the same for every tenant. `org_id` is therefore
+      // nullable — NULL is a platform-published row, non-NULL is a
+      // model one tenant added privately — and readers filter
+      // `org_id IS NULL OR org_id = <tenant>` through `.raw()`. The
+      // formulary, availability, and fit-session tables below are
+      // genuinely tenant-scoped and go through the org-scoped facade.
+
+      // Migration 0481: one row per mask model.
+      mask_models: {
+        Row: {
+          id: string;
+          org_id: string | null;
+          slug: string;
+          manufacturer: string;
+          model_name: string;
+          product_line: string | null;
+          interface_type:
+            | "nasal"
+            | "nasal_pillow"
+            | "nasal_cradle"
+            | "hybrid"
+            | "full_face"
+            | "total_face"
+            | "oral";
+          service_line: "adult" | "pediatric" | "both";
+          therapy_modes: string[];
+          vented: "vented" | "non_vented" | "both";
+          has_magnetic_components: boolean;
+          magnetic_component_notes: string | null;
+          magnet_free_variant_slug: string | null;
+          pressure_min_cm_h2o: number | null;
+          pressure_max_cm_h2o: number | null;
+          supports_supplemental_oxygen: boolean | null;
+          minimal_contact: boolean;
+          avoids_nasal_bridge: boolean;
+          hose_position: "front" | "top" | "side" | null;
+          facial_hair_tolerance: "poor" | "fair" | "good" | null;
+          side_sleeping_tolerance: "poor" | "fair" | "good" | null;
+          claustrophobia_tolerance: "poor" | "fair" | "good" | null;
+          glasses_compatible: boolean | null;
+          cushion_material: string | null;
+          headgear_style: string | null;
+          weight_grams: number | null;
+          description: string | null;
+          image_url: string | null;
+          status: "current" | "discontinued" | "pre_release";
+          discontinued_on: string | null;
+          successor_slug: string | null;
+          fitting_instructions_url: string | null;
+          fitting_instructions_version: string | null;
+          fitting_instructions_version_date: string | null;
+          fit_data_source: "manufacturer" | "measured" | "estimated";
+          needs_clinical_review: boolean;
+          reviewed_by_email: string | null;
+          reviewed_at: string | null;
+          catalog_version: number;
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["mask_models"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["mask_models"]["Row"]>;
+        Relationships: [];
+      };
+
+      // Migration 0481: per-size millimetre bands. A NULL band means the
+      // dimension does not gate that size.
+      mask_size_variants: {
+        Row: {
+          id: string;
+          mask_model_id: string;
+          component:
+            | "cushion"
+            | "frame"
+            | "pillow"
+            | "headgear"
+            | "full_assembly";
+          size_code: string;
+          size_label: string;
+          sort_order: number;
+          nose_width_min_mm: number | null;
+          nose_width_max_mm: number | null;
+          nose_height_min_mm: number | null;
+          nose_height_max_mm: number | null;
+          nose_to_chin_min_mm: number | null;
+          nose_to_chin_max_mm: number | null;
+          mouth_width_min_mm: number | null;
+          mouth_width_max_mm: number | null;
+          face_width_min_mm: number | null;
+          face_width_max_mm: number | null;
+          nostril_width_min_mm: number | null;
+          nostril_width_max_mm: number | null;
+          is_default: boolean;
+          hcpcs_code: string | null;
+          manufacturer_part_number: string | null;
+          status: "current" | "discontinued";
+          fit_data_source: "manufacturer" | "measured" | "estimated";
+          // 0495: citation behind a non-estimated band. NULL on an
+          // estimated band means "nothing to cite", never "unrecorded".
+          fit_data_source_ref: string | null;
+          fit_data_source_date: string | null;
+          needs_clinical_review: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["mask_size_variants"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["mask_size_variants"]["Row"]
+        >;
+        Relationships: [];
+      };
+
+      // Migration 0481: replacement parts + payer replacement categories.
+      mask_components: {
+        Row: {
+          id: string;
+          mask_model_id: string;
+          component_type:
+            | "cushion"
+            | "pillow"
+            | "frame"
+            | "headgear"
+            | "elbow"
+            | "tube"
+            | "clip"
+            | "filter"
+            | "chinstrap";
+          name: string;
+          hcpcs_code: string | null;
+          payer_replacement_category: string | null;
+          manufacturer_part_number: string | null;
+          replacement_interval_days: number | null;
+          status: "current" | "discontinued";
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["mask_components"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["mask_components"]["Row"]
+        >;
+        Relationships: [];
+      };
+
+      // Migration 0481: cross-model frame/cushion compatibility.
+      mask_component_compatibility: {
+        Row: {
+          id: string;
+          component_id: string;
+          compatible_mask_model_id: string;
+          notes: string | null;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["mask_component_compatibility"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["mask_component_compatibility"]["Row"]
+        >;
+        Relationships: [];
+      };
+
+      // Migration 0481: structured clinical exclusions. severity
+      // 'exclude' is a hard filter the ranking pipeline can never score
+      // away; 'caution' is a penalty plus a caveat on the fit report.
+      mask_contraindications: {
+        Row: {
+          id: string;
+          mask_model_id: string;
+          factor:
+            | "mouth_breathing"
+            | "nasal_obstruction"
+            | "claustrophobia"
+            | "facial_hair"
+            | "dentures"
+            | "skin_breakdown"
+            | "high_pressure"
+            | "supplemental_oxygen"
+            | "magnet_implant_patient"
+            | "magnet_implant_household"
+            | "niv_vented_mismatch"
+            | "hand_dexterity"
+            | "side_sleeping"
+            | "vision_cognitive"
+            | "pediatric_service_line";
+          severity: "exclude" | "caution";
+          rationale: string;
+          source: "manufacturer_ifu" | "clinical_policy";
+          version_date: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["mask_contraindications"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["mask_contraindications"]["Row"]
+        >;
+        Relationships: [];
+      };
+
+      // Migration 0482: the versioned formulary container. Exactly one
+      // active per tenant (partial unique index).
+      formularies: {
+        Row: {
+          id: string;
+          org_id: string | null;
+          name: string;
+          status: "draft" | "active" | "archived";
+          default_posture: "open" | "closed";
+          version: number;
+          published_at: string | null;
+          published_by_email: string | null;
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["formularies"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["formularies"]["Row"]>;
+        Relationships: [];
+      };
+
+      // Migration 0482: scope x target x effect. Every scope axis is
+      // nullable and NULL means "any".
+      formulary_rules: {
+        Row: {
+          id: string;
+          org_id: string | null;
+          formulary_id: string;
+          location_id: string | null;
+          payer_profile_id: string | null;
+          contract_ref: string | null;
+          service_line: "adult" | "pediatric" | null;
+          therapy_mode: "pap" | "niv" | null;
+          target_kind:
+            | "manufacturer"
+            | "interface_type"
+            | "mask_model"
+            | "size_variant"
+            | "all";
+          target_manufacturer: string | null;
+          target_interface_type: string | null;
+          target_mask_model_id: string | null;
+          target_size_variant_id: string | null;
+          effect: "allow" | "deny" | "prefer" | "deprioritize";
+          preference_rank: number | null;
+          reason_code: string | null;
+          reason_note: string | null;
+          effective_from: string | null;
+          effective_to: string | null;
+          created_by_email: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["formulary_rules"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["formulary_rules"]["Row"]
+        >;
+        Relationships: [];
+      };
+
+      // Migration 0482: the inventory axis. NEVER excludes a mask — it
+      // demotes and annotates inside the lowest ranking tier.
+      mask_availability: {
+        Row: {
+          id: string;
+          org_id: string | null;
+          location_id: string | null;
+          mask_model_id: string;
+          size_variant_id: string | null;
+          availability:
+            | "in_stock"
+            | "low"
+            | "out"
+            | "special_order"
+            | "not_stocked"
+            | "unknown";
+          on_hand_qty: number | null;
+          lead_time_days: number | null;
+          margin_rank: number | null;
+          updated_at: string;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["mask_availability"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["mask_availability"]["Row"]
+        >;
+        Relationships: [];
+      };
+
+      // Migration 0482: TENANT-scoped clinical sign-off on a SHARED size
+      // variant's millimetre bands. `mask_size_variants.needs_clinical_
+      // review` is a platform flag that a tenant must never clear —
+      // doing so would lift the engine's confidence cap for every other
+      // tenant. A row here records "this DME's RT has reviewed this size"
+      // and is read only for that org.
+      mask_variant_reviews: {
+        Row: {
+          id: string;
+          org_id: string | null;
+          size_variant_id: string;
+          approved: boolean;
+          reviewed_by_email: string | null;
+          reviewed_at: string;
+          note: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["mask_variant_reviews"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["mask_variant_reviews"]["Row"]
+        >;
+        Relationships: [];
+      };
+
+      // Migration 0483: the clinical record of one fitting. PHI —
+      // measurements and profile answers. `measurements` and
+      // `measurement_frames` hold NUMBERS ONLY; no image ever reaches
+      // the server.
+      fit_sessions: {
+        Row: {
+          id: string;
+          org_id: string | null;
+          location_id: string | null;
+          fitter_invite_id: string | null;
+          patient_id: string | null;
+          entry_point: "remote_link" | "in_office" | "kiosk_qr";
+          population: "adult" | "pediatric";
+          service_line: "pap" | "niv";
+          payer_profile_id: string | null;
+          contract_ref: string | null;
+          status:
+            | "in_progress"
+            | "recommended"
+            | "awaiting_review"
+            | "approved"
+            | "overridden"
+            | "rescan_required"
+            | "abandoned";
+          measurements: Json | null;
+          measurement_frames: Json | null;
+          calibration_method: string | null;
+          frame_count: number;
+          scan_quality: Json | null;
+          scan_quality_grade: "good" | "marginal" | "poor" | null;
+          measurement_agreement: Json | null;
+          measurement_confidence: number | null;
+          measurement_confidence_band: "high" | "moderate" | "low" | null;
+          profile_answers: Json | null;
+          profile_version: string;
+          safety_screen_version: string | null;
+          safety_flags: string[];
+          safety_attested_at: string | null;
+          safety_snapshot: Json | null;
+          primary_mask_model_id: string | null;
+          primary_cushion_variant_id: string | null;
+          primary_frame_variant_id: string | null;
+          primary_recommendation: Json | null;
+          alternatives: Json | null;
+          excluded: Json | null;
+          recommendation_confidence: number | null;
+          outcome:
+            | "high_confidence"
+            | "moderate_confidence"
+            | "low_confidence"
+            | "contraindicated"
+            | "outside_validated_range"
+            | null;
+          rules_engine_version: string;
+          formulary_id: string | null;
+          formulary_version: number | null;
+          formulary_name: string | null;
+          formulary_rules_matched: Json | null;
+          catalog_snapshot_version: number | null;
+          fit_adjustments_applied: Json | null;
+          degraded: boolean;
+          review_status:
+            | "not_required"
+            | "pending_review"
+            | "approved"
+            | "overridden"
+            | "rescan_requested"
+            | "rejected";
+          reviewed_by_user_id: string | null;
+          reviewed_by_email: string | null;
+          reviewed_at: string | null;
+          override_mask_model_id: string | null;
+          override_variant_id: string | null;
+          override_reason: string | null;
+          ordered_mask_model_id: string | null;
+          ordered_variant_id: string | null;
+          shop_order_id: string | null;
+          dispensed_at: string | null;
+          report_generated_at: string | null;
+          report_count: number;
+          report_link_version: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["fit_sessions"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["fit_sessions"]["Row"]>;
+        Relationships: [];
+      };
+
+      // Migration 0483: append-only provenance trail. NOT audit_log —
+      // this is an ordinary feature-owned domain table. `detail` is
+      // Zod-validated on write and carries ids/codes/counts only.
+      fit_session_events: {
+        Row: {
+          id: string;
+          org_id: string | null;
+          fit_session_id: string;
+          event_type: string;
+          actor_kind: "patient" | "staff" | "system";
+          actor_user_id: string | null;
+          actor_email: string | null;
+          detail: Json | null;
+          occurred_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["fit_session_events"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["fit_session_events"]["Row"]
+        >;
+        Relationships: [];
+      };
+
+      // Migration 0483: safety-screen answers. 'unsure' is treated as
+      // 'yes' for exclusion purposes.
+      fit_session_safety_responses: {
+        Row: {
+          id: string;
+          org_id: string | null;
+          fit_session_id: string;
+          screen_version: string;
+          question_key: string;
+          subject: "patient" | "household";
+          answer: "yes" | "no" | "unsure";
+          answered_at: string;
+          acknowledged_by_email: string | null;
+          acknowledged_at: string | null;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["fit_session_safety_responses"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["fit_session_safety_responses"]["Row"]
+        >;
+        Relationships: [];
+      };
+
+      // Migration 0484: version-controlled safety screening. The
+      // exclusion RULE is data (disqualifies_attribute / severity /
+      // unsure_behaves_as), so revising a manufacturer warning is a new
+      // version row rather than a deploy.
+      safety_screen_versions: {
+        Row: {
+          id: string;
+          org_id: string | null;
+          slug: string;
+          version: string;
+          scope: "magnetic" | "general";
+          manufacturer: string | null;
+          status: "draft" | "active" | "retired";
+          title: string;
+          intro_copy: string | null;
+          attestation_copy: string;
+          source_url: string | null;
+          source_version_date: string | null;
+          effective_from: string | null;
+          retired_on: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["safety_screen_versions"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["safety_screen_versions"]["Row"]
+        >;
+        Relationships: [];
+      };
+
+      // Migration 0484: the individual screening prompts.
+      safety_screen_questions: {
+        Row: {
+          id: string;
+          screen_version_id: string;
+          question_key: string;
+          prompt: string;
+          help_text: string | null;
+          subject: "patient" | "household";
+          answer_type: "yes_no_unsure";
+          sort_order: number;
+          risk_flag: string;
+          disqualifies_attribute: "has_magnetic_components" | null;
+          severity: "exclude" | "warn";
+          unsure_behaves_as: "exclude" | "warn" | "ignore";
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["safety_screen_questions"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["safety_screen_questions"]["Row"]
+        >;
+        Relationships: [];
+      };
+
+      // Migration 0487: the AUTHORIZATION edge between the cross-org
+      // provider directory and a tenant. A DME invites a provider; without
+      // an active link that provider cannot direct a referral at this
+      // tenant, which is what stops a global directory from becoming a way
+      // to push unsolicited PHI into any workspace.
+      provider_dme_links: {
+        Row: {
+          id: string;
+          org_id: string | null;
+          provider_id: string;
+          status: "active" | "suspended" | "revoked";
+          display_name: string | null;
+          default_location_id: string | null;
+          invited_by_email: string | null;
+          invited_at: string;
+          revoked_at: string | null;
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["provider_dme_links"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["provider_dme_links"]["Row"]
+        >;
+        Relationships: [];
+      };
+
+      // Migration 0487: one patient handed from a referring provider to a
+      // DME. Org-scoped to the RECEIVING DME; the provider reads their own
+      // across tenants by provider_id.
+      //
+      // PHI: carries demographics and insurance identifiers typed by the
+      // provider BEFORE a chart exists — that is the point, the DME does
+      // not have the patient yet. `patient_id` stays null until the DME
+      // accepts and matches or creates a chart.
+      referrals: {
+        Row: {
+          id: string;
+          org_id: string | null;
+          provider_id: string;
+          created_by_account_id: string | null;
+          created_by_email: string | null;
+          routed_to_location_id: string | null;
+          patient_id: string | null;
+          patient_first_name: string;
+          patient_last_name: string;
+          patient_dob: string | null;
+          patient_email: string | null;
+          patient_phone_e164: string | null;
+          patient_sex: string | null;
+          patient_address: Json | null;
+          insurance_payer_name: string | null;
+          insurance_member_id: string | null;
+          insurance_group_number: string | null;
+          fitter_invite_id: string | null;
+          fit_session_id: string | null;
+          entry_point: "remote_link" | "in_office" | "kiosk_qr";
+          fitting_sent_at: string | null;
+          fitting_completed_at: string | null;
+          approved_mask_model_id: string | null;
+          approved_variant_id: string | null;
+          approval_is_override: boolean;
+          approval_note: string | null;
+          approved_at: string | null;
+          therapy_mode: "pap" | "niv";
+          prescribed_pressure_cm_h2o: number | null;
+          diagnosis_code: string | null;
+          clinical_notes: string | null;
+          signature_request_id: string | null;
+          signed_at: string | null;
+          status:
+            | "draft"
+            | "awaiting_fitting"
+            | "fitting_complete"
+            | "awaiting_signature"
+            | "signed"
+            | "submitted"
+            | "accepted"
+            | "in_progress"
+            | "dispensed"
+            | "declined"
+            | "cancelled";
+          submitted_at: string | null;
+          accepted_at: string | null;
+          accepted_by_email: string | null;
+          declined_at: string | null;
+          declined_reason: string | null;
+          dispensed_at: string | null;
+          cancelled_at: string | null;
+          adherence_updates_authorized: boolean;
+          provider_unread_count: number;
+          dme_unread_count: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["referrals"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["referrals"]["Row"]>;
+        Relationships: [];
+      };
+
+      // Migration 0487: paperwork pointers. Bytes live in Supabase
+      // Storage with per-object ACL in object_storage_acls, exactly like
+      // POD photos and MMS media — only the pointer is here.
+      referral_documents: {
+        Row: {
+          id: string;
+          org_id: string | null;
+          referral_id: string;
+          doc_type:
+            | "prescription"
+            | "sleep_study"
+            | "demographics"
+            | "insurance"
+            | "chart_note"
+            | "face_sheet"
+            | "other";
+          file_name: string;
+          storage_object_path: string;
+          content_type: string;
+          size_bytes: number;
+          uploaded_by_kind: "provider" | "staff";
+          uploaded_by_email: string | null;
+          notes: string | null;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["referral_documents"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["referral_documents"]["Row"]
+        >;
+        Relationships: [];
+      };
+
+      // Migration 0487: the clinician-to-DME thread that replaces the
+      // phone call. Its own table rather than `conversations`, which
+      // models a PATIENT channel with consent and opt-out semantics that
+      // do not apply between two clinical parties. `body` is PHI.
+      referral_messages: {
+        Row: {
+          id: string;
+          org_id: string | null;
+          referral_id: string;
+          author_kind: "provider" | "staff";
+          author_email: string | null;
+          author_name: string | null;
+          body: string;
+          read_at: string | null;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["referral_messages"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["referral_messages"]["Row"]
+        >;
+        Relationships: [];
+      };
+
+      // Migration 0487: the status timeline both sides read — what makes
+      // "check referral status without a phone call" real. A feature-owned
+      // domain table, NOT the retired resupply.audit_log. `detail` carries
+      // ids, codes, and counts only, never free-text PHI.
+      referral_events: {
+        Row: {
+          id: string;
+          org_id: string | null;
+          referral_id: string;
+          event_type: string;
+          actor_kind: "provider" | "staff" | "patient" | "system";
+          actor_email: string | null;
+          detail: Json | null;
+          occurred_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["referral_events"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["referral_events"]["Row"]
         >;
         Relationships: [];
       };

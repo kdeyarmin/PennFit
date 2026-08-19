@@ -104,6 +104,11 @@ function ProviderNav() {
         location.startsWith("/provider/sign"),
     },
     {
+      href: "/provider/referrals",
+      label: "Referrals",
+      active: location.startsWith("/provider/referrals"),
+    },
+    {
       href: "/provider/patients",
       label: "My patients",
       active: location.startsWith("/provider/patients"),

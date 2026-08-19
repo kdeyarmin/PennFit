@@ -226,6 +226,11 @@ const AdminAnalyticsRevenueBySourcePage = lazyWithRetry(() =>
     default: m.AdminAnalyticsRevenueBySourcePage,
   })),
 );
+const AdminAnalyticsFitterOutcomesPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-analytics-fitter-outcomes").then((m) => ({
+    default: m.AdminAnalyticsFitterOutcomesPage,
+  })),
+);
 const AdminAnalyticsChannelEngagementPage = lazyWithRetry(() =>
   import("@/pages/admin/admin-analytics-channel-engagement").then((m) => ({
     default: m.AdminAnalyticsChannelEngagementPage,
@@ -274,6 +279,31 @@ const AdminInterventionsPage = lazyWithRetry(() =>
 const AdminMaskFitWorklistPage = lazyWithRetry(() =>
   import("@/pages/admin/admin-mask-fit-worklist").then((m) => ({
     default: m.AdminMaskFitWorklistPage,
+  })),
+);
+const AdminFitSessionsPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-fit-sessions").then((m) => ({
+    default: m.AdminFitSessionsPage,
+  })),
+);
+const AdminReferralsPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-referrals").then((m) => ({
+    default: m.AdminReferralsPage,
+  })),
+);
+const AdminMaskCatalogPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-mask-catalog").then((m) => ({
+    default: m.AdminMaskCatalogPage,
+  })),
+);
+const AdminSafetyScreensPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-safety-screens").then((m) => ({
+    default: m.AdminSafetyScreensPage,
+  })),
+);
+const AdminFormularyPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-formulary").then((m) => ({
+    default: m.AdminFormularyPage,
   })),
 );
 const AdminClinicalOutreachPage = lazyWithRetry(() =>
@@ -1210,6 +1240,10 @@ function AdminConsole() {
               component={AdminAnalyticsRevenueBySourcePage}
             />
             <Route
+              path="/admin/analytics/fitter-outcomes"
+              component={AdminAnalyticsFitterOutcomesPage}
+            />
+            <Route
               path="/admin/analytics/channel-engagement"
               component={AdminAnalyticsChannelEngagementPage}
             />
@@ -1245,6 +1279,32 @@ function AdminConsole() {
             <Route
               path="/admin/clinical/mask-fit"
               component={AdminMaskFitWorklistPage}
+            />
+            {/* The clinical fitting core. Deliberately NOT nested under
+                /admin/clinical/: that prefix is not on the mask_fitter
+                product-scope allowlist, so a fitter-only tenant would be
+                403'd out of its own product. */}
+            <Route
+              path="/admin/fit-sessions"
+              component={AdminFitSessionsPage}
+            />
+            {/* Inbound referrals from the provider portal. Top-level for
+                the same product-scope reason as fit-sessions above. */}
+            <Route
+              path="/admin/provider-referrals"
+              component={AdminReferralsPage}
+            />
+            <Route
+              path="/admin/fitter/catalog"
+              component={AdminMaskCatalogPage}
+            />
+            <Route
+              path="/admin/fitter/formulary"
+              component={AdminFormularyPage}
+            />
+            <Route
+              path="/admin/fitter/safety-screens"
+              component={AdminSafetyScreensPage}
             />
             <Route
               path="/admin/clinical/outreach"

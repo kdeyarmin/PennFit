@@ -49,7 +49,7 @@ const body = z
       // Exactly "PENN-" + 6 alphanumerics, or just the 6-char tail.
       // A shorter tail is brute-forceable in tens of thousands of
       // guesses; see ORDER_REFERENCE_PATTERN for the full rationale.
-      .regex(ORDER_REFERENCE_PATTERN, "must be a PennPaps order reference"),
+      .regex(ORDER_REFERENCE_PATTERN, "must be a valid order reference"),
     email: z.string().trim().toLowerCase().email().max(200),
   })
   .strict();

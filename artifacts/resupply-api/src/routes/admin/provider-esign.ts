@@ -218,11 +218,23 @@ async function inviteProviderUser(
   ).replace(/\/$/, "");
   const inviteLink = `${baseUrl}/reset-password?token=${encodeURIComponent(token.raw)}`;
 
+  // Brand the external clinician's invite with the inviting tenant's own
+  // identity (resolveBrandingByOrgId → the seed tenant's "PennPaps"/"Penn
+  // Home Medical Supply", the neutral CareMetric Breathe identity for an
+  // unconfigured tenant) so a non-seed tenant's provider never sees the
+  // seed brand. Resolved here rather than below because the attached PDFs
+  // carry the same name as the email body — they used to be hardcoded to
+  // the seed tenant while the body was already tenant-correct.
+  const branding = await resolveBrandingByOrgId(orgId);
+
   // Attach the provider portal getting-started guide. Best-effort —
   // an invite must never fail because the PDF didn't render.
   let attachments: Awaited<ReturnType<typeof buildInviteHelpAttachments>> = [];
   try {
-    attachments = await buildInviteHelpAttachments({ kind: "provider" });
+    attachments = await buildInviteHelpAttachments(
+      { kind: "provider" },
+      branding.storefrontName,
+    );
   } catch (err) {
     logger.warn(
       { err, event: "provider_invite_help_docs_render_failed" },
@@ -234,12 +246,6 @@ async function inviteProviderUser(
   // the provider has never had a password, and the email should explain
   // what they're being invited to (reviewing + e-signing their
   // patients' documents).
-  // Brand the external clinician's invite with the inviting tenant's own
-  // identity (resolveBrandingByOrgId → the seed tenant's "PennPaps"/"Penn
-  // Home Medical Supply", the neutral CareMetric Breathe identity for an
-  // unconfigured tenant) so a non-seed tenant's provider never sees the
-  // seed brand.
-  const branding = await resolveBrandingByOrgId(orgId);
   const rendered = renderProviderPortalInviteEmail(
     {
       productName: `${branding.storefrontName} Provider Portal`,

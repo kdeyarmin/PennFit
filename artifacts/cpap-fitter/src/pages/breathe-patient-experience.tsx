@@ -58,10 +58,12 @@ const EXPERIENCE: Cap[] = [
   {
     icon: <ScanFace size={20} />,
     title: "Fit a mask from the couch",
-    summary: "No in-person fitting, no guesswork.",
+    summary:
+      "No in-person fitting, no guesswork — and nothing to take on faith.",
     points: [
-      "The virtual fitter measures from a phone photo and recommends the size",
       "The image never leaves the browser — only measurements are used",
+      "They see their own measurement drawn against the size band it landed in",
+      "Safety questions are screened before anything is recommended, not after",
       "Fewer returns and exchanges from masks that fit the first time",
     ],
     gold: true,

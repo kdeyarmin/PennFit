@@ -25,6 +25,8 @@ import {
 } from "lucide-react";
 import { getMaskImage, formatMaskType } from "@/lib/mask-images";
 import { useCompanyContact } from "@/lib/contact";
+import { FitRangeDiagram } from "@/components/fit-range-diagram";
+import type { FitRangeRow } from "@/lib/fit-range-diagram";
 
 /**
  * MaskRecommendationCard — single, reusable card for one entry on the
@@ -41,11 +43,23 @@ export function MaskRecommendationCard({
   isTopPick,
   onChoose,
   cashPay,
+  measurements,
 }: {
   mask: MaskRecommendation;
   details: MaskEntry | undefined;
   isTopPick: boolean;
   onChoose: () => void;
+  /**
+   * The patient's own measurements, so the card can show the actual
+   * comparison the engine made against this mask's fit range. Optional:
+   * omitted (or paired with a mask carrying no ranges) simply hides the
+   * diagram rather than guessing at numbers.
+   */
+  measurements?: {
+    noseWidth: number;
+    noseToChin: number;
+    mouthWidth: number;
+  } | null;
   /**
    * Cash-pay path for this mask, present when it's sold in the shop
    * and checkout is live. Renders a secondary "buy without insurance"
@@ -59,6 +73,34 @@ export function MaskRecommendationCard({
 }) {
   const c = useCompanyContact();
   const confidencePct = Math.round(mask.confidence * 100);
+
+  // Only the three dimensions the catalog actually publishes a range for.
+  // A dimension with no range is left out rather than drawn against an
+  // invented one.
+  const ranges = details?.fitRanges;
+  const fitRows: FitRangeRow[] =
+    measurements && ranges
+      ? [
+          {
+            label: "Nose width",
+            value: measurements.noseWidth,
+            min: ranges.noseWidthMin,
+            max: ranges.noseWidthMax,
+          },
+          {
+            label: "Nose to chin",
+            value: measurements.noseToChin,
+            min: ranges.noseToChinMin,
+            max: ranges.noseToChinMax,
+          },
+          {
+            label: "Mouth width",
+            value: measurements.mouthWidth,
+            min: ranges.mouthWidthMin,
+            max: ranges.mouthWidthMax,
+          },
+        ]
+      : [];
 
   return (
     <Card
@@ -296,6 +338,8 @@ export function MaskRecommendationCard({
                 )}
               </div>
             )}
+
+            {fitRows.length > 0 && <FitRangeDiagram rows={fitRows} />}
           </div>
 
           <div className="mt-5 pt-5 border-t border-border/50">

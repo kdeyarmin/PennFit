@@ -605,6 +605,14 @@ const BreatheSwitchNikohealth = lazyWithRetry(() =>
     default: m.BreatheSwitchNikohealth,
   })),
 );
+// Point-solution comparison (not a platform migration): teams shopping a
+// stand-alone AI mask fitter against ours. Same lazy chunk as the switch
+// pages; leads with the fitting head-to-head, then the platform table.
+const BreatheVsSleepGlad = lazyWithRetry(() =>
+  import("@/pages/breathe-switch").then((m) => ({
+    default: m.BreatheVsSleepGlad,
+  })),
+);
 
 // Breathe — deep-dive "solution" pages. Long-form pages for the marquee
 // revenue drivers (the AI voice agent, the full revenue cycle) and the
@@ -653,6 +661,11 @@ const BreatheCompliance = lazyWithRetry(() =>
 const BreatheLocations = lazyWithRetry(() =>
   import("@/pages/breathe-locations").then((m) => ({
     default: m.BreatheLocations,
+  })),
+);
+const BreatheMaskFitting = lazyWithRetry(() =>
+  import("@/pages/breathe-mask-fitting").then((m) => ({
+    default: m.BreatheMaskFitting,
   })),
 );
 
@@ -845,6 +858,26 @@ function LegacyResupplyRedirect({ rest }: { rest: string }) {
     const path = rest ? `/admin/${rest}` : "/admin";
     setLocation(`${path}${search}${hash}`, { replace: true });
   }, [rest, setLocation]);
+  return null;
+}
+
+/**
+ * `/login` and `/signin` → whichever sign-in page actually applies to the
+ * host being browsed. Tenant hosts get the patient sign-in (the storefront's
+ * own `/sign-in`); the platform home host has no storefront at all, so the
+ * only account there is a staff/operator one at `/admin/sign-in`.
+ *
+ * Any `?redirect=` / `#hash` the caller carried is preserved so a deep link
+ * that bounced someone to /login still returns them where they were headed.
+ */
+function LoginAliasRedirect() {
+  const [, setLocation] = useLocation();
+  useEffect(() => {
+    const search = typeof window !== "undefined" ? window.location.search : "";
+    const hash = typeof window !== "undefined" ? window.location.hash : "";
+    const target = isPlatformHomeHost() ? "/admin/sign-in" : "/sign-in";
+    setLocation(`${target}${search}${hash}`, { replace: true });
+  }, [setLocation]);
   return null;
 }
 
@@ -1333,6 +1366,7 @@ function TopRouter() {
         <Route path="/breathe/analytics" component={BreatheAnalytics} />
         <Route path="/breathe/compliance" component={BreatheCompliance} />
         <Route path="/breathe/multi-location" component={BreatheLocations} />
+        <Route path="/breathe/mask-fitting" component={BreatheMaskFitting} />
         <Route
           path="/breathe/switch/brightree"
           component={BreatheSwitchBrightree}
@@ -1340,6 +1374,10 @@ function TopRouter() {
         <Route
           path="/breathe/switch/bonafide"
           component={BreatheSwitchBonafide}
+        />
+        <Route
+          path="/breathe/switch/sleepglad"
+          component={BreatheVsSleepGlad}
         />
         <Route
           path="/breathe/switch/nikohealth"
@@ -1354,6 +1392,21 @@ function TopRouter() {
         <Route path="/sign-in/*" component={SignInPage} />
         <Route path="/sign-up" component={SignUpPage} />
         <Route path="/sign-up/*" component={SignUpPage} />
+
+        {/*
+          "Where do I log in?" aliases. `/sign-in` is the canonical patient
+          route and `/admin/sign-in` the canonical staff one, but people type
+          /login and /signin — and hitting a 404 there is how a sign-in page
+          ends up feeling like it doesn't exist. On the platform's OWN host
+          (cmbreathe.com) there is no patient storefront, so the only sensible
+          destination is the staff/operator sign-in.
+        */}
+        <Route path="/login">
+          <LoginAliasRedirect />
+        </Route>
+        <Route path="/signin">
+          <LoginAliasRedirect />
+        </Route>
         <Route path="/forgot-password" component={ForgotPasswordPage} />
         <Route path="/reset-password" component={ResetPasswordPage} />
         <Route path="/verify-email" component={VerifyEmailPage} />
@@ -1383,6 +1436,13 @@ function TopRouter() {
           mounting the AppShell + admin Switch.
         */}
         <Route path="/admin/sign-in" component={AdminSignInPage} />
+        {/* Same "what would someone type?" aliases for the staff console. */}
+        <Route path="/admin/login">
+          <Redirect to="/admin/sign-in" replace />
+        </Route>
+        <Route path="/admin/signin">
+          <Redirect to="/admin/sign-in" replace />
+        </Route>
         <Route
           path="/admin/forgot-password"
           component={AdminForgotPasswordPage}

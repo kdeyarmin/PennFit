@@ -3,16 +3,35 @@ import type {
   FacialMeasurements,
   QuestionnaireAnswers,
 } from "@workspace/api-client-react/storefront";
+import type { ScanSignalsPayload } from "@/lib/scan-signals";
 
 export interface ChosenMask {
   maskId: string;
   name: string;
   modelNumber: string;
   manufacturer: string;
+  /**
+   * The size the fitting actually recommended, e.g. "Medium". Optional
+   * because the legacy `/api/recommend` path ranks masks without ever
+   * resolving a size — the clinical path (`/api/fit/assess`) does, and
+   * losing it between the results page and the order was a real gap: a
+   * mask ordered in the wrong size fits no better than the wrong mask.
+   */
+  size?: string | null;
 }
 
 interface FitterState {
   measurements: FacialMeasurements | null;
+  /**
+   * Scalar scan-quality signals for the frame the measurements came from
+   * (lighting, focus, pose, framing, cross-frame agreement, and the
+   * resulting measurement confidence). Set alongside `measurements` by
+   * /measure and posted with the clinical assessment, which otherwise
+   * substitutes a fixed neutral 0.7 — below its own high-confidence scan
+   * floor, so no fitting could ever be high confidence. Scalars only;
+   * nothing image-derived beyond these numbers is retained.
+   */
+  scanSignals: ScanSignalsPayload | null;
   answers: Partial<QuestionnaireAnswers>;
   capturedImage: string | null; // Data URL for display purposes only. Never uploaded.
   chosenMask: ChosenMask | null;
@@ -35,6 +54,18 @@ interface FitterState {
    * the patient's chart. Null for the normal public storefront flow.
    */
   inviteToken: string | null;
+  /**
+   * How the patient was put in front of the fitter — set from the `entry`
+   * query param on a referral fitting link. Without it every persisted
+   * session would record `remote_link`, silently mislabelling in-office
+   * and kiosk fittings and defeating any by-channel outcome comparison.
+   */
+  entryPoint:
+    | "remote_link"
+    | "in_office"
+    | "kiosk_qr"
+    | "refit_campaign"
+    | null;
 }
 
 interface FitterContextType extends FitterState {
@@ -46,7 +77,10 @@ interface FitterContextType extends FitterState {
    * patient isn't surprised mid-flow.
    */
   storagePersisted: boolean;
-  setMeasurements: (measurements: FacialMeasurements) => void;
+  setMeasurements: (
+    measurements: FacialMeasurements,
+    scanSignals?: ScanSignalsPayload | null,
+  ) => void;
   updateAnswers: (answers: Partial<QuestionnaireAnswers>) => void;
   setCapturedImage: (image: string | null) => void;
   setChosenMask: (mask: ChosenMask | null) => void;
@@ -57,6 +91,7 @@ interface FitterContextType extends FitterState {
 
 const FitterContext = createContext<FitterContextType | undefined>(undefined);
 const MEASUREMENTS_STORAGE_KEY = "fitter_measurements";
+const SCAN_SIGNALS_STORAGE_KEY = "fitter_scan_signals";
 
 /**
  * Write-probe sessionStorage. Reading `window.sessionStorage` alone
@@ -107,10 +142,37 @@ function readStoredMeasurements(): FacialMeasurements | null {
   }
 }
 
+/**
+ * Restore the persisted scan signals.
+ *
+ * Validated loosely on purpose: the API re-validates with a strict Zod
+ * schema, and a malformed blob here should degrade to "no signals"
+ * (the server's neutral default) rather than throw mid-flow.
+ */
+function readStoredScanSignals(): ScanSignalsPayload | null {
+  try {
+    const stored = sessionStorage.getItem(SCAN_SIGNALS_STORAGE_KEY);
+    if (!stored) return null;
+    const parsed: unknown = JSON.parse(stored);
+    if (!parsed || typeof parsed !== "object") return null;
+    const r = parsed as Record<string, unknown>;
+    if (typeof r.measurementConfidence !== "number") return null;
+    if (r.band !== "high" && r.band !== "moderate" && r.band !== "low") {
+      return null;
+    }
+    if (typeof r.frameCount !== "number") return null;
+    return parsed as ScanSignalsPayload;
+  } catch {
+    return null;
+  }
+}
+
 export function FitterProvider({ children }: { children: ReactNode }) {
   const [storagePersisted] = useState(probeSessionStorage);
   const [measurements, setMeasurementsState] =
     useState<FacialMeasurements | null>(readStoredMeasurements);
+  const [scanSignals, setScanSignalsState] =
+    useState<ScanSignalsPayload | null>(readStoredScanSignals);
 
   // Load initial answers from sessionStorage.
   const [answers, setAnswers] = useState<Partial<QuestionnaireAnswers>>(() => {
@@ -144,6 +206,18 @@ export function FitterProvider({ children }: { children: ReactNode }) {
   // Staff-invite token. Persisted in sessionStorage so it survives the
   // multi-page fitter flow (and a mid-flow refresh) and is still
   // available on /results to transmit the completed fitting.
+  const [entryPoint] = useState<
+    "remote_link" | "in_office" | "kiosk_qr" | "refit_campaign" | null
+  >(() => {
+    if (typeof window === "undefined") return null;
+    const raw = new URLSearchParams(window.location.search).get("entry");
+    return raw === "in_office" ||
+      raw === "kiosk_qr" ||
+      raw === "remote_link" ||
+      raw === "refit_campaign"
+      ? raw
+      : null;
+  });
   const [inviteToken, setInviteTokenState] = useState<string | null>(() => {
     try {
       return sessionStorage.getItem("fitter_invite_token");
@@ -213,8 +287,12 @@ export function FitterProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const setMeasurements = (nextMeasurements: FacialMeasurements) => {
+  const setMeasurements = (
+    nextMeasurements: FacialMeasurements,
+    nextScanSignals?: ScanSignalsPayload | null,
+  ) => {
     setMeasurementsState(nextMeasurements);
+    if (nextScanSignals !== undefined) setScanSignalsState(nextScanSignals);
     try {
       sessionStorage.setItem(
         MEASUREMENTS_STORAGE_KEY,
@@ -227,6 +305,16 @@ export function FitterProvider({ children }: { children: ReactNode }) {
           calibrationMethod: nextMeasurements.calibrationMethod,
         }),
       );
+      // Persisted separately so a refresh keeps the real signals rather
+      // than falling back to the server's neutral default.
+      if (nextScanSignals) {
+        sessionStorage.setItem(
+          SCAN_SIGNALS_STORAGE_KEY,
+          JSON.stringify(nextScanSignals),
+        );
+      } else if (nextScanSignals === null) {
+        sessionStorage.removeItem(SCAN_SIGNALS_STORAGE_KEY);
+      }
     } catch (e) {
       console.error("Failed to persist fitter measurements", e);
     }
@@ -234,6 +322,7 @@ export function FitterProvider({ children }: { children: ReactNode }) {
 
   const reset = () => {
     setMeasurementsState(null);
+    setScanSignalsState(null);
     setAnswers({});
     setCapturedImage(null);
     setChosenMaskState(null);
@@ -248,6 +337,7 @@ export function FitterProvider({ children }: { children: ReactNode }) {
       sessionStorage.removeItem("fitter_email_consent");
       sessionStorage.removeItem("fitter_invite_token");
       sessionStorage.removeItem(MEASUREMENTS_STORAGE_KEY);
+      sessionStorage.removeItem(SCAN_SIGNALS_STORAGE_KEY);
     } catch {
       // Storage unusable — nothing was persisted, nothing to clear.
     }
@@ -257,12 +347,14 @@ export function FitterProvider({ children }: { children: ReactNode }) {
     <FitterContext.Provider
       value={{
         measurements,
+        scanSignals,
         answers,
         capturedImage,
         chosenMask,
         email,
         emailConsent,
         inviteToken,
+        entryPoint,
         storagePersisted,
         setMeasurements,
         updateAnswers,

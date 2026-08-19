@@ -25,7 +25,10 @@
 //     logged; failures log only a shape.
 
 import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
-import { resolvePlanFlagPreset } from "@workspace/resupply-domain";
+import {
+  isPresetExemptFlag,
+  resolvePlanFlagPreset,
+} from "@workspace/resupply-domain";
 import {
   hashPassword,
   issueToken,
@@ -150,7 +153,13 @@ async function provisionFeatureFlags(
     return {
       org_id: newOrgId,
       key,
-      enabled: preset ? preset.has(key) : (f as { enabled: boolean }).enabled,
+      // Preset-exempt keys (`module.*`) keep the seed catalog's value —
+      // a plan bundle doesn't list them, and "not listed" means OFF, which
+      // would hand a brand-new tenant an empty sidebar.
+      enabled:
+        preset && !isPresetExemptFlag(key)
+          ? preset.has(key)
+          : (f as { enabled: boolean }).enabled,
       description: (f as { description: string | null }).description,
       category: (f as { category: string | null }).category,
     };
@@ -162,6 +171,56 @@ async function provisionFeatureFlags(
     .upsert(rows, { onConflict: "org_id,key", ignoreDuplicates: true });
   if (insErr) throw insErr;
   return rows.length;
+}
+
+/**
+ * Give the new tenant its own default mask formulary.
+ *
+ * Migration 0482 seeds one per org, but a migration only covers the orgs
+ * that existed when it ran. Without this, a tenant created afterwards has
+ * NO active formulary — and the fitting engine's fallback for that is
+ * `OPEN_FORMULARY`, whose id is null and version is 0. Every fit report
+ * that tenant produced would then be stamped with a formulary the
+ * operator cannot find, edit, or version, which defeats the provenance
+ * the report exists to provide.
+ *
+ * 'open' posture with zero rules is exactly the pre-formulary behaviour —
+ * every catalog mask is dispensable — so this changes nothing about what
+ * gets recommended. It only makes the provenance real.
+ *
+ * `formularies` has a partial UNIQUE (org_id) WHERE is_default, so a
+ * re-run is a no-op rather than a duplicate.
+ */
+async function provisionDefaultFormulary(
+  raw: RawClient,
+  orgId: string,
+): Promise<void> {
+  const { data: existing, error: readErr } = await raw
+    .schema("resupply")
+    .from("formularies")
+    .select("id")
+    .eq("org_id", orgId)
+    .limit(1)
+    .maybeSingle();
+  if (readErr) throw readErr;
+  if (existing) return;
+
+  const { error } = await raw
+    .schema("resupply")
+    .from("formularies")
+    .insert({
+      org_id: orgId,
+      name: "Default formulary",
+      status: "active",
+      default_posture: "open",
+      is_default: true,
+      version: 1,
+      notes:
+        "Created automatically when this workspace was provisioned. Open " +
+        "posture with no rules means every mask in the catalog is " +
+        "dispensable. Add rules to shape it.",
+    });
+  if (error) throw error;
 }
 
 /**
@@ -346,6 +405,16 @@ export async function createSelfServeTenant(
     logger.warn(
       { event: "tenant_signup_flag_provision_failed", orgId, err },
       "tenant signup: feature-flag provisioning failed",
+    );
+  }
+
+  // 3b. Default mask formulary — best-effort, same posture as the flags.
+  try {
+    await provisionDefaultFormulary(raw, orgId);
+  } catch (err) {
+    logger.warn(
+      { event: "tenant_signup_formulary_provision_failed", orgId, err },
+      "tenant signup: default formulary provisioning failed",
     );
   }
 

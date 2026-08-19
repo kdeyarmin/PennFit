@@ -54,6 +54,7 @@ import {
 type ShopOrderUpdate = Database["resupply"]["Tables"]["shop_orders"]["Update"];
 
 import { logAudit } from "@workspace/resupply-audit";
+import { markFitSessionDispensed } from "../../lib/fitting/order-link";
 import { requirePermission } from "../../middlewares/requireAdmin";
 import { rateLimit } from "../../middlewares/rate-limit";
 import { withMetrics } from "../../lib/observability";
@@ -439,8 +440,14 @@ export async function sendShippingNotificationIfNew(args: {
     // only; the helper itself never logs the payload or endpoint URL.
     if (claimedRow.customer_id) {
       try {
+        // Tenant-branded, not hardcoded: this push reaches the patient
+        // verbatim and never passes the I/O-boundary rename that email
+        // copy does, so a literal here showed the seed tenant's name to
+        // every other tenant's patients. Same resolver and same field as
+        // the email above, so the two channels can't disagree on the brand.
+        const pushBrand = await resolveBrandingByOrgId(orgId);
         const counts = await sendPushToCustomer(orgId, claimedRow.customer_id, {
-          title: "Your PennPaps order shipped",
+          title: `Your ${pushBrand.storefrontName} order shipped`,
           body: `${claimedRow.tracking_carrier} · ${claimedRow.tracking_number}`,
           url: "/account/orders",
           tag: `shop_order_shipped:${claimedRow.id}`,
@@ -1133,6 +1140,12 @@ router.post(
       "admin/shop/orders: marked delivered",
     );
 
+    // Stamp the dispense on the fitting this order came from, if any.
+    // Mirrors the carrier-webhook path; both are guarded on
+    // `dispensed_at IS NULL`, so whichever marks delivery first counts and
+    // the other is a no-op. Never fatal to the delivery transition.
+    await markFitSessionDispensed(orgId, orderId);
+
     // Best-effort: when the auto-send flag is on and this order's
     // customer is linked to a patient, email them their new-patient
     // signature packet. Feature-flag-gated, one-time per patient, and
@@ -1492,8 +1505,9 @@ async function sendReadyForPickupNotificationIfNew(args: {
     // Best-effort push fan-out — same news, separate channel.
     if (claimedRow.customer_id) {
       try {
+        const pushBrand = await resolveBrandingByOrgId(orgId);
         await sendPushToCustomer(orgId, claimedRow.customer_id, {
-          title: "Your PennPaps order is ready for pickup",
+          title: `Your ${pushBrand.storefrontName} order is ready for pickup`,
           body: `Ready to collect at ${location.name}`,
           url: "/account/orders",
           tag: `shop_order_ready_for_pickup:${claimedRow.id}`,

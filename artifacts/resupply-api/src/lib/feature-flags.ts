@@ -110,6 +110,45 @@ export const FEATURE_FLAG_KEYS = [
   "slack.notifications",
   "slack.interactivity",
   "slack.digests",
+  // Clinical fitting core (migration 0485). Every patient-visible one is
+  // seeded OFF; `fitter.clinical_assessment` is the master switch the
+  // others depend on.
+  "fitter.clinical_assessment",
+  "fitter.multiframe_capture",
+  "fitter.fit_profile_v2",
+  "fitter.magnet_screening",
+  "fitter.confidence_gating",
+  "fitter.clinical_report",
+  // App modules (migration 0488). Unlike every key above — which gates a
+  // BEHAVIOUR (does the dispatcher send? does auto-submit run?) — a
+  // `module.*` key gates a NAVIGABLE part of the admin console. Turning
+  // one off removes its section from the sidebar and turns a deep link
+  // into a "this part of the app is turned off" notice, so a tenant only
+  // navigates the parts of the product it actually uses. All seeded ON.
+  //
+  // These are scope controls, not authorization: the server-side
+  // requireAdmin / requirePermission gates are unchanged, and no data is
+  // deleted or made unreachable by an API client. Keep the list in
+  // lockstep with migration 0488 and with APP_MODULES in
+  // artifacts/cpap-fitter/src/lib/admin/app-modules.ts.
+  "module.front_desk",
+  "module.conversations",
+  "module.schedule",
+  "module.outreach",
+  "module.documents",
+  "module.therapy",
+  "module.clinical",
+  "module.providers",
+  "module.storefront",
+  "module.inventory",
+  "module.billing",
+  "module.analytics",
+  "module.automation",
+  "module.integrations",
+  "module.support",
+  // Proactive re-fit outreach to patients already on service (0490).
+  // Seeded OFF — unsolicited patient contact is the tenant's call.
+  "fitter.refit_campaign",
 ] as const;
 
 export type FeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];
@@ -327,12 +366,101 @@ export async function isFeatureEnabled(
   }
 }
 
+// ── Bulk read: which flags are OFF for a tenant ───────────────────────
+//
+// `isFeatureEnabled` is the right shape for a route asking about ONE
+// flag. The admin SPA needs the opposite: a single answer covering the
+// whole catalog, so it can subtract disabled modules from the sidebar in
+// one pass without ~90 round-trips on every /me.
+//
+// We return the DISABLED set rather than the enabled one on purpose:
+// it's the shorter list (flags are overwhelmingly on), and — more
+// importantly — it degrades in the safe direction. An empty result means
+// "nothing is hidden", so a client that fails to read this, or reads it
+// during a blip, shows the full console rather than an empty sidebar.
+
+const disabledCache = new Map<string, { keys: string[]; expiresAt: number }>();
+
+/** Rows for one org, or null when the org has no feature_flags rows. */
+async function readFlagRows(
+  orgId: string,
+): Promise<Array<{ key: string; enabled: boolean }> | null> {
+  const { data, error } = await getOrgScopedClient(orgId)
+    .from("feature_flags")
+    .select("key, enabled");
+  if (error) throw error;
+  const rows = (data ?? []) as Array<{ key: string; enabled: boolean }>;
+  return rows.length > 0 ? rows : null;
+}
+
+/**
+ * Every flag key currently turned OFF for `orgId`, mirroring
+ * `isFeatureEnabled`'s per-tenant resolution: a tenant with no rows of
+ * its own inherits the seed tenant's catalog (the platform default).
+ *
+ * Posture — deliberately the OPPOSITE of `isFeatureEnabled`. That
+ * function fails CLOSED (a flag whose state we can't read is treated as
+ * off) because the things it gates SEND: texts, calls, claims, charges.
+ * Doing something on bad information is worse than doing nothing.
+ *
+ * This function only decides what the console DRAWS. Failing closed here
+ * would mean an unreachable database empties an operator's sidebar
+ * mid-shift — a self-inflicted outage of the UI, on a signal that grants
+ * no access either way (every route behind those nav entries is still
+ * gated server-side by requireAdmin / requirePermission). So a read
+ * failure yields an EMPTY set: show everything, hide nothing, and let
+ * the real gates do the real work.
+ */
+export async function listDisabledFeatures(orgId?: string): Promise<string[]> {
+  const now = Date.now();
+  try {
+    let seedOrgId: string | null = null;
+    try {
+      seedOrgId = await withLookupTimeout(() => resolveSeedOrgId());
+    } catch {
+      seedOrgId = null;
+    }
+    const effectiveOrgId = orgId ?? seedOrgId;
+    if (!effectiveOrgId) return [];
+
+    const cached = disabledCache.get(effectiveOrgId);
+    if (cached && cached.expiresAt > now) return cached.keys;
+
+    const rows = await withLookupTimeout(async () => {
+      const own = await readFlagRows(effectiveOrgId);
+      if (own) return own;
+      // Un-provisioned tenant: inherit the seed catalog, same as the
+      // single-key path does.
+      if (seedOrgId && effectiveOrgId !== seedOrgId) {
+        return (await readFlagRows(seedOrgId)) ?? [];
+      }
+      return [];
+    });
+
+    const keys = rows
+      .filter((r) => !r.enabled)
+      .map((r) => r.key)
+      .sort();
+    disabledCache.set(effectiveOrgId, { keys, expiresAt: now + CACHE_TTL_MS });
+    return keys;
+  } catch (err) {
+    logger.warn(
+      { event: "feature_flag_bulk_lookup_failed", err },
+      "disabled-feature lookup failed; reporting none disabled (show everything)",
+    );
+    return [];
+  }
+}
+
 /**
  * Drop cached entries so a recent toggle write becomes visible. Pass
  * a key to invalidate a single flag; pass nothing to clear everything
  * (used by tests).
  */
 export function invalidateFeatureFlagCache(key?: FeatureFlagKey): void {
+  // The bulk (per-org) cache holds every key for an org, so a single-key
+  // toggle invalidates it wholesale either way.
+  disabledCache.clear();
   if (!key) {
     cache.clear();
     return;

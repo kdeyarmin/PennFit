@@ -158,5 +158,5 @@ export function getStripeClient(config: StripeConfig): Stripe {
 export const SHOP_UNAVAILABLE_BODY = {
   error: "shop_unavailable",
   message:
-    "The PennPaps shop isn't configured in this environment yet. Please check back soon.",
+    "The shop isn't configured in this environment yet. Please check back soon.",
 } as const;

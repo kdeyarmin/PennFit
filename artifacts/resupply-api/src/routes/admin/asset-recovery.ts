@@ -32,6 +32,7 @@ import { selectAdapter } from "../../lib/carrier-labels";
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
+import { getCompanyInfo } from "../../lib/company-info.js";
 
 const router: IRouter = Router();
 
@@ -379,10 +380,15 @@ router.post(
     // placeholder addresses are never transmitted. Mirrors the existing
     // /admin/shop/returns/:id/label posture.
     const adapter = selectAdapter();
+    // The return address a carrier prints. Tenant-resolved: a literal
+    // here would put the seed tenant's name on every other tenant's
+    // return labels the moment a real carrier adapter replaces the null
+    // one. (Today the adapter 503s, so this is latent, not live.)
+    const company = await getCompanyInfo(orgId);
     const result = await adapter.createLabel({
       kind: "return",
       to: {
-        name: "PennPaps Returns",
+        name: `${company.name} Returns`,
         line1: "—",
         city: "—",
         state: "—",

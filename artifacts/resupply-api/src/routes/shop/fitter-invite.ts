@@ -71,7 +71,7 @@ router.get("/shop/fitter-invite/resolve", resolveLimiter, async (req, res) => {
   const supabase = getOrgScopedClient(orgId);
   const { data: invite, error } = await supabase
     .from("fitter_invites")
-    .select("id, status, recipient_email, recipient_name, expires_at")
+    .select("id, status, channel, recipient_email, recipient_name, expires_at")
     .eq("id", verified.inviteId)
     .limit(1)
     .maybeSingle();
@@ -135,10 +135,23 @@ router.get("/shop/fitter-invite/resolve", resolveLimiter, async (req, res) => {
     }
   }
 
+  // Prefill is suppressed for an in-office invite (migration 0489).
+  //
+  // That QR is DISPLAYED on a staff screen in a semi-public space, which
+  // is a different exposure from a link mailed to one person. Anyone who
+  // photographs it can call this endpoint, and the create route resolves
+  // the chart's email and name onto a patient-linked invite before it
+  // ever looks at the channel — so echoing them back here would hand a
+  // bystander another patient's identifying details.
+  //
+  // Nothing is lost by withholding them: the patient is standing at the
+  // counter with staff who already know who they are, and the fields
+  // stay on the row server-side so a later rescan can still reach them.
+  const inOffice = invite.channel === "in_office";
   res.json({
     valid: true,
-    email: invite.recipient_email,
-    name: invite.recipient_name,
+    email: inOffice ? null : invite.recipient_email,
+    name: inOffice ? null : invite.recipient_name,
   });
 });
 

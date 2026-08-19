@@ -546,3 +546,63 @@ describe("POST /shop/checkout — subscription mode (signed-in)", () => {
     expect(sessionCreateMock).not.toHaveBeenCalled();
   });
 });
+
+describe("POST /shop/checkout — fitting attribution", () => {
+  // The Session's metadata is the only channel that survives the trip to
+  // Stripe and back, so if these keys don't land here, the webhook has
+  // nothing to link and `fit_sessions.shop_order_id` stays null forever.
+  const FIT_SESSION_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const VARIANT_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+
+  it("stamps the fit session, mask and variant onto the session metadata", async () => {
+    stubSignedIn();
+    stubStripeConfigured();
+    stubCartValid();
+
+    const res = await request(makeApp())
+      .post("/shop/checkout")
+      .send({
+        items: [{ priceId: PRICE_ID, quantity: 1 }],
+        fitSessionId: FIT_SESSION_ID,
+        orderedMaskSlug: "resmed-airfit-f20",
+        orderedVariantId: VARIANT_ID,
+      });
+
+    expect(res.status).toBe(200);
+    const [params] = sessionCreateMock.mock.calls[0]!;
+    expect(params.metadata.fit_session_id).toBe(FIT_SESSION_ID);
+    expect(params.metadata.fit_ordered_mask_slug).toBe("resmed-airfit-f20");
+    expect(params.metadata.fit_ordered_variant_id).toBe(VARIANT_ID);
+  });
+
+  it("leaves the keys off entirely for an ordinary shop checkout", async () => {
+    stubSignedIn();
+    stubStripeConfigured();
+    stubCartValid();
+
+    const res = await request(makeApp())
+      .post("/shop/checkout")
+      .send({ items: [{ priceId: PRICE_ID, quantity: 1 }] });
+
+    expect(res.status).toBe(200);
+    const [params] = sessionCreateMock.mock.calls[0]!;
+    expect(params.metadata).not.toHaveProperty("fit_session_id");
+    expect(params.metadata).not.toHaveProperty("fit_ordered_mask_slug");
+  });
+
+  it("rejects a fit session id that isn't a uuid rather than stamping junk", async () => {
+    stubSignedIn();
+    stubStripeConfigured();
+    stubCartValid();
+
+    const res = await request(makeApp())
+      .post("/shop/checkout")
+      .send({
+        items: [{ priceId: PRICE_ID, quantity: 1 }],
+        fitSessionId: "not-a-uuid",
+      });
+
+    expect(res.status).toBe(400);
+    expect(sessionCreateMock).not.toHaveBeenCalled();
+  });
+});

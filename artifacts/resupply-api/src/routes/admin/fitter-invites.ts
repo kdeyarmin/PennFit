@@ -37,6 +37,7 @@ import { logger } from "../../lib/logger";
 import { resolveTenantSmsClientOptions } from "../../lib/messaging/tenant-telecom";
 import { resolveBrandingByOrgId } from "../../lib/tenant-branding.js";
 import {
+  FITTER_INVITE_IN_OFFICE_TTL_MS,
   FITTER_INVITE_TTL_MS,
   signFitterInviteToken,
 } from "../../lib/fitter-invite-token";
@@ -221,7 +222,10 @@ const createBody = z
       .regex(E164_RE, "Must be E.164 format, e.g. +12155551234")
       .optional(),
     name: z.string().trim().min(1).max(200).optional(),
-    channel: z.enum(["email", "sms"]),
+    // "in_office" (migration 0489) creates the invite without sending
+    // anything: the signed link comes back in the response and is handed
+    // over at the counter as a QR code the patient scans themselves.
+    channel: z.enum(["email", "sms", "in_office"]),
   })
   .strict();
 
@@ -283,7 +287,10 @@ router.post(
       }
     }
 
-    // The chosen channel must have a contact to deliver to.
+    // The chosen channel must have a contact to deliver to. An in-office
+    // invite is handed over directly, so it needs none — a walk-in
+    // prospect may have no email or phone on file yet, and demanding one
+    // to scan a QR the patient is standing in front of would be absurd.
     if (body.channel === "email" && !recipientEmail) {
       res.status(422).json({
         error: "email_required",
@@ -301,10 +308,15 @@ router.post(
       return;
     }
 
+    const inOffice = body.channel === "in_office";
+    // A QR on a staff screen sits in a semi-public space, so it expires
+    // with the visit rather than in a month — see the constant's comment.
+    const ttlMs = inOffice
+      ? FITTER_INVITE_IN_OFFICE_TTL_MS
+      : FITTER_INVITE_TTL_MS;
+
     const nowIso = new Date().toISOString();
-    const expiresIso = new Date(
-      Date.now() + FITTER_INVITE_TTL_MS,
-    ).toISOString();
+    const expiresIso = new Date(Date.now() + ttlMs).toISOString();
     const insert: FitterInvitesInsert = {
       patient_id: patientId,
       recipient_email: recipientEmail,
@@ -326,16 +338,22 @@ router.post(
     if (insertErr) throw insertErr;
     if (!row) throw new Error("fitter_invites insert returned no rows");
 
-    const token = signFitterInviteToken(row.id);
+    const token = signFitterInviteToken(row.id, new Date(), ttlMs);
     const link = inviteLinkFor(token);
-    const delivery = await deliverInvite({
-      channel: body.channel,
-      orgId,
-      email: recipientEmail,
-      phone: recipientPhone,
-      name: recipientName,
-      link,
-    });
+    // Nothing is sent for an in-office invite: the patient is here, and
+    // the handover IS the delivery. Reported as delivered so the caller's
+    // success check stays uniform, without claiming a message went out.
+    const delivery =
+      body.channel === "in_office"
+        ? { delivered: true as const, reason: null }
+        : await deliverInvite({
+            channel: body.channel,
+            orgId,
+            email: recipientEmail,
+            phone: recipientPhone,
+            name: recipientName,
+            link,
+          });
 
     await logAudit({
       action: "fitter.invite.sent",
@@ -362,8 +380,9 @@ router.post(
       delivered: delivery.delivered,
       deliveryError: delivery.delivered ? null : (delivery.reason ?? null),
       // Always returned so staff can copy/share the link directly
-      // (e.g. read it aloud in-office or paste into another channel).
+      // (rendered as a QR in-office, or pasted into another channel).
       inviteLink: link,
+      expiresAt: expiresIso,
     });
   },
 );
@@ -816,21 +835,30 @@ router.post(
     // Re-mint a fresh token (extends the expiry window) and re-arm the
     // row to 'sent' so a previously-opened-but-abandoned invite reads
     // cleanly in the worklist again.
-    const token = signFitterInviteToken(invite.id);
+    const inOffice = invite.channel === "in_office";
+    const ttlMs = inOffice
+      ? FITTER_INVITE_IN_OFFICE_TTL_MS
+      : FITTER_INVITE_TTL_MS;
+    const token = signFitterInviteToken(invite.id, new Date(), ttlMs);
     const link = inviteLinkFor(token);
-    const delivery = await deliverInvite({
-      channel: invite.channel,
-      orgId,
-      email: invite.recipient_email,
-      phone: invite.recipient_phone_e164,
-      name: invite.recipient_name,
-      link,
-    });
+    // "Resend" on an in-office invite means "show the QR again" — there
+    // is no address to send to, and the row may have none. Re-minting
+    // still does the useful half: a fresh, un-expired link.
+    const delivery =
+      invite.channel === "in_office"
+        ? { delivered: true as const, reason: null }
+        : await deliverInvite({
+            channel: invite.channel,
+            orgId,
+            email: invite.recipient_email,
+            phone: invite.recipient_phone_e164,
+            name: invite.recipient_name,
+            link,
+          });
 
     const nowIso = new Date().toISOString();
-    const expiresIso = new Date(
-      Date.now() + FITTER_INVITE_TTL_MS,
-    ).toISOString();
+    // Keep the stored expiry in step with the token that was just minted.
+    const expiresIso = new Date(Date.now() + ttlMs).toISOString();
     const { error: updErr } = await supabase
       .from("fitter_invites")
       .update({

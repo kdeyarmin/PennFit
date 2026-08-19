@@ -3,6 +3,7 @@ import { createHmac } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
+  FITTER_INVITE_IN_OFFICE_TTL_MS,
   FITTER_INVITE_TTL_MS,
   signFitterInviteToken,
   verifyFitterInviteToken,
@@ -89,5 +90,49 @@ describe("fitter-invite-token", () => {
       .replaceAll("=", "");
     const result = verifyFitterInviteToken(`${payload}.${sig}`);
     expect(result).toEqual({ valid: false, reason: "malformed" });
+  });
+  // ── In-office short window (migration 0489) ──────────────────────
+
+  it("honours a shorter TTL for an in-office QR", () => {
+    const now = new Date("2026-08-18T09:00:00Z");
+    const token = signFitterInviteToken(
+      "invite-1",
+      now,
+      FITTER_INVITE_IN_OFFICE_TTL_MS,
+    );
+
+    // Live during the visit…
+    expect(
+      verifyFitterInviteToken(token, new Date("2026-08-18T20:00:00Z")),
+    ).toEqual({ valid: true, inviteId: "invite-1" });
+
+    // …and dead the next morning, where a mailed link would still work.
+    // A QR displayed on a counter screen shouldn't outlive the visit.
+    expect(
+      verifyFitterInviteToken(token, new Date("2026-08-19T09:00:00Z")),
+    ).toEqual({ valid: false, reason: "expired" });
+  });
+
+  it("still defaults to the long window when no TTL is passed", () => {
+    // The default must not drift to the in-office window — mailed invites
+    // rely on a patient getting round to it days later.
+    const now = new Date("2026-08-18T09:00:00Z");
+    const token = signFitterInviteToken("invite-1", now);
+    expect(
+      verifyFitterInviteToken(token, new Date("2026-08-19T09:00:00Z")),
+    ).toEqual({ valid: true, inviteId: "invite-1" });
+  });
+
+  it("cannot have its expiry extended after minting", () => {
+    // The expiry lives inside the signed payload, so widening the window
+    // means minting a new token — an old QR can never be revived.
+    const now = new Date("2026-08-18T09:00:00Z");
+    const short = signFitterInviteToken(
+      "invite-1",
+      now,
+      FITTER_INVITE_IN_OFFICE_TTL_MS,
+    );
+    const long = signFitterInviteToken("invite-1", now, FITTER_INVITE_TTL_MS);
+    expect(short).not.toBe(long);
   });
 });

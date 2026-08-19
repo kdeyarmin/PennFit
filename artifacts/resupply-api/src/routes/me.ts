@@ -3,7 +3,7 @@ import { Router, type IRouter } from "express";
 import { permissionsForRole } from "@workspace/resupply-auth";
 
 import { getPendingAgreementTypes } from "../lib/agreements/status";
-import { isFeatureEnabled } from "../lib/feature-flags";
+import { isFeatureEnabled, listDisabledFeatures } from "../lib/feature-flags";
 import { resolveTenantProductScope } from "../lib/product-scope";
 import { adminReadRateLimiter } from "../middlewares/admin-rate-limit";
 import { requireAdmin } from "../middlewares/requireAdmin";
@@ -84,6 +84,14 @@ router.get("/me", adminReadRateLimiter, requireAdmin, async (req, res) => {
   const productScope = req.impersonation
     ? "full"
     : await resolveTenantProductScope(req.orgId);
+  // App modules + every other flag this tenant has switched OFF. The SPA
+  // subtracts these from the sidebar so an operator only navigates the
+  // parts of the product they actually use (`module.*`), and so a page
+  // whose feature is off stops advertising itself. Purely presentational
+  // — the server-side permission gates are unchanged, and the lookup
+  // reports NOTHING disabled if it can't read the table, so a DB blip
+  // shows the full console rather than an empty one.
+  const disabledFeatures = await listDisabledFeatures(req.orgId);
   res.json({
     userId: req.adminUserId ?? "",
     email: req.adminEmail ?? "",
@@ -104,6 +112,7 @@ router.get("/me", adminReadRateLimiter, requireAdmin, async (req, res) => {
     impersonation: req.impersonation === true,
     impersonatedOrgId: req.impersonation === true ? (req.orgId ?? null) : null,
     pendingAgreements,
+    disabledFeatures,
   });
 });
 

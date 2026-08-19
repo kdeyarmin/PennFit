@@ -295,6 +295,31 @@
 .bx-nav-links a.bx-nav-anchor.is-active::after {
   width: 100%;
 }
+/* "Sign in" — the returning-customer entry point. Deliberately styled as a
+   control rather than a plain nav word: it sits between the marketing links
+   and the two CTAs, and a bare text link there reads as one more page name
+   and gets scanned past (which is exactly how it went missing before). The
+   icon + rule give it just enough weight to be findable without competing
+   with the primary "Start free demo" button. */
+.bx-nav-links a.bx-nav-signin {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--bx-text);
+  font-weight: 600;
+  padding: 7px 13px;
+  border-radius: 10px;
+  border: 1px solid var(--bx-line-strong);
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease,
+    color 0.18s ease;
+}
+.bx-nav-links a.bx-nav-signin:hover {
+  color: var(--bx-cyan);
+  border-color: var(--bx-cyan);
+  background: rgba(255, 255, 255, 0.05);
+}
 /* Mobile menu (toggle hidden on desktop; the page-nav links collapse into
    a dropdown under 900px so the split-out routes stay reachable on phones). */
 .bx-nav-toggle {
@@ -1748,6 +1773,13 @@
   width: 100%;
   height: auto;
   aspect-ratio: 16 / 10;
+}
+/* A captured UI fragment rather than a full screen — the fit-range diagram
+   is ~3.4:1, so it must keep its own aspect ratio instead of the 16:10 the
+   full-screen shots reserve. Selector matches `.bx-shotcard-frame img`'s
+   specificity plus one class so it wins without !important. */
+.bx-shotcard-frame img.bx-shot-natural {
+  aspect-ratio: auto;
 }
 .bx-shotcard figcaption {
   margin-top: 14px;

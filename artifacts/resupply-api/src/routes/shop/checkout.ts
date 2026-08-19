@@ -36,6 +36,11 @@ import {
   readStripeConfigOrNull,
 } from "../../lib/stripe/config";
 import { isFeatureEnabled } from "../../lib/feature-flags";
+import {
+  FIT_ORDERED_MASK_METADATA_KEY,
+  FIT_ORDERED_VARIANT_METADATA_KEY,
+  FIT_SESSION_METADATA_KEY,
+} from "../../lib/fitting/order-link";
 import { getActivePickupLocationById } from "../../lib/pickup/locations";
 import { getOrCreateStripeCustomer } from "../../lib/stripe/customer";
 import { stripeAccountRequestOptions } from "../../lib/stripe/connect";
@@ -81,6 +86,28 @@ const checkoutBody = z
       )
       .min(1)
       .max(20),
+    /**
+     * Set when this checkout came from the mask fitter, so the paid order
+     * can be linked back to the fitting that produced it (0483's
+     * downstream-outcome columns). Optional — most shop checkouts are
+     * ordinary resupply and carry neither field.
+     */
+    fitSessionId: z.string().uuid().optional(),
+    /**
+     * The mask the patient actually chose on the results page, as the
+     * engine's slug. Deliberately NOT assumed to be the recommendation:
+     * they may well have picked an alternative, and that difference is
+     * what the acceptance metric measures.
+     */
+    orderedMaskSlug: z
+      .string()
+      .trim()
+      .min(1)
+      .max(120)
+      .regex(/^[a-z0-9-]+$/)
+      .optional(),
+    /** Size variant behind that choice, so the size is auditable too. */
+    orderedVariantId: z.string().uuid().optional(),
     /**
      * Where Stripe redirects after success. Must be on our public
      * origin. We don't accept arbitrary redirects from clients —
@@ -175,7 +202,7 @@ router.post(
       res.status(401).json({
         error: "sign_in_required",
         message:
-          "You'll need to sign in before subscribing — auto-ship is tied to your PennPaps account so you can pause or cancel anytime.",
+          "You'll need to sign in before subscribing — auto-ship is tied to your account so you can pause or cancel anytime.",
       });
       return;
     }
@@ -381,6 +408,17 @@ router.post(
       // would fall back to the seed org, orphan the pending row, and write the
       // paid order into the seed tenant's books (multi-tenant mis-attribution).
       ...(req.orgId ? { org_id: req.orgId } : {}),
+      // Fitting attribution, read back by the webhook. Absent for an
+      // ordinary shop checkout.
+      ...(parsed.data.fitSessionId
+        ? { [FIT_SESSION_METADATA_KEY]: parsed.data.fitSessionId }
+        : {}),
+      ...(parsed.data.orderedMaskSlug
+        ? { [FIT_ORDERED_MASK_METADATA_KEY]: parsed.data.orderedMaskSlug }
+        : {}),
+      ...(parsed.data.orderedVariantId
+        ? { [FIT_ORDERED_VARIANT_METADATA_KEY]: parsed.data.orderedVariantId }
+        : {}),
     };
 
     let session;

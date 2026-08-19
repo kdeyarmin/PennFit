@@ -190,18 +190,35 @@ const CAPABILITIES: Capability[] = [
       "AI referral intake: faxed packets are read and used to pre-fill a patient",
       "One-click CMN, Rx and agreement generation plus e-signature packets",
       "A provider e-sign portal with full signature tracking",
+      "A referral portal for your prescribers: a queue they clear, batch signing, shared documents and threaded messages",
+      "Two-factor sign-in on the provider portal — a verified prescriber, not a shared link",
       "Inbound faxes triaged straight onto the right patient record",
     ],
   },
   {
+    icon: <ScanFace size={20} />,
+    title: "Clinical mask fitting",
+    summary: "The fitting moment, built like a clinical instrument.",
+    points: [
+      "On-device AI measurement from the patient's own phone — the image never leaves the browser",
+      "Start it three ways: a QR code at your counter, a text or email link, or re-fit outreach to patients already on service",
+      "Safety and therapy compatibility are hard filters — no margin or stock level can outrank a contraindication",
+      "Magnetic-implant screening that covers the household, and offers the magnet-free version of the same mask first",
+      "Millimetre size bands your own clinician signs off, with the evidence recorded on every fit report",
+      "A fit report naming every mask ruled out and the rule that ruled it out",
+      "A fitter-outcomes dashboard: refit rate, acceptance, override reasons and scan quality on your own patients — split by counter, link, or re-fit outreach",
+      "Revise the safety questions yourself when a manufacturer updates a warning — versioned, no release required",
+    ],
+  },
+  {
     icon: <Store size={20} />,
-    title: "Branded storefront and fitter",
+    title: "Branded storefront",
     summary: "A shop that converts shoppers into patients.",
     points: [
-      "Virtual mask fitter — patients self-fit at home, no staff fittings, no wasted masks",
       "Catalog, cart, Stripe checkout, subscriptions, returns and reviews",
       "Live insurance benefit estimates before a patient ever pays",
       "Your brand, your domain — patient accounts, tracking and POD photos",
+      "Cash-pay checkout straight from a fitting result, insurance path alongside it",
     ],
   },
   {
@@ -232,7 +249,8 @@ const CAPABILITIES: Capability[] = [
       "Multi-location, your business kept separate and private, and you stay in control.",
     points: [
       "Role-based access, granular permissions and admin two-factor sign-in",
-      "Feature flags to switch each surface on at your own pace",
+      "Turn whole parts of the console off — if you don't bill insurance or run a storefront, those pages leave your sidebar",
+      "Feature flags to switch each surface on at your own pace, from the console, with no deploy",
       "Locations, team management and your own branded From addresses",
       "PacWare stays your system of record — a safe import that only fills in blanks and never overwrites what you already have",
     ],
@@ -276,8 +294,8 @@ const AI_CELLS: AiCell[] = [
   },
   {
     icon: <ScanFace size={22} />,
-    title: "Virtual mask fitter",
-    body: "Patients self-fit at home from their phone — no staff time on fittings and no sample masks opened just to be thrown away. AI facial measurements pick the perfect mask and size, and the image never leaves the browser.",
+    title: "Clinical mask fitter",
+    body: "A six-tier engine that screens safety and therapy compatibility as hard filters before anything is ranked, sizes to published millimetre bands, and is allowed to say “I don’t know” and route to a human. The image never leaves the browser.",
     gold: true,
   },
   {
@@ -571,12 +589,12 @@ const ROLES: RoleBlock[] = [
       },
       {
         icon: <ScanFace size={20} />,
-        title: "Virtual mask fitter",
-        body: "Patients fit themselves at home from their phone camera — AI facial measurements pick the perfect mask and size, and images never leave the browser.",
+        title: "Clinical mask fitter",
+        body: "Patients fit themselves from their own phone — at home, or on a QR code at your counter. Safety screening and size bands are handled by the engine, and every fitting prints a report showing its reasoning.",
         impacts: [
           {
             kind: "time",
-            text: "Self-serve fitting at home removes in-person fittings from staff's day.",
+            text: "The patient runs the fitting themselves — at home or on your own counter — so it leaves staff's day either way.",
           },
           {
             kind: "revenue",
@@ -909,6 +927,17 @@ function Capabilities() {
             </article>
           ))}
         </div>
+        <p className="bx-stats-note bx-reveal">
+          <ScanFace
+            size={14}
+            aria-hidden="true"
+            style={{ verticalAlign: "-2px", marginRight: 6 }}
+          />
+          Shopping a stand-alone AI mask fitter alongside us?{" "}
+          <Link href="/breathe/mask-fitting">
+            See the fitting engine in full, and the head-to-head →
+          </Link>
+        </p>
         <div className="bx-price-cta bx-reveal">
           <span>Want to click through every screen and automation?</span>
           <Link className="bx-btn bx-btn-primary" href="/breathe/product">

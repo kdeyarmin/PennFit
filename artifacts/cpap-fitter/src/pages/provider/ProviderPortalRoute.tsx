@@ -25,6 +25,8 @@ import { ProviderMfaSetup } from "./provider-mfa-setup";
 import { ProviderQueue } from "./provider-queue";
 import { ProviderSignDocument } from "./provider-sign-document";
 import { ProviderPatients } from "./provider-patients";
+import { ProviderReferrals } from "./provider-referrals";
+import { ProviderReferralDetail } from "./provider-referral-detail";
 import { ProviderPatientDetail } from "./provider-patient-detail";
 import { Button, Card, ProviderAuthLayout, Spinner } from "./provider-ui";
 
@@ -140,6 +142,25 @@ export function ProviderPortalRoute() {
             )}
           />
         )}
+      </Route>
+      <Route path="/provider/referrals/:id">
+        {(params: { id: string }) => (
+          <Gated
+            render={(me) => (
+              <ProviderReferralDetail
+                id={params.id}
+                providerName={me.provider?.legalName}
+              />
+            )}
+          />
+        )}
+      </Route>
+      <Route path="/provider/referrals">
+        <Gated
+          render={(me) => (
+            <ProviderReferrals providerName={me.provider?.legalName} />
+          )}
+        />
       </Route>
       <Route path="/provider/patients/:id">
         {(params: { id: string }) => (

@@ -226,22 +226,30 @@ describe("provider portal — MFA gate stays in force", () => {
 });
 
 describe("provider portal — sign route scopes the org-guarded update", () => {
-  it("signs against the host tenant's org and preserves provider isolation", async () => {
+  // BEHAVIOUR CHANGE (migration 0487): the single-request lookup is now
+  // ROW-OWNED rather than host-scoped. A referral order is staged under
+  // the DESTINATION DME, which need not be the domain the provider signed
+  // in on, so the old host filter 404'd exactly the cross-tenant case the
+  // referral portal exists to serve.
+  //
+  // What did NOT change, and is still asserted here: authorization is the
+  // `provider_id` filter, and the guarded WRITE is still scoped to a
+  // single org — now the row's own. The queue LIST above stays
+  // host-scoped, which is why those tests are untouched.
+  it("signs against the request's own org, and keeps provider isolation", async () => {
     resolveOrgIdByHostMock.mockResolvedValue(TENANT_A_ORG);
-    // loadOwnRequest → select one pending row for this provider.
     stageSupabaseResponse("provider_signature_requests", "select", {
       data: {
         id: REQUEST_ID,
+        org_id: TENANT_A_ORG,
         status: "pending",
         expires_at: null,
         subject_type: "prescription",
       },
     });
-    // loadProviderNpi → providers select (global table).
     stageSupabaseResponse("providers", "select", {
       data: { npi: "1234567890" },
     });
-    // executeSignature → the status-guarded update RETURNING id.
     stageSupabaseResponse("provider_signature_requests", "update", {
       data: { id: REQUEST_ID },
     });
@@ -253,9 +261,41 @@ describe("provider portal — sign route scopes the org-guarded update", () => {
 
     expect(res.status).toBe(200);
     expect(res.body.status).toBe("signed");
-    // Both the load (select) and the guarded write (update) scoped to A.
-    expect(orgFilterValue("select")).toBe(TENANT_A_ORG);
+    // Same-tenant document: the row's org IS the host's, so the guarded
+    // write lands exactly where it did before this change.
     expect(orgFilterValue("update")).toBe(TENANT_A_ORG);
+    expect(providerFilterValue("select")).toBe(PROVIDER_ID);
+  });
+
+  it("signs a request staged by another tenant, against that tenant's org", async () => {
+    // The case the row-owned lookup exists for. Before this change the
+    // load 404'd and the provider could not sign their own referral order.
+    const TENANT_B_ORG = "bbbbbbbb-0000-4000-8000-000000000002";
+    resolveOrgIdByHostMock.mockResolvedValue(TENANT_A_ORG);
+    stageSupabaseResponse("provider_signature_requests", "select", {
+      data: {
+        id: REQUEST_ID,
+        org_id: TENANT_B_ORG,
+        status: "pending",
+        expires_at: null,
+        subject_type: "referral",
+      },
+    });
+    stageSupabaseResponse("providers", "select", {
+      data: { npi: "1234567890" },
+    });
+    stageSupabaseResponse("provider_signature_requests", "update", {
+      data: { id: REQUEST_ID },
+    });
+
+    const res = await request(makeApp())
+      .post(`/api/provider/queue/${REQUEST_ID}/sign`)
+      .set("Host", "tenant-a.example.com")
+      .send({ consentEsign: true, signerName: "Dr Pat Example" });
+
+    expect(res.status).toBe(200);
+    // The signature lands in B's tenant — the host never decides it.
+    expect(orgFilterValue("update")).toBe(TENANT_B_ORG);
     expect(providerFilterValue("select")).toBe(PROVIDER_ID);
   });
 });

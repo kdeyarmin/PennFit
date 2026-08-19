@@ -16,6 +16,11 @@ import secondaryClaimsRouter from "./admin/secondary-claims.js";
 import billingStatementSendRouter from "./admin/billing-statement-send.js";
 import billingCollectionsForecastRouter from "./admin/billing-collections-forecast.js";
 import maskFitWorklistRouter from "./admin/mask-fit-worklist.js";
+import fitSessionsRouter from "./admin/fit-sessions.js";
+import adminReferralsRouter from "./admin/referrals.js";
+import maskCatalogRouter from "./admin/mask-catalog.js";
+import safetyScreensRouter from "./admin/safety-screens.js";
+import formularyRouter from "./admin/formulary.js";
 import cmnDocumentsRouter from "./admin/cmn-documents.js";
 import clinicalOutreachRouter from "./admin/clinical-outreach.js";
 import educationVideosAdminRouter from "./admin/education-videos.js";
@@ -67,6 +72,7 @@ import analyticsRevenueBySourceRouter from "./admin/analytics-revenue-by-source.
 import analyticsChannelEngagementRouter from "./admin/analytics-channel-engagement.js";
 import inventoryTurnoverRouter from "./admin/inventory-turnover.js";
 import ltvCacRouter from "./admin/ltv-cac.js";
+import fitterOutcomesRouter from "./admin/analytics-fitter-outcomes.js";
 import rtOverviewRouter from "./admin/rt-overview.js";
 import productivityRouter from "./admin/productivity.js";
 import staffingLiveRouter from "./admin/staffing-live.js";
@@ -494,6 +500,24 @@ router.use(billingStatementSendRouter);
 router.use(billingCollectionsForecastRouter);
 // /admin/clinical/mask-fit/* — RT mask-fit triage worklist (RT #22a s2).
 router.use(maskFitWorklistRouter);
+// /admin/fit-sessions/* — the clinical fitting record, RT review queue,
+// and the downloadable fit report. Deliberately NOT under
+// /admin/clinical/: that prefix is not on the mask_fitter product-scope
+// allowlist, so nesting it there would 403 fitter-only tenants out of
+// their own product.
+router.use(fitSessionsRouter);
+// /admin/referrals/* — the DME's inbound queue from the provider referral
+// portal, plus the provider-link management that authorizes a referring
+// clinician to send here at all. Top-level for the same product-scope
+// reason as fit-sessions above.
+router.use(adminReferralsRouter);
+// /admin/fitter/catalog/* — the Mask Intelligence Catalog + the clinical
+// review queue for estimated fit geometry.
+router.use(maskCatalogRouter);
+router.use(safetyScreensRouter);
+// /admin/fitter/formulary/* — the multi-axis provider formulary, its
+// dry-run simulator, and the publish pre-flight.
+router.use(formularyRouter);
 // /admin/.../cmn-documents + /admin/billing/cmn-* — CMN/DIF structured
 // forms (Biller #29).
 router.use(cmnDocumentsRouter);
@@ -953,6 +977,10 @@ router.use(inventoryTurnoverRouter);
 // CAC cohort economics by acquisition channel (Owner #3). cost.read to
 // view, cost.write to record attribution.
 router.use(ltvCacRouter);
+
+// /admin/analytics/fitter-outcomes — refit rate, recommendation
+// acceptance, scan quality and confidence mix for the mask fitter.
+router.use(fitterOutcomesRouter);
 // /admin/rt-overview — respiratory-therapist at-a-glance board.
 // Reads patient_therapy_links + patient_therapy_nights +
 // patient_smart_trigger_events for the daily clinical review.

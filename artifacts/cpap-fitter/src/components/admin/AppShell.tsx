@@ -13,6 +13,8 @@ import {
   type AdminInboxCounts,
 } from "@/lib/admin/inbox-counts-api";
 import {
+  featureHidingLocation,
+  filterNavGroupsByFeature,
   findGroupForActiveHref,
   linkMatchesLocation,
   pickActiveHref,
@@ -24,6 +26,7 @@ import {
   type NavGroup,
   type NavLink,
 } from "./nav-traversal";
+import { appModuleLabel } from "@/lib/admin/app-modules";
 import {
   LayoutDashboard,
   LifeBuoy,
@@ -77,10 +80,12 @@ import {
   Wallet,
   Bot,
   ListFilter,
+  Library,
   TrendingDown,
   TrendingUp,
   ClipboardCheck,
   ShieldAlert,
+  EyeOff,
   SlidersHorizontal,
   CalendarRange,
   ToggleLeft,
@@ -163,7 +168,11 @@ import { clearAllDrafts } from "@/lib/admin/use-draft-autosave";
  *   5. ANALYTICS & REPORTS — exports, financial, performance, customer/clinical
  *   6. SYSTEM     — automation, operations health, settings, setup & advanced
  */
-const NAV_GROUPS: ReadonlyArray<NavGroup> = [
+// Exported so the app-module invariant test can assert against the REAL
+// nav data — that switching every module off still leaves the console's
+// escape hatches (Home, Settings, Team, Control Center, the plan page)
+// reachable — instead of string-matching this file's source.
+export const NAV_GROUPS: ReadonlyArray<NavGroup> = [
   {
     label: "Workspace",
     items: [
@@ -176,6 +185,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
       },
       {
         label: "Front Desk",
+        requiredFeature: "module.front_desk",
         icon: Store,
         href: "/admin/front-desk",
         matchPrefix: "/admin/front-desk",
@@ -184,6 +194,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
       },
       {
         label: "Conversations",
+        requiredFeature: "module.conversations",
         icon: MessageSquareText,
         hint: "Inbound threads, multi-channel cases, and open service episodes",
         tabs: [
@@ -220,6 +231,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         // date-driven callback queue that used to be a separate
         // sidebar entry.
         label: "Schedule",
+        requiredFeature: "module.schedule",
         icon: CalendarDays,
         hint: "The shared company calendar and scheduled callbacks",
         tabs: [
@@ -255,6 +267,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         // plain CSR sees only the send tabs. One "messages out" entry
         // instead of the old Outreach/Templates near-synonym pair.
         label: "Outreach",
+        requiredFeature: "module.outreach",
         icon: Send,
         hint: "Send messages to patients — campaigns, alerts, reminders — and manage the reusable content behind them",
         tabs: [
@@ -338,6 +351,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         // e-sign portal → returned faxes to file. These were five
         // scattered sidebar entries; they're one job.
         label: "Documents & e-sign",
+        requiredFeature: "module.documents",
         icon: FileSignature,
         hint: "The paperwork pipeline — draft documents, send packets, track signatures, file returned faxes",
         tabs: [
@@ -398,6 +412,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         // surface the patients who need attention; the clinical-work
         // worklists are where the RT acts on what the boards surfaced.
         label: "Therapy monitoring",
+        requiredFeature: "module.therapy",
         icon: HeartPulse,
         hint: "Population therapy monitoring — adherence board, fleet, setups, resupply, RT outcomes",
         tabs: [
@@ -441,6 +456,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
       },
       {
         label: "Clinical work",
+        requiredFeature: "module.clinical",
         icon: Stethoscope,
         hint: "RT clinical work — encounters, interventions, mask-fit, coaching",
         tabs: [
@@ -459,6 +475,46 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             matchPrefix: "/admin/clinical/interventions",
             requiredPermission: "clinical.read",
             hint: "Non-adherence intervention worklist — cause, plan, outcome",
+          },
+          {
+            href: "/admin/fit-sessions",
+            label: "Fit review",
+            icon: ClipboardCheck,
+            matchPrefix: "/admin/fit-sessions",
+            requiredPermission: "clinical.read",
+            hint: "Fittings the engine declined to be confident about — approve, override, or send back for a rescan",
+          },
+          {
+            href: "/admin/provider-referrals",
+            label: "Referrals",
+            icon: Inbox,
+            matchPrefix: "/admin/provider-referrals",
+            requiredPermission: "clinical.read",
+            hint: "Patients sent to you by referring clinicians, fitting and mask approval already done",
+          },
+          {
+            href: "/admin/fitter/catalog",
+            label: "Mask catalog",
+            icon: Library,
+            matchPrefix: "/admin/fitter/catalog",
+            requiredPermission: "clinical.read",
+            hint: "Mask intelligence: interface type, therapy compatibility, magnets, per-size measurement ranges, and the clinical sign-off queue",
+          },
+          {
+            href: "/admin/fitter/formulary",
+            label: "Formulary",
+            icon: ListFilter,
+            matchPrefix: "/admin/fitter/formulary",
+            requiredPermission: "clinical.read",
+            hint: "What you dispense, by location, payer, contract, service line, and therapy mode",
+          },
+          {
+            href: "/admin/fitter/safety-screens",
+            label: "Safety screening",
+            icon: ShieldAlert,
+            matchPrefix: "/admin/fitter/safety-screens",
+            requiredPermission: "clinical.read",
+            hint: "The questions a patient answers before the fitter will recommend a mask — versioned, so a fit report always shows the ones that actually ran",
           },
           {
             href: "/admin/clinical/mask-fit",
@@ -495,6 +551,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
       },
       {
         label: "Providers & recalls",
+        requiredFeature: "module.providers",
         icon: HeartHandshake,
         hint: "Physician/NP registry and the equipment-recall registry",
         tabs: [
@@ -581,6 +638,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
       },
       {
         label: "Inventory",
+        requiredFeature: "module.inventory",
         icon: Boxes,
         hint: "Catalog, stock levels, product editor, monthly reconciliation",
         tabs: [
@@ -605,6 +663,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         // one entry for "people who shop (or might)". The old separate
         // Leads section lives on as the three trailing tabs.
         label: "Storefront & leads",
+        requiredFeature: "module.storefront",
         icon: ShoppingCart,
         hint: "Shop accounts, reviews, product Q&A, carts to recover, and new-customer leads",
         tabs: [
@@ -671,6 +730,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
   },
   {
     label: "Billing",
+    // The single biggest lever on sidebar clutter: ~40 pages that a
+    // cash-pay tenant will never open. Gated at the GROUP level so the
+    // heading goes with it rather than leaving an orphaned entry. The
+    // tenant's own plan & usage stays reachable — it is duplicated as an
+    // ungated "Plan & billing" tab under System > Settings, so switching
+    // this off can never strand someone away from their subscription.
+    requiredFeature: "module.billing",
     items: [
       {
         // All the read-only money dashboards in one place: the AR
@@ -932,6 +998,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
   },
   {
     label: "Analytics & Reports",
+    requiredFeature: "module.analytics",
     items: [
       {
         label: "Reports",
@@ -990,6 +1057,16 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             matchPrefix: "/admin/analytics/revenue-by-source",
             requiredPermission: "reports.read",
             hint: "Order volume + cash revenue by channel (storefront / resupply / clinical form)",
+          },
+          {
+            href: "/admin/analytics/fitter-outcomes",
+            label: "Fitter outcomes",
+            icon: Activity,
+            matchPrefix: "/admin/analytics/fitter-outcomes",
+            // clinical.read to match the server gate — refit rates and
+            // override reasons are clinical outcome data, not a sales report.
+            requiredPermission: "clinical.read",
+            hint: "Refit rate, whether clinicians accept the engine's pick, and scan quality",
           },
           {
             href: "/admin/analytics/channel-engagement",
@@ -1104,6 +1181,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
     items: [
       {
         label: "Support",
+        requiredFeature: "module.support",
         icon: LifeBuoy,
         href: "/admin/support",
         matchPrefix: "/admin/support",
@@ -1118,6 +1196,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
       },
       {
         label: "Automation",
+        requiredFeature: "module.automation",
         icon: ScrollText,
         hint: "Automation rules and the rule dry-run tester",
         tabs: [
@@ -1173,6 +1252,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
           },
           {
             href: "/admin/integrations",
+            requiredFeature: "module.integrations",
             label: "Integrations",
             icon: Plug,
             matchPrefix: "/admin/integrations",
@@ -1184,6 +1264,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
           },
           {
             href: "/admin/pacware",
+            requiredFeature: "module.integrations",
             label: "PacWare",
             icon: Boxes,
             matchPrefix: "/admin/pacware",
@@ -1193,6 +1274,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
           },
           {
             href: "/admin/webhook-deliveries",
+            requiredFeature: "module.integrations",
             label: "Webhook Deliveries",
             icon: Webhook,
             matchPrefix: "/admin/webhook-deliveries",
@@ -1297,6 +1379,22 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             matchPrefix: "/admin/security",
             hint: "Manage your own MFA / authenticator-app enrollment",
           },
+          {
+            // Deliberately duplicated from Billing > Tools. YOUR
+            // subscription is a settings concern, not a claims-billing
+            // one, and this copy carries no `requiredFeature` — so a
+            // tenant that switches the whole Billing module off can
+            // still reach the page where they change their plan. Without
+            // it, "we don't bill insurance" would also mean "I can't
+            // find where to pay you". Active-tab resolution is
+            // deterministic on a tie (NAV_GROUPS order), so the Billing
+            // copy stays the highlighted one while that group is on.
+            href: "/admin/billing/package",
+            label: "Plan & billing",
+            icon: CircleDollarSign,
+            matchPrefix: "/admin/billing/package",
+            hint: "Your CareMetric package, add-ons, and monthly usage",
+          },
         ],
       },
       {
@@ -1347,7 +1445,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
 // independently 403s them, so this is purely the matching UX, not the
 // security boundary. The SPA route guard (useMaskFitterRouteGuard) redirects
 // any URL outside these prefixes back to the fitter worklist.
-const MASK_FITTER_NAV_GROUPS: ReadonlyArray<NavGroup> = [
+export const MASK_FITTER_NAV_GROUPS: ReadonlyArray<NavGroup> = [
   {
     label: "Mask Fitter",
     items: [
@@ -1364,6 +1462,41 @@ const MASK_FITTER_NAV_GROUPS: ReadonlyArray<NavGroup> = [
         href: "/admin/fitter-leads",
         matchPrefix: "/admin/fitter-leads",
         hint: "Fitter funnel + supply-campaign conversion",
+      },
+      {
+        label: "Fit Review",
+        icon: ClipboardCheck,
+        href: "/admin/fit-sessions",
+        matchPrefix: "/admin/fit-sessions",
+        hint: "Fittings that need a clinician's eye before they go out",
+      },
+      {
+        label: "Referrals",
+        icon: Inbox,
+        href: "/admin/provider-referrals",
+        matchPrefix: "/admin/provider-referrals",
+        hint: "Patients referred to you, with their fitting already done",
+      },
+      {
+        label: "Mask Catalog",
+        icon: Library,
+        href: "/admin/fitter/catalog",
+        matchPrefix: "/admin/fitter/catalog",
+        hint: "The masks you fit against — and the clinical sign-off queue for estimated sizing",
+      },
+      {
+        label: "Formulary",
+        icon: ListFilter,
+        href: "/admin/fitter/formulary",
+        matchPrefix: "/admin/fitter/formulary",
+        hint: "Which of those masks you actually dispense",
+      },
+      {
+        label: "Safety screening",
+        icon: ShieldAlert,
+        href: "/admin/fitter/safety-screens",
+        matchPrefix: "/admin/fitter/safety-screens",
+        hint: "The questions asked before a mask is recommended — revise them yourself when a manufacturer updates a warning",
       },
     ],
   },
@@ -1386,6 +1519,13 @@ const MASK_FITTER_NAV_GROUPS: ReadonlyArray<NavGroup> = [
         href: "/admin/billing/package",
         matchPrefix: "/admin/billing/package",
         hint: "Manage your Virtual Mask Fitter subscription and usage",
+      },
+      {
+        label: "Control Center",
+        icon: SlidersHorizontal,
+        href: "/admin/control-center",
+        matchPrefix: "/admin/control-center",
+        hint: "Turn the clinical fitting engine on once your clinician has signed off your size bands",
       },
       {
         label: "Settings",
@@ -1413,9 +1553,28 @@ const MASK_FITTER_NAV_GROUPS: ReadonlyArray<NavGroup> = [
  *  so account-essential pages reached from Settings (team, MFA) are listed
  *  here too. The billing entry is the subscription page specifically — the
  *  operational claims worklists under /admin/billing/ stay blocked. */
-const MASK_FITTER_ALLOWED_ROUTE_PREFIXES: readonly string[] = [
+export const MASK_FITTER_ALLOWED_ROUTE_PREFIXES: readonly string[] = [
   "/admin/fitter-invites",
   "/admin/fitter-leads",
+  // The clinical fitting core. These were already in MASK_FITTER_NAV_GROUPS
+  // above and already allowed by the server, but were missing here — so the
+  // sidebar rendered the links and the route guard bounced every one of
+  // them straight back to Fitter Invites. A fitter-only tenant therefore
+  // could not sign off a size band, edit their formulary, or open the fit
+  // review queue: the exact things the plan is sold on.
+  // `maskFitterNavIsReachable` below pins this list against the nav so the
+  // two cannot drift apart again.
+  "/admin/fit-sessions",
+  "/admin/fitter/catalog",
+  "/admin/fitter/formulary",
+  "/admin/fitter/safety-screens",
+  "/admin/provider-referrals",
+  // Control Center. The clinical fitter ships behind `fitter.*` flags that
+  // the tenant flips themselves after their RT signs off the size bands —
+  // without this they would have to ask us to turn on the product they
+  // bought. The page is filtered to their own fitter flags (see
+  // FlagsList), and every module they cannot reach stays unreachable.
+  "/admin/control-center",
   "/admin/storefront-branding",
   "/admin/settings",
   "/admin/security",
@@ -1624,7 +1783,7 @@ function SidebarNavBody({
   onItemClick,
   isAdminConfirmed,
   permissions,
-  productScope,
+  navGroups,
 }: {
   location: string;
   /** Shared nav-group expansion state, owned by the parent AppShell. */
@@ -1639,9 +1798,10 @@ function SidebarNavBody({
   /** Granular permission keys the caller holds (from /admin/me). Used
    *  to hide nav entries whose `requiredPermission` they lack. */
   permissions: ReadonlySet<string>;
-  /** Platform product scope from /me. "mask_fitter" swaps the full
-   *  console nav for the curated fitter-only nav. */
-  productScope?: string;
+  /** The nav model to render — already narrowed by the parent for the
+   *  tenant's product scope AND for the app modules it has switched off,
+   *  so both the sidebar and the sub-nav draw from one filtered source. */
+  navGroups: ReadonlyArray<NavGroup>;
 }) {
   // Phase 16 — actionable-work counts powering nav badges. Cached for
   // 30s so paging through the SPA doesn't hammer the endpoint, but
@@ -1670,7 +1830,7 @@ function SidebarNavBody({
   // requiredPermission (and at least one visible tab) is always shown.
   // The server-side `requirePermission(...)` is the real boundary; this
   // only avoids showing a link that would 403.
-  const visibleGroups = navGroupsForScope(productScope)
+  const visibleGroups = navGroups
     .map((group) => ({
       ...group,
       items: group.items.filter((link) => sectionVisible(link, permissions)),
@@ -1800,15 +1960,14 @@ function SectionSubNav({
   location,
   isAdminConfirmed,
   permissions,
-  productScope,
+  navGroups,
 }: {
   location: string;
   isAdminConfirmed: boolean;
   permissions: ReadonlySet<string>;
-  /** Platform product scope from /me — scopes the active-section lookup to
-   *  the same nav the sidebar renders, so a fitter-only tenant never gets a
-   *  full-console section's tab bar. */
-  productScope?: string;
+  /** The same filtered nav the sidebar renders, so a tab bar never offers
+   *  a page the tenant's product scope or app modules have removed. */
+  navGroups: ReadonlyArray<NavGroup>;
 }) {
   // Reuses the same query key as the sidebar, so TanStack serves it from
   // cache — no extra request, badges stay in lockstep with the sidebar.
@@ -1822,7 +1981,7 @@ function SectionSubNav({
     enabled: isAdminConfirmed,
   });
 
-  const active = pickActiveTarget(location, navGroupsForScope(productScope));
+  const active = pickActiveTarget(location, navGroups);
   if (!active?.section?.tabs) return null;
   const tabs = visibleTabs(active.section, permissions);
   if (tabs.length <= 1) return null;
@@ -2158,6 +2317,60 @@ function ImpersonationBanner() {
   );
 }
 
+/**
+ * Shown in place of a page whose app module the tenant has switched off.
+ *
+ * Deliberately NOT a redirect. A silent bounce to the dashboard is
+ * indistinguishable from a broken link, and the person hitting it is
+ * usually the person who can fix it — so the notice names the module and,
+ * for an operator who can manage it, links straight to the switch.
+ */
+function FeatureTurnedOffNotice({
+  featureKey,
+  canManage,
+}: {
+  featureKey: string;
+  canManage: boolean;
+}) {
+  return (
+    <div
+      className="max-w-xl rounded-lg border border-slate-200 bg-white p-6"
+      data-testid="admin-feature-turned-off"
+    >
+      <div className="flex items-start gap-3">
+        <EyeOff
+          className="h-5 w-5 mt-0.5 shrink-0 text-slate-400"
+          aria-hidden="true"
+        />
+        <div className="space-y-2">
+          <h1 className="text-base font-semibold text-slate-900">
+            {appModuleLabel(featureKey)} is turned off
+          </h1>
+          <p className="text-sm text-slate-600">
+            This part of the app is switched off for your company, so it has
+            been removed from the sidebar. Nothing was deleted — turning it back
+            on restores these pages and everything in them.
+          </p>
+          {canManage ? (
+            <Link
+              href="/admin/control-center"
+              className="inline-flex items-center gap-1.5 text-sm font-semibold text-[hsl(var(--penn-navy))] hover:underline"
+              data-testid="admin-feature-turned-off-manage"
+            >
+              <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />
+              Turn it back on in Control Center
+            </Link>
+          ) : (
+            <p className="text-sm text-slate-500">
+              Ask a super admin if you need it switched back on.
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function AppShell({
   adminEmail,
   adminRole = "admin",
@@ -2221,7 +2434,37 @@ export function AppShell({
   // and only one localStorage writer — preventing the CSS-hidden instance
   // from clobbering toggle changes made by the visible one.
 
-  const scopedNavGroups = navGroupsForScope(productScope);
+  // App modules the tenant has switched off (migration 0488). Empty while
+  // /me is in flight and empty when the server can't read the flag table,
+  // so the console renders whole rather than empty in both cases — the
+  // safe direction for a purely presentational signal.
+  const disabledFeatures = useMemo(
+    () => new Set(adminMe?.disabledFeatures ?? []),
+    [adminMe?.disabledFeatures],
+  );
+  // NOTE: module filtering applies to whichever nav the product scope
+  // selected, and only NAV_GROUPS carries `requiredFeature` tags — the
+  // curated MASK_FITTER / LOCKED navs deliberately carry none, so their
+  // entries survive regardless of which modules a tenant has off. That is
+  // intentional, not an oversight: those navs are already scoped to ~6
+  // entries, and neither includes Control Center, so a fitter-only tenant
+  // has no in-app way to undo a module their platform admin switched off.
+  // Subtracting from an already-minimal nav could strand them with no
+  // route back. Modules are a decluttering tool for the FULL console.
+  const fullNavGroups = navGroupsForScope(productScope);
+  const scopedNavGroups = useMemo(
+    () => filterNavGroupsByFeature(fullNavGroups, disabledFeatures),
+    [fullNavGroups, disabledFeatures],
+  );
+  // A bookmark or emailed link into a part of the app that has since been
+  // switched off. We render an explanation in place of the page rather
+  // than redirecting: bouncing someone to the dashboard with no reason
+  // looks like the link is broken, and the fix (turn the module back on)
+  // is one they can actually take.
+  const hiddenByFeature = useMemo(
+    () => featureHidingLocation(location, fullNavGroups, disabledFeatures),
+    [location, fullNavGroups, disabledFeatures],
+  );
   const activeGroup = findGroupForActiveHref(
     scopedNavGroups,
     pickActiveHref(location, scopedNavGroups),
@@ -2377,7 +2620,7 @@ export function AppShell({
                     onItemClick={() => setMobileNavOpen(false)}
                     isAdminConfirmed={!!adminEmail}
                     permissions={navPermissions}
-                    productScope={productScope}
+                    navGroups={scopedNavGroups}
                   />
                 </nav>
               </SheetContent>
@@ -2411,7 +2654,7 @@ export function AppShell({
                 onToggleGroup={toggleNavGroup}
                 isAdminConfirmed={!!adminEmail}
                 permissions={navPermissions}
-                productScope={productScope}
+                navGroups={scopedNavGroups}
               />
             </nav>
           </aside>
@@ -2429,10 +2672,17 @@ export function AppShell({
                 location={location}
                 isAdminConfirmed={!!adminEmail}
                 permissions={navPermissions}
-                productScope={productScope}
+                navGroups={scopedNavGroups}
               />
             ) : null}
-            {children}
+            {hiddenByFeature ? (
+              <FeatureTurnedOffNotice
+                featureKey={hiddenByFeature}
+                canManage={navPermissions.has("admin.tools.manage")}
+              />
+            ) : (
+              children
+            )}
           </main>
         </div>
         <BrandFooter />

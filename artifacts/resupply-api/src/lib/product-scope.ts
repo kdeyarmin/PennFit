@@ -204,6 +204,29 @@ const MASK_FITTER_ALLOWED_PREFIXES: readonly string[] = [
   "/admin/agreements", // onboarding accept screen (also exempted upstream)
   "/admin/fitter-invites", // THE product: send links, review results/sizes
   "/admin/fitter-leads", // fitter funnel / prospects
+  // The clinical fitting core. These ARE the product for a fitter-only
+  // tenant — the RT review queue, the downloadable fit report, the mask
+  // catalog they fit against, and their own formulary.
+  //
+  // Note the paths: the review queue lives at /admin/fit-sessions rather
+  // than the more natural-looking /admin/clinical/fit-sessions precisely
+  // so it can be allowlisted here. "/admin/clinical/" is deliberately NOT
+  // on this list — it fronts order-joined worklists a fitter-only tenant
+  // has no data for — so co-locating the queue there would 403 exactly
+  // the customers this plan exists to serve.
+  "/admin/fit-sessions",
+  "/admin/fitter/catalog",
+  "/admin/fitter/formulary",
+  "/admin/fitter/safety-screens",
+  // Inbound referrals from the provider portal. A fitter-only DME that
+  // receives referrals is exactly the customer the portal exists for, so
+  // omitting this would 403 them out of their own inbound queue.
+  //
+  // Deliberately NOT "/admin/referrals": this list is matched by
+  // SUBSTRING, so that prefix would also have allowed the unrelated
+  // pre-existing "/admin/referrals/scan-attribution" sweep (patient-to-
+  // patient attribution) through the fitter-only gate.
+  "/admin/provider-referrals",
   // Tenant self-service subscription billing — the SIX exact endpoints the
   // /admin/billing/package page calls (platform-billing-api.ts). NOT the
   // operational claims worklists that also live under /admin/billing/.
@@ -213,6 +236,13 @@ const MASK_FITTER_ALLOWED_PREFIXES: readonly string[] = [
   "/admin/billing/addons",
   "/admin/billing/preview",
   "/admin/billing/usage-events",
+  // Control Center's backing API. The clinical fitter ships behind
+  // `fitter.*` flags the tenant flips themselves once their RT has signed
+  // off the size bands they dispense — without this they would have to ask
+  // us to enable the product they bought. Flags are per-org config for
+  // their OWN org, and a flag for a module this scope cannot reach is
+  // inert, so this grants no operational surface.
+  "/admin/feature-flags",
   "/admin/storefront-branding", // brand the fitting link
   "/admin/mfa", // account security: the MFA banner runs on every admin page
   "/admin/team", // manage their own staff seats

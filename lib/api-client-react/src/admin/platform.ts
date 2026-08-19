@@ -621,6 +621,68 @@ export function useTenantAdmins(
   });
 }
 
+/** Body for POST /platform/tenants/:id/admins. */
+export interface CreateTenantAdminBody {
+  email: string;
+  /** Granular admin_users role. Defaults to `admin` server-side. */
+  role?: string;
+  displayName?: string | null;
+  /**
+   * When set (min 12 chars), the account is created active + verified
+   * with this password and NO email is sent — the operator hands the
+   * credential over directly. Omit to send a set-password invite.
+   */
+  initialPassword?: string | null;
+}
+
+export interface CreateTenantAdminResponse {
+  tenantId: string;
+  admin: TenantAdmin;
+  emailSent: boolean;
+  /**
+   * The raw set-password link, returned ONLY when the invite email did
+   * not go out, so the operator can pass it along another way rather
+   * than being left with an account nobody can reach. Null otherwise —
+   * a live link belongs in the recipient's inbox, not on a screen.
+   */
+  inviteLink: string | null;
+  /** True when the account can sign in right now (initialPassword path). */
+  signInReady: boolean;
+}
+
+/**
+ * Create an admin account for a tenant from the platform console — the
+ * in-product equivalent of the `tenant:onboard` CLI, so onboarding a
+ * customer doesn't require shell access to a deploy.
+ */
+export function useCreateTenantAdmin(
+  id: string,
+  options?: {
+    mutation?: UseMutationOptions<
+      CreateTenantAdminResponse,
+      PlatformError,
+      CreateTenantAdminBody
+    >;
+  },
+) {
+  return useMutation<
+    CreateTenantAdminResponse,
+    PlatformError,
+    CreateTenantAdminBody
+  >({
+    mutationFn: (body) =>
+      customFetch<CreateTenantAdminResponse>(
+        `${TENANTS_URL}/${encodeURIComponent(id)}/admins`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        },
+      ),
+    ...options?.mutation,
+  });
+}
+
 // ── Impersonation ──────────────────────────────────────────────────
 
 export interface ImpersonateResponse {

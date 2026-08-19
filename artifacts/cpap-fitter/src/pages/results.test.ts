@@ -203,3 +203,84 @@ describe("results — retake CTA gating", () => {
     expect(SRC).toContain('data-testid="results-retake-photo"');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Clinical cash-pay shop-key resolution — part number, then legacy fallback
+// ---------------------------------------------------------------------------
+
+/**
+ * Pure re-implementation of the shop-key resolution inside
+ * `clinicalCashPayFor`, kept in lockstep with results.tsx.
+ *
+ * Two identifier spaces meet there: `shopByModelNumber` is keyed on the
+ * TENANT's own SKU (Stripe metadata `model_number`, e.g. "PHM-RM-F20"),
+ * while `mask_size_variants.manufacturer_part_number` is the
+ * MANUFACTURER's part number — and the 0486 seed leaves it NULL besides.
+ * Resolving on the part number alone matched nothing, which hid the
+ * cash-pay CTA on the clinical path and, because that resolver is the
+ * only writer of the fit→order link, left the fitter outcome loop
+ * structurally empty. The fix falls back to the legacy catalog's
+ * modelNumber for the same slug (0481 keeps the slug space identical
+ * across both catalogs, which is what makes the fallback exact).
+ */
+function resolveShopKey(
+  partNumber: string | null | undefined,
+  legacyModelNumber: string | null | undefined,
+  shopKeys: ReadonlySet<string>,
+): string | undefined {
+  return (
+    (partNumber && shopKeys.has(partNumber) ? partNumber : undefined) ??
+    (legacyModelNumber && shopKeys.has(legacyModelNumber)
+      ? legacyModelNumber
+      : undefined)
+  );
+}
+
+describe("results — clinical cash-pay shop-key fallback", () => {
+  it("prefers the manufacturer part number when the shop is keyed on it", () => {
+    const key = resolveShopKey(
+      "63400",
+      "PHM-RM-F20",
+      new Set(["63400", "PHM-RM-F20"]),
+    );
+    expect(key).toBe("63400");
+  });
+
+  it("falls back to the legacy modelNumber when the part number is NULL", () => {
+    // The 0486 seed's actual shape: every variant's part number is NULL,
+    // so before the fallback existed this resolved to nothing and the
+    // CTA never rendered on the clinical path.
+    const key = resolveShopKey(null, "PHM-RM-F20", new Set(["PHM-RM-F20"]));
+    expect(key).toBe("PHM-RM-F20");
+  });
+
+  it("falls back when the part number simply isn't a shop key", () => {
+    // Part number present but the tenant keys its shop on its own SKUs —
+    // the two identifier spaces are different, not just sparsely filled.
+    const key = resolveShopKey("63400", "PHM-RM-F20", new Set(["PHM-RM-F20"]));
+    expect(key).toBe("PHM-RM-F20");
+  });
+
+  it("returns undefined when neither key matches — the CTA stays hidden", () => {
+    // A mask we can't price is a mask we can't sell.
+    const key = resolveShopKey("63400", "PHM-RM-F20", new Set(["OTHER"]));
+    expect(key).toBeUndefined();
+    expect(resolveShopKey(null, undefined, new Set(["X"]))).toBeUndefined();
+  });
+
+  it("source keeps the fallback chain and passes the resolved key onward", () => {
+    // Pin the shape in results.tsx: resolve to `shopKey`, look up the
+    // product by it, and hand the SAME key to handleCashPayAdd so the
+    // cart line matches the product that priced it.
+    expect(SRC).toContain(
+      "const legacyModelNumber = catalogById.get(c.maskSlug)?.modelNumber;",
+    );
+    expect(SRC).toContain("shopByModelNumber?.has(partNumber)");
+    expect(SRC).toContain("shopByModelNumber?.has(legacyModelNumber)");
+    expect(SRC).toContain("shopByModelNumber?.get(shopKey)");
+    expect(SRC).toContain("{ maskId: c.maskId, modelNumber: shopKey }");
+    // The regression this guards against: resolving the product from the
+    // bare part number with no fallback.
+    expect(SRC).not.toContain("shopByModelNumber?.get(partNumber)");
+  });
+});

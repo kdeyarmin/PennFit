@@ -44,6 +44,28 @@ const FITTER = [
   "fitter_supply_campaign.dispatcher",
   "fitter_first_day_nudge.dispatcher",
   "fitter_reengage.dispatcher",
+  // The clinical fit report (PDF). Staff-only and purely additive — it
+  // reads a fit session that already exists and renders it. Every plan
+  // that includes the fitter should be able to print one.
+  "fitter.clinical_report",
+  // The clinical fitting core (migration 0485, turned on by 0500). These
+  // three moved out of DELIBERATELY_OFF_FLAGS when the RT sign-off gate
+  // was removed from `resolveConfidence`: the reason they were opt-in was
+  // that seeded size bands are estimates and a clinician had to vouch for
+  // them first, and that requirement is gone.
+  //
+  // They travel TOGETHER and should not be split:
+  //   * clinical_assessment is the master switch — the other two are
+  //     inert without it.
+  //   * magnet_screening is what asks about pacemakers, ICDs and
+  //     neurostimulators. Engine on + screening off means nobody is
+  //     asked, which is worse than the engine being off.
+  //   * confidence_gating is what makes the SCAN's verdict binding —
+  //     without it an implausible measurement still yields a confident
+  //     answer and every low_confidence result is upgraded to moderate.
+  "fitter.clinical_assessment",
+  "fitter.magnet_screening",
+  "fitter.confidence_gating",
 ] as const;
 
 /** Resupply reminders — the Launch-tier core. */
@@ -144,6 +166,21 @@ const SCALE_AUTOMATION = [
  *     departure: free-text email otherwise goes to a human).
  *   * `voice.breathe_sales` — the platform's own sales-outreach agent, not a
  *     tenant-facing feature.
+ *   * The clinical-fitting flags that change how the patient is ASKED or
+ *     MEASURED, rather than whether the engine runs at all.
+ *     `fitter.multiframe_capture` changes the capture UX (it widens the
+ *     high-confidence window; it is not needed to reach one — a single
+ *     frame at quality >= 0.9 already clears the 0.75 scan floor).
+ *     `fitter.fit_profile_v2` swaps 11 questions for ~20.
+ *     `fitter.refit_campaign` drives outbound re-fit invitations.
+ *
+ *     Note what is NO LONGER here: `fitter.clinical_assessment`,
+ *     `fitter.magnet_screening` and `fitter.confidence_gating` moved into
+ *     the FITTER bundle (migration 0500). They were opt-in because the
+ *     seeded size bands are estimates and an RT had to sign them off
+ *     first; `resolveConfidence` no longer consults
+ *     `needs_clinical_review`, so that blocker is gone, and leaving the
+ *     engine off meant the face scan never actually chose the mask.
  *
  * Listed here (rather than merely omitted) so the drift test can assert the
  * full enum is accounted for and a newly-added flag can't silently fall
@@ -152,6 +189,9 @@ const SCALE_AUTOMATION = [
 export const DELIBERATELY_OFF_FLAGS = [
   "email.auto_reply",
   "voice.breathe_sales",
+  "fitter.multiframe_capture",
+  "fitter.fit_profile_v2",
+  "fitter.refit_campaign",
 ] as const;
 
 const uniq = (keys: readonly string[]): readonly string[] => [...new Set(keys)];
@@ -199,6 +239,29 @@ export const PLAN_FEATURE_FLAG_PRESETS: Record<
   scale: SCALE,
   enterprise: ENTERPRISE,
 };
+
+/**
+ * Flag-key prefixes the plan presets do not govern.
+ *
+ * `module.*` (migration 0488) answers "which parts of the console does
+ * this tenant want to see?" — a navigation preference the tenant sets for
+ * itself, not an entitlement their plan grants. Feeding those keys through
+ * the preset machinery would be actively destructive in both directions:
+ * a preset apply would silently re-show every section an operator
+ * deliberately hid, and — because a preset turns OFF everything it does
+ * not list — a plan bundle that forgot to enumerate them would empty a
+ * tenant's sidebar entirely at onboarding.
+ *
+ * So preset consumers skip these keys: they are neither turned on nor
+ * turned off by a bundle, and they keep whatever value the tenant (or the
+ * seed catalog) already had.
+ */
+export const PRESET_EXEMPT_FLAG_PREFIXES = ["module."] as const;
+
+/** True for a flag the plan presets deliberately do not govern. */
+export function isPresetExemptFlag(key: string): boolean {
+  return PRESET_EXEMPT_FLAG_PREFIXES.some((prefix) => key.startsWith(prefix));
+}
 
 /**
  * Resolve the default-ON flag set for a plan code as a Set for O(1) lookup.
