@@ -171,11 +171,11 @@ export interface RealtimeClientOptions {
    */
   generateAudio?: boolean;
   /**
-   * Realtime session schema. `"beta"` (default) is the proven
-   * `OpenAI-Beta: realtime=v1` flat session shape production runs on.
-   * `"ga"` is OpenAI's GA nested `audio.input/output` shape required by
-   * gpt-realtime-2. The GA path is feature-flagged and validated on a
-   * preview before it becomes a default — see
+   * Realtime session schema. `"ga"` — the SHIPPED DEFAULT (voice-config
+   * resolves OPENAI_REALTIME_SCHEMA unset → "ga") — is OpenAI's GA nested
+   * `audio.input/output` shape required by gpt-realtime-2. `"beta"` is the
+   * deprecated `OpenAI-Beta: realtime=v1` flat session shape, kept only as
+   * an inert rollback (OpenAI has retired it upstream) — see
    * docs/runbooks/realtime-ga-migration.md. The inbound event demux
    * already handles both schemas' event names, so only the outbound
    * session.update + connection header differ.
