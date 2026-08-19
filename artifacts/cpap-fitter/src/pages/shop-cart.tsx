@@ -37,10 +37,7 @@ import {
   isInWishlist,
   removeFromWishlist,
 } from "@/lib/wishlist";
-import {
-  clearFitCheckoutContext,
-  readFitCheckoutContext,
-} from "@/lib/fit-checkout-context";
+import { readFitCheckoutContext } from "@/lib/fit-checkout-context";
 import {
   fetchPickupLocations,
   fetchShopProducts,
@@ -539,8 +536,12 @@ export function ShopCart() {
           ...(fitLink ?? {}),
         },
       );
-      // The Session now carries the link; keep it off the NEXT order.
-      if (fitLink) clearFitCheckoutContext();
+      // Deliberately NOT cleared here: the Session carries the link, but
+      // the patient hasn't paid yet. Clearing at checkout-click meant a
+      // Stripe cancel + retry (a path this page has explicit resume UI
+      // for) lost the attribution on the retry. The success page clears
+      // it on CONFIRMED payment; an abandoned context ages out on its own
+      // TTL, and the server-side link is first-order-wins.
       window.location.assign(url);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -603,7 +604,8 @@ export function ShopCart() {
               : "one_time",
         })),
       });
-      if (fitLink) clearFitCheckoutContext();
+      // Not cleared here either — see the standard-checkout branch above:
+      // the success page clears it on confirmed payment.
       window.location.assign(url);
     } catch (err: unknown) {
       const msg =

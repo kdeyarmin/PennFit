@@ -14,7 +14,7 @@
 // Invalid / expired / revoked links get a friendly dead-end rather
 // than a stack trace.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 
 import { Button } from "@/components/ui/button";
@@ -67,8 +67,14 @@ const MISSING_REASON = "missing";
 export function FitterInvite() {
   useDocumentTitle("Your mask-fitting invite");
   const [, setLocation] = useLocation();
-  const { setEmailConsent, setInviteToken, setFitProfileV2 } = useFitterStore();
+  const { setEmailConsent, setInviteToken, setFitProfileV2, setMultiframeCapture } =
+    useFitterStore();
   const [state, setState] = useState<State>({ kind: "loading" });
+  // The store setters in the deps get a fresh identity whenever the
+  // provider re-renders — which the setInviteToken call below itself
+  // causes — so without this guard the effect re-runs and the invite is
+  // resolved (and tracked) twice per landing.
+  const resolvedTokenRef = useRef<string | null>(null);
 
   useEffect(() => {
     const token = getTokenFromUrl();
@@ -76,6 +82,8 @@ export function FitterInvite() {
       setState({ kind: "invalid", reason: "missing" });
       return;
     }
+    if (resolvedTokenRef.current === token) return;
+    resolvedTokenRef.current = token;
     let cancelled = false;
     track("fitter_invite_opened");
     resolveFitterInvite(token)
@@ -88,10 +96,11 @@ export function FitterInvite() {
         // Stash the token now so it survives the multi-step flow even
         // if the patient navigates away before clicking start.
         setInviteToken(token);
-        // Which questionnaire this tenant runs. Decided here because the
-        // /questionnaire page renders long before /results ever probes
-        // the clinical route.
+        // Which questionnaire and capture mode this tenant runs. Decided
+        // here because /capture and /questionnaire render long before
+        // /results ever probes the clinical route.
         setFitProfileV2(Boolean(res.fitProfileV2));
+        setMultiframeCapture(Boolean(res.multiframeCapture));
         setState({
           kind: "ready",
           email: res.email ?? null,
@@ -104,7 +113,7 @@ export function FitterInvite() {
     return () => {
       cancelled = true;
     };
-  }, [setInviteToken, setFitProfileV2]);
+  }, [setInviteToken, setFitProfileV2, setMultiframeCapture]);
 
   const handleStart = (email: string | null) => {
     track("fitter_invite_started");

@@ -325,11 +325,20 @@ router.post("/shop/fitter-complete", async (req, res) => {
     // converted, unsubscribed, or expired. Idempotent on re-fires
     // (e.g. patient refreshes /results); the second call sees
     // journey_stage='campaign_active' and short-circuits.
+    //
+    // reorder_active / final_call_pending are sticky too: both are LATER
+    // cadence stages the supply-campaign dispatcher moved the lead into.
+    // Resetting either back to campaign_active + a T1 touch (which is
+    // what falling through here did) restarted the from-scratch drip on
+    // a customer already deep in the re-order cadence — duplicate,
+    // contradictory emails from one re-run of the fitter.
     if (
       lead.journey_stage === "converted" ||
       lead.journey_stage === "unsubscribed" ||
       lead.journey_stage === "expired" ||
-      lead.journey_stage === "campaign_active"
+      lead.journey_stage === "campaign_active" ||
+      lead.journey_stage === "reorder_active" ||
+      lead.journey_stage === "final_call_pending"
     ) {
       req.log?.info?.(
         { event: "fitter_complete_skip", stage: lead.journey_stage },

@@ -98,10 +98,16 @@ export function AdminFitSessionsPage() {
     // Keep the panel open on success: whether the patient was actually
     // reached is the outcome a clinician needs to see, and closing the
     // panel would hide the fallback link on every failure path.
+    //
+    // Deliberately NO query invalidation here: the rescan flips the
+    // session's review_status server-side, so a refetch drops the row
+    // from the default "Needs review" filter — unmounting this very
+    // panel with the delivery outcome and fallback link still on it.
+    // The list refreshes when the clinician dismisses the panel (the
+    // Done button below invalidates).
     onSuccess: (result) => {
       setRescanReason("");
       setRescanOutcome(result);
-      queryClient.invalidateQueries({ queryKey: QUERY_KEY });
     },
   });
 
@@ -167,6 +173,13 @@ export function AdminFitSessionsPage() {
         />
       ) : null}
 
+      {approve.isError ? (
+        // Approve is a one-click row action with no panel of its own, so
+        // without this a failed approval (409 conflict, expired session,
+        // network) looked exactly like success — the row just didn't move.
+        <ErrorPanel title="Couldn't approve the session" error={approve.error} />
+      ) : null}
+
       {sessions.isLoading ? <Spinner /> : null}
 
       {!sessions.isLoading && rows.length === 0 ? (
@@ -174,6 +187,21 @@ export function AdminFitSessionsPage() {
           <p className="text-sm text-muted-foreground p-4">
             Nothing here. When a fitting comes back without enough evidence for
             a confident recommendation, it lands in this queue.
+          </p>
+        </Card>
+      ) : null}
+
+      {rows.length >= 100 ? (
+        // The fetch caps at 100; a backlog past that was silently
+        // invisible, which for a CLINICAL review queue reads as "all
+        // caught up" when it isn't. Say so instead.
+        <Card>
+          <p
+            className="text-sm text-muted-foreground p-4"
+            data-testid="fit-sessions-truncated"
+          >
+            Showing the first 100 sessions — older items exist beyond this
+            list. Work the queue down or narrow the filter to reach them.
           </p>
         </Card>
       ) : null}
@@ -291,6 +319,11 @@ export function AdminFitSessionsPage() {
                             setRescanFor(rescanFor === s.id ? null : s.id);
                             setRescanOutcome(null);
                             setOverrideFor(null);
+                            // One page-level reason field serves every
+                            // row: switching the panel to a different
+                            // session must not carry over a reason typed
+                            // for another patient's clinical record.
+                            setRescanReason("");
                           }}
                           aria-expanded={rescanFor === s.id}
                         >
@@ -377,8 +410,19 @@ export function AdminFitSessionsPage() {
                       <Button
                         intent="secondary"
                         onClick={() => {
+                          const hadOutcome = rescanOutcome !== null;
                           setRescanFor(null);
                           setRescanOutcome(null);
+                          setRescanReason("");
+                          // The list refresh deferred from the rescan
+                          // mutation — see its onSuccess. Refetching only
+                          // now keeps the delivery-outcome panel (and its
+                          // fallback link) on screen until dismissed.
+                          if (hadOutcome) {
+                            void queryClient.invalidateQueries({
+                              queryKey: QUERY_KEY,
+                            });
+                          }
                         }}
                       >
                         {rescanOutcome ? "Done" : "Cancel"}

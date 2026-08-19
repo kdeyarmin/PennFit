@@ -21,6 +21,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import { useCart } from "@/hooks/use-cart";
+import { clearFitCheckoutContext } from "@/lib/fit-checkout-context";
 import { SubscribeRemindersCta } from "@/components/subscribe-reminders-cta";
 import { ComfortGuarantee } from "@/components/comfort-guarantee";
 import {
@@ -105,6 +106,15 @@ export function ShopCheckoutSuccess() {
         currency: o.currency,
       });
       clear();
+      // The fitting attribution is cleared HERE — on confirmed payment —
+      // for the same reason as the cart. Clearing it at checkout-click
+      // (as this flow used to) meant a shopper who cancelled on Stripe
+      // and retried from the cart lost the fit link on the retry, and
+      // the order that DID complete was never attributed to its fitting.
+      // A context that never reaches this page ages out on its own TTL,
+      // and the server-side link is first-order-wins, so a stale record
+      // can never re-attribute a later order.
+      clearFitCheckoutContext();
       if (sessionId) markFinalized(sessionId);
     },
     [clear, sessionId],

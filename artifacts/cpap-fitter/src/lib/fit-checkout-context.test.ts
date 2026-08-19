@@ -115,6 +115,35 @@ describe("fit checkout context", () => {
     });
   });
 
+  it("drops a record whose fitSessionId is not a UUID instead of poisoning checkout", () => {
+    // The checkout routes validate fitSessionId as z.string().uuid() in a
+    // .strict() schema. Forwarding a corrupted stored value verbatim
+    // would 400 the ENTIRE checkout — and keep 400ing it on retry, since
+    // the record survives the failure. Not-a-UUID must read as absent.
+    window.localStorage.setItem(
+      KEY,
+      JSON.stringify({ fitSessionId: "hand-edited-junk", savedAt: Date.now() }),
+    );
+    expect(readFitCheckoutContext()).toBeNull();
+  });
+
+  it("drops just the variant/slug when they are malformed, keeping the session", () => {
+    window.localStorage.setItem(
+      KEY,
+      JSON.stringify({
+        fitSessionId: SESSION,
+        orderedMaskSlug: "Not A Slug!",
+        orderedVariantId: "also-junk",
+        savedAt: Date.now(),
+      }),
+    );
+    expect(readFitCheckoutContext()).toEqual({
+      fitSessionId: SESSION,
+      orderedMaskSlug: null,
+      orderedVariantId: null,
+    });
+  });
+
   it("clears once the order it described has been placed", () => {
     rememberFitCheckoutContext({
       fitSessionId: SESSION,

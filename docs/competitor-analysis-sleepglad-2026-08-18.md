@@ -257,6 +257,33 @@ and **higher-fidelity multi-angle capture** (built, behind
 
 ---
 
+## 9. Update — third pass (2026-08-19)
+
+Two items this document had carried as open or partial are now closed:
+
+- **Guided multi-angle capture is real.** §8's "built, just dark" was
+  generous: the pure math (quality checks, pose prompts, cross-frame
+  aggregation in `scan-quality.ts`) was built and tested, but the capture
+  UI never was — migration 0503's own flag description said "NOT YET
+  ACTIVE… this toggle currently has no effect". The guided experience now
+  exists (`pages/capture-guided.tsx`: live quality coach, three-pose
+  capture, either-direction turn acceptance, fail-open fallback to
+  single-frame; aggregation in `pages/measure.tsx`), the flag rides the
+  invite-resolve response, and 0504 corrects the flag copy. Still OFF by
+  default — patient-visible, so flipping it stays a per-tenant opt-in
+  (runbook §B5). This closes the §2 "Scan fidelity" row's caveat and
+  exceeds SleepGlad's single-selfie evidence on the axis that matters:
+  cross-frame measurement agreement, still with zero image upload.
+- **The outcome-feedback loop now feeds the LIVE engine.** SleepGlad's
+  "every scan builds on itself" had a PennFit equivalent that only fed an
+  admin display; `/api/fit/assess` passed `fitAdjustments: {}`. The
+  tenant's attributed `mask_fit_outcomes` are now tallied
+  (`loadFitAdjustments`, cached, fail-soft) and applied as the bounded
+  ±15% ranking multiplier the engine always accepted. Pediatric/NIV
+  clinical validation remains the one §5 item deliberately open.
+
+---
+
 ## 8. Update — second pass (same day, PR #1267)
 
 An independent re-run of the research confirmed §1–§6 and turned up one

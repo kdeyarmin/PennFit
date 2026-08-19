@@ -22,6 +22,23 @@ describe("findImplausibleMeasurement", () => {
     ).toBe("noseWidth");
   });
 
+  test("accepts a typical pediatric-face measurement set", () => {
+    // The client window is the UNION of the server's adult and pediatric
+    // windows: this page doesn't know the population (the chart does,
+    // server-side), and an adult-only gate made the server's pediatric
+    // path unreachable from the scanner.
+    expect(
+      findImplausibleMeasurement({
+        noseWidth: 18,
+        noseHeight: 28,
+        noseToChin: 38,
+        mouthWidth: 28,
+        faceWidthAtCheekbones: 105,
+        calibrationMethod: "iris",
+      }),
+    ).toBeNull();
+  });
+
   test("flags a too-large faceWidthAtCheekbones", () => {
     expect(
       findImplausibleMeasurement({

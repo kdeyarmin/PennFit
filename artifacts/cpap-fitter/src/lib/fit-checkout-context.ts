@@ -71,6 +71,17 @@ export function rememberFitCheckoutContext(ctx: FitCheckoutContext): void {
  * absent, malformed, or expired record, so callers can spread the result
  * into a request body without checking anything but nullness.
  */
+// Mirror the checkout routes' Zod shapes (`z.string().uuid()` and the
+// slug regex in routes/shop/checkout.ts). This attribution rides a MONEY
+// path in a `.strict()` schema: a corrupted or hand-edited localStorage
+// value that we forward verbatim 400s the ENTIRE checkout, and since the
+// record survives the failure, every retry fails the same way. A value
+// that doesn't match is dropped here instead — losing the attribution,
+// never the sale.
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const SLUG_RE = /^[a-z0-9-]{1,120}$/;
+
 export function readFitCheckoutContext(): FitCheckoutContext | null {
   if (typeof window === "undefined") return null;
   try {
@@ -78,19 +89,21 @@ export function readFitCheckoutContext(): FitCheckoutContext | null {
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<StoredContext> | null;
     if (!parsed || typeof parsed.fitSessionId !== "string") return null;
-    if (!parsed.fitSessionId.trim()) return null;
+    if (!UUID_RE.test(parsed.fitSessionId.trim())) return null;
     if (typeof parsed.savedAt !== "number" || !Number.isFinite(parsed.savedAt))
       return null;
     if (Date.now() - parsed.savedAt > TTL_MS) return null;
     return {
-      fitSessionId: parsed.fitSessionId,
+      fitSessionId: parsed.fitSessionId.trim(),
       orderedMaskSlug:
-        typeof parsed.orderedMaskSlug === "string" && parsed.orderedMaskSlug
+        typeof parsed.orderedMaskSlug === "string" &&
+        SLUG_RE.test(parsed.orderedMaskSlug)
           ? parsed.orderedMaskSlug
           : null,
       orderedVariantId:
-        typeof parsed.orderedVariantId === "string" && parsed.orderedVariantId
-          ? parsed.orderedVariantId
+        typeof parsed.orderedVariantId === "string" &&
+        UUID_RE.test(parsed.orderedVariantId.trim())
+          ? parsed.orderedVariantId.trim()
           : null,
     };
   } catch {

@@ -43,7 +43,10 @@ import { logger } from "../../lib/logger";
 import { verifyFitterInviteToken } from "../../lib/fitter-invite-token.js";
 import { resolveOrgIdForSignedRecord } from "../../lib/storefront/signed-link-org.js";
 import { isFeatureEnabled } from "../../lib/feature-flags.js";
-import { loadFittingContext } from "../../lib/fitting/catalog-store.js";
+import {
+  loadFitAdjustments,
+  loadFittingContext,
+} from "../../lib/fitting/catalog-store.js";
 import { assess } from "../../lib/fitting/index.js";
 import { buildProfile } from "../../lib/fitting/profile.js";
 import { RULES_ENGINE_VERSION } from "../../lib/fitting/versions.js";
@@ -314,8 +317,6 @@ router.post("/fit/assess", assessLimiter, async (req, res) => {
 
   const body = parsed.data;
   let profile = buildProfile(body.answers ?? null, body.profile ?? null);
-  const bounds =
-    profile.population === "pediatric" ? PEDIATRIC_BOUNDS : ADULT_BOUNDS;
 
   const measurements: FitMeasurements = {
     noseWidth: body.measurements.noseWidth,
@@ -324,23 +325,6 @@ router.post("/fit/assess", assessLimiter, async (req, res) => {
     mouthWidth: body.measurements.mouthWidth,
     faceWidthAtCheekbones: body.measurements.faceWidthAtCheekbones,
   };
-
-  // Grossly impossible numbers are rejected outright — they indicate a
-  // broken or hostile client, not a patient. Values that are merely
-  // outside the sizing window fall through to the engine, which returns
-  // `outside_validated_range` and says so plainly.
-  for (const [field, [, max]] of Object.entries(bounds)) {
-    const value = measurements[field as keyof FitMeasurements];
-    if (value <= 0 || value > max * 3) {
-      res.status(400).json({
-        error: "Invalid input",
-        details: [
-          `measurements.${field}: must be a positive number no greater than ${max * 3} mm`,
-        ],
-      });
-      return;
-    }
-  }
 
   const orgId = await resolveOrgIdForSignedRecord(
     "fitter_invites",
@@ -383,6 +367,30 @@ router.post("/fit/assess", assessLimiter, async (req, res) => {
     profile = { ...profile, population: invite.chartPopulation };
   }
 
+  // Grossly impossible numbers are rejected outright — they indicate a
+  // broken or hostile client, not a patient. Values that are merely
+  // outside the sizing window fall through to the engine, which returns
+  // `outside_validated_range` and says so plainly.
+  //
+  // Deliberately AFTER the chart-population override above: the windows
+  // are population-specific, and picking them from the client-claimed
+  // population meant a pediatric chart with a browser-supplied "adult"
+  // hint was gross-checked against adult windows (and vice versa).
+  const bounds =
+    profile.population === "pediatric" ? PEDIATRIC_BOUNDS : ADULT_BOUNDS;
+  for (const [field, [, max]] of Object.entries(bounds)) {
+    const value = measurements[field as keyof FitMeasurements];
+    if (value <= 0 || value > max * 3) {
+      res.status(400).json({
+        error: "Invalid input",
+        details: [
+          `measurements.${field}: must be a positive number no greater than ${max * 3} mm`,
+        ],
+      });
+      return;
+    }
+  }
+
   const [enabled, gating, magnets] = await Promise.all([
     isFeatureEnabled("fitter.clinical_assessment", orgId).catch(() => false),
     isFeatureEnabled("fitter.confidence_gating", orgId).catch(() => false),
@@ -401,6 +409,13 @@ router.post("/fit/assess", assessLimiter, async (req, res) => {
   }
 
   const context = await loadFittingContext(orgId);
+
+  // The #22b closed loop, live: per-mask ranking multipliers from this
+  // tenant's attributed post-fit outcomes ("every fitting builds on the
+  // last"). Keyed by slug for the engine; fail-soft neutral `{}`; bounded
+  // to ±15% inside the engine regardless, so feedback can re-order
+  // near-ties but can never rescue a clinically poor mask.
+  const fitAdjustments = await loadFitAdjustments(orgId, context.catalog);
 
   const safetyResponses: SafetyResponse[] = (body.safety?.responses ?? []).map(
     (r) => ({ questionKey: r.questionKey, answer: r.answer }),
@@ -474,10 +489,7 @@ router.post("/fit/assess", assessLimiter, async (req, res) => {
     // fails closed by excluding magnetic masks, with the reason recorded.
     magnetScreenUnavailable: magnets && !context.safetyScreen,
     availability: context.availability,
-    // Empirical outcome adjustments are loaded per tenant by the admin
-    // signal route today; wiring them into the live path is the next
-    // increment of the closed loop.
-    fitAdjustments: {},
+    fitAdjustments,
     degraded: context.degraded,
     confidenceGating: gating,
     magnetScreening: magnets,

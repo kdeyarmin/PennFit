@@ -147,7 +147,10 @@ export async function markContactedFitterLead(
   const url = `/resupply-api/admin/fitter-leads/${encodeURIComponent(id)}/mark-contacted`;
   const res = await fetch(url, {
     method: "POST",
-    headers: { Accept: "application/json" },
+    // csrfHeader() is mandatory on every admin mutation — the app-level
+    // requireCsrfOnAdminMutations gate 403s a POST without it, which is
+    // exactly how this action shipped broken: the button always failed.
+    headers: { Accept: "application/json", ...csrfHeader() },
   });
   if (!res.ok) {
     let data: unknown = null;
@@ -267,9 +270,12 @@ export async function setFitterLeadNotes(
   const url = `/resupply-api/admin/fitter-leads/${encodeURIComponent(id)}/notes`;
   const res = await fetch(url, {
     method: "POST",
+    // Same CSRF requirement as mark-contacted above — without the header
+    // the app-level admin-mutation gate rejects the save every time.
     headers: {
       Accept: "application/json",
       "Content-Type": "application/json",
+      ...csrfHeader(),
     },
     body: JSON.stringify({ notes }),
   });

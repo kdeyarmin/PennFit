@@ -103,6 +103,13 @@ export function verifyMaskFitToken(token: string): VerifyMaskFitTokenResult {
 
   const sigBuf = base64urlDecode(sigEncoded);
   if (!sigBuf) return { valid: false };
+  // Reject non-canonical base64url, mirroring fitter-invite-token.ts: the
+  // final character of the encoded HMAC carries unused padding bits that
+  // Buffer.from(..., 'base64') silently ignores, so one logical token
+  // would otherwise have multiple accepted string forms. Not a forgery
+  // vector (the HMAC still has to verify) — but a token that is meant to
+  // be single-use-ish must have exactly one canonical spelling.
+  if (base64urlEncode(sigBuf) !== sigEncoded) return { valid: false };
 
   const expected = hmacSign(payloadEncoded);
   if (sigBuf.length !== expected.length || !timingSafeEqual(sigBuf, expected)) {

@@ -21,6 +21,10 @@ import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../logger";
 import { maskCatalog, type MaskEntry } from "../../data/maskCatalog.js";
+import {
+  computeFitAdjustments,
+  tallyOutcomesByMask,
+} from "../storefront/mask-fit-tuning.js";
 import { OPEN_FORMULARY } from "./formulary.js";
 import type {
   CatalogMask,
@@ -273,16 +277,47 @@ export async function loadFittingContext(
  */
 type Result<T> = { data: T | null; error: { message: string } | null };
 
-function asRows(result: unknown): Record<string, unknown>[] {
-  const r = result as Result<Record<string, unknown>[]>;
-  if (!r || r.error || !Array.isArray(r.data)) return [];
-  return r.data;
-}
-
 function asRow(result: unknown): Record<string, unknown> | null {
   const r = result as Result<Record<string, unknown>>;
   if (!r || r.error || !r.data) return null;
   return r.data;
+}
+
+/**
+ * Page a bulk read past PostgREST's `max_rows` cap (1000 by default). A
+ * bare high `.limit()` is silently truncated to an UNORDERED first 1000
+ * rows — for the variants table that means a mask whose sizes fell past
+ * the window loses its geometry and gets the "no sizing data" fallback,
+ * a silently wrong size rather than a visible failure. The builder MUST
+ * apply a deterministic ORDER BY (unique tail) or pages can overlap.
+ *
+ * FAIL CLOSED by default: a page error throws, routing the caller into
+ * the documented degraded path (see loadFromDb). `swallowErrors` is for
+ * the one read whose failure mode is asymmetric (variant reviews).
+ */
+async function loadAllRows(
+  label: string,
+  build: (from: number, to: number) => PromiseLike<unknown>,
+  maxRows: number,
+  swallowErrors = false,
+): Promise<Record<string, unknown>[]> {
+  const out: Record<string, unknown>[] = [];
+  const PAGE = 1000;
+  for (let offset = 0; offset < maxRows; offset += PAGE) {
+    const result = (await withTimeout(
+      build(offset, Math.min(offset + PAGE, maxRows) - 1),
+    )) as Result<Record<string, unknown>[]>;
+    if (!result || result.error) {
+      if (swallowErrors) return out;
+      throw new Error(
+        `fitting catalog load failed on ${label}: ${result?.error?.message ?? "unknown"}`,
+      );
+    }
+    const page = result.data ?? [];
+    out.push(...page);
+    if (page.length < PAGE) break;
+  }
+  return out;
 }
 
 async function loadFromDb(orgId: string): Promise<FittingContext> {
@@ -295,49 +330,86 @@ async function loadFromDb(orgId: string): Promise<FittingContext> {
   // every platform row. The tenant boundary is preserved by the explicit
   // `org_id.is.null,org_id.eq.<tenant>` filter below — a tenant can see the
   // shared catalog and its own additions, never another tenant's.
+  //
+  // FAIL CLOSED on every load except variant reviews (see below).
+  //
+  // PostgREST reports failures as `{ error }` on a RESOLVED promise, so a
+  // failed sub-query silently becomes an empty array. That is harmless for
+  // most data and actively dangerous for two of these: an empty
+  // contraindications result deletes every hard clinical exclusion, and an
+  // empty formulary result turns a closed formulary into an open one. Both
+  // would produce a confident-looking recommendation from missing safety
+  // data while still reporting `degraded: false`. Throwing (loadAllRows /
+  // the formulary check below) routes the caller into the documented
+  // degraded path — a visibly worse answer rather than an invisibly wrong
+  // one.
+  //
+  // `mask_variant_reviews` is deliberately the exception. Its failure
+  // mode is asymmetric: losing it leaves every variant flagged as
+  // unreviewed, which routes to a human — strictly more cautious, never
+  // less. Tearing the whole context down over a safe-direction failure
+  // would be the worse trade.
   const [
-    models,
-    variants,
-    contras,
+    modelRowsRaw,
+    variantRows,
+    contraRows,
     formularyRows,
-    availabilityRows,
-    variantReviews,
+    availabilityRowList,
+    variantReviewRows,
     screen,
   ] = await Promise.all([
-    withTimeout(
-      supabase
-        .raw()
-        .schema("resupply")
-        .from("mask_models")
-        .select(
-          "id, org_id, slug, manufacturer, model_name, product_line, interface_type, service_line, therapy_modes, vented, has_magnetic_components, magnet_free_variant_slug, pressure_min_cm_h2o, pressure_max_cm_h2o, supports_supplemental_oxygen, minimal_contact, avoids_nasal_bridge, hose_position, facial_hair_tolerance, side_sleeping_tolerance, claustrophobia_tolerance, glasses_compatible, cushion_material, headgear_style, weight_grams, description, image_url, status, fit_data_source, needs_clinical_review, catalog_version",
-        )
-        .or(`org_id.is.null,org_id.eq.${orgId}`)
-        .neq("status", "pre_release")
-        .limit(2000),
+    loadAllRows(
+      "mask_models",
+      (from, to) =>
+        supabase
+          .raw()
+          .schema("resupply")
+          .from("mask_models")
+          .select(
+            "id, org_id, slug, manufacturer, model_name, product_line, interface_type, service_line, therapy_modes, vented, has_magnetic_components, magnet_free_variant_slug, pressure_min_cm_h2o, pressure_max_cm_h2o, supports_supplemental_oxygen, minimal_contact, avoids_nasal_bridge, hose_position, facial_hair_tolerance, side_sleeping_tolerance, claustrophobia_tolerance, glasses_compatible, cushion_material, headgear_style, weight_grams, description, image_url, status, fit_data_source, needs_clinical_review, catalog_version",
+          )
+          .or(`org_id.is.null,org_id.eq.${orgId}`)
+          // Only CURRENT models are recommendable. Excluding just
+          // pre_release left discontinued models fully rankable: the size
+          // picker skips discontinued VARIANTS (tiers.ts), but nothing
+          // model-level did, so a mask a manufacturer had withdrawn could
+          // still be recommended — and the refit campaign's "you're on a
+          // discontinued mask" outreach would then re-fit patients onto it.
+          .eq("status", "current")
+          .order("id", { ascending: true })
+          .range(from, to),
+      4000,
     ),
-    withTimeout(
-      supabase
-        .raw()
-        .schema("resupply")
-        .from("mask_size_variants")
-        .select("*")
-        .eq("status", "current")
-        // Deterministic order. PostgREST makes no ordering promise, and
-        // with overlapping bands the size picker must not depend on row
-        // arrival order (the picker sorts again, but the stored variant
-        // lists — and anything else that walks them — should be stable).
-        .order("sort_order", { ascending: true })
-        .order("id", { ascending: true })
-        .limit(5000),
+    loadAllRows(
+      "mask_size_variants",
+      (from, to) =>
+        supabase
+          .raw()
+          .schema("resupply")
+          .from("mask_size_variants")
+          .select("*")
+          .eq("status", "current")
+          // Deterministic order. PostgREST makes no ordering promise, and
+          // with overlapping bands the size picker must not depend on row
+          // arrival order (the picker sorts again, but the stored variant
+          // lists — and anything else that walks them — should be stable).
+          // The unique id tail is also what makes the paging exact.
+          .order("sort_order", { ascending: true })
+          .order("id", { ascending: true })
+          .range(from, to),
+      10000,
     ),
-    withTimeout(
-      supabase
-        .raw()
-        .schema("resupply")
-        .from("mask_contraindications")
-        .select("mask_model_id, factor, severity, rationale")
-        .limit(5000),
+    loadAllRows(
+      "mask_contraindications",
+      (from, to) =>
+        supabase
+          .raw()
+          .schema("resupply")
+          .from("mask_contraindications")
+          .select("id, mask_model_id, factor, severity, rationale")
+          .order("id", { ascending: true })
+          .range(from, to),
+      10000,
     ),
     withTimeout(
       supabase
@@ -347,11 +419,15 @@ async function loadFromDb(orgId: string): Promise<FittingContext> {
         .limit(1)
         .maybeSingle(),
     ),
-    withTimeout(
-      supabase
-        .from("mask_availability")
-        .select("mask_model_id, availability, margin_rank")
-        .limit(5000),
+    loadAllRows(
+      "mask_availability",
+      (from, to) =>
+        supabase
+          .from("mask_availability")
+          .select("id, mask_model_id, availability, margin_rank")
+          .order("id", { ascending: true })
+          .range(from, to),
+      10000,
     ),
     // THIS tenant's clinical sign-off on the shared size bands. The
     // platform `needs_clinical_review` flag is never cleared by a
@@ -359,53 +435,35 @@ async function loadFromDb(orgId: string): Promise<FittingContext> {
     // per-tenant review flag carried on the session and the fit report.
     // (It no longer caps confidence — that gate was removed on purpose;
     // see resolveConfidence in confidence.ts.)
-    withTimeout(
-      supabase
-        .from("mask_variant_reviews")
-        .select("size_variant_id, approved")
-        .eq("approved", true)
-        .limit(20000),
+    loadAllRows(
+      "mask_variant_reviews",
+      (from, to) =>
+        supabase
+          .from("mask_variant_reviews")
+          .select("size_variant_id, approved")
+          .eq("approved", true)
+          .order("size_variant_id", { ascending: true })
+          .range(from, to),
+      20000,
+      /* swallowErrors */ true,
     ),
     loadSafetyScreen(orgId),
   ]);
 
-  // FAIL CLOSED on ANY of these, not just the models query.
-  //
-  // PostgREST reports failures as `{ error }` on a RESOLVED promise, so a
-  // failed sub-query silently becomes an empty array. That is harmless for
-  // most data and actively dangerous for two of these: an empty
-  // contraindications result deletes every hard clinical exclusion, and an
-  // empty formulary result turns a closed formulary into an open one. Both
-  // would produce a confident-looking recommendation from missing safety
-  // data while still reporting `degraded: false`.
-  //
-  // Throwing here routes the caller into the documented degraded path
-  // (static catalog, open formulary, `degraded: true` stamped on the
-  // session and printed on the report), which is a visibly worse answer
-  // rather than an invisibly wrong one.
-  //
-  // `mask_variant_reviews` is deliberately NOT in this list. Its failure
-  // mode is asymmetric: losing it leaves every variant flagged as
-  // unreviewed, which caps confidence and routes to a human — strictly
-  // more cautious, never less. Tearing the whole context down to the
-  // static catalog over a safe-direction failure would be the worse
-  // trade.
-  for (const [label, result] of [
-    ["mask_models", models],
-    ["mask_size_variants", variants],
-    ["mask_contraindications", contras],
-    ["formularies", formularyRows],
-    ["mask_availability", availabilityRows],
-  ] as const) {
-    const err = (result as { error?: { message?: string } | null }).error;
+  {
+    // The formulary read is the one remaining single-row query; check it
+    // explicitly (an empty result from a FAILED read would silently turn
+    // a closed formulary into an open one).
+    const err = (formularyRows as { error?: { message?: string } | null })
+      .error;
     if (err) {
       throw new Error(
-        `fitting catalog load failed on ${label}: ${err.message ?? "unknown"}`,
+        `fitting catalog load failed on formularies: ${err.message ?? "unknown"}`,
       );
     }
   }
 
-  const allModelRows = (models.data ?? []) as ModelRow[];
+  const allModelRows = modelRowsRaw as unknown as ModelRow[];
 
   // A tenant may add a private model that SHADOWS a platform slug (0481
   // allows exactly that, via two partial unique indexes). Keep the tenant's
@@ -435,12 +493,12 @@ async function loadFromDb(orgId: string): Promise<FittingContext> {
   // tenant-scoped `mask_variant_reviews` row rather than mutating the
   // shared variant. So the flag the engine acts on is the AND of the two.
   const approvedVariantIds = new Set<string>();
-  for (const r of asRows(variantReviews)) {
+  for (const r of variantReviewRows) {
     approvedVariantIds.add(String(r.size_variant_id));
   }
 
   const variantsByModel = new Map<string, SizeVariant[]>();
-  for (const v of (variants.data ?? []) as Record<string, unknown>[]) {
+  for (const v of variantRows) {
     const modelId = String(v.mask_model_id);
     const list = variantsByModel.get(modelId) ?? [];
     list.push({
@@ -473,7 +531,7 @@ async function loadFromDb(orgId: string): Promise<FittingContext> {
   }
 
   const contrasByModel = new Map<string, CatalogMask["contraindications"]>();
-  for (const c of (contras.data ?? []) as Record<string, unknown>[]) {
+  for (const c of contraRows) {
     const modelId = String(c.mask_model_id);
     const list = contrasByModel.get(modelId) ?? [];
     list.push({
@@ -524,12 +582,16 @@ async function loadFromDb(orgId: string): Promise<FittingContext> {
   const formularyRow = asRow(formularyRows);
   let formulary: Formulary = OPEN_FORMULARY;
   if (formularyRow) {
-    const rules = await withTimeout(
-      supabase
-        .from("formulary_rules")
-        .select("*")
-        .eq("formulary_id", String(formularyRow.id))
-        .limit(2000),
+    const ruleRows = await loadAllRows(
+      "formulary_rules",
+      (from, to) =>
+        supabase
+          .from("formulary_rules")
+          .select("*")
+          .eq("formulary_id", String(formularyRow.id))
+          .order("id", { ascending: true })
+          .range(from, to),
+      4000,
     );
     formulary = {
       id: String(formularyRow.id),
@@ -537,7 +599,7 @@ async function loadFromDb(orgId: string): Promise<FittingContext> {
       version: Number(formularyRow.version ?? 1),
       defaultPosture:
         (formularyRow.default_posture as "open" | "closed") ?? "open",
-      rules: asRows(rules).map(
+      rules: ruleRows.map(
         (r) =>
           ({
             id: String(r.id),
@@ -569,7 +631,7 @@ async function loadFromDb(orgId: string): Promise<FittingContext> {
 
   const bySlug = new Map(catalog.map((m) => [m.id, m.slug]));
   const availability: Record<string, MaskAvailability> = {};
-  for (const a of asRows(availabilityRows)) {
+  for (const a of availabilityRowList) {
     const slug = bySlug.get(String(a.mask_model_id));
     if (!slug) continue;
     availability[slug] = {
@@ -585,6 +647,133 @@ async function loadFromDb(orgId: string): Promise<FittingContext> {
     safetyScreen: screen,
     degraded: false,
   };
+}
+
+// ── Outcome-driven ranking adjustments (#22b, live path) ─────────────
+//
+// The tuning loop: attributed post-fit outcomes (`mask_fit_outcomes`) are
+// tallied per mask and folded into a bounded ranking multiplier by
+// `computeFitAdjustments()`. The admin rec-signal route has always shown
+// this signal; this loader is what feeds it to the LIVE engine — the
+// wiring the fit-assess route documented as "the next increment of the
+// closed loop".
+//
+// Posture mirrors the catalog load above: short-TTL cache, hard lookup
+// timeout, FAIL SOFT. Any failure returns `{}` — the engine's neutral —
+// because a fitting must never be lost to the tuning signal being
+// unavailable. The TTL is longer than the catalog's: the signal moves at
+// the speed of patient feedback, not admin edits, and `minSamples` (10)
+// means a five-minute lag can never flip a recommendation on one outcome.
+
+const ADJUSTMENTS_CACHE_TTL_MS = 5 * 60_000;
+const ADJUSTMENTS_PAGE = 1000;
+/** Newest-first row window. When the table outgrows it, the signal
+ *  reflects the MOST RECENT outcomes (the ones describing today's mask
+ *  lineup) — same rationale as the admin rec-signal route's pagination
+ *  (routes/admin/mask-fit-worklist.ts), just a tighter bound because this
+ *  runs on the patient-facing path. */
+const ADJUSTMENTS_MAX_ROWS = 5000;
+
+interface AdjustmentsCacheEntry {
+  /** Multipliers keyed by `mask_models.id` — outcomes store the uuid. */
+  byMaskId: Record<string, number>;
+  expiresAt: number;
+}
+
+const adjustmentsCache = new Map<string, AdjustmentsCacheEntry>();
+
+/** Drop a tenant's cached tuning signal (e.g. after a bulk outcome import). */
+export function invalidateFitAdjustments(orgId?: string): void {
+  if (orgId) adjustmentsCache.delete(orgId);
+  else adjustmentsCache.clear();
+}
+
+/**
+ * Load a tenant's outcome-driven ranking multipliers, keyed by SLUG —
+ * the key `runTiers` looks up (`fitAdjustments[mask.slug]`), while the
+ * outcome rows carry the model uuid. Mapping through the catalog actually
+ * in play this session means a degraded (static) catalog — whose ids are
+ * slugs, not uuids — simply resolves no matches and stays neutral.
+ *
+ * Never throws; never returns a multiplier for a mask outside `catalog`.
+ */
+export async function loadFitAdjustments(
+  orgId: string,
+  catalog: readonly CatalogMask[],
+): Promise<Record<string, number>> {
+  let byMaskId: Record<string, number>;
+  const cached = adjustmentsCache.get(orgId);
+  if (cached && cached.expiresAt > Date.now()) {
+    byMaskId = cached.byMaskId;
+  } else {
+    try {
+      byMaskId = await loadAdjustmentsFromDb(orgId);
+      adjustmentsCache.set(orgId, {
+        byMaskId,
+        expiresAt: Date.now() + ADJUSTMENTS_CACHE_TTL_MS,
+      });
+    } catch (err) {
+      logger.warn(
+        { err: err instanceof Error ? err : new Error(String(err)), orgId },
+        "fit adjustments load failed; ranking stays neutral",
+      );
+      byMaskId = {};
+      // Cache the neutral answer briefly too, so an outage doesn't add a
+      // timed-out round trip to every in-flight fitting.
+      adjustmentsCache.set(orgId, {
+        byMaskId,
+        expiresAt: Date.now() + 10_000,
+      });
+    }
+  }
+
+  const bySlug: Record<string, number> = {};
+  for (const m of catalog) {
+    const mult = byMaskId[m.id];
+    if (typeof mult === "number") bySlug[m.slug] = mult;
+  }
+  return bySlug;
+}
+
+async function loadAdjustmentsFromDb(
+  orgId: string,
+): Promise<Record<string, number>> {
+  const supabase = getOrgScopedClient(orgId);
+  type OutcomeRow = {
+    mask_id: string | null;
+    fit_outcome: "good" | "leaking" | "uncomfortable";
+  };
+  const rows: OutcomeRow[] = [];
+  // Page past PostgREST's max_rows cap — a bare high `.limit()` silently
+  // truncates to an UNORDERED first 1000 and reports the partial tally as
+  // complete (the trap the admin routes document and page around).
+  for (let offset = 0; offset < ADJUSTMENTS_MAX_ROWS; offset += ADJUSTMENTS_PAGE) {
+    const result = (await withTimeout(
+      supabase
+        .from("mask_fit_outcomes")
+        .select("mask_id, fit_outcome")
+        .not("mask_id", "is", null)
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: false })
+        .range(offset, offset + ADJUSTMENTS_PAGE - 1),
+    )) as {
+      data: OutcomeRow[] | null;
+      error: { message: string } | null;
+    };
+    if (result.error) {
+      throw new Error(
+        `mask_fit_outcomes read failed: ${result.error.message}`,
+      );
+    }
+    const page = result.data ?? [];
+    rows.push(...page);
+    if (page.length < ADJUSTMENTS_PAGE) break;
+  }
+  return computeFitAdjustments(
+    tallyOutcomesByMask(
+      rows.map((r) => ({ maskId: r.mask_id, fitOutcome: r.fit_outcome })),
+    ),
+  );
 }
 
 async function loadSafetyScreen(orgId: string): Promise<SafetyScreen | null> {

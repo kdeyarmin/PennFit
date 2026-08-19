@@ -11,4 +11,7 @@ export type OrderRequestChosenMask = {
   name: string;
   modelNumber: string;
   manufacturer: string;
+  /** The size the fitting recommended (e.g. "Medium"). Null/absent on the
+   *  legacy recommendation path, which ranks masks without a size. */
+  size?: string | null;
 };

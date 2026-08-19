@@ -459,6 +459,6 @@
     "label": "Fitter \u2014 multiframe capture",
     "category": "Clinical",
     "default": "off",
-    "description": "NOT YET ACTIVE in this build \u2014 capture is single-frame today, so this toggle currently has no effect. When it lands: guided multi-angle scan capture with live quality checks (lighting, distance, head position, obstruction, movement) and cross-frame measurement agreement, producing a measurement confidence score instead of a single unverified snapshot. OFF will keep single-frame capture."
+    "description": "Guided multi-angle scan capture: a live coach walks the patient through three angles (front, then a slight turn each way) with real-time quality checks (lighting, distance, head position, obstruction, movement), and the measurements are cross-checked across frames for agreement \u2014 producing a measurement confidence score instead of a single unverified snapshot. Falls back to single-frame capture automatically on devices that cannot run the live face tracker. OFF keeps the one-photo capture."
   }
 ]

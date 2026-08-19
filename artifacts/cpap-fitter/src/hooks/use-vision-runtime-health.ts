@@ -29,7 +29,11 @@ export function useVisionRuntimeHealth() {
         if (active) setAttempt((n) => n + 1);
       }, delayMs);
     };
-    fetch(modelUrl, { method: "HEAD" })
+    // Time-boxed: a blackholed request (a proxy that accepts and never
+    // responds) would otherwise leave health at "checking" forever — the
+    // capture button stays disabled AND the "degraded" escape hatches
+    // never render, the exact dead-end this probe exists to prevent.
+    fetch(modelUrl, { method: "HEAD", signal: AbortSignal.timeout(8_000) })
       .then((r) => {
         if (!active) return;
         if (r.ok) {

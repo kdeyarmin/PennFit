@@ -155,16 +155,22 @@ router.get("/shop/fitter-invite/resolve", resolveLimiter, async (req, res) => {
   // BEFORE the /results page ever probes the clinical route — so this
   // resolve response (the one call that already knows the tenant) is
   // where the flag has to travel. Fail-soft to the legacy questionnaire.
-  const fitProfileV2 = await isFeatureEnabled(
-    "fitter.fit_profile_v2",
-    orgId,
-  ).catch(() => false);
+  //
+  // `fitter.multiframe_capture` travels the same way for the same reason:
+  // /capture renders long before /results, and it is the page that has to
+  // know whether to run the guided multi-angle scan or the single-frame
+  // capture. Fail-soft to single-frame.
+  const [fitProfileV2, multiframeCapture] = await Promise.all([
+    isFeatureEnabled("fitter.fit_profile_v2", orgId).catch(() => false),
+    isFeatureEnabled("fitter.multiframe_capture", orgId).catch(() => false),
+  ]);
 
   res.json({
     valid: true,
     email: inOffice ? null : invite.recipient_email,
     name: inOffice ? null : invite.recipient_name,
     fitProfileV2,
+    multiframeCapture,
   });
 });
 

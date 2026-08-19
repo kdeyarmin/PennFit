@@ -5,6 +5,18 @@ import type {
 } from "@workspace/api-client-react/storefront";
 import type { ScanSignalsPayload } from "@/lib/scan-signals";
 import type { FitAnswers } from "@/lib/fit-profile";
+import type { CapturePose } from "@/lib/scan-quality";
+
+/**
+ * One frame from the guided multi-angle capture: the still (display +
+ * re-detection on /measure only — never uploaded, never persisted) and
+ * the pose prompt it was captured under, which /measure needs to pick the
+ * right quality target and foreshortening correction.
+ */
+export interface CapturedFrame {
+  dataUrl: string;
+  pose: CapturePose;
+}
 
 export interface ChosenMask {
   maskId: string;
@@ -45,7 +57,17 @@ interface FitterState {
   fitAnswers: FitAnswers;
   /** Whether this tenant's invite resolved with the v2 questionnaire on. */
   fitProfileV2: boolean;
+  /** Whether this tenant's invite resolved with guided multi-angle capture
+   *  on (`fitter.multiframe_capture`). Off = the single-frame capture. */
+  multiframeCapture: boolean;
   capturedImage: string | null; // Data URL for display purposes only. Never uploaded.
+  /**
+   * The guided capture's frame set (front + turns), memory only — like
+   * `capturedImage`, never sessionStorage, never transmitted. /measure
+   * re-detects landmarks on each and aggregates; it clears them the
+   * moment the numbers are extracted. Null on the single-frame path.
+   */
+  capturedFrames: CapturedFrame[] | null;
   chosenMask: ChosenMask | null;
   /**
    * Email + marketing-consent captured at the start of the fitter flow
@@ -100,11 +122,23 @@ interface FitterContextType extends FitterState {
    *  exactly a deletion. */
   replaceFitAnswers: (answers: FitAnswers) => void;
   setFitProfileV2: (on: boolean) => void;
+  setMultiframeCapture: (on: boolean) => void;
   setCapturedImage: (image: string | null) => void;
+  setCapturedFrames: (frames: CapturedFrame[] | null) => void;
   setChosenMask: (mask: ChosenMask | null) => void;
   setEmailConsent: (email: string, consent: boolean) => void;
   setInviteToken: (token: string | null) => void;
   reset: () => void;
+  /**
+   * Clear the fitting DATA (photo, measurements, answers, chosen mask)
+   * while keeping the patient's IDENTITY and invite context (email,
+   * consent, invite token, tenant flags, entry point). This is what
+   * "Start Over" means inside an invitation-only flow: a full `reset()`
+   * there also wipes the invite token, and since every fitter route is
+   * invite-gated the patient lands on "Invitation required" with no way
+   * back in short of re-opening the original link.
+   */
+  resetForNewFitting: () => void;
 }
 
 const FitterContext = createContext<FitterContextType | undefined>(undefined);
@@ -220,8 +254,23 @@ export function FitterProvider({ children }: { children: ReactNode }) {
       return false;
     }
   });
+  const [multiframeCapture, setMultiframeCaptureState] = useState<boolean>(
+    () => {
+      try {
+        return sessionStorage.getItem("fitter_multiframe") === "1";
+      } catch {
+        return false;
+      }
+    },
+  );
 
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
+  // Memory only, deliberately: persisting camera stills — even to
+  // sessionStorage — would outlive the "discarded the moment your
+  // measurements are extracted" promise the UI makes.
+  const [capturedFrames, setCapturedFrames] = useState<CapturedFrame[] | null>(
+    null,
+  );
 
   // Email + marketing-consent gate. Persisted in sessionStorage so a
   // refresh mid-flow doesn't kick the patient back to /consent.
@@ -248,12 +297,33 @@ export function FitterProvider({ children }: { children: ReactNode }) {
   >(() => {
     if (typeof window === "undefined") return null;
     const raw = new URLSearchParams(window.location.search).get("entry");
-    return raw === "in_office" ||
+    const fromUrl =
+      raw === "in_office" ||
       raw === "kiosk_qr" ||
       raw === "remote_link" ||
       raw === "refit_campaign"
-      ? raw
-      : null;
+        ? raw
+        : null;
+    // Persisted like every other flow field: the `entry` param only exists
+    // on the landing URL, so without this a mid-flow refresh silently
+    // drops the channel and the fitting is recorded under the server's
+    // `remote_link` default — mislabelling kiosk and refit-campaign
+    // fittings in the by-channel outcome reporting.
+    try {
+      if (fromUrl) {
+        sessionStorage.setItem("fitter_entry_point", fromUrl);
+        return fromUrl;
+      }
+      const stored = sessionStorage.getItem("fitter_entry_point");
+      return stored === "in_office" ||
+        stored === "kiosk_qr" ||
+        stored === "remote_link" ||
+        stored === "refit_campaign"
+        ? stored
+        : null;
+    } catch {
+      return fromUrl;
+    }
   });
   const [inviteToken, setInviteTokenState] = useState<string | null>(() => {
     try {
@@ -315,6 +385,16 @@ export function FitterProvider({ children }: { children: ReactNode }) {
       else sessionStorage.removeItem("fitter_profile_v2");
     } catch (e) {
       console.error("Failed to persist fit profile flag", e);
+    }
+  };
+
+  const setMultiframeCapture = (on: boolean) => {
+    setMultiframeCaptureState(on);
+    try {
+      if (on) sessionStorage.setItem("fitter_multiframe", "1");
+      else sessionStorage.removeItem("fitter_multiframe");
+    } catch (e) {
+      console.error("Failed to persist multiframe capture flag", e);
     }
   };
 
@@ -388,28 +468,41 @@ export function FitterProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const reset = () => {
+  /** Clear the fitting DATA but keep identity + invite context. */
+  const resetForNewFitting = () => {
     setMeasurementsState(null);
     setScanSignalsState(null);
     setAnswers({});
     setFitAnswers({});
-    setFitProfileV2State(false);
     setCapturedImage(null);
+    setCapturedFrames(null);
     setChosenMaskState(null);
+    try {
+      sessionStorage.removeItem("fitter_answers");
+      sessionStorage.removeItem("fitter_fit_answers");
+      sessionStorage.removeItem("fitter_chosen_mask");
+      sessionStorage.removeItem(MEASUREMENTS_STORAGE_KEY);
+      sessionStorage.removeItem(SCAN_SIGNALS_STORAGE_KEY);
+    } catch {
+      // Storage unusable — nothing was persisted, nothing to clear.
+    }
+  };
+
+  const reset = () => {
+    resetForNewFitting();
+    setFitProfileV2State(false);
+    setMultiframeCaptureState(false);
     setEmail(null);
     setEmailConsentState(false);
     setInviteTokenState(null);
     try {
       sessionStorage.removeItem("fitter_measurements");
-      sessionStorage.removeItem("fitter_answers");
-      sessionStorage.removeItem("fitter_fit_answers");
       sessionStorage.removeItem("fitter_profile_v2");
-      sessionStorage.removeItem("fitter_chosen_mask");
+      sessionStorage.removeItem("fitter_multiframe");
       sessionStorage.removeItem("fitter_email");
       sessionStorage.removeItem("fitter_email_consent");
       sessionStorage.removeItem("fitter_invite_token");
-      sessionStorage.removeItem(MEASUREMENTS_STORAGE_KEY);
-      sessionStorage.removeItem(SCAN_SIGNALS_STORAGE_KEY);
+      sessionStorage.removeItem("fitter_entry_point");
     } catch {
       // Storage unusable — nothing was persisted, nothing to clear.
     }
@@ -423,7 +516,9 @@ export function FitterProvider({ children }: { children: ReactNode }) {
         answers,
         fitAnswers,
         fitProfileV2,
+        multiframeCapture,
         capturedImage,
+        capturedFrames,
         chosenMask,
         email,
         emailConsent,
@@ -435,11 +530,14 @@ export function FitterProvider({ children }: { children: ReactNode }) {
         updateFitAnswers,
         replaceFitAnswers,
         setFitProfileV2,
+        setMultiframeCapture,
         setCapturedImage,
+        setCapturedFrames,
         setChosenMask,
         setEmailConsent,
         setInviteToken,
         reset,
+        resetForNewFitting,
       }}
     >
       {children}

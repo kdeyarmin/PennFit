@@ -883,7 +883,16 @@ router.post(
     const { error: updErr } = await supabase
       .from("fitter_invites")
       .update({
-        status: invite.status === "completed" ? "completed" : "sent",
+        // A resend refreshes the LINK, not the invite's lifecycle. Both
+        // terminal-progress states survive: regressing "attached" to
+        // "sent" made the row vanish from the Attached worklist view (its
+        // patient_id/attached_at intact but invisible), and a subsequent
+        // patient re-submit then walked it back through "completed" as if
+        // the chart attachment had never happened.
+        status:
+          invite.status === "completed" || invite.status === "attached"
+            ? invite.status
+            : "sent",
         sent_at: nowIso,
         expires_at: expiresIso,
         updated_at: nowIso,

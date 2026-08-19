@@ -1034,7 +1034,13 @@ export function runTiers(input: FitEngineInput): RankedResult {
     if (a.outsideFormulary !== b.outsideFormulary) {
       return a.outsideFormulary ? 1 : -1;
     }
-    return b.rankScore - a.rankScore;
+    if (b.rankScore !== a.rankScore) return b.rankScore - a.rankScore;
+    // Exact rank ties break on slug, so the PRIMARY recommendation is a
+    // deterministic function of the inputs — never of catalog row order.
+    // Two seeded masks with identical geometry and factors DO tie, and
+    // the mask a patient is told to buy (and the clinical record of it)
+    // must not flip between reloads.
+    return a.maskSlug.localeCompare(b.maskSlug);
   });
 
   const outsideValidatedRange =

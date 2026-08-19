@@ -7,19 +7,27 @@ import type { FacialMeasurements } from "@workspace/api-client-react/storefront"
 
 /**
  * Plausibility bounds for iris-calibrated measurements (millimeters).
- * Generous enough to cover ~99% of adult faces per anthropometric
- * surveys, narrow enough to catch the failure mode where MediaPipe
- * returns a high-confidence detection on something that isn't a real
- * face — a poster, a screen reflection, a rendered avatar — and
- * "calibrates" against a non-iris, producing nonsense millimeters that
- * would otherwise feed into the recommender.
+ * Catches the failure mode where MediaPipe returns a high-confidence
+ * detection on something that isn't a real face — a poster, a screen
+ * reflection, a rendered avatar — and "calibrates" against a non-iris,
+ * producing nonsense millimeters that would otherwise feed into the
+ * recommender.
+ *
+ * The window is the UNION of the server's adult and pediatric windows
+ * (PLAUSIBILITY_BOUNDS / PEDIATRIC_PLAUSIBILITY_BOUNDS in
+ * lib/fitting/confidence.ts), deliberately: this page does not know the
+ * patient's population — the CHART does, server-side, from date of birth
+ * — and the previous adult-only window rejected every pediatric face at
+ * /measure, making the server's entire pediatric fitting path
+ * unreachable from the scanner. Population-correct validation happens on
+ * the server; this gate only has to reject non-faces.
  */
 export const PLAUSIBILITY_BOUNDS = {
-  noseWidth: [20, 60],
-  noseHeight: [25, 70],
-  noseToChin: [40, 90],
-  mouthWidth: [30, 80],
-  faceWidthAtCheekbones: [110, 180],
+  noseWidth: [12, 60],
+  noseHeight: [15, 70],
+  noseToChin: [25, 90],
+  mouthWidth: [18, 80],
+  faceWidthAtCheekbones: [80, 180],
 } as const;
 
 export type PlausibilityField = keyof typeof PLAUSIBILITY_BOUNDS;

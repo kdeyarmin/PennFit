@@ -80,6 +80,9 @@ export type TrackStep =
   | "fit_assessment_completed"
   | "fit_safety_screen_shown"
   | "fit_invite_invalid"
+  | "guided_capture_ready"
+  | "guided_capture_manual"
+  | "guided_capture_skip"
   | "web_vital";
 
 type MetadataForStep<T extends TrackStep> = T extends "capture_blocked"

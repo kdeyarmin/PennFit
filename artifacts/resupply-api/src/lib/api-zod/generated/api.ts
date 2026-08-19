@@ -73,6 +73,13 @@ export const SubmitOrderBody = zod
       name: zod.string(),
       modelNumber: zod.string(),
       manufacturer: zod.string(),
+      // The size the fitting recommended (e.g. "Medium"). Optional and
+      // nullable: the legacy /api/recommend path ranks masks without
+      // resolving a size. Without this key the schema silently STRIPPED
+      // the size the client has always sent — a mask ordered in the
+      // wrong size fits no better than the wrong mask, and fulfillment
+      // never saw the one number the whole fitter exists to produce.
+      size: zod.string().max(64).nullable().optional(),
     }),
     patient: zod.object({
       firstName: zod.string().min(1).max(submitOrderBodyPatientFirstNameMax),
