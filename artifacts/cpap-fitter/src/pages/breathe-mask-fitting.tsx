@@ -473,7 +473,7 @@ const SAFEGUARDS: {
       "Lighting, focus, head pose and framing are scored on the actual frame — a blurry or badly-lit scan cannot produce a confident answer however well the mask matches",
       "A single unverified frame is treated as moderate, never as perfect — without cross-frame agreement there is no evidence the measurement is stable",
       "An incomplete questionnaire caps confidence too, rather than guessing the missing answers",
-      "A size band no clinician has signed off can never produce a high-confidence result",
+      "A measurement outside the plausible range for an adult face is reported as a scan failure, not answered as though it were a very small or very large patient",
       "Low confidence routes to a human on your team instead of shipping a guess",
       "A frame the capture checks judge unusable — too dark, too soft, head turned too far — is reported as such, and caps the result no matter how well the geometry scored",
     ],
@@ -851,7 +851,7 @@ const FIT_ROWS: {
   },
   {
     label: "Size bands signed off by your own clinician",
-    sub: "against evidence the report then prints",
+    sub: "optional — the fitter never waits on it, but when you do sign off, the evidence is recorded and printed on the report",
     breathe: "yes",
     other: "no",
   },

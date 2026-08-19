@@ -14,6 +14,12 @@
  *
  * Commercial signals — formulary preference, stock position, margin — are
  * excluded by construction. They live in `rankScore`, never here.
+ *
+ * A clinician's sign-off is NOT a fourth input. It used to be — an
+ * unreviewed size band was capped below high confidence — and that gate
+ * was removed on purpose (see `resolveConfidence`). Safety is enforced
+ * where it belongs, in the tier 1-2 hard filters, not by withholding a
+ * percentage.
  */
 
 import type {
@@ -167,19 +173,36 @@ export function resolveConfidence(input: ConfidenceInput): ConfidenceResult {
   const scanWeight = 0.6 + 0.4 * clamp01(scan.measurementConfidence);
   const combined = top.confidence * scanWeight * profileCompleteness(profile);
 
-  // The estimated-geometry safety valve. Most of the seeded catalog
-  // carries clinically-reasoned rather than manufacturer-published bands.
-  // Until an RT signs a variant off, it cannot produce a high-confidence
-  // automated recommendation, no matter how well it scores.
-  const unreviewed =
-    top.cushion?.needsClinicalReview === true ||
-    top.frame?.needsClinicalReview === true;
-
+  // The scan decides.
+  //
+  // This used to carry a second gate: a variant whose bands were seeded
+  // estimates (`needsClinicalReview`) could not reach high confidence
+  // until an RT signed it off, however well it scored. That was a
+  // product decision, and it has been reversed deliberately — requiring
+  // a clinician to hand-approve ~290 size bands before the fitter can
+  // speak confidently made the feature unusable at the scale it is meant
+  // for. Confidence is now what this module always said it was: how good
+  // the scan was, how well the winning size sits in its band, and how
+  // complete the profile is.
+  //
+  // What this does NOT relax, and must not:
+  //   * Tier 1-2 remain HARD FILTERS (see tiers.ts). A contraindicated or
+  //     therapy-incompatible mask is removed from consideration entirely,
+  //     not merely scored down — that is the safety floor and it is
+  //     untouched by this change.
+  //   * The scan-quality floors below still gate every band, and a
+  //     capture the client judged unusable still forces low confidence.
+  //   * Commercial signals are still excluded by construction.
+  //
+  // The cost, stated plainly: a size band that is an estimate can now
+  // produce a high-confidence recommendation. `fitDataSource` still
+  // records the provenance and the fit report still prints it, so the
+  // claim remains auditable after the fact — but the engine no longer
+  // waits for a human to vouch for the numbers.
   let outcome: FitOutcome;
   if (
     combined >= CONFIDENCE_THRESHOLDS.high &&
-    scan.measurementConfidence >= CONFIDENCE_THRESHOLDS.highScan &&
-    !unreviewed
+    scan.measurementConfidence >= CONFIDENCE_THRESHOLDS.highScan
   ) {
     outcome = "high_confidence";
   } else if (

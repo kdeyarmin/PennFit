@@ -1,6 +1,6 @@
 ---
 name: pennfit-migrations
-description: How to safely write, review, test, and ship PennFit database migrations — the repo's #1 footgun area (multiple production incidents). Covers the hand-written-SQL + content-hash ledger model, the frozen `_journal.json`, the immutability rule (never edit a shipped migration), the prefix moratorium, idempotency (including why a destructive statement makes a migration un-editable), transaction opt-out, the `RUN_DB_MIGRATIONS` deploy gate, the one-time ledger baseline, and the rule that a clinical reference-data import never clears `needs_clinical_review`. Use whenever adding/editing/reviewing a `lib/resupply-db/migrations/*.sql` file, making a schema change (CREATE/ALTER TABLE, index, enum, backfill), importing clinical reference data (mask size bands, safety rules) from a vendor document, diagnosing a failed deploy-time migration, or baselining/adopting the ledger.
+description: How to safely write, review, test, and ship PennFit database migrations — the repo's #1 footgun area (multiple production incidents). Covers the hand-written-SQL + content-hash ledger model, the frozen `_journal.json`, the immutability rule (never edit a shipped migration), the prefix moratorium, idempotency (including why a destructive statement makes a migration un-editable), transaction opt-out, the `RUN_DB_MIGRATIONS` deploy gate, the one-time ledger baseline, and the rule that a clinical reference-data import never clears `needs_clinical_review` (a provenance record, not a confidence gate). Use whenever adding/editing/reviewing a `lib/resupply-db/migrations/*.sql` file, making a schema change (CREATE/ALTER TABLE, index, enum, backfill), importing clinical reference data (mask size bands, safety rules) from a vendor document, diagnosing a failed deploy-time migration, or baselining/adopting the ledger.
 ---
 
 # PennFit migration safety
@@ -111,9 +111,15 @@ schemas"** or every PostgREST query against it 503s at runtime.
 A migration that loads clinical reference data (mask size bands, safety
 rules, therapy thresholds) **must leave `needs_clinical_review = TRUE`**
 and must never set a review/approval row on a tenant's behalf. Vendor
-documents are not pre-verified inputs, and clearing the flag centrally
-lifts the confidence ceiling for every tenant at once — none of whom
-looked.
+documents are not pre-verified inputs.
+
+Note the flag's scope changed: it used to cap patient-facing confidence,
+and that gate was **removed on purpose** (see `pennfit-rules` R8). It now
+drives the admin review queue and the "pending clinical review" line on
+the fit report. So an import that cleared it would no longer inflate a
+score — it would instead make the queue claim work nobody did and the
+report print a review that never happened. Still a bug; different
+blast radius.
 
 **The evidence is concrete, not hypothetical.** Fisher & Paykel's REF
 620198 (the source for `0499`) prints, in its nasal table:
@@ -133,9 +139,9 @@ Two corollaries when writing an import:
 - **Invalidate prior sign-offs for anything you rewrite in place.**
   `mask_variant_reviews` is keyed on `size_variant_id`, so an in-place
   `UPDATE` keeps the UUID and a tenant's old approval carries over to new
-  geometry — and `catalog-store.ts` treats an approved row as clearing
-  `needs_clinical_review`. (Then re-read M4: that `DELETE` is what makes
-  the migration un-editable.)
+  geometry — leaving the record asserting a clinician checked numbers
+  that have since been replaced. (Then re-read M4: that `DELETE` is what
+  makes the migration un-editable.)
 - **Don't attribute what the source doesn't contain.** `fit_data_source`
   is row-level, so every non-NULL band on the row inherits the citation.
   `NULL` out dimensions the cited document is silent on rather than

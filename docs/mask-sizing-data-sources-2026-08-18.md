@@ -104,12 +104,17 @@ size, with no gaps and no overlaps.
 
 Independent bands reproduce this for a patient squarely inside one size,
 but not for mixed cases (e.g. height 40 mm, width 43 mm → the matrix says
-L; independent bands score S and L equally). This is left as-is
-deliberately: `needs_clinical_review` is still true, so nothing ships at
-high confidence without a reviewer, and the reviewer is exactly the person
-who should reconcile a mixed case. Encoding the matrix properly would need
-a schema change and is worth its own design pass if F&P-style matrices
-turn out to be common.
+L; independent bands score S and L equally). Encoding the matrix properly
+would need a schema change and is worth its own design pass if F&P-style
+matrices turn out to be common.
+
+This was originally left as-is on the grounds that `needs_clinical_review`
+kept anything from shipping at high confidence without a reviewer. **That
+is no longer true** — the review cap was removed on 2026-08-19 and the
+scan's own verdict governs (see `confidence.ts`). A mixed case can now
+produce a confident answer from independent bands that do not reproduce
+the published matrix, which raises the value of the schema work above
+from "nice to have" to the honest next step for F&P nasal masks.
 
 ## Sourcing caveat
 

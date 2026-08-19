@@ -1,6 +1,6 @@
 ---
 name: pennfit-rules
-description: PennFit-specific invariants and "hard rules" to check when writing, reviewing, or committing changes in this repo — PHI/image logging, Supabase-only data path, admin theme scoping, no column encryption, no password pepper, no compliance/audit_log machinery, single email From address, the decoupled service-boot contract, and the rule that only a per-tenant RT sign-off clears `needs_clinical_review`. Use when editing code under artifacts/ or lib/, reviewing a diff or PR, or before committing. These are correctness invariants, not style — a violation is a real bug.
+description: PennFit-specific invariants and "hard rules" to check when writing, reviewing, or committing changes in this repo — PHI/image logging, Supabase-only data path, admin theme scoping, no column encryption, no password pepper, no compliance/audit_log machinery, single email From address, the decoupled service-boot contract, and the rule that nothing but a per-tenant sign-off may clear `needs_clinical_review` (which records provenance — it no longer gates confidence). Use when editing code under artifacts/ or lib/, reviewing a diff or PR, or before committing. These are correctness invariants, not style — a violation is a real bug.
 ---
 
 # PennFit hard-rules reviewer
@@ -127,40 +127,55 @@ panel render transparent). Re-point shadcn tokens by overriding the **raw**
 `--background` / `--foreground` / … variables under `.admin-root`.
 Enforced by `artifacts/cpap-fitter/src/admin.scope.test.ts`.
 
-### R8 — Only an RT sign-off clears `needs_clinical_review`
-The clinical fitter caps recommendation confidence until a licensed
-reviewer signs off a mask's size bands **for that tenant**. The mechanism
-matters: the platform column `mask_size_variants.needs_clinical_review`
-is **never written to `false` by anything**. A tenant clears it for
-itself by writing a tenant-scoped `mask_variant_reviews` row, and
-`catalog-store.ts` ANDs the two:
+### R8 — `needs_clinical_review` is an honest record, not a rubber stamp
+**Scope changed — read this before applying it.** This flag used to gate
+patient-facing confidence: an unreviewed size band could not reach
+`high_confidence` until a clinician signed it off. **That gate was removed
+on purpose** (`resolveConfidence`, `confidence.ts`) — requiring a human to
+hand-approve ~290 seeded bands made the fitter unusable at the scale it
+exists for. Confidence is now scan quality × band fit × profile
+completeness, and nothing else.
+
+So do NOT "restore" the cap, and do not describe it as live in copy or
+docs. What the flag still does is real, though, and still worth
+protecting: it drives the admin review queue and prints on the fit report
+as "pending clinical review". The platform column
+`mask_size_variants.needs_clinical_review` is **never written to `false`
+by anything** — a tenant clears it for itself by writing a tenant-scoped
+`mask_variant_reviews` row, which `catalog-store.ts` ANDs in:
 
 ```ts
 needsClinicalReview:
   Boolean(v.needs_clinical_review) && !approvedVariantIds.has(String(v.id)),
 ```
 
-So the rule is absolute rather than a matter of which route does it: **any
-statement setting that column `false` is a bug**, wherever it appears —
-a data-import migration, a "trusted" manufacturer source, an admin
-toggle. Flipping the shared column lifts the ceiling for every tenant at
-once, none of whom looked.
+**Any statement setting that column `false` is still a bug.** It no longer
+inflates a confidence score, but it does make the queue claim work that
+was never done and the report print a review that never happened. A
+falsified audit trail is worse than a missing one.
 
 The source documents are not clean inputs — F&P's REF 620198 prints
 "Greater than 5.2 cm (2.95 inches)" when 5.2 cm is 2.05 inches, in every
-revision. Trusting the sheet would have written a Large band starting
-above `PLAUSIBILITY_BOUNDS`, i.e. unreachable.
+revision. That is why provenance is recorded honestly, and why nothing
+should mark bands reviewed on a clinician's behalf.
 
 Watch for, on any diff touching the fitter:
-- Any write of `needs_clinical_review = false` (there is no legitimate
-  one), or a read that drops the `approvedVariantIds` half of the AND.
+- Any write of `needs_clinical_review = false`, or a read that drops the
+  `approvedVariantIds` half of the AND.
 - An in-place rewrite of a `mask_size_variants` row that leaves its
-  `mask_variant_reviews` approval in place (the UUID is unchanged, so the
-  stale approval silently certifies new geometry).
+  `mask_variant_reviews` approval in place — the UUID is unchanged, so a
+  stale approval would mark new geometry as reviewed.
 - A `fit_data_source` / `fit_data_source_ref` set on a row that still
   carries dimensions the cited document is silent on — `fit_data_source`
   is row-level and `scoreVariant` averages every non-NULL band, so the
   citation would cover numbers it does not support.
+- Copy or docs (marketing pages, FAQ, PDFs) asserting that an unreviewed
+  band cannot reach high confidence. It can, since the gate was removed.
+
+Safety is enforced in the **tier 1-2 hard filters** (`tiers.ts`), which
+remove a contraindicated or therapy-incompatible mask from consideration
+entirely. Those are the floor; they were never this flag's job and must
+not be weakened to compensate for its narrowed scope.
 
 See `.claude/skills/pennfit-migrations/SKILL.md` **M7** for the
 import-side rule, and `docs/mask-sizing-data-sources-2026-08-18.md` for
