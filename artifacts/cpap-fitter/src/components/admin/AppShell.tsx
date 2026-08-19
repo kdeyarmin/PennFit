@@ -1470,6 +1470,8 @@ export const MASK_FITTER_NAV_GROUPS: ReadonlyArray<NavGroup> = [
         href: "/admin/fit-sessions",
         matchPrefix: "/admin/fit-sessions",
         badgeKey: "pendingFitReviews",
+        // clinical.read to match the server gate on /admin/fit-sessions.
+        requiredPermission: "clinical.read",
         hint: "Fittings that need a clinician's eye before they go out",
       },
       {
@@ -1477,6 +1479,9 @@ export const MASK_FITTER_NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: Activity,
         href: "/admin/analytics/fitter-outcomes",
         matchPrefix: "/admin/analytics/fitter-outcomes",
+        // clinical.read to match the server gate — same as the full-product
+        // analytics entry for this page.
+        requiredPermission: "clinical.read",
         hint: "Acceptance, override, and dispense rates — how the fitter is actually performing",
       },
       {

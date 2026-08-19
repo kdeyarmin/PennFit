@@ -32,6 +32,11 @@ vi.mock("@/hooks/use-fitter-store", () => ({
     updateFitAnswers: (next: FitAnswers) => {
       store.fitAnswers = { ...store.fitAnswers, ...next };
     },
+    // REPLACE, exactly like the provider — pruning is a deletion, and a
+    // merge-based double would silently hide the stale-branch bug.
+    replaceFitAnswers: (next: FitAnswers) => {
+      store.fitAnswers = { ...next };
+    },
     updateAnswers: (next: Record<string, unknown>) => {
       store.legacyAnswers = { ...store.legacyAnswers, ...next };
     },
@@ -68,6 +73,32 @@ describe("QuestionnaireV2", () => {
     render(<QuestionnaireV2 />);
     fireEvent.click(screen.getByTestId("fit-therapyDevice-unsure"));
     expect(store.fitAnswers.therapyDevice).toBeNull();
+  });
+
+  it("prunes answers from a branch the patient backed out of", () => {
+    const { rerender } = render(<QuestionnaireV2 />);
+    const click = (testId: string) => {
+      fireEvent.click(screen.getByTestId(testId));
+      rerender(<QuestionnaireV2 />);
+    };
+    const back = () => {
+      fireEvent.keyDown(window, { key: "ArrowLeft" });
+      rerender(<QuestionnaireV2 />);
+    };
+    // Bilevel → the oxygen question applies; answer yes.
+    click("fit-therapyDevice-bilevel");
+    click("fit-pressureCmH2O-unsure");
+    click("fit-supplementalOxygen-yes");
+    expect(store.fitAnswers.supplementalOxygen).toBe(true);
+    // Back up (mouthBreather → oxygen → pressure → device) and switch to
+    // CPAP, which skips the oxygen question entirely. The old `true` must
+    // not survive to the engine or the clinical record.
+    back();
+    back();
+    back();
+    click("fit-therapyDevice-cpap");
+    expect(store.fitAnswers.therapyDevice).toBe("cpap");
+    expect(store.fitAnswers.supplementalOxygen).toBeUndefined();
   });
 
   it("walks the whole flow, branching past the previous-mask block for a first-timer, and derives the legacy answers", () => {

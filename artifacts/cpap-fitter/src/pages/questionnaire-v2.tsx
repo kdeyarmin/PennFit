@@ -33,6 +33,7 @@ import {
   nextQuestionIndex,
   overallProgress,
   previousQuestionIndex,
+  pruneInapplicableAnswers,
   toLegacyAnswers,
   type AnswerValue,
   type FitAnswers,
@@ -44,7 +45,7 @@ const PAGE_TITLE = "Your fit profile";
 export function QuestionnaireV2() {
   useDocumentTitle(PAGE_TITLE);
   const [, setLocation] = useLocation();
-  const { fitAnswers, updateFitAnswers, updateAnswers } = useFitterStore();
+  const { fitAnswers, replaceFitAnswers, updateAnswers } = useFitterStore();
   const [currentIndex, setCurrentIndex] = useState(0);
   // Local scratch for the two answer kinds that need an explicit
   // Continue (multi-select and number entry).
@@ -78,8 +79,15 @@ export function QuestionnaireV2() {
   };
 
   const commit = (value: AnswerValue) => {
-    const merged: FitAnswers = { ...fitAnswers, [question.id]: value };
-    updateFitAnswers({ [question.id]: value });
+    // Prune answers from branches this answer just closed — going Back
+    // and switching a branching choice must not leave the old branch's
+    // answers to reach the engine and the clinical record. REPLACE the
+    // store (the merge updater can never delete a key).
+    const merged = pruneInapplicableAnswers({
+      ...fitAnswers,
+      [question.id]: value,
+    });
+    replaceFitAnswers(merged);
     const next = nextQuestionIndex(currentIndex, merged);
     if (next === null) finish(merged);
     else setCurrentIndex(next);

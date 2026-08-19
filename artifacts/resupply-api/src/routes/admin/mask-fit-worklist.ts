@@ -141,6 +141,9 @@ router.get(
     // silently truncates to an UNORDERED first 1000 rows and reports the
     // partial tally as if it were complete — the exact trap the
     // fitter-outcomes analytics route documents and pages around.
+    // Newest-first, so when the table outgrows the bounded window the
+    // tuning signal reflects the MOST RECENT outcomes (the ones that
+    // describe today's mask lineup), not a frozen oldest-20k snapshot.
     type SignalRow = {
       mask_id: string | null;
       fit_outcome: "good" | "leaking" | "uncomfortable";
@@ -153,8 +156,8 @@ router.get(
         .from("mask_fit_outcomes")
         .select("mask_id, fit_outcome")
         .not("mask_id", "is", null)
-        .order("created_at", { ascending: true })
-        .order("id", { ascending: true })
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: false })
         .range(offset, offset + PAGE - 1);
       if (error) {
         res.status(500).json({ error: "query_failed", message: error.message });
@@ -176,7 +179,14 @@ router.get(
         adjustment: adjustments[maskId] ?? 1, // 1.0 = neutral (below threshold)
       }))
       .sort((a, b) => b.total - a.total);
-    res.json({ masks, adjustments, attributedOutcomes: rows.length });
+    res.json({
+      masks,
+      adjustments,
+      attributedOutcomes: rows.length,
+      // True when the window filled — older outcomes beyond the most
+      // recent 20k exist and are not in this tally.
+      windowTruncated: rows.length >= MAX_ROWS,
+    });
   },
 );
 

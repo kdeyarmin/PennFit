@@ -34,7 +34,7 @@
  */
 
 import { Router, type IRouter } from "express";
-import rateLimit from "express-rate-limit";
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { z } from "zod";
 
 import { getOrgScopedClient } from "@workspace/resupply-db";
@@ -58,16 +58,30 @@ import type {
 
 const router: IRouter = Router();
 
-// Public PHI-writing endpoint — cap replays of a single valid token the
-// same way the sibling /shop/fitter-invite/complete does. Generous enough
-// for real retakes (a patient re-scanning a handful of times), tight
+// Public PHI-writing endpoint — cap replays of a single valid token.
+// Generous enough for real retakes (a patient re-scanning a handful of
+// times, two POSTs per fitting when the safety screen runs), tight
 // enough that one leaked token can't be used to spray unbounded
 // fit_sessions rows.
+//
+// Keyed by the VERIFIED invite when the token checks out, so the cap is
+// genuinely per-invitation — an IP key would pool every patient behind
+// one clinic Wi-Fi / carrier NAT into a single bucket and 429 unrelated
+// valid fittings. Requests without a valid token (which the handler will
+// 403 anyway) still share the caller's IP bucket.
 const assessLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 60,
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: (req) => {
+    const token = req.header("x-fitter-invite-token");
+    const verified =
+      typeof token === "string" ? verifyFitterInviteToken(token) : null;
+    return verified?.valid
+      ? `invite:${verified.inviteId}`
+      : ipKeyGenerator(req.ip ?? "");
+  },
 });
 
 // Server-side plausibility window, mirroring the client and the legacy
@@ -713,12 +727,22 @@ async function loadInvite(
         // text — escape them so this stays the exact (case-insensitive)
         // equality the comment above promises, never a pattern match.
         const escaped = payerName.trim().replace(/([\\%_])/g, "\\$1");
+        // payer_profiles is reference data with a NULLABLE org_id (NULL =
+        // platform row, non-NULL = a tenant's private payer), reached via
+        // .raw() like the mask catalog — so the tenant boundary has to be
+        // this explicit filter. Without it a name that matches ANOTHER
+        // tenant's private payer resolves to that foreign id, mis-scopes
+        // the formulary rules, and is persisted as cross-tenant clinical
+        // provenance. A tenant's own row outranks a platform row on a
+        // name collision, mirroring loadSafetyScreen.
         const { data: profile } = (await supabase
           .raw()
           .schema("resupply")
           .from("payer_profiles")
           .select("id")
+          .or(`org_id.is.null,org_id.eq.${orgId}`)
           .ilike("display_name", escaped)
+          .order("org_id", { ascending: false, nullsFirst: false })
           .limit(1)
           .maybeSingle()) as { data: Record<string, unknown> | null };
         payerProfileId = (profile?.id as string | null) ?? null;

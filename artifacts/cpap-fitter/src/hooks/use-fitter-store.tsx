@@ -95,6 +95,10 @@ interface FitterContextType extends FitterState {
   ) => void;
   updateAnswers: (answers: Partial<QuestionnaireAnswers>) => void;
   updateFitAnswers: (answers: FitAnswers) => void;
+  /** Replace the WHOLE v2 answer set. The merge-based updater above can
+   *  never delete a key, and pruning answers from abandoned branches is
+   *  exactly a deletion. */
+  replaceFitAnswers: (answers: FitAnswers) => void;
   setFitProfileV2: (on: boolean) => void;
   setCapturedImage: (image: string | null) => void;
   setChosenMask: (mask: ChosenMask | null) => void;
@@ -295,6 +299,15 @@ export function FitterProvider({ children }: { children: ReactNode }) {
     });
   };
 
+  const replaceFitAnswers = (next: FitAnswers) => {
+    setFitAnswers(next);
+    try {
+      sessionStorage.setItem("fitter_fit_answers", JSON.stringify(next));
+    } catch (e) {
+      console.error("Failed to save fit answers to sessionStorage", e);
+    }
+  };
+
   const setFitProfileV2 = (on: boolean) => {
     setFitProfileV2State(on);
     try {
@@ -420,6 +433,7 @@ export function FitterProvider({ children }: { children: ReactNode }) {
         setMeasurements,
         updateAnswers,
         updateFitAnswers,
+        replaceFitAnswers,
         setFitProfileV2,
         setCapturedImage,
         setChosenMask,

@@ -178,7 +178,12 @@ function InviteCard({
   });
   const revoke = useMutation({
     mutationFn: () => revokeFitterInvite(invite.id),
-    onSuccess: onChanged,
+    onSuccess: () => {
+      // Revoking kills the token server-side — drop the "fresh link"
+      // panel so staff can't copy or QR-scan a link that now 410s.
+      setResent(null);
+      onChanged();
+    },
   });
 
   async function handleRevoke() {
@@ -293,7 +298,7 @@ function InviteCard({
         )}
       </div>
 
-      {resent && (
+      {resent && invite.status !== "revoked" && (
         <div
           className="mt-3 pt-3 border-t space-y-2"
           style={{ borderColor: "hsl(var(--line-1))" }}

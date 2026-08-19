@@ -51,6 +51,13 @@ const db = vi.hoisted(() => ({
     status: "sent",
     expires_at: null as string | null,
   } as Record<string, unknown> | null,
+  /** Per-table maybeSingle rows for reads beyond fitter_invites (patients,
+   *  insurance_coverages, payer_profiles) — unset tables resolve null. */
+  rows: {} as Record<string, Record<string, unknown> | null>,
+  /** Every chained filter/modifier call, so a test can assert a query was
+   *  actually scoped (the tenant boundary on reference tables IS a chain
+   *  call — nothing else observable distinguishes scoped from unscoped). */
+  calls: [] as Array<{ table: string; method: string; args: unknown[] }>,
   /** Every insert the route attempts, so a test can assert the payload. */
   inserts: [] as Array<{ table: string; payload: unknown }>,
   /**
@@ -68,13 +75,24 @@ vi.mock("@workspace/resupply-db", () => {
   const builder = (table: string) => {
     const chain: Record<string, unknown> = {};
     const self = () => chain;
-    for (const method of ["select", "eq", "limit", "order", "ilike", "neq"]) {
-      chain[method] = () => self();
+    for (const method of [
+      "select",
+      "eq",
+      "limit",
+      "order",
+      "ilike",
+      "neq",
+      "or",
+    ]) {
+      chain[method] = (...args: unknown[]) => {
+        db.calls.push({ table, method, args });
+        return self();
+      };
     }
     chain.maybeSingle = async () =>
       table === "fitter_invites"
         ? { data: db.invite, error: null }
-        : { data: null, error: null };
+        : { data: db.rows[table] ?? null, error: null };
     chain.single = async () => {
       throw new Error("no database in tests");
     };
@@ -162,6 +180,8 @@ afterEach(() => {
     "fitter.confidence_gating",
   ]);
   db.invite = { patient_id: null, status: "sent", expires_at: null };
+  db.rows = {};
+  db.calls = [];
   db.inserts = [];
   db.persistOk = false;
 });
@@ -533,6 +553,42 @@ describe("POST /fit/assess — stateful invite checks", () => {
     });
     expect(res.status).toBe(200);
     expect(res.body.outcome).toBeTruthy();
+  });
+});
+
+// The payer axis resolves by name against `payer_profiles` — a reference
+// table with NULLABLE org_id (NULL = platform row) reached via .raw(), so
+// the org-scoped client does NOT inject the tenant filter. Unscoped, a
+// display name matching another tenant's private payer would mis-scope
+// the formulary and persist a foreign payer id as clinical provenance.
+describe("POST /fit/assess — payer lookup tenant boundary", () => {
+  it("scopes the payer_profiles read to platform + this tenant, tenant row first", async () => {
+    db.invite = {
+      patient_id: "33333333-3333-3333-3333-333333333333",
+      status: "sent",
+      expires_at: null,
+    };
+    db.rows.patients = { location_id: null, date_of_birth: null };
+    db.rows.insurance_coverages = { payer_name: "Acme Health" };
+    db.rows.payer_profiles = { id: "44444444-4444-4444-4444-444444444444" };
+
+    const res = await post({
+      measurements: VALID_MEASUREMENTS,
+      profile: VALID_PROFILE,
+    });
+    expect(res.status).toBe(200);
+
+    const payerCalls = db.calls.filter((c) => c.table === "payer_profiles");
+    expect(payerCalls.length).toBeGreaterThan(0);
+    const orCall = payerCalls.find((c) => c.method === "or");
+    expect(orCall?.args[0]).toBe(`org_id.is.null,org_id.eq.${ORG_ID}`);
+    // On a display-name collision the tenant's own row must outrank the
+    // platform row — descending org_id with NULLs last.
+    const orderCall = payerCalls.find((c) => c.method === "order");
+    expect(orderCall?.args).toEqual([
+      "org_id",
+      { ascending: false, nullsFirst: false },
+    ]);
   });
 });
 
