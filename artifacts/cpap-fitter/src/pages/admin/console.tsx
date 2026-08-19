@@ -95,6 +95,11 @@ const AdminDocumentsPage = lazyWithRetry(() =>
     default: m.AdminDocumentsPage,
   })),
 );
+const AdminDocumentRetentionPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-document-retention").then((m) => ({
+    default: m.AdminDocumentRetentionPage,
+  })),
+);
 const AdminSignatureTrackingPage = lazyWithRetry(() =>
   import("@/pages/admin/admin-signature-tracking").then((m) => ({
     default: m.AdminSignatureTrackingPage,
@@ -1090,6 +1095,13 @@ function AdminConsole() {
             <Route
               path="/admin/patient-packets"
               component={AdminPatientPacketsPage}
+            />
+            {/* Literal sub-path — registered before /admin/documents is
+              harmless (wouter patterns are exact), but keeping them
+              adjacent documents the pairing. */}
+            <Route
+              path="/admin/documents/retention"
+              component={AdminDocumentRetentionPage}
             />
             <Route path="/admin/documents" component={AdminDocumentsPage} />
             <Route

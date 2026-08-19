@@ -18,6 +18,7 @@ import {
   createSendgridClient,
   EmailConfigError,
 } from "@workspace/resupply-email";
+import { getCompanyInfo } from "../company-info.js";
 import { createTenantSendgridClient } from "../email/tenant-sender.js";
 import {
   createTwilioSmsClient,
@@ -33,6 +34,7 @@ import { resolveTenantSmsClientOptions } from "../messaging/tenant-telecom";
 import { messageTemplateLookup } from "../message-templates/lookup";
 import { sendPushToCustomerByEmail } from "../web-push";
 import {
+  buildRxRenewalTemplateVars,
   rxRenewalHtml,
   rxRenewalPushTitle,
   rxRenewalSms,
@@ -99,6 +101,10 @@ export async function runRxRenewalSendDue(
     };
   }
   const supabase = getOrgScopedClient(orgId);
+  // Resolve the tenant's identity ONCE per sweep so every message in the
+  // batch signs off as the tenant, never the seed brand (fail-soft: an
+  // unconfigured tenant resolves to the neutral platform identity).
+  const company = await getCompanyInfo(orgId);
   const now = new Date();
   const cutoffIso = new Date(
     now.getTime() + RENEWAL_WINDOW_DAYS * 24 * 60 * 60 * 1000,
@@ -279,17 +285,19 @@ export async function runRxRenewalSendDue(
       continue;
     }
 
-    // Variables exposed to the templated path. Names are
-    // snake_case + ASCII per the renderMessage substitution rules.
-    // The fallback strings below are pre-rendered (existing renderer
-    // contract) so even with no template row present, the fallback
-    // path returns the same bytes — guaranteed by the parity test
-    // in renderers.template-parity.test.ts.
-    const tmplVars = {
-      first_name: firstName,
-      days_until_expiry: String(daysUntilExpiry),
+    // Variables exposed to the templated path — the shared builder also
+    // pre-renders the conditional clauses (headline/status/push title)
+    // the {{var}}-only template engine can't express, keeping the seeded
+    // rx_renewal.* rows (migration 0502) byte-identical to the fallback
+    // renderers below. Pinned by seed-bodies.parity.test.ts; the
+    // no-row fallback path is pinned by renderers.template-parity.test.ts.
+    const tmplVars = buildRxRenewalTemplateVars({
+      firstName,
       greeting,
-    };
+      daysUntilExpiry,
+      brandName: company.name,
+      brandLegalName: company.legalName,
+    });
 
     try {
       if (channel === "email") {
@@ -306,8 +314,16 @@ export async function runRxRenewalSendDue(
           },
           {
             subject: rxRenewalSubject(daysUntilExpiry),
-            bodyHtml: rxRenewalHtml(greeting, daysUntilExpiry),
-            bodyText: rxRenewalText(greeting, daysUntilExpiry),
+            bodyHtml: rxRenewalHtml(
+              greeting,
+              daysUntilExpiry,
+              company.legalName,
+            ),
+            bodyText: rxRenewalText(
+              greeting,
+              daysUntilExpiry,
+              company.legalName,
+            ),
           },
           messageTemplateLookup,
         );
@@ -334,7 +350,7 @@ export async function runRxRenewalSendDue(
           {
             subject: null,
             bodyHtml: null,
-            bodyText: rxRenewalSms(firstName, daysUntilExpiry),
+            bodyText: rxRenewalSms(firstName, daysUntilExpiry, company.name),
           },
           messageTemplateLookup,
         );

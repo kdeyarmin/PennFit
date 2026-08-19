@@ -364,18 +364,11 @@
     "description": "Secure provider e-signature portal: physicians/NPs sign in (MFA-protected) to e-sign outstanding orders/prescriptions/claims; employees track + release signed items and print the signature audit log."
   },
   {
-    "key": "inbound_referrals.dispatcher",
-    "label": "Inbound referrals \u2014 dispatcher",
-    "category": "Integrations",
-    "default": "on",
-    "description": "Inbound referral / EHR-FHIR integration workers: drains the inbound_webhooks / inbound_referral_* queues (preflight checks, partner status callbacks, per-source dispatch). Registration is gated by RESUPPLY_INBOUND_REFERRALS_ENABLED (requires the inbound-referral schema + a provisioned partner tenant); turning this OFF pauses all three referral jobs without changing that env gate."
-  },
-  {
     "key": "domains.tls_automation",
     "label": "Domains \u2014 TLS automation",
     "category": "Integrations",
     "default": "off",
-    "description": "Automatically provision + renew TLS for tenant custom domains via Cloudflare for SaaS (Custom Hostnames) when a domain is verified. Requires CLOUDFLARE_API_TOKEN + CLOUDFLARE_ZONE_ID. Off = manual operator edge binding."
+    "description": "NOT YET ACTIVE in this build \u2014 the TLS automation has not shipped, so this toggle currently has no effect. When it lands: automatically provision + renew TLS for tenant custom domains via Cloudflare for SaaS (Custom Hostnames) when a domain is verified. Requires CLOUDFLARE_API_TOKEN + CLOUDFLARE_ZONE_ID. Off = manual operator edge binding."
   },
   {
     "key": "failed_email_digest.dispatcher",
@@ -460,5 +453,12 @@
     "category": "Integrations",
     "default": "on",
     "description": "Also post the operator digests (owner weekly KPIs, metric alerts, stuck-job monitor, low-stock inventory) into Slack. Routes to the optional digests channel, else the alerts channel. Inert until Slack credentials are configured. Non-PHI (counts / KPI headlines / SKU + queue names). The email path is unchanged."
+  },
+  {
+    "key": "fitter.multiframe_capture",
+    "label": "Fitter \u2014 multiframe capture",
+    "category": "Clinical",
+    "default": "off",
+    "description": "NOT YET ACTIVE in this build \u2014 capture is single-frame today, so this toggle currently has no effect. When it lands: guided multi-angle scan capture with live quality checks (lighting, distance, head position, obstruction, movement) and cross-frame measurement agreement, producing a measurement confidence score instead of a single unverified snapshot. OFF will keep single-frame capture."
   }
 ]

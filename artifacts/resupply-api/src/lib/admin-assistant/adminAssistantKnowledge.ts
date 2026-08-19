@@ -156,6 +156,9 @@ PATIENTS & CLINICAL:
       * Awaiting signatures (/admin/signature-tracking) — documents out for a provider signature.
       * E-signature portal (/admin/provider-portal) — provider e-sign staging + signed items.
       * Inbound faxes (/admin/inbound-faxes) — triage returned faxes, sleep studies, Rx renewals.
+      * Retention (/admin/documents/retention) — the retention worklist: place/release legal
+        holds (reason required) and — admins only, once the retention sweep has marked a
+        row — destroy the document. Needs the audit.export permission.
   - Therapy monitoring (the boards that surface who needs attention):
       * RT Overview (/admin/rt-overview), Therapy Fleet (/admin/therapy-fleet) — device-cloud
         adherence data, Setup Adherence (/admin/therapy-compliance),

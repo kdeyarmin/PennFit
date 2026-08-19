@@ -122,11 +122,26 @@ jobs:
       # checker's own self-test into CI; the checker now also hard-fails
       # if rg is absent rather than passing empty).
       - name: Install ripgrep
-        # apt-backed, so bounded: runners have hung here indefinitely
-        # while siblings on the SAME run finished it in ~60-85s. Left
-        # unbounded, one stall burns the 6-hour default as a pending check.
-        timeout-minutes: 5
-        run: sudo apt-get update && sudo apt-get install -y ripgrep
+        # Pinned static binary from ripgrep's own GitHub releases — NOT
+        # apt. The apt path depended on Ubuntu's mirror fleet and stalled
+        # until its timeout whenever a mirror degraded (2026-08-19: two
+        # identical 5-minute `apt-get update` hangs in a row while every
+        # sibling job on the same runs passed; runners had hung here
+        # before that too). A GitHub-to-GitHub download shares fate with
+        # the CI platform itself, and the pinned sha256 (copied from the
+        # release's official .sha256 asset) makes the artifact
+        # tamper-evident. Bump RG_VERSION + RG_SHA256 together.
+        timeout-minutes: 2
+        env:
+          RG_VERSION: 14.1.1
+          RG_SHA256: 4cf9f2741e6c465ffdb7c26f38056a59e2a2544b51f7cc128ef28337eeae4d8e
+        run: |
+          curl -fsSL --retry 3 -o /tmp/rg.tar.gz \
+            "https://github.com/BurntSushi/ripgrep/releases/download/${RG_VERSION}/ripgrep-${RG_VERSION}-x86_64-unknown-linux-musl.tar.gz"
+          echo "${RG_SHA256}  /tmp/rg.tar.gz" | sha256sum -c -
+          tar -xzf /tmp/rg.tar.gz -C /tmp
+          sudo install -m 0755 "/tmp/ripgrep-${RG_VERSION}-x86_64-unknown-linux-musl/rg" /usr/local/bin/rg
+          rg --version
 
       - name: Architecture drift
         run: scripts/check-resupply-architecture.sh

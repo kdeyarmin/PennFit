@@ -63,7 +63,7 @@ import { PatientBillingTab } from "./PatientBillingTab";
 
 function defaultQueryData(): Record<string, unknown> {
   return {
-    "patient-claims": { claims: [] },
+    "patient-claims": { insuranceClaims: [] },
     "patient-eligibility": { checks: [] },
     "patient-prior-auths": { priorAuthorizations: [] },
     "patient-statements": { statements: [] },

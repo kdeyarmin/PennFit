@@ -326,6 +326,11 @@
     <priority>0.6</priority>
   </url>
   <url>
+    <loc>https://pennpaps.com/contact</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
     <loc>https://pennpaps.com/stories</loc>
     <changefreq>monthly</changefreq>
     <priority>0.6</priority>

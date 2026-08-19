@@ -131,14 +131,25 @@ function renderText(p: BackInStockEmailPayload): string {
  * pattern we'd use for any future HTML template wrap.
  */
 function buildVariables(p: BackInStockEmailPayload): Record<string, string> {
+  const brandName = p.brandName ?? "CareMetric Breathe";
   return {
     product_name: p.productName,
     product_name_html: escapeHtml(p.productName),
     product_url: p.productUrl,
     product_url_html: escapeHtml(p.productUrl),
     price_label: p.priceLabel ?? "",
+    // Tenant storefront brand (resolved by sendBackInStockEmail; the
+    // neutral platform identity when unset) — same value the fallback
+    // renderers interpolate, so the seeded template stays byte-identical.
+    brand_name: brandName,
+    brand_name_html: escapeHtml(brandName),
     image_block_html: renderImageBlockHtml(p.productImageUrl ?? null),
     price_block_html: renderPriceBlockHtml(p.priceLabel ?? null),
+    // Pre-rendered conditional line for the PLAIN-TEXT body: the price on
+    // its own line (with trailing newline) when present, empty otherwise —
+    // renderText omits the line entirely when there is no price, and the
+    // {{var}}-only template engine can't express that conditional.
+    price_line_text: p.priceLabel ? `${p.priceLabel}\n` : "",
   };
 }
 
@@ -177,7 +188,9 @@ export async function sendBackInStockEmail(
       // apply today.
       customerId: null,
       orgId: payload.orgId,
-      variables: buildVariables(payload),
+      // The brand-resolved payload, so {{brand_name}} in a template row
+      // carries the tenant's storefront brand exactly like the fallback.
+      variables: buildVariables(renderPayload),
     },
     {
       subject: `Back in stock: ${payload.productName}`,

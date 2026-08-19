@@ -28,6 +28,7 @@ import {
 } from "./nav-traversal";
 import { appModuleLabel } from "@/lib/admin/app-modules";
 import {
+  Archive,
   LayoutDashboard,
   LifeBuoy,
   Store,
@@ -404,6 +405,18 @@ export const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             icon: HeartHandshake,
             matchPrefix: "/admin/referral-sources",
             hint: "Referral-source scorecard — claim volume, patients, and paid revenue by referring physician — plus a rep-visit/call activity log",
+          },
+          {
+            // End of the paperwork lifecycle: what happens to documents
+            // when their retention clock runs out. audit.export mirrors
+            // the server gate (admin / supervisor / compliance_officer);
+            // byte destruction inside the page is further admin-only.
+            href: "/admin/documents/retention",
+            label: "Retention",
+            icon: Archive,
+            matchPrefix: "/admin/documents/retention",
+            requiredPermission: "audit.export",
+            hint: "Retention worklist — documents whose clock is up: place legal holds, or destroy stored bytes once retention allows",
           },
         ],
       },

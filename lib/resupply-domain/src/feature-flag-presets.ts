@@ -109,7 +109,6 @@ const OUTREACH = [
 
 /** Patient packets, e-signature, inbound fax/referral triage (Growth). */
 const DOCUMENTS = [
-  "inbound_referrals.dispatcher",
   "patient_packets.autosend_on_delivery",
   "patient_packets.autoremind",
   "patient_packets.autofile_signed_pdf",

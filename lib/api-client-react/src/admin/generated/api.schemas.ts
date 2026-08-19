@@ -1283,42 +1283,6 @@ export interface EpisodesBulkSendResponse {
   results: EpisodesBulkSendItemResult[];
 }
 
-export type AuditListItemMetadata = { [key: string]: unknown };
-
-/**
- * One audit row. `metadata` is the plaintext jsonb context written
-through @workspace/resupply-audit's sanitiser (PHI-key denylist
-+ size + depth caps), so it is safe to surface as-is. The
-dashboard renderer additionally allowlists keys it knows how to
-display.
-
- */
-export interface AuditListItem {
-  id: string;
-  occurredAt: string;
-  adminEmail?: string | null;
-  adminUserId?: string | null;
-  action: string;
-  targetTable?: string | null;
-  targetId?: string | null;
-  metadata: AuditListItemMetadata;
-  ip?: string | null;
-  userAgent?: string | null;
-}
-
-export interface AuditPage {
-  items: AuditListItem[];
-  /** @minimum 0 */
-  total: number;
-  /**
-   * @minimum 1
-   * @maximum 100
-   */
-  limit: number;
-  /** @minimum 0 */
-  offset: number;
-}
-
 export type PatientUpdateChannelPreference =
   | (typeof PatientUpdateChannelPreference)[keyof typeof PatientUpdateChannelPreference]
   | null;
@@ -2208,32 +2172,6 @@ returned counts are filtered to matching rows.
  * @maxLength 64
  */
   q?: string;
-};
-
-export type ListAuditParams = {
-  /**
-   * Substring match against `action` (e.g. "voice." or "patient.view").
-   * @maxLength 128
-   */
-  action?: string;
-  /**
-   * Exact match against `target_table`.
-   * @maxLength 64
-   */
-  targetTable?: string;
-  /**
-   * Lower bound on `occurred_at` (inclusive).
-   */
-  since?: string;
-  /**
-   * @minimum 1
-   * @maximum 100
-   */
-  limit?: number;
-  /**
-   * @minimum 0
-   */
-  offset?: number;
 };
 
 export type ExportPatientsCsvParams = {

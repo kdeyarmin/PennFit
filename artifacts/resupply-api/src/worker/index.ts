@@ -720,8 +720,10 @@ async function doStartWorker(): Promise<void> {
     () => registerFounderActivePatientBillingJob(boss),
   );
   // Auto-resolve XPS orders staged but not yet booked into a shipment.
-  // Queue + worker always register; the recurring cron attaches only when
-  // XPS_RESOLVE_STAGED_CRON_ENABLED=1 (opt-in — it pulls tracking + fires
+  // Fully opt-in: queue, worker, AND cron only register when
+  // XPS_RESOLVE_STAGED_CRON_ENABLED=1 (the disabled branch just clears any
+  // persisted schedule). Safe because nothing outside the job sends to this
+  // queue — it only ever runs off its own cron (it pulls tracking + fires
   // the patient shipping notification once XPS books the label).
   await safeRegister("registerXpsResolveStagedJob", registrationFailures, () =>
     registerXpsResolveStagedJob(boss),
