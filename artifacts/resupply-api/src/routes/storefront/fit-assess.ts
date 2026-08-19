@@ -34,6 +34,7 @@
  */
 
 import { Router, type IRouter } from "express";
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { z } from "zod";
 
 import { getOrgScopedClient } from "@workspace/resupply-db";
@@ -47,13 +48,41 @@ import { assess } from "../../lib/fitting/index.js";
 import { buildProfile } from "../../lib/fitting/profile.js";
 import { RULES_ENGINE_VERSION } from "../../lib/fitting/versions.js";
 import type {
+  ExclusionRecord,
   FitAssessment,
+  FitCandidate,
   FitMeasurements,
   SafetyResponse,
   ScanSignals,
 } from "../../lib/fitting/types.js";
 
 const router: IRouter = Router();
+
+// Public PHI-writing endpoint — cap replays of a single valid token.
+// Generous enough for real retakes (a patient re-scanning a handful of
+// times, two POSTs per fitting when the safety screen runs), tight
+// enough that one leaked token can't be used to spray unbounded
+// fit_sessions rows.
+//
+// Keyed by the VERIFIED invite when the token checks out, so the cap is
+// genuinely per-invitation — an IP key would pool every patient behind
+// one clinic Wi-Fi / carrier NAT into a single bucket and 429 unrelated
+// valid fittings. Requests without a valid token (which the handler will
+// 403 anyway) still share the caller's IP bucket.
+const assessLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    const token = req.header("x-fitter-invite-token");
+    const verified =
+      typeof token === "string" ? verifyFitterInviteToken(token) : null;
+    return verified?.valid
+      ? `invite:${verified.inviteId}`
+      : ipKeyGenerator(req.ip ?? "");
+  },
+});
 
 // Server-side plausibility window, mirroring the client and the legacy
 // route. Generous enough for ~99% of adult faces; a value outside it is a
@@ -247,7 +276,7 @@ const NEUTRAL_SCAN: ScanSignals = {
   band: "moderate",
 };
 
-router.post("/fit/assess", async (req, res) => {
+router.post("/fit/assess", assessLimiter, async (req, res) => {
   // ── Gate first, exactly as the legacy route does. Stateless HMAC, no
   //    DB read: a valid signature proves an invite was issued, which is
   //    the bar for "you were invited". Revocation stays on the stateful
@@ -284,7 +313,7 @@ router.post("/fit/assess", async (req, res) => {
   }
 
   const body = parsed.data;
-  const profile = buildProfile(body.answers ?? null, body.profile ?? null);
+  let profile = buildProfile(body.answers ?? null, body.profile ?? null);
   const bounds =
     profile.population === "pediatric" ? PEDIATRIC_BOUNDS : ADULT_BOUNDS;
 
@@ -300,13 +329,13 @@ router.post("/fit/assess", async (req, res) => {
   // broken or hostile client, not a patient. Values that are merely
   // outside the sizing window fall through to the engine, which returns
   // `outside_validated_range` and says so plainly.
-  for (const [field, [min, max]] of Object.entries(bounds)) {
+  for (const [field, [, max]] of Object.entries(bounds)) {
     const value = measurements[field as keyof FitMeasurements];
     if (value <= 0 || value > max * 3) {
       res.status(400).json({
         error: "Invalid input",
         details: [
-          `measurements.${field}: must be a number between ${min} and ${max} mm`,
+          `measurements.${field}: must be a positive number no greater than ${max * 3} mm`,
         ],
       });
       return;
@@ -346,10 +375,22 @@ router.post("/fit/assess", async (req, res) => {
     return;
   }
 
+  // The chart outranks the client's self-reported population. Population
+  // selects the plausibility windows, the tier-1 service-line filter, and
+  // the stored column — for a chart-linked fitting all of that should
+  // follow the patient's date of birth, not a browser-supplied hint.
+  if (invite.chartPopulation && invite.chartPopulation !== profile.population) {
+    profile = { ...profile, population: invite.chartPopulation };
+  }
+
   const [enabled, gating, magnets] = await Promise.all([
     isFeatureEnabled("fitter.clinical_assessment", orgId).catch(() => false),
     isFeatureEnabled("fitter.confidence_gating", orgId).catch(() => false),
-    isFeatureEnabled("fitter.magnet_screening", orgId).catch(() => false),
+    // Fail CLOSED on the safety flag: if the flag store can't be read,
+    // assume screening is required. The cost of a wrong "true" is an
+    // unnecessary safety question; the cost of a wrong "false" is a
+    // magnetic mask reaching an unscreened implant patient.
+    isFeatureEnabled("fitter.magnet_screening", orgId).catch(() => true),
   ]);
   if (!enabled) {
     res.status(404).json({
@@ -425,6 +466,13 @@ router.post("/fit/assess", async (req, res) => {
     },
     safetyScreen: context.safetyScreen,
     safetyResponses,
+    // Screening is ON but the screen itself failed to load (DB blip, the
+    // degraded static path, a missing question set). The withhold above
+    // only covers a screen that LOADED with missing answers; without this
+    // the unloadable-screen case silently resolved to "no risk" and a
+    // magnetic mask could reach an unscreened implant patient. The engine
+    // fails closed by excluding magnetic masks, with the reason recorded.
+    magnetScreenUnavailable: magnets && !context.safetyScreen,
     availability: context.availability,
     // Empirical outcome adjustments are loaded per tenant by the admin
     // signal route today; wiring them into the live path is the next
@@ -443,6 +491,7 @@ router.post("/fit/assess", async (req, res) => {
     inviteId: verification.inviteId,
     patientId: invite.patientId,
     locationId: invite.locationId,
+    payerProfileId: invite.payerProfileId,
     // The INVITE decides how the fitting started, not the client. An
     // in-office invite is one staff deliberately raised as a counter
     // handover, which is a fact the server already knows; `body.entryPoint`
@@ -467,8 +516,47 @@ router.post("/fit/assess", async (req, res) => {
     calibrationMethod: body.measurements.calibrationMethod ?? null,
   });
 
-  res.json({ ...assessment, fitSessionId: sessionId });
+  res.json({ ...projectAssessment(assessment), fitSessionId: sessionId });
 });
+
+/**
+ * Project the assessment for the patient's browser.
+ *
+ * The STORED record keeps every internal term — the review queue and the
+ * fit report need them. The response must not: `rankScore` bakes in the
+ * formulary preference and inventory margin rank (publishing it lets
+ * anyone reconstruct the DME's commercial ordering, undoing the
+ * "commercial signals never reach the patient" invariant),
+ * `formularyRulesMatched` is internal rule ids, and `clinicianReason` is
+ * the staff-facing wording. None of them are consumed by the SPA.
+ */
+function projectAssessment(assessment: FitAssessment): Omit<
+  FitAssessment,
+  "primary" | "alternatives" | "excluded" | "provenance"
+> & {
+  primary: Partial<FitCandidate> | null;
+  alternatives: Partial<FitCandidate>[];
+  excluded: Omit<ExclusionRecord, "clinicianReason">[];
+  provenance: Omit<FitAssessment["provenance"], "formularyRulesMatched">;
+} {
+  const candidate = ({
+    rankScore: _rankScore,
+    facialFitScore: _facialFitScore,
+    patientFactorScore: _patientFactorScore,
+    ...pub
+  }: FitCandidate) => pub;
+  const { formularyRulesMatched: _rules, ...provenance } =
+    assessment.provenance;
+  return {
+    ...assessment,
+    primary: assessment.primary ? candidate(assessment.primary) : null,
+    alternatives: assessment.alternatives.map(candidate),
+    excluded: assessment.excluded.map(
+      ({ clinicianReason: _clinician, ...ex }) => ex,
+    ),
+    provenance,
+  };
+}
 
 /**
  * GET /api/fit/catalog — the tenant's catalog, filtered to what their
@@ -492,6 +580,25 @@ router.get("/fit/catalog", async (req, res) => {
   ).catch(() => null);
   if (!orgId) {
     res.json({ valid: false, reason: "tenant_unavailable" });
+    return;
+  }
+
+  // Same stateful check as /fit/assess. Two things depend on it: a
+  // revoked or expired invite must stop reading the catalog, and — since
+  // resolveOrgIdForSignedRecord falls back to the SEED org when the
+  // record is missing — a validly-signed token whose invite row is gone
+  // must not be handed the seed tenant's private catalog.
+  const invite = await loadInvite(orgId, verification.inviteId);
+  if (!invite) {
+    res.json({ valid: false, reason: "invite_not_found" });
+    return;
+  }
+  if (invite.status === "revoked") {
+    res.json({ valid: false, reason: "revoked" });
+    return;
+  }
+  if (invite.expiresAt && Date.parse(invite.expiresAt) < Date.now()) {
+    res.json({ valid: false, reason: "expired" });
     return;
   }
 
@@ -546,6 +653,12 @@ interface InviteContext {
   /** How the invite was raised (migration 0489). Authoritative over the
    *  client's `entryPoint` hint — see where it's resolved below. */
   channel: string | null;
+  /** The chart's own adult/pediatric classification, from date_of_birth.
+   *  Authoritative over the client's self-reported `population` when the
+   *  invite is chart-linked: population selects the plausibility windows,
+   *  the tier-1 service-line filter, and the stored column, and none of
+   *  those should follow a browser-supplied hint when the chart knows. */
+  chartPopulation: "adult" | "pediatric" | null;
 }
 
 /**
@@ -578,15 +691,21 @@ async function loadInvite(
     // resolves both to null.
     let locationId: string | null = null;
     let payerProfileId: string | null = null;
+    let chartPopulation: "adult" | "pediatric" | null = null;
     const patientId = (data.patient_id as string | null) ?? null;
     if (patientId) {
       const { data: patient } = (await supabase
         .from("patients")
-        .select("location_id")
+        .select("location_id, date_of_birth")
         .eq("id", patientId)
         .limit(1)
         .maybeSingle()) as { data: Record<string, unknown> | null };
       locationId = (patient?.location_id as string | null) ?? null;
+      const dob = Date.parse(String(patient?.date_of_birth ?? ""));
+      if (Number.isFinite(dob)) {
+        const ageYears = (Date.now() - dob) / (365.25 * 86_400_000);
+        chartPopulation = ageYears < 18 ? "pediatric" : "adult";
+      }
 
       // insurance_coverages stores a free-text `payer_name`, not a
       // payer_profiles id, so the payer axis has to be resolved by name.
@@ -604,12 +723,26 @@ async function loadInvite(
         .maybeSingle()) as { data: Record<string, unknown> | null };
       const payerName = (coverage?.payer_name as string | null) ?? null;
       if (payerName && payerName.trim()) {
+        // `ilike` treats % and _ as wildcards, and payer_name is free
+        // text — escape them so this stays the exact (case-insensitive)
+        // equality the comment above promises, never a pattern match.
+        const escaped = payerName.trim().replace(/([\\%_])/g, "\\$1");
+        // payer_profiles is reference data with a NULLABLE org_id (NULL =
+        // platform row, non-NULL = a tenant's private payer), reached via
+        // .raw() like the mask catalog — so the tenant boundary has to be
+        // this explicit filter. Without it a name that matches ANOTHER
+        // tenant's private payer resolves to that foreign id, mis-scopes
+        // the formulary rules, and is persisted as cross-tenant clinical
+        // provenance. A tenant's own row outranks a platform row on a
+        // name collision, mirroring loadSafetyScreen.
         const { data: profile } = (await supabase
           .raw()
           .schema("resupply")
           .from("payer_profiles")
           .select("id")
-          .ilike("display_name", payerName.trim())
+          .or(`org_id.is.null,org_id.eq.${orgId}`)
+          .ilike("display_name", escaped)
+          .order("org_id", { ascending: false, nullsFirst: false })
           .limit(1)
           .maybeSingle()) as { data: Record<string, unknown> | null };
         payerProfileId = (profile?.id as string | null) ?? null;
@@ -623,6 +756,7 @@ async function loadInvite(
       status: String(data.status ?? "sent"),
       expiresAt: (data.expires_at as string | null) ?? null,
       channel: (data.channel as string | null) ?? null,
+      chartPopulation,
     };
   } catch {
     return null;
@@ -635,6 +769,9 @@ interface PersistInput {
   /** From the invite, when staff raised it against an existing chart. */
   patientId: string | null;
   locationId: string | null;
+  /** The payer scope the formulary rules ran under — provenance the
+   *  report needs to say which payer's rules produced this result. */
+  payerProfileId: string | null;
   entryPoint: "remote_link" | "in_office" | "kiosk_qr" | "refit_campaign";
   measurements: FitMeasurements;
   profile: ReturnType<typeof buildProfile>;
@@ -667,15 +804,20 @@ async function persistSession(input: PersistInput): Promise<string | null> {
         // "Not attached to a chart" for fittings that ARE chart-linked.
         patient_id: input.patientId,
         location_id: input.locationId,
+        payer_profile_id: input.payerProfileId,
         entry_point: input.entryPoint,
         population: input.profile.population,
         service_line: input.profile.therapyMode,
+        // `rescan_required` is reserved for outcomes a better photo can
+        // actually fix. A contraindicated or out-of-range fitting needs a
+        // clinician's decision, not a retake — mapping those to
+        // rescan_required put them in the wrong worklist bucket.
         status:
           input.assessment.outcome === "high_confidence"
             ? "recommended"
-            : input.assessment.outcome === "moderate_confidence"
-              ? "awaiting_review"
-              : "rescan_required",
+            : input.assessment.outcome === "low_confidence"
+              ? "rescan_required"
+              : "awaiting_review",
         measurements: input.measurements,
         calibration_method: input.calibrationMethod,
         frame_count: input.scan.frameCount,
@@ -708,11 +850,21 @@ async function persistSession(input: PersistInput): Promise<string | null> {
         //
         // Null on a contraindicated / low-confidence / out-of-range
         // outcome, where there is deliberately no primary to record.
-        primary_mask_model_id: input.assessment.primary?.maskId ?? null,
-        primary_cushion_variant_id:
-          input.assessment.primary?.cushion?.variantId ?? null,
-        primary_frame_variant_id:
-          input.assessment.primary?.frame?.variantId ?? null,
+        //
+        // ALSO null on the degraded path: the static fallback catalog's
+        // ids are slugs ("resmed-airfit-f20"), not uuids, and these are
+        // uuid FK columns — writing them made Postgres reject the entire
+        // insert with 22P02, silently losing the clinical record of every
+        // degraded fitting. The JSON blob above still carries the ids.
+        primary_mask_model_id: input.assessment.provenance.degraded
+          ? null
+          : (input.assessment.primary?.maskId ?? null),
+        primary_cushion_variant_id: input.assessment.provenance.degraded
+          ? null
+          : (input.assessment.primary?.cushion?.variantId ?? null),
+        primary_frame_variant_id: input.assessment.provenance.degraded
+          ? null
+          : (input.assessment.primary?.frame?.variantId ?? null),
         alternatives: input.assessment.alternatives,
         excluded: input.assessment.excluded,
         recommendation_confidence: input.assessment.recommendationConfidence,
@@ -734,7 +886,16 @@ async function persistSession(input: PersistInput): Promise<string | null> {
       .select("id")
       .single();
 
-    if (error || !data) return null;
+    if (error || !data) {
+      // The write path is best-effort, but a silent failure here loses
+      // the clinical record with no trace at all. Message only — never
+      // the row being inserted, which carries PHI.
+      logger.warn(
+        { message: error?.message ?? "no row returned" },
+        "fit session persistence failed; the assessment was still returned",
+      );
+      return null;
+    }
     const sessionId = String((data as { id: string }).id);
 
     if (input.safety && input.safety.responses.length > 0) {

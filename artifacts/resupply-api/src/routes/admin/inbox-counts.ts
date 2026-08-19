@@ -71,11 +71,11 @@ router.get(
         (autoSyncRow as { value?: string } | null)?.value === "true";
     }
 
-    // Seven counts in parallel. Each individual query is already
+    // Eight counts in parallel. Each individual query is already
     // index-backed (every WHERE clause hits a partial or narrow index),
-    // so the wall-clock cost is the slowest of the seven rather than
+    // so the wall-clock cost is the slowest of the eight rather than
     // their sum.
-    // Throw on ANY of the seven errors so a partial Supabase failure
+    // Throw on ANY of the eight errors so a partial Supabase failure
     // surfaces as a 500 rather than silently rendering "queue empty"
     // on every nav badge. The previous code destructured only `count`
     // from each result and ignored `error`, which masked transient
@@ -115,6 +115,14 @@ router.get(
         .from("inbound_faxes")
         .select("*", { count: "exact", head: true })
         .eq("status", "new"),
+      // Fittings waiting on a clinician. Backed by
+      // fit_sessions_org_review_idx (org_id, review_status, created_at) —
+      // without this badge a pending fitting sat silently until someone
+      // happened to open the review queue.
+      supabase
+        .from("fit_sessions")
+        .select("*", { count: "exact", head: true })
+        .eq("review_status", "pending_review"),
     ]);
     for (const r of results) {
       if (r.error) throw r.error;
@@ -127,6 +135,7 @@ router.get(
       { count: overdueShop },
       { count: overduePatient },
       { count: newInboundFaxes },
+      { count: pendingFitReviews },
     ] = results;
 
     // Only query the episodes count when the operator has opted into
@@ -153,6 +162,7 @@ router.get(
       overdueFollowups: (overdueShop ?? 0) + (overduePatient ?? 0),
       newPatientDocuments: newPatientDocuments ?? 0,
       newInboundFaxes: newInboundFaxes ?? 0,
+      pendingFitReviews: pendingFitReviews ?? 0,
       pacwareReadyToSync: pacwareConfirmed,
       serverTime: new Date().toISOString(),
     });

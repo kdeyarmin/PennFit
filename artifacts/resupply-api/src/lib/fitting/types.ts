@@ -341,8 +341,13 @@ export interface SizeChoice {
    * ranked a mask, then dropped which size it had chosen.
    */
   manufacturerPartNumber: string | null;
-  /** How far inside its band the measurement sits, 0..1. */
+  /** How far inside its band the measurement sits, 0..1. Exactly 0 at a
+   *  band edge, so in/out-of-band must be read from `inBand`, not this. */
   bandMargin: number;
+  /** True when every gated measurement sits inside this size's band
+   *  (edges inclusive — a manufacturer's published boundary belongs to
+   *  the size, not outside it). */
+  inBand: boolean;
   fitDataSource: FitDataSource;
   needsClinicalReview: boolean;
   /** Which measurements actually gated this size. */
@@ -432,4 +437,13 @@ export interface FitEngineInput {
   confidenceGating: boolean;
   /** True when the magnetic safety screen is enabled. */
   magnetScreening: boolean;
+  /**
+   * True when magnet screening is enabled for the tenant but the screen
+   * itself could not be loaded (DB timeout, missing question set, the
+   * degraded static path). The engine then FAILS CLOSED on the mask side:
+   * every mask with magnetic components is excluded at tier 1, because a
+   * risk we could not screen for must be treated as present, never
+   * assumed away. Optional so existing pure-engine callers are unchanged.
+   */
+  magnetScreenUnavailable?: boolean;
 }

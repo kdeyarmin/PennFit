@@ -18,6 +18,7 @@ import { Button } from "@/components/admin/Button";
 import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 import { Badge } from "@/components/admin/Badge";
 import { Input, Label } from "@/components/admin/Input";
+import { QrCode } from "@/components/QrCode";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Spinner } from "@/components/admin/Spinner";
 import { FitterInviteButton } from "@/components/admin/FitterInviteButton";
@@ -35,6 +36,7 @@ import {
   type FitterInviteChannel,
   type FitterInviteRow,
   type FitterInviteStatus,
+  type ResendFitterInviteResponse,
 } from "@/lib/admin/fitter-invites-api";
 
 const QUERY_KEY = ["admin", "fitter-invites"] as const;
@@ -162,13 +164,26 @@ function InviteCard({
   onChanged: () => void;
 }) {
   const [confirm, ConfirmDialogEl] = useConfirmDialog();
+  // The fresh link from the last resend. For an in-office invite,
+  // "resend" means "show the QR again" — dropping the response on the
+  // floor (as this page used to) made that action a silent no-op.
+  const [resent, setResent] = useState<ResendFitterInviteResponse | null>(null);
+  const [copied, setCopied] = useState(false);
   const resend = useMutation({
     mutationFn: () => resendFitterInvite(invite.id),
-    onSuccess: onChanged,
+    onSuccess: (res) => {
+      setResent(res);
+      onChanged();
+    },
   });
   const revoke = useMutation({
     mutationFn: () => revokeFitterInvite(invite.id),
-    onSuccess: onChanged,
+    onSuccess: () => {
+      // Revoking kills the token server-side — drop the "fresh link"
+      // panel so staff can't copy or QR-scan a link that now 410s.
+      setResent(null);
+      onChanged();
+    },
   });
 
   async function handleRevoke() {
@@ -234,14 +249,17 @@ function InviteCard({
           )}
         </div>
         <div className="flex items-center gap-2">
-          {invite.status !== "revoked" && invite.status !== "expired" && (
+          {/* Resend is available on expired invites too — the server
+              re-mints a fresh token and re-arms the row to "sent", which
+              beats forcing staff to create a duplicate invite. */}
+          {invite.status !== "revoked" && (
             <Button
               size="sm"
               intent="secondary"
               isLoading={resend.isPending}
               onClick={() => resend.mutate()}
             >
-              Resend
+              {invite.channel === "in_office" ? "Show QR again" : "Resend"}
             </Button>
           )}
           {/* Revoke only outstanding invites — a completed/attached
@@ -269,7 +287,66 @@ function InviteCard({
             Couldn&apos;t revoke the invite — please try again.
           </p>
         )}
+        {resend.error instanceof Error && (
+          <p
+            className="text-xs mt-1 w-full text-right"
+            style={{ color: "#b91c1c" }}
+            role="alert"
+          >
+            Couldn&apos;t resend the invite — please try again.
+          </p>
+        )}
       </div>
+
+      {resent && invite.status !== "revoked" && (
+        <div
+          className="mt-3 pt-3 border-t space-y-2"
+          style={{ borderColor: "hsl(var(--line-1))" }}
+          data-testid={`fitter-invite-resent-${invite.id}`}
+        >
+          <p className="text-sm" style={{ color: "hsl(var(--ink-1))" }}>
+            {resent.channel === "in_office"
+              ? "Fresh QR code — have the patient scan it with their phone camera."
+              : resent.delivered
+                ? "Invite resent with a fresh link."
+                : "New link created, but automatic delivery isn't configured — share it directly."}
+          </p>
+          {resent.channel === "in_office" && (
+            <div className="flex flex-col items-center gap-1">
+              <QrCode
+                value={resent.inviteLink}
+                size={180}
+                ariaLabel="QR code linking to the mask fitter"
+              />
+            </div>
+          )}
+          <div className="flex gap-2 items-center">
+            <Input
+              readOnly
+              value={resent.inviteLink}
+              onFocus={(e) => e.currentTarget.select()}
+              aria-label="Fresh invite link"
+            />
+            <Button
+              intent="secondary"
+              size="sm"
+              onClick={() => {
+                void navigator.clipboard
+                  ?.writeText(resent.inviteLink)
+                  .then(() => {
+                    setCopied(true);
+                    window.setTimeout(() => setCopied(false), 1500);
+                  });
+              }}
+            >
+              {copied ? "Copied" : "Copy"}
+            </Button>
+          </div>
+          <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+            Expires {formatDateTime(resent.expiresAt)}.
+          </p>
+        </div>
+      )}
 
       {isCompleted && (
         <div

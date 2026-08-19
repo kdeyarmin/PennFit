@@ -145,7 +145,11 @@ export async function buildFitReport(
       ? single(
           supabase
             .from("patients")
-            .select("first_name, last_name, date_of_birth")
+            // The chart's name columns are legal_first_name/legal_last_name
+            // (there is no first_name/last_name on patients) — selecting the
+            // wrong names makes PostgREST error, single() swallows it, and
+            // every report prints "Not attached to a chart".
+            .select("legal_first_name, legal_last_name, date_of_birth")
             .eq("id", String(data.patient_id))
             .limit(1)
             .maybeSingle(),
@@ -186,7 +190,7 @@ export async function buildFitReport(
   }));
 
   const patientName = patientRow
-    ? [str(patientRow.first_name), str(patientRow.last_name)]
+    ? [str(patientRow.legal_first_name), str(patientRow.legal_last_name)]
         .filter(Boolean)
         .join(" ") || null
     : null;
@@ -275,6 +279,7 @@ export async function buildFitReport(
       overrideTo:
         catalogNames.get(str(data.override_mask_model_id) ?? "") ?? null,
       overrideReason: str(data.override_reason),
+      rescanReason: str(data.rescan_reason),
     },
     dispensing: {
       orderedMask:

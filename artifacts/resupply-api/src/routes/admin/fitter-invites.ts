@@ -35,7 +35,10 @@ import {
 import { createTenantSendgridClient } from "../../lib/email/tenant-sender.js";
 import { logger } from "../../lib/logger";
 import { resolveTenantSmsClientOptions } from "../../lib/messaging/tenant-telecom";
-import { resolveBrandingByOrgId } from "../../lib/tenant-branding.js";
+import {
+  resolveBrandingByOrgId,
+  resolveTenantBaseUrl,
+} from "../../lib/tenant-branding.js";
 import {
   FITTER_INVITE_IN_OFFICE_TTL_MS,
   FITTER_INVITE_TTL_MS,
@@ -106,8 +109,15 @@ async function tryCreateTwilioSms(
   }
 }
 
-const inviteLinkFor = (token: string) =>
-  `${publicBaseUrl()}/fitter-invite?t=${encodeURIComponent(token)}`;
+/** Build the patient-facing link on the tenant's own verified custom
+ *  domain when it has one, falling back to the platform host. Without
+ *  this, a tenant's SMS says "Acme Sleep" while the link lands the
+ *  patient on the platform-branded storefront. */
+const inviteLinkFor = async (orgId: string, token: string): Promise<string> => {
+  const base =
+    (await resolveTenantBaseUrl(orgId).catch(() => null)) ?? publicBaseUrl();
+  return `${base}/fitter-invite?t=${encodeURIComponent(token)}`;
+};
 
 /** Send the invite over the chosen channel. Returns whether delivery
  *  succeeded; never throws on a vendor / config failure so the caller
@@ -145,11 +155,22 @@ async function deliverInvite(opts: {
     if (!twilio) return { delivered: false, reason: "no_sms_config" };
     await twilio.sendSms({
       to: opts.phone,
-      body: `Hi ${greeting}, ${brandName} invites you to find your best CPAP mask fit — it takes about 2 minutes on your phone: ${opts.link}`,
+      body: `Hi ${greeting}, ${brandName} invites you to find your best CPAP mask fit — it takes about 2 minutes on your phone: ${opts.link} Reply STOP to opt out.`,
     });
     return { delivered: true };
   } catch (err) {
-    logger.warn({ err, channel: opts.channel }, "fitter-invite: send failed");
+    // Vendor error messages can embed the recipient's phone number or
+    // email verbatim (Twilio's invalid-number errors do). Log the error's
+    // shape only — the full message would put PHI in a log line.
+    logger.warn(
+      {
+        channel: opts.channel,
+        errName: err instanceof Error ? err.name : "unknown",
+        status: (err as { status?: number }).status ?? null,
+        code: (err as { code?: number | string }).code ?? null,
+      },
+      "fitter-invite: send failed",
+    );
     return {
       delivered: false,
       reason: err instanceof Error ? err.message.slice(0, 120) : "send_error",
@@ -339,7 +360,7 @@ router.post(
     if (!row) throw new Error("fitter_invites insert returned no rows");
 
     const token = signFitterInviteToken(row.id, new Date(), ttlMs);
-    const link = inviteLinkFor(token);
+    const link = await inviteLinkFor(orgId, token);
     // Nothing is sent for an in-office invite: the patient is here, and
     // the handover IS the delivery. Reported as delivered so the caller's
     // success check stays uniform, without claiming a message went out.
@@ -840,7 +861,7 @@ router.post(
       ? FITTER_INVITE_IN_OFFICE_TTL_MS
       : FITTER_INVITE_TTL_MS;
     const token = signFitterInviteToken(invite.id, new Date(), ttlMs);
-    const link = inviteLinkFor(token);
+    const link = await inviteLinkFor(orgId, token);
     // "Resend" on an in-office invite means "show the QR again" — there
     // is no address to send to, and the row may have none. Re-minting
     // still does the useful half: a fresh, un-expired link.
@@ -885,9 +906,13 @@ router.post(
 
     res.json({
       id: invite.id,
+      channel: invite.channel,
       delivered: delivery.delivered,
       deliveryError: delivery.delivered ? null : (delivery.reason ?? null),
       inviteLink: link,
+      // The fresh window, so the UI can re-render the QR panel with an
+      // accurate expiry (an in-office "resend" IS the QR re-display).
+      expiresAt: expiresIso,
     });
   },
 );

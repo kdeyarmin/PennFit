@@ -25,7 +25,7 @@ export const FacialMeasurementsCalibrationMethod = {
  * Numeric measurements in millimeters derived from on-device face mesh. No image data.
  */
 export interface FacialMeasurements {
-  /** Width of nose at bridge in mm */
+  /** Width of nose at the alar base (nostril span) in mm */
   noseWidth: number;
   /** Height of nose from bridge to tip in mm */
   noseHeight: number;

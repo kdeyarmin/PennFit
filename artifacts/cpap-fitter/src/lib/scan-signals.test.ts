@@ -44,14 +44,16 @@ function frontFaceLandmarks(): Point2D[] {
   const set = (i: number, x: number, y: number) => {
     pts[i] = { x, y };
   };
-  set(1, 0.5, 0.52); // nose tip
+  // Nose tip at ~0.28 of the eye-to-chin span below the eye line — the
+  // neutral-head proportion the pitch estimator is calibrated against.
+  set(1, 0.5, 0.542);
   set(234, 0.35, 0.5); // left cheek
   set(454, 0.65, 0.5); // right cheek
   set(10, 0.5, 0.24); // forehead
   set(152, 0.5, 0.78); // chin
   set(33, 0.41, 0.45); // left eye outer
   set(263, 0.59, 0.45); // right eye outer
-  set(168, 0.5, 0.3576); // nose bridge — placed for a neutral pitch estimate
+  set(168, 0.5, 0.45); // nose bridge — sits at eye level, as it really does
   return pts;
 }
 

@@ -323,6 +323,12 @@ async function loadFromDb(orgId: string): Promise<FittingContext> {
         .from("mask_size_variants")
         .select("*")
         .eq("status", "current")
+        // Deterministic order. PostgREST makes no ordering promise, and
+        // with overlapping bands the size picker must not depend on row
+        // arrival order (the picker sorts again, but the stored variant
+        // lists — and anything else that walks them — should be stable).
+        .order("sort_order", { ascending: true })
+        .order("id", { ascending: true })
         .limit(5000),
     ),
     withTimeout(
@@ -349,8 +355,10 @@ async function loadFromDb(orgId: string): Promise<FittingContext> {
     ),
     // THIS tenant's clinical sign-off on the shared size bands. The
     // platform `needs_clinical_review` flag is never cleared by a
-    // tenant (0482 header explains why); an approved row here is what
-    // lifts the confidence cap, and only for this org.
+    // tenant (0482 header explains why); an approved row here clears the
+    // per-tenant review flag carried on the session and the fit report.
+    // (It no longer caps confidence — that gate was removed on purpose;
+    // see resolveConfidence in confidence.ts.)
     withTimeout(
       supabase
         .from("mask_variant_reviews")

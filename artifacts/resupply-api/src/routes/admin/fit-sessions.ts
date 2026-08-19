@@ -118,7 +118,7 @@ router.get(
     let query = supabase
       .from("fit_sessions")
       .select(
-        "id, created_at, patient_id, status, outcome, recommendation_confidence, measurement_confidence_band, scan_quality_grade, review_status, reviewed_by_email, reviewed_at, primary_recommendation, population, service_line, degraded",
+        "id, created_at, patient_id, fitter_invite_id, status, outcome, recommendation_confidence, measurement_confidence_band, scan_quality_grade, review_status, reviewed_by_email, reviewed_at, primary_recommendation, population, service_line, degraded",
       )
       .order("created_at", { ascending: false })
       .range(offset, offset + limit - 1);
@@ -135,9 +135,42 @@ router.get(
       res.status(500).json({ error: "query_failed", message: error.message });
       return;
     }
+    const rows = data ?? [];
+
+    // A rescan request produces a NEW session for the same invite, and
+    // nothing ever moves the old one out of `rescan_requested` — so those
+    // rows read as eternally open work. Resolve, in one batched lookup,
+    // which of them have in fact been superseded by a newer fitting, so
+    // the queue can say "rescan completed — see the new session" instead
+    // of dead-ending. Best-effort: a lookup failure leaves the field null.
+    const supersededBy = new Map<string, string>();
+    const rescanRows = rows.filter(
+      (r) => r.review_status === "rescan_requested" && r.fitter_invite_id,
+    );
+    if (rescanRows.length > 0) {
+      const inviteIds = [
+        ...new Set(rescanRows.map((r) => String(r.fitter_invite_id))),
+      ];
+      const { data: siblings } = (await supabase
+        .from("fit_sessions")
+        .select("id, fitter_invite_id, created_at")
+        .in("fitter_invite_id", inviteIds)
+        .order("created_at", { ascending: false })) as {
+        data: Record<string, unknown>[] | null;
+      };
+      for (const row of rescanRows) {
+        const newer = (siblings ?? []).find(
+          (s) =>
+            String(s.fitter_invite_id) === String(row.fitter_invite_id) &&
+            String(s.id) !== String(row.id) &&
+            String(s.created_at) > String(row.created_at),
+        );
+        if (newer) supersededBy.set(String(row.id), String(newer.id));
+      }
+    }
 
     res.json({
-      sessions: (data ?? []).map((row) => ({
+      sessions: rows.map((row) => ({
         id: String(row.id),
         createdAt: String(row.created_at),
         patientId: (row.patient_id as string | null) ?? null,
@@ -155,6 +188,9 @@ router.get(
         recommendedMask:
           (row.primary_recommendation as { name?: string } | null)?.name ??
           null,
+        // The newer session that answered this row's rescan request, when
+        // one exists. Null for everything that is not a superseded rescan.
+        supersededBySessionId: supersededBy.get(String(row.id)) ?? null,
       })),
       limit,
       offset,
@@ -285,7 +321,7 @@ router.post(
     const supabase = getOrgScopedClient(orgId);
     const { data: existing } = (await supabase
       .from("fit_sessions")
-      .select("primary_recommendation, outcome")
+      .select("primary_recommendation, outcome, review_status")
       .eq("id", id.data)
       .limit(1)
       .maybeSingle()) as { data: Record<string, unknown> | null };
@@ -302,6 +338,18 @@ router.post(
       });
       return;
     }
+    // An overridden session already carries a clinician's decision AND the
+    // override mask/reason columns. Flipping it to "approved" would leave
+    // those populated under a status that contradicts them — a record that
+    // reads "approved" while still naming a different dispensed mask.
+    if (existing.review_status === "overridden") {
+      res.status(409).json({
+        error: "already_overridden",
+        message:
+          "This fitting was overridden with a different mask. To change that decision, record a new override with a reason.",
+      });
+      return;
+    }
 
     const { error } = await supabase
       .from("fit_sessions")
@@ -309,6 +357,7 @@ router.post(
         review_status: "approved",
         status: "approved",
         reviewed_by_email: req.adminEmail ?? null,
+        reviewed_by_user_id: req.adminUserId ?? null,
         reviewed_at: new Date().toISOString(),
       })
       .eq("id", id.data);
@@ -408,6 +457,7 @@ router.post(
         override_variant_id: body.data.variantId ?? null,
         override_reason: body.data.reason,
         reviewed_by_email: req.adminEmail ?? null,
+        reviewed_by_user_id: req.adminUserId ?? null,
         reviewed_at: new Date().toISOString(),
       })
       .eq("id", id.data);
@@ -447,7 +497,11 @@ router.post(
       .update({
         review_status: "rescan_requested",
         status: "rescan_required",
+        // The clinician's why (0501). Free text sits on the session row
+        // beside override_reason — the events table stays codes/counts.
+        rescan_reason: body.data.reason,
         reviewed_by_email: req.adminEmail ?? null,
+        reviewed_by_user_id: req.adminUserId ?? null,
         reviewed_at: new Date().toISOString(),
       })
       .eq("id", id.data);
@@ -502,6 +556,9 @@ async function recordEvent(
         event_type: eventType,
         actor_kind: "staff",
         actor_email: req.adminEmail ?? null,
+        // The stable identity too — an email is mutable and re-assignable,
+        // which is a weak basis for a clinical sign-off trail.
+        actor_user_id: req.adminUserId ?? null,
         detail,
       });
   } catch (err) {

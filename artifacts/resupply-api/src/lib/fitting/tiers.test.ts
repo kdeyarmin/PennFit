@@ -391,6 +391,49 @@ describe("tier 1 — safety", () => {
     expect(result.survivors).toHaveLength(1);
   });
 
+  it("fails closed on magnetic masks when screening is on but the screen could not load", () => {
+    // The unloadable-screen case (DB timeout, degraded static path). The
+    // question was never asked, so the risk must be treated as present:
+    // every magnetic mask is excluded, non-magnetic ones survive, and the
+    // exclusion record says why.
+    const result = applySafetyExclusions(
+      [
+        mask({ slug: "magnetic", hasMagneticComponents: true }),
+        mask({ slug: "clip-free", hasMagneticComponents: false }),
+      ],
+      emptyProfile(),
+      null,
+      [],
+      true,
+      true,
+    );
+    expect(result.survivors.map((m) => m.slug)).toEqual(["clip-free"]);
+    expect(result.excluded[0]!.code).toBe("magnet_screen_unavailable");
+    expect(result.excluded[0]!.patientReason).toContain("precaution");
+  });
+
+  it("end to end: an unloadable screen never lets a magnetic mask through", () => {
+    const result = assess(
+      input({
+        catalog: [
+          mask({ slug: "magnetic", hasMagneticComponents: true }),
+          mask({ slug: "clip-free", hasMagneticComponents: false }),
+        ],
+        safetyScreen: null,
+        magnetScreening: true,
+        magnetScreenUnavailable: true,
+      }),
+    );
+    const shown = [
+      result.primary?.maskSlug,
+      ...result.alternatives.map((a) => a.maskSlug),
+    ].filter(Boolean);
+    expect(shown).not.toContain("magnetic");
+    expect(
+      result.excluded.some((e) => e.code === "magnet_screen_unavailable"),
+    ).toBe(true);
+  });
+
   it("keeps a pediatric interface away from an adult session and vice versa", () => {
     const pediatric = mask({ slug: "ped", serviceLine: "pediatric" });
     const adult = mask({ slug: "adult", serviceLine: "adult" });
@@ -554,7 +597,70 @@ describe("tier 3 — facial fit", () => {
       noseToChinMin: null,
       noseToChinMax: null,
     });
-    expect(scoreVariant(v, { ...MEASUREMENTS, noseWidth: 45 })!.margin).toBe(0);
+    const outside = scoreVariant(v, { ...MEASUREMENTS, noseWidth: 45 })!;
+    expect(outside.margin).toBe(0);
+    expect(outside.inBand).toBe(false);
+  });
+
+  it("treats a measurement exactly on a band edge as INSIDE the size", () => {
+    // A manufacturer's published boundary belongs to the size. The margin
+    // is legitimately 0 there, so in/out must come from `inBand` — reading
+    // it off `margin > 0` told an on-the-line patient they were "just
+    // outside" the range and, with every candidate on an edge, withheld
+    // the recommendation as outside_validated_range.
+    const v = variant({
+      noseWidthMin: 30,
+      noseWidthMax: 38,
+      noseToChinMin: null,
+      noseToChinMax: null,
+    });
+    for (const value of [30, 38]) {
+      const scored = scoreVariant(v, { ...MEASUREMENTS, noseWidth: value })!;
+      expect(scored.inBand).toBe(true);
+      expect(scored.score).toBe(1);
+    }
+    const fit = scoreFacialFit(
+      mask({
+        variants: [variant({ noseToChinMin: null, noseToChinMax: null })],
+      }),
+      { ...MEASUREMENTS, noseWidth: 30 },
+    );
+    expect(fit.outsideAllBands).toBe(false);
+    expect(fit.cushion?.rationale).toContain("falls inside");
+  });
+
+  it("breaks a size tie on margin, independent of catalog row order", () => {
+    // Overlapping bands (the seeded catalogs have them): a patient can
+    // score a perfect 1.0 on two sizes at once. The pick must be the size
+    // they sit deeper inside, and must not depend on DB arrival order.
+    const small = variant({
+      id: "v-small",
+      sizeCode: "S",
+      sizeLabel: "Small",
+      sortOrder: 0,
+      noseWidthMin: 27,
+      noseWidthMax: 34.5,
+      noseToChinMin: null,
+      noseToChinMax: null,
+    });
+    const medium = variant({
+      id: "v-medium",
+      sizeCode: "M",
+      sizeLabel: "Medium",
+      sortOrder: 10,
+      noseWidthMin: 33,
+      noseWidthMax: 41,
+      noseToChinMin: null,
+      noseToChinMax: null,
+    });
+    // noseWidth 34: inside both bands (both score 1.0), but deeper inside
+    // Medium (centre 37, half-width 4 → margin 0.25) than Small (centre
+    // 30.75, half-width 3.75 → margin 0.13).
+    const m = { ...MEASUREMENTS, noseWidth: 34 };
+    const forwards = scoreFacialFit(mask({ variants: [small, medium] }), m);
+    const backwards = scoreFacialFit(mask({ variants: [medium, small] }), m);
+    expect(forwards.cushion?.sizeCode).toBe("M");
+    expect(backwards.cushion?.sizeCode).toBe("M");
   });
 
   it("names the measurements that actually drove the size", () => {

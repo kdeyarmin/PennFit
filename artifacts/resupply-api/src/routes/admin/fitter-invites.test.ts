@@ -60,6 +60,18 @@ vi.mock("@workspace/resupply-telecom", async () => {
   };
 });
 
+// Tenant branding: null base URL = no verified custom domain (platform
+// fallback); tests flip it to assert the tenant-domain link path.
+const tenantBranding = vi.hoisted(() => ({
+  baseUrl: null as string | null,
+}));
+vi.mock("../../lib/tenant-branding.js", () => ({
+  resolveBrandingByOrgId: vi.fn(async () => ({
+    storefrontName: "Acme Sleep",
+  })),
+  resolveTenantBaseUrl: vi.fn(async () => tenantBranding.baseUrl),
+}));
+
 import fitterInvitesRouter from "./fitter-invites";
 
 const INVITE_ID = "11111111-1111-4111-8111-111111111111";
@@ -81,6 +93,7 @@ beforeEach(() => {
   };
   process.env.RESUPPLY_LINK_HMAC_KEY = "test-link-hmac-key-value-1234567890";
   process.env.SHOP_PUBLIC_BASE_URL = "https://pennpaps.example.com";
+  tenantBranding.baseUrl = null;
 });
 
 describe("POST /admin/fitter-invites", () => {
@@ -107,6 +120,23 @@ describe("POST /admin/fitter-invites", () => {
     expect(row.channel).toBe("email");
     expect(row.status).toBe("sent");
     expect(row.patient_id).toBeNull();
+  });
+
+  it("builds the link on the tenant's verified custom domain when it has one", async () => {
+    // A tenant's SMS says "Acme Sleep"; the link must land the patient on
+    // Acme's own storefront, not the platform host — the storefront brands
+    // itself by request host, so a platform link shows platform branding.
+    tenantBranding.baseUrl = "https://acmesleep.example.com";
+    stageSupabaseResponse("fitter_invites", "insert", {
+      data: { id: INVITE_ID },
+    });
+    const res = await request(makeApp())
+      .post("/resupply-api/admin/fitter-invites")
+      .send({ email: "prospect@example.com", channel: "email" });
+    expect(res.status).toBe(201);
+    expect(res.body.inviteLink).toContain(
+      "https://acmesleep.example.com/fitter-invite?t=",
+    );
   });
 
   it("resolves contact from the patient chart in patient mode", async () => {

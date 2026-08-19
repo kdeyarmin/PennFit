@@ -191,9 +191,20 @@ export async function attachFitterInvite(
   return json as AttachFitterInviteResponse;
 }
 
+export interface ResendFitterInviteResponse {
+  id: string;
+  channel: FitterInviteChannel;
+  delivered: boolean;
+  deliveryError: string | null;
+  /** The freshly-minted link — for an in-office invite, "resend" IS
+   *  re-displaying this as a QR code. */
+  inviteLink: string;
+  expiresAt: string;
+}
+
 export async function resendFitterInvite(
   id: string,
-): Promise<{ id: string; delivered: boolean; inviteLink: string }> {
+): Promise<ResendFitterInviteResponse> {
   const url = `${BASE}/${encodeURIComponent(id)}/resend`;
   const res = await fetch(url, {
     method: "POST",
@@ -202,7 +213,7 @@ export async function resendFitterInvite(
   });
   const json = (await res.json()) as unknown;
   if (!res.ok) throw new ApiError(res, json, { method: "POST", url });
-  return json as { id: string; delivered: boolean; inviteLink: string };
+  return json as ResendFitterInviteResponse;
 }
 
 export async function revokeFitterInvite(

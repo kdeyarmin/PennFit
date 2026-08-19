@@ -13,8 +13,15 @@
  * changing what the engine decides does.
  */
 
-/** The tiered recommendation pipeline. */
-export const RULES_ENGINE_VERSION = "fit-rules@2026.08.1";
+/** The tiered recommendation pipeline.
+ *
+ * 2026.08.2: RT sign-off confidence cap removed (the scan decides);
+ * band edges made inclusive; deterministic size tie-break on margin;
+ * magnet-screen-unavailable fail-closed exclusion; legacy-questionnaire
+ * profile completeness no longer penalised for questions v1 never asks.
+ * (The cap removal itself shipped in the prior release without a bump —
+ * this stamp covers it retroactively for new rows.) */
+export const RULES_ENGINE_VERSION = "fit-rules@2026.08.2";
 
 /** The Patient Fit Profile question set. */
 export const FIT_PROFILE_VERSION = "fit_profile_v2";

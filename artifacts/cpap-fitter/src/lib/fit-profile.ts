@@ -432,6 +432,31 @@ export function applicableQuestions(answers: FitAnswers): FitQuestion[] {
 }
 
 /**
+ * Drop answers to questions that no longer apply.
+ *
+ * Going Back and changing a branching answer must not leave the old
+ * branch's answers behind: change `therapyDevice` to CPAP and an earlier
+ * `supplementalOxygen: true` would otherwise still reach the engine (and
+ * the clinical record) for a question the flow just decided not to ask.
+ * Iterated to a fixpoint because applicability cascades — pruning one
+ * answer can make another question inapplicable in turn.
+ */
+export function pruneInapplicableAnswers(answers: FitAnswers): FitAnswers {
+  const current: FitAnswers = { ...answers };
+  for (let pass = 0; pass < FIT_QUESTIONS.length; pass += 1) {
+    let changed = false;
+    for (const q of FIT_QUESTIONS) {
+      if (current[q.id] !== undefined && !questionApplies(q, current)) {
+        delete current[q.id];
+        changed = true;
+      }
+    }
+    if (!changed) break;
+  }
+  return current;
+}
+
+/**
  * Index of the next question to show after `currentIndex`, or null when
  * the profile is complete. Indices are into `FIT_QUESTIONS`, so a skipped
  * question does not shift the ones after it.

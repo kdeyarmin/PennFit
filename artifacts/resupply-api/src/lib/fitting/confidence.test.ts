@@ -75,6 +75,7 @@ function candidate(over: Partial<FitCandidate> = {}): FitCandidate {
       sizeLabel: "Medium",
       manufacturerPartNumber: null,
       bandMargin: 0.8,
+      inBand: true,
       fitDataSource: "manufacturer",
       needsClinicalReview: false,
       measurementsUsed: ["noseWidth"],

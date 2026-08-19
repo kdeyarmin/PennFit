@@ -218,6 +218,12 @@ const MASK_FITTER_ALLOWED_PREFIXES: readonly string[] = [
   "/admin/fitter/catalog",
   "/admin/fitter/formulary",
   "/admin/fitter/safety-screens",
+  // The fitter outcome report — acceptance/override/dispense rates. This
+  // is the number the product is sold on, and the fitter-only tenants are
+  // exactly the customers who ask for it. The EXACT route only: the bare
+  // "/admin/analytics" prefix would open every other analytics worklist
+  // (substring match), which a fitter-only tenant has no data for.
+  "/admin/analytics/fitter-outcomes",
   // Inbound referrals from the provider portal. A fitter-only DME that
   // receives referrals is exactly the customer the portal exists for, so
   // omitting this would 403 them out of their own inbound queue.

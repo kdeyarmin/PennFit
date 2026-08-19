@@ -51,6 +51,13 @@ const db = vi.hoisted(() => ({
     status: "sent",
     expires_at: null as string | null,
   } as Record<string, unknown> | null,
+  /** Per-table maybeSingle rows for reads beyond fitter_invites (patients,
+   *  insurance_coverages, payer_profiles) — unset tables resolve null. */
+  rows: {} as Record<string, Record<string, unknown> | null>,
+  /** Every chained filter/modifier call, so a test can assert a query was
+   *  actually scoped (the tenant boundary on reference tables IS a chain
+   *  call — nothing else observable distinguishes scoped from unscoped). */
+  calls: [] as Array<{ table: string; method: string; args: unknown[] }>,
   /** Every insert the route attempts, so a test can assert the payload. */
   inserts: [] as Array<{ table: string; payload: unknown }>,
   /**
@@ -68,13 +75,24 @@ vi.mock("@workspace/resupply-db", () => {
   const builder = (table: string) => {
     const chain: Record<string, unknown> = {};
     const self = () => chain;
-    for (const method of ["select", "eq", "limit", "order", "ilike", "neq"]) {
-      chain[method] = () => self();
+    for (const method of [
+      "select",
+      "eq",
+      "limit",
+      "order",
+      "ilike",
+      "neq",
+      "or",
+    ]) {
+      chain[method] = (...args: unknown[]) => {
+        db.calls.push({ table, method, args });
+        return self();
+      };
     }
     chain.maybeSingle = async () =>
       table === "fitter_invites"
         ? { data: db.invite, error: null }
-        : { data: null, error: null };
+        : { data: db.rows[table] ?? null, error: null };
     chain.single = async () => {
       throw new Error("no database in tests");
     };
@@ -162,6 +180,8 @@ afterEach(() => {
     "fitter.confidence_gating",
   ]);
   db.invite = { patient_id: null, status: "sent", expires_at: null };
+  db.rows = {};
+  db.calls = [];
   db.inserts = [];
   db.persistOk = false;
 });
@@ -340,6 +360,100 @@ describe("POST /fit/assess — happy path and degradation", () => {
     expect(res.status).toBe(200);
     expect(res.body.outcome).toBeTruthy();
   });
+
+  it("accepts the exact shape the v2 questionnaire's toProfilePayload emits", async () => {
+    // Pins the wire contract between the SPA's fit-profile module and the
+    // .strict() profile schema here — an unknown key on either side 400s
+    // the whole assessment, so drift must fail THIS test, not a patient.
+    const res = await post({
+      measurements: VALID_MEASUREMENTS,
+      profile: {
+        version: "fit_profile_v2",
+        population: "adult",
+        therapyMode: "pap",
+        therapyDevice: "cpap",
+        pressureCmH2O: 12,
+        supplementalOxygen: null,
+        mouthBreather: true,
+        nasalObstruction: "none",
+        frequentCongestion: false,
+        dryMouth: null,
+        sleepPositions: ["side"],
+        claustrophobia: "none",
+        minimalContactPreference: "minimal",
+        facialHair: "none",
+        dentures: false,
+        skinIrritation: "none",
+        sensitiveSkin: false,
+        wearsGlasses: null,
+        priorMaskExperience: "nasal",
+        priorMaskSize: "M",
+        priorLeakLocations: ["bridge_of_nose"],
+        priorMaskSatisfaction: 2,
+        headgearDifficulty: null,
+        handDexterity: "normal",
+        visionOrCognitiveLimitation: null,
+      },
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.outcome).toBeTruthy();
+  });
+
+  it("keeps internal ranking and formulary terms out of the browser payload", async () => {
+    // The STORED record keeps them; the response must not. `rankScore`
+    // bakes in formulary preference and inventory margin rank, and
+    // `clinicianReason` / `formularyRulesMatched` are staff-facing.
+    const res = await post({
+      measurements: VALID_MEASUREMENTS,
+      profile: VALID_PROFILE,
+    });
+    expect(res.status).toBe(200);
+    const keys = new Set<string>();
+    const walk = (v: unknown) => {
+      if (Array.isArray(v)) return v.forEach(walk);
+      if (v && typeof v === "object") {
+        for (const [k, val] of Object.entries(v)) {
+          keys.add(k);
+          walk(val);
+        }
+      }
+    };
+    walk(res.body);
+    for (const forbidden of [
+      "rankScore",
+      "facialFitScore",
+      "patientFactorScore",
+      "clinicianReason",
+      "formularyRulesMatched",
+    ]) {
+      expect(keys.has(forbidden)).toBe(false);
+    }
+    // The patient-facing terms survive the projection.
+    expect(keys.has("confidence")).toBe(true);
+    expect(keys.has("guidance")).toBe(true);
+  });
+
+  it("fails closed on magnetic masks when screening is on but no screen loaded", async () => {
+    // The tenant screens for magnets, but the screen itself could not be
+    // loaded (the mock's context carries safetyScreen: null). The old
+    // behaviour silently resolved that to "no risk"; now every magnetic
+    // mask is excluded with an explicit record, and the fitting proceeds
+    // on the magnet-free catalog.
+    featureFlags.enabled = new Set([
+      "fitter.clinical_assessment",
+      "fitter.magnet_screening",
+    ]);
+    const res = await post({
+      measurements: VALID_MEASUREMENTS,
+      profile: VALID_PROFILE,
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.outcome).toBeTruthy();
+    const excluded = res.body.excluded as Array<{ code: string }>;
+    expect(excluded.some((e) => e.code === "magnet_screen_unavailable")).toBe(
+      true,
+    );
+  });
 });
 
 describe("GET /fit/catalog", () => {
@@ -442,6 +556,42 @@ describe("POST /fit/assess — stateful invite checks", () => {
   });
 });
 
+// The payer axis resolves by name against `payer_profiles` — a reference
+// table with NULLABLE org_id (NULL = platform row) reached via .raw(), so
+// the org-scoped client does NOT inject the tenant filter. Unscoped, a
+// display name matching another tenant's private payer would mis-scope
+// the formulary and persist a foreign payer id as clinical provenance.
+describe("POST /fit/assess — payer lookup tenant boundary", () => {
+  it("scopes the payer_profiles read to platform + this tenant, tenant row first", async () => {
+    db.invite = {
+      patient_id: "33333333-3333-3333-3333-333333333333",
+      status: "sent",
+      expires_at: null,
+    };
+    db.rows.patients = { location_id: null, date_of_birth: null };
+    db.rows.insurance_coverages = { payer_name: "Acme Health" };
+    db.rows.payer_profiles = { id: "44444444-4444-4444-4444-444444444444" };
+
+    const res = await post({
+      measurements: VALID_MEASUREMENTS,
+      profile: VALID_PROFILE,
+    });
+    expect(res.status).toBe(200);
+
+    const payerCalls = db.calls.filter((c) => c.table === "payer_profiles");
+    expect(payerCalls.length).toBeGreaterThan(0);
+    const orCall = payerCalls.find((c) => c.method === "or");
+    expect(orCall?.args[0]).toBe(`org_id.is.null,org_id.eq.${ORG_ID}`);
+    // On a display-name collision the tenant's own row must outrank the
+    // platform row — descending org_id with NULLs last.
+    const orderCall = payerCalls.find((c) => c.method === "order");
+    expect(orderCall?.args).toEqual([
+      "org_id",
+      { ascending: false, nullsFirst: false },
+    ]);
+  });
+});
+
 // ── Structured recommendation fields (0483 columns, dual-written) ──────
 //
 // The recommendation also lives in `primary_recommendation` as jsonb, but
@@ -512,5 +662,47 @@ describe("POST /api/fit/assess — structured recommendation columns", () => {
       // the column tracks the blob either way.
       expect(row.primary_mask_model_id).toBe(primary.maskId);
     }
+  });
+
+  it("leaves the uuid FK columns null on the degraded path", async () => {
+    // The static fallback catalog's ids are slugs, not uuids. Writing them
+    // into the uuid FK columns made Postgres reject the entire insert with
+    // 22P02, silently losing the clinical record of every degraded
+    // fitting. The blob still carries the ids.
+    db.persistOk = true;
+    catalogStore.degraded = true;
+    featureFlags.enabled = new Set(["fitter.clinical_assessment"]);
+
+    const res = await request(makeApp())
+      .post("/fit/assess")
+      .set("x-fitter-invite-token", signFitterInviteToken(INVITE_ID))
+      .send({ measurements: VALID_MEASUREMENTS, profile: {} });
+
+    expect(res.status).toBe(200);
+    const row = db.inserts.find((i) => i.table === "fit_sessions")!
+      .payload as Record<string, unknown>;
+    expect(row.degraded).toBe(true);
+    expect(row.primary_mask_model_id).toBeNull();
+    expect(row.primary_cushion_variant_id).toBeNull();
+    expect(row.primary_frame_variant_id).toBeNull();
+    const primary = row.primary_recommendation as { maskId?: string } | null;
+    expect(primary?.maskId).toBeTruthy();
+  });
+
+  it("routes a withheld-but-not-rescannable outcome to awaiting_review", async () => {
+    // `rescan_required` is for outcomes a better photo can fix. An
+    // outside-range or contraindicated fitting needs a clinician, and
+    // used to land in the rescan bucket of the worklist instead.
+    db.persistOk = true;
+    const res = await post({
+      measurements: { ...VALID_MEASUREMENTS, noseWidth: 15 },
+      profile: VALID_PROFILE,
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.outcome).toBe("outside_validated_range");
+    const row = db.inserts.find((i) => i.table === "fit_sessions")!
+      .payload as Record<string, unknown>;
+    expect(row.status).toBe("awaiting_review");
+    expect(row.review_status).toBe("pending_review");
   });
 });

@@ -177,15 +177,16 @@ export function Capture() {
   // and drove drop-off; the iris-calibrated math is robust to small
   // motion. Disabled-button gating still prevents a press before the
   // camera/runtime is ready.
-  const blockers = getCaptureBlockers(hasPermission, videoReady);
-  const captureReady = isCaptureReady(blockers) && visionHealth === "ready";
+  const blockers = getCaptureBlockers(
+    hasPermission,
+    videoReady,
+    visionHealth === "ready",
+  );
+  const captureReady = isCaptureReady(blockers);
   const handleCapture = () => {
     if (capturing) return;
     if (!captureReady) {
-      track("capture_blocked", {
-        ...blockers,
-        runtimeReady: visionHealth === "ready",
-      });
+      track("capture_blocked", blockers);
       return;
     }
     setCapturing(true);
@@ -260,27 +261,28 @@ export function Capture() {
               <RefreshCw className="h-4 w-4" /> Try again
             </Button>
           )}
-          <Link href="/shop">
-            <Button
-              variant="outline"
-              className="rounded-full glass-panel border-0 px-6"
-              data-testid="capture-camera-fallback-shop"
-            >
-              Skip for now — browse the shop
-            </Button>
-          </Link>
+          {/* asChild so the Button styling lands ON the link itself — a
+              <button> nested inside wouter's <a> is invalid HTML and
+              confuses keyboard/screen-reader navigation. */}
+          <Button
+            asChild
+            variant="outline"
+            className="rounded-full glass-panel border-0 px-6"
+            data-testid="capture-camera-fallback-shop"
+          >
+            <Link href="/shop">Skip for now — browse the shop</Link>
+          </Button>
           {/* Camera-blocked patients (older users, locked-down devices) are
               exactly the cohort who need the insurance / in-person path the
               body copy promises — so give them a direct link to it. */}
-          <Link href="/insurance">
-            <Button
-              variant="outline"
-              className="rounded-full glass-panel border-0 px-6"
-              data-testid="capture-camera-fallback-insurance"
-            >
-              Use insurance instead
-            </Button>
-          </Link>
+          <Button
+            asChild
+            variant="outline"
+            className="rounded-full glass-panel border-0 px-6"
+            data-testid="capture-camera-fallback-insurance"
+          >
+            <Link href="/insurance">Use insurance instead</Link>
+          </Button>
         </div>
 
         <p className="text-xs text-center text-muted-foreground/85 max-w-md mx-auto leading-relaxed">
@@ -415,6 +417,31 @@ export function Capture() {
         <p className="w-full max-w-lg mb-4 text-xs text-muted-foreground text-center">
           Vision runtime is not ready yet. Please wait a moment and try again.
         </p>
+      )}
+
+      {/* If the face-scanner runtime never becomes ready (blocked CDN,
+          corporate proxy, missing asset), the capture button stays
+          disabled forever — give those patients the same escape hatches
+          the camera-error screen offers instead of a dead end. */}
+      {visionHealth === "degraded" && (
+        <div className="flex flex-wrap gap-3 justify-center mb-4">
+          <Button
+            asChild
+            variant="outline"
+            className="rounded-full glass-panel border-0 px-6"
+            data-testid="capture-degraded-fallback-shop"
+          >
+            <Link href="/shop">Skip for now — browse the shop</Link>
+          </Button>
+          <Button
+            asChild
+            variant="outline"
+            className="rounded-full glass-panel border-0 px-6"
+            data-testid="capture-degraded-fallback-insurance"
+          >
+            <Link href="/insurance">Use insurance instead</Link>
+          </Button>
+        </div>
       )}
 
       <Button

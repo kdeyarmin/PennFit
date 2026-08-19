@@ -49,6 +49,7 @@ import {
   SafetyScreen,
   type SafetyScreenSubmission,
 } from "@/components/safety-screen";
+import { toProfilePayload } from "@/lib/fit-profile";
 import { ClinicalResults, FitWithheld } from "@/components/clinical-results";
 import { rememberFitCheckoutContext } from "@/lib/fit-checkout-context";
 
@@ -62,6 +63,8 @@ export function Results() {
     measurements,
     scanSignals,
     answers,
+    fitAnswers,
+    fitProfileV2,
     reset,
     setChosenMask,
     email,
@@ -94,6 +97,18 @@ export function Results() {
   useEffect(() => {
     track("results_viewed");
   }, []);
+
+  // The v2 Patient Fit Profile payload, when the tenant runs the v2
+  // questionnaire and the patient answered it. Sent ALONGSIDE the legacy
+  // answers: the route's buildProfile merges the v2 block over the
+  // legacy mapping, so an in-flight patient can finish on either path.
+  const profilePayload = React.useMemo(
+    () =>
+      fitProfileV2 && Object.keys(fitAnswers).length > 0
+        ? toProfilePayload(fitAnswers)
+        : null,
+    [fitProfileV2, fitAnswers],
+  );
 
   // Best-effort campaign-enrollment ping. Fires once when the
   // recommendation lands, telling the backend "this lead saw a
@@ -225,8 +240,11 @@ export function Results() {
   // so a tenant that never turns the flag on sees no change at all.
   const [assessment, setAssessment] = useState<FitAssessment | null>(null);
   const [clinicalState, setClinicalState] = useState<
-    "probing" | "clinical" | "legacy" | "safety_screen"
+    "probing" | "clinical" | "legacy" | "safety_screen" | "invite_invalid"
   >("probing");
+  const [inviteInvalidReason, setInviteInvalidReason] = useState<
+    "revoked" | "expired" | "invite_not_found" | null
+  >(null);
   const hasProbedClinical = useRef(false);
   // The magnetic-component screen, when the tenant runs it. Held here
   // rather than in the assessment because it is a PRE-condition of one:
@@ -258,6 +276,9 @@ export function Results() {
         inviteToken,
         measurements,
         answers: { ...fullAnswers },
+        // The v2 Patient Fit Profile, when the tenant runs it. The
+        // route merges it over the legacy answers.
+        ...(profilePayload ? { profile: profilePayload } : {}),
         // Real per-frame quality from /measure. Omitted only when the
         // probe failed, in which case the route applies its neutral
         // default.
@@ -295,12 +316,43 @@ export function Results() {
         return;
       }
 
+      // The invite itself is dead — staff revoked it, or it expired.
+      // The legacy fallback would hand the patient a recommendation
+      // anyway (its gate is a stateless HMAC that cannot see
+      // revocation), which un-does the revoke. Dead-end honestly
+      // instead.
+      if (result.kind === "invite_invalid") {
+        setInviteInvalidReason(result.reason);
+        setClinicalState("invite_invalid");
+        track("fit_invite_invalid", { reason: result.reason });
+        return;
+      }
+
+      // A transient failure ON the safety-answer submission itself must
+      // not fall through to the legacy engine: we already know this
+      // tenant screens for magnets, and the legacy engine has no filter.
+      // Keep the screen up and let the patient retry.
+      if (result.kind === "unavailable" && safety) {
+        setSafetyError(
+          "We couldn't check that just now. Please try again in a moment.",
+        );
+        setClinicalState("safety_screen");
+        return;
+      }
+
       // Flag off, unresolvable tenant, network failure — the legacy
       // engine is the correct fallback for all of these, because none of
       // them means "this tenant screens for magnets".
       setClinicalState("legacy");
     },
-    [measurements, inviteToken, fullAnswers, scanSignals, entryPoint],
+    [
+      measurements,
+      inviteToken,
+      fullAnswers,
+      profilePayload,
+      scanSignals,
+      entryPoint,
+    ],
   );
 
   const handleSafetySubmit = React.useCallback(
@@ -331,7 +383,13 @@ export function Results() {
     }
     hasProbedClinical.current = true;
     const controller = new AbortController();
-    void runAssessment(null, controller.signal);
+    // `requestFitAssessment` never rejects, but anything else inside
+    // `runAssessment` throwing would otherwise strand the page on the
+    // "probing" skeletons with no request in flight. Legacy is the safe
+    // landing for an unexpected client-side failure.
+    void runAssessment(null, controller.signal).catch(() => {
+      setClinicalState("legacy");
+    });
     return () => controller.abort();
     // `runAssessment` is stable for the life of the page (it only reads
     // refs and state setters), and re-running this probe on every render
@@ -557,6 +615,39 @@ export function Results() {
           submitting={safetySubmitting}
           error={safetyError}
         />
+      </div>
+    );
+  }
+
+  // The invite is dead — revoked by staff or expired. A friendly
+  // dead-end, mirroring /fitter-invite's own invalid-link screen. This
+  // must NOT fall through to the legacy engine below: its gate is a
+  // stateless HMAC, so it would happily produce a recommendation for a
+  // fitting the DME explicitly stopped.
+  if (clinicalState === "invite_invalid") {
+    const inviteInvalidCopy: Record<string, string> = {
+      expired:
+        "This fitting link has expired. Ask your DME company to resend it.",
+      revoked:
+        "This fitting link is no longer active. Ask your DME company for a new one.",
+      invite_not_found:
+        "We couldn't find this fitting invite. Ask your DME company to resend it.",
+    };
+    return (
+      <div className="container max-w-2xl mx-auto px-4 py-12">
+        <Alert data-testid="results-invite-invalid">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>This fitting link isn&apos;t active</AlertTitle>
+          <AlertDescription>
+            {inviteInvalidCopy[inviteInvalidReason ?? ""] ??
+              inviteInvalidCopy.invite_not_found}
+          </AlertDescription>
+        </Alert>
+        <div className="mt-6">
+          <Button variant="outline" onClick={() => setLocation("/shop")}>
+            Browse the shop instead
+          </Button>
+        </div>
       </div>
     );
   }

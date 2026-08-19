@@ -1007,6 +1007,8 @@ export interface ResolveFitterInviteResult {
   email?: string | null;
   name?: string | null;
   reason?: string;
+  /** True when this tenant runs the v2 Patient Fit Profile questionnaire. */
+  fitProfileV2?: boolean;
 }
 
 export async function resolveFitterInvite(

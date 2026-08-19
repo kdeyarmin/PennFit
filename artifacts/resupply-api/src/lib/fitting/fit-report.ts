@@ -84,6 +84,8 @@ export interface FitReportReview {
   overrideFrom: string | null;
   overrideTo: string | null;
   overrideReason: string | null;
+  /** Why a rescan was requested (0501). Null before the column existed. */
+  rescanReason: string | null;
 }
 
 export interface FitReportDispensing {
@@ -296,6 +298,8 @@ export function redactForPatient(report: FitReport): FitReport {
     review: {
       ...report.review,
       reviewerEmail: null,
+      // Clinician-authored working notes stay staff-side.
+      rescanReason: null,
     },
     // The event trail names staff members and carries internal codes.
     auditTrail: [],

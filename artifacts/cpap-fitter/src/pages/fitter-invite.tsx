@@ -67,7 +67,7 @@ const MISSING_REASON = "missing";
 export function FitterInvite() {
   useDocumentTitle("Your mask-fitting invite");
   const [, setLocation] = useLocation();
-  const { setEmailConsent, setInviteToken } = useFitterStore();
+  const { setEmailConsent, setInviteToken, setFitProfileV2 } = useFitterStore();
   const [state, setState] = useState<State>({ kind: "loading" });
 
   useEffect(() => {
@@ -88,6 +88,10 @@ export function FitterInvite() {
         // Stash the token now so it survives the multi-step flow even
         // if the patient navigates away before clicking start.
         setInviteToken(token);
+        // Which questionnaire this tenant runs. Decided here because the
+        // /questionnaire page renders long before /results ever probes
+        // the clinical route.
+        setFitProfileV2(Boolean(res.fitProfileV2));
         setState({
           kind: "ready",
           email: res.email ?? null,
@@ -100,7 +104,7 @@ export function FitterInvite() {
     return () => {
       cancelled = true;
     };
-  }, [setInviteToken]);
+  }, [setInviteToken, setFitProfileV2]);
 
   const handleStart = (email: string | null) => {
     track("fitter_invite_started");
@@ -160,13 +164,31 @@ export function FitterInvite() {
           )}
 
           {state.kind === "invalid" && state.reason !== MISSING_REASON && (
-            <Alert variant="destructive">
-              <AlertCircle className="h-4 w-4" />
-              <AlertTitle>This invite link isn't usable</AlertTitle>
-              <AlertDescription>
-                {REASON_COPY[state.reason] ?? REASON_COPY.error}
-              </AlertDescription>
-            </Alert>
+            <div className="space-y-4">
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle>This invite link isn&apos;t usable</AlertTitle>
+                <AlertDescription>
+                  {REASON_COPY[state.reason] ?? REASON_COPY.error}
+                </AlertDescription>
+              </Alert>
+              {/* "error" is a transient failure (network blip, server
+                  hiccup) — the token is still in the URL, so a retry can
+                  simply reload. Without this the patient's only option
+                  was to know to refresh the page themselves. */}
+              {state.reason === "error" && (
+                <div className="text-center">
+                  <Button
+                    variant="outline"
+                    className="rounded-full glass-panel border-0 px-6"
+                    onClick={() => window.location.reload()}
+                    data-testid="fitter-invite-retry"
+                  >
+                    Try again
+                  </Button>
+                </div>
+              )}
+            </div>
           )}
 
           {state.kind === "ready" && (

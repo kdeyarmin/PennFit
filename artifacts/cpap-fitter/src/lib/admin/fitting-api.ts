@@ -198,9 +198,10 @@ export function updateVariantBands(
 /**
  * Clinical sign-off on one size's millimetre bands.
  *
- * This is the write that lifts the engine's confidence cap: until a
- * variant is approved it can never drive a high-confidence automated
- * recommendation, however well it scores.
+ * Records this tenant's clinical verification of the band — the
+ * provenance the fit report and review queue print. (It no longer caps
+ * the engine's confidence; that gate was removed deliberately — see
+ * resolveConfidence in resupply-api's lib/fitting/confidence.ts.)
  */
 export function reviewVariant(
   variantId: string,
@@ -363,6 +364,8 @@ export interface FitSessionSummary {
   serviceLine: string;
   degraded: boolean;
   recommendedMask: string | null;
+  /** For a superseded rescan request: the newer session that answered it. */
+  supersededBySessionId: string | null;
 }
 
 export function fetchFitSessions(
