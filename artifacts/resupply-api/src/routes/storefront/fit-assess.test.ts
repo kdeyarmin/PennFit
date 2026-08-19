@@ -340,6 +340,62 @@ describe("POST /fit/assess — happy path and degradation", () => {
     expect(res.status).toBe(200);
     expect(res.body.outcome).toBeTruthy();
   });
+
+  it("keeps internal ranking and formulary terms out of the browser payload", async () => {
+    // The STORED record keeps them; the response must not. `rankScore`
+    // bakes in formulary preference and inventory margin rank, and
+    // `clinicianReason` / `formularyRulesMatched` are staff-facing.
+    const res = await post({
+      measurements: VALID_MEASUREMENTS,
+      profile: VALID_PROFILE,
+    });
+    expect(res.status).toBe(200);
+    const keys = new Set<string>();
+    const walk = (v: unknown) => {
+      if (Array.isArray(v)) return v.forEach(walk);
+      if (v && typeof v === "object") {
+        for (const [k, val] of Object.entries(v)) {
+          keys.add(k);
+          walk(val);
+        }
+      }
+    };
+    walk(res.body);
+    for (const forbidden of [
+      "rankScore",
+      "facialFitScore",
+      "patientFactorScore",
+      "clinicianReason",
+      "formularyRulesMatched",
+    ]) {
+      expect(keys.has(forbidden)).toBe(false);
+    }
+    // The patient-facing terms survive the projection.
+    expect(keys.has("confidence")).toBe(true);
+    expect(keys.has("guidance")).toBe(true);
+  });
+
+  it("fails closed on magnetic masks when screening is on but no screen loaded", async () => {
+    // The tenant screens for magnets, but the screen itself could not be
+    // loaded (the mock's context carries safetyScreen: null). The old
+    // behaviour silently resolved that to "no risk"; now every magnetic
+    // mask is excluded with an explicit record, and the fitting proceeds
+    // on the magnet-free catalog.
+    featureFlags.enabled = new Set([
+      "fitter.clinical_assessment",
+      "fitter.magnet_screening",
+    ]);
+    const res = await post({
+      measurements: VALID_MEASUREMENTS,
+      profile: VALID_PROFILE,
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.outcome).toBeTruthy();
+    const excluded = res.body.excluded as Array<{ code: string }>;
+    expect(excluded.some((e) => e.code === "magnet_screen_unavailable")).toBe(
+      true,
+    );
+  });
 });
 
 describe("GET /fit/catalog", () => {
@@ -512,5 +568,47 @@ describe("POST /api/fit/assess — structured recommendation columns", () => {
       // the column tracks the blob either way.
       expect(row.primary_mask_model_id).toBe(primary.maskId);
     }
+  });
+
+  it("leaves the uuid FK columns null on the degraded path", async () => {
+    // The static fallback catalog's ids are slugs, not uuids. Writing them
+    // into the uuid FK columns made Postgres reject the entire insert with
+    // 22P02, silently losing the clinical record of every degraded
+    // fitting. The blob still carries the ids.
+    db.persistOk = true;
+    catalogStore.degraded = true;
+    featureFlags.enabled = new Set(["fitter.clinical_assessment"]);
+
+    const res = await request(makeApp())
+      .post("/fit/assess")
+      .set("x-fitter-invite-token", signFitterInviteToken(INVITE_ID))
+      .send({ measurements: VALID_MEASUREMENTS, profile: {} });
+
+    expect(res.status).toBe(200);
+    const row = db.inserts.find((i) => i.table === "fit_sessions")!
+      .payload as Record<string, unknown>;
+    expect(row.degraded).toBe(true);
+    expect(row.primary_mask_model_id).toBeNull();
+    expect(row.primary_cushion_variant_id).toBeNull();
+    expect(row.primary_frame_variant_id).toBeNull();
+    const primary = row.primary_recommendation as { maskId?: string } | null;
+    expect(primary?.maskId).toBeTruthy();
+  });
+
+  it("routes a withheld-but-not-rescannable outcome to awaiting_review", async () => {
+    // `rescan_required` is for outcomes a better photo can fix. An
+    // outside-range or contraindicated fitting needs a clinician, and
+    // used to land in the rescan bucket of the worklist instead.
+    db.persistOk = true;
+    const res = await post({
+      measurements: { ...VALID_MEASUREMENTS, noseWidth: 15 },
+      profile: VALID_PROFILE,
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.outcome).toBe("outside_validated_range");
+    const row = db.inserts.find((i) => i.table === "fit_sessions")!
+      .payload as Record<string, unknown>;
+    expect(row.status).toBe("awaiting_review");
+    expect(row.review_status).toBe("pending_review");
   });
 });

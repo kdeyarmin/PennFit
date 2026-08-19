@@ -33,7 +33,10 @@ import { getOrgScopedClient } from "@workspace/resupply-db";
 import { createTenantSendgridClient } from "../email/tenant-sender.js";
 import { logger } from "../logger.js";
 import { resolveTenantSmsClientOptions } from "../messaging/tenant-telecom.js";
-import { resolveBrandingByOrgId } from "../tenant-branding.js";
+import {
+  resolveBrandingByOrgId,
+  resolveTenantBaseUrl,
+} from "../tenant-branding.js";
 import {
   FITTER_INVITE_TTL_MS,
   signFitterInviteToken,
@@ -166,8 +169,13 @@ export async function sendRescanForInvite(
     // assessment; an unrecognised value is ignored there, so an older
     // client simply records the default.
     const entryPoint = reason === "poor_scan" ? null : "refit_campaign";
+    // The tenant's own verified domain when it has one, so the patient
+    // lands on THEIR DME's branded storefront rather than the platform
+    // host (same pattern as every other patient-facing link builder).
+    const base =
+      (await resolveTenantBaseUrl(orgId).catch(() => null)) ?? publicBaseUrl();
     const link =
-      `${publicBaseUrl()}/fitter-invite?t=${encodeURIComponent(token)}` +
+      `${base}/fitter-invite?t=${encodeURIComponent(token)}` +
       (entryPoint ? `&entry=${encodeURIComponent(entryPoint)}` : "");
 
     // The mailed-link window, deliberately, even for an invite that began
@@ -261,8 +269,16 @@ export async function sendRescanForInvite(
     });
     return { delivered: true, reason: null, link };
   } catch (err) {
+    // Vendor error messages can embed the recipient's phone number or
+    // address verbatim (Twilio's invalid-number errors do), so log the
+    // error's shape — never its message.
     logger.warn(
-      { err: err instanceof Error ? err : new Error(String(err)), orgId },
+      {
+        orgId,
+        errName: err instanceof Error ? err.name : "unknown",
+        status: (err as { status?: number }).status ?? null,
+        code: (err as { code?: number | string }).code ?? null,
+      },
       "rescan notification failed to send",
     );
     return { delivered: false, reason: "send_failed", link: null };
@@ -294,7 +310,7 @@ function reasonCopy(reason: RescanReason): {
         sms: (greeting, brand, link) =>
           `Hi ${greeting}, ${brand} here. You told us your mask isn't ` +
           `sealing right — let's fix that. A fresh two-minute scan and ` +
-          `we'll look again: ${link}`,
+          `we'll look again: ${link} Reply STOP to opt out.`,
       };
     case "mask_discontinued":
       return {
@@ -307,7 +323,7 @@ function reasonCopy(reason: RescanReason): {
         sms: (greeting, brand, link) =>
           `Hi ${greeting}, ${brand} here. Your mask model is being ` +
           `discontinued, so let's find your best current option — a ` +
-          `two-minute scan: ${link}`,
+          `two-minute scan: ${link} Reply STOP to opt out.`,
       };
     default:
       return {
@@ -319,7 +335,7 @@ function reasonCopy(reason: RescanReason): {
         sms: (greeting, brand, link) =>
           `Hi ${greeting}, ${brand} here. Your care team would like one ` +
           `more mask-fitting scan to make sure we get your fit right — it ` +
-          `takes about two minutes: ${link}`,
+          `takes about two minutes: ${link} Reply STOP to opt out.`,
       };
   }
 }

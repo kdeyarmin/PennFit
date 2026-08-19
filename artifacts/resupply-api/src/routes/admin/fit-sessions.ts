@@ -285,7 +285,7 @@ router.post(
     const supabase = getOrgScopedClient(orgId);
     const { data: existing } = (await supabase
       .from("fit_sessions")
-      .select("primary_recommendation, outcome")
+      .select("primary_recommendation, outcome, review_status")
       .eq("id", id.data)
       .limit(1)
       .maybeSingle()) as { data: Record<string, unknown> | null };
@@ -302,6 +302,18 @@ router.post(
       });
       return;
     }
+    // An overridden session already carries a clinician's decision AND the
+    // override mask/reason columns. Flipping it to "approved" would leave
+    // those populated under a status that contradicts them — a record that
+    // reads "approved" while still naming a different dispensed mask.
+    if (existing.review_status === "overridden") {
+      res.status(409).json({
+        error: "already_overridden",
+        message:
+          "This fitting was overridden with a different mask. To change that decision, record a new override with a reason.",
+      });
+      return;
+    }
 
     const { error } = await supabase
       .from("fit_sessions")
@@ -309,6 +321,7 @@ router.post(
         review_status: "approved",
         status: "approved",
         reviewed_by_email: req.adminEmail ?? null,
+        reviewed_by_user_id: req.adminUserId ?? null,
         reviewed_at: new Date().toISOString(),
       })
       .eq("id", id.data);
@@ -408,6 +421,7 @@ router.post(
         override_variant_id: body.data.variantId ?? null,
         override_reason: body.data.reason,
         reviewed_by_email: req.adminEmail ?? null,
+        reviewed_by_user_id: req.adminUserId ?? null,
         reviewed_at: new Date().toISOString(),
       })
       .eq("id", id.data);
@@ -448,6 +462,7 @@ router.post(
         review_status: "rescan_requested",
         status: "rescan_required",
         reviewed_by_email: req.adminEmail ?? null,
+        reviewed_by_user_id: req.adminUserId ?? null,
         reviewed_at: new Date().toISOString(),
       })
       .eq("id", id.data);
@@ -502,6 +517,9 @@ async function recordEvent(
         event_type: eventType,
         actor_kind: "staff",
         actor_email: req.adminEmail ?? null,
+        // The stable identity too — an email is mutable and re-assignable,
+        // which is a weak basis for a clinical sign-off trail.
+        actor_user_id: req.adminUserId ?? null,
         detail,
       });
   } catch (err) {

@@ -336,6 +336,11 @@ const EFFECTIVE_ROLE_PERMISSIONS: Record<
     // curates the formulary, so the clinical-configuration permission
     // belongs here rather than only with supervisors.
     "formulary.manage",
+    // Overriding a fitting's recommended mask/size is the RT's central
+    // triage action — the fit-review queue's override route gates on
+    // exactly this permission. Without it the one role the queue exists
+    // for could read every session but never act on one.
+    "fit_session.override",
   ]),
 
   // Revenue-cycle staff (db role `biller`). Scoped to the Billing area:

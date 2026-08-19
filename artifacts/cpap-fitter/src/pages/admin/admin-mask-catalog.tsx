@@ -201,9 +201,11 @@ export function AdminMaskCatalogPage() {
         <p className="text-sm text-muted-foreground max-w-3xl">
           Every mask the fitter can recommend, with its interface type, therapy
           compatibility, magnetic components, and per-size measurement ranges.
-          Sizes marked <strong>needs review</strong> use estimated geometry: the
-          engine will not issue a high-confidence recommendation from them until
-          a clinician signs them off here.
+          Sizes marked <strong>needs review</strong> use estimated geometry that
+          no clinician has verified yet. Signing off here records your
+          organization&apos;s clinical verification — it appears on each
+          fitting&apos;s report and review queue as the provenance behind the
+          size bands.
         </p>
       </header>
 

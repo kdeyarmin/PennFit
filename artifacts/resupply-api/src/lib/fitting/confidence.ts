@@ -22,6 +22,7 @@
  * percentage.
  */
 
+import { LEGACY_PROFILE_VERSION } from "./versions.js";
 import type {
   FitCandidate,
   FitOutcome,
@@ -75,8 +76,14 @@ export function profileCompleteness(profile: FitProfile): number {
     profile.priorMaskExperience !== undefined,
     profile.handDexterity !== null || profile.headgearDifficulty !== null,
     profile.pressureCmH2O !== null || profile.pressureBand !== "unknown",
-    profile.minimalContactPreference !== null,
   ];
+  // Completeness measures how much of what we ASKED was answered. The
+  // legacy 11-question set has no minimal-contact question, so a legacy
+  // profile must not carry a permanent haircut for a question the patient
+  // was never shown.
+  if (profile.version !== LEGACY_PROFILE_VERSION) {
+    answered.push(profile.minimalContactPreference !== null);
+  }
   const yes = answered.filter(Boolean).length;
   // Floor at 0.6 — a sparse profile weakens confidence but should not on
   // its own drag a good geometric match into "low".

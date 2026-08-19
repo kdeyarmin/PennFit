@@ -125,10 +125,18 @@ export function applySafetyExclusions(
   screen: SafetyScreen | null,
   responses: SafetyResponse[],
   magnetScreening: boolean,
+  magnetScreenUnavailable = false,
 ): SafetyResult {
   const { flags, disqualifiedAttributes } = magnetScreening
     ? resolveSafetyFlags(screen, responses)
     : { flags: [], disqualifiedAttributes: new Set<string>() };
+
+  // The tenant screens for magnets but the screen itself could not be
+  // loaded, so nobody was asked. Fail closed on the MASK side: exclude
+  // everything with magnetic components rather than silently resolving
+  // an unasked question to "no risk". The fitting stays alive on the
+  // magnet-free catalog, and the exclusion record says why.
+  const excludeAllMagnetic = magnetScreening && magnetScreenUnavailable;
 
   const active = profileFactors(profile);
   const survivors: CatalogMask[] = [];
@@ -151,6 +159,21 @@ export function applySafetyExclusions(
             ? "This mask is made for adults."
             : "This mask is made for children.",
         clinicianReason: `Service line mismatch: the model is ${mask.serviceLine}, the session is ${profile.population}.`,
+      });
+      continue;
+    }
+
+    // Screening enabled but unavailable this session — see above.
+    if (excludeAllMagnetic && mask.hasMagneticComponents) {
+      excluded.push({
+        maskSlug: mask.slug,
+        maskName: mask.modelName,
+        tier: 1,
+        code: "magnet_screen_unavailable",
+        patientReason:
+          "This mask uses magnets in the headgear, and we couldn't run the implanted-device safety check just now, so it was left out as a precaution.",
+        clinicianReason:
+          "Magnetic headgear excluded: the magnetic-implant safety screen is enabled for this organization but could not be loaded for this session, so magnetic masks were withheld rather than assuming no risk.",
       });
       continue;
     }
@@ -352,6 +375,12 @@ export function scoreVariant(
 ): {
   score: number;
   margin: number;
+  /** Every gated measurement inside its band, edges INCLUSIVE. A margin
+   *  of exactly 0 also happens at a band edge, so in/out must be read
+   *  from this flag, not from `margin > 0` — a patient sitting precisely
+   *  on a manufacturer's published boundary is inside the size, and
+   *  treating them as outside used to withhold the recommendation. */
+  inBand: boolean;
   used: Array<keyof FitMeasurements>;
 } | null {
   const bands = bandsFor(variant, m);
@@ -359,6 +388,7 @@ export function scoreVariant(
 
   let total = 0;
   let worstMargin = 1;
+  let inBand = true;
   for (const band of bands) {
     const width = band.max - band.min;
     if (band.value >= band.min && band.value <= band.max) {
@@ -373,12 +403,14 @@ export function scoreVariant(
       // Falls to zero one half-width outside the band.
       total += Math.max(0, 1 - overshoot / (width * 0.5));
       worstMargin = 0;
+      inBand = false;
     }
   }
 
   return {
     score: total / bands.length,
     margin: worstMargin,
+    inBand,
     used: bands.map((b) => b.key),
   };
 }
@@ -431,19 +463,32 @@ export function scoreFacialFit(
   const pick = (
     components: SizeVariant["component"][],
   ): { choice: SizeChoice | null; score: number; inBand: boolean } => {
-    const candidates = mask.variants.filter(
-      (v) => components.includes(v.component) && v.status !== "discontinued",
-    );
+    const candidates = mask.variants
+      .filter(
+        (v) => components.includes(v.component) && v.status !== "discontinued",
+      )
+      // Deterministic walk order. The DB read carries no ORDER BY promise,
+      // and with overlapping seeded bands two sizes can score identically —
+      // the size a patient is told to order must not depend on row arrival
+      // order.
+      .sort((a, b) => a.sortOrder - b.sortOrder || a.id.localeCompare(b.id));
     let best: {
       variant: SizeVariant;
       score: number;
       margin: number;
+      inBand: boolean;
       used: Array<keyof FitMeasurements>;
     } | null = null;
     for (const variant of candidates) {
       const scored = scoreVariant(variant, m);
       if (!scored) continue;
-      if (!best || scored.score > best.score) {
+      // Ties on score break on margin: between two sizes the patient
+      // technically fits, prefer the one they sit deeper inside.
+      if (
+        !best ||
+        scored.score > best.score ||
+        (scored.score === best.score && scored.margin > best.margin)
+      ) {
         best = { variant, ...scored };
       }
     }
@@ -462,6 +507,7 @@ export function scoreFacialFit(
           sizeLabel: fallback.sizeLabel,
           manufacturerPartNumber: fallback.manufacturerPartNumber,
           bandMargin: 0,
+          inBand: false,
           fitDataSource: fallback.fitDataSource,
           needsClinicalReview: fallback.needsClinicalReview,
           measurementsUsed: [],
@@ -471,7 +517,7 @@ export function scoreFacialFit(
         inBand: false,
       };
     }
-    const inBand = best.margin > 0;
+    const inBand = best.inBand;
     return {
       choice: {
         variantId: best.variant.id,
@@ -480,6 +526,7 @@ export function scoreFacialFit(
         sizeLabel: best.variant.sizeLabel,
         manufacturerPartNumber: best.variant.manufacturerPartNumber,
         bandMargin: best.margin,
+        inBand,
         fitDataSource: best.variant.fitDataSource,
         needsClinicalReview: best.variant.needsClinicalReview,
         measurementsUsed: best.used,
@@ -878,6 +925,7 @@ export function runTiers(input: FitEngineInput): RankedResult {
     input.safetyScreen,
     input.safetyResponses,
     input.magnetScreening,
+    input.magnetScreenUnavailable ?? false,
   );
   const therapy = applyTherapyCompatibility(
     safety.survivors,
@@ -991,7 +1039,7 @@ export function runTiers(input: FitEngineInput): RankedResult {
 
   const outsideValidatedRange =
     candidates.length > 0 &&
-    candidates.every((c) => (c.cushion?.bandMargin ?? 0) === 0);
+    candidates.every((c) => !(c.cushion?.inBand ?? false));
 
   return {
     candidates,

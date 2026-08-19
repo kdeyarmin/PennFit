@@ -7,17 +7,18 @@
 //   POST  /admin/fitter/catalog/variants/:id/review — RT sign-off
 //   POST  /admin/fitter/catalog/variants/review-batch — RT sign-off, many
 //
-// WHY THE REVIEW ENDPOINT MATTERS MOST
-// -----------------------------------
+// WHY THE REVIEW ENDPOINT MATTERS
+// -------------------------------
 // The catalog ships with ~250 size variants whose millimetre bands are
 // clinically-reasoned estimates rather than published manufacturer data,
-// each flagged `needs_clinical_review`. The engine caps an unreviewed
-// variant below high confidence, so until a respiratory therapist works
-// through this queue the fitter will never issue a confident automated
-// recommendation off estimated geometry. Sign-off here is what lifts that
-// cap — which is why it is gated on `formulary.manage` (a clinical
-// permission held by clinicians and supervisors) and not on a generic
-// tools permission.
+// each flagged `needs_clinical_review`. Sign-off here records THIS
+// tenant's clinical verification of a band: it clears the per-tenant
+// review flag carried on sessions and printed on the fit report, and it
+// is the provenance a payer or sleep lab reads. (It no longer caps the
+// engine's confidence — that gate was removed deliberately; see
+// resolveConfidence in lib/fitting/confidence.ts and pennfit-rules R8.)
+// Gated on `formulary.manage` (a clinical permission held by clinicians
+// and supervisors) and not on a generic tools permission.
 //
 // TENANCY — the rule that shapes every write in this file
 // -------------------------------------------------------
@@ -910,12 +911,12 @@ router.post(
       return;
     }
 
-    // Sign-off lifts the engine's confidence cap on this size band, which
-    // makes it the most consequential write in this file — and precisely
-    // why it lands in a TENANT-scoped row rather than clearing the shared
+    // Sign-off records this tenant's clinical verification of the band
+    // (report provenance — no longer a confidence cap; see the header),
+    // and it lands in a TENANT-scoped row rather than clearing the shared
     // `mask_size_variants.needs_clinical_review` flag. One DME's RT
-    // reviewing the sizes that DME stocks must not silently raise every
-    // other DME's confidence ceiling on the same shared geometry.
+    // reviewing the sizes that DME stocks must not silently speak for
+    // every other DME on the same shared geometry.
     // `org_id` is forced on by the org-scoped facade — see `tag()` in
     // lib/resupply-db/src/org-scoped-client.ts.
     const { error } = (await client
@@ -936,9 +937,10 @@ router.post(
  * Sign off several size bands at once — in practice, a whole model's size
  * run in one action.
  *
- * Identical in consequence to the single-variant route above (it lifts the
- * engine's confidence cap on every id it touches), so it carries the same
- * `formulary.manage` gate and the same tenant-scoped write. The only
+ * Identical in consequence to the single-variant route above (it records
+ * this tenant's clinical verification of every id it touches), so it
+ * carries the same `formulary.manage` gate and the same tenant-scoped
+ * write. The only
  * difference is that the ownership check is done set-wise: every id must
  * resolve to a variant this tenant can see, and if ANY does not the whole
  * request is refused rather than partially applied. A reviewer who is told

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { useLocation } from "wouter";
+import { Link, useLocation } from "wouter";
 import { useFitterStore } from "@/hooks/use-fitter-store";
 import { buildScanSignals } from "@/lib/scan-signals";
 import { Progress } from "@/components/ui/progress";
@@ -167,15 +167,30 @@ export function Measure() {
         setProgress(40);
         setStatus("Configuring landmark detection…");
 
-        faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
+        const landmarkerOptions = (delegate: "GPU" | "CPU") => ({
           baseOptions: {
             modelAssetPath: `${base}mediapipe/models/face_landmarker.task`,
-            delegate: "GPU",
+            delegate,
           },
           outputFaceBlendshapes: false,
-          runningMode: "IMAGE",
+          runningMode: "IMAGE" as const,
           numFaces: 1,
         });
+        try {
+          faceLandmarker = await FaceLandmarker.createFromOptions(
+            vision,
+            landmarkerOptions("GPU"),
+          );
+        } catch {
+          // Devices without usable WebGL (older phones, locked-down
+          // browsers, remote desktops) reject the GPU delegate outright.
+          // Without this fallback they hit "unknown error" → retake →
+          // identical failure, forever.
+          faceLandmarker = await FaceLandmarker.createFromOptions(
+            vision,
+            landmarkerOptions("CPU"),
+          );
+        }
 
         if (!isMountedRef.current) return;
         setProgress(60);
@@ -249,8 +264,30 @@ export function Measure() {
             return Math.sqrt(dx * dx + dy * dy);
           };
 
+          // Runtime guard, not just a type: a model bundle emitting the
+          // 468-point (iris-less) mesh would make landmarks[469] undefined
+          // and crash `dist` with an unhelpful "unknown" error.
+          if (!landmarks[469] || !landmarks[471]) {
+            throw new ExtractionError(
+              "no_face",
+              "We couldn't locate your eyes precisely enough to calibrate. Please retake the photo.",
+            );
+          }
+
           const irisLeftPix = dist(landmarks[469], landmarks[471]);
-          const pxPerMm = irisLeftPix / 11.7;
+          // Use BOTH irises when the right one is available. Calibrating
+          // off a single eye lets a squint, glasses glare, or a stray
+          // hair silently rescale every millimetre value; the mean of two
+          // independent reads halves that error.
+          const irisRightPix =
+            landmarks[474] && landmarks[476]
+              ? dist(landmarks[474], landmarks[476])
+              : 0;
+          const irisPix =
+            irisLeftPix > 0 && irisRightPix > 0
+              ? (irisLeftPix + irisRightPix) / 2
+              : Math.max(irisLeftPix, irisRightPix);
+          const pxPerMm = irisPix / 11.7;
 
           // pxPerMm < 1 means the iris was less than ~12 pixels across,
           // which is too small for the millimeter math to be trustworthy.
@@ -304,7 +341,7 @@ export function Measure() {
             scanSignals = buildScanSignals({
               image: img,
               landmarks,
-              irisWidthPx: irisLeftPix,
+              irisWidthPx: irisPix,
               values: {
                 noseWidth: measurements.noseWidth,
                 noseHeight: measurements.noseHeight,
@@ -390,14 +427,28 @@ export function Measure() {
             ))}
           </ul>
         </div>
-        <Button
-          onClick={() => setLocation("/capture")}
-          className="rounded-full btn-primary-glow px-6 gap-2"
-          data-testid="measure-retake"
-        >
-          <RefreshCw className="h-4 w-4" />
-          Retake photo
-        </Button>
+        <div className="flex flex-wrap gap-3 justify-center">
+          <Button
+            onClick={() => setLocation("/capture")}
+            className="rounded-full btn-primary-glow px-6 gap-2"
+            data-testid="measure-retake"
+          >
+            <RefreshCw className="h-4 w-4" />
+            Retake photo
+          </Button>
+          {/* An escape hatch, mirroring the camera-error screen. Without
+              it a device that can never pass extraction (no WebGL, broken
+              runtime) traps the patient in a retake loop with no exit. */}
+          <Link href="/shop">
+            <Button
+              variant="outline"
+              className="rounded-full glass-panel border-0 px-6"
+              data-testid="measure-error-fallback-shop"
+            >
+              Skip for now — browse the shop
+            </Button>
+          </Link>
+        </div>
       </div>
     );
   }

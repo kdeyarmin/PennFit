@@ -113,6 +113,17 @@ export type FitAssessResult =
   | { kind: "assessment"; assessment: FitAssessment }
   | { kind: "safety_screen"; screen: SafetyScreenPrompt }
   | { kind: "not_enabled" }
+  /**
+   * The INVITE is dead — revoked by staff, expired, or its record is
+   * gone. Distinct from "unavailable" because falling back to the legacy
+   * engine here would hand the patient a recommendation from a fitting
+   * their DME explicitly stopped (the legacy route's gate is a stateless
+   * HMAC and cannot see revocation).
+   */
+  | {
+      kind: "invite_invalid";
+      reason: "revoked" | "expired" | "invite_not_found";
+    }
   | { kind: "unavailable"; reason: string };
 
 /**
@@ -226,6 +237,13 @@ export async function requestFitAssessment(
         kind: "safety_screen",
         screen: record.safetyScreen as SafetyScreenPrompt,
       };
+    }
+    if (
+      record.reason === "revoked" ||
+      record.reason === "expired" ||
+      record.reason === "invite_not_found"
+    ) {
+      return { kind: "invite_invalid", reason: record.reason };
     }
     return { kind: "unavailable", reason: String(record.reason ?? "invalid") };
   }

@@ -290,6 +290,18 @@ router.post(
       res.status(409).json({ error: "revoked" });
       return;
     }
+    // Enforce the row's expiry here too, exactly as /resolve and
+    // /api/fit/assess do. Without it, a token whose own HMAC window
+    // outlives the row's `expires_at` (staff resend rewrites the row's
+    // expiry while older tokens stay valid to their embedded one) could
+    // keep writing measurements onto an invite staff consider dead.
+    if (
+      invite.expires_at &&
+      new Date(invite.expires_at).getTime() <= Date.now()
+    ) {
+      res.status(409).json({ error: "expired" });
+      return;
+    }
 
     const rec = parsed.data.recommendation;
     const nowIso = new Date().toISOString();

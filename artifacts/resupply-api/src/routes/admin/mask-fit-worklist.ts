@@ -18,7 +18,10 @@ import { z } from "zod";
 import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { respondInvalidBody } from "../../lib/http-validation";
-import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
+import {
+  adminRateLimit,
+  adminReadRateLimiter,
+} from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 import {
   computeFitAdjustments,
@@ -134,19 +137,33 @@ router.get(
       return;
     }
     const supabase = getOrgScopedClient(orgId);
-    const { data, error } = await supabase
-      .from("mask_fit_outcomes")
-      .select("mask_id, fit_outcome")
-      .not("mask_id", "is", null)
-      .limit(20000);
-    if (error) {
-      res.status(500).json({ error: "query_failed", message: error.message });
-      return;
-    }
-    const rows = (data ?? []) as Array<{
+    // Page past PostgREST's max_rows cap (1000). A bare `.limit(20000)`
+    // silently truncates to an UNORDERED first 1000 rows and reports the
+    // partial tally as if it were complete — the exact trap the
+    // fitter-outcomes analytics route documents and pages around.
+    type SignalRow = {
       mask_id: string | null;
       fit_outcome: "good" | "leaking" | "uncomfortable";
-    }>;
+    };
+    const rows: SignalRow[] = [];
+    const PAGE = 1000;
+    const MAX_ROWS = 20000;
+    for (let offset = 0; offset < MAX_ROWS; offset += PAGE) {
+      const { data, error } = await supabase
+        .from("mask_fit_outcomes")
+        .select("mask_id, fit_outcome")
+        .not("mask_id", "is", null)
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true })
+        .range(offset, offset + PAGE - 1);
+      if (error) {
+        res.status(500).json({ error: "query_failed", message: error.message });
+        return;
+      }
+      const page = (data ?? []) as SignalRow[];
+      rows.push(...page);
+      if (page.length < PAGE) break;
+    }
     const byMask = tallyOutcomesByMask(
       rows.map((r) => ({ maskId: r.mask_id, fitOutcome: r.fit_outcome })),
     );
@@ -170,6 +187,7 @@ const triageSchema = z
 router.post(
   "/admin/clinical/mask-fit/:id/triage",
   requirePermission("clinical.intervention.write"),
+  adminRateLimit({ name: "mask_fit.triage", preset: "mutation" }),
   async (req, res) => {
     const idOk = z.string().uuid().safeParse(req.params.id);
     if (!idOk.success) {

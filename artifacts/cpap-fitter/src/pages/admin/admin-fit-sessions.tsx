@@ -301,8 +301,9 @@ export function AdminFitSessionsPage() {
                     </label>
                     <p className="text-xs text-muted-foreground">
                       Sending this re-issues the patient&apos;s fitting link
-                      over the channel their invite used. Your note is recorded
-                      on the session — it is not sent to the patient.
+                      over the channel their invite used. Your note is for this
+                      screen only — it is not sent to the patient and is not
+                      stored on the session.
                     </p>
                     <textarea
                       id={`rescan-${s.id}`}

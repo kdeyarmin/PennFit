@@ -442,7 +442,9 @@ Returns ranked mask recommendations. No images accepted. No PHI stored.
 export const GetRecommendationBody = zod.object({
   measurements: zod
     .object({
-      noseWidth: zod.number().describe("Width of nose at bridge in mm"),
+      noseWidth: zod
+        .number()
+        .describe("Width of nose at the alar base (nostril span) in mm"),
       noseHeight: zod
         .number()
         .describe("Height of nose from bridge to tip in mm"),
@@ -455,6 +457,10 @@ export const GetRecommendationBody = zod.object({
         .enum(["creditCard", "iris", "manual"])
         .describe("Method used to calibrate mm\/pixel conversion"),
     })
+    // Strict: the route's contract ("any payload containing unexpected
+    // fields is rejected") depends on it — zod's default strips unknown
+    // keys instead of rejecting them.
+    .strict()
     .describe(
       "Numeric measurements in millimeters derived from on-device face mesh. No image data.",
     ),
@@ -488,8 +494,9 @@ export const GetRecommendationBody = zod.object({
           "Patient's prescribed CPAP pressure (cmH2O). low = 4–9, medium = 10–14, high = 15+. unknown if patient hasn't been titrated yet. High pressures favor full-face\/hybrid masks because most nasal pillows aren't rated above ~20 cmH2O.",
         ),
     })
+    .strict()
     .describe("Clinical questionnaire answers affecting mask type suitability"),
-});
+}).strict();
 
 export const getRecommendationResponseTopRecommendationsItemConfidenceMin = 0;
 export const getRecommendationResponseTopRecommendationsItemConfidenceMax = 1;

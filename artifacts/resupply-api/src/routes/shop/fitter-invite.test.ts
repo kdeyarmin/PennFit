@@ -229,6 +229,32 @@ describe("POST /shop/fitter-invite/complete", () => {
     expect(res.body).toEqual({ ok: true, matched: false });
   });
 
+  it("409s when the invite row has expired, even under a still-valid token", async () => {
+    // Staff resend rewrites `expires_at` while previously-minted tokens
+    // stay valid to their own embedded expiry — so the row's expiry must
+    // be enforced here exactly as /resolve and /api/fit/assess do, or a
+    // stale tab keeps writing measurements onto a dead invite.
+    const token = signFitterInviteToken(INVITE_ID);
+    stageSupabaseResponse("fitter_invites", "select", {
+      data: {
+        id: INVITE_ID,
+        status: "opened",
+        patient_id: null,
+        recipient_email: "p@example.com",
+        recipient_phone_e164: null,
+        expires_at: new Date(Date.now() - 60_000).toISOString(),
+      },
+    });
+    const res = await request(makeApp())
+      .post("/resupply-api/shop/fitter-invite/complete")
+      .send({ t: token, measurements, answers, recommendation });
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("expired");
+    expect(getSupabaseWritePayloads("fitter_invites", "update")).toHaveLength(
+      0,
+    );
+  });
+
   it("401s on an invalid token", async () => {
     const res = await request(makeApp())
       .post("/resupply-api/shop/fitter-invite/complete")

@@ -417,6 +417,33 @@ export function Capture() {
         </p>
       )}
 
+      {/* If the face-scanner runtime never becomes ready (blocked CDN,
+          corporate proxy, missing asset), the capture button stays
+          disabled forever — give those patients the same escape hatches
+          the camera-error screen offers instead of a dead end. */}
+      {visionHealth === "degraded" && (
+        <div className="flex flex-wrap gap-3 justify-center mb-4">
+          <Link href="/shop">
+            <Button
+              variant="outline"
+              className="rounded-full glass-panel border-0 px-6"
+              data-testid="capture-degraded-fallback-shop"
+            >
+              Skip for now — browse the shop
+            </Button>
+          </Link>
+          <Link href="/insurance">
+            <Button
+              variant="outline"
+              className="rounded-full glass-panel border-0 px-6"
+              data-testid="capture-degraded-fallback-insurance"
+            >
+              Use insurance instead
+            </Button>
+          </Link>
+        </div>
+      )}
+
       <Button
         size="lg"
         className="h-12 md:h-16 px-8 md:px-12 rounded-full text-base md:text-lg btn-primary-glow hover:scale-[1.02] transition-transform disabled:opacity-60"

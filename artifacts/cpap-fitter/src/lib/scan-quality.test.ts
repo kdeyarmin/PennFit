@@ -133,6 +133,20 @@ describe("geometric pose fallback", () => {
     const pose = estimatePoseFromLandmarks(goodLandmarks());
     expect(Math.abs(pose.yawDeg)).toBeLessThan(5);
     expect(Math.abs(pose.rollDeg)).toBeLessThan(5);
+    // Pitch included deliberately: the estimator used to measure the
+    // eye-to-BRIDGE span (which is ~0 on every face) against a baseline
+    // built for eye-to-nose-tip, reading every level head as ~-30° and
+    // silently zeroing the pose score on all real captures.
+    expect(Math.abs(pose.pitchDeg)).toBeLessThan(5);
+  });
+
+  it("detects a pitched head from the nose-tip-to-eye-line span", () => {
+    // Head tilted: the nose tip projects up toward the eye line.
+    const pitched = goodLandmarks();
+    pitched[1] = { x: 0.5, y: 0.46 };
+    expect(
+      Math.abs(estimatePoseFromLandmarks(pitched).pitchDeg),
+    ).toBeGreaterThan(10);
   });
 
   it("detects a turn from cheek asymmetry, with the right sign", () => {

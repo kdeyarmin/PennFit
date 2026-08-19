@@ -70,12 +70,13 @@ const putBody = z
 
 router.put(
   "/admin/patients/:id/fit-override",
-  // Upsert — overrides the camera recommendation. Existing roles
-  // with `patients.update` keep access; the `fit_session.override`
-  // perm exists in the catalog but is held only by admin/supervisor/
-  // fitter (not csr/agent), so we use `patients.update` here as the
-  // broader, role-accurate gate to match the existing access matrix.
-  requirePermission("patients.update"),
+  // Overriding the fit recommendation is exactly what the dedicated
+  // `fit_session.override` permission exists for. Post-role-collapse it
+  // is held by the CSR tier (which folded in the legacy fitter role) and
+  // the clinician tier — the two roles that actually curate mask fits —
+  // while `patients.update` was a chart-editing gate the clinician tier
+  // doesn't hold, which locked RTs out of this control entirely.
+  requirePermission("fit_session.override"),
   adminRateLimit({ name: "patient_fit_overrides.upsert", preset: "mutation" }),
   async (req, res) => {
     const p = idParam.safeParse(req.params);
@@ -94,6 +95,22 @@ router.put(
       return;
     }
     const supabase = getOrgScopedClient(orgId);
+    // The patient must belong to THIS tenant. `patient_id` is the table's
+    // global PK and the facade's upsert only tags the payload with org_id
+    // (it adds no WHERE clause), so without this check a caller could
+    // overwrite another tenant's override row — and re-stamp its org_id —
+    // by addressing a foreign patient uuid.
+    const { data: patient, error: patientErr } = await supabase
+      .from("patients")
+      .select("id")
+      .eq("id", p.data.id)
+      .limit(1)
+      .maybeSingle();
+    if (patientErr) throw patientErr;
+    if (!patient) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
     // Upsert by patient_id (PK). On conflict update mask + size +
     // rationale and refresh created_by_user_id to the current actor.
     const { error } = await supabase.from("patient_fit_overrides").upsert(
@@ -131,7 +148,7 @@ router.put(
 router.delete(
   "/admin/patients/:id/fit-override",
   // Revert to camera recommendation. Same scope as the PUT.
-  requirePermission("patients.update"),
+  requirePermission("fit_session.override"),
   adminRateLimit({ name: "patient_fit_overrides.delete", preset: "destroy" }),
   async (req, res) => {
     const p = idParam.safeParse(req.params);

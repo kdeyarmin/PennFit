@@ -99,6 +99,19 @@ export const POSE_TARGETS: Record<
   turn_right: { yaw: 20, yawTolerance: 10, maxPitch: 10, maxRoll: 8 },
 };
 
+/**
+ * Grace band on the pitch score, in degrees.
+ *
+ * The landmark fallback derives pitch from the eye-to-nose-tip /
+ * eye-to-chin proportion, and that proportion varies ~±0.04 across real
+ * faces — about ±5° of apparent "pitch" that is anatomy, not head
+ * position. Penalising inside that band would mark ordinarily-shaped
+ * faces down on every capture, so deviations under the grace are scored
+ * clean and the gate engages only beyond it (a genuinely tilted head at
+ * 15–20° still fails exactly as before).
+ */
+export const PITCH_GRACE_DEG = 6;
+
 function clamp01(n: number): number {
   if (!Number.isFinite(n)) return 0;
   return Math.min(1, Math.max(0, n));
@@ -153,9 +166,16 @@ export function estimatePoseFromLandmarks(landmarks: Point2D[]): {
   const rollDeg =
     (Math.atan2(eyeR.y - eyeL.y, eyeR.x - eyeL.x) * 180) / Math.PI;
 
-  // Pitch: how the bridge-to-eye-line span compares with eye-line-to-chin.
+  // Pitch: how the eye-line-to-NOSE-TIP span compares with
+  // eye-line-to-chin. The nose tip projects up toward the eye line as the
+  // head tilts, so the ratio moves with pitch; ~0.28 is a neutral head.
+  //
+  // This previously measured eye-line-to-BRIDGE — landmark 168 sits at
+  // eye level, so `upper` was ~0.02 and the formula read every level face
+  // as ~-30° of pitch, zeroing the pitch score on all real captures and
+  // putting the high-confidence scan floor permanently out of reach.
   const eyeMidY = (eyeL.y + eyeR.y) / 2;
-  const upper = Math.abs(eyeMidY - bridge.y);
+  const upper = Math.abs(nose.y - eyeMidY);
   const lower = Math.abs(chin.y - eyeMidY);
   const ratio = lower > 1e-6 ? upper / lower : 0;
   // ~0.28 is a neutral head; scale the deviation into degrees.
@@ -225,7 +245,9 @@ export function assessFrameQuality(input: QualityInput): QualityResult {
   const yawError = Math.abs(input.yawDeg - target.yaw);
   const yawScore = clamp01(1 - yawError / (target.yawTolerance * 2));
   const pitchScore = clamp01(
-    1 - Math.abs(input.pitchDeg) / (target.maxPitch * 2),
+    1 -
+      Math.max(0, Math.abs(input.pitchDeg) - PITCH_GRACE_DEG) /
+        (target.maxPitch * 2),
   );
   const rollScore = clamp01(1 - Math.abs(input.rollDeg) / (target.maxRoll * 2));
   scores.pose = clamp01(yawScore * 0.5 + pitchScore * 0.25 + rollScore * 0.25);
