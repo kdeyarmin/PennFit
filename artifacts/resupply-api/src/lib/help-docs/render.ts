@@ -18,8 +18,8 @@ import type { EmailAttachment } from "@workspace/resupply-auth";
 
 import {
   HELP_DOC_VERSION,
-  PATIENT_HELP_DOCS,
-  PROVIDER_HELP_DOCS,
+  patientHelpDocs,
+  providerHelpDocs,
   staffHelpDocs,
   type HelpDoc,
   type HelpDocSection,
@@ -29,8 +29,10 @@ import { loadCustomerServiceManual } from "./manual";
 const PAGE_WIDTH = 504; // LETTER (612) minus 54pt margins each side
 const PDF_CONTENT_TYPE = "application/pdf";
 
-// key + version → rendered PDF bytes. Static content, so this never
-// grows beyond the handful of distinct help documents.
+// key + version + tenant name → rendered PDF bytes. The tenant name is
+// part of the key because the copy is branded to it — without that, the
+// first tenant to request a guide would poison the cache for every
+// other tenant.
 const renderedCache = new Map<string, Buffer>();
 
 /** Audience descriptor for {@link buildInviteHelpAttachments}. */
@@ -39,14 +41,17 @@ export type HelpDocAudience =
   | { kind: "provider" }
   | { kind: "staff"; role: AdminRole };
 
-function docsFor(audience: HelpDocAudience): ReadonlyArray<HelpDoc> {
+function docsFor(
+  audience: HelpDocAudience,
+  company: string,
+): ReadonlyArray<HelpDoc> {
   switch (audience.kind) {
     case "patient":
-      return PATIENT_HELP_DOCS;
+      return patientHelpDocs(company);
     case "provider":
-      return PROVIDER_HELP_DOCS;
+      return providerHelpDocs(company);
     case "staff":
-      return staffHelpDocs(audience.role);
+      return staffHelpDocs(audience.role, company);
   }
 }
 
@@ -58,11 +63,13 @@ function docsFor(audience: HelpDocAudience): ReadonlyArray<HelpDoc> {
  */
 export async function buildInviteHelpAttachments(
   audience: HelpDocAudience,
+  /** The inviting tenant's own company name — these PDFs carry it. */
+  company: string,
 ): Promise<EmailAttachment[]> {
-  const docs = docsFor(audience);
+  const docs = docsFor(audience, company);
   const attachments: EmailAttachment[] = [];
   for (const doc of docs) {
-    const content = await renderHelpDocPdf(doc);
+    const content = await renderHelpDocPdf(doc, company);
     attachments.push({
       content,
       filename: doc.filename,
@@ -80,16 +87,19 @@ export async function buildInviteHelpAttachments(
   return attachments;
 }
 
-async function renderHelpDocPdf(doc: HelpDoc): Promise<Buffer> {
-  const cacheKey = `${doc.key}@${HELP_DOC_VERSION}`;
+async function renderHelpDocPdf(
+  doc: HelpDoc,
+  company: string,
+): Promise<Buffer> {
+  const cacheKey = `${doc.key}@${HELP_DOC_VERSION}#${company}`;
   const cached = renderedCache.get(cacheKey);
   if (cached) return cached;
-  const rendered = await renderToBuffer(doc);
+  const rendered = await renderToBuffer(doc, company);
   renderedCache.set(cacheKey, rendered);
   return rendered;
 }
 
-function renderToBuffer(doc: HelpDoc): Promise<Buffer> {
+function renderToBuffer(doc: HelpDoc, company: string): Promise<Buffer> {
   const pdf = new PDFDocument({
     size: "LETTER",
     margins: { top: 64, bottom: 56, left: 54, right: 54 },
@@ -101,7 +111,7 @@ function renderToBuffer(doc: HelpDoc): Promise<Buffer> {
     pdf.on("end", () => resolve(Buffer.concat(chunks)));
     pdf.on("error", reject);
     try {
-      drawHelpDoc(pdf, doc);
+      drawHelpDoc(pdf, doc, company);
       pdf.end();
     } catch (err) {
       reject(err);
@@ -109,7 +119,11 @@ function renderToBuffer(doc: HelpDoc): Promise<Buffer> {
   });
 }
 
-function drawHelpDoc(pdf: PDFKit.PDFDocument, doc: HelpDoc): void {
+function drawHelpDoc(
+  pdf: PDFKit.PDFDocument,
+  doc: HelpDoc,
+  company: string,
+): void {
   // ── Header ──
   pdf.font("Helvetica-Bold").fontSize(18).fillColor("#0f172a").text(doc.title);
   pdf.moveDown(0.3);
@@ -131,7 +145,7 @@ function drawHelpDoc(pdf: PDFKit.PDFDocument, doc: HelpDoc): void {
     .fontSize(8)
     .fillColor("#94a3b8")
     .text(
-      `PennPaps • This guide is for general help only and contains no personal health information. (rev ${HELP_DOC_VERSION})`,
+      `${company} • This guide is for general help only and contains no personal health information. (rev ${HELP_DOC_VERSION})`,
       { width: PAGE_WIDTH },
     );
   pdf.fillColor("#000000");

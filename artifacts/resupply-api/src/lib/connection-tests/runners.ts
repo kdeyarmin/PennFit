@@ -64,6 +64,7 @@ import {
   type LlmProvider,
 } from "../llm-provider";
 import { readVoicePublicBaseUrlOrNull } from "../voice/voice-config";
+import { PLATFORM_NAME } from "../company-info.js";
 
 export type ConnectionChannel = "email" | "sms" | "voice" | "chat";
 
@@ -182,11 +183,16 @@ export function computeConnectionTestStatus(
 
 // ── Fixed, PHI-free test message bodies ──────────────────────────────
 
-const TEST_EMAIL_SUBJECT = "PennPaps connection test";
+// Platform-branded, NOT tenant-branded, and deliberately so. These are
+// infrastructure probes fired from the admin console to prove a vendor
+// integration works — the same class as password resets and operator
+// digests, which CLAUDE.md keeps on the platform identity. They also have
+// no `orgId` in scope to resolve a tenant from.
+const TEST_EMAIL_SUBJECT = `${PLATFORM_NAME} connection test`;
 
 function testEmailHtml(stamp: string): string {
   return [
-    `<p>This is a connection test from the PennPaps admin console.</p>`,
+    `<p>This is a connection test from the ${PLATFORM_NAME} admin console.</p>`,
     `<p>If you are reading this, your SendGrid email integration is`,
     ` working correctly.</p>`,
     `<p style="color:#888;font-size:12px">Sent ${stamp}</p>`,
@@ -195,7 +201,7 @@ function testEmailHtml(stamp: string): string {
 
 function testEmailText(stamp: string): string {
   return (
-    `This is a connection test from the PennPaps admin console.\n\n` +
+    `This is a connection test from the ${PLATFORM_NAME} admin console.\n\n` +
     `If you are reading this, your SendGrid email integration is ` +
     `working correctly.\n\nSent ${stamp}`
   );
@@ -203,12 +209,12 @@ function testEmailText(stamp: string): string {
 
 // Single-segment ASCII so it never splits / transcodes to UCS-2.
 const TEST_SMS_BODY =
-  "PennPaps connection test: your Twilio SMS integration is working. " +
+  `${PLATFORM_NAME} connection test: your Twilio SMS integration is working. ` +
   "(automated message from the admin console)";
 
 // Spoken by the connection-test TwiML route after Twilio fetches it.
 export const TEST_VOICE_MESSAGE =
-  "This is a connection test from Penn Paps. " +
+  `This is a connection test from ${PLATFORM_NAME}. ` +
   "Your outbound voice integration is working correctly. Goodbye.";
 
 const CHAT_TEST_PROMPT = "Connection test. Reply with the single word: OK.";

@@ -189,7 +189,9 @@ async function resolveAuthorIdentity(
   } else if (tokens.length === 1) {
     displayName = tokens[0]!;
   } else {
-    displayName = "PennPaps customer";
+    // Tenant-neutral: this renders publicly under a product review for
+    // whichever tenant's storefront it was left on.
+    displayName = "Verified customer";
   }
 
   return { displayName, email: rawEmail.toLowerCase() };

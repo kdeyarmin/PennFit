@@ -876,7 +876,10 @@ async function attemptEmailAutoReply(
  */
 function buildReplySubject(
   subject: string | null,
-  brandName = "PennPaps",
+  // Required, not defaulted. The sole caller resolves the tenant's own
+  // name, and a default here would silently hand the seed tenant's brand
+  // to the next caller that forgets — so let the compiler ask instead.
+  brandName: string,
 ): string {
   const base = (subject ?? "")
     .replace(/[\r\n]+/g, " ")

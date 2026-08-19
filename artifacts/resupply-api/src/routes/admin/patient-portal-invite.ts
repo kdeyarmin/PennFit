@@ -54,9 +54,9 @@ type PatientUpdate = Database["resupply"]["Tables"]["patients"]["Update"];
  * invite email. Best-effort: a render failure logs and returns an
  * empty list so the invite still goes out.
  */
-async function patientInviteAttachments() {
+async function patientInviteAttachments(company: string) {
   try {
-    return await buildInviteHelpAttachments({ kind: "patient" });
+    return await buildInviteHelpAttachments({ kind: "patient" }, company);
   } catch (err) {
     logger.warn(
       { err, event: "patient_invite_help_docs_render_failed" },
@@ -368,7 +368,7 @@ router.post(
     // identity for an unconfigured tenant) so a non-seed tenant's patient
     // never sees the seed brand.
     const brand = await resolveBrandingByOrgId(orgId);
-    const attachments = await patientInviteAttachments();
+    const attachments = await patientInviteAttachments(brand.storefrontName);
     const rendered = renderPatientPortalInviteEmail(
       {
         productName: brand.storefrontName,
@@ -509,7 +509,7 @@ router.post(
     // Brand the resend with the inviting tenant's own identity (same
     // resolver as the initial invite above) — never the seed brand.
     const brand = await resolveBrandingByOrgId(orgId);
-    const attachments = await patientInviteAttachments();
+    const attachments = await patientInviteAttachments(brand.storefrontName);
     const rendered = renderPatientPortalInviteEmail(
       {
         productName: brand.storefrontName,

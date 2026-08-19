@@ -181,7 +181,7 @@ router.get(
           abandonedCart: carts[0] ?? null,
           notes: {
             coverage:
-              "This file contains every record the PennPaps cash-pay shop holds for your account.",
+              "This file contains every record the cash-pay shop holds for your account.",
             phi: "Insurance / Rx / clinical data lives in a separate system and is not included here. Contact support@pennpaps.com to request that data.",
           },
         },

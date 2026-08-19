@@ -1,6 +1,6 @@
 ---
 name: pennfit-rules
-description: PennFit-specific invariants and "hard rules" to check when writing, reviewing, or committing changes in this repo — PHI/image logging, Supabase-only data path, admin theme scoping, no column encryption, no password pepper, no compliance/audit_log machinery, single email From address, the decoupled service-boot contract, and the rule that nothing but a per-tenant sign-off may clear `needs_clinical_review` (which records provenance — it no longer gates confidence). Use when editing code under artifacts/ or lib/, reviewing a diff or PR, or before committing. These are correctness invariants, not style — a violation is a real bug.
+description: PennFit-specific invariants and "hard rules" to check when writing, reviewing, or committing changes in this repo — PHI/image logging, Supabase-only data path, admin theme scoping, no column encryption, no password pepper, no compliance/audit_log machinery, single email From address, the decoupled service-boot contract, and the rule that nothing but a per-tenant sign-off may clear `needs_clinical_review` (which records provenance — it no longer gates confidence), and the rule that a tenant brand in shared code must be resolved rather than typed. Use when editing code under artifacts/ or lib/, reviewing a diff or PR, or before committing. These are correctness invariants, not style — a violation is a real bug.
 ---
 
 # PennFit hard-rules reviewer
@@ -181,6 +181,47 @@ See `.claude/skills/pennfit-migrations/SKILL.md` **M7** for the
 import-side rule, and `docs/mask-sizing-data-sources-2026-08-18.md` for
 what each manufacturer actually publishes.
 
+### R9 — A tenant brand in shared code must be resolved, not typed
+`PennPaps` is ONE TENANT's storefront name. In shared platform code it is
+only ever legitimate in two forms:
+
+1. **A placeholder that is normalized at the I/O boundary** — the large
+   prose bodies (`chatbotKnowledge.ts`, `customerChatKnowledge.ts`, the
+   LLM system prompts, the tool descriptions) keep `PennPaps`/`PennBot`/
+   `PennPilot` verbatim, and the *route* renames them per tenant via
+   `applyCompanyIdentityToText(text, await getCompanyInfo(orgId))` and/or
+   `applyPlatformBrandingForOrg(text, orgId)`. CLAUDE.md endorses this so
+   the knowledge bases don't need editing. A few files carry their own
+   equivalent (`checkin-dispatcher.ts`, `routes/voice/inbound-reorder.ts`
+   both do `text.split("PennPaps").join(brandName)`).
+2. **Genuinely tenant-scoped data** — the seeded `organizations` row, the
+   Penn logo asset, `capacitor.config.ts`'s native app name.
+
+Anything else is a bug: the literal reaches **every** tenant's users
+verbatim. Found in the wild across ~20 callsites — push-notification
+titles, return-label sender names, a PHI document footer, invite-attached
+PDF guides (filenames included), a public review's anonymous display name,
+Zod validation messages, and a "Curated Kit" product manufacturer.
+
+Deciding a hit:
+- **Does the string reach a user?** Comments and docstrings don't.
+- **Does its route normalize?** Grep the ROUTE, not the helper, for
+  `applyCompanyIdentityToText` / `applyPlatformBranding`. A prompt is fine
+  because the model's *output* is normalized; a hand-built email body,
+  push payload or PDF is not.
+- **Which name is right?** Patient/storefront surfaces →
+  `resolveBrandingByOrgId(orgId).storefrontName`. Practice/legal contexts
+  (carrier labels, documents) → `getCompanyInfo(orgId).name`. Platform
+  infrastructure with no tenant in scope (auth mail, operator digests,
+  connection tests, first-admin bootstrap) → `PLATFORM_NAME`. If no name
+  belongs there at all, drop it — "your provider", "Verified customer".
+- **Two channels, one event, one brand.** A push and its email must use
+  the same resolver and field, or they will disagree.
+
+Prefer threading a parameter over adding a placeholder: the compiler then
+finds every callsite. Watch for spaced TTS variants (`Penn Paps`) that a
+`PennPaps` grep misses.
+
 ## Step 3 — convention invariants (also worth checking)
 
 - **Supabase is the only runtime data path.** Read/write through
@@ -202,7 +243,7 @@ what each manufacturer actually publishes.
 
 ## Step 4 — report
 
-For each finding give: the rule (R1–R8 or convention), `file:line`, why it
+For each finding give: the rule (R1–R9 or convention), `file:line`, why it
 violates the invariant, and the minimal fix. If a sweep hit is actually the
 rule's own allowed location (e.g. the SendGrid client *inside*
 `lib/resupply-email`), note it as a false positive and move on. When asked
