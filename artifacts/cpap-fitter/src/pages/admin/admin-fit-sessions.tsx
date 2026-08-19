@@ -177,7 +177,10 @@ export function AdminFitSessionsPage() {
         // Approve is a one-click row action with no panel of its own, so
         // without this a failed approval (409 conflict, expired session,
         // network) looked exactly like success — the row just didn't move.
-        <ErrorPanel title="Couldn't approve the session" error={approve.error} />
+        <ErrorPanel
+          title="Couldn't approve the session"
+          error={approve.error}
+        />
       ) : null}
 
       {sessions.isLoading ? <Spinner /> : null}
@@ -200,8 +203,8 @@ export function AdminFitSessionsPage() {
             className="text-sm text-muted-foreground p-4"
             data-testid="fit-sessions-truncated"
           >
-            Showing the first 100 sessions — older items exist beyond this
-            list. Work the queue down or narrow the filter to reach them.
+            Showing the first 100 sessions — older items exist beyond this list.
+            Work the queue down or narrow the filter to reach them.
           </p>
         </Card>
       ) : null}

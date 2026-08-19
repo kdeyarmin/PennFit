@@ -385,24 +385,63 @@ router.post(
       update.auto_matched = autoMatched;
     }
 
-    const { error: updErr } = await supabase
-      .from("fitter_invites")
-      .update(update)
-      .eq("id", invite.id);
-    // Best-effort: a transient write failure must not 500 the patient.
-    if (updErr) {
-      logger.warn(
-        { err: updErr, inviteId: invite.id },
-        "fitter-invite: completion write failed",
-      );
-      res.json({ ok: true, matched: false });
-      return;
+    // The billable transition is claimed ATOMICALLY: `isNewCompletion`
+    // above is derived from a stale read, so two concurrent completes
+    // (double-tap, two tabs, a replayed request) would BOTH see
+    // sent/opened and both meter a fitting. The conditional write below
+    // matches only while the row is still un-completed — exactly one
+    // request wins it; the loser falls through to a data-only update so
+    // its (newer) measurements are still recorded, unbilled.
+    let billableTransition = false;
+    if (isNewCompletion) {
+      const { data: claimed, error: claimErr } = await supabase
+        .from("fitter_invites")
+        .update(update)
+        .eq("id", invite.id)
+        .not("status", "in", "(completed,attached)")
+        .select("id");
+      if (claimErr) {
+        logger.warn(
+          { err: claimErr, inviteId: invite.id },
+          "fitter-invite: completion write failed",
+        );
+        res.json({ ok: true, matched: false });
+        return;
+      }
+      billableTransition = (claimed ?? []).length > 0;
+    }
+    if (!billableTransition) {
+      // Re-submit (or race loser): refresh the fitting DATA only. Status,
+      // completed_at and opened_at were settled by the first completion —
+      // rewriting status here from the stale read could regress a
+      // concurrent "attached" back to "completed". The auto-attach fields
+      // stay: they are only in `update` when the row had no chart link at
+      // read time, and setting the same match twice is idempotent.
+      const {
+        status: _status,
+        completed_at: _completedAt,
+        opened_at: _openedAt,
+        ...dataOnly
+      } = update;
+      const { error: updErr } = await supabase
+        .from("fitter_invites")
+        .update(dataOnly)
+        .eq("id", invite.id);
+      // Best-effort: a transient write failure must not 500 the patient.
+      if (updErr) {
+        logger.warn(
+          { err: updErr, inviteId: invite.id },
+          "fitter-invite: completion write failed",
+        );
+        res.json({ ok: true, matched: false });
+        return;
+      }
     }
 
     // Meter the completed fitting for per-fitting billing (migration 0419).
     // Fire-and-forget + fail-soft (recordTenantUsage never throws); only on
     // a genuinely new completion so a patient re-submit can't inflate usage.
-    if (isNewCompletion) {
+    if (billableTransition) {
       void recordTenantUsage({
         orgId,
         metricKey: "fitterFittingsPerMonth",

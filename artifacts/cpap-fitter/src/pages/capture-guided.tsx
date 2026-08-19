@@ -87,9 +87,7 @@ export function GuidedCapture({ onFallback }: { onFallback: () => void }) {
     message: string;
     struggling: boolean;
   }>({ message: "Getting your camera ready…", struggling: false });
-  const [prompt, setPrompt] = useState<string>(
-    "Look straight at the camera.",
-  );
+  const [prompt, setPrompt] = useState<string>("Look straight at the camera.");
   const [capturedCount, setCapturedCount] = useState(0);
   const [flash, setFlash] = useState(false);
   const [skippable, setSkippable] = useState(false);
@@ -317,7 +315,13 @@ export function GuidedCapture({ onFallback }: { onFallback: () => void }) {
             willReadFrequently: true,
           });
           if (sctx) {
-            sctx.drawImage(video, 0, 0, sampleCanvas.width, sampleCanvas.height);
+            sctx.drawImage(
+              video,
+              0,
+              0,
+              sampleCanvas.width,
+              sampleCanvas.height,
+            );
           }
           const sample = sctx
             ? sampleFrame(sampleCanvas, landmarks)
@@ -517,9 +521,9 @@ export function GuidedCapture({ onFallback }: { onFallback: () => void }) {
       )}
 
       <p className="mt-1 text-xs text-muted-foreground text-center max-w-md leading-relaxed">
-        Three quick angles — straight on, then a slight turn each way — let
-        us cross-check every measurement. It all happens on this device;
-        photos never leave your phone.
+        Three quick angles — straight on, then a slight turn each way — let us
+        cross-check every measurement. It all happens on this device; photos
+        never leave your phone.
       </p>
     </div>
   );

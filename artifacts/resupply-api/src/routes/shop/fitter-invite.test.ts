@@ -264,9 +264,15 @@ describe("POST /shop/fitter-invite/complete", () => {
       "fitter_invites",
       "update",
     )[0] as Record<string, unknown>;
-    // Terminal state stays sticky; the true first-open is preserved.
-    expect(upd.status).toBe("attached");
+    // Terminal state stays sticky — a re-submit is a DATA-ONLY update
+    // that never touches the lifecycle columns at all (writing them from
+    // a stale read is how a concurrent attach could be regressed), and
+    // the true first-open is preserved the same way.
+    expect(upd.status).toBeUndefined();
+    expect(upd.completed_at).toBeUndefined();
     expect(upd.opened_at).toBeUndefined();
+    // The fitting data itself IS refreshed.
+    expect(upd.recommended_mask_id).toBeDefined();
   });
 
   it("fails soft (200) when the invite lookup errors", async () => {

@@ -25,7 +25,15 @@ vi.mock("@workspace/resupply-db", () => {
   const builder = () => {
     const chain: Record<string, unknown> = {};
     const self = () => chain;
-    for (const method of ["select", "not", "order", "eq", "neq", "or", "limit"]) {
+    for (const method of [
+      "select",
+      "not",
+      "order",
+      "eq",
+      "neq",
+      "or",
+      "limit",
+    ]) {
       chain[method] = () => self();
     }
     chain.range = async (from: number, to: number) => {
@@ -43,10 +51,7 @@ vi.mock("@workspace/resupply-db", () => {
   };
 });
 
-import {
-  invalidateFitAdjustments,
-  loadFitAdjustments,
-} from "./catalog-store";
+import { invalidateFitAdjustments, loadFitAdjustments } from "./catalog-store";
 import type { CatalogMask } from "./types";
 
 const MASK_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";

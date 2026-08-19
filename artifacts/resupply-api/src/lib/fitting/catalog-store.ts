@@ -747,7 +747,11 @@ async function loadAdjustmentsFromDb(
   // Page past PostgREST's max_rows cap — a bare high `.limit()` silently
   // truncates to an UNORDERED first 1000 and reports the partial tally as
   // complete (the trap the admin routes document and page around).
-  for (let offset = 0; offset < ADJUSTMENTS_MAX_ROWS; offset += ADJUSTMENTS_PAGE) {
+  for (
+    let offset = 0;
+    offset < ADJUSTMENTS_MAX_ROWS;
+    offset += ADJUSTMENTS_PAGE
+  ) {
     const result = (await withTimeout(
       supabase
         .from("mask_fit_outcomes")
@@ -761,9 +765,7 @@ async function loadAdjustmentsFromDb(
       error: { message: string } | null;
     };
     if (result.error) {
-      throw new Error(
-        `mask_fit_outcomes read failed: ${result.error.message}`,
-      );
+      throw new Error(`mask_fit_outcomes read failed: ${result.error.message}`);
     }
     const page = result.data ?? [];
     rows.push(...page);

@@ -67,8 +67,12 @@ const MISSING_REASON = "missing";
 export function FitterInvite() {
   useDocumentTitle("Your mask-fitting invite");
   const [, setLocation] = useLocation();
-  const { setEmailConsent, setInviteToken, setFitProfileV2, setMultiframeCapture } =
-    useFitterStore();
+  const {
+    setEmailConsent,
+    setInviteToken,
+    setFitProfileV2,
+    setMultiframeCapture,
+  } = useFitterStore();
   const [state, setState] = useState<State>({ kind: "loading" });
   // The store setters in the deps get a fresh identity whenever the
   // provider re-renders — which the setInviteToken call below itself

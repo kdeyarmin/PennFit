@@ -389,10 +389,10 @@ export function Measure() {
           let lastFailure: ExtractionError | null = null;
           for (let i = 0; i < capturedFrames.length; i += 1) {
             if (!isMountedRef.current) return;
-            setProgress(60 + Math.round(((i + 1) / capturedFrames.length) * 30));
-            setStatus(
-              `Analyzing angle ${i + 1} of ${capturedFrames.length}…`,
+            setProgress(
+              60 + Math.round(((i + 1) / capturedFrames.length) * 30),
             );
+            setStatus(`Analyzing angle ${i + 1} of ${capturedFrames.length}…`);
             const frame = capturedFrames[i]!;
             try {
               const frameImg = await decodeImage(frame.dataUrl);
