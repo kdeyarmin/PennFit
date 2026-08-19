@@ -408,3 +408,60 @@ describe("recommend — result shape", () => {
     expect(total).toBeGreaterThan(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Tenant-brand neutrality
+// ---------------------------------------------------------------------------
+// This engine is shared platform code, and `/api/recommend` does NOT run the
+// I/O-boundary rename (`applyCompanyIdentityToText`) that patient SMS, email
+// and PDF copy goes through. So any brand name hardcoded in a rationale here
+// reaches every tenant's patients verbatim — which is exactly what happened:
+// the in-range rationale used to end "Final fit confirmed at PennPaps."
+//
+// Asserting on the seed tenant's name specifically (rather than a generic
+// "no brands" rule) keeps this honest: the string is what regressed, and a
+// future tenant name added here would be the same bug.
+
+describe("recommendSize — rationale carries no tenant brand", () => {
+  const BRANDS = [/PennPaps/i, /Penn Home Medical/i, /PennFit/i];
+
+  function rationaleFor(noseWidth: number): string {
+    return recommendSize(
+      maskFixture({
+        type: "nasalPillow",
+        sizesAvailable: ["S", "M", "L"],
+        fitRanges: {
+          noseWidthMin: 28,
+          noseWidthMax: 44,
+          noseToChinMin: 35,
+          noseToChinMax: 65,
+          mouthWidthMin: 30,
+          mouthWidthMax: 50,
+        },
+      }),
+      { ...PROFILE_MEASUREMENTS, noseWidth },
+    ).rationale;
+  }
+
+  it("stays neutral for an in-range measurement", () => {
+    const r = rationaleFor(36);
+    for (const b of BRANDS) expect(r).not.toMatch(b);
+    // The clinically useful half must survive the de-branding.
+    expect(r).toMatch(/28–44 mm range/);
+  });
+
+  it("stays neutral below and above the range too", () => {
+    for (const w of [20, 60]) {
+      const r = rationaleFor(w);
+      for (const b of BRANDS) expect(r).not.toMatch(b);
+    }
+  });
+
+  it("stays neutral for a single-size mask", () => {
+    const r = recommendSize(
+      maskFixture({ sizesAvailable: [] }),
+      PROFILE_MEASUREMENTS,
+    ).rationale;
+    for (const b of BRANDS) expect(r).not.toMatch(b);
+  });
+});

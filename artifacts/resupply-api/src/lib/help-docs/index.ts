@@ -2,8 +2,8 @@
 // emails, tailored to the new user's type (patient vs staff role).
 export {
   HELP_DOC_VERSION,
-  PATIENT_HELP_DOCS,
-  PROVIDER_HELP_DOCS,
+  patientHelpDocs,
+  providerHelpDocs,
   staffHelpDocs,
   type HelpDoc,
   type HelpDocSection,

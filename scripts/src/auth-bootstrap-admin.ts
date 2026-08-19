@@ -103,7 +103,9 @@ function parseArgs(argv: string[]): ParsedArgs {
       "--platform-admin requires --role=admin (the platform tier is admin-only).",
     );
   }
-  const productName = args.get("product") ?? "PennPaps";
+  // Platform default, not the seed tenant: this bootstraps the FIRST admin
+  // of any deployment, which is by definition not yet a configured tenant.
+  const productName = args.get("product") ?? "CareMetric Breathe";
   const publicBaseUrl =
     args.get("base-url") ??
     process.env.SHOP_PUBLIC_BASE_URL ??

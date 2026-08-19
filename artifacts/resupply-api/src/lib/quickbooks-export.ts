@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import { safeCsvCell } from "./safe-csv-cell";
+import { PLATFORM_NAME } from "./company-info.js";
 
 //
 // Two emitter functions, sharing one input shape:
@@ -117,7 +118,12 @@ function escCsv(value: unknown): string {
 export function renderIif(input: QuickbooksExportInput): string {
   const lines: string[] = [];
   // Comment header — QuickBooks ignores `;`-prefixed lines.
-  lines.push(`; PennPaps QuickBooks export — ${escIif(input.practiceName)}`);
+  // The generating PLATFORM, then the tenant it was generated for. The
+  // literal used to name the seed tenant here while `practiceName` on the
+  // same line already carried whichever tenant actually ran the export.
+  lines.push(
+    `; ${PLATFORM_NAME} QuickBooks export — ${escIif(input.practiceName)}`,
+  );
   lines.push(`; Range: ${escIif(input.from)} to ${escIif(input.to)}`);
   lines.push(`; Rows: ${input.rows.length}`);
   lines.push("");

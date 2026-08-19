@@ -405,7 +405,7 @@ const SEED: PreviewSeed[] = [
     tagline: "Save vs. buying separately",
     replacementHint: "Set-and-forget every 3 months",
     unitAmountCents: 8900,
-    manufacturer: "PennPaps Curated Kit",
+    manufacturer: "Curated Kit",
     modelNumber: "BUNDLE-Q",
     imageUrl: "/products/cushion-n20.webp",
     bundleContents: [
@@ -424,7 +424,7 @@ const SEED: PreviewSeed[] = [
     tagline: "Twice-a-year fit refresh",
     replacementHint: "Set-and-forget every 6 months",
     unitAmountCents: 5500,
-    manufacturer: "PennPaps Curated Kit",
+    manufacturer: "Curated Kit",
     modelNumber: "BUNDLE-H",
     imageUrl: "/products/headgear-n20.webp",
     bundleContents: [
@@ -441,7 +441,7 @@ const SEED: PreviewSeed[] = [
     tagline: "Spare set for the road",
     replacementHint: "Keep in your suitcase",
     unitAmountCents: 5900,
-    manufacturer: "PennPaps Curated Kit",
+    manufacturer: "Curated Kit",
     modelNumber: "BUNDLE-T",
     imageUrl: "/products/tubing-slimline.webp",
     bundleContents: [
@@ -459,7 +459,7 @@ const SEED: PreviewSeed[] = [
     tagline: "Once-a-year deep refresh",
     replacementHint: "Set-and-forget every 12 months",
     unitAmountCents: 27900,
-    manufacturer: "PennPaps Curated Kit",
+    manufacturer: "Curated Kit",
     modelNumber: "BUNDLE-A",
     imageUrl: "/products/airfit-n20.webp",
     bundleContents: [

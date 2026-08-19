@@ -14,6 +14,7 @@ import {
   applySafetyExclusions,
   applyTherapyCompatibility,
   resolveSafetyFlags,
+  scoreFacialFit,
   scoreVariant,
   supplyMultiplier,
 } from "./tiers";
@@ -560,6 +561,35 @@ describe("tier 3 — facial fit", () => {
     const result = assess(input());
     expect(result.primary?.cushion?.measurementsUsed).toContain("noseWidth");
     expect(result.primary?.cushion?.rationale).toContain("Medium");
+  });
+
+  // The rationale is patient-facing copy. It used to append "based on
+  // estimated sizing data pending clinical review" for a seeded band —
+  // a hedge that was dropped with the RT sign-off gate it referred to.
+  // Provenance is still recorded on `fit_data_source` and printed on the
+  // clinical fit report; it just is not in the sentence the patient reads.
+  it("cites a real source, and hedges nothing when there isn't one", () => {
+    const rationaleFor = (over: Partial<SizeVariant>): string =>
+      scoreFacialFit(mask({ variants: [variant(over)] }), MEASUREMENTS).cushion!
+        .rationale;
+
+    expect(rationaleFor({ fitDataSource: "manufacturer" })).toContain(
+      "based on manufacturer fitting data",
+    );
+    expect(rationaleFor({ fitDataSource: "measured" })).toContain(
+      "based on measured sample data",
+    );
+
+    const estimated = rationaleFor({
+      fitDataSource: "estimated",
+      needsClinicalReview: true,
+    });
+    expect(estimated).not.toMatch(/pending clinical review/i);
+    expect(estimated).not.toMatch(/estimated/i);
+    expect(estimated).not.toMatch(/based on/i);
+    // The useful half survives: it still says which size and why.
+    expect(estimated).toContain("Medium");
+    expect(estimated).toContain("nose width");
   });
 });
 

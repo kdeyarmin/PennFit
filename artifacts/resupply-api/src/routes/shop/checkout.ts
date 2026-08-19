@@ -202,7 +202,7 @@ router.post(
       res.status(401).json({
         error: "sign_in_required",
         message:
-          "You'll need to sign in before subscribing — auto-ship is tied to your PennPaps account so you can pause or cancel anytime.",
+          "You'll need to sign in before subscribing — auto-ship is tied to your account so you can pause or cancel anytime.",
       });
       return;
     }

@@ -438,7 +438,14 @@ export function recommendSize(
   const idx = Math.min(rawIdx, sizes.length - 1);
   return {
     size: sizes[idx],
-    rationale: `Estimated size ${sizes[idx]} from your ${axisLabel} (${value} mm) within the mask's ${min}–${max} mm range. Final fit confirmed at PennPaps.`,
+    // Tenant-neutral on purpose. This is shared platform code with no
+    // `orgId` in scope, and the /api/recommend route does not run the
+    // I/O-boundary rename (`applyCompanyIdentityToText`) that patient
+    // SMS/email/PDF copy goes through — so a hardcoded brand here reaches
+    // EVERY tenant's patients verbatim. It used to read "confirmed at
+    // PennPaps", which was wrong for every tenant but one. "your provider"
+    // is accurate for all of them, Penn included, and needs no plumbing.
+    rationale: `Estimated size ${sizes[idx]} from your ${axisLabel} (${value} mm) within the mask's ${min}–${max} mm range. Final fit confirmed with your provider.`,
   };
 }
 

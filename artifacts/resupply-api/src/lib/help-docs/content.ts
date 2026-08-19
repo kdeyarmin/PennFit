@@ -6,11 +6,14 @@
 // email. This module owns the copy + the role→document mapping; the
 // rendering (to PDF) and email-attachment shaping live in `render.ts`.
 //
-// Copy here is intentionally static and brand-neutral except for the
-// PennPaps product name. No PHI ever appears in a help document — they
-// are generic onboarding guides, identical for every recipient of a
-// given user type, which is why `render.ts` can safely cache the
-// rendered bytes.
+// Copy here is static and brand-neutral apart from the company name,
+// which is a PARAMETER, not a literal. It used to be hardcoded to the
+// seed tenant, so every tenant's patients and providers received a PDF
+// branded "PennPaps". Each document is therefore a factory taking the
+// tenant's own name; `render.ts` keys its byte cache on that name as
+// well as the doc + version. No PHI ever appears in a help document —
+// they are generic onboarding guides, identical for every recipient of
+// a given user type and tenant, which is what makes caching safe.
 
 import type { AdminRole } from "@workspace/resupply-db";
 
@@ -42,16 +45,16 @@ export interface HelpDoc {
 
 // ── Patient portal ──────────────────────────────────────────────────
 
-const PATIENT_PORTAL_GUIDE: HelpDoc = {
+const PATIENT_PORTAL_GUIDE = (company: string): HelpDoc => ({
   key: "patient-portal-guide",
-  filename: "PennPaps-Patient-Portal-Guide.pdf",
-  title: "Welcome to Your PennPaps Patient Portal",
+  filename: `${company}-Patient-Portal-Guide.pdf`,
+  title: `Welcome to Your ${company} Patient Portal`,
   subtitle: "A quick guide to getting set up and managing your CPAP supplies.",
   sections: [
     {
       heading: "Setting up your account",
       paragraphs: [
-        "Your care team has invited you to the PennPaps patient portal. The invitation email contains a secure link to choose your password — open it on any phone, tablet, or computer to get started.",
+        `Your care team has invited you to the ${company} patient portal. The invitation email contains a secure link to choose your password — open it on any phone, tablet, or computer to get started.`,
         "For your security, that link expires seven days after it is sent. If it expires before you set your password, just contact our team and we'll send you a fresh invitation.",
       ],
     },
@@ -75,29 +78,31 @@ const PATIENT_PORTAL_GUIDE: HelpDoc = {
     {
       heading: "Getting help",
       paragraphs: [
-        "Have a question? Reply to any PennPaps email or call the number on your welcome message and a member of our team will be glad to assist. We're a real, local team — not a call center.",
+        `Have a question? Reply to any ${company} email or call the number on your welcome message and a member of our team will be glad to assist. We're a real, local team — not a call center.`,
       ],
     },
   ],
-};
+});
 
 /** Help documents attached to a patient portal invite. */
-export const PATIENT_HELP_DOCS: ReadonlyArray<HelpDoc> = [PATIENT_PORTAL_GUIDE];
+export const patientHelpDocs = (company: string): ReadonlyArray<HelpDoc> => [
+  PATIENT_PORTAL_GUIDE(company),
+];
 
 // ── Provider e-signature portal ─────────────────────────────────────
 
-const PROVIDER_PORTAL_GUIDE: HelpDoc = {
+const PROVIDER_PORTAL_GUIDE = (company: string): HelpDoc => ({
   key: "provider-portal-guide",
-  filename: "PennPaps-Provider-Portal-Guide.pdf",
-  title: "Welcome to the PennPaps Provider Portal",
+  filename: `${company}-Provider-Portal-Guide.pdf`,
+  title: `Welcome to the ${company} Provider Portal`,
   subtitle:
     "Reviewing and electronically signing your patients' documents online.",
   sections: [
     {
       heading: "Activating your account",
       paragraphs: [
-        "PennPaps has invited you to its provider portal, where you can review and electronically sign documents for your patients without faxes or paper chasing. Your invitation email contains a secure link to choose your password — your username is your email address.",
-        "The invitation link expires seven days after it is sent. If it expires before you set your password, contact the PennPaps team and we'll send a fresh one.",
+        `${company} has invited you to its provider portal, where you can review and electronically sign documents for your patients without faxes or paper chasing. Your invitation email contains a secure link to choose your password — your username is your email address.`,
+        `The invitation link expires seven days after it is sent. If it expires before you set your password, contact the ${company} team and we'll send a fresh one.`,
         "To protect patient information, the portal uses multi-factor authentication: after enrolling an authenticator app on first sign-in, you'll confirm a six-digit code each time you sign in.",
       ],
     },
@@ -107,7 +112,7 @@ const PROVIDER_PORTAL_GUIDE: HelpDoc = {
         "See every document awaiting your signature for your patients in a single queue.",
         "Review each item — prescriptions, supply orders, and certificates of medical necessity — before you sign.",
         "Sign electronically with a typed or drawn signature, one document at a time or several at once.",
-        "Decline a document back to the PennPaps team when something needs to be corrected first.",
+        `Decline a document back to the ${company} team when something needs to be corrected first.`,
       ],
     },
     {
@@ -119,29 +124,29 @@ const PROVIDER_PORTAL_GUIDE: HelpDoc = {
     {
       heading: "Getting help",
       paragraphs: [
-        "Questions about a document or the portal itself? Reply to any PennPaps email or call the practice and a member of the team will be glad to assist.",
+        `Questions about a document or the portal itself? Reply to any ${company} email or call the practice and a member of the team will be glad to assist.`,
       ],
     },
   ],
-};
+});
 
 /** Help documents attached to a provider portal invite. */
-export const PROVIDER_HELP_DOCS: ReadonlyArray<HelpDoc> = [
-  PROVIDER_PORTAL_GUIDE,
+export const providerHelpDocs = (company: string): ReadonlyArray<HelpDoc> => [
+  PROVIDER_PORTAL_GUIDE(company),
 ];
 
 // ── Staff / admin console ───────────────────────────────────────────
 
-const STAFF_GETTING_STARTED: HelpDoc = {
+const STAFF_GETTING_STARTED = (company: string): HelpDoc => ({
   key: "staff-getting-started",
-  filename: "PennPaps-Team-Getting-Started.pdf",
-  title: "Getting Started with the PennPaps Admin Console",
+  filename: `${company}-Team-Getting-Started.pdf`,
+  title: `Getting Started with the ${company} Admin Console`,
   subtitle: "Everything you need to sign in and find your way around.",
   sections: [
     {
       heading: "Activating your account",
       paragraphs: [
-        "Welcome to the PennPaps team. Your invitation email contains a secure link to set your password — it lands you on the admin sign-in page once you've chosen one. The link is valid for seven days; if it expires, ask an administrator to resend your invite.",
+        `Welcome to the ${company} team. Your invitation email contains a secure link to set your password — it lands you on the admin sign-in page once you've chosen one. The link is valid for seven days; if it expires, ask an administrator to resend your invite.`,
         "Sign in at /admin/sign-in. If your account has multi-factor authentication enabled, you'll be prompted to enter a code from your authenticator app after your password.",
       ],
     },
@@ -169,12 +174,12 @@ const STAFF_GETTING_STARTED: HelpDoc = {
       ],
     },
   ],
-};
+});
 
-const ADMINISTRATOR_GUIDE: HelpDoc = {
+const ADMINISTRATOR_GUIDE = (company: string): HelpDoc => ({
   key: "staff-administrator-guide",
-  filename: "PennPaps-Administrator-Guide.pdf",
-  title: "PennPaps Administrator Guide",
+  filename: `${company}-Administrator-Guide.pdf`,
+  title: `${company} Administrator Guide`,
   subtitle: "Managing your team, roles, and settings.",
   sections: [
     {
@@ -202,7 +207,7 @@ const ADMINISTRATOR_GUIDE: HelpDoc = {
       ],
     },
   ],
-};
+});
 
 /**
  * Return the help document(s) to attach to a staff invite for the
@@ -210,9 +215,12 @@ const ADMINISTRATOR_GUIDE: HelpDoc = {
  * getting-started guide; administrators additionally get the
  * administrator guide.
  */
-export function staffHelpDocs(role: AdminRole): ReadonlyArray<HelpDoc> {
+export function staffHelpDocs(
+  role: AdminRole,
+  company: string,
+): ReadonlyArray<HelpDoc> {
   if (role === "admin") {
-    return [STAFF_GETTING_STARTED, ADMINISTRATOR_GUIDE];
+    return [STAFF_GETTING_STARTED(company), ADMINISTRATOR_GUIDE(company)];
   }
-  return [STAFF_GETTING_STARTED];
+  return [STAFF_GETTING_STARTED(company)];
 }

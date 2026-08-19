@@ -68,9 +68,9 @@ type AdminUserRow = Database["resupply"]["Tables"]["admin_users"]["Row"];
  * an empty list so the invite still goes out — an invite must never
  * fail because a help doc didn't render.
  */
-async function staffInviteAttachments(role: AdminRole) {
+async function staffInviteAttachments(role: AdminRole, company: string) {
   try {
-    return await buildInviteHelpAttachments({ kind: "staff", role });
+    return await buildInviteHelpAttachments({ kind: "staff", role }, company);
   } catch (err) {
     logger.warn(
       { err, event: "staff_invite_help_docs_render_failed", role },
@@ -408,7 +408,7 @@ router.post(
       // Skipped automatically on the initialPassword path (no email).
       attachments: useInitialPassword
         ? undefined
-        : await staffInviteAttachments(role),
+        : await staffInviteAttachments(role, company.name),
     });
 
     const nowIso = new Date().toISOString();
@@ -534,7 +534,10 @@ router.post(
       productName: company.name,
       signatureName: company.legalName,
       uiPathPrefix: "/admin",
-      attachments: await staffInviteAttachments(row.role as AdminRole),
+      attachments: await staffInviteAttachments(
+        row.role as AdminRole,
+        company.name,
+      ),
     });
 
     const nowIso = new Date().toISOString();

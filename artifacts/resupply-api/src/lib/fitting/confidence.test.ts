@@ -215,15 +215,13 @@ describe("what cannot produce a confident answer", () => {
     expect(result.outcome).not.toBe("high_confidence");
   });
 
-  it("an unreviewed estimated size band caps the result at moderate", () => {
-    // This is the safety valve that makes shipping estimated geometry
-    // defensible: until an RT signs a variant off, it cannot produce a
-    // confident automated recommendation however well it scores.
+  it("a clinician's sign-off is not required for confidence — the scan decides", () => {
+    // Reversal of the old behaviour, pinned deliberately. An unreviewed
+    // estimated band used to be capped below high confidence until an RT
+    // signed it off; requiring a human to hand-approve ~290 bands made
+    // the fitter unusable at scale, so the gate was removed. A band's
+    // provenance no longer changes the number the patient sees.
     const strong = candidate({ confidence: 1 });
-    expect(resolveConfidence({ ...base, top: strong }).outcome).toBe(
-      "high_confidence",
-    );
-
     const unreviewed = candidate({
       confidence: 1,
       cushion: {
@@ -232,9 +230,30 @@ describe("what cannot produce a confident answer", () => {
         fitDataSource: "estimated",
       },
     });
-    expect(resolveConfidence({ ...base, top: unreviewed }).outcome).toBe(
-      "moderate_confidence",
+
+    expect(resolveConfidence({ ...base, top: strong }).outcome).toBe(
+      "high_confidence",
     );
+    expect(resolveConfidence({ ...base, top: unreviewed }).outcome).toBe(
+      "high_confidence",
+    );
+  });
+
+  it("but a bad scan still overrides an unreviewed band's strong score", () => {
+    // The point of removing the review gate was to let the SCAN decide,
+    // not to let everything through. A strong geometric match on a bad
+    // capture must still fail, review status notwithstanding.
+    const unreviewed = candidate({
+      confidence: 1,
+      cushion: {
+        ...candidate().cushion!,
+        needsClinicalReview: true,
+        fitDataSource: "estimated",
+      },
+    });
+    expect(
+      resolveConfidence({ ...base, top: unreviewed, scan: POOR_SCAN }).outcome,
+    ).not.toBe("high_confidence");
   });
 
   it("an unanswered profile drags an otherwise strong match down", () => {

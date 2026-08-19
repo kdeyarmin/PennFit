@@ -221,7 +221,7 @@ const FAQ_GROUPS: FaqGroup[] = [
       },
       {
         q: "What happens if the scan is poor or the answer is uncertain?",
-        a: "It says so. Lighting, focus, head pose and framing are scored on the actual frame, so a blurry or badly-lit scan cannot produce a confident answer however well the mask matches; a single unverified frame is scored as moderate rather than perfect, because without cross-frame agreement there's no evidence the measurement is stable; an incomplete questionnaire caps confidence too rather than guessing; a size band no clinician has signed off can never reach high confidence; and anything low routes to a human on your team instead of shipping a guess. A fitter that always answers confidently isn't confident; it's just always answering.",
+        a: "It says so. Lighting, focus, head pose and framing are scored on the actual frame, so a blurry or badly-lit scan cannot produce a confident answer however well the mask matches; a single unverified frame is scored as moderate rather than perfect, because without cross-frame agreement there's no evidence the measurement is stable; an incomplete questionnaire caps confidence too rather than guessing; a measurement outside the plausible range for an adult face is reported as a scan failure rather than answered; and anything low routes to a human on your team instead of shipping a guess. A fitter that always answers confidently isn't confident; it's just always answering.",
       },
       {
         q: "How are magnetic mask components handled?",

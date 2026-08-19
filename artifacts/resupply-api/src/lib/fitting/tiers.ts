@@ -396,15 +396,24 @@ function describeSize(
     faceWidthAtCheekbones: "face width",
   };
   const list = used.map((u) => names[u]).join(" and ");
+  // Cite a source when there IS one to cite. An estimated band used to
+  // read "based on estimated sizing data pending clinical review" — a
+  // hedge in the sentence a patient reads, and dropped deliberately along
+  // with the RT sign-off gate it referred to.
+  //
+  // The provenance itself is unchanged: `fit_data_source` still records
+  // it, the clinical fit report still prints it, and the admin review
+  // queue still lists it. It simply no longer appears in patient copy.
   const source =
     variant.fitDataSource === "manufacturer"
       ? "manufacturer fitting data"
       : variant.fitDataSource === "measured"
         ? "measured sample data"
-        : "estimated sizing data pending clinical review";
+        : null;
+  const because = source ? `, based on ${source}` : "";
   return inBand
-    ? `Your ${list} falls inside the ${variant.sizeLabel} range, based on ${source}.`
-    : `Your ${list} sits just outside the ${variant.sizeLabel} range — ${variant.sizeLabel} is the closest available size, based on ${source}. Verify the fit in person.`;
+    ? `Your ${list} falls inside the ${variant.sizeLabel} range${because}.`
+    : `Your ${list} sits just outside the ${variant.sizeLabel} range — ${variant.sizeLabel} is the closest available size${because}. Verify the fit in person.`;
 }
 
 export interface FacialFitResult {

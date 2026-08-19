@@ -134,15 +134,25 @@ Migration 0485 seeds **every** `fitter.*` flag OFF except `fitter.clinical_repor
 | `fitter.multiframe_capture`  | OFF    | Independent of the server work           |
 | `fitter.clinical_report`     | **ON** | Staff-only, purely additive              |
 
-The blocker is real and correctly chosen: the seeded facial-geometry bands in
-0486 are **estimated**, so every `mask_size_variants` row lands
-`needs_clinical_review = true`, and `confidence.ts` independently caps an
-unreviewed variant below high confidence. Turning the master switch on before an
-RT signs off the variants a tenant actually stocks would ship estimates as
-clinical output.
+> **Superseded (2026-08-19).** The confidence cap described below was
+> removed deliberately. `confidence.ts` no longer consults
+> `needs_clinical_review`; confidence is scan quality × band fit × profile
+> completeness. The reasoning is preserved because it explains why the
+> flags shipped OFF, not because the gate is still live.
 
-**So the single highest-value action here is not a feature — it is making that
-RT sign-off practical and then flipping the flags in order.** Against SleepGlad
+The blocker as originally assessed: the seeded facial-geometry bands in
+0486 are **estimated**, so every `mask_size_variants` row lands
+`needs_clinical_review = true`, and `confidence.ts` then capped an
+unreviewed variant below high confidence — making the RT sign-off the
+practical blocker on turning the master switch on.
+
+**That is no longer the sequencing constraint.** Requiring a clinician to
+hand-approve ~290 bands before the fitter could speak confidently was
+judged unworkable at scale, so the cap was dropped and the scan's own
+verdict now governs. Safety still sits in the tier 1-2 hard filters, which
+remove contraindicated and therapy-incompatible masks outright. Sign-off
+remains available, and the evidence still prints on the report — it is
+simply no longer on the critical path. Against SleepGlad
 we are currently fielding the _old_ engine.
 
 Related, and worth an owner decision rather than an engineering task: SleepGlad
