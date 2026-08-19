@@ -72,6 +72,7 @@ export function FitterInvite() {
     setInviteToken,
     setFitProfileV2,
     setMultiframeCapture,
+    setEntryPoint,
   } = useFitterStore();
   const [state, setState] = useState<State>({ kind: "loading" });
   // The store setters in the deps get a fresh identity whenever the
@@ -105,6 +106,22 @@ export function FitterInvite() {
         // /results ever probes the clinical route.
         setFitProfileV2(Boolean(res.fitProfileV2));
         setMultiframeCapture(Boolean(res.multiframeCapture));
+        // Re-anchor the entry channel to THIS invite's URL. Without it, a
+        // fresh invite opened in the same tab (no `entry` param) inherits
+        // whatever channel the previous fitting persisted — an ordinary
+        // remote invite after a kiosk or refit-campaign fitting would be
+        // recorded under the stale channel.
+        const entryRaw = new URLSearchParams(window.location.search).get(
+          "entry",
+        );
+        setEntryPoint(
+          entryRaw === "in_office" ||
+            entryRaw === "kiosk_qr" ||
+            entryRaw === "remote_link" ||
+            entryRaw === "refit_campaign"
+            ? entryRaw
+            : null,
+        );
         setState({
           kind: "ready",
           email: res.email ?? null,
@@ -117,7 +134,7 @@ export function FitterInvite() {
     return () => {
       cancelled = true;
     };
-  }, [setInviteToken, setFitProfileV2, setMultiframeCapture]);
+  }, [setInviteToken, setFitProfileV2, setMultiframeCapture, setEntryPoint]);
 
   const handleStart = (email: string | null) => {
     track("fitter_invite_started");

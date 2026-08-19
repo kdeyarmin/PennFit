@@ -14,6 +14,8 @@ import { beforeEach, describe, expect, it, vi, afterEach } from "vitest";
 
 import {
   clearFitCheckoutContext,
+  clearSubmittedFitCheckoutContext,
+  markFitCheckoutContextSubmitted,
   readFitCheckoutContext,
   rememberFitCheckoutContext,
 } from "./fit-checkout-context";
@@ -124,6 +126,37 @@ describe("fit checkout context", () => {
       KEY,
       JSON.stringify({ fitSessionId: "hand-edited-junk", savedAt: Date.now() }),
     );
+    expect(readFitCheckoutContext()).toBeNull();
+  });
+
+  it("rejects a hyphen-shaped value Zod's RFC uuid() would refuse", () => {
+    // Zod 4 enforces the version nibble (1-8) and variant bits — a merely
+    // hyphen-shaped check would forward this and 400 every retry.
+    window.localStorage.setItem(
+      KEY,
+      JSON.stringify({
+        fitSessionId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        savedAt: Date.now(),
+      }),
+    );
+    expect(readFitCheckoutContext()).toBeNull();
+  });
+
+  it("clearSubmitted leaves a record no checkout has carried yet", () => {
+    // The record is a single localStorage slot shared across tabs: while
+    // checkout A is pending on Stripe, another tab can store fitting B's
+    // context. A's success page must clear only a record that actually
+    // rode a checkout — never B's fresh, un-submitted one.
+    rememberFitCheckoutContext({
+      fitSessionId: SESSION,
+      orderedMaskSlug: "resmed-airfit-f20",
+      orderedVariantId: null,
+    });
+    clearSubmittedFitCheckoutContext();
+    expect(readFitCheckoutContext()).not.toBeNull();
+
+    markFitCheckoutContextSubmitted();
+    clearSubmittedFitCheckoutContext();
     expect(readFitCheckoutContext()).toBeNull();
   });
 

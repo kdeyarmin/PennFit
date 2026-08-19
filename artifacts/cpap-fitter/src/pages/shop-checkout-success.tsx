@@ -21,7 +21,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import { useCart } from "@/hooks/use-cart";
-import { clearFitCheckoutContext } from "@/lib/fit-checkout-context";
+import { clearSubmittedFitCheckoutContext } from "@/lib/fit-checkout-context";
 import { SubscribeRemindersCta } from "@/components/subscribe-reminders-cta";
 import { ComfortGuarantee } from "@/components/comfort-guarantee";
 import {
@@ -113,8 +113,10 @@ export function ShopCheckoutSuccess() {
       // the order that DID complete was never attributed to its fitting.
       // A context that never reaches this page ages out on its own TTL,
       // and the server-side link is first-order-wins, so a stale record
-      // can never re-attribute a later order.
-      clearFitCheckoutContext();
+      // can never re-attribute a later order. "Submitted" scoping keeps
+      // this from deleting a NEWER fitting's context stored by another
+      // tab while this payment was pending.
+      clearSubmittedFitCheckoutContext();
       if (sessionId) markFinalized(sessionId);
     },
     [clear, sessionId],

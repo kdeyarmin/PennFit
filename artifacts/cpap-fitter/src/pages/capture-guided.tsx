@@ -38,6 +38,7 @@ import {
   assessFrameQuality,
   centroidOf,
   estimatePoseFromLandmarks,
+  POSE_PROMPT,
   type CapturePose,
   type Point2D,
   type QualityResult,
@@ -64,6 +65,35 @@ const MODEL_LOAD_TIMEOUT_MS = 20_000;
 
 /** Recent-centroid window for the movement check. */
 const MOTION_WINDOW = 3;
+
+/**
+ * The turn direction the CURRENT turn step must produce, or null when
+ * either direction is acceptable.
+ *
+ * Each turn step accepts either physical direction (a mirrored preview
+ * makes "your left" genuinely ambiguous) — but the two steps together
+ * exist to capture two DIFFERENT angles. Without this, a patient who
+ * turned the "wrong" way on the first turn prompt could record the same
+ * direction twice, halving the cross-frame evidence the second angle was
+ * supposed to add. So once one turn direction is on film, the remaining
+ * step requires the other.
+ */
+function requiredTurn(
+  frames: readonly { pose: CapturePose }[],
+  nominal: CapturePose,
+): CapturePose | null {
+  if (nominal === "front") return null;
+  const turned = new Set(
+    frames.filter((f) => f.pose !== "front").map((f) => f.pose),
+  );
+  if (turned.has("turn_left") && !turned.has("turn_right")) {
+    return "turn_right";
+  }
+  if (turned.has("turn_right") && !turned.has("turn_left")) {
+    return "turn_left";
+  }
+  return null;
+}
 
 export function GuidedCapture({ onFallback }: { onFallback: () => void }) {
   const [, setLocation] = useLocation();
@@ -254,7 +284,17 @@ export function GuidedCapture({ onFallback }: { onFallback: () => void }) {
     if (machineRef.current.done) {
       finalize();
     } else {
-      setPrompt(posePrompt(machineRef.current));
+      // Direction-aware prompt: if the first turn actually captured (say)
+      // a right turn — whatever the nominal step asked — the remaining
+      // step must produce the LEFT one, and the on-screen instruction has
+      // to say so rather than parroting the nominal step's wording.
+      const required = requiredTurn(
+        framesRef.current,
+        currentPose(machineRef.current),
+      );
+      setPrompt(
+        required ? POSE_PROMPT[required] : posePrompt(machineRef.current),
+      );
       setSkippable(canSkipPose(machineRef.current));
       setCoach({ message: "Nice. Next angle…", struggling: false });
     }
@@ -349,16 +389,22 @@ export function GuidedCapture({ onFallback }: { onFallback: () => void }) {
           if (nominal === "front") {
             quality = assessFor("front");
           } else {
-            // A turn pose accepts EITHER direction. The angle is what buys
-            // cross-frame evidence; which shoulder the patient turned
-            // toward carries no information, and a mirrored preview makes
-            // "your left" genuinely ambiguous. Score both targets, keep
-            // the better, and record the direction that actually matched.
-            const asLeft = assessFor("turn_left");
-            const asRight = assessFor("turn_right");
-            const useLeft = asLeft.scores.pose >= asRight.scores.pose;
-            quality = useLeft ? asLeft : asRight;
-            matchedPose = useLeft ? "turn_left" : "turn_right";
+            // A turn step accepts EITHER direction — the angle is what
+            // buys cross-frame evidence, and a mirrored preview makes
+            // "your left" genuinely ambiguous — EXCEPT once one direction
+            // is already on film: the remaining step then requires the
+            // other, or both turn frames could record the same angle.
+            const required = requiredTurn(framesRef.current, nominal);
+            if (required) {
+              quality = assessFor(required);
+              matchedPose = required;
+            } else {
+              const asLeft = assessFor("turn_left");
+              const asRight = assessFor("turn_right");
+              const useLeft = asLeft.scores.pose >= asRight.scores.pose;
+              quality = useLeft ? asLeft : asRight;
+              matchedPose = useLeft ? "turn_left" : "turn_right";
+            }
           }
 
           centroidsRef.current = [
@@ -379,8 +425,23 @@ export function GuidedCapture({ onFallback }: { onFallback: () => void }) {
         if (action.kind === "capture") {
           captureCurrentFrame(matchedPose);
         } else {
+          // The machine's pose-failure coach line is worded for the
+          // NOMINAL step. When the remaining turn is direction-locked
+          // (see requiredTurn), re-issue the locked direction's prompt so
+          // the coach never tells the patient to turn the way that's
+          // already on film.
+          const required = requiredTurn(
+            framesRef.current,
+            currentPose(machineRef.current),
+          );
+          const message =
+            required &&
+            (action.message === POSE_PROMPT.turn_left ||
+              action.message === POSE_PROMPT.turn_right)
+              ? POSE_PROMPT[required]
+              : action.message;
           setCoach({
-            message: action.message,
+            message,
             struggling: action.struggling,
           });
           setSkippable(action.struggling && canSkipPose(machineRef.current));

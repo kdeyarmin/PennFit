@@ -131,6 +131,23 @@ export function AdminFitSessionsPage() {
 
   const rows: FitSessionSummary[] = sessions.data?.sessions ?? [];
 
+  /**
+   * The ONE way the rescan panel closes — from Done/Cancel, from opening
+   * another row's panel, or from switching to Override. The list refresh
+   * deferred out of the rescan mutation's onSuccess happens here, so a
+   * completed rescan's row leaves the "Needs review" filter however the
+   * panel was dismissed, not only via its own Done button.
+   */
+  const dismissRescanPanel = () => {
+    const hadOutcome = rescanOutcome !== null;
+    setRescanFor(null);
+    setRescanOutcome(null);
+    setRescanReason("");
+    if (hadOutcome) {
+      void queryClient.invalidateQueries({ queryKey: QUERY_KEY });
+    }
+  };
+
   return (
     <div className="admin-root space-y-4">
       <header className="flex items-start justify-between gap-4">
@@ -310,7 +327,7 @@ export function AdminFitSessionsPage() {
                           intent="secondary"
                           onClick={() => {
                             setOverrideFor(overrideFor === s.id ? null : s.id);
-                            setRescanFor(null);
+                            dismissRescanPanel();
                           }}
                           aria-expanded={overrideFor === s.id}
                         >
@@ -319,14 +336,15 @@ export function AdminFitSessionsPage() {
                         <Button
                           intent="secondary"
                           onClick={() => {
-                            setRescanFor(rescanFor === s.id ? null : s.id);
-                            setRescanOutcome(null);
+                            const opening = rescanFor !== s.id;
+                            // One page-level state set serves every row:
+                            // dismissing also clears a reason typed for
+                            // another patient's clinical record, and runs
+                            // the deferred list refresh if a completed
+                            // rescan was still on screen.
+                            dismissRescanPanel();
+                            if (opening) setRescanFor(s.id);
                             setOverrideFor(null);
-                            // One page-level reason field serves every
-                            // row: switching the panel to a different
-                            // session must not carry over a reason typed
-                            // for another patient's clinical record.
-                            setRescanReason("");
                           }}
                           aria-expanded={rescanFor === s.id}
                         >
@@ -410,24 +428,7 @@ export function AdminFitSessionsPage() {
                       >
                         Send rescan request
                       </Button>
-                      <Button
-                        intent="secondary"
-                        onClick={() => {
-                          const hadOutcome = rescanOutcome !== null;
-                          setRescanFor(null);
-                          setRescanOutcome(null);
-                          setRescanReason("");
-                          // The list refresh deferred from the rescan
-                          // mutation — see its onSuccess. Refetching only
-                          // now keeps the delivery-outcome panel (and its
-                          // fallback link) on screen until dismissed.
-                          if (hadOutcome) {
-                            void queryClient.invalidateQueries({
-                              queryKey: QUERY_KEY,
-                            });
-                          }
-                        }}
-                      >
+                      <Button intent="secondary" onClick={dismissRescanPanel}>
                         {rescanOutcome ? "Done" : "Cancel"}
                       </Button>
                     </div>

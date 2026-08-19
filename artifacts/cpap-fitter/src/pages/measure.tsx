@@ -336,22 +336,8 @@ export function Measure() {
         // Bounded, like the image decode below: the WASM fileset + model
         // are a multi-MB download, and a blackholed fetch used to strand
         // the patient at 15-40% progress forever with no error and no
-        // escape hatch. If the slow load eventually lands after the
-        // timeout already fired, close it — nothing will use it.
+        // escape hatch.
         const modelLoad = loadModel();
-        void modelLoad
-          .then((l) => {
-            if (faceLandmarker !== l) {
-              try {
-                l.close?.();
-              } catch {
-                /* best-effort */
-              }
-            }
-          })
-          .catch(() => {
-            /* surfaced via the race below */
-          });
         let modelTimer: ReturnType<typeof setTimeout> | undefined;
         try {
           faceLandmarker = await Promise.race([
@@ -369,6 +355,25 @@ export function Measure() {
               );
             }),
           ]);
+        } catch (raceErr) {
+          // The timeout won (or the load itself failed). If the slow load
+          // eventually lands, close it — nothing will use it. Attached
+          // only HERE, on the losing path: a pre-attached .then runs
+          // before the race's await resumes (same microtask queue, earlier
+          // registration), so it would see `faceLandmarker` still null and
+          // close the SUCCESSFUL landmarker on every ordinary run.
+          void modelLoad
+            .then((l) => {
+              try {
+                l.close?.();
+              } catch {
+                /* best-effort */
+              }
+            })
+            .catch(() => {
+              /* the load failed outright — nothing to close */
+            });
+          throw raceErr;
         } finally {
           if (modelTimer !== undefined) clearTimeout(modelTimer);
         }

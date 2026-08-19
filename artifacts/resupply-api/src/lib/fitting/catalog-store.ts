@@ -675,8 +675,10 @@ const ADJUSTMENTS_PAGE = 1000;
 const ADJUSTMENTS_MAX_ROWS = 5000;
 
 interface AdjustmentsCacheEntry {
-  /** Multipliers keyed by `mask_models.id` — outcomes store the uuid. */
-  byMaskId: Record<string, number>;
+  /** Multipliers keyed by whatever `mask_fit_outcomes.mask_id` carried —
+   *  normally the engine SLUG (migration 0203: "the recommendation-engine
+   *  catalog id, e.g. 'resmed-airfit-f20'"), uuid tolerated defensively. */
+  byMaskKey: Record<string, number>;
   expiresAt: number;
 }
 
@@ -690,10 +692,14 @@ export function invalidateFitAdjustments(orgId?: string): void {
 
 /**
  * Load a tenant's outcome-driven ranking multipliers, keyed by SLUG —
- * the key `runTiers` looks up (`fitAdjustments[mask.slug]`), while the
- * outcome rows carry the model uuid. Mapping through the catalog actually
- * in play this session means a degraded (static) catalog — whose ids are
- * slugs, not uuids — simply resolves no matches and stays neutral.
+ * the key `runTiers` looks up (`fitAdjustments[mask.slug]`).
+ *
+ * `mask_fit_outcomes.mask_id` itself carries the engine slug (migration
+ * 0203; order-link.ts documents the slug/uuid split explicitly), so the
+ * catalog pass below is a FILTER, not a translation: a multiplier is
+ * only ever returned for a mask actually in this session's catalog. The
+ * uuid is accepted as a defensive fallback for any writer that recorded
+ * the model's primary key instead.
  *
  * Never throws; never returns a multiplier for a mask outside `catalog`.
  */
@@ -701,15 +707,15 @@ export async function loadFitAdjustments(
   orgId: string,
   catalog: readonly CatalogMask[],
 ): Promise<Record<string, number>> {
-  let byMaskId: Record<string, number>;
+  let byMaskKey: Record<string, number>;
   const cached = adjustmentsCache.get(orgId);
   if (cached && cached.expiresAt > Date.now()) {
-    byMaskId = cached.byMaskId;
+    byMaskKey = cached.byMaskKey;
   } else {
     try {
-      byMaskId = await loadAdjustmentsFromDb(orgId);
+      byMaskKey = await loadAdjustmentsFromDb(orgId);
       adjustmentsCache.set(orgId, {
-        byMaskId,
+        byMaskKey,
         expiresAt: Date.now() + ADJUSTMENTS_CACHE_TTL_MS,
       });
     } catch (err) {
@@ -717,11 +723,11 @@ export async function loadFitAdjustments(
         { err: err instanceof Error ? err : new Error(String(err)), orgId },
         "fit adjustments load failed; ranking stays neutral",
       );
-      byMaskId = {};
+      byMaskKey = {};
       // Cache the neutral answer briefly too, so an outage doesn't add a
       // timed-out round trip to every in-flight fitting.
       adjustmentsCache.set(orgId, {
-        byMaskId,
+        byMaskKey,
         expiresAt: Date.now() + 10_000,
       });
     }
@@ -729,7 +735,7 @@ export async function loadFitAdjustments(
 
   const bySlug: Record<string, number> = {};
   for (const m of catalog) {
-    const mult = byMaskId[m.id];
+    const mult = byMaskKey[m.slug] ?? byMaskKey[m.id];
     if (typeof mult === "number") bySlug[m.slug] = mult;
   }
   return bySlug;
@@ -740,6 +746,7 @@ async function loadAdjustmentsFromDb(
 ): Promise<Record<string, number>> {
   const supabase = getOrgScopedClient(orgId);
   type OutcomeRow = {
+    order_id: string | null;
     mask_id: string | null;
     fit_outcome: "good" | "leaking" | "uncomfortable";
   };
@@ -755,7 +762,7 @@ async function loadAdjustmentsFromDb(
     const result = (await withTimeout(
       supabase
         .from("mask_fit_outcomes")
-        .select("mask_id, fit_outcome")
+        .select("order_id, mask_id, fit_outcome")
         .not("mask_id", "is", null)
         .order("created_at", { ascending: false })
         .order("id", { ascending: false })
@@ -771,9 +778,28 @@ async function loadAdjustmentsFromDb(
     rows.push(...page);
     if (page.length < ADJUSTMENTS_PAGE) break;
   }
+
+  // ONE vote per order: 0201 deliberately lets a patient re-answer their
+  // survey link, and this signal now steers LIVE rankings — without the
+  // dedupe, replaying one signed link (rate-limited but generous) could
+  // single-handedly clear minSamples and push a mask by the full ±15%.
+  // Rows arrive newest-first, so the first row seen per order is the
+  // patient's latest word — the same "latest verdict" rule the refit
+  // campaign applies.
+  const seenOrders = new Set<string>();
+  const latestPerOrder = rows.filter((r) => {
+    if (!r.order_id) return true; // un-attributed legacy rows: keep as-is
+    if (seenOrders.has(r.order_id)) return false;
+    seenOrders.add(r.order_id);
+    return true;
+  });
+
   return computeFitAdjustments(
     tallyOutcomesByMask(
-      rows.map((r) => ({ maskId: r.mask_id, fitOutcome: r.fit_outcome })),
+      latestPerOrder.map((r) => ({
+        maskId: r.mask_id,
+        fitOutcome: r.fit_outcome,
+      })),
     ),
   );
 }

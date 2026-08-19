@@ -128,6 +128,11 @@ interface FitterContextType extends FitterState {
   setChosenMask: (mask: ChosenMask | null) => void;
   setEmailConsent: (email: string, consent: boolean) => void;
   setInviteToken: (token: string | null) => void;
+  /** Re-anchor the entry channel when a NEW invite resolves — see the
+   *  implementation note in the provider. */
+  setEntryPoint: (
+    value: "remote_link" | "in_office" | "kiosk_qr" | "refit_campaign" | null,
+  ) => void;
   reset: () => void;
   /**
    * Clear the fitting DATA (photo, measurements, answers, chosen mask)
@@ -292,7 +297,7 @@ export function FitterProvider({ children }: { children: ReactNode }) {
   // Staff-invite token. Persisted in sessionStorage so it survives the
   // multi-page fitter flow (and a mid-flow refresh) and is still
   // available on /results to transmit the completed fitting.
-  const [entryPoint] = useState<
+  const [entryPoint, setEntryPointState] = useState<
     "remote_link" | "in_office" | "kiosk_qr" | "refit_campaign" | null
   >(() => {
     if (typeof window === "undefined") return null;
@@ -435,6 +440,26 @@ export function FitterProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  /**
+   * Re-anchor the entry channel when a NEW invite is resolved. The
+   * persisted value exists so a mid-flow refresh keeps its channel — but
+   * opening a fresh invite in the same tab must not inherit the PREVIOUS
+   * fitting's channel: an ordinary remote invite following a kiosk or
+   * refit-campaign fitting would otherwise be recorded under the stale
+   * channel. Null means "no channel hint" (the server default applies).
+   */
+  const setEntryPoint = (
+    value: "remote_link" | "in_office" | "kiosk_qr" | "refit_campaign" | null,
+  ) => {
+    setEntryPointState(value);
+    try {
+      if (value) sessionStorage.setItem("fitter_entry_point", value);
+      else sessionStorage.removeItem("fitter_entry_point");
+    } catch (e) {
+      console.error("Failed to persist fitter entry point", e);
+    }
+  };
+
   const setMeasurements = (
     nextMeasurements: FacialMeasurements,
     nextScanSignals?: ScanSignalsPayload | null,
@@ -536,6 +561,7 @@ export function FitterProvider({ children }: { children: ReactNode }) {
         setChosenMask,
         setEmailConsent,
         setInviteToken,
+        setEntryPoint,
         reset,
         resetForNewFitting,
       }}

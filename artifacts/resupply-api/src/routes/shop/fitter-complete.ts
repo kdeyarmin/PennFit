@@ -331,14 +331,45 @@ router.post("/shop/fitter-complete", async (req, res) => {
     // Resetting either back to campaign_active + a T1 touch (which is
     // what falling through here did) restarted the from-scratch drip on
     // a customer already deep in the re-order cadence — duplicate,
-    // contradictory emails from one re-run of the fitter.
+    // contradictory emails from one re-run of the fitter. The
+    // RECOMMENDATION still refreshes for those two, though: the later
+    // touches read recommended_mask_name/type, and after a re-fit they
+    // must talk about the mask the patient was just matched to, not the
+    // one from the original fitting. Cadence columns stay untouched.
+    if (
+      lead.journey_stage === "reorder_active" ||
+      lead.journey_stage === "final_call_pending"
+    ) {
+      const { error: refreshErr } = await supabase
+        .from("fitter_leads")
+        .update({
+          recommended_mask_id: data.recommendedMaskId,
+          recommended_mask_name: data.recommendedMaskName,
+          recommended_mask_type: data.recommendedMaskType,
+        })
+        .eq("id", lead.id);
+      if (refreshErr) {
+        req.log?.warn?.(
+          { err: refreshErr, leadId: lead.id },
+          "fitter-complete: recommendation refresh failed for cadence-stage lead",
+        );
+      }
+      req.log?.info?.(
+        { event: "fitter_complete_skip", stage: lead.journey_stage },
+        "shop/fitter-complete: lead already in a later cadence stage; recommendation refreshed",
+      );
+      res.json({
+        ok: true,
+        enrolled: false,
+        reason: lead.journey_stage,
+      });
+      return;
+    }
     if (
       lead.journey_stage === "converted" ||
       lead.journey_stage === "unsubscribed" ||
       lead.journey_stage === "expired" ||
-      lead.journey_stage === "campaign_active" ||
-      lead.journey_stage === "reorder_active" ||
-      lead.journey_stage === "final_call_pending"
+      lead.journey_stage === "campaign_active"
     ) {
       req.log?.info?.(
         { event: "fitter_complete_skip", stage: lead.journey_stage },

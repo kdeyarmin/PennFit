@@ -43,6 +43,9 @@ export interface FitCheckoutContext {
 
 interface StoredContext extends FitCheckoutContext {
   savedAt: number;
+  /** Set when a Stripe Checkout Session was created carrying this record
+   *  — i.e. the attribution is now baked into a pending checkout. */
+  submittedAt?: number;
 }
 
 /**
@@ -78,8 +81,14 @@ export function rememberFitCheckoutContext(ctx: FitCheckoutContext): void {
 // record survives the failure, every retry fails the same way. A value
 // that doesn't match is dropped here instead — losing the attribution,
 // never the sale.
+//
+// The UUID pattern is Zod 4's own RFC 9562 regex, verbatim (zod
+// v4/core/regexes.ts) — a merely hyphen-shaped check is NOT equivalent:
+// Zod enforces the version nibble (1-8) and variant bits (8/9/a/b), so a
+// looser client check would forward values the server still rejects,
+// recreating the exact retry-loop this guard exists to prevent.
 const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  /^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/;
 const SLUG_RE = /^[a-z0-9-]{1,120}$/;
 
 export function readFitCheckoutContext(): FitCheckoutContext | null {
@@ -118,5 +127,54 @@ export function clearFitCheckoutContext(): void {
     window.localStorage.removeItem(STORAGE_KEY);
   } catch {
     /* nothing to do — an orphaned record expires on its own */
+  }
+}
+
+/**
+ * Record that a checkout Session was just created carrying this context.
+ * Called at checkout-click, after the Session exists — from that moment
+ * the attribution rides the Session's metadata, and the stored record's
+ * only remaining job is a retry after a Stripe cancel.
+ */
+export function markFitCheckoutContextSubmitted(): void {
+  if (typeof window === "undefined") return;
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw) as StoredContext | null;
+    if (!parsed || typeof parsed !== "object") return;
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ ...parsed, submittedAt: Date.now() }),
+    );
+  } catch {
+    /* best-effort — worst case the success page clears an unmarked record */
+  }
+}
+
+/**
+ * Clear the record on confirmed payment — but only if it was the one a
+ * checkout actually carried. The record is a SINGLE localStorage slot
+ * shared across tabs: while checkout A is pending on Stripe, a second
+ * fitting in another tab can store context B, and A's success page must
+ * not delete B's not-yet-submitted attribution. A fresh (un-submitted)
+ * record is left alone; it either rides its own checkout or ages out on
+ * the TTL.
+ */
+export function clearSubmittedFitCheckoutContext(): void {
+  if (typeof window === "undefined") return;
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw) as StoredContext | null;
+    if (parsed && typeof parsed === "object" && !parsed.submittedAt) return;
+    window.localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // Unreadable record — remove it; it can't attribute anything anyway.
+    try {
+      window.localStorage.removeItem(STORAGE_KEY);
+    } catch {
+      /* storage unusable */
+    }
   }
 }
