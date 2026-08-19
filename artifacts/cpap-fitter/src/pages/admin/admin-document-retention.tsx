@@ -3,16 +3,17 @@
 // The admin UI for the retention surface that already shipped server-side
 // (routes/admin/patient-documents-retention.ts): patient documents whose
 // retention clock is up (or close), with the two retention actions the
-// API offers — a legal hold (with a required reason, audited) and the
-// one-way byte destruction. The server is the authority on both gates:
-// viewing requires `audit.export` (admin / supervisor /
-// compliance_officer), destruction is admin-only; this page mirrors those
-// gates for legibility, never replaces them.
+// API offers — a legal hold (with a required reason) and the one-way byte
+// destruction. The server is the authority on every gate: viewing requires
+// `audit.export` (admin / supervisor / compliance_officer), destruction is
+// admin-only AND requires the retention sweep to have marked the row; this
+// page mirrors those gates for legibility, never replaces them.
 //
 // Destruction UX intentionally mirrors the API contract: the operator must
 // type DESTROY (the exact body token the route validates) before the
-// button arms. The row survives destruction for the audit trail — only the
-// stored bytes are erased.
+// button arms. The row itself survives destruction (destroyed_at +
+// destroyed_by stay on the record); the bytes are erased by the
+// object-storage sweep once the route releases the object's ACL row.
 //
 // PHI posture: this list renders document metadata only (type, filename,
 // size, dates) plus a link to the patient chart — no document content.
@@ -135,9 +136,10 @@ export function AdminDocumentRetentionPage() {
         </h1>
         <p className="text-sm mt-1" style={{ color: "hsl(var(--ink-3))" }}>
           Patient documents whose retention period is up (or coming up). Place a
-          legal hold to pause the clock, or — admins only — destroy the stored
-          bytes once retention allows. Destruction is one-way; the record itself
-          stays for the audit trail.
+          legal hold to pause the clock, or — admins only, once the retention
+          sweep has marked a row — destroy the document. Destruction is one-way:
+          the stored bytes are queued for permanent erasure and the record
+          itself stays on the patient chart.
         </p>
       </header>
 
@@ -256,7 +258,15 @@ export function AdminDocumentRetentionPage() {
                               ? "Release legal hold"
                               : "Place legal hold"}
                           </Button>
-                          {canDestroy && !doc.legalHold ? (
+                          {/* Destruction is offered only when the server
+                            would accept it: admin role, no hold, AND the
+                            retention sweep has marked the row — the API
+                            409s `not_marked` otherwise, so an unmarked
+                            row must not walk the operator through a
+                            confirmation that cannot succeed. */}
+                          {canDestroy &&
+                          !doc.legalHold &&
+                          doc.retentionMarkedAt != null ? (
                             <Button
                               size="sm"
                               intent="ghost"
@@ -285,8 +295,8 @@ export function AdminDocumentRetentionPage() {
                             className="text-xs font-medium block"
                             htmlFor={`hold-reason-${doc.id}`}
                           >
-                            Reason ({doc.legalHold ? "releasing" : "placing"}{" "}
-                            the hold — recorded in the audit log)
+                            Reason for {doc.legalHold ? "releasing" : "placing"}{" "}
+                            the hold (required)
                           </label>
                           <input
                             id={`hold-reason-${doc.id}`}
@@ -346,8 +356,9 @@ export function AdminDocumentRetentionPage() {
                             style={{ color: "#b91c1c" }}
                           >
                             <ShieldAlert className="h-3.5 w-3.5" />
-                            This erases the stored bytes permanently. Type
-                            DESTROY to arm the button.
+                            This is one-way: the document becomes unreadable
+                            immediately and its bytes are queued for permanent
+                            erasure. Type DESTROY to arm the button.
                           </p>
                           <input
                             aria-label="Type DESTROY to confirm"

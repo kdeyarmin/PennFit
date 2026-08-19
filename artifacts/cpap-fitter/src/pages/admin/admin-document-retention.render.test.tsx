@@ -88,9 +88,11 @@ function docRow(overrides: Record<string, unknown> = {}) {
     createdAt: "2020-01-01T00:00:00Z",
     retentionUntilAt: "2026-08-01T00:00:00Z",
     legalHold: false,
-    retentionMarkedAt: null,
+    // Marked by default: destruction is only offered on marked rows
+    // (the API 409s `not_marked` otherwise).
+    retentionMarkedAt: "2026-08-10T00:00:00Z",
     destroyedAt: null,
-    bucket: "due_now",
+    bucket: "marked",
     ...overrides,
   };
 }
@@ -110,8 +112,20 @@ describe("AdminDocumentRetentionPage", () => {
     expect(screen.getByTestId("admin-document-retention-page")).toBeTruthy();
     const row = screen.getByTestId("retention-row");
     expect(within(row).getByText("rx-sample.pdf")).toBeTruthy();
-    expect(within(row).getByText("Due now")).toBeTruthy();
+    expect(within(row).getByText("Marked")).toBeTruthy();
     expect(screen.getByTestId("retention-destroy-toggle")).toBeTruthy();
+  });
+
+  it("hides the destroy affordance for unmarked rows (API would 409 not_marked)", () => {
+    queryData.current = {
+      retention: {
+        count: 1,
+        documents: [docRow({ retentionMarkedAt: null, bucket: "due_now" })],
+      },
+    };
+    render(<AdminDocumentRetentionPage />);
+    expect(screen.getByTestId("retention-hold-toggle")).toBeTruthy();
+    expect(screen.queryByTestId("retention-destroy-toggle")).toBeNull();
   });
 
   it("hides the destroy affordance for non-admin roles", () => {
@@ -160,7 +174,7 @@ describe("AdminDocumentRetentionPage", () => {
     expect(submit.disabled).toBe(true);
 
     fireEvent.change(
-      screen.getByLabelText(/Reason \(placing the hold/, { exact: false }),
+      screen.getByLabelText(/Reason for placing the hold/, { exact: false }),
       { target: { value: "litigation hold — Smith v. Co" } },
     );
     expect(submit.disabled).toBe(false);
@@ -184,7 +198,7 @@ describe("AdminDocumentRetentionPage", () => {
     render(<AdminDocumentRetentionPage />);
     fireEvent.click(screen.getByTestId("retention-hold-toggle"));
     fireEvent.change(
-      screen.getByLabelText(/Reason \(releasing the hold/, { exact: false }),
+      screen.getByLabelText(/Reason for releasing the hold/, { exact: false }),
       { target: { value: "hold lifted by counsel" } },
     );
     fireEvent.click(screen.getByTestId("retention-hold-submit"));

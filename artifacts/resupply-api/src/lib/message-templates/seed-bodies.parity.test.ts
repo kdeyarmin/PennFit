@@ -56,17 +56,26 @@ function seedLookup(templateKey: string, channel: Channel): TemplateLookup {
       : null;
 }
 
+// renderMessage caches lookup results in a module-level Map keyed by
+// (orgId, templateKey, channel, customerId) — the LOOKUP FUNCTION is not
+// part of the key. Two calls sharing those values would therefore both
+// resolve from whichever lookup ran first, silently comparing one path's
+// output with itself. Stamp a UNIQUE orgId on every call so each render
+// gets a cold cache and the seeded and fallback paths genuinely both run
+// (caught by Codex review on PR #1272).
+let cacheBust = 0;
+
 async function bothPaths(
   req: Omit<RenderRequest, "orgId" | "customerId">,
   fallback: RenderResult,
 ): Promise<{ seeded: RenderResult; fallbackPath: RenderResult }> {
   const seeded = await renderMessage(
-    { ...req, customerId: null },
+    { ...req, customerId: null, orgId: `parity-seeded-${cacheBust++}` },
     fallback,
     seedLookup(req.templateKey, req.channel),
   );
   const fallbackPath = await renderMessage(
-    { ...req, customerId: null },
+    { ...req, customerId: null, orgId: `parity-fallback-${cacheBust++}` },
     fallback,
     noTemplate,
   );

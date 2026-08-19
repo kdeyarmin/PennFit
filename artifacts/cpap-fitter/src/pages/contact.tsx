@@ -112,7 +112,10 @@ export function Contact() {
           <Button
             variant="outline"
             className="w-full"
-            onClick={() => openPennBot({ contactTab: true })}
+            // Plain openPennBot() lands on the CHAT tab — the assistant
+            // input this card promises. (contactTab: true would open the
+            // launcher's phone/email panel instead.)
+            onClick={() => openPennBot()}
           >
             Start a conversation
           </Button>

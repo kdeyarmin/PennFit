@@ -236,11 +236,14 @@ router.post(
 // Admin-only (one-way action). The row stays for audit; only the
 // PHI bytes are gone.
 //
-// We deliberately do NOT delete the object from GCS in this route —
-// object lifecycle is a separate concern with its own infra. The
-// row's `object_key` is cleared and `destroyed_at` is stamped; a
-// follow-up object-storage sweep will hard-delete the orphaned
-// blob on its own schedule.
+// We deliberately do NOT delete the object from storage in this route —
+// object lifecycle is a separate concern with its own infra. The row's
+// `object_key` is cleared, `destroyed_at` is stamped, and the object's
+// `object_storage_acls` row is released; the object-storage sweep
+// (prescription-attachment-sweep) then hard-deletes the now-unreferenced
+// blob on its own schedule. Releasing the ACL row is load-bearing: the
+// sweep treats any ACL row as "still referenced", so without the release
+// the blob would stay protected forever.
 // ────────────────────────────────────────────────────────────────
 router.post(
   "/admin/patient-documents/:id/destroy",
@@ -318,12 +321,51 @@ router.post(
         destroyed_at: nowIso,
         destroyed_by_admin_id: req.adminUserId ?? null,
         // Bytes-pointer cleared so any subsequent download attempt
-        // 404s. The blob itself is cleaned up by a separate
-        // object-storage sweep (deferred).
+        // 404s. The blob itself is erased by the object-storage sweep
+        // (prescription-attachment-sweep) on its next run — see the ACL
+        // release below, which is what makes that possible.
         object_key: "",
       })
       .eq("id", params.data.id);
     if (updErr) throw updErr;
+
+    // Release the object's ownership-ACL row so the deferred
+    // object-storage sweep can actually collect the bytes. The sweep's
+    // keep-set (and its pre-delete recheck) treats ANY
+    // `object_storage_acls` row as an authoritative "still referenced"
+    // — without this delete, a destroyed document's blob stayed
+    // ACL-protected forever and the deferred erasure never happened.
+    // Ordering: AFTER the row is stamped destroyed, so a failure here
+    // leaves the bytes lingering (retryable by ops) rather than ever
+    // exposing a live document's blob to the sweep. Fail-soft with a
+    // loud error: the destruction itself already succeeded.
+    const objectKey = (prior.object_key ?? "").trim();
+    if (objectKey.startsWith("/objects/")) {
+      const aclPath = objectKey.slice("/objects/".length);
+      const bucket = (process.env.SUPABASE_STORAGE_BUCKET_PRIVATE ?? "").trim();
+      if (bucket && aclPath) {
+        // `object_storage_acls` is a GLOBAL (non-org-scoped) table —
+        // same `.raw()` idiom as objectStorage.ts's ACL reads.
+        const { error: aclErr } = await supabase
+          .raw()
+          .schema("resupply")
+          .from("object_storage_acls")
+          .delete()
+          .eq("bucket", bucket)
+          .eq("path", aclPath);
+        if (aclErr) {
+          logger.error(
+            {
+              err: aclErr,
+              event: "patient_documents.destroy.acl_release_failed",
+              document_id: params.data.id,
+            },
+            "patient_documents.destroy: ACL release failed — the blob " +
+              "stays sweep-protected until the row is removed by hand",
+          );
+        }
+      }
+    }
 
     await logAudit({
       action: "patient_documents.destroyed",
