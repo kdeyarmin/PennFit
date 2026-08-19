@@ -101,8 +101,13 @@ export function readReengageMessagingConfig(
       env.SENDGRID_FROM_EMAIL?.trim() || DEFAULT_SENDGRID_FROM_EMAIL,
     sendgridFromName: env.SENDGRID_FROM_NAME ?? null,
     practiceName: env.RESUPPLY_PRACTICE_NAME ?? "CareMetric Breathe",
+    // Same resolution chain as the other fitter jobs (first-day nudge,
+    // supply campaign): SHOP_PUBLIC_BASE_URL first. This job used to skip
+    // it, so a deploy configured only with SHOP_PUBLIC_BASE_URL silently
+    // produced no resume link base while its sibling jobs worked.
     publicBaseUrl:
-      (env.RESUPPLY_VOICE_PUBLIC_BASE_URL ??
+      (env.SHOP_PUBLIC_BASE_URL ??
+        env.RESUPPLY_VOICE_PUBLIC_BASE_URL ??
         (env.RAILWAY_PUBLIC_DOMAIN
           ? `https://${env.RAILWAY_PUBLIC_DOMAIN}`
           : "")) ||
@@ -225,6 +230,12 @@ async function fitterLeadReengageSweepForOrg(
     .eq("marketing_opt_in", true)
     .is("nudged_at", null)
     .is("completed_at", null)
+    // A lead can be unsubscribed WITHOUT flipping marketing_opt_in: the
+    // admin force-unsubscribe (routes/admin/fitter-leads.ts) and the
+    // signed unsubscribe link both stamp unsubscribed_at and leave the
+    // original opt-in record intact. Emailing past that stamp isn't a
+    // nudge, it's a violation of an explicit stop request.
+    .is("unsubscribed_at", null)
     .lt("created_at", youngerThan)
     .gt("created_at", olderThan)
     .order("created_at", { ascending: true })

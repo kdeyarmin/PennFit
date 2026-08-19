@@ -253,6 +253,12 @@ async function firstDayNudgeSweepForOrg(
     .eq("marketing_opt_in", true)
     .is("first_day_nudged_at", null)
     .is("completed_at", null)
+    // A lead can be unsubscribed WITHOUT flipping marketing_opt_in: the
+    // admin force-unsubscribe (routes/admin/fitter-leads.ts) and the
+    // signed unsubscribe link both stamp unsubscribed_at and leave the
+    // original opt-in record intact. Emailing past that stamp isn't a
+    // nudge, it's a violation of an explicit stop request.
+    .is("unsubscribed_at", null)
     .lt("created_at", youngerThan)
     .gt("created_at", olderThan)
     .order("created_at", { ascending: true })

@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useFitterStore } from "@/hooks/use-fitter-store";
-import { buildScanSignals } from "@/lib/scan-signals";
 import { Progress } from "@/components/ui/progress";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -20,6 +19,14 @@ import type { FacialMeasurements } from "@workspace/api-client-react/storefront"
 import { track } from "@/lib/track";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import { findImplausibleMeasurement } from "@/lib/measure-flow";
+import { buildScanSignals, payloadFromAggregate } from "@/lib/scan-signals";
+import { sampleFrame } from "@/lib/frame-sampling";
+import {
+  aggregateFrames,
+  assessFrameQuality,
+  estimatePoseFromLandmarks,
+  type FrameMeasurement,
+} from "@/lib/scan-quality";
 
 // How long the success state ("Measurements Ready" + readout) stays
 // visible before auto-advancing to /questionnaire. Long enough for the
@@ -38,6 +45,7 @@ type ExtractionFailReason =
   | "implausible_measurements"
   | "image_decode"
   | "image_decode_timeout"
+  | "model_load_timeout"
   | "unknown";
 
 class ExtractionError extends Error {
@@ -70,20 +78,146 @@ const FAIL_HINTS: Record<ExtractionFailReason, string[]> = {
   image_decode_timeout: [
     "The captured photo took too long to load. Try again, ideally on Wi-Fi or after closing other camera-using apps.",
   ],
+  model_load_timeout: [
+    "The measurement model took too long to download. Check your connection — Wi-Fi helps — and try again.",
+    "If this keeps happening, you can browse the shop and get fitted in person instead.",
+  ],
   unknown: [
     "Try retaking the photo with even lighting and your face centered.",
   ],
 };
+
+// MediaPipe normalized landmark — has at least x/y in [0..1]. Typing this
+// explicitly (vs `any`) lets the compiler catch typos in the index
+// lookups and protects us if MediaPipe ever returns null/undefined for a
+// missing point.
+type Landmark = { x: number; y: number; z?: number };
+
+/**
+ * Landmark set → millimetre values, iris-calibrated. Shared by the
+ * single-frame path and every angle of the guided multi-frame path, so
+ * the two can never drift on the landmark math. Throws `ExtractionError`
+ * (no_face / iris_too_small) when the frame cannot be measured.
+ *
+ * MediaPipe landmarks are normalized [0, 1]. We calibrate the millimeter
+ * scale using the iris diameter, which is remarkably consistent across
+ * adults at ~11.7mm horizontally (Forrester JV et al, "The Eye: Basic
+ * Sciences in Practice", 4th ed).
+ *
+ * Landmarks (normalized coordinates):
+ *   Nose tip 4 · nose bridge 6 · nostrils 129/358 · mouth corners 61/291
+ *   · chin 152 · cheekbones 234/454 · left iris 469/471 · right 474/476.
+ */
+function extractMeasurementValues(
+  landmarks: Landmark[],
+  img: { width: number; height: number },
+): {
+  values: {
+    noseWidth: number;
+    noseHeight: number;
+    noseToChin: number;
+    mouthWidth: number;
+    faceWidthAtCheekbones: number;
+  };
+  irisPix: number;
+} {
+  const dist = (p1: Landmark, p2: Landmark) => {
+    const dx = (p1.x - p2.x) * img.width;
+    const dy = (p1.y - p2.y) * img.height;
+    return Math.sqrt(dx * dx + dy * dy);
+  };
+
+  // Runtime guard, not just a type: a model bundle emitting the 468-point
+  // (iris-less) mesh would make landmarks[469] undefined and crash `dist`
+  // with an unhelpful "unknown" error.
+  if (!landmarks[469] || !landmarks[471]) {
+    throw new ExtractionError(
+      "no_face",
+      "We couldn't locate your eyes precisely enough to calibrate. Please retake the photo.",
+    );
+  }
+
+  const irisLeftPix = dist(landmarks[469], landmarks[471]);
+  // Use BOTH irises when the right one is available. Calibrating off a
+  // single eye lets a squint, glasses glare, or a stray hair silently
+  // rescale every millimetre value; the mean of two independent reads
+  // halves that error.
+  const irisRightPix =
+    landmarks[474] && landmarks[476] ? dist(landmarks[474], landmarks[476]) : 0;
+  const irisPix =
+    irisLeftPix > 0 && irisRightPix > 0
+      ? (irisLeftPix + irisRightPix) / 2
+      : Math.max(irisLeftPix, irisRightPix);
+  const pxPerMm = irisPix / 11.7;
+
+  // pxPerMm < 1 means the iris was less than ~12 pixels across, which is
+  // too small for the millimeter math to be trustworthy.
+  if (pxPerMm < 1) {
+    throw new ExtractionError(
+      "iris_too_small",
+      "Your face is too far from the camera for accurate measurement. Please move closer and try again.",
+    );
+  }
+
+  const mm = (pixels: number) => Math.round((pixels / pxPerMm) * 10) / 10;
+
+  return {
+    values: {
+      // Nose alar (nostril span) — outer alar landmarks. This is the
+      // nasal-pillow base width (drives small/medium/large pillow fit).
+      noseWidth: mm(dist(landmarks[129], landmarks[358])),
+      noseHeight: mm(dist(landmarks[6], landmarks[4])),
+      noseToChin: mm(dist(landmarks[4], landmarks[152])),
+      mouthWidth: mm(dist(landmarks[61], landmarks[291])),
+      // Face width at cheekbones drives headgear strap sizing.
+      faceWidthAtCheekbones: mm(dist(landmarks[234], landmarks[454])),
+    },
+    irisPix,
+  };
+}
+
+/** Bounded image decode — a hung decode must never strand the patient. */
+function decodeImage(dataUrl: string): Promise<HTMLImageElement> {
+  const img = new Image();
+  img.src = dataUrl;
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const timer = setTimeout(
+      () =>
+        reject(
+          new ExtractionError(
+            "image_decode_timeout",
+            "Image decode timed out. Please retake the photo.",
+          ),
+        ),
+      8000,
+    );
+    img.onload = () => {
+      clearTimeout(timer);
+      resolve(img);
+    };
+    img.onerror = () => {
+      clearTimeout(timer);
+      reject(
+        new ExtractionError(
+          "image_decode",
+          "Could not load the captured photo. Please retake it.",
+        ),
+      );
+    };
+  });
+}
 
 export function Measure() {
   useDocumentTitle("Analyzing your measurements");
   const [, setLocation] = useLocation();
   const {
     capturedImage,
+    capturedFrames,
     measurements,
     scanSignals,
     setMeasurements,
     setCapturedImage,
+    setCapturedFrames,
   } = useFitterStore();
   const [progress, setProgress] = useState(0);
   const [status, setStatus] = useState(
@@ -128,9 +262,10 @@ export function Measure() {
     // inside this effect doesn't help because the route guard lives
     // one level up and doesn't see it.
     setLocation("/questionnaire");
-    // Privacy: discard the captured image from memory now that we've
+    // Privacy: discard the captured image(s) from memory now that we've
     // navigated away from /measure. Our UI promises this — keep it true.
     setCapturedImage(null);
+    setCapturedFrames(null);
   };
 
   useEffect(() => {
@@ -164,13 +299,6 @@ export function Measure() {
         // is what backs PennPaps's "100% private" claim end-to-end and
         // also lets the app pass a strict same-origin CSP.
         const base = import.meta.env.BASE_URL; // includes trailing slash
-        const vision = await FilesetResolver.forVisionTasks(
-          `${base}mediapipe/wasm`,
-        );
-
-        if (!isMountedRef.current) return;
-        setProgress(40);
-        setStatus("Configuring landmark detection…");
 
         const landmarkerOptions = (delegate: "GPU" | "CPU") => ({
           baseOptions: {
@@ -181,57 +309,196 @@ export function Measure() {
           runningMode: "IMAGE" as const,
           numFaces: 1,
         });
+        const loadModel = async (): Promise<FaceLandmarker> => {
+          const vision = await FilesetResolver.forVisionTasks(
+            `${base}mediapipe/wasm`,
+          );
+          if (isMountedRef.current) {
+            setProgress(40);
+            setStatus("Configuring landmark detection…");
+          }
+          try {
+            return await FaceLandmarker.createFromOptions(
+              vision,
+              landmarkerOptions("GPU"),
+            );
+          } catch {
+            // Devices without usable WebGL (older phones, locked-down
+            // browsers, remote desktops) reject the GPU delegate outright.
+            // Without this fallback they hit "unknown error" → retake →
+            // identical failure, forever.
+            return await FaceLandmarker.createFromOptions(
+              vision,
+              landmarkerOptions("CPU"),
+            );
+          }
+        };
+        // Bounded, like the image decode below: the WASM fileset + model
+        // are a multi-MB download, and a blackholed fetch used to strand
+        // the patient at 15-40% progress forever with no error and no
+        // escape hatch.
+        const modelLoad = loadModel();
+        let modelTimer: ReturnType<typeof setTimeout> | undefined;
         try {
-          faceLandmarker = await FaceLandmarker.createFromOptions(
-            vision,
-            landmarkerOptions("GPU"),
-          );
-        } catch {
-          // Devices without usable WebGL (older phones, locked-down
-          // browsers, remote desktops) reject the GPU delegate outright.
-          // Without this fallback they hit "unknown error" → retake →
-          // identical failure, forever.
-          faceLandmarker = await FaceLandmarker.createFromOptions(
-            vision,
-            landmarkerOptions("CPU"),
-          );
+          faceLandmarker = await Promise.race([
+            modelLoad,
+            new Promise<never>((_, reject) => {
+              modelTimer = setTimeout(
+                () =>
+                  reject(
+                    new ExtractionError(
+                      "model_load_timeout",
+                      "The measurement model took too long to load. Please try again.",
+                    ),
+                  ),
+                20_000,
+              );
+            }),
+          ]);
+        } catch (raceErr) {
+          // The timeout won (or the load itself failed). If the slow load
+          // eventually lands, close it — nothing will use it. Attached
+          // only HERE, on the losing path: a pre-attached .then runs
+          // before the race's await resumes (same microtask queue, earlier
+          // registration), so it would see `faceLandmarker` still null and
+          // close the SUCCESSFUL landmarker on every ordinary run.
+          void modelLoad
+            .then((l) => {
+              try {
+                l.close?.();
+              } catch {
+                /* best-effort */
+              }
+            })
+            .catch(() => {
+              /* the load failed outright — nothing to close */
+            });
+          throw raceErr;
+        } finally {
+          if (modelTimer !== undefined) clearTimeout(modelTimer);
         }
 
         if (!isMountedRef.current) return;
         setProgress(60);
+
+        // ── Guided multi-angle path (fitter.multiframe_capture). Each
+        //    captured angle is independently landmark-detected and
+        //    iris-calibrated with the SAME math as the single frame
+        //    (extractMeasurementValues); the per-frame values are then
+        //    pose-corrected and folded to a median with cross-frame
+        //    agreement by aggregateFrames. A failed angle is dropped, not
+        //    fatal — fewer frames is an honest degradation the confidence
+        //    model already prices in. ──
+        if (capturedFrames && capturedFrames.length > 0) {
+          const perFrame: FrameMeasurement[] = [];
+          let lastFailure: ExtractionError | null = null;
+          for (let i = 0; i < capturedFrames.length; i += 1) {
+            if (!isMountedRef.current) return;
+            setProgress(
+              60 + Math.round(((i + 1) / capturedFrames.length) * 30),
+            );
+            setStatus(`Analyzing angle ${i + 1} of ${capturedFrames.length}…`);
+            const frame = capturedFrames[i]!;
+            try {
+              const frameImg = await decodeImage(frame.dataUrl);
+              const detection = faceLandmarker.detect(frameImg);
+              const landmarks = detection.faceLandmarks?.[0];
+              if (!landmarks || landmarks.length === 0) {
+                throw new ExtractionError(
+                  "no_face",
+                  "No face detected in the image. Please try the capture again.",
+                );
+              }
+              const { values, irisPix } = extractMeasurementValues(
+                landmarks,
+                frameImg,
+              );
+              // Quality scalars for this frame. sampleFrame never throws
+              // (neutral fallback) and the checks are pure math.
+              const angles = estimatePoseFromLandmarks(landmarks);
+              const sample = sampleFrame(frameImg, landmarks);
+              const quality = assessFrameQuality({
+                pose: frame.pose,
+                landmarks,
+                irisWidthPx: irisPix,
+                frameWidth: frameImg.width,
+                frameHeight: frameImg.height,
+                faceLuma: sample.faceLuma,
+                faceLumaLeft: sample.faceLumaLeft,
+                faceLumaRight: sample.faceLumaRight,
+                sharpness: sample.sharpness,
+                yawDeg: angles.yawDeg,
+                pitchDeg: angles.pitchDeg,
+                rollDeg: angles.rollDeg,
+                // Deliberately no cross-frame motion check here: these
+                // stills were taken at different poses, and the movement
+                // BETWEEN them is the instruction, not a defect.
+              });
+              perFrame.push({
+                pose: frame.pose,
+                quality,
+                values,
+                yawDeg: angles.yawDeg,
+                pitchDeg: angles.pitchDeg,
+              });
+            } catch (err) {
+              lastFailure =
+                err instanceof ExtractionError
+                  ? err
+                  : new ExtractionError(
+                      "unknown",
+                      "An error occurred during measurement extraction.",
+                    );
+            }
+          }
+          if (perFrame.length === 0) {
+            throw (
+              lastFailure ??
+              new ExtractionError(
+                "no_face",
+                "No face detected in the captured angles. Please try again.",
+              )
+            );
+          }
+
+          const aggregate = aggregateFrames(perFrame);
+          const measurements: FacialMeasurements = {
+            noseWidth: aggregate.measurements.noseWidth ?? Number.NaN,
+            noseHeight: aggregate.measurements.noseHeight ?? Number.NaN,
+            noseToChin: aggregate.measurements.noseToChin ?? Number.NaN,
+            mouthWidth: aggregate.measurements.mouthWidth ?? Number.NaN,
+            faceWidthAtCheekbones:
+              aggregate.measurements.faceWidthAtCheekbones ?? Number.NaN,
+            calibrationMethod: "iris",
+          };
+          const implausibleField = findImplausibleMeasurement(measurements);
+          if (implausibleField) {
+            throw new ExtractionError(
+              "implausible_measurements",
+              "We couldn't get a confident reading from these photos. Please retake them.",
+            );
+          }
+
+          if (!isMountedRef.current) return;
+          setProgress(100);
+          setStatus("Analysis complete.");
+          setMeasurements(measurements, payloadFromAggregate(aggregate));
+          track("measurements_extracted", {
+            frames: perFrame.length,
+            guided: true,
+          });
+          setTimeout(goToQuestionnaire, AUTO_ADVANCE_MS);
+          return;
+        }
+
+        // ── Single-frame path (the default). ──
         setStatus("Analyzing facial structure…");
 
         // Bounded image-load with explicit error + timeout so a hung decode
         // can't strand the user on this page indefinitely (the stall this
         // page is otherwise prone to). Data URLs decode synchronously in
         // most browsers but mobile Safari has been known to stall.
-        const img = new Image();
-        img.src = capturedImage;
-        await new Promise<void>((resolve, reject) => {
-          const timer = setTimeout(
-            () =>
-              reject(
-                new ExtractionError(
-                  "image_decode_timeout",
-                  "Image decode timed out. Please retake the photo.",
-                ),
-              ),
-            8000,
-          );
-          img.onload = () => {
-            clearTimeout(timer);
-            resolve();
-          };
-          img.onerror = () => {
-            clearTimeout(timer);
-            reject(
-              new ExtractionError(
-                "image_decode",
-                "Could not load the captured photo. Please retake it.",
-              ),
-            );
-          };
-        });
+        const img = await decodeImage(capturedImage);
 
         if (!isMountedRef.current) return;
         setProgress(75);
@@ -242,88 +509,9 @@ export function Measure() {
         if (result.faceLandmarks && result.faceLandmarks.length > 0) {
           const landmarks = result.faceLandmarks[0];
 
-          /*
-            MediaPipe landmarks are normalized [0, 1].
-            We calibrate the millimeter scale using the iris diameter, which is
-            remarkably consistent across adults at ~11.7mm horizontally
-            (Forrester JV et al, "The Eye: Basic Sciences in Practice", 4th ed).
-
-            Landmarks (normalized coordinates):
-            Nose tip: 4
-            Nose bridge: 6
-            Left nostril: 129, Right nostril: 358
-            Left mouth corner: 61, Right mouth corner: 291
-            Chin bottom: 152
-            Left cheekbone: 234, Right cheekbone: 454
-            Left iris boundary (left): 469, Left iris boundary (right): 471
-          */
-
-          // MediaPipe normalized landmark — has at least x/y in [0..1].
-          // Typing this explicitly (vs `any`) lets the compiler catch
-          // typos in the index lookups below and protects us if
-          // MediaPipe ever returns null/undefined for a missing point.
-          type Landmark = { x: number; y: number; z?: number };
-          const dist = (p1: Landmark, p2: Landmark) => {
-            const dx = (p1.x - p2.x) * img.width;
-            const dy = (p1.y - p2.y) * img.height;
-            return Math.sqrt(dx * dx + dy * dy);
-          };
-
-          // Runtime guard, not just a type: a model bundle emitting the
-          // 468-point (iris-less) mesh would make landmarks[469] undefined
-          // and crash `dist` with an unhelpful "unknown" error.
-          if (!landmarks[469] || !landmarks[471]) {
-            throw new ExtractionError(
-              "no_face",
-              "We couldn't locate your eyes precisely enough to calibrate. Please retake the photo.",
-            );
-          }
-
-          const irisLeftPix = dist(landmarks[469], landmarks[471]);
-          // Use BOTH irises when the right one is available. Calibrating
-          // off a single eye lets a squint, glasses glare, or a stray
-          // hair silently rescale every millimetre value; the mean of two
-          // independent reads halves that error.
-          const irisRightPix =
-            landmarks[474] && landmarks[476]
-              ? dist(landmarks[474], landmarks[476])
-              : 0;
-          const irisPix =
-            irisLeftPix > 0 && irisRightPix > 0
-              ? (irisLeftPix + irisRightPix) / 2
-              : Math.max(irisLeftPix, irisRightPix);
-          const pxPerMm = irisPix / 11.7;
-
-          // pxPerMm < 1 means the iris was less than ~12 pixels across,
-          // which is too small for the millimeter math to be trustworthy.
-          // Bumped from the prior 0.1 threshold (~1 px) which only caught
-          // total no-detect garbage and still let through hopeless
-          // "subject is 4 feet from the camera" cases.
-          if (pxPerMm < 1) {
-            throw new ExtractionError(
-              "iris_too_small",
-              "Your face is too far from the camera for accurate measurement. Please move closer and try again.",
-            );
-          }
-
-          const mm = (pixels: number) =>
-            Math.round((pixels / pxPerMm) * 10) / 10;
-
-          // Nose alar (nostril span) — outer alar landmarks. This is the
-          // nasal-pillow base width (drives small/medium/large pillow fit).
-          const noseWidthPx = dist(landmarks[129], landmarks[358]);
-          const noseHeightPx = dist(landmarks[6], landmarks[4]);
-          const noseToChinPx = dist(landmarks[4], landmarks[152]);
-          const mouthWidthPx = dist(landmarks[61], landmarks[291]);
-          // Face width at cheekbones drives headgear strap sizing.
-          const faceWidthPx = dist(landmarks[234], landmarks[454]);
-
+          const { values, irisPix } = extractMeasurementValues(landmarks, img);
           const measurements: FacialMeasurements = {
-            noseWidth: mm(noseWidthPx),
-            noseHeight: mm(noseHeightPx),
-            noseToChin: mm(noseToChinPx),
-            mouthWidth: mm(mouthWidthPx),
-            faceWidthAtCheekbones: mm(faceWidthPx),
+            ...values,
             calibrationMethod: "iris",
           };
 
@@ -347,13 +535,7 @@ export function Measure() {
               image: img,
               landmarks,
               irisWidthPx: irisPix,
-              values: {
-                noseWidth: measurements.noseWidth,
-                noseHeight: measurements.noseHeight,
-                noseToChin: measurements.noseToChin,
-                mouthWidth: measurements.mouthWidth,
-                faceWidthAtCheekbones: measurements.faceWidthAtCheekbones,
-              },
+              values,
             });
           } catch {
             scanSignals = null;

@@ -46,6 +46,8 @@ export interface OrderPayload {
     name: string;
     modelNumber: string;
     manufacturer: string;
+    /** The size the fitting recommended. Absent on the legacy path. */
+    size?: string | null;
   };
   measurements?: {
     noseWidth: number;
@@ -126,6 +128,11 @@ function composeEmailBody(
   lines.push("─── CHOSEN MASK ───");
   lines.push(`${order.chosenMask.manufacturer} ${order.chosenMask.name}`);
   lines.push(`Model number: ${order.chosenMask.modelNumber}`);
+  // The one number the whole fitter exists to produce — fulfillment
+  // dispenses the wrong size without it. Absent on the legacy path.
+  if (order.chosenMask.size) {
+    lines.push(`Recommended size: ${order.chosenMask.size}`);
+  }
   lines.push("");
   if (order.measurements) {
     const m = order.measurements;

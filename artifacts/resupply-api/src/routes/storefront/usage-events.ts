@@ -32,10 +32,19 @@ const KNOWN_STEPS = [
   "questionnaire_completed",
   "results_viewed",
   "mask_chosen",
+  "mask_cashpay_added",
   "order_started",
   "order_submitted_success",
   "capture_blocked",
   "results_retake_requested",
+  // Clinical assessment path (fitter.clinical_assessment)
+  "fit_assessment_completed",
+  "fit_safety_screen_shown",
+  "fit_invite_invalid",
+  // Guided multi-angle capture (fitter.multiframe_capture)
+  "guided_capture_ready",
+  "guided_capture_manual",
+  "guided_capture_skip",
   // Shop / checkout funnel
   "cart_items_dropped",
   "checkout_started",

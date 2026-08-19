@@ -284,7 +284,14 @@ export async function buildFitReport(
     dispensing: {
       orderedMask:
         catalogNames.get(str(data.ordered_mask_model_id) ?? "") ?? null,
-      orderedSize: null,
+      // The size actually ordered — 0483's ordered_variant_id, written by
+      // the checkout webhook (order-link.ts). This line printed a
+      // hardcoded null even after the column started being populated, so
+      // the clinical record never showed the dispensed size.
+      orderedSize: await resolveVariantSizeLabel(
+        orgId,
+        str(data.ordered_variant_id),
+      ),
       orderId: str(data.shop_order_id),
       dispensedAt: str(data.dispensed_at),
     },
@@ -367,6 +374,30 @@ async function resolveGeometrySignOff(
     return out;
   } catch {
     return [];
+  }
+}
+
+/** The ordered variant's size label, for the dispensing block. Best-effort
+ *  like `resolveMaskNames`: a missing label degrades the line to null and
+ *  must never fail the report. */
+async function resolveVariantSizeLabel(
+  orgId: string,
+  variantId: string | null,
+): Promise<string | null> {
+  if (!variantId) return null;
+  try {
+    const { data } = (await getOrgScopedClient(orgId)
+      .raw()
+      .schema("resupply")
+      .from("mask_size_variants")
+      .select("id, size_label")
+      .eq("id", variantId)
+      .limit(1)
+      .maybeSingle()) as { data: Row | null };
+    const label = data?.size_label;
+    return typeof label === "string" && label ? label : null;
+  } catch {
+    return null;
   }
 }
 

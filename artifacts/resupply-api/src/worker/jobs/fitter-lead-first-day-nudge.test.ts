@@ -113,6 +113,20 @@ describe("runFirstDayNudgeSweep — eligibility predicate", () => {
     });
   });
 
+  it("excludes unsubscribed leads even when marketing_opt_in is still true", async () => {
+    // The admin force-unsubscribe and the signed unsubscribe link both
+    // stamp unsubscribed_at WITHOUT flipping marketing_opt_in (the
+    // original consent record stays intact). The nudge must honour the
+    // stop request, not the stale opt-in.
+    stageSupabaseResponse("fitter_leads", "select", { data: [] });
+    await runFirstDayNudgeSweep();
+    const filters = getSupabaseFilterCalls("fitter_leads", "select");
+    expect(filters).toContainEqual({
+      verb: "is",
+      args: ["unsubscribed_at", null],
+    });
+  });
+
   it("scans each active tenant's leads (multi-tenant fan-out)", async () => {
     supabaseMock.reset();
     stageSupabaseResponse("organizations", "select", {

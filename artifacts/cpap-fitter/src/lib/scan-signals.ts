@@ -29,6 +29,7 @@ import {
   aggregateFrames,
   assessFrameQuality,
   estimatePoseFromLandmarks,
+  type AggregateResult,
   type CapturePose,
   type Point2D,
 } from "./scan-quality";
@@ -102,8 +103,21 @@ export function buildScanSignals(
     },
   ]);
 
-  // Only the keys the schema knows about — it is `.strict()`, so an extra
-  // measurement key would 400 the whole assessment.
+  return payloadFromAggregate(aggregate);
+}
+
+/**
+ * Fold an `aggregateFrames` result into the wire shape.
+ *
+ * Shared by the single-frame path above and the guided multi-angle path
+ * in /measure (which aggregates several frames itself and only needs the
+ * projection). Clamps every scalar into [0, 1] and keeps only the keys
+ * the route's `.strict()` schema knows about — an unexpected key would
+ * 400 the whole assessment.
+ */
+export function payloadFromAggregate(
+  aggregate: AggregateResult,
+): ScanSignalsPayload {
   const agreement: ScanSignalsPayload["agreement"] = {};
   for (const key of AGREEMENT_KEYS) {
     const v = aggregate.agreement[key];

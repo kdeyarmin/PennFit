@@ -10,15 +10,28 @@ import { useDocumentTitle } from "@/hooks/use-document-title";
 import { getCaptureBlockers, isCaptureReady } from "@/lib/capture-readiness";
 import { useVisionRuntimeHealth } from "@/hooks/use-vision-runtime-health";
 import { BrandName } from "@/components/company-contact";
+import { GuidedCapture } from "./capture-guided";
 
 export function Capture() {
   useDocumentTitle("Take a photo");
-  const [, setLocation] = useLocation();
-  const { setCapturedImage } = useFitterStore();
-  const visionHealth = useVisionRuntimeHealth();
+  const { multiframeCapture } = useFitterStore();
+  // The guided scan FAILS OPEN: any setup problem (camera denied, model
+  // unreachable, landmarker refusing to start) drops this session back to
+  // the proven single-frame page, which owns the full recovery UX.
+  const [guidedFallback, setGuidedFallback] = useState(false);
   useEffect(() => {
     track("capture_started");
   }, []);
+  if (multiframeCapture && !guidedFallback) {
+    return <GuidedCapture onFallback={() => setGuidedFallback(true)} />;
+  }
+  return <SingleFrameCapture />;
+}
+
+function SingleFrameCapture() {
+  const [, setLocation] = useLocation();
+  const { setCapturedImage, setCapturedFrames } = useFitterStore();
+  const visionHealth = useVisionRuntimeHealth();
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   // Tracks the active MediaStream so stopCamera works even if the component
@@ -30,6 +43,20 @@ export function Capture() {
   const [error, setError] = useState<string | null>(null);
   const [capturing, setCapturing] = useState(false);
   const [videoReady, setVideoReady] = useState(false);
+  // Unmount latch shared by every acquisition path. The mount effect's
+  // `active` flag only covers the INITIAL startCamera call — the error
+  // screen's "Try again" invokes startCamera directly, and a patient who
+  // navigates away (Skip to shop / Use insurance) while that retry's
+  // getUserMedia is still in flight would otherwise leave the camera
+  // light on until the tab closes: the unmount cleanup ran before
+  // streamRef was ever set.
+  const unmountedRef = useRef(false);
+  useEffect(() => {
+    unmountedRef.current = false;
+    return () => {
+      unmountedRef.current = true;
+    };
+  }, []);
 
   const stopCamera = () => {
     streamRef.current?.getTracks().forEach((t) => t.stop());
@@ -45,7 +72,17 @@ export function Capture() {
     const stream = streamRef.current;
     if (!video || !stream || video.srcObject === stream) return;
     video.srcObject = stream;
-    video.onloadeddata = () => setVideoReady(true);
+    const ready = () => setVideoReady(true);
+    video.onloadeddata = ready;
+    // iOS Safari can defer `loadeddata` for camera streams (Low Power
+    // Mode, a tab regaining focus) — arm the earlier `loadedmetadata` as
+    // well, and nudge playback explicitly. captureFrame independently
+    // guards against a zero-size feed, so flipping ready off the earlier
+    // event can never capture an empty frame.
+    video.onloadedmetadata = ready;
+    void video.play?.()?.catch?.(() => {
+      /* autoplay is already handled by the muted+playsInline attributes */
+    });
   };
 
   const startCamera = async (): Promise<MediaStream | null> => {
@@ -61,6 +98,12 @@ export function Capture() {
           height: { ideal: 720 },
         },
       });
+      if (unmountedRef.current) {
+        // The page went away while permission was pending. Stop the
+        // tracks NOW — nothing downstream will.
+        stream.getTracks().forEach((t) => t.stop());
+        return null;
+      }
       streamRef.current = stream;
       attachStream();
       setHasPermission(true);
@@ -156,6 +199,11 @@ export function Capture() {
       // node_modules/wouter/src/use-browser-location.js lines 74-76.)
       flushSync(() => {
         setCapturedImage(dataUrl);
+        // A single-frame capture supersedes any earlier guided run's
+        // frame set (e.g. guided → fallback → retake). Stale frames left
+        // in the store would send /measure down the multi-angle path
+        // against photos the patient just replaced.
+        setCapturedFrames(null);
       });
       stopCamera();
       track("capture_taken");

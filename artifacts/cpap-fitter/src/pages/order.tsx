@@ -367,6 +367,18 @@ export function Order() {
               <code className="font-mono text-foreground bg-white/60 px-1.5 py-0.5 rounded text-xs">
                 {chosenMask.modelNumber}
               </code>
+              {chosenMask.size ? (
+                <>
+                  {" "}
+                  ·{" "}
+                  <span
+                    className="font-medium text-foreground"
+                    data-testid="order-mask-size"
+                  >
+                    Size: {chosenMask.size}
+                  </span>
+                </>
+              ) : null}
             </div>
           </div>
           <Link href="/results">

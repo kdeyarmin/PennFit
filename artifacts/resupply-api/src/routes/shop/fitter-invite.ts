@@ -155,16 +155,22 @@ router.get("/shop/fitter-invite/resolve", resolveLimiter, async (req, res) => {
   // BEFORE the /results page ever probes the clinical route — so this
   // resolve response (the one call that already knows the tenant) is
   // where the flag has to travel. Fail-soft to the legacy questionnaire.
-  const fitProfileV2 = await isFeatureEnabled(
-    "fitter.fit_profile_v2",
-    orgId,
-  ).catch(() => false);
+  //
+  // `fitter.multiframe_capture` travels the same way for the same reason:
+  // /capture renders long before /results, and it is the page that has to
+  // know whether to run the guided multi-angle scan or the single-frame
+  // capture. Fail-soft to single-frame.
+  const [fitProfileV2, multiframeCapture] = await Promise.all([
+    isFeatureEnabled("fitter.fit_profile_v2", orgId).catch(() => false),
+    isFeatureEnabled("fitter.multiframe_capture", orgId).catch(() => false),
+  ]);
 
   res.json({
     valid: true,
     email: inOffice ? null : invite.recipient_email,
     name: inOffice ? null : invite.recipient_name,
     fitProfileV2,
+    multiframeCapture,
   });
 });
 
@@ -379,24 +385,63 @@ router.post(
       update.auto_matched = autoMatched;
     }
 
-    const { error: updErr } = await supabase
-      .from("fitter_invites")
-      .update(update)
-      .eq("id", invite.id);
-    // Best-effort: a transient write failure must not 500 the patient.
-    if (updErr) {
-      logger.warn(
-        { err: updErr, inviteId: invite.id },
-        "fitter-invite: completion write failed",
-      );
-      res.json({ ok: true, matched: false });
-      return;
+    // The billable transition is claimed ATOMICALLY: `isNewCompletion`
+    // above is derived from a stale read, so two concurrent completes
+    // (double-tap, two tabs, a replayed request) would BOTH see
+    // sent/opened and both meter a fitting. The conditional write below
+    // matches only while the row is still un-completed — exactly one
+    // request wins it; the loser falls through to a data-only update so
+    // its (newer) measurements are still recorded, unbilled.
+    let billableTransition = false;
+    if (isNewCompletion) {
+      const { data: claimed, error: claimErr } = await supabase
+        .from("fitter_invites")
+        .update(update)
+        .eq("id", invite.id)
+        .not("status", "in", "(completed,attached)")
+        .select("id");
+      if (claimErr) {
+        logger.warn(
+          { err: claimErr, inviteId: invite.id },
+          "fitter-invite: completion write failed",
+        );
+        res.json({ ok: true, matched: false });
+        return;
+      }
+      billableTransition = (claimed ?? []).length > 0;
+    }
+    if (!billableTransition) {
+      // Re-submit (or race loser): refresh the fitting DATA only. Status,
+      // completed_at and opened_at were settled by the first completion —
+      // rewriting status here from the stale read could regress a
+      // concurrent "attached" back to "completed". The auto-attach fields
+      // stay: they are only in `update` when the row had no chart link at
+      // read time, and setting the same match twice is idempotent.
+      const {
+        status: _status,
+        completed_at: _completedAt,
+        opened_at: _openedAt,
+        ...dataOnly
+      } = update;
+      const { error: updErr } = await supabase
+        .from("fitter_invites")
+        .update(dataOnly)
+        .eq("id", invite.id);
+      // Best-effort: a transient write failure must not 500 the patient.
+      if (updErr) {
+        logger.warn(
+          { err: updErr, inviteId: invite.id },
+          "fitter-invite: completion write failed",
+        );
+        res.json({ ok: true, matched: false });
+        return;
+      }
     }
 
     // Meter the completed fitting for per-fitting billing (migration 0419).
     // Fire-and-forget + fail-soft (recordTenantUsage never throws); only on
     // a genuinely new completion so a patient re-submit can't inflate usage.
-    if (isNewCompletion) {
+    if (billableTransition) {
       void recordTenantUsage({
         orgId,
         metricKey: "fitterFittingsPerMonth",

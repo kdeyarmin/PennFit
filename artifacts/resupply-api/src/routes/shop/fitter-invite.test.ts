@@ -93,9 +93,11 @@ describe("GET /shop/fitter-invite/resolve", () => {
       valid: true,
       email: "p@example.com",
       name: "Pat Q",
-      // The v2 fit-profile flag rides on resolve (the one call that knows
-      // the tenant before the questionnaire renders); off by default.
+      // The capture-shaping flags ride on resolve (the one call that knows
+      // the tenant before /capture and /questionnaire render); both off by
+      // default.
       fitProfileV2: false,
+      multiframeCapture: false,
     });
     // The tenant was resolved from the token's invite, not a fixed seed.
     expect(vi.mocked(resolveOrgIdForSignedRecord)).toHaveBeenCalledWith(
@@ -121,6 +123,27 @@ describe("GET /shop/fitter-invite/resolve", () => {
     );
     expect(res.status).toBe(200);
     expect(res.body.fitProfileV2).toBe(true);
+    expect(res.body.multiframeCapture).toBe(false);
+  });
+
+  it("carries multiframeCapture:true when the tenant enables the flag", async () => {
+    featureFlags.enabled = new Set(["fitter.multiframe_capture"]);
+    const token = signFitterInviteToken(INVITE_ID);
+    stageSupabaseResponse("fitter_invites", "select", {
+      data: {
+        id: INVITE_ID,
+        status: "opened",
+        recipient_email: "p@example.com",
+        recipient_name: "Pat Q",
+        expires_at: new Date(Date.now() + 86_400_000).toISOString(),
+      },
+    });
+    const res = await request(makeApp()).get(
+      `/resupply-api/shop/fitter-invite/resolve?t=${encodeURIComponent(token)}`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.multiframeCapture).toBe(true);
+    expect(res.body.fitProfileV2).toBe(false);
   });
 
   it("returns valid:false for a bad signature", async () => {
@@ -241,9 +264,15 @@ describe("POST /shop/fitter-invite/complete", () => {
       "fitter_invites",
       "update",
     )[0] as Record<string, unknown>;
-    // Terminal state stays sticky; the true first-open is preserved.
-    expect(upd.status).toBe("attached");
+    // Terminal state stays sticky — a re-submit is a DATA-ONLY update
+    // that never touches the lifecycle columns at all (writing them from
+    // a stale read is how a concurrent attach could be regressed), and
+    // the true first-open is preserved the same way.
+    expect(upd.status).toBeUndefined();
+    expect(upd.completed_at).toBeUndefined();
     expect(upd.opened_at).toBeUndefined();
+    // The fitting data itself IS refreshed.
+    expect(upd.recommended_mask_id).toBeDefined();
   });
 
   it("fails soft (200) when the invite lookup errors", async () => {

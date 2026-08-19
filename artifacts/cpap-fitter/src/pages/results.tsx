@@ -65,7 +65,7 @@ export function Results() {
     answers,
     fitAnswers,
     fitProfileV2,
-    reset,
+    resetForNewFitting,
     setChosenMask,
     email,
     emailConsent,
@@ -963,7 +963,15 @@ export function Results() {
               mask={mask}
               details={catalogById.get(mask.maskId)}
               isTopPick={idx === 0}
-              onChoose={() => handleChooseMask(mask)}
+              // The legacy engine names a size too (`recommendedSize`,
+              // shown on this very card) — carry it onto the order
+              // rather than dropping the field on the rename.
+              onChoose={() =>
+                handleChooseMask({
+                  ...mask,
+                  size: mask.recommendedSize ?? null,
+                })
+              }
               measurements={measurements}
               cashPay={
                 shopProduct
@@ -1008,8 +1016,13 @@ export function Results() {
         <Button
           variant="ghost"
           onClick={() => {
-            reset();
-            setLocation("/");
+            // Clear the fitting DATA but keep the invite context. A full
+            // reset() here also wiped the invite token, and since every
+            // fitter route is invite-gated, "Start Over" stranded invited
+            // patients on "Invitation required" with no way back in short
+            // of re-opening the original link.
+            resetForNewFitting();
+            setLocation("/capture");
           }}
           className="text-muted-foreground"
         >

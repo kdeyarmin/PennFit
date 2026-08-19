@@ -251,6 +251,20 @@ describe("runFitterLeadReengageSweep", () => {
     expect(filters).toContainEqual({ verb: "is", args: ["nudged_at", null] });
   });
 
+  it("excludes unsubscribed leads even when marketing_opt_in is still true", async () => {
+    // The admin force-unsubscribe and the signed unsubscribe link both
+    // stamp unsubscribed_at WITHOUT flipping marketing_opt_in (the
+    // original consent record stays intact). The re-engage email must
+    // honour the stop request, not the stale opt-in.
+    stageSupabaseResponse("fitter_leads", "select", { data: [] });
+    await runFitterLeadReengageSweep(FULL_CFG);
+    const filters = getSupabaseFilterCalls("fitter_leads", "select");
+    expect(filters).toContainEqual({
+      verb: "is",
+      args: ["unsubscribed_at", null],
+    });
+  });
+
   it("counts a send failure as errors AND stamps the row to prevent retry storm", async () => {
     stageSupabaseResponse("fitter_leads", "select", {
       data: [

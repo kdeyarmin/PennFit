@@ -1009,6 +1009,8 @@ export interface ResolveFitterInviteResult {
   reason?: string;
   /** True when this tenant runs the v2 Patient Fit Profile questionnaire. */
   fitProfileV2?: boolean;
+  /** True when this tenant runs the guided multi-angle capture. */
+  multiframeCapture?: boolean;
 }
 
 export async function resolveFitterInvite(

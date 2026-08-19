@@ -249,38 +249,59 @@ async function findReportedBadFits(
   }
 
   // Rows arrive newest-first, so the first one seen per order IS the
-  // latest. Anything already `actioned` is staff's — they have picked this
-  // up, and a second automated message would talk over them.
-  const latestByOrder = new Map<string, { verdict: string; status: string }>();
+  // latest for that order. Anything already `actioned` is staff's — they
+  // have picked this up, and a second automated message would talk over
+  // them.
+  const latestByOrder = new Map<
+    string,
+    { verdict: string; status: string; createdAt: string }
+  >();
   for (const r of data ?? []) {
     if (!latestByOrder.has(r.order_id)) {
       latestByOrder.set(r.order_id, {
         verdict: r.fit_outcome,
         status: r.status,
+        createdAt: r.created_at,
       });
     }
   }
-  const orderIds = [...latestByOrder.entries()]
-    .filter(
-      ([, v]) =>
-        (v.verdict === "leaking" || v.verdict === "uncomfortable") &&
-        v.status !== "actioned",
-    )
-    .map(([orderId]) => orderId);
-  if (orderIds.length === 0) return [];
+  if (latestByOrder.size === 0) return [];
 
+  // Resolve EVERY surveyed order to its patient — not just the bad ones —
+  // because the verdict that governs is the patient's NEWEST across all
+  // their orders. Keying on orders alone re-offered a refit off a stale
+  // "leaking" on an old order after the patient's replacement order came
+  // back "good": the later good answer cancelled only its own order's
+  // verdict, not the patient's.
   const { data: orders } = (await supabase
     .from("shop_orders")
     .select("id, patient_id")
-    .in("id", orderIds)) as {
+    .in("id", [...latestByOrder.keys()])) as {
     data: Array<{ id: string; patient_id: string | null }> | null;
   };
 
-  const out: Candidate[] = [];
+  const latestByPatient = new Map<
+    string,
+    { verdict: string; status: string; createdAt: string }
+  >();
   for (const o of orders ?? []) {
     // A survey answer we cannot tie to a chart has nobody to contact.
-    if (o.patient_id) {
-      out.push({ patientId: o.patient_id, reason: "reported_bad_fit" });
+    if (!o.patient_id) continue;
+    const v = latestByOrder.get(o.id);
+    if (!v) continue;
+    const existing = latestByPatient.get(o.patient_id);
+    if (!existing || v.createdAt > existing.createdAt) {
+      latestByPatient.set(o.patient_id, v);
+    }
+  }
+
+  const out: Candidate[] = [];
+  for (const [patientId, v] of latestByPatient) {
+    if (
+      (v.verdict === "leaking" || v.verdict === "uncomfortable") &&
+      v.status !== "actioned"
+    ) {
+      out.push({ patientId, reason: "reported_bad_fit" });
     }
   }
   return out;

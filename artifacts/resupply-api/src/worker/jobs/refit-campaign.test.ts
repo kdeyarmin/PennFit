@@ -239,6 +239,43 @@ describe("runRefitCampaignScan — whose survey answer still counts", () => {
     expect(sendRescan).not.toHaveBeenCalled();
   });
 
+  it("lets a newer 'good' on a DIFFERENT order cancel an older order's bad verdict", async () => {
+    // The verdict that governs is the PATIENT's newest, across orders. A
+    // patient who reported a leak, got a replacement, and reported the
+    // replacement good must not be re-offered a refit off the old order's
+    // stale verdict.
+    const OLD_ORDER = "44444444-4444-4444-8444-444444444444";
+    stageSupabaseResponse("organizations", "select", { data: [{ id: ORG }] });
+    stageSupabaseResponse("mask_fit_outcomes", "select", {
+      data: [
+        {
+          order_id: ORDER,
+          fit_outcome: "good",
+          status: "new",
+          created_at: "2026-05-20T00:00:00Z",
+        },
+        {
+          order_id: OLD_ORDER,
+          fit_outcome: "leaking",
+          status: "new",
+          created_at: "2026-05-01T00:00:00Z",
+        },
+      ],
+    });
+    // Both orders belong to the same patient.
+    stageSupabaseResponse("shop_orders", "select", {
+      data: [
+        { id: ORDER, patient_id: PATIENT },
+        { id: OLD_ORDER, patient_id: PATIENT },
+      ],
+    });
+    stageSupabaseResponse("mask_models", "select", { data: [] });
+
+    await runRefitCampaignScan();
+
+    expect(sendRescan).not.toHaveBeenCalled();
+  });
+
   it("leaves an answer staff have already actioned alone", async () => {
     // Staff picked it up; a second automated message talks over them.
     stageOutcomes([
