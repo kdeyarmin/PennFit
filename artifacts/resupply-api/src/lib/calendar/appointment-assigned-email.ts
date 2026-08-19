@@ -108,6 +108,43 @@ function buildFields(input: AppointmentAssignedEmailInput) {
   };
 }
 
+/**
+ * The variable dictionary the templated path hands to `renderMessage`.
+ * The optional Where / Assigned-by pieces are pre-rendered — as
+ * trailing-newline plain-text lines and as `<tr>` fragments — because
+ * the {{var}}-only template engine can't express "omit when empty".
+ * Sharing `buildFields` + the row builders with the fallback renderers
+ * is what keeps the seeded template row (migration 0502) byte-identical
+ * to them (pinned by seed-bodies.parity.test.ts).
+ */
+function buildTemplateVariables(
+  input: AppointmentAssignedEmailInput,
+  brandName: string,
+): Record<string, string> {
+  const fields = buildFields(input);
+  return {
+    assignee_name: fields.greetingName,
+    assignee_name_html: escapeHtml(fields.greetingName),
+    appointment_date: fields.date,
+    appointment_time: fields.time,
+    appointment_type: fields.type,
+    appointment_type_html: escapeHtml(fields.type),
+    when_html: escapeHtml(`${fields.date}, ${fields.time}`),
+    location: fields.location,
+    assigned_by: fields.assignedBy,
+    dashboard_url: input.dashboardUrl,
+    dashboard_url_html: escapeHtml(input.dashboardUrl),
+    brand_name: brandName,
+    brand_name_html: escapeHtml(brandName),
+    location_line_text: fields.location ? `Where: ${fields.location}\n` : "",
+    assigned_by_line_text: fields.assignedBy
+      ? `Assigned by: ${fields.assignedBy}\n`
+      : "",
+    location_row_html: locationRowHtml(fields.location),
+    assigned_by_row_html: assignedByRowHtml(fields.assignedBy),
+  };
+}
+
 function renderText(
   input: AppointmentAssignedEmailInput,
   brandName = "CareMetric Breathe",
@@ -132,21 +169,34 @@ function renderText(
   return lines.join("\n");
 }
 
+// Optional-row fragments, extracted so the templated path can hand them to
+// `renderMessage` as pre-rendered `*_row_html` variables — the {{var}}-only
+// template engine can't express "omit the row when the field is empty", and
+// sharing these builders is what keeps the seeded template byte-identical
+// to the fallback renderer.
+function locationRowHtml(location: string): string {
+  return location
+    ? `<tr><td style="padding:2px 0;color:#888;">Where</td><td style="padding:2px 0 2px 16px;color:#0a1f44;font-weight:600;">${escapeHtml(
+        location,
+      )}</td></tr>`
+    : "";
+}
+
+function assignedByRowHtml(assignedBy: string): string {
+  return assignedBy
+    ? `<tr><td style="padding:2px 0;color:#888;">Assigned by</td><td style="padding:2px 0 2px 16px;color:#0a1f44;">${escapeHtml(
+        assignedBy,
+      )}</td></tr>`
+    : "";
+}
+
 function renderHtml(
   input: AppointmentAssignedEmailInput,
   brandName = "CareMetric Breathe",
 ): string {
   const f = buildFields(input);
-  const locationRow = f.location
-    ? `<tr><td style="padding:2px 0;color:#888;">Where</td><td style="padding:2px 0 2px 16px;color:#0a1f44;font-weight:600;">${escapeHtml(
-        f.location,
-      )}</td></tr>`
-    : "";
-  const assignedByRow = f.assignedBy
-    ? `<tr><td style="padding:2px 0;color:#888;">Assigned by</td><td style="padding:2px 0 2px 16px;color:#0a1f44;">${escapeHtml(
-        f.assignedBy,
-      )}</td></tr>`
-    : "";
+  const locationRow = locationRowHtml(f.location);
+  const assignedByRow = assignedByRowHtml(f.assignedBy);
   return `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f7f4ec;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f7f4ec;padding:24px 0;">
     <tr><td align="center">
@@ -213,23 +263,13 @@ export async function sendAppointmentAssignedEmail(
   const brand = await resolveBrandingByOrgId(input.orgId);
   const brandName = brand.storefrontName;
 
-  const fields = buildFields(input);
   const rendered = await renderMessage(
     {
       templateKey: "appointment.assigned.email",
       channel: "email",
       customerId: null,
       orgId: input.orgId,
-      variables: {
-        assignee_name: fields.greetingName,
-        appointment_date: fields.date,
-        appointment_time: fields.time,
-        appointment_type: fields.type,
-        location: fields.location,
-        assigned_by: fields.assignedBy,
-        dashboard_url: input.dashboardUrl,
-        dashboard_url_html: escapeHtml(input.dashboardUrl),
-      },
+      variables: buildTemplateVariables(input, brandName),
     },
     {
       subject: "An appointment was scheduled for you",
@@ -265,4 +305,5 @@ export const __forTests = {
   renderText,
   renderHtml,
   typeLabel,
+  buildTemplateVariables,
 };

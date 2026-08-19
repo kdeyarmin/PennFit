@@ -34,19 +34,42 @@ const MIGRATIONS_DIR = join(
   "migrations",
 );
 
-/** Keys seeded by any migration's `INSERT INTO resupply.feature_flags`. */
+/**
+ * Keys seeded by any migration's `INSERT INTO resupply.feature_flags`,
+ * minus keys a LATER migration retires with a
+ * `DELETE FROM resupply.feature_flags WHERE key = '...'` (e.g. 0503
+ * retiring inbound_referrals.dispatcher after its subsystem was removed).
+ * Files are replayed in numeric-prefix order — the same order the
+ * migrator applies them — so a retire-then-reseed sequence resolves the
+ * way a real database would.
+ */
 function seededFlagKeys(): Set<string> {
   const keys = new Set<string>();
-  const files = readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith(".sql"));
+  const files = readdirSync(MIGRATIONS_DIR)
+    .filter((f) => f.endsWith(".sql"))
+    .sort();
   for (const file of files) {
     const sql = readFileSync(join(MIGRATIONS_DIR, file), "utf8");
-    if (!sql.includes("resupply.feature_flags")) continue;
+    if (!sql.includes("feature_flags")) continue;
     // A feature-flag VALUES tuple is uniquely shaped: ('key', true|false,
     // ...). The enabled boolean immediately follows the key (possibly
     // across a newline), which no other table's seed tuple matches.
-    const re = /\(\s*'([a-z0-9_.]+)'\s*,\s*(?:true|false)\b/g;
+    const insertRe = /\(\s*'([a-z0-9_.]+)'\s*,\s*(?:true|false)\b/g;
+    const deleteRe =
+      /DELETE FROM "?resupply"?\."?feature_flags"?\s+WHERE\s+"?key"?\s*=\s*'([a-z0-9_.]+)'/g;
+    const ops: Array<{ index: number; key: string; kind: "add" | "del" }> = [];
     let m: RegExpExecArray | null;
-    while ((m = re.exec(sql)) !== null) keys.add(m[1]!);
+    while ((m = insertRe.exec(sql)) !== null) {
+      ops.push({ index: m.index, key: m[1]!, kind: "add" });
+    }
+    while ((m = deleteRe.exec(sql)) !== null) {
+      ops.push({ index: m.index, key: m[1]!, kind: "del" });
+    }
+    ops.sort((a, b) => a.index - b.index);
+    for (const op of ops) {
+      if (op.kind === "add") keys.add(op.key);
+      else keys.delete(op.key);
+    }
   }
   return keys;
 }
