@@ -1,8 +1,8 @@
-// /admin/documents/retention — the HIPAA retention worklist.
+// /admin/documents/retention — the document-retention worklist.
 //
 // The admin UI for the retention surface that already shipped server-side
 // (routes/admin/patient-documents-retention.ts): patient documents whose
-// retention clock is up (or close), with the two compliance actions the
+// retention clock is up (or close), with the two retention actions the
 // API offers — a legal hold (with a required reason, audited) and the
 // one-way byte destruction. The server is the authority on both gates:
 // viewing requires `audit.export` (admin / supervisor /
