@@ -36,6 +36,17 @@ export const PLATFORM_NAME = "CareMetric Breathe";
  */
 export const PLATFORM_LOGO_URL = "/breathe/caremetric-logo.png";
 
+/**
+ * The platform's square app icon — the SAME artwork as
+ * `PLATFORM_LOGO_URL` minus the "CareMetric AI" wordmark that the full
+ * lockup bakes in underneath. Use this (not the lockup) in small square
+ * brand slots that set the brand text separately, such as the admin
+ * workstation chrome: squished into a ~36px box the lockup's wordmark
+ * turns illegible and collides with the name rendered beside it. The
+ * `/breathe/*` marketing pages inline the same path for the same reason.
+ */
+export const PLATFORM_ICON_URL = "/breathe/caremetric-icon.png";
+
 export interface StorefrontBranding {
   /** Short customer-facing brand shown in the header/hero. */
   storefrontName: string;
