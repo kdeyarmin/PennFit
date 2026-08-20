@@ -146,6 +146,20 @@ So the seeder refuses when `--email=` resolves to an existing auth user that
 isn't already this tenant's admin, and writes nothing. Pick another address,
 or pass `--adopt-existing-identity` if the overwrite is genuinely intended.
 
+### Deployments with mandatory MFA
+
+`AUTH_REQUIRE_MFA_FOR_ADMINS` is off by default, and the demo login works
+normally when it is unset. Turn it on and `requireAdmin` blocks every admin
+route except `/me` and the enrollment endpoints until the account has a
+verified TOTP secret — which the seeder does not create, because a _shared_
+TOTP secret is not something worth writing into a repo.
+
+The practical consequence for a shared sales/training login: the first
+person to sign in enrolls, and everyone else then needs that person's
+authenticator. If you run with mandatory MFA on, either give each
+demonstrator their own account (`auth:bootstrap-admin --role=admin`, then
+attach it to the demo tenant) or keep one enrolled device with the team.
+
 ### A second demo tenant
 
 `--org-slug=` gives you one. Fixture ids are derived from the slug, so two
