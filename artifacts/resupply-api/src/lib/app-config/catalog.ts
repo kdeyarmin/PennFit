@@ -272,7 +272,7 @@ export const APP_CONFIG_CATALOG: readonly AppConfigSetting[] = [
     secret: true,
     applyMode: "restart",
     description:
-      "Platform-wide credential — every transactional and bulk email funnels through the shared client. The From ADDRESS is not set here: each tenant sets its own under Email From address (/admin/email-settings), and a tenant that sets none inherits the platform default noreply@cmbreathe.com.",
+      "Platform-wide credential — every transactional and bulk email funnels through the shared client. The From address is not set here: each tenant sets its own under Email From address (/admin/email-settings), and a tenant that sets none inherits the platform default noreply@cmbreathe.com.",
     placeholder: "SG.…",
   },
   {
@@ -282,7 +282,7 @@ export const APP_CONFIG_CATALOG: readonly AppConfigSetting[] = [
     secret: false,
     applyMode: "restart",
     description:
-      "Platform default display name, used only by tenants that have NOT set their own From name. Leave blank to fall back to the CareMetric Breathe platform identity — setting one tenant's brand here makes every other tenant send under that brand.",
+      "Platform default display name, used only by tenants that have not set their own From name. Leave blank to fall back to the CareMetric Breathe platform identity — setting one tenant's brand here makes every other tenant send under that brand.",
   },
 
   // ── Stripe ────────────────────────────────────────────────────────
