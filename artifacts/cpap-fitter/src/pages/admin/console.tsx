@@ -30,6 +30,7 @@ import { ErrorBoundary } from "@/components/error-boundary";
 import { lazyWithRetry } from "@/lib/lazy-with-retry";
 
 import { authHooks } from "@/lib/admin/auth-hooks";
+import { buildAdminSignInHref } from "@/lib/admin/sign-in-redirect";
 import { AppShell } from "@/components/admin/AppShell";
 import { Spinner } from "@/components/admin/Spinner";
 import NotFound from "@/pages/admin/not-found";
@@ -1479,6 +1480,8 @@ export function ConsoleRoute() {
         <Spinner label="Checking sign-in…" />
       </div>
     );
-  if (!data) return <Redirect to="/admin/sign-in" />;
+  // Preserve the deep link (e.g. /admin/patients/123) so signing in returns
+  // them to the page they asked for rather than the dashboard.
+  if (!data) return <Redirect to={buildAdminSignInHref()} />;
   return <AdminConsole />;
 }

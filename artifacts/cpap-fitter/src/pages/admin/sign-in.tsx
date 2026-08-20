@@ -10,6 +10,14 @@
 //
 // Admins who haven't enrolled MFA only ever see step 1.
 //
+// Post-sign-in destination: callers append ?redirect=<path> — both the
+// platform console and the admin console do, when they bounce a signed-out
+// visitor here — so sign-in returns the operator to whatever they clicked
+// toward instead of always dumping them on /admin. Without it, the Breathe
+// footer's "Super admin login" → /platform link deposited people in the
+// TENANT console, which read as the link being broken. The target is
+// sanitized against open redirects in lib/admin/sign-in-redirect.ts.
+//
 // No "Sign up" link — staff are invited via /admin/team. The
 // admin route emails a 7-day password_reset link, which lands
 // on /reset-password.
@@ -22,6 +30,7 @@ import { Link, useLocation } from "wouter";
 import { AuthError, authErrorMessage } from "@workspace/resupply-auth-react";
 
 import { authHooks } from "@/lib/admin/auth-hooks";
+import { readAdminRedirectTarget } from "@/lib/admin/sign-in-redirect";
 import { AuthLayout } from "@/components/auth-layout";
 
 const basePath = "/admin";
@@ -39,6 +48,9 @@ export function SignInPage() {
   const signIn = authHooks.useSignIn();
   const verifyMfa = authHooks.useVerifySignInMfa();
   const [, setLocation] = useLocation();
+  // Captured once on mount so it survives the password → MFA step change
+  // and any re-render in between.
+  const [redirectTarget] = useState(readAdminRedirectTarget);
 
   function onPasswordSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -51,7 +63,7 @@ export function SignInPage() {
             setStep({ kind: "mfa", challengeToken: result.challengeToken });
             setCode("");
           } else {
-            setLocation("/admin");
+            setLocation(redirectTarget);
           }
         },
         onError: (err) => {
@@ -78,7 +90,7 @@ export function SignInPage() {
         }
       : { challengeToken: step.challengeToken, code: code.trim() };
     verifyMfa.mutate(payload, {
-      onSuccess: () => setLocation("/admin"),
+      onSuccess: () => setLocation(redirectTarget),
       onError: (err) => {
         // If the challenge expired or is otherwise invalid, kick
         // the user back to step 1 so they can re-enter their
