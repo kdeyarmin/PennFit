@@ -66,6 +66,12 @@ function normalizeForAuthCheck(pathOnly: string): string {
  */
 export function sanitizeAdminRedirect(raw: string | null | undefined): string {
   if (!raw || !raw.startsWith("/")) return ADMIN_DEFAULT_LANDING;
+  // The URL parser STRIPS tab / LF / CR from anywhere in a URL (WHATWG), so
+  // "/\t/evil.com" reaches the browser as "//evil.com" — protocol-relative
+  // after all, and the leading-slash checks below would never see it. Refuse
+  // any C0 control or DEL rather than trying to predict the normalization.
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u001F\u007F]/.test(raw)) return ADMIN_DEFAULT_LANDING;
   if (raw.startsWith("//") || raw.startsWith("/\\")) {
     return ADMIN_DEFAULT_LANDING;
   }
@@ -84,11 +90,37 @@ export function readAdminRedirectTarget(): string {
   );
 }
 
-/** The path the browser is on right now, query + hash included. */
+/**
+ * The router base wouter prepends to every navigation — `<WouterRouter
+ * base={basePath}>` in App.tsx, derived from Vite's BASE_URL. Empty string
+ * for a root-mounted deploy, which is the norm here (BASE_PATH defaults to
+ * "/" on Railway).
+ */
+function routerBase(): string {
+  return (import.meta.env?.BASE_URL ?? "/").replace(/\/$/, "");
+}
+
+/**
+ * The router-RELATIVE path the browser is on, query + hash included.
+ *
+ * `window.location.pathname` already carries the router base, but wouter
+ * prepends that base again to every `setLocation` / `<Redirect>` target — so
+ * encoding the raw pathname would yield "/app/app/platform" on a sub-path
+ * deploy and match no route. Strip the base here so what we hand to sign-in
+ * is exactly what wouter expects to receive back.
+ */
 function currentPathWithQuery(): string {
   if (typeof window === "undefined") return "";
   const { pathname, search, hash } = window.location;
-  return `${pathname}${search}${hash}`;
+  const base = routerBase();
+  // Compare case-insensitively, but only on a full segment boundary so a base
+  // of "/app" doesn't chew the front off "/apples".
+  const lower = pathname.toLowerCase();
+  const lowerBase = base.toLowerCase();
+  const onBase =
+    base !== "" && (lower === lowerBase || lower.startsWith(`${lowerBase}/`));
+  const relative = onBase ? pathname.slice(base.length) || "/" : pathname;
+  return `${relative}${search}${hash}`;
 }
 
 /**

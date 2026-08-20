@@ -77,6 +77,23 @@ describe("sanitizeAdminRedirect", () => {
     expect(sanitizeAdminRedirect("/\\evil.com")).toBe(ADMIN_DEFAULT_LANDING);
   });
 
+  // The WHATWG URL parser strips tab/LF/CR from ANYWHERE in a URL, so
+  // "/<tab>/evil.com" reaches the browser as "//evil.com" — the leading-slash
+  // checks alone would never see it.
+  it("rejects control whitespace the URL parser would strip", () => {
+    expect(sanitizeAdminRedirect("/\t/evil.com")).toBe(ADMIN_DEFAULT_LANDING);
+    expect(sanitizeAdminRedirect("/\n/evil.com")).toBe(ADMIN_DEFAULT_LANDING);
+    expect(sanitizeAdminRedirect("/\r/evil.com")).toBe(ADMIN_DEFAULT_LANDING);
+    expect(sanitizeAdminRedirect("/\u0000/evil.com")).toBe(
+      ADMIN_DEFAULT_LANDING,
+    );
+    expect(sanitizeAdminRedirect("/admin\u007F/x")).toBe(ADMIN_DEFAULT_LANDING);
+    // And the decoded form a ?redirect= would actually arrive as.
+    expect(sanitizeAdminRedirect(decodeURIComponent("%2F%09%2Fevil.com"))).toBe(
+      ADMIN_DEFAULT_LANDING,
+    );
+  });
+
   it("refuses to bounce back into an auth page", () => {
     expect(sanitizeAdminRedirect("/admin/sign-in")).toBe(ADMIN_DEFAULT_LANDING);
     expect(sanitizeAdminRedirect("/admin/forgot-password")).toBe(
@@ -166,6 +183,27 @@ describe("buildAdminSignInHref", () => {
 
   it("omits the param rather than encoding a hostile destination", () => {
     expect(buildAdminSignInHref("//evil.com")).toBe(ADMIN_SIGN_IN_PATH);
+  });
+
+  // wouter's <Router base> re-prepends the base to every setLocation target,
+  // so encoding the raw pathname would produce "/app/app/platform".
+  it("strips the router base so wouter doesn't double-prefix it", () => {
+    vi.stubEnv("BASE_URL", "/app/");
+    withLocation("https://cmbreathe.com/app/platform/tenants");
+    expect(buildAdminSignInHref()).toBe(
+      `${ADMIN_SIGN_IN_PATH}?redirect=%2Fplatform%2Ftenants`,
+    );
+    vi.unstubAllEnvs();
+  });
+
+  it("only strips the base on a segment boundary", () => {
+    vi.stubEnv("BASE_URL", "/app/");
+    // "/apples" merely starts with the same letters — it is not under /app.
+    withLocation("https://cmbreathe.com/apples/platform");
+    expect(buildAdminSignInHref()).toBe(
+      `${ADMIN_SIGN_IN_PATH}?redirect=%2Fapples%2Fplatform`,
+    );
+    vi.unstubAllEnvs();
   });
 
   it("round-trips: what it encodes is what sign-in reads back", () => {
