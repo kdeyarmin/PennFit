@@ -92,15 +92,27 @@ interface MessagingConfig {
   publicBaseUrl: string;
 }
 
+/**
+ * The env-derived half of {@link MessagingConfig} — everything EXCEPT the
+ * practice name.
+ *
+ * `practiceName` is deliberately absent. It used to be read here from
+ * `RESUPPLY_PRACTICE_NAME`, which `applyCompanyInfoToEnv()` folds to the
+ * SEED tenant's name at boot — so every tenant's patient-facing copy went
+ * out under the seed tenant's brand. Omitting it from this type makes that
+ * a COMPILE error rather than a silent leak: the per-tenant sweep must
+ * supply the name it resolved for the tenant it is sweeping.
+ */
+export type PlatformMessagingConfig = Omit<MessagingConfig, "practiceName">;
+
 export function readReengageMessagingConfig(
   env: NodeJS.ProcessEnv = process.env,
-): MessagingConfig {
+): PlatformMessagingConfig {
   return {
     sendgridApiKey: env.SENDGRID_API_KEY ?? null,
     sendgridFromEmail:
       env.SENDGRID_FROM_EMAIL?.trim() || DEFAULT_SENDGRID_FROM_EMAIL,
     sendgridFromName: env.SENDGRID_FROM_NAME ?? null,
-    practiceName: env.RESUPPLY_PRACTICE_NAME ?? "CareMetric Breathe",
     // Same resolution chain as the other fitter jobs (first-day nudge,
     // supply campaign): SHOP_PUBLIC_BASE_URL first. This job used to skip
     // it, so a deploy configured only with SHOP_PUBLIC_BASE_URL silently
@@ -162,7 +174,7 @@ function escapeHtml(s: string): string {
 
 /** Run a single re-engagement sweep. Exported for tests. */
 export async function runFitterLeadReengageSweep(
-  cfg: MessagingConfig = readReengageMessagingConfig(),
+  cfg: PlatformMessagingConfig = readReengageMessagingConfig(),
 ): Promise<ReengageStats> {
   const stats: ReengageStats = {
     scanned: 0,
@@ -199,7 +211,7 @@ export async function runFitterLeadReengageSweep(
 
 async function fitterLeadReengageSweepForOrg(
   orgId: string,
-  cfg: MessagingConfig,
+  cfg: PlatformMessagingConfig,
   stats: ReengageStats,
 ): Promise<void> {
   // Per-tenant runtime kill switch (admin Control Center): a tenant that

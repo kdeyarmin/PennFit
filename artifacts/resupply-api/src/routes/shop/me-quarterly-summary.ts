@@ -9,6 +9,7 @@ import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 import { buildQuarterlySummary } from "../../lib/therapy-summary/build-quarterly-html";
 import { logger } from "../../lib/logger";
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
+import { getCompanyInfo } from "../../lib/company-info";
 
 const router: IRouter = Router();
 
@@ -85,8 +86,9 @@ router.get("/shop/me/quarterly-summary", requireSignedIn, async (req, res) => {
     patient,
     windowStart: startIso,
     windowEnd: endIso,
-    practiceName:
-      process.env.RESUPPLY_PRACTICE_NAME?.trim() || "CareMetric Breathe",
+    // Patient-facing summary — brand it with the requesting tenant's own
+    // name, not the seed tenant's env-folded practice name.
+    practiceName: (await getCompanyInfo(orgId)).name,
     nights: (
       (nights ?? []) as Array<
         Database["resupply"]["Tables"]["patient_therapy_nights"]["Row"]

@@ -36,6 +36,7 @@ import {
 import { logger } from "../../lib/logger";
 import { rateLimit } from "../../middlewares/rate-limit";
 import { requireProvider } from "../../middlewares/requireProvider";
+import { getCompanyInfo, PLATFORM_NAME } from "../../lib/company-info";
 
 const router: IRouter = Router();
 
@@ -71,8 +72,14 @@ const verifyBody = z
   })
   .strict();
 
-function getIssuerLabel(): string {
-  return process.env.RESUPPLY_PRACTICE_NAME?.trim() || "CareMetric Breathe";
+/**
+ * The issuer an authenticator app shows beside the code, scoped to the
+ * provider's own tenant. See the note on the admin counterpart: the
+ * process-global this replaced carried the SEED tenant's name.
+ */
+async function getIssuerLabel(orgId: string | undefined): Promise<string> {
+  if (!orgId) return PLATFORM_NAME;
+  return (await getCompanyInfo(orgId)).name;
 }
 
 router.get(
@@ -196,7 +203,7 @@ router.post(
       if (insErr) throw insErr;
     }
 
-    const issuer = getIssuerLabel();
+    const issuer = await getIssuerLabel(orgId);
     const otpauthUri = buildOtpauthUri({
       label: account.emailLower,
       issuer,

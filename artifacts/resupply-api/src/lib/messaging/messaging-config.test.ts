@@ -11,7 +11,6 @@ import {
   readSmsConfigOrNull,
   readEmailConfigOrNull,
   readMessagingConfigOrNull,
-  readPracticeName,
 } from "./messaging-config";
 
 // ---------------------------------------------------------------------------
@@ -266,24 +265,6 @@ describe("readEmailConfigOrNull", () => {
       sendgridEventWebhookPublicKey: "MFkwEwYHKoZIzj0CAQ==",
       publicBaseUrl: "https://explicit.example.com",
     });
-  });
-});
-
-// ---------------------------------------------------------------------------
-// readPracticeName
-// ---------------------------------------------------------------------------
-
-describe("readPracticeName", () => {
-  it("returns RESUPPLY_PRACTICE_NAME when set", () => {
-    expect(readPracticeName({ RESUPPLY_PRACTICE_NAME: "Acme DME" })).toBe(
-      "Acme DME",
-    );
-  });
-
-  it("defaults to the CareMetric Breathe platform name when env var is absent", () => {
-    // NOT the seed (Penn) tenant's "PennPaps" — an unconfigured tenant must
-    // never inherit the seed brand.
-    expect(readPracticeName({})).toBe("CareMetric Breathe");
   });
 });
 

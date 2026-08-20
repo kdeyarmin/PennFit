@@ -24,6 +24,7 @@ import { buildClosuresIcal } from "../../lib/office-closure/build-ical";
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
+import { getDocumentSupplierName } from "../../lib/company-info";
 
 type ClosureUpdate =
   Database["resupply"]["Tables"]["office_closures"]["Update"];
@@ -264,8 +265,10 @@ router.get(
       .limit(500);
     if (error) throw error;
     const ics = buildClosuresIcal({
-      practiceName:
-        process.env.RESUPPLY_PRACTICE_NAME?.trim() || "CareMetric Breathe",
+      // The calendar this tenant's staff subscribes to, so it carries THEIR
+      // practice name. The process-global RESUPPLY_PRACTICE_NAME is folded
+      // to the seed tenant's name at boot.
+      practiceName: await getDocumentSupplierName(orgId),
       closures: ((data ?? []) as ClosureRow[]).map((r) => ({
         id: r.id,
         label: r.label,

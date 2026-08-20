@@ -92,10 +92,9 @@ describe("runFitterLeadReengageSweep", () => {
   it("exits cleanly when SendGrid creds are missing", async () => {
     const stats = await runFitterLeadReengageSweep({
       sendgridApiKey: null,
-      sendgridFromEmail: "info@pennpaps.com",
+      sendgridFromEmail: "info@example.test",
       sendgridFromName: null,
-      practiceName: "PennPaps",
-      publicBaseUrl: "https://pennfit.example",
+      publicBaseUrl: "https://example.test",
     });
     expect(stats).toEqual({
       scanned: 0,
@@ -397,27 +396,28 @@ describe("readReengageMessagingConfig", () => {
     vi.stubEnv("SENDGRID_API_KEY", "SG.testkey");
     vi.stubEnv("SENDGRID_FROM_EMAIL", "from@example.com");
     vi.stubEnv("SENDGRID_FROM_NAME", "Test Sender");
-    vi.stubEnv("RESUPPLY_PRACTICE_NAME", "Test Practice");
     vi.stubEnv("RESUPPLY_VOICE_PUBLIC_BASE_URL", "https://test.example");
 
     const cfg = readReengageMessagingConfig(process.env);
     expect(cfg.sendgridApiKey).toBe("SG.testkey");
     expect(cfg.sendgridFromEmail).toBe("from@example.com");
     expect(cfg.sendgridFromName).toBe("Test Sender");
-    expect(cfg.practiceName).toBe("Test Practice");
     expect(cfg.publicBaseUrl).toBe("https://test.example");
   });
 
-  it("falls back to the CareMetric Breathe platform name when RESUPPLY_PRACTICE_NAME is not set", () => {
+  it("carries no practice name — the brand is resolved per tenant", () => {
     const cfg = readReengageMessagingConfig({
       SENDGRID_API_KEY: "SG.x",
       SENDGRID_FROM_EMAIL: "f@x.com",
       SENDGRID_FROM_NAME: "X",
+      RESUPPLY_PRACTICE_NAME: "Seed Tenant Practice",
       RESUPPLY_VOICE_PUBLIC_BASE_URL: "https://x.example",
     });
-    // NOT the seed (Penn) tenant's "PennPaps" — an unconfigured tenant must
-    // never inherit the seed brand.
-    expect(cfg.practiceName).toBe("CareMetric Breathe");
+    // RESUPPLY_PRACTICE_NAME is folded to the SEED tenant's name at boot, so
+    // a process-global read here brands every tenant's re-engagement email
+    // as the seed. The env config must not carry a name at all; the per-org
+    // sweep resolves the sweeping tenant's own brand.
+    expect(cfg).not.toHaveProperty("practiceName");
   });
 
   it("falls back to RAILWAY_PUBLIC_DOMAIN when RESUPPLY_VOICE_PUBLIC_BASE_URL is absent", () => {

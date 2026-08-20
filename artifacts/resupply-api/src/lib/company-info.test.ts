@@ -5,8 +5,8 @@
 //      name; support fields fall back to the main phone / emails.
 //   2. No DB row → RESUPPLY_PRACTICE_NAME env → hardcoded defaults.
 //   3. A DB error degrades to env + defaults (fail-soft, never throws).
-//   4. applyCompanyInfoToEnv hydrates RESUPPLY_PRACTICE_NAME and the
-//      SENDGRID_FROM_NAME alias only when the row exists.
+//   4. hydrateCompanyInfoCache warms the sync cache and writes NOTHING to
+//      process.env (the old fold leaked the seed tenant's brand globally).
 //   5. applyCompanyIdentityToText rewrites the historical hardcoded
 //      strings only once the DB row exists.
 
@@ -32,7 +32,8 @@ vi.mock("./app-config/store.js", () => ({
 import {
   __resetCompanyInfoForTests,
   applyCompanyIdentityToText,
-  applyCompanyInfoToEnv,
+  getCompanyInfoSync,
+  hydrateCompanyInfoCache,
   applyPlatformBranding,
   applyPlatformBrandingForOrg,
   formatPhoneForDisplay,
@@ -231,20 +232,34 @@ describe("getCompanyInfo", () => {
   });
 });
 
-describe("applyCompanyInfoToEnv", () => {
-  it("hydrates RESUPPLY_PRACTICE_NAME and SENDGRID_FROM_NAME from the row", async () => {
+describe("hydrateCompanyInfoCache", () => {
+  it("warms the sync cache from the row", async () => {
     stageSupabaseResponse("dme_organization", "select", { data: ORG_ROW });
-    const result = await applyCompanyInfoToEnv();
+    const result = await hydrateCompanyInfoCache();
     expect(result.applied).toBe(true);
-    expect(process.env.RESUPPLY_PRACTICE_NAME).toBe("Acme Sleep");
-    expect(process.env.SENDGRID_FROM_NAME).toBe("Acme Sleep");
+    // The point of the hydration: the synchronous accessor now answers
+    // without a DB round-trip.
+    expect(getCompanyInfoSync().name).toBe("Acme Sleep");
   });
 
-  it("does not touch env when no row exists", async () => {
+  it("reports not-applied when no row exists", async () => {
     stageSupabaseResponse("dme_organization", "select", { data: null });
-    const result = await applyCompanyInfoToEnv();
+    const result = await hydrateCompanyInfoCache();
     expect(result.applied).toBe(false);
+  });
+
+  it("writes NOTHING to process.env", async () => {
+    // This is the regression the whole refactor exists to prevent. The old
+    // applyCompanyInfoToEnv folded the SEED tenant's name into
+    // RESUPPLY_PRACTICE_NAME (and aliased SENDGRID_FROM_NAME to it), so one
+    // process-global carried one tenant's brand to every other tenant's
+    // SMS, email, voice prompt, PDF header and MFA issuer.
+    delete process.env.RESUPPLY_PRACTICE_NAME;
+    delete process.env.SENDGRID_FROM_NAME;
+    stageSupabaseResponse("dme_organization", "select", { data: ORG_ROW });
+    await hydrateCompanyInfoCache();
     expect(process.env.RESUPPLY_PRACTICE_NAME).toBeUndefined();
+    expect(process.env.SENDGRID_FROM_NAME).toBeUndefined();
   });
 });
 

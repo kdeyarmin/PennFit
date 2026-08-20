@@ -93,6 +93,67 @@ function scan(pattern: RegExp): string[] {
   return hits;
 }
 
+// The one module allowed to read RESUPPLY_PRACTICE_NAME: it is the
+// OPERATOR-set default identity for the seed/default tenant, and
+// `envFallbackInfo()` is the only thing that should consult it.
+const PRACTICE_NAME_ENV_OWNER =
+  "artifacts/resupply-api/src/lib/company-info.ts";
+
+describe("RESUPPLY_PRACTICE_NAME is not a process-global brand", () => {
+  it("is read only by company-info's env fallback", () => {
+    const hits: string[] = [];
+    for (const root of ROOTS) {
+      for (const rel of walk(join(REPO_ROOT, root))) {
+        const path = `${root}/${rel}`;
+        if (path === PRACTICE_NAME_ENV_OWNER) continue;
+        readFileSync(join(REPO_ROOT, root, rel), "utf8")
+          .split("\n")
+          .forEach((line, i) => {
+            if (isComment(line)) return;
+            if (line.includes("RESUPPLY_PRACTICE_NAME")) {
+              hits.push(`  ${path}:${i + 1}  ${line.trim()}`);
+            }
+          });
+      }
+    }
+    expect(
+      hits,
+      "RESUPPLY_PRACTICE_NAME is folded to the SEED tenant's name, so a " +
+        "direct read brands whatever it touches as that one tenant — which " +
+        "is how the seed brand reached every other tenant's SMS, email, " +
+        "voice prompt, PDF headers and MFA issuer. Resolve the tenant you " +
+        "are actually serving with getCompanyInfo(orgId) / " +
+        `getDocumentSupplierName(orgId) instead:\n${hits.join("\n")}\n`,
+    ).toEqual([]);
+  });
+
+  it("is never written back into process.env", () => {
+    const hits: string[] = [];
+    for (const root of ROOTS) {
+      for (const rel of walk(join(REPO_ROOT, root))) {
+        readFileSync(join(REPO_ROOT, root, rel), "utf8")
+          .split("\n")
+          .forEach((line, i) => {
+            if (isComment(line)) return;
+            if (
+              /process\.env\.(RESUPPLY_PRACTICE_NAME|SENDGRID_FROM_NAME)\s*=/.test(
+                line,
+              )
+            ) {
+              hits.push(`  ${root}/${rel}:${i + 1}  ${line.trim()}`);
+            }
+          });
+      }
+    }
+    expect(
+      hits,
+      "Writing a tenant's name into a process-global is what made one " +
+        "tenant's brand everyone's. Nothing may re-create that fold:\n" +
+        `${hits.join("\n")}\n`,
+    ).toEqual([]);
+  });
+});
+
 describe("Penn tenant brand isolation", () => {
   it("uses no Penn literal as a fallback value", () => {
     const hits = scan(FALLBACK);

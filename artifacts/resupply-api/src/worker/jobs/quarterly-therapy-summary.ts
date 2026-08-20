@@ -53,6 +53,7 @@ import {
   createQueueWithDlq,
   VENDOR_SEND_QUEUE_OPTS,
 } from "../lib/queue-options";
+import { getCompanyInfo } from "../../lib/company-info.js";
 
 const JOB_NAME = "patients.quarterly-summary";
 const JOB_CRON = "17 6 * * *"; // Daily 06:17 UTC.
@@ -193,8 +194,13 @@ async function quarterlySummarySweepForOrg(
 
   const cooldownThreshold = isoDaysAgo(RESEND_COOLDOWN_DAYS);
 
-  const practiceName =
-    process.env.RESUPPLY_PRACTICE_NAME?.trim() || "CareMetric Breathe";
+  // This name goes on a PATIENT-facing therapy summary, so it must be the
+  // sweeping tenant's own. RESUPPLY_PRACTICE_NAME is folded to the SEED
+  // tenant's name at boot, which branded every tenant's summaries as the
+  // seed; getCompanyInfo(orgId) resolves this tenant's saved name, the
+  // neutral platform identity when it has none, and the seed brand for the
+  // seed org — so single-tenant copy is unchanged.
+  const practiceName = (await getCompanyInfo(orgId)).name;
 
   // Keyset-paged candidate walk. Skipped rows — most patients have NO
   // shop_customers row at all (skippedNoShopCustomer), plus opt-outs

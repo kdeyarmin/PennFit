@@ -15,7 +15,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import {
-  applyCompanyInfoToEnv,
+  hydrateCompanyInfoCache,
   invalidateCompanyInfoCache,
 } from "../../lib/company-info";
 import { logger } from "../../lib/logger";
@@ -353,11 +353,10 @@ router.put(
     }
 
     // Make the new identity visible everywhere immediately: drop the
-    // resolver cache and re-hydrate RESUPPLY_PRACTICE_NAME /
-    // SENDGRID_FROM_NAME so SMS/email/voice/PDF copy uses the saved
-    // name without a restart. Fail-soft — the save itself succeeded.
+    // resolver cache and re-warm it so SMS/email/voice/PDF copy uses the
+    // saved name without a restart. Fail-soft — the save itself succeeded.
     invalidateCompanyInfoCache();
-    await applyCompanyInfoToEnv().catch((err) => {
+    await hydrateCompanyInfoCache().catch((err) => {
       logger.warn({ err }, "company info re-hydration after save failed");
     });
 

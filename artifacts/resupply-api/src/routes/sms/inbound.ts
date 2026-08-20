@@ -66,7 +66,7 @@ import {
 
 import { smsAsksRefillAttestation } from "@workspace/resupply-reminders";
 
-import { getCompanyInfo } from "../../lib/company-info";
+import { getCompanyInfo, PLATFORM_NAME } from "../../lib/company-info";
 import { logger } from "../../lib/logger";
 import {
   resolveOrgIdByCalledNumber,
@@ -250,14 +250,25 @@ router.post(
           ip: req.ip ?? null,
           userAgent: req.get("user-agent") ?? null,
         });
+        // The sender's number is unparseable, but the CALLED number still
+        // identifies the tenant (per-tenant numbers, G7), so brand the
+        // carrier-mandated reply as that tenant. This used to read the
+        // process-global practice name — the SEED tenant's — so a tenant-B
+        // patient texting tenant-B's number was told the seed tenant would
+        // stop contacting them. Falls back to the platform name on the
+        // shared number, where no single tenant owns the conversation.
+        const earlyOrgId = await resolveOrgIdByCalledNumber(parsed.To);
+        const earlyPracticeName = earlyOrgId
+          ? (await getCompanyInfo(earlyOrgId)).name
+          : PLATFORM_NAME;
         res
           .status(200)
           .type("text/xml")
           .send(
             twimlMessage(
               earlyRouted.intent === "stop"
-                ? `Done. You will not get any more texts from ${cfg.practiceName}. Reply START if you want them back on.`
-                : `This is ${cfg.practiceName}. We text you when your CPAP supplies are due. Reply YES to ship. NO to skip. EDIT to fix your address. STOP to opt out. Message and data rates may apply.`,
+                ? `Done. You will not get any more texts from ${earlyPracticeName}. Reply START if you want them back on.`
+                : `This is ${earlyPracticeName}. We text you when your CPAP supplies are due. Reply YES to ship. NO to skip. EDIT to fix your address. STOP to opt out. Message and data rates may apply.`,
             ),
           );
         return;

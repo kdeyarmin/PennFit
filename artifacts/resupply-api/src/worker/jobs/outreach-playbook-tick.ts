@@ -115,19 +115,24 @@ interface StepRow {
   body: string;
 }
 
+// `practiceName` is deliberately absent from the shapes below. It used to
+// be read from `RESUPPLY_PRACTICE_NAME`, which `applyCompanyInfoToEnv()`
+// folds to the SEED tenant's name at boot — so the library-composed parts
+// of a playbook message (email footer, reply subject, default SMS body)
+// went out under the seed brand even though the rendered body was already
+// branded per tenant. The per-org tick spreads in the name it resolved;
+// leaving it out of the type makes a missed site a COMPILE error.
 function readMessagingConfig(env: NodeJS.ProcessEnv = process.env): {
-  sms: SmsSendConfig | null;
-  email: EmailSendConfig | null;
+  sms: Omit<SmsSendConfig, "practiceName"> | null;
+  email: Omit<EmailSendConfig, "practiceName"> | null;
   hmacKeyReady: boolean;
-  practiceName: string;
 } {
-  const practiceName = env.RESUPPLY_PRACTICE_NAME ?? "CareMetric Breathe";
   const publicBaseUrl = (
     env.RESUPPLY_VOICE_PUBLIC_BASE_URL ??
     (env.RAILWAY_PUBLIC_DOMAIN ? `https://${env.RAILWAY_PUBLIC_DOMAIN}` : "")
   ).replace(/\/+$/, "");
 
-  let sms: SmsSendConfig | null = null;
+  let sms: Omit<SmsSendConfig, "practiceName"> | null = null;
   if (
     env.TWILIO_ACCOUNT_SID &&
     env.TWILIO_AUTH_TOKEN &&
@@ -140,11 +145,10 @@ function readMessagingConfig(env: NodeJS.ProcessEnv = process.env): {
       twilioPhoneNumber: env.TWILIO_PHONE_NUMBER,
       twilioMessagingServiceSid: env.TWILIO_MESSAGING_SERVICE_SID,
       publicBaseUrl,
-      practiceName,
     };
   }
 
-  let email: EmailSendConfig | null = null;
+  let email: Omit<EmailSendConfig, "practiceName"> | null = null;
   if (env.SENDGRID_API_KEY && env.SENDGRID_FROM_NAME && publicBaseUrl) {
     email = {
       sendgridApiKey: env.SENDGRID_API_KEY,
@@ -152,11 +156,10 @@ function readMessagingConfig(env: NodeJS.ProcessEnv = process.env): {
         env.SENDGRID_FROM_EMAIL?.trim() || DEFAULT_SENDGRID_FROM_EMAIL,
       sendgridFromName: env.SENDGRID_FROM_NAME,
       publicBaseUrl,
-      practiceName,
     };
   }
 
-  return { sms, email, hmacKeyReady: hasLinkHmacKey(env), practiceName };
+  return { sms, email, hmacKeyReady: hasLinkHmacKey(env) };
 }
 
 function parsePrefs(raw: unknown): CommunicationPreferences {
@@ -293,9 +296,9 @@ async function outreachPlaybookSweepForOrg(
   }
 
   const cfg = readMessagingConfig();
-  // Brand the rendered patient-facing body/subject with THIS tenant's own
-  // name. cfg.practiceName comes from the process-global RESUPPLY_PRACTICE_NAME
-  // (the seed brand) — never use it in copy a non-seed tenant's patient sees.
+  // Brand THIS tenant's outbound copy with its own name — both the body
+  // rendered below and the library-composed parts (email footer, reply
+  // subject, default SMS body), which read `cfg.practiceName`.
   // getCompanyInfo(orgId) returns the tenant's own row, or the neutral
   // CareMetric Breathe identity for an unconfigured tenant; for the seed org
   // it resolves to the seed brand, so single-tenant copy is unchanged.
@@ -521,8 +524,12 @@ async function outreachPlaybookSweepForOrg(
           supabase: supabase.raw(),
           orgId,
           // Send under the tenant's own number / Messaging Service when
-          // it has one (G7); falls back to the platform default.
-          cfg: await applyTenantSmsFrom(orgId, cfg.sms),
+          // it has one (G7); falls back to the platform default. Brand the
+          // library-composed parts with this tenant's own name too.
+          cfg: {
+            ...(await applyTenantSmsFrom(orgId, cfg.sms)),
+            practiceName,
+          },
           patientId: run.patient_id,
           body: rendered,
           actor,
@@ -584,8 +591,12 @@ async function outreachPlaybookSweepForOrg(
         supabase: supabase.raw(),
         orgId,
         // Send under the tenant's own From identity when configured (G6);
-        // falls back to the platform default when it isn't.
-        cfg: await applyTenantEmailSender(orgId, cfg.email),
+        // falls back to the platform default when it isn't. Brand the
+        // library-composed parts (footer, reply subject) to match.
+        cfg: {
+          ...(await applyTenantEmailSender(orgId, cfg.email)),
+          practiceName,
+        },
         patientId: run.patient_id,
         content: { subject, bodyText: rendered },
         actor,
