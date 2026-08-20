@@ -330,7 +330,7 @@ router.post(
           {
             path: "",
             message:
-              "Request body contains unexpected binary or encoded data. Only numeric measurements are accepted.",
+              "Request body contains binary or encoded media, which this endpoint never accepts — only numeric measurements, scalar questionnaire answers, and catalog references.",
           },
         ],
       });
