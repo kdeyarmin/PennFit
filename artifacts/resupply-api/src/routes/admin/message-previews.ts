@@ -34,7 +34,10 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { EmailConfigError } from "@workspace/resupply-email";
+import {
+  DEFAULT_SENDGRID_FROM_EMAIL,
+  EmailConfigError,
+} from "@workspace/resupply-email";
 import {
   createTwilioSmsClient,
   TwilioConfigError,
@@ -47,8 +50,14 @@ import {
   findMessagePreview,
   type PreviewBrand,
 } from "../../lib/message-previews/catalog";
-import { createTenantSendgridClient } from "../../lib/email/tenant-sender";
-import { resolveTenantSmsClientOptions } from "../../lib/messaging/tenant-telecom";
+import {
+  createTenantSendgridClient,
+  resolveTenantSender,
+} from "../../lib/email/tenant-sender";
+import {
+  resolveTenantSmsClientOptions,
+  resolveTenantSmsFrom,
+} from "../../lib/messaging/tenant-telecom";
 import {
   resolveBrandingByOrgId,
   resolveTenantBaseUrl,
@@ -77,6 +86,65 @@ async function previewBrand(orgId: string | undefined): Promise<PreviewBrand> {
   };
 }
 
+/**
+ * Can this tenant actually send a test right now, and from what identity?
+ *
+ * The page asks staff to type their own phone/email, so telling them up
+ * front that a channel is unconfigured beats letting them type an address
+ * and get a failure back. "Configured" is probed by CONSTRUCTING the
+ * vendor client, because that is exactly where both clients throw their
+ * config error — an env-var check here would drift from the real rule.
+ * Nothing is sent by the probe.
+ */
+async function sendingReadiness(orgId: string | undefined): Promise<{
+  email: { configured: boolean; from: string | null };
+  sms: { configured: boolean; from: string | null };
+}> {
+  const email = await (async () => {
+    try {
+      await createTenantSendgridClient(orgId);
+      const sender = await resolveTenantSender(orgId);
+      return {
+        configured: true,
+        from:
+          sender.fromEmail ??
+          process.env.SENDGRID_FROM_EMAIL?.trim() ??
+          DEFAULT_SENDGRID_FROM_EMAIL,
+      };
+    } catch (err) {
+      if (err instanceof EmailConfigError) {
+        return { configured: false, from: null };
+      }
+      throw err;
+    }
+  })();
+
+  const sms = await (async () => {
+    try {
+      const opts = await resolveTenantSmsClientOptions(orgId);
+      createTwilioSmsClient(opts);
+      const tenant = await resolveTenantSmsFrom(orgId);
+      return {
+        configured: true,
+        // A Messaging Service has no single display number; say so rather
+        // than showing a platform number the patient would not see.
+        from:
+          tenant.from ??
+          (tenant.messagingServiceSid
+            ? "Messaging Service"
+            : (process.env.TWILIO_PHONE_NUMBER?.trim() ?? null)),
+      };
+    } catch (err) {
+      if (err instanceof TwilioConfigError) {
+        return { configured: false, from: null };
+      }
+      throw err;
+    }
+  })();
+
+  return { email, sms };
+}
+
 // ── GET /admin/message-previews ─────────────────────────────────────
 
 router.get(
@@ -86,7 +154,9 @@ router.get(
   async (req, res): Promise<void> => {
     try {
       const brand = await previewBrand(req.orgId);
+      const sending = await sendingReadiness(req.orgId);
       res.json({
+        sending,
         brand: {
           name: brand.brandName,
           legalName: brand.legalName,
@@ -197,11 +267,26 @@ router.post(
       res.status(400).json({ error: "invalid_phone" });
       return;
     }
+    // Assigned by the try below; every catch path returns, so it is
+    // definitely assigned by the time it is read.
+    let confirmation: {
+      terminal: boolean;
+      delivered: boolean;
+      status: string;
+      errorCode: number | string | null;
+      errorMessage: string | null;
+    };
     try {
       const client = createTwilioSmsClient(
         await resolveTenantSmsClientOptions(req.orgId),
       );
-      await client.sendSms({ to, body: sms.body });
+      const { messageSid } = await client.sendSms({ to, body: sms.body });
+      // Twilio ACCEPTING a message is not the same as a handset receiving
+      // it — a landline, an unreachable number, or a carrier block all
+      // accept then fail. Since the whole point here is "did it actually
+      // arrive on my phone", poll briefly for the terminal state instead
+      // of reporting success on acceptance.
+      confirmation = await client.confirmDelivery(messageSid);
     } catch (err) {
       if (err instanceof TwilioConfigError) {
         res.json({
@@ -225,11 +310,42 @@ router.post(
       });
       return;
     }
+    // A carrier rejection is a real failure the operator must see, even
+    // though the API call itself succeeded.
+    if (confirmation.terminal && !confirmation.delivered) {
+      logger.warn(
+        {
+          event: "message_preview_sms_undelivered",
+          id: preview.id,
+          status: confirmation.status,
+          errorCode: confirmation.errorCode,
+        },
+        "message-previews: test SMS was accepted but not delivered",
+      );
+      res.json({
+        ok: false,
+        channel,
+        code: "undelivered",
+        message:
+          confirmation.errorMessage ??
+          `The carrier reported "${confirmation.status}". Check the number can receive texts (a landline or VoIP line often can't).`,
+      });
+      return;
+    }
     logger.info(
       { event: "message_preview_sent", id: preview.id, channel },
       "message-previews: test SMS sent",
     );
-    res.json({ ok: true, channel, id: preview.id, segments: sms.segments });
+    res.json({
+      ok: true,
+      channel,
+      id: preview.id,
+      segments: sms.segments,
+      // `false` here means Twilio accepted it but no terminal state came
+      // back inside the poll window — it is probably still in flight.
+      delivered: confirmation.delivered,
+      deliveryStatus: confirmation.status,
+    });
   },
 );
 

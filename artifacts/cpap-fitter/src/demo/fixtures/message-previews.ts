@@ -628,7 +628,17 @@ function buildPreviews(): DemoPreview[] {
 
 /** GET /admin/message-previews */
 export function demoMessagePreviews() {
-  return { brand: BRAND, previews: buildPreviews() };
+  return {
+    // Demo mode has no vendor credentials and no network, so both channels
+    // report unconfigured. That is the honest state AND it makes the page
+    // explain what to do instead of offering a Send button that can't work.
+    sending: {
+      email: { configured: false, from: null },
+      sms: { configured: false, from: null },
+    },
+    brand: BRAND,
+    previews: buildPreviews(),
+  };
 }
 
 /**

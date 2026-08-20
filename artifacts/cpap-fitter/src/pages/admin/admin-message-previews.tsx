@@ -36,6 +36,7 @@ import {
   type MessagePreview,
   type PreviewGroup,
   type SendTestResult,
+  type SendingReadiness,
 } from "@/lib/admin/message-previews-api";
 
 const QUERY_KEY = ["admin", "message-previews"] as const;
@@ -114,10 +115,13 @@ function EmailMock({
 function SendTest({
   previewId,
   channel,
+  readiness,
 }: {
   previewId: string;
   channel: "email" | "sms";
+  readiness: SendingReadiness;
 }) {
+  const channelReady = readiness[channel];
   const [to, setTo] = useState("");
   const [result, setResult] = useState<SendTestResult | null>(null);
 
@@ -138,6 +142,22 @@ function SendTest({
     channel === "email"
       ? /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to.trim())
       : /^\+[1-9]\d{7,14}$/.test(to.trim());
+
+  if (!channelReady.configured) {
+    // Say so before they type an address and wait for a failure.
+    return (
+      <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-3">
+        <p className="text-sm font-medium text-amber-900">
+          {channel === "email" ? "Email" : "SMS"} sending isn&apos;t set up yet
+        </p>
+        <p className="mt-1 text-xs text-amber-800">
+          Add your {channel === "email" ? "SendGrid" : "Twilio"} credentials
+          under Global integrations, then come back and you can send this to
+          yourself. Until then you can still read the message above.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="mt-3 rounded-md border border-slate-200 bg-slate-50 p-3">
@@ -165,21 +185,43 @@ function SendTest({
         </Button>
       </div>
       <p className="mt-1 text-xs text-slate-500">
-        Goes to the address you type, from this tenant&apos;s own sender — so
-        the test shows the From identity a patient would see. The body is the
-        sample above; you can&apos;t send custom text from here.
+        Sends the real message
+        {channelReady.from ? (
+          <>
+            {" "}
+            from <strong>{channelReady.from}</strong>
+          </>
+        ) : null}{" "}
+        — the same identity a patient sees. The body is the sample above; you
+        can&apos;t send custom text from here.
       </p>
       {result ? (
         <p
           className={`mt-2 text-xs ${result.ok ? "text-emerald-700" : "text-red-700"}`}
         >
-          {result.ok
-            ? `Sent${result.segments ? ` (${result.segments} segment${result.segments === 1 ? "" : "s"})` : ""}. Check your ${channel === "email" ? "inbox" : "phone"}.`
-            : result.message}
+          {result.ok ? sentMessage(result, channel) : result.message}
         </p>
       ) : null}
     </div>
   );
+}
+
+/**
+ * What to say after a successful send. For SMS, "sent" and "arrived" are
+ * different things — the provider accepting a message says nothing about a
+ * handset receiving it — so report the confirmed state rather than implying
+ * delivery we haven't seen.
+ */
+function sentMessage(
+  result: Extract<SendTestResult, { ok: true }>,
+  channel: "email" | "sms",
+): string {
+  if (channel === "email") return "Sent. Check your inbox.";
+  const segs = result.segments
+    ? ` (${result.segments} segment${result.segments === 1 ? "" : "s"})`
+    : "";
+  if (result.delivered) return `Delivered to your phone${segs}.`;
+  return `Sent${segs}. The carrier hasn't confirmed delivery yet — it's probably still in flight.`;
 }
 
 function FidelityBadge({ preview }: { preview: MessagePreview }) {
@@ -199,9 +241,11 @@ function FidelityBadge({ preview }: { preview: MessagePreview }) {
 function PreviewCard({
   preview,
   fromEmail,
+  readiness,
 }: {
   preview: MessagePreview;
   fromEmail: string;
+  readiness: SendingReadiness;
 }) {
   const [tab, setTab] = useState<"email" | "sms">(
     preview.email ? "email" : "sms",
@@ -260,7 +304,11 @@ function PreviewCard({
               {preview.email.text}
             </pre>
           ) : null}
-          <SendTest previewId={preview.id} channel="email" />
+          <SendTest
+            previewId={preview.id}
+            channel="email"
+            readiness={readiness}
+          />
         </div>
       ) : null}
 
@@ -268,7 +316,11 @@ function PreviewCard({
         <div className="mt-3 space-y-2">
           <PhoneMock body={preview.sms.body} />
           <SmsMeter sms={preview.sms} />
-          <SendTest previewId={preview.id} channel="sms" />
+          <SendTest
+            previewId={preview.id}
+            channel="sms"
+            readiness={readiness}
+          />
         </div>
       ) : null}
     </Card>
@@ -367,7 +419,8 @@ export function AdminMessagePreviewsPage() {
                 <PreviewCard
                   key={preview.id}
                   preview={preview}
-                  fromEmail={`${data.brand.name} <noreply@${new URL(data.brand.baseUrl).hostname}>`}
+                  readiness={data.sending}
+                  fromEmail={`${data.brand.name} <${data.sending.email.from ?? `noreply@${new URL(data.brand.baseUrl).hostname}`}>`}
                 />
               ))}
             </section>

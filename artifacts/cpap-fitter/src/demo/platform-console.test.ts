@@ -1265,6 +1265,19 @@ describe("tenant admin — patient message previews", () => {
     }
   });
 
+  it("reports both channels as unconfigured, so the page explains rather than offers a dead button", async () => {
+    const { body } = await get<{
+      sending: {
+        email: { configured: boolean; from: string | null };
+        sms: { configured: boolean; from: string | null };
+      };
+    }>(`${A}/message-previews`);
+    // Demo mode has no credentials and no network — claiming otherwise
+    // would put a Send button in front of the user that cannot work.
+    expect(body.sending.email.configured).toBe(false);
+    expect(body.sending.sms.configured).toBe(false);
+  });
+
   it("reports that a demo send cannot actually deliver, rather than faking success", async () => {
     // Nothing leaves the browser in demo mode. Claiming "sent" here would
     // be the one genuinely misleading thing this page could do.

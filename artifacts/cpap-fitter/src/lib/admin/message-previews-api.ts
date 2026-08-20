@@ -41,7 +41,14 @@ export interface MessagePreview {
   sms: PreviewSms | null;
 }
 
+/** Whether this tenant can actually send right now, and from what. */
+export interface SendingReadiness {
+  email: { configured: boolean; from: string | null };
+  sms: { configured: boolean; from: string | null };
+}
+
 export interface MessagePreviewsResponse {
+  sending: SendingReadiness;
   brand: {
     name: string;
     legalName: string;
@@ -52,11 +59,25 @@ export interface MessagePreviewsResponse {
 }
 
 export type SendTestResult =
-  | { ok: true; channel: "email" | "sms"; id: string; segments?: number }
+  | {
+      ok: true;
+      channel: "email" | "sms";
+      id: string;
+      segments?: number;
+      /** SMS only: the carrier confirmed a terminal `delivered` state. */
+      delivered?: boolean;
+      /** SMS only: the last carrier status seen (e.g. "delivered", "sent"). */
+      deliveryStatus?: string;
+    }
   | {
       ok: false;
       channel: "email" | "sms";
-      code: "not_configured" | "upstream_error";
+      /**
+       * `undelivered` is the case worth distinguishing: the provider
+       * ACCEPTED the message and the carrier then failed to deliver it —
+       * a landline or blocked number looks like a success until this.
+       */
+      code: "not_configured" | "upstream_error" | "undelivered";
       message: string;
     };
 
