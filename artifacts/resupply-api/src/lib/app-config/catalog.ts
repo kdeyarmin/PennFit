@@ -272,7 +272,7 @@ export const APP_CONFIG_CATALOG: readonly AppConfigSetting[] = [
     secret: true,
     applyMode: "restart",
     description:
-      "All transactional and bulk email funnels through the shared client. The From address is fixed to info@pennpaps.com and is not editable here.",
+      "All transactional and bulk email funnels through the shared client. The From address is your tenant's own sender (Settings → Storefront branding), falling back to the platform default; it is not editable here.",
     placeholder: "SG.…",
   },
   {
@@ -282,7 +282,7 @@ export const APP_CONFIG_CATALOG: readonly AppConfigSetting[] = [
     secret: false,
     applyMode: "restart",
     description:
-      "Display name shown on outbound email (the address stays info@pennpaps.com).",
+      "Display name shown on outbound email (the address stays your tenant's configured sender).",
   },
 
   // ── Stripe ────────────────────────────────────────────────────────
@@ -614,7 +614,7 @@ export const APP_CONFIG_CATALOG: readonly AppConfigSetting[] = [
     secret: false,
     applyMode: "live",
     description: "Sender / return-to name printed on every label.",
-    placeholder: "Penn Home Medical Supply",
+    placeholder: "Your practice name",
   },
   {
     key: "XPS_SHIP_FROM_COMPANY",

@@ -54,10 +54,22 @@ const router: IRouter = Router();
 
 const INVITE_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
-function practiceName(): string {
-  return (
-    process.env.RESUPPLY_PRACTICE_NAME?.trim() || "Penn Home Medical Supply"
-  );
+/**
+ * The operating practice's name for provider-portal email + PDF copy.
+ *
+ * Resolved per TENANT, not from `process.env.RESUPPLY_PRACTICE_NAME` —
+ * that variable is folded to the SEED tenant's brand at boot, so reading
+ * it here signed a second tenant's provider invites and signature-log
+ * certificates as the seed tenant (Penn Home Medical Supply). A tenant
+ * with no brand of its own falls back to the neutral CareMetric platform
+ * identity via `DEFAULT_BRANDING`, never another tenant's.
+ *
+ * Matches how this file already builds the invite email's `productName`
+ * / `signatureName` a few lines below.
+ */
+async function practiceName(orgId: string): Promise<string> {
+  const branding = await resolveBrandingByOrgId(orgId);
+  return branding.legalName || branding.storefrontName;
 }
 
 // ── Accounts ──────────────────────────────────────────────────────
@@ -257,7 +269,7 @@ async function inviteProviderUser(
       ttlMs: INVITE_TOKEN_TTL_MS,
       email: emailLower,
       providerName: displayName,
-      practiceName: practiceName(),
+      practiceName: branding.legalName || branding.storefrontName,
       portalPath: "/provider",
       attachmentFilenames: attachments.map((a) => a.filename),
     },
@@ -994,12 +1006,13 @@ router.post(
       const baseUrl = (
         (await resolveTenantBaseUrl(orgId)) ?? deps.publicBaseUrl
       ).replace(/\/$/, "");
+      const practice = await practiceName(orgId);
       try {
         await deps.email({
           to: account.email_lower,
           subject: `Action needed: a document is awaiting your signature`,
-          html: `<p>You have a document awaiting your electronic signature in the ${practiceName()} provider portal.</p><p><a href="${baseUrl}/provider/sign-in">Sign in to review and sign</a></p>`,
-          text: `You have a document awaiting your electronic signature in the ${practiceName()} provider portal. Sign in at ${baseUrl}/provider/sign-in`,
+          html: `<p>You have a document awaiting your electronic signature in the ${practice} provider portal.</p><p><a href="${baseUrl}/provider/sign-in">Sign in to review and sign</a></p>`,
+          text: `You have a document awaiting your electronic signature in the ${practice} provider portal. Sign in at ${baseUrl}/provider/sign-in`,
         });
         emailSent = true;
       } catch (err) {
@@ -1103,7 +1116,7 @@ router.get(
     } | null;
     const pdf = await renderSignatureLogPdf({
       scope: "certificate",
-      practiceName: practiceName(),
+      practiceName: await practiceName(orgId),
       provider: {
         legalName: provider?.legal_name ?? "Unknown provider",
         npi: provider?.npi ?? null,
@@ -1175,7 +1188,7 @@ router.get(
     }
     const pdf = await renderSignatureLogPdf({
       scope: "log",
-      practiceName: practiceName(),
+      practiceName: await practiceName(orgId),
       provider: {
         legalName: provider.legal_name ?? "Unknown provider",
         npi: provider.npi ?? null,

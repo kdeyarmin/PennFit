@@ -299,7 +299,7 @@ export function buildChecklistItems(
       group: "Email",
       title: "SendGrid",
       description:
-        "Outbound email — receipts, reminders, review requests, password resets. The From address must be info@pennpaps.com.",
+        "Outbound email — receipts, reminders, review requests, password resets. Sends from your tenant's own From address once its domain is authenticated.",
       configured: isSet(env, "SENDGRID_API_KEY"),
       envHint: "SENDGRID_API_KEY",
     }),

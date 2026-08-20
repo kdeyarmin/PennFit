@@ -147,7 +147,7 @@ export const allFinancialReport: ReportModule = {
         setDownloadHeaders(
           res,
           "text/csv; charset=utf-8",
-          `pennpaps-all-financial-${rangeSlug(from, to)}.csv`,
+          `all-financial-${rangeSlug(from, to)}.csv`,
         );
         writeCombinedFinancialCsv(res, rows);
       },
@@ -170,7 +170,7 @@ export const allFinancialReport: ReportModule = {
         const pdf = await renderTablePdf({
           title: "All financial data",
           range: rangeLabel(from, to),
-          practiceName: practiceName(),
+          practiceName: await practiceName(orgId),
           columns: [
             { label: "Date", width: 75 },
             { label: "Category", width: 130 },
@@ -195,7 +195,7 @@ export const allFinancialReport: ReportModule = {
         setDownloadHeaders(
           res,
           "application/pdf",
-          `pennpaps-all-financial-${rangeSlug(from, to)}.pdf`,
+          `all-financial-${rangeSlug(from, to)}.pdf`,
         );
         res.setHeader("Content-Length", String(pdf.length));
         res.end(pdf);
@@ -213,13 +213,13 @@ export const allFinancialReport: ReportModule = {
         const iif = await renderIifWithAccounts(orgId, {
           from: from.toISOString().slice(0, 10),
           to: to.toISOString().slice(0, 10),
-          practiceName: practiceName(),
+          practiceName: await practiceName(orgId),
           rows,
         });
         setDownloadHeaders(
           res,
           "application/octet-stream",
-          `pennpaps-all-financial-${rangeSlug(from, to)}.iif`,
+          `all-financial-${rangeSlug(from, to)}.iif`,
         );
         res.end(iif);
       },
@@ -236,13 +236,13 @@ export const allFinancialReport: ReportModule = {
         const csv = renderQboCsv({
           from: from.toISOString().slice(0, 10),
           to: to.toISOString().slice(0, 10),
-          practiceName: practiceName(),
+          practiceName: await practiceName(orgId),
           rows,
         });
         setDownloadHeaders(
           res,
           "text/csv; charset=utf-8",
-          `pennpaps-all-financial-${rangeSlug(from, to)}.qbo.csv`,
+          `all-financial-${rangeSlug(from, to)}.qbo.csv`,
         );
         res.end(csv);
       },
@@ -269,7 +269,7 @@ export const allFinancialReport: ReportModule = {
     const pdf = await renderTablePdf({
       title: "All financial data",
       range: rangeLabel(from, to),
-      practiceName: practiceName(),
+      practiceName: await practiceName(orgId),
       columns: [
         { label: "Date", width: 75 },
         { label: "Category", width: 130 },

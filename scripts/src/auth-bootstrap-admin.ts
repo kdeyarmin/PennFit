@@ -353,7 +353,12 @@ async function main(): Promise<void> {
   if (argsParsed.sendEmail) {
     const ctx = {
       productName: argsParsed.productName,
-      signatureName: "Penn Home Medical Supply",
+      // Platform identity, not the seed tenant: this bootstraps the FIRST
+      // admin of a deployment, so there is no configured tenant to sign as
+      // — and hardcoding one signed every new environment's welcome email
+      // "Penn Home Medical Supply". Follows --product (default
+      // "CareMetric Breathe"), same as the subject line.
+      signatureName: argsParsed.productName,
       publicBaseUrl: argsParsed.publicBaseUrl,
       uiPathPrefix: argsParsed.uiPathPrefix,
     };

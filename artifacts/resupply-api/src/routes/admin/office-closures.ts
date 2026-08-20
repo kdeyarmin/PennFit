@@ -277,7 +277,7 @@ router.get(
     res.setHeader("Content-Type", "text/calendar; charset=utf-8");
     res.setHeader(
       "Content-Disposition",
-      'attachment; filename="pennpaps-closures.ics"',
+      'attachment; filename="office-closures.ics"',
     );
     res.send(ics);
   },

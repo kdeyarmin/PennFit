@@ -320,6 +320,16 @@ export async function resolveClearinghouse(
   // own gets no env fallback (fail closed), exactly like realtime/SFTP above.
   const discoveryConfig = buildDiscoveryConfig(row, isSeedOrg ? env : {});
   if (row) {
+    // Submitter name falls back to the TENANT's own legal name, mirroring
+    // resolveBillingIdentity above. It previously fell back to a hardcoded
+    // "PENNPAPS INC", so a tenant with a clearinghouse row but no
+    // submitter_organization_name would have transmitted its 837P claims
+    // under the seed tenant's entity — a wrong-payer submission, not just a
+    // cosmetic brand leak. A tenant with neither is left blank, which the
+    // submit path rejects rather than mis-billing.
+    const submitterOrg =
+      row.submitter_organization_name ??
+      (scoped ? ((await loadOrganization(scoped))?.legal_name ?? "") : "");
     return {
       source: "db",
       row,
@@ -336,7 +346,7 @@ export async function resolveClearinghouse(
       usageIndicator: row.usage_indicator,
       submitter: {
         etin: row.etin,
-        organizationName: row.submitter_organization_name ?? "PENNPAPS INC",
+        organizationName: submitterOrg,
         contactName: row.contact_name ?? "BILLING",
         contactPhoneE164: row.contact_phone_e164 ?? "+10000000000",
       },

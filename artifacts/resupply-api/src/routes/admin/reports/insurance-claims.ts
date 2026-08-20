@@ -161,7 +161,7 @@ export const insuranceClaimsReport: ReportModule = {
         setDownloadHeaders(
           res,
           "text/csv; charset=utf-8",
-          `pennpaps-insurance-claims-${rangeSlug(from, to)}.csv`,
+          `insurance-claims-${rangeSlug(from, to)}.csv`,
         );
         writeInsuranceClaimsCsv(res, rows);
       },
@@ -186,7 +186,7 @@ export const insuranceClaimsReport: ReportModule = {
         const pdf = await renderTablePdf({
           title: "Insurance claims",
           range: rangeLabel(from, to),
-          practiceName: practiceName(),
+          practiceName: await practiceName(orgId),
           columns: [
             { label: "Claim #", width: 100 },
             { label: "DOS", width: 70 },
@@ -217,7 +217,7 @@ export const insuranceClaimsReport: ReportModule = {
         setDownloadHeaders(
           res,
           "application/pdf",
-          `pennpaps-insurance-claims-${rangeSlug(from, to)}.pdf`,
+          `insurance-claims-${rangeSlug(from, to)}.pdf`,
         );
         res.setHeader("Content-Length", String(pdf.length));
         res.end(pdf);
@@ -235,13 +235,13 @@ export const insuranceClaimsReport: ReportModule = {
         const iif = await renderIifWithAccounts(orgId, {
           from: from.toISOString().slice(0, 10),
           to: to.toISOString().slice(0, 10),
-          practiceName: practiceName(),
+          practiceName: await practiceName(orgId),
           rows: buildQbRowsFromClaims(rows),
         });
         setDownloadHeaders(
           res,
           "application/octet-stream",
-          `pennpaps-insurance-claims-${rangeSlug(from, to)}.iif`,
+          `insurance-claims-${rangeSlug(from, to)}.iif`,
         );
         res.end(iif);
       },
@@ -258,13 +258,13 @@ export const insuranceClaimsReport: ReportModule = {
         const csv = renderQboCsv({
           from: from.toISOString().slice(0, 10),
           to: to.toISOString().slice(0, 10),
-          practiceName: practiceName(),
+          practiceName: await practiceName(orgId),
           rows: buildQbRowsFromClaims(rows),
         });
         setDownloadHeaders(
           res,
           "text/csv; charset=utf-8",
-          `pennpaps-insurance-claims-${rangeSlug(from, to)}.qbo.csv`,
+          `insurance-claims-${rangeSlug(from, to)}.qbo.csv`,
         );
         res.end(csv);
       },
@@ -290,7 +290,7 @@ export const insuranceClaimsReport: ReportModule = {
     const pdf = await renderTablePdf({
       title: "Insurance claims",
       range: rangeLabel(from, to),
-      practiceName: practiceName(),
+      practiceName: await practiceName(orgId),
       columns: [
         { label: "Claim #", width: 100 },
         { label: "DOS", width: 70 },

@@ -9,7 +9,7 @@ import {
   GL_ACCOUNT_DEFAULTS,
   loadGlAccounts,
 } from "../../../lib/billing/gl-accounts";
-import { getDocumentSupplierNameSync } from "../../../lib/company-info";
+import { getDocumentSupplierName } from "../../../lib/company-info";
 import {
   renderIif,
   type QuickbooksExportInput,
@@ -96,7 +96,15 @@ export function reportOrgId(
 // Read at call time (not module load) so the boot/save-time company-
 // info hydration is honoured without a restart. Reports carry the
 // registered DME legal name, not the storefront brand.
-export const practiceName = (): string => getDocumentSupplierNameSync();
+//
+// Scoped to the REQUESTING tenant. The synchronous
+// `getDocumentSupplierNameSync()` this used to call reads the seed-org
+// cache — which is folded to the seed tenant's brand at boot — so every
+// tenant's financial PDFs, IIF exports, and emailed report subjects were
+// stamped "Penn Home Medical Supply". A tenant with no company row of its
+// own resolves to the neutral platform identity, never another tenant's.
+export const practiceName = (orgId: string): Promise<string> =>
+  getDocumentSupplierName(orgId);
 
 export function parseRange(req: import("express").Request): {
   from: Date;

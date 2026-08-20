@@ -148,7 +148,7 @@ export const patientPaymentsReport: ReportModule = {
         setDownloadHeaders(
           res,
           "text/csv; charset=utf-8",
-          `pennpaps-patient-payments-${rangeSlug(from, to)}.csv`,
+          `patient-payments-${rangeSlug(from, to)}.csv`,
         );
         writePatientPaymentsCsv(res, rows);
       },
@@ -168,7 +168,7 @@ export const patientPaymentsReport: ReportModule = {
         const pdf = await renderTablePdf({
           title: "Patient payments",
           range: rangeLabel(from, to),
-          practiceName: practiceName(),
+          practiceName: await practiceName(orgId),
           columns: [
             { label: "Payment #", width: 100 },
             { label: "Date", width: 80 },
@@ -194,7 +194,7 @@ export const patientPaymentsReport: ReportModule = {
         setDownloadHeaders(
           res,
           "application/pdf",
-          `pennpaps-patient-payments-${rangeSlug(from, to)}.pdf`,
+          `patient-payments-${rangeSlug(from, to)}.pdf`,
         );
         res.setHeader("Content-Length", String(pdf.length));
         res.end(pdf);
@@ -212,13 +212,13 @@ export const patientPaymentsReport: ReportModule = {
         const iif = await renderIifWithAccounts(orgId, {
           from: from.toISOString().slice(0, 10),
           to: to.toISOString().slice(0, 10),
-          practiceName: practiceName(),
+          practiceName: await practiceName(orgId),
           rows: buildQbRowsFromPatientPayments(rows),
         });
         setDownloadHeaders(
           res,
           "application/octet-stream",
-          `pennpaps-patient-payments-${rangeSlug(from, to)}.iif`,
+          `patient-payments-${rangeSlug(from, to)}.iif`,
         );
         res.end(iif);
       },
@@ -235,13 +235,13 @@ export const patientPaymentsReport: ReportModule = {
         const csv = renderQboCsv({
           from: from.toISOString().slice(0, 10),
           to: to.toISOString().slice(0, 10),
-          practiceName: practiceName(),
+          practiceName: await practiceName(orgId),
           rows: buildQbRowsFromPatientPayments(rows),
         });
         setDownloadHeaders(
           res,
           "text/csv; charset=utf-8",
-          `pennpaps-patient-payments-${rangeSlug(from, to)}.qbo.csv`,
+          `patient-payments-${rangeSlug(from, to)}.qbo.csv`,
         );
         res.end(csv);
       },
@@ -262,7 +262,7 @@ export const patientPaymentsReport: ReportModule = {
     const pdf = await renderTablePdf({
       title: "Patient payments",
       range: rangeLabel(from, to),
-      practiceName: practiceName(),
+      practiceName: await practiceName(orgId),
       columns: [
         { label: "Payment #", width: 100 },
         { label: "Date", width: 80 },

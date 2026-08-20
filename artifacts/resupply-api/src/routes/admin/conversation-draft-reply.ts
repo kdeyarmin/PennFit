@@ -91,7 +91,7 @@ router.post(
       }))
       .reverse();
 
-    const result = await draftConversationReply({ channel, turns });
+    const result = await draftConversationReply({ channel, turns, orgId });
 
     // Counts + soft reason only — never the draft or any body.
     req.log?.info(
