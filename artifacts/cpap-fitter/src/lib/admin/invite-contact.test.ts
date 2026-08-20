@@ -61,6 +61,52 @@ describe("parseInviteContact", () => {
     expect(parsed.kind === "invalid" && parsed.reason).toMatch(/too long/i);
   });
 
+  // Regression: blanket-stripping non-digits folded an extension into
+  // the subscriber number ("+1 (215) 555-1234 ext. 99" → +1215555123499,
+  // 13 digits, which passed the E.164 length check) and would have
+  // texted a signed patient link to a different number entirely.
+  it("refuses a number with an extension rather than folding its digits in", () => {
+    for (const raw of [
+      "+1 (215) 555-1234 ext. 99",
+      "+1 215 555 1234 x99",
+      "215-555-1234 ext 99",
+      "2155551234x2",
+    ]) {
+      const parsed = parseInviteContact(raw);
+      expect(parsed.kind, raw).toBe("invalid");
+      expect(normalizePhoneE164(raw), raw).toBeNull();
+    }
+  });
+
+  it("rejects an email the server's Zod would reject, so the operator sees why", () => {
+    // Verified against the installed zod: each of these fails
+    // z.string().email(), which would return a bare `invalid_body`.
+    for (const raw of [
+      "john..doe@example.com",
+      ".john@example.com",
+      "john.@example.com",
+      "jordan@example..com",
+      "jordan@-example.com",
+    ]) {
+      const parsed = parseInviteContact(raw);
+      expect(parsed.kind, raw).toBe("invalid");
+      expect(parsed.kind === "invalid" && parsed.reason).toMatch(/email/i);
+    }
+  });
+
+  it("still accepts the ordinary addresses the server accepts", () => {
+    for (const raw of [
+      "jordan@example.com",
+      "jordan.lee@example.com",
+      "a+b@example.co.uk",
+      "jordan@sub.example.com",
+      "o'brien@example.com",
+      "jordan_lee@example.com",
+    ]) {
+      expect(parseInviteContact(raw).kind, raw).toBe("email");
+    }
+  });
+
   it("rejects a number that is the wrong length", () => {
     for (const raw of ["555-1234", "21555512345", "+1234", "abc"]) {
       expect(parseInviteContact(raw).kind, raw).toBe("invalid");

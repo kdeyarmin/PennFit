@@ -13,7 +13,7 @@
 // needs no contact details at all (migration 0489), because the patient
 // is standing at the counter.
 
-import { useMemo, useState } from "react";
+import { lazy, Suspense, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { ScanFace } from "lucide-react";
@@ -22,13 +22,22 @@ import { ApiError } from "@workspace/api-client-react/admin";
 
 import { Button } from "@/components/admin/Button";
 import { Input, Label } from "@/components/admin/Input";
-import { QrCode } from "@/components/QrCode";
 import {
   createFitterInvite,
   type CreateFitterInviteBody,
   type FitterInviteChannel,
 } from "@/lib/admin/fitter-invites-api";
 import { parseInviteContact } from "@/lib/admin/invite-contact";
+
+// DashboardPage is deliberately EAGER (see console.tsx) — it's the
+// default /admin route and a Suspense flash there is the first thing a
+// staff user sees. A static import of <QrCode/> would therefore drag the
+// `qrcode` package into the eager admin entry chunk for everyone,
+// including the majority who only ever send by text or email. It's only
+// reachable after an in-office invite succeeds, so load it there.
+const QrCode = lazy(() =>
+  import("@/components/QrCode").then((m) => ({ default: m.QrCode })),
+);
 
 /** Matches the worklist page's key so a send from Home refreshes it. */
 const INVITE_QUERY_KEY = ["admin", "fitter-invites"] as const;
@@ -136,10 +145,23 @@ export function FitterInviteQuickSend() {
           sent={sent}
           copied={copied}
           onCopy={() => {
-            void navigator.clipboard?.writeText(sent.inviteLink).then(() => {
-              setCopied(true);
-              window.setTimeout(() => setCopied(false), 1500);
-            });
+            // writeText REJECTS on a denied clipboard permission or an
+            // unfocused document, so the .then chain needs a .catch —
+            // without one this is an unhandled rejection every time a
+            // browser blocks the write. Swallowing it is the right
+            // recovery: the link is on screen in a selectable input, so
+            // the operator can still copy it by hand. (The `?.` already
+            // short-circuits the whole chain when the API is absent, so
+            // that case never reaches .then at all.)
+            void navigator.clipboard
+              ?.writeText(sent.inviteLink)
+              .then(() => {
+                setCopied(true);
+                window.setTimeout(() => setCopied(false), 1500);
+              })
+              .catch(() => {
+                /* clipboard blocked — the link stays selectable */
+              });
           }}
           onReset={reset}
         />
@@ -260,12 +282,23 @@ function SentPanel({
       {sent.channel === "in_office" && (
         <div className="flex flex-col items-center gap-2">
           {/* Rendered locally by the `qrcode` package — the link is never
-              sent anywhere to become an image. */}
-          <QrCode
-            value={sent.inviteLink}
-            size={180}
-            ariaLabel="QR code linking to the mask fitter"
-          />
+              sent anywhere to become an image. The reserved box keeps the
+              panel from jumping as the lazy chunk lands. */}
+          <Suspense
+            fallback={
+              <div
+                style={{ width: 180, height: 180 }}
+                aria-label="Preparing QR code"
+                role="img"
+              />
+            }
+          >
+            <QrCode
+              value={sent.inviteLink}
+              size={180}
+              ariaLabel="QR code linking to the mask fitter"
+            />
+          </Suspense>
           <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
             Expires {formatExpiry(sent.expiresAt)}.
           </p>
@@ -344,8 +377,20 @@ function formatExpiry(iso: string): string {
 
 function describeError(err: unknown): string {
   if (err instanceof ApiError) {
-    const data = err.data as { error?: string; message?: string } | undefined;
-    return data?.message ?? data?.error ?? "Could not send the invite.";
+    const data = err.data as
+      | {
+          error?: string;
+          message?: string;
+          issues?: { path?: string; message?: string }[];
+        }
+      | undefined;
+    if (data?.message) return data.message;
+    // A 400 from the endpoint's Zod guard carries field issues and no
+    // `message`, so falling straight through to `error` printed the bare
+    // token "invalid_body" at the operator. Prefer the field message.
+    const issue = data?.issues?.find((i) => i.message);
+    if (issue?.message) return issue.message;
+    return data?.error ?? "Could not send the invite.";
   }
   return err instanceof Error ? err.message : "Could not send the invite.";
 }

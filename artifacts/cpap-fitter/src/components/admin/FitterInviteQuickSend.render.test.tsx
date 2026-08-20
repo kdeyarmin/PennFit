@@ -153,6 +153,65 @@ describe("FitterInviteQuickSend", () => {
     ).toBe(OK.inviteLink);
   });
 
+  // The copy button writes to a clipboard the browser can refuse. Both
+  // refusal shapes must leave the handler quiet: no throw, and no
+  // unhandled rejection (the link is on screen to copy by hand anyway).
+  describe("copy link, when the browser blocks the clipboard", () => {
+    async function sendThenCopy() {
+      render(<FitterInviteQuickSend />);
+      fireEvent.change(screen.getByLabelText(/mobile number or email/i), {
+        target: { value: "2155551234" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Send text" }));
+      await screen.findByTestId("dashboard-fitter-quick-sent");
+      fireEvent.click(screen.getByRole("button", { name: "Copy link" }));
+    }
+
+    it("does not throw when the clipboard API is absent entirely", async () => {
+      Object.defineProperty(navigator, "clipboard", {
+        value: undefined,
+        configurable: true,
+      });
+      await sendThenCopy();
+      // Nothing was copied, so the button must not claim it was.
+      expect(screen.getByRole("button", { name: "Copy link" })).toBeTruthy();
+    });
+
+    // Regression guard for the missing .catch: Vitest fails the whole run
+    // on an unhandled rejection, so dropping the .catch turns this test
+    // red (verified) even though the assertion below is about the UI.
+    it("stays quiet, and does not claim success, when the write is denied", async () => {
+      Object.defineProperty(navigator, "clipboard", {
+        value: {
+          writeText: () =>
+            Promise.reject(
+              new Error("NotAllowedError: Document is not focused"),
+            ),
+        },
+        configurable: true,
+      });
+      await sendThenCopy();
+      // Let the rejection settle before asserting.
+      await new Promise((r) => setTimeout(r, 0));
+      expect(screen.getByRole("button", { name: "Copy link" })).toBeTruthy();
+    });
+
+    it("confirms with 'Copied' when the write succeeds", async () => {
+      const writeText = vi.fn().mockResolvedValue(undefined);
+      Object.defineProperty(navigator, "clipboard", {
+        value: { writeText },
+        configurable: true,
+      });
+      await sendThenCopy();
+      expect(writeText).toHaveBeenCalledWith(
+        "https://pennpaps.com/fitter-invite?t=abc",
+      );
+      expect(
+        await screen.findByRole("button", { name: "Copied" }),
+      ).toBeTruthy();
+    });
+  });
+
   it("surfaces the API's message when the send fails", async () => {
     createFitterInvite.mockRejectedValue(
       new Error("You're sending fitter invites too quickly."),

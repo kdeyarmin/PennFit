@@ -1,7 +1,10 @@
 import { useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { useGetDashboardSummary } from "@workspace/api-client-react/admin";
+import {
+  useGetAdminMe,
+  useGetDashboardSummary,
+} from "@workspace/api-client-react/admin";
 import { KpiCard } from "@/components/admin/Card";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { SetupProgressCard } from "@/components/admin/SetupProgressCard";
@@ -11,6 +14,37 @@ import { shouldRedirectToSetup } from "@/lib/admin/onboarding-redirect";
 import { TodayWorklistSection } from "@/pages/admin/admin-today";
 
 const ONBOARDING_REDIRECT_KEY = "cmb-onboarding-redirected";
+
+/**
+ * Whether to offer the quick fitter-invite sender at all.
+ *
+ * Home is the one page every staff member lands on, so an unconditional
+ * action card here reaches people the action doesn't apply to:
+ *
+ *  - `POST /admin/fitter-invites` gates on `conversations.manage`, which
+ *    the `clinician` bucket (DB role `rt`) does NOT hold — an RT would
+ *    type a patient's number, press send, and get a 403.
+ *  - Fitter invites live in the "Storefront & leads" nav section, gated
+ *    by `module.storefront`. A tenant that switched that module off has
+ *    the sidebar entry hidden and the route replaced by a "turned off"
+ *    notice, so offering the same action on Home contradicts it.
+ *
+ * Permissions fail CLOSED (absent ⇒ hidden, matching how the sidebar
+ * filters entries), while disabled features fail OPEN (absent/empty
+ * means nothing is hidden — the same direction AppShell takes, so a
+ * flag-table blip shows the full console rather than an empty one).
+ */
+export function canQuickSendFitterInvite(me: {
+  permissions?: string[];
+  disabledFeatures?: string[];
+}): boolean {
+  const permissions = me.permissions ?? [];
+  const disabled = me.disabledFeatures ?? [];
+  return (
+    permissions.includes("conversations.manage") &&
+    !disabled.includes("module.storefront")
+  );
+}
 
 // Send a brand-new tenant to the guided setup checklist once, on their first
 // dashboard landing of the session — so onboarding can't be silently skipped.
@@ -147,7 +181,9 @@ function FirstActionsCard({ show }: { show: boolean }) {
 
 export function DashboardPage() {
   const { data, isPending, isError, error, refetch } = useGetDashboardSummary();
+  const { data: adminMe } = useGetAdminMe();
   useOnboardingRedirect();
+  const showQuickSend = canQuickSendFitterInvite(adminMe ?? {});
 
   const kpis: KpiLink[] = [
     {
@@ -206,7 +242,7 @@ export function DashboardPage() {
 
       <SetupProgressCard />
 
-      <FitterInviteQuickSend />
+      {showQuickSend && <FitterInviteQuickSend />}
 
       <FirstActionsCard
         show={

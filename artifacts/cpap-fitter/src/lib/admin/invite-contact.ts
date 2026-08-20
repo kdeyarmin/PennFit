@@ -22,9 +22,19 @@ export type InviteContact =
   /** Typed something, but it isn't a usable address/number yet. */
   | { kind: "invalid"; reason: string };
 
-/** Same shape the invite modal validates against, and about as strict as
- *  a client-side email check should be — SendGrid is the real judge. */
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+/**
+ * The server validates with Zod's `.email()`, so this mirrors Zod's own
+ * pattern rather than a looser "has an @" check. Matching it matters:
+ * a looser client check announces "Will email john..doe@example.com",
+ * sends, and gets back a bare `invalid_body` — the API returns field
+ * issues, not a human message, so the operator sees nothing useful. The
+ * rules Zod enforces (verified against the installed version): no
+ * leading dot, no consecutive dots anywhere, a local part ending in a
+ * non-dot character, domain labels starting alphanumeric, and a
+ * two-letter-or-longer alphabetic TLD.
+ */
+const EMAIL_RE =
+  /^(?!\.)(?!.*\.\.)([A-Za-z0-9_'+\-.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9-]*\.)+[A-Za-z]{2,}$/;
 
 /** The API caps `email` at 200 chars (Zod `.max(200)`); reject longer
  *  input here so the operator gets a readable message instead of a 400. */
@@ -78,6 +88,15 @@ export function parseInviteContact(raw: string): InviteContact {
  */
 export function normalizePhoneE164(raw: string): string | null {
   const trimmed = raw.trim();
+  // Reject anything that isn't a number plus conventional separators
+  // BEFORE stripping. Blanket-stripping non-digits silently folds an
+  // extension into the subscriber number — "+1 (215) 555-1234 ext. 99"
+  // became "+1215555123499", which is 13 digits and so passed the E.164
+  // length check. That doesn't fail loudly; it texts a signed
+  // patient-facing fitting link to whatever number those digits happen
+  // to be. An extension can't be dialled by SMS anyway, so the only
+  // right answer is to refuse it and let the operator retype.
+  if (!/^[+\d\s().-]+$/.test(trimmed)) return null;
   if (trimmed.startsWith("+")) {
     const candidate = `+${trimmed.slice(1).replace(/[^\d]/g, "")}`;
     return E164_RE.test(candidate) ? candidate : null;
