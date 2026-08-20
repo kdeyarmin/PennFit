@@ -760,11 +760,11 @@ describe("tenant admin — fit sessions", () => {
     expect(all.body.sessions.length).toBeGreaterThan(3);
 
     const pending = await get<{ sessions: Array<{ reviewStatus: string }> }>(
-      `${A}/fit-sessions?reviewStatus=pending`,
+      `${A}/fit-sessions?reviewStatus=pending_review`,
     );
     expect(pending.body.sessions.length).toBeGreaterThan(0);
     expect(
-      pending.body.sessions.every((s) => s.reviewStatus === "pending"),
+      pending.body.sessions.every((s) => s.reviewStatus === "pending_review"),
     ).toBe(true);
   });
 
@@ -784,7 +784,7 @@ describe("tenant admin — fit sessions", () => {
       note: "Bands check out.",
     });
     const { body } = await get<{ sessions: Array<{ id: string }> }>(
-      `${A}/fit-sessions?reviewStatus=pending`,
+      `${A}/fit-sessions?reviewStatus=pending_review`,
     );
     expect(body.sessions.some((s) => s.id === "demo-fit-3")).toBe(false);
   });
@@ -980,7 +980,7 @@ describe("tenant admin — referral reviews (AI triage)", () => {
   it("seeds a triage queue spanning the status range", async () => {
     const { body } = await get<{
       reviews: Array<{ id: string; status: string }>;
-    }>(`${A}/referral-reviews`);
+    }>(`${A}/referral-reviews?status=all`);
     expect(body.reviews.length).toBeGreaterThan(3);
     const statuses = new Set(body.reviews.map((r) => r.status));
     // The interesting states for the triage UI: something to work, something
@@ -992,49 +992,46 @@ describe("tenant admin — referral reviews (AI triage)", () => {
 
   it("an extracted review carries a full extraction and a qualification verdict", async () => {
     const { body } = await get<{
-      review: {
-        status: string;
-        extraction: {
-          patient: { firstName: string | null };
-          sleepStudy: { ahi: number | null } | null;
-          order: unknown[];
-          confidence: Record<string, string>;
-        } | null;
-        report: {
-          qualification: { verdict: string };
-          completeness: { outstandingCount: number };
-        } | null;
-      };
+      status: string;
+      faxFromE164: string | null;
+      extraction: {
+        patient: { firstName: string | null };
+        sleepStudy: { ahi: number | null } | null;
+        order: unknown[];
+        confidence: Record<string, string>;
+      } | null;
+      report: {
+        qualification: { verdict: string };
+        completeness: { outstandingCount: number };
+      } | null;
     }>(`${A}/referral-reviews/demo-review-1`);
-    expect(body.review.status).toBe("extracted");
-    expect(body.review.extraction?.patient.firstName).toBe("Gloria");
-    expect(body.review.extraction?.sleepStudy?.ahi).toBeGreaterThan(15);
-    expect(body.review.extraction?.order.length).toBeGreaterThan(0);
-    expect(body.review.report?.qualification.verdict).toBe("qualifies");
+    expect(body.status).toBe("extracted");
+    expect(body.extraction?.patient.firstName).toBe("Gloria");
+    expect(body.extraction?.sleepStudy?.ahi).toBeGreaterThan(15);
+    expect(body.extraction?.order.length).toBeGreaterThan(0);
+    expect(body.report?.qualification.verdict).toBe("qualifies");
+    // Detail-only field, proving this is the detail shape not the summary.
+    expect(body.faxFromE164).toBeTruthy();
   });
 
   it("a sub-threshold AHI reports the comorbidity path, not a clean qualify", async () => {
     const { body } = await get<{
-      review: {
-        report: {
-          qualification: { verdict: string; hasDocumentedComorbidity: boolean };
-        } | null;
-      };
+      report: {
+        qualification: { verdict: string; hasDocumentedComorbidity: boolean };
+      } | null;
     }>(`${A}/referral-reviews/demo-review-2`);
-    expect(body.review.report?.qualification.verdict).toBe(
+    expect(body.report?.qualification.verdict).toBe(
       "qualifies_with_comorbidity",
     );
-    expect(body.review.report?.qualification.hasDocumentedComorbidity).toBe(
-      true,
-    );
+    expect(body.report?.qualification.hasDocumentedComorbidity).toBe(true);
   });
 
   it("a failed extraction explains itself instead of showing a blank packet", async () => {
-    const { body } = await get<{
-      review: { status: string; errorReason: string | null };
-    }>(`${A}/referral-reviews/demo-review-6`);
-    expect(body.review.status).toBe("failed");
-    expect(body.review.errorReason).toBeTruthy();
+    const { body } = await get<{ status: string; errorReason: string | null }>(
+      `${A}/referral-reviews/demo-review-6`,
+    );
+    expect(body.status).toBe("failed");
+    expect(body.errorReason).toBeTruthy();
   });
 
   it("surfaces duplicate-patient candidates for the accept flow", async () => {
@@ -1051,69 +1048,74 @@ describe("tenant admin — referral reviews (AI triage)", () => {
   });
 
   it("accepting a review creates a patient and marks it accepted", async () => {
-    const { body } = await post<{ ok: boolean; patientId: string | null }>(
-      `${A}/referral-reviews/demo-review-3/accept`,
-    );
+    const { body } = await post<{
+      patientId: string | null;
+      status: string;
+      documentsCreated: number;
+    }>(`${A}/referral-reviews/demo-review-3/accept`);
     expect(body.patientId).toBeTruthy();
-    const after = await get<{ review: { status: string } }>(
+    expect(body.status).toBe("accepted");
+    const after = await get<{ status: string }>(
       `${A}/referral-reviews/demo-review-3`,
     );
-    expect(after.body.review.status).toBe("accepted");
+    expect(after.body.status).toBe("accepted");
   });
 
   it("dismissing a review records the note", async () => {
-    await post(`${A}/referral-reviews/demo-review-2/dismiss`, {
-      note: "Duplicate fax.",
-    });
+    const dismissed = await post<{ id: string; status: string }>(
+      `${A}/referral-reviews/demo-review-2/dismiss`,
+      { note: "Duplicate fax." },
+    );
+    expect(dismissed.body.status).toBe("dismissed");
     const { body } = await get<{
-      review: { status: string; dismissNote: string | null };
+      status: string;
+      dismissNote: string | null;
     }>(`${A}/referral-reviews/demo-review-2`);
-    expect(body.review.status).toBe("dismissed");
-    expect(body.review.dismissNote).toBe("Duplicate fax.");
+    expect(body.status).toBe("dismissed");
+    expect(body.dismissNote).toBe("Duplicate fax.");
   });
 
   it("re-running extraction on a failed packet fills it in", async () => {
-    const { body } = await post<{
-      review: { status: string; extraction: unknown };
-    }>(`${A}/referral-reviews/demo-review-6/extract`);
-    expect(body.review.status).toBe("extracted");
-    expect(body.review.extraction).not.toBeNull();
+    const { body } = await post<{ status: string; extraction: unknown }>(
+      `${A}/referral-reviews/demo-review-6/extract`,
+    );
+    expect(body.status).toBe("extracted");
+    expect(body.extraction).not.toBeNull();
   });
 
   it("builds a provider request list from the completeness gaps", async () => {
     const { body } = await post<{
-      ok: boolean;
-      sent: boolean;
+      manualDocumentId: string;
       requests: string[];
     }>(`${A}/referral-reviews/demo-review-1/request-from-provider`);
-    expect(body.sent).toBe(false);
+    expect(body.manualDocumentId).toBeTruthy();
     expect(body.requests.length).toBeGreaterThan(0);
   });
 
   it("hands back a same-origin upload target so nothing escapes the sandbox", async () => {
-    const { body } = await post<{ url: string; method: string }>(
+    const { body } = await post<{ uploadURL: string; objectPath: string }>(
       `${A}/referral-reviews/upload-url`,
     );
-    expect(body.method).toBe("PUT");
-    expect(body.url.startsWith("/resupply-api/")).toBe(true);
+    expect(body.objectPath).toContain("referral-uploads/");
+    expect(body.uploadURL.startsWith("/resupply-api/")).toBe(true);
   });
 
   it("registering an uploaded packet adds it to the queue as pending", async () => {
     const created = await post<{
-      review: { id: string; status: string; source: string };
-    }>(`${A}/referral-reviews`, {
-      uploadId: "demo-upload-1",
-      fileName: "packet.pdf",
-    });
-    expect(created.body.review.status).toBe("pending");
-    expect(created.body.review.source).toBe("upload");
+      id: string;
+      status: string;
+      source: string;
+      enqueued: boolean;
+    }>(`${A}/referral-reviews`, { objectPath: "demo/packet.pdf" });
+    expect(created.body.status).toBe("pending");
+    expect(created.body.source).toBe("upload");
+    expect(created.body.enqueued).toBe(true);
 
+    // A pending review belongs to the default `open` bucket.
     const { body } = await get<{ reviews: Array<{ id: string }> }>(
       `${A}/referral-reviews`,
     );
-    expect(body.reviews.some((r) => r.id === created.body.review.id)).toBe(
-      true,
-    );
+    expect(body.reviews.some((r) => r.id === created.body.id)).toBe(true);
   });
 });
 

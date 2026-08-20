@@ -828,27 +828,44 @@ export function demoUpdateProviderLink(
 
 // ── Referral reviews (AI triage) ────────────────────────────────────
 
-/** GET /admin/referral-reviews */
+/**
+ * GET /admin/referral-reviews?status=
+ *
+ * `status` is a BUCKET, not a raw row status: the console sends
+ * `open | accepted | dismissed | all` and defaults to `open`, which the
+ * real route expands to the still-actionable statuses. Filtering on the
+ * raw value here would make the default view empty.
+ */
+const OPEN_REVIEW_STATUSES: ReadonlyArray<ReferralReviewStatus> = [
+  "pending",
+  "extracted",
+  "failed",
+  "offline",
+  "unsupported",
+];
+
 export function demoReferralReviews(query: URLSearchParams) {
   const s = get();
-  const status = query.get("status");
+  const bucket = query.get("status") ?? "open";
   const limit = Number(query.get("limit")) || 50;
-  const offset = Number(query.get("offset")) || 0;
+
   let reviews = s.reviews;
-  if (status) reviews = reviews.filter((r) => r.status === status);
+  if (bucket === "open") {
+    reviews = reviews.filter((r) => OPEN_REVIEW_STATUSES.includes(r.status));
+  } else if (bucket !== "all") {
+    reviews = reviews.filter((r) => r.status === bucket);
+  }
   return {
     reviews: [...reviews]
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-      .slice(offset, offset + limit),
-    limit,
-    offset,
+      .slice(0, limit),
   };
 }
 
-/** GET /admin/referral-reviews/:id */
+/** GET /admin/referral-reviews/:id — the review at the TOP level (the
+ *  route spreads it, it does not nest it under `review`). */
 export function demoReferralReview(id: string) {
-  const r = get().reviews.find((x) => x.id === id);
-  return r ? { review: r } : null;
+  return get().reviews.find((x) => x.id === id) ?? null;
 }
 
 /** GET /admin/referral-reviews/:id/duplicates */
@@ -873,13 +890,6 @@ export function demoReferralDuplicates(id: string) {
   };
 }
 
-/** GET /admin/referral-reviews/:id/report */
-export function demoReferralReviewReport(id: string) {
-  const r = get().reviews.find((x) => x.id === id);
-  if (!r?.report) return null;
-  return r.report;
-}
-
 /** POST /admin/referral-reviews/:id/extract — re-run the extraction. */
 export function demoExtractReferralReview(id: string) {
   const r = get().reviews.find((x) => x.id === id);
@@ -897,7 +907,7 @@ export function demoExtractReferralReview(id: string) {
   r.extractedAt = NOW_ISO();
   r.errorReason = null;
   r.updatedAt = NOW_ISO();
-  return { review: r };
+  return r;
 }
 
 /** POST /admin/referral-reviews/:id/accept — create/merge the patient. */
@@ -908,7 +918,15 @@ export function demoAcceptReferralReview(id: string) {
   r.acceptedAt = NOW_ISO();
   r.createdPatientId = r.createdPatientId ?? newId("demo-patient");
   r.updatedAt = NOW_ISO();
-  return { ok: true as const, patientId: r.createdPatientId, review: r };
+  // AcceptReferralResponse: the console navigates to the new patient and
+  // reports what the packet split produced.
+  return {
+    id: r.id,
+    patientId: r.createdPatientId,
+    status: "accepted" as const,
+    documentsCreated: 3,
+    coverageCreated: r.extraction?.insurance != null,
+  };
 }
 
 /** POST /admin/referral-reviews/:id/dismiss */
@@ -919,7 +937,7 @@ export function demoDismissReferralReview(id: string, note?: string) {
   r.dismissedAt = NOW_ISO();
   r.dismissNote = note ?? null;
   r.updatedAt = NOW_ISO();
-  return { ok: true as const, review: r };
+  return { id: r.id, status: "dismissed" as const };
 }
 
 /** POST /admin/referral-reviews/:id/request-from-provider */
@@ -929,26 +947,19 @@ export function demoRequestFromProvider(id: string) {
   const requests =
     (r.report as { completeness?: { providerRequests?: string[] } } | null)
       ?.completeness?.providerRequests ?? [];
-  return {
-    ok: true as const,
-    // No fax leaves the sandbox; the console renders what WOULD be sent.
-    sent: false,
-    faxTo: r.faxFromE164,
-    requests,
-  };
+  // Drafts a manual document the operator then sends — nothing leaves the
+  // sandbox; the console links to the draft by id.
+  return { manualDocumentId: newId("demo-manual-doc"), requests };
 }
 
 /** POST /admin/referral-reviews/upload-url — presigned-upload stand-in. */
 export function demoReferralUploadUrl() {
-  const id = newId("demo-review-upload");
+  const objectPath = `demo/referral-uploads/${newId("packet")}.pdf`;
   return {
-    uploadId: id,
-    // A same-origin path so nothing in the sandbox tries to reach a real
+    // A same-origin URL so nothing in the sandbox tries to reach a real
     // storage host; the demo router answers the PUT with `{ ok: true }`.
-    url: `/resupply-api/admin/referral-reviews/upload/${id}`,
-    method: "PUT",
-    headers: { "Content-Type": "application/pdf" },
-    expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
+    uploadURL: `/resupply-api/admin/referral-reviews/upload/${encodeURIComponent(objectPath)}`,
+    objectPath,
   };
 }
 
@@ -979,5 +990,5 @@ export function demoCreateReferralReview(
     faxFromE164: null,
   };
   s.reviews.unshift(review);
-  return { review };
+  return { ...review, enqueued: true };
 }

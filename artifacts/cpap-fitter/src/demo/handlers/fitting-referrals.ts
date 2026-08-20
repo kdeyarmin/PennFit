@@ -62,7 +62,6 @@ import {
   demoProviderLinks,
   demoReferralDuplicates,
   demoReferralReview,
-  demoReferralReviewReport,
   demoReferralReviews,
   demoReferralUploadUrl,
   demoReplyToReferral,
@@ -263,6 +262,8 @@ export const fittingReferralsHandlers: DemoHandler[] = [
   ),
 
   // ── Referral reviews (/admin/referral-reviews) ───────────────────
+  // `/:id/report` and `/:id/media` stream a PDF, not JSON — they are left
+  // to the router's fallback rather than seeded with a wrong-typed body.
   route("POST", "/resupply-api/admin/referral-reviews/upload-url", () =>
     json(demoReferralUploadUrl()),
   ),
@@ -277,10 +278,6 @@ export const fittingReferralsHandlers: DemoHandler[] = [
     "/resupply-api/admin/referral-reviews/:id/duplicates",
     (_req, p) => json(demoReferralDuplicates(p.id)),
   ),
-  route("GET", "/resupply-api/admin/referral-reviews/:id/report", (_req, p) => {
-    const found = demoReferralReviewReport(p.id);
-    return found ? json(found) : notFound("report_not_available");
-  }),
   route(
     "POST",
     "/resupply-api/admin/referral-reviews/:id/extract",

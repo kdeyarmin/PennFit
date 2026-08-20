@@ -409,7 +409,7 @@ function seedFitSessions(models: DemoMaskModel[]): DemoFitSession[] {
     },
     {
       outcome: "moderate_confidence",
-      reviewStatus: "pending",
+      reviewStatus: "pending_review",
       confidence: 0.72,
       band: "moderate",
       quality: "marginal",
@@ -417,7 +417,7 @@ function seedFitSessions(models: DemoMaskModel[]): DemoFitSession[] {
     },
     {
       outcome: "low_confidence",
-      reviewStatus: "pending",
+      reviewStatus: "pending_review",
       confidence: 0.48,
       band: "low",
       quality: "marginal",
@@ -426,7 +426,7 @@ function seedFitSessions(models: DemoMaskModel[]): DemoFitSession[] {
     },
     {
       outcome: "contraindicated",
-      reviewStatus: "pending",
+      reviewStatus: "pending_review",
       confidence: 0.66,
       band: "moderate",
       quality: "good",
@@ -434,7 +434,7 @@ function seedFitSessions(models: DemoMaskModel[]): DemoFitSession[] {
     },
     {
       outcome: "outside_validated_range",
-      reviewStatus: "pending",
+      reviewStatus: "pending_review",
       confidence: 0.39,
       band: "low",
       quality: "poor",
