@@ -34,8 +34,13 @@ const DEMO_DIR = fileURLToPath(new URL(".", import.meta.url));
 
 // Penn-tenant brand tokens. Case-insensitive so "pennpaps" in a URL and
 // "PennPaps" in prose are both caught.
+// Case-insensitive, and matched against the line with separators stripped
+// as well as verbatim — so a compact spelling like the Stripe account id
+// `acct_DEMO000PennHomeMedical` (rendered verbatim by StripeConnectCard) is
+// caught alongside the spaced "Penn Home Medical Supply".
 const PENN_TOKENS = [
   "pennpaps",
+  "pennhomemedical",
   "penn home medical",
   "pennbot",
   "pennpilot",
@@ -86,7 +91,14 @@ function pennHits(opts: { commentsToo: boolean }): Hit[] {
     lines.forEach((text, i) => {
       if (!opts.commentsToo && isComment(text)) return;
       const lower = text.toLowerCase();
-      if (PENN_TOKENS.some((t) => lower.includes(t))) {
+      // Also test with separators removed, so camel/snake/kebab spellings of
+      // the same brand ("PennHomeMedical", "penn_home_medical") are caught.
+      const squashed = lower.replace(/[\s_-]+/g, "");
+      if (
+        PENN_TOKENS.some(
+          (t) => lower.includes(t) || squashed.includes(t.replace(/\s+/g, "")),
+        )
+      ) {
         hits.push({ file: rel, line: i + 1, text: text.trim() });
       }
     });

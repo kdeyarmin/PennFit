@@ -49,6 +49,7 @@ import {
   adminReadRateLimiter,
   adminWriteRateLimiter,
 } from "../../middlewares/admin-rate-limit";
+import { getDocumentSupplierName } from "../../lib/company-info";
 
 const router: IRouter = Router();
 
@@ -68,8 +69,14 @@ const INVITE_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
  * / `signatureName` a few lines below.
  */
 async function practiceName(orgId: string): Promise<string> {
-  const branding = await resolveBrandingByOrgId(orgId);
-  return branding.legalName || branding.storefrontName;
+  // The REGISTERED legal name from Company Information, not the storefront
+  // brand. `resolveBrandingByOrgId` reads `organizations.name` (the
+  // onboarding display name), which the Company Information save path does
+  // not update — so a tenant that corrected its legal entity would keep
+  // printing the stale onboarding name on signature certificates and logs.
+  // `getDocumentSupplierName` reads `dme_organization.legal_name`, which is
+  // what every other official document in this codebase prints.
+  return getDocumentSupplierName(orgId);
 }
 
 // ── Accounts ──────────────────────────────────────────────────────
@@ -269,7 +276,9 @@ async function inviteProviderUser(
       ttlMs: INVITE_TOKEN_TTL_MS,
       email: emailLower,
       providerName: displayName,
-      practiceName: branding.legalName || branding.storefrontName,
+      // The invite names the practice whose documents they will be signing:
+      // the registered legal entity, same as the certificate they produce.
+      practiceName: await practiceName(orgId),
       portalPath: "/provider",
       attachmentFilenames: attachments.map((a) => a.filename),
     },

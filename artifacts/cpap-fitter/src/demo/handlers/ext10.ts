@@ -17,9 +17,14 @@
 import { route, type DemoHandler } from "../types";
 import { json } from "../respond";
 import {
+  DEMO_ASSISTANT_ADMIN_NAME,
+  DEMO_ASSISTANT_STOREFRONT_NAME,
+  DEMO_BASE_URL,
+  DEMO_GENERAL_EMAIL,
   DEMO_LEGAL_NAME,
   DEMO_LOGO_URL,
   DEMO_STOREFRONT_NAME,
+  DEMO_SUPPORT_EMAIL,
   DEMO_TAGLINE,
 } from "../brand";
 import { daysAgo, dateOnly } from "../fixtures/dates";
@@ -35,14 +40,19 @@ export const ext10Handlers: DemoHandler[] = [
   // (Mirrors company-info.ts DEFAULTS + DEFAULT_*_ASSISTANT_NAME.)
   route("GET", "/api/company-info", () =>
     json({
-      name: "CareMetric Breathe",
-      legalName: "CareMetric Breathe",
+      // Same operating company the storefront-branding endpoint names. These
+      // two feed different surfaces — branding drives the header/footer,
+      // company-info drives checkout, contact, order and provider pages — so
+      // when they disagreed a demo visitor saw two different businesses
+      // fulfilling one order.
+      name: DEMO_STOREFRONT_NAME,
+      legalName: DEMO_LEGAL_NAME,
       phoneE164: "+18005550100",
       phoneDisplay: "(800) 555-0100",
-      supportEmail: "support@cmbreathe.com",
-      generalEmail: "hello@cmbreathe.com",
+      supportEmail: DEMO_SUPPORT_EMAIL,
+      generalEmail: DEMO_GENERAL_EMAIL,
       supportHours: "Mon–Fri 8am–7pm ET · Sat 9am–2pm ET",
-      websiteUrl: "https://cmbreathe.com",
+      websiteUrl: DEMO_BASE_URL,
       address: {
         line1: "100 Innovation Way",
         line2: "Suite 200",
@@ -51,8 +61,8 @@ export const ext10Handlers: DemoHandler[] = [
         postalCode: "78701",
         country: "US",
       },
-      assistantStorefrontName: "CareMetric Assistant",
-      assistantAdminName: "CareMetric Copilot",
+      assistantStorefrontName: DEMO_ASSISTANT_STOREFRONT_NAME,
+      assistantAdminName: DEMO_ASSISTANT_ADMIN_NAME,
     }),
   ),
 

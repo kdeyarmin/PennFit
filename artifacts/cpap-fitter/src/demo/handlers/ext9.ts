@@ -104,7 +104,7 @@ function stripeConnectStatus() {
     connected: true,
     chargesEnabled: true,
     // Obviously-fake demo account id — never a real acct_ key.
-    accountId: "acct_DEMO000PennHomeMedical",
+    accountId: "acct_DEMO000CareMetricDemo",
   };
 }
 
@@ -410,14 +410,14 @@ export const ext9Handlers: DemoHandler[] = [
   route("POST", "/resupply-api/admin/billing/stripe-connect/start", () =>
     json({
       url: "https://connect.stripe.com/setup/e/demo_onboarding_link",
-      accountId: "acct_DEMO000PennHomeMedical",
+      accountId: "acct_DEMO000CareMetricDemo",
     }),
   ),
   route("POST", "/resupply-api/admin/billing/stripe-connect/refresh", () =>
     json({
       connected: true,
       chargesEnabled: true,
-      accountId: "acct_DEMO000PennHomeMedical",
+      accountId: "acct_DEMO000CareMetricDemo",
     }),
   ),
   route("POST", "/resupply-api/admin/billing/stripe-connect/disconnect", () =>
