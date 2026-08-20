@@ -313,7 +313,7 @@ describe("POST /sms/inbound", () => {
       });
 
     expect(res.status).toBe(200);
-    expect(res.text).toMatch(/<Response><Message>.*refill is on its way/);
+    expect(res.text).toMatch(/<Response><Message>.*supplies are on the way/);
     expect(placeOrderMock).toHaveBeenCalledWith(
       expect.objectContaining({
         conversationId: CONVERSATION_ID,
@@ -404,7 +404,7 @@ describe("POST /sms/inbound", () => {
       });
 
     expect(res.status).toBe(200);
-    expect(res.text).toMatch(/verify your insurance coverage/);
+    expect(res.text).toMatch(/check your insurance coverage/);
     const audits = logAuditMock.mock.calls.map((c) => c[0]);
     const blockedAudit = audits.find(
       (a) => a.action === "messaging.order.blocked_coverage",
@@ -429,7 +429,7 @@ describe("POST /sms/inbound", () => {
         NumMedia: "0",
       });
     expect(res.status).toBe(200);
-    expect(res.text).toContain("unsubscribed");
+    expect(res.text).toContain("not get any more texts");
     // SMS-only opt-out: the reply scopes to texts (not "messages"), since
     // marketing email keeps its own separate opt-out.
     expect(res.text).toContain("texts");
@@ -465,7 +465,7 @@ describe("POST /sms/inbound", () => {
         NumMedia: "0",
       });
     expect(res.status).toBe(200);
-    expect(res.text).toContain("resubscribed");
+    expect(res.text).toContain("back on");
     expect(reactivatePatientMock).toHaveBeenCalledWith(
       PATIENT_ID,
       expect.any(String),
@@ -609,7 +609,7 @@ describe("POST /sms/inbound", () => {
         NumMedia: "0",
       });
     expect(res.status).toBe(200);
-    expect(res.text).toContain("automated CPAP refill reminders");
+    expect(res.text).toContain("when your CPAP supplies are due");
     expect(placeOrderMock).not.toHaveBeenCalled();
     expect(pausePatientMock).not.toHaveBeenCalled();
   });
@@ -691,7 +691,7 @@ describe("POST /sms/inbound", () => {
         NumMedia: "0",
       });
     expect(res.status).toBe(200);
-    expect(res.text).toContain("unsubscribed");
+    expect(res.text).toContain("not get any more texts");
     expect(res.text).toMatch(/<Response><Message>/);
     expect(placeOrderMock).not.toHaveBeenCalled();
     expect(pausePatientMock).not.toHaveBeenCalled();
@@ -716,7 +716,7 @@ describe("POST /sms/inbound", () => {
         NumMedia: "0",
       });
     expect(res.status).toBe(200);
-    expect(res.text).toContain("automated CPAP refill reminders");
+    expect(res.text).toContain("when your CPAP supplies are due");
     expect(placeOrderMock).not.toHaveBeenCalled();
     expect(pausePatientMock).not.toHaveBeenCalled();
     expect(logAuditMock).toHaveBeenCalledTimes(1);
@@ -740,7 +740,7 @@ describe("POST /sms/inbound", () => {
         NumMedia: "0",
       });
     expect(res.status).toBe(200);
-    expect(res.text).toContain("unsubscribed");
+    expect(res.text).toContain("not get any more texts");
     expect(logAuditMock).toHaveBeenCalledTimes(1);
     expect(logAuditMock.mock.calls[0][0].metadata.outcome).toBe(
       "unparseable_from_stop",

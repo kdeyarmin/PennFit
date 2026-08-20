@@ -28,8 +28,27 @@ describe("defaultReminderSmsBody", () => {
     // the copy asks them to confirm continued use AND running low before
     // replying (see REFILL_AFFIRMATION_STATEMENT).
     expect(defaultReminderSmsBody("initial", NAME, PRACTICE)).toBe(
-      "Hi Sam, it's PennPaps. Time for a CPAP refill. Reply YES if you still use it and are low on supplies, EDIT to change address, STOP to opt out.",
+      "Hi Sam, it's PennPaps. Time for your CPAP refill. Still use it and low on supplies? Reply YES to ship. EDIT to fix your address. STOP to opt out.",
     );
+  });
+
+  it("gives each instruction as its own short sentence", () => {
+    // Readability guard: the keyword directions used to be one
+    // comma-spliced run-on ("Reply YES ..., EDIT ..., STOP ..."). A
+    // patient scanning on a phone should be able to stop reading at the
+    // sentence that applies to them, so each keyword gets its own.
+    for (const v of variants) {
+      const body = defaultReminderSmsBody(v, NAME, PRACTICE);
+      // No keyword direction may be introduced by a comma.
+      expect(body).not.toMatch(/,\s*(?:Reply )?(?:YES|EDIT|STOP)\b/);
+      // Sentences stay short enough to scan.
+      const longest = Math.max(
+        ...body
+          .split(/(?<=[.?])\s+/)
+          .map((sentence) => sentence.trim().split(/\s+/).length),
+      );
+      expect(longest).toBeLessThanOrEqual(12);
+    }
   });
 
   for (const v of variants) {
