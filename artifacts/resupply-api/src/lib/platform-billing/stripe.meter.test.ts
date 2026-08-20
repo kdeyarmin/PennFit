@@ -6,7 +6,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const { state } = vi.hoisted(() => ({
   state: {
     config: null as unknown,
-    customerRow: null as { stripe_customer_id: string | null } | null,
+    customerRow: null as Record<string, unknown> | null,
     queryError: null as unknown,
     meterEvents: [] as Array<Record<string, unknown>>,
     throwOnCreate: false,
@@ -102,6 +102,61 @@ describe("reportFitterFittingMeterEvent", () => {
       event_name: "fitter_fitting",
       payload: { stripe_customer_id: "cus_123", value: "1" },
     });
+  });
+
+  // ── Unlimited tenants (pilots, negotiated contracts) ────────────────
+  //
+  // This reporter is the ONLY biller for fitter fittings: reportMeteredOverage
+  // skips the metric entirely (its add-on query filters included_units IS
+  // NULL, and the fitter row sets it). So if this path ignored
+  // custom_allowances, an "unlimited" tenant would still be charged from
+  // fitting 26 — silently, and on the metric most likely to exceed its plan.
+
+  it("does not report when the tenant fitter allowance is UNLIMITED", async () => {
+    state.config = { mode: "shared" };
+    state.customerRow = {
+      stripe_customer_id: "cus_123",
+      custom_allowances: { fitterFittingsPerMonth: null },
+      billing_plans: { allowances: { fitterFittingsPerMonth: 25 } },
+    };
+    await reportFitterFittingMeterEvent("org-1");
+    expect(state.meterEvents).toHaveLength(0);
+  });
+
+  it("still reports when the plan number stands (no override)", async () => {
+    state.config = { mode: "shared" };
+    state.customerRow = {
+      stripe_customer_id: "cus_123",
+      custom_allowances: {},
+      billing_plans: { allowances: { fitterFittingsPerMonth: 25 } },
+    };
+    await reportFitterFittingMeterEvent("org-1");
+    expect(state.meterEvents).toHaveLength(1);
+  });
+
+  it("still reports for a NUMERIC override — the free tier lives in the Stripe price", async () => {
+    // Deliberate: withholding events to emulate a different included amount
+    // would double-count against the tier Stripe already applies. Changing a
+    // tenant's included fittings means changing their price.
+    state.config = { mode: "shared" };
+    state.customerRow = {
+      stripe_customer_id: "cus_123",
+      custom_allowances: { fitterFittingsPerMonth: 500 },
+      billing_plans: { allowances: { fitterFittingsPerMonth: 25 } },
+    };
+    await reportFitterFittingMeterEvent("org-1");
+    expect(state.meterEvents).toHaveLength(1);
+  });
+
+  it("still reports when another metric is unlimited but the fitter is not", async () => {
+    state.config = { mode: "shared" };
+    state.customerRow = {
+      stripe_customer_id: "cus_123",
+      custom_allowances: { outboundMessagesPerMonth: null },
+      billing_plans: { allowances: { fitterFittingsPerMonth: 25 } },
+    };
+    await reportFitterFittingMeterEvent("org-1");
+    expect(state.meterEvents).toHaveLength(1);
   });
 
   it("never throws when Stripe rejects (fail-soft)", async () => {

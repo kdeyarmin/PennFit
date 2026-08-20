@@ -1244,6 +1244,27 @@ export async function handlePlatformTenantStripeEvent(
  *
  * Caller pattern: `void reportFitterFittingMeterEvent(orgId)` on the same
  * completion that increments the usage rollup — no await, no try/catch.
+ *
+ * UNLIMITED tenants report nothing. Unlike the standard metered metrics,
+ * this path reports EVERY fitting and lets the Stripe price's own free tier
+ * (`included_units`, e.g. the plan's 25/month) do the allowance math — which
+ * is exactly why `reportMeteredOverage` skips it (its add-on query filters
+ * `included_units IS NULL`). So a `custom_allowances` override would sail
+ * straight past this reporter and keep billing fitting 26 onwards. A tenant
+ * whose effective `fitterFittingsPerMonth` is unlimited therefore has to be
+ * short-circuited HERE, or "unlimited" silently wouldn't hold for the one
+ * metric most likely to exceed its plan.
+ *
+ * Only the UNLIMITED case is honoured. A NUMERIC override is deliberately
+ * NOT emulated here: the included-units free tier lives in the Stripe price,
+ * so withholding events to fake a different number would double-count
+ * against a tier Stripe is already applying and produce a wrong invoice.
+ * Changing a tenant's included fittings means changing their price, not
+ * filtering their meter events.
+ *
+ * Suppressing the meter event does NOT suppress measurement — the caller
+ * increments the usage rollup through `recordTenantUsage` separately, so an
+ * unlimited tenant is still fully metered on both usage surfaces.
  */
 export async function reportFitterFittingMeterEvent(
   orgId: string | undefined | null,
@@ -1258,13 +1279,22 @@ export async function reportFitterFittingMeterEvent(
     const { data, error } = await raw
       .schema("resupply")
       .from("tenant_billing_subscriptions")
-      .select("stripe_customer_id")
+      .select(
+        "stripe_customer_id, custom_allowances, billing_plans(allowances)",
+      )
       .eq("org_id", id)
       .in("status", ["active", "trialing", "past_due"])
       .not("stripe_customer_id", "is", null)
       .limit(1)
       .maybeSingle();
     if (error || !data?.stripe_customer_id) return;
+    const effective = resolveEffectiveAllowances(
+      (data as { billing_plans?: { allowances?: Record<string, unknown> } })
+        .billing_plans?.allowances,
+      (data as { custom_allowances?: Record<string, unknown> | null })
+        .custom_allowances,
+    );
+    if (isUnlimited(effective.fitterFittingsPerMonth)) return;
     const stripe = getStripeClient(config);
     await stripe.billing.meterEvents.create({
       event_name: FITTER_FITTING_METER_EVENT,
