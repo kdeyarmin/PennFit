@@ -943,7 +943,7 @@ function runChecks(): void {
   // Key) — NOT a Telnyx API key. Runtime verification
   // (lib/resupply-telecom/src/telnyx-signature.ts) fails closed on any
   // value that does not base64-decode to exactly 32 bytes, which silently
-  // 401s EVERY inbound fax webhook (status callbacks + inbound faxes).
+  // 403s EVERY inbound fax webhook (status callbacks + inbound faxes).
   // Mirror that exact acceptance test here so the misconfig fails preflight
   // instead of production.
   const telnyxPublicKey = getTrimmed("TELNYX_PUBLIC_KEY");
@@ -953,7 +953,7 @@ function runChecks(): void {
         "TELNYX_PUBLIC_KEY",
         "fail",
         "looks like a Telnyx API key (KEY… prefix), not the Ed25519 webhook " +
-          "public key — every inbound Telnyx webhook will be rejected (401). " +
+          "public key — every inbound Telnyx webhook will be rejected (403). " +
           "Copy the base64 public key from Telnyx Portal → Account settings → " +
           "Keys & Credentials → Public Key.",
       );
@@ -978,7 +978,7 @@ function runChecks(): void {
   // P-256 verification key SendGrid shows under Mail Settings → Event
   // Webhook → Signed Event Webhook. Runtime verification
   // (lib/resupply-email/src/signature.ts) collapses an unparseable key to
-  // "signature invalid" — i.e. every event POST 401s. Parse it here.
+  // "signature invalid" — i.e. every event POST 403s. Parse it here.
   const sendgridEventKey = getTrimmed("SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY");
   if (sendgridEventKey !== undefined) {
     let spkiParses = false;
