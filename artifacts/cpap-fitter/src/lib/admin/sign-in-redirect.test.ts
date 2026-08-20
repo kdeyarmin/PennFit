@@ -89,6 +89,40 @@ describe("sanitizeAdminRedirect", () => {
       ADMIN_DEFAULT_LANDING,
     );
   });
+
+  // App.tsx routes /admin/login and /admin/signin straight to /admin/sign-in,
+  // and bare /login + /signin land there too on the platform home host. An
+  // alias that slipped through would bounce the operator back to the form.
+  it("refuses the aliases that redirect into the sign-in page", () => {
+    expect(sanitizeAdminRedirect("/admin/login")).toBe(ADMIN_DEFAULT_LANDING);
+    expect(sanitizeAdminRedirect("/admin/signin")).toBe(ADMIN_DEFAULT_LANDING);
+    expect(sanitizeAdminRedirect("/login")).toBe(ADMIN_DEFAULT_LANDING);
+    expect(sanitizeAdminRedirect("/signin")).toBe(ADMIN_DEFAULT_LANDING);
+  });
+
+  it("refuses an auth path dressed up with a trailing slash or odd casing", () => {
+    expect(sanitizeAdminRedirect("/admin/sign-in/")).toBe(
+      ADMIN_DEFAULT_LANDING,
+    );
+    expect(sanitizeAdminRedirect("/admin/sign-in//")).toBe(
+      ADMIN_DEFAULT_LANDING,
+    );
+    expect(sanitizeAdminRedirect("/admin/login/")).toBe(ADMIN_DEFAULT_LANDING);
+    expect(sanitizeAdminRedirect("/Admin/Sign-In")).toBe(ADMIN_DEFAULT_LANDING);
+    expect(sanitizeAdminRedirect("/admin/sign-in/?next=x")).toBe(
+      ADMIN_DEFAULT_LANDING,
+    );
+  });
+
+  it("normalizes only the comparison — a real destination keeps its exact form", () => {
+    // Trailing slash and casing survive on a legitimate path; we return the
+    // caller's string untouched rather than a normalized rewrite of it.
+    expect(sanitizeAdminRedirect("/admin/patients/")).toBe("/admin/patients/");
+    expect(sanitizeAdminRedirect("/Admin/Patients")).toBe("/Admin/Patients");
+    expect(sanitizeAdminRedirect("/platform/tenants/")).toBe(
+      "/platform/tenants/",
+    );
+  });
 });
 
 describe("readAdminRedirectTarget", () => {

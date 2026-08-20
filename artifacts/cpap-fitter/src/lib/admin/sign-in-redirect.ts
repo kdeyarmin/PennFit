@@ -24,12 +24,36 @@ export const ADMIN_SIGN_IN_PATH = "/admin/sign-in";
 // An auth page is never a valid post-sign-in destination — returning to one
 // would bounce a freshly signed-in operator straight back into the flow they
 // just finished.
+//
+// This covers the canonical staff auth pages AND the "what would someone
+// type?" aliases that redirect INTO them (App.tsx): /admin/login and
+// /admin/signin redirect to /admin/sign-in outright, and bare /login and
+// /signin resolve there too on the platform home host. Matching only the
+// canonical paths would let an alias slip through and land the operator back
+// on the sign-in form.
 const AUTH_PATHS: ReadonlySet<string> = new Set([
   "/admin/sign-in",
   "/admin/forgot-password",
   "/admin/reset-password",
   "/admin/verify-email",
+  "/admin/login",
+  "/admin/signin",
+  "/login",
+  "/signin",
 ]);
+
+/**
+ * Normalize a path for the AUTH_PATHS lookup only: lowercased, with trailing
+ * slashes dropped so "/admin/sign-in/" is recognized as the auth page it is.
+ *
+ * Only the COMPARISON is normalized — `sanitizeAdminRedirect` returns the
+ * caller's original string, so a legitimate destination keeps its exact form
+ * (case, query, and hash included).
+ */
+function normalizeForAuthCheck(pathOnly: string): string {
+  const trimmed = pathOnly.toLowerCase().replace(/\/+$/, "");
+  return trimmed === "" ? "/" : trimmed;
+}
 
 /**
  * Sanitize a caller-supplied post-sign-in destination.
@@ -46,7 +70,9 @@ export function sanitizeAdminRedirect(raw: string | null | undefined): string {
     return ADMIN_DEFAULT_LANDING;
   }
   const pathOnly = raw.split(/[?#]/)[0] ?? "";
-  if (AUTH_PATHS.has(pathOnly)) return ADMIN_DEFAULT_LANDING;
+  if (AUTH_PATHS.has(normalizeForAuthCheck(pathOnly))) {
+    return ADMIN_DEFAULT_LANDING;
+  }
   return raw;
 }
 
