@@ -9,8 +9,8 @@
 // DATA RULES: everything here is fictional demo data — obviously-fake
 // names ("Demo Patient", "Avery Sample"), demo ids, 555 phone numbers,
 // fresh relative dates, and money in cents. Platform identity is
-// CareMetric Breathe (noreply@cmbreathe.com); the seed tenant is Penn
-// Home Medical Supply / pennpaps.com (info@pennpaps.com). NO real PHI,
+// CareMetric Breathe (noreply@cmbreathe.com); the sandbox tenant is
+// CareMetric Demo DME / demo.example (info@demo.example). NO real PHI,
 // NO real secrets — clearinghouse credentials use obvious placeholders
 // and the route's masked shape (only `realtimePasswordSet`, never a key).
 
@@ -179,7 +179,7 @@ function botPlaygroundPrompt(req: DemoRequest) {
       ? raw
       : "storefront";
   const systemPrompt =
-    "[demo] You are the CareMetric Assistant for Penn Home Medical Supply. " +
+    "[demo] You are the CareMetric Assistant for CareMetric Demo DME. " +
     "Be warm and concise. Never promise specific insurance coverage. " +
     "Hand off to a human for anything order-, account-, or clinical-specific. " +
     `(This is a demo-mode rendering of the "${bot}" bot prompt — the live ` +
@@ -288,7 +288,7 @@ const CASES = [
     patientId: "demo-p-2004",
     customerId: null,
     assignedToUserId: "demo-user-csr-1",
-    openedByEmail: "demo.csr@pennpaps.com",
+    openedByEmail: "demo.csr@demo.example",
     summary: "Patient unsure between medium and large nasal cushion.",
     createdAt: daysAgo(2),
     updatedAt: daysAgo(1),
@@ -302,7 +302,7 @@ const CASES = [
     patientId: "demo-p-3007",
     customerId: null,
     assignedToUserId: "demo-user-rt-1",
-    openedByEmail: "demo.csr@pennpaps.com",
+    openedByEmail: "demo.csr@demo.example",
     summary: "Chasing the prescriber for the F2F evaluation note.",
     createdAt: daysAgo(5),
     updatedAt: daysAgo(1),
@@ -316,7 +316,7 @@ const CASES = [
     patientId: null,
     customerId: "demo-cust-9001",
     assignedToUserId: "demo-user-csr-1",
-    openedByEmail: "demo.csr@pennpaps.com",
+    openedByEmail: "demo.csr@demo.example",
     summary: "Reshipped via expedited; customer satisfied.",
     createdAt: daysAgo(14),
     updatedAt: daysAgo(10),
@@ -335,7 +335,7 @@ function caseDetail(id: string) {
         linkKind: "order",
         refId: "demo-order-7001",
         note: "Order under discussion",
-        createdByEmail: "demo.csr@pennpaps.com",
+        createdByEmail: "demo.csr@demo.example",
         createdAt: daysAgo(2),
       },
       {
@@ -343,7 +343,7 @@ function caseDetail(id: string) {
         linkKind: "conversation",
         refId: "demo-conv-5501",
         note: null,
-        createdByEmail: "demo.csr@pennpaps.com",
+        createdByEmail: "demo.csr@demo.example",
         createdAt: daysAgo(1),
       },
     ],
@@ -377,14 +377,14 @@ function paperworkRequirement(over: {
     satisfied_at: over.status === "satisfied" ? daysAgo(over.ago - 1) : null,
     satisfied_via: over.status === "satisfied" ? "fax" : null,
     satisfied_by_email:
-      over.status === "satisfied" ? "demo.csr@pennpaps.com" : null,
+      over.status === "satisfied" ? "demo.csr@demo.example" : null,
     satisfied_inbound_fax_id: null,
     satisfied_document_id: null,
     source_manual_document_id: null,
     source_packet_id: null,
     waived_reason: null,
     notes: null,
-    created_by_email: "demo.csr@pennpaps.com",
+    created_by_email: "demo.csr@demo.example",
     created_at: daysAgo(over.ago),
     updated_at: daysAgo(1),
   };
@@ -560,7 +560,7 @@ function clearinghouseRow(over: {
     remoteOutboundDir: "outbound",
     remoteArchiveDir: "archive",
     etin: "DEMO12345",
-    submitterOrganizationName: "Penn Home Medical Supply",
+    submitterOrganizationName: "CareMetric Demo DME",
     contactName: "Demo Biller",
     contactPhoneE164: "+15555550133",
     isActive: over.isActive,
@@ -649,21 +649,21 @@ function callDispositions() {
       id: "demo-disp-0001",
       outcome: "reached",
       note: "Confirmed resupply order; happy with current mask.",
-      agentEmail: "demo.csr@pennpaps.com",
+      agentEmail: "demo.csr@demo.example",
       createdAt: daysAgo(1),
     },
     {
       id: "demo-disp-0002",
       outcome: "voicemail",
       note: "Left message re: prescription renewal.",
-      agentEmail: "demo.csr@pennpaps.com",
+      agentEmail: "demo.csr@demo.example",
       createdAt: daysAgo(4),
     },
     {
       id: "demo-disp-0003",
       outcome: "callback_requested",
       note: "Patient asked to call back after 5pm.",
-      agentEmail: "demo.rt@pennpaps.com",
+      agentEmail: "demo.rt@demo.example",
       createdAt: daysAgo(9),
     },
   ];

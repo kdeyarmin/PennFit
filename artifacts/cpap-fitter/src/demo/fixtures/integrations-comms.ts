@@ -3,8 +3,8 @@
 // demonstration sandbox, never real PHI. Phone + fax numbers are in the
 // reserved 555 range. Therapy-cloud vendors are the real product names
 // (ResMed AirView, Philips Care Orchestrator, 3B / React Health); the
-// platform brand is CareMetric Breathe and the seeded tenant is Penn Home
-// Medical Supply.
+// platform brand is CareMetric Breathe and the sandbox tenant is
+// CareMetric Demo DME.
 
 import { daysAgo, hoursAgo, daysFromNow, dateOnly, NOW_ISO } from "./dates";
 

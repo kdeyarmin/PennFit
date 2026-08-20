@@ -10,7 +10,7 @@
 // artifacts/resupply-api/src/routes/admin/* (and the pure aggregators in
 // src/lib/analytics + lib/resupply-domain). Fictional demo data only — no
 // real PHI; obviously-fake names; platform brand "CareMetric Breathe", with
-// Penn Home Medical Supply as the storefront tenant.
+// CareMetric Demo DME as the storefront tenant.
 
 import { json } from "../respond";
 import { route, type DemoHandler } from "../types";
@@ -718,7 +718,7 @@ function demoProductivity(win: string) {
   const agents = [
     {
       adminUserId: "demo-admin-1",
-      email: "jordan.demo@pennpaps.com",
+      email: "jordan.demo@demo.example",
       displayName: "Jordan Sample",
       role: "csr",
       assignedConversationsOpen: 12,
@@ -730,7 +730,7 @@ function demoProductivity(win: string) {
     },
     {
       adminUserId: "demo-admin-2",
-      email: "taylor.example@pennpaps.com",
+      email: "taylor.example@demo.example",
       displayName: "Taylor Placeholder",
       role: "csr",
       assignedConversationsOpen: 8,
@@ -742,7 +742,7 @@ function demoProductivity(win: string) {
     },
     {
       adminUserId: "demo-admin-3",
-      email: "morgan.mock@pennpaps.com",
+      email: "morgan.mock@demo.example",
       displayName: "Morgan Fictional",
       role: "supervisor",
       assignedConversationsOpen: 4,
@@ -850,7 +850,7 @@ function demoComplianceCohorts(days: number) {
 function demoCsrProductivity(days: number) {
   const rows = [
     {
-      operator: "jordan.demo@pennpaps.com",
+      operator: "jordan.demo@demo.example",
       total: 120,
       byAction: {
         conversation_closed: 64,
@@ -862,7 +862,7 @@ function demoCsrProductivity(days: number) {
       lastActiveDate: dateOnly(0),
     },
     {
-      operator: "taylor.example@pennpaps.com",
+      operator: "taylor.example@demo.example",
       total: 102,
       byAction: {
         conversation_closed: 51,
@@ -1010,7 +1010,8 @@ function demoNpsRecent(days: number, commentLimit: number) {
       id: "demo-nps-2",
       orderId: "demo-order-7002",
       score: 9,
-      comment: "Easy to reorder my cushions. PennPaps makes it painless.",
+      comment:
+        "Easy to reorder my cushions. CareMetric Breathe makes it painless.",
       createdAt: daysAgo(2),
     },
     {
@@ -1077,7 +1078,7 @@ function demoBusinessTargets(period?: string) {
       targetValue: 3_000_000,
       unit: "cents",
       notes: "Storefront cash-pay revenue goal.",
-      createdByEmail: "owner.demo@pennpaps.com",
+      createdByEmail: "owner.demo@demo.example",
       createdAt: daysAgo(20),
       updatedAt: daysAgo(2),
       pace: goalPace(3_000_000, 2_414_900, daysInPeriod, daysElapsed),
@@ -1089,7 +1090,7 @@ function demoBusinessTargets(period?: string) {
       targetValue: 350,
       unit: "count",
       notes: "Resupply fulfillment volume.",
-      createdByEmail: "owner.demo@pennpaps.com",
+      createdByEmail: "owner.demo@demo.example",
       createdAt: daysAgo(20),
       updatedAt: daysAgo(3),
       pace: goalPace(350, 312, daysInPeriod, daysElapsed),
@@ -1101,7 +1102,7 @@ function demoBusinessTargets(period?: string) {
       targetValue: 50,
       unit: "count",
       notes: null,
-      createdByEmail: "owner.demo@pennpaps.com",
+      createdByEmail: "owner.demo@demo.example",
       createdAt: daysAgo(18),
       updatedAt: daysAgo(1),
       pace: goalPace(50, 41, daysInPeriod, daysElapsed),

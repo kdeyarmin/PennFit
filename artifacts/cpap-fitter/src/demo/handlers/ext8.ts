@@ -14,8 +14,8 @@
 //
 // DATA RULES: fictional demo data only — fake customer names ("Demo
 // Patient", "Avery Sample"), demo ids, fresh relative dates, money in
-// integer cents. Platform = CareMetric Breathe; tenant = Penn Home
-// Medical Supply (pennpaps.com). Internally consistent with the seeded
+// integer cents. Platform = CareMetric Breathe; tenant = CareMetric
+// Demo DME (demo.example). Internally consistent with the seeded
 // product / order fixtures. NO real PHI.
 //
 // SKIPPED (handled elsewhere or non-JSON):
@@ -45,7 +45,7 @@ const REPORT_PRESETS = [
     rangePreset: "last_30_days",
     rangeFrom: null,
     rangeTo: null,
-    recipient: "owner@pennpaps.com",
+    recipient: "owner@demo.example",
     createdAt: daysAgo(20),
     updatedAt: daysAgo(20),
   },
@@ -73,14 +73,14 @@ function returnNotes() {
       {
         id: "demo-rn-0001-0000-0000-0000-000000000001",
         body: "Customer reports cushion was too large; approved exchange for a medium.",
-        authorEmail: "demo.csr@pennpaps.com",
+        authorEmail: "demo.csr@demo.example",
         authorUserId: "demo-user-csr-1",
         createdAt: daysAgo(2),
       },
       {
         id: "demo-rn-0001-0000-0000-0000-000000000002",
         body: "Return label emailed. Awaiting drop-off at carrier.",
-        authorEmail: "demo.csr@pennpaps.com",
+        authorEmail: "demo.csr@demo.example",
         authorUserId: "demo-user-csr-1",
         createdAt: daysAgo(1),
       },
@@ -293,7 +293,7 @@ const DEMO_RETURNS = [
     returnTrackingNumber: "1Z999AA10112233445",
     returnLabelUrl: "https://www.ups.com/track?tracknum=1Z999AA10112233445",
     adminNote:
-      "[approved] demo.csr@pennpaps.com — Approved: defective on arrival",
+      "[approved] demo.csr@demo.example — Approved: defective on arrival",
     adminUserId: "demo-user-csr-1",
     approvedAt: daysAgo(1),
     createdAt: daysAgo(5),
@@ -826,7 +826,7 @@ export const ext8Handlers: DemoHandler[] = [
     json({
       return: serializedReturn({
         ...findReturn(id),
-        adminNote: "[note] demo.csr@pennpaps.com — Note added",
+        adminNote: "[note] demo.csr@demo.example — Note added",
         updatedAt: NOW_ISO(),
       }),
     }),

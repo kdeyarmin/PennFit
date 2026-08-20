@@ -9,8 +9,8 @@
 // DATA RULES: everything here is fictional demo data — obviously-fake
 // names ("Demo Prescriber", "Sample Physician"), demo ids, 555 phone /
 // fax numbers, and FAKE 1-prefixed 10-digit NPI values. Platform is
-// CareMetric Breathe; the tenant is Penn Home Medical Supply
-// (pennpaps.com). Fresh relative dates via the shared helpers. NO real
+// CareMetric Breathe; the tenant is CareMetric Demo DME
+// (demo.example). Fresh relative dates via the shared helpers. NO real
 // PHI. Product ids / names reuse the demo catalog for consistency.
 
 import { route, type DemoHandler } from "../types";
@@ -611,7 +611,7 @@ export const ext7Handlers: DemoHandler[] = [
         email: body?.email ?? "dr.physician@fixturepulmonary.example",
         emailSent: true,
         inviteLink:
-          "https://pennpaps.com/reset-password?token=demo-invite-token",
+          "https://demo.example/reset-password?token=demo-invite-token",
       });
     },
   ),

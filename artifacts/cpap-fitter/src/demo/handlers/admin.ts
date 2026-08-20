@@ -51,7 +51,7 @@ interface AssistantMessage {
 }
 
 /**
- * Canned PennPilot (admin assistant) replies. The widget streams SSE
+ * Canned CareMetric Copilot (admin assistant) replies. The widget streams SSE
  * with a JSON fallback, exactly like the customer chatbot — without
  * this handler the endpoint hits the router's `{ ok: true }` mutation
  * fallback, which contains no SSE events, so the widget renders an
@@ -59,7 +59,7 @@ interface AssistantMessage {
  * of the widget's suggested prompts; replies mention real /admin paths
  * because the widget renders them as one-click links.
  */
-function pennPilotReply(messages: AssistantMessage[] | undefined): string {
+function copilotReply(messages: AssistantMessage[] | undefined): string {
   const lastUser = [...(messages ?? [])]
     .reverse()
     .find((m) => m.role === "user");
@@ -101,10 +101,10 @@ export const adminHandlers: DemoHandler[] = [
     json(demoSystemInfo()),
   ),
 
-  // ── PennPilot (admin assistant widget) ───────────────────────────
+  // ── CareMetric Copilot (admin assistant widget) ───────────────────────────
   route("POST", "/resupply-api/admin/assistant/chat", (req) => {
     const body = req.json<{ messages?: AssistantMessage[] }>() ?? {};
-    const reply = pennPilotReply(body.messages);
+    const reply = copilotReply(body.messages);
     const wantsStream = (req.headers.get("accept") ?? "").includes(
       "text/event-stream",
     );

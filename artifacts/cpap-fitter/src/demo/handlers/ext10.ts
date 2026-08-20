@@ -8,14 +8,20 @@
 // (claims explorer, payment-methods/autopay, statement delivery
 // preference) plus the patient-portal sleep coach.
 //
-// All fixtures are inline + fictional. The storefront tenant is Penn
-// Home Medical Supply (storefront brand "PennPaps", pennpaps.com,
-// info@pennpaps.com); the platform/parent product is CareMetric Breathe
-// (cmbreathe.com). Money is in cents; phones are 555 numbers; dates are
-// fresh via the date helpers. No real PHI.
+// All fixtures are inline + fictional. The sandbox tenant is CareMetric
+// Demo DME (demo.example) — a stand-in, never a real customer's brand —
+// on the CareMetric Breathe platform (cmbreathe.com). Money is in cents;
+// phones are 555 numbers; dates are fresh via the date helpers. No real
+// PHI.
 
 import { route, type DemoHandler } from "../types";
 import { json } from "../respond";
+import {
+  DEMO_LEGAL_NAME,
+  DEMO_LOGO_URL,
+  DEMO_STOREFRONT_NAME,
+  DEMO_TAGLINE,
+} from "../brand";
 import { daysAgo, dateOnly } from "../fixtures/dates";
 
 export const ext10Handlers: DemoHandler[] = [
@@ -53,15 +59,14 @@ export const ext10Handlers: DemoHandler[] = [
   // ── Public identity: host-resolved storefront branding ────────────
   // GET /api/storefront-branding — see routes/storefront/storefront-branding.ts.
   // NOTE: this is shadowed by miscHandlers' earlier (first-match-wins)
-  // /api/storefront-branding, which already returns the CareMetric platform
-  // identity. Kept aligned to CareMetric so the two never disagree if the
-  // ordering ever changes.
+  // /api/storefront-branding. Both read ../brand, so the two cannot
+  // disagree if the ordering ever changes.
   route("GET", "/api/storefront-branding", () =>
     json({
-      storefrontName: "CareMetric Breathe",
-      legalName: "CareMetric Breathe",
-      tagline: "Your CPAP, made simple. Fit. Shop. Resupply.",
-      logoUrl: "/breathe/caremetric-logo.png",
+      storefrontName: DEMO_STOREFRONT_NAME,
+      legalName: DEMO_LEGAL_NAME,
+      tagline: DEMO_TAGLINE,
+      logoUrl: DEMO_LOGO_URL,
       resolved: true,
     }),
   ),
@@ -308,7 +313,7 @@ export const ext10Handlers: DemoHandler[] = [
   route("GET", "/api/me/statement-preferences", () =>
     json({
       statementDeliveryMethod: "email",
-      email: "alex.demo@pennpaps.example",
+      email: "alex.demo@demo.example",
       linked: true,
     }),
   ),
@@ -317,7 +322,7 @@ export const ext10Handlers: DemoHandler[] = [
       req.json<{ statementDeliveryMethod?: "email" | "mail" }>() ?? {};
     return json({
       statementDeliveryMethod: body.statementDeliveryMethod ?? "email",
-      email: "alex.demo@pennpaps.example",
+      email: "alex.demo@demo.example",
     });
   }),
 

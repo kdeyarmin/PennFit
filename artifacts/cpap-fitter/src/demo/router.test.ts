@@ -80,7 +80,7 @@ describe("demo router", () => {
     expect(sseRes!.headers.get("content-type")).toContain("text/event-stream");
   });
 
-  it("answers PennPilot (admin assistant) chat in JSON and SSE modes", async () => {
+  it("answers the admin assistant (CareMetric Copilot) chat in JSON and SSE modes", async () => {
     // Regression guard: without a handler this endpoint hits the
     // `{ ok: true }` mutation fallback, which carries no SSE events —
     // the widget then renders an empty bubble and toasts "Trouble
@@ -139,7 +139,7 @@ describe("demo router", () => {
     // groups/excluded, pending.map, queued.map), so each endpoint
     // falling through to the empty-object GET fallback crashes the page
     // into the admin error boundary — the exact "Something went wrong"
-    // a demo visitor hit while following PennPilot's claims walkthrough.
+    // a demo visitor hit while following the admin assistant's claims walkthrough.
     const shapes: Array<[string, (body: Record<string, unknown>) => void]> = [
       [
         "/resupply-api/admin/billing/eligibility-recent",

@@ -14,8 +14,8 @@
 // from compliance-rules.
 //
 // DATA RULES: everything here is fictional demo data — obviously-fake
-// payer names, demo ids, fresh relative dates. Tenant is Penn Home Medical
-// Supply (pennpaps.com) on the CareMetric Breathe platform. NO real PHI.
+// payer names, demo ids, fresh relative dates. Tenant is CareMetric Demo
+// DME (demo.example) on the CareMetric Breathe platform. NO real PHI.
 
 import { route, type DemoHandler } from "../types";
 import { json, noContent } from "../respond";
@@ -341,7 +341,7 @@ export const ext16Handlers: DemoHandler[] = [
       role: "patient",
       purpose: "follow_up",
       scheduledAt: NOW_ISO(),
-      practiceName: "Penn Home Medical Supply",
+      practiceName: "CareMetric Demo DME",
       wsPath: "/resupply-api/video/signal",
       iceServers: [],
     }),

@@ -19,7 +19,7 @@
 //   - swo.ts (streams a PDF), *.csv reports, xps label.pdf (binary streams)
 //
 // DATA RULES: fictional demo data only. Platform = CareMetric Breathe; the
-// active tenant is Penn Home Medical Supply (pennpaps.com). Therapy-cloud
+// active tenant is CareMetric Demo DME (demo.example). Therapy-cloud
 // vendors are ResMed AirView / Philips Care Orchestrator / 3B React Health.
 // Money in cents. Realistic-but-synthetic clinical values. NO real PHI.
 
@@ -114,7 +114,7 @@ function systemIntegrationsStatus() {
   return {
     dmeIdentity: {
       source: "db",
-      organizationName: "Penn Home Medical Supply",
+      organizationName: "CareMetric Demo DME",
       configured: true,
     },
     clearinghouseOfficeAlly: {
@@ -183,7 +183,7 @@ function tenantSetupChecklist() {
       description:
         "Serve your storefront on your own domain instead of the platform subdomain. Verify by adding a DNS record.",
       status: "complete",
-      detail: "Verified: pennpaps.com.",
+      detail: "Verified: demo.example.",
       href: "/admin/storefront-branding",
       required: false,
     },
@@ -227,7 +227,7 @@ function tenantSetupChecklist() {
       description:
         "Send patient email from your own address. Requires authenticating your sending domain (SPF/DKIM) in SendGrid so mail isn't flagged as spam.",
       status: "complete",
-      detail: "Sending as info@pennpaps.com.",
+      detail: "Sending as info@demo.example.",
       href: "/admin/email-settings",
       required: true,
     },

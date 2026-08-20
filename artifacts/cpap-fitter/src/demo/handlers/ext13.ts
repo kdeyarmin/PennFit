@@ -652,7 +652,7 @@ export const ext13Handlers: DemoHandler[] = [
     (_req, { id }) =>
       json({
         subject: "An update on your recent insurance claim",
-        body: `Hi ${fullName(id).split(" ")[0]},\n\nWe wanted to let you know that your insurance asked for one more document before they finish processing your recent CPAP supply claim — a Certificate of Medical Necessity from your doctor. This is a common, routine request and does not mean your claim was rejected.\n\nWe're already requesting that document on your behalf and will resubmit as soon as it arrives. There is nothing you need to do right now, and you won't be billed while we sort this out.\n\nWe'll reach out again the moment we hear back.\n\nWarmly,\nThe Penn Home Medical Supply team`,
+        body: `Hi ${fullName(id).split(" ")[0]},\n\nWe wanted to let you know that your insurance asked for one more document before they finish processing your recent CPAP supply claim — a Certificate of Medical Necessity from your doctor. This is a common, routine request and does not mean your claim was rejected.\n\nWe're already requesting that document on your behalf and will resubmit as soon as it arrives. There is nothing you need to do right now, and you won't be billed while we sort this out.\n\nWe'll reach out again the moment we hear back.\n\nWarmly,\nThe CareMetric Demo DME team`,
         tone: "reassuring",
         latencyMs: 1620,
         promptVersion: "demo-explainer-v1",
