@@ -38,6 +38,9 @@
 //                      writing. Needs no database connection and no
 //                      service-role key; pair with --org-id= to fill in the
 //                      tenant, or substitute the :ORG_ID placeholder.
+//   --no-accept-agreements
+//                      Leave the BAA / platform-terms gate in place, so the
+//                      first sign-in lands on the onboarding flow.
 //   --force            Bypass the ALLOW_DEMO_SEED guard.
 //
 // ── Why the login is an email address ────────────────────────────────
@@ -126,6 +129,17 @@ const orgName = opt("org-name", "CareMetric Demo DME");
 const storefrontName = opt("storefront-name", "CareMetric Demo");
 const planCode = opt("plan", "");
 const flagsMode = opt("flags", "all");
+const acceptAgreements = !flag("no-accept-agreements");
+
+// Mirrors the `version` on both docs in
+// artifacts/resupply-api/src/lib/agreements/index.ts. Kept as a literal
+// because `scripts/` does not depend on the API package.
+//
+// If those versions are bumped, this one goes stale and the demo tenant
+// is gated again on next sign-in — which is the CORRECT failure direction
+// (a re-prompt, never a forged acceptance of text nobody has seen). Update
+// this constant and re-run to clear it.
+const AGREEMENT_VERSION = "2026-06-24";
 
 if (!["all", "preset", "copy"].includes(flagsMode)) {
   fail("--flags must be one of: all, preset, copy");
@@ -623,6 +637,42 @@ function buildThreadWrites(orgId: string): TableWrite[] {
 }
 
 /**
+ * Pre-record the tenant's onboarding agreements (BAA + platform terms).
+ *
+ * Without these the account signs in fine and then hits `AgreementsGate`,
+ * which replaces the ENTIRE console until an owner signs — so a demo would
+ * open on a legal document instead of the product. That is right for a real
+ * tenant and wrong for this one.
+ *
+ * This is defensible only because of who the parties are: the demo tenant
+ * is CareMetric's own, so a Business Associate Agreement here has the
+ * platform on both sides and no third party's PHI behind it. The rows are
+ * labelled as seeded rather than dressed up as a signature, so an audit of
+ * `organization_agreements` can tell them apart at a glance. Pass
+ * `--no-accept-agreements` to leave the gate in place (useful when the
+ * onboarding flow is itself what you want to demo).
+ */
+function buildAgreementWrites(orgId: string, userId: string): TableWrite[] {
+  if (!acceptAgreements) return [];
+  return [
+    {
+      schema: "resupply",
+      table: "organization_agreements",
+      conflict: "org_id,agreement_type,version",
+      rows: ["platform_terms", "baa"].map((type) => ({
+        org_id: orgId,
+        agreement_type: type,
+        version: AGREEMENT_VERSION,
+        accepted_at: nowIso,
+        accepted_by_user_id: userId,
+        accepted_by_email: normalizeEmail(demoEmail),
+        signatory_name: "CareMetric Demo (seeded by demo:seed)",
+      })),
+    },
+  ];
+}
+
+/**
  * The three rows that have to agree before `requireAdmin` lets the demo
  * account into the console:
  *
@@ -836,6 +886,7 @@ async function runClean(): Promise<void> {
     "feature_flags",
     "formularies",
     "tenant_billing_subscriptions",
+    "organization_agreements",
   ]) {
     const { error } = await rs().from(table).delete().eq("org_id", orgId);
     check(`delete ${table}`, error);
@@ -913,6 +964,7 @@ async function main(): Promise<void> {
     const passwordHash = await hashPassword(demoPassword);
     const writes = [
       ...buildAuthWrites(orgId, DEMO_AUTH_USER_ID, passwordHash),
+      ...buildAgreementWrites(orgId, DEMO_AUTH_USER_ID),
       buildProviderRows(),
       ...buildPatientWrites(orgId),
       ...buildThreadWrites(orgId),
@@ -971,6 +1023,7 @@ async function main(): Promise<void> {
   out("writing rows…");
   await applyWrites([
     ...buildAuthWrites(orgId, userId, passwordHash),
+    ...buildAgreementWrites(orgId, userId),
     buildProviderRows(),
     ...buildPatientWrites(orgId),
     ...buildThreadWrites(orgId),

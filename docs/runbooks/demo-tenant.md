@@ -64,6 +64,32 @@ pnpm --filter @workspace/scripts demo:seed -- --password='DemoDemo2026!'
 > what keeps it away from other tenants' data — not the password. Treat
 > the password as public and never widen this account's reach.
 
+## The onboarding agreements gate
+
+Every tenant must execute the BAA and platform terms before the console
+opens — `AgreementsGate` replaces the **entire** admin console while
+`/me` reports anything in `pendingAgreements`. Left alone, a sales demo
+would therefore open on a legal document instead of the product.
+
+The seeder pre-records both acceptances so the demo lands straight in the
+console. That is defensible here only because of who the parties are: this
+is CareMetric's own tenant, so the BAA has the platform on both sides and
+no third party's PHI behind it. The rows are labelled
+`CareMetric Demo (seeded by demo:seed)` rather than dressed up as a
+signature, so an audit of `organization_agreements` can tell them apart at
+a glance.
+
+Two things follow:
+
+- Pass `--no-accept-agreements` to leave the gate up — useful when the
+  onboarding flow is itself what you want to demo.
+- `AGREEMENT_VERSION` in the seeder mirrors the versions in
+  `artifacts/resupply-api/src/lib/agreements/index.ts`. **If those are
+  bumped, this constant goes stale and the demo tenant is gated again on
+  next sign-in.** That is the correct failure direction — a re-prompt,
+  never a forged acceptance of text nobody has seen. Update the constant
+  and re-run to clear it.
+
 ## Re-seeding and resetting
 
 The seeder is idempotent — every row has a fixed id under the `0dec0de0`
@@ -86,6 +112,7 @@ Useful flags:
 | `--password=` / `--email=`    | Override the credentials.                                                                                                                                                     |
 | `--org-slug=` / `--org-name=` | Stand up a second, separate demo tenant.                                                                                                                                      |
 | `--flags=all\|preset\|copy`   | Feature-flag posture. Default `all`.                                                                                                                                          |
+| `--no-accept-agreements`      | Leave the BAA / platform-terms gate in place.                                                                                                                                 |
 | `--plan=`                     | Assign a billing plan (e.g. `growth`).                                                                                                                                        |
 
 `--emit-sql` is the path to use when you don't have the service-role key
