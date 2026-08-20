@@ -60,14 +60,54 @@ page so React Query caches and the in-memory store reset cleanly.
    Handlers are matched first-match-wins in the order listed in
    `router.ts`.
 3. For interactive writes that should stick within a session, route
-   through `fixtures/store.ts` (the mutable, reload-scoped state).
+   through a mutable, reload-scoped store — `fixtures/store.ts` for the
+   storefront/account surfaces, or the per-domain stores in
+   `fixtures/platform.ts`, `fixtures/fitting.ts` and
+   `fixtures/referrals.ts`.
 
 Anything you don't explicitly handle falls back to a benign default
 (empty object for GETs, `{ ok: true }` for mutations) so unmocked
 endpoints render empty states rather than erroring.
+
+**That fallback is also the trap.** A page with no seeded routes still
+renders — it just renders EMPTY, and nothing fails to tell you. So when
+you add a surface, add a test that asserts it is genuinely seeded (see
+`platform-console.test.ts`); "the page loads" is not evidence that the
+demo covers it.
+
+## Admin surface coverage
+
+The two admin consoles are seeded end to end, actions included:
+
+- **Super-admin (`/platform/*`)** — every console page: fleet dashboard
+  (analytics, margin, health, overview), tenant directory and detail
+  (create / suspend / reactivate / impersonate, per-tenant feature flags,
+  admins, usage, activity), billing, global integrations, the operator
+  roster, the support queue, outreach (contacts + campaigns), vendor cost
+  rates, connection tests, and the launch checklist. Fixtures in
+  `fixtures/platform.ts`, routes in `handlers/platform.ts`.
+- **Tenant (`/admin/*`)** — the long tail lives in `handlers/ext0`–`ext16`
+  plus the domain modules; `handlers/fitting-referrals.ts` covers the mask
+  catalog, formulary, fit sessions, safety screens, provider referrals and
+  the AI referral triage queue.
+
+The demo stores model real cause and effect across pages, which is what
+makes the consoles demonstrable rather than merely populated. For example:
+clearing the SendGrid credential on **Global integrations** turns the
+matching vendor dot dark on the **Dashboard** and makes the **email
+connection test** report `not_configured`; adding a deny rule on
+**Formulary** changes what the simulator allows; signing off a size band on
+the **Mask catalog** clears its review flag and records the provenance
+cited.
 
 ## Tests
 
 - `state.test.ts` — URL/localStorage flag resolution + subscriptions.
 - `router.test.ts` — dispatch + fallbacks for the key surfaces.
 - `install.test.ts` — passthrough when off, intercept when on.
+- `platform-console.test.ts` — the super-admin console and the tenant
+  fitting/referral pages are seeded (not silently falling through to the
+  empty fallback), and their write paths are reflected by the next read.
+- `empty.drift.test.ts` — the empty fallback seeds every array-typed key
+  the SPA's response types declare, so an unseeded page renders its empty
+  state instead of crashing.
