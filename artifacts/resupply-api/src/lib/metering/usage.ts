@@ -112,11 +112,33 @@ export async function recordTenantUsage(
     // report-overage metered add-on, so this is a no-op for every metric until
     // an operator enables it. The fitter metric is excluded automatically (its
     // add-on reports all usage via a separate path, not overage).
+    //
+    // The measurement above is already committed at this point, and that
+    // ordering is deliberate: billing is strictly DOWNSTREAM of metering,
+    // so nothing here — an unlimited allowance, a disabled flag, an
+    // unreachable Stripe — can suppress a usage datapoint. A tenant lifted
+    // to unlimited is still fully metered; only their invoice changes.
+    //
+    // `.catch` rather than a bare `void`: reportMeteredOverage documents
+    // itself as never-throwing and try/catches internally, but a floating
+    // promise would turn any future regression there into an UNHANDLED
+    // REJECTION on a hot path — the one thing this fail-soft emitter
+    // promises callers can't happen.
     void reportMeteredOverage({
       orgId,
       metricKey: input.metricKey,
       increment: quantity,
       newTotal,
+    }).catch((err: unknown) => {
+      logger.warn(
+        {
+          event: "tenant_usage_overage_report_failed",
+          metricKey: input.metricKey,
+          orgId,
+          err: err instanceof Error ? err : new Error(String(err)),
+        },
+        "metered overage report failed (usage already recorded; ignored)",
+      );
     });
   } catch (err) {
     logger.warn(

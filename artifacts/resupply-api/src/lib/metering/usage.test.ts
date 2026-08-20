@@ -8,6 +8,22 @@ const { state } = vi.hoisted(() => ({
     inserted: [] as Array<Record<string, unknown>>,
     insertError: null as unknown,
     throwOnInsert: false,
+    // Ordered log of what happened, so a test can assert that metering
+    // ran BEFORE the billing decision rather than merely alongside it.
+    order: [] as string[],
+    overageCalls: [] as Array<Record<string, unknown>>,
+    throwOnOverage: false,
+  },
+}));
+
+// The billing side is mocked so these tests can assert the RELATIONSHIP
+// between metering and billing: the rollup must be written regardless of
+// what the biller does with it (or whether it fails outright).
+vi.mock("../platform-billing/stripe", () => ({
+  reportMeteredOverage: async (input: Record<string, unknown>) => {
+    state.order.push("overage");
+    state.overageCalls.push(input);
+    if (state.throwOnOverage) throw new Error("stripe unreachable");
   },
 }));
 
@@ -17,6 +33,7 @@ vi.mock("@workspace/resupply-db", () => ({
       schema: () => ({
         rpc: async (fn: string, params: Record<string, unknown>) => {
           if (state.throwOnInsert) throw new Error("connection reset");
+          state.order.push("rollup");
           state.inserted.push({ ...params, __fn: fn, __orgArg: orgId });
           return { error: state.insertError };
         },
@@ -44,6 +61,9 @@ beforeEach(() => {
   state.inserted = [];
   state.insertError = null;
   state.throwOnInsert = false;
+  state.order = [];
+  state.overageCalls = [];
+  state.throwOnOverage = false;
 });
 
 describe("recordTenantUsage", () => {
@@ -132,6 +152,88 @@ describe("recordTenantUsage", () => {
         metricKey: "aiTextInteractionsPerMonth",
       }),
     ).resolves.toBeUndefined();
+  });
+});
+
+// ── Tracking is independent of billing ────────────────────────────────
+//
+// A tenant can be lifted to UNLIMITED allowances (no overage is ever
+// billed — see platform-billing/allowances.ts), and the whole point of
+// doing that for a pilot is to keep seeing exactly how much they use.
+// That guarantee is structural rather than conditional: the rollup RPC is
+// AWAITED first, and only then is the billing decision made downstream,
+// fire-and-forget. Nothing on the billing side — an unlimited allowance,
+// a disabled flag, an unreachable Stripe — can reach back and suppress a
+// measurement. These tests pin that ordering so a future refactor cannot
+// quietly invert it and leave an unlimited tenant unmetered.
+
+describe("metering vs billing (usage stays tracked when nothing is billed)", () => {
+  it("writes the rollup BEFORE consulting the biller", async () => {
+    await recordTenantUsage({
+      orgId: "org-1",
+      metricKey: "outboundMessagesPerMonth",
+      quantity: 3,
+    });
+    expect(state.order).toEqual(["rollup", "overage"]);
+  });
+
+  it("still records usage when the biller throws outright", async () => {
+    // The billing call is `void`-ed, so its rejection must not surface as
+    // an unhandled rejection NOR undo the measurement that already landed.
+    state.throwOnOverage = true;
+    await expect(
+      recordTenantUsage({
+        orgId: "org-1",
+        metricKey: "faxEvents",
+        quantity: 2,
+      }),
+    ).resolves.toBeUndefined();
+    expect(state.inserted).toHaveLength(1);
+    expect(state.inserted[0]).toMatchObject({
+      p_metric_key: "faxEvents",
+      p_quantity: 2,
+    });
+  });
+
+  it("meters every billable metric, including the ones a pilot has unlimited", async () => {
+    // faxEvents and aiVoiceEvents ride on flat premium add-ons rather than
+    // a plan allowance; they are metered through the same path as the
+    // rest, so lifting their allowance cannot stop them being counted.
+    for (const key of [
+      "outboundMessagesPerMonth",
+      "aiTextInteractionsPerMonth",
+      "billingTransactionsPerMonth",
+      "fitterFittingsPerMonth",
+      "faxEvents",
+      "aiVoiceEvents",
+    ] as const) {
+      await recordTenantUsage({ orgId: "org-1", metricKey: key, quantity: 1 });
+    }
+    expect(state.inserted.map((r) => r.p_metric_key)).toEqual([
+      "outboundMessagesPerMonth",
+      "aiTextInteractionsPerMonth",
+      "billingTransactionsPerMonth",
+      "fitterFittingsPerMonth",
+      "faxEvents",
+      "aiVoiceEvents",
+    ]);
+  });
+
+  it("hands the biller the atomic post-increment total, not a re-read", async () => {
+    // The rollup RPC returns the running total; passing it through is what
+    // lets the overage math avoid racing concurrent increments. It is also
+    // what the unlimited short-circuit ignores entirely.
+    await recordTenantUsage({
+      orgId: "org-1",
+      metricKey: "outboundMessagesPerMonth",
+      quantity: 4,
+    });
+    expect(state.overageCalls).toHaveLength(1);
+    expect(state.overageCalls[0]).toMatchObject({
+      orgId: "org-1",
+      metricKey: "outboundMessagesPerMonth",
+      increment: 4,
+    });
   });
 });
 
