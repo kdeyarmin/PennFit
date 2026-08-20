@@ -43,6 +43,7 @@ import csrMacrosRouter from "./admin/csr-macros.js";
 import alertsRouter from "./admin/alerts.js";
 import alertMessageOverridesRouter from "./admin/alert-message-overrides.js";
 import messageTemplatesRouter from "./admin/message-templates.js";
+import messagePreviewsRouter from "./admin/message-previews.js";
 import outreachPlaybooksRouter from "./admin/outreach-playbooks.js";
 import messageTemplateOverridesRouter from "./admin/message-template-overrides.js";
 import shopReturnsAdminRouter from "./admin/shop-returns.js";
@@ -854,6 +855,12 @@ router.use(alertMessageOverridesRouter);
 // is journaled — see lib/resupply-db/migrations/0067_message_templates.sql
 // for the journal posture.
 router.use(messageTemplatesRouter);
+
+// /admin/message-previews — the patient's-eye view of every outbound
+// scenario, rendered from the shared catalog with this tenant's brand,
+// plus a send-a-test action so staff can see one land in a real inbox
+// or Messages app.
+router.use(messagePreviewsRouter);
 // /admin/outreach-playbooks/* — situation-based contact templates:
 // a library of multi-touch outreach recipes (cadence + channel +
 // wording for SMS / email / staff call scripts) that CSRs start

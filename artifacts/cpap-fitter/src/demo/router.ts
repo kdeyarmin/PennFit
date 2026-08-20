@@ -40,6 +40,7 @@ import { ext13Handlers } from "./handlers/ext13";
 import { ext14Handlers } from "./handlers/ext14";
 import { ext15Handlers } from "./handlers/ext15";
 import { ext16Handlers } from "./handlers/ext16";
+import { fittingReferralsHandlers } from "./handlers/fitting-referrals";
 
 // Order matters only where patterns could overlap; within a surface
 // the more specific routes are declared first in their module. The
@@ -91,6 +92,12 @@ const handlers: DemoHandler[] = [
   ...ext14Handlers,
   ...ext15Handlers,
   ...ext16Handlers,
+  // Fitting + referral surfaces (mask catalog, formulary, fit sessions,
+  // safety screens, provider referrals, AI referral triage). Own the
+  // `/admin/fitter/...`, `/admin/fit-sessions/...`,
+  // `/admin/provider-referrals/...` and `/admin/referral-reviews/...`
+  // prefixes, which no module above claims.
+  ...fittingReferralsHandlers,
 ];
 
 /** API paths the demo sandbox is responsible for answering. */

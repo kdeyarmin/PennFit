@@ -337,6 +337,243 @@ function findReturn(id: string) {
 // and the back-in-stock rows is obvious (and to keep the import live).
 void DEMO_PRODUCTS;
 
+// ── Shop orders: list + detail (shop-orders.ts) ───────────────────────
+// GET /resupply-api/admin/shop/orders            → AdminShopOrderListPage
+// GET /resupply-api/admin/shop/orders/:orderId   → AdminShopOrderDetail
+//
+// Every per-order ACTION below (tracking, delivered, pickup, refund,
+// address, POD, loss-claims, shipping labels) was already seeded, but the
+// list that reaches an order was not — so /admin/shop/orders rendered an
+// empty table and none of those actions could be exercised from the UI.
+// Shapes mirror src/lib/admin/shop-orders-api.ts.
+const SHOP_ORDER_SEED: ReadonlyArray<{
+  n: number;
+  status: string;
+  name: string;
+  email: string;
+  cents: number;
+  method: "ship" | "pickup";
+  carrier: string | null;
+  stage: "paid" | "shipped" | "delivered" | "ready" | "picked_up" | "refunded";
+}> = [
+  {
+    n: 1,
+    status: "delivered",
+    name: "Avery Sample",
+    email: "avery.sample@example.com",
+    cents: 18400,
+    method: "ship",
+    carrier: "UPS",
+    stage: "delivered",
+  },
+  {
+    n: 2,
+    status: "shipped",
+    name: "Demo Patient",
+    email: "demo.patient@example.com",
+    cents: 9250,
+    method: "ship",
+    carrier: "USPS",
+    stage: "shipped",
+  },
+  {
+    n: 3,
+    status: "paid",
+    name: "Jordan Reyes",
+    email: "jordan.reyes@example.com",
+    cents: 24600,
+    method: "ship",
+    carrier: null,
+    stage: "paid",
+  },
+  {
+    n: 4,
+    status: "ready_for_pickup",
+    name: "Sam Okafor",
+    email: "sam.okafor@example.com",
+    cents: 7100,
+    method: "pickup",
+    carrier: null,
+    stage: "ready",
+  },
+  {
+    n: 5,
+    status: "picked_up",
+    name: "Nina Alvarez",
+    email: "nina.alvarez@example.com",
+    cents: 13350,
+    method: "pickup",
+    carrier: null,
+    stage: "picked_up",
+  },
+  {
+    n: 6,
+    status: "refunded",
+    name: "Chris Bell",
+    email: "chris.bell@example.com",
+    cents: 15900,
+    method: "ship",
+    carrier: "UPS",
+    stage: "refunded",
+  },
+  {
+    n: 7,
+    status: "paid",
+    name: "Robin Diaz",
+    email: "robin.diaz@example.com",
+    cents: 20800,
+    method: "ship",
+    carrier: null,
+    stage: "paid",
+  },
+];
+
+function shopOrderId(n: number): string {
+  return `demo-order-${String(n).padStart(4, "0")}`;
+}
+
+function shopOrderListItem(seed: (typeof SHOP_ORDER_SEED)[number]) {
+  const shipped = ["shipped", "delivered", "refunded"].includes(seed.stage);
+  const delivered = seed.stage === "delivered";
+  return {
+    id: shopOrderId(seed.n),
+    status: seed.status,
+    customerName: seed.name,
+    customerEmail: seed.email,
+    amountTotalCents: seed.cents,
+    currency: "usd",
+    createdAt: daysAgo(seed.n * 3),
+    paidAt: daysAgo(seed.n * 3),
+    shippedAt: shipped ? daysAgo(seed.n * 3 - 1) : null,
+    deliveredAt: delivered ? daysAgo(seed.n * 3 - 2) : null,
+    trackingCarrier: shipped ? seed.carrier : null,
+    trackingNumber: shipped
+      ? `1Z999AA1${String(10000000 + seed.n * 137)}`
+      : null,
+    fulfillmentMethod: seed.method,
+    itemCount: 1 + (seed.n % 3),
+  };
+}
+
+/**
+ * Session-scoped order state.
+ *
+ * The list/detail readers used to rebuild rows from `SHOP_ORDER_SEED` on
+ * every call while the fulfilment mutations only returned a projected
+ * response. The page invalidates and refetches after each action, so every
+ * successful save (tracking, delivered, pickup, refund, address) visibly
+ * reverted a moment later. Both sides now share this map, so an action
+ * sticks for the session — the same posture as the other demo stores.
+ */
+type DemoOrderRow = ReturnType<typeof shopOrderListItem> & {
+  shippingAddress: Record<string, string | null> | null;
+  readyForPickupAt: string | null;
+  pickedUpAt: string | null;
+  refundedAmountCents: number | null;
+};
+
+let orderStore: Map<string, DemoOrderRow> | null = null;
+
+function orders(): Map<string, DemoOrderRow> {
+  if (!orderStore) {
+    orderStore = new Map(
+      SHOP_ORDER_SEED.map((seed) => {
+        const base = shopOrderListItem(seed);
+        return [
+          base.id,
+          {
+            ...base,
+            shippingAddress:
+              seed.method === "pickup"
+                ? null
+                : {
+                    name: seed.name,
+                    line1: `${200 + seed.n * 5} Market St`,
+                    line2: null,
+                    city: "Philadelphia",
+                    state: "PA",
+                    postalCode: "19103",
+                    country: "US",
+                  },
+            readyForPickupAt:
+              seed.stage === "ready" || seed.stage === "picked_up"
+                ? daysAgo(1)
+                : null,
+            pickedUpAt: seed.stage === "picked_up" ? daysAgo(1) : null,
+            refundedAmountCents: seed.stage === "refunded" ? seed.cents : null,
+          } satisfies DemoOrderRow,
+        ];
+      }),
+    );
+  }
+  return orderStore;
+}
+
+/** Apply a fulfilment patch and return the stored row. */
+function patchDemoOrder(
+  orderId: string,
+  patch: Partial<DemoOrderRow>,
+): DemoOrderRow {
+  const store = orders();
+  const existing = store.get(orderId);
+  // A deep link to an id we never seeded still resolves to a coherent
+  // order rather than 404-ing mid-demo.
+  const base =
+    existing ??
+    ({
+      ...shopOrderListItem(SHOP_ORDER_SEED[0]),
+      id: orderId,
+      shippingAddress: null,
+      readyForPickupAt: null,
+      pickedUpAt: null,
+      refundedAmountCents: null,
+    } as DemoOrderRow);
+  const next = { ...base, ...patch };
+  store.set(orderId, next);
+  return next;
+}
+
+function shopOrdersList(query: URLSearchParams) {
+  const status = query.get("status");
+  const q = query.get("q")?.toLowerCase();
+  const limit = Number(query.get("limit")) || 25;
+  const offset = Number(query.get("offset")) || 0;
+
+  let rows = [...orders().values()];
+  if (status) rows = rows.filter((o) => o.status === status);
+  if (q) {
+    rows = rows.filter(
+      (o) =>
+        (o.customerName ?? "").toLowerCase().includes(q) ||
+        (o.customerEmail ?? "").toLowerCase().includes(q) ||
+        o.id.includes(q),
+    );
+  }
+  return {
+    orders: rows.slice(offset, offset + limit),
+    total: rows.length,
+    limit,
+    offset,
+  };
+}
+
+function shopOrderDetail(orderId: string) {
+  const row = orders().get(orderId) ?? patchDemoOrder(orderId, {});
+  const products = DEMO_PRODUCTS.slice(0, Math.max(1, row.itemCount));
+  return {
+    ...row,
+    stripeSessionId: `cs_demo_${orderId}`,
+    stripePaymentIntentId: row.status === "paid" ? null : `pi_demo_${orderId}`,
+    lineItems: products.map((p, i) => ({
+      name: p.name,
+      quantity: i === 0 ? 1 : 2,
+      amountSubtotalCents: Math.round(
+        (row.amountTotalCents ?? 0) / Math.max(1, row.itemCount),
+      ),
+    })),
+  };
+}
+
 export const ext8Handlers: DemoHandler[] = [
   // ── Reports presets ─────────────────────────────────────────────────
   route("GET", "/resupply-api/admin/reports/presets", () =>
@@ -436,6 +673,19 @@ export const ext8Handlers: DemoHandler[] = [
     "PATCH",
     "/resupply-api/admin/shop/customers/:customerId/membership",
     () => json({ ok: true }),
+  ),
+
+  // ── Shop orders: list + detail ──────────────────────────────────────
+  // Declared before the `:orderId` sub-routes below; `/orders` and
+  // `/orders/:orderId` are distinct patterns, and the detail route is a
+  // two-segment match so it cannot swallow `/orders/:orderId/pod` etc.
+  route("GET", "/resupply-api/admin/shop/orders", (req) =>
+    json(shopOrdersList(req.query)),
+  ),
+  route(
+    "GET",
+    "/resupply-api/admin/shop/orders/:orderId",
+    (_req, { orderId }) => json(shopOrderDetail(orderId)),
   ),
 
   // ── Order loss-claims ───────────────────────────────────────────────
@@ -593,8 +843,8 @@ export const ext8Handlers: DemoHandler[] = [
     (req, { orderId }) => {
       const body = req.json<{ carrier?: string; number?: string }>();
       return json({
-        order: projectDemoOrder(orderId, {
-          status: "paid",
+        order: patchDemoOrder(orderId, {
+          status: "shipped",
           trackingCarrier: body?.carrier ?? "UPS",
           trackingNumber: body?.number ?? "1Z999AA10123456784",
           shippedAt: NOW_ISO(),
@@ -607,9 +857,8 @@ export const ext8Handlers: DemoHandler[] = [
     "/resupply-api/admin/shop/orders/:orderId/delivered",
     (_req, { orderId }) =>
       json({
-        order: projectDemoOrder(orderId, {
-          status: "paid",
-          shippedAt: daysAgo(2),
+        order: patchDemoOrder(orderId, {
+          status: "delivered",
           deliveredAt: NOW_ISO(),
         }),
       }),
@@ -619,8 +868,8 @@ export const ext8Handlers: DemoHandler[] = [
     "/resupply-api/admin/shop/orders/:orderId/ready-for-pickup",
     (_req, { orderId }) =>
       json({
-        order: projectDemoOrder(orderId, {
-          status: "paid",
+        order: patchDemoOrder(orderId, {
+          status: "ready_for_pickup",
           fulfillmentMethod: "pickup",
           readyForPickupAt: NOW_ISO(),
         }),
@@ -631,10 +880,9 @@ export const ext8Handlers: DemoHandler[] = [
     "/resupply-api/admin/shop/orders/:orderId/picked-up",
     (_req, { orderId }) =>
       json({
-        order: projectDemoOrder(orderId, {
-          status: "paid",
+        order: patchDemoOrder(orderId, {
+          status: "picked_up",
           fulfillmentMethod: "pickup",
-          readyForPickupAt: daysAgo(1),
           pickedUpAt: NOW_ISO(),
         }),
       }),
@@ -651,8 +899,7 @@ export const ext8Handlers: DemoHandler[] = [
         postalCode?: string;
       }>();
       return json({
-        order: projectDemoOrder(orderId, {
-          status: "paid",
+        order: patchDemoOrder(orderId, {
           shippingAddress: {
             line1: body?.line1 ?? "1200 Market Street",
             line2: body?.line2 ?? "Apt 4B",
@@ -677,63 +924,17 @@ export const ext8Handlers: DemoHandler[] = [
           amountCents: amount,
           status: "succeeded",
         },
-        order: projectDemoOrder(orderId, { status: "paid" }),
+        order: patchDemoOrder(orderId, {
+          status: "refunded",
+          refundedAmountCents: amount,
+        }),
       });
     },
   ),
 ];
-
-interface ProjectedOrderPatch {
-  status?: string;
-  trackingCarrier?: string | null;
-  trackingNumber?: string | null;
-  shippedAt?: string | null;
-  deliveredAt?: string | null;
-  fulfillmentMethod?: "ship" | "pickup";
-  pickupLocationId?: string | null;
-  readyForPickupAt?: string | null;
-  pickedUpAt?: string | null;
-  shippingAddress?: {
-    line1: string;
-    line2: string | null;
-    city: string;
-    state: string;
-    postalCode: string;
-    country: "US";
-  } | null;
-}
 
 /**
  * Build the `{ order }` payload the shop-order fulfillment client expects
  * (matches projectOrder() in shop-orders.ts). Defaults model a paid
  * shippable order; the patch overrides whichever fields the action sets.
  */
-function projectDemoOrder(orderId: string, patch: ProjectedOrderPatch) {
-  return {
-    id: orderId,
-    sessionId: "demo_sess_1001",
-    paymentIntentId: "pi_demo_order_001",
-    status: patch.status ?? "paid",
-    amountTotalCents: 8900,
-    currency: "usd",
-    customerId: "demo-cust-9001",
-    createdAt: daysAgo(12),
-    paidAt: daysAgo(12),
-    shippingAddress: patch.shippingAddress ?? {
-      line1: "1200 Market Street",
-      line2: "Apt 4B",
-      city: "Philadelphia",
-      state: "PA",
-      postalCode: "19107",
-      country: "US" as const,
-    },
-    trackingCarrier: patch.trackingCarrier ?? null,
-    trackingNumber: patch.trackingNumber ?? null,
-    shippedAt: patch.shippedAt ?? null,
-    deliveredAt: patch.deliveredAt ?? null,
-    fulfillmentMethod: patch.fulfillmentMethod ?? "ship",
-    pickupLocationId: patch.pickupLocationId ?? null,
-    readyForPickupAt: patch.readyForPickupAt ?? null,
-    pickedUpAt: patch.pickedUpAt ?? null,
-  };
-}
