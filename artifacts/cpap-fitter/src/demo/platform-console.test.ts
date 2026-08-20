@@ -1116,3 +1116,68 @@ describe("tenant admin — referral reviews (AI triage)", () => {
     );
   });
 });
+
+describe("tenant admin — shop orders", () => {
+  it("seeds an order list with totals and pagination", async () => {
+    const { body } = await get<{
+      orders: Array<{ id: string; status: string; itemCount: number }>;
+      total: number;
+      limit: number;
+      offset: number;
+    }>(`${A}/shop/orders`);
+    expect(body.orders.length).toBeGreaterThan(3);
+    expect(body.total).toBe(body.orders.length);
+    expect(body.orders[0].itemCount).toBeGreaterThan(0);
+  });
+
+  it("filters orders by status and free-text query", async () => {
+    const paid = await get<{ orders: Array<{ status: string }> }>(
+      `${A}/shop/orders?status=paid`,
+    );
+    expect(paid.body.orders.length).toBeGreaterThan(0);
+    expect(paid.body.orders.every((o) => o.status === "paid")).toBe(true);
+
+    const searched = await get<{
+      orders: Array<{ customerName: string | null }>;
+    }>(`${A}/shop/orders?q=avery`);
+    expect(searched.body.orders).toHaveLength(1);
+    expect(searched.body.orders[0].customerName).toBe("Avery Sample");
+  });
+
+  it("serves an order detail with line items and a shipping address", async () => {
+    const { body } = await get<{
+      id: string;
+      stripeSessionId: string;
+      lineItems: Array<{ name: string; quantity: number }>;
+      shippingAddress: { city: string } | null;
+    }>(`${A}/shop/orders/demo-order-0001`);
+    expect(body.id).toBe("demo-order-0001");
+    expect(body.stripeSessionId).toContain("cs_demo_");
+    expect(body.lineItems.length).toBeGreaterThan(0);
+    expect(body.shippingAddress?.city).toBe("Philadelphia");
+  });
+
+  it("omits the shipping address on a pickup order", async () => {
+    const { body } = await get<{
+      fulfillmentMethod: string | null;
+      shippingAddress: unknown | null;
+    }>(`${A}/shop/orders/demo-order-0004`);
+    expect(body.fulfillmentMethod).toBe("pickup");
+    expect(body.shippingAddress).toBeNull();
+  });
+
+  it("does not shadow the per-order action sub-routes", async () => {
+    // The detail pattern is a single-segment match, so `/orders/:id/pod/meta`
+    // and friends must still reach their own handlers rather than being
+    // swallowed by the newly-added detail route.
+    const pod = await get<{ signedName?: string; uploadedAt?: string }>(
+      `${A}/shop/orders/demo-order-0001/pod/meta`,
+    );
+    expect(pod.body.signedName).toBe("D. Patient");
+
+    const claims = await get<{ claims: unknown[] }>(
+      `${A}/shop/orders/demo-order-0001/loss-claims`,
+    );
+    expect(Array.isArray(claims.body.claims)).toBe(true);
+  });
+});
