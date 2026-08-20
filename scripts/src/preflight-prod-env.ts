@@ -45,6 +45,8 @@
 //   1 — at least one required check failed.
 //   2 — internal error (the checker itself crashed).
 
+import { createPublicKey } from "node:crypto";
+
 import { applyEnvAliases } from "@workspace/resupply-secrets";
 
 const RESET = "\x1b[0m";
@@ -935,6 +937,77 @@ function runChecks(): void {
         "fully configured for Telnyx outbound fax + webhook verification",
     },
   );
+
+  // TELNYX_PUBLIC_KEY must be the base64-encoded 32-byte Ed25519 WEBHOOK
+  // public key from Telnyx Portal (Account → Keys & Credentials → Public
+  // Key) — NOT a Telnyx API key. Runtime verification
+  // (lib/resupply-telecom/src/telnyx-signature.ts) fails closed on any
+  // value that does not base64-decode to exactly 32 bytes, which silently
+  // 403s EVERY inbound fax webhook (status callbacks + inbound faxes).
+  // Mirror that exact acceptance test here so the misconfig fails preflight
+  // instead of production.
+  const telnyxPublicKey = getTrimmed("TELNYX_PUBLIC_KEY");
+  if (telnyxPublicKey !== undefined) {
+    if (/^KEY[0-9A-Za-z]/.test(telnyxPublicKey)) {
+      record(
+        "TELNYX_PUBLIC_KEY",
+        "fail",
+        "looks like a Telnyx API key (KEY… prefix), not the Ed25519 webhook " +
+          "public key — every inbound Telnyx webhook will be rejected (403). " +
+          "Copy the base64 public key from Telnyx Portal → Account settings → " +
+          "Keys & Credentials → Public Key.",
+      );
+    } else if (Buffer.from(telnyxPublicKey, "base64").length !== 32) {
+      record(
+        "TELNYX_PUBLIC_KEY",
+        "fail",
+        "does not base64-decode to exactly 32 bytes, so Telnyx webhook " +
+          "signature verification will reject every inbound webhook. Expected " +
+          "the base64 Ed25519 public key from the Telnyx portal.",
+      );
+    } else {
+      record(
+        "TELNYX_PUBLIC_KEY",
+        "pass",
+        "base64-decodes to a 32-byte Ed25519 public key",
+      );
+    }
+  }
+
+  // SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY must be the base64 DER SPKI ECDSA
+  // P-256 verification key SendGrid shows under Mail Settings → Event
+  // Webhook → Signed Event Webhook. Runtime verification
+  // (lib/resupply-email/src/signature.ts) collapses an unparseable key to
+  // "signature invalid" — i.e. every event POST 401s. Parse it here.
+  //
+  // NB: 401, not 403 — the two webhook verifiers deliberately differ.
+  // SendGrid's returns 401 "Invalid SendGrid signature"
+  // (resupply-email/src/signature.ts:230); Telnyx's returns 403 "Forbidden"
+  // (resupply-telecom/src/telnyx-signature.ts:216). Confirmed against the
+  // live endpoint: an unsigned POST to /email/sendgrid-events answers 401.
+  const sendgridEventKey = getTrimmed("SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY");
+  if (sendgridEventKey !== undefined) {
+    let spkiParses = false;
+    try {
+      createPublicKey({
+        key: Buffer.from(sendgridEventKey, "base64"),
+        format: "der",
+        type: "spki",
+      });
+      spkiParses = true;
+    } catch {
+      // leave spkiParses = false
+    }
+    record(
+      "SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY",
+      spkiParses ? "pass" : "fail",
+      spkiParses
+        ? "parses as a DER SPKI public key"
+        : "does not parse as a base64 DER SPKI public key — every signed " +
+            "SendGrid event webhook POST will be rejected. Copy the " +
+            "verification key from SendGrid → Mail Settings → Event Webhook.",
+    );
+  }
   checkAllOrNoneGroup(
     "WEB_PUSH_VAPID",
     [

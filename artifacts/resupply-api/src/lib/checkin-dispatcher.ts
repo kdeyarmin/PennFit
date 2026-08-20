@@ -718,7 +718,17 @@ async function placeVoiceCall(
           // can attribute the manual alert to the right patient without
           // touching the database first.
           url: `${clients.voice!.publicBaseUrl}/resupply-api/voice/checkin-twiml?day=${encodeURIComponent(day)}&patientId=${encodeURIComponent(row.patientId)}&journeyId=${encodeURIComponent(row.journeyId)}`,
-          statusCallbackUrl: `${clients.voice!.publicBaseUrl}/resupply-api/voice/status-callback`,
+          // No status callback URL — mirrors the onboarding SMS path above.
+          // /voice/status-callback binds every event to a `conversations` row
+          // via a REQUIRED `?conversationId=<uuid>` (attached by
+          // place-outbound-call.ts / alerts/dispatch.ts). Check-in calls
+          // deliberately do NOT create a conversations row — attempts live in
+          // patient_checkin_attempts — so a callback without that param could
+          // never bind: the route logged `voice_status_callback_malformed` and
+          // dropped the event, emitting a WARN that reads like a real breakage
+          // on every check-in call while recording nothing. Omitting it keeps
+          // that warning meaningful — it now fires only when a caller that
+          // SHOULD have passed a conversationId didn't.
           // Recording is always off (enforced in placeCall per the PHI
           // hard rule); no `record` option to pass.
           timeLimit: 120,

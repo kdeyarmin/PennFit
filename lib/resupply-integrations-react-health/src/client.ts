@@ -3,9 +3,14 @@
 // Endpoint paths are placeholders modelled after the documented
 // iCode Connect partner surface — every request runs through
 // `request()` so a future swap to a final spec is one place. The
-// 3B docs follow OAuth2 client_credentials, JSON resources at
-// /v1/account/{accountId}/patients/{partnerPatientId}/... and an
-// X-Account-Id header that mirrors AirView's X-DME-Id pattern.
+// 3B docs follow OAuth2 client_credentials with JSON resources; note
+// the DIVERGENCE from this implementation: the docs nest resources at
+// /v1/account/{accountId}/patients/{partnerPatientId}/... while this
+// client currently calls the flat /v1/patients/{partnerPatientId}/...
+// shape and carries the account via the X-Account-Id header (mirroring
+// AirView's X-DME-Id pattern). Reconcile against the signed partner
+// spec before go-live — the flat paths WILL 404 against an API that
+// implements the nested shape.
 //
 // Loaded only when ReactHealthConfig is non-null (see adapter.ts).
 
