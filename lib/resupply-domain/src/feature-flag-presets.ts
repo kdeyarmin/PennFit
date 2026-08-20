@@ -163,8 +163,6 @@ const SCALE_AUTOMATION = [
  * OFF until an operator deliberately enables them in the Control Center:
  *   * `email.auto_reply` — seeded OFF by design (migration 0250 / ADR 013
  *     departure: free-text email otherwise goes to a human).
- *   * `voice.breathe_sales` — the platform's own sales-outreach agent, not a
- *     tenant-facing feature.
  *   * The clinical-fitting flags that change how the patient is ASKED or
  *     MEASURED, rather than whether the engine runs at all.
  *     `fitter.multiframe_capture` changes the capture UX (it widens the
@@ -187,7 +185,6 @@ const SCALE_AUTOMATION = [
  */
 export const DELIBERATELY_OFF_FLAGS = [
   "email.auto_reply",
-  "voice.breathe_sales",
   "fitter.multiframe_capture",
   "fitter.fit_profile_v2",
   "fitter.refit_campaign",
@@ -257,9 +254,33 @@ export const PLAN_FEATURE_FLAG_PRESETS: Record<
  */
 export const PRESET_EXEMPT_FLAG_PREFIXES = ["module."] as const;
 
+/**
+ * Individual flag keys the plan presets do not govern — the exact-match
+ * counterpart to `PRESET_EXEMPT_FLAG_PREFIXES`.
+ *
+ * `voice.breathe_sales` is a PLATFORM flag, not a tenant entitlement: it
+ * gates CareMetric's own inbound sales line, and
+ * `routes/voice/inbound-breathe-sales.ts` reads it as
+ * `isFeatureEnabled("voice.breathe_sales")` with NO orgId — which resolves
+ * against the SEED tenant's row. That makes the seed tenant's value the
+ * platform's own on/off switch.
+ *
+ * It used to sit in `DELIBERATELY_OFF_FLAGS`, which meant a preset would
+ * turn it OFF (a bundle disables everything it does not list). Applying a
+ * plan preset to the seed tenant would therefore have taken the platform's
+ * sales line down as a side effect of an unrelated, tenant-scoped action —
+ * a cross-tenant blast radius no operator would predict from a button
+ * labelled "apply my plan's recommended bundle". Exempting it leaves the
+ * key at whatever the platform operator set, in both directions.
+ */
+export const PRESET_EXEMPT_FLAG_KEYS = ["voice.breathe_sales"] as const;
+
 /** True for a flag the plan presets deliberately do not govern. */
 export function isPresetExemptFlag(key: string): boolean {
-  return PRESET_EXEMPT_FLAG_PREFIXES.some((prefix) => key.startsWith(prefix));
+  return (
+    PRESET_EXEMPT_FLAG_PREFIXES.some((prefix) => key.startsWith(prefix)) ||
+    (PRESET_EXEMPT_FLAG_KEYS as readonly string[]).includes(key)
+  );
 }
 
 /**

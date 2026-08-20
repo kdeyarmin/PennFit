@@ -124,120 +124,201 @@ that does it.
 // of the app": every page a question could be about, with its path.
 const APP_MAP_SECTION = `
 ADMIN CONSOLE MAP (the left-nav, grouped as the operator sees it).
-Every page lives under /admin. Some pages are permission-gated and only
-appear for staff who hold the matching permission.
+Every page lives under /admin. Two kinds of gate hide a page:
+  * a PERMISSION the staff member doesn't hold, and
+  * an APP MODULE the tenant turned off in Control Center (the
+    module.* switches) — that removes a whole section from the sidebar.
+So "I don't see that page" is usually one of those two, not a bug.
 
 WORKSPACE — the day-to-day desk:
   - Home (/admin) — landing dashboard: today's work, queues, signals.
-  - Conversations:
-      * Conversations (/admin/conversations) — unified patient message threads (SMS/email/chat).
-      * Email Inbox (/admin/email-inbox) — inbound patient email, with AI draft replies.
-      * Cases (/admin/cases) — tracked multi-step issues (permission: cases.read).
-      * Episodes (/admin/episodes) — grouped interaction episodes.
-  - Schedule (everything time-based):
-      * Company Calendar (/admin/company-calendar) — shared team schedule.
-      * Video visits (/admin/video-visits) — telehealth video calls with patients (equipment setups, mask troubleshooting, follow-ups). Create a visit and the patient gets a secure join link by text or email — no app on their side. Also reachable from the "Video visit" button in the top header (works for people not in the system yet) and the Telehealth action on every patient chart.
+  - Front Desk (/admin/front-desk) — capture a walk-in and ring up a counter
+    order in real time (permission: orders.create; module: front_desk).
+  - Conversations (module: conversations):
+      * Conversations (/admin/conversations) — unified inbound SMS/MMS/email
+        threads. The old /admin/email-inbox redirects here; filter
+        channel=email for the email-only view.
+      * Cases (/admin/cases) — multi-channel tickets linking the threads,
+        orders, and faxes that belong to one issue (permission: cases.read).
+      * Episodes (/admin/episodes) — open service episodes needing follow-up.
+  - Schedule (module: schedule):
+      * Company Calendar (/admin/company-calendar) — shared schedule of
+        patient appointments (fittings, setups, follow-ups).
+      * Video visits (/admin/video-visits) — telehealth video calls. Create a
+        visit and the patient gets a secure join link by text or email — no
+        app on their side. Also on the top header "Video visit" button (works
+        for people not in the system yet) and every patient chart.
       * Follow-ups (/admin/followups) — scheduled callbacks/tasks.
-  - Outreach (send surfaces + the reusable content behind them):
+  - Outreach (module: outreach — send surfaces + the content behind them):
       * Bulk Campaigns (/admin/bulk-campaigns) — batch SMS/email sends.
-      * Alert Library (/admin/alerts) — curated one-off alerts (permission: admin.tools.manage).
+      * Alert Library (/admin/alerts) — curated one-off alerts (admin.tools.manage).
       * Reminders (/admin/fitter/reminders) — resupply reminder schedule.
-      * Playbooks (/admin/playbooks) — situation-based contact templates (cadence + wording).
-      * Canned Replies (/admin/macros) — CSR quick-reply macros (permission: admin.tools.manage).
-      * Automated messages (/admin/templates) — system-sent message copy (permission: admin.tools.manage).
+      * Playbooks (/admin/playbooks) — situation-based contact templates.
+      * Canned Replies (/admin/macros) — CSR quick-reply macros (admin.tools.manage).
+      * Automated messages (/admin/templates) — system-sent copy (admin.tools.manage).
+      * Message previews (/admin/message-previews) — render any automated
+        message with sample data before it goes out (admin.tools.manage).
 
 PATIENTS & CLINICAL:
   - Patients:
-      * Patients (/admin/patients) — the patient roster; click a patient for their full timeline.
-      * Duplicate review (/admin/patients/duplicates) — merge likely-duplicate patient records.
-  - Documents & e-sign (the paperwork pipeline, in workflow order):
-      * Documents (/admin/documents) — draft a CMN, prescription, agreement, or fax cover.
-      * Document packets (/admin/patient-packets) — send & track patient e-signature packets.
-      * Awaiting signatures (/admin/signature-tracking) — documents out for a provider signature.
+      * Patients (/admin/patients) — the roster; click through for the full timeline.
+      * Duplicate review (/admin/patients/duplicates) — merge likely duplicates.
+  - Documents & e-sign (module: documents — the paperwork pipeline, in order):
+      * Documents (/admin/documents) — draft a CMN, prescription, agreement, fax cover.
+      * Document packets (/admin/patient-packets) — send & track e-signature packets.
+      * Awaiting signatures (/admin/signature-tracking) — out for provider signature.
       * E-signature portal (/admin/provider-portal) — provider e-sign staging + signed items.
       * Inbound faxes (/admin/inbound-faxes) — triage returned faxes, sleep studies, Rx renewals.
-      * Retention (/admin/documents/retention) — the retention worklist: place/release legal
-        holds (reason required) and — admins only, once the retention sweep has marked a
-        row — destroy the document. Needs the audit.export permission.
-  - Therapy monitoring (the boards that surface who needs attention):
-      * RT Overview (/admin/rt-overview), Therapy Fleet (/admin/therapy-fleet) — device-cloud
-        adherence data, Setup Adherence (/admin/therapy-compliance),
-        Resupply Opportunities (/admin/therapy-resupply), RT outcomes (/admin/rt-outcomes).
-  - Clinical work (acting on what monitoring surfaced; permission: clinical.read for most tabs):
-      * Clinical encounters (/admin/clinical), Interventions (/admin/clinical/interventions),
-        Mask-fit feedback (/admin/clinical/mask-fit), Clinical outreach (/admin/clinical/outreach),
-        Adherence coaching (/admin/coaching), Video library (/admin/clinical/education-videos).
-  - Providers & recalls:
-      * Providers (/admin/providers), Recalls (/admin/equipment-recalls).
+      * Referral reviewer (/admin/referral-reviews) — work inbound referral faxes into
+        patients and orders.
+      * Referral sources (/admin/referral-sources) — the referring practices/accounts
+        those referrals come from, and their volume.
+      * Retention (/admin/documents/retention) — place/release legal holds (reason
+        required) and, admins only once the sweep has marked a row, destroy a
+        document (permission: audit.export).
+  - Therapy monitoring (module: therapy — the boards that surface who needs attention):
+      * RT Overview (/admin/rt-overview), Therapy Fleet (/admin/therapy-fleet) —
+        device-cloud adherence data, Setup Adherence (/admin/therapy-compliance),
+        Resupply Opportunities (/admin/therapy-resupply),
+        RT outcomes (/admin/rt-outcomes, permission: clinical.read).
+  - Clinical work (module: clinical; permission: clinical.read for most tabs):
+      * Clinical encounters (/admin/clinical), Interventions (/admin/clinical/interventions).
+      * Fit review (/admin/fit-sessions) — the mask-fitter worklist: every fit session
+        with its measurements, the tier-by-tier reasoning, and its confidence. Approve
+        a recommendation, override the mask/size, or request a rescan.
+      * Referrals (/admin/provider-referrals) — clinical referrals out to providers.
+      * Mask catalog (/admin/fitter/catalog) — the Mask Intelligence Catalog: models,
+        size variants, per-variant fit bands, contraindications, and where each
+        figure came from.
+      * Formulary (/admin/fitter/formulary) — which catalog masks THIS tenant
+        stocks/prefers. Tier 5 of the fitting engine: a bounded multiplier that
+        re-orders near-ties, never a filter.
+      * Safety screening (/admin/fitter/safety-screens) — the magnetic-implant
+        question set (patient AND household) and its published version.
+      * Mask-fit feedback (/admin/clinical/mask-fit), Clinical outreach
+        (/admin/clinical/outreach), Adherence coaching (/admin/coaching),
+        Video library (/admin/clinical/education-videos, permission: reports.read).
+  - Providers & recalls (module: providers):
+      * Providers (/admin/providers), Recalls (/admin/equipment-recalls),
+        Asset recovery (/admin/asset-recovery) — chase back rental equipment
+        that is out with a patient who has stopped therapy (permission: cases.read).
 
 ORDERS & SHOP:
   - Orders:
-      * Orders (/admin/fitter/orders) — all storefront/resupply orders.
-      * Subscriptions (/admin/shop/subscriptions) — recurring Subscribe-and-Save / resupply subs.
+      * Orders (/admin/shop/orders) — all storefront/resupply orders (returns.manage).
+      * Fitter requests (/admin/fitter/orders) — orders that came out of a fitting.
+      * Shipping labels (/admin/shipping) — buy/print labels, track parcels (returns.manage).
+      * Subscriptions (/admin/shop/subscriptions) — Subscribe-and-Save / resupply subs.
       * Returns & RMAs (/admin/shop/returns), Backorders & subs (/admin/shop/backorders).
-  - Inventory:
+  - Inventory (module: inventory):
       * Inventory (/admin/shop/inventory), Reconcile (/admin/shop/inventory/reconcile).
-  - Storefront & leads:
+  - Storefront & leads (module: storefront):
       * Customers (/admin/shop/customers), Reviews (/admin/shop/reviews),
-        Product Q&A (/admin/shop/product-questions), Abandoned Carts (/admin/shop/abandoned-carts),
-        Back-in-Stock (/admin/shop/back-in-stock), Insurance Leads (/admin/shop/insurance-leads),
-        Fitter Invites (/admin/fitter-invites), Fitter Prospects (/admin/fitter-leads).
+        Product Q&A (/admin/shop/product-questions), Abandoned Carts
+        (/admin/shop/abandoned-carts), Back-in-Stock (/admin/shop/back-in-stock),
+        Insurance Leads (/admin/shop/insurance-leads),
+        Fitter Invites (/admin/fitter-invites) — text/email a fitting link to anyone,
+        including someone not yet in the system, Fitter Prospects (/admin/fitter-leads).
 
 BILLING (the claims + revenue-cycle hub):
   - Dashboards (read-only money views):
       * Billing Hub (/admin/billing), Denials & DSO (/admin/billing/denials),
-        Collections forecast (/admin/billing/collections-forecast),
-        Payer profitability (/admin/billing/payer-profitability).
+        Collections forecast (/admin/billing/collections-forecast, reports.read),
+        Chargeback disputes (/admin/billing/disputes, reports.read) — card disputes
+        with their evidence deadlines,
+        Payer profitability (/admin/billing/payer-profitability, cost.read).
   - Worklists (tabs follow the claim lifecycle):
-      * Verify insurance (/admin/billing/verify) — run an on-demand 270/271 for any patient,
-        Eligibility (/admin/billing/eligibility), Re-verification (/admin/billing/eligibility-recheck),
-        Prior auths (/admin/billing/prior-auths), CMN / DIF worklist (/admin/billing/cmn),
-        Bill hold (/admin/billing/bill-hold), Auto-submit (/admin/billing/auto-submit),
-        AI queue (/admin/billing/ai-queue), Denials worklist (/admin/billing/denials-worklist).
+      * Verify insurance (/admin/billing/verify) — run an on-demand 270/271 for any patient.
+      * Insurance discovery (/admin/billing/insurance-discovery) — find coverage for a
+        patient who says they have none, or whose plan we can't identify.
+      * Eligibility (/admin/billing/eligibility), Re-verification
+        (/admin/billing/eligibility-recheck, reports.read),
+        Prior auths (/admin/billing/prior-auths), CMN / DIF worklist
+        (/admin/billing/cmn, reports.read), Bill hold (/admin/billing/bill-hold, reports.read).
+      * ADR / audit response (/admin/billing/adr, reports.read) — payer Additional
+        Documentation Requests, with their response clocks.
+      * Audit readiness (/admin/billing/audit-readiness, reports.read) — whether the
+        documentation behind billed claims would survive an audit.
+      * Collections (/admin/billing/collections, reports.read) — the patient dunning
+        ladder (statement → reminder → second notice → final notice → agency), plus
+        the reviewed agency hand-off export.
+      * Billing notes (/admin/billing/notes) — the account-level note trail.
+      * Auto-submit (/admin/billing/auto-submit, billing.manage),
+        AI queue (/admin/billing/ai-queue),
+        Denials worklist (/admin/billing/denials-worklist, reports.read).
   - A/R & collections:
       * A/R aging (/admin/billing/aging), Filing deadlines (/admin/billing/timely-filing),
-        Secondary claims (/admin/billing/secondary), Statement send (/admin/billing/statements),
+        Secondary claims (/admin/billing/secondary, reports.read),
+        Statement send (/admin/billing/statements, reports.read),
         Capped rentals (/admin/billing/capped-rentals).
   - Tools:
-      * ERA files (/admin/billing/era), Manual claim (/admin/billing/manual-claim),
-        Config (/admin/billing/config) — HCPCS maps, payer/modifier rules, claim templates.
+      * ERA files (/admin/billing/era), Office Ally (/admin/billing/office-ally,
+        billing.manage) — the clearinghouse queue: 837P out, 835/277CA back,
+        Manual claim (/admin/billing/manual-claim, patients.update),
+        Config (/admin/billing/config) — HCPCS maps, payer/modifier rules, claim templates,
+        Package & usage (/admin/billing/package) — this tenant's own plan, allowances,
+        and usage against them (same page as Plan & billing under System).
 
 ANALYTICS & REPORTS:
   - Reports (/admin/reports) — the report catalog.
-  - Financial: Margin & COGS (/admin/analytics/margin), Outreach Attribution
-    (/admin/analytics/outreach-attribution), Acquisition funnel (/admin/analytics/acquisition-funnel),
-    Revenue by source (/admin/analytics/revenue-by-source),
-    Channel engagement (/admin/analytics/channel-engagement), LTV & CAC (/admin/analytics/ltv-cac),
-    Inventory turnover (/admin/analytics/inventory-turnover).
-  - Performance & goals: Team throughput (/admin/productivity), Live staffing (/admin/live-staffing),
-    Goals & targets (/admin/goals), KPI alerts (/admin/kpi-alerts).
-  - Clinical & customer: Clinical Analytics (/admin/analytics), Therapy Report
-    (/admin/therapy-usage-report), Customer NPS (/admin/nps), Storefront Analytics (/admin/fitter/analytics).
+  - Audit Trail (/admin/analytics/audit-trail, permission: audit.read) — who did what.
+  - Financial: Margin & COGS (/admin/analytics/margin, cost.read), Outreach Attribution
+    (/admin/analytics/outreach-attribution), Acquisition funnel
+    (/admin/analytics/acquisition-funnel), Revenue by source
+    (/admin/analytics/revenue-by-source), Fitter outcomes
+    (/admin/analytics/fitter-outcomes, clinical.read) — how fitter recommendations
+    actually turned out (ordered, kept, exchanged), Channel engagement
+    (/admin/analytics/channel-engagement), LTV & CAC (/admin/analytics/ltv-cac, cost.read),
+    Inventory turnover (/admin/analytics/inventory-turnover, cost.read).
+  - Performance & goals: Team throughput (/admin/productivity), Live staffing
+    (/admin/live-staffing), Goals & targets (/admin/goals, targets.manage),
+    KPI alerts (/admin/kpi-alerts, metrics.read).
+  - Clinical & customer: Clinical Analytics (/admin/analytics), Reorder Reminders
+    (/admin/reorder-reminders, reports.read) — how the resupply reminder program is
+    performing, Therapy Report (/admin/therapy-usage-report), Customer NPS (/admin/nps),
+    Storefront Analytics (/admin/fitter/analytics).
 
 SYSTEM (mostly admin / super-admin):
-  - Support (/admin/support) — file a support request; the in-app assistant
-    answers how-to questions and a person handles the rest.
-  - Help & Resources (/admin/resources) — downloadable setup guides (e.g. the
-    Slack setup guide PDF) for staff.
-  - Automation: Rules (/admin/rules), Compliance Rules (/admin/compliance-rules),
-    Rule Tester (/admin/rule-tester) — dry-run a rule before enabling it.
-  - Operations: Operations (/admin/operations), Outbound Messages (/admin/outbound-messages) —
-    every outbound SMS/email with its delivery result (admin/super-admin only),
-    Delivery Failures (/admin/delivery-failures), Integrations (/admin/integrations) —
-    therapy-cloud / payer / clearinghouse connectors, PacWare (/admin/pacware) — CSV exchange
-    with the legacy billing system, Webhook Deliveries (/admin/webhook-deliveries).
-  - Settings (day-to-day): Settings (/admin/settings) — toggles the client-only demo sandbox,
-    Company information
-    (/admin/company-information) — company name, addresses, support contact, and identifiers
-    used on documents, the storefront, chat, and SMS/email branding, Closures (/admin/closures),
-    Team (/admin/team) — invite/role management (admin-only), Locations (/admin/locations) —
-    only with multi-branch enabled, Account security (/admin/security) — your own password + MFA.
-  - Setup & advanced: Configuration (/admin/system/configuration) — OWNER ONLY: your branding and
-    your OWN integration accounts (therapy-cloud, clearinghouse). Shared platform infrastructure
-    (AI vendors, telephony, email, payments), the send-a-test Connection tests, the deployment
-    launch checklist (Account Setup), platform packages/pricing (Platform billing), and deployment
-    System info all live on the global platform super-admin console, not here,
-    Control Center (/admin/control-center) — feature flags, Bot playground (/admin/bot-playground).
+  - Support (/admin/support, module: support) — file a support request; the in-app
+    assistant answers how-to questions and a person handles the rest.
+  - Help & Resources (/admin/resources) — downloadable setup guides for staff.
+  - Automation (module: automation): Rules (/admin/rules), Compliance Rules
+    (/admin/compliance-rules), Rule Tester (/admin/rule-tester) — dry-run a rule
+    before enabling it.
+  - Operations: Operations (/admin/operations), Outbound Messages
+    (/admin/outbound-messages, admin.tools.manage) — every outbound SMS/email with its
+    delivery result, Delivery Failures (/admin/delivery-failures),
+    and (module: integrations, admin.tools.manage) Integrations (/admin/integrations) —
+    therapy-cloud / payer / clearinghouse connectors, PacWare (/admin/pacware) — CSV
+    exchange with the legacy billing system, Webhook Deliveries (/admin/webhook-deliveries).
+  - Settings (day-to-day):
+      * Set up your workspace (/admin/setup) — the tenant onboarding checklist:
+        branding, custom domain, phone/SMS/fax numbers, email sender, patients,
+        payments, team, catalog. Each row links to the page that finishes it and
+        shows live status. START HERE for "how do I finish setting up".
+      * Settings (/admin/settings) — toggles the client-only demo sandbox.
+      * Company information (/admin/company-information, admin.tools.manage) — company
+        name, addresses, support contact, and identifiers used on documents, the
+        storefront, chat, and SMS/email branding.
+      * Storefront branding (/admin/storefront-branding) — the customer-facing name,
+        logo, and colors.
+      * Phone & SMS (/admin/phone-settings), Fax number (/admin/fax-settings),
+        Email From address (/admin/email-settings) — this tenant's OWN sending
+        identities. Each falls back to the platform's number/address until set.
+      * Closures (/admin/closures), Team (/admin/team, admin.tools.manage) —
+        invite/role management, Locations (/admin/locations) — only with
+        multi-branch enabled, Account security (/admin/security) — your own
+        password + MFA, Plan & billing (/admin/billing/package).
+  - Setup & advanced: Configuration (/admin/system/configuration, system.config.manage) —
+    OWNER ONLY: your branding and your OWN integration accounts (therapy-cloud,
+    clearinghouse). Shared platform infrastructure (AI vendors, telephony, email,
+    payments), the send-a-test Connection tests, the deployment launch checklist,
+    platform packages/pricing, and deployment System info all live on the global
+    platform super-admin console, not here.
+    Control Center (/admin/control-center, admin.tools.manage) — feature flags AND the
+    app-module switches that show/hide whole console sections; "apply my plan's
+    recommended bundle" previews its diff before writing.
+    Bot playground (/admin/bot-playground, admin.tools.manage).
 `;
 
 const ROLES_SECTION = `
