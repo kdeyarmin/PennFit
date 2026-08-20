@@ -5,6 +5,7 @@ import { useGetDashboardSummary } from "@workspace/api-client-react/admin";
 import { KpiCard } from "@/components/admin/Card";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { SetupProgressCard } from "@/components/admin/SetupProgressCard";
+import { FitterInviteQuickSend } from "@/components/admin/FitterInviteQuickSend";
 import { fetchTenantSetup } from "@/lib/admin/tenant-setup-api";
 import { shouldRedirectToSetup } from "@/lib/admin/onboarding-redirect";
 import { TodayWorklistSection } from "@/pages/admin/admin-today";
@@ -52,6 +53,9 @@ function useOnboardingRedirect() {
 //   2. Today's worklist — top items across every queue (rendered by
 //      <TodayWorklistSection/>, which owns its own fetch).
 //   3. Quick links — pre-filtered queue deep links.
+// Plus one action, not just a view: <FitterInviteQuickSend/> sends a
+// patient the AI mask-fitting link from Home, so the most-repeated staff
+// task doesn't start with a navigation.
 // The /admin/today and /admin/work-queue routes now redirect here.
 //
 // Each KPI tile is wrapped in a Link to a pre-filtered queue view —
@@ -80,13 +84,6 @@ const FIRST_ACTIONS: ReadonlyArray<{
   href: string;
   cta: string;
 }> = [
-  {
-    title: "Send a fitting link",
-    blurb:
-      "Text or email a patient an AI mask-fitting link and get their recommended mask + size back.",
-    href: "/admin/fitter-invites",
-    cta: "Open the fitter",
-  },
   {
     title: "Take an order",
     blurb:
@@ -121,7 +118,7 @@ function FirstActionsCard({ show }: { show: boolean }) {
         Your workspace is ready to use right now. Pick one to see the app in
         action — you can finish branding and settings later.
       </p>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {FIRST_ACTIONS.map((a) => (
           <Link
             key={a.href}
@@ -208,6 +205,8 @@ export function DashboardPage() {
       {isError && <ErrorPanel error={error} onRetry={() => void refetch()} />}
 
       <SetupProgressCard />
+
+      <FitterInviteQuickSend />
 
       <FirstActionsCard
         show={
