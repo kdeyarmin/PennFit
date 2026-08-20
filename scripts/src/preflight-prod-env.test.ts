@@ -6,6 +6,7 @@
 // controlled process.env and inspecting the exit code and stdout output.
 
 import { spawnSync } from "node:child_process";
+import { generateKeyPairSync } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { resolve, dirname } from "node:path";
 import { describe, it, expect } from "vitest";
@@ -112,7 +113,9 @@ const VALID_PROD_ENV: Record<string, string> = {
   TELNYX_API_KEY: "KEY0123456789abcdef",
   TELNYX_FAX_CONNECTION_ID: "1234567890",
   TELNYX_FAX_FROM_NUMBER: "+12155550199",
-  TELNYX_PUBLIC_KEY: "a".repeat(64),
+  // Telnyx hands out the raw 32-byte Ed25519 webhook key base64-encoded;
+  // both the runtime verifier and preflight require exactly that shape.
+  TELNYX_PUBLIC_KEY: Buffer.alloc(32, 0x61).toString("base64"),
   WEB_PUSH_VAPID_PUBLIC_KEY: "B".repeat(87),
   WEB_PUSH_VAPID_PRIVATE_KEY: "c".repeat(43),
   WEB_PUSH_VAPID_SUBJECT: "mailto:info@pennpaps.com",
@@ -591,6 +594,77 @@ describe("SendGrid checks", () => {
   it("fails when SENDGRID_FROM_EMAIL is missing in production", () => {
     const { exitCode } = run(withEnv({ SENDGRID_FROM_EMAIL: undefined }));
     expect(exitCode).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Exit 1: webhook-verification key shapes
+//
+// Both of these guard a failure mode that is INVISIBLE until a vendor webhook
+// arrives: the runtime verifiers fail closed on an unparseable key, so every
+// inbound webhook 401s while the deploy still looks healthy.
+// ---------------------------------------------------------------------------
+
+describe("webhook signing-key shape checks", () => {
+  it("fails when TELNYX_PUBLIC_KEY is a Telnyx API key instead of the Ed25519 public key", () => {
+    const { exitCode, stdout } = run(
+      withEnv({ TELNYX_PUBLIC_KEY: "KEY019EAA17E78ED61978168FCA3E2E9837_abc" }),
+    );
+    expect(exitCode).toBe(1);
+    expect(stdout).toContain("TELNYX_PUBLIC_KEY");
+    expect(stdout).toContain("API key");
+  });
+
+  it("fails when TELNYX_PUBLIC_KEY does not decode to 32 bytes", () => {
+    const { exitCode, stdout } = run(
+      withEnv({ TELNYX_PUBLIC_KEY: Buffer.alloc(16, 0x61).toString("base64") }),
+    );
+    expect(exitCode).toBe(1);
+    expect(stdout).toContain("TELNYX_PUBLIC_KEY");
+  });
+
+  it("passes when TELNYX_PUBLIC_KEY is a base64 32-byte Ed25519 key", () => {
+    const { exitCode, stdout } = run(VALID_PROD_ENV);
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("Ready for launch.");
+  });
+
+  it("fails when SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY is not a DER SPKI key", () => {
+    const { exitCode, stdout } = run(
+      withEnv({
+        SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY:
+          Buffer.from("not-a-key").toString("base64"),
+      }),
+    );
+    expect(exitCode).toBe(1);
+    expect(stdout).toContain("SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY");
+  });
+
+  it("passes when SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY is a valid DER SPKI key", () => {
+    const { publicKey } = generateKeyPairSync("ec", {
+      namedCurve: "prime256v1",
+    });
+    const spki = publicKey.export({ format: "der", type: "spki" }) as Buffer;
+    const { exitCode, stdout } = run(
+      withEnv({
+        SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY: spki.toString("base64"),
+      }),
+    );
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("Ready for launch.");
+  });
+
+  it("skips both checks when the vars are unset (optional integrations)", () => {
+    const { exitCode } = run(
+      withEnv({
+        TELNYX_API_KEY: undefined,
+        TELNYX_FAX_CONNECTION_ID: undefined,
+        TELNYX_FAX_FROM_NUMBER: undefined,
+        TELNYX_PUBLIC_KEY: undefined,
+        SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY: undefined,
+      }),
+    );
+    expect(exitCode).toBe(0);
   });
 });
 
