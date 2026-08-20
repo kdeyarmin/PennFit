@@ -15,7 +15,7 @@ card in `pages/help.tsx`. The coverage test fails until all three exist.
 
 | Feature                                    | Help article                      | Status                                 |
 | ------------------------------------------ | --------------------------------- | -------------------------------------- |
-| Virtual mask fitter                        | `/help/find-your-mask`            | Covered                                |
+| Virtual mask fitter                        | `/help/find-your-mask`            | Covered (guided scan + safety check)   |
 | Ordering a recommended mask                | `/help/place-an-order`            | Covered                                |
 | Shop & checkout                            | `/help/shop-and-checkout`         | Covered                                |
 | Order tracking                             | `/help/track-your-order`          | Covered                                |
@@ -45,13 +45,32 @@ Help Center stays task-oriented.
 
 | Surface                  | What it covers                                                        | Where                                          |
 | ------------------------ | --------------------------------------------------------------------- | ---------------------------------------------- |
-| PennPilot app map        | Every admin page, grouped as the sidebar                              | `adminAssistantKnowledge.ts` `APP_MAP_SECTION` |
+| PennPilot app map        | Every admin page, grouped as the sidebar — enforced, see below        | `adminAssistantKnowledge.ts` `APP_MAP_SECTION` |
 | PennPilot workflows      | Find/work a patient, claims end-to-end, returns, flags, PacWare, KPIs | `WORKFLOWS_SECTION`                            |
 | PennPilot best practices | Denial management, rule-tester safety, campaign etiquette, escalation | `BEST_PRACTICES_SECTION`                       |
 | PennPilot runbook index  | Which `docs/runbooks/*` manual to use, and when                       | `RUNBOOKS_SECTION`                             |
 | PacWare in-app how-to    | Condensed import/export steps on `/admin/pacware`                     | `admin-pacware.tsx` `HowToCard`                |
 | Launch checklist         | Required env/integration setup with auto-detection                    | `/admin/account-setup`                         |
 | Operator runbooks        | Launch, go-lives, key rotation, outage recovery                       | `docs/runbooks/`                               |
+
+The PennPilot app map is now **enforced**, not just editorial:
+`artifacts/cpap-fitter/src/components/admin/AppShell.assistant-app-map.test.ts`
+fails when a page reachable from `NAV_GROUPS` has no mention in
+`APP_MAP_SECTION`. Adding a sidebar entry therefore requires a line in
+the knowledge base in the same change. It checks one direction only —
+the map may still describe things that aren't nav entries (the
+top-header Video visit button, the platform console, the
+`/admin/email-inbox` redirect).
+
+That guard exists because the drift was real and silent: 29 pages had
+shipped with nav entries the assistant had never heard of — the whole
+clinical-fitter suite (Fit review, Mask catalog, Formulary, Safety
+screening), Front Desk, the referral reviewer and referral sources,
+insurance discovery, ADR / audit response, audit readiness, collections,
+chargeback disputes, billing notes, Office Ally, asset recovery, fitter
+outcomes, the audit trail, message previews, reorder reminders, shipping
+labels, and the per-tenant sending-identity settings pages. An operator
+asking PennPilot "where do I review a fit?" was told it didn't exist.
 
 Known staff-side gaps (candidates for future PennPilot sections or
 in-app cards): denial appeal letter writing, secondary-claim COB detail,

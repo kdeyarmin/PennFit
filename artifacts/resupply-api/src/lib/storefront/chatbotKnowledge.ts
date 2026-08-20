@@ -709,8 +709,14 @@ const ATYPICAL_SITUATIONS_SECTION = `
     this.
   - **Older adults / decreased dexterity**: full-face masks with
     magnetic clips (e.g. ResMed AirFit F20, F30) are easier to
-    handle than two-handed snap-on systems. Lighter, simpler
-    headgear (e.g. AirFit P10's split-strap design) helps too.
+    handle than two-handed snap-on systems — but ONLY after the
+    magnetic-implant screen comes back clear for the patient AND
+    their household (pacemaker / ICD / other implanted heart device,
+    aneurysm clip, neurostimulator, adjustable shunt). If any of
+    those is a yes or an unsure, magnetic masks are off the table;
+    steer to easy-to-handle NON-magnetic options and simple
+    headgear instead. Lighter, simpler headgear (e.g. AirFit P10's
+    split-strap design) helps dexterity too and carries no magnets.
   - **Athletes / very fit users**: lower BMI doesn't rule out OSA —
     palate / jaw anatomy is the bigger driver. Athletes commonly do
     well with nasal pillow masks (low contact, low weight) at
@@ -772,9 +778,13 @@ The reluctant partner ("my husband refuses to wear it"):
     scare tactic.
 
 Elderly parents:
-  - Simpler gear genuinely helps: masks with magnetic clips (easier
-    with arthritis), simple one-piece headgear, and auto-ship
-    (/reminders or Subscribe & Save) so nobody has to remember dates.
+  - Simpler gear genuinely helps: simple one-piece headgear, and
+    auto-ship (/reminders or Subscribe & Save) so nobody has to
+    remember dates. Magnetic clips are easier with arthritis, but
+    ask about implanted devices FIRST — for the parent and for
+    whoever lives with them. Pacemakers and ICDs are common in this
+    age group, and a yes or an unsure rules magnetic masks out
+    entirely. Plenty of non-magnetic masks are still easy to handle.
   - Adult children often handle reorders. With the parent's OK, the
     easiest paths are the cash-pay shop or calling the team at
     (814) 471-0627 — they can also note a caregiver contact on the
@@ -1154,19 +1164,63 @@ recite the whole list.
 const HOW_IT_WORKS_SECTION = `
 # How the PennPaps virtual mask fitter works (see /how-it-works)
 
-The fitter is the simplest path to a recommended mask and takes about
-three minutes. Four steps:
-  1. Consent (/consent) - one screen explaining what the camera will
-     measure and that no images leave the browser.
-  2. Capture (/capture) - one front-facing photo. Processing happens
-     entirely in-browser via MediaPipe Face Mesh; the picture itself
-     never reaches PennPaps's servers.
+The fitter is the simplest path to a recommended mask, three to five
+minutes:
+  1. Consent (/consent) - what the camera measures, and that no images
+     leave the browser.
+  2. Capture (/capture) - the face scan, processed entirely in-browser
+     via MediaPipe. The picture never reaches PennPaps's servers and the
+     frames are discarded once the measurements are read off them.
+     Either a single front-facing photo, or a GUIDED scan: an on-screen
+     coach checks lighting, distance, head position, obstruction and
+     movement, then captures three angles - straight ahead, then a
+     slight turn each way. The extra angles let the measurements be
+     cross-checked, which is what produces a confidence score instead of
+     one unverified snapshot. If the camera or tracker can't start it
+     falls back to the single photo automatically - nobody gets stuck.
   3. Questionnaire (/questionnaire) - mouth breathing? prescribed
      pressure? sleep position? facial hair? claustrophobia? skin
      sensitivities?
-  4. Results (/results) - a ranked shortlist of masks from the
-     catalog, with weighted scores and a fit rationale per mask.
-     From there, /order kicks off the insurance order flow.
+  4. Results (/results) - the safety check below, then the shortlist
+     with a fit rationale per mask. /order starts the insurance order.
+
+## The magnetic-implant safety check (on /results)
+
+Some masks attach with MAGNETIC headgear clips, and magnets can
+interfere with implanted medical devices. So before the shortlist is
+final, the fitter asks about the patient AND anyone in their household
+(a mask is handled at close range at home):
+  - a pacemaker, defibrillator (ICD), or other implanted heart device
+    (including leadless pacemakers and implanted loop recorders)
+  - an aneurysm clip, neurostimulator, or an adjustable shunt
+A "yes" - and equally an "I'm not sure" - excludes every magnetic-clip
+mask and surfaces non-magnetic alternatives. It is a hard exclusion: a
+magnetic mask cannot score its way back onto the list.
+
+Never talk a patient out of a yes or an unsure, and never recommend a
+magnetic-clip mask to someone who has flagged an implant for themselves
+or anyone at home. If they don't know what their implant is: choose
+unsure and check with the clinic that placed it - never guess.
+
+## How the shortlist is chosen
+
+Strict order, and the first two are FILTERS - what they remove is gone:
+  1. Safety (the screen above, plus recorded contraindications).
+  2. Therapy compatibility - e.g. a mask rated below the prescribed
+     pressure is excluded, not merely penalised.
+  3. Facial fit - measurements matched against each mask's per-size fit
+     range, size by size, not split evenly across one overall range.
+  4. Patient answers - mouth breathing, sleep position, facial hair,
+     claustrophobia, and the rest.
+  5. What this location stocks and prefers, then availability. Small
+     nudges that only re-order near-ties; neither can promote an unsafe
+     or ill-fitting mask.
+
+If scan quality was poor, or a measurement is outside the plausible
+range for a face, the fitter says so and asks for a better scan or a
+human review INSTEAD of naming a mask. That is a real answer, not a
+failure - a retake in better light usually fixes it, and they can always
+ask for a person.
 
 The fitter is for patients who already have a CPAP prescription /
 sleep-study diagnosis. PennPaps does NOT diagnose sleep apnea.
