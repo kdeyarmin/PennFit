@@ -978,7 +978,13 @@ function runChecks(): void {
   // P-256 verification key SendGrid shows under Mail Settings → Event
   // Webhook → Signed Event Webhook. Runtime verification
   // (lib/resupply-email/src/signature.ts) collapses an unparseable key to
-  // "signature invalid" — i.e. every event POST 403s. Parse it here.
+  // "signature invalid" — i.e. every event POST 401s. Parse it here.
+  //
+  // NB: 401, not 403 — the two webhook verifiers deliberately differ.
+  // SendGrid's returns 401 "Invalid SendGrid signature"
+  // (resupply-email/src/signature.ts:230); Telnyx's returns 403 "Forbidden"
+  // (resupply-telecom/src/telnyx-signature.ts:216). Confirmed against the
+  // live endpoint: an unsigned POST to /email/sendgrid-events answers 401.
   const sendgridEventKey = getTrimmed("SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY");
   if (sendgridEventKey !== undefined) {
     let spkiParses = false;
