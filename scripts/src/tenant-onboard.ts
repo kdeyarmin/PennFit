@@ -438,7 +438,6 @@ async function provisionDefaultFormulary(
       name: "Default formulary",
       status: "active",
       default_posture: "open",
-      is_default: true,
       version: 1,
       notes:
         "Created by tenant:onboard. Open posture with no rules behaves " +
