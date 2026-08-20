@@ -3091,7 +3091,9 @@ function TenantBillingCard({ tenantId }: { tenantId: string }) {
   // used or is attached to a metered add-on (pay-as-you-go, no cap).
   const meterRows = useMemo(() => {
     if (!sub) return [];
-    const allowances: Record<string, number> = {
+    // `null` here is an explicit UNLIMITED override, not a missing value —
+    // it must survive the merge so it can out-rank the plan's number.
+    const allowances: Record<string, number | null> = {
       ...sub.plan.allowances,
       ...sub.customAllowances,
     };
@@ -3111,6 +3113,12 @@ function TenantBillingCard({ tenantId }: { tenantId: string }) {
       key,
       used: usageMetrics[key] ?? 0,
       allowance: key in allowances ? allowances[key] : null,
+      // Two different kinds of "no number to show", and they bill in
+      // opposite ways: an explicit null override means UNLIMITED (nothing
+      // is billable), while a metric absent from the map is uncapped
+      // pay-as-you-go (every unit is billable). Collapsing them would tell
+      // an operator the tenant is free-riding when they're on the meter.
+      unlimited: key in allowances && allowances[key] === null,
       unit: unitByMetric.get(key) ?? null,
     }));
   }, [sub, row]);
@@ -3205,7 +3213,7 @@ function TenantBillingCard({ tenantId }: { tenantId: string }) {
                   : ""}
               </div>
               <div className="space-y-1">
-                {meterRows.map(({ key, used, allowance, unit }) => {
+                {meterRows.map(({ key, used, allowance, unlimited, unit }) => {
                   const capped = allowance !== null;
                   const over = capped && allowance > 0 && used > allowance;
                   return (
@@ -3239,7 +3247,7 @@ function TenantBillingCard({ tenantId }: { tenantId: string }) {
                               className="font-normal"
                               style={{ color: "hsl(var(--ink-3))" }}
                             >
-                              metered
+                              {unlimited ? "unlimited" : "metered"}
                             </span>
                           </>
                         )}

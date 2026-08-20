@@ -8,6 +8,9 @@ export interface BillingPlan {
   onboardingFeeCents: number | null;
   isPublic?: boolean;
   isCustom: boolean;
+  /** The marketed tier's caps. Plans express "uncapped" by OMITTING a
+   *  metric, never by a null — only a tenant's customAllowances override
+   *  can carry an explicit unlimited. */
   allowances: Record<string, number>;
   features: string[];
   stripeProductId?: string | null;
@@ -39,7 +42,8 @@ export interface TenantBilling {
     status: string;
     customMonthlyPriceCents: number | null;
     customOnboardingFeeCents: number | null;
-    customAllowances: Record<string, number>;
+    /** Per-tenant override of the plan allowances; `null` = unlimited. */
+    customAllowances: Record<string, number | null>;
     notes: string;
     stripeCustomerId?: string | null;
     stripeSubscriptionId?: string | null;
@@ -324,7 +328,7 @@ export function updateTenantPlan(
     status: string;
     customMonthlyPriceCents?: number | null;
     customOnboardingFeeCents?: number | null;
-    customAllowances?: Record<string, number>;
+    customAllowances?: Record<string, number | null>;
     notes?: string;
   },
 ): Promise<TenantBilling> {

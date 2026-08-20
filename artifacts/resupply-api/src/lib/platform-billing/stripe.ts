@@ -7,6 +7,11 @@ import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { logger } from "../logger";
 import {
+  isUnlimited,
+  overageAllowanceFor,
+  resolveEffectiveAllowances,
+} from "./allowances";
+import {
   getStripeClient,
   readPlatformBillingStripeConfigOrNull,
   type PlatformBillingStripeConfig,
@@ -1346,11 +1351,17 @@ export async function reportMeteredOverage(input: {
     const eventName = (addon as OverageAddonRow).meter_event_name;
     if (!eventName) return;
 
-    // The tenant's Stripe customer + the plan allowance for this metric.
+    // The tenant's Stripe customer + the allowance for this metric. The
+    // tenant's own `custom_allowances` override the plan's numbers — both
+    // admin surfaces already merge them this way, and billing has to agree
+    // or the console reports a tenant inside their allowance while the
+    // invoice charges overage against the plan's smaller one.
     const { data: sub, error: subErr } = await raw
       .schema("resupply")
       .from("tenant_billing_subscriptions")
-      .select("stripe_customer_id, billing_plans(allowances)")
+      .select(
+        "stripe_customer_id, custom_allowances, billing_plans(allowances)",
+      )
       .eq("org_id", id)
       .in("status", ["active", "trialing", "past_due"])
       .not("stripe_customer_id", "is", null)
@@ -1360,10 +1371,17 @@ export async function reportMeteredOverage(input: {
     const customerId = (sub as { stripe_customer_id?: string | null })
       .stripe_customer_id;
     if (!customerId) return;
-    const allowances = ((sub as { billing_plans?: { allowances?: unknown } })
-      .billing_plans?.allowances ?? {}) as Record<string, unknown>;
-    const allowanceRaw = allowances[input.metricKey];
-    const allowance = typeof allowanceRaw === "number" ? allowanceRaw : 0;
+    const effective = resolveEffectiveAllowances(
+      (sub as { billing_plans?: { allowances?: Record<string, unknown> } })
+        .billing_plans?.allowances,
+      (sub as { custom_allowances?: Record<string, unknown> | null })
+        .custom_allowances,
+    );
+    const allowance = overageAllowanceFor(effective, input.metricKey);
+    // Unlimited: nothing can be over, so never report a meter event. The
+    // rollup was already written by the caller, so the tenant stays fully
+    // metered on both usage surfaces — only the billing stops.
+    if (isUnlimited(allowance)) return;
 
     // Post-increment running total. Prefer the atomic value the increment RPC
     // returned (migration 0422); fall back to a (racy) read for callers that

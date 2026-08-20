@@ -59,12 +59,15 @@ function dollarInputToCents(raw: string): number | null | undefined {
   return Math.round(n * 100);
 }
 
-function pct(used: number, limit: number | undefined): number | null {
+// `null` limit = an explicit UNLIMITED override on the tenant; `undefined`
+// = no allowance declared at all. Neither yields a percentage, so neither
+// can ever read as near- or over-limit.
+function pct(used: number, limit: number | null | undefined): number | null {
   if (!limit || limit <= 0) return null;
   return Math.min(100, Math.round((used / limit) * 100));
 }
 
-function usageTone(used: number, limit: number | undefined) {
+function usageTone(used: number, limit: number | null | undefined) {
   const p = pct(used, limit);
   if (p === null) return "bg-slate-300";
   if (p >= 100) return "bg-red-600";
@@ -96,10 +99,12 @@ function UsageBar({
   label,
   used,
   limit,
+  unlimited = false,
 }: {
   label: string;
   used: number;
-  limit?: number;
+  limit?: number | null;
+  unlimited?: boolean;
 }) {
   const p = pct(used, limit);
   return (
@@ -108,7 +113,12 @@ function UsageBar({
         <span>{label}</span>
         <span>
           {used.toLocaleString()}
-          {limit ? ` / ${limit.toLocaleString()}` : ""}
+          {typeof limit === "number" && limit > 0
+            ? ` / ${limit.toLocaleString()}`
+            : ""}
+          {unlimited ? (
+            <span className="text-slate-400"> / unlimited</span>
+          ) : null}
         </span>
       </div>
       <div className="h-2 rounded-full bg-slate-100">
@@ -269,6 +279,7 @@ function TenantEditor({
             label={METRIC_LABELS[key] ?? key}
             used={used}
             limit={allowances[key]}
+            unlimited={key in allowances && allowances[key] === null}
           />
         ))}
       </div>

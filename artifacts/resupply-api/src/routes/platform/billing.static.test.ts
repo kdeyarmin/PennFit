@@ -83,6 +83,20 @@ describe("platform billing route wiring", () => {
     expect(SRC).toContain('.rpc("assign_tenant_subscription"');
   });
 
+  it("treats an omitted customAllowances as 'leave unchanged', not 'reset'", () => {
+    // The platform console posts a subscription save without ever sending
+    // customAllowances (console.tsx reads it for display only). Defaulting
+    // to {} here made every plan change silently revoke a tenant's
+    // negotiated or unlimited allowance — and since allowances now drive
+    // overage billing, the only symptom would be an unintended charge.
+    // Migration 0508 makes a NULL parameter mean "carry the prior value
+    // forward"; an explicit {} from a caller still clears it.
+    expect(SRC).toContain("p_custom_allowances: body.data.customAllowances ??");
+    expect(SRC).not.toContain(
+      "p_custom_allowances: body.data.customAllowances ?? {}",
+    );
+  });
+
   it("counts active locations by is_active, not a nonexistent status column", () => {
     // resupply.locations has `is_active` (boolean), no `status` column —
     // filtering on `status` 400s in PostgREST and 500s the whole tenant
