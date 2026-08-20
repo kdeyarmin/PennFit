@@ -879,19 +879,25 @@ export function demoReviewVariant(
 export function demoReviewVariantsBatch(
   body:
     | {
-        ids?: string[];
+        variantIds?: string[];
+        approved?: boolean;
         sourceKind?: ReviewSourceKind;
         sourceRef?: string;
         note?: string;
       }
     | undefined,
 ) {
-  const ids = body?.ids ?? [];
-  let reviewed = 0;
+  // The client serializes the selection as `variantIds` (not `ids`) and
+  // reads back `{ ok, approved, count }`. Reading the wrong key made the
+  // bulk sign-off a silent no-op: it reported success and left every
+  // variant still flagged after the refetch.
+  const ids = body?.variantIds ?? [];
+  const approved = body?.approved ?? true;
+  let count = 0;
   for (const id of ids) {
-    if (demoReviewVariant(id, body)) reviewed += 1;
+    if (demoReviewVariant(id, body)) count += 1;
   }
-  return { reviewed, skipped: ids.length - reviewed };
+  return { ok: true as const, approved, count };
 }
 
 // ── Formulary ───────────────────────────────────────────────────────
@@ -1146,13 +1152,15 @@ export function demoRequestRescan(id: string) {
   s.reviewStatus = "rescan_requested";
   s.reviewedByEmail = DEMO_REVIEWER;
   s.reviewedAt = NOW_ISO();
+  // RescanResult. Demo mode can't deliver anything, so this reports the
+  // "nowhere to send it" branch and hands back a usable link — which is
+  // also the branch worth demonstrating, since it's the one where staff
+  // have to copy the link to the patient themselves.
   return {
     ok: true as const,
-    // `rescanNotifyMessage()` renders this into a copyable patient message.
-    link: `https://cmbreathe.example/fit/rescan/${newId("demo-token")}`,
-    expiresAt: new Date(Date.now() + 7 * 864e5).toISOString(),
-    channel: "sms",
-    sent: false,
+    patientNotified: false,
+    notifyReason: "no_channel_config" as const,
+    inviteLink: `https://cmbreathe.example/fit/rescan/${newId("demo-token")}`,
   };
 }
 
@@ -1194,7 +1202,9 @@ export function demoCreateSafetyScreenDraft(
     })),
   };
   s.screens.push(draft);
-  return { version: draft };
+  // `{ id, clonedFrom }` at the TOP level — the page immediately calls
+  // setOpenId(r.id) to open the new draft for editing.
+  return { id: draft.id, clonedFrom: source?.id ?? null };
 }
 
 /** PATCH /admin/fitter/safety-screens/:id */

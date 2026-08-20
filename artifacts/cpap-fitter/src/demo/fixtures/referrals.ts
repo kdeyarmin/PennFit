@@ -787,9 +787,9 @@ export function demoReplyToReferral(id: string, body: string) {
   return { ok: true as const };
 }
 
-/** GET /admin/provider-referrals/providers */
+/** GET /admin/provider-referrals/providers — the client reads `links`. */
 export function demoProviderLinks() {
-  return { providers: get().providers };
+  return { links: get().providers };
 }
 
 /** POST /admin/provider-referrals/providers */
@@ -811,7 +811,7 @@ export function demoInviteProvider(
     notes: body?.notes ?? null,
   };
   s.providers.push(link);
-  return { provider: link };
+  return { link };
 }
 
 /** PATCH /admin/provider-referrals/providers/:id */
@@ -823,7 +823,7 @@ export function demoUpdateProviderLink(
   if (!link) return null;
   Object.assign(link, patch);
   if (patch?.status === "revoked") link.revokedAt = NOW_ISO();
-  return { provider: link };
+  return { link };
 }
 
 // ── Referral reviews (AI triage) ────────────────────────────────────
@@ -918,14 +918,21 @@ export function demoAcceptReferralReview(id: string) {
   r.acceptedAt = NOW_ISO();
   r.createdPatientId = r.createdPatientId ?? newId("demo-patient");
   r.updatedAt = NOW_ISO();
-  // AcceptReferralResponse: the console navigates to the new patient and
-  // reports what the packet split produced.
+  // AcceptReferralResponse. The success panel dereferences
+  // `documentIds.length` and `warnings.length` immediately, so both must
+  // be arrays — returning differently-named fields threw at render.
   return {
-    id: r.id,
     patientId: r.createdPatientId,
-    status: "accepted" as const,
-    documentsCreated: 3,
-    coverageCreated: r.extraction?.insurance != null,
+    documentIds: [
+      `${r.id}-doc-sleep-study`,
+      `${r.id}-doc-physician-order`,
+      `${r.id}-doc-demographics`,
+    ],
+    warnings: r.extraction?.insurance
+      ? []
+      : [
+          "No insurance details were found in the packet; add coverage manually.",
+        ],
   };
 }
 

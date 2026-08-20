@@ -79,6 +79,9 @@ async function previewBrand(orgId: string | undefined): Promise<PreviewBrand> {
   ]);
   return {
     brandName: branding.storefrontName,
+    // The reminder worker brands its messages with getCompanyInfo().name,
+    // which a tenant can configure independently of the storefront name.
+    companyName: company.name,
     legalName: company.legalName,
     supportPhoneDisplay: company.supportPhoneDisplay,
     supportEmail: company.supportEmail,
@@ -159,6 +162,7 @@ router.get(
         sending,
         brand: {
           name: brand.brandName,
+          companyName: brand.companyName,
           legalName: brand.legalName,
           supportPhoneDisplay: brand.supportPhoneDisplay,
           baseUrl: brand.baseUrl,

@@ -46,6 +46,10 @@ import {
   renderInviteEmailHtml,
   renderInviteEmailText,
 } from "../video-visits/invite-email";
+import {
+  renderPacketInviteHtml,
+  renderPacketInviteText,
+} from "../patient-packet/invite-email";
 
 export type PreviewGroup = "resupply" | "orders" | "clinical" | "billing";
 
@@ -76,14 +80,31 @@ export interface MessagePreview {
   fidelity: "exact" | "mirrored";
   /** Repo-relative file that owns the production copy. */
   source: string;
+  /**
+   * Set when the SMS variant is built somewhere OTHER than `source` —
+   * several scenarios have their email in one module and their text in
+   * the route that sends it.
+   */
+  smsSource?: string;
   email: PreviewEmail | null;
   sms: PreviewSms | null;
 }
 
 /** Brand + contact values a preview renders against. */
 export interface PreviewBrand {
-  /** Patient-facing storefront/practice name. */
+  /**
+   * Storefront brand (`organizations.storefront_name`). Used by the shop
+   * / order emails, which brand themselves this way.
+   */
   brandName: string;
+  /**
+   * Practice name from `getCompanyInfo().name` — the DBA when set, else
+   * the legal name. A tenant can configure this INDEPENDENTLY of the
+   * storefront brand, and the resupply reminder worker passes THIS as
+   * `practiceName`. Using the storefront brand for those scenarios would
+   * show a different name from the message patients actually get.
+   */
+  companyName: string;
   legalName: string;
   supportPhoneDisplay: string;
   supportEmail: string;
@@ -268,7 +289,8 @@ export function buildMessagePreviews(brand: PreviewBrand): MessagePreview[] {
   for (const variant of ["initial", "followup", "final"] as const) {
     const meta = reminderMeta[variant];
     const email = renderResupplyReminder({
-      practiceName: brandName,
+      // The worker passes getCompanyInfo(orgId).name here — mirror it.
+      practiceName: brand.companyName,
       firstName: first,
       items: SAMPLE.items.map((i) => ({ name: i.name, quantity: i.quantity })),
       confirmUrl,
@@ -285,7 +307,7 @@ export function buildMessagePreviews(brand: PreviewBrand): MessagePreview[] {
       fidelity: "exact",
       source: "lib/resupply-messaging/src/email-templates.ts",
       email: { subject: email.subject, html: email.html, text: email.text },
-      sms: meterSms(defaultReminderSmsBody(variant, first, brandName)),
+      sms: meterSms(defaultReminderSmsBody(variant, first, brand.companyName)),
     });
   }
 
@@ -342,7 +364,7 @@ export function buildMessagePreviews(brand: PreviewBrand): MessagePreview[] {
     source:
       "artifacts/resupply-api/src/lib/order-emails/send-shipping-notification-email.ts",
     email: {
-      subject: `Your ${brandName} order ${SAMPLE.orderNumber} shipped`,
+      subject: `Your ${brandName} order has shipped`,
       text: [
         `Good news ${first} — your ${brandName} order is on its way.`,
         "",
@@ -367,8 +389,11 @@ export function buildMessagePreviews(brand: PreviewBrand): MessagePreview[] {
         ].join("\n"),
       ),
     },
+    // The shipped SMS is NOT built by the email module above — it is
+    // assembled in routes/admin/shop-orders.ts, with its own wording.
+    smsSource: "artifacts/resupply-api/src/routes/admin/shop-orders.ts",
     sms: meterSms(
-      `Hi ${first}, ${brandName} shipped your CPAP supplies. ${SAMPLE.trackingCarrier} tracking: ${SAMPLE.trackingNumber}. Reply STOP to opt out.`,
+      `Hi ${first}: your CPAP supplies just shipped (${SAMPLE.trackingCarrier} ${SAMPLE.trackingNumber}). Reply STOP to opt out.`,
     ),
   });
 
@@ -597,45 +622,29 @@ export function buildMessagePreviews(brand: PreviewBrand): MessagePreview[] {
     ),
   });
 
+  // EXACT: the patient-packet invite renderers are exported and pure.
+  // (An earlier version of this cited provider-esign.ts, whose similar
+  // notice goes to a PROVIDER and links to /provider/sign-in — a message
+  // no patient ever receives.)
+  const packetLink = `${baseUrl}/patient-packet-sign?token=demo-signed-token`;
   out.push({
     id: "clinical.packet_esign",
     group: "clinical",
-    label: "Document awaiting signature",
+    label: "New patient documents to sign",
     description:
-      "Asks the patient to e-sign a form before their order can be released.",
+      "Asks the patient to e-sign their new-patient paperwork before therapy is set up.",
     trigger:
       "A patient packet is sent, or its reminder fires while still unsigned.",
-    fidelity: "mirrored",
-    source: "artifacts/resupply-api/src/routes/admin/provider-esign.ts",
+    fidelity: "exact",
+    source: "artifacts/resupply-api/src/lib/patient-packet/invite-email.ts",
+    smsSource: "artifacts/resupply-api/src/lib/patient-packet/send.ts",
     email: {
-      subject: "Action needed: a document is awaiting your signature",
-      text: [
-        `Hi ${first},`,
-        "",
-        `${brandName} needs your signature on: ${SAMPLE.packetTitle}.`,
-        "",
-        `Sign it here: ${baseUrl}/p/demo-signed-token`,
-        "",
-        "The link is personal to you and expires for your security. Reply to this email if it has already expired and we'll send a fresh one.",
-      ].join("\n"),
-      html: shell(
-        brand,
-        [
-          p(`Hi ${escapeHtml(first)},`),
-          p(
-            `${escapeHtml(brandName)} needs your signature on: <strong>${escapeHtml(SAMPLE.packetTitle)}</strong>.`,
-          ),
-          p(
-            `<a href="${escapeHtml(baseUrl)}/p/demo-signed-token" style="display:inline-block;padding:10px 18px;background:#0a1f44;color:#ffffff;border-radius:6px;text-decoration:none;font-size:14px;">Review and sign</a>`,
-          ),
-          p(
-            "The link is personal to you and expires for your security. Reply to this email if it has already expired and we'll send a fresh one.",
-          ),
-        ].join("\n"),
-      ),
+      subject: `Please review and sign your ${brand.legalName} new patient documents`,
+      html: renderPacketInviteHtml(brand.legalName, first, packetLink),
+      text: renderPacketInviteText(brand.legalName, first, packetLink),
     },
     sms: meterSms(
-      `Hi ${first}, ${brandName} needs your signature on a form before we can ship. Sign here: ${baseUrl}/p/demo Reply STOP to opt out.`,
+      `${brand.legalName}: please review & sign your new patient documents here: ${packetLink} Reply STOP to opt out.`,
     ),
   });
 
@@ -652,7 +661,9 @@ export function buildMessagePreviews(brand: PreviewBrand): MessagePreview[] {
       "Sends the patient their secure join link for a scheduled video visit with a respiratory therapist.",
     trigger: "Staff schedule a video visit and send the invite.",
     fidelity: "exact",
-    source: "artifacts/resupply-api/src/routes/admin/video-visits.ts",
+    // The renderers, not the route that schedules the visit — this is what
+    // the UI tooltip cites and what an "exact" claim rests on.
+    source: "artifacts/resupply-api/src/lib/video-visits/invite-email.ts",
     email: {
       subject: `Your video visit link from ${brandName}`,
       html: renderInviteEmailHtml(first, brandName, visitWhen, visitLink),
@@ -822,10 +833,19 @@ export function findMessagePreview(
 }
 
 /**
- * Distinctive substrings that MUST still be present in each mirrored
- * scenario's source file. `catalog.drift.test.ts` asserts these, so
- * production copy cannot quietly diverge from what this page shows.
- * Keyed by scenario id; only mirrored entries appear.
+ * Phrases that must still appear in each mirrored scenario's source.
+ *
+ * What this DOES prove: the sentence this page shows still exists in the
+ * code that sends it, and the scenario points at a file that really owns
+ * that copy. A rewrite that drops the phrase fails the build.
+ *
+ * What it does NOT prove: byte equality. A one-word fingerprint would be
+ * nearly worthless — "shipped" appears in an email module that does not
+ * even build the shipped TEXT — so prefer a distinctive full clause, and
+ * add a SECOND entry for a scenario whose two channels live in different
+ * files (same id, different source). Byte equality is only available for
+ * `exact` scenarios, which call the renderer; when a renderer can be
+ * extracted, prefer that over strengthening a fingerprint here.
  */
 export const MIRRORED_FINGERPRINTS: ReadonlyArray<{
   id: string;
@@ -839,10 +859,23 @@ export const MIRRORED_FINGERPRINTS: ReadonlyArray<{
     fingerprint: "order is confirmed",
   },
   {
+    id: "orders.confirmation",
+    source:
+      "artifacts/resupply-api/src/lib/order-emails/send-order-confirmation-email.ts",
+    fingerprint:
+      "Your payment was received and we're getting it ready to ship.",
+  },
+  {
     id: "orders.shipped",
     source:
       "artifacts/resupply-api/src/lib/order-emails/send-shipping-notification-email.ts",
-    fingerprint: "shipped",
+    fingerprint: "order has shipped",
+  },
+  {
+    // The shipped TEXT is assembled in the route, not the email module.
+    id: "orders.shipped",
+    source: "artifacts/resupply-api/src/routes/admin/shop-orders.ts",
+    fingerprint: "your CPAP supplies just shipped",
   },
   {
     id: "orders.delivered",
@@ -854,7 +887,7 @@ export const MIRRORED_FINGERPRINTS: ReadonlyArray<{
     id: "orders.ready_for_pickup",
     source:
       "artifacts/resupply-api/src/lib/order-emails/send-ready-for-pickup-email.ts",
-    fingerprint: "pickup",
+    fingerprint: "ready for pickup",
   },
   {
     id: "orders.refunded",
@@ -869,15 +902,10 @@ export const MIRRORED_FINGERPRINTS: ReadonlyArray<{
     fingerprint: "recall",
   },
   {
-    id: "clinical.packet_esign",
-    source: "artifacts/resupply-api/src/routes/admin/provider-esign.ts",
-    fingerprint: "awaiting your signature",
-  },
-  {
     id: "clinical.setup_deadline",
     source:
       "artifacts/resupply-api/src/worker/jobs/therapy-setup-deadline-outreach.ts",
-    fingerprint: "STOP",
+    fingerprint: "STOP to opt out",
   },
   {
     id: "billing.statement",

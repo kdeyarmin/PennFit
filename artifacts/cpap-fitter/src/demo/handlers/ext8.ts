@@ -455,13 +455,91 @@ function shopOrderListItem(seed: (typeof SHOP_ORDER_SEED)[number]) {
   };
 }
 
+/**
+ * Session-scoped order state.
+ *
+ * The list/detail readers used to rebuild rows from `SHOP_ORDER_SEED` on
+ * every call while the fulfilment mutations only returned a projected
+ * response. The page invalidates and refetches after each action, so every
+ * successful save (tracking, delivered, pickup, refund, address) visibly
+ * reverted a moment later. Both sides now share this map, so an action
+ * sticks for the session — the same posture as the other demo stores.
+ */
+type DemoOrderRow = ReturnType<typeof shopOrderListItem> & {
+  shippingAddress: Record<string, string | null> | null;
+  readyForPickupAt: string | null;
+  pickedUpAt: string | null;
+  refundedAmountCents: number | null;
+};
+
+let orderStore: Map<string, DemoOrderRow> | null = null;
+
+function orders(): Map<string, DemoOrderRow> {
+  if (!orderStore) {
+    orderStore = new Map(
+      SHOP_ORDER_SEED.map((seed) => {
+        const base = shopOrderListItem(seed);
+        return [
+          base.id,
+          {
+            ...base,
+            shippingAddress:
+              seed.method === "pickup"
+                ? null
+                : {
+                    name: seed.name,
+                    line1: `${200 + seed.n * 5} Market St`,
+                    line2: null,
+                    city: "Philadelphia",
+                    state: "PA",
+                    postalCode: "19103",
+                    country: "US",
+                  },
+            readyForPickupAt:
+              seed.stage === "ready" || seed.stage === "picked_up"
+                ? daysAgo(1)
+                : null,
+            pickedUpAt: seed.stage === "picked_up" ? daysAgo(1) : null,
+            refundedAmountCents: seed.stage === "refunded" ? seed.cents : null,
+          } satisfies DemoOrderRow,
+        ];
+      }),
+    );
+  }
+  return orderStore;
+}
+
+/** Apply a fulfilment patch and return the stored row. */
+function patchDemoOrder(
+  orderId: string,
+  patch: Partial<DemoOrderRow>,
+): DemoOrderRow {
+  const store = orders();
+  const existing = store.get(orderId);
+  // A deep link to an id we never seeded still resolves to a coherent
+  // order rather than 404-ing mid-demo.
+  const base =
+    existing ??
+    ({
+      ...shopOrderListItem(SHOP_ORDER_SEED[0]),
+      id: orderId,
+      shippingAddress: null,
+      readyForPickupAt: null,
+      pickedUpAt: null,
+      refundedAmountCents: null,
+    } as DemoOrderRow);
+  const next = { ...base, ...patch };
+  store.set(orderId, next);
+  return next;
+}
+
 function shopOrdersList(query: URLSearchParams) {
   const status = query.get("status");
   const q = query.get("q")?.toLowerCase();
   const limit = Number(query.get("limit")) || 25;
   const offset = Number(query.get("offset")) || 0;
 
-  let rows = SHOP_ORDER_SEED.map(shopOrderListItem);
+  let rows = [...orders().values()];
   if (status) rows = rows.filter((o) => o.status === status);
   if (q) {
     rows = rows.filter(
@@ -480,34 +558,18 @@ function shopOrdersList(query: URLSearchParams) {
 }
 
 function shopOrderDetail(orderId: string) {
-  const seed =
-    SHOP_ORDER_SEED.find((o) => shopOrderId(o.n) === orderId) ??
-    SHOP_ORDER_SEED[0];
-  const base = shopOrderListItem(seed);
-  const products = DEMO_PRODUCTS.slice(0, base.itemCount);
+  const row = orders().get(orderId) ?? patchDemoOrder(orderId, {});
+  const products = DEMO_PRODUCTS.slice(0, Math.max(1, row.itemCount));
   return {
-    ...base,
-    // The real id is echoed back even for an unseeded one, so a deep link
-    // from another demo surface still resolves to a coherent order.
-    id: orderId,
+    ...row,
     stripeSessionId: `cs_demo_${orderId}`,
-    stripePaymentIntentId: seed.stage === "paid" ? null : `pi_demo_${seed.n}`,
-    shippingAddress:
-      seed.method === "pickup"
-        ? null
-        : {
-            name: seed.name,
-            line1: `${200 + seed.n * 5} Market St`,
-            line2: null,
-            city: "Philadelphia",
-            state: "PA",
-            postalCode: "19103",
-            country: "US",
-          },
+    stripePaymentIntentId: row.status === "paid" ? null : `pi_demo_${orderId}`,
     lineItems: products.map((p, i) => ({
       name: p.name,
       quantity: i === 0 ? 1 : 2,
-      amountSubtotalCents: Math.round(base.amountTotalCents! / base.itemCount),
+      amountSubtotalCents: Math.round(
+        (row.amountTotalCents ?? 0) / Math.max(1, row.itemCount),
+      ),
     })),
   };
 }
@@ -781,8 +843,8 @@ export const ext8Handlers: DemoHandler[] = [
     (req, { orderId }) => {
       const body = req.json<{ carrier?: string; number?: string }>();
       return json({
-        order: projectDemoOrder(orderId, {
-          status: "paid",
+        order: patchDemoOrder(orderId, {
+          status: "shipped",
           trackingCarrier: body?.carrier ?? "UPS",
           trackingNumber: body?.number ?? "1Z999AA10123456784",
           shippedAt: NOW_ISO(),
@@ -795,9 +857,8 @@ export const ext8Handlers: DemoHandler[] = [
     "/resupply-api/admin/shop/orders/:orderId/delivered",
     (_req, { orderId }) =>
       json({
-        order: projectDemoOrder(orderId, {
-          status: "paid",
-          shippedAt: daysAgo(2),
+        order: patchDemoOrder(orderId, {
+          status: "delivered",
           deliveredAt: NOW_ISO(),
         }),
       }),
@@ -807,8 +868,8 @@ export const ext8Handlers: DemoHandler[] = [
     "/resupply-api/admin/shop/orders/:orderId/ready-for-pickup",
     (_req, { orderId }) =>
       json({
-        order: projectDemoOrder(orderId, {
-          status: "paid",
+        order: patchDemoOrder(orderId, {
+          status: "ready_for_pickup",
           fulfillmentMethod: "pickup",
           readyForPickupAt: NOW_ISO(),
         }),
@@ -819,10 +880,9 @@ export const ext8Handlers: DemoHandler[] = [
     "/resupply-api/admin/shop/orders/:orderId/picked-up",
     (_req, { orderId }) =>
       json({
-        order: projectDemoOrder(orderId, {
-          status: "paid",
+        order: patchDemoOrder(orderId, {
+          status: "picked_up",
           fulfillmentMethod: "pickup",
-          readyForPickupAt: daysAgo(1),
           pickedUpAt: NOW_ISO(),
         }),
       }),
@@ -839,8 +899,7 @@ export const ext8Handlers: DemoHandler[] = [
         postalCode?: string;
       }>();
       return json({
-        order: projectDemoOrder(orderId, {
-          status: "paid",
+        order: patchDemoOrder(orderId, {
           shippingAddress: {
             line1: body?.line1 ?? "1200 Market Street",
             line2: body?.line2 ?? "Apt 4B",
@@ -865,63 +924,17 @@ export const ext8Handlers: DemoHandler[] = [
           amountCents: amount,
           status: "succeeded",
         },
-        order: projectDemoOrder(orderId, { status: "paid" }),
+        order: patchDemoOrder(orderId, {
+          status: "refunded",
+          refundedAmountCents: amount,
+        }),
       });
     },
   ),
 ];
-
-interface ProjectedOrderPatch {
-  status?: string;
-  trackingCarrier?: string | null;
-  trackingNumber?: string | null;
-  shippedAt?: string | null;
-  deliveredAt?: string | null;
-  fulfillmentMethod?: "ship" | "pickup";
-  pickupLocationId?: string | null;
-  readyForPickupAt?: string | null;
-  pickedUpAt?: string | null;
-  shippingAddress?: {
-    line1: string;
-    line2: string | null;
-    city: string;
-    state: string;
-    postalCode: string;
-    country: "US";
-  } | null;
-}
 
 /**
  * Build the `{ order }` payload the shop-order fulfillment client expects
  * (matches projectOrder() in shop-orders.ts). Defaults model a paid
  * shippable order; the patch overrides whichever fields the action sets.
  */
-function projectDemoOrder(orderId: string, patch: ProjectedOrderPatch) {
-  return {
-    id: orderId,
-    sessionId: "demo_sess_1001",
-    paymentIntentId: "pi_demo_order_001",
-    status: patch.status ?? "paid",
-    amountTotalCents: 8900,
-    currency: "usd",
-    customerId: "demo-cust-9001",
-    createdAt: daysAgo(12),
-    paidAt: daysAgo(12),
-    shippingAddress: patch.shippingAddress ?? {
-      line1: "1200 Market Street",
-      line2: "Apt 4B",
-      city: "Philadelphia",
-      state: "PA",
-      postalCode: "19107",
-      country: "US" as const,
-    },
-    trackingCarrier: patch.trackingCarrier ?? null,
-    trackingNumber: patch.trackingNumber ?? null,
-    shippedAt: patch.shippedAt ?? null,
-    deliveredAt: patch.deliveredAt ?? null,
-    fulfillmentMethod: patch.fulfillmentMethod ?? "ship",
-    pickupLocationId: patch.pickupLocationId ?? null,
-    readyForPickupAt: patch.readyForPickupAt ?? null,
-    pickedUpAt: patch.pickedUpAt ?? null,
-  };
-}

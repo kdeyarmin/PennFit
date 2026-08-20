@@ -666,12 +666,19 @@ describe("tenant admin — mask catalog", () => {
       .map((v) => v.id);
     expect(ids.length).toBeGreaterThan(0);
 
-    const { body } = await post<{ reviewed: number; skipped: number }>(
-      `${A}/fitter/catalog/variants/review-batch`,
-      { ids, sourceKind: "clinical_judgment" },
-    );
-    expect(body.reviewed).toBe(ids.length);
-    expect(body.skipped).toBe(0);
+    // The client sends `variantIds` and reads `{ ok, approved, count }`.
+    const { body } = await post<{
+      ok: boolean;
+      approved: boolean;
+      count: number;
+    }>(`${A}/fitter/catalog/variants/review-batch`, {
+      variantIds: ids,
+      approved: true,
+      sourceKind: "clinical_judgment",
+    });
+    expect(body.ok).toBe(true);
+    expect(body.approved).toBe(true);
+    expect(body.count).toBe(ids.length);
   });
 
   it("refuses to edit a shared platform row", async () => {
@@ -807,12 +814,17 @@ describe("tenant admin — fit sessions", () => {
   });
 
   it("requesting a rescan returns a link the console can pass to the patient", async () => {
-    const { body } = await post<{ ok: boolean; link: string; sent: boolean }>(
-      `${A}/fit-sessions/demo-fit-6/request-rescan`,
-    );
-    expect(body.link).toContain("/fit/rescan/");
-    // Nothing actually leaves the sandbox.
-    expect(body.sent).toBe(false);
+    const { body } = await post<{
+      ok: boolean;
+      patientNotified: boolean;
+      notifyReason: string | null;
+      inviteLink: string | null;
+    }>(`${A}/fit-sessions/demo-fit-6/request-rescan`);
+    // RescanResult: nothing leaves the sandbox, so this is the "nowhere to
+    // send it" branch, which hands back a link staff can pass on.
+    expect(body.patientNotified).toBe(false);
+    expect(body.notifyReason).toBe("no_channel_config");
+    expect(body.inviteLink).toContain("/fit/rescan/");
   });
 });
 
@@ -864,17 +876,20 @@ describe("tenant admin — safety screens", () => {
   });
 
   it("clones the active screen into a new draft", async () => {
-    const { body } = await post<{
-      version: {
-        id: string;
-        status: string;
-        isPlatform: boolean;
-        questions: unknown[];
-      };
-    }>(`${A}/fitter/safety-screens`, { title: "My screen" });
-    expect(body.version.status).toBe("draft");
-    expect(body.version.isPlatform).toBe(false);
-    expect(body.version.questions.length).toBeGreaterThan(0);
+    // The page calls setOpenId(r.id), so the id must be top-level.
+    const created = await post<{ id: string; clonedFrom: string | null }>(
+      `${A}/fitter/safety-screens`,
+      { version: "draft-3", title: "My screen" },
+    );
+    expect(created.body.id).toBeTruthy();
+    expect(created.body.clonedFrom).toBe("demo-screen-platform");
+
+    const after = await get<{
+      versions: Array<{ id: string; status: string; questions: unknown[] }>;
+    }>(`${A}/fitter/safety-screens`);
+    const draft = after.body.versions.find((v) => v.id === created.body.id);
+    expect(draft?.status).toBe("draft");
+    expect(draft?.questions.length).toBeGreaterThan(0);
   });
 });
 
@@ -950,29 +965,29 @@ describe("tenant admin — provider referrals", () => {
   });
 
   it("lists and invites referring providers", async () => {
-    const seeded = await get<{ providers: Array<{ status: string }> }>(
+    // The client reads `links`, not `providers` — the page renders its
+    // empty state against any other key.
+    const seeded = await get<{ links: Array<{ status: string }> }>(
       `${A}/provider-referrals/providers`,
     );
-    expect(seeded.body.providers.length).toBeGreaterThan(1);
-    expect(seeded.body.providers.some((p) => p.status === "suspended")).toBe(
-      true,
-    );
+    expect(seeded.body.links.length).toBeGreaterThan(1);
+    expect(seeded.body.links.some((p) => p.status === "suspended")).toBe(true);
 
     const invited = await post<{
-      provider: { id: string; displayName: string | null };
+      link: { id: string; displayName: string | null };
     }>(`${A}/provider-referrals/providers`, {
       email: "dr.new@clinic.example",
       displayName: "Dr. New",
     });
-    expect(invited.body.provider.displayName).toBe("Dr. New");
+    expect(invited.body.link.displayName).toBe("Dr. New");
 
     const revoked = await patch<{
-      provider: { status: string; revokedAt: string | null };
-    }>(`${A}/provider-referrals/providers/${invited.body.provider.id}`, {
+      link: { status: string; revokedAt: string | null };
+    }>(`${A}/provider-referrals/providers/${invited.body.link.id}`, {
       status: "revoked",
     });
-    expect(revoked.body.provider.status).toBe("revoked");
-    expect(revoked.body.provider.revokedAt).not.toBeNull();
+    expect(revoked.body.link.status).toBe("revoked");
+    expect(revoked.body.link.revokedAt).not.toBeNull();
   });
 });
 
@@ -1048,13 +1063,16 @@ describe("tenant admin — referral reviews (AI triage)", () => {
   });
 
   it("accepting a review creates a patient and marks it accepted", async () => {
+    // AcceptReferralResponse — the success panel immediately reads
+    // documentIds.length and warnings.length, so both must be arrays.
     const { body } = await post<{
       patientId: string | null;
-      status: string;
-      documentsCreated: number;
+      documentIds: string[];
+      warnings: string[];
     }>(`${A}/referral-reviews/demo-review-3/accept`);
     expect(body.patientId).toBeTruthy();
-    expect(body.status).toBe("accepted");
+    expect(body.documentIds.length).toBeGreaterThan(0);
+    expect(Array.isArray(body.warnings)).toBe(true);
     const after = await get<{ status: string }>(
       `${A}/referral-reviews/demo-review-3`,
     );
@@ -1166,6 +1184,49 @@ describe("tenant admin — shop orders", () => {
     }>(`${A}/shop/orders/demo-order-0004`);
     expect(body.fulfillmentMethod).toBe("pickup");
     expect(body.shippingAddress).toBeNull();
+  });
+
+  it("persists a fulfilment action instead of reverting on refetch", async () => {
+    // The page invalidates and refetches after each action. When the
+    // readers rebuilt rows from an immutable seed, every save visibly
+    // reverted a moment later — so this pins that a mutation sticks.
+    const before = await get<{ status: string; trackingNumber: string | null }>(
+      `${A}/shop/orders/demo-order-0003`,
+    );
+    expect(before.body.status).toBe("paid");
+    expect(before.body.trackingNumber).toBeNull();
+
+    await post(`${A}/shop/orders/demo-order-0003/tracking`, {
+      carrier: "FedEx",
+      number: "794644790112",
+    });
+
+    const detail = await get<{
+      status: string;
+      trackingCarrier: string | null;
+      trackingNumber: string | null;
+    }>(`${A}/shop/orders/demo-order-0003`);
+    expect(detail.body.trackingCarrier).toBe("FedEx");
+    expect(detail.body.trackingNumber).toBe("794644790112");
+    expect(detail.body.status).toBe("shipped");
+
+    // ...and the LIST reflects it too, since both read the same store.
+    const list = await get<{
+      orders: Array<{ id: string; trackingNumber: string | null }>;
+    }>(`${A}/shop/orders`);
+    expect(
+      list.body.orders.find((o) => o.id === "demo-order-0003")?.trackingNumber,
+    ).toBe("794644790112");
+  });
+
+  it("persists a refund", async () => {
+    await post(`${A}/shop/orders/demo-order-0007/refund`, {
+      amountCents: 20800,
+    });
+    const { body } = await get<{ status: string }>(
+      `${A}/shop/orders/demo-order-0007`,
+    );
+    expect(body.status).toBe("refunded");
   });
 
   it("does not shadow the per-order action sub-routes", async () => {

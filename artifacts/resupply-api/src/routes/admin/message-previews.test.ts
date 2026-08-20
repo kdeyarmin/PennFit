@@ -48,6 +48,9 @@ vi.mock("../../lib/tenant-branding", () => ({
 }));
 vi.mock("../../lib/company-info", () => ({
   getCompanyInfo: vi.fn(async () => ({
+    // Deliberately different from the storefront brand — the reminder
+    // scenarios must render THIS, like the worker does.
+    name: "Riverside Home Medical",
     legalName: "Riverside Home Medical LLC",
     supportPhoneDisplay: "(215) 555-0100",
     supportEmail: "care@riverside.example",
@@ -211,7 +214,10 @@ describe("POST /admin/message-previews/:id/send — email", () => {
     expect(sent.to).toBe("owner@riverside.example");
     // The body is the catalog's, carrying the tenant brand.
     expect(sent.subject).toBe("Time to refill your CPAP supplies");
-    expect(sent.text).toContain("Riverside CPAP");
+    // Reminders carry the COMPANY identity (getCompanyInfo().name), which
+    // a tenant configures separately from the storefront brand — the same
+    // name the production reminder worker uses.
+    expect(sent.text).toContain("Riverside Home Medical");
     expect(sent.html).toContain("<");
   });
 
@@ -286,11 +292,13 @@ describe("POST /admin/message-previews/:id/send — SMS", () => {
     expect(res.body.ok).toBe(true);
     expect(res.body.delivered).toBe(true);
     expect(res.body.deliveryStatus).toBe("delivered");
-    expect(res.body.segments).toBe(1);
+    // Two segments here because "Riverside Home Medical" is a longish
+    // practice name — see the segment tests in catalog.test.ts.
+    expect(res.body.segments).toBe(2);
 
     const sent = sendSms.mock.calls[0][0];
     expect(sent.to).toBe("+12155551234");
-    expect(sent.body).toContain("Riverside CPAP");
+    expect(sent.body).toContain("Riverside Home Medical");
     expect(sent.body).toContain("STOP to opt out");
     // Delivery was confirmed against the sid Twilio returned.
     expect(confirmDelivery).toHaveBeenCalledWith("SM123");

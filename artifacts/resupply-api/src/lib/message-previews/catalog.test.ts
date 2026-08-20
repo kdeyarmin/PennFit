@@ -33,6 +33,9 @@ const REPO_ROOT = path.resolve(__dirname, "../../../../..");
 
 const BRAND: PreviewBrand = {
   brandName: "Riverside CPAP",
+  // Deliberately DIFFERENT from brandName: a tenant can configure the
+  // practice name independently, and the reminder scenarios must use it.
+  companyName: "Riverside Home Medical",
   legalName: "Riverside Home Medical LLC",
   supportPhoneDisplay: "(215) 555-0100",
   supportEmail: "care@riverside.example",
@@ -148,14 +151,41 @@ describe("SMS metering", () => {
     expect(m.segments).toBe(2);
   });
 
-  it("reports the reminder bodies as single-segment GSM-7", () => {
-    // The reminder copy is deliberately kept under one segment; if an edit
-    // pushes it over, the fleet's SMS bill changes and this should say so.
+  it("keeps every reminder body in GSM-7", () => {
+    // This is the invariant that always holds and matters most: a single
+    // non-GSM-7 character would cut the segment from 160 septets to 70 and
+    // more than double the cost of a fleet-wide send.
     for (const p of buildMessagePreviews(BRAND)) {
       if (!p.id.startsWith("resupply.reminder.")) continue;
       expect(p.sms?.encoding, `${p.id} left GSM-7`).toBe("GSM-7");
+    }
+  });
+
+  it("fits a reminder in one segment for a short practice name", () => {
+    // The production copy is written to fit one segment "for a typical
+    // name/practice" (see defaultReminderSmsBody). Pin that for a short
+    // name so an edit to the copy itself is caught.
+    const shortBrand = { ...BRAND, companyName: "Acme CPAP" };
+    for (const p of buildMessagePreviews(shortBrand)) {
+      if (!p.id.startsWith("resupply.reminder.")) continue;
       expect(p.sms?.segments, `${p.id} needs >1 segment`).toBe(1);
     }
+  });
+
+  it("spills a reminder into a second segment for a long practice name", () => {
+    // NOT a bug, but an operational fact worth being visible: the reminder
+    // fits one segment only for shortish practice names. A tenant called
+    // "Riverside Home Medical" pays for two segments on every reminder,
+    // which is exactly the kind of thing this page exists to surface.
+    const longBrand = {
+      ...BRAND,
+      companyName: "Riverside Home Medical Equipment & Supply",
+    };
+    const initial = buildMessagePreviews(longBrand).find(
+      (p) => p.id === "resupply.reminder.initial",
+    );
+    expect(initial?.sms?.encoding).toBe("GSM-7");
+    expect(initial?.sms?.segments).toBeGreaterThan(1);
   });
 });
 
@@ -215,7 +245,7 @@ describe("exact scenarios call the production renderer", () => {
     const { renderResupplyReminder } =
       await import("@workspace/resupply-messaging");
     const expected = renderResupplyReminder({
-      practiceName: BRAND.brandName,
+      practiceName: BRAND.companyName,
       firstName: SAMPLE.firstName,
       items: SAMPLE.items.map((i) => ({ name: i.name, quantity: i.quantity })),
       confirmUrl: `${BRAND.baseUrl}/r/c/demo-signed-token`,
@@ -236,7 +266,7 @@ describe("exact scenarios call the production renderer", () => {
     for (const variant of ["initial", "followup", "final"] as const) {
       const preview = findMessagePreview(BRAND, `resupply.reminder.${variant}`);
       expect(preview?.sms?.body).toBe(
-        defaultReminderSmsBody(variant, SAMPLE.firstName, BRAND.brandName),
+        defaultReminderSmsBody(variant, SAMPLE.firstName, BRAND.companyName),
       );
     }
   });

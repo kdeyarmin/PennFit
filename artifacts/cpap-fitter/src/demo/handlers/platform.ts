@@ -119,22 +119,41 @@ export const platformHandlers: DemoHandler[] = [
   // operation and let the console's own refetch redraw from the seeded
   // fleet. Declared explicitly (rather than left to the router's
   // `{ ok: true }` fallback) so the shapes match what each caller reads.
-  route(
-    "POST",
-    "/resupply-api/platform/billing/tenants/:id/preview",
-    (req, p) => {
-      const body = req.json<{ planCode?: string; addons?: unknown[] }>() ?? {};
-      return json({
-        tenantId: p.id,
-        // A preview the console renders as "what this change will cost".
-        current: { monthlyCents: 199700 },
-        next: { monthlyCents: body.planCode === "launch" ? 79900 : 199700 },
-        deltaCents: body.planCode === "launch" ? -119800 : 0,
-        prorationCents: 0,
-        effectiveAt: new Date().toISOString(),
-      });
-    },
-  ),
+  route("POST", "/resupply-api/platform/billing/tenants/:id/preview", (req) => {
+    // BillingPreview. `buildPreviewConfirm` reads changeLabel,
+    // newMonthlyCents, deltaMonthlyCents and proratedNowCents directly,
+    // so a differently-shaped body rendered "undefined?" with $NaN
+    // totals instead of a usable cost preview.
+    const body =
+      req.json<{
+        planCode?: string;
+        addonCode?: string;
+        quantity?: number;
+      }>() ?? {};
+    const currentMonthlyCents = 199700;
+    const newMonthlyCents = body.planCode === "launch" ? 79900 : 199700;
+    const deltaMonthlyCents = newMonthlyCents - currentMonthlyCents;
+    const periodDays = 30;
+    const daysRemaining = 12;
+    return json({
+      currentMonthlyCents,
+      newMonthlyCents,
+      deltaMonthlyCents,
+      proratedNowCents: Math.round(
+        (deltaMonthlyCents * daysRemaining) / periodDays,
+      ),
+      daysRemaining,
+      periodDays,
+      currentPeriodEnd: new Date(
+        Date.now() + daysRemaining * 864e5,
+      ).toISOString(),
+      changeLabel: body.planCode
+        ? `Switch to ${body.planCode === "launch" ? "Launch" : "Growth"}`
+        : body.addonCode
+          ? `Set ${body.addonCode} to ${body.quantity ?? 0}`
+          : "Update subscription",
+    });
+  }),
   route(
     "PUT",
     "/resupply-api/platform/billing/tenants/:id/subscription",

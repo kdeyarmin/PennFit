@@ -18,6 +18,8 @@
 
 const BRAND = {
   name: "Riverside CPAP",
+  // getCompanyInfo().name — what the reminder worker brands with.
+  companyName: "Riverside Home Medical",
   legalName: "Riverside Home Medical LLC",
   supportPhoneDisplay: "(215) 555-0100",
   baseUrl: "https://shop.riversidehomemedical.example",
@@ -30,7 +32,33 @@ const ITEMS = [
   { name: "Disposable filters (6-pack)", quantity: 1 },
 ];
 
-/** Mirror of the server's `meterSms` for the demo's fixed bodies. */
+// Mirror of the server's `meterSms`. The real one calls `gsm7Length` /
+// `isGsm7` from `@workspace/resupply-messaging`, which the SPA cannot
+// import at runtime: that package's index re-exports signed-link-token
+// helpers built on `node:crypto`, which has no place in a browser bundle.
+// So the alphabet is mirrored here — and `message-previews.gsm7.test.ts`
+// imports the REAL implementation and asserts this agrees with it, so the
+// copy cannot drift.
+//
+// "ASCII" is NOT a usable proxy for GSM-7 in either direction, which is
+// what an earlier version of this got wrong:
+//   * `^ { } \ [ ~ ] |` are ASCII but live in the GSM-7 EXTENSION table
+//     and cost TWO septets each — counting them as one undercounts the
+//     bill on the very page that exists to show segment math;
+//   * a backtick is ASCII and is NOT in GSM-7 at all, so it forces the
+//     whole message to UCS-2.
+
+/** GSM 03.38 basic set — one septet each. */
+const GSM7_BASIC = new Set(
+  "@£$¥èéùìòÇ\nØø\rÅåÆæßÉ !\"#¤%&'()*+,-./0123456789:;<=>?" +
+    "¡ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜ§" +
+    "¿abcdefghijklmnopqrstuvwxyzäöñüà" +
+    "Δ_ΦΓΛΩΠΨΣΘΞ",
+);
+
+/** Extension table — two septets each. */
+const GSM7_EXTENDED = new Set("^{}\\[~]|€");
+
 function meter(body: string): {
   body: string;
   encoding: "GSM-7" | "UCS-2";
@@ -38,25 +66,38 @@ function meter(body: string): {
   units: number;
   segments: number;
 } {
-  // The demo bodies are plain ASCII by construction; anything outside it
-  // would bill as UCS-2, which this still reports correctly.
-  const ascii = [...body].every((c) => (c.codePointAt(0) ?? 0) < 128);
   const chars = [...body].length;
-  if (ascii) {
+  let septets = 0;
+  let gsm7 = true;
+  for (const ch of body) {
+    if (GSM7_EXTENDED.has(ch)) {
+      septets += 2;
+      continue;
+    }
+    if (GSM7_BASIC.has(ch)) {
+      septets += 1;
+      continue;
+    }
+    gsm7 = false;
+    break;
+  }
+  if (gsm7) {
     return {
       body,
       encoding: "GSM-7",
       characters: chars,
-      units: chars,
-      segments: chars <= 160 ? 1 : Math.ceil(chars / 153),
+      units: septets,
+      // Multi-segment GSM-7 spends 7 septets per part on the UDH header.
+      segments: septets <= 160 ? 1 : Math.ceil(septets / 153),
     };
   }
+  const units = body.length; // UTF-16 code units, which is what UCS-2 counts
   return {
     body,
     encoding: "UCS-2",
     characters: chars,
-    units: body.length,
-    segments: body.length <= 70 ? 1 : Math.ceil(body.length / 67),
+    units,
+    segments: units <= 70 ? 1 : Math.ceil(units / 67),
   };
 }
 
@@ -97,6 +138,8 @@ interface DemoPreview {
   trigger: string;
   fidelity: "exact" | "mirrored";
   source: string;
+  /** Set when the SMS is built somewhere other than `source`. */
+  smsSource?: string;
   email: { subject: string; html: string; text: string } | null;
   sms: ReturnType<typeof meter> | null;
 }
@@ -231,7 +274,7 @@ function buildPreviews(): DemoPreview[] {
     source:
       "artifacts/resupply-api/src/lib/order-emails/send-shipping-notification-email.ts",
     email: {
-      subject: `Your ${BRAND.name} order CMB-DEMO-4417 shipped`,
+      subject: `Your ${BRAND.name} order has shipped`,
       text: [
         `Good news ${FIRST} — your ${BRAND.name} order is on its way.`,
         "",
@@ -246,8 +289,9 @@ function buildPreviews(): DemoPreview[] {
         ].join("\n"),
       ),
     },
+    smsSource: "artifacts/resupply-api/src/routes/admin/shop-orders.ts",
     sms: meter(
-      `Hi ${FIRST}, ${BRAND.name} shipped your CPAP supplies. UPS tracking: 1Z999AA10123456784. Reply STOP to opt out.`,
+      `Hi ${FIRST}: your CPAP supplies just shipped (UPS 1Z999AA10123456784). Reply STOP to opt out.`,
     ),
   });
 
@@ -440,36 +484,50 @@ function buildPreviews(): DemoPreview[] {
     ),
   });
 
+  const packetLink = `${BRAND.baseUrl}/patient-packet-sign?token=demo-signed-token`;
+  // Mirrors the server catalog, which renders this EXACTLY from the
+  // patient-packet invite renderers. An earlier version cited
+  // provider-esign.ts, whose similar notice goes to a PROVIDER and links
+  // to /provider/sign-in — copy no patient ever receives.
   out.push({
     id: "clinical.packet_esign",
     group: "clinical",
-    label: "Document awaiting signature",
+    label: "New patient documents to sign",
     description:
-      "Asks the patient to e-sign a form before their order can be released.",
+      "Asks the patient to e-sign their new-patient paperwork before therapy is set up.",
     trigger:
       "A patient packet is sent, or its reminder fires while still unsigned.",
-    fidelity: "mirrored",
-    source: "artifacts/resupply-api/src/routes/admin/provider-esign.ts",
+    fidelity: "exact",
+    source: "artifacts/resupply-api/src/lib/patient-packet/invite-email.ts",
     email: {
-      subject: "Action needed: a document is awaiting your signature",
-      text: `Hi ${FIRST},\n\n${BRAND.name} needs your signature on: Assignment of Benefits.\n\nSign it here: ${BRAND.baseUrl}/p/demo-signed-token\n\nThe link is personal to you and expires for your security.`,
-      html: shell(
-        [
-          para(`Hi ${FIRST},`),
-          para(
-            `${BRAND.name} needs your signature on: <strong>Assignment of Benefits</strong>.`,
-          ),
-          para(
-            `<a href="${BRAND.baseUrl}/p/demo-signed-token" style="display:inline-block;padding:10px 18px;background:#0a1f44;color:#ffffff;border-radius:6px;text-decoration:none;font-size:14px;">Review and sign</a>`,
-          ),
-          para(
-            "The link is personal to you and expires for your security. Reply to this email if it has already expired and we'll send a fresh one.",
-          ),
-        ].join("\n"),
-      ),
+      subject: `Please review and sign your ${BRAND.legalName} new patient documents`,
+      text: [
+        `${BRAND.legalName}`,
+        "",
+        `Hello ${FIRST},`,
+        "",
+        "Welcome! Before we set up your therapy, please review and electronically sign your new patient documents. It only takes a few minutes on any device.",
+        "",
+        `Review & sign: ${packetLink}`,
+        "",
+        "This is a secure, personalized link. Please don't forward it.",
+      ].join("\n"),
+      html: `<!doctype html><html><body style="margin:0;background:#f1f5f9;font-family:Arial,Helvetica,sans-serif;color:#1f2937">
+  <div style="max-width:560px;margin:0 auto;padding:24px">
+    <div style="background:#ffffff;border-radius:16px;padding:32px;border:1px solid #e2e8f0">
+      <h1 style="margin:0 0 12px;font-size:20px;color:#0f172a">${BRAND.legalName}</h1>
+      <p style="font-size:15px;line-height:1.55">Hello ${FIRST},</p>
+      <p style="font-size:15px;line-height:1.55">Welcome! Before we set up your therapy, please review and electronically sign your new patient documents. It only takes a few minutes on any phone, tablet, or computer.</p>
+      <p style="text-align:center;margin:28px 0">
+        <a href="${packetLink}" style="display:inline-block;background:#0f172a;color:#ffffff;text-decoration:none;padding:14px 28px;border-radius:9999px;font-weight:bold;font-size:15px">Review &amp; sign my documents</a>
+      </p>
+      <p style="font-size:13px;color:#64748b;line-height:1.5">If the button doesn't work, copy and paste this link into your browser:<br><span style="word-break:break-all;color:#334155">${packetLink}</span></p>
+      <p style="font-size:13px;color:#64748b;line-height:1.5">This is a secure, personalized link. Please don't forward it. If you didn't expect this message, you can ignore it.</p>
+    </div>
+  </div></body></html>`,
     },
     sms: meter(
-      `Hi ${FIRST}, ${BRAND.name} needs your signature on a form before we can ship. Sign here: ${BRAND.baseUrl}/p/demo Reply STOP to opt out.`,
+      `${BRAND.legalName}: please review & sign your new patient documents here: ${packetLink} Reply STOP to opt out.`,
     ),
   });
 
@@ -481,7 +539,7 @@ function buildPreviews(): DemoPreview[] {
       "Sends the patient their secure join link for a scheduled video visit with a respiratory therapist.",
     trigger: "Staff schedule a video visit and send the invite.",
     fidelity: "exact",
-    source: "artifacts/resupply-api/src/routes/admin/video-visits.ts",
+    source: "artifacts/resupply-api/src/lib/video-visits/invite-email.ts",
     email: {
       subject: `Your video visit link from ${BRAND.name}`,
       text: `Hi ${FIRST},\n\nYour care team at ${BRAND.name} has set up a secure video visit to help\nyou with your equipment. You can join from your phone, tablet, or\ncomputer — no app to install, just a camera and microphone.\n\nWhen: Tuesday, March 4 at 10:15 AM\n\nJoin your video visit: ${BRAND.baseUrl}/v/demo-signed-token`,
