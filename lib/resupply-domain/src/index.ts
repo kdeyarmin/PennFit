@@ -9,6 +9,7 @@ export {
   resolvePlanFlagPreset,
   isPresetExemptFlag,
   PRESET_EXEMPT_FLAG_PREFIXES,
+  PRESET_EXEMPT_FLAG_KEYS,
   type BillingPlanCode,
 } from "./feature-flag-presets";
 

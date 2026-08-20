@@ -9,6 +9,7 @@ import {
   DELIBERATELY_OFF_FLAGS,
   isPresetExemptFlag,
   PLAN_FEATURE_FLAG_PRESETS,
+  PRESET_EXEMPT_FLAG_KEYS,
 } from "@workspace/resupply-domain";
 import { describe, expect, it } from "vitest";
 
@@ -65,9 +66,25 @@ describe("plan presets vs FEATURE_FLAG_KEYS", () => {
     const modules = FEATURE_FLAG_KEYS.filter((k) => k.startsWith("module."));
     expect(modules.length).toBeGreaterThan(5);
     for (const k of modules) expect(isPresetExemptFlag(k)).toBe(true);
-    // And nothing outside the family is swept up.
-    for (const k of FEATURE_FLAG_KEYS.filter((k) => !k.startsWith("module."))) {
+    // And nothing outside the family is swept up, except the explicitly
+    // enumerated exact-match exemptions.
+    const exactExempt = new Set<string>(PRESET_EXEMPT_FLAG_KEYS);
+    for (const k of FEATURE_FLAG_KEYS.filter(
+      (k) => !k.startsWith("module.") && !exactExempt.has(k),
+    )) {
       expect(isPresetExemptFlag(k), k).toBe(false);
     }
+  });
+
+  it("exempts the platform's own sales-line flag from every bundle", () => {
+    // `voice.breathe_sales` gates CareMetric's inbound sales line, which
+    // reads the SEED tenant's row (isFeatureEnabled with no orgId). A
+    // preset turns OFF everything it does not list, so if this key were
+    // preset-governed, applying a plan bundle to the seed tenant would
+    // silently take the platform's own sales line down. It must be exempt
+    // in BOTH directions — not merely absent from the bundles.
+    expect(PRESET_EXEMPT_FLAG_KEYS).toContain("voice.breathe_sales");
+    expect(isPresetExemptFlag("voice.breathe_sales")).toBe(true);
+    expect(CANONICAL.has("voice.breathe_sales")).toBe(true);
   });
 });
