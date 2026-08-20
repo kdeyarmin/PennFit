@@ -8,8 +8,8 @@
 //
 // DATA RULES: everything here is fictional demo data — obviously-fake
 // patient/provider names, demo ids, fresh relative dates. Platform =
-// CareMetric Breathe; the demo tenant = Penn Home Medical Supply
-// (pennpaps.com). Office Ally is the clearinghouse (837P/835/277CA
+// CareMetric Breathe; the demo tenant = CareMetric Demo DME
+// (demo.example). Office Ally is the clearinghouse (837P/835/277CA
 // over SFTP) — believable submission/ack rows, NO real credentials.
 // PacWare is a CSV file exchange with no API — preview/notice shapes
 // only. Money in cents. NO real PHI.
@@ -65,7 +65,7 @@ const OA_SUBMISSIONS: OaSubmission[] = [
     ack277caFileName: "277CA-20260619-0001.txt",
     ack277caReceivedAt: hoursAgo(64),
     rejectionReason: null,
-    submittedByEmail: "demo.biller@pennpaps.example",
+    submittedByEmail: "demo.biller@demo.example",
     submittedAt: daysAgo(3),
     updatedAt: hoursAgo(64),
     attemptedClaimIds: ["demo-claim-9001", "demo-claim-9002"],
@@ -86,7 +86,7 @@ const OA_SUBMISSIONS: OaSubmission[] = [
     ack277caReceivedAt: null,
     rejectionReason:
       "IK304: Subscriber primary identifier missing on 1 of 2 claims (loop 2010BA)",
-    submittedByEmail: "demo.biller@pennpaps.example",
+    submittedByEmail: "demo.biller@demo.example",
     submittedAt: daysAgo(1),
     updatedAt: hoursAgo(20),
     attemptedClaimIds: ["demo-claim-9003", "demo-claim-9004"],
@@ -106,7 +106,7 @@ const OA_SUBMISSIONS: OaSubmission[] = [
     ack277caFileName: null,
     ack277caReceivedAt: null,
     rejectionReason: null,
-    submittedByEmail: "demo.biller@pennpaps.example",
+    submittedByEmail: "demo.biller@demo.example",
     submittedAt: hoursAgo(2),
     updatedAt: hoursAgo(2),
     attemptedClaimIds: ["demo-claim-9005"],
@@ -126,7 +126,7 @@ const OA_SUBMISSIONS: OaSubmission[] = [
     ack277caFileName: null,
     ack277caReceivedAt: null,
     rejectionReason: "SFTP upload failed: connection reset by peer",
-    submittedByEmail: "demo.biller@pennpaps.example",
+    submittedByEmail: "demo.biller@demo.example",
     submittedAt: hoursAgo(5),
     updatedAt: hoursAgo(5),
     attemptedClaimIds: ["demo-claim-9006", "demo-claim-9007"],
@@ -192,7 +192,7 @@ const OFFICE_CLOSURES = [
     startsAt: daysFromNow(12),
     endsAt: daysFromNow(13),
     autoReplyMessage:
-      "Penn Home Medical Supply is closed for the holiday. We'll reply to your message on the next business day.",
+      "CareMetric Demo DME is closed for the holiday. We'll reply to your message on the next business day.",
     createdByUserId: "demo-user-csr-1",
     createdAt: daysAgo(20),
     updatedAt: daysAgo(20),
@@ -214,7 +214,7 @@ const OFFICE_CLOSURES = [
     startsAt: daysAgo(26),
     endsAt: daysAgo(25),
     autoReplyMessage:
-      "Penn Home Medical Supply is closed for Memorial Day. We'll respond on the next business day.",
+      "CareMetric Demo DME is closed for Memorial Day. We'll respond on the next business day.",
     createdByUserId: "demo-user-csr-1",
     createdAt: daysAgo(45),
     updatedAt: daysAgo(45),
@@ -365,7 +365,7 @@ function outreachRuns(status: "active" | "completed" | "cancelled") {
       status: "active",
       nextStepIndex: 2,
       nextStepAt: daysFromNow(1),
-      startedByEmail: "demo.csr@pennpaps.example",
+      startedByEmail: "demo.csr@demo.example",
       startedAt: daysAgo(2),
       completedAt: null,
       cancelledAt: null,
@@ -379,7 +379,7 @@ function outreachRuns(status: "active" | "completed" | "cancelled") {
       status: "active",
       nextStepIndex: 2,
       nextStepAt: daysFromNow(2),
-      startedByEmail: "demo.rt@pennpaps.example",
+      startedByEmail: "demo.rt@demo.example",
       startedAt: daysAgo(2),
       completedAt: null,
       cancelledAt: null,
@@ -395,7 +395,7 @@ function outreachRuns(status: "active" | "completed" | "cancelled") {
       status: "completed",
       nextStepIndex: 4,
       nextStepAt: null,
-      startedByEmail: "demo.csr@pennpaps.example",
+      startedByEmail: "demo.csr@demo.example",
       startedAt: daysAgo(20),
       completedAt: daysAgo(11),
       cancelledAt: null,
@@ -411,7 +411,7 @@ function outreachRuns(status: "active" | "completed" | "cancelled") {
       status: "cancelled",
       nextStepIndex: 1,
       nextStepAt: null,
-      startedByEmail: "demo.rt@pennpaps.example",
+      startedByEmail: "demo.rt@demo.example",
       startedAt: daysAgo(15),
       completedAt: null,
       cancelledAt: daysAgo(13),

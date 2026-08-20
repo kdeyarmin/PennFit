@@ -78,15 +78,27 @@ interface MessagingConfig {
   publicBaseUrl: string;
 }
 
+/**
+ * The env-derived half of {@link MessagingConfig} — everything EXCEPT the
+ * practice name.
+ *
+ * `practiceName` is deliberately absent. It used to be read here from
+ * `RESUPPLY_PRACTICE_NAME`, which `applyCompanyInfoToEnv()` folds to the
+ * SEED tenant's name at boot — so every tenant's patient-facing copy went
+ * out under the seed tenant's brand. Omitting it from this type makes that
+ * a COMPILE error rather than a silent leak: the per-tenant sweep must
+ * supply the name it resolved for the tenant it is sweeping.
+ */
+export type PlatformMessagingConfig = Omit<MessagingConfig, "practiceName">;
+
 export function readNudgeMessagingConfig(
   env: NodeJS.ProcessEnv = process.env,
-): MessagingConfig {
+): PlatformMessagingConfig {
   return {
     sendgridApiKey: env.SENDGRID_API_KEY ?? null,
     sendgridFromEmail:
       env.SENDGRID_FROM_EMAIL?.trim() || DEFAULT_SENDGRID_FROM_EMAIL,
     sendgridFromName: env.SENDGRID_FROM_NAME ?? null,
-    practiceName: env.RESUPPLY_PRACTICE_NAME ?? "CareMetric Breathe",
     publicBaseUrl:
       (env.RESUPPLY_VOICE_PUBLIC_BASE_URL ??
         (env.RAILWAY_PUBLIC_DOMAIN
@@ -177,7 +189,7 @@ function emptyNudgeStats(): NudgeStats {
  */
 async function maintenanceNudgeSweepForOrg(
   orgId: string,
-  cfg: MessagingConfig,
+  cfg: PlatformMessagingConfig,
   asOfDate: Date,
 ): Promise<NudgeStats> {
   const stats = emptyNudgeStats();
@@ -435,7 +447,7 @@ async function maintenanceNudgeSweepForOrg(
  * Exported for tests.
  */
 export async function runMaintenanceNudgeSweep(
-  cfg: MessagingConfig = readNudgeMessagingConfig(),
+  cfg: PlatformMessagingConfig = readNudgeMessagingConfig(),
 ): Promise<NudgeStats> {
   const stats = emptyNudgeStats();
   if (!cfg.sendgridApiKey || !cfg.sendgridFromName || !cfg.publicBaseUrl) {

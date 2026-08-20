@@ -55,6 +55,7 @@ import {
   createQueueWithDlq,
   VENDOR_SEND_QUEUE_OPTS,
 } from "../lib/queue-options";
+import { PLATFORM_NAME } from "../../lib/company-info.js";
 
 const NOTIFY_JOB = "invite-password.expiry-notify";
 // Hourly at :23 — staggered off the top-of-hour bursts the reminders
@@ -90,15 +91,27 @@ interface MessagingConfig {
   publicBaseUrl: string;
 }
 
+/**
+ * The env-derived half of {@link MessagingConfig} — everything EXCEPT the
+ * practice name.
+ *
+ * `practiceName` is deliberately absent. It used to be read here from
+ * `RESUPPLY_PRACTICE_NAME`, which `applyCompanyInfoToEnv()` folds to the
+ * SEED tenant's name at boot — so every tenant's patient-facing copy went
+ * out under the seed tenant's brand. Omitting it from this type makes that
+ * a COMPILE error rather than a silent leak: the per-tenant sweep must
+ * supply the name it resolved for the tenant it is sweeping.
+ */
+export type PlatformMessagingConfig = Omit<MessagingConfig, "practiceName">;
+
 export function readNotifyMessagingConfig(
   env: NodeJS.ProcessEnv = process.env,
-): MessagingConfig {
+): PlatformMessagingConfig {
   return {
     sendgridApiKey: env.SENDGRID_API_KEY ?? null,
     sendgridFromEmail:
       env.SENDGRID_FROM_EMAIL?.trim() || DEFAULT_SENDGRID_FROM_EMAIL,
     sendgridFromName: env.SENDGRID_FROM_NAME ?? null,
-    practiceName: env.RESUPPLY_PRACTICE_NAME ?? "CareMetric Breathe",
     publicBaseUrl:
       (env.RESUPPLY_VOICE_PUBLIC_BASE_URL ??
         (env.RAILWAY_PUBLIC_DOMAIN
@@ -203,7 +216,7 @@ interface UserRow {
 
 /** Run a single notify sweep. Exported for tests. */
 export async function runInvitePasswordExpiryNotifySweep(
-  cfg: MessagingConfig = readNotifyMessagingConfig(),
+  cfg: PlatformMessagingConfig = readNotifyMessagingConfig(),
 ): Promise<NotifyStats> {
   const stats: NotifyStats = {
     scannedReminders: 0,
@@ -363,8 +376,12 @@ export async function runInvitePasswordExpiryNotifySweep(
   ): Promise<{ practiceName: string; publicBaseUrl: string }> => {
     const orgId = orgByUserId.get(userId);
     if (!orgId) {
+      // No resolvable tenant for this user. Sign the invite copy with the
+      // PLATFORM name — this used to read the seed tenant's env-folded
+      // practice name, so an orphaned invite went out branded as the seed
+      // tenant to someone who may have nothing to do with it.
       return {
-        practiceName: cfg.practiceName,
+        practiceName: PLATFORM_NAME,
         publicBaseUrl: cfg.publicBaseUrl,
       };
     }

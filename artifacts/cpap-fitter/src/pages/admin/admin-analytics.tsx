@@ -11,7 +11,7 @@
 //   3. CSR productivity — per-operator action totals from the audit
 //      log, last-active date, top action.
 //
-// Distinct from /admin/pennpaps/analytics (storefront orders +
+// Distinct from /admin/fitter/analytics (storefront orders +
 // email health + mask popularity).
 
 import { useState } from "react";

@@ -13,7 +13,7 @@
 // DATA RULES: everything here is fictional demo data — obviously-fake
 // patient/customer names ("Demo Patient", "Avery Sample"), demo ids,
 // fresh relative dates. Platform = CareMetric Breathe; the tenant is
-// Penn Home Medical Supply (pennpaps.com). NO real PHI.
+// CareMetric Demo DME (demo.example). NO real PHI.
 //
 // SKIPPED (handled elsewhere / not suitable for the sandbox):
 //   * GET /admin/shop/customers + /:userId — already seeded in
@@ -51,12 +51,12 @@ function companyCalendarEvents() {
         status: "scheduled" as const,
         startsAt: daysFromNow(1),
         endsAt: daysFromNow(1),
-        location: "Penn Home Medical Supply — Front Desk",
+        location: "CareMetric Demo DME — Front Desk",
         notes: "New mask fitting; bring nasal-pillow samples",
         createdByUserId: "demo-user-csr-1",
-        createdByEmail: "demo.csr@pennpaps.example",
+        createdByEmail: "demo.csr@demo.example",
         assignedToUserId: "demo-user-rt-1",
-        assignedToEmail: "demo.rt@pennpaps.example",
+        assignedToEmail: "demo.rt@demo.example",
         createdAt: daysAgo(2),
         updatedAt: daysAgo(2),
       },
@@ -72,9 +72,9 @@ function companyCalendarEvents() {
         location: "Video visit",
         notes: "First-night setup walkthrough",
         createdByUserId: "demo-user-csr-1",
-        createdByEmail: "demo.csr@pennpaps.example",
+        createdByEmail: "demo.csr@demo.example",
         assignedToUserId: "demo-user-rt-2",
-        assignedToEmail: "demo.rt2@pennpaps.example",
+        assignedToEmail: "demo.rt2@demo.example",
         createdAt: daysAgo(1),
         updatedAt: daysAgo(1),
       },
@@ -90,7 +90,7 @@ function companyCalendarEvents() {
         location: "Phone",
         notes: "30-day adherence check — doing well",
         createdByUserId: "demo-user-rt-1",
-        createdByEmail: "demo.rt@pennpaps.example",
+        createdByEmail: "demo.rt@demo.example",
         assignedToUserId: null,
         assignedToEmail: null,
         createdAt: daysAgo(10),
@@ -106,17 +106,17 @@ function assignableStaff() {
     staff: [
       {
         userId: "demo-user-rt-1",
-        email: "demo.rt@pennpaps.example",
+        email: "demo.rt@demo.example",
         displayName: "Demo RT",
       },
       {
         userId: "demo-user-rt-2",
-        email: "demo.rt2@pennpaps.example",
+        email: "demo.rt2@demo.example",
         displayName: "Sample Therapist",
       },
       {
         userId: "demo-user-csr-1",
-        email: "demo.csr@pennpaps.example",
+        email: "demo.csr@demo.example",
         displayName: "Demo CSR",
       },
     ],
@@ -198,7 +198,7 @@ function assigneeSuggestions() {
       {
         adminUserId: "demo-user-rt-1",
         displayName: "Demo RT",
-        email: "demo.rt@pennpaps.example",
+        email: "demo.rt@demo.example",
         role: "supervisor",
         skills: ["mask_fit", "billing", "adherence"],
         matchedSkillCount: 2,
@@ -208,7 +208,7 @@ function assigneeSuggestions() {
       {
         adminUserId: "demo-user-csr-1",
         displayName: "Demo CSR",
-        email: "demo.csr@pennpaps.example",
+        email: "demo.csr@demo.example",
         role: "csr",
         skills: ["billing"],
         matchedSkillCount: 1,
@@ -218,7 +218,7 @@ function assigneeSuggestions() {
       {
         adminUserId: "demo-user-rt-2",
         displayName: "Sample Therapist",
-        email: "demo.rt2@pennpaps.example",
+        email: "demo.rt2@demo.example",
         role: "csr",
         skills: ["mask_fit"],
         matchedSkillCount: 1,
@@ -344,7 +344,7 @@ const CSR_ORDER_REQUESTS = [
       paidAt: daysAgo(2),
       shopOrderId: "demo-order-9101",
     },
-    createdByEmail: "demo.csr@pennpaps.example",
+    createdByEmail: "demo.csr@demo.example",
     createdAt: daysAgo(3),
   },
   {
@@ -372,7 +372,7 @@ const CSR_ORDER_REQUESTS = [
     signerName: null,
     canceledAt: null,
     payment: { status: "not_started", paidAt: null, shopOrderId: null },
-    createdByEmail: "demo.csr@pennpaps.example",
+    createdByEmail: "demo.csr@demo.example",
     createdAt: daysAgo(1),
   },
   {
@@ -401,7 +401,7 @@ const CSR_ORDER_REQUESTS = [
     signerName: null,
     canceledAt: null,
     payment: { status: "not_started", paidAt: null, shopOrderId: null },
-    createdByEmail: "demo.csr@pennpaps.example",
+    createdByEmail: "demo.csr@demo.example",
     createdAt: daysAgo(2),
   },
 ];
@@ -424,7 +424,7 @@ function csrOrderRequestDetail(id: string) {
     request: { ...row, id },
     signingLink: row.canceledAt
       ? null
-      : `https://pennpaps.com/order/${id}?v=1&sig=demo-signature`,
+      : `https://demo.example/order/${id}?v=1&sig=demo-signature`,
   };
 }
 
@@ -669,7 +669,7 @@ export const ext2Handlers: DemoHandler[] = [
         orderReference: "PHM-DEMO-1099",
         status: "sent",
         signingLink:
-          "https://pennpaps.com/order/demo-csro-00ff?v=1&sig=demo-signature",
+          "https://demo.example/order/demo-csro-00ff?v=1&sig=demo-signature",
         emailSent: true,
         smsSent: false,
       },
@@ -685,7 +685,7 @@ export const ext2Handlers: DemoHandler[] = [
     (_req, { id }) =>
       json({
         status: "sent",
-        signingLink: `https://pennpaps.com/order/${id}?v=2&sig=demo-signature`,
+        signingLink: `https://demo.example/order/${id}?v=2&sig=demo-signature`,
         emailSent: true,
         smsSent: false,
       }),

@@ -88,6 +88,7 @@ import {
 } from "./post-call-summary";
 import { createVoiceToolDispatcher } from "./tools-impl";
 import { readVoiceConfigOrThrow, type VoiceConfig } from "./voice-config";
+import { getCompanyInfo } from "../company-info";
 
 const OUTBOUND_DEFAULT_CALL_CONTEXT =
   "Outbound CPAP resupply check-in. Verify identity by date of birth, " +
@@ -168,6 +169,19 @@ function buildPromptOrFallback(
  * Returned promise resolves once the bridge is fully closed (used by
  * the integration test; production callers can fire-and-forget).
  */
+
+/**
+ * The practice name the voice agent introduces itself with, for THIS call's
+ * tenant. Falls back to the platform name when the call carries no tenant —
+ * never to another tenant's brand.
+ */
+async function resolveCallPracticeName(
+  orgId: string | undefined,
+): Promise<string> {
+  if (!orgId) return PLATFORM_NAME;
+  return (await getCompanyInfo(orgId)).name;
+}
+
 export async function handleVoiceWsConnection(
   ws: WebSocket,
   pending: PendingSessionEntry,
@@ -426,9 +440,12 @@ export async function handleVoiceWsConnection(
       generateAudio: !externalVoice,
       instructions: buildPromptOrFallback(
         {
-          // Platform default (CareMetric Breathe), NOT the seed (Penn)
-          // tenant — the tenant's resolved practice name wins when present.
-          practiceName: config.practiceName?.trim() || "CareMetric Breathe",
+          // THIS call's tenant. `config.practiceName` is whatever the
+          // caller resolved; the platform name is the floor, never another
+          // tenant's brand.
+          practiceName:
+            config.practiceName?.trim() ||
+            (await resolveCallPracticeName(pending.orgId)),
           callerKind,
           // Inbound calls (the reorder IVR) set their own context + greeting
           // on the pending entry so the agent doesn't tell a caller who
@@ -735,14 +752,24 @@ export async function handleVoiceWsConnection(
     }
     // Fire-and-forget post-call summarization (Claude Sonnet 4.6 when
     // ANTHROPIC_API_KEY is set; otherwise a no-op). A flaky model call
-    // must NEVER delay hangup, so the promise is detached.
-    void runPostCallSummary({
-      conversationId: pending.conversationId,
-      twilioCallSid,
-      practiceName: config.practiceName ?? "CareMetric Breathe",
-      endReason: reason,
-      turns: turnHistory,
-      orgId: pending.orgId,
+    // must NEVER delay hangup, so the promise is detached — including the
+    // tenant-name lookup, which is why it is resolved INSIDE the detached
+    // async rather than awaited on the hangup path.
+    void (async () => {
+      const practiceName =
+        config.practiceName?.trim() ||
+        (await resolveCallPracticeName(pending.orgId));
+      await runPostCallSummary({
+        conversationId: pending.conversationId,
+        twilioCallSid,
+        practiceName,
+        endReason: reason,
+        turns: turnHistory,
+        orgId: pending.orgId,
+      });
+    })().catch(() => {
+      // Summarization is best-effort; a failure must not surface as an
+      // unhandled rejection on a call that already ended cleanly.
     });
     try {
       ws.close(
@@ -1075,7 +1102,9 @@ export async function handleVoiceDiagnosticWsConnection(
     generateAudio: true,
     instructions: buildPromptOrFallback(
       {
-        practiceName: config.practiceName?.trim() || "CareMetric Breathe",
+        practiceName:
+          config.practiceName?.trim() ||
+          (await resolveCallPracticeName(pending.orgId)),
         callContext: pending.callContext ?? DIAGNOSTIC_DEFAULT_CALL_CONTEXT,
         ...(pending.greeting ? { greeting: pending.greeting } : {}),
         // Honor the caller kind so an admin test call can hear the

@@ -16,7 +16,7 @@
 // DATA RULES: everything here is fictional demo data — obviously-fake
 // patient names ("Avery Sample", "Demo Patient"), demo ids, fresh
 // relative dates, cents for money. Platform = CareMetric Breathe; the
-// demo tenant is Penn Home Medical Supply (pennpaps.com). Therapy-cloud
+// demo tenant is CareMetric Demo DME (demo.example). Therapy-cloud
 // vendors are the real product names (ResMed AirView, Philips Care
 // Orchestrator, 3B/React Health). NO real PHI.
 
@@ -215,7 +215,7 @@ function dispenseReview(over: Record<string, unknown>) {
     review_status: "pending",
     reviewed_by_email: null,
     reviewed_at: null,
-    created_by_email: "demo.csr@pennpaps.example",
+    created_by_email: "demo.csr@demo.example",
     created_at: daysAgo(1),
     ...over,
   };
@@ -223,13 +223,13 @@ function dispenseReview(over: Record<string, unknown>) {
 
 // ── DME organization (dme-organization.ts) ────────────────────────────
 // GET /resupply-api/admin/dme-organization → { organization, contacts }
-//   This is the demo TENANT's billing identity: Penn Home Medical Supply.
+//   This is the demo TENANT's billing identity: CareMetric Demo DME.
 function dmeOrganization() {
   return {
     organization: {
       id: "demo-dme-org-0001",
-      legalName: "Penn Home Medical Supply, LLC",
-      dbaName: "PennPaps",
+      legalName: "CareMetric Demo DME, LLC",
+      dbaName: "CareMetric Breathe",
       taxId: "123456789",
       organizationalNpi: "1982736450",
       taxonomyCode: "332B00000X",
@@ -251,12 +251,12 @@ function dmeOrganization() {
       payTo: null,
       phoneE164: "+12155550123",
       faxE164: "+12155550144",
-      billingEmail: "billing@pennpaps.com",
-      generalEmail: "info@pennpaps.com",
-      supportEmail: "support@pennpaps.com",
+      billingEmail: "billing@demo.example",
+      generalEmail: "info@demo.example",
+      supportEmail: "support@demo.example",
       supportPhoneE164: "+12155550123",
       supportHoursText: "Mon-Fri 8am-6pm ET",
-      websiteUrl: "https://pennpaps.com",
+      websiteUrl: "https://demo.example",
       accreditation: {
         body: "achc" as const,
         number: "ACHC-DEMO-77120",
@@ -291,7 +291,7 @@ function dmeOrganization() {
         role: "billing_manager" as const,
         name: "Riley Ledger",
         title: "Billing Manager",
-        email: "billing@pennpaps.com",
+        email: "billing@demo.example",
         phoneE164: "+12155550130",
         isPrimary: true,
         isActive: true,
@@ -303,7 +303,7 @@ function dmeOrganization() {
         role: "authorized_signer" as const,
         name: "Dana Operator",
         title: "Owner",
-        email: "owner@pennpaps.com",
+        email: "owner@demo.example",
         phoneE164: "+12155550131",
         isPrimary: false,
         isActive: true,
@@ -333,7 +333,7 @@ function documentationPackets() {
         },
         page_count: 6,
         notes: "Assembled for Demo Medicaid MCO prior-auth submission.",
-        generated_by_email: "demo.csr@pennpaps.example",
+        generated_by_email: "demo.csr@demo.example",
         created_at: daysAgo(4),
       },
       {
@@ -348,7 +348,7 @@ function documentationPackets() {
         },
         page_count: 11,
         notes: null,
-        generated_by_email: "demo.csr@pennpaps.example",
+        generated_by_email: "demo.csr@demo.example",
         created_at: daysAgo(20),
       },
     ],
@@ -372,7 +372,7 @@ function educationVideos() {
         duration_seconds: 142,
         sort_order: 10,
         active: true,
-        created_by_email: "demo.rt@pennpaps.example",
+        created_by_email: "demo.rt@demo.example",
         created_at: daysAgo(120),
         updated_at: daysAgo(30),
       },
@@ -387,7 +387,7 @@ function educationVideos() {
         duration_seconds: 198,
         sort_order: 20,
         active: true,
-        created_by_email: "demo.rt@pennpaps.example",
+        created_by_email: "demo.rt@demo.example",
         created_at: daysAgo(90),
         updated_at: daysAgo(90),
       },
@@ -402,7 +402,7 @@ function educationVideos() {
         duration_seconds: 165,
         sort_order: 30,
         active: false,
-        created_by_email: "demo.rt@pennpaps.example",
+        created_by_email: "demo.rt@demo.example",
         created_at: daysAgo(45),
         updated_at: daysAgo(10),
       },
@@ -621,7 +621,7 @@ function fitterInvites(status: string, holding: boolean) {
       recipient_name: "Avery Sample",
       channel: "email",
       status: "completed",
-      invited_by_email: "demo.csr@pennpaps.example",
+      invited_by_email: "demo.csr@demo.example",
       measurements: { faceWidthMm: 138, noseBridgeMm: 22 },
       questionnaire_answers: { sleepPosition: "side", facialHair: "no" },
       recommended_mask_id: "demo-mask-n30",
@@ -650,7 +650,7 @@ function fitterInvites(status: string, holding: boolean) {
       recipient_name: "Jordan Prospect",
       channel: "email",
       status: "completed",
-      invited_by_email: "demo.csr@pennpaps.example",
+      invited_by_email: "demo.csr@demo.example",
       measurements: { faceWidthMm: 145, noseBridgeMm: 26 },
       questionnaire_answers: { sleepPosition: "back", facialHair: "yes" },
       recommended_mask_id: "demo-mask-f30i",
@@ -676,7 +676,7 @@ function fitterInvites(status: string, holding: boolean) {
       recipient_name: "Sam Newlead",
       channel: "sms",
       status: "sent",
-      invited_by_email: "demo.csr@pennpaps.example",
+      invited_by_email: "demo.csr@demo.example",
       measurements: null,
       questionnaire_answers: null,
       recommended_mask_id: null,
@@ -878,7 +878,7 @@ export const ext3Handlers: DemoHandler[] = [
             checks_passed: 8,
             estimated_days_to_ready: 0,
             review_status: "acknowledged",
-            reviewed_by_email: "demo.csr@pennpaps.example",
+            reviewed_by_email: "demo.csr@demo.example",
             reviewed_at: daysAgo(8),
             ai_summary: "All checks pass — ready to dispense.",
             created_at: daysAgo(9),
@@ -1020,7 +1020,7 @@ export const ext3Handlers: DemoHandler[] = [
         channel,
         delivered: true,
         deliveryError: null,
-        inviteLink: "https://pennpaps.com/fitter-invite?t=demo-token",
+        inviteLink: "https://demo.example/fitter-invite?t=demo-token",
         // In-office links expire with the visit; mailed ones in a month
         // (FITTER_INVITE_IN_OFFICE_TTL_MS / FITTER_INVITE_TTL_MS). Without
         // this the senders' expiry line read "Expires soon.".
@@ -1035,7 +1035,7 @@ export const ext3Handlers: DemoHandler[] = [
     (_req, params) =>
       json({
         id: params.id,
-        claimedByEmail: "demo.csr@pennpaps.example",
+        claimedByEmail: "demo.csr@demo.example",
         claimedAt: NOW_ISO(),
       }),
   ),
@@ -1063,7 +1063,7 @@ export const ext3Handlers: DemoHandler[] = [
         id: params.id,
         delivered: true,
         deliveryError: null,
-        inviteLink: "https://pennpaps.com/fitter-invite?t=demo-token",
+        inviteLink: "https://demo.example/fitter-invite?t=demo-token",
       }),
   ),
   route("DELETE", "/resupply-api/admin/fitter-invites/:id", (_req, params) =>

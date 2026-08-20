@@ -32,6 +32,7 @@ import { Router, type IRouter } from "express";
 
 import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
+import { getCompanyInfo } from "../../lib/company-info";
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
 import { rateLimit } from "../../middlewares/rate-limit";
 
@@ -153,8 +154,11 @@ router.get(
       itemsByOrder.set(it.order_id, list);
     }
 
+    const company = await getCompanyInfo(orgId);
     const exportedAt = new Date().toISOString();
-    const filename = `pennpaps-export-${customerId.slice(-8)}-${exportedAt
+    // Tenant-neutral filename. The old `pennpaps-export-…` stamped the
+    // seed tenant's brand onto every tenant's customers' downloads.
+    const filename = `data-export-${customerId.slice(-8)}-${exportedAt
       .slice(0, 10)
       .replace(/-/g, "")}.json`;
 
@@ -182,7 +186,12 @@ router.get(
           notes: {
             coverage:
               "This file contains every record the cash-pay shop holds for your account.",
-            phi: "Insurance / Rx / clinical data lives in a separate system and is not included here. Contact support@pennpaps.com to request that data.",
+            // Support address resolved per TENANT: this file is handed to
+            // the customer, and a hardcoded mailbox pointed every tenant's
+            // customers at the seed tenant's inbox. An unconfigured tenant
+            // resolves to the neutral platform address, never another
+            // tenant's.
+            phi: `Insurance / Rx / clinical data lives in a separate system and is not included here. Contact ${company.supportEmail} to request that data.`,
           },
         },
         null,

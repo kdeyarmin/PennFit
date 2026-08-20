@@ -1,5 +1,5 @@
 // Seeded demo data for the insurance-claims workflow pages — the exact
-// chain PennPilot's "process a claim end to end" answer deep-links
+// chain CareMetric Copilot's "process a claim end to end" answer deep-links
 // (eligibility → auto-submit → ERA files → denials worklist). Shapes
 // mirror the response interfaces in src/lib/admin/billing-api.ts,
 // billing-auto-submit-api.ts, denials-worklist-api.ts, and

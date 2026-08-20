@@ -48,6 +48,7 @@ import {
 import { buildResupplyDueItems } from "../../lib/messaging/resupply-due-items";
 import type { ClickLandingItem } from "@workspace/resupply-messaging";
 import { safeAudit } from "../../lib/messaging/safe-audit";
+import { getCompanyInfo, PLATFORM_NAME } from "../../lib/company-info";
 
 const router: IRouter = Router();
 
@@ -123,7 +124,14 @@ router.get("/email/click", emailClickLimiter, async (req, res) => {
     return;
   }
 
-  const verified = extractVerifiedToken(req, res, cfg.practiceName);
+  // Brand every page this route renders with the TENANT the signed link
+  // belongs to. Until the token identifies that tenant (below) we can only
+  // honestly say "the platform" — this used to read the process-global
+  // RESUPPLY_PRACTICE_NAME, i.e. the SEED tenant's name, so a tenant-B
+  // patient clicking a tenant-B link saw the seed tenant's brand.
+  let practiceName = PLATFORM_NAME;
+
+  const verified = extractVerifiedToken(req, res, practiceName);
   if (!verified) return;
 
   // Public signed-link route: there is no req.orgId. The HMAC token is the
@@ -140,12 +148,15 @@ router.get("/email/click", emailClickLimiter, async (req, res) => {
       .type("text/html")
       .send(
         renderClickError({
-          practiceName: cfg.practiceName,
+          practiceName: practiceName,
           reason: "malformed",
         }),
       );
     return;
   }
+
+  // Tenant resolved — brand the rest of this request as that tenant.
+  practiceName = (await getCompanyInfo(orgId)).name;
 
   // Audit the link open (no state change — audit is informational only).
   const supabase = getOrgScopedClient(orgId);
@@ -163,7 +174,7 @@ router.get("/email/click", emailClickLimiter, async (req, res) => {
       .type("text/html")
       .send(
         renderClickError({
-          practiceName: cfg.practiceName,
+          practiceName: practiceName,
           reason: "malformed",
         }),
       );
@@ -215,7 +226,7 @@ router.get("/email/click", emailClickLimiter, async (req, res) => {
     .type("text/html")
     .send(
       renderClickLanding({
-        practiceName: cfg.practiceName,
+        practiceName: practiceName,
         action: verified.action,
         formActionUrl,
         items: dueItems,
@@ -245,7 +256,14 @@ router.post("/email/click", emailClickLimiter, async (req, res) => {
     return;
   }
 
-  const verified = extractVerifiedToken(req, res, cfg.practiceName);
+  // Brand every page this route renders with the TENANT the signed link
+  // belongs to. Until the token identifies that tenant (below) we can only
+  // honestly say "the platform" — this used to read the process-global
+  // RESUPPLY_PRACTICE_NAME, i.e. the SEED tenant's name, so a tenant-B
+  // patient clicking a tenant-B link saw the seed tenant's brand.
+  let practiceName = PLATFORM_NAME;
+
+  const verified = extractVerifiedToken(req, res, practiceName);
   if (!verified) return;
 
   const { conversationId, action } = verified;
@@ -264,12 +282,15 @@ router.post("/email/click", emailClickLimiter, async (req, res) => {
       .type("text/html")
       .send(
         renderClickError({
-          practiceName: cfg.practiceName,
+          practiceName: practiceName,
           reason: "malformed",
         }),
       );
     return;
   }
+
+  // Tenant resolved — brand the rest of this request as that tenant.
+  practiceName = (await getCompanyInfo(orgId)).name;
 
   const supabase = getOrgScopedClient(orgId);
   const { data: conv, error: convErr } = await supabase
@@ -290,7 +311,7 @@ router.post("/email/click", emailClickLimiter, async (req, res) => {
       .type("text/html")
       .send(
         renderClickError({
-          practiceName: cfg.practiceName,
+          practiceName: practiceName,
           reason: "malformed",
         }),
       );
@@ -383,7 +404,7 @@ router.post("/email/click", emailClickLimiter, async (req, res) => {
             .type("text/html")
             .send(
               renderClickConfirmation({
-                practiceName: cfg.practiceName,
+                practiceName: practiceName,
                 action: "confirm",
               }),
             );
@@ -423,7 +444,7 @@ router.post("/email/click", emailClickLimiter, async (req, res) => {
             .type("text/html")
             .send(
               renderClickConfirmation({
-                practiceName: cfg.practiceName,
+                practiceName: practiceName,
                 action: "address_pending",
               }),
             );
@@ -467,7 +488,7 @@ router.post("/email/click", emailClickLimiter, async (req, res) => {
             .type("text/html")
             .send(
               renderClickConfirmation({
-                practiceName: cfg.practiceName,
+                practiceName: practiceName,
                 action: "review",
               }),
             );
@@ -510,7 +531,7 @@ router.post("/email/click", emailClickLimiter, async (req, res) => {
             .type("text/html")
             .send(
               renderClickConfirmation({
-                practiceName: cfg.practiceName,
+                practiceName: practiceName,
                 action: "review",
               }),
             );
@@ -554,7 +575,7 @@ router.post("/email/click", emailClickLimiter, async (req, res) => {
             .type("text/html")
             .send(
               renderClickConfirmation({
-                practiceName: cfg.practiceName,
+                practiceName: practiceName,
                 action: "review",
               }),
             );
@@ -598,7 +619,7 @@ router.post("/email/click", emailClickLimiter, async (req, res) => {
             .type("text/html")
             .send(
               renderClickConfirmation({
-                practiceName: cfg.practiceName,
+                practiceName: practiceName,
                 action: "review",
               }),
             );
@@ -609,7 +630,7 @@ router.post("/email/click", emailClickLimiter, async (req, res) => {
           .type("text/html")
           .send(
             renderClickError({
-              practiceName: cfg.practiceName,
+              practiceName: practiceName,
               reason: "malformed",
             }),
           );
@@ -655,7 +676,7 @@ router.post("/email/click", emailClickLimiter, async (req, res) => {
           .type("text/html")
           .send(
             renderClickConfirmation({
-              practiceName: cfg.practiceName,
+              practiceName: practiceName,
               action: "edit",
             }),
           );
@@ -692,7 +713,7 @@ router.post("/email/click", emailClickLimiter, async (req, res) => {
           .type("text/html")
           .send(
             renderClickConfirmation({
-              practiceName: cfg.practiceName,
+              practiceName: practiceName,
               action: "stop",
             }),
           );
@@ -706,7 +727,7 @@ router.post("/email/click", emailClickLimiter, async (req, res) => {
           .type("text/html")
           .send(
             renderClickError({
-              practiceName: cfg.practiceName,
+              practiceName: practiceName,
               reason: "unknown-action",
             }),
           );
@@ -728,7 +749,7 @@ router.post("/email/click", emailClickLimiter, async (req, res) => {
       .type("text/html")
       .send(
         renderClickError({
-          practiceName: cfg.practiceName,
+          practiceName: practiceName,
           reason: "malformed",
         }),
       );

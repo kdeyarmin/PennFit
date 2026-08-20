@@ -11,7 +11,7 @@
 // Every shape mirrors the live route's `res.json({...})` exactly (incl.
 // nested keys + array element fields) so the SPA pages render real data
 // instead of empty states or crashing the admin error boundary on a
-// missing nested field. Tenant is Penn Home Medical Supply on the
+// missing nested field. Tenant is CareMetric Demo DME on the
 // CareMetric Breathe platform; all names/payers/ids are obviously
 // fictional and money is integer cents in realistic DME amounts.
 
@@ -702,7 +702,7 @@ export function demoGoodFaithEstimates() {
         expected_service_date: dateOnly(7),
         delivery_method: "email",
         delivered_at: daysAgo(2),
-        generated_by_email: "billing@pennpaps.com",
+        generated_by_email: "billing@demo.example",
         created_at: daysAgo(2),
       },
       {
@@ -722,7 +722,7 @@ export function demoGoodFaithEstimates() {
         expected_service_date: dateOnly(14),
         delivery_method: null,
         delivered_at: null,
-        generated_by_email: "billing@pennpaps.com",
+        generated_by_email: "billing@demo.example",
         created_at: daysAgo(5),
       },
     ],
@@ -825,7 +825,7 @@ export function demoClaimAppealLetters() {
         delivered_at: daysAgo(6),
         responded_at: null,
         outcome: null,
-        generated_by_email: "billing@pennpaps.com",
+        generated_by_email: "billing@demo.example",
         created_at: daysAgo(7),
       },
     ],

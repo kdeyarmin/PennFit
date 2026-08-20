@@ -11,7 +11,7 @@
 // names ("Demo Patient", "Avery Sample", "Jordan Quinn"), demo ids
 // ("demo-..."), 555-range phones, money in integer cents. Platform brand
 // is CareMetric Breathe (noreply@cmbreathe.com); the seed storefront
-// tenant is Penn Home Medical Supply / pennpaps.com. NO real PHI.
+// tenant is CareMetric Demo DME / demo.example. NO real PHI.
 
 import { route, type DemoHandler } from "../types";
 import { json } from "../respond";
@@ -243,28 +243,28 @@ function agentAvailabilityBoard() {
     agents: [
       {
         adminUserId: "demo-user-rt-1",
-        email: "avery.rt@pennpaps.com",
+        email: "avery.rt@demo.example",
         displayName: "Avery Sample, RT",
         role: "agent",
         availability: "available",
       },
       {
         adminUserId: "demo-user-rt-2",
-        email: "jordan.rt@pennpaps.com",
+        email: "jordan.rt@demo.example",
         displayName: "Jordan Quinn, RT",
         role: "agent",
         availability: "away",
       },
       {
         adminUserId: "demo-user-csr-1",
-        email: "demo.csr@pennpaps.com",
+        email: "demo.csr@demo.example",
         displayName: "Demo CSR",
         role: "agent",
         availability: "do_not_assign",
       },
       {
         adminUserId: "demo-user-admin-1",
-        email: "owner@pennpaps.com",
+        email: "owner@demo.example",
         displayName: "Demo Owner",
         role: "admin",
         availability: "available",
@@ -316,7 +316,7 @@ function alertMessageOverrides() {
         subject: null,
         bodyHtml: null,
         bodyText:
-          "Hi {{first_name}}, your CPAP supplies are due. Reply YES to ship. - Penn Home Medical Supply",
+          "Hi {{first_name}}, your CPAP supplies are due. Reply YES to ship. - CareMetric Demo DME",
         isActive: true,
         note: "Patient prefers a shorter, plainer SMS than the default.",
         createdAt: daysAgo(20),
@@ -409,8 +409,8 @@ const ASSET_RECOVERY_CASES: AssetCaseDto[] = [
     trackingNumber: null,
     returnLabelUrl: null,
     notes: "No data in 21 days; left two voicemails.",
-    createdByEmail: "demo.csr@pennpaps.com",
-    updatedByEmail: "demo.csr@pennpaps.com",
+    createdByEmail: "demo.csr@demo.example",
+    updatedByEmail: "demo.csr@demo.example",
     createdAt: daysAgo(8),
     updatedAt: daysAgo(2),
   },
@@ -425,8 +425,8 @@ const ASSET_RECOVERY_CASES: AssetCaseDto[] = [
     trackingNumber: "DEMO1Z999AA10123456784",
     returnLabelUrl: null,
     notes: "Return label emailed; awaiting drop-off.",
-    createdByEmail: "demo.csr@pennpaps.com",
-    updatedByEmail: "demo.csr@pennpaps.com",
+    createdByEmail: "demo.csr@demo.example",
+    updatedByEmail: "demo.csr@demo.example",
     createdAt: daysAgo(15),
     updatedAt: daysAgo(3),
   },
@@ -441,8 +441,8 @@ const ASSET_RECOVERY_CASES: AssetCaseDto[] = [
     trackingNumber: "DEMO1Z999AA10987654321",
     returnLabelUrl: null,
     notes: "Device back in warehouse; queued for refurb.",
-    createdByEmail: "demo.rt@pennpaps.com",
-    updatedByEmail: "demo.rt@pennpaps.com",
+    createdByEmail: "demo.rt@demo.example",
+    updatedByEmail: "demo.rt@demo.example",
     createdAt: daysAgo(30),
     updatedAt: daysAgo(6),
   },
@@ -716,8 +716,8 @@ export const ext0Handlers: DemoHandler[] = [
           trackingNumber: null,
           returnLabelUrl: null,
           notes: body?.notes ?? null,
-          createdByEmail: "demo.csr@pennpaps.com",
-          updatedByEmail: "demo.csr@pennpaps.com",
+          createdByEmail: "demo.csr@demo.example",
+          updatedByEmail: "demo.csr@demo.example",
           createdAt: NOW_ISO(),
           updatedAt: NOW_ISO(),
         },
@@ -741,7 +741,7 @@ export const ext0Handlers: DemoHandler[] = [
         trackingNumber: (body.trackingNumber as string) ?? base.trackingNumber,
         returnLabelUrl: (body.returnLabelUrl as string) ?? base.returnLabelUrl,
         notes: (body.notes as string) ?? base.notes,
-        updatedByEmail: "demo.csr@pennpaps.com",
+        updatedByEmail: "demo.csr@demo.example",
         updatedAt: NOW_ISO(),
       },
     });

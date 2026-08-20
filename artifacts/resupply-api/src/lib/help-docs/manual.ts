@@ -29,7 +29,7 @@ import type { EmailAttachment } from "@workspace/resupply-auth";
 import { logger } from "../logger";
 
 export const CUSTOMER_SERVICE_MANUAL_FILENAME =
-  "PennPaps-Customer-Service-Manual.pdf";
+  "CareMetric-Breathe-Customer-Service-Manual.pdf";
 /** The comprehensive, role-organised operator manual (authored in
  *  docs/user-manual/, pre-rendered, and committed under assets/ for the
  *  same deploy-context reason as the customer-service manual above). It is

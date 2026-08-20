@@ -1,5 +1,5 @@
 // PodSection — proof-of-delivery photo upload + view for a single
-// shop_orders row. Lives inside pennpaps-order-detail.tsx alongside
+// shop_orders row. Lives inside fitter-order-detail.tsx alongside
 // the existing Insurance / Prescription / Measurements / Shipping
 // sections.
 //

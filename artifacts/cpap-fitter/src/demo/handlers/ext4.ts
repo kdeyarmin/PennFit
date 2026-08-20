@@ -12,8 +12,8 @@
 //
 // DATA RULES: everything here is fictional demo data. Obviously-fake names
 // ("Avery Sample", "Demo Patient"), demo ids, 555 phone numbers, fresh
-// relative dates. Platform = CareMetric Breathe; tenant = Penn Home Medical
-// Supply (pennpaps.com). Therapy-cloud vendors are the real product names
+// relative dates. Platform = CareMetric Breathe; tenant = CareMetric Demo
+// DME (demo.example). Therapy-cloud vendors are the real product names
 // (ResMed AirView, Philips Care Orchestrator, 3B/React Health). NO real PHI.
 
 import { route, type DemoHandler } from "../types";
@@ -342,7 +342,7 @@ interface RawLocation {
 const LOCATIONS: RawLocation[] = [
   {
     id: "44444444-4444-4444-8444-000000000001",
-    name: "Penn Home Medical Supply — Main",
+    name: "CareMetric Demo DME — Main",
     code: "MAIN",
     address_line1: "120 Market Street",
     address_line2: "Suite 200",
@@ -358,7 +358,7 @@ const LOCATIONS: RawLocation[] = [
   },
   {
     id: "44444444-4444-4444-8444-000000000002",
-    name: "Penn Home Medical Supply — West Branch",
+    name: "CareMetric Demo DME — West Branch",
     code: "WEST",
     address_line1: "5500 Lancaster Avenue",
     address_line2: null,
@@ -374,7 +374,7 @@ const LOCATIONS: RawLocation[] = [
   },
   {
     id: "44444444-4444-4444-8444-000000000003",
-    name: "Penn Home Medical Supply — Warehouse (Legacy)",
+    name: "CareMetric Demo DME — Warehouse (Legacy)",
     code: "WH1",
     address_line1: "9 Industrial Way",
     address_line2: null,
@@ -617,7 +617,7 @@ function overridesFor(userId: string): OverrideView[] {
       customerId: userId,
       templateKey: "order.shipped",
       channel: "email",
-      subject: "Your Penn Home Medical Supply order is on its way",
+      subject: "Your CareMetric Demo DME order is on its way",
       bodyHtml: "<p>Hi {{firstName}}, your order has shipped.</p>",
       bodyText: "Hi {{firstName}}, your order has shipped.",
       isActive: false,

@@ -1,4 +1,4 @@
-// Claims-workflow handlers — the pages PennPilot's "process a claim
+// Claims-workflow handlers — the pages CareMetric Copilot's "process a claim
 // end to end" answer deep-links: Eligibility, Auto-submit, ERA files,
 // Denials worklist (plus Statement send, same family). Without these
 // the router's empty-object GET fallback crashes each page into the

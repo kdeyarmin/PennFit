@@ -152,7 +152,7 @@ WORKSPACE — the day-to-day desk:
   - Outreach (module: outreach — send surfaces + the content behind them):
       * Bulk Campaigns (/admin/bulk-campaigns) — batch SMS/email sends.
       * Alert Library (/admin/alerts) — curated one-off alerts (admin.tools.manage).
-      * Reminders (/admin/pennpaps/reminders) — resupply reminder schedule.
+      * Reminders (/admin/fitter/reminders) — resupply reminder schedule.
       * Playbooks (/admin/playbooks) — situation-based contact templates.
       * Canned Replies (/admin/macros) — CSR quick-reply macros (admin.tools.manage).
       * Automated messages (/admin/templates) — system-sent copy (admin.tools.manage).
@@ -206,7 +206,7 @@ PATIENTS & CLINICAL:
 ORDERS & SHOP:
   - Orders:
       * Orders (/admin/shop/orders) — all storefront/resupply orders (returns.manage).
-      * Fitter requests (/admin/pennpaps/orders) — orders that came out of a fitting.
+      * Fitter requests (/admin/fitter/orders) — orders that came out of a fitting.
       * Shipping labels (/admin/shipping) — buy/print labels, track parcels (returns.manage).
       * Subscriptions (/admin/shop/subscriptions) — Subscribe-and-Save / resupply subs.
       * Returns & RMAs (/admin/shop/returns), Backorders & subs (/admin/shop/backorders).
@@ -276,7 +276,7 @@ ANALYTICS & REPORTS:
   - Clinical & customer: Clinical Analytics (/admin/analytics), Reorder Reminders
     (/admin/reorder-reminders, reports.read) — how the resupply reminder program is
     performing, Therapy Report (/admin/therapy-usage-report), Customer NPS (/admin/nps),
-    Storefront Analytics (/admin/pennpaps/analytics).
+    Storefront Analytics (/admin/fitter/analytics).
 
 SYSTEM (mostly admin / super-admin):
   - Support (/admin/support, module: support) — file a support request; the in-app

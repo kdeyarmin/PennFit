@@ -18,7 +18,7 @@ import { setProjectionLogger } from "@workspace/resupply-db";
 
 import app from "./app";
 import { applyAppConfigOverlayToEnv } from "./lib/app-config/store";
-import { applyCompanyInfoToEnv } from "./lib/company-info";
+import { hydrateCompanyInfoCache } from "./lib/company-info";
 import { logger } from "./lib/logger";
 import { getPendingSessions } from "./lib/voice/pending-sessions";
 import {
@@ -607,12 +607,13 @@ async function start(): Promise<void> {
   });
 
   // Same decoupled posture for the admin-entered company identity
-  // (resupply.dme_organization): hydrate RESUPPLY_PRACTICE_NAME /
-  // SENDGRID_FROM_NAME from the Company information page so the brand
-  // name in SMS/email/voice/PDF copy follows the database. Re-applied
+  // (resupply.dme_organization): warm the seed tenant's company-info cache
+  // so the synchronous accessors (getCompanyInfoSync /
+  // applyCompanyIdentityToText) answer without a DB round-trip. Re-applied
   // periodically so a save on another replica (or a missed in-process
-  // refresh) converges without a redeploy. Fail-soft throughout.
-  void applyCompanyInfoToEnv().catch((err) => {
+  // refresh) converges without a redeploy. This no longer writes
+  // process.env — every brand reader resolves its own tenant. Fail-soft.
+  void hydrateCompanyInfoCache().catch((err) => {
     logger.warn(
       { err: serializeErr(err), event: "company_info_hydrate_boot_failed" },
       "company info hydration failed at boot — continuing on environment values",
@@ -620,7 +621,7 @@ async function start(): Promise<void> {
   });
   const companyInfoRefresh = setInterval(
     () => {
-      void applyCompanyInfoToEnv().catch(() => {
+      void hydrateCompanyInfoCache().catch(() => {
         // getCompanyInfo already logs; a refresh failure changes nothing.
       });
     },

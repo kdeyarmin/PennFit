@@ -182,7 +182,7 @@ export const revenueSummaryReport: ReportModule = {
         setDownloadHeaders(
           res,
           "text/csv; charset=utf-8",
-          `pennpaps-revenue-${rangeSlug(from, to)}.csv`,
+          `revenue-${rangeSlug(from, to)}.csv`,
         );
         writeRevenueCsv(res, rollupRevenue(orders, returns));
       },
@@ -237,7 +237,7 @@ export const revenueSummaryReport: ReportModule = {
         const pdf = await renderTablePdf({
           title: "Revenue summary",
           range: rangeLabel(from, to),
-          practiceName: practiceName(),
+          practiceName: await practiceName(orgId),
           columns: [
             { label: "Day", width: 100 },
             { label: "Orders", width: 80, rightAlign: true },
@@ -257,7 +257,7 @@ export const revenueSummaryReport: ReportModule = {
         setDownloadHeaders(
           res,
           "application/pdf",
-          `pennpaps-revenue-${rangeSlug(from, to)}.pdf`,
+          `revenue-${rangeSlug(from, to)}.pdf`,
         );
         res.setHeader("Content-Length", String(pdf.length));
         res.end(pdf);
@@ -287,7 +287,7 @@ export const revenueSummaryReport: ReportModule = {
     const pdf = await renderTablePdf({
       title: "Revenue summary",
       range: rangeLabel(from, to),
-      practiceName: practiceName(),
+      practiceName: await practiceName(orgId),
       columns: [
         { label: "Day", width: 100 },
         { label: "Orders", width: 80, rightAlign: true },

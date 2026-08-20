@@ -144,7 +144,7 @@ export const returnsReport: ReportModule = {
         setDownloadHeaders(
           res,
           "text/csv; charset=utf-8",
-          `pennpaps-returns-${rangeSlug(from, to)}.csv`,
+          `returns-${rangeSlug(from, to)}.csv`,
         );
         writeReturnsCsv(res, rows);
       },
@@ -165,7 +165,7 @@ export const returnsReport: ReportModule = {
         const pdf = await renderTablePdf({
           title: "Returns & RMAs",
           range: rangeLabel(from, to),
-          practiceName: practiceName(),
+          practiceName: await practiceName(orgId),
           columns: [
             { label: "Return #", width: 90 },
             { label: "Order #", width: 90 },
@@ -194,7 +194,7 @@ export const returnsReport: ReportModule = {
         setDownloadHeaders(
           res,
           "application/pdf",
-          `pennpaps-returns-${rangeSlug(from, to)}.pdf`,
+          `returns-${rangeSlug(from, to)}.pdf`,
         );
         res.setHeader("Content-Length", String(pdf.length));
         res.end(pdf);
@@ -212,13 +212,13 @@ export const returnsReport: ReportModule = {
         const iif = await renderIifWithAccounts(orgId, {
           from: from.toISOString().slice(0, 10),
           to: to.toISOString().slice(0, 10),
-          practiceName: practiceName(),
+          practiceName: await practiceName(orgId),
           rows: buildQbRowsFromReturns(rows),
         });
         setDownloadHeaders(
           res,
           "application/octet-stream",
-          `pennpaps-returns-${rangeSlug(from, to)}.iif`,
+          `returns-${rangeSlug(from, to)}.iif`,
         );
         res.end(iif);
       },
@@ -235,13 +235,13 @@ export const returnsReport: ReportModule = {
         const csv = renderQboCsv({
           from: from.toISOString().slice(0, 10),
           to: to.toISOString().slice(0, 10),
-          practiceName: practiceName(),
+          practiceName: await practiceName(orgId),
           rows: buildQbRowsFromReturns(rows),
         });
         setDownloadHeaders(
           res,
           "text/csv; charset=utf-8",
-          `pennpaps-returns-qbo-${rangeSlug(from, to)}.csv`,
+          `returns-qbo-${rangeSlug(from, to)}.csv`,
         );
         res.end(csv);
       },
@@ -263,7 +263,7 @@ export const returnsReport: ReportModule = {
     const pdf = await renderTablePdf({
       title: "Returns & RMAs",
       range: rangeLabel(from, to),
-      practiceName: practiceName(),
+      practiceName: await practiceName(orgId),
       columns: [
         { label: "Return #", width: 100 },
         { label: "Order #", width: 100 },

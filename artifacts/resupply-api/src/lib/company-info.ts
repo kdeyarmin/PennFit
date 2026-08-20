@@ -538,34 +538,35 @@ export async function applyPlatformBrandingForOrg(
   return applyPlatformBranding(text, { ...getCompanyInfoSync(), ...names });
 }
 
-// What SENDGRID_FROM_NAME / RESUPPLY_PRACTICE_NAME looked like before
-// this module ever touched them, captured at module load (i.e. after
-// applyEnvAliases() but before any hydration). Used to tell "operator
-// explicitly set this in Railway" apart from "we wrote it earlier" so
-// re-hydration stays idempotent and an explicit From-name still wins.
-const initialEnvPracticeName = trimmed(process.env.RESUPPLY_PRACTICE_NAME);
-const initialEnvFromName = trimmed(process.env.SENDGRID_FROM_NAME);
-
 /**
- * Fold the admin-entered company name into process.env so the existing
- * `RESUPPLY_PRACTICE_NAME` readers (SMS/email copy, voice prompt, PDF
- * headers, MFA issuer) all use it without being rewritten. DB wins —
- * the Company information page is authoritative, matching the
- * app_config overlay precedence. Fail-soft; never throws. Called once
- * post-listen at boot and again after every org-row save.
+ * Warm the seed/default company-info cache entry.
+ *
+ * This REPLACED a `process.env` fold that wrote the admin-entered company
+ * name into `RESUPPLY_PRACTICE_NAME` (and aliased `SENDGRID_FROM_NAME` to
+ * it) so that ~28 direct `env.RESUPPLY_PRACTICE_NAME` readers would pick up
+ * the database value without each being rewritten.
+ *
+ * That bridge was single-tenant by construction: one process-global carried
+ * the SEED tenant's brand, so every OTHER tenant's SMS, email, voice prompt,
+ * PDF header, MFA issuer, and report footer rendered under the seed
+ * tenant's name. All of those readers now resolve `getCompanyInfo(orgId)`
+ * for the tenant they are actually serving, so nothing needs the global —
+ * and writing it would only re-create the leak.
+ *
+ * `RESUPPLY_PRACTICE_NAME` survives as an OPERATOR-set variable: an
+ * unconfigured deployment's default identity, read by `envFallbackInfo()`
+ * for the seed/default tenant only. Nothing writes it any more.
+ *
+ * What is still needed here is the CACHE: `getCompanyInfoSync()` (and
+ * therefore `applyCompanyIdentityToText`) answers from the seed entry
+ * without a DB round-trip, so boot and the periodic refresh keep it warm.
+ * Fail-soft; never throws.
  */
-export async function applyCompanyInfoToEnv(): Promise<{
+export async function hydrateCompanyInfoCache(): Promise<{
   applied: boolean;
 }> {
   const info = await getCompanyInfo();
-  if (info.source !== "database") return { applied: false };
-  process.env.RESUPPLY_PRACTICE_NAME = info.name;
-  // Keep the email From-name aliased to the brand name unless the
-  // operator explicitly set a distinct SENDGRID_FROM_NAME in the env.
-  if (!initialEnvFromName || initialEnvFromName === initialEnvPracticeName) {
-    process.env.SENDGRID_FROM_NAME = info.name;
-  }
-  return { applied: true };
+  return { applied: info.source === "database" };
 }
 
 /** Test-only: reset module state between cases. */

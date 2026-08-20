@@ -22,6 +22,13 @@
 import { route, type DemoHandler } from "../types";
 import { json } from "../respond";
 import { daysAgo, hoursAgo, NOW_ISO } from "../fixtures/dates";
+import {
+  DEMO_DOMAIN,
+  DEMO_LEGAL_NAME,
+  DEMO_LOGO_URL,
+  DEMO_STOREFRONT_NAME,
+  DEMO_TAGLINE,
+} from "../brand";
 
 // ── Feature flags (Control Center) ─────────────────────────────────
 // Mirrors GET /admin/feature-flags → { flags: FeatureFlag[] } and
@@ -77,13 +84,14 @@ const FEATURE_FLAG_SEED: Array<
   {
     key: "storefront.chatbot",
     enabled: true,
-    description: "Storefront chatbot (PennBot) on the public shop.",
+    description:
+      "Storefront chatbot (CareMetric Assistant) on the public shop.",
     category: "Storefront",
   },
   {
     key: "admin.assistant",
     enabled: true,
-    description: "In-app admin assistant (PennPilot) widget.",
+    description: "In-app admin assistant (CareMetric Copilot) widget.",
     category: "Admin",
   },
   {
@@ -258,7 +266,7 @@ function demoAlerts() {
           demoAlertMessage(
             "voice",
             null,
-            "Hi {{first_name}}, this is Penn Home Medical Supply calling about your CPAP resupply.",
+            "Hi {{first_name}}, this is CareMetric Demo DME calling about your CPAP resupply.",
           ),
         ],
       },
@@ -303,7 +311,7 @@ function demoAlerts() {
           demoAlertMessage(
             "sms",
             null,
-            "Your Penn Home Medical Supply order shipped! Track: {{tracking_url}}",
+            "Your CareMetric Demo DME order shipped! Track: {{tracking_url}}",
           ),
         ],
       },
@@ -360,7 +368,7 @@ function demoMessageTemplates() {
       demoTemplate(
         "welcome.onboarding",
         "email",
-        "Welcome to Penn Home Medical Supply",
+        "Welcome to CareMetric Demo DME",
         "Welcome {{first_name}}! Here's everything you need to get started with your therapy.",
         ["first_name"],
       ),
@@ -534,16 +542,17 @@ function demoTeam() {
 }
 
 // ── Storefront branding ────────────────────────────────────────────
-// GET /admin/storefront-branding → viewOf() shape (tenant = PennPaps).
+// GET /admin/storefront-branding → viewOf() shape. Same identity the
+// public GET /api/storefront-branding serves — both read ../brand.
 
 function demoStorefrontBranding() {
   return {
-    storefrontName: "PennPaps",
-    legalName: "Penn Home Medical Supply",
-    tagline: "CPAP supplies, delivered on your schedule.",
-    logoUrl: null,
+    storefrontName: DEMO_STOREFRONT_NAME,
+    legalName: DEMO_LEGAL_NAME,
+    tagline: DEMO_TAGLINE,
+    logoUrl: DEMO_LOGO_URL,
     domain: {
-      host: "pennpaps.com",
+      host: DEMO_DOMAIN,
       status: "verified" as const,
       verifiedAt: daysAgo(45),
       instructions: null,
@@ -873,7 +882,7 @@ function demoPatientAccessLog() {
 // ── Tenant System Configuration (app-config) ───────────────────────
 // GET /admin/system/config → { categories, overlayDisabled, ... }.
 // Surfaces tenant-scoped settings; the seed tenant keeps its
-// PennBot/PennPilot assistant names.
+// CareMetric Assistant/CareMetric Copilot assistant names.
 
 function demoConfigSetting(
   key: string,
@@ -904,13 +913,13 @@ function demoSystemConfig() {
           demoConfigSetting(
             "RESUPPLY_ASSISTANT_STOREFRONT_NAME",
             "Storefront chatbot name",
-            "PennBot",
+            "CareMetric Assistant",
             { updated: true },
           ),
           demoConfigSetting(
             "RESUPPLY_ASSISTANT_ADMIN_NAME",
             "Admin assistant name",
-            "PennPilot",
+            "CareMetric Copilot",
             { updated: true },
           ),
         ],
@@ -921,7 +930,7 @@ function demoSystemConfig() {
           demoConfigSetting(
             "RESMED_AIRVIEW_USERNAME",
             "ResMed AirView username",
-            "pennpaps-airview",
+            "demo-airview",
           ),
           demoConfigSetting(
             "RESMED_AIRVIEW_PASSWORD",
@@ -943,7 +952,7 @@ function demoSystemConfig() {
           demoConfigSetting(
             "OFFICE_ALLY_SFTP_USERNAME",
             "Office Ally SFTP username",
-            "pennpaps-oa",
+            "demo-oa",
           ),
           demoConfigSetting(
             "OFFICE_ALLY_SFTP_PASSWORD",
@@ -996,11 +1005,11 @@ function demoEmailSettings(overrides?: {
   const fromEmail =
     overrides && "fromEmail" in overrides
       ? (overrides.fromEmail ?? null)
-      : "info@pennpaps.com";
+      : "info@demo.example";
   const fromName =
     overrides && "fromName" in overrides
       ? (overrides.fromName ?? null)
-      : "Penn Home Medical Supply";
+      : "CareMetric Demo DME";
   return {
     fromEmail,
     fromName,

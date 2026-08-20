@@ -614,7 +614,7 @@ export const APP_CONFIG_CATALOG: readonly AppConfigSetting[] = [
     secret: false,
     applyMode: "live",
     description: "Sender / return-to name printed on every label.",
-    placeholder: "Penn Home Medical Supply",
+    placeholder: "Your practice name",
   },
   {
     key: "XPS_SHIP_FROM_COMPANY",

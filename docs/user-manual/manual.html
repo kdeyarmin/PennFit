@@ -2,10 +2,10 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>PennPaps Customer Service Manual</title>
+    <title>CareMetric Breathe Customer Service Manual</title>
     <style>
       /* ────────────────────────────────────────────────────────────────
-       * PennPaps "Obsidian Aurum" palette — kept in lockstep with
+       * CareMetric Breathe "Obsidian Aurum" palette — kept in lockstep with
        * artifacts/cpap-fitter/src/admin.css so the mockup screenshots
        * read as authentic captures of the real admin console.
        * ──────────────────────────────────────────────────────────── */
@@ -47,8 +47,8 @@
         size: Letter;
         margin: 0.6in 0.7in 0.7in 0.7in;
         @bottom-center {
-          content: "PennPaps Customer Service Manual · " counter(page) " / "
-            counter(pages);
+          content: "CareMetric Breathe Customer Service Manual · " counter(page)
+            " / " counter(pages);
           font-family: "Inter", "Helvetica Neue", Arial, sans-serif;
           font-size: 9pt;
           color: hsl(220 14% 44%);
@@ -785,12 +785,12 @@
          ════════════════════════════════════════════════════════════ -->
     <section class="cover">
       <div>
-        <div class="cover-mark">PennPaps · Penn Home Medical Supply</div>
+        <div class="cover-mark">CareMetric Breathe</div>
         <div class="cover-mark-rule"></div>
         <h1 class="cover-title">Customer<br />Service<br />Manual</h1>
         <div class="cover-subtitle">
-          A complete operator's guide to the PennPaps platform — the most
-          patient-friendly CPAP supply experience on the market.
+          A complete operator's guide to the CareMetric Breathe platform — the
+          most patient-friendly CPAP supply experience on the market.
         </div>
       </div>
       <div class="cover-meta">
@@ -801,11 +801,11 @@
         </div>
         <div>
           <strong>Edition</strong>
-          May 2026 · v1.0<br />Issued by Penn Home Medical Supply
+          May 2026 · v1.0<br />Issued by CareMetric Breathe
         </div>
       </div>
       <div class="cover-emblem">
-        <span>EST<br />· 2025 ·<br />PENN</span>
+        <span>EST<br />· 2025 ·<br />CMB</span>
       </div>
     </section>
 
@@ -816,14 +816,14 @@
       <span class="section-tag">Welcome</span>
       <h2 style="border: 0; margin-top: 4pt">About this manual</h2>
       <p>
-        This manual is the canonical reference for everyone on the Penn Home
-        Medical Supply customer service team. It walks you through every screen
-        of the PennPaps admin console, every customer-facing flow on the
+        This manual is the canonical reference for everyone on a CareMetric
+        Breathe customer service team. It walks you through every screen of the
+        CareMetric Breathe admin console, every customer-facing flow on the
         storefront, and the policies behind both. Read it in order on day one;
         keep it on your second monitor after that.
       </p>
       <p>
-        PennPaps is built on a single guiding principle:
+        CareMetric Breathe is built on a single guiding principle:
         <strong>patients get answers in seconds, not days</strong>. Every
         workflow in this document is designed so you can resolve a question on
         the first contact — whether it arrives by phone, SMS, email, web chat,
@@ -846,7 +846,7 @@
             <span>1 · Platform overview</span><span class="num">p. 04</span>
           </li>
           <li class="h3">
-            <span>1.1 · The four jobs PennPaps does</span
+            <span>1.1 · The four jobs CareMetric Breathe does</span
             ><span class="num">04</span>
           </li>
           <li class="h3">
@@ -955,10 +955,11 @@
       <span class="section-tag">Chapter 1</span>
       <h2 style="border: 0; margin-top: 4pt">Platform overview</h2>
 
-      <h3>1.1 · The four jobs PennPaps does</h3>
+      <h3>1.1 · The four jobs CareMetric Breathe does</h3>
       <p>
-        PennPaps is one product with four tightly-integrated jobs. Knowing which
-        "job" a customer is in is the single fastest way to solve their problem.
+        CareMetric Breathe is one product with four tightly-integrated jobs.
+        Knowing which "job" a customer is in is the single fastest way to solve
+        their problem.
       </p>
       <table class="spec">
         <thead>
@@ -1017,7 +1018,7 @@
       <p>
         All four jobs ship as
         <strong>one customer-facing site</strong>
-        (<code>pennfit.up.railway.app</code>) and
+        (your storefront domain) and
         <strong>one internal admin console</strong> mounted at
         <code>/admin/*</code>. There is no separate dashboard URL to remember
         and no second SPA to load — whatever a customer sees, you can see (and
@@ -1030,12 +1031,12 @@
           <span class="shot-dot r"></span>
           <span class="shot-dot y"></span>
           <span class="shot-dot g"></span>
-          <span class="shot-url">https://pennfit.up.railway.app/</span>
+          <span class="shot-url">https://yourstorefront.com/</span>
         </div>
         <div class="shot-body no-side">
           <div>
             <div class="topbar">
-              <span class="brand">PennPaps</span>
+              <span class="brand">CareMetric Breathe</span>
               <a>Mask Fitter</a><a>Shop</a><a>Insurance</a><a>How it works</a
               ><a>FAQ</a>
               <span style="flex: 1"></span>
@@ -1053,7 +1054,7 @@
                 min-height: 220pt;
               "
             >
-              <span class="section-tag">For Penn-area sleep patients</span>
+              <span class="section-tag">For sleep patients in your area</span>
               <h3 class="page-title" style="font-size: 22pt; margin-top: 6pt">
                 Find the mask that finally fits — in 3 minutes, on your phone.
               </h3>
@@ -1185,7 +1186,7 @@
 
       <h3>2.1 · Storefront &amp; mask fitter</h3>
       <p>
-        Patients arrive at <code>pennfit.up.railway.app</code> from search,
+        Patients arrive at <strong>your storefront domain</strong> from search,
         sleep-study referrals, and our doctor partner network. The home page
         gives them three doors: <strong>start the fitter</strong>,
         <strong>browse the shop</strong>, or <strong>check insurance</strong>.
@@ -1231,12 +1232,12 @@
           <span class="shot-dot r"></span>
           <span class="shot-dot y"></span>
           <span class="shot-dot g"></span>
-          <span class="shot-url">https://pennfit.up.railway.app/results</span>
+          <span class="shot-url">https://yourstorefront.com/results</span>
         </div>
         <div class="shot-body no-side">
           <div>
             <div class="topbar">
-              <span class="brand">PennPaps</span>
+              <span class="brand">CareMetric Breathe</span>
               <a>Mask Fitter</a><a>Shop</a><a>Insurance</a><a>FAQ</a>
               <span style="flex: 1"></span>
               <span class="pill emerald">Step 5 of 5 · Results</span>
@@ -1417,11 +1418,11 @@
           <span class="shot-dot r"></span>
           <span class="shot-dot y"></span>
           <span class="shot-dot g"></span>
-          <span class="shot-url">https://pennfit.up.railway.app/admin</span>
+          <span class="shot-url">https://cmbreathe.com/admin</span>
         </div>
         <div class="shot-body">
           <div class="shot-side">
-            <div class="brand">PennPaps</div>
+            <div class="brand">CareMetric Breathe</div>
             <div class="group">Inbox</div>
             <div class="nav">
               <a class="active">Dashboard</a>
@@ -1551,12 +1552,12 @@
           <span class="shot-dot y"></span>
           <span class="shot-dot g"></span>
           <span class="shot-url"
-            >https://pennfit.up.railway.app/admin/conversations?status=awaiting_admin</span
+            >https://cmbreathe.com/admin/conversations?status=awaiting_admin</span
           >
         </div>
         <div class="shot-body">
           <div class="shot-side">
-            <div class="brand">PennPaps</div>
+            <div class="brand">CareMetric Breathe</div>
             <div class="group">Inbox</div>
             <div class="nav">
               <a>Dashboard</a>
@@ -1682,12 +1683,12 @@
           <span class="shot-dot y"></span>
           <span class="shot-dot g"></span>
           <span class="shot-url"
-            >https://pennfit.up.railway.app/admin/conversations/CV-7741</span
+            >https://cmbreathe.com/admin/conversations/CV-7741</span
           >
         </div>
         <div class="shot-body">
           <div class="shot-side">
-            <div class="brand">PennPaps</div>
+            <div class="brand">CareMetric Breathe</div>
             <div class="group">Inbox</div>
             <div class="nav">
               <a>Dashboard</a>
@@ -1720,15 +1721,15 @@
               <div class="thread-col">
                 <h5>Thread · 6 messages</h5>
                 <div class="msg out">
-                  <span class="from">PennPaps · 2d ago</span>Time for your
-                  monthly resupply, M.! Reply YES to ship the F30i (med).
+                  <span class="from">CareMetric Breathe · 2d ago</span>Time for
+                  your monthly resupply, M.! Reply YES to ship the F30i (med).
                 </div>
                 <div class="msg">
                   <span class="from">M. Alvarez · 2d ago</span>YES
                 </div>
                 <div class="msg out">
-                  <span class="from">PennPaps · 2d ago</span>Got it — shipping
-                  today, tracking by tomorrow. ✨
+                  <span class="from">CareMetric Breathe · 2d ago</span>Got it —
+                  shipping today, tracking by tomorrow. ✨
                 </div>
                 <div class="msg">
                   <span class="from">M. Alvarez · 12m ago</span>Mask leaks at
@@ -1845,12 +1846,12 @@
           <span class="shot-dot r"></span><span class="shot-dot y"></span
           ><span class="shot-dot g"></span>
           <span class="shot-url"
-            >https://pennfit.up.railway.app/admin/episodes?status=overdue</span
+            >https://cmbreathe.com/admin/episodes?status=overdue</span
           >
         </div>
         <div class="shot-body">
           <div class="shot-side">
-            <div class="brand">PennPaps</div>
+            <div class="brand">CareMetric Breathe</div>
             <div class="group">Inbox</div>
             <div class="nav">
               <a>Dashboard</a><a>Conversations</a><a class="active">Episodes</a
@@ -1954,8 +1955,8 @@
       <div class="callout warn">
         <strong>PHI handling.</strong> Don't paste patient names, phone numbers,
         prescriptions, or carrier IDs into Slack, email, screenshot tools, or
-        anything not behind PennPaps SSO. The audit log records every page view
-        that surfaces PHI; pasting it elsewhere will not.
+        anything not behind CareMetric Breathe SSO. The audit log records every
+        page view that surfaces PHI; pasting it elsewhere will not.
       </div>
 
       <h3>3.5 · Follow-ups, canned replies, macros</h3>
@@ -2001,7 +2002,7 @@
         </thead>
         <tbody>
           <tr>
-            <td><code>/admin/pennpaps/orders</code></td>
+            <td><code>/admin/fitter/orders</code></td>
             <td>
               Every Stripe-checkout order with status, tracking, fulfillment
               notes.
@@ -2030,12 +2031,12 @@
           <span class="shot-dot r"></span><span class="shot-dot y"></span
           ><span class="shot-dot g"></span>
           <span class="shot-url"
-            >https://pennfit.up.railway.app/admin/pennpaps/orders/ORD-9482</span
+            >https://cmbreathe.com/admin/fitter/orders/ORD-9482</span
           >
         </div>
         <div class="shot-body">
           <div class="shot-side">
-            <div class="brand">PennPaps</div>
+            <div class="brand">CareMetric Breathe</div>
             <div class="group">Orders &amp; Shop</div>
             <div class="nav">
               <a class="active">Orders</a><a>Subscriptions</a
@@ -2115,7 +2116,7 @@
               <strong>May 02 14:12</strong> · Marked delivered (USPS scan).
             </div>
             <div class="msg" style="font-size: 7.5pt">
-              <strong>May 01 09:34</strong> · Shipped (label printed by Penn
+              <strong>May 01 09:34</strong> · Shipped (label printed by
               Fulfillment).
             </div>
             <div class="msg" style="font-size: 7.5pt">
@@ -2165,7 +2166,7 @@
           <strong>Reviews</strong> (<code>/admin/shop/reviews</code>) —
           moderation queue for product reviews. Approve, reply publicly, or
           hide. Replies email the reviewer through the shared SendGrid client
-          (one From address: <code>info@pennpaps.com</code>).
+          (from your tenant's own configured From address).
         </li>
         <li>
           <strong>Product Q&amp;A</strong>
@@ -2326,7 +2327,7 @@
       <h4>Scenario C · "I never got my order"</h4>
       <ol class="steps">
         <li>
-          Look up the order in <code>/admin/pennpaps/orders</code>. Check the
+          Look up the order in <code>/admin/fitter/orders</code>. Check the
           tracking link.
         </li>
         <li>
@@ -2512,7 +2513,7 @@
           padding-top: 10pt;
         "
       >
-        Penn Home Medical Supply · pennfit.up.railway.app · info@pennpaps.com<br />
+        CareMetric Breathe · cmbreathe.com · support@cmbreathe.com<br />
         Manual edition May 2026 · written for the v1 admin console
         (post-consolidation, single-storefront era).
       </p>

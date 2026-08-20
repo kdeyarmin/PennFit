@@ -72,7 +72,7 @@ export const refundsJournalReport: ReportModule = {
         setDownloadHeaders(
           res,
           "text/csv; charset=utf-8",
-          `pennpaps-refunds-${rangeSlug(from, to)}.csv`,
+          `refunds-${rangeSlug(from, to)}.csv`,
         );
         writeRefundsCsv(res, rows);
       },
@@ -96,7 +96,7 @@ export const refundsJournalReport: ReportModule = {
         const pdf = await renderTablePdf({
           title: "Refunds journal",
           range: rangeLabel(from, to),
-          practiceName: practiceName(),
+          practiceName: await practiceName(orgId),
           columns: [
             { label: "Return #", width: 100 },
             { label: "Order #", width: 100 },
@@ -121,7 +121,7 @@ export const refundsJournalReport: ReportModule = {
         setDownloadHeaders(
           res,
           "application/pdf",
-          `pennpaps-refunds-${rangeSlug(from, to)}.pdf`,
+          `refunds-${rangeSlug(from, to)}.pdf`,
         );
         res.setHeader("Content-Length", String(pdf.length));
         res.end(pdf);
@@ -147,7 +147,7 @@ export const refundsJournalReport: ReportModule = {
     const pdf = await renderTablePdf({
       title: "Refunds journal",
       range: rangeLabel(from, to),
-      practiceName: practiceName(),
+      practiceName: await practiceName(orgId),
       columns: [
         { label: "Return #", width: 100 },
         { label: "Resolved", width: 90 },

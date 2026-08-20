@@ -109,7 +109,7 @@ async function buildReportArtifact(
       const iif = await renderIifWithAccounts(orgId, {
         from: fromIso,
         to: toIso,
-        practiceName: practiceName(),
+        practiceName: await practiceName(orgId),
         rows,
       });
       return {
@@ -121,7 +121,7 @@ async function buildReportArtifact(
     const csv = renderQboCsv({
       from: fromIso,
       to: toIso,
-      practiceName: practiceName(),
+      practiceName: await practiceName(orgId),
       rows,
     });
     return {
@@ -219,15 +219,19 @@ export function registerEmailRoute(router: IRouter): void {
         throw err;
       }
 
-      const filename = `pennpaps-${slug}-${rangeSlug(from, effectiveTo)}.${artifact.filenameExt}`;
-      const subject = `[${practiceName()}] ${slug} report — ${rangeLabel(from, effectiveTo)}`;
+      const filename = `${slug}-${rangeSlug(from, effectiveTo)}.${artifact.filenameExt}`;
+      // Resolved once: this is a per-tenant lookup, and the subject and
+      // both signatures must name the same practice even if the tenant's
+      // branding changes mid-request.
+      const sender = await practiceName(orgId);
+      const subject = `[${sender}] ${slug} report — ${rangeLabel(from, effectiveTo)}`;
       const notePara = note ? `<p>${escapeHtml(note)}</p>` : "";
       const html = [
         `<p>Hi,</p>`,
         `<p>Attached is the <strong>${escapeHtml(slug)}</strong> report for the period <strong>${escapeHtml(rangeLabel(from, effectiveTo))}</strong>, generated as <strong>${escapeHtml(format)}</strong>.</p>`,
         notePara,
         `<p>Requested by ${escapeHtml(req.adminEmail ?? "an admin")}.</p>`,
-        `<p>— ${escapeHtml(practiceName())}</p>`,
+        `<p>— ${escapeHtml(sender)}</p>`,
       ]
         .filter(Boolean)
         .join("\n");
@@ -239,7 +243,7 @@ export function registerEmailRoute(router: IRouter): void {
         ``,
         `Requested by ${req.adminEmail ?? "an admin"}.`,
         ``,
-        `— ${practiceName()}`,
+        `— ${sender}`,
       ].join("\n");
 
       try {

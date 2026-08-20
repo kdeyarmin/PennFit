@@ -11,8 +11,8 @@
 //   * /shop/me/chat                   (POST — SSE customer assistant)
 //   * /shop/orders/mask-fit           (POST — public micro-survey)
 //
-// Everything here is fictional demo data for the Penn Home Medical
-// Supply / PennPaps tenant — no real PHI. Shapes mirror the live route
+// Everything here is fictional demo data for the CareMetric Demo DME
+// sandbox tenant — no real PHI. Shapes mirror the live route
 // handlers under artifacts/resupply-api/src/routes/shop/*. Reads return
 // realistic fixtures; prominent mutations return a benign success so
 // the UI advances. Dates are computed fresh via the shared date helpers
@@ -190,7 +190,7 @@ const FORM_ACK_FIXTURE = [
   {
     kind: "hipaa_npp",
     title: "Notice of Privacy Practices",
-    body: "Penn Home Medical Supply respects the privacy of your health information. This notice describes how your information may be used and disclosed and how you can access it. (Demo copy.)",
+    body: "CareMetric Demo DME respects the privacy of your health information. This notice describes how your information may be used and disclosed and how you can access it. (Demo copy.)",
     currentVersion: "2026-01-01",
     lastSignedVersion: "2026-01-01",
     lastSignedAt: daysAgo(30),
@@ -199,7 +199,7 @@ const FORM_ACK_FIXTURE = [
   {
     kind: "aob",
     title: "Assignment of Benefits",
-    body: "I authorize my insurance benefits to be paid directly to Penn Home Medical Supply for equipment and supplies furnished to me. (Demo copy.)",
+    body: "I authorize my insurance benefits to be paid directly to CareMetric Demo DME for equipment and supplies furnished to me. (Demo copy.)",
     currentVersion: "2026-01-01",
     lastSignedVersion: "2026-01-01",
     lastSignedAt: daysAgo(30),
@@ -226,7 +226,7 @@ const FORM_ACK_FIXTURE = [
   {
     kind: "supplier_standards",
     title: "Medicare DMEPOS Supplier Standards",
-    body: "Penn Home Medical Supply meets the Medicare DMEPOS supplier standards. A copy is available on request. (Demo copy.)",
+    body: "CareMetric Demo DME meets the Medicare DMEPOS supplier standards. A copy is available on request. (Demo copy.)",
     currentVersion: "2026-01-01",
     lastSignedVersion: "2026-01-01",
     lastSignedAt: daysAgo(30),

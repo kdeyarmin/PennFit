@@ -21,8 +21,8 @@
 //
 // DATA RULES: everything here is fictional demo data — obviously-fake
 // patient/physician names, demo ids, 555 phones, fake fax numbers.
-// Platform = CareMetric Breathe; tenant = Penn Home Medical Supply
-// (pennpaps.com). Fresh relative dates via helpers. Money in cents.
+// Platform = CareMetric Breathe; tenant = CareMetric Demo DME
+// (demo.example). Fresh relative dates via helpers. Money in cents.
 // NO real PHI.
 
 import { route, type DemoHandler } from "../types";
@@ -30,7 +30,7 @@ import { json } from "../respond";
 import { daysAgo, dateOnly } from "../fixtures/dates";
 
 // ── Public storefront origin used in demo-returned links. ─────────────
-const DEMO_BASE = "https://pennpaps.com";
+const DEMO_BASE = "https://demo.example";
 
 // ── Payer profiles (payer-profiles.ts) ────────────────────────────────
 // The catalog of PA payers. The SPA list filters on display_name / region

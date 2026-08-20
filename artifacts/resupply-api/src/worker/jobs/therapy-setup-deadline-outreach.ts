@@ -113,9 +113,21 @@ function readPrefs(raw: unknown): CommunicationPreferences {
   };
 }
 
+/**
+ * The env-derived half of {@link SmsSendConfig} — everything EXCEPT the
+ * practice name, which is per-TENANT and resolved by the sweep below.
+ *
+ * `practiceName` used to be read here from `RESUPPLY_PRACTICE_NAME`, which
+ * `applyCompanyInfoToEnv()` folds to the SEED tenant's name at boot. Any
+ * send that fell back to the library's default body would then have gone
+ * out under the seed tenant's brand. Omitting it here makes that a COMPILE
+ * error: the caller must supply the name it resolved for this tenant.
+ */
+type PlatformSmsConfig = Omit<SmsSendConfig, "practiceName">;
+
 function readSmsConfig(
   env: NodeJS.ProcessEnv = process.env,
-): SmsSendConfig | null {
+): PlatformSmsConfig | null {
   const publicBaseUrl = (
     env.RESUPPLY_VOICE_PUBLIC_BASE_URL ??
     (env.RAILWAY_PUBLIC_DOMAIN ? `https://${env.RAILWAY_PUBLIC_DOMAIN}` : "")
@@ -134,7 +146,6 @@ function readSmsConfig(
     twilioPhoneNumber: env.TWILIO_PHONE_NUMBER,
     twilioMessagingServiceSid: env.TWILIO_MESSAGING_SERVICE_SID,
     publicBaseUrl,
-    practiceName: env.RESUPPLY_PRACTICE_NAME ?? "CareMetric Breathe",
   };
 }
 
@@ -221,9 +232,18 @@ async function setupDeadlineOutreachForOrg(
     (await isFeatureEnabled("therapy_fleet.auto_outreach", orgId)) &&
     (await isFeatureEnabled("sms.reminders", orgId));
   const baseCfg = outreachOn ? readSmsConfig() : null;
+  // Brand every outbound message with THIS tenant's own name: the copy
+  // composed below AND the library's default body, which reads
+  // `cfg.practiceName`. Resolved once per tenant sweep. getCompanyInfo
+  // gives the tenant's saved name, the neutral CareMetric Breathe identity
+  // for an unconfigured tenant, and the seed brand for the seed org — so
+  // single-tenant copy is unchanged.
+  const practiceName = (await getCompanyInfo(orgId)).name;
   // Send under the tenant's own number / Messaging Service when it has
   // one (G7); falls back to the platform default otherwise.
-  const cfg = baseCfg ? await applyTenantSmsFrom(orgId, baseCfg) : null;
+  const cfg: SmsSendConfig | null = baseCfg
+    ? await applyTenantSmsFrom(orgId, { ...baseCfg, practiceName })
+    : null;
 
   const setups = await supabase
     .raw()
@@ -242,13 +262,6 @@ async function setupDeadlineOutreachForOrg(
   // Compute the message plan for each patient (pure). This also lets the
   // job report `eligible` even when outreach is off (visibility for the
   // operator deciding whether to enable the flag).
-  // Brand the patient-facing copy with THIS tenant's own name. cfg.practiceName
-  // comes from the process-global RESUPPLY_PRACTICE_NAME (the seed brand) and
-  // must never appear in a non-seed tenant's patient SMS; getCompanyInfo(orgId)
-  // resolves the tenant's own name (the neutral CareMetric Breathe identity for
-  // an unconfigured tenant, the seed brand for the seed org — single-tenant
-  // copy is unchanged).
-  const practiceName = (await getCompanyInfo(orgId)).name;
   const planned: Array<{ patientId: string; body: string }> = [];
   for (const r of rows) {
     const body = planDeadlineOutreach(

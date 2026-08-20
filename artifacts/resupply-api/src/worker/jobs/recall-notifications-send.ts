@@ -94,9 +94,22 @@ interface MessagingConfig {
  *  when channel-specific creds are absent — callers branch on
  *  presence so the worker still runs (and surfaces 'skipped' rows)
  *  in dev environments without Twilio / SendGrid. */
+/**
+ * The env-derived half of {@link MessagingConfig} — everything EXCEPT the
+ * practice name.
+ *
+ * `practiceName` is deliberately absent. It used to be read here from
+ * `RESUPPLY_PRACTICE_NAME`, which `applyCompanyInfoToEnv()` folds to the
+ * SEED tenant's name at boot — so every tenant's patient-facing copy went
+ * out under the seed tenant's brand. Omitting it from this type makes that
+ * a COMPILE error rather than a silent leak: the per-tenant sweep must
+ * supply the name it resolved for the tenant it is sweeping.
+ */
+export type PlatformMessagingConfig = Omit<MessagingConfig, "practiceName">;
+
 export function readRecallMessagingConfig(
   env: NodeJS.ProcessEnv = process.env,
-): MessagingConfig {
+): PlatformMessagingConfig {
   return {
     sendgridApiKey: env.SENDGRID_API_KEY ?? null,
     sendgridFromEmail:
@@ -106,7 +119,6 @@ export function readRecallMessagingConfig(
     twilioAuthToken: env.TWILIO_AUTH_TOKEN ?? null,
     twilioPhoneNumber: env.TWILIO_PHONE_NUMBER ?? null,
     twilioMessagingServiceSid: env.TWILIO_MESSAGING_SERVICE_SID ?? null,
-    practiceName: env.RESUPPLY_PRACTICE_NAME ?? "CareMetric Breathe",
     publicBaseUrl:
       stripTrailingSlash(
         env.RESUPPLY_VOICE_PUBLIC_BASE_URL ??
@@ -296,7 +308,7 @@ let inFlightRecallSweep: Promise<SweepStats> | null = null;
 
 /** Run one sweep cycle. Exported for test injection. */
 export function runRecallSendSweep(
-  cfg: MessagingConfig = readRecallMessagingConfig(),
+  cfg: PlatformMessagingConfig = readRecallMessagingConfig(),
 ): Promise<SweepStats> {
   if (inFlightRecallSweep) return inFlightRecallSweep;
   const run = runRecallSendSweepInner(cfg).finally(() => {
@@ -307,7 +319,7 @@ export function runRecallSendSweep(
 }
 
 async function runRecallSendSweepInner(
-  cfg: MessagingConfig,
+  cfg: PlatformMessagingConfig,
 ): Promise<SweepStats> {
   const stats: SweepStats = { attempted: 0, sent: 0, failed: 0, skipped: 0 };
   // Fan out across every active tenant — recall_notifications,
@@ -331,7 +343,7 @@ async function runRecallSendSweepInner(
  */
 async function recallSendSweepForOrg(
   orgId: string,
-  baseCfg: MessagingConfig,
+  baseCfg: PlatformMessagingConfig,
   stats: SweepStats,
 ): Promise<void> {
   const supabase = getOrgScopedClient(orgId);

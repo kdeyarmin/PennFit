@@ -361,6 +361,12 @@ export function isWithinQuietHours(now: Date, timezone: string): boolean {
  * artifacts/resupply-api/), so we duplicate the env-presence check
  * here. Keep this in sync with `lib/messaging/messaging-config.ts`.
  */
+// `practiceName` is deliberately absent from both shapes below. It used to
+// be read from `RESUPPLY_PRACTICE_NAME`, which `applyCompanyInfoToEnv()`
+// folds to the SEED tenant's name at boot — so a reminder to any other
+// tenant's patient would have gone out under the seed brand. The per-job
+// send sites resolve `getCompanyInfo(orgId).name` and spread it in; leaving
+// it out of the type makes a missed site a COMPILE error.
 function readWorkerMessagingConfig(env: NodeJS.ProcessEnv = process.env): {
   sms: {
     twilioAccountSid: string;
@@ -368,18 +374,15 @@ function readWorkerMessagingConfig(env: NodeJS.ProcessEnv = process.env): {
     twilioPhoneNumber?: string;
     twilioMessagingServiceSid?: string;
     publicBaseUrl: string;
-    practiceName: string;
   } | null;
   email: {
     sendgridApiKey: string;
     sendgridFromEmail: string;
     sendgridFromName: string;
     publicBaseUrl: string;
-    practiceName: string;
   } | null;
   hmacKeysReady: boolean;
 } {
-  const practiceName = env.RESUPPLY_PRACTICE_NAME ?? "CareMetric Breathe";
   const publicBaseUrl = stripTrailingSlash(
     env.RESUPPLY_VOICE_PUBLIC_BASE_URL ??
       (env.RAILWAY_PUBLIC_DOMAIN ? `https://${env.RAILWAY_PUBLIC_DOMAIN}` : ""),
@@ -406,7 +409,6 @@ function readWorkerMessagingConfig(env: NodeJS.ProcessEnv = process.env): {
       twilioPhoneNumber: env.TWILIO_PHONE_NUMBER,
       twilioMessagingServiceSid: env.TWILIO_MESSAGING_SERVICE_SID,
       publicBaseUrl,
-      practiceName,
     };
   }
 
@@ -418,7 +420,6 @@ function readWorkerMessagingConfig(env: NodeJS.ProcessEnv = process.env): {
         env.SENDGRID_FROM_EMAIL?.trim() || DEFAULT_SENDGRID_FROM_EMAIL,
       sendgridFromName: env.SENDGRID_FROM_NAME,
       publicBaseUrl,
-      practiceName,
     };
   }
 

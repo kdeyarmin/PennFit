@@ -1,9 +1,15 @@
 // Miscellaneous public handlers: order tracking, resupply reminders,
-// the PennBot chatbot (streaming + JSON), NPS, newsletter, and the
+// the CareMetric Assistant chatbot (streaming + JSON), NPS, newsletter, and the
 // fire-and-forget analytics sink.
 
 import { route, type DemoHandler } from "../types";
 import { json, sseChat } from "../respond";
+import {
+  DEMO_LEGAL_NAME,
+  DEMO_LOGO_URL,
+  DEMO_STOREFRONT_NAME,
+  DEMO_TAGLINE,
+} from "../brand";
 import { demoTrackResult } from "../fixtures/orders";
 import { dateOnly } from "../fixtures/dates";
 
@@ -12,7 +18,7 @@ interface ChatMessage {
   content: string;
 }
 
-/** Build a friendly, demo-flavored PennBot reply for the chat surface. */
+/** Build a friendly, demo-flavored CareMetric Assistant reply for the chat surface. */
 function chatReply(messages: ChatMessage[] | undefined): string {
   const lastUser = [...(messages ?? [])]
     .reverse()
@@ -41,17 +47,17 @@ function chatHandler(req: Parameters<DemoHandler["handle"]>[0]): Response {
 
 export const miscHandlers: DemoHandler[] = [
   // Storefront branding. The demo is the *platform's* showcase, not the
-  // PennPaps tenant, so it must NOT inherit the bundled "PennPaps" /
-  // "Penn Home Medical Supply" fallback in lib/branding.ts. Return the
-  // CareMetric platform identity (and the CareMetric logo served from
-  // /breathe/) so the storefront header/footer AND the shared admin
-  // chrome (BrandHeader reads storefrontName) both read CareMetric.
+  // Penn Home Medical Supply tenant, so it must never serve that (or any
+  // other real customer's) brand. Return the CareMetric platform identity
+  // and logo so the storefront header/footer AND the shared admin chrome
+  // (BrandHeader reads storefrontName) both read CareMetric. Values come
+  // from ../brand — the sandbox has exactly one tenant identity.
   route("GET", "/api/storefront-branding", () =>
     json({
-      storefrontName: "CareMetric Breathe",
-      legalName: "CareMetric",
-      tagline: "Your CPAP, made simple. Fit. Shop. Resupply.",
-      logoUrl: "/breathe/caremetric-logo.png",
+      storefrontName: DEMO_STOREFRONT_NAME,
+      legalName: DEMO_LEGAL_NAME,
+      tagline: DEMO_TAGLINE,
+      logoUrl: DEMO_LOGO_URL,
       resolved: true,
     }),
   ),
@@ -125,7 +131,7 @@ export const miscHandlers: DemoHandler[] = [
     }),
   ),
 
-  // PennBot chatbot — public + signed-in.
+  // CareMetric Assistant chatbot — public + signed-in.
   route("POST", "/api/chat", (req) => chatHandler(req)),
   route("POST", "/resupply-api/shop/me/chat", (req) => chatHandler(req)),
 

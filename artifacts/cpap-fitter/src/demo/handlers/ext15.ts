@@ -22,8 +22,8 @@
 //   GET /conversations/:id/messages/:mid/attachments/:aid — it streams
 //   object-storage bytes; there is nothing meaningful to fixture.
 //
-// All data is fictional demo data — no real PHI. Tenant is Penn Home
-// Medical Supply (pennpaps.com); the platform is CareMetric Breathe.
+// All data is fictional demo data — no real PHI. Tenant is CareMetric
+// Demo DME (demo.example); the platform is CareMetric Breathe.
 // Provider NPIs are fake (1-prefixed, the NPI numbering convention).
 
 import { route, type DemoHandler } from "../types";
@@ -92,7 +92,7 @@ function demoEpisodeCounts() {
 // ── provider portal: identity ───────────────────────────────────────
 // GET /api/provider/me — the gate the SPA's ProviderPortalRoute runs.
 // `mfaEnrolled: true` so the demo lands on the queue (not the mandatory
-// MFA-setup redirect). Fake 1-prefixed NPI; Penn Home Medical Supply
+// MFA-setup redirect). Fake 1-prefixed NPI; CareMetric Demo DME
 // practice name.
 const DEMO_PROVIDER = {
   accountId: "demo-prov-acct-1",
@@ -100,7 +100,7 @@ const DEMO_PROVIDER = {
   providerId: "demo-prov-1",
   npi: "1457382906",
   legalName: "Dr. Demo Prescriber, MD",
-  practiceName: "Penn Home Medical Supply",
+  practiceName: "CareMetric Demo DME",
 };
 
 function demoProviderMe() {

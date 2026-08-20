@@ -47,7 +47,7 @@ and is regenerable.
 14. **Appendix** — role/permission matrix, competitive comparison, glossary.
 
 > This is distinct from `manual.html` / `render.mjs` in this same folder,
-> which build the shorter **PennPaps Customer Service Manual** PDF that staff
+> which build the shorter **CareMetric Breathe Customer Service Manual** PDF that staff
 > invite emails attach at runtime. Leave those as-is.
 
 ## Regenerating the PDF

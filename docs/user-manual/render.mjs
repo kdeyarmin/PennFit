@@ -1,4 +1,8 @@
-import { chromium } from "/home/user/PennFit/node_modules/.pnpm/playwright@1.59.1/node_modules/playwright/index.mjs";
+// Resolved from the workspace, not an absolute .pnpm store path pinned to
+// one Playwright version — that path went stale on the next dependency
+// bump and made this script unrunnable. `@playwright/test` re-exports
+// chromium and is the version the repo already pins.
+import { chromium } from "@playwright/test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, resolve } from "node:path";
 
@@ -11,12 +15,13 @@ const htmlPath = resolve(here, "manual.html");
 // deployed container. See artifacts/resupply-api/src/lib/help-docs/manual.ts.
 const pdfPath = resolve(
   here,
-  "../../artifacts/resupply-api/assets/user-manual/PennPaps-Customer-Service-Manual.pdf",
+  "../../artifacts/resupply-api/assets/user-manual/CareMetric-Breathe-Customer-Service-Manual.pdf",
 );
 
-const browser = await chromium.launch({
-  executablePath: "/opt/pw-browsers/chromium-1194/chrome-linux/chrome",
-});
+// PLAYWRIGHT_BROWSERS_PATH normally locates the browser; PW_CHROMIUM_PATH
+// overrides it for images that ship Chromium somewhere else.
+const executablePath = process.env.PW_CHROMIUM_PATH;
+const browser = await chromium.launch(executablePath ? { executablePath } : {});
 try {
   const ctx = await browser.newContext();
   const page = await ctx.newPage();

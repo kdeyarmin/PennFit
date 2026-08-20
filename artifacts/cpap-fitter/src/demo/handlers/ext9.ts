@@ -19,7 +19,7 @@
 //   - swo.ts (streams a PDF), *.csv reports, xps label.pdf (binary streams)
 //
 // DATA RULES: fictional demo data only. Platform = CareMetric Breathe; the
-// active tenant is Penn Home Medical Supply (pennpaps.com). Therapy-cloud
+// active tenant is CareMetric Demo DME (demo.example). Therapy-cloud
 // vendors are ResMed AirView / Philips Care Orchestrator / 3B React Health.
 // Money in cents. Realistic-but-synthetic clinical values. NO real PHI.
 
@@ -104,7 +104,7 @@ function stripeConnectStatus() {
     connected: true,
     chargesEnabled: true,
     // Obviously-fake demo account id — never a real acct_ key.
-    accountId: "acct_DEMO000PennHomeMedical",
+    accountId: "acct_DEMO000CareMetricDemo",
   };
 }
 
@@ -114,7 +114,7 @@ function systemIntegrationsStatus() {
   return {
     dmeIdentity: {
       source: "db",
-      organizationName: "Penn Home Medical Supply",
+      organizationName: "CareMetric Demo DME",
       configured: true,
     },
     clearinghouseOfficeAlly: {
@@ -183,7 +183,7 @@ function tenantSetupChecklist() {
       description:
         "Serve your storefront on your own domain instead of the platform subdomain. Verify by adding a DNS record.",
       status: "complete",
-      detail: "Verified: pennpaps.com.",
+      detail: "Verified: demo.example.",
       href: "/admin/storefront-branding",
       required: false,
     },
@@ -227,7 +227,7 @@ function tenantSetupChecklist() {
       description:
         "Send patient email from your own address. Requires authenticating your sending domain (SPF/DKIM) in SendGrid so mail isn't flagged as spam.",
       status: "complete",
-      detail: "Sending as info@pennpaps.com.",
+      detail: "Sending as info@demo.example.",
       href: "/admin/email-settings",
       required: true,
     },
@@ -410,14 +410,14 @@ export const ext9Handlers: DemoHandler[] = [
   route("POST", "/resupply-api/admin/billing/stripe-connect/start", () =>
     json({
       url: "https://connect.stripe.com/setup/e/demo_onboarding_link",
-      accountId: "acct_DEMO000PennHomeMedical",
+      accountId: "acct_DEMO000CareMetricDemo",
     }),
   ),
   route("POST", "/resupply-api/admin/billing/stripe-connect/refresh", () =>
     json({
       connected: true,
       chargesEnabled: true,
-      accountId: "acct_DEMO000PennHomeMedical",
+      accountId: "acct_DEMO000CareMetricDemo",
     }),
   ),
   route("POST", "/resupply-api/admin/billing/stripe-connect/disconnect", () =>

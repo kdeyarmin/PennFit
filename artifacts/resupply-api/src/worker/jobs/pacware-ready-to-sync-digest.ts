@@ -43,6 +43,7 @@ import {
   createQueueWithDlq,
   VENDOR_SEND_QUEUE_OPTS,
 } from "../lib/queue-options";
+import { getCompanyInfo } from "../../lib/company-info.js";
 
 export const PACWARE_DIGEST_JOB = "pacware.ready-to-sync-digest";
 
@@ -204,16 +205,17 @@ export async function runPacwareReadyToSyncDigest(
       skippedReason: "no_recipient",
     };
   }
-  const practiceName =
-    process.env.RESUPPLY_PRACTICE_NAME ?? "CareMetric Breathe";
-
   let sentCount = 0;
   let readyCount = 0;
   const fan = await forEachActiveOrg(
     async (orgId) => {
+      // Name the tenant the digest is ABOUT, resolved per org. This was the
+      // process-global RESUPPLY_PRACTICE_NAME (the seed tenant's name), so
+      // every tenant's digest arrived in the operator's inbox with the same
+      // subject line and no way to tell them apart.
       const result = await pacwareDigestForOrg(orgId, {
         recipient,
-        practiceName,
+        practiceName: (await getCompanyInfo(orgId)).name,
       });
       if (result.sent) {
         sentCount += 1;

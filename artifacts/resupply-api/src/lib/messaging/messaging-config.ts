@@ -48,23 +48,19 @@ export interface EmailConfig {
   publicBaseUrl: string;
 }
 
+// NOTE: there is deliberately no `practiceName` here.
+//
+// It used to be read from `RESUPPLY_PRACTICE_NAME`, which
+// `applyCompanyInfoToEnv()` folds to the SEED tenant's name at boot. Every
+// route below shares this one process-global, so a message sent on behalf
+// of ANY tenant carried the seed tenant's brand. The name is per-tenant
+// data: each caller resolves `getCompanyInfo(req.orgId)` and supplies it.
+// Keeping it off this type makes a missed caller a COMPILE error.
 export interface MessagingConfig {
   sms: SmsConfig;
   email: EmailConfig;
   hasLinkHmacKey: boolean;
-  /**
-   * Practice name baked into outbound SMS + email templates. Falls
-   * back to the CareMetric Breathe platform name when unset so an
-   * unconfigured tenant never inherits the seed (Penn) tenant's brand;
-   * a configured tenant's RESUPPLY_PRACTICE_NAME / org row wins.
-   */
-  practiceName: string;
 }
-
-// The platform default (mirrors PLATFORM_NAME in company-info.ts). NOT the
-// seed tenant's "PennPaps" — that is tenant data and must never be the
-// global fallback.
-const DEFAULT_PRACTICE_NAME = "CareMetric Breathe";
 
 export function readSmsConfigOrNull(
   env: NodeJS.ProcessEnv = process.env,
@@ -135,12 +131,7 @@ export function readMessagingConfigOrNull(
     sms,
     email,
     hasLinkHmacKey: true,
-    practiceName: env.RESUPPLY_PRACTICE_NAME ?? DEFAULT_PRACTICE_NAME,
   };
-}
-
-export function readPracticeName(env: NodeJS.ProcessEnv = process.env): string {
-  return env.RESUPPLY_PRACTICE_NAME ?? DEFAULT_PRACTICE_NAME;
 }
 
 function stripTrailingSlash(s: string): string {

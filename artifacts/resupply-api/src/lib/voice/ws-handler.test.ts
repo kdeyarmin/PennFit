@@ -109,9 +109,12 @@ describe("ws-handler — idempotent finalizeAndClose teardown", () => {
   it("runs finalize + Deepgram transcript + post-call summary from ONE place", () => {
     // Each side effect should be invoked from exactly one place now that
     // the three close paths share `finalizeAndClose` (no duplicated
-    // teardown). Match the call site (`void <fn>(`) so the helper's own
-    // local function definition doesn't count.
-    expect(SRC.split("void runPostCallSummary({").length - 1).toBe(1);
+    // teardown). Match the call site, not the local function definition:
+    // the summary is invoked as `await runPostCallSummary({` inside a
+    // detached `void (async () => …)()` (the tenant-name lookup it needs
+    // must not run on the hangup path), while the other two are still bare
+    // `void <fn>(` calls.
+    expect(SRC.split("await runPostCallSummary({").length - 1).toBe(1);
     expect(SRC.split("void writeDeepgramAuditTranscript(").length - 1).toBe(1);
     expect(SRC.split("void finalizeConversation(").length - 1).toBe(1);
   });

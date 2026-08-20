@@ -289,10 +289,10 @@ export const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             hint: "Send a curated one-off email / SMS / phone-call alert to a patient",
           },
           {
-            href: "/admin/pennpaps/reminders",
+            href: "/admin/fitter/reminders",
             label: "Reminders",
             icon: BellRing,
-            matchPrefix: "/admin/pennpaps/reminders",
+            matchPrefix: "/admin/fitter/reminders",
             hint: "Scheduled patient resupply reminders",
           },
           {
@@ -621,10 +621,10 @@ export const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             hint: "Paid storefront orders — look one up, set tracking, mark delivered, refund",
           },
           {
-            href: "/admin/pennpaps/orders",
+            href: "/admin/fitter/orders",
             label: "Fitter requests",
             icon: ScanFace,
-            matchPrefix: "/admin/pennpaps/orders",
+            matchPrefix: "/admin/fitter/orders",
             hint: "AI mask-fitter order requests — read-only log of submitted fittings",
           },
           {
@@ -1189,10 +1189,10 @@ export const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             hint: "Post-delivery NPS responses with comment tail",
           },
           {
-            href: "/admin/pennpaps/analytics",
+            href: "/admin/fitter/analytics",
             label: "Storefront Analytics",
             icon: BarChart3,
-            matchPrefix: "/admin/pennpaps/analytics",
+            matchPrefix: "/admin/fitter/analytics",
             hint: "Storefront traffic & revenue",
           },
         ],

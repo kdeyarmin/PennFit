@@ -55,9 +55,13 @@ export interface VoiceConfig {
    */
   streamBaseUrl: string;
   /**
-   * Optional override for the practice name baked into the system
-   * prompt. Defaults inside the route handler so a single env var
-   * controls branding for every outbound call.
+   * Practice name baked into the agent's system prompt.
+   *
+   * Set by the CALLER from the call's own tenant — it is no longer sourced
+   * from `RESUPPLY_PRACTICE_NAME`, which `applyCompanyInfoToEnv()` folds to
+   * the SEED tenant's name at boot: every tenant's voice agent introduced
+   * itself as the seed tenant. Left undefined the handler falls back to the
+   * platform name, never another tenant's.
    */
   practiceName?: string;
   /**
@@ -300,7 +304,6 @@ export function readVoiceConfigOrNull(
     twilioPhoneNumber: env.TWILIO_PHONE_NUMBER,
     publicBaseUrl,
     streamBaseUrl,
-    practiceName: env.RESUPPLY_PRACTICE_NAME,
     deepgramApiKey: env.DEEPGRAM_API_KEY,
     elevenLabsApiKey: env.ELEVENLABS_API_KEY?.trim() || undefined,
     elevenLabsVoiceId: env.ELEVENLABS_VOICE_ID?.trim() || undefined,

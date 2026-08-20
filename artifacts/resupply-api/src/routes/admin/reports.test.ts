@@ -1299,9 +1299,7 @@ describe("POST /admin/reports/email — happy path", () => {
     };
     expect(sendCall.to).toBe("accounting@example.com");
     expect(sendCall.attachments).toHaveLength(1);
-    expect(sendCall.attachments![0]!.filename).toMatch(
-      /^pennpaps-orders-.*\.csv$/,
-    );
+    expect(sendCall.attachments![0]!.filename).toMatch(/^orders-.*\.csv$/);
 
     expect(logAuditMock).toHaveBeenCalledOnce();
     const audit = logAuditMock.mock.calls[0]![0] as {
@@ -1335,7 +1333,7 @@ describe("POST /admin/reports/email — happy path", () => {
       attachments?: { filename: string }[];
     };
     expect(sendCall.attachments![0]!.filename).toMatch(
-      /^pennpaps-all-financial-.*\.iif$/,
+      /^all-financial-.*\.iif$/,
     );
   });
 

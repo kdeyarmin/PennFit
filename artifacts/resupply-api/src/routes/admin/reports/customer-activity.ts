@@ -213,7 +213,7 @@ export const customerActivityReport: ReportModule = {
         setDownloadHeaders(
           res,
           "text/csv; charset=utf-8",
-          `pennpaps-customer-activity-${rangeSlug(from, to)}.csv`,
+          `customer-activity-${rangeSlug(from, to)}.csv`,
         );
         writeCustomerActivityCsv(res, rows);
       },
@@ -239,7 +239,7 @@ export const customerActivityReport: ReportModule = {
         const pdf = await renderTablePdf({
           title: "Customer activity",
           range: rangeLabel(from, to),
-          practiceName: practiceName(),
+          practiceName: await practiceName(orgId),
           columns: [
             { label: "Day", width: 100 },
             { label: "New customers", width: 140, rightAlign: true },
@@ -271,7 +271,7 @@ export const customerActivityReport: ReportModule = {
         setDownloadHeaders(
           res,
           "application/pdf",
-          `pennpaps-customer-activity-${rangeSlug(from, to)}.pdf`,
+          `customer-activity-${rangeSlug(from, to)}.pdf`,
         );
         res.setHeader("Content-Length", String(pdf.length));
         res.end(pdf);
@@ -299,7 +299,7 @@ export const customerActivityReport: ReportModule = {
     const pdf = await renderTablePdf({
       title: "Customer activity",
       range: rangeLabel(from, to),
-      practiceName: practiceName(),
+      practiceName: await practiceName(orgId),
       columns: [
         { label: "Day", width: 100 },
         { label: "New customers", width: 140, rightAlign: true },

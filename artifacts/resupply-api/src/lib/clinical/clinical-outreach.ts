@@ -35,6 +35,7 @@ import { logger } from "../logger";
 import { applyTenantSmsFrom } from "../messaging/tenant-telecom";
 import { recordOutboundMessageUsage } from "../metering/usage";
 import { resolveBrandingByOrgId } from "../tenant-branding.js";
+import { getCompanyInfo, PLATFORM_NAME } from "../company-info";
 
 type SupabaseClient = ReturnType<typeof getOrgScopedClient>;
 
@@ -49,9 +50,23 @@ export interface OutreachMessagingConfig {
   practiceName: string;
 }
 
+/**
+ * The env-derived half of {@link OutreachMessagingConfig} — everything
+ * EXCEPT the practice name.
+ *
+ * `practiceName` used to be read here from `RESUPPLY_PRACTICE_NAME`, folded
+ * to the SEED tenant's name at boot. The sweep already overrides it with the
+ * tenant's storefront brand; omitting it from this return type means a
+ * caller that forgets to is a COMPILE error rather than a silent leak.
+ */
+export type PlatformOutreachConfig = Omit<
+  OutreachMessagingConfig,
+  "practiceName"
+>;
+
 export function readOutreachMessagingConfig(
   env: NodeJS.ProcessEnv = process.env,
-): OutreachMessagingConfig {
+): PlatformOutreachConfig {
   return {
     sendgridApiKey: env.SENDGRID_API_KEY ?? null,
     sendgridFromEmail:
@@ -61,9 +76,6 @@ export function readOutreachMessagingConfig(
     twilioAuthToken: env.TWILIO_AUTH_TOKEN ?? null,
     twilioPhoneNumber: env.TWILIO_PHONE_NUMBER ?? null,
     twilioMessagingServiceSid: env.TWILIO_MESSAGING_SERVICE_SID ?? null,
-    // Platform default (CareMetric Breathe), NOT the seed (Penn) tenant —
-    // a configured tenant's RESUPPLY_PRACTICE_NAME / org row wins.
-    practiceName: env.RESUPPLY_PRACTICE_NAME ?? "CareMetric Breathe",
   };
 }
 
@@ -246,7 +258,16 @@ export async function sendOneOutreach(
   target: OutreachTarget,
   deps: OutreachDeps = {},
 ): Promise<OutreachOutcome> {
-  const cfg = deps.cfg ?? readOutreachMessagingConfig();
+  // The batch sweep passes a cfg already branded for the tenant it is
+  // sweeping. On the direct-call path (unit tests, one-off sends) fall back
+  // to the env config plus this call's own tenant name — never the
+  // process-global RESUPPLY_PRACTICE_NAME, which is the seed tenant's.
+  const cfg: OutreachMessagingConfig = deps.cfg ?? {
+    ...readOutreachMessagingConfig(),
+    practiceName: deps.orgId
+      ? (await getCompanyInfo(deps.orgId)).name
+      : PLATFORM_NAME,
+  };
   const now = deps.now ?? new Date();
 
   const { data: patient } = await supabase

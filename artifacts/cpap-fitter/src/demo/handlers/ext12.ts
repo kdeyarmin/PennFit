@@ -18,7 +18,7 @@
 // DATA RULES: fictional demo data only — fake names ("Alex Demo",
 // "Jordan Sample"), demo ids, fresh relative dates via the date
 // helpers, money in integer cents. Platform = CareMetric Breathe;
-// tenant = Penn Home Medical Supply (pennpaps.com). Internally
+// tenant = CareMetric Demo DME (demo.example). Internally
 // consistent with the seeded product / order fixtures. NO real PHI.
 //
 // SKIPPED (already handled elsewhere, or non-JSON):
@@ -53,7 +53,7 @@ const addressValidationHandlers: DemoHandler[] = [
 // ── In-store pickup locations (pickup-locations.ts) ───────────────────
 // GET /resupply-api/shop/pickup-locations → { enabled, locations }
 // Pickup is offered in the demo so the cart shows the "Pick up in
-// store" choice. Locations are Penn Home Medical Supply storefronts.
+// store" choice. Locations are CareMetric Demo DME storefronts.
 const pickupLocationHandlers: DemoHandler[] = [
   route("GET", "/resupply-api/shop/pickup-locations", () =>
     json({
@@ -61,7 +61,7 @@ const pickupLocationHandlers: DemoHandler[] = [
       locations: [
         {
           id: "demo-pickup-1",
-          name: "Penn Home Medical Supply — Center City",
+          name: "CareMetric Demo DME — Center City",
           addressLine1: "1200 Market Street",
           addressLine2: "Suite 100",
           city: "Philadelphia",
@@ -72,7 +72,7 @@ const pickupLocationHandlers: DemoHandler[] = [
         },
         {
           id: "demo-pickup-2",
-          name: "Penn Home Medical Supply — King of Prussia",
+          name: "CareMetric Demo DME — King of Prussia",
           addressLine1: "160 N Gulph Road",
           addressLine2: null,
           city: "King of Prussia",
@@ -174,7 +174,7 @@ const referralHandlers: DemoHandler[] = [
 const QUARTERLY_FIELDS = {
   patientName: "Alex Demo",
   dateOfBirth: "1968-04-12",
-  practiceName: "Penn Home Medical Supply",
+  practiceName: "CareMetric Demo DME",
   windowStart: dateOnly(-90),
   windowEnd: dateOnly(0),
   nightsRecorded: 86,

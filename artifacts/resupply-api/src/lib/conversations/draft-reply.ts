@@ -12,8 +12,8 @@
 //   configured, so the composer degrades to manual typing.
 //
 // PHI posture:
-//   Message bodies ARE PHI. Before any text leaves PennPaps we run it
-//   through `redactPiiForOutbound` (the same scrubber the storefront
+//   Message bodies ARE PHI. Before any text leaves the platform we run
+//   it through `redactPiiForOutbound` (the same scrubber the storefront
 //   chatbot uses) — phones, emails, DOBs, and long id runs become
 //   `[redacted-*]` tokens. The patient's FIRST NAME is included for a
 //   warm reply (same posture as the macro merge tokens); nothing
@@ -28,6 +28,7 @@ import {
   selectLlmProvider,
   sendWithRetry,
 } from "../llm-provider";
+import { applyCompanyIdentityToText, getCompanyInfo } from "../company-info";
 
 /** The slice of a `messages` row this drafter needs. */
 export interface DraftTurn {
@@ -44,6 +45,13 @@ export interface DraftReplyInput {
   /** Oldest → newest. The drafter keeps only the most recent window. */
   turns: DraftTurn[];
   env?: NodeJS.ProcessEnv;
+  /**
+   * Tenant whose brand the draft is written in. The system prompt below
+   * names the company, so without this a second tenant's CSR would get
+   * drafts written as the seed tenant (PennPaps). Omitted → the seed
+   * identity, so single-tenant behavior is unchanged.
+   */
+  orgId?: string | null;
 }
 
 export interface BuiltDraftPrompt {
@@ -71,6 +79,12 @@ export const MAX_TURNS = 12;
 /** Per-turn body cap so one giant paste can't blow the prompt budget. */
 export const MAX_TURN_CHARS = 1000;
 
+// "PennPaps" here is the in-source placeholder for the operating
+// tenant's brand, per the repo's I/O-boundary convention: the literal is
+// rewritten to the caller's tenant by `applyCompanyIdentityToText` in
+// `draftConversationReply` before it reaches the model. Keep it as the
+// needle `identityReplacements()` matches — do not "fix" it to a
+// hardcoded platform name, which would stop resolving per tenant.
 const SYSTEM_PROMPT = [
   "You are an assistant drafting a reply for a customer-service agent at",
   "PennPaps, a CPAP-resupply company. You are given the recent transcript",
@@ -147,6 +161,13 @@ export async function draftConversationReply(
   const env = input.env ?? process.env;
   const prompt = buildDraftPrompt(input);
   const selection = selectLlmProvider(env);
+  // Brand the system prompt for the requesting tenant. buildDraftPrompt
+  // stays pure (no I/O) — the rewrite happens here, at the boundary, the
+  // same way the chatbot and email auto-reply do it.
+  const system = applyCompanyIdentityToText(
+    prompt.system,
+    await getCompanyInfo(input.orgId ?? undefined),
+  );
 
   if (selection.provider === "offline") {
     return { ok: false, reason: "offline", redactions: prompt.redactions };
@@ -173,7 +194,7 @@ export async function draftConversationReply(
     model: DEFAULT_ANTHROPIC_MODEL_CHAT,
     max_tokens: 600,
     temperature: 0.5,
-    system: prompt.system,
+    system,
     messages: [{ role: "user", content: prompt.user }],
   });
   if (!result.ok) {

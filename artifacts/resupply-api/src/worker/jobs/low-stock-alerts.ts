@@ -52,6 +52,7 @@ import {
   projectProduct,
   type ShopProductView,
 } from "../../lib/stripe/products-meta";
+import { PLATFORM_NAME } from "../../lib/company-info.js";
 
 const ALERT_JOB = "shop-inventory.low-stock-alerts";
 // Every 6 hours at :13 to dodge the top-of-hour cron stampede.
@@ -168,7 +169,6 @@ interface LowStockRunContext {
   stripe: ReturnType<typeof getStripeClient>;
   /** The seed/platform tenant — the one org that owns the platform catalog. */
   seedOrgId: string | null;
-  practiceName: string;
 }
 
 /**
@@ -187,7 +187,7 @@ async function lowStockAlertsForOrg(
   ctx: LowStockRunContext,
   stats: LowStockAlertStats,
 ): Promise<void> {
-  const { stripe, seedOrgId, practiceName } = ctx;
+  const { stripe, seedOrgId } = ctx;
 
   // Stripe Connect (G5): route the catalog read to the tenant's connected
   // account. NULL account → {} → the platform account. A non-seed tenant
@@ -390,10 +390,12 @@ async function lowStockAlertsForOrg(
     throw err;
   }
 
-  // Brand the subject with THIS tenant's name, not the process-global env
-  // practice name (which is the seed tenant's) — the recipients are this
-  // tenant's admins.
-  const brand = await resolveTenantBrandName(supabase, orgId, practiceName);
+  // Brand the subject with THIS tenant's name — the recipients are this
+  // tenant's admins. The miss/error fallback is the PLATFORM name, not the
+  // process-global RESUPPLY_PRACTICE_NAME it used to be: that carries the
+  // SEED tenant's brand, so a DB blip put the seed's name on another
+  // tenant's inventory alert.
+  const brand = await resolveTenantBrandName(supabase, orgId, PLATFORM_NAME);
   const { subject, html, text } = renderDigest(alertable, brand);
   let anySent = false;
   for (const to of recipients) {
@@ -454,16 +456,9 @@ export async function runLowStockAlerts(): Promise<LowStockAlertStats> {
       "low-stock-alerts: seed org unresolved — platform catalog skipped this tick (connected tenants unaffected)",
     );
   }
-  const practiceName =
-    process.env.RESUPPLY_PRACTICE_NAME ?? "CareMetric Breathe";
-
   await forEachActiveOrg(
     async (orgId) => {
-      await lowStockAlertsForOrg(
-        orgId,
-        { stripe, seedOrgId, practiceName },
-        stats,
-      );
+      await lowStockAlertsForOrg(orgId, { stripe, seedOrgId }, stats);
     },
     { jobName: ALERT_JOB },
   );
@@ -475,8 +470,8 @@ export async function runLowStockAlerts(): Promise<LowStockAlertStats> {
  * The tenant's customer-facing brand for the alert subject. Reads the org's
  * storefront/legal name from the GLOBAL organizations directory via `.raw()`
  * (the org-scoped facade would wrongly filter that table), falling back to
- * the platform practice name on any miss/error so a DB blip never blocks the
- * alert.
+ * the platform name on any miss/error so a DB blip never blocks the alert
+ * (and never substitutes another tenant's brand).
  */
 async function resolveTenantBrandName(
   supabase: OrgScopedClient,
@@ -505,7 +500,7 @@ async function resolveTenantBrandName(
         err,
         org_id: orgId,
       },
-      "low-stock-alerts: tenant brand lookup failed; using platform practice name",
+      "low-stock-alerts: tenant brand lookup failed; using the platform name",
     );
     return fallback;
   }

@@ -37,6 +37,7 @@ import { logger } from "../../lib/logger";
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 import { rateLimit } from "../../middlewares/rate-limit";
+import { getCompanyInfo, PLATFORM_NAME } from "../../lib/company-info";
 
 const router: IRouter = Router();
 
@@ -85,8 +86,16 @@ const verifyBody = z
 
 /** Issuer string shown by authenticator apps. Env-overridable so a
  *  staging deploy doesn't shadow the prod app's entry. */
-function getIssuerLabel(): string {
-  return process.env.RESUPPLY_PRACTICE_NAME?.trim() || "CareMetric Breathe";
+/**
+ * The issuer an authenticator app shows beside the code. Scoped to the
+ * enrolling admin's own tenant: `RESUPPLY_PRACTICE_NAME` is folded to the
+ * SEED tenant's name at boot, so every tenant's staff saw the seed tenant's
+ * brand in their authenticator — and a person with accounts in two tenants
+ * saw two entries with the same issuer. Falls back to the platform name.
+ */
+async function getIssuerLabel(orgId: string | undefined): Promise<string> {
+  if (!orgId) return PLATFORM_NAME;
+  return (await getCompanyInfo(orgId)).name;
 }
 
 /** MFA enforcement mode — env-var-gated so an org can flip the
@@ -275,7 +284,7 @@ router.post(
       if (insErr) throw insErr;
     }
 
-    const issuer = getIssuerLabel();
+    const issuer = await getIssuerLabel(orgId);
     const otpauthUri = buildOtpauthUri({
       label: adminEmail,
       issuer,
