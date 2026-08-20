@@ -4,7 +4,7 @@
 // list/detail page at all — staff could not look up an arbitrary order, see
 // its line items, or act on it, even though the "set tracking / mark
 // delivered / refund" endpoints already existed (they appeared on no
-// screen). The /admin/pennpaps/orders entry is the read-only AI-fitter
+// screen). The /admin/fitter/orders entry is the read-only AI-fitter
 // request log, NOT these paid orders — hence this dedicated workspace.
 
 import { useEffect, useState } from "react";

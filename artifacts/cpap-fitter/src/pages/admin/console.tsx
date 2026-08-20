@@ -802,25 +802,25 @@ const AdminShopCustomersPage = lazyWithRetry(() =>
 );
 // Renamed-export pattern: the source files export AdminOrders /
 // AdminOrderDetail / AdminReminders / AdminAnalytics but are bound to
-// renamed Pennpaps* locals here. The lazy factory must map the source
+// renamed Fitter* locals here. The lazy factory must map the source
 // name to a default export under the renamed alias.
-const PennpapsOrdersPage = lazyWithRetry(() =>
-  import("@/pages/admin/pennpaps-orders").then((m) => ({
+const FitterOrdersPage = lazyWithRetry(() =>
+  import("@/pages/admin/fitter-orders").then((m) => ({
     default: m.AdminOrders,
   })),
 );
-const PennpapsOrderDetailPage = lazyWithRetry(() =>
-  import("@/pages/admin/pennpaps-order-detail").then((m) => ({
+const FitterOrderDetailPage = lazyWithRetry(() =>
+  import("@/pages/admin/fitter-order-detail").then((m) => ({
     default: m.AdminOrderDetail,
   })),
 );
-const PennpapsRemindersPage = lazyWithRetry(() =>
-  import("@/pages/admin/pennpaps-reminders").then((m) => ({
+const FitterRemindersPage = lazyWithRetry(() =>
+  import("@/pages/admin/fitter-reminders").then((m) => ({
     default: m.AdminReminders,
   })),
 );
-const PennpapsAnalyticsPage = lazyWithRetry(() =>
-  import("@/pages/admin/pennpaps-analytics").then((m) => ({
+const FitterAnalyticsPage = lazyWithRetry(() =>
+  import("@/pages/admin/fitter-analytics").then((m) => ({
     default: m.AdminAnalytics,
   })),
 );
@@ -1458,22 +1458,39 @@ function AdminConsole() {
             />
             <Route path="/admin/rule-tester" component={AdminRuleTesterPage} />
             <Route path="/admin/settings" component={AdminSettingsPage} />
+            {/* These four live under /admin/fitter/* alongside the
+                catalog / formulary / safety-screens pages. They used to
+                be /admin/pennpaps/*, which put ONE tenant's storefront
+                brand in every tenant's admin URL bar. The legacy paths
+                below redirect so existing bookmarks keep working — the
+                same courtesy the /resupply/* → /admin/* move got. */}
+            <Route path="/admin/fitter/orders" component={FitterOrdersPage} />
             <Route
-              path="/admin/pennpaps/orders"
-              component={PennpapsOrdersPage}
+              path="/admin/fitter/orders/:id"
+              component={FitterOrderDetailPage}
             />
             <Route
-              path="/admin/pennpaps/orders/:id"
-              component={PennpapsOrderDetailPage}
+              path="/admin/fitter/reminders"
+              component={FitterRemindersPage}
             />
             <Route
-              path="/admin/pennpaps/reminders"
-              component={PennpapsRemindersPage}
+              path="/admin/fitter/analytics"
+              component={FitterAnalyticsPage}
             />
-            <Route
-              path="/admin/pennpaps/analytics"
-              component={PennpapsAnalyticsPage}
-            />
+            <Route path="/admin/pennpaps/orders/:id">
+              {(params) => (
+                <Redirect to={`/admin/fitter/orders/${params.id}`} replace />
+              )}
+            </Route>
+            <Route path="/admin/pennpaps/orders">
+              <Redirect to="/admin/fitter/orders" replace />
+            </Route>
+            <Route path="/admin/pennpaps/reminders">
+              <Redirect to="/admin/fitter/reminders" replace />
+            </Route>
+            <Route path="/admin/pennpaps/analytics">
+              <Redirect to="/admin/fitter/analytics" replace />
+            </Route>
             <Route component={NotFound} />
           </Switch>
         </Suspense>

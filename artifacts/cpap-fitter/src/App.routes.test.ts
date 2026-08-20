@@ -411,7 +411,7 @@ describe("App.tsx — pre-existing routes not regressed", () => {
 // Wouter's matcher is regexparam, which does NOT support path-to-regexp's
 // `:name*` named-splat syntax: `/admin/:rest*` compiles to a pattern that
 // only matches a SINGLE segment after `/admin/`, so multi-segment URLs
-// like `/admin/pennpaps/analytics` fall through to the next route (the
+// like `/admin/fitter/analytics` fall through to the next route (the
 // patient catch-all → patient 404). The fix is the bare `*` wildcard.
 // These assertions guard against re-introducing the broken form.
 // ---------------------------------------------------------------------------
@@ -442,7 +442,7 @@ describe("App.tsx — sub-tree wildcards compile to deep matches", () => {
     // /^\/admin\/(.*)\/?$/i  (case-insensitive by regexparam default).
     // The bug we're guarding against: `/admin/:rest*` instead compiled
     // to /^\/admin\/([^/]+?)\/?$/i — a SINGLE-segment match — so
-    // multi-segment URLs like `/admin/pennpaps/analytics` fell through
+    // multi-segment URLs like `/admin/fitter/analytics` fell through
     // to the next route. This test reads the live console.tsx, extracts
     // every `path="/admin/..."` registered there, and asserts that the
     // correct compiled regex matches all of them while the broken one

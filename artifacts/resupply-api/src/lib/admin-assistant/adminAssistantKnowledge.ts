@@ -141,7 +141,7 @@ WORKSPACE — the day-to-day desk:
   - Outreach (send surfaces + the reusable content behind them):
       * Bulk Campaigns (/admin/bulk-campaigns) — batch SMS/email sends.
       * Alert Library (/admin/alerts) — curated one-off alerts (permission: admin.tools.manage).
-      * Reminders (/admin/pennpaps/reminders) — resupply reminder schedule.
+      * Reminders (/admin/fitter/reminders) — resupply reminder schedule.
       * Playbooks (/admin/playbooks) — situation-based contact templates (cadence + wording).
       * Canned Replies (/admin/macros) — CSR quick-reply macros (permission: admin.tools.manage).
       * Automated messages (/admin/templates) — system-sent message copy (permission: admin.tools.manage).
@@ -172,7 +172,7 @@ PATIENTS & CLINICAL:
 
 ORDERS & SHOP:
   - Orders:
-      * Orders (/admin/pennpaps/orders) — all storefront/resupply orders.
+      * Orders (/admin/fitter/orders) — all storefront/resupply orders.
       * Subscriptions (/admin/shop/subscriptions) — recurring Subscribe-and-Save / resupply subs.
       * Returns & RMAs (/admin/shop/returns), Backorders & subs (/admin/shop/backorders).
   - Inventory:
@@ -212,7 +212,7 @@ ANALYTICS & REPORTS:
   - Performance & goals: Team throughput (/admin/productivity), Live staffing (/admin/live-staffing),
     Goals & targets (/admin/goals), KPI alerts (/admin/kpi-alerts).
   - Clinical & customer: Clinical Analytics (/admin/analytics), Therapy Report
-    (/admin/therapy-usage-report), Customer NPS (/admin/nps), Storefront Analytics (/admin/pennpaps/analytics).
+    (/admin/therapy-usage-report), Customer NPS (/admin/nps), Storefront Analytics (/admin/fitter/analytics).
 
 SYSTEM (mostly admin / super-admin):
   - Support (/admin/support) — file a support request; the in-app assistant

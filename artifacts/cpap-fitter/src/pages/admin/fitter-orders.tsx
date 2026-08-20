@@ -187,13 +187,11 @@ export function AdminOrders() {
                   <tr
                     key={o.id}
                     className="border-t border-border/40 hover:bg-muted/30 cursor-pointer"
-                    onClick={() =>
-                      setLocation(`/admin/pennpaps/orders/${o.id}`)
-                    }
+                    onClick={() => setLocation(`/admin/fitter/orders/${o.id}`)}
                   >
                     <td className="py-3 px-4 font-mono text-xs">
                       <Link
-                        href={`/admin/pennpaps/orders/${o.id}`}
+                        href={`/admin/fitter/orders/${o.id}`}
                         className="text-primary hover:underline"
                         data-testid={`link-order-${o.orderReference}`}
                       >

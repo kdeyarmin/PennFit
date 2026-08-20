@@ -14,7 +14,7 @@
 //   2. All other pages are wrapped in lazyWithRetry().
 //   3. The Suspense boundary with the correct fallback spinner is present.
 //   4. ErrorBoundary still wraps the Suspense (error paths unchanged).
-//   5. Pennpaps pages use the renamed source exports.
+//   5. Fitter pages use the renamed source exports.
 //   6. lazyWithRetry() + import().then({ default: m.X }) pattern — not bare
 //      dynamic imports — so the .then() re-export avoids Vite's
 //      name-mangling.
@@ -145,51 +145,47 @@ describe("console.tsx — billing pages are lazy-loaded", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Pennpaps pages — renamed-export pattern
+// Fitter pages — renamed-export pattern
 // ---------------------------------------------------------------------------
 //
 // The source modules export `AdminOrders`, `AdminOrderDetail`, etc. but
-// console.tsx binds them to Pennpaps-prefixed locals. The .then() factory
+// console.tsx binds them to Fitter-prefixed locals. The .then() factory
 // must map the *source* symbol name to `default`, not the local alias.
 
-describe("console.tsx — Pennpaps pages use renamed source exports", () => {
-  it("PennpapsOrdersPage factory maps m.AdminOrders → default", () => {
-    expect(SRC).toMatch(/const\s+PennpapsOrdersPage\s*=\s*lazyWithRetry\s*\(/);
-    expect(SRC).toContain('import("@/pages/admin/pennpaps-orders")');
+describe("console.tsx — Fitter pages use renamed source exports", () => {
+  it("FitterOrdersPage factory maps m.AdminOrders → default", () => {
+    expect(SRC).toMatch(/const\s+FitterOrdersPage\s*=\s*lazyWithRetry\s*\(/);
+    expect(SRC).toContain('import("@/pages/admin/fitter-orders")');
     expect(SRC).toContain("default: m.AdminOrders");
   });
 
-  it("PennpapsOrderDetailPage factory maps m.AdminOrderDetail → default", () => {
+  it("FitterOrderDetailPage factory maps m.AdminOrderDetail → default", () => {
     expect(SRC).toMatch(
-      /const\s+PennpapsOrderDetailPage\s*=\s*lazyWithRetry\s*\(/,
+      /const\s+FitterOrderDetailPage\s*=\s*lazyWithRetry\s*\(/,
     );
-    expect(SRC).toContain('import("@/pages/admin/pennpaps-order-detail")');
+    expect(SRC).toContain('import("@/pages/admin/fitter-order-detail")');
     expect(SRC).toContain("default: m.AdminOrderDetail");
   });
 
-  it("PennpapsRemindersPage factory maps m.AdminReminders → default", () => {
-    expect(SRC).toMatch(
-      /const\s+PennpapsRemindersPage\s*=\s*lazyWithRetry\s*\(/,
-    );
-    expect(SRC).toContain('import("@/pages/admin/pennpaps-reminders")');
+  it("FitterRemindersPage factory maps m.AdminReminders → default", () => {
+    expect(SRC).toMatch(/const\s+FitterRemindersPage\s*=\s*lazyWithRetry\s*\(/);
+    expect(SRC).toContain('import("@/pages/admin/fitter-reminders")');
     expect(SRC).toContain("default: m.AdminReminders");
   });
 
-  it("PennpapsAnalyticsPage factory maps m.AdminAnalytics → default", () => {
-    expect(SRC).toMatch(
-      /const\s+PennpapsAnalyticsPage\s*=\s*lazyWithRetry\s*\(/,
-    );
-    expect(SRC).toContain('import("@/pages/admin/pennpaps-analytics")');
+  it("FitterAnalyticsPage factory maps m.AdminAnalytics → default", () => {
+    expect(SRC).toMatch(/const\s+FitterAnalyticsPage\s*=\s*lazyWithRetry\s*\(/);
+    expect(SRC).toContain('import("@/pages/admin/fitter-analytics")');
     expect(SRC).toContain("default: m.AdminAnalytics");
   });
 
-  // Regression: the old eager pattern was `AdminOrders as PennpapsOrdersPage`
+  // Regression: the old eager pattern was `AdminOrders as FitterOrdersPage`
   // — that form must not appear in the refactored file.
-  it("no longer uses the old 'as'-alias import pattern for Pennpaps pages", () => {
-    expect(SRC).not.toContain("AdminOrders as PennpapsOrdersPage");
-    expect(SRC).not.toContain("AdminOrderDetail as PennpapsOrderDetailPage");
-    expect(SRC).not.toContain("AdminReminders as PennpapsRemindersPage");
-    expect(SRC).not.toContain("AdminAnalytics as PennpapsAnalyticsPage");
+  it("no longer uses the old 'as'-alias import pattern for Fitter pages", () => {
+    expect(SRC).not.toContain("AdminOrders as FitterOrdersPage");
+    expect(SRC).not.toContain("AdminOrderDetail as FitterOrderDetailPage");
+    expect(SRC).not.toContain("AdminReminders as FitterRemindersPage");
+    expect(SRC).not.toContain("AdminAnalytics as FitterAnalyticsPage");
   });
 });
 

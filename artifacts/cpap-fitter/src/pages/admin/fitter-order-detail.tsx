@@ -296,7 +296,7 @@ export function AdminOrderDetail() {
 
 function BackLink() {
   return (
-    <Link href="/admin/pennpaps/orders">
+    <Link href="/admin/fitter/orders">
       <Button
         variant="ghost"
         size="sm"
