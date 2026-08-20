@@ -346,6 +346,11 @@ const AdminMessageTemplatesPage = lazyWithRetry(() =>
     default: m.AdminMessageTemplatesPage,
   })),
 );
+const AdminMessagePreviewsPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-message-previews").then((m) => ({
+    default: m.AdminMessagePreviewsPage,
+  })),
+);
 const AdminAlertsPage = lazyWithRetry(() =>
   import("@/pages/admin/admin-alerts").then((m) => ({
     default: m.AdminAlertsPage,
@@ -1340,6 +1345,15 @@ function AdminConsole() {
               path="/admin/templates"
               component={AdminMessageTemplatesPage}
             />
+            <Route path="/admin/message-previews">
+              {() =>
+                canManageTools ? (
+                  <AdminMessagePreviewsPage />
+                ) : (
+                  <NotAuthorizedPage reason="not-authorized" />
+                )
+              }
+            </Route>
             <Route path="/admin/alerts">
               {() =>
                 canManageTools ? (

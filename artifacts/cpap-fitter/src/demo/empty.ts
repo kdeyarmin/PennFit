@@ -36,6 +36,7 @@ const EMPTY_COLLECTION_KEYS = [
   "tenants",
   "accounts",
   "providers",
+  "previews",
   "locations",
   "agents",
   "recipients",

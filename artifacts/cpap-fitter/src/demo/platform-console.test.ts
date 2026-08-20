@@ -1183,3 +1183,101 @@ describe("tenant admin — shop orders", () => {
     expect(Array.isArray(claims.body.claims)).toBe(true);
   });
 });
+
+describe("tenant admin — patient message previews", () => {
+  it("seeds every scenario group with at least one channel", async () => {
+    const { body } = await get<{
+      brand: { name: string };
+      previews: Array<{
+        id: string;
+        group: string;
+        fidelity: string;
+        email: unknown | null;
+        sms: unknown | null;
+      }>;
+    }>(`${A}/message-previews`);
+
+    expect(body.previews.length).toBeGreaterThan(10);
+    expect(new Set(body.previews.map((p) => p.group))).toEqual(
+      new Set(["resupply", "orders", "clinical", "billing"]),
+    );
+    for (const p of body.previews) {
+      expect(p.email ?? p.sms, `${p.id} has neither channel`).toBeTruthy();
+    }
+  });
+
+  it("renders the tenant brand, never the seed tenant's", async () => {
+    const { body } = await get<{
+      previews: Array<{
+        id: string;
+        email: { subject: string; text: string } | null;
+        sms: { body: string } | null;
+      }>;
+    }>(`${A}/message-previews`);
+    for (const p of body.previews) {
+      const blob = `${p.email?.subject ?? ""}${p.email?.text ?? ""}${p.sms?.body ?? ""}`;
+      expect(blob, `${p.id} mentions PennPaps`).not.toContain("PennPaps");
+    }
+  });
+
+  it("leaves no unrendered template variables", async () => {
+    const { body } = await get<{
+      previews: Array<{
+        id: string;
+        email: { subject: string; text: string; html: string } | null;
+        sms: { body: string } | null;
+      }>;
+    }>(`${A}/message-previews`);
+    for (const p of body.previews) {
+      const blob = `${p.email?.subject ?? ""}${p.email?.text ?? ""}${p.email?.html ?? ""}${p.sms?.body ?? ""}`;
+      expect(blob, `${p.id} has an unrendered {{variable}}`).not.toMatch(
+        /\{\{[a-z][a-z0-9_]*\}\}/,
+      );
+    }
+  });
+
+  it("meters SMS bodies and keeps the reminders to one GSM-7 segment", async () => {
+    const { body } = await get<{
+      previews: Array<{
+        id: string;
+        sms: { encoding: string; segments: number } | null;
+      }>;
+    }>(`${A}/message-previews`);
+    const reminders = body.previews.filter((p) =>
+      p.id.startsWith("resupply.reminder."),
+    );
+    expect(reminders.length).toBe(3);
+    for (const r of reminders) {
+      expect(r.sms?.encoding, `${r.id} left GSM-7`).toBe("GSM-7");
+      expect(r.sms?.segments, `${r.id} needs >1 segment`).toBe(1);
+    }
+  });
+
+  it("every SMS carries a STOP footer or names the brand", async () => {
+    const { body } = await get<{
+      previews: Array<{ id: string; sms: { body: string } | null }>;
+    }>(`${A}/message-previews`);
+    for (const p of body.previews) {
+      if (!p.sms) continue;
+      const ok =
+        /STOP/.test(p.sms.body) || p.sms.body.includes("Riverside CPAP");
+      expect(ok, `${p.id} SMS has neither STOP nor the brand`).toBe(true);
+    }
+  });
+
+  it("reports that a demo send cannot actually deliver, rather than faking success", async () => {
+    // Nothing leaves the browser in demo mode. Claiming "sent" here would
+    // be the one genuinely misleading thing this page could do.
+    const { body } = await post<{
+      ok: boolean;
+      code: string;
+      message: string;
+    }>(`${A}/message-previews/resupply.reminder.initial/send`, {
+      channel: "sms",
+      to: "+12155550123",
+    });
+    expect(body.ok).toBe(false);
+    expect(body.code).toBe("not_configured");
+    expect(body.message).toContain("Demo mode");
+  });
+});

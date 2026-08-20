@@ -50,6 +50,10 @@ import {
   demoUpdateVariantBands,
 } from "../fixtures/fitting";
 import {
+  demoMessagePreviews,
+  demoSendMessagePreview,
+} from "../fixtures/message-previews";
+import {
   demoAcceptReferral,
   demoAcceptReferralReview,
   demoCreateReferralReview,
@@ -314,5 +318,15 @@ export const fittingReferralsHandlers: DemoHandler[] = [
   route("GET", "/resupply-api/admin/referral-reviews/:id", (_req, p) => {
     const found = demoReferralReview(p.id);
     return found ? json(found) : notFound("review_not_found");
+  }),
+
+  // ── Patient message previews (/admin/message-previews) ───────────
+  route("GET", "/resupply-api/admin/message-previews", () =>
+    json(demoMessagePreviews()),
+  ),
+  route("POST", "/resupply-api/admin/message-previews/:id/send", (req, p) => {
+    const channel =
+      req.json<{ channel?: "email" | "sms" }>()?.channel ?? "email";
+    return json(demoSendMessagePreview(p.id, channel));
   }),
 ];
