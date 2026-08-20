@@ -15,6 +15,10 @@ export function hoursAgo(n: number): string {
   return new Date(Date.now() - n * 60 * 60 * 1000).toISOString();
 }
 
+export function hoursFromNow(n: number): string {
+  return new Date(Date.now() + n * 60 * 60 * 1000).toISOString();
+}
+
 export function minutesAgo(n: number): string {
   return new Date(Date.now() - n * 60 * 1000).toISOString();
 }

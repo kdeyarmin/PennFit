@@ -22,7 +22,13 @@
 
 import { route, type DemoHandler } from "../types";
 import { json } from "../respond";
-import { daysAgo, daysFromNow, dateOnly, NOW_ISO } from "../fixtures/dates";
+import {
+  daysAgo,
+  daysFromNow,
+  dateOnly,
+  hoursFromNow,
+  NOW_ISO,
+} from "../fixtures/dates";
 
 // ── Delivery failures (delivery-failures.ts) ──────────────────────────
 // GET /resupply-api/admin/delivery-failures
@@ -1000,8 +1006,14 @@ export const ext3Handlers: DemoHandler[] = [
     return json(fitterInvites(req.query.get("status") ?? "all", holding));
   }),
   route("POST", "/resupply-api/admin/fitter-invites", (req) => {
-    const body = req.json<{ channel?: "email" | "sms" }>();
-    const channel = body?.channel === "sms" ? "sms" : "email";
+    const body = req.json<{ channel?: "email" | "sms" | "in_office" }>();
+    // Echo the requested channel — the senders render a QR panel for
+    // "in_office" and a "texted/emailed" line otherwise, so collapsing it
+    // to email here showed the demo the wrong confirmation.
+    const channel =
+      body?.channel === "sms" || body?.channel === "in_office"
+        ? body.channel
+        : "email";
     return json(
       {
         id: "demo-fi-new-0001",
@@ -1009,6 +1021,10 @@ export const ext3Handlers: DemoHandler[] = [
         delivered: true,
         deliveryError: null,
         inviteLink: "https://pennpaps.com/fitter-invite?t=demo-token",
+        // In-office links expire with the visit; mailed ones in a month
+        // (FITTER_INVITE_IN_OFFICE_TTL_MS / FITTER_INVITE_TTL_MS). Without
+        // this the senders' expiry line read "Expires soon.".
+        expiresAt: channel === "in_office" ? hoursFromNow(4) : daysFromNow(30),
       },
       201,
     );
