@@ -31,9 +31,11 @@ describe("ConsoleRoute — mustChangePassword gate removed", () => {
     expect(SRC).toContain("function ConsoleRoute");
   });
 
-  it("ConsoleRoute redirects to /admin/sign-in when no session data", () => {
-    // The session-required gate must still be present.
-    expect(SRC).toContain('Redirect to="/admin/sign-in"');
+  it("ConsoleRoute redirects to the sign-in page when no session data", () => {
+    // The session-required gate must still be present. The destination now
+    // comes from buildAdminSignInHref() so the requested deep link survives
+    // sign-in (lib/admin/sign-in-redirect.ts owns + tests the path itself).
+    expect(SRC).toContain("<Redirect to={buildAdminSignInHref()} />");
   });
 
   it("ConsoleRoute renders AdminConsole when session is present", () => {
