@@ -36,10 +36,15 @@ vi.mock("@workspace/resupply-audit", () => ({
 const placeOrderMock = vi.fn();
 const pausePatientMock = vi.fn();
 const reactivatePatientMock = vi.fn();
+const requestAddressChangeHoldMock = vi
+  .fn()
+  .mockResolvedValue({ heldCount: 0, alertOpen: true });
 vi.mock("../../lib/messaging/order-flow", () => ({
   placeResupplyOrderForConversation: (...a: unknown[]) => placeOrderMock(...a),
   pausePatient: (...a: unknown[]) => pausePatientMock(...a),
   reactivatePatient: (...a: unknown[]) => reactivatePatientMock(...a),
+  requestAddressChangeHold: (...a: unknown[]) =>
+    requestAddressChangeHoldMock(...a),
 }));
 
 // MMS ingestion — mocked at the module boundary so the route test
@@ -135,6 +140,9 @@ describe("POST /sms/inbound", () => {
     logAuditMock.mockReset().mockResolvedValue(undefined);
     placeOrderMock.mockReset();
     pausePatientMock.mockReset().mockResolvedValue(undefined);
+    requestAddressChangeHoldMock
+      .mockReset()
+      .mockResolvedValue({ heldCount: 1, alertOpen: true });
     reactivatePatientMock.mockReset().mockResolvedValue(undefined);
     ingestMmsMock.mockReset().mockResolvedValue({
       attempted: 0,
@@ -524,6 +532,38 @@ describe("POST /sms/inbound", () => {
     expect(intentAudit?.metadata.intent).toBe("confirm");
     expect(intentAudit?.metadata.resolved_by).toBe("ai");
     expect(intentAudit?.metadata.low_confidence_override).toBeUndefined();
+  });
+
+  it("EDIT holds not-yet-shipped orders and tells the patient so", async () => {
+    // Without the hold, a patient who replied YES and then EDIT still had
+    // supplies sent to the address on file. The reply also promises the
+    // hold, so the promise and the write have to travel together.
+    setMessagingEnv();
+    stageKnownPatientFlow();
+    stageSupabaseResponse("messages", "select", { data: [] });
+
+    const res = await request(makeApp())
+      .post("/resupply-api/sms/inbound")
+      .type("form")
+      .send({
+        From: FROM_PHONE,
+        To: "+12158675309",
+        Body: "EDIT",
+        MessageSid: "SM_edit_hold",
+        NumMedia: "0",
+      });
+
+    expect(res.status).toBe(200);
+    expect(requestAddressChangeHoldMock).toHaveBeenCalledWith(
+      expect.objectContaining({ patientId: PATIENT_ID, channel: "sms" }),
+    );
+    expect(res.text).toContain("on hold");
+    // An address change must never place an order.
+    expect(placeOrderMock).not.toHaveBeenCalled();
+    const handoffAudit = logAuditMock.mock.calls
+      .map((c) => c[0])
+      .find((a) => a.metadata?.reason === "edit_address");
+    expect(handoffAudit?.metadata.held_fulfillments).toBe(1);
   });
 
   it("folds a model-written reply to GSM-7 before sending it", async () => {

@@ -83,6 +83,7 @@ import {
   pausePatient,
   reactivatePatient,
   placeResupplyOrderForConversation,
+  requestAddressChangeHold,
 } from "../../lib/messaging/order-flow";
 import { findActiveClosure } from "../../lib/office-closure/active";
 import { safeAudit } from "../../lib/messaging/safe-audit";
@@ -997,6 +998,32 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
           `Thanks. Your supplies are on the way to the address on file. We will text tracking when they ship. - ${input.practiceName}`
         );
       }
+      if (result.status === "address_change_pending") {
+        // The patient has an open address-change request, so we will not
+        // ship to the address still on file. Park it with CSR alongside
+        // the other blocked-confirm outcomes.
+        const { error: addrErr } = await supabase
+          .from("conversations")
+          .update({ status: "awaiting_admin", updated_at: nowIso })
+          .eq("id", input.conversationId);
+        if (addrErr) throw addrErr;
+        await safeAudit({
+          action: "messaging.order.blocked_address_change",
+          adminEmail: null,
+          adminUserId: null,
+          targetTable: "episodes",
+          targetId: result.episodeId,
+          metadata: {
+            channel: "sms",
+            conversation_id: input.conversationId,
+            patient_id: input.patientId,
+            episode_id: result.episodeId,
+          },
+          ip: input.ip,
+          userAgent: input.userAgent,
+        });
+        return "Thanks. You asked us to change your address, so we are holding this order until a team member confirms the new one with you. Nothing ships until then.";
+      }
       if (result.status === "already_confirmed") {
         return "You are already set. That order is confirmed and on its way. We will text you tracking when it ships.";
       }
@@ -1141,6 +1168,14 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
         .update({ status: "awaiting_admin", updated_at: nowIso })
         .eq("id", input.conversationId);
       if (editErr) throw editErr;
+      // Hold anything already queued and open the address-change alert
+      // (see requestAddressChangeHold) so nothing reaches the old
+      // address while the new one is unconfirmed. Never throws.
+      const hold = await requestAddressChangeHold({
+        orgId: input.orgId,
+        patientId: input.patientId,
+        channel: "sms",
+      });
       await safeAudit({
         action: "messaging.handoff.escalated",
         adminEmail: null,
@@ -1152,6 +1187,8 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
           conversation_id: input.conversationId,
           patient_id: input.patientId,
           reason: "edit_address",
+          held_fulfillments: hold.heldCount,
+          address_change_alert_open: hold.alertOpen,
         },
         ip: input.ip,
         userAgent: input.userAgent,
@@ -1165,7 +1202,7 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
       });
       return (
         input.aiReply ??
-        "Thanks. A team member will call or email you to confirm your new address. If you already confirmed an order, tell them and they can update it."
+        "Thanks. We put any order that has not shipped on hold. A team member will call or email you to confirm your new address."
       );
     }
     case "stop": {

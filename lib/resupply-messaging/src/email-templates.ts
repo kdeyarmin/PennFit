@@ -437,7 +437,7 @@ export function renderClickLanding(input: RenderClickLandingInput): string {
         ? "Here is what is due. Use the button below to confirm. We will check your plan, then ship to the address we have on file. If anything needs a closer look, a team member will contact you first."
         : "Use the button below to confirm. We will check your plan, then ship your supplies to the address we have on file. If anything needs a closer look, a team member will contact you first."
       : input.action === "edit"
-        ? "Use the button below to ask for an address change. A team member will call or email you to confirm the new address. If you already confirmed an order, tell them and they can update where it goes."
+        ? "Use the button below to ask for an address change. We'll hold any order that hasn't shipped yet, so nothing goes to your old address, and a team member will call or email you to confirm the new one."
         : "Use the button below to stop CPAP refill reminders. You can turn them back on any time by replying to one of our emails.";
 
   const buttonLabel =
@@ -503,8 +503,10 @@ export interface RenderClickConfirmationInput {
   practiceName: string;
   /** What the patient just did. `review` is the entitlement-guard
    *  outcome: the reorder was received but isn't yet payable under the
-   *  replacement schedule, so a CSR will follow up before it ships. */
-  action: "confirm" | "edit" | "stop" | "review";
+   *  replacement schedule, so a CSR will follow up before it ships.
+   *  `address_pending` is the address-change hold: they asked us to move
+   *  their address, so nothing ships until a team member confirms it. */
+  action: "confirm" | "edit" | "stop" | "review" | "address_pending";
 }
 
 /**
@@ -522,16 +524,19 @@ export function renderClickConfirmation(
   const MESSAGES: Record<RenderClickConfirmationInput["action"], string> = {
     confirm:
       "You're all set. Your supplies are on the way to the address we have on file. We'll text or email you tracking as soon as they ship. You don't need to do anything else.",
-    edit: "Thanks. We have your address change request. A team member will call or email you within one business day to confirm the new address. If you already confirmed an order, tell them and they can update where it goes.",
+    edit: "Thanks. We have your address change request. We've put any order that hasn't shipped on hold, so nothing goes to your old address. A team member will call or email you within one business day to confirm the new one.",
     stop: "Done. We've stopped CPAP refill reminders, so you won't get any more of these emails. If you change your mind, reply to any of our past emails and we'll turn them back on.",
     review:
       "Thanks. It looks like it's a little early to resend this item under your plan, so a team member will check it and follow up with you before anything ships. You don't need to do anything right now.",
+    address_pending:
+      "Thanks. You asked us to change your shipping address, so we're holding this order until a team member confirms the new one with you. They'll call or email you within one business day. Nothing ships until then.",
   };
   const HEADINGS: Record<RenderClickConfirmationInput["action"], string> = {
     confirm: "Order confirmed",
     edit: "We'll be in touch",
     stop: "Reminders stopped",
     review: "We'll be in touch",
+    address_pending: "Order held",
   };
   const message = MESSAGES[input.action];
   const heading = HEADINGS[input.action];

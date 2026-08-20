@@ -24,6 +24,7 @@ import {
 } from "@workspace/resupply-db";
 
 import { scanCompliance } from "../../lib/compliance-scanner";
+import { releaseAddressChangeHold } from "../../lib/messaging/order-flow";
 import { logger } from "../../lib/logger";
 import { requirePermission } from "../../middlewares/requireAdmin";
 import { rateLimit } from "../../middlewares/rate-limit";
@@ -280,7 +281,7 @@ router.patch(
     const supabase = getOrgScopedClient(orgId);
     const { data: row, error: lookupErr } = await supabase
       .from("csr_compliance_alerts")
-      .select("id, patient_id, status")
+      .select("id, patient_id, status, alert_type")
       .eq("id", alertId)
       .limit(1)
       .maybeSingle();
@@ -341,6 +342,24 @@ router.patch(
       throw updateErr;
     }
 
+    // Resolving an address-change alert is the release valve for the
+    // fulfillment hold placed when the patient asked to move. Without
+    // this the hold would be a one-way door and the order would sit
+    // forever, which is worse than the stale-address bug it prevents.
+    // Best-effort: the alert is already resolved, so a release failure
+    // must not fail the request (it logs and an admin can retry).
+    let releasedFulfillments: number | undefined;
+    if (
+      action === "resolve" &&
+      row.alert_type === "address_change_pending" &&
+      row.patient_id
+    ) {
+      releasedFulfillments = await releaseAddressChangeHold({
+        orgId,
+        patientId: row.patient_id,
+      });
+    }
+
     await logAudit({
       action: `csr.compliance_alert.${action}`,
       adminEmail: req.adminEmail ?? null,
@@ -351,6 +370,9 @@ router.patch(
         patient_id: row.patient_id,
         previous_status: row.status,
         new_status: nextStatus,
+        ...(releasedFulfillments !== undefined
+          ? { released_fulfillments: releasedFulfillments }
+          : {}),
       },
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
@@ -358,7 +380,11 @@ router.patch(
       logger.warn({ err, action }, "csr.compliance_alert audit write failed");
     });
 
-    res.json({ id: alertId, status: nextStatus });
+    res.json({
+      id: alertId,
+      status: nextStatus,
+      ...(releasedFulfillments !== undefined ? { releasedFulfillments } : {}),
+    });
   },
 );
 

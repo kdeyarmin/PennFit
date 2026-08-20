@@ -29,6 +29,8 @@ const supabaseMock = installSupabaseMock();
 import {
   placeResupplyOrderForConversation,
   reactivatePatient,
+  requestAddressChangeHold,
+  releaseAddressChangeHold,
 } from "./order-flow";
 import { decideCoverageBlock } from "../billing/coverage-eligibility";
 import { invalidateFeatureFlagCache } from "../feature-flags";
@@ -39,6 +41,7 @@ beforeEach(() => {
 });
 
 const PATIENT_ID = "00000000-0000-4000-8000-000000000011";
+const ORG_ID = "00000000-0000-4000-8000-000000000000";
 const CUSTOMER_ID = "00000000-0000-4000-8000-000000000022";
 
 // ---------------------------------------------------------------------------
@@ -388,6 +391,15 @@ describe("placeResupplyOrderForConversation — coverage guard", () => {
       },
       error: null,
     });
+    // Address-change guard (order-flow step 2b) probes
+    // csr_compliance_alerts before the prescription read. The mock is a
+    // per-table FIFO and does not filter on alert_type, so stage its
+    // "no open address change" answer here to keep later alert lookups
+    // aligned with the real call order.
+    stageSupabaseResponse("csr_compliance_alerts", "select", {
+      data: null,
+      error: null,
+    });
     stageSupabaseResponse("prescriptions", "select", {
       data: { id: RX_ID, item_sku: "CUSHION-NASAL-MED" },
       error: null,
@@ -509,6 +521,15 @@ describe("placeResupplyOrderForConversation — continued-use guard", () => {
         prescription_id: RX_ID,
         status: "outreach_pending",
       },
+      error: null,
+    });
+    // Address-change guard (order-flow step 2b) probes
+    // csr_compliance_alerts before the prescription read. The mock is a
+    // per-table FIFO and does not filter on alert_type, so stage its
+    // "no open address change" answer here to keep later alert lookups
+    // aligned with the real call order.
+    stageSupabaseResponse("csr_compliance_alerts", "select", {
+      data: null,
       error: null,
     });
     stageSupabaseResponse("prescriptions", "select", {
@@ -725,6 +746,15 @@ describe("placeResupplyOrderForConversation — continued-use guard", () => {
       },
       error: null,
     });
+    // Address-change guard (order-flow step 2b) probes
+    // csr_compliance_alerts before the prescription read. The mock is a
+    // per-table FIFO and does not filter on alert_type, so stage its
+    // "no open address change" answer here to keep later alert lookups
+    // aligned with the real call order.
+    stageSupabaseResponse("csr_compliance_alerts", "select", {
+      data: null,
+      error: null,
+    });
     stageSupabaseResponse("prescriptions", "select", {
       data: { id: RX_ID, item_sku: "CUSHION-NASAL-MED" },
       error: null,
@@ -767,6 +797,15 @@ describe("placeResupplyOrderForConversation — refill-window guard", () => {
         prescription_id: RX_ID,
         status: "outreach_pending",
       },
+      error: null,
+    });
+    // Address-change guard (order-flow step 2b) probes
+    // csr_compliance_alerts before the prescription read. The mock is a
+    // per-table FIFO and does not filter on alert_type, so stage its
+    // "no open address change" answer here to keep later alert lookups
+    // aligned with the real call order.
+    stageSupabaseResponse("csr_compliance_alerts", "select", {
+      data: null,
       error: null,
     });
     stageSupabaseResponse("prescriptions", "select", {
@@ -890,6 +929,15 @@ describe("placeResupplyOrderForConversation — refill attestation capture", () 
       },
       error: null,
     });
+    // Address-change guard (order-flow step 2b) probes
+    // csr_compliance_alerts before the prescription read. The mock is a
+    // per-table FIFO and does not filter on alert_type, so stage its
+    // "no open address change" answer here to keep later alert lookups
+    // aligned with the real call order.
+    stageSupabaseResponse("csr_compliance_alerts", "select", {
+      data: null,
+      error: null,
+    });
     stageSupabaseResponse("prescriptions", "select", {
       data: { id: RX_ID, item_sku: "CUSHION-NASAL-MED" },
       error: null,
@@ -965,5 +1013,243 @@ describe("placeResupplyOrderForConversation — refill attestation capture", () 
 
     expect(result.status).toBe("ok");
     expect(supabaseMock.callCount("refill_confirmations", "upsert")).toBe(0);
+  });
+});
+
+// Address-change hold — closes the gap where a patient who confirmed and
+// then asked to move (or asked to move and then clicked a still-valid
+// confirm link) had supplies sent to the address already on file. The
+// confirm path used to have no notion of a pending address change, and
+// the edit path did nothing but flip the conversation to awaiting_admin.
+describe("placeResupplyOrderForConversation — address-change guard", () => {
+  const CONV_ID = "00000000-0000-4000-8000-0000000000f1";
+  const EPISODE_ID = "00000000-0000-4000-8000-0000000000f2";
+  const RX_ID = "00000000-0000-4000-8000-0000000000f3";
+  const ALERT_ID = "00000000-0000-4000-8000-0000000000fa";
+
+  function stageConversationAndEpisode(): void {
+    stageSupabaseResponse("conversations", "select", {
+      data: { id: CONV_ID, patient_id: PATIENT_ID, episode_id: EPISODE_ID },
+      error: null,
+    });
+    stageSupabaseResponse("episodes", "select", {
+      data: {
+        id: EPISODE_ID,
+        patient_id: PATIENT_ID,
+        prescription_id: RX_ID,
+        status: "outreach_pending",
+      },
+      error: null,
+    });
+  }
+
+  it("refuses to ship while an address change is open, and creates no fulfillment", async () => {
+    stageConversationAndEpisode();
+    stageSupabaseResponse("csr_compliance_alerts", "select", {
+      data: { id: ALERT_ID },
+      error: null,
+    });
+
+    const result = await placeResupplyOrderForConversation({
+      conversationId: CONV_ID,
+    });
+
+    expect(result.status).toBe("address_change_pending");
+    // The whole point: nothing is queued toward the stale address.
+    expect(supabaseMock.callCount("fulfillments", "insert")).toBe(0);
+    // And we stop before the prescription read, so the guard is cheap.
+    expect(supabaseMock.callCount("prescriptions", "select")).toBe(0);
+  });
+
+  it("proceeds normally when no address change is open", async () => {
+    stageConversationAndEpisode();
+    stageSupabaseResponse("csr_compliance_alerts", "select", {
+      data: null,
+      error: null,
+    });
+    stageSupabaseResponse("prescriptions", "select", {
+      data: { id: RX_ID, item_sku: "CUSHION-NASAL-MED" },
+      error: null,
+    });
+    for (let i = 0; i < 4; i++) {
+      stageSupabaseResponse("feature_flags", "select", {
+        data: { enabled: false },
+        error: null,
+      });
+    }
+    stageSupabaseResponse("episodes", "update", { data: null, error: null });
+    stageSupabaseResponse("prescriptions", "select", {
+      data: { id: RX_ID, item_sku: "CUSHION-NASAL-MED" },
+      error: null,
+    });
+    stageSupabaseResponse("fulfillments", "insert", {
+      data: [{ id: "00000000-0000-4000-8000-0000000000fb" }],
+      error: null,
+    });
+
+    const result = await placeResupplyOrderForConversation({
+      conversationId: CONV_ID,
+    });
+
+    expect(result.status).not.toBe("address_change_pending");
+  });
+
+  it("fails OPEN when the guard read errors, so a DB blip cannot block every refill", async () => {
+    stageConversationAndEpisode();
+    stageSupabaseResponse("csr_compliance_alerts", "select", {
+      data: null,
+      error: { message: "connection reset", code: "57P01" },
+    });
+    stageSupabaseResponse("prescriptions", "select", {
+      data: { id: RX_ID, item_sku: "CUSHION-NASAL-MED" },
+      error: null,
+    });
+    for (let i = 0; i < 4; i++) {
+      stageSupabaseResponse("feature_flags", "select", {
+        data: { enabled: false },
+        error: null,
+      });
+    }
+    stageSupabaseResponse("episodes", "update", { data: null, error: null });
+    stageSupabaseResponse("prescriptions", "select", {
+      data: { id: RX_ID, item_sku: "CUSHION-NASAL-MED" },
+      error: null,
+    });
+    stageSupabaseResponse("fulfillments", "insert", {
+      data: [{ id: "00000000-0000-4000-8000-0000000000fc" }],
+      error: null,
+    });
+
+    const result = await placeResupplyOrderForConversation({
+      conversationId: CONV_ID,
+    });
+
+    expect(result.status).not.toBe("address_change_pending");
+  });
+});
+
+describe("requestAddressChangeHold / releaseAddressChangeHold", () => {
+  it("holds queued fulfillments and opens one alert", async () => {
+    stageSupabaseResponse("fulfillments", "update", {
+      data: [{ id: "f1" }, { id: "f2" }],
+      error: null,
+    });
+    stageSupabaseResponse("csr_compliance_alerts", "select", {
+      data: null,
+      error: null,
+    });
+    stageSupabaseResponse("csr_compliance_alerts", "insert", {
+      data: null,
+      error: null,
+    });
+
+    const out = await requestAddressChangeHold({
+      orgId: ORG_ID,
+      patientId: PATIENT_ID,
+      channel: "email",
+    });
+
+    expect(out).toEqual({ heldCount: 2, alertOpen: true });
+    expect(supabaseMock.callCount("csr_compliance_alerts", "insert")).toBe(1);
+  });
+
+  it("does not open a second alert when one is already open", async () => {
+    stageSupabaseResponse("fulfillments", "update", {
+      data: [],
+      error: null,
+    });
+    stageSupabaseResponse("csr_compliance_alerts", "select", {
+      data: { id: "a1" },
+      error: null,
+    });
+
+    const out = await requestAddressChangeHold({
+      orgId: ORG_ID,
+      patientId: PATIENT_ID,
+      channel: "sms",
+    });
+
+    expect(out).toEqual({ heldCount: 0, alertOpen: true });
+    expect(supabaseMock.callCount("csr_compliance_alerts", "insert")).toBe(0);
+  });
+
+  it("treats a lost insert race as already-open, not a failure", async () => {
+    // The partial unique index collapses a concurrent double-click. The
+    // loser must still report alertOpen: the alert exists, which is all
+    // the confirm guard reads.
+    stageSupabaseResponse("fulfillments", "update", {
+      data: [{ id: "f1" }],
+      error: null,
+    });
+    stageSupabaseResponse("csr_compliance_alerts", "select", {
+      data: null,
+      error: null,
+    });
+    stageSupabaseResponse("csr_compliance_alerts", "insert", {
+      data: null,
+      error: { message: "duplicate key value", code: "23505" },
+    });
+
+    const out = await requestAddressChangeHold({
+      orgId: ORG_ID,
+      patientId: PATIENT_ID,
+      channel: "email",
+    });
+
+    expect(out).toEqual({ heldCount: 1, alertOpen: true });
+  });
+
+  it("still acknowledges the request when the hold write fails", async () => {
+    // The patient must not see an error just because bookkeeping failed;
+    // the alert is what actually blocks the confirm.
+    stageSupabaseResponse("fulfillments", "update", {
+      data: null,
+      error: { message: "deadlock detected", code: "40P01" },
+    });
+    stageSupabaseResponse("csr_compliance_alerts", "select", {
+      data: null,
+      error: null,
+    });
+    stageSupabaseResponse("csr_compliance_alerts", "insert", {
+      data: null,
+      error: null,
+    });
+
+    const out = await requestAddressChangeHold({
+      orgId: ORG_ID,
+      patientId: PATIENT_ID,
+      channel: "email",
+    });
+
+    expect(out.heldCount).toBe(0);
+    expect(out.alertOpen).toBe(true);
+  });
+
+  it("releases held fulfillments back to queued", async () => {
+    stageSupabaseResponse("fulfillments", "update", {
+      data: [{ id: "f1" }, { id: "f2" }, { id: "f3" }],
+      error: null,
+    });
+
+    const released = await releaseAddressChangeHold({
+      orgId: ORG_ID,
+      patientId: PATIENT_ID,
+    });
+
+    expect(released).toBe(3);
+  });
+
+  it("returns 0 rather than throwing when the release fails", async () => {
+    stageSupabaseResponse("fulfillments", "update", {
+      data: null,
+      error: { message: "connection reset", code: "57P01" },
+    });
+
+    const released = await releaseAddressChangeHold({
+      orgId: ORG_ID,
+      patientId: PATIENT_ID,
+    });
+
+    expect(released).toBe(0);
   });
 });
