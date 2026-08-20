@@ -59,6 +59,7 @@ import {
 } from "@workspace/resupply-telecom";
 import {
   parseSmsIntent,
+  toGsm7,
   type AiFallbackAdapter,
   type Intent,
 } from "@workspace/resupply-messaging";
@@ -252,9 +253,11 @@ router.post(
           .status(200)
           .type("text/xml")
           .send(
-            earlyRouted.intent === "stop"
-              ? `<Response><Message>Done. You will not get any more texts from ${escapeXml(cfg.practiceName)}. Reply START if you want them back on.</Message></Response>`
-              : `<Response><Message>This is ${escapeXml(cfg.practiceName)}. We text you when your CPAP supplies are due. Reply YES to ship. NO to skip. EDIT to fix your address. STOP to opt out. Message and data rates may apply.</Message></Response>`,
+            twimlMessage(
+              earlyRouted.intent === "stop"
+                ? `Done. You will not get any more texts from ${cfg.practiceName}. Reply START if you want them back on.`
+                : `This is ${cfg.practiceName}. We text you when your CPAP supplies are due. Reply YES to ship. NO to skip. EDIT to fix your address. STOP to opt out. Message and data rates may apply.`,
+            ),
           );
         return;
       }
@@ -374,9 +377,7 @@ router.post(
           res
             .status(200)
             .type("text/xml")
-            .send(
-              `<Response><Message>${escapeXml(activeClosure.autoReplyMessage)}</Message></Response>`,
-            );
+            .send(twimlMessage(activeClosure.autoReplyMessage));
           return;
         }
       } catch (err) {
@@ -422,9 +423,11 @@ router.post(
           .status(200)
           .type("text/xml")
           .send(
-            earlyRouted.intent === "stop"
-              ? `<Response><Message>Done. You will not get any more texts from ${escapeXml(inboundPracticeName)}. Reply START if you want them back on.</Message></Response>`
-              : `<Response><Message>This is ${escapeXml(inboundPracticeName)}. We text you when your CPAP supplies are due. Reply YES to ship. NO to skip. EDIT to fix your address. STOP to opt out. Message and data rates may apply.</Message></Response>`,
+            twimlMessage(
+              earlyRouted.intent === "stop"
+                ? `Done. You will not get any more texts from ${inboundPracticeName}. Reply START if you want them back on.`
+                : `This is ${inboundPracticeName}. We text you when your CPAP supplies are due. Reply YES to ship. NO to skip. EDIT to fix your address. STOP to opt out. Message and data rates may apply.`,
+            ),
           );
         return;
       }
@@ -904,10 +907,7 @@ router.post(
       req.log,
     );
 
-    res
-      .status(200)
-      .type("text/xml")
-      .send(`<Response><Message>${escapeXml(twimlBody)}</Message></Response>`);
+    res.status(200).type("text/xml").send(twimlMessage(twimlBody));
   },
 );
 
@@ -1165,7 +1165,7 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
       });
       return (
         input.aiReply ??
-        "Thanks. A team member will call or email you to confirm your new address. Nothing ships until we have it."
+        "Thanks. A team member will call or email you to confirm your new address. If you already confirmed an order, tell them and they can update it."
       );
     }
     case "stop": {
@@ -1268,6 +1268,21 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
       return "Thanks. We have passed your message to a team member.";
     }
   }
+}
+
+/**
+ * Compose the TwiML for a single outbound reply.
+ *
+ * Every reply body funnels through here so the GSM-7 fold is
+ * unavoidable. `inbound.gsm7.test.ts` pins the static copy in this file
+ * to ASCII, but it cannot see text composed at runtime — a tenant's
+ * configured practice name, an admin-typed closure auto-reply, or a
+ * reply written by the AI fallback model. Any one of those carrying a
+ * single non-GSM-7 character would flip the whole message to UCS-2
+ * (70-char segments instead of 160) and triple what it costs to send.
+ */
+function twimlMessage(body: string): string {
+  return `<Response><Message>${escapeXml(toGsm7(body))}</Message></Response>`;
 }
 
 function escapeXml(s: string): string {

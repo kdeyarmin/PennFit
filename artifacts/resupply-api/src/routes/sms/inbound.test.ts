@@ -526,6 +526,47 @@ describe("POST /sms/inbound", () => {
     expect(intentAudit?.metadata.low_confidence_override).toBeUndefined();
   });
 
+  it("folds a model-written reply to GSM-7 before sending it", async () => {
+    // The source-literal guard in inbound.gsm7.test.ts cannot see text
+    // composed at runtime. A model reply is exactly that: the system
+    // prompt asks for plain ASCII, but a prompt is guidance, not a
+    // guarantee. One em-dash would flip the whole SMS to UCS-2 (70-char
+    // segments instead of 160), so the route folds every reply body.
+    setMessagingEnv();
+    stageKnownPatientFlow();
+    stageSupabaseResponse("messages", "select", { data: [] });
+
+    const classifyMock = vi.fn().mockResolvedValue({
+      intent: "unknown",
+      reply: "Thanks \u2014 we\u2019ll follow up\u2026 caf\u00e9 Cl\u00ednica",
+      confidence: 0.3,
+    });
+    __setAiFallbackAdapterForTests({ classify: classifyMock });
+
+    const res = await request(makeApp())
+      .post("/resupply-api/sms/inbound")
+      .type("form")
+      .send({
+        From: FROM_PHONE,
+        To: "+12158675309",
+        Body: "what is going on here",
+        MessageSid: "SM_gsm7_ai_reply",
+        NumMedia: "0",
+      });
+
+    expect(res.status).toBe(200);
+    const body = /<Message>([\s\S]*?)<\/Message>/.exec(res.text)?.[1] ?? "";
+    expect(body).not.toBe("");
+    // Typographic punctuation folded to ASCII...
+    expect(body).toContain("Thanks - we&apos;ll follow up...");
+    // ...accents GSM-7 already covers are kept (they cost nothing)...
+    expect(body).toContain("caf\u00e9");
+    // ...and one it does not cover is reduced to its base letter.
+    expect(body).toContain("Clinica");
+    // Nothing left that would trigger UCS-2.
+    expect(body).not.toMatch(/[\u2010-\u2027\u2030-\u205e]/);
+  });
+
   it("gates action intents when AI confidence is missing", async () => {
     setMessagingEnv();
     stageKnownPatientFlow();

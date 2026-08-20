@@ -42,7 +42,7 @@ import type {
   AiFallbackResult,
   Intent,
 } from "@workspace/resupply-messaging";
-import { INTENT_NAMES } from "@workspace/resupply-messaging";
+import { INTENT_NAMES, clampToOneSegment } from "@workspace/resupply-messaging";
 
 import { logger } from "../logger";
 import { recordAiTokenUsage } from "../metering/usage.js";
@@ -139,7 +139,11 @@ const SYSTEM_PROMPT = [
   "- NEVER put a phone number, price, ship date, or tracking number in",
   "  `reply`. This service is multi-tenant and you do not know which",
   "  practice is texting, so any number you write would be the wrong",
-  "  one. Direct the patient to reply HELP instead.",
+  "  one. Do NOT tell the patient to reply HELP for these either: HELP",
+  "  is a reserved keyword that returns a fixed YES/NO/EDIT/STOP menu",
+  "  and cannot answer a question or reach a person, so it is a dead",
+  "  end. Use intent=unknown and say a team member will get back to",
+  "  them -- that is the branch that actually reaches a human.",
   "- When unsure, intent=unknown with a polite handoff reply and",
   "  confidence near 0.3.",
   "- Output JSON ONLY. No prose, no markdown fences.",
@@ -427,10 +431,18 @@ function parseModelOutput(content: string): AiFallbackResult {
       confidence?: unknown;
     };
     const intent = isValidIntent(parsed.intent) ? parsed.intent : "unknown";
-    const reply =
+    // Enforce the SMS encoding the system prompt asks for. The prompt is
+    // guidance; this is the guarantee. A model that returns an em-dash or
+    // overruns 160 characters would otherwise be sent verbatim by
+    // dispatchIntent, flipping the message to UCS-2 (70-char segments) —
+    // exactly what the static-copy guards exist to prevent. Note the old
+    // `truncate` helper appended a literal ellipsis character, so every
+    // truncated reply was itself non-GSM-7.
+    const rawReply =
       typeof parsed.reply === "string" && parsed.reply.length > 0
-        ? truncate(parsed.reply, 200)
-        : undefined;
+        ? clampToOneSegment(parsed.reply)
+        : "";
+    const reply = rawReply.length > 0 ? rawReply : undefined;
     // Confidence is optional on the wire — a model that omits the field
     // (older fine-tune, malformed output) should not poison the result.
     // The route handler treats `undefined` as "no signal" and uses the

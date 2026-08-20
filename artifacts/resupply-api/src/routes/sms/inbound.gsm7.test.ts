@@ -43,7 +43,15 @@ function stripComments(src: string): string {
     }
     if (c === "/" && next === "*") {
       const end = src.indexOf("*/", i + 2);
-      i = end < 0 ? src.length : end + 2;
+      const stop = end < 0 ? src.length : end + 2;
+      // Keep the newlines the comment spanned. Dropping them shifts every
+      // subsequent line number, so the "line N" in a failure message would
+      // not match the real file (a 6-line JSDoc block silently moved the
+      // reported line up by 5).
+      for (let k = i; k < stop; k += 1) {
+        if (src[k] === "\n") out.push("\n");
+      }
+      i = stop;
       continue;
     }
     if (c === '"' || c === "'" || c === "`") {
@@ -72,6 +80,18 @@ const STRING_LITERAL =
   /"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)'|`((?:[^`\\]|\\.)*)`/g;
 
 describe("inbound SMS route copy", () => {
+  it("reports line numbers that match the real file", () => {
+    // stripComments() must preserve newlines, or every line number after a
+    // block comment is wrong and the failure message sends the reader to
+    // the wrong place.
+    const src = readFileSync(
+      fileURLToPath(new URL("./inbound.ts", import.meta.url)),
+      "utf8",
+    );
+    const stripped = stripComments(src);
+    expect(stripped.split("\n").length).toBe(src.split("\n").length);
+  });
+
   it("uses only GSM-7-safe (ASCII) characters in every string literal", () => {
     const src = readFileSync(
       fileURLToPath(new URL("./inbound.ts", import.meta.url)),

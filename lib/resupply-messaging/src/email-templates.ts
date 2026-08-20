@@ -191,7 +191,7 @@ export function renderResupplyReminder(
     "Pick one of the links below. You don't need a password or an account.",
     "",
     "1. Send my supplies",
-    "   Use this if you still use your CPAP and are running low. We ship to the address we have on file.",
+    "   Use this if you still use your CPAP and are running low. We check your plan, then ship to the address we have on file. If anything needs a closer look, a team member will contact you first.",
     `   ${input.confirmUrl}`,
     "",
     "2. Change my shipping address",
@@ -251,7 +251,7 @@ export function renderResupplyReminder(
       Pick one of the buttons below. You don't need a password or an account.
     </p>
     <p style="margin:0 0 8px;font-size:14px;line-height:21px;color:#334155;">
-      <strong>1. Send my supplies.</strong> Use this if you still use your CPAP and are running low. We ship to the address we have on file.
+      <strong>1. Send my supplies.</strong> Use this if you still use your CPAP and are running low. We check your plan, then ship to the address we have on file. If anything needs a closer look, a team member will contact you first.
     </p>
     <div style="margin:0 0 24px;">
       <a href="${safeHref(input.confirmUrl)}" style="display:inline-block;padding:12px 20px;border-radius:6px;background:#0f766e;color:#ffffff;text-decoration:none;font-weight:600;font-size:15px;">
@@ -424,14 +424,20 @@ export function renderClickLanding(input: RenderClickLandingInput): string {
   // One step per page, stated plainly, plus what happens after the tap so
   // nobody has to guess. "Use the button" reads correctly on a phone and a
   // desktop alike (the page was mixing "Tap" and "Click").
+  //
+  // The confirm copy must NOT promise shipment. POST /email/click runs the
+  // entitlement, coverage, continued-use and refill-window guards, and any
+  // one of them renders the `review` confirmation ("a team member will
+  // check it") instead of shipping. Promising "we will ship" here would
+  // make that outcome read as a broken promise.
   const hasItems = !!input.items && input.items.length > 0;
   const description =
     input.action === "confirm"
       ? hasItems
-        ? "Here is what is due. Use the button below to confirm, and we will ship these supplies to the address we have on file."
-        : "Use the button below to confirm, and we will ship your supplies to the address we have on file."
+        ? "Here is what is due. Use the button below to confirm. We will check your plan, then ship to the address we have on file. If anything needs a closer look, a team member will contact you first."
+        : "Use the button below to confirm. We will check your plan, then ship your supplies to the address we have on file. If anything needs a closer look, a team member will contact you first."
       : input.action === "edit"
-        ? "Use the button below to ask for an address change. A team member will call or email you to confirm the new address before anything ships."
+        ? "Use the button below to ask for an address change. A team member will call or email you to confirm the new address. If you already confirmed an order, tell them and they can update where it goes."
         : "Use the button below to stop CPAP refill reminders. You can turn them back on any time by replying to one of our emails.";
 
   const buttonLabel =
@@ -516,7 +522,7 @@ export function renderClickConfirmation(
   const MESSAGES: Record<RenderClickConfirmationInput["action"], string> = {
     confirm:
       "You're all set. Your supplies are on the way to the address we have on file. We'll text or email you tracking as soon as they ship. You don't need to do anything else.",
-    edit: "Thanks. We have your address change request. A team member will call or email you within one business day to confirm the new address. Nothing ships until then.",
+    edit: "Thanks. We have your address change request. A team member will call or email you within one business day to confirm the new address. If you already confirmed an order, tell them and they can update where it goes.",
     stop: "Done. We've stopped CPAP refill reminders, so you won't get any more of these emails. If you change your mind, reply to any of our past emails and we'll turn them back on.",
     review:
       "Thanks. It looks like it's a little early to resend this item under your plan, so a team member will check it and follow up with you before anything ships. You don't need to do anything right now.",
