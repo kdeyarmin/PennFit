@@ -150,6 +150,8 @@ describe("reportMeteredOverage", () => {
     customer?: string | null;
     allowance: number;
     monthTotal: number;
+    /** Tenant-level override; `null` for a metric means UNLIMITED. */
+    customAllowances?: Record<string, number | null>;
   }) {
     state.config = { mode: "shared" };
     state.results.billing_addons = {
@@ -160,6 +162,7 @@ describe("reportMeteredOverage", () => {
       data: {
         stripe_customer_id:
           opts.customer === undefined ? "cus_1" : opts.customer,
+        custom_allowances: opts.customAllowances ?? {},
         billing_plans: {
           allowances: { outboundMessagesPerMonth: opts.allowance },
         },
@@ -196,6 +199,101 @@ describe("reportMeteredOverage", () => {
       event_name: "sms_overage",
       payload: { stripe_customer_id: "cus_1", value: "10" },
     });
+  });
+
+  // ── Tenant custom allowances (unlimited pilots, negotiated contracts) ──
+  //
+  // The console and the invoice must agree. Before this, reportMeteredOverage
+  // read billing_plans(allowances) alone, so a tenant could sit comfortably
+  // inside a custom allowance on both usage surfaces and still be billed
+  // overage against the plan's smaller number.
+
+  it("honours a tenant custom allowance over the plan's number", async () => {
+    process.env.PLATFORM_METERED_OVERAGE_ENABLED = "true";
+    // Plan says 1000 and the month total is 1010 — overage under the plan.
+    // The tenant negotiated 5000, so nothing is billable.
+    wireHappyPath({
+      allowance: 1000,
+      monthTotal: 1010,
+      customAllowances: { outboundMessagesPerMonth: 5000 },
+    });
+    await reportMeteredOverage({
+      orgId: "org-1",
+      metricKey: "outboundMessagesPerMonth",
+      increment: 10,
+    });
+    expect(state.meterEvents).toHaveLength(0);
+  });
+
+  it("bills against a custom allowance that is LOWER than the plan's", async () => {
+    process.env.PLATFORM_METERED_OVERAGE_ENABLED = "true";
+    // The override wins in both directions — it is not a max().
+    wireHappyPath({
+      allowance: 1000,
+      monthTotal: 110,
+      customAllowances: { outboundMessagesPerMonth: 100 },
+    });
+    await reportMeteredOverage({
+      orgId: "org-1",
+      metricKey: "outboundMessagesPerMonth",
+      increment: 10,
+    });
+    expect(state.meterEvents).toHaveLength(1);
+    expect(state.meterEvents[0]).toMatchObject({
+      payload: { value: "10" },
+    });
+  });
+
+  it("never reports a meter event for an UNLIMITED metric", async () => {
+    process.env.PLATFORM_METERED_OVERAGE_ENABLED = "true";
+    // A pilot lifted to unlimited: hugely past the plan number, zero billed.
+    wireHappyPath({
+      allowance: 1000,
+      monthTotal: 999_999,
+      customAllowances: { outboundMessagesPerMonth: null },
+    });
+    await reportMeteredOverage({
+      orgId: "org-1",
+      metricKey: "outboundMessagesPerMonth",
+      increment: 500,
+    });
+    expect(state.meterEvents).toHaveLength(0);
+  });
+
+  it("keeps billing a DIFFERENT metric that was not lifted", async () => {
+    process.env.PLATFORM_METERED_OVERAGE_ENABLED = "true";
+    // Unlimited is per-metric, not a blanket switch: the plan number still
+    // governs any metric the override does not name.
+    wireHappyPath({
+      allowance: 1000,
+      monthTotal: 1010,
+      customAllowances: { faxEvents: null },
+    });
+    await reportMeteredOverage({
+      orgId: "org-1",
+      metricKey: "outboundMessagesPerMonth",
+      increment: 10,
+    });
+    expect(state.meterEvents).toHaveLength(1);
+  });
+
+  it("ignores a malformed override rather than granting free usage", async () => {
+    process.env.PLATFORM_METERED_OVERAGE_ENABLED = "true";
+    // A junk value must fall back to the MARKETED number. The failure we
+    // cannot accept is a typo silently zeroing a tenant's bill.
+    wireHappyPath({
+      allowance: 1000,
+      monthTotal: 1010,
+      customAllowances: {
+        outboundMessagesPerMonth: "unlimited" as unknown as number,
+      },
+    });
+    await reportMeteredOverage({
+      orgId: "org-1",
+      metricKey: "outboundMessagesPerMonth",
+      increment: 10,
+    });
+    expect(state.meterEvents).toHaveLength(1);
   });
 
   it("uses the atomic newTotal when provided, ignoring the rollup read", async () => {

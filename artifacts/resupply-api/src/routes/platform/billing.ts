@@ -1923,7 +1923,14 @@ router.put(
         p_custom_monthly_price_cents: body.data.customMonthlyPriceCents ?? null,
         p_custom_onboarding_fee_cents:
           body.data.customOnboardingFeeCents ?? null,
-        p_custom_allowances: body.data.customAllowances ?? {},
+        // NULL means "leave this tenant's allowances alone" (migration
+        // 0508). The console posts a subscription save without ever
+        // sending customAllowances, so defaulting to {} here silently
+        // revoked a negotiated or unlimited allowance on every plan
+        // change — and since allowances now drive overage billing, the
+        // only symptom would have been an unintended charge. A caller
+        // that genuinely wants plan pricing back sends an explicit {}.
+        p_custom_allowances: body.data.customAllowances ?? null,
         p_notes: body.data.notes ?? "",
         p_updated_by_email: req.platformAdminEmail ?? null,
       });

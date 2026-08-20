@@ -411,7 +411,11 @@ export function AdminBillingPackagePage() {
       <ErrorPanel title="Could not load billing package" error={q.error} />
     );
   const sub = q.data.subscription;
-  const allowances = {
+  // A `null` allowance is an explicit UNLIMITED override on this tenant's
+  // subscription, and it has to survive the merge to out-rank the plan's
+  // number. Usage is still metered and still shown either way — unlimited
+  // suppresses overage BILLING, not measurement.
+  const allowances: Record<string, number | null> = {
     ...(sub?.plan?.allowances ?? {}),
     ...(sub?.customAllowances ?? {}),
   };
@@ -506,6 +510,11 @@ export function AdminBillingPackagePage() {
       <div className="grid gap-4 md:grid-cols-2">
         {Object.entries(q.data.usage.metrics).map(([key, used]) => {
           const limit = allowances[key];
+          // Unlimited is an explicit `null` in the map; a metric with no
+          // entry at all is simply uncapped. Neither has a bar to fill, but
+          // only the first should SAY so — otherwise an operator can't tell
+          // "we lifted your cap" from "we have no number for this".
+          const unlimited = key in allowances && limit === null;
           const pct =
             typeof limit === "number" && limit > 0
               ? Math.min(100, Math.round((used / limit) * 100))
@@ -516,14 +525,29 @@ export function AdminBillingPackagePage() {
                 <span>{LABELS[key] ?? key}</span>
                 <span>
                   {used.toLocaleString()}
-                  {limit ? ` / ${limit.toLocaleString()}` : ""}
+                  {typeof limit === "number" && limit > 0
+                    ? ` / ${limit.toLocaleString()}`
+                    : ""}
+                  {unlimited ? (
+                    <span className="ml-1 font-normal text-slate-500">
+                      / unlimited
+                    </span>
+                  ) : null}
                 </span>
               </div>
               <div className="mt-2 h-2 rounded-full bg-slate-100">
-                <div
-                  className={`h-2 rounded-full ${pct >= 90 ? "bg-red-500" : pct >= 75 ? "bg-amber-500" : "bg-emerald-500"}`}
-                  style={{ width: `${pct}%` }}
-                />
+                {unlimited ? (
+                  <div
+                    className="h-2 rounded-full bg-slate-300"
+                    style={{ width: "100%" }}
+                    data-testid={`usage-unlimited-${key}`}
+                  />
+                ) : (
+                  <div
+                    className={`h-2 rounded-full ${pct >= 90 ? "bg-red-500" : pct >= 75 ? "bg-amber-500" : "bg-emerald-500"}`}
+                    style={{ width: `${pct}%` }}
+                  />
+                )}
               </div>
             </Card>
           );
