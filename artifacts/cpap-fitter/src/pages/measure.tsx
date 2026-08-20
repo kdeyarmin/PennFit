@@ -271,17 +271,30 @@ export function Measure() {
   useEffect(() => {
     if (startedRef.current) return;
     if (!capturedImage) {
-      // Cold-load with no image (e.g. user pasted /measure into the URL).
-      // The /capture → /measure handoff goes through GuardedMeasure
-      // (App.tsx), which already keeps users without a captured image off
-      // this route, so this branch is rarely hit in practice.
+      // Cold-load with no image — two distinct situations land here:
       //
-      // `replace` matters (app-review 2026-06-10, P2-8): a PUSH here
-      // leaves the image-less /measure entry in history, so pressing
-      // Back from /capture re-mounts /measure, which pushes /capture
-      // again — the user can never navigate back past this page and is
-      // herded toward re-taking the photo.
-      setLocation("/capture", { replace: true });
+      // 1. Measurements already extracted (a refresh on /measure after
+      //    a successful extraction, or during the auto-advance window:
+      //    the image is memory-only and lost, but the measurements were
+      //    persisted). There is nothing left for this page to do, and
+      //    bouncing to /capture forces a redundant photo retake — so
+      //    continue FORWARD to the questionnaire with the saved
+      //    measurements. This is also what `canStayOnMeasure`
+      //    (measure-flow.ts) documents: measurements alone are a valid
+      //    reason to be past the capture step.
+      //
+      // 2. No measurements either (user pasted /measure into the URL).
+      //    Send them to /capture to start properly. The /capture →
+      //    /measure handoff goes through GuardedMeasure (App.tsx), so
+      //    this branch is rarely hit in practice.
+      //
+      // `replace` matters in both (app-review 2026-06-10, P2-8): a PUSH
+      // here leaves the image-less /measure entry in history, so
+      // pressing Back re-mounts /measure, which pushes again — the user
+      // can never navigate back past this page.
+      setLocation(measurements ? "/questionnaire" : "/capture", {
+        replace: true,
+      });
       return;
     }
     startedRef.current = true;

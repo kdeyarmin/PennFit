@@ -521,7 +521,8 @@ export function FitterProvider({ children }: { children: ReactNode }) {
     setEmailConsentState(false);
     setInviteTokenState(null);
     try {
-      sessionStorage.removeItem("fitter_measurements");
+      // Measurements + scan signals were already cleared by
+      // resetForNewFitting() above (via the storage-key constants).
       sessionStorage.removeItem("fitter_profile_v2");
       sessionStorage.removeItem("fitter_multiframe");
       sessionStorage.removeItem("fitter_email");

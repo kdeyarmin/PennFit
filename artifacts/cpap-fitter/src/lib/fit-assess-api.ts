@@ -248,7 +248,23 @@ export async function requestFitAssessment(
     return { kind: "unavailable", reason: String(record.reason ?? "invalid") };
   }
 
-  if (typeof record.outcome !== "string") {
+  if (
+    typeof record.outcome !== "string" ||
+    !KNOWN_OUTCOMES.has(record.outcome)
+  ) {
+    return { kind: "unavailable", reason: "malformed_response" };
+  }
+  // Contract check: a non-withheld outcome always names a primary mask
+  // (see FitAssessment.primary). Without this, a malformed 200 — e.g.
+  // `outcome: "high_confidence"` with no primary — would put the page
+  // in the clinical state with nothing to render: the withheld branch
+  // doesn't match, the clinical branch has no primary, and the legacy
+  // fallback never fires — skeletons forever with no retry. Treat it
+  // as malformed so the caller falls back to the legacy engine.
+  if (
+    !isWithheld(record.outcome as FitOutcome) &&
+    (typeof record.primary !== "object" || record.primary === null)
+  ) {
     return { kind: "unavailable", reason: "malformed_response" };
   }
   return { kind: "assessment", assessment: record as unknown as FitAssessment };
@@ -325,6 +341,16 @@ export function toLegacyMaskType(
       return "nasal";
   }
 }
+
+/** Every outcome the route can emit — used to reject a malformed 200
+ *  (unknown outcome string) instead of casting it into the UI. */
+const KNOWN_OUTCOMES: ReadonlySet<string> = new Set([
+  "high_confidence",
+  "moderate_confidence",
+  "low_confidence",
+  "contraindicated",
+  "outside_validated_range",
+] satisfies FitOutcome[]);
 
 /** True when the engine deliberately withheld an automated recommendation. */
 export function isWithheld(outcome: FitOutcome): boolean {

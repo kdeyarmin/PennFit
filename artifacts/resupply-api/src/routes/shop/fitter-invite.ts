@@ -175,19 +175,62 @@ router.get("/shop/fitter-invite/resolve", resolveLimiter, async (req, res) => {
 });
 
 // ---- completion payload validation -------------------------------
+//
+// This is the third ingest path for fitting data (after /api/recommend
+// and /api/fit/assess), and what it accepts is written verbatim into
+// jsonb columns that staff later view — so it enforces the same two
+// guards its siblings have: numeric plausibility bounds on the
+// measurements, and the belt-and-braces encoded-media check ("no images
+// in the backend" is a hard rule, and the header comment alone does not
+// enforce it). Unknown keys are STRIPPED rather than rejected (plain
+// z.object, no .passthrough()), so a newer client with extra fields
+// degrades to "extras dropped" instead of silently losing the whole
+// transmission — this endpoint is fire-and-forget on the client.
 
-const measurementsSchema = z
-  .object({
-    noseWidth: z.number().finite(),
-    noseHeight: z.number().finite(),
-    noseToChin: z.number().finite(),
-    mouthWidth: z.number().finite(),
-    faceWidthAtCheekbones: z.number().finite(),
-    calibrationMethod: z.string().max(64).optional(),
-  })
-  .passthrough();
+/**
+ * Adult ∪ pediatric plausibility window (mm). This route cannot know the
+ * patient's population, so it uses the same union window the client's
+ * own /measure gate applies (cpap-fitter measure-flow.ts
+ * PLAUSIBILITY_BOUNDS); the population-correct windows live in
+ * lib/fitting/confidence.ts. Keep the three in sync.
+ */
+const COMPLETE_MEASUREMENT_BOUNDS = {
+  noseWidth: [12, 60],
+  noseHeight: [15, 70],
+  noseToChin: [25, 90],
+  mouthWidth: [18, 80],
+  faceWidthAtCheekbones: [80, 180],
+} as const;
 
-const answersSchema = z.record(z.string(), z.unknown());
+const boundedMm = (field: keyof typeof COMPLETE_MEASUREMENT_BOUNDS) =>
+  z
+    .number()
+    .finite()
+    .min(COMPLETE_MEASUREMENT_BOUNDS[field][0])
+    .max(COMPLETE_MEASUREMENT_BOUNDS[field][1]);
+
+const measurementsSchema = z.object({
+  noseWidth: boundedMm("noseWidth"),
+  noseHeight: boundedMm("noseHeight"),
+  noseToChin: boundedMm("noseToChin"),
+  mouthWidth: boundedMm("mouthWidth"),
+  faceWidthAtCheekbones: boundedMm("faceWidthAtCheekbones"),
+  calibrationMethod: z.enum(["creditCard", "iris", "manual"]).optional(),
+});
+
+// The v1 questionnaire is 11 keys of booleans/enums. Bounded as a record
+// (rather than enumerating the keys) so questionnaire evolution doesn't
+// 400 an older server — but bounded hard: scalar values only, capped
+// lengths and key count. A nested object or a long string is exactly
+// where encoded media would hide.
+const answersSchema = z
+  .record(
+    z.string().max(64),
+    z.union([z.boolean(), z.number().finite(), z.string().max(200), z.null()]),
+  )
+  .refine((r) => Object.keys(r).length <= 40, {
+    message: "too many answer keys",
+  });
 
 const maskType = z.enum(["fullFace", "nasal", "nasalPillow", "hybrid"]);
 
@@ -195,22 +238,35 @@ const recommendationSchema = z.object({
   maskId: z.string().min(1).max(200),
   name: z.string().min(1).max(300),
   type: maskType,
-  // Ranked top-N (the cards the patient saw), stored verbatim for
-  // staff follow-up. Bounded so a hostile client can't bloat the row.
+  // Ranked top-N (the cards the patient saw), stored for staff
+  // follow-up. Bounded so a hostile client can't bloat the row; unknown
+  // keys on each entry are stripped, not stored.
   top: z
     .array(
-      z
-        .object({
-          maskId: z.string().max(200),
-          name: z.string().max(300),
-          type: maskType,
-          confidence: z.number().finite().optional(),
-        })
-        .passthrough(),
+      z.object({
+        maskId: z.string().max(200),
+        name: z.string().max(300),
+        type: maskType,
+        confidence: z.number().finite().optional(),
+      }),
     )
     .max(10)
     .optional(),
 });
+
+/**
+ * Belt-and-braces guard against encoded media, mirroring
+ * routes/storefront/fit-assess.ts and recommend.ts. Runs against the RAW
+ * request body (before Zod strips unknown keys), so media smuggled under
+ * a key the schema would drop is still rejected loudly instead of
+ * silently discarded.
+ */
+function looksLikeEncodedMedia(body: unknown): boolean {
+  const s = JSON.stringify(body ?? {});
+  return (
+    /data:[a-z]+\/[a-z]+;base64,/i.test(s) || /[A-Za-z0-9+/]{1000,}/.test(s)
+  );
+}
 
 const completeBody = z
   .object({
@@ -264,6 +320,19 @@ router.post(
           path: i.path.join("."),
           message: i.message,
         })),
+      });
+      return;
+    }
+    if (looksLikeEncodedMedia(req.body)) {
+      res.status(400).json({
+        error: "invalid_body",
+        issues: [
+          {
+            path: "",
+            message:
+              "Request body contains unexpected binary or encoded data. Only numeric measurements are accepted.",
+          },
+        ],
       });
       return;
     }

@@ -1160,7 +1160,11 @@ export function demoRequestRescan(id: string) {
     ok: true as const,
     patientNotified: false,
     notifyReason: "no_channel_config" as const,
-    inviteLink: `https://cmbreathe.example/fit/rescan/${newId("demo-token")}`,
+    // Mirrors the REAL link shape rescan-notify.ts builds
+    // (`/fitter-invite?t=<token>`); the previous `/fit/rescan/<token>`
+    // shape matched no route, so staff copying it out of the demo
+    // console handed the patient a 404.
+    inviteLink: `https://cmbreathe.example/fitter-invite?t=${newId("demo-token")}`,
   };
 }
 

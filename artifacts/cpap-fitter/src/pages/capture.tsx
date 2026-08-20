@@ -461,11 +461,12 @@ function SingleFrameCapture() {
         </div>
       </div>
 
-      {!captureReady && visionHealth !== "ready" && (
-        <p className="w-full max-w-lg mb-4 text-xs text-muted-foreground text-center">
-          Vision runtime is not ready yet. Please wait a moment and try again.
-        </p>
-      )}
+      {/* No separate "vision runtime not ready" line here: the status
+          line at the top of the page already narrates the same wait in
+          plain language ("Getting your camera ready…" / "Still
+          preparing the face scanner…"), and this one printed developer
+          jargon during ordinary camera warm-up — including when the
+          actual blocker was the camera, not the runtime. */}
 
       {/* If the face-scanner runtime never becomes ready (blocked CDN,
           corporate proxy, missing asset), the capture button stays
