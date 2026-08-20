@@ -220,14 +220,18 @@ export function registerEmailRoute(router: IRouter): void {
       }
 
       const filename = `${slug}-${rangeSlug(from, effectiveTo)}.${artifact.filenameExt}`;
-      const subject = `[${await practiceName(orgId)}] ${slug} report — ${rangeLabel(from, effectiveTo)}`;
+      // Resolved once: this is a per-tenant lookup, and the subject and
+      // both signatures must name the same practice even if the tenant's
+      // branding changes mid-request.
+      const sender = await practiceName(orgId);
+      const subject = `[${sender}] ${slug} report — ${rangeLabel(from, effectiveTo)}`;
       const notePara = note ? `<p>${escapeHtml(note)}</p>` : "";
       const html = [
         `<p>Hi,</p>`,
         `<p>Attached is the <strong>${escapeHtml(slug)}</strong> report for the period <strong>${escapeHtml(rangeLabel(from, effectiveTo))}</strong>, generated as <strong>${escapeHtml(format)}</strong>.</p>`,
         notePara,
         `<p>Requested by ${escapeHtml(req.adminEmail ?? "an admin")}.</p>`,
-        `<p>— ${escapeHtml(await practiceName(orgId))}</p>`,
+        `<p>— ${escapeHtml(sender)}</p>`,
       ]
         .filter(Boolean)
         .join("\n");
@@ -239,7 +243,7 @@ export function registerEmailRoute(router: IRouter): void {
         ``,
         `Requested by ${req.adminEmail ?? "an admin"}.`,
         ``,
-        `— ${await practiceName(orgId)}`,
+        `— ${sender}`,
       ].join("\n");
 
       try {

@@ -86,7 +86,17 @@ function pennHits(opts: { commentsToo: boolean }): Hit[] {
     lines.forEach((text, i) => {
       if (!opts.commentsToo && isComment(text)) return;
       const lower = text.toLowerCase();
-      if (PENN_TOKENS.some((t) => lower.includes(t))) {
+      // Also scan with separators stripped, so a COMPACT spelling is
+      // caught: "acct_DEMO000PennHomeMedical" sailed past the spaced
+      // "penn home medical" token while StripeConnectCard rendered it
+      // verbatim in the demo. Covers "penn-home-medical" too.
+      const compact = lower.replace(/[^a-z0-9]/g, "");
+      if (
+        PENN_TOKENS.some(
+          (t) =>
+            lower.includes(t) || compact.includes(t.replace(/[^a-z0-9]/g, "")),
+        )
+      ) {
         hits.push({ file: rel, line: i + 1, text: text.trim() });
       }
     });
