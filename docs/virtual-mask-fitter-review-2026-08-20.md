@@ -18,6 +18,14 @@ This builds on the four prior fitter review passes (#1262, #1265/#1267,
 #1268, #1271, #1273) — most of what those fixed was re-verified still
 working; findings below are new.
 
+A second pass verified the SCAN'S MEASUREMENT ACCURACY against
+ground-truth projections of MediaPipe's canonical face model and
+corrected three systematic errors it found (depth-plane bias on the
+face width, inverted pose-correction physics, turned-frame height
+contamination), plus added one-tap burst capture. That work is
+documented separately in
+[`scan-accuracy-verification-2026-08-20.md`](./scan-accuracy-verification-2026-08-20.md).
+
 ## 1. What was verified working (e2e)
 
 New spec: [`e2e/tests/fitter-funnel-full.spec.ts`](../e2e/tests/fitter-funnel-full.spec.ts)

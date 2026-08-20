@@ -12,6 +12,14 @@ import { useVisionRuntimeHealth } from "@/hooks/use-vision-runtime-health";
 import { BrandName } from "@/components/company-contact";
 import { GuidedCapture } from "./capture-guided";
 
+// One tap captures this many frames, this far apart. ~5 frames over
+// ~560 ms: long enough that hand shake and a blink de-correlate between
+// frames (so the median discards them), short enough that the shutter
+// still feels instant. /measure drops frames that fail their quality
+// gates and folds the rest to a median with cross-frame agreement.
+const BURST_FRAME_COUNT = 5;
+const BURST_FRAME_INTERVAL_MS = 140;
+
 export function Capture() {
   useDocumentTitle("Take a photo");
   const { multiframeCapture } = useFitterStore();
@@ -161,9 +169,24 @@ function SingleFrameCapture() {
     attachStream();
   }, [hasPermission, error]);
 
-  // Capture the current frame from the video feed.
-  // Returns true on success, false on failure (so the caller can reset state).
-  const captureFrame = (): boolean => {
+  // Capture a short burst of frames from the video feed on ONE tap.
+  //
+  // The tap UX is identical to the old single shot — one press, one
+  // shutter — but /measure receives several frames ~140 ms apart and
+  // folds them to a median with real cross-frame agreement
+  // (aggregateFrames). Two wins over a single still, both verified by
+  // the scan-quality model: one blinked/blurred/badly-lit frame is
+  // dropped instead of failing the whole capture, and the cross-frame
+  // agreement evidence lifts the scan confidence band past the
+  // single-frame "moderate" cap when the frames genuinely agree.
+  //
+  // Frames stay in memory only (never sessionStorage, never uploaded)
+  // and /measure discards them the moment the numbers are extracted —
+  // the same privacy promise the single shot made.
+  //
+  // Returns true on success, false on failure (so the caller can reset
+  // state).
+  const captureBurst = async (): Promise<boolean> => {
     try {
       if (!videoRef.current || !canvasRef.current) {
         setError("Camera or canvas was not ready. Please try again.");
@@ -179,17 +202,42 @@ function SingleFrameCapture() {
         return false;
       }
 
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-
       const ctx = canvas.getContext("2d");
       if (!ctx) {
         setError("Could not initialize image capture.");
         return false;
       }
 
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
+      const frames: { dataUrl: string; pose: "front" }[] = [];
+      for (let i = 0; i < BURST_FRAME_COUNT; i += 1) {
+        // The camera can die mid-burst (tab switch, OS revoking the
+        // stream, unmount) — ship whatever was captured so far rather
+        // than failing a capture that already has usable frames.
+        if (unmountedRef.current) break;
+        if (!video.videoWidth || !video.videoHeight) break;
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        frames.push({
+          dataUrl: canvas.toDataURL("image/jpeg", 0.92),
+          pose: "front",
+        });
+        if (i < BURST_FRAME_COUNT - 1) {
+          await new Promise((resolve) =>
+            setTimeout(resolve, BURST_FRAME_INTERVAL_MS),
+          );
+        }
+      }
+      if (unmountedRef.current) {
+        // Navigated away mid-burst — the unmount cleanup already stopped
+        // the camera; don't navigate a dead page.
+        return false;
+      }
+      if (frames.length === 0) {
+        setError("Camera feed wasn't ready yet. Please try again in a moment.");
+        return false;
+      }
+
       // flushSync forces the captured-image context state to commit BEFORE
       // we navigate. Without it, wouter's setLocation synchronously fires a
       // 'pushState' event that re-renders the wouter subtree first, so the
@@ -198,15 +246,15 @@ function SingleFrameCapture() {
       // missing unstable_batchedUpdates as a known caveat — see
       // node_modules/wouter/src/use-browser-location.js lines 74-76.)
       flushSync(() => {
-        setCapturedImage(dataUrl);
-        // A single-frame capture supersedes any earlier guided run's
-        // frame set (e.g. guided → fallback → retake). Stale frames left
-        // in the store would send /measure down the multi-angle path
-        // against photos the patient just replaced.
-        setCapturedFrames(null);
+        // The first frame doubles as the display still on /measure.
+        setCapturedImage(frames[0]!.dataUrl);
+        // The burst replaces any earlier guided run's frame set
+        // (e.g. guided → fallback → retake). Stale frames left in the
+        // store would measure photos the patient just replaced.
+        setCapturedFrames(frames);
       });
       stopCamera();
-      track("capture_taken");
+      track("capture_taken", { frames: frames.length, burst: true });
       setLocation("/measure");
       return true;
     } catch (err) {
@@ -238,8 +286,9 @@ function SingleFrameCapture() {
       return;
     }
     setCapturing(true);
-    const ok = captureFrame();
-    if (!ok) setCapturing(false);
+    void captureBurst().then((ok) => {
+      if (!ok && !unmountedRef.current) setCapturing(false);
+    });
   };
 
   if (hasPermission === false || error) {

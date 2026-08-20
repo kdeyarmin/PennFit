@@ -373,12 +373,38 @@ const HORIZONTAL_KEYS = new Set([
 ]);
 
 /**
+ * Yaw beyond which a frame stops contributing to VERTICAL measurements
+ * (noseHeight, noseToChin) in the aggregate. A turned head genuinely
+ * adds width evidence, but its vertical spans are distorted by the
+ * nose's own depth swinging through the image plane — an error the
+ * small-angle cos model cannot express (verified at ~+10–18% at 20° of
+ * yaw against pinhole projections of the canonical face model). Frames
+ * inside this limit are "front enough" to measure heights from.
+ */
+export const VERTICAL_YAW_LIMIT_DEG = 10;
+
+/**
  * Correct a span for head rotation.
  *
- * A horizontal span foreshortens by cos(yaw) as the head turns, and a
- * vertical one by cos(pitch). Clamped at 30 degrees: past that the small-
- * angle assumption stops holding and the correction would amplify error
- * rather than remove it.
+ * The naive model — divide a horizontal span by cos(yaw) — is wrong,
+ * because the iris that CALIBRATES the millimetre scale is itself a
+ * circle and foreshortens by the same cos(yaw) as any horizontal span at
+ * its depth. The two cancel in `span_px / pxPerMm`, so under yaw:
+ *
+ *   * horizontal spans are already self-corrected — dividing them by
+ *     cos(yaw) again was a systematic over-correction (~+6% per frame at
+ *     the 20° guided turn poses, verified against pinhole projections of
+ *     the canonical face model);
+ *   * VERTICAL spans are the ones inflated — their pixel span is yaw-
+ *     stable while the shrunken iris drags pxPerMm down — so they are
+ *     multiplied by cos(yaw) to undo the calibration shift.
+ *
+ * Under pitch the roles flip: the iris's horizontal diameter is pitch-
+ * stable, so horizontal spans need nothing, while vertical spans
+ * genuinely foreshorten and are divided by cos(pitch).
+ *
+ * Clamped at 30 degrees: past that the small-angle assumption stops
+ * holding and the correction would amplify error rather than remove it.
  */
 export function poseCorrect(
   key: string,
@@ -386,10 +412,12 @@ export function poseCorrect(
   yawDeg: number,
   pitchDeg: number,
 ): number {
-  const angle = HORIZONTAL_KEYS.has(key) ? yawDeg : pitchDeg;
-  const clamped = Math.min(30, Math.abs(angle));
-  const factor = Math.cos((clamped * Math.PI) / 180);
-  return factor > 0.1 ? value / factor : value;
+  if (HORIZONTAL_KEYS.has(key)) return value;
+  const yawFactor = Math.cos((Math.min(30, Math.abs(yawDeg)) * Math.PI) / 180);
+  const pitchFactor = Math.cos(
+    (Math.min(30, Math.abs(pitchDeg)) * Math.PI) / 180,
+  );
+  return (value * yawFactor) / (pitchFactor > 0.1 ? pitchFactor : 1);
 }
 
 function median(values: number[]): number {
@@ -432,7 +460,19 @@ export function aggregateFrames(frames: FrameMeasurement[]): AggregateResult {
   const agreement: Record<string, number> = {};
 
   for (const key of keys) {
-    const corrected = frames
+    // Vertical measurements come from near-frontal frames only (see
+    // VERTICAL_YAW_LIMIT_DEG) — a turned frame's heights are distorted
+    // beyond what the cos model can repair. Fall back to every frame
+    // when none qualifies, so a fully-turned set still measures rather
+    // than failing.
+    const nearFrontal = frames.filter(
+      (f) => Math.abs(f.yawDeg) <= VERTICAL_YAW_LIMIT_DEG,
+    );
+    const usable =
+      HORIZONTAL_KEYS.has(key) || nearFrontal.length === 0
+        ? frames
+        : nearFrontal;
+    const corrected = usable
       .map((f) =>
         poseCorrect(key, f.values[key] ?? Number.NaN, f.yawDeg, f.pitchDeg),
       )
