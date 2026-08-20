@@ -104,21 +104,60 @@ pnpm --filter @workspace/scripts demo:seed
 
 Useful flags:
 
-| Flag                          | Effect                                                                                                                                                                        |
-| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--dry-run`                   | Print what would be written. No connection needed.                                                                                                                            |
-| `--emit-sql`                  | Print the `INSERT … ON CONFLICT` statements instead of writing. No connection and no service-role key needed — pair with `--org-id=` or substitute the `:ORG_ID` placeholder. |
-| `--clean`                     | Remove the tenant and every row it owns.                                                                                                                                      |
-| `--password=` / `--email=`    | Override the credentials.                                                                                                                                                     |
-| `--org-slug=` / `--org-name=` | Stand up a second, separate demo tenant.                                                                                                                                      |
-| `--flags=all\|preset\|copy`   | Feature-flag posture. Default `all`.                                                                                                                                          |
-| `--no-accept-agreements`      | Leave the BAA / platform-terms gate in place.                                                                                                                                 |
-| `--plan=`                     | Assign a billing plan (e.g. `growth`).                                                                                                                                        |
+| Flag                          | Effect                                                                                                                                                                                                       |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `--dry-run`                   | Print what would be written. No connection needed.                                                                                                                                                           |
+| `--emit-sql`                  | Print the `INSERT … ON CONFLICT` statements instead of writing. No connection and no service-role key needed — pair with `--org-id=` or substitute the `:ORG_ID` placeholder. **Fixtures only** — see below. |
+| `--clean`                     | Remove the tenant and every row it owns.                                                                                                                                                                     |
+| `--password=` / `--email=`    | Override the credentials.                                                                                                                                                                                    |
+| `--org-slug=` / `--org-name=` | Stand up a second, separate demo tenant.                                                                                                                                                                     |
+| `--flags=all\|preset\|copy`   | Feature-flag posture. Default `all`.                                                                                                                                                                         |
+| `--no-accept-agreements`      | Leave the BAA / platform-terms gate in place. On a tenant already seeded normally, this also **revokes** the seeded acceptances so the gate genuinely comes back.                                            |
+| `--force-clean`               | Allow `--clean` to proceed against an org holding no demo-prefixed rows. See [Removing it](#removing-it) — you should almost never need this.                                                                |
+| `--adopt-existing-identity`   | Allow `--email=` to point at an auth user that already exists outside this tenant, overwriting its password and role. See below.                                                                             |
+| `--plan=`                     | Assign a billing plan (e.g. `growth`).                                                                                                                                                                       |
 
 `--emit-sql` is the path to use when you don't have the service-role key
 to hand, or when you want to read exactly what will land before it does.
 Both sinks are fed by one row-builder, so the SQL and the live write are
 the same data by construction.
+
+### `--emit-sql` covers fixtures only
+
+The SQL is rendered from the same row builders that feed the live write, so
+the two cannot drift — but only for the rows those builders own: the login,
+agreements, providers, patients and inbox threads.
+
+The organization itself, its feature flags, its formulary and any billing
+subscription are provisioned by live queries instead (the flags are _copied_
+from the seed tenant, so there is nothing to render offline). **The tenant
+must already exist** — via `tenant:onboard` or an earlier live run — or the
+emitted statements fail on their `org_id` foreign keys.
+
+### Pointing `--email=` at an address that already exists
+
+The identity writes are not additive: they overwrite `password_credentials`,
+force the coarse role to `admin`, mark the address verified and attach the
+user to the demo tenant. Aimed at an address belonging to a real shopper or
+a real staff member, that is an account takeover performed by a seeding
+script.
+
+So the seeder refuses when `--email=` resolves to an existing auth user that
+isn't already this tenant's admin, and writes nothing. Pick another address,
+or pass `--adopt-existing-identity` if the overwrite is genuinely intended.
+
+### A second demo tenant
+
+`--org-slug=` gives you one. Fixture ids are derived from the slug, so two
+demo tenants never share a row — without that, the second run would upsert
+onto the first tenant's ids and _move_ its patients rather than create new
+ones. The default slug (`demo`) maps to the original id set, so the existing
+tenant is unaffected.
+
+One caveat: `providers` is a **global** directory keyed by NPI (migration
+0342), not tenant-scoped. Two demo tenants therefore share the same six
+prescribers, and `--clean` on either removes them. Re-run the other tenant's
+seed to put them back.
 
 ## What gets seeded
 
@@ -165,13 +204,40 @@ pnpm --filter @workspace/scripts demo:seed -- --clean
 ```
 
 This deletes the demo rows (by their `0dec0de0` ids), the tenant's flags,
-formulary and billing subscription, the `admin_users` link, and the
-organization. Anything without the demo id prefix is never touched, so a
-`--clean` aimed at the wrong org still cannot take real rows with it.
+formulary, billing subscription and agreements, its `fit_sessions`, the
+`admin_users` link, and the organization.
 
-The auth user is deliberately **left in place** — deleting identity rows
-is out of scope for a seeder, and without an `admin_users` row the login
-can no longer reach any console.
+**Only the fixture deletes are self-limiting.** They name exact demo ids, so
+they cannot touch a row this script didn't write. The tenant-wide deletes
+that follow key on `org_id` alone — pointed at a real tenant, they would take
+its entire configuration, and because the deletes are not one transaction a
+later failure does not roll the earlier ones back.
+
+What stands between a mistyped `--org-slug` and that outcome is an ownership
+check: the seeder refuses to clean an org that holds no demo-prefixed patient
+rows, and refuses the seed tenant outright. `--force-clean` overrides the
+first check; there is no override for the second.
+
+If the organization row itself cannot be deleted — some other tenant-scoped
+table still references it — the seeder says so explicitly rather than
+failing after the fixtures are already gone. The login is revoked either way,
+so the leftover tenant is inert.
+
+The auth user row itself is kept (identity rows stay for audit), but the
+login is **revoked**: `--clean` sets `resupply_auth.users.status` to
+`revoked` and kills any live session.
+
+That revoke is load-bearing, not tidiness. Deleting the `admin_users` row
+does not disarm the login — `requireAdmin` reads a missing `admin_users`
+row as a _legacy pre-RBAC account_, keeps the coarse `admin` role, and
+falls back to `resolveSeedOrgId()` for the tenant. A demo login left
+active after `--clean` would therefore not lose access; it would **gain**
+it, landing in the seed tenant — real patients — with effective
+`super_admin`. Revoking the user row is checked before any of that
+fallback runs.
+
+Re-running `demo:seed` reactivates the login, so `--clean` is a
+reversible off switch rather than a one-way delete.
 
 ## Related
 

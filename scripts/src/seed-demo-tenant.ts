@@ -33,11 +33,20 @@
 //   --plan=...         Billing plan code to assign (default: none).
 //   --flags=all|preset|copy
 //                      Feature-flag posture (default: all — a demo should
-//                      show the whole product).
+//                      show the whole product). 'copy' mirrors the seed
+//                      tenant's live state; 'preset' writes no flag rows at
+//                      all, leaving whatever a plan preset established.
 //   --emit-sql         Print the INSERT … ON CONFLICT statements instead of
 //                      writing. Needs no database connection and no
 //                      service-role key; pair with --org-id= to fill in the
 //                      tenant, or substitute the :ORG_ID placeholder.
+//                      FIXTURES ONLY: the organization, its feature flags,
+//                      formulary and billing subscription are provisioned by
+//                      live queries (the flags are COPIED from the seed
+//                      tenant, so they cannot be rendered offline) and are
+//                      NOT in this output. The tenant must already exist —
+//                      via tenant:onboard or a prior live run — or these
+//                      statements fail their org_id foreign keys.
 //   --no-accept-agreements
 //                      Leave the BAA / platform-terms gate in place, so the
 //                      first sign-in lands on the onboarding flow.
@@ -91,8 +100,10 @@ import {
 } from "@workspace/resupply-auth";
 
 import {
+  DEFAULT_DEMO_SLUG,
   DEMO_UUID_PREFIX,
   id,
+  namespaceId,
   PATIENTS,
   PROVIDERS,
   THREADS,
@@ -130,6 +141,22 @@ const storefrontName = opt("storefront-name", "CareMetric Demo");
 const planCode = opt("plan", "");
 const flagsMode = opt("flags", "all");
 const acceptAgreements = !flag("no-accept-agreements");
+// Deleting a tenant's whole configuration is not something a typo in
+// --org-slug should be able to do; see assertCleanTargetIsDemo.
+const forceClean = flag("force-clean");
+// Overwriting an EXISTING identity's password and role is likewise opt-in.
+const adoptIdentity = flag("adopt-existing-identity");
+
+// Validate --email before the FIRST write. normalizeEmail throws on a
+// malformed address, and it used to be reached only after the org, its
+// feature flags, formulary and billing rows had all been created — so a
+// typo left a fully provisioned tenant with no usable administrator.
+let demoEmailLower: string;
+try {
+  demoEmailLower = normalizeEmail(demoEmail);
+} catch {
+  fail(`--email must be a valid email address (got '${demoEmail}').`);
+}
 
 // Mirrors the `version` on both docs in
 // artifacts/resupply-api/src/lib/agreements/index.ts. Kept as a literal
@@ -141,12 +168,27 @@ const acceptAgreements = !flag("no-accept-agreements");
 // this constant and re-run to clear it.
 const AGREEMENT_VERSION = "2026-06-24";
 
+// Marks an acceptance row as seeded rather than signed. Load-bearing in two
+// directions: an audit of organization_agreements can tell them apart, and
+// --no-accept-agreements revokes ONLY rows carrying it.
+const SEEDED_SIGNATORY = "CareMetric Demo (seeded by demo:seed)";
+
 if (!["all", "preset", "copy"].includes(flagsMode)) {
   fail("--flags must be one of: all, preset, copy");
 }
 // Mirrors the DB CHECK on organizations.slug (0331_organizations_tenant).
 if (!/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(orgSlug)) {
   fail(`--org-slug must be a URL-safe lowercase label (got '${orgSlug}').`);
+}
+// Checked here rather than inside the clean path so it costs no database
+// connection and cannot be reached by any code path at all. There is
+// deliberately no override: this script has no business writing to — let
+// alone deleting the configuration of — the seed tenant.
+if (orgSlug === SEED_ORG_SLUG) {
+  fail(
+    `--org-slug must not be '${SEED_ORG_SLUG}': that is the seed tenant, ` +
+      "not a demo tenant. Nothing was written or deleted.",
+  );
 }
 
 // Same posture as seed:sample — writing a whole fake tenant is never
@@ -187,6 +229,30 @@ function db(): ReturnType<typeof getSupabaseServiceRoleClient> {
 }
 function rs() {
   return db().schema("resupply");
+}
+
+/**
+ * Re-key a write set's demo ids onto the active tenant slug. A no-op for
+ * the default slug, so the tenant already seeded under it is untouched.
+ */
+function namespaceWrites(writes: TableWrite[]): TableWrite[] {
+  if (orgSlug === DEFAULT_DEMO_SLUG) return writes;
+  return writes.map((w) => ({
+    ...w,
+    rows: w.rows.map((row) =>
+      Object.fromEntries(
+        Object.entries(row).map(([k, v]) => [
+          k,
+          typeof v === "string" ? namespaceId(v, orgSlug) : v,
+        ]),
+      ),
+    ),
+  }));
+}
+
+/** `id()` for the active tenant — the key set `--clean` deletes by. */
+function fid(kind: Parameters<typeof id>[0], n: number): string {
+  return namespaceId(id(kind, n), orgSlug);
 }
 
 function check(label: string, error: unknown): void {
@@ -251,11 +317,19 @@ async function ensureOrg(): Promise<{ orgId: string; action: string }> {
  * Default posture is `all`: a demo tenant exists to show the whole
  * product, so every flag in the catalog is switched on. `copy` mirrors
  * the seed tenant's live state instead, and `preset` leaves whatever a
- * plan preset already established.
+ * plan preset already established — writing nothing at all.
  */
 async function provisionFeatureFlags(
   orgId: string,
 ): Promise<{ provisioned: number; enabled: number }> {
+  // `preset` means "don't touch the flags": a plan preset (or a human
+  // part-way through a demo) already decided this tenant's posture, and
+  // copying the seed tenant's rows over the top would silently overwrite
+  // it. Returning early IS the whole implementation — falling through to
+  // the upsert below made `preset` behave identically to `copy`, which is
+  // the opposite of what it advertises.
+  if (flagsMode === "preset") return { provisioned: 0, enabled: 0 };
+
   const { data: seedOrg, error: seedErr } = await rs()
     .from("organizations")
     .select("id")
@@ -297,10 +371,15 @@ async function provisionFeatureFlags(
  * and every fit report cites provenance the operator cannot open.
  */
 async function provisionFormulary(orgId: string): Promise<boolean> {
+  // Specifically an ACTIVE one. If a training session archived the tenant's
+  // only formulary, treating that archived row as sufficient would let the
+  // advertised "re-run to reset" leave the tenant with no active formulary
+  // — and every fit report back to null/version-zero provenance.
   const { data: existing, error: readErr } = await rs()
     .from("formularies")
     .select("id")
     .eq("org_id", orgId)
+    .eq("status", "active")
     .limit(1)
     .maybeSingle();
   check("read formularies", readErr);
@@ -666,7 +745,7 @@ function buildAgreementWrites(orgId: string, userId: string): TableWrite[] {
         accepted_at: nowIso,
         accepted_by_user_id: userId,
         accepted_by_email: normalizeEmail(demoEmail),
-        signatory_name: "CareMetric Demo (seeded by demo:seed)",
+        signatory_name: SEEDED_SIGNATORY,
       })),
     },
   ];
@@ -829,9 +908,52 @@ function sqlForWrites(writes: TableWrite[]): string {
  * that would make the outcome depend on which migration a given database
  * has reached.
  *
- * Nothing without the `0dec0de0` id prefix is ever touched, so a clean
- * pointed at the wrong org still cannot take real rows with it.
+ * The FIXTURE deletes are keyed by the `0dec0de0` id prefix, so they can
+ * only ever take rows this script wrote. The tenant-wide deletes that
+ * follow (flags, formulary, billing, agreements, the org row) are NOT —
+ * they key on `org_id` alone and would take a real tenant's entire
+ * configuration with them. `assertCleanTargetIsDemo` is what stands
+ * between a mistyped --org-slug and that outcome; do not remove it.
  */
+/**
+ * Refuse to clean anything that isn't demonstrably a tenant this script
+ * created.
+ *
+ * The fixture deletes are self-limiting (they name exact demo ids), but the
+ * tenant-wide sweep afterwards is not: it deletes every feature flag,
+ * formulary, billing subscription and agreement carrying the org_id, then
+ * the organization itself. Pointed at a real tenant by a typo or a slug
+ * collision, that is unrecoverable from this script — and because the
+ * deletes are not in one transaction, a later failure does not roll the
+ * earlier ones back.
+ *
+ * So: prove ownership first. A tenant this script seeded always holds
+ * demo-prefixed patient rows. No such rows means this is somebody else's
+ * tenant and we stop before touching anything.
+ */
+async function assertCleanTargetIsDemo(orgId: string): Promise<void> {
+  const { count, error } = await rs()
+    .from("patients")
+    .select("id", { count: "exact", head: true })
+    .eq("org_id", orgId)
+    .like("id", `${DEMO_UUID_PREFIX}-%`);
+  check("probe for demo rows", error);
+  if (count && count > 0) return;
+  if (forceClean) {
+    out(
+      `WARNING: '${orgSlug}' holds no demo-prefixed rows, but --force-clean ` +
+        "was passed. Proceeding.",
+    );
+    return;
+  }
+  fail(
+    `refusing to clean '${orgSlug}' (org_id=${orgId}): it holds no ` +
+      "demo-prefixed patient rows, so it does not look like a tenant " +
+      "demo:seed created. Nothing was deleted. If you are certain, re-run " +
+      "with --force-clean.",
+  );
+}
+
 async function runClean(): Promise<void> {
   out(`cleaning demo tenant '${orgSlug}'…`);
 
@@ -846,22 +968,23 @@ async function runClean(): Promise<void> {
     return;
   }
   const orgId = org.id;
+  await assertCleanTargetIsDemo(orgId);
 
   const steps: Array<[string, string[]]> = [
     [
       "messages",
       THREADS.flatMap((t) =>
-        t.messages.map((m) => id("message", t.n * 100 + m.n)),
+        t.messages.map((m) => fid("message", t.n * 100 + m.n)),
       ),
     ],
-    ["conversations", THREADS.map((t) => id("conversation", t.n))],
-    ["patient_notes", PATIENTS.map((p) => id("note", p.n))],
-    ["equipment_assets", PATIENTS.map((p) => id("equipment", p.n))],
-    ["insurance_coverages", PATIENTS.map((p) => id("coverage", p.n))],
-    ["fulfillments", PATIENTS.map((p) => id("fulfillment", p.n))],
-    ["episodes", PATIENTS.map((p) => id("episode", p.n))],
-    ["prescriptions", PATIENTS.map((p) => id("rx", p.n))],
-    ["patients", PATIENTS.map((p) => id("patient", p.n))],
+    ["conversations", THREADS.map((t) => fid("conversation", t.n))],
+    ["patient_notes", PATIENTS.map((p) => fid("note", p.n))],
+    ["equipment_assets", PATIENTS.map((p) => fid("equipment", p.n))],
+    ["insurance_coverages", PATIENTS.map((p) => fid("coverage", p.n))],
+    ["fulfillments", PATIENTS.map((p) => fid("fulfillment", p.n))],
+    ["episodes", PATIENTS.map((p) => fid("episode", p.n))],
+    ["prescriptions", PATIENTS.map((p) => fid("rx", p.n))],
+    ["patients", PATIENTS.map((p) => fid("patient", p.n))],
   ];
   for (const [table, ids] of steps) {
     if (ids.length === 0) continue;
@@ -893,9 +1016,7 @@ async function runClean(): Promise<void> {
   }
   out("  removed feature_flags / formularies / billing subscription");
 
-  // The admin_users link, then the org. The auth user is left in place:
-  // deleting identity rows is out of scope for a seeder, and a login with
-  // no admin_users row cannot reach the console.
+  // The admin_users link, then the org.
   const emailLower = normalizeEmail(demoEmail);
   const { error: auErr } = await rs()
     .from("admin_users")
@@ -904,15 +1025,140 @@ async function runClean(): Promise<void> {
     .eq("org_id", orgId);
   check("delete admin_users", auErr);
 
+  // Operational rows the demo GENERATED (as opposed to rows it was seeded
+  // with). fit_sessions is the one that matters: `org_id` references
+  // organizations(id) with no ON DELETE clause — so NO ACTION — and running
+  // the fitter is the single most likely thing to happen during a demo.
+  // Leaving those rows makes the organization delete below fail outright.
+  const { error: fitErr } = await rs()
+    .from("fit_sessions")
+    .delete()
+    .eq("org_id", orgId);
+  check("delete fit_sessions", fitErr);
+  out("  removed fit_sessions");
+
+  // Not check()ed: a restrictive FK from some other tenant-scoped table is
+  // a plausible outcome on a heavily-used demo tenant, and hard-failing
+  // here would report "clean failed" after the fixtures are already gone —
+  // the least useful moment to stop. Say precisely what is left instead.
   const { error: orgDelErr } = await rs()
     .from("organizations")
     .delete()
     .eq("id", orgId);
-  check("delete organization", orgDelErr);
-  out(`  removed organization '${orgSlug}'`);
-  out(
-    `auth user ${emailLower} left in place — without an admin_users row it ` +
-      "can no longer reach the console.",
+  if (orgDelErr) {
+    const msg =
+      orgDelErr instanceof Error
+        ? orgDelErr.message
+        : JSON.stringify(orgDelErr);
+    out(
+      `  NOTE: demo rows are gone, but organization '${orgSlug}' could not be ` +
+        `deleted: ${msg}\n` +
+        "        Another tenant-scoped table still references it. The login " +
+        "is revoked below either way, so the tenant is inert; drop the row " +
+        "by hand once you have identified the holder.",
+    );
+  } else {
+    out(`  removed organization '${orgSlug}'`);
+  }
+
+  // Revoke the identity too. Deleting the admin_users row does NOT disarm
+  // this login — an earlier version of this script claimed it did, and the
+  // claim was backwards.
+  //
+  // `requireAdmin` reads "no admin_users row" as a LEGACY pre-RBAC account,
+  // not a revoked one: resolveAdmin keeps the coarse `auth.users.role`
+  // ('admin') as the granular role, and requireAdmin then falls back to
+  // `resolveSeedOrgId()` for the tenant. So a demo login left active after
+  // --clean would not lose access — it would silently GAIN it, landing in
+  // the SEED tenant (real patients, real phone numbers) with effective
+  // super_admin. Revoking the user row closes that off ahead of any of
+  // that fallback logic: resolveAdmin rejects status 'revoked' outright.
+  await revokeDemoLogin(emailLower);
+}
+
+/**
+ * Disarm the demo login: mark the auth user 'revoked' and kill any session
+ * minted before now. A re-seed puts it back — buildAuthWrites upserts
+ * `status: "active"` on the same `email_lower` — so this is a reversible
+ * "off", not a destructive delete (identity rows stay for audit).
+ */
+async function revokeDemoLogin(emailLower: string): Promise<void> {
+  const auth = db().schema("resupply_auth");
+  const { data: user, error: findErr } = await auth
+    .from("users")
+    .select("id")
+    .eq("email_lower", emailLower)
+    .maybeSingle();
+  check("find demo auth user", findErr);
+  if (!user) {
+    out(`  no auth user ${emailLower} to revoke`);
+    return;
+  }
+
+  const { error: revokeErr } = await auth
+    .from("users")
+    .update({ status: "revoked", updated_at: nowIso })
+    .eq("id", user.id);
+  check("revoke demo auth user", revokeErr);
+
+  // A cookie minted before the revoke would otherwise stay valid until its
+  // own TTL ran out, so the revoke wouldn't take effect until then.
+  const { error: sessErr } = await auth
+    .from("sessions")
+    .update({ revoked_at: nowIso })
+    .eq("user_id", user.id)
+    .is("revoked_at", null);
+  check("revoke demo sessions", sessErr);
+
+  out(`  revoked auth user ${emailLower} and killed its live sessions`);
+}
+
+/**
+ * Refuse to seed on top of an identity that isn't already this demo
+ * tenant's.
+ *
+ * The writes that follow are not additive: they overwrite
+ * `password_credentials`, set the coarse role to 'admin', mark the address
+ * verified and attach the user to the demo tenant. Run against an address
+ * that happens to belong to a real shopper or a real staff member, that is
+ * an account takeover performed by a seeding script — and the pre-existing
+ * "is this user in a different org" check didn't catch it, because it read
+ * `admin_users`, which a shopper has no row in.
+ *
+ * Passing null (no such user yet) is the ordinary first-run case.
+ */
+async function assertIdentityIsAdoptable(
+  existingUserId: string | null,
+  orgId: string,
+): Promise<void> {
+  if (!existingUserId) return;
+  // The id this script mints itself — a plain re-seed of its own tenant.
+  if (existingUserId === DEMO_AUTH_USER_ID) return;
+
+  const { data: link, error } = await rs()
+    .from("admin_users")
+    .select("org_id")
+    .eq("auth_user_id", existingUserId)
+    .maybeSingle();
+  check("read admin_users for identity check", error);
+  // Already this tenant's admin (e.g. seeded once under a custom --email).
+  if (link?.org_id === orgId) return;
+
+  if (adoptIdentity) {
+    out(
+      `WARNING: ${demoEmailLower} already exists as auth user ` +
+        `${existingUserId}; --adopt-existing-identity was passed, so its ` +
+        "password and role are being overwritten.",
+    );
+    return;
+  }
+  fail(
+    `refusing to seed: ${demoEmailLower} is already a user (id ` +
+      `${existingUserId}) that does not belong to this demo tenant. ` +
+      "Seeding would overwrite its password, force role='admin' and mark it " +
+      "verified. Nothing was written to the identity tables. Choose another " +
+      "--email, or pass --adopt-existing-identity if the takeover is " +
+      "genuinely what you want.",
   );
 }
 
@@ -962,17 +1208,20 @@ async function main(): Promise<void> {
   if (emitSql) {
     const orgId = opt("org-id", ":ORG_ID");
     const passwordHash = await hashPassword(demoPassword);
-    const writes = [
+    const writes = namespaceWrites([
       ...buildAuthWrites(orgId, DEMO_AUTH_USER_ID, passwordHash),
       ...buildAgreementWrites(orgId, DEMO_AUTH_USER_ID),
       buildProviderRows(),
       ...buildPatientWrites(orgId),
       ...buildThreadWrites(orgId),
-    ];
+    ]);
     process.stdout.write(
       `-- demo:seed — generated ${nowIso}\n` +
         `-- Tenant '${orgSlug}'. Substitute ${orgId} if it is still a placeholder.\n` +
-        `-- The password hash below is argon2id over the configured password.\n\n` +
+        `-- The password hash below is argon2id over the configured password.\n` +
+        `-- FIXTURES ONLY — the organization, feature flags, formulary and\n` +
+        `-- billing subscription are NOT included (they are provisioned by\n` +
+        `-- live queries). Create the tenant first or these fail on org_id.\n\n` +
         sqlForWrites(writes) +
         "\n",
     );
@@ -1002,7 +1251,8 @@ async function main(): Promise<void> {
   // DEMO_AUTH_USER_ID is only for a first run. Upserting on email_lower
   // with a different id would collide with the UNIQUE constraint.
   const repo = supabaseAuthRepository(db());
-  const existing = await repo.findUserByEmail(normalizeEmail(demoEmail));
+  const existing = await repo.findUserByEmail(demoEmailLower);
+  await assertIdentityIsAdoptable(existing?.id ?? null, orgId);
   const userId = existing?.id ?? DEMO_AUTH_USER_ID;
 
   const { data: existingAdmin, error: adminErr } = await rs()
@@ -1021,13 +1271,30 @@ async function main(): Promise<void> {
 
   const passwordHash = await hashPassword(demoPassword);
   out("writing rows…");
-  await applyWrites([
-    ...buildAuthWrites(orgId, userId, passwordHash),
-    ...buildAgreementWrites(orgId, userId),
-    buildProviderRows(),
-    ...buildPatientWrites(orgId),
-    ...buildThreadWrites(orgId),
-  ]);
+  await applyWrites(
+    namespaceWrites([
+      ...buildAuthWrites(orgId, userId, passwordHash),
+      ...buildAgreementWrites(orgId, userId),
+      buildProviderRows(),
+      ...buildPatientWrites(orgId),
+      ...buildThreadWrites(orgId),
+    ]),
+  );
+
+  // --no-accept-agreements has to be able to put the gate BACK, not merely
+  // decline to clear it: re-running with the flag on a tenant that was
+  // already seeded normally would otherwise leave the earlier acceptance
+  // rows in place and the gate still down. Scoped to this script's own
+  // signatory marker so a genuine acceptance is never revoked.
+  if (!acceptAgreements) {
+    const { error: revokeErr } = await rs()
+      .from("organization_agreements")
+      .delete()
+      .eq("org_id", orgId)
+      .eq("signatory_name", SEEDED_SIGNATORY);
+    check("revoke seeded agreements", revokeErr);
+    out("agreements: seeded acceptances revoked — the gate is back up");
+  }
 
   process.stdout.write(summary(orgId));
 }

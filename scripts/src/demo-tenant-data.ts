@@ -48,6 +48,51 @@ export function id(kind: Kind, n: number): string {
   return `${DEMO_UUID_PREFIX}-${KIND_GROUP[kind]}-4000-8000-${tail}`;
 }
 
+/** The slug `--org-slug` defaults to. */
+export const DEFAULT_DEMO_SLUG = "demo";
+
+/**
+ * Three hex characters derived from a tenant slug.
+ *
+ * Two demo tenants must never share a fixture id. Every write upserts on
+ * `id`, so without this a second `--org-slug` run would UPDATE the first
+ * tenant's patients (and their prescriptions, episodes, …) onto the new
+ * `org_id` rather than insert its own — silently moving one demo tenant's
+ * rows into another.
+ *
+ * The default slug maps to `000`, which is exactly what the ids were
+ * before this existed, so a tenant already seeded under `demo` keeps
+ * byte-identical ids and a re-seed still updates in place.
+ */
+export function slugDiscriminator(slug: string): string {
+  if (slug === DEFAULT_DEMO_SLUG) return "000";
+  // FNV-1a folded to 12 bits. Not cryptographic — it only has to be stable
+  // across runs and different from the default's "000".
+  let h = 0x811c9dc5;
+  for (let i = 0; i < slug.length; i += 1) {
+    h ^= slug.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  const d = (h & 0xfff).toString(16).padStart(3, "0");
+  return d === "000" ? "001" : d;
+}
+
+const DEMO_ID_RE = new RegExp(
+  `^${DEMO_UUID_PREFIX}-([0-9a-f]{4})-4[0-9a-f]{3}-8000-([0-9a-f]{12})$`,
+);
+
+/**
+ * Re-key a fixture id onto a tenant slug, leaving anything that isn't a
+ * demo id untouched. Applied to every value at the sink rather than at each
+ * `id()` callsite, so cross-references (a prescription's `patient_id`, a
+ * message's `conversation_id`) move with the rows that own them.
+ */
+export function namespaceId(value: string, slug: string): string {
+  const m = DEMO_ID_RE.exec(value);
+  if (!m) return value;
+  return `${DEMO_UUID_PREFIX}-${m[1]}-4${slugDiscriminator(slug)}-8000-${m[2]}`;
+}
+
 // ── The dataset ──────────────────────────────────────────────────────
 //
 // These people are fictional, but they are deliberately NOT labelled

@@ -8,10 +8,13 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  DEFAULT_DEMO_SLUG,
   DEMO_UUID_PREFIX,
   id,
+  namespaceId,
   PATIENTS,
   PROVIDERS,
+  slugDiscriminator,
   THREADS,
 } from "./demo-tenant-data";
 
@@ -149,5 +152,69 @@ describe("demo dataset — referential integrity", () => {
         expect(m.body.length).toBeLessThanOrEqual(10_000);
       }
     }
+  });
+});
+
+describe("fixture ids are namespaced per tenant", () => {
+  // Every write upserts on `id`. Without a per-tenant discriminator a
+  // second `--org-slug` run UPDATES the first tenant's rows onto the new
+  // org_id instead of inserting its own — one demo tenant silently
+  // swallowing another's patients, prescriptions and episodes.
+  it("gives two tenants disjoint id sets", () => {
+    const a = PATIENTS.map((p) => namespaceId(id("patient", p.n), "demo"));
+    const b = PATIENTS.map((p) => namespaceId(id("patient", p.n), "demo-eu"));
+    expect(new Set([...a, ...b]).size).toBe(a.length + b.length);
+  });
+
+  // The tenant already seeded under the default slug must keep byte-identical
+  // ids, or a re-seed inserts duplicates instead of updating in place.
+  it("leaves the default slug's ids exactly as they were", () => {
+    expect(slugDiscriminator(DEFAULT_DEMO_SLUG)).toBe("000");
+    for (const p of PATIENTS) {
+      const raw = id("patient", p.n);
+      expect(namespaceId(raw, DEFAULT_DEMO_SLUG)).toBe(raw);
+      expect(raw).toContain(`${DEMO_UUID_PREFIX}-0002-4000-8000-`);
+    }
+  });
+
+  it("keeps the v4 UUID shape for any slug", () => {
+    for (const slug of ["demo", "demo-eu", "acme", "x", "a-very-long-slug-2"]) {
+      expect(namespaceId(id("episode", 7), slug)).toMatch(UUID_RE);
+    }
+  });
+
+  it("never collides a non-default slug with the default", () => {
+    for (const slug of ["demo-eu", "acme", "x", "training", "sales-2"]) {
+      expect(slugDiscriminator(slug)).not.toBe("000");
+    }
+  });
+
+  it("is stable and idempotent", () => {
+    const once = namespaceId(id("rx", 3), "demo-eu");
+    expect(namespaceId(once, "demo-eu")).toBe(once);
+    expect(namespaceId(id("rx", 3), "demo-eu")).toBe(once);
+  });
+
+  // Applied to every string value at the sink, so it must not corrupt the
+  // non-id fields (names, phone numbers, bodies) travelling alongside.
+  it("leaves anything that is not a demo id untouched", () => {
+    for (const v of [
+      "Ellery Nakamura",
+      "+12155550117",
+      "",
+      "0dec0de0",
+      "11111111-2222-4333-8444-555555555555",
+      "not-a-uuid-at-all",
+    ]) {
+      expect(namespaceId(v, "demo-eu")).toBe(v);
+    }
+  });
+
+  // Distinct row kinds must stay distinct after re-keying — the
+  // discriminator lives in a different UUID group than the kind.
+  it("keeps different row kinds distinct", () => {
+    const kinds = ["patient", "rx", "episode", "coverage"] as const;
+    const ids = kinds.map((k) => namespaceId(id(k, 1), "demo-eu"));
+    expect(new Set(ids).size).toBe(kinds.length);
   });
 });
