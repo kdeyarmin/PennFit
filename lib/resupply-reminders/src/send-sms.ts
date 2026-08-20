@@ -69,7 +69,6 @@ export interface SendReminderSmsInput {
  * UCS-2-triggering characters (em-dash, curly quotes, ellipsis) — Twilio
  * silently switches the whole message to UCS-2 (70-char segments) on a
  * single non-GSM-7 character, tripling the per-message cost at scale.
- * "initial" is byte-for-byte the historical copy.
  */
 export function defaultReminderSmsBody(
   variant: ReminderVariant,
@@ -82,14 +81,18 @@ export function defaultReminderSmsBody(
   // REFILL_AFFIRMATION_STATEMENT). Kept GSM-7-safe (no em-dash, curly
   // quotes, or ellipsis) so Twilio doesn't upgrade the whole message to
   // UCS-2 and triple the per-segment cost.
+  //
+  // Readability: one instruction per short sentence, not a comma-spliced
+  // list of three keywords. A patient scanning this on a phone should be
+  // able to stop reading after the sentence that applies to them.
   switch (variant) {
     case "followup":
-      return `Hi ${firstName}, ${practiceName} checking back. Reply YES if you still use your CPAP and are low on supplies, EDIT to change address, STOP to opt out.`;
+      return `Hi ${firstName}, ${practiceName} checking back. Still use your CPAP and low on supplies? Reply YES to ship. EDIT to fix your address. STOP to opt out.`;
     case "final":
-      return `Last reminder, ${firstName}: reply YES if you still use your CPAP and are low on supplies and ${practiceName} ships today, or STOP to opt out.`;
+      return `Last reminder, ${firstName}. Still use your CPAP and low on supplies? Reply YES today and ${practiceName} ships your order. STOP to opt out.`;
     case "initial":
     default:
-      return `Hi ${firstName}, it's ${practiceName}. Time for a CPAP refill. Reply YES if you still use it and are low on supplies, EDIT to change address, STOP to opt out.`;
+      return `Hi ${firstName}, it's ${practiceName}. Time for your CPAP refill. Still use it and low on supplies? Reply YES to ship. EDIT to fix your address. STOP to opt out.`;
   }
 }
 

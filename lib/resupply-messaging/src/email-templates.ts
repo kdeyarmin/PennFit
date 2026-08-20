@@ -61,15 +61,13 @@ interface ReminderVariantCopy {
   subject: string;
   /** Opening sentence in the plain-text body (practice name pre-interpolated). */
   introText: string;
-  /** Opening sentence in the HTML body, following "Hi {name} — "
-   *  (escaped practice name pre-interpolated). */
+  /** Same opening sentence for the HTML body, with the practice name
+   *  pre-escaped. It is a complete sentence in its own paragraph (it used
+   *  to be spliced onto "Hi {name} — ", which read as a run-on). */
   introHtml: string;
 }
 
-/**
- * Resolve the subject + opening line for a reminder variant. "initial" is
- * byte-for-byte the historical copy so the first touch is unchanged.
- */
+/** Resolve the subject + opening line for a reminder variant. */
 function reminderVariantCopy(
   variant: ReminderVariant,
   practiceName: string,
@@ -79,21 +77,21 @@ function reminderVariantCopy(
     case "followup":
       return {
         subject: "Still time to refill your CPAP supplies",
-        introText: `Just circling back from ${practiceName} — your CPAP refill is ready whenever you are:`,
-        introHtml: `just circling back from ${safePractice}. Your CPAP refill is ready whenever you are:`,
+        introText: `Just circling back from ${practiceName}. Your CPAP refill is ready whenever you are. Here's what's due:`,
+        introHtml: `Just circling back from ${safePractice}. Your CPAP refill is ready whenever you are. Here's what's due:`,
       };
     case "final":
       return {
         subject: "Last call: your CPAP refill is ready",
-        introText: `We don't want you to run low — your CPAP refill from ${practiceName} is ready and we can ship today:`,
-        introHtml: `we don't want you to run low — your CPAP refill from ${safePractice} is ready and we can ship today:`,
+        introText: `This is our last reminder. We don't want you to run low, and ${practiceName} can ship today. Here's what's due:`,
+        introHtml: `This is our last reminder. We don't want you to run low, and ${safePractice} can ship today. Here's what's due:`,
       };
     case "initial":
     default:
       return {
         subject: "Time to refill your CPAP supplies",
-        introText: `Quick note from ${practiceName} — you're due for a CPAP refill, and your next order is ready whenever you are:`,
-        introHtml: `quick note from ${safePractice}. You're due for a CPAP refill, and your next order is ready whenever you are:`,
+        introText: `You're due for a CPAP refill. ${practiceName} has your next order ready. Here's what's due:`,
+        introHtml: `You're due for a CPAP refill. ${safePractice} has your next order ready. Here's what's due:`,
       };
   }
 }
@@ -172,6 +170,10 @@ export function renderResupplyReminder(
     )
     .join("");
 
+  // Body copy is deliberately plain: short sentences, one idea each, and
+  // the directions written as numbered steps a patient can follow without
+  // re-reading. Labelled sections ("Why this matters", "What to do") let
+  // someone skim to the part they need.
   const text = [
     `Hi ${input.firstName},`,
     "",
@@ -179,14 +181,28 @@ export function renderResupplyReminder(
     "",
     itemsTextLines || "  (your supplies, per your prescription)",
     "",
-    "Keeping these fresh matters: a worn cushion leaks and an old filter makes your machine work harder, so an on-time refill keeps your therapy doing its job. Most plans cover the replacement and we verify yours before anything ships — no surprise bills.",
+    "WHY THIS MATTERS",
+    "A worn cushion leaks. An old filter makes your machine work harder. Fresh supplies keep your therapy working the way it should.",
     "",
-    "Confirm below if you're still using your equipment and running low on supplies — we'll ship to the address on file, no login needed:",
-    `  Yes, ship it: ${input.confirmUrl}`,
-    `  Change my address: ${input.editUrl}`,
-    `  Stop these reminders: ${input.stopUrl}`,
+    "WHAT IT COSTS",
+    "Most plans cover these replacements. We check your coverage before anything ships, so you won't get a surprise bill.",
     "",
-    "If a link doesn't work, just reply to this email — a real person reads it.",
+    "WHAT TO DO",
+    "Pick one of the links below. You don't need a password or an account.",
+    "",
+    "1. Send my supplies",
+    "   Use this if you still use your CPAP and are running low. We check your plan, then ship to the address we have on file. If anything needs a closer look, a team member will contact you first.",
+    `   ${input.confirmUrl}`,
+    "",
+    "2. Change my shipping address",
+    "   Use this if you have moved. A team member will call or email you to confirm the new address.",
+    `   ${input.editUrl}`,
+    "",
+    "3. Stop these reminders",
+    "   Use this if you don't want refill reminders. You can turn them back on any time by replying to one of our emails.",
+    `   ${input.stopUrl}`,
+    "",
+    "If a link doesn't work, just reply to this email. A real person reads it.",
     "",
     "Talk soon,",
     `the ${input.practiceName} team`,
@@ -207,32 +223,52 @@ export function renderResupplyReminder(
     <h1 style="margin:0 0 16px;font-size:20px;line-height:28px;font-weight:600;color:#0f172a;">
       ${escapeHtml(subject)}
     </h1>
-    <p style="margin:0 0 16px;font-size:15px;line-height:22px;">
-      Hi ${safeFirstName} — ${variantCopy.introHtml}
+    <p style="margin:0 0 8px;font-size:15px;line-height:22px;">
+      Hi ${safeFirstName},
     </p>
-    <ul style="margin:0 0 16px;padding-left:18px;font-size:15px;line-height:22px;color:#1e293b;">
+    <p style="margin:0 0 16px;font-size:15px;line-height:22px;">
+      ${variantCopy.introHtml}
+    </p>
+    <ul style="margin:0 0 24px;padding-left:18px;font-size:15px;line-height:22px;color:#1e293b;">
       ${itemsHtmlLines || `<li style="margin:4px 0;">Your supplies, per your prescription.</li>`}
     </ul>
-    <p style="margin:0 0 20px;font-size:14px;line-height:21px;color:#475569;">
-      Keeping these fresh matters — a worn cushion leaks and an old filter makes your machine work harder, so an on-time refill keeps your therapy doing its job. Most plans cover the replacement and we verify yours before anything ships, so there are no surprise bills.
+    <p style="margin:0 0 4px;font-size:12px;line-height:18px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:#64748b;">
+      Why this matters
     </p>
-    <p style="margin:0 0 12px;font-size:14px;line-height:21px;color:#0f172a;font-weight:600;">
-      Confirm below if you're still using your equipment and running low on supplies — we'll ship to the address on file, no login needed.
+    <p style="margin:0 0 20px;font-size:14px;line-height:21px;color:#475569;">
+      A worn cushion leaks. An old filter makes your machine work harder. Fresh supplies keep your therapy working the way it should.
+    </p>
+    <p style="margin:0 0 4px;font-size:12px;line-height:18px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:#64748b;">
+      What it costs
+    </p>
+    <p style="margin:0 0 20px;font-size:14px;line-height:21px;color:#475569;">
+      Most plans cover these replacements. We check your coverage before anything ships, so you won't get a surprise bill.
+    </p>
+    <p style="margin:0 0 4px;font-size:12px;line-height:18px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:#64748b;">
+      What to do
+    </p>
+    <p style="margin:0 0 16px;font-size:14px;line-height:21px;color:#334155;">
+      Pick one of the buttons below. You don't need a password or an account.
+    </p>
+    <p style="margin:0 0 8px;font-size:14px;line-height:21px;color:#334155;">
+      <strong>1. Send my supplies.</strong> Use this if you still use your CPAP and are running low. We check your plan, then ship to the address we have on file. If anything needs a closer look, a team member will contact you first.
     </p>
     <div style="margin:0 0 24px;">
       <a href="${safeHref(input.confirmUrl)}" style="display:inline-block;padding:12px 20px;border-radius:6px;background:#0f766e;color:#ffffff;text-decoration:none;font-weight:600;font-size:15px;">
-        Yes, ship it
+        Send my supplies
       </a>
     </div>
-    <p style="margin:0 0 8px;font-size:14px;line-height:20px;color:#475569;">
+    <p style="margin:0 0 20px;font-size:14px;line-height:21px;color:#334155;">
+      <strong>2. Change my shipping address.</strong> Use this if you have moved. A team member will call or email you to confirm the new address.<br />
       <a href="${safeHref(input.editUrl)}" style="color:#0f766e;text-decoration:underline;">Change my shipping address</a>
     </p>
-    <p style="margin:0 0 24px;font-size:14px;line-height:20px;color:#475569;">
+    <p style="margin:0 0 24px;font-size:14px;line-height:21px;color:#334155;">
+      <strong>3. Stop these reminders.</strong> Use this if you don't want refill reminders. You can turn them back on any time by replying to one of our emails.<br />
       <a href="${safeHref(input.stopUrl)}" style="color:#0f766e;text-decoration:underline;">Stop these reminders</a>
     </p>
     <hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0;" />
     <p style="margin:0;font-size:12px;line-height:18px;color:#64748b;">
-      If a link doesn't work, just reply to this email — a real person reads it.<br />
+      If a link doesn't work, just reply to this email. A real person reads it.<br />
       Talk soon,<br />
       the ${safePractice} team
     </p>
@@ -380,26 +416,35 @@ export function renderClickLanding(input: RenderClickLandingInput): string {
 
   const heading =
     input.action === "confirm"
-      ? "Confirm your CPAP resupply order"
+      ? "Confirm your CPAP supply order"
       : input.action === "edit"
-        ? "Request an address change"
+        ? "Change your shipping address"
         : "Stop CPAP refill reminders";
 
+  // One step per page, stated plainly, plus what happens after the tap so
+  // nobody has to guess. "Use the button" reads correctly on a phone and a
+  // desktop alike (the page was mixing "Tap" and "Click").
+  //
+  // The confirm copy must NOT promise shipment. POST /email/click runs the
+  // entitlement, coverage, continued-use and refill-window guards, and any
+  // one of them renders the `review` confirmation ("a team member will
+  // check it") instead of shipping. Promising "we will ship" here would
+  // make that outcome read as a broken promise.
   const hasItems = !!input.items && input.items.length > 0;
   const description =
     input.action === "confirm"
       ? hasItems
-        ? "Here's what's due. Tap the button below to confirm and we'll ship your supplies right away."
-        : "Tap the button below to confirm and we'll ship your supplies right away."
+        ? "Here is what is due. Use the button below to confirm. We will check your plan, then ship to the address we have on file. If anything needs a closer look, a team member will contact you first."
+        : "Use the button below to confirm. We will check your plan, then ship your supplies to the address we have on file. If anything needs a closer look, a team member will contact you first."
       : input.action === "edit"
-        ? "Click the button below and a member of our team will reach out about your shipping address."
-        : "Click the button below to unsubscribe from CPAP refill reminders. You can always reply to a future email to re-enroll.";
+        ? "Use the button below to ask for an address change. We'll hold any order that hasn't shipped yet, so nothing goes to your old address, and a team member will call or email you to confirm the new one."
+        : "Use the button below to stop CPAP refill reminders. You can turn them back on any time by replying to one of our emails.";
 
   const buttonLabel =
     input.action === "confirm"
       ? "Confirm my order"
       : input.action === "edit"
-        ? "Request address change"
+        ? "Request an address change"
         : "Stop reminders";
 
   const buttonColor = input.action === "stop" ? "#dc2626" : "#0f766e";
@@ -458,8 +503,10 @@ export interface RenderClickConfirmationInput {
   practiceName: string;
   /** What the patient just did. `review` is the entitlement-guard
    *  outcome: the reorder was received but isn't yet payable under the
-   *  replacement schedule, so a CSR will follow up before it ships. */
-  action: "confirm" | "edit" | "stop" | "review";
+   *  replacement schedule, so a CSR will follow up before it ships.
+   *  `address_pending` is the address-change hold: they asked us to move
+   *  their address, so nothing ships until a team member confirms it. */
+  action: "confirm" | "edit" | "stop" | "review" | "address_pending";
 }
 
 /**
@@ -472,19 +519,24 @@ export function renderClickConfirmation(
   input: RenderClickConfirmationInput,
 ): string {
   const safePractice = escapeHtml(input.practiceName);
+  // Each message says what just happened, then what happens next. No
+  // jargon ("unsubscribed", "re-enroll") and no open loops.
   const MESSAGES: Record<RenderClickConfirmationInput["action"], string> = {
     confirm:
-      "You're all set — your refill is on the way. We'll text or email tracking the moment it ships.",
-    edit: "Got it — someone from our team will be in touch about the address change shortly.",
-    stop: "You're unsubscribed from CPAP refill reminders for now — no more emails from us on this. Reply to a past email any time and we'll turn them back on.",
+      "You're all set. Your supplies are on the way to the address we have on file. We'll text or email you tracking as soon as they ship. You don't need to do anything else.",
+    edit: "Thanks. We have your address change request. We've put any order that hasn't shipped on hold, so nothing goes to your old address. A team member will call or email you within one business day to confirm the new one.",
+    stop: "Done. We've stopped CPAP refill reminders, so you won't get any more of these emails. If you change your mind, reply to any of our past emails and we'll turn them back on.",
     review:
-      "Thanks! It looks like it's a little early to reship this item under your plan, so someone from our team will review and follow up before anything ships.",
+      "Thanks. It looks like it's a little early to resend this item under your plan, so a team member will check it and follow up with you before anything ships. You don't need to do anything right now.",
+    address_pending:
+      "Thanks. You asked us to change your shipping address, so we're holding this order until a team member confirms the new one with you. They'll call or email you within one business day. Nothing ships until then.",
   };
   const HEADINGS: Record<RenderClickConfirmationInput["action"], string> = {
     confirm: "Order confirmed",
     edit: "We'll be in touch",
-    stop: "Reminders paused",
+    stop: "Reminders stopped",
     review: "We'll be in touch",
+    address_pending: "Order held",
   };
   const message = MESSAGES[input.action];
   const heading = HEADINGS[input.action];
@@ -529,8 +581,8 @@ export function renderClickError(input: RenderClickErrorInput): string {
   const safePractice = escapeHtml(input.practiceName);
   const reasonLine =
     input.reason === "expired"
-      ? "This link has expired. Reply to the most recent reminder email and we'll help."
-      : "This link is no longer valid. Reply to the most recent reminder email and we'll help.";
+      ? "This link has expired. To pick up where you left off, reply to the most recent reminder email we sent you and a team member will help."
+      : "This link no longer works. To pick up where you left off, reply to the most recent reminder email we sent you and a team member will help.";
 
   return `<!DOCTYPE html>
 <html lang="en">

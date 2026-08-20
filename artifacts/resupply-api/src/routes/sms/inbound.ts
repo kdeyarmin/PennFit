@@ -59,6 +59,7 @@ import {
 } from "@workspace/resupply-telecom";
 import {
   parseSmsIntent,
+  toGsm7,
   type AiFallbackAdapter,
   type Intent,
 } from "@workspace/resupply-messaging";
@@ -82,6 +83,7 @@ import {
   pausePatient,
   reactivatePatient,
   placeResupplyOrderForConversation,
+  requestAddressChangeHold,
 } from "../../lib/messaging/order-flow";
 import { findActiveClosure } from "../../lib/office-closure/active";
 import { safeAudit } from "../../lib/messaging/safe-audit";
@@ -252,9 +254,11 @@ router.post(
           .status(200)
           .type("text/xml")
           .send(
-            earlyRouted.intent === "stop"
-              ? "<Response><Message>You've been unsubscribed and won't get further texts from us. Reply START to resume.</Message></Response>"
-              : `<Response><Message>${escapeXml(cfg.practiceName)} — automated CPAP refill reminders. Reply YES to confirm, NO to decline, EDIT to change your address, STOP to opt out. Standard message + data rates may apply.</Message></Response>`,
+            twimlMessage(
+              earlyRouted.intent === "stop"
+                ? `Done. You will not get any more texts from ${cfg.practiceName}. Reply START if you want them back on.`
+                : `This is ${cfg.practiceName}. We text you when your CPAP supplies are due. Reply YES to ship. NO to skip. EDIT to fix your address. STOP to opt out. Message and data rates may apply.`,
+            ),
           );
         return;
       }
@@ -374,9 +378,7 @@ router.post(
           res
             .status(200)
             .type("text/xml")
-            .send(
-              `<Response><Message>${escapeXml(activeClosure.autoReplyMessage)}</Message></Response>`,
-            );
+            .send(twimlMessage(activeClosure.autoReplyMessage));
           return;
         }
       } catch (err) {
@@ -422,9 +424,11 @@ router.post(
           .status(200)
           .type("text/xml")
           .send(
-            earlyRouted.intent === "stop"
-              ? "<Response><Message>You've been unsubscribed and won't get further texts from us. Reply START to resume.</Message></Response>"
-              : `<Response><Message>${escapeXml(inboundPracticeName)} — automated CPAP refill reminders. Reply YES to confirm, NO to decline, EDIT to change your address, STOP to opt out. Standard message + data rates may apply.</Message></Response>`,
+            twimlMessage(
+              earlyRouted.intent === "stop"
+                ? `Done. You will not get any more texts from ${inboundPracticeName}. Reply START if you want them back on.`
+                : `This is ${inboundPracticeName}. We text you when your CPAP supplies are due. Reply YES to ship. NO to skip. EDIT to fix your address. STOP to opt out. Message and data rates may apply.`,
+            ),
           );
         return;
       }
@@ -482,7 +486,7 @@ router.post(
           event: "sms_inbound_duplicate_sid",
           twilio_message_sid: parsed.MessageSid,
         },
-        "sms.inbound: duplicate MessageSid — replayed webhook discarded",
+        "sms.inbound: duplicate MessageSid, replayed webhook discarded",
       );
       res.status(200).type("text/xml").send("<Response/>");
       return;
@@ -544,8 +548,9 @@ router.post(
           .status(200)
           .type("text/xml")
           .send(
-            "<Response><Message>Thanks — there's nothing scheduled for you right now. " +
-              "A team member will follow up if needed. Reply STOP to opt out.</Message></Response>",
+            "<Response><Message>Thanks. You have nothing due right now, so there is nothing " +
+              "for you to do. We will text you when your next refill is ready. " +
+              "Reply STOP to opt out.</Message></Response>",
           );
         return;
       }
@@ -600,7 +605,7 @@ router.post(
       if ((insertMsgErr as { code?: string }).code === "23505") {
         logger.info(
           { event: "sms_inbound_duplicate_sid" },
-          "sms.inbound: duplicate MessageSid at insert — replayed webhook discarded",
+          "sms.inbound: duplicate MessageSid at insert, replayed webhook discarded",
         );
         res.status(200).type("text/xml").send("<Response/>");
         return;
@@ -786,7 +791,7 @@ router.post(
               confidence: confidence ?? null,
               threshold: MIN_AI_DISPATCH_CONFIDENCE,
             },
-            "sms.inbound: gating low-confidence AI classification — routing to human",
+            "sms.inbound: gating low-confidence AI classification, routing to human",
           );
           intent = "unknown";
           // Drop the AI's reply too — its text was crafted for the
@@ -843,7 +848,7 @@ router.post(
         "sms.inbound: dispatch crashed",
       );
       twimlBody =
-        "Thanks — we've passed your message to a team member who will follow up.";
+        "Thanks. We have passed your message to a team member. Someone will get back to you.";
     }
 
     // Persist the outbound reply we're about to send. The persist
@@ -887,7 +892,7 @@ router.post(
           conversation_id: conversationId,
           intent,
         },
-        "sms.inbound: outbound reply insert failed — sending TwiML anyway to avoid Twilio retry storm",
+        "sms.inbound: outbound reply insert failed, sending TwiML anyway to avoid Twilio retry storm",
       );
     }
 
@@ -903,10 +908,7 @@ router.post(
       req.log,
     );
 
-    res
-      .status(200)
-      .type("text/xml")
-      .send(`<Response><Message>${escapeXml(twimlBody)}</Message></Response>`);
+    res.status(200).type("text/xml").send(twimlMessage(twimlBody));
   },
 );
 
@@ -993,11 +995,37 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
         });
         return (
           input.aiReply ??
-          `Got it — your refill is on its way. Thanks from ${input.practiceName}.`
+          `Thanks. Your supplies are on the way to the address on file. We will text tracking when they ship. - ${input.practiceName}`
         );
       }
+      if (result.status === "address_change_pending") {
+        // The patient has an open address-change request, so we will not
+        // ship to the address still on file. Park it with CSR alongside
+        // the other blocked-confirm outcomes.
+        const { error: addrErr } = await supabase
+          .from("conversations")
+          .update({ status: "awaiting_admin", updated_at: nowIso })
+          .eq("id", input.conversationId);
+        if (addrErr) throw addrErr;
+        await safeAudit({
+          action: "messaging.order.blocked_address_change",
+          adminEmail: null,
+          adminUserId: null,
+          targetTable: "episodes",
+          targetId: result.episodeId,
+          metadata: {
+            channel: "sms",
+            conversation_id: input.conversationId,
+            patient_id: input.patientId,
+            episode_id: result.episodeId,
+          },
+          ip: input.ip,
+          userAgent: input.userAgent,
+        });
+        return "Thanks. You asked us to change your address, so we are holding this order until a team member confirms the new one with you. Nothing ships until then.";
+      }
       if (result.status === "already_confirmed") {
-        return "Got it — that order is already confirmed and on its way.";
+        return "You are already set. That order is confirmed and on its way. We will text you tracking when it ships.";
       }
       if (result.status === "not_eligible") {
         // Entitlement guard blocked the reship (too soon / over the
@@ -1029,7 +1057,7 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
           ip: input.ip,
           userAgent: input.userAgent,
         });
-        return "Thanks! It looks like it's a little early to reship this one under your plan, so a team member will review and follow up before anything ships.";
+        return "Thanks. It is a little early to resend this under your plan. A team member will check and get back to you. Nothing ships until then.";
       }
       if (result.status === "coverage_blocked") {
         // Coverage guard held the reship (inactive plan / PA required on
@@ -1058,7 +1086,7 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
           ip: input.ip,
           userAgent: input.userAgent,
         });
-        return "Thanks! We need to verify your insurance coverage before this ships, so a team member will review and follow up shortly.";
+        return "Thanks. We need to check your insurance coverage before this ships. A team member will look into it and get back to you.";
       }
       if (result.status === "usage_review") {
         // Continued-use guard held the reship (recent therapy data
@@ -1089,7 +1117,7 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
           ip: input.ip,
           userAgent: input.userAgent,
         });
-        return "Thanks! A team member will check in with you before this ships — we want to make sure your therapy is going well first.";
+        return "Thanks. A team member will call you before this ships to make sure your therapy is going well.";
       }
       if (result.status === "too_early") {
         // Refill-window guard held the reship (would ship earlier than the
@@ -1119,9 +1147,9 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
           ip: input.ip,
           userAgent: input.userAgent,
         });
-        return "Thanks! It looks like it's a little early to reship this under your plan, so a team member will review and follow up before anything ships.";
+        return "Thanks. It is a little early to resend this under your plan. A team member will check and get back to you. Nothing ships until then.";
       }
-      return "Thanks — we'll review and follow up shortly.";
+      return "Thanks. A team member will review this and get back to you.";
     }
     case "decline": {
       const { error: declineErr } = await supabase
@@ -1131,7 +1159,7 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
       if (declineErr) throw declineErr;
       return (
         input.aiReply ??
-        "No problem — we won't ship anything right now. Reply HELP if you need us."
+        "No problem. We will not ship anything right now. Reply YES any time you are ready, or HELP if you need us."
       );
     }
     case "edit_address": {
@@ -1140,6 +1168,14 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
         .update({ status: "awaiting_admin", updated_at: nowIso })
         .eq("id", input.conversationId);
       if (editErr) throw editErr;
+      // Hold anything already queued and open the address-change alert
+      // (see requestAddressChangeHold) so nothing reaches the old
+      // address while the new one is unconfirmed. Never throws.
+      const hold = await requestAddressChangeHold({
+        orgId: input.orgId,
+        patientId: input.patientId,
+        channel: "sms",
+      });
       await safeAudit({
         action: "messaging.handoff.escalated",
         adminEmail: null,
@@ -1151,6 +1187,8 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
           conversation_id: input.conversationId,
           patient_id: input.patientId,
           reason: "edit_address",
+          held_fulfillments: hold.heldCount,
+          address_change_alert_open: hold.alertOpen,
         },
         ip: input.ip,
         userAgent: input.userAgent,
@@ -1164,7 +1202,7 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
       });
       return (
         input.aiReply ??
-        "Thanks — a team member will follow up about your address change."
+        "Thanks. We put any order that has not shipped on hold. A team member will call or email you to confirm your new address."
       );
     }
     case "stop": {
@@ -1191,7 +1229,7 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
         ip: input.ip,
         userAgent: input.userAgent,
       });
-      return "You've been unsubscribed and won't get further texts from us. Reply START to resume.";
+      return `Done. You will not get any more texts from ${input.practiceName}. Reply START if you want them back on.`;
     }
     case "start": {
       // Carrier-mandated opt-in. Reverse a STOP-induced pause so the
@@ -1219,13 +1257,13 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
         ip: input.ip,
         userAgent: input.userAgent,
       });
-      return `You're resubscribed and will start receiving messages from ${input.practiceName} again. Reply STOP to opt out at any time.`;
+      return `You are back on. ${input.practiceName} will text you when your CPAP supplies are due. Reply STOP any time to opt out.`;
     }
     case "help": {
       return (
-        `${input.practiceName} — automated CPAP refill reminders. ` +
-        "Reply YES to confirm, NO to decline, EDIT to change your address, " +
-        "STOP to opt out. Standard message + data rates may apply."
+        `This is ${input.practiceName}. We text you when your CPAP supplies are due. ` +
+        "Reply YES to ship. NO to skip. EDIT to fix your address. " +
+        "STOP to opt out. Message and data rates may apply."
       );
     }
     case "unknown": {
@@ -1258,15 +1296,30 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
       });
       return (
         input.aiReply ??
-        "Thanks — we've passed your message to a team member who will follow up."
+        "Thanks. We have passed your message to a team member. Someone will get back to you."
       );
     }
     default: {
       const _exhaustive: never = input.intent;
       void _exhaustive;
-      return "Thanks — we've passed your message to a team member.";
+      return "Thanks. We have passed your message to a team member.";
     }
   }
+}
+
+/**
+ * Compose the TwiML for a single outbound reply.
+ *
+ * Every reply body funnels through here so the GSM-7 fold is
+ * unavoidable. `inbound.gsm7.test.ts` pins the static copy in this file
+ * to ASCII, but it cannot see text composed at runtime — a tenant's
+ * configured practice name, an admin-typed closure auto-reply, or a
+ * reply written by the AI fallback model. Any one of those carrying a
+ * single non-GSM-7 character would flip the whole message to UCS-2
+ * (70-char segments instead of 160) and triple what it costs to send.
+ */
+function twimlMessage(body: string): string {
+  return `<Response><Message>${escapeXml(toGsm7(body))}</Message></Response>`;
 }
 
 function escapeXml(s: string): string {

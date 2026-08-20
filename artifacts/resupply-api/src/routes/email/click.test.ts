@@ -24,9 +24,14 @@ vi.mock("@workspace/resupply-audit", () => ({
 
 const placeOrderMock = vi.fn();
 const pausePatientMock = vi.fn();
+const requestAddressChangeHoldMock = vi
+  .fn()
+  .mockResolvedValue({ heldCount: 0, alertOpen: true });
 vi.mock("../../lib/messaging/order-flow", () => ({
   placeResupplyOrderForConversation: (...a: unknown[]) => placeOrderMock(...a),
   pausePatient: (...a: unknown[]) => pausePatientMock(...a),
+  requestAddressChangeHold: (...a: unknown[]) =>
+    requestAddressChangeHoldMock(...a),
 }));
 
 import clickRouter from "./click";
@@ -363,6 +368,11 @@ describe("POST /email/click (signed action)", () => {
       `/resupply-api/email/click?t=${encodeURIComponent(token)}`,
     );
     expect(res.status).toBe(200);
+    // The edit link must hold anything already queued, or an order the
+    // patient confirmed moments earlier still goes to the old address.
+    expect(requestAddressChangeHoldMock).toHaveBeenCalledWith(
+      expect.objectContaining({ patientId: PATIENT_ID, channel: "email" }),
+    );
     const handoffAudit = logAuditMock.mock.calls
       .map((c) => c[0])
       .find(

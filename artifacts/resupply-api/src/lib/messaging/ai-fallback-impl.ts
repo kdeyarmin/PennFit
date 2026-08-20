@@ -42,7 +42,7 @@ import type {
   AiFallbackResult,
   Intent,
 } from "@workspace/resupply-messaging";
-import { INTENT_NAMES } from "@workspace/resupply-messaging";
+import { INTENT_NAMES, clampToOneSegment } from "@workspace/resupply-messaging";
 
 import { logger } from "../logger";
 import { recordAiTokenUsage } from "../metering/usage.js";
@@ -62,12 +62,12 @@ const SYSTEM_PROMPT = [
   "two things:",
   "",
   "GOAL & TONE: we want to make it easy and reassuring for the patient to",
-  "get the fresh supplies they're due for — worn cushions leak and old",
+  "get the fresh supplies they're due for. Worn cushions leak and old",
   "filters strain the machine, so an on-time refill keeps therapy working.",
-  "Be warm and helpful, never pushy or salesy. When a patient is on the",
-  "fence or asks a question, gently reassure them and keep the door open to",
-  "confirm — but if they clearly decline, respect it cheerfully and don't",
-  "press.",
+  "Be warm, plain-spoken, and helpful. Never pushy or salesy. When a",
+  "patient is on the fence or asks a question, gently reassure them and",
+  "keep the door open to confirm. If they clearly decline, respect it",
+  "cheerfully and don't press.",
   "",
   "1) CLASSIFY the message into exactly one of these intents:",
   "   - confirm: patient agrees to ship the resupply order as proposed.",
@@ -81,29 +81,44 @@ const SYSTEM_PROMPT = [
   '     "how much is it?", "is it covered?", "I think I still have some").',
   "   - unknown: anything else, including ambiguous replies.",
   "",
-  "2) WRITE A SHORT, HUMAN-SOUNDING REPLY (max 160 chars so it fits in",
-  "   one SMS segment). Match the patient's energy. Use contractions.",
-  "   No corporate boilerplate. For a `help` reply that answers a",
-  "   hesitation, briefly reassure and invite them to reply YES — but never",
-  "   promise a specific price or guarantee insurance approval (we verify",
-  "   each plan before shipping).",
+  "2) WRITE A SHORT, HUMAN-SOUNDING REPLY (max 160 characters so it fits",
+  "   in one SMS segment). Match the patient's energy. Use contractions.",
+  "   No corporate boilerplate.",
   "",
-  "EXAMPLES (intent → reply):",
-  "   confirm → \"Got it! We'll ship today. You'll get tracking by text.\"",
-  "   decline → \"No problem — we'll hold off. Fresh supplies are here",
-  '             whenever you need them; just reply YES anytime."',
-  "   edit_address → \"Sounds good — we'll text you a quick link to",
-  '                   update it."',
-  '   stop → "You\'re unsubscribed. Reply START to opt back in anytime."',
-  "   help (what is this) → \"It's your CPAP refill reminder! Reply YES and",
-  "           we'll ship your supplies to the address on file.\"",
-  '   help (cost/coverage) → "Most plans cover the refill and we verify',
-  "           yours before shipping, so no surprise bills. Reply YES to",
-  '           get it going, or call (814) 471-0627."',
-  '   help (still have some) → "Totally fine to line up the next set so you',
-  "           don't run out — old supplies wear out even unused. Reply YES",
-  "           when you're ready.\"",
-  '   unknown → "Thanks for writing — a teammate will follow up shortly."',
+  "   WRITE IT FOR SOMEONE READING ON A PHONE:",
+  "   - Short sentences, one idea each. Everyday words, never clinical or",
+  "     billing jargon.",
+  "   - If the patient has to do something, say exactly what to reply",
+  '     (e.g. "Reply YES to ship"). If they do NOT have to do anything,',
+  "     say so plainly.",
+  "   - If a person will follow up, say who and roughly when.",
+  "   - PLAIN ASCII ONLY. No em-dashes, curly quotes, ellipsis characters,",
+  "     accented letters, or emoji. A single non-ASCII character flips the",
+  "     whole text to UCS-2, which cuts the segment limit from 160",
+  "     characters to 70 and triples what it costs to send. Use a period",
+  "     or a comma anywhere you would reach for a dash.",
+  "   - For a `help` reply that answers a hesitation, briefly reassure and",
+  "     invite them to reply YES, but never promise a specific price or",
+  "     guarantee insurance approval (we verify each plan before shipping).",
+  "",
+  "EXAMPLES (intent -> reply):",
+  '   confirm -> "Got it. We will ship today and text you tracking."',
+  '   decline -> "No problem, we will hold off. Reply YES any time you are',
+  '              ready."',
+  '   edit_address -> "Thanks. We will text you a link to update your',
+  '                    address."',
+  '   stop -> "Done. No more texts from us. Reply START to turn them back',
+  '            on."',
+  '   help (what is this) -> "This is your CPAP refill reminder. Reply YES',
+  '                           and we will ship to the address on file."',
+  '   help (cost/coverage) -> "Most plans cover the refill and we check',
+  "                            yours before shipping, so no surprise bills.",
+  '                            Reply YES to get it going."',
+  '   help (still have some) -> "Fine to line up the next set so you do not',
+  "                              run out. Old supplies wear out even unused.",
+  '                              Reply YES when you are ready."',
+  '   unknown -> "Thanks. We have passed this to a team member who will get',
+  '               back to you."',
   "",
   "3) REPORT YOUR CONFIDENCE in the classification as a number between",
   "   0 and 1. Use ~0.95+ when the patient's reply is unambiguous (\"yes",
@@ -121,6 +136,14 @@ const SYSTEM_PROMPT = [
   "  any other identifying detail in `reply` even if it appeared in the",
   "  inbound text.",
   "- NEVER make up clinical or medical information.",
+  "- NEVER put a phone number, price, ship date, or tracking number in",
+  "  `reply`. This service is multi-tenant and you do not know which",
+  "  practice is texting, so any number you write would be the wrong",
+  "  one. Do NOT tell the patient to reply HELP for these either: HELP",
+  "  is a reserved keyword that returns a fixed YES/NO/EDIT/STOP menu",
+  "  and cannot answer a question or reach a person, so it is a dead",
+  "  end. Use intent=unknown and say a team member will get back to",
+  "  them -- that is the branch that actually reaches a human.",
   "- When unsure, intent=unknown with a polite handoff reply and",
   "  confidence near 0.3.",
   "- Output JSON ONLY. No prose, no markdown fences.",
@@ -408,10 +431,18 @@ function parseModelOutput(content: string): AiFallbackResult {
       confidence?: unknown;
     };
     const intent = isValidIntent(parsed.intent) ? parsed.intent : "unknown";
-    const reply =
+    // Enforce the SMS encoding the system prompt asks for. The prompt is
+    // guidance; this is the guarantee. A model that returns an em-dash or
+    // overruns 160 characters would otherwise be sent verbatim by
+    // dispatchIntent, flipping the message to UCS-2 (70-char segments) —
+    // exactly what the static-copy guards exist to prevent. Note the old
+    // `truncate` helper appended a literal ellipsis character, so every
+    // truncated reply was itself non-GSM-7.
+    const rawReply =
       typeof parsed.reply === "string" && parsed.reply.length > 0
-        ? truncate(parsed.reply, 200)
-        : undefined;
+        ? clampToOneSegment(parsed.reply)
+        : "";
+    const reply = rawReply.length > 0 ? rawReply : undefined;
     // Confidence is optional on the wire — a model that omits the field
     // (older fine-tune, malformed output) should not poison the result.
     // The route handler treats `undefined` as "no signal" and uses the

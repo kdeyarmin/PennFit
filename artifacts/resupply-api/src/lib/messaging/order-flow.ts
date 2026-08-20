@@ -162,6 +162,11 @@ export type PlaceOrderResult =
       episodeId: string;
       refillWindow: RefillWindowBlock;
     }
+  | {
+      status: "address_change_pending";
+      patientId: string;
+      episodeId: string;
+    }
   | { status: "conversation_not_found" }
   | { status: "episode_not_found" }
   | { status: "no_active_prescription" };
@@ -224,6 +229,22 @@ export async function placeResupplyOrderForConversation(
   if (episode.status === "confirmed" || episode.status === "fulfilled") {
     return {
       status: "already_confirmed",
+      patientId: convPatientId,
+      episodeId: convEpisodeId,
+    };
+  }
+
+  // 2b. Address-change guard. The signed confirm/edit links from one
+  // reminder stay valid independently, so a patient can ask us to change
+  // their address and then click Confirm (or confirm first and then ask).
+  // Either order used to ship to the address still on file. While an
+  // address change is open we refuse to create fulfillments and hand the
+  // order to a CSR, who resolves the alert once the address is settled —
+  // which releases the hold. Checked before the entitlement/coverage
+  // guards because shipping to a stale address is the worse outcome.
+  if (await hasOpenAddressChange(supabase, convPatientId)) {
+    return {
+      status: "address_change_pending",
       patientId: convPatientId,
       episodeId: convEpisodeId,
     };
@@ -665,6 +686,219 @@ async function ensureFulfillments(
     .select("id");
   if (insertErr) throw insertErr;
   return (inserted ?? []).map((r: { id: string }) => r.id);
+}
+
+/**
+ * Statuses a fulfillment can be in while it has NOT yet left the
+ * building. Only these can be held for an address change — once a row is
+ * submitted, shipped or delivered, holding it would be a lie.
+ */
+const HOLDABLE_FULFILLMENT_STATUSES = ["queued"] as const;
+
+/** Status a held fulfillment carries while an address change is open. */
+export const FULFILLMENT_ON_HOLD = "on_hold";
+
+const ADDRESS_CHANGE_ALERT = "address_change_pending";
+
+/**
+ * True when the patient has an open address-change request. Backed by
+ * the partial index added in migration 0505, so this stays an index
+ * probe on the confirm hot path.
+ */
+async function hasOpenAddressChange(
+  supabase: OrgScopedClient,
+  patientId: string,
+): Promise<boolean> {
+  const { data, error } = await supabase
+    .from("csr_compliance_alerts")
+    .select("id")
+    .eq("patient_id", patientId)
+    .eq("alert_type", ADDRESS_CHANGE_ALERT)
+    .eq("status", "open")
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    // Fail OPEN on a read error: a transient Supabase blip must not
+    // block a legitimate refill. The window this reopens is the
+    // pre-existing behaviour, not a regression.
+    logger.warn(
+      {
+        event: "resupply.address_change.guard_read_failed",
+        err: error.message,
+        patientId,
+      },
+      "resupply: address-change guard read failed; allowing the order",
+    );
+    return false;
+  }
+  return !!data;
+}
+
+export interface AddressChangeHoldResult {
+  /** Fulfillment rows moved to `on_hold` by this call. */
+  heldCount: number;
+  /** False when the alert could not be opened (the guard won't engage). */
+  alertOpen: boolean;
+}
+
+/**
+ * Record that a patient asked to change their shipping address.
+ *
+ * Does two things, in this order:
+ *   1. Holds every not-yet-shipped fulfillment for the patient, so an
+ *      order confirmed a moment ago stops before it reaches the old
+ *      address.
+ *   2. Opens a `address_change_pending` CSR alert. That alert is what
+ *      `placeResupplyOrderForConversation` checks, so it also blocks a
+ *      LATER confirm arriving on a still-valid signed link.
+ *
+ * Never throws: an address-change request must still be acknowledged to
+ * the patient even if the bookkeeping fails. The return value says what
+ * actually happened so the caller can log it.
+ */
+export async function requestAddressChangeHold(args: {
+  orgId: string;
+  patientId: string;
+  channel: "email" | "sms" | "voice" | "admin";
+}): Promise<AddressChangeHoldResult> {
+  let heldCount = 0;
+  let alertOpen = false;
+
+  // Client construction is inside the guard too: this helper promises
+  // never to throw, and an address-change request must still be
+  // acknowledged to the patient even if we cannot record it.
+  let supabase: OrgScopedClient;
+  try {
+    supabase = getOrgScopedClient(args.orgId);
+  } catch (err) {
+    logger.warn(
+      {
+        event: "resupply.address_change.client_failed",
+        errName: err instanceof Error ? err.name : "unknown",
+        patientId: args.patientId,
+      },
+      "resupply: could not resolve tenant client for address-change hold",
+    );
+    return { heldCount: 0, alertOpen: false };
+  }
+
+  try {
+    const { data: held, error: holdErr } = await supabase
+      .from("fulfillments")
+      .update({
+        status: FULFILLMENT_ON_HOLD,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("patient_id", args.patientId)
+      .in("status", HOLDABLE_FULFILLMENT_STATUSES as unknown as string[])
+      .select("id");
+    if (holdErr) throw holdErr;
+    heldCount = (held ?? []).length;
+  } catch (err) {
+    logger.warn(
+      {
+        event: "resupply.address_change.hold_failed",
+        errName: err instanceof Error ? err.name : "unknown",
+        patientId: args.patientId,
+      },
+      "resupply: could not hold fulfillments for address change",
+    );
+  }
+
+  try {
+    // The (patient_id, alert_type) WHERE status='open' partial unique
+    // index collapses repeats, so check first rather than eating a 23505.
+    const { data: existing } = await supabase
+      .from("csr_compliance_alerts")
+      .select("id")
+      .eq("patient_id", args.patientId)
+      .eq("alert_type", ADDRESS_CHANGE_ALERT)
+      .eq("status", "open")
+      .limit(1)
+      .maybeSingle();
+    if (existing) {
+      alertOpen = true;
+    } else {
+      const { error: insertErr } = await supabase
+        .from("csr_compliance_alerts")
+        .insert({
+          patient_id: args.patientId,
+          alert_type: ADDRESS_CHANGE_ALERT,
+          severity: "warning",
+          summary:
+            heldCount > 0
+              ? `Patient asked to change their shipping address. ${heldCount} order(s) held. Confirm the new address, then resolve this alert to release them.`
+              : "Patient asked to change their shipping address. Confirm the new address, then resolve this alert.",
+          metric_snapshot: {
+            channel: args.channel,
+            heldFulfillments: heldCount,
+          } as unknown as Json,
+        });
+      if (insertErr) {
+        // Two clicks racing on the same reminder both pass the check
+        // above and the second loses to the partial unique index. That
+        // is the index doing its job, not a failure: the alert IS open,
+        // which is all the confirm guard needs.
+        if (
+          typeof (insertErr as { code?: unknown }).code === "string" &&
+          (insertErr as { code: string }).code === "23505"
+        ) {
+          alertOpen = true;
+        } else {
+          throw insertErr;
+        }
+      } else {
+        alertOpen = true;
+      }
+    }
+  } catch (err) {
+    logger.warn(
+      {
+        event: "resupply.address_change.alert_failed",
+        errName: err instanceof Error ? err.name : "unknown",
+        patientId: args.patientId,
+      },
+      "resupply: could not open address-change CSR alert",
+    );
+  }
+
+  return { heldCount, alertOpen };
+}
+
+/**
+ * Release the holds placed by `requestAddressChangeHold`, returning the
+ * patient's fulfillments to `queued`.
+ *
+ * Called when a CSR resolves the address-change alert. Without this the
+ * hold would be a one-way door and the order would sit forever — worse
+ * than the bug it fixes. Never throws; the caller has already resolved
+ * the alert and must not fail on the release.
+ */
+export async function releaseAddressChangeHold(args: {
+  orgId: string;
+  patientId: string;
+}): Promise<number> {
+  try {
+    const supabase = getOrgScopedClient(args.orgId);
+    const { data: released, error } = await supabase
+      .from("fulfillments")
+      .update({ status: "queued", updated_at: new Date().toISOString() })
+      .eq("patient_id", args.patientId)
+      .eq("status", FULFILLMENT_ON_HOLD)
+      .select("id");
+    if (error) throw error;
+    return (released ?? []).length;
+  } catch (err) {
+    logger.warn(
+      {
+        event: "resupply.address_change.release_failed",
+        errName: err instanceof Error ? err.name : "unknown",
+        patientId: args.patientId,
+      },
+      "resupply: could not release address-change holds",
+    );
+    return 0;
+  }
 }
 
 /**

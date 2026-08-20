@@ -43,6 +43,7 @@ import { readMessagingConfigOrNull } from "../../lib/messaging/messaging-config"
 import {
   pausePatient,
   placeResupplyOrderForConversation,
+  requestAddressChangeHold,
 } from "../../lib/messaging/order-flow";
 import { buildResupplyDueItems } from "../../lib/messaging/resupply-due-items";
 import type { ClickLandingItem } from "@workspace/resupply-messaging";
@@ -388,6 +389,46 @@ router.post("/email/click", emailClickLimiter, async (req, res) => {
             );
           return;
         }
+        if (result.status === "address_change_pending") {
+          // The patient has an open address-change request, so the
+          // address on file is not trusted. Refuse to ship, park it with
+          // CSR, and tell them plainly that the order is held. Resolving
+          // the address-change alert releases it.
+          const { error: addrErr } = await supabase
+            .from("conversations")
+            .update({
+              status: "awaiting_admin",
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", conversationId);
+          if (addrErr) throw addrErr;
+          await safeAudit({
+            action: "messaging.order.blocked_address_change",
+            adminEmail: null,
+            adminUserId: null,
+            targetTable: "episodes",
+            targetId: result.episodeId,
+            metadata: {
+              channel: "email",
+              conversation_id: conversationId,
+              patient_id: result.patientId,
+              episode_id: result.episodeId,
+              via: "email_link",
+            },
+            ip: req.ip ?? null,
+            userAgent: req.get("user-agent") ?? null,
+          });
+          res
+            .status(200)
+            .type("text/html")
+            .send(
+              renderClickConfirmation({
+                practiceName: cfg.practiceName,
+                action: "address_pending",
+              }),
+            );
+          return;
+        }
         if (result.status === "not_eligible") {
           // Entitlement guard blocked the reship (too soon / over the
           // per-period cap). order-flow already raised a CSR alert and
@@ -583,6 +624,15 @@ router.post("/email/click", emailClickLimiter, async (req, res) => {
           })
           .eq("id", conversationId);
         if (editErr) throw editErr;
+        // Hold anything already queued for this patient and open the
+        // address-change alert, so a confirm that landed a moment ago
+        // does not ship to the old address and a later confirm on the
+        // still-valid signed link is refused. Never throws.
+        const hold = await requestAddressChangeHold({
+          orgId,
+          patientId: conv.patient_id,
+          channel: "email",
+        });
         await safeAudit({
           action: "messaging.handoff.escalated",
           adminEmail: null,
@@ -594,6 +644,8 @@ router.post("/email/click", emailClickLimiter, async (req, res) => {
             conversation_id: conversationId,
             patient_id: conv.patient_id,
             reason: "edit_address_link",
+            held_fulfillments: hold.heldCount,
+            address_change_alert_open: hold.alertOpen,
           },
           ip: req.ip ?? null,
           userAgent: req.get("user-agent") ?? null,

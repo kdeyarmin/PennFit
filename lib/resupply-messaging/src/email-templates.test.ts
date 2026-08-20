@@ -187,7 +187,7 @@ describe("renderClickLanding", () => {
       action: "confirm",
       formActionUrl: "https://api.example/email/click?t=conf",
     });
-    expect(html).toContain("Confirm your CPAP resupply order");
+    expect(html).toContain("Confirm your CPAP supply order");
     expect(html).toContain("Penn Sleep Center");
     expect(html).toContain("Confirm my order");
   });
@@ -365,8 +365,11 @@ describe("renderClickConfirmation", () => {
       practiceName: "Penn Sleep Center",
       action: "stop",
     });
-    expect(html).toContain("Reminders paused");
-    expect(html).toContain("unsubscribed");
+    expect(html).toContain("Reminders stopped");
+    // Plain language, not opt-out jargon: the page says what happened
+    // ("stopped ... reminders") rather than "unsubscribed".
+    expect(html).toContain("stopped CPAP refill reminders");
+    expect(html).not.toContain("unsubscribed");
   });
 
   it("escapes practice name", () => {
@@ -381,10 +384,10 @@ describe("renderClickConfirmation", () => {
 
 describe("renderClickError", () => {
   it.each([
-    ["malformed", "is no longer valid"],
-    ["bad-signature", "is no longer valid"],
+    ["malformed", "no longer works"],
+    ["bad-signature", "no longer works"],
     ["expired", "expired"],
-    ["unknown-action", "is no longer valid"],
+    ["unknown-action", "no longer works"],
   ] as const)("renders a generic error for reason=%s", (reason, expected) => {
     const html = renderClickError({
       practiceName: "Penn Sleep Center",

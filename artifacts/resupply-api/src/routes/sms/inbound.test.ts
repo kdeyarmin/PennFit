@@ -36,10 +36,15 @@ vi.mock("@workspace/resupply-audit", () => ({
 const placeOrderMock = vi.fn();
 const pausePatientMock = vi.fn();
 const reactivatePatientMock = vi.fn();
+const requestAddressChangeHoldMock = vi
+  .fn()
+  .mockResolvedValue({ heldCount: 0, alertOpen: true });
 vi.mock("../../lib/messaging/order-flow", () => ({
   placeResupplyOrderForConversation: (...a: unknown[]) => placeOrderMock(...a),
   pausePatient: (...a: unknown[]) => pausePatientMock(...a),
   reactivatePatient: (...a: unknown[]) => reactivatePatientMock(...a),
+  requestAddressChangeHold: (...a: unknown[]) =>
+    requestAddressChangeHoldMock(...a),
 }));
 
 // MMS ingestion — mocked at the module boundary so the route test
@@ -135,6 +140,9 @@ describe("POST /sms/inbound", () => {
     logAuditMock.mockReset().mockResolvedValue(undefined);
     placeOrderMock.mockReset();
     pausePatientMock.mockReset().mockResolvedValue(undefined);
+    requestAddressChangeHoldMock
+      .mockReset()
+      .mockResolvedValue({ heldCount: 1, alertOpen: true });
     reactivatePatientMock.mockReset().mockResolvedValue(undefined);
     ingestMmsMock.mockReset().mockResolvedValue({
       attempted: 0,
@@ -313,7 +321,7 @@ describe("POST /sms/inbound", () => {
       });
 
     expect(res.status).toBe(200);
-    expect(res.text).toMatch(/<Response><Message>.*refill is on its way/);
+    expect(res.text).toMatch(/<Response><Message>.*supplies are on the way/);
     expect(placeOrderMock).toHaveBeenCalledWith(
       expect.objectContaining({
         conversationId: CONVERSATION_ID,
@@ -404,7 +412,7 @@ describe("POST /sms/inbound", () => {
       });
 
     expect(res.status).toBe(200);
-    expect(res.text).toMatch(/verify your insurance coverage/);
+    expect(res.text).toMatch(/check your insurance coverage/);
     const audits = logAuditMock.mock.calls.map((c) => c[0]);
     const blockedAudit = audits.find(
       (a) => a.action === "messaging.order.blocked_coverage",
@@ -429,7 +437,7 @@ describe("POST /sms/inbound", () => {
         NumMedia: "0",
       });
     expect(res.status).toBe(200);
-    expect(res.text).toContain("unsubscribed");
+    expect(res.text).toContain("not get any more texts");
     // SMS-only opt-out: the reply scopes to texts (not "messages"), since
     // marketing email keeps its own separate opt-out.
     expect(res.text).toContain("texts");
@@ -465,7 +473,7 @@ describe("POST /sms/inbound", () => {
         NumMedia: "0",
       });
     expect(res.status).toBe(200);
-    expect(res.text).toContain("resubscribed");
+    expect(res.text).toContain("back on");
     expect(reactivatePatientMock).toHaveBeenCalledWith(
       PATIENT_ID,
       expect.any(String),
@@ -524,6 +532,79 @@ describe("POST /sms/inbound", () => {
     expect(intentAudit?.metadata.intent).toBe("confirm");
     expect(intentAudit?.metadata.resolved_by).toBe("ai");
     expect(intentAudit?.metadata.low_confidence_override).toBeUndefined();
+  });
+
+  it("EDIT holds not-yet-shipped orders and tells the patient so", async () => {
+    // Without the hold, a patient who replied YES and then EDIT still had
+    // supplies sent to the address on file. The reply also promises the
+    // hold, so the promise and the write have to travel together.
+    setMessagingEnv();
+    stageKnownPatientFlow();
+    stageSupabaseResponse("messages", "select", { data: [] });
+
+    const res = await request(makeApp())
+      .post("/resupply-api/sms/inbound")
+      .type("form")
+      .send({
+        From: FROM_PHONE,
+        To: "+12158675309",
+        Body: "EDIT",
+        MessageSid: "SM_edit_hold",
+        NumMedia: "0",
+      });
+
+    expect(res.status).toBe(200);
+    expect(requestAddressChangeHoldMock).toHaveBeenCalledWith(
+      expect.objectContaining({ patientId: PATIENT_ID, channel: "sms" }),
+    );
+    expect(res.text).toContain("on hold");
+    // An address change must never place an order.
+    expect(placeOrderMock).not.toHaveBeenCalled();
+    const handoffAudit = logAuditMock.mock.calls
+      .map((c) => c[0])
+      .find((a) => a.metadata?.reason === "edit_address");
+    expect(handoffAudit?.metadata.held_fulfillments).toBe(1);
+  });
+
+  it("folds a model-written reply to GSM-7 before sending it", async () => {
+    // The source-literal guard in inbound.gsm7.test.ts cannot see text
+    // composed at runtime. A model reply is exactly that: the system
+    // prompt asks for plain ASCII, but a prompt is guidance, not a
+    // guarantee. One em-dash would flip the whole SMS to UCS-2 (70-char
+    // segments instead of 160), so the route folds every reply body.
+    setMessagingEnv();
+    stageKnownPatientFlow();
+    stageSupabaseResponse("messages", "select", { data: [] });
+
+    const classifyMock = vi.fn().mockResolvedValue({
+      intent: "unknown",
+      reply: "Thanks \u2014 we\u2019ll follow up\u2026 caf\u00e9 Cl\u00ednica",
+      confidence: 0.3,
+    });
+    __setAiFallbackAdapterForTests({ classify: classifyMock });
+
+    const res = await request(makeApp())
+      .post("/resupply-api/sms/inbound")
+      .type("form")
+      .send({
+        From: FROM_PHONE,
+        To: "+12158675309",
+        Body: "what is going on here",
+        MessageSid: "SM_gsm7_ai_reply",
+        NumMedia: "0",
+      });
+
+    expect(res.status).toBe(200);
+    const body = /<Message>([\s\S]*?)<\/Message>/.exec(res.text)?.[1] ?? "";
+    expect(body).not.toBe("");
+    // Typographic punctuation folded to ASCII...
+    expect(body).toContain("Thanks - we&apos;ll follow up...");
+    // ...accents GSM-7 already covers are kept (they cost nothing)...
+    expect(body).toContain("caf\u00e9");
+    // ...and one it does not cover is reduced to its base letter.
+    expect(body).toContain("Clinica");
+    // Nothing left that would trigger UCS-2.
+    expect(body).not.toMatch(/[\u2010-\u2027\u2030-\u205e]/);
   });
 
   it("gates action intents when AI confidence is missing", async () => {
@@ -609,7 +690,7 @@ describe("POST /sms/inbound", () => {
         NumMedia: "0",
       });
     expect(res.status).toBe(200);
-    expect(res.text).toContain("automated CPAP refill reminders");
+    expect(res.text).toContain("when your CPAP supplies are due");
     expect(placeOrderMock).not.toHaveBeenCalled();
     expect(pausePatientMock).not.toHaveBeenCalled();
   });
@@ -691,7 +772,7 @@ describe("POST /sms/inbound", () => {
         NumMedia: "0",
       });
     expect(res.status).toBe(200);
-    expect(res.text).toContain("unsubscribed");
+    expect(res.text).toContain("not get any more texts");
     expect(res.text).toMatch(/<Response><Message>/);
     expect(placeOrderMock).not.toHaveBeenCalled();
     expect(pausePatientMock).not.toHaveBeenCalled();
@@ -716,7 +797,7 @@ describe("POST /sms/inbound", () => {
         NumMedia: "0",
       });
     expect(res.status).toBe(200);
-    expect(res.text).toContain("automated CPAP refill reminders");
+    expect(res.text).toContain("when your CPAP supplies are due");
     expect(placeOrderMock).not.toHaveBeenCalled();
     expect(pausePatientMock).not.toHaveBeenCalled();
     expect(logAuditMock).toHaveBeenCalledTimes(1);
@@ -740,7 +821,7 @@ describe("POST /sms/inbound", () => {
         NumMedia: "0",
       });
     expect(res.status).toBe(200);
-    expect(res.text).toContain("unsubscribed");
+    expect(res.text).toContain("not get any more texts");
     expect(logAuditMock).toHaveBeenCalledTimes(1);
     expect(logAuditMock.mock.calls[0][0].metadata.outcome).toBe(
       "unparseable_from_stop",
