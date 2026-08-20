@@ -128,6 +128,7 @@ import { Sparkline } from "@/components/admin/Sparkline";
 import { Spinner } from "@/components/admin/Spinner";
 import { Table, type Column } from "@/components/admin/Table";
 import { authHooks } from "@/lib/admin/auth-hooks";
+import { buildAdminSignInHref } from "@/lib/admin/sign-in-redirect";
 import { useDashboardIdentity } from "@/lib/admin/identity";
 import { NotAuthorizedPage } from "@/pages/admin/not-authorized";
 import { PlatformOutreachPage } from "@/pages/platform/outreach";
@@ -4985,6 +4986,9 @@ export function PlatformConsoleRoute() {
       </div>
     );
   }
-  if (!data) return <Redirect to="/admin/sign-in" />;
+  // Carry where they were headed (/platform, or a /platform/* deep link) so
+  // sign-in returns them HERE. Without it the Breathe footer's "Super admin
+  // login" link landed operators in the tenant console instead.
+  if (!data) return <Redirect to={buildAdminSignInHref()} />;
   return <PlatformConsole />;
 }
