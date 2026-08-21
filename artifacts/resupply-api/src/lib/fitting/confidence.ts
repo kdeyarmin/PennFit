@@ -302,6 +302,30 @@ export function resolveConfidence(input: ConfidenceInput): ConfidenceResult {
     outcome = "low_confidence";
   }
 
+  // Honour the winning size's own band verdict.
+  //
+  // This function's contract says confidence is "how good the scan was,
+  // how well the winning size sits in its band, and how complete the
+  // profile is" — but band membership only reached the score diluted
+  // through the facial-fit term (0.45 of the clinical blend), which
+  // patient-factor strength can outweigh. A mask the patient measurably
+  // sits OUTSIDE every size of could therefore ship as high confidence
+  // ("you can go ahead and order") whenever its tolerance ratings suited
+  // them — and the same applies to a mask with no sizing geometry at
+  // all, whose fallback size choice is a guess by construction. The
+  // whole-field `outside_validated_range` gate above only fires when
+  // EVERY candidate is out of band, not when the winner is.
+  //
+  // So: a recommendation whose chosen size the geometry does not confirm
+  // caps at moderate — still recommended, still ordered, but routed
+  // through the clinical review the moderate guidance already promises,
+  // never sold as a sure thing. Only ever downgrades, and only when
+  // gating is on.
+  const topSizeConfirmed = top.cushion?.inBand === true;
+  if (gatingEnabled && !topSizeConfirmed && outcome === "high_confidence") {
+    outcome = "moderate_confidence";
+  }
+
   // Honour the capture's own verdict on the frame.
   //
   // The client's aggregation sets `band: "low"` when a contributing frame

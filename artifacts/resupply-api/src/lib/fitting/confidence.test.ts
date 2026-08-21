@@ -206,6 +206,59 @@ describe("the five exception states are each reachable", () => {
   });
 });
 
+describe("the winning size's own band verdict", () => {
+  // The whole-field gate (outside_validated_range) fires only when EVERY
+  // candidate is out of band. These pin the per-winner rule: a top pick
+  // whose chosen size the geometry does not confirm caps at moderate —
+  // strong patient factors must not sell an out-of-band size as "go
+  // ahead and order".
+  it("caps an out-of-band winner at moderate however well it scored", () => {
+    const outOfBand = candidate({
+      confidence: 1,
+      cushion: { ...candidate().cushion!, inBand: false, bandMargin: 0 },
+    });
+    const result = resolveConfidence({ ...base, top: outOfBand });
+    expect(result.outcome).toBe("moderate_confidence");
+    expect(result.requiresReview).toBe(true);
+  });
+
+  it("caps a winner with no sizing geometry at all — its size is a guess", () => {
+    // scoreFacialFit's no-geometry fallback emits the default size with
+    // inBand=false; a null cushion (no variants) is the same statement.
+    const noGeometry = candidate({ confidence: 1, cushion: null });
+    expect(resolveConfidence({ ...base, top: noGeometry }).outcome).toBe(
+      "moderate_confidence",
+    );
+  });
+
+  it("does not lift a weak match — the cap only ever downgrades", () => {
+    const weak = candidate({
+      confidence: 0.4,
+      cushion: { ...candidate().cushion!, inBand: false },
+    });
+    expect(resolveConfidence({ ...base, top: weak }).outcome).toBe(
+      "low_confidence",
+    );
+  });
+
+  it("an in-band winner still reaches high confidence", () => {
+    expect(resolveConfidence({ ...base, top: candidate() }).outcome).toBe(
+      "high_confidence",
+    );
+  });
+
+  it("is inert when gating is off — pre-opt-in behaviour is preserved", () => {
+    const outOfBand = candidate({
+      confidence: 1,
+      cushion: { ...candidate().cushion!, inBand: false },
+    });
+    expect(
+      resolveConfidence({ ...base, top: outOfBand, gatingEnabled: false })
+        .outcome,
+    ).toBe("high_confidence");
+  });
+});
+
 describe("what cannot produce a confident answer", () => {
   it("a perfect clinical match measured badly is never high confidence", () => {
     const result = resolveConfidence({
