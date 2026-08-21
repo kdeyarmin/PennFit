@@ -1,7 +1,18 @@
 # Help Center coverage checklist
 
-A feature ↔ help-article registry for the patient-facing Help Center
-(`/help`). The structural half of this is enforced by
+There are two Help Centers, with different audiences and different
+mechanics:
+
+| Help Center | Audience                     | Lives at           | Content source                          |
+| ----------- | ---------------------------- | ------------------ | --------------------------------------- |
+| Patient     | Customers on the storefront  | `/help`            | One `pages/help-<slug>.tsx` per article |
+| Staff       | Operators inside the console | `/admin/resources` | Data in `src/content/admin-help/`       |
+
+Both are editorially maintained here and structurally enforced by tests.
+
+## Patient Help Center (`/help`)
+
+The structural half is enforced by
 `artifacts/cpap-fitter/src/help.coverage.test.ts` (every routed `/help/*`
 article must have an index card, and every index card must have a route);
 this file is the editorial half — when a feature ships, decide its row
@@ -11,7 +22,7 @@ How to add an article: create `pages/help-<slug>.tsx` (use
 `HelpArticleShell`), register the route in `App.tsx`, and add a topic
 card in `pages/help.tsx`. The coverage test fails until all three exist.
 
-## Patient-facing features
+### Patient-facing features
 
 | Feature                                    | Help article                      | Status                                 |
 | ------------------------------------------ | --------------------------------- | -------------------------------------- |
@@ -39,9 +50,45 @@ card in `pages/help.tsx`. The coverage test fails until all three exist.
 
 Clinical/educational topics (cleaning, troubleshooting, travel, therapy
 data) live under `/learn` and the chatbot knowledge base by design — the
-Help Center stays task-oriented.
+patient Help Center stays task-oriented.
 
-## Staff-facing guidance
+## Staff Help Center (`/admin/resources`)
+
+The operator-facing Help Center. Unlike the patient side, the content is
+**data, not pages** — three modules under
+`artifacts/cpap-fitter/src/content/admin-help/`, rendered by four thin
+pages. That is what lets one search box span all three content types and
+lets a test assert things about the prose itself.
+
+| Surface               | Route                                   | Content module  |
+| --------------------- | --------------------------------------- | --------------- |
+| Hub (search + browse) | `/admin/resources`                      | —               |
+| How-to guides         | `/admin/resources/how-to/<slug>`        | `how-tos.ts`    |
+| Complete user guide   | `/admin/resources/user-guide#<section>` | `user-guide.ts` |
+| FAQ                   | `/admin/resources/faq#<id>`             | `faq.ts`        |
+
+How to add content: append an object to the relevant module. Routes are
+already registered (`how-to/:slug` is a single param route), and the hub
+and search pick it up automatically — no wiring step, unlike the patient
+side.
+
+`src/content/admin-help/admin-help.coverage.test.ts` enforces the
+invariants. The important one: **every `/admin/...` path mentioned
+anywhere in the content is cross-checked against the console's
+`NAV_GROUPS`**, so a help article can never ship pointing at a page that
+does not exist. Non-nav destinations go in that test's `NON_NAV_PATHS`
+allowlist, which should stay short. It also checks slug/anchor
+uniqueness, that `related` and `seeAlso` cross-links resolve, that every
+category has at least one how-to, and that the routes are registered in
+the order wouter's `<Switch>` needs.
+
+Known staff-help gaps (candidates for future how-tos): appeal-letter
+writing, secondary-claim coordination-of-benefits detail, capped-rental
+modifier rotation, and inventory reorder-point strategy — the same list
+as the PennPilot gaps below, since both draw on the same missing
+material.
+
+## Other staff-facing guidance
 
 | Surface                  | What it covers                                                        | Where                                          |
 | ------------------------ | --------------------------------------------------------------------- | ---------------------------------------------- |

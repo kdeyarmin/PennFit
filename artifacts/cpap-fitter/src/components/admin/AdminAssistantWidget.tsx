@@ -36,6 +36,8 @@ import {
 } from "lucide-react";
 import { Link } from "wouter";
 
+import { splitAdminPaths } from "@/lib/admin/admin-path-segments";
+
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
@@ -125,47 +127,11 @@ function nextId(): string {
   return `m-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-// Matches an in-app admin path the bot mentions: `/admin`, optionally
-// followed by `/segment` parts. Stops before trailing punctuation like
-// `)`, `.` or `,` so a path in prose / parentheses links cleanly. The
-// `:` is allowed so a route param placeholder (e.g. `/admin/patients/:id`)
-// still highlights, even though it isn't directly navigable.
-const ADMIN_PATH_RE = /\/admin(?:\/[A-Za-z0-9_:-]+)*/g;
-
-export interface MessageSegment {
-  type: "text" | "link";
-  value: string;
-}
-
-/**
- * Split an assistant reply into plain-text and admin-path segments so
- * the UI can render each `/admin/...` path the bot mentions as a
- * one-click link. Pure + exported for unit testing. A path containing a
- * `:` route placeholder is treated as plain text (not a real
- * destination).
- */
-export function splitAdminPaths(text: string): MessageSegment[] {
-  const segments: MessageSegment[] = [];
-  let lastIndex = 0;
-  ADMIN_PATH_RE.lastIndex = 0;
-  let match: RegExpExecArray | null;
-  while ((match = ADMIN_PATH_RE.exec(text)) !== null) {
-    const path = match[0];
-    if (match.index > lastIndex) {
-      segments.push({
-        type: "text",
-        value: text.slice(lastIndex, match.index),
-      });
-    }
-    // A `:param` placeholder isn't a concrete destination — keep it as text.
-    segments.push({ type: path.includes(":") ? "text" : "link", value: path });
-    lastIndex = match.index + path.length;
-  }
-  if (lastIndex < text.length) {
-    segments.push({ type: "text", value: text.slice(lastIndex) });
-  }
-  return segments;
-}
+// The `/admin/...` path segmenter is shared with the Help Center
+// (/admin/resources), which renders the same kind of prose. Re-exported
+// here so existing importers (and its unit test) keep working.
+export { splitAdminPaths };
+export type { MessageSegment } from "@/lib/admin/admin-path-segments";
 
 // Localized error boundary so a malformed streamed token can't take the
 // whole admin console down — the surrounding pages keep working and the

@@ -281,7 +281,11 @@ ANALYTICS & REPORTS:
 SYSTEM (mostly admin / super-admin):
   - Support (/admin/support, module: support) — file a support request; the in-app
     assistant answers how-to questions and a person handles the rest.
-  - Help & Resources (/admin/resources) — downloadable setup guides for staff.
+  - Help & Resources (/admin/resources) — the staff HELP CENTER. Searchable
+    step-by-step how-to guides at /admin/resources/how-to/<slug>, a complete
+    user guide covering every console area at /admin/resources/user-guide,
+    an FAQ at /admin/resources/faq, and downloadable setup PDFs. Point staff
+    here when they want to READ the procedure rather than be told it.
   - Automation (module: automation): Rules (/admin/rules), Compliance Rules
     (/admin/compliance-rules), Rule Tester (/admin/rule-tester) — dry-run a rule
     before enabling it.
