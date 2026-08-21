@@ -744,7 +744,7 @@ function generateSummary(
   return `Because ${needsClause}, the ${mask.manufacturer} ${mask.name} (model ${mask.modelNumber}) ${matchClause} — and ${measureClause}.`;
 }
 
-function maskHasMagneticHardware(mask: MaskEntry): boolean {
+export function maskHasMagneticHardware(mask: MaskEntry): boolean {
   const haystack = [mask.headgearStyle, ...mask.features]
     .join(" ")
     .toLowerCase();
@@ -755,7 +755,7 @@ function maskHasMagneticHardware(mask: MaskEntry): boolean {
  * Check if a mask is contraindicated for this patient.
  * Returns array of triggered contraindication strings, empty if none.
  */
-function getActiveContraindications(
+export function getActiveContraindications(
   mask: MaskEntry,
   answers: QuestionnaireAnswers,
 ): string[] {

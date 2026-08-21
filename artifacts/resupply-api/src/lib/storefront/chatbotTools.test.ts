@@ -10,6 +10,7 @@ const supabaseMock = installSupabaseMock();
 import {
   CHAT_TOOLS,
   executeChatTool,
+  isCatalogMaskEligibleForChatRecommend,
   serializeToolResult,
   type ChatToolContext,
 } from "./chatbotTools";
@@ -122,7 +123,7 @@ describe("executeChatTool", () => {
       expect(result.ok).toBe(false);
     });
 
-    it("withholds magnetic-clip masks unless the patient has confirmed no implant", async () => {
+    it("always withholds magnetic-clip masks, even when the patient denies a pacemaker", async () => {
       const withheld = await executeChatTool("recommend_masks", { limit: 5 });
       expect(withheld.ok).toBe(true);
       if (!withheld.ok) throw new Error("expected ok");
@@ -130,17 +131,19 @@ describe("executeChatTool", () => {
         withheld.data as { recommendations: Array<{ maskId: string }> }
       ).recommendations.map((r) => r.maskId);
       expect(withheldIds).not.toContain("resmed-airfit-f20");
+      expect(withheldIds.length).toBeGreaterThan(0);
 
-      const cleared = await executeChatTool("recommend_masks", {
+      const stillWithheld = await executeChatTool("recommend_masks", {
         implanted_electronic_device: false,
         limit: 5,
       });
-      expect(cleared.ok).toBe(true);
-      if (!cleared.ok) throw new Error("expected ok");
-      const clearedIds = (
-        cleared.data as { recommendations: Array<{ maskId: string }> }
+      expect(stillWithheld.ok).toBe(true);
+      if (!stillWithheld.ok) throw new Error("expected ok");
+      const ids = (
+        stillWithheld.data as { recommendations: Array<{ maskId: string }> }
       ).recommendations.map((r) => r.maskId);
-      expect(clearedIds.length).toBeGreaterThan(0);
+      expect(ids).not.toContain("resmed-airfit-f20");
+      expect(ids.length).toBeGreaterThan(0);
     });
 
     it("still withholds magnetic-clip masks when an implant is present", async () => {
@@ -154,6 +157,60 @@ describe("executeChatTool", () => {
         result.data as { recommendations: Array<{ maskId: string }> }
       ).recommendations.map((r) => r.maskId);
       expect(ids).not.toContain("resmed-airfit-f20");
+    });
+
+    it("does not surface contraindicated masks from the engine's alternative padding", async () => {
+      const result = await executeChatTool("recommend_masks", {
+        claustrophobic: true,
+        limit: 5,
+      });
+      expect(result.ok).toBe(true);
+      if (!result.ok) throw new Error("expected ok");
+      const recs = (
+        result.data as {
+          recommendations: Array<{
+            maskId: string;
+            contraindications: string[];
+          }>;
+        }
+      ).recommendations;
+      expect(recs.map((r) => r.maskId)).not.toContain(
+        "react-health-ivolve-f1a",
+      );
+      for (const rec of recs) {
+        expect(Array.isArray(rec.contraindications)).toBe(true);
+      }
+    });
+
+    it("fails closed on unknown catalog ids and magnetic hardware", () => {
+      const answers = {
+        mouthBreather: null,
+        claustrophobic: true,
+        sideOrStomachSleeper: null,
+        heavyFacialHair: null,
+        wearsGlasses: null,
+        frequentCongestion: null,
+        priorMaskExperience: "none" as const,
+        mobilityLimitations: null,
+        sensitiveSkin: null,
+        siliconeSensitivity: null,
+        cpapPressureSetting: "unknown" as const,
+      };
+      expect(
+        isCatalogMaskEligibleForChatRecommend("not-in-the-catalog", answers),
+      ).toBe(false);
+      expect(
+        isCatalogMaskEligibleForChatRecommend("resmed-airfit-f20", answers),
+      ).toBe(false);
+      expect(
+        isCatalogMaskEligibleForChatRecommend(
+          "react-health-ivolve-f1a",
+          answers,
+        ),
+      ).toBe(false);
+      expect(
+        isCatalogMaskEligibleForChatRecommend("resmed-airfit-p10", answers),
+      ).toBe(true);
     });
   });
 
@@ -206,6 +263,20 @@ describe("executeChatTool", () => {
       if (!result.ok) throw new Error("expected ok");
       const data = result.data as { masks: unknown[] };
       expect(data.masks).toEqual([]);
+    });
+
+    it("omits magnetic-clip masks from browse results", async () => {
+      const result = await executeChatTool("find_masks", {
+        type: "fullFace",
+        limit: 10,
+      });
+      expect(result.ok).toBe(true);
+      if (!result.ok) throw new Error("expected ok");
+      const ids = (
+        result.data as { masks: Array<{ maskId: string }> }
+      ).masks.map((m) => m.maskId);
+      expect(ids).not.toContain("resmed-airfit-f20");
+      expect(ids.length).toBeGreaterThan(0);
     });
 
     it("rejects unknown extra fields", async () => {
@@ -266,6 +337,7 @@ describe("executeChatTool", () => {
       const data = result.data as { differences: string[] };
       const text = data.differences.join(" ");
       expect(text).toMatch(/fullFace|nasalPillow/);
+      expect(text).toMatch(/magnetic/i);
     });
 
     it("returns an error when one mask cannot be resolved", async () => {
