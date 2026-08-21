@@ -125,15 +125,18 @@ router.get(
         );
       return;
     }
-    res
-      .status(200)
-      .type("html")
-      .send(
-        page(
-          "You're unsubscribed",
-          "You won't receive any more CareMetric Breathe marketing emails. Changed your mind? Just sign up again any time.",
-        ),
-      );
+    res.status(200).type("html").send(
+      page(
+        "You're unsubscribed",
+        // Brand-NEUTRAL on purpose: this global list mixes two
+        // audiences — platform demo leads (CareMetric-branded drip) and
+        // tenant-storefront newsletter signups (/learn) — and the host
+        // resolver folds unknown hosts to the seed org, so neither the
+        // platform nor a tenant name is safe to hardcode here. "From
+        // us" is correct for every recipient.
+        "You won't receive any more marketing emails from us. Changed your mind? Just sign up again any time.",
+      ),
+    );
   },
 );
 
