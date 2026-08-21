@@ -50,7 +50,27 @@ WHERE "slug" = 'penn-home-medical'
 --    through to `legal_name`. NULL (not a copy of the legal name) is the
 --    honest encoding: this company has no "doing business as" any more, and
 --    the admin Company Information form renders the field empty accordingly.
+--
+--    Scoped by ORG IDENTITY, like statement 1 — `dme_organization` is
+--    tenant-scoped (`org_id`, migration 0331/0375) and neither name column
+--    is unique, so matching on the name strings alone would also clear the
+--    DBA of any other tenant that happened to carry the same pair. Matching
+--    the slug is the only predicate that actually means "this tenant".
+--
+--    The `dba_name` match stays as the idempotence guard: it targets the
+--    retired brand specifically, so re-running is a no-op and a DBA the
+--    operator sets later is never clobbered. The `legal_name` test is now a
+--    SAFETY check rather than an identity one — clearing the DBA must leave
+--    a name behind, since `loadFromDb` discards a row with a blank
+--    `legal_name` entirely and the tenant would fall back to the env
+--    identity. It no longer depends on the exact registered spelling.
 UPDATE "resupply"."dme_organization" AS o
 SET "dba_name" = NULL
 WHERE lower(coalesce(o."dba_name", '')) = 'pennpaps'
-  AND lower(coalesce(o."legal_name", '')) = 'penn home medical supply';
+  AND coalesce(btrim(o."legal_name"), '') <> ''
+  AND EXISTS (
+    SELECT 1
+    FROM "resupply"."organizations" AS org
+    WHERE org."id" = o."org_id"
+      AND org."slug" = 'penn-home-medical'
+  );
