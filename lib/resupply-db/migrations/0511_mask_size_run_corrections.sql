@@ -43,6 +43,14 @@
 --   F&P Forma               seeded S/M/L; ships S/M/L/XL.
 --   F&P Zest                seeded S/Standard/Plus; F&P's size names are
 --                           Petite / Standard / Plus (400HC557/542/558).
+--   Philips DreamWear Full  size CODE aligned: the seed stored
+--   Face                    'MW (Medium Wide)' as the code itself, where
+--                           every other Medium-Wide in the catalog (and
+--                           the static fallback catalog) uses code 'MW'
+--                           with the long form as the LABEL. Same size,
+--                           same UUID — the code is what fit reports and
+--                           order data carry, so the two catalog modes
+--                           must agree on it.
 --   F&P Brevida             codes restated as the manufacturer prints
 --   F&P Evora Full          them: XS-S / M-L, and XS / S-M / L
 --                           (Brevida fit-pack page; sizing guide REF
@@ -187,6 +195,10 @@ FROM (VALUES
   ('fisher-paykel-brevida', 'pillow', 'M/L', 'M-L', 'M-L', 10),
   ('fisher-paykel-evora-full', 'cushion', 'S/M', 'S-M', 'S-M', 10),
   ('fisher-paykel-zest', 'cushion', 'S', 'Petite', 'Petite', 0),
+  ('philips-dreamwear-ff', 'cushion', 'S', 'S', 'S', 0),
+  ('philips-dreamwear-ff', 'cushion', 'M', 'M', 'M', 10),
+  ('philips-dreamwear-ff', 'cushion', 'MW (Medium Wide)', 'MW', 'MW (Medium Wide)', 20),
+  ('philips-dreamwear-ff', 'cushion', 'L', 'L', 'L', 30),
   ('philips-fitlife', 'cushion', 'L', 'L', 'L', 10),
   ('philips-trueblue', 'cushion', 'L', 'L', 'L', 40),
   ('philips-trueblue', 'cushion', 'M', 'M', 'M', 20),
@@ -320,6 +332,11 @@ FROM (VALUES
   ('philips-trueblue', 'cushion', 'M', 35.4, 39.3, 29.1, 32.3, NULL, NULL, NULL, NULL),
   ('philips-trueblue', 'cushion', 'MW', 38.6, 55, 29.1, 32.3, NULL, NULL, NULL, NULL),
   ('philips-trueblue', 'cushion', 'L', 38.6, 55, 31.7, 45, NULL, NULL, NULL, NULL),
+  -- philips-dreamwear-ff (full_face, adult)
+  ('philips-dreamwear-ff', 'cushion', 'S', 20, 34, NULL, NULL, 55, 85.1, 30, 46.8),
+  ('philips-dreamwear-ff', 'cushion', 'M', 33.1, 38.3, NULL, NULL, 83, 95.8, 45.6, 52.7),
+  ('philips-dreamwear-ff', 'cushion', 'MW', 37.4, 55, NULL, NULL, 83, 95.8, 51.5, 70),
+  ('philips-dreamwear-ff', 'cushion', 'L', 37.4, 55, NULL, NULL, 93.7, 125, 51.5, 70),
   -- philips-comfortgel-blue-full (full_face, adult)
   ('philips-comfortgel-blue-full', 'cushion', 'S', 20, 32.8, NULL, NULL, 55, 82.2, 30, 45.1),
   ('philips-comfortgel-blue-full', 'cushion', 'M', 32.2, 36, NULL, NULL, 80.5, 90.2, 44.3, 49.6),
@@ -377,6 +394,7 @@ WHERE r."size_variant_id" = v."id"
   'fisher-paykel-zest',
   'philips-amara-full',
   'philips-comfortgel-blue-full',
+  'philips-dreamwear-ff',
   'philips-dreamwear-ff-gel',
   'philips-dreamwear-np',
   'philips-fitlife',
@@ -402,6 +420,7 @@ WHERE "org_id" IS NULL
   'fisher-paykel-zest',
   'philips-amara-full',
   'philips-comfortgel-blue-full',
+  'philips-dreamwear-ff',
   'philips-dreamwear-ff-gel',
   'philips-dreamwear-np',
   'philips-fitlife',

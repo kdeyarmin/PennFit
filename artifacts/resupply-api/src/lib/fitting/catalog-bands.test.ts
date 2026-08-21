@@ -502,6 +502,10 @@ describe("size runs match what the manufacturer actually ships", () => {
     "philips-wisp-pediatric|cushion": ["S", "M", "L"],
     "philips-trueblue|cushion": ["P", "S", "M", "MW", "L"],
     "philips-comfortgel-blue-full|cushion": ["S", "M", "L", "XL"],
+    // 0511 also aligns this run's Medium-Wide CODE with the rest of the
+    // catalog ('MW', long form as the label) so the DB and static
+    // catalog modes emit the same size code.
+    "philips-dreamwear-ff|cushion": ["S", "M", "MW", "L"],
     "philips-fitlife|cushion": ["S", "L", "XL"],
     "philips-dreamwear-np|pillow": ["S", "M", "L"],
     "fisher-paykel-forma|cushion": ["S", "M", "L", "XL"],

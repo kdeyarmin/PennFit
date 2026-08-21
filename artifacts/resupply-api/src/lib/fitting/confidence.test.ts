@@ -9,6 +9,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  CONFIDENCE_THRESHOLDS,
   measurementsOutOfBounds,
   profileCompleteness,
   resolveConfidence,
@@ -220,6 +221,10 @@ describe("the winning size's own band verdict", () => {
     const result = resolveConfidence({ ...base, top: outOfBand });
     expect(result.outcome).toBe("moderate_confidence");
     expect(result.requiresReview).toBe(true);
+    // The NUMBER is capped with the label: the results page renders it as
+    // "N% match" next to the outcome copy, and "98% match" beside "worth
+    // a second look" is the overclaim restated as a percentage.
+    expect(result.confidence).toBeLessThan(CONFIDENCE_THRESHOLDS.high);
   });
 
   it("caps a winner with no sizing geometry at all — its size is a guess", () => {

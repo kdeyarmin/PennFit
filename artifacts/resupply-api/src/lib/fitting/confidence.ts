@@ -259,7 +259,8 @@ export function resolveConfidence(input: ConfidenceInput): ConfidenceResult {
   // degrades the clinical score from there. This is what stops a strong
   // geometric match on a blurry, badly-lit frame reading as "high".
   const scanWeight = 0.6 + 0.4 * clamp01(scan.measurementConfidence);
-  const combined = top.confidence * scanWeight * profileCompleteness(profile);
+  const uncappedCombined =
+    top.confidence * scanWeight * profileCompleteness(profile);
 
   // The scan decides.
   //
@@ -289,12 +290,12 @@ export function resolveConfidence(input: ConfidenceInput): ConfidenceResult {
   // waits for a human to vouch for the numbers.
   let outcome: FitOutcome;
   if (
-    combined >= CONFIDENCE_THRESHOLDS.high &&
+    uncappedCombined >= CONFIDENCE_THRESHOLDS.high &&
     scan.measurementConfidence >= CONFIDENCE_THRESHOLDS.highScan
   ) {
     outcome = "high_confidence";
   } else if (
-    combined >= CONFIDENCE_THRESHOLDS.moderate &&
+    uncappedCombined >= CONFIDENCE_THRESHOLDS.moderate &&
     scan.measurementConfidence >= CONFIDENCE_THRESHOLDS.moderateScan
   ) {
     outcome = "moderate_confidence";
@@ -321,9 +322,17 @@ export function resolveConfidence(input: ConfidenceInput): ConfidenceResult {
   // through the clinical review the moderate guidance already promises,
   // never sold as a sure thing. Only ever downgrades, and only when
   // gating is on.
+  //
+  // The NUMBER is capped along with the label. The results page renders
+  // `confidence` as "N% match" right next to the outcome copy, so
+  // downgrading the outcome alone would show "98% match" beside "worth a
+  // second look" — the exact overclaim this cap exists to prevent,
+  // restated as a percentage.
   const topSizeConfirmed = top.cushion?.inBand === true;
+  let combined = uncappedCombined;
   if (gatingEnabled && !topSizeConfirmed && outcome === "high_confidence") {
     outcome = "moderate_confidence";
+    combined = Math.min(combined, CONFIDENCE_THRESHOLDS.high - 0.001);
   }
 
   // Honour the capture's own verdict on the frame.

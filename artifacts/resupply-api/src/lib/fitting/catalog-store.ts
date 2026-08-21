@@ -25,6 +25,7 @@ import {
   computeFitAdjustments,
   tallyOutcomesByMask,
 } from "../storefront/mask-fit-tuning.js";
+import { ADULT_PLAUSIBILITY_BOUNDS } from "./confidence.js";
 import { OPEN_FORMULARY } from "./formulary.js";
 import type {
   CatalogMask,
@@ -82,9 +83,17 @@ const LEGACY_INTERFACE: Record<string, InterfaceType> = {
  * Project the built-in TypeScript catalog into the engine's shape.
  *
  * Used when the database is unreachable, and when a tenant has not turned
- * the DB catalog on. The size bands are the same linear partition the
- * previous engine used, so the degraded path reproduces the old behaviour
- * rather than inventing a different one.
+ * the DB catalog on. The size bands are a linear partition of the entry's
+ * fit range, with the SAME open-edge rule as the DB catalog's derived
+ * bands: the smallest size runs down to the adult plausibility floor and
+ * the largest up to the ceiling. Without that, a measurement the
+ * plausibility gate accepts could sit outside every band of every mask —
+ * the legacy entries all carry the canonical-face ±18% envelope, so a
+ * plausible 25 mm nose or 60 mm nose-to-chin would make `runTiers` report
+ * `outsideValidatedRange` and, under confidence gating, withhold a
+ * fitting the DB path would happily size. The degraded path serves adults
+ * only (`serviceLine: "adult"` below), so the adult window is the right
+ * envelope to run out to.
  */
 export function staticCatalogAsMasks(
   entries: readonly MaskEntry[] = maskCatalog,
@@ -97,11 +106,16 @@ export function staticCatalogAsMasks(
     const range = axisIsNose
       ? ([e.fitRanges.noseWidthMin, e.fitRanges.noseWidthMax] as const)
       : ([e.fitRanges.noseToChinMin, e.fitRanges.noseToChinMax] as const);
+    const [windowLo, windowHi] = axisIsNose
+      ? ADULT_PLAUSIBILITY_BOUNDS.noseWidth
+      : ADULT_PLAUSIBILITY_BOUNDS.noseToChin;
 
     const variants: SizeVariant[] = sizes.map((size, i) => {
       const width = (range[1] - range[0]) / sizes.length;
-      const lo = range[0] + width * i;
-      const hi = lo + width;
+      // Edge sizes run out to the plausibility window (see the header):
+      // any value the gate admits lands in some band.
+      const lo = i === 0 ? windowLo : range[0] + width * i;
+      const hi = i === sizes.length - 1 ? windowHi : range[0] + width * (i + 1);
       return {
         id: `${e.id}:${size}`,
         component: interfaceType === "nasal_pillow" ? "pillow" : "cushion",
