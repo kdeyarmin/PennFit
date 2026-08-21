@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 
+import { PLATFORM_NAME } from "@/lib/branding";
 import { useCompanyContact } from "@/lib/contact";
 
 // Helper — find an existing meta tag by name OR property, or create
@@ -22,9 +23,24 @@ function getOrCreateMeta(
 }
 
 /**
- * Pass an empty string for `pageTitle` to use the site's default title
- * from `index.html` (e.g. on the landing page where no page-specific
- * suffix is needed); the canonical update still happens.
+ * Pass an empty string for `pageTitle` to use the site-default title
+ * (e.g. on the landing page where no page-specific prefix is needed);
+ * the canonical update still happens.
+ *
+ * The site default is built from the RESOLVED tenant brand, not read
+ * back from `index.html`: the static shell is one bundle serving every
+ * tenant, so it necessarily carries the platform ("CareMetric Breathe")
+ * placeholders — falling back to it is exactly how a tenant's landing
+ * tab and meta description ended up reading CareMetric instead of the
+ * DME's own name.
+ *
+ * SCOPE — runtime only. Everything this hook writes exists after the SPA
+ * executes, which covers the browser tab, the live DOM, and crawlers
+ * that run JavaScript (Google). Link-preview scrapers that read the raw
+ * HTML without executing it (most social/chat unfurlers) still see the
+ * static shell's platform placeholders; fixing THOSE requires the server
+ * to render per-host `<title>`/OG tags into the shell response, which is
+ * deliberately out of this hook's reach.
  *
  * Why a hook instead of react-helmet-async: avoiding a 3rd-party
  * helmet provider removes a runtime dependency and one more thing to
@@ -57,8 +73,35 @@ export function useDocumentTitle(
   // name, "CareMetric Breathe" as the platform default) instead of hardcoding
   // the seed tenant. The live value arrives with /api/company-info.
   const company = useCompanyContact();
-  const siteTitleSuffix = ` — ${company.name}`;
-  const publisherName = company.legalName || company.name;
+  // …EXCEPT on the platform marketing routes. Everything under /breathe/*
+  // describes CareMetric Breathe, the SaaS product itself, and those pages
+  // stay reachable on tenant hosts — where /api/company-info resolves to
+  // the TENANT. Stamping a tenant's name onto the platform's own product
+  // pages inverts the brand architecture (see lib/branding.ts), so the
+  // marketing surface pins the platform identity regardless of host.
+  // Mirrors the canonical-path logic below: strip the artifact basePath
+  // first so subpath previews classify the same way.
+  const basePathPrefix = import.meta.env.BASE_URL.replace(/\/$/, "");
+  const currentRawPath =
+    typeof window !== "undefined" ? window.location.pathname : "/";
+  const currentPath =
+    basePathPrefix && currentRawPath.startsWith(basePathPrefix)
+      ? currentRawPath.slice(basePathPrefix.length) || "/"
+      : currentRawPath;
+  const isPlatformSurface =
+    currentPath === "/breathe" || currentPath.startsWith("/breathe/");
+  const brandName = isPlatformSurface ? PLATFORM_NAME : company.name;
+  const brandPublisher = isPlatformSurface
+    ? PLATFORM_NAME
+    : company.legalName || company.name;
+  const siteTitleSuffix = ` — ${brandName}`;
+  const publisherName = brandPublisher;
+  // The brand-resolved site defaults, used when the page asks for "the
+  // site default" (empty pageTitle / no description). See the module doc:
+  // the static shell's values are platform placeholders, never a brand a
+  // tenant's patient should see.
+  const siteDefaultTitle = `${brandName} — CPAP Fitter, Shop & Resupply`;
+  const siteDefaultDescription = `Get fitted for a CPAP mask in minutes with ${brandName}: shop cushions, filters, and tubing direct, and let us handle insurance and resupply. Privacy-first, on-device fitting.`;
 
   useEffect(() => {
     const previousTitle = document.title;
@@ -69,10 +112,14 @@ export function useDocumentTitle(
 
     const fullTitle = pageTitle
       ? `${pageTitle}${siteTitleSuffix}`
-      : previousTitle;
+      : siteDefaultTitle;
     document.title = fullTitle;
-    if (description && metaDesc) {
-      metaDesc.setAttribute("content", description);
+    // On the landing page (no per-page description) the static shell's
+    // platform description is replaced with the tenant-branded default.
+    const effectiveDescription =
+      description ?? (pageTitle ? undefined : siteDefaultDescription);
+    if (effectiveDescription && metaDesc) {
+      metaDesc.setAttribute("content", effectiveDescription);
     }
 
     /*
@@ -132,20 +179,30 @@ export function useDocumentTitle(
       metaUpdates.push({ el, attr: contentAttr, previous, created });
     }
 
-    if (pageTitle) {
-      setMeta(
-        'meta[property="og:title"]',
-        { property: "og:title" },
-        "content",
-        fullTitle,
-      );
-      setMeta(
-        'meta[name="twitter:title"]',
-        { name: "twitter:title" },
-        "content",
-        fullTitle,
-      );
-    }
+    // Written unconditionally (fullTitle is the tenant-branded site
+    // default when pageTitle is empty) so the shell's platform-branded
+    // og:title never survives onto a tenant's landing page.
+    setMeta(
+      'meta[property="og:title"]',
+      { property: "og:title" },
+      "content",
+      fullTitle,
+    );
+    setMeta(
+      'meta[name="twitter:title"]',
+      { name: "twitter:title" },
+      "content",
+      fullTitle,
+    );
+    // og:site_name is static platform copy in the shell; re-point it at
+    // the resolved brand on every route (the tenant on storefront pages,
+    // the platform on /breathe/* — see brandName above).
+    setMeta(
+      'meta[property="og:site_name"]',
+      { property: "og:site_name" },
+      "content",
+      brandName,
+    );
     setMeta(
       'meta[property="og:url"]',
       { property: "og:url" },
@@ -158,18 +215,18 @@ export function useDocumentTitle(
       "content",
       "website",
     );
-    if (description) {
+    if (effectiveDescription) {
       setMeta(
         'meta[property="og:description"]',
         { property: "og:description" },
         "content",
-        description,
+        effectiveDescription,
       );
       setMeta(
         'meta[name="twitter:description"]',
         { name: "twitter:description" },
         "content",
-        description,
+        effectiveDescription,
       );
     }
 
@@ -240,5 +297,14 @@ export function useDocumentTitle(
         schemaScript.parentNode.removeChild(schemaScript);
       }
     };
-  }, [pageTitle, description, options?.schema, siteTitleSuffix, publisherName]);
+  }, [
+    pageTitle,
+    description,
+    options?.schema,
+    siteTitleSuffix,
+    publisherName,
+    brandName,
+    siteDefaultTitle,
+    siteDefaultDescription,
+  ]);
 }

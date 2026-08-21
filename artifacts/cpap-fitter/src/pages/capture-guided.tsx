@@ -28,7 +28,14 @@ import React, { useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
-import { Camera, CheckCircle2, RefreshCw, ScanFace } from "lucide-react";
+import {
+  Camera,
+  CheckCircle2,
+  RefreshCw,
+  ScanFace,
+  Volume2,
+  VolumeX,
+} from "lucide-react";
 
 import { FilesetResolver, FaceLandmarker } from "@mediapipe/tasks-vision";
 
@@ -36,10 +43,17 @@ import { useFitterStore, type CapturedFrame } from "@/hooks/use-fitter-store";
 import { track } from "@/lib/track";
 import { sampleFrame } from "@/lib/frame-sampling";
 import {
+  createCaptureFeedback,
+  shouldSpeakCoachLine,
+  type CaptureFeedback,
+  type SpokenCoachLine,
+} from "@/lib/capture-feedback";
+import {
   assessFrameQuality,
   centroidOf,
   estimatePoseFromLandmarks,
   POSE_PROMPT,
+  turnCoachNudge,
   type CapturePose,
   type Point2D,
   type QualityResult,
@@ -112,6 +126,25 @@ export function GuidedCapture({ onFallback }: { onFallback: () => void }) {
   const finalizedRef = useRef(false);
   const unmountedRef = useRef(false);
 
+  // Eyes-free feedback: a chime + vibration the instant a frame is taken,
+  // and spoken coaching while the patient's head (and eyes) are turned
+  // away from the screen. Every channel degrades silently where the
+  // browser doesn't support it.
+  const feedbackRef = useRef<CaptureFeedback | null>(null);
+  feedbackRef.current ??= createCaptureFeedback();
+  const lastSpokenCoachRef = useRef<SpokenCoachLine | null>(null);
+  const struggleSpokenForPoseRef = useRef(-1);
+  const introSpokenRef = useRef(false);
+  // The turn direction the live loop most recently MATCHED for the
+  // current turn step (either physical side can satisfy an unlocked
+  // step). The manual "take it anyway" capture records this, not the
+  // nominal step label: a patient who turned opposite the nominal
+  // direction and tapped the escape hatch would otherwise be filed under
+  // the wrong side, and requiredTurn would then lock the remaining step
+  // to the SAME physical direction — two frames of one side, zero of the
+  // other. Cleared on every pose advance/skip.
+  const lastMatchedTurnRef = useRef<CapturePose | null>(null);
+
   const [videoReady, setVideoReady] = useState(false);
   const [landmarkerReady, setLandmarkerReady] = useState(false);
   const [coach, setCoach] = useState<{
@@ -122,6 +155,7 @@ export function GuidedCapture({ onFallback }: { onFallback: () => void }) {
   const [capturedCount, setCapturedCount] = useState(0);
   const [flash, setFlash] = useState(false);
   const [skippable, setSkippable] = useState(false);
+  const [audioOn, setAudioOn] = useState(() => feedbackRef.current!.enabled);
 
   useEffect(() => {
     unmountedRef.current = false;
@@ -277,12 +311,23 @@ export function GuidedCapture({ onFallback }: { onFallback: () => void }) {
     framesRef.current = [...framesRef.current, { dataUrl, pose }];
     machineRef.current = advancePose(machineRef.current, performance.now());
     centroidsRef.current = [];
+    lastMatchedTurnRef.current = null;
     setCapturedCount(framesRef.current.length);
     setFlash(true);
     setTimeout(() => {
       if (!unmountedRef.current) setFlash(false);
     }, 350);
+    const feedback = feedbackRef.current!;
     if (machineRef.current.done) {
+      // The completion chime is deliberately distinct from the per-frame
+      // one, and the spoken line calls the patient's eyes back to the
+      // phone — the whole flow just spent a minute training them NOT to
+      // look at it.
+      feedback.allDone();
+      feedback.speak(
+        "That's every angle — all done. You can look at your phone now.",
+        { interrupt: true },
+      );
       finalize();
     } else {
       // Direction-aware prompt: if the first turn actually captured (say)
@@ -293,19 +338,28 @@ export function GuidedCapture({ onFallback }: { onFallback: () => void }) {
         framesRef.current,
         currentPose(machineRef.current),
       );
-      setPrompt(
-        required ? POSE_PROMPT[required] : posePrompt(machineRef.current),
-      );
+      const nextPrompt = required
+        ? POSE_PROMPT[required]
+        : posePrompt(machineRef.current);
+      setPrompt(nextPrompt);
       setSkippable(canSkipPose(machineRef.current));
       // The second front capture repeats the same pose — "next angle"
       // would contradict the prompt right above it.
+      const atFront = currentPose(machineRef.current) === "front";
       setCoach({
-        message:
-          currentPose(machineRef.current) === "front"
-            ? "Nice. One more, hold steady…"
-            : "Nice. Next angle…",
+        message: atFront ? "Nice. One more, hold steady…" : "Nice. Next angle…",
         struggling: false,
       });
+      // Chime says "it took"; the voice hands over the next instruction —
+      // the patient hears the step change without looking back.
+      feedback.frameCaptured();
+      const spoken = atFront
+        ? "Got it — one more straight on. Hold steady."
+        : `Got it. ${nextPrompt}`;
+      feedback.speak(spoken, { interrupt: true });
+      if (feedback.enabled) {
+        lastSpokenCoachRef.current = { text: spoken, atMs: performance.now() };
+      }
     }
     return true;
   };
@@ -314,6 +368,14 @@ export function GuidedCapture({ onFallback }: { onFallback: () => void }) {
   useEffect(() => {
     if (!videoReady || !landmarkerReady) return;
     setCoach({ message: "Look straight at the camera.", struggling: false });
+    if (!introSpokenRef.current) {
+      introSpokenRef.current = true;
+      // Warm the audio path while sticky activation from the tap that
+      // navigated here is still fresh — the first auto-capture fires from
+      // a timer, where a suspended AudioContext cannot resume itself.
+      feedbackRef.current!.prime();
+      feedbackRef.current!.speak("Look straight at the camera.");
+    }
 
     const tick = () => {
       if (tickBusyRef.current || finalizedRef.current) return;
@@ -331,6 +393,7 @@ export function GuidedCapture({ onFallback }: { onFallback: () => void }) {
 
         let quality: QualityResult | null = null;
         let matchedPose: CapturePose = currentPose(machineRef.current);
+        let liveYawDeg: number | null = null;
         if (landmarks && landmarks[469] && landmarks[471]) {
           // Iris pixels at FULL capture resolution — the distance check's
           // px/mm window is calibrated for the frame we actually save,
@@ -377,6 +440,7 @@ export function GuidedCapture({ onFallback }: { onFallback: () => void }) {
             : sampleFrame(video as never, landmarks);
 
           const angles = estimatePoseFromLandmarks(landmarks);
+          liveYawDeg = angles.yawDeg;
           const assessFor = (pose: CapturePose) =>
             assessFrameQuality({
               pose,
@@ -414,6 +478,9 @@ export function GuidedCapture({ onFallback }: { onFallback: () => void }) {
               quality = useLeft ? asLeft : asRight;
               matchedPose = useLeft ? "turn_left" : "turn_right";
             }
+            // Remember the live direction for the manual escape hatch —
+            // see lastMatchedTurnRef.
+            lastMatchedTurnRef.current = matchedPose;
           }
 
           centroidsRef.current = [
@@ -439,21 +506,66 @@ export function GuidedCapture({ onFallback }: { onFallback: () => void }) {
           // (see requiredTurn), re-issue the locked direction's prompt so
           // the coach never tells the patient to turn the way that's
           // already on film.
-          const required = requiredTurn(
-            framesRef.current,
-            currentPose(machineRef.current),
-          );
-          const message =
+          const machinePose = currentPose(machineRef.current);
+          const required = requiredTurn(framesRef.current, machinePose);
+          let message =
             required &&
             (action.message === POSE_PROMPT.turn_left ||
               action.message === POSE_PROMPT.turn_right)
               ? POSE_PROMPT[required]
               : action.message;
+          // At a turn step, "turn your head slightly" tells a patient who
+          // IS turned nothing. When yaw itself is what's failing, replace
+          // the prompt with the live directional nudge: further, back a
+          // touch, or (direction-locked) the other way.
+          if (
+            machinePose !== "front" &&
+            liveYawDeg !== null &&
+            quality?.failing[0] === "pose"
+          ) {
+            const nudge = turnCoachNudge(liveYawDeg, matchedPose, !!required);
+            if (nudge) message = nudge;
+          }
           setCoach({
             message,
             struggling: action.struggling,
           });
           setSkippable(action.struggling && canSkipPose(machineRef.current));
+
+          const feedback = feedbackRef.current!;
+          // Speak coach lines only at the TURN steps — that's when the
+          // patient's eyes are off the screen and the on-screen coach is
+          // unreadable. (Front-pose coaching stays visual; narrating it
+          // would be noise.) Throttled so the voice never chases the
+          // ~180ms assessment cadence. The bookkeeping advances ONLY when
+          // sound is on: a muted speak() is a no-op, and recording it as
+          // spoken would leave a patient who unmutes mid-struggle waiting
+          // out a throttle on words they never heard.
+          if (machinePose !== "front" && feedback.enabled) {
+            const nowMs = performance.now();
+            if (
+              shouldSpeakCoachLine(lastSpokenCoachRef.current, message, nowMs)
+            ) {
+              lastSpokenCoachRef.current = { text: message, atMs: nowMs };
+              feedback.speak(message);
+            }
+          }
+          // One spoken pointer at the escape hatches, per pose — the
+          // buttons appear silently below an eyes-off-screen patient
+          // otherwise. Same rule: only marked delivered when it could
+          // actually be heard.
+          if (
+            action.struggling &&
+            feedback.enabled &&
+            struggleSpokenForPoseRef.current !== machineRef.current.poseIndex
+          ) {
+            struggleSpokenForPoseRef.current = machineRef.current.poseIndex;
+            feedback.speak(
+              canSkipPose(machineRef.current)
+                ? "Having trouble? That's okay — look at your phone. You can take the photo as it is, or skip this angle."
+                : "Having trouble? Look at your phone — you can take the photo yourself.",
+            );
+          }
         }
       } catch {
         // A single failed assessment is not a failed capture — skip the
@@ -470,10 +582,14 @@ export function GuidedCapture({ onFallback }: { onFallback: () => void }) {
 
   const handleManualCapture = () => {
     if (finalizedRef.current) return;
-    track("guided_capture_manual", {
-      pose: currentPose(machineRef.current),
-    });
-    captureCurrentFrame(currentPose(machineRef.current));
+    // File the frame under the direction the patient is ACTUALLY turned
+    // (the live loop's last match), falling back to the nominal step only
+    // when no assessment has seen a face at this step yet.
+    const nominal = currentPose(machineRef.current);
+    const pose =
+      nominal !== "front" ? (lastMatchedTurnRef.current ?? nominal) : nominal;
+    track("guided_capture_manual", { pose });
+    captureCurrentFrame(pose);
   };
 
   const handleSkip = () => {
@@ -481,12 +597,44 @@ export function GuidedCapture({ onFallback }: { onFallback: () => void }) {
     track("guided_capture_skip", { pose: currentPose(machineRef.current) });
     machineRef.current = skipPose(machineRef.current, performance.now());
     centroidsRef.current = [];
+    lastMatchedTurnRef.current = null;
     if (machineRef.current.done) {
+      // Skipping the last angle finishes the flow too — emit the same
+      // completion signal the capture path emits, so "done" always
+      // sounds the same however the final step ended. Worded to allow
+      // skipped angles ("everything we need", not "every angle").
+      const feedback = feedbackRef.current!;
+      feedback.allDone();
+      feedback.speak("That's everything we need — all done.", {
+        interrupt: true,
+      });
       finalize();
       return;
     }
-    setPrompt(posePrompt(machineRef.current));
+    const nextPrompt = posePrompt(machineRef.current);
+    setPrompt(nextPrompt);
     setSkippable(canSkipPose(machineRef.current));
+    feedbackRef.current!.speak(nextPrompt, { interrupt: true });
+    if (feedbackRef.current!.enabled) {
+      lastSpokenCoachRef.current = {
+        text: nextPrompt,
+        atMs: performance.now(),
+      };
+    }
+  };
+
+  const toggleAudio = () => {
+    const feedback = feedbackRef.current!;
+    const next = !feedback.enabled;
+    feedback.setEnabled(next);
+    setAudioOn(next);
+    if (next) {
+      // Sound just came on: clear the speech bookkeeping so the current
+      // guidance (and this pose's struggle pointer) speaks promptly
+      // instead of waiting out a throttle recorded while muted.
+      lastSpokenCoachRef.current = null;
+      struggleSpokenForPoseRef.current = -1;
+    }
   };
 
   const ready = videoReady && landmarkerReady;
@@ -530,6 +678,25 @@ export function GuidedCapture({ onFallback }: { onFallback: () => void }) {
           className="w-full h-full object-cover transform -scale-x-100"
         />
         <canvas ref={captureCanvasRef} className="hidden" />
+        {/* Sound on/off. The chime + voice are the whole eyes-free story,
+            so they default ON; the toggle is for patients somewhere quiet.
+            Vibration is silent and stays on regardless. */}
+        <button
+          type="button"
+          onClick={toggleAudio}
+          aria-pressed={audioOn}
+          aria-label={
+            audioOn ? "Turn capture sounds off" : "Turn capture sounds on"
+          }
+          data-testid="guided-sound-toggle"
+          className="absolute top-3 right-3 z-10 rounded-full bg-black/50 p-2.5 text-white backdrop-blur-sm transition-colors hover:bg-black/65"
+        >
+          {audioOn ? (
+            <Volume2 className="h-4 w-4" />
+          ) : (
+            <VolumeX className="h-4 w-4" />
+          )}
+        </button>
         <div
           className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center"
           aria-hidden="true"
@@ -592,8 +759,9 @@ export function GuidedCapture({ onFallback }: { onFallback: () => void }) {
 
       <p className="mt-1 text-xs text-muted-foreground text-center max-w-md leading-relaxed">
         Three quick angles — straight on, then a slight turn each way — let us
-        cross-check every measurement. It all happens on this device; photos
-        never leave your phone.
+        cross-check every measurement. You&apos;ll hear a chime each time a
+        photo is taken, so there&apos;s no need to watch the screen. It all
+        happens on this device; photos never leave your phone.
       </p>
     </div>
   );

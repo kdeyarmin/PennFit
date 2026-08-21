@@ -23,6 +23,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   Info,
+  PhoneCall,
   RefreshCcw,
   ShieldAlert,
 } from "lucide-react";
@@ -31,6 +32,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { useCompanyContact } from "@/lib/contact";
 import { getMaskImage, formatMaskType } from "@/lib/mask-images";
 import type { FitAssessment, FitCandidate } from "@/lib/fit-assess-api";
 
@@ -318,24 +320,43 @@ function Provenance({ assessment }: { assessment: FitAssessment }) {
  * The engine declined to name a mask.
  *
  * `low_confidence`, `contraindicated`, and `outside_validated_range` are
- * distinct outcomes and get distinct copy, because "retake the photo"
- * helps a low-confidence scan and is useless advice for a patient whose
- * whole mask category was contraindicated.
+ * distinct outcomes and get distinct copy — but they share one exit: the
+ * flow ENDS here, with the DME company named as the hand-off. There is
+ * deliberately no "retake photo" loop anymore. A patient who has just
+ * fought the capture into a low-confidence photo has already told us the
+ * photo path isn't working for them; bouncing them back to the camera
+ * for another round is how fittings die in frustration. The DME's team
+ * can still send a fresh scan link from the console (rescan-notify) when
+ * THEY judge another try worthwhile.
+ *
+ * The company identity comes from `useCompanyContact()` — the
+ * host-resolved tenant, never a typed-out brand — so every tenant's
+ * patients are referred to that tenant by name (with the neutral
+ * platform identity as the pre-fetch/failure fallback).
  */
-export function FitWithheld({
-  assessment,
-  onRetake,
-}: {
-  assessment: FitAssessment;
-  onRetake: () => void;
-}) {
-  const canRetake = assessment.outcome !== "contraindicated";
+export function FitWithheld({ assessment }: { assessment: FitAssessment }) {
+  const contact = useCompanyContact();
+  // The two non-contraindicated withholds share the ending (stop + named
+  // referral) but NOT one explanation: `low_confidence` can come from the
+  // photo, a weak match, or a sparse profile, and `outside_validated_range`
+  // can be a perfectly good scan of a face outside the sizing data — so
+  // neither body may claim "the photo failed" as fact. Each outcome gets
+  // copy that is true for every path that produces it.
+  const scanLimited =
+    assessment.outcome === "low_confidence" ||
+    assessment.outcome === "outside_validated_range";
   const title =
     assessment.outcome === "contraindicated"
       ? "This one needs a person, not an algorithm"
       : assessment.outcome === "outside_validated_range"
         ? "Your measurements sit outside our sizing range"
         : "We'd rather not guess";
+  const body =
+    assessment.outcome === "low_confidence"
+      ? `We couldn't reach a confident enough match from your scan and answers, and we'd rather stop than guess. This is where ${contact.name} takes over — a member of the team will fit you personally and make sure the mask is right.`
+      : assessment.outcome === "outside_validated_range"
+        ? `Your measurements fall outside the range our sizing data covers, so we're not going to guess. This is where ${contact.name} takes over — a member of the team will fit you personally.`
+        : assessment.guidance;
 
   return (
     <div className="container max-w-2xl mx-auto px-4 py-12">
@@ -344,13 +365,19 @@ export function FitWithheld({
           <AlertCircle className="h-6 w-6 text-amber-600 shrink-0 mt-0.5" />
           <div>
             <h1 className="text-xl font-semibold">{title}</h1>
-            <p className="text-sm text-muted-foreground mt-2">
-              {assessment.guidance}
+            <p
+              className="text-sm text-muted-foreground mt-2"
+              data-testid="withheld-guidance"
+            >
+              {body}
             </p>
           </div>
         </div>
 
-        {assessment.excluded.length > 0 ? (
+        {/* The exclusion list explains a contraindication; under a
+            scan-driven stop it reads as "every mask rejected you", which
+            is not what happened — the photo was the problem. */}
+        {!scanLimited && assessment.excluded.length > 0 ? (
           <div>
             <p className="text-sm font-medium mb-1.5">What we ruled out</p>
             <ul className="space-y-1.5 text-sm text-muted-foreground">
@@ -369,15 +396,17 @@ export function FitWithheld({
         <p className="text-xs text-muted-foreground">{assessment.disclaimer}</p>
 
         <div className="flex flex-wrap gap-3 pt-1">
-          {canRetake ? (
-            <Button onClick={onRetake} data-testid="withheld-retake">
-              <RefreshCcw className="h-4 w-4 mr-2" />
-              Retake photo
+          <Button asChild data-testid="withheld-contact">
+            <a href="/contact">Contact {contact.name}</a>
+          </Button>
+          {contact.phoneE164 ? (
+            <Button variant="outline" asChild data-testid="withheld-call">
+              <a href={`tel:${contact.phoneE164}`}>
+                <PhoneCall className="h-4 w-4 mr-2" />
+                Call {contact.phoneDisplay || contact.name}
+              </a>
             </Button>
           ) : null}
-          <Button variant="outline" asChild>
-            <a href="/contact">Talk to a specialist</a>
-          </Button>
         </div>
       </div>
     </div>

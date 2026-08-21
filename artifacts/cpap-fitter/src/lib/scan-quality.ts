@@ -89,14 +89,25 @@ export const MAX_LUMA_SIDE_DELTA = 35;
 export const SHARPNESS_FLOOR = 45;
 export const MAX_MOTION_FRACTION = 0.008;
 
-/** Per-pose head-angle tolerances, in degrees. */
+/**
+ * Per-pose head-angle tolerances, in degrees.
+ *
+ * The TURN poses are deliberately looser than front on every axis.
+ * Turned frames never contribute measurement samples (see
+ * MEASUREMENT_YAW_LIMIT_DEG) — they are capture/consistency evidence —
+ * so precision there buys nothing, while a tight window costs real
+ * patients real minutes: people naturally cock their head (roll) and dip
+ * their chin (pitch) as they turn, and they are doing it blind, eyes off
+ * the screen. FRONT keeps the strict window: those are the frames every
+ * millimetre actually comes from.
+ */
 export const POSE_TARGETS: Record<
   CapturePose,
   { yaw: number; yawTolerance: number; maxPitch: number; maxRoll: number }
 > = {
   front: { yaw: 0, yawTolerance: 8, maxPitch: 8, maxRoll: 6 },
-  turn_left: { yaw: -20, yawTolerance: 10, maxPitch: 10, maxRoll: 8 },
-  turn_right: { yaw: 20, yawTolerance: 10, maxPitch: 10, maxRoll: 8 },
+  turn_left: { yaw: -20, yawTolerance: 12, maxPitch: 12, maxRoll: 10 },
+  turn_right: { yaw: 20, yawTolerance: 12, maxPitch: 12, maxRoll: 10 },
 };
 
 /**
@@ -229,7 +240,26 @@ export function assessFrameQuality(input: QualityInput): QualityResult {
     LUMA_BOUNDS.max,
   );
   const sideDelta = Math.abs(input.faceLumaLeft - input.faceLumaRight);
-  const balance = clamp01(1 - sideDelta / (MAX_LUMA_SIDE_DELTA * 2));
+  // At a TURN pose the balance gate is doubled, not because side light
+  // stops mattering, but because turning the head MANUFACTURES imbalance
+  // from perfectly even light: the far cheek rotates into its own shadow
+  // and the near cheek toward the source. Holding turned frames to the
+  // frontal balance bar made the turn steps nearly uncapturable in
+  // ordinary rooms — and the measurement risk the strict gate guards
+  // against (one warped half of a horizontal span) does not apply to
+  // frames that contribute no measurement samples (see
+  // MEASUREMENT_YAW_LIMIT_DEG). The leniency is therefore keyed to the
+  // ACTUAL yaw, not the nominal pose: a frame still inside the
+  // near-frontal measurement window WOULD contribute samples, so it is
+  // held to the frontal bar even at a turn step — the relaxed gate and
+  // the measurement set can never overlap.
+  const turnedPastFrontal =
+    input.pose !== "front" &&
+    Math.abs(input.yawDeg) > MEASUREMENT_YAW_LIMIT_DEG;
+  const sideAllowance = turnedPastFrontal
+    ? MAX_LUMA_SIDE_DELTA * 2
+    : MAX_LUMA_SIDE_DELTA;
+  const balance = clamp01(1 - sideDelta / (sideAllowance * 2));
   scores.lighting = clamp01(exposure * (0.5 + 0.5 * balance));
 
   // ── Distance, via the iris reference already used for calibration. ──
@@ -243,7 +273,17 @@ export function assessFrameQuality(input: QualityInput): QualityResult {
   // ── Head position against this pose's target. ──
   const target = POSE_TARGETS[input.pose];
   const yawError = Math.abs(input.yawDeg - target.yaw);
-  const yawScore = clamp01(1 - yawError / (target.yawTolerance * 2));
+  let yawScore = clamp01(1 - yawError / (target.yawTolerance * 2));
+  // Hard minimum turn: a "turn" frame must actually be past the
+  // near-frontal measurement window. Without this floor, good pitch/roll
+  // could lift the composite pose score over the acceptance bar at ~1° of
+  // real yaw — auto-capturing a straight-on frame as a completed turn
+  // angle, which defeats the cross-angle evidence the step exists to
+  // collect. Capped low enough that the composite cannot clear 0.6, so
+  // the coach keeps saying "turn a little further" instead.
+  if (input.pose !== "front" && !turnedPastFrontal) {
+    yawScore = Math.min(yawScore, 0.1);
+  }
   const pitchScore = clamp01(
     1 -
       Math.max(0, Math.abs(input.pitchDeg) - PITCH_GRACE_DEG) /
@@ -343,6 +383,53 @@ export const POSE_PROMPT: Record<CapturePose, string> = {
 export function coachMessage(result: QualityResult, pose: CapturePose): string {
   if (result.failing.length === 0) return "Hold it right there…";
   return COACH_COPY[result.failing[0]!] ?? POSE_PROMPT[pose];
+}
+
+/**
+ * Directional coaching for a failing TURN pose.
+ *
+ * Re-issuing "turn your head slightly" at a patient who IS turned — just
+ * too far, or not far enough — tells them nothing, and they cannot study
+ * the screen to work it out because their eyes are off it. This turns
+ * the live yaw into the one instruction that actually helps: further,
+ * back a bit, or (when the remaining step is locked to one direction and
+ * they turned the other way) the other way entirely.
+ *
+ * Magnitude-based on purpose: each turn step accepts either physical
+ * direction, so |yaw| against the target is the honest comparison and it
+ * sidesteps the estimator's sign convention. The one place sign matters —
+ * the direction-locked wrong-way case — compares against the SAME
+ * convention `assessFrameQuality` scores with, so the two always agree.
+ *
+ * Returns null when yaw is inside the window (some other check is the
+ * problem — let its coach line through) or on the front pose.
+ */
+export function turnCoachNudge(
+  yawDeg: number,
+  pose: CapturePose,
+  directionLocked: boolean,
+): string | null {
+  if (pose === "front") return null;
+  const target = POSE_TARGETS[pose];
+  if (directionLocked && yawDeg * target.yaw < 0 && Math.abs(yawDeg) > 4) {
+    return "The other way — turn toward your other shoulder.";
+  }
+  const magnitude = Math.abs(yawDeg);
+  const targetMagnitude = Math.abs(target.yaw);
+  // Under-turned covers BOTH the tolerance window's low edge and the
+  // hard minimum-turn floor (a frame inside the near-frontal measurement
+  // window never counts as a turn — see assessFrameQuality), so the
+  // coach keeps asking for more turn everywhere the gate would refuse.
+  if (
+    magnitude <= MEASUREMENT_YAW_LIMIT_DEG ||
+    magnitude < targetMagnitude - target.yawTolerance
+  ) {
+    return "Turn a little further…";
+  }
+  if (magnitude > targetMagnitude + target.yawTolerance) {
+    return "Too far — come back toward the camera a touch.";
+  }
+  return null;
 }
 
 // ── Multi-frame aggregation ──────────────────────────────────────────
@@ -548,18 +635,33 @@ export function aggregateFrames(frames: FrameMeasurement[]): AggregateResult {
   //     frames yet only one sample behind every value, and the
   //     frame-count bonus plus width agreement must not smuggle that
   //     single look into a high-confidence fitting.
-  //   * If any contributing frame failed its own quality gates, the
-  //     aggregate is `low`, not merely "not high" — three consistent
-  //     readings off three equally bad frames are consistently wrong, and
-  //     a frame the quality checks judged unusable must not be reported
-  //     as a moderate one.
+  //   * If any frame the MEASUREMENTS actually rest on failed its own
+  //     quality gates, the aggregate is `low`, not merely "not high" —
+  //     three consistent readings off three equally bad frames are
+  //     consistently wrong, and a frame the quality checks judged
+  //     unusable must not be reported as a moderate one. Scoped to
+  //     `usable` (the measurement-contributing set) on purpose: a rough
+  //     TURN frame — a patient who gave up and tapped "take it anyway"
+  //     mid-struggle — contributed no measurement samples (see
+  //     MEASUREMENT_YAW_LIMIT_DEG), so it must not floor two pristine
+  //     front frames to `low` and torpedo the whole fitting.
+  //
+  //     Pipeline note: the live /measure path additionally DROPS frames
+  //     that failed their gates before calling this function (keeping
+  //     them all only when every frame failed — see measure.tsx), so in
+  //     that flow an unacceptable frame normally never reaches this
+  //     check at all. The scoping is this function's own contract — it
+  //     keys the floor to the frames the numbers rest on, whatever the
+  //     caller's filtering policy — and in the everything-failed
+  //     fallback `usable` covers every frame, so the floor still fires
+  //     in full.
   //
   // That second cap has to be a floor rather than a score adjustment,
   // because the score cannot express it: a single frame's agreement term
   // is fixed at 0.7, which puts a ~0.35 floor under `measurementConfidence`
   // however bad the pixels were. Without the cap, a too-dark, too-soft
   // frame still lands around 0.55 and reads as "moderate".
-  const anyUnacceptable = frames.some((f) => !f.quality.acceptable);
+  const anyUnacceptable = usable.some((f) => !f.quality.acceptable);
   const anySingleSampled = keys.some((k) => (sampleCounts[k] ?? 0) < 2);
   if (anyUnacceptable) {
     band = "low";

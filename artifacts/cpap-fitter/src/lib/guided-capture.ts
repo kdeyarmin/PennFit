@@ -16,10 +16,11 @@
  * repeated evidence.
  *
  * At each pose the live loop feeds one `QualityResult` per assessed
- * preview frame. A pose auto-captures only after `STEADY_FRAMES_REQUIRED`
- * consecutive acceptable assessments — a single lucky frame between two
- * blurry ones is not a steady subject. Anything unacceptable resets the
- * streak and surfaces the worst failing check's coach line.
+ * preview frame. A pose auto-captures only after a streak of consecutive
+ * acceptable assessments (`steadyFramesRequiredFor` — three for front,
+ * two for the turns) — a single lucky frame between two blurry ones is
+ * not a steady subject. Anything unacceptable resets the streak and
+ * surfaces the worst failing check's coach line.
  *
  * Patients who cannot satisfy a pose are never trapped:
  *   * after `POSE_STRUGGLE_MS` at one pose, the caller is told
@@ -45,11 +46,36 @@ export const GUIDED_POSES: readonly CapturePose[] = [
   "turn_right",
 ];
 
-/** Consecutive acceptable assessments before a pose auto-captures. */
+/** Consecutive acceptable assessments before the FRONT pose auto-captures. */
 export const STEADY_FRAMES_REQUIRED = 3;
 
-/** Time at one pose, without a capture, before the escape hatches show. */
-export const POSE_STRUGGLE_MS = 12_000;
+/**
+ * Consecutive acceptable assessments before a TURN pose auto-captures.
+ *
+ * Lower than front on purpose. Holding a turned head rock-steady with
+ * eyes off the screen is genuinely hard — patients drift, the streak
+ * resets, and the step feels impossible. Front frames are where every
+ * millimetre comes from and keep the three-frame bar; turned frames are
+ * capture/consistency evidence (they contribute no measurement samples —
+ * see MEASUREMENT_YAW_LIMIT_DEG in scan-quality.ts), so two consecutive
+ * acceptable looks is evidence enough to fire the shutter.
+ */
+export const TURN_STEADY_FRAMES_REQUIRED = 2;
+
+/** The steady-streak bar for a pose. */
+export function steadyFramesRequiredFor(pose: CapturePose): number {
+  return pose === "front"
+    ? STEADY_FRAMES_REQUIRED
+    : TURN_STEADY_FRAMES_REQUIRED;
+}
+
+/**
+ * Time at one pose, without a capture, before the escape hatches show.
+ * Short enough that a struggling patient is offered the way out while
+ * they still have patience left — twelve seconds of "turn slightly
+ * right" on loop proved to be past that point.
+ */
+export const POSE_STRUGGLE_MS = 8_000;
 
 export interface GuidedCaptureState {
   /** Index into GUIDED_POSES; equal to its length once done. */
@@ -159,7 +185,7 @@ export function guidedTick(
   }
 
   const steadyCount = state.steadyCount + 1;
-  if (steadyCount >= STEADY_FRAMES_REQUIRED) {
+  if (steadyCount >= steadyFramesRequiredFor(pose)) {
     return {
       state: { ...state, steadyCount },
       action: { kind: "capture", pose },
