@@ -207,6 +207,23 @@ brand) and the brand-leak guard specs, whose patterns must keep matching
 it. Do not reintroduce it as a display name. `pennpaps.com` and
 `info@pennpaps.com` are unaffected — they are addresses, not names.
 
+**Settled: the shared placeholder resolves to `legalName`, not to the
+storefront brand.** `identityReplacements()` maps
+`Penn Home Medical Supply → info.legalName`, so for a tenant that keeps a
+DBA distinct from its registered name the chatbot, sleep coach and email
+auto-reply speak the *registered* name. This is intended, and confirmed by
+the owner. The same in-source string is the placeholder in the
+intake-form consent / ABN / notice-of-privacy bodies
+(`me-form-acknowledgements.ts` → `applyCompanyIdentityToText`), where
+naming a DBA instead of the registered entity is a compliance defect —
+one token serves both, so legal correctness wins. Two review bots have
+now proposed splitting it into a second storefront-brand token; do not,
+without the owner reopening it. Storefront *rendering* is unaffected
+either way — the header, hero, footer and order/reminder emails resolve
+`resolveBrandingByOrgId(orgId).storefrontName`. If a tenant ever does
+need a distinct brand in chat copy, thread `storefrontName` into
+`buildChatSystemPrompt()` rather than adding a placeholder.
+
 Anything else is a bug: the literal reaches **every** tenant's users
 verbatim. Found in the wild across ~20 callsites — push-notification
 titles, return-label sender names, a PHI document footer, invite-attached
