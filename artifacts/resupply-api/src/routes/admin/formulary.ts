@@ -112,48 +112,70 @@ const simulateBody = z
 
 /**
  * A synthetic panel spanning the measurement space — small, average, and
- * large faces, adult and pediatric. Entirely fabricated numbers: this
- * exists so a configuration tool never has to touch a real patient.
+ * large faces, adult and pediatric. Synthetic by design: a configuration
+ * tool must never touch a real patient.
+ *
+ * Synthetic is not the same as arbitrary. "Average adult face" is the
+ * canonical face — MediaPipe's metric reference mesh as this pipeline's
+ * landmark pairs measure it (see lib/fitting/plausibility-windows.test.ts)
+ * — and the other three are that face scaled uniformly: x0.85, x1.15, and
+ * x0.72 for the child. Every row therefore sits inside the plausibility
+ * window for its population, with margin.
+ *
+ * The previous numbers were freehand and carried the textbook
+ * nasion→subnasale reading of "nose height" (36 / 45 / 54 mm) rather
+ * than the bridge→tip span this pipeline reports (~29 mm on an average
+ * face). Two of the four faces fell outside the recalibrated windows —
+ * "Large adult" at noseHeight 54 and "Small adult" at noseToChin 52 —
+ * i.e. the panel meant to represent the measurement space contained
+ * faces the scanner would have rejected as measurement failures.
+ *
+ * Only `label` is read today (the simulation resolves formulary allow /
+ * deny rules, which are geometry-independent), so these values are
+ * currently inert. They are kept correct because the moment size-band
+ * scoring is added to the simulation — the obvious next step for this
+ * tool — wrong-convention numbers here would silently produce wrong
+ * answers about a tenant's own catalog.
  */
 const SIMULATION_PANEL: Array<{ label: string; m: FitMeasurements }> = [
   {
     label: "Small adult face",
     m: {
-      noseWidth: 27,
-      noseHeight: 36,
-      noseToChin: 52,
-      mouthWidth: 40,
-      faceWidthAtCheekbones: 124,
+      noseWidth: 30.3,
+      noseHeight: 25.0,
+      noseToChin: 76.0,
+      mouthWidth: 41.7,
+      faceWidthAtCheekbones: 130.3,
     },
   },
   {
     label: "Average adult face",
     m: {
-      noseWidth: 34,
-      noseHeight: 45,
-      noseToChin: 65,
-      mouthWidth: 50,
-      faceWidthAtCheekbones: 142,
+      noseWidth: 35.7,
+      noseHeight: 29.4,
+      noseToChin: 89.4,
+      mouthWidth: 49.1,
+      faceWidthAtCheekbones: 153.3,
     },
   },
   {
     label: "Large adult face",
     m: {
-      noseWidth: 42,
-      noseHeight: 54,
-      noseToChin: 78,
-      mouthWidth: 60,
-      faceWidthAtCheekbones: 162,
+      noseWidth: 41.1,
+      noseHeight: 33.8,
+      noseToChin: 102.8,
+      mouthWidth: 56.5,
+      faceWidthAtCheekbones: 176.3,
     },
   },
   {
     label: "Pediatric face",
     m: {
-      noseWidth: 20,
-      noseHeight: 26,
-      noseToChin: 40,
-      mouthWidth: 30,
-      faceWidthAtCheekbones: 100,
+      noseWidth: 25.7,
+      noseHeight: 21.2,
+      noseToChin: 64.4,
+      mouthWidth: 35.4,
+      faceWidthAtCheekbones: 110.4,
     },
   },
 ];
