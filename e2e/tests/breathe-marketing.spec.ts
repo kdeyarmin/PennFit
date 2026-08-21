@@ -20,7 +20,9 @@
 import { expect, test, type Page } from "@playwright/test";
 
 /** Widths that bracket every nav breakpoint, plus the narrowest phone. */
-const BREAKPOINTS = [1440, 1280, 1081, 1080, 1024, 900, 768, 390, 320];
+const BREAKPOINTS = [
+  1440, 1280, 1201, 1200, 1170, 1100, 1024, 900, 768, 390, 320,
+];
 
 /**
  * Console noise that is an artifact of the backend-less harness rather than
@@ -98,6 +100,35 @@ test("navigation is reachable at every breakpoint", async ({ page }) => {
       overflow,
       `Horizontal page overflow of ${overflow}px at ${width}px wide`,
     ).toBeLessThanOrEqual(1);
+
+    // A scrollWidth check alone is NOT enough for the header. `.breathe-page`
+    // sets `overflow-x: clip`, so a nav row that is too wide gets silently
+    // cut off without ever widening the document — the CTA can be most of
+    // the way off-screen while the check above still reads zero. Measure
+    // each visible nav item against the shell's inner edge instead.
+    const clipped = await page.evaluate(() => {
+      const row = document.querySelector(".bx-nav-inner");
+      if (!row) return { over: 0, who: "" };
+      const rect = row.getBoundingClientRect();
+      const innerRight =
+        rect.right - (parseFloat(getComputedStyle(row).paddingRight) || 0);
+      let over = 0;
+      let who = "";
+      const sel = ".bx-nav-mega,.bx-nav-plain,.bx-nav-signin,.bx-btn";
+      for (const el of row.querySelectorAll(sel)) {
+        const b = el.getBoundingClientRect();
+        if (b.width === 0) continue;
+        if (b.right - innerRight > over) {
+          over = Math.round(b.right - innerRight);
+          who = (el.textContent ?? "").trim().slice(0, 24);
+        }
+      }
+      return { over, who };
+    });
+    expect(
+      clipped.over,
+      `Nav item "${clipped.who}" is clipped by ${clipped.over}px at ${width}px wide — collapse to the mobile panel before this width`,
+    ).toBeLessThanOrEqual(1);
   }
 });
 
@@ -164,6 +195,32 @@ test("a keyboard-opened mega-menu closes when focus leaves it", async ({
   ).toBeHidden();
 });
 
+test("the header's in-page hash link scrolls when already on /breathe", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/breathe", { waitUntil: "networkidle" });
+  await page.waitForTimeout(500);
+  expect(await page.evaluate(() => window.scrollY)).toBeLessThan(50);
+
+  // "How it works" is /breathe#how, rendered through a wouter <Link>.
+  // Wouter pushState's it, which performs no native anchor jump, and the
+  // mount-time hash effect has already run — so without an explicit scroll
+  // the URL changes and the page sits still.
+  await page.getByRole("button", { name: /^Platform/i }).hover();
+  await page
+    .locator(".bx-nav-mega-panel")
+    .getByRole("link", { name: /how it works/i })
+    .click();
+
+  await expect
+    .poll(() => page.evaluate(() => window.scrollY), {
+      message: "Clicking the header's #how link did not scroll the page",
+      timeout: 10_000,
+    })
+    .toBeGreaterThan(200);
+});
+
 test("the mobile panel exposes the grouped sitemap with tappable targets", async ({
   page,
 }) => {
@@ -198,6 +255,11 @@ test("the mobile panel exposes the grouped sitemap with tappable targets", async
 test("every header and footer link resolves to a real route", async ({
   page,
 }) => {
+  // ~26 destinations, each a separate lazy chunk the dev server transforms
+  // on first request. Comfortably inside Playwright's 30s default locally,
+  // but not on a cold CI runner — so give it explicit room rather than let
+  // it flake.
+  test.setTimeout(120_000);
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/breathe", { waitUntil: "networkidle" });
 
@@ -235,8 +297,33 @@ test("every header and footer link resolves to a real route", async ({
     // Strip the in-page anchor; `/breathe#how` is the same document.
     const path = href.split("#")[0] || "/breathe";
     await page.goto(path, { waitUntil: "domcontentloaded" });
-    // NotFound sets this exact title (src/pages/not-found.tsx), which makes
-    // it a stabler signal than scraping the 404 body copy.
+
+    if (path.startsWith("/breathe")) {
+      // Positive proof, not the absence of a 404 title. Every marketing
+      // route renders through BreatheShell's `.breathe-page` wrapper;
+      // NotFound is a top-level route and never does. Asserting the
+      // wrapper appeared means the intended lazy route actually mounted.
+      //
+      // The earlier version asserted `not.toHaveTitle(/page not found/)`
+      // straight after domcontentloaded, which passed against the static
+      // shell title before any route had mounted — so a misspelled href
+      // would have sailed through. A negative assertion cannot wait for
+      // something to *not* happen; this positive one can.
+      await expect(
+        page.locator(".breathe-page"),
+        `${href} did not render a Breathe route — it fell through to NotFound`,
+      ).toBeVisible({ timeout: 15_000 });
+    } else {
+      // The one non-marketing destination (/admin/sign-in). It has no
+      // `.breathe-page` wrapper and never calls useDocumentTitle, so wait
+      // for its sign-in form to prove the route mounted.
+      await expect(
+        page.locator("form, input[type='password']").first(),
+        `${href} did not render a sign-in form`,
+      ).toBeVisible({ timeout: 15_000 });
+    }
+
+    // Belt and braces: NotFound sets this exact title.
     await expect(page, `${href} fell through to NotFound`).not.toHaveTitle(
       /page not found/i,
     );

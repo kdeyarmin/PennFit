@@ -6678,13 +6678,23 @@
     grid-template-columns: repeat(3, 1fr);
   }
 }
-@media (max-width: 1080px) {
-  /* The mega-menus need ~1080px to sit beside the CTAs. Below that they
+@media (max-width: 1200px) {
+  /* The mega-menus need ~1170px to sit beside the CTAs. Below that they
      hide — and the hamburger MUST appear at the same breakpoint, or the
-     901-1080px band has no reachable navigation at all (the pre-existing
+     band below it has no reachable navigation at all (the pre-existing
      rule below only revealed the toggle at 900px). The secondary CTAs
      fold into the panel too; the primary demo CTA stays put, since it is
-     the page's conversion action. */
+     the page's conversion action.
+
+     The 1200px figure is measured, not guessed: with all four menus,
+     Pricing and the three CTAs on one row, the "Start free demo" button
+     starts overhanging the shell's inner edge below 1170px (89px of it is
+     cut off at 1081px). `.breathe-page` uses `overflow-x: clip`, so that
+     clipping never shows up in `documentElement.scrollWidth` — it is
+     invisible to a page-level overflow check, which is why the e2e spec
+     measures each nav item's right edge against the container instead.
+     1200px is the shell's own max-width and leaves ~30px of headroom for
+     font-metric variation across platforms. */
   .bx-nav-mega,
   .bx-nav-plain,
   .bx-nav-links a.bx-nav-signin,

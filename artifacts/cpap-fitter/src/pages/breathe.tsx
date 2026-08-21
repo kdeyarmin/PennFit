@@ -1491,7 +1491,19 @@ function NavMega({
                 className="bx-nav-mega-link"
                 href={l.href}
                 key={`${menu.key}-${l.label}`}
-                onClick={onNavigate}
+                onClick={() => {
+                  onNavigate();
+                  // Same-route hash link: wouter pushState's it without a
+                  // native anchor jump, and the mount-time hash effect has
+                  // already run, so scroll explicitly. Cross-route hash
+                  // links still land via useInitialHashScroll on mount.
+                  const hashAt = l.href.indexOf("#");
+                  if (hashAt === -1) return;
+                  if (l.href.slice(0, hashAt) !== window.location.pathname) {
+                    return;
+                  }
+                  scrollToHash(l.href.slice(hashAt));
+                }}
               >
                 <span className={"bx-nav-mega-label" + (l.gold ? " gold" : "")}>
                   {l.label}
@@ -6582,31 +6594,32 @@ function useSmoothScroll() {
  * then scroll to it (honoring prefers-reduced-motion). No hash, or a
  * hash that never resolves, is a silent no-op.
  */
+function scrollToHash(hash: string): () => void {
+  if (!hash || hash === "#" || hash === "#top") return () => {};
+  let frame = 0;
+  let tries = 0;
+  const tryScroll = () => {
+    let el: Element | null;
+    try {
+      el = document.querySelector(hash);
+    } catch {
+      return; // malformed selector — nothing to do
+    }
+    if (el) {
+      el.scrollIntoView({
+        behavior: prefersReducedMotion() ? "auto" : "smooth",
+        block: "start",
+      });
+      return;
+    }
+    if (tries++ < 60) frame = requestAnimationFrame(tryScroll);
+  };
+  frame = requestAnimationFrame(tryScroll);
+  return () => cancelAnimationFrame(frame);
+}
+
 function useInitialHashScroll() {
-  useEffect(() => {
-    const hash = window.location.hash;
-    if (!hash || hash === "#" || hash === "#top") return;
-    let frame = 0;
-    let tries = 0;
-    const tryScroll = () => {
-      let el: Element | null;
-      try {
-        el = document.querySelector(hash);
-      } catch {
-        return; // malformed selector — nothing to do
-      }
-      if (el) {
-        el.scrollIntoView({
-          behavior: prefersReducedMotion() ? "auto" : "smooth",
-          block: "start",
-        });
-        return;
-      }
-      if (tries++ < 60) frame = requestAnimationFrame(tryScroll);
-    };
-    frame = requestAnimationFrame(tryScroll);
-    return () => cancelAnimationFrame(frame);
-  }, []);
+  useEffect(() => scrollToHash(window.location.hash), []);
 }
 
 /**
