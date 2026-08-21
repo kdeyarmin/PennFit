@@ -121,6 +121,40 @@ describe("executeChatTool", () => {
       });
       expect(result.ok).toBe(false);
     });
+
+    it("withholds magnetic-clip masks unless the patient has confirmed no implant", async () => {
+      const withheld = await executeChatTool("recommend_masks", { limit: 5 });
+      expect(withheld.ok).toBe(true);
+      if (!withheld.ok) throw new Error("expected ok");
+      const withheldIds = (
+        withheld.data as { recommendations: Array<{ maskId: string }> }
+      ).recommendations.map((r) => r.maskId);
+      expect(withheldIds).not.toContain("resmed-airfit-f20");
+
+      const cleared = await executeChatTool("recommend_masks", {
+        implanted_electronic_device: false,
+        limit: 5,
+      });
+      expect(cleared.ok).toBe(true);
+      if (!cleared.ok) throw new Error("expected ok");
+      const clearedIds = (
+        cleared.data as { recommendations: Array<{ maskId: string }> }
+      ).recommendations.map((r) => r.maskId);
+      expect(clearedIds.length).toBeGreaterThan(0);
+    });
+
+    it("still withholds magnetic-clip masks when an implant is present", async () => {
+      const result = await executeChatTool("recommend_masks", {
+        implanted_electronic_device: true,
+        limit: 5,
+      });
+      expect(result.ok).toBe(true);
+      if (!result.ok) throw new Error("expected ok");
+      const ids = (
+        result.data as { recommendations: Array<{ maskId: string }> }
+      ).recommendations.map((r) => r.maskId);
+      expect(ids).not.toContain("resmed-airfit-f20");
+    });
   });
 
   describe("find_masks", () => {

@@ -584,14 +584,11 @@ function generateReasoning(
   }
   if (
     answers.mobilityLimitations === true &&
-    mask.features.some(
-      (f) =>
-        f.toLowerCase().includes("magnetic") ||
-        f.toLowerCase().includes("clip"),
-    )
+    mask.features.some((f) => f.toLowerCase().includes("clip")) &&
+    !maskHasMagneticHardware(mask)
   ) {
     reasons.push(
-      "Magnetic clips make it easier to put on and remove without fine motor precision.",
+      "Quick-release clips make it easier to put on and remove without fine motor precision.",
     );
   }
   if (
@@ -699,12 +696,6 @@ function generateSummary(
   // get a tie-in claiming they stated the need.
   const featureLower = mask.features.map((f) => f.toLowerCase());
   if (
-    answers.mobilityLimitations === true &&
-    featureLower.some((f) => f.includes("magnetic"))
-  ) {
-    matchClause +=
-      ", and the magnetic clips make it easy to put on and take off";
-  } else if (
     answers.wearsGlasses === true &&
     featureLower.some(
       (f) =>
@@ -751,6 +742,13 @@ function generateSummary(
   }
 
   return `Because ${needsClause}, the ${mask.manufacturer} ${mask.name} (model ${mask.modelNumber}) ${matchClause} — and ${measureClause}.`;
+}
+
+function maskHasMagneticHardware(mask: MaskEntry): boolean {
+  const haystack = [mask.headgearStyle, ...mask.features]
+    .join(" ")
+    .toLowerCase();
+  return haystack.includes("magnetic");
 }
 
 /**

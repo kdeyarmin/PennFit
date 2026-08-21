@@ -83,6 +83,7 @@ const recommendArgsSchema = z
     sensitive_skin: z.boolean().optional(),
     silicone_sensitivity: z.boolean().optional(),
     mobility_limitations: z.boolean().optional(),
+    implanted_electronic_device: z.boolean().optional(),
     cpap_pressure_setting: z
       .enum(["unknown", "low", "medium", "high"])
       .optional(),
@@ -140,6 +141,12 @@ export interface ChatToolContext {
    * disables rate limiting (unit tests only — the route always sets it).
    */
   rateLimitKey: string | null;
+  /**
+   * Per-request branded tool descriptors. When set, the chat route
+   * sends these (tenant name/phone rewritten) instead of the static
+   * CHAT_TOOLS placeholders.
+   */
+  tools?: OpenAiToolDescriptor[];
 }
 
 /**
@@ -154,7 +161,7 @@ export const CATALOG_CHAT_TOOLS: OpenAiToolDescriptor[] = [
     function: {
       name: "recommend_masks",
       description:
-        "Recommend the best PennPaps masks for a patient based on their stated preferences. Use this when the user asks 'help me pick a mask', 'which mask is best for me', or describes their sleep profile and wants a recommendation. All arguments are optional; pass only the preferences the user has actually stated. Returns a ranked shortlist.",
+        "Recommend the best PennPaps masks for a patient based on their stated preferences. Use this when the user asks 'help me pick a mask', 'which mask is best for me', or describes their sleep profile and wants a recommendation. Ask whether they or anyone in their household has a pacemaker, ICD, or other implanted electronic device before recommending, and pass implanted_electronic_device accordingly — magnetic-clip masks are withheld unless they have confirmed they do not. All arguments are optional; pass only the preferences the user has actually stated. Returns a ranked shortlist.",
       parameters: {
         type: "object",
         additionalProperties: false,
@@ -200,6 +207,11 @@ export const CATALOG_CHAT_TOOLS: OpenAiToolDescriptor[] = [
             type: "boolean",
             description:
               "User has limited hand/finger dexterity for fitting headgear.",
+          },
+          implanted_electronic_device: {
+            type: "boolean",
+            description:
+              "True if the user OR someone in their household has a pacemaker, ICD, or other implanted electronic device. False only when they have confirmed they do not. Omit when unknown. Magnetic-clip masks are withheld unless this is explicitly false.",
           },
           cpap_pressure_setting: {
             type: "string",
@@ -336,6 +348,13 @@ const NEUTRAL_MEASUREMENTS: FacialMeasurements = {
   faceWidthAtCheekbones: 140,
   calibrationMethod: "iris",
 };
+
+function maskHasMagneticHardware(mask: MaskEntry): boolean {
+  const haystack = [mask.headgearStyle, ...mask.features]
+    .join(" ")
+    .toLowerCase();
+  return haystack.includes("magnetic");
+}
 
 function toQuestionnaireAnswers(
   args: z.infer<typeof recommendArgsSchema>,
@@ -628,7 +647,18 @@ export async function executeChatTool(
       NEUTRAL_MEASUREMENTS,
       toQuestionnaireAnswers(parsed.data),
     );
-    const top = result.topRecommendations.slice(0, limit).map((r) => ({
+    // Fail closed on magnets: the public chatbot has no implant
+    // safety screen. Only include magnetic-clip masks when the
+    // caller has explicitly confirmed there is no implanted device.
+    const includeMagnetic = parsed.data.implanted_electronic_device === false;
+    const ranked = [...result.topRecommendations, ...result.alternatives];
+    const screened = includeMagnetic
+      ? ranked
+      : ranked.filter((r) => {
+          const mask = maskCatalog.find((m) => m.id === r.maskId);
+          return !mask || !maskHasMagneticHardware(mask);
+        });
+    const top = screened.slice(0, limit).map((r) => ({
       maskId: r.maskId,
       name: r.name,
       manufacturer: r.manufacturer,

@@ -151,6 +151,26 @@ describe("results — catalogById pure-logic contract", () => {
 // Structural — component shape unchanged by the PR
 // ---------------------------------------------------------------------------
 
+describe("results — magnet screening is not skipped on clinical outage", () => {
+  it("renders a dedicated unavailable state instead of falling through to legacy", () => {
+    expect(SRC).toContain('clinicalState === "unavailable"');
+    expect(SRC).toContain('data-testid="results-clinical-unavailable"');
+  });
+
+  it("only uses the legacy engine when the tenant has clinical assessment off", () => {
+    expect(SRC).toContain('result.kind === "not_enabled"');
+    const notEnabledIdx = SRC.indexOf('result.kind === "not_enabled"');
+    const after = SRC.slice(notEnabledIdx, notEnabledIdx + 280);
+    expect(after).toContain('setClinicalState("legacy")');
+  });
+
+  it("does not treat a network/HTTP miss as a reason to skip magnet screening", () => {
+    expect(SRC).not.toContain(
+      "Flag off, unresolvable tenant, network failure",
+    );
+  });
+});
+
 describe("results — structural integrity", () => {
   it("exports the Results function component", () => {
     expect(SRC).toContain("export function Results");
