@@ -60,6 +60,13 @@ const db = vi.hoisted(() => ({
   calls: [] as Array<{ table: string; method: string; args: unknown[] }>,
   /** Every insert the route attempts, so a test can assert the payload. */
   inserts: [] as Array<{ table: string; payload: unknown }>,
+  /** Every update the route attempts. The invite completion is an UPDATE,
+   *  so without this the one write that puts a fitting in front of staff
+   *  was the only one the mock couldn't see. */
+  updates: [] as Array<{ table: string; payload: unknown }>,
+  /** Make the update on this table THROW, to prove a failed worklist
+   *  write can't take the clinical record down with it. */
+  updateThrowsFor: null as string | null,
   /**
    * Whether the fit_sessions write SUCCEEDS. Default false, which keeps
    * the existing "persistence failed but the patient still got their
@@ -121,9 +128,27 @@ vi.mock("@workspace/resupply-db", () => {
           ),
       };
     };
-    chain.update = () => ({
-      eq: async () => ({ data: null, error: { message: "no db" } }),
-    });
+    chain.update = (payload: unknown) => {
+      if (db.updateThrowsFor === table) {
+        throw new Error(`update on ${table} exploded`);
+      }
+      db.updates.push({ table, payload });
+      // Mirrors the two shapes the completion helper uses: the
+      // conditional claim (`.eq().not().select()`) and the data-only
+      // fallback (`await .eq()`). Tied to `persistOk` so the existing
+      // "the database is down" tests keep exercising the failure path.
+      const result = db.persistOk
+        ? {
+            data: [{ id: "22222222-2222-4222-8222-222222222222" }],
+            error: null,
+          }
+        : { data: null, error: { message: "no db" } };
+      const node: Record<string, unknown> = {
+        not: () => ({ select: async () => result }),
+        then: (resolve: (v: unknown) => unknown) => resolve(result),
+      };
+      return { eq: () => node };
+    };
     return chain;
   };
   return {
@@ -183,6 +208,8 @@ afterEach(() => {
   db.rows = {};
   db.calls = [];
   db.inserts = [];
+  db.updates = [];
+  db.updateThrowsFor = null;
   db.persistOk = false;
 });
 
@@ -737,5 +764,80 @@ describe("POST /api/fit/assess — structured recommendation columns", () => {
       .payload as Record<string, unknown>;
     expect(row.status).toBe("awaiting_review");
     expect(row.review_status).toBe("pending_review");
+  });
+});
+
+// The regression this whole change exists for. The invite row is what the
+// staff worklist reads, and it used to be written from ONE place — the
+// patient's browser — which only transmitted when /results had a mask to
+// name. Every fitting the engine declined to name one for left its invite
+// stranded at "opened": no measurements, no completion time, absent from
+// the holding area and the Completed filter, while the fit_sessions row
+// written a few lines above held the whole story. To staff that reads as
+// "the invite I sent never registered".
+describe("POST /api/fit/assess — the invite records the fitting", () => {
+  function inviteUpdate(): Record<string, unknown> | undefined {
+    const write = db.updates.find((u) => u.table === "fitter_invites");
+    return write?.payload as Record<string, unknown> | undefined;
+  }
+
+  it("completes the invite, whether or not a mask was named", async () => {
+    db.persistOk = true;
+
+    const res = await request(makeApp())
+      .post("/fit/assess")
+      .set("x-fitter-invite-token", signFitterInviteToken(INVITE_ID))
+      .send({
+        measurements: VALID_MEASUREMENTS,
+        profile: VALID_PROFILE,
+        safety: {
+          screenVersion: "magnetic_implant@v1",
+          attestedAt: new Date().toISOString(),
+          responses: [],
+        },
+      });
+
+    expect(res.status).toBe(200);
+    const upd = inviteUpdate();
+    expect(upd).toBeDefined();
+    // The fitting is on the invite the moment the engine answers — no
+    // dependency on the browser making a second, best-effort call.
+    expect(upd!.status).toBe("completed");
+    expect(upd!.completed_at).toEqual(expect.any(String));
+    expect(upd!.measurements).toEqual(VALID_MEASUREMENTS);
+    // …and the worklist can reach the clinical record behind it.
+    expect(upd!.fit_session_id).toBe("11111111-1111-4111-8111-111111111111");
+
+    // Whatever the engine decided, the invite must agree with the session
+    // rather than inventing a mask to fill its columns.
+    const row = db.inserts.find((i) => i.table === "fit_sessions")!
+      .payload as Record<string, unknown>;
+    const primary = row.primary_recommendation as { name?: string } | null;
+    expect(upd!.recommended_mask_name).toBe(primary?.name ?? null);
+  });
+
+  it("never costs the session write its id when the invite update fails", async () => {
+    // The completion runs INSIDE the fit-session write. A throw there
+    // would abort that write's own try block and return no session id —
+    // losing the clinical record over a failure to update a worklist row.
+    // The helper swallows everything for exactly this reason.
+    db.persistOk = true;
+    db.updateThrowsFor = "fitter_invites";
+
+    const res = await request(makeApp())
+      .post("/fit/assess")
+      .set("x-fitter-invite-token", signFitterInviteToken(INVITE_ID))
+      .send({
+        measurements: VALID_MEASUREMENTS,
+        profile: VALID_PROFILE,
+        safety: {
+          screenVersion: "magnetic_implant@v1",
+          attestedAt: new Date().toISOString(),
+          responses: [],
+        },
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.fitSessionId).toBe("11111111-1111-4111-8111-111111111111");
   });
 });

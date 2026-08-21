@@ -430,7 +430,7 @@ const listQuery = z.object({
 });
 
 const INVITE_SELECT =
-  "id, patient_id, recipient_email, recipient_phone_e164, recipient_name, channel, status, invited_by_email, measurements, questionnaire_answers, recommended_mask_id, recommended_mask_name, recommended_mask_type, recommendations, auto_matched, claimed_by_user_id, claimed_by_email, claimed_at, sent_at, opened_at, completed_at, attached_at, expires_at, created_at";
+  "id, patient_id, recipient_email, recipient_phone_e164, recipient_name, channel, status, invited_by_email, measurements, questionnaire_answers, recommended_mask_id, recommended_mask_name, recommended_mask_type, recommendations, auto_matched, claimed_by_user_id, claimed_by_email, claimed_at, fit_session_id, sent_at, opened_at, completed_at, attached_at, expires_at, created_at";
 
 router.get(
   "/admin/fitter-invites",

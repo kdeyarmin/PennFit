@@ -70,6 +70,11 @@ export interface FitterInviteRow {
   claimed_by_user_id: string | null;
   claimed_by_email: string | null;
   claimed_at: string | null;
+  /** The clinical `fit_sessions` record behind this fitting, when the
+   *  tenant runs the clinical assessment. Its review queue holds the
+   *  reasoning — why a mask was or wasn't named — that this row only
+   *  summarises. */
+  fit_session_id: string | null;
   sent_at: string | null;
   opened_at: string | null;
   completed_at: string | null;
