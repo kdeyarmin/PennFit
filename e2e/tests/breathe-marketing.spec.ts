@@ -122,13 +122,46 @@ test("the four header mega-menus open and expose their deep dives", async ({
   }
 
   // The fitter menu is the differentiator; spot-check that it routes to the
-  // deep dive rather than a generic features page.
+  // deep dive rather than a generic features page, and that the referral
+  // entry deep-links its own section instead of repeating that URL.
   await page.getByRole("button", { name: /mask fitter/i }).hover();
+  const fitterPanel = page.locator(".bx-nav-mega-panel");
   await expect(
-    page.locator(".bx-nav-mega-panel").getByRole("link", {
-      name: /clinical mask fitting/i,
-    }),
+    fitterPanel.getByRole("link", { name: /clinical mask fitting/i }),
   ).toHaveAttribute("href", "/breathe/mask-fitting");
+  await expect(
+    fitterPanel.getByRole("link", { name: /provider referral portal/i }),
+  ).toHaveAttribute("href", "/breathe/mask-fitting#referrals");
+});
+
+test("a keyboard-opened mega-menu closes when focus leaves it", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/breathe", { waitUntil: "networkidle" });
+
+  // Open by keyboard rather than hover — there is no onMouseLeave to save
+  // us here, so without a focus-out handler the panel stays open over the
+  // page for the rest of the visit.
+  const trigger = page.getByRole("button", { name: /^Platform/i });
+  await trigger.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".bx-nav-mega-panel")).toBeVisible();
+
+  // Tab until focus leaves the menu subtree.
+  for (let i = 0; i < 30; i++) {
+    await page.keyboard.press("Tab");
+    const inside = await page.evaluate(() => {
+      const mega = document.activeElement?.closest(".bx-nav-mega");
+      return mega !== null && mega !== undefined;
+    });
+    if (!inside) break;
+  }
+
+  await expect(
+    page.locator(".bx-nav-mega-panel"),
+    "The mega-menu stayed open after focus left it",
+  ).toBeHidden();
 });
 
 test("the mobile panel exposes the grouped sitemap with tappable targets", async ({

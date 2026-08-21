@@ -1253,7 +1253,9 @@ const NAV_FITTER: NavItem[] = [
     note: "Head to head with a stand-alone fitter",
   },
   {
-    href: "/breathe/mask-fitting",
+    // Deep-links the referral section rather than repeating the bare
+    // deep-dive URL the first entry already uses.
+    href: "/breathe/mask-fitting#referrals",
     label: "Provider referral portal",
     note: "Batch-signed scripts, fitting attached",
   },
@@ -1443,11 +1445,20 @@ function NavMega({
       className="bx-nav-mega"
       onMouseEnter={onOpen}
       onMouseLeave={onClose}
-      // Escape closes from anywhere inside the menu, and blurring out of
-      // the subtree closes it for keyboard users (hover alone would trap
-      // the panel open once tabbed into).
+      // Escape closes from anywhere inside the menu.
       onKeyDown={(e) => {
         if (e.key === "Escape") onClose();
+      }}
+      // ...and tabbing out of the subtree closes it too. Without this a
+      // keyboard user who opens a menu and tabs past it leaves the panel
+      // hanging open over the page — mouse users get onMouseLeave, but
+      // there is no equivalent for focus. `relatedTarget` is null when
+      // focus leaves the document entirely, and `contains(null)` is false,
+      // so that closes as well, which is what we want.
+      onBlurCapture={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+          onClose();
+        }
       }}
     >
       <button
