@@ -281,7 +281,11 @@ async function loadFromDb(orgId: string): Promise<CompanyInfo | null> {
       zip: org.physical_zip,
     },
     organizationalNpi: trimmed(org.organizational_npi) || null,
-    ...resolveAssistantNames(),
+    // Tenant-scoped assistant names — never the process-global
+    // RESUPPLY_ASSISTANT_* overlay, which is the seed tenant's brand
+    // folded in at boot. A second tenant with a dme_organization row
+    // would otherwise ship PennBot in escalations and tool schemas.
+    ...(await resolveAssistantNamesForOrg(orgId)),
     source: "database",
   };
 }
