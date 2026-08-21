@@ -135,6 +135,15 @@ export function GuidedCapture({ onFallback }: { onFallback: () => void }) {
   const lastSpokenCoachRef = useRef<SpokenCoachLine | null>(null);
   const struggleSpokenForPoseRef = useRef(-1);
   const introSpokenRef = useRef(false);
+  // The turn direction the live loop most recently MATCHED for the
+  // current turn step (either physical side can satisfy an unlocked
+  // step). The manual "take it anyway" capture records this, not the
+  // nominal step label: a patient who turned opposite the nominal
+  // direction and tapped the escape hatch would otherwise be filed under
+  // the wrong side, and requiredTurn would then lock the remaining step
+  // to the SAME physical direction — two frames of one side, zero of the
+  // other. Cleared on every pose advance/skip.
+  const lastMatchedTurnRef = useRef<CapturePose | null>(null);
 
   const [videoReady, setVideoReady] = useState(false);
   const [landmarkerReady, setLandmarkerReady] = useState(false);
@@ -302,6 +311,7 @@ export function GuidedCapture({ onFallback }: { onFallback: () => void }) {
     framesRef.current = [...framesRef.current, { dataUrl, pose }];
     machineRef.current = advancePose(machineRef.current, performance.now());
     centroidsRef.current = [];
+    lastMatchedTurnRef.current = null;
     setCapturedCount(framesRef.current.length);
     setFlash(true);
     setTimeout(() => {
@@ -468,6 +478,9 @@ export function GuidedCapture({ onFallback }: { onFallback: () => void }) {
               quality = useLeft ? asLeft : asRight;
               matchedPose = useLeft ? "turn_left" : "turn_right";
             }
+            // Remember the live direction for the manual escape hatch —
+            // see lastMatchedTurnRef.
+            lastMatchedTurnRef.current = matchedPose;
           }
 
           centroidsRef.current = [
@@ -569,10 +582,14 @@ export function GuidedCapture({ onFallback }: { onFallback: () => void }) {
 
   const handleManualCapture = () => {
     if (finalizedRef.current) return;
-    track("guided_capture_manual", {
-      pose: currentPose(machineRef.current),
-    });
-    captureCurrentFrame(currentPose(machineRef.current));
+    // File the frame under the direction the patient is ACTUALLY turned
+    // (the live loop's last match), falling back to the nominal step only
+    // when no assessment has seen a face at this step yet.
+    const nominal = currentPose(machineRef.current);
+    const pose =
+      nominal !== "front" ? (lastMatchedTurnRef.current ?? nominal) : nominal;
+    track("guided_capture_manual", { pose });
+    captureCurrentFrame(pose);
   };
 
   const handleSkip = () => {
@@ -580,6 +597,7 @@ export function GuidedCapture({ onFallback }: { onFallback: () => void }) {
     track("guided_capture_skip", { pose: currentPose(machineRef.current) });
     machineRef.current = skipPose(machineRef.current, performance.now());
     centroidsRef.current = [];
+    lastMatchedTurnRef.current = null;
     if (machineRef.current.done) {
       finalize();
       return;

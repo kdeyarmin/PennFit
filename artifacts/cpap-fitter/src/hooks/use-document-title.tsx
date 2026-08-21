@@ -31,8 +31,16 @@ function getOrCreateMeta(
  * back from `index.html`: the static shell is one bundle serving every
  * tenant, so it necessarily carries the platform ("CareMetric Breathe")
  * placeholders — falling back to it is exactly how a tenant's landing
- * tab, meta description, and share previews ended up reading CareMetric
- * instead of the DME's own name.
+ * tab and meta description ended up reading CareMetric instead of the
+ * DME's own name.
+ *
+ * SCOPE — runtime only. Everything this hook writes exists after the SPA
+ * executes, which covers the browser tab, the live DOM, and crawlers
+ * that run JavaScript (Google). Link-preview scrapers that read the raw
+ * HTML without executing it (most social/chat unfurlers) still see the
+ * static shell's platform placeholders; fixing THOSE requires the server
+ * to render per-host `<title>`/OG tags into the shell response, which is
+ * deliberately out of this hook's reach.
  *
  * Why a hook instead of react-helmet-async: avoiding a 3rd-party
  * helmet provider removes a runtime dependency and one more thing to
