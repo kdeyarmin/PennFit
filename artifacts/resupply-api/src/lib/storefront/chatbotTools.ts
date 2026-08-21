@@ -343,10 +343,26 @@ export const CHAT_TOOLS: OpenAiToolDescriptor[] = [
  * masks on size grounds when we don't have a real face scan.
  * Calibration method is set to "iris" purely to satisfy the type;
  * the engine doesn't branch on it.
+ *
+ * `noseWidth`, `noseToChin` and `mouthWidth` are the three the legacy
+ * `recommend()` actually scores, against the legacy catalog's own fit
+ * ranges — they are deliberately tuned to be neutral against THAT
+ * catalog and are not meant to describe a real face, so they stay put.
+ *
+ * `noseHeight` was 50 mm, which is the textbook nasion→subnasale span;
+ * the scan pipeline reports bridge→tip, ~29 mm on an average adult, and
+ * 50 now sits outside the adult plausibility window entirely. The legacy
+ * engine never reads this field, so the old value was inert — but it was
+ * a live trap for the day this shortlist is routed through `assess()`,
+ * which DOES gate on the window and would have answered
+ * `outside_validated_range` for every chatbot request. Set to the
+ * canonical average adult (see lib/fitting/plausibility-windows.test.ts).
+ * `faceWidthAtCheekbones` is likewise unscored by the legacy engine but
+ * already sits inside the window.
  */
 const NEUTRAL_MEASUREMENTS: FacialMeasurements = {
   noseWidth: 36,
-  noseHeight: 50,
+  noseHeight: 29.4,
   noseToChin: 65,
   mouthWidth: 50,
   faceWidthAtCheekbones: 140,
