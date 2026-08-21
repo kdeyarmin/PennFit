@@ -25,7 +25,8 @@ export type BuildPacketOutcome =
   | { kind: "ok"; insert: PacketInsert }
   | { kind: "rx_not_found" }
   | { kind: "rx_missing_provider" }
-  | { kind: "rx_missing_hcpcs" };
+  | { kind: "rx_missing_hcpcs" }
+  | { kind: "rx_missing_diagnosis" };
 
 export type PacketInsert =
   Database["resupply"]["Tables"]["prescription_request_packets"]["Insert"];
@@ -87,8 +88,21 @@ export async function buildPrescriptionRequestPacketFromRx(
   // come from CSR input + EHR snapshots and can ship lowercase
   // ("g47.30") even when the format is otherwise valid.
   const rawIcd = study?.diagnosis_icd10?.toUpperCase() ?? null;
-  const icd10 =
-    rawIcd && /^[A-Z]\d{2}(\.\d{1,4})?$/.test(rawIcd) ? [rawIcd] : ["G47.33"];
+  // No usable diagnosis on file → refuse to build the packet.
+  //
+  // This used to fall back to ["G47.33"] (obstructive sleep apnea). That is
+  // the right answer for most CPAP patients, which is exactly what made it
+  // dangerous: this packet is FAXED TO A PRESCRIBER TO SIGN, so an assumed
+  // diagnosis becomes attested clinical documentation — and that document is
+  // then what justifies billing. A prescriber skimming a pre-filled form is
+  // unlikely to catch a code nobody sourced from the chart.
+  //
+  // Same rule the 837P builder now applies (office-ally-batch.ts): a
+  // diagnosis is either in the record or the paperwork doesn't go out.
+  if (!rawIcd || !/^[A-Z]\d{2}(\.\d{1,4})?$/.test(rawIcd)) {
+    return { kind: "rx_missing_diagnosis" };
+  }
+  const icd10 = [rawIcd];
 
   // `providers` is a GLOBAL (non-org-scoped) table — use the unscoped
   // client via `.raw()`.

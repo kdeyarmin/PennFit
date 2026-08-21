@@ -70,11 +70,22 @@ Next available migration number: **`0474`** (`0473` is the current tip).
 - **Gap A — seeded payer rules:** the `payer_modifier_rules` rule engine
   (`resolveModifiersFromRules()`, migration 0130) exists but launch-payer rows
   must be seeded. → **migration `0474`**.
-- **Gap B — G47.33 silent fallback:** `office-ally-batch.ts:1266` defaults the
-  diagnosis to `G47.33` when no sleep study exists. For manual submit this
-  should become a **preflight failure** (`claim_missing_required_data`) rather
-  than auto-stamping an assumed dx — wrong/assumed diagnosis drives denials like
+- **Gap B — G47.33 silent fallback: CLOSED.** `office-ally-batch.ts` used to
+  default the diagnosis to `G47.33` when no sleep study existed. It now fails
+  the preflight with `claim_missing_required_data` and names the missing field
+  (`missing: "diagnosis_icd10"`) plus an operator-facing message, instead of
+  auto-stamping an assumed dx — a wrong/assumed diagnosis drives denials like
   wrong modifiers do.
+
+  The same fallback existed in a second, worse place and was fixed with it:
+  `prescription-request-builder.ts` stamped `["G47.33"]` onto a
+  prescription-request packet that is **faxed to a prescriber to sign**, so an
+  unsourced diagnosis could become attested clinical documentation — and that
+  document is what justifies billing. It now returns a new
+  `rx_missing_diagnosis` outcome; the auto-draft worker counts those in their
+  own `skipped_no_diagnosis` bucket rather than as failures, so the daily
+  number reads as "N patients need a sleep study attached".
+
 - **External gates (cannot be satisfied from the repo):** DMEPOS sign-off
   (human/out-of-band) and an Office Ally **sandbox** to validate real 837P
   acceptance (999/277CA). Local EDI can still be generated/inspected via stub
@@ -135,8 +146,9 @@ Next available migration number: **`0474`** (`0473` is the current tip).
    log `attachCallSid` failures.
 4. Refunded→paid regression test.
 
-**Phase B — capped-rental / Office Ally (code lands now, go-live gated on externals):** 5. Migration `0474`: seed `payer_modifier_rules` for launch payers. 6. G47.33 preflight: fail manual submit with `claim_missing_required_data` when
-no real `diagnosis_icd10` exists (stop silent fallback). 7. Validate generated 837P locally via stub mode; then **hold for** DMEPOS
+**Phase B — capped-rental / Office Ally (code lands now, go-live gated on externals):** 5. Migration `0474`: seed `payer_modifier_rules` for launch payers. 6. ~~G47.33 preflight~~ — **done**: manual submit now fails with
+`claim_missing_required_data` when no real `diagnosis_icd10` exists, and the
+prescription-request packet builder refuses for the same reason. 7. Validate generated 837P locally via stub mode; then **hold for** DMEPOS
 sign-off + Office Ally sandbox acceptance before flipping e-claims live.
 
 **Validation that must happen outside the repo before go-live:**

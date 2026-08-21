@@ -69,7 +69,10 @@ function makeClaimRow(overrides: Record<string, unknown> = {}) {
 // 1. insurance_coverages (primary)
 // 2. patients
 // 3. insurance_claim_line_items
-// (sleep_studies, providers: optional → unstaged default returns null)
+// 4. sleep_studies — REQUIRED since the diagnosis stopped defaulting to
+//    G47.33. A claim with no diagnosis on file is no longer billable, so a
+//    helper that omitted it would be staging an unbillable claim.
+// (providers: optional → unstaged default returns null)
 function stageMinimalDetail(
   lines: Array<{
     hcpcs_code: string;
@@ -98,6 +101,10 @@ function stageMinimalDetail(
   });
   stageSupabaseResponse("insurance_claim_line_items", "select", {
     data: lines,
+    error: null,
+  });
+  stageSupabaseResponse("sleep_studies", "select", {
+    data: { diagnosis_icd10: "G47.33" },
     error: null,
   });
 }
@@ -408,6 +415,10 @@ describe("executeOfficeAllyBatchSubmit — atomic batch claim (double-transmissi
         ],
         error: null,
       });
+      stageSupabaseResponse("sleep_studies", "select", {
+        data: { diagnosis_icd10: "G47.33" },
+        error: null,
+      });
     }
   }
 
@@ -710,6 +721,10 @@ describe("buildOneDetail — coordination of benefits", () => {
       ],
       error: null,
     });
+    stageSupabaseResponse("sleep_studies", "select", {
+      data: { diagnosis_icd10: "G47.33" },
+      error: null,
+    });
     // loadPrimaryCobDisclosure: primary claim row, then its coverage.
     stageSupabaseResponse("insurance_claims", "select", {
       data: {
@@ -776,6 +791,10 @@ describe("buildOneDetail — coordination of benefits", () => {
           quantity: 1,
         },
       ],
+      error: null,
+    });
+    stageSupabaseResponse("sleep_studies", "select", {
+      data: { diagnosis_icd10: "G47.33" },
       error: null,
     });
     // secondaryCoverage fetch (claim.secondary_coverage_id set).
@@ -1035,7 +1054,7 @@ describe("buildOneDetail — claim-level fields", () => {
     expect(detail!.diagnosisCodes).toContain("G47.30");
   });
 
-  it("falls back to G47.33 when no sleep study exists", async () => {
+  it("refuses to build a claim when no diagnosis is on file (no assumed G47.33)", async () => {
     stageSupabaseResponse("insurance_coverages", "select", {
       data: { member_id: "MBR-NOstudy", policyholder_relationship: "self" },
       error: null,
@@ -1065,17 +1084,103 @@ describe("buildOneDetail — claim-level fields", () => {
       ],
       error: null,
     });
-    // sleep_studies unstaged → returns null
+    // sleep_studies unstaged → no diagnosis on file.
 
     const claim = makeClaimRow();
     const supabase = getOrgScopedClient(MOCK_ORG_ID);
+    const missed: string[] = [];
     const detail = await buildOneDetail(
       supabase,
       claim as never,
       "BCBS",
       "00790",
+      (field) => missed.push(field),
     );
 
-    expect(detail!.diagnosisCodes).toContain("G47.33");
+    // This previously returned a claim stamped with an ASSUMED G47.33.
+    // Billing a payer a diagnosis nobody documented drives denials and
+    // misrepresents the record, so the claim must not be built at all.
+    expect(detail).toBeNull();
+    expect(missed).toEqual(["diagnosis_icd10"]);
+  });
+
+  it("reports diagnosis_icd10 with an actionable message through the preflight", async () => {
+    stageSupabaseResponse("insurance_claims", "select", {
+      data: [
+        {
+          id: "claim-nodx",
+          payer_profile_id: "pp-1",
+          status: "draft",
+          insurance_coverage_id: "cov-1",
+          patient_id: "pat-1",
+        },
+      ],
+    });
+    stageSupabaseResponse("payer_profiles", "select", {
+      data: {
+        id: "pp-1",
+        payer_legal_name: "Aetna",
+        office_ally_payer_id: "60054",
+        paper_only: false,
+        claim_format: "837p",
+        is_active: true,
+        edi_enrollment_status: "enrolled",
+      },
+    });
+    stageSupabaseResponse("eligibility_checks", "select", {
+      data: {
+        id: "eli-1",
+        is_active: true,
+        requires_prior_auth: false,
+        status: "parsed",
+        responded_at: new Date().toISOString(),
+      },
+    });
+    stageSupabaseResponse("insurance_coverages", "select", {
+      data: { member_id: "MBR-1", policyholder_relationship: "self" },
+      error: null,
+    });
+    stageSupabaseResponse("patients", "select", {
+      data: {
+        legal_first_name: "Dana",
+        legal_last_name: "Lopez",
+        date_of_birth: "1979-02-02",
+        address: {
+          line1: "9 Oak Ave",
+          city: "Erie",
+          state: "PA",
+          zip: "16501",
+        },
+      },
+      error: null,
+    });
+    stageSupabaseResponse("insurance_claim_line_items", "select", {
+      data: [
+        {
+          hcpcs_code: "E0601",
+          modifier: "RR",
+          billed_cents: 24999,
+          quantity: 1,
+        },
+      ],
+      error: null,
+    });
+    // sleep_studies unstaged → no diagnosis on file.
+
+    const result = await executeOfficeAllyBatchSubmit({
+      orgId: MOCK_ORG_ID,
+      claimIds: ["claim-nodx"],
+      adminEmail: "ops@example.com",
+      adminUserId: "u-1",
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.kind).toBe("claim_missing_required_data");
+    // The operator has to know WHICH record is missing; a bare claim id is
+    // a support ticket, not a fix.
+    expect(result.detail["missing"]).toBe("diagnosis_icd10");
+    expect(String(result.detail["message"])).toMatch(/sleep study/i);
+    expect(String(result.detail["message"])).toMatch(/assumed diagnosis/i);
   });
 });

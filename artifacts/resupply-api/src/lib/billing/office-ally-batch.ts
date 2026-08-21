@@ -123,6 +123,36 @@ export type BatchSubmitResult =
     };
 
 /**
+ * Turn the field name `buildOneDetail` reported into something an operator
+ * can act on. A claim that silently refuses to submit is a support ticket;
+ * naming the missing record turns it into a two-minute fix.
+ */
+function missingFieldMessage(field: string | null): string {
+  switch (field) {
+    case "diagnosis_icd10":
+      return (
+        "no diagnosis on file for this claim — attach the sleep study (or " +
+        "record the diagnosis) before submitting. The claim is not sent " +
+        "with an assumed diagnosis."
+      );
+    case "insurance_coverage_id":
+    case "insurance_coverage":
+      return "the claim has no insurance coverage attached.";
+    case "patient":
+      return "the claim's patient record could not be loaded.";
+    case "patient_address":
+      return (
+        "the patient's address is incomplete — street, city, state, and " +
+        "ZIP are all required on an 837P."
+      );
+    case "service_lines":
+      return "the claim has no service lines.";
+    default:
+      return "the claim is missing data required to build an 837P.";
+  }
+}
+
+/**
  * Release claimed claims back to 'draft' (conflict loser, or transport
  * failure — nothing reached the clearinghouse, so the claims must stay
  * retryable). Conditional on 'submitting' so it can never stomp a row
@@ -609,17 +639,28 @@ export async function executeOfficeAllyBatchSubmit(
 
   const detailEntries: ClaimDetail[] = [];
   for (const claim of claims) {
+    // Both submit routes spread `detail` straight into the HTTP body, so
+    // naming the missing field here is the difference between "this claim
+    // won't submit" and "attach the sleep study to this claim".
+    let missingField: string | null = null;
     const detail = await buildOneDetail(
       supabase,
       claim,
       payer.payer_legal_name,
       payer.office_ally_payer_id,
+      (field) => {
+        missingField ??= field;
+      },
     );
     if (!detail) {
       return {
         ok: false,
         kind: "claim_missing_required_data",
-        detail: { claimId: claim.id },
+        detail: {
+          claimId: claim.id,
+          missing: missingField,
+          message: missingFieldMessage(missingField),
+        },
       };
     }
     detailEntries.push(detail);
@@ -1191,8 +1232,20 @@ export async function buildOneDetail(
   claim: ClaimRow,
   payerLegalName: string,
   payerId: string,
+  /**
+   * Optional sink for WHY this claim can't be built. Every `return null`
+   * below names the field it is missing, so the caller can tell the operator
+   * what to fix instead of surfacing a bare claim id. Optional on purpose:
+   * the contract stays `ClaimDetail | null` for the callers (and the ~25
+   * tests) that only care whether the claim is billable.
+   */
+  onMissing?: (field: string) => void,
 ): Promise<ClaimDetail | null> {
-  if (!claim.insurance_coverage_id) return null;
+  const missing = (field: string): null => {
+    onMissing?.(field);
+    return null;
+  };
+  if (!claim.insurance_coverage_id) return missing("insurance_coverage_id");
   const [
     { data: coverage },
     { data: patient },
@@ -1256,15 +1309,33 @@ export async function buildOneDetail(
           .maybeSingle()
       : Promise.resolve({ data: null }),
   ]);
-  if (!coverage || !patient || !lines || lines.length === 0) return null;
+  if (!coverage) return missing("insurance_coverage");
+  if (!patient) return missing("patient");
+  if (!lines || lines.length === 0) return missing("service_lines");
   const addr = patient.address as {
     line1?: string;
     city?: string;
     state?: string;
     zip?: string;
   } | null;
-  if (!addr?.line1 || !addr.city || !addr.state || !addr.zip) return null;
-  const primaryDx = sleep?.diagnosis_icd10 ?? "G47.33";
+  if (!addr?.line1 || !addr.city || !addr.state || !addr.zip) {
+    return missing("patient_address");
+  }
+
+  // The diagnosis must come from the patient's record. This used to fall back
+  // to `?? "G47.33"` (obstructive sleep apnea) when no sleep study was on
+  // file, which put an ASSUMED diagnosis on a claim sent to a payer: the most
+  // common dx for this population, so it would often be right, and silently
+  // wrong the rest of the time. Wrong-or-unsupported diagnoses drive denials
+  // exactly like wrong modifiers do, and a payer reading it has no way to
+  // know the code was inferred rather than documented.
+  //
+  // Fail the preflight instead (docs/launch-triage-2026-06-24.md, gap 3B).
+  // Refusing to build the claim is the conservative direction: the operator
+  // attaches the sleep study — or records the real dx — and resubmits, which
+  // is strictly cheaper than a denial or a corrected claim after the fact.
+  if (!sleep?.diagnosis_icd10) return missing("diagnosis_icd10");
+  const primaryDx = sleep.diagnosis_icd10;
   const subscriberAddress = {
     line1: addr.line1,
     city: addr.city,
