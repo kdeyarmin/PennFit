@@ -2,9 +2,14 @@
 //
 // Scope: Storefront/admin SPA E2E. Current specs under tests/:
 //   * storefront-loads.spec.ts      — SPA boots, landing nav renders
+//   * home-trust-signals.spec.ts    — on-device privacy badge is present
+//   * fitter-funnel-full.spec.ts    — the whole virtual mask fitter, happy
+//                                     path + every recoverable failure
 //   * results-page-resilience.spec.ts — measure/results page degrades
 //                                       gracefully
 //   * a11y.spec.ts                  — axe a11y sweep of public routes
+//   * fitter-funnel-a11y.spec.ts    — axe sweep across the fitter funnel
+//   * admin/*.admin.spec.ts         — authenticated admin (opt-in, E2E_ADMIN)
 //
 // Running the suite locally:
 //   1. Install browser binaries once:
@@ -17,12 +22,20 @@
 // the cpap-fitter Vite config, which intentionally requires PORT + BASE_PATH
 // in non-build modes.
 //
-// CI integration is wired in .github/workflows/ci.yml: the `smoke`
-// job runs storefront-loads.spec.ts against a `vite preview` build
-// and is REQUIRED; the `a11y` job runs a11y.spec.ts and is currently
-// `continue-on-error` (non-gating) while baseline violations are
-// triaged. results-page-resilience.spec.ts is not yet wired into a
-// CI job.
+// CI integration is wired in .github/workflows/ci.yml, and every
+// storefront spec is gated:
+//   * `smoke`   — storefront-loads.spec.ts against a `vite preview`
+//                 build. Catches "the production bundle doesn't boot".
+//   * `a11y`    — a11y.spec.ts against `vite preview`.
+//   * `e2e-dev` — the WHOLE default project against `vite dev`, with no
+//                 file filter. Specs that stub the @mediapipe/tasks-vision
+//                 ES module only work unbundled, so they self-skip under
+//                 preview; this job is where they actually execute. Adding
+//                 a spec file under tests/ needs no CI change — which is
+//                 the point, since naming files one at a time is what left
+//                 three specs running in no job at all.
+//   * `e2e-admin` — the `admin` project against the full backend stack
+//                 (advisory; it pulls a third-party PostgREST binary).
 
 import { defineConfig, devices } from "@playwright/test";
 
@@ -116,9 +129,9 @@ export default defineConfig({
       : []),
   ],
 
-  // The dev server is not auto-started; tests assume it's already
-  // running on `BASE_URL`. Auto-starting it from Playwright would
-  // duplicate the `pnpm dev` scripts already documented in the
-  // README and tangle CI startup ordering. Document this in the
-  // README when the suite grows beyond smoke tests.
+  // The dev server is auto-started by the `webServer` block above, not
+  // assumed to be running. `reuseExistingServer: true` keeps that from
+  // being disruptive: Playwright only launches vite when nothing already
+  // answers at BASE_URL, so a local `pnpm dev` session is reused, and CI
+  // — which starts vite itself and passes E2E_BASE_URL — is left alone.
 });
