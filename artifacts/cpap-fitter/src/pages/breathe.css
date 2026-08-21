@@ -6679,9 +6679,20 @@
   }
 }
 @media (max-width: 1080px) {
+  /* The mega-menus need ~1080px to sit beside the CTAs. Below that they
+     hide — and the hamburger MUST appear at the same breakpoint, or the
+     901-1080px band has no reachable navigation at all (the pre-existing
+     rule below only revealed the toggle at 900px). The secondary CTAs
+     fold into the panel too; the primary demo CTA stays put, since it is
+     the page's conversion action. */
   .bx-nav-mega,
-  .bx-nav-plain {
+  .bx-nav-plain,
+  .bx-nav-links a.bx-nav-signin,
+  .bx-nav-links a.bx-btn-ghost {
     display: none;
+  }
+  .bx-nav-toggle {
+    display: inline-flex;
   }
 }
 @media (max-width: 980px) {
