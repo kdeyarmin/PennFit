@@ -66,9 +66,13 @@ describe("tallyOutcomesByMask", () => {
 });
 
 describe("recommend() with fitAdjustments", () => {
+  // noseHeight only: 50 mm was the textbook nasion→subnasale span, not
+  // the ~29 mm bridge→tip span this pipeline reports. The other three
+  // are scored by the legacy engine against the legacy catalog, so
+  // moving them would change what this test asserts.
   const measurements: FacialMeasurements = {
     noseWidth: 35,
-    noseHeight: 50,
+    noseHeight: 29.4,
     noseToChin: 70,
     mouthWidth: 50,
     faceWidthAtCheekbones: 130,

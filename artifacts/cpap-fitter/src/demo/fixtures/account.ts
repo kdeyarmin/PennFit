@@ -105,10 +105,10 @@ export function demoClinicalInfo(): ShopClinicalInfoResponse {
     physicianInfo: p.physicianInfo,
     facialMeasurements: {
       noseWidth: 36.2,
-      noseHeight: 48.5,
-      noseToChin: 118.4,
+      noseHeight: 30.1,
+      noseToChin: 91.5,
       mouthWidth: 51.0,
-      faceWidthAtCheekbones: 139.7,
+      faceWidthAtCheekbones: 155.4,
       calibrationMethod: "iris",
       capturedAt: daysAgo(12),
     },
