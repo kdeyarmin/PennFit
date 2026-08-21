@@ -5803,3 +5803,957 @@
     max-width: none;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * Home redesign (Aug 2026) — mask-fitter-led landing page.
+ *
+ * Ships the Claude Design "Breathe Marketing Site" canvas: the fitter is
+ * promoted from one feature card to the page's flagship band, the header
+ * becomes four mega-menus so all 26 marketing routes are reachable, and
+ * the footer carries the full sitemap.
+ *
+ * Grid convention, deliberately: every multi-column grid below is
+ * `repeat(N, 1fr)` with an explicit `@media` collapse chain — NOT
+ * `minmax(Npx, 1fr)`. `auto-fit` + a px floor collapses the column count
+ * but keeps the floor, which is what breaks a 320px viewport. This
+ * matches the rest of the file; see docs/marketing/.
+ * ═══════════════════════════════════════════════════════════════════ */
+
+/* ── Header: mega-menus ─────────────────────────────────────────────── */
+.bx-nav-mega {
+  position: relative;
+}
+.bx-nav-mega-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: 0;
+  padding: 10px 12px;
+  min-height: 44px;
+  font: inherit;
+  font-size: 14.5px;
+  font-weight: 500;
+  color: var(--bx-text-dim);
+  cursor: pointer;
+  border-radius: 9px;
+  white-space: nowrap;
+  transition:
+    color 0.18s ease,
+    background 0.18s ease;
+}
+.bx-nav-mega-btn:hover,
+.bx-nav-mega-btn[aria-expanded="true"] {
+  color: var(--bx-text);
+  background: rgba(255, 255, 255, 0.05);
+}
+.bx-nav-mega-btn.gold {
+  font-weight: 600;
+  color: var(--bx-gold-soft);
+}
+.bx-nav-mega-btn.gold:hover,
+.bx-nav-mega-btn.gold[aria-expanded="true"] {
+  color: var(--bx-gold-soft);
+  background: rgba(246, 167, 34, 0.1);
+}
+.bx-nav-mega-caret {
+  font-size: 9px;
+  opacity: 0.7;
+}
+.bx-nav-mega-panel {
+  position: absolute;
+  top: 100%;
+  left: -8px;
+  padding-top: 8px;
+  z-index: 70;
+  width: 380px;
+}
+.bx-nav-mega-panel.wide {
+  width: 660px;
+}
+.bx-nav-mega-panel.narrow {
+  width: 360px;
+}
+.bx-nav-mega-inner {
+  background: rgba(13, 24, 46, 0.98);
+  border: 1px solid rgba(130, 172, 236, 0.28);
+  border-radius: 16px;
+  box-shadow: 0 40px 80px -30px rgba(3, 8, 20, 0.95);
+  padding: 16px;
+}
+.bx-nav-mega-panel.gold .bx-nav-mega-inner {
+  border-color: rgba(246, 167, 34, 0.3);
+}
+.bx-nav-mega-panel.wide .bx-nav-mega-inner {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+}
+.bx-nav-mega-link {
+  display: block;
+  padding: 10px 12px;
+  border-radius: 10px;
+  text-decoration: none;
+  transition: background 0.16s ease;
+}
+.bx-nav-mega-link:hover {
+  background: rgba(84, 200, 255, 0.09);
+}
+.bx-nav-mega-panel.gold .bx-nav-mega-link:hover {
+  background: rgba(246, 167, 34, 0.1);
+}
+.bx-nav-mega-label {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--bx-text);
+}
+.bx-nav-mega-label.gold {
+  color: var(--bx-gold-soft);
+}
+.bx-nav-mega-note {
+  display: block;
+  font-size: 12.5px;
+  color: var(--bx-text-faint);
+  margin-top: 2px;
+}
+.bx-nav-plain {
+  display: inline-flex;
+  align-items: center;
+  padding: 10px 12px;
+  min-height: 44px;
+  font-size: 14.5px;
+  font-weight: 500;
+  color: var(--bx-text-dim);
+  border-radius: 9px;
+  white-space: nowrap;
+  text-decoration: none;
+}
+.bx-nav-plain:hover {
+  color: var(--bx-text);
+  background: rgba(255, 255, 255, 0.05);
+}
+/* The header now carries four menus, Pricing, and three CTAs. Without this
+   the CTA labels break mid-word ("Sign / in") once the row gets tight. */
+.bx-nav-links .bx-btn,
+.bx-nav-links a.bx-nav-signin {
+  white-space: nowrap;
+}
+
+/* Mobile panel — grouped sitemap. */
+.bx-nav-mob {
+  width: 100%;
+  border-top: 1px solid rgba(130, 172, 236, 0.22);
+  margin-top: 8px;
+  padding: 18px 0 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-height: 72vh;
+  overflow-y: auto;
+}
+.bx-nav-mob-title {
+  display: block;
+  font-family: var(--bx-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #7f90b4;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+.bx-nav-mob-list {
+  display: flex;
+  flex-direction: column;
+}
+.bx-nav-mob-link {
+  display: flex;
+  align-items: center;
+  min-height: 46px;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--bx-text-dim);
+  text-decoration: none;
+  border-bottom: 1px solid rgba(130, 172, 236, 0.12);
+}
+.bx-nav-mob-link:hover {
+  color: var(--bx-cyan);
+}
+.bx-nav-mob-ctas {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding-bottom: 6px;
+}
+
+/* ── Hero: value props + the fitter product card ────────────────────── */
+.bx-hero-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--bx-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--bx-gold-soft);
+  font-weight: 700;
+}
+.bx-hero-props-wrap {
+  margin-top: 30px;
+  padding-top: 26px;
+  border-top: 1px solid rgba(130, 172, 236, 0.22);
+}
+.bx-hero-props {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+  margin-top: 16px;
+}
+.bx-hero-prop b {
+  display: block;
+  font-size: 14.5px;
+  color: var(--bx-text);
+  line-height: 1.35;
+}
+.bx-hero-prop span {
+  display: block;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--bx-text-faint);
+  margin-top: 5px;
+}
+.bx-fitcard {
+  background: linear-gradient(
+    180deg,
+    rgba(246, 167, 34, 0.1),
+    rgba(22, 36, 66, 0.86)
+  );
+  border: 1px solid rgba(246, 167, 34, 0.3);
+  border-radius: 22px;
+  padding: 20px;
+  box-shadow: 0 50px 100px -40px rgba(3, 8, 20, 0.95);
+}
+.bx-fitcard-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.bx-fitcard-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--bx-gold-soft);
+}
+.bx-fitcard-live i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--bx-mint);
+  box-shadow: 0 0 10px var(--bx-mint);
+}
+.bx-fitcard-meta {
+  font-family: var(--bx-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--bx-text-faint);
+}
+.bx-fitcard-shot {
+  background: #fff;
+  border-radius: 14px;
+  padding: 12px;
+  box-shadow: inset 0 0 0 1px rgba(11, 20, 38, 0.08);
+}
+.bx-fitcard-shot img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 8px;
+}
+.bx-fitcard-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 16px;
+}
+.bx-fitcard-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 11px 13px;
+  border-radius: 11px;
+  background: rgba(246, 167, 34, 0.1);
+  border: 1px solid rgba(246, 167, 34, 0.26);
+}
+.bx-fitcard-row.result {
+  background: rgba(111, 240, 194, 0.09);
+  border-color: rgba(111, 240, 194, 0.28);
+}
+.bx-fitcard-tier {
+  font-family: var(--bx-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--bx-gold-soft);
+  font-weight: 700;
+}
+.bx-fitcard-row.result .bx-fitcard-tier {
+  color: var(--bx-mint);
+}
+.bx-fitcard-what {
+  font-size: 13px;
+  color: var(--bx-text);
+  font-weight: 600;
+}
+.bx-fitcard-val {
+  font-size: 12.5px;
+  color: var(--bx-text-dim);
+  margin-left: auto;
+}
+.bx-fitcard-row.result .bx-fitcard-val {
+  color: var(--bx-mint);
+}
+.bx-fitcard-note {
+  margin: 16px 0 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--bx-text-faint);
+}
+
+/* ── Fitter band ────────────────────────────────────────────────────── */
+.bx-fitband {
+  position: relative;
+  background: linear-gradient(
+    180deg,
+    rgba(246, 167, 34, 0.07),
+    rgba(11, 20, 38, 0) 30%
+  );
+}
+.bx-fit-sub {
+  margin-top: clamp(48px, 5vw, 72px);
+}
+.bx-fit-h3 {
+  font-family: var(--bx-display);
+  font-size: 27px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  margin: 0;
+  color: #f4f7ff;
+}
+.bx-fit-lede {
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--bx-text-faint);
+  margin: 10px 0 0;
+  max-width: 820px;
+}
+.bx-fit-entry {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+  margin-top: 26px;
+}
+.bx-entry {
+  background: var(--bx-panel-2);
+  border: 1px solid var(--bx-line);
+  border-radius: 18px;
+  padding: 24px 26px;
+  transition: border-color 0.22s ease;
+}
+.bx-entry:hover {
+  border-color: var(--bx-line-strong);
+}
+.bx-entry-tag {
+  font-family: var(--bx-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+.bx-entry h4 {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--bx-text);
+  margin: 10px 0 6px;
+}
+.bx-entry-sum {
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--bx-text-faint);
+  margin: 0 0 14px;
+}
+.bx-ticks {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.bx-ticks li {
+  position: relative;
+  padding-left: 22px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--bx-text-dim);
+}
+.bx-ticks li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 7px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--bx-cyan);
+}
+.bx-ticks.gold li::before {
+  background: var(--bx-gold-soft);
+}
+
+/* Six-tier ladder — the first two tiers are hard filters. */
+.bx-tiers-grid {
+  margin-top: clamp(52px, 6vw, 84px);
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 44px;
+  align-items: start;
+}
+.bx-tiers {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.bx-tiers-cap {
+  align-self: flex-start;
+  font-family: var(--bx-mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--bx-text-faint);
+  border: 1px dashed rgba(130, 172, 236, 0.36);
+  padding: 7px 12px;
+  border-radius: 8px;
+  line-height: 1.45;
+}
+.bx-tiers-out {
+  align-self: flex-start;
+  font-family: var(--bx-mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--bx-mint);
+  border: 1px solid rgba(111, 240, 194, 0.34);
+  background: rgba(111, 240, 194, 0.07);
+  padding: 7px 12px;
+  border-radius: 8px;
+  margin-top: 4px;
+  line-height: 1.5;
+}
+.bx-tier {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 18px;
+  border-radius: 14px;
+  background: var(--bx-panel-2);
+  border: 1px solid rgba(130, 172, 236, 0.22);
+}
+.bx-tier.hard {
+  background: linear-gradient(
+    100deg,
+    rgba(246, 167, 34, 0.14),
+    rgba(22, 36, 66, 0.8)
+  );
+  border-color: rgba(246, 167, 34, 0.36);
+}
+.bx-tier-n {
+  font-family: var(--bx-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--bx-cyan);
+  flex: none;
+}
+.bx-tier.hard .bx-tier-n {
+  color: var(--bx-gold-soft);
+}
+.bx-tier-txt {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.bx-tier-txt b {
+  font-size: 14.5px;
+  color: var(--bx-text);
+}
+.bx-tier-txt i {
+  font-style: normal;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--bx-text-faint);
+}
+.bx-tier-fail {
+  display: inline-block;
+  margin: 6px 0 0 18px;
+  font-family: var(--bx-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--bx-gold-soft);
+}
+.bx-tier-note {
+  margin: 20px 0 0;
+  padding: 16px 18px;
+  border-radius: 14px;
+  background: rgba(111, 240, 194, 0.07);
+  border: 1px solid rgba(111, 240, 194, 0.24);
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--bx-text-dim);
+}
+.bx-tier-note b {
+  color: var(--bx-mint);
+}
+
+/* Privacy contrast — "deleted" vs "never received". */
+.bx-privacy {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 22px;
+  align-items: stretch;
+  margin-top: 26px;
+}
+.bx-privacy-card {
+  flex: 1 1 330px;
+  background: rgba(16, 28, 54, 0.72);
+  border: 1px solid rgba(130, 172, 236, 0.2);
+  border-radius: 18px;
+  padding: 24px 26px;
+}
+.bx-privacy-card.ours {
+  background: linear-gradient(
+    180deg,
+    rgba(84, 200, 255, 0.09),
+    rgba(22, 36, 66, 0.82)
+  );
+  border-color: rgba(84, 200, 255, 0.32);
+}
+.bx-privacy-tag {
+  font-family: var(--bx-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #7f90b4;
+}
+.bx-privacy-card.ours .bx-privacy-tag {
+  color: var(--bx-cyan);
+}
+.bx-privacy-card h4 {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--bx-text-dim);
+  margin: 9px 0 14px;
+}
+.bx-privacy-card.ours h4 {
+  color: var(--bx-text);
+}
+.bx-dashes {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.bx-dashes li {
+  position: relative;
+  padding-left: 22px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--bx-text-faint);
+}
+.bx-dashes li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  width: 8px;
+  height: 1px;
+  background: #6d7f9f;
+}
+.bx-pairs {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.bx-pairs li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.bx-pairs b {
+  font-size: 14px;
+  color: var(--bx-text);
+}
+.bx-pairs i {
+  font-style: normal;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--bx-text-faint);
+}
+.bx-privacy-vs {
+  align-self: center;
+  font-family: var(--bx-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--bx-text-faint);
+}
+
+/* "Where a stand-alone fitter stops" */
+.bx-standalone {
+  margin-top: 24px;
+  border: 1px solid var(--bx-line);
+  border-radius: 18px;
+  background: rgba(16, 28, 54, 0.6);
+  padding: 26px 28px;
+}
+.bx-standalone-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 24px;
+  margin-top: 18px;
+}
+.bx-standalone-foot {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin-top: 22px;
+  padding-top: 20px;
+  border-top: 1px solid rgba(130, 172, 236, 0.18);
+}
+
+/* Fitter-only plan + the activation note. */
+.bx-fitplan-grid {
+  margin-top: clamp(52px, 6vw, 84px);
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 22px;
+  align-items: stretch;
+}
+.bx-fitplan {
+  background: linear-gradient(
+    150deg,
+    rgba(246, 167, 34, 0.14),
+    rgba(22, 36, 66, 0.86)
+  );
+  border: 1px solid rgba(246, 167, 34, 0.36);
+  border-radius: 20px;
+  padding: 30px 32px;
+}
+.bx-fitplan-amt {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 14px 0 0;
+}
+.bx-fitplan-amt b {
+  font-family: var(--bx-display);
+  font-size: 52px;
+  font-weight: 600;
+  line-height: 1;
+  color: #f4f7ff;
+}
+.bx-fitplan-amt span {
+  font-size: 15px;
+  color: var(--bx-text-dim);
+  padding-bottom: 8px;
+}
+.bx-fitplan-fine {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--bx-text-faint);
+}
+.bx-fitplan-fine s {
+  color: #7f90b4;
+}
+.bx-fitnote {
+  background: var(--bx-panel-2);
+  border: 1px solid var(--bx-line);
+  border-radius: 20px;
+  padding: 30px 32px;
+}
+
+/* ── Platform pillars (10 deep dives) ───────────────────────────────── */
+.bx-deepgrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 20px;
+  margin-top: 44px;
+}
+.bx-deep {
+  display: block;
+  text-decoration: none;
+  background: var(--bx-panel-2);
+  border: 1px solid var(--bx-line);
+  border-radius: 18px;
+  padding: 24px 26px;
+  transition:
+    transform 0.22s ease,
+    border-color 0.22s ease;
+}
+.bx-deep.gold {
+  background: linear-gradient(
+    180deg,
+    rgba(246, 167, 34, 0.1),
+    rgba(22, 36, 66, 0.8)
+  );
+  border-color: rgba(246, 167, 34, 0.32);
+}
+.bx-deep:hover {
+  transform: translateY(-3px);
+  border-color: rgba(142, 186, 250, 0.5);
+}
+.bx-deep h3 {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--bx-text);
+  margin: 0 0 8px;
+}
+.bx-deep p {
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--bx-text-faint);
+  margin: 0 0 16px;
+}
+.bx-deep-go {
+  font-family: var(--bx-mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--bx-cyan);
+}
+.bx-deep.gold .bx-deep-go {
+  color: var(--bx-gold-soft);
+}
+.bx-chiprow {
+  margin-top: 26px;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+.bx-chiprow-label {
+  font-family: var(--bx-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #7f90b4;
+  font-weight: 700;
+}
+.bx-chips {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.bx-chip {
+  font-size: 13px;
+  color: var(--bx-text-dim);
+  border: 1px solid var(--bx-line);
+  border-radius: 999px;
+  padding: 6px 14px;
+}
+
+/* ── Home FAQ ───────────────────────────────────────────────────────── */
+.bx-faqgrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 20px;
+  margin-top: 36px;
+}
+.bx-faqcard {
+  background: rgba(22, 36, 66, 0.7);
+  border: 1px solid var(--bx-line);
+  border-radius: 16px;
+  padding: 22px 24px;
+}
+.bx-faqcard h3 {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--bx-text);
+  margin: 0 0 9px;
+}
+.bx-faqcard p {
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--bx-text-faint);
+  margin: 0;
+}
+
+/* ── Footer sitemap ─────────────────────────────────────────────────── */
+.bx-footer-cols {
+  display: grid;
+  grid-template-columns: 1.3fr repeat(4, 1fr);
+  gap: 34px;
+}
+.bx-footer-col-title {
+  font-family: var(--bx-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #7f90b4;
+  margin: 4px 0 14px;
+  font-weight: 700;
+}
+.bx-footer-col ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.bx-footer-col a {
+  display: inline-block;
+  padding: 8px 0;
+  min-height: 24px;
+  font-size: 13.5px;
+  color: var(--bx-text-dim);
+  text-decoration: none;
+}
+.bx-footer-col a:hover {
+  color: var(--bx-cyan);
+}
+.bx-footer-blurb {
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--bx-text-faint);
+  margin: 16px 0 0;
+  max-width: 280px;
+}
+.bx-footer-bottom {
+  margin-top: 38px;
+  padding-top: 22px;
+  border-top: 1px solid rgba(130, 172, 236, 0.18);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+.bx-footer-bottom p {
+  margin: 0;
+  font-size: 12.5px;
+  color: #7f90b4;
+}
+.bx-footer-bottom-links {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+.bx-footer-bottom-links a {
+  font-size: 12.5px;
+  color: var(--bx-text-faint);
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* ── Responsive collapse chain ──────────────────────────────────────── */
+@media (max-width: 1180px) {
+  .bx-deepgrid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .bx-footer-cols {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+@media (max-width: 1200px) {
+  /* The mega-menus need ~1170px to sit beside the CTAs. Below that they
+     hide — and the hamburger MUST appear at the same breakpoint, or the
+     band below it has no reachable navigation at all (the pre-existing
+     rule below only revealed the toggle at 900px). The secondary CTAs
+     fold into the panel too; the primary demo CTA stays put, since it is
+     the page's conversion action.
+
+     The 1200px figure is measured, not guessed: with all four menus,
+     Pricing and the three CTAs on one row, the "Start free demo" button
+     starts overhanging the shell's inner edge below 1170px (89px of it is
+     cut off at 1081px). `.breathe-page` uses `overflow-x: clip`, so that
+     clipping never shows up in `documentElement.scrollWidth` — it is
+     invisible to a page-level overflow check, which is why the e2e spec
+     measures each nav item's right edge against the container instead.
+     1200px is the shell's own max-width and leaves ~30px of headroom for
+     font-metric variation across platforms. */
+  .bx-nav-mega,
+  .bx-nav-plain,
+  .bx-nav-links a.bx-nav-signin,
+  .bx-nav-links a.bx-btn-ghost {
+    display: none;
+  }
+  .bx-nav-toggle {
+    display: inline-flex;
+  }
+}
+@media (max-width: 980px) {
+  .bx-tiers-grid,
+  .bx-fitplan-grid {
+    grid-template-columns: 1fr;
+    gap: 28px;
+  }
+  .bx-standalone-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (max-width: 900px) {
+  .bx-hero-props,
+  .bx-fit-entry,
+  .bx-deepgrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .bx-faqgrid {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 760px) {
+  .bx-footer-cols {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 26px;
+  }
+  .bx-privacy-vs {
+    align-self: flex-start;
+  }
+  .bx-fitplan,
+  .bx-fitnote,
+  .bx-standalone {
+    padding: 24px 22px;
+  }
+}
+@media (max-width: 620px) {
+  .bx-hero-props,
+  .bx-fit-entry,
+  .bx-deepgrid,
+  .bx-standalone-grid {
+    grid-template-columns: 1fr;
+  }
+  .bx-footer-cols {
+    grid-template-columns: 1fr;
+  }
+  .bx-fitcard-val {
+    margin-left: 0;
+    width: 100%;
+  }
+  .bx-fitplan-amt b {
+    font-size: 42px;
+  }
+}

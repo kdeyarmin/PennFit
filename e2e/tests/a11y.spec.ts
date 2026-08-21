@@ -25,6 +25,10 @@ const PUBLIC_ROUTES: ReadonlyArray<{ path: string; label: string }> = [
   // landing instead — that's the entry point an uninvited visitor sees.
   { path: "/fitter-invite", label: "fitter invite" },
   { path: "/contact", label: "contact" },
+  // The CareMetric Breathe platform marketing surface. Separate-brand B2B
+  // content served on the same SPA, and the page a prospective DME buyer
+  // lands on, so it carries the same accessibility bar as the storefront.
+  { path: "/breathe", label: "breathe marketing home" },
   { path: "/admin/sign-in", label: "admin sign-in" },
   // Customer auth forms — directly reachable, and the entry points where
   // a shopper types credentials, so their inline field errors must stay
