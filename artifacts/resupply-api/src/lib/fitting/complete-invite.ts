@@ -300,13 +300,28 @@ async function recordCompletion(
     // Re-submit (or race loser): refresh the fitting DATA only. Status,
     // completed_at and opened_at were settled by the first completion —
     // rewriting status here from the stale read could regress a
-    // concurrent "attached" back to "completed". The auto-attach fields
-    // stay: they are only in `update` when the row had no chart link at
-    // read time, and setting the same match twice is idempotent.
+    // concurrent "attached" back to "completed".
+    //
+    // CHART LINKAGE IS OFF-LIMITS HERE TOO. `patient_id`/`auto_matched`
+    // are in `update` because the row carried no chart at THIS caller's
+    // read — a view a staff attach in the meantime has already
+    // invalidated. Writing them back would repoint the fitting from the
+    // chart a human deliberately chose to the auto-matched one, and set
+    // `auto_matched` true underneath an `attached_at` that says a person
+    // did it: a fitting filed on the wrong patient, labelled as though
+    // nobody had touched it.
+    //
+    // Nothing is lost by staying out of it. Whoever won the claim ran the
+    // same lookup against the same contact details, so the linkage this
+    // caller would write is the linkage already there; and if that lookup
+    // failed, the row stays unattached and lands in the holding area,
+    // which exists precisely to put it in front of a human.
     const {
       status: _status,
       completed_at: _completedAt,
       opened_at: _openedAt,
+      patient_id: _patientId,
+      auto_matched: _autoMatched,
       ...dataOnly
     } = update;
     const { error: updErr } = await supabase

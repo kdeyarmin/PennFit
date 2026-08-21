@@ -506,4 +506,55 @@ describe("POST /shop/fitter-invite/complete", () => {
     )[0] as Record<string, unknown>;
     expect(upd).not.toHaveProperty("recommendations");
   });
+
+  it("cannot repoint a chart a staff member attached", async () => {
+    // Two writers now record every clinical fitting, so the data-only
+    // fallback is the NORMAL path rather than a double-tap curiosity —
+    // and it runs off a read taken before the claim. If staff attach the
+    // fitting in that window, writing this caller's own auto-match back
+    // would repoint the row from the chart a human chose to the matched
+    // one, and set auto_matched true under an attached_at that says
+    // otherwise: a fitting filed on the wrong patient.
+    const token = signFitterInviteToken(INVITE_ID);
+    // Read shows an unattached, still-in-flight invite…
+    stageSupabaseResponse("fitter_invites", "select", {
+      data: {
+        id: INVITE_ID,
+        status: "opened",
+        patient_id: null,
+        recipient_email: "p@example.com",
+        recipient_phone_e164: null,
+        expires_at: new Date(Date.now() + 86_400_000).toISOString(),
+      },
+    });
+    // …and the email matches a chart, so this caller has an auto-match.
+    stageSupabaseResponse("patients", "select", { data: [{ id: PATIENT_ID }] });
+    // The conditional claim matches nothing: someone else already
+    // completed (and, in the case that matters, attached) the row.
+    stageSupabaseResponse("fitter_invites", "update", { data: [] });
+    // The data-only fallback write.
+    stageSupabaseResponse("fitter_invites", "update", { data: null });
+
+    const res = await request(makeApp())
+      .post("/resupply-api/shop/fitter-invite/complete")
+      .send({ t: token, measurements, answers, recommendation });
+    expect(res.status).toBe(200);
+
+    const writes = getSupabaseWritePayloads("fitter_invites", "update");
+    expect(writes).toHaveLength(2);
+    const claim = writes[0] as Record<string, unknown>;
+    const fallback = writes[1] as Record<string, unknown>;
+
+    // The claim is allowed to carry the linkage — it only lands while the
+    // row is still un-completed, which is before any attach could happen.
+    expect(claim.patient_id).toBe(PATIENT_ID);
+    // The fallback must not touch chart linkage at all…
+    expect(fallback).not.toHaveProperty("patient_id");
+    expect(fallback).not.toHaveProperty("auto_matched");
+    // …nor the lifecycle fields the winner settled…
+    expect(fallback).not.toHaveProperty("status");
+    expect(fallback).not.toHaveProperty("completed_at");
+    // …while still refreshing the fitting data it came to deliver.
+    expect(fallback.measurements).toEqual(measurements);
+  });
 });
